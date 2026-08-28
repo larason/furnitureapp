@@ -609,51 +609,66 @@ Use this structure:
 
 ## 17. Out of Scope
 
-## 18. Open Questions
+## 18. Resolved Business Decisions
+
+The following decisions have been confirmed by the project owner and MUST be treated as authoritative for later phases unless explicitly changed by the project owner.
+
+1. **Guest browsing is allowed.** Visitors may browse the public catalog, categories, search/filter products, and view product details without registration or login.
+
+2. **Checkout requires an account.** A customer must be authenticated before checkout. Checkout must collect the required payment information and billing address.
+
+3. **Made-to-order requests may be anonymous.** A visitor does not need an account to submit a furniture request. Anonymous requests must collect sufficient contact information, including email and/or phone as required by the form.
+
+4. **General enquiries may be anonymous.** The same identity rule applies to general enquiries: authentication is not required, and the enquiry must collect contact information such as email and/or phone.
+
+5. **Delivery fee is variable and staff-controlled.** Version 1 does not assume a fixed delivery price. The delivery fee is determined and entered directly by authorized admin/staff as part of order fulfilment/checkout operations. Later phases must define the exact point at which the fee is set and validated.
+
+6. **Payment provider selection belongs to Phase Group G.** Phase 1.1 must not select or hard-code a payment provider. The API scope must preserve a provider-agnostic payment boundary so Phase Group G can define the implementation.
+
+7. **Customer cancellation has a 20-minute window.** The customer may cancel an order only within 20 minutes of order creation, subject to later detailed status/payment rules. The exact transition and refund behavior must be defined in the later order/payment contract phases; it must not be guessed here.
+
+8. **Order reference format is `OD-****`.** The later order-contract phase must define the exact sequence generation and collision-safe implementation while preserving the `OD-` human-readable prefix.
+
+9. **Email/notification sending is deferred to Phase Group R.** Phase 1.1 must not assume real email delivery or external notification delivery for Version 1. The notification capability may be scoped, but external delivery implementation remains deferred until Phase Group R.
+
+10. **Password recovery and email verification must use a secure, backend-controlled approach.** The exact delivery mechanism is intentionally deferred to the authentication/security phases. The system must not invent an insecure client-side password reset mechanism or expose password-reset secrets to frontend applications.
+
+11. **Saved address books are deferred.** Customers will not have a persistent saved-address book in the initial scope. Address information is captured as needed for checkout/order fulfilment.
+
+12. **Staff/admin permission granularity is deferred to Phase Group D.** Phase 1.1 recognizes separate staff/admin operational access but does not define the final permission matrix.
+
+13. **Request/enquiry attachments are optional.** The scope must allow optional file/image attachments for made-to-order requests and general enquiries. Storage provider and upload implementation are deferred to the appropriate later phase.
+
+14. **Anonymous requests/enquiries remain separate from orders.** An anonymous furniture request or enquiry must not be silently converted into an order. A later business action can create a normal order only through the approved purchase/quotation workflow.
+
+15. **Small-business scope remains mandatory.** Do not introduce enterprise logistics, warehouse ERP, route optimization, manufacturing planning, marketplace/multi-vendor functionality, or similar complexity unless separately approved.
+
+---
 
 ## 19. Phase 1.1 Acceptance Checklist
-```
 
-Keep it concise enough to review easily. This is a scope-control document, not a complete API reference.
+Phase 1.1 is accepted only when the resulting `api-scope-v1.md` explicitly reflects the following confirmed decisions:
 
----
-
-# 16. Agent Behavior Rules During This Phase
-
-The AI agent must:
-
-1. Read the root `AGENTS.md` before working.
-2. Treat `AGENTS.md` as the governing project instruction.
-3. Work only on Phase 1.1.
-4. Prefer clarification through explicit `Open Questions` rather than silently inventing business rules.
-5. Preserve the small-business scope.
-6. Avoid enterprise abstractions.
-7. Avoid implementation code.
-8. Avoid database schema design.
-9. Avoid endpoint-level detail that belongs to later micro-phases.
-10. Avoid frontend implementation.
-11. Avoid choosing libraries/packages unless they are already fixed by the project architecture.
-12. Do not modify unrelated project files.
-13. Do not start Phase 1.2 automatically.
-14. At completion, summarize exactly what was established and list unresolved questions.
+- [ ] Anonymous users can browse categories and products without login.
+- [ ] Anonymous users can search/filter and view product details without login.
+- [ ] Checkout requires an authenticated customer account.
+- [ ] Checkout requires payment information and billing address.
+- [ ] Made-to-order furniture requests can be submitted anonymously with contact information.
+- [ ] General enquiries can be submitted anonymously with contact information.
+- [ ] Delivery pricing is variable and entered/controlled by authorized admin/staff rather than assumed to be a fixed Version 1 fee.
+- [ ] Payment provider selection is explicitly deferred to Phase Group G.
+- [ ] Customer order cancellation is limited to a 20-minute window, with detailed refund/status rules deferred to later phases.
+- [ ] Order references use the `OD-` prefix.
+- [ ] Real email/notification delivery is deferred to Phase Group R.
+- [ ] Password recovery/email verification will use a secure backend-controlled approach, with implementation deferred to the authentication/security phases.
+- [ ] Saved address books are deferred.
+- [ ] Staff/admin permission granularity is deferred to Phase Group D.
+- [ ] Attachments for requests/enquiries are optional.
+- [ ] No Laravel, database, frontend, Flutter, or payment implementation is introduced during Phase 1.1.
 
 ---
 
-# 16.1 Acceptance Criteria for Anonymous Browsing
-
-Phase 1.1 is incomplete unless the scope document explicitly confirms all of the following:
-
-- A customer can browse the product catalog without creating an account.
-- A customer can open product-detail information without logging in.
-- Public catalog reads do not require an access token.
-- Authentication is separated from public discovery in the capability map.
-- The API scope distinguishes public data from protected customer data.
-- The document does not imply that SEO depends on authentication.
-- Cart, checkout, order history, wishlist, profile, and other account-specific operations may have their own authentication rules and are not used as a reason to block anonymous product browsing.
-
----
-
-# 17. Stop Condition
+## 20. Stop Condition
 
 When `api-scope-v1.md` satisfies the acceptance criteria:
 

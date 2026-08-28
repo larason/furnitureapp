@@ -131,6 +131,7 @@ Rules:
 - A made-to-order request is **not** automatically an order.
 - A request becomes an order only through an explicit business process (admin/staff agreement on commercial terms), which is defined in a later phase.
 - `MADE_TO_ORDER` products are not added to cart and not purchased directly.
+- Requests may be submitted **anonymously**; authentication is not required. Anonymous requests must collect sufficient contact information (email and/or phone). An anonymous request is never silently converted into an order.
 
 ---
 
@@ -149,6 +150,7 @@ Rules:
 - Enquiries are a separate workflow from normal orders and made-to-order requests.
 - An enquiry may or may not reference a product; it is not required to.
 - Enquiries are leads for the sales/admin team, not orders.
+- Enquiries may be submitted **anonymously**; authentication is not required. Anonymous enquiries must collect contact information such as email and/or phone. An anonymous enquiry is never silently converted into an order.
 
 ---
 
@@ -164,7 +166,7 @@ DELIVERY     → backend-controlled fee
 Scope support includes:
 
 - Choosing a fulfilment type at checkout
-- Backend calculation/application of the delivery fee (flat rate in Version 1; no zone/distance/size pricing)
+- Delivery fee is **variable and staff-controlled**: the fee is determined and entered directly by authorized admin/staff as part of order fulfilment/checkout operations, rather than a fixed Version 1 rate. The exact point at which the fee is set and validated is defined in a later phase.
 - Capturing delivery details (customer name, phone, address)
 - Representing `READY_FOR_PICKUP` and `SHIPPED` states
 - Exposing fulfilment status to the customer in the tracking timeline
@@ -206,8 +208,9 @@ Scope decisions:
 - Not every order uses every status.
 - Statuses are validated by the backend. Clients never invent or force status changes.
 - Every significant transition is recorded in an order status history (used as the customer tracking timeline and for operational accountability).
-- At this scope phase, who may trigger each transition and the precise valid-transition rules are **open questions** (see section 18) to be finalized in the order-contract phase.
-- Cancellation rules (who can cancel, at which statuses, refund behavior) are **open questions**.
+- Order references use the human-readable `OD-` prefix. Exact sequence generation and collision-safe implementation are defined in the later order-contract phase.
+- At this scope phase, who may trigger each transition and the precise valid-transition rules are **open questions** (see section 18, Resolved Business Decisions) to be finalized in the order-contract phase.
+- **Customer cancellation window:** a customer may cancel an order only within 20 minutes of order creation. Exact transition and refund behavior are defined in later order/payment contract phases.
 
 ---
 
@@ -229,14 +232,16 @@ All are `AUTHENTICATED_CUSTOMER` unless marked otherwise.
 | Search/filter/sort products | PUBLIC_ANONYMOUS | No |
 | View cart | AUTHENTICATED_CUSTOMER | No |
 | Modify cart | AUTHENTICATED_CUSTOMER | Yes |
-| Checkout | AUTHENTICATED_CUSTOMER | Yes |
+| Checkout | AUTHENTICATED_CUSTOMER (account required) | Yes |
 | Pay | AUTHENTICATED_CUSTOMER | Yes |
 | View orders | AUTHENTICATED_CUSTOMER (own orders only) | No |
 | View order details | AUTHENTICATED_CUSTOMER (own orders only) | No |
 | Track order | AUTHENTICATED_CUSTOMER (own orders only) | No |
-| Submit made-to-order request | AUTHENTICATED_CUSTOMER (registered customers; see section 18 open question) | Yes |
-| Submit enquiry | AUTHENTICATED_CUSTOMER or PUBLIC_ANONYMOUS (see open question) | Yes |
+| Submit made-to-order request | PUBLIC_ANONYMOUS (contact info required) | Yes |
+| Submit enquiry | PUBLIC_ANONYMOUS (contact info required) | Yes |
 | View relevant notifications | AUTHENTICATED_CUSTOMER | No |
+
+Checkout requires an authenticated customer account and collects payment information and billing address. Addresses are captured per checkout/order; there is no persistent saved-address book in Version 1.
 
 Not in Version 1: wishlist, reviews/ratings, coupons, loyalty points, referrals, subscriptions, gift cards.
 
@@ -280,7 +285,7 @@ Backend/system capabilities not initiated directly by a screen.
 | Audit logging | IN (minimal) | Operational accountability for status/payment changes |
 | File/image handling boundary | IN (boundary only) | Product images and optional request/enquiry attachments; provider/storage chosen later |
 | Background jobs | DEFERRED | Only needed when volume or async work requires them |
-| Email delivery (password recovery, order emails) | IN (minimal) | Depends on email provider decision; see section 18 |
+| Email delivery | DEFERRED | External email/notification sending is deferred to Phase Group R |
 | Push notifications | DEFERRED | Push architecture is a later phase (Phase Group R) |
 
 ---
@@ -374,15 +379,16 @@ Scope-level only; implementation belongs to later phases.
 ## 15. In Scope
 
 - Anonymous public catalog: categories, products, product detail, search/filter/sort, availability (`IN_STOCK` / `MADE_TO_ORDER`), prices
-- Customer accounts: register, login, logout, password recovery, profile, addresses
+- Customer accounts: register, login, logout, password recovery, profile
 - Cart for `IN_STOCK` products
-- Checkout with pickup or delivery
-- Backend-authoritative monetary totals (subtotal, delivery fee, total)
-- Payment integration boundary with backend-verified payment (webhook pattern, idempotent)
-- Orders with a backend-validated state machine and full status history
+- Checkout with pickup or delivery, requiring an authenticated customer account and billing/payment information
+- Backend-authoritative monetary totals (subtotal, delivery fee, total); delivery fee variable and staff-controlled
+- Payment integration boundary with backend-verified payment (webhook pattern, idempotent), provider-agnostic
+- Orders with a backend-validated state machine, full status history, `OD-` references, and a 20-minute customer cancellation window
 - Customer order list, order detail, tracking timeline
-- Made-to-order furniture requests as leads, separate from orders
-- General enquiries as leads, separate from orders
+- Anonymous made-to-order furniture requests (with contact info) as leads, separate from orders
+- Anonymous general enquiries (with contact info) as leads, separate from orders
+- Optional attachments on requests/enquiries
 - Minimal notifications tied to completed workflows
 - Staff/admin operational capabilities (products, categories, inventory, orders, customers, requests, enquiries, payments, fulfilment)
 - Inventory distinction: physical / reserved / available; overselling protection
@@ -395,13 +401,17 @@ Scope-level only; implementation belongs to later phases.
 - Coupons / promotions
 - Loyalty points / customer segmentation
 - Push notification infrastructure
+- Payment provider selection (belongs to Phase Group G)
 - Advanced delivery zones / dynamic delivery pricing
-- Dynamic delivery fee by distance/size/item count
+- Dynamic delivery fee by distance/size/item count (fee is staff-controlled in Version 1)
 - Background jobs/queues (until volume requires them)
 - GPS / real-time courier tracking
 - Manufacturing workflow / production planning
-- Email HTML template system beyond minimal transactional messages
-- Payment provider selection details (decision required; see section 18)
+- Email/notification delivery (Phase Group R)
+- Password recovery / email verification delivery mechanism (auth/security phases; secure backend-controlled approach)
+- Saved address books (addresses captured per checkout/order)
+- Staff/admin permission matrix (Phase Group D)
+- Request/enquiry attachment storage/upload implementation (boundary in scope, provider later)
 
 ## 17. Out of Scope
 
@@ -413,6 +423,8 @@ The API must **not**:
 - Expose database credentials
 - Allow customers to arbitrarily change order status
 - Treat made-to-order requests as automatic orders
+- Silently convert an anonymous request/enquiry into an order
+- Expose password-reset secrets to frontend applications or use insecure client-side reset
 - Implement enterprise warehouse-management / ERP / route optimization
 - Implement multi-vendor marketplace functionality
 - Implement enterprise-scale logistics infrastructure
@@ -420,31 +432,55 @@ The API must **not**:
 
 ---
 
-## 18. Open Questions
+## 18. Resolved Business Decisions
 
-Business decisions affecting later API design. Recorded rather than silently guessed. Smallest safe assumptions are noted in parentheses where a placeholder is needed to proceed.
+The following decisions were confirmed by the project owner and are authoritative for later phases unless explicitly changed.
 
-1. **Guest checkout vs registration-required checkout.** May a visitor check out without an account, or must they register first? (Assumption: registration required before checkout, per VISION.md customer flow; to be confirmed.)
-2. **Furniture request identity.** Must a customer be logged in to submit a made-to-order request, or can it be anonymous with name/phone/email fields? (Assumption: allow authenticated; anonymous option open.)
-3. **Enquiry identity.** Same question as #2 for general enquiries.
-4. **Delivery fee.** Confirmed flat rate (TZS 20,000 per VISION.md) for Version 1, or variable? (Assumption: flat rate.)
-5. **Payment provider.** Which provider(s) in Version 1? Payment secrets live on the backend only. (Assumption: integration boundary defined; provider selected in Phase Group H.)
-6. **Order cancellation rules.** Who may cancel (customer/staff), at which statuses, and is a refund required? (Assumption: customer may cancel only before `PAID`; staff/admin may cancel later; refunds handled as a separate payment operation. To be confirmed.)
-7. **Order numbering format.** Human-readable order reference format (e.g., `ORD-XXXXX`). (Assumption: `ORD-` prefix + sequence.)
-8. **Email/notification delivery.** Does Version 1 require real email sending for password recovery and order updates, or is in-app notification display sufficient initially? (Assumption: in-app first, email deferred to Phase Group R.)
-9. **Password recovery / email verification.** Required for Version 1, and which delivery channel?
-10. **Saved addresses.** Persistent address book on the profile, or capture address per order only? (Assumption: capture per order; saved address book deferred.)
-11. **Staff vs admin split.** Exact role/permission granularity. (Assumption: `staff` and `admin` roles with policies defined in Phase Group D.)
-12. **Request/enquiry attachments.** Is image/file attachment on requests/enquiries required for Version 1, and via which storage? (Assumption: optional attachment support in boundary; provider deferred.)
+1. **Guest browsing is allowed.** Visitors may browse the public catalog, categories, search/filter products, and view product details without registration or login.
+2. **Checkout requires an account.** A customer must be authenticated before checkout. Checkout collects the required payment information and billing address.
+3. **Made-to-order requests may be anonymous.** Authentication is not required; anonymous requests collect sufficient contact information (email and/or phone).
+4. **General enquiries may be anonymous.** Same identity rule as requests; contact information such as email and/or phone is collected.
+5. **Delivery fee is variable and staff-controlled.** No fixed Version 1 fee is assumed. Authorized admin/staff determine and enter the fee as part of fulfilment/checkout. The exact set/validate point is defined later.
+6. **Payment provider selection belongs to Phase Group G.** The API keeps a provider-agnostic payment boundary.
+7. **Customer cancellation has a 20-minute window.** A customer may cancel within 20 minutes of order creation; exact transition/refund behavior is defined later.
+8. **Order reference format is `OD-`.** Sequence generation and collision-safe implementation are defined in the order-contract phase.
+9. **Email/notification sending is deferred to Phase Group R.** No real email/external notification delivery is assumed for Version 1.
+10. **Password recovery/email verification use a secure backend-controlled approach.** Implementation deferred to authentication/security phases; no insecure client-side reset.
+11. **Saved address books are deferred.** Addresses are captured per checkout/order.
+12. **Staff/admin permission granularity is deferred to Phase Group D.** Separate staff/admin access is recognized but the final permission matrix is not defined here.
+13. **Request/enquiry attachments are optional.** Scope allows optional file/image attachments; storage/upload implementation is deferred.
+14. **Anonymous requests/enquiries remain separate from orders.** A later business action can create an order only through the approved purchase/quotation workflow.
+15. **Small-business scope remains mandatory.** No enterprise logistics, ERP, route optimization, manufacturing planning, or marketplace features unless separately approved.
 
 ---
 
 ## 19. Phase 1.1 Acceptance Checklist
 
+Confirmed decision checklist (per section 18 of the phase instructions):
+
+- [x] Anonymous users can browse categories and products without login
+- [x] Anonymous users can search/filter and view product details without login
+- [x] Checkout requires an authenticated customer account
+- [x] Checkout requires payment information and billing address
+- [x] Made-to-order furniture requests can be submitted anonymously with contact information
+- [x] General enquiries can be submitted anonymously with contact information
+- [x] Delivery pricing is variable and entered/controlled by authorized admin/staff rather than a fixed Version 1 fee
+- [x] Payment provider selection is explicitly deferred to Phase Group G
+- [x] Customer order cancellation is limited to a 20-minute window, with detailed refund/status rules deferred to later phases
+- [x] Order references use the `OD-` prefix
+- [x] Real email/notification delivery is deferred to Phase Group R
+- [x] Password recovery/email verification will use a secure backend-controlled approach, with implementation deferred to the authentication/security phases
+- [x] Saved address books are deferred
+- [x] Staff/admin permission granularity is deferred to Phase Group D
+- [x] Attachments for requests/enquiries are optional
+- [x] No Laravel, database, frontend, Flutter, or payment implementation is introduced during Phase 1.1
+
+Capability acceptance:
+
 - [x] Every Version 1 business workflow has an identified API capability
 - [x] Normal purchases, made-to-order requests, and enquiries are explicitly separated
 - [x] Customer, staff/admin, and system capabilities are identified
-- [x] Fulfilment supports pickup (free) and delivery (fee)
+- [x] Fulfilment supports pickup (free) and delivery (staff-controlled fee)
 - [x] Order lifecycle scope is identified with all nine states and pickup/delivery paths
 - [x] Major dependencies between capability areas are documented
 - [x] In-scope, deferred, and out-of-scope functionality is explicitly separated
