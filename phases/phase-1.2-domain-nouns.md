@@ -584,12 +584,13 @@ COMMERCE
 ├── Order Item
 ├── Payment
 └── Fulfillment
+    ├── Pickup
+    └── Delivery
 
 ORDER OPERATIONS
 ├── Order Status
 ├── Order Status History
-├── Cancellation
-└── Delivery
+└── Cancellation
 
 CUSTOMER COMMUNICATION
 ├── Made-to-order Request
@@ -633,7 +634,7 @@ Order Item
 Order Status History
     belongs to Order
 
-Delivery
+Fulfillment (Pickup / Delivery)
     belongs to Order
 
 Payment

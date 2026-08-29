@@ -141,3 +141,27 @@ Order status ≠ Payment status
 - **Reason:** These are the most common sources of implementation errors; explicit separation prevents silent collapse of concepts.
 - **Affected concepts:** All listed concepts.
 - **Later phases affected:** All data-model, API, and frontend phases.
+
+---
+
+## Decision 18 — Cart is not strictly bound to an authenticated customer
+
+- **Decision:** A guest may create, view, and modify a cart without an account. A guest cart becomes associated with the customer's account upon authentication. Checkout still requires an authenticated customer account.
+- **Reason:** Owner answer to Phase 1.2 open question 1; preserves a cart across login without requiring account creation to begin shopping.
+- **Note:** This is the single Version 1 rule for cart creation, viewing, and modification: guests and authenticated customers both have cart access (create/view/modify); authentication is the gate only at checkout. All Phase 1.2 documents use this same rule.
+- **Affected concepts:** Cart, Cart Item, Guest Visitor, Authenticated Customer, Checkout.
+- **Later phases affected:** Phase 1.12 (cart contract), Phase Group F (cart API), Phase 3.8 (cart schema). These must define guest-cart identity and the attach/merge behavior at login.
+
+## Decision 19 — Delivery fees are staff-managed and keyed by delivery region/location, resolved at checkout
+
+- **Decision:** Delivery fees are staff-controlled and entered as part of product/delivery configuration. Fees are differentiated by delivery region and location (e.g., Dar es Salaam — Kinondoni: free; Ubungo: TZS 5,000). The fee applicable to an order is resolved from the customer's delivery location/address at checkout and displayed to the customer before payment; the customer cannot set the fee.
+- **Reason:** Owner answer to Phase 1.2 open question 2. Keeps delivery pricing under business control while supporting location-based pricing and a clear checkout-time display.
+- **Affected concepts:** Delivery Fee, Delivery Fee Rule, Delivery Region/Delivery Location, Delivery, Order (totals), Checkout.
+- **Later phases affected:** Phase 1.13 (checkout contract), Phase Group G (checkout totals), Phase 3.13 (delivery schema), Phase Group K (admin delivery management). Exact scoping (per-product vs global fee rules) and geographic tiering representation are deferred implementation details for those phases.
+
+## Decision 20 — Made-to-order requests are leads only in Version 1
+
+- **Decision:** A made-to-order request never becomes an order in Version 1. Requests are captured and managed as leads; an order is created only through the normal purchase workflow.
+- **Reason:** Owner answer to Phase 1.2 open question 3, consistent with Phase 1.1 decisions 3 and 14.
+- **Affected concepts:** Made-to-order Request, Order, Staff/Admin follow-up.
+- **Later phases affected:** Phase 1.17 (request contract), Phase 10.3 (request status lifecycle), Phase 3.14 (request schema).

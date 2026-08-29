@@ -39,16 +39,16 @@ A concept is marked `DEFERRED` when the approved Phase 1.1 decisions intentional
 - **Definition:** A person browsing public content without an authenticated account.
 - **Purpose:** Represents anonymous discovery and anonymous communication before/without registration.
 - **Owner/parent:** Identity domain (no User record).
-- **Important distinctions:** Guest Visitor ≠ Customer (no account, no orders). Guest browsing is a first-class supported state, not an error.
-- **Version 1 relevance:** IN. Guests can browse/search/view catalog, submit made-to-order requests, and submit general enquiries with contact information. Guests cannot checkout.
+- **Important distinctions:** Guest Visitor ≠ Customer (no account, no orders). Guest browsing is a first-class supported state, not an error. A Guest may maintain a cart, but a guest is not a Customer until they authenticate.
+- **Version 1 relevance:** IN. Guests can browse/search/view catalog, submit made-to-order requests, and submit general enquiries with contact information, and may maintain a guest cart. Guests cannot checkout.
 
 ## Authenticated Customer
 
 - **Definition:** A registered User with the customer role who has authenticated successfully.
-- **Purpose:** Gates account-required operations (cart, checkout, orders, profile).
+- **Purpose:** Gates account-required operations (checkout, orders, profile, notifications).
 - **Owner/parent:** User (customer role).
-- **Important distinctions:** Authenticated Customer ≠ Guest Visitor. Authentication is a state of a User, not a separate concept.
-- **Version 1 relevance:** IN. Required for cart, checkout, payment, order viewing/tracking, profile, notifications.
+- **Important distinctions:** Authenticated Customer ≠ Guest Visitor. Authentication is a state of a User, not a separate concept. A guest cart becomes an authenticated cart when the guest logs in.
+- **Version 1 relevance:** IN. Required for checkout, payment, order viewing/tracking, profile, notifications. Cart access itself is available to guests; a guest cart is bound to the account upon authentication.
 
 ## Staff
 
@@ -132,11 +132,11 @@ A concept is marked `DEFERRED` when the approved Phase 1.1 decisions intentional
 
 ## Cart
 
-- **Definition:** A customer's temporary collection of items intended for checkout.
-- **Purpose:** Lets a customer accumulate `IN_STOCK` items before converting them into an order.
-- **Owner/parent:** Commerce domain (customer-owned; identity/binding is recorded in open questions).
+- **Definition:** A person's temporary collection of items intended for checkout. A Cart is **not** strictly bound to an authenticated customer: a guest may maintain a cart, and the cart becomes associated with the customer's account upon authentication.
+- **Purpose:** Lets anyone accumulate `IN_STOCK` items before converting them into an order.
+- **Owner/parent:** Commerce domain. May be guest-owned (no User) or bound to an Authenticated Customer.
 - **Important distinctions:** Cart ≠ Order (a cart is tentative; an order is confirmed and enters the workflow). Cart contents do not guarantee inventory reservation. Availability may change between adding and checkout; the backend revalidates before creating an order.
-- **Version 1 relevance:** IN. Requires an authenticated customer for checkout; cart operations are authenticated.
+- **Version 1 relevance:** IN. Guests may create and maintain a cart; the cart is associated with the customer's account on authentication. Checkout still requires an authenticated customer account.
 
 ## Cart Item
 
@@ -180,19 +180,35 @@ A concept is marked `DEFERRED` when the approved Phase 1.1 decisions intentional
 
 ## Delivery
 
-- **Definition:** Fulfillment where the business delivers the order to the customer.
+- **Definition:** Fulfilment where the business delivers the order to the customer.
 - **Purpose:** A paid fulfillment option managed by the business.
 - **Owner/parent:** Order (fulfillment mode).
-- **Important distinctions:** Delivery ≠ Order (delivery is a mode/workflow of an order). Delivery ≠ Payment.
-- **Version 1 relevance:** IN. Requires a delivery address and a delivery fee.
+- **Important distinctions:** Delivery ≠ Order (delivery is a mode/workflow of an order). Delivery ≠ Payment. Delivery ≠ Delivery Fee Rule (the fee rule is pricing configuration; the applied fee is part of the order's monetary data).
+- **Version 1 relevance:** IN. Requires a delivery address and a delivery fee derived from the delivery location/region.
 
 ## Delivery Fee
 
-- **Definition:** The amount charged for `DELIVERY` fulfillment.
+- **Definition:** The amount charged for `DELIVERY` fulfillment, determined from the business's staff-managed delivery pricing for the customer's delivery location.
 - **Purpose:** Covers the business's delivery cost.
 - **Owner/parent:** Delivery (fulfillment).
 - **Important distinctions:** Delivery Fee ≠ fixed catalog price. The fee is variable and staff-controlled; the customer cannot arbitrarily set the final fee. It is an order monetary component that must be included in backend-authoritative totals.
-- **Version 1 relevance:** IN. Determined and entered by authorized admin/staff; the exact point of setting/validation is recorded as an open question.
+- **Version 1 relevance:** IN. Staff-controlled and differentiated by delivery region/location (e.g., Dar es Salaam — Kinondoni: free, Ubungo: TZS 5,000). At checkout, once the customer provides their delivery location and address, the applicable fee is resolved from the staff-managed rules and displayed to the customer before payment.
+
+## Delivery Fee Rule
+
+- **Definition:** A staff-managed pricing rule that assigns a delivery fee to a delivery region/location (e.g., Dar es Salaam — Kinondoni: free, Ubungo: TZS 5,000). Staff enter this pricing as part of product/delivery configuration.
+- **Purpose:** Gives the business control over variable delivery pricing without letting the customer influence the final fee.
+- **Owner/parent:** Business delivery configuration (staff-managed); applied to Delivery and Order.
+- **Important distinctions:** Delivery Fee Rule ≠ a single fixed fee. Delivery Fee Rule ≠ the applied order-level fee (the applied fee becomes part of the order's authoritative monetary data). Delivery Fee Rule ≠ Delivery Address (a rule is pricing; an address is the precise destination).
+- **Version 1 relevance:** IN. Staff-managed; used to resolve the fee for an order based on the customer's delivery location/address at checkout.
+
+## Delivery Region / Delivery Location
+
+- **Definition:** The geographic tiering used to price delivery (e.g., region "Dar es Salaam" containing locations such as Kinondoni and Ubungo).
+- **Purpose:** Provides the key used to look up the applicable Delivery Fee Rule for a customer's order.
+- **Owner/parent:** Delivery Fee Rule configuration (staff-managed).
+- **Important distinctions:** Delivery Region/Location ≠ Delivery Address (the address is the precise order destination; the region/location is the price-tier key).
+- **Version 1 relevance:** IN for fee determination. The exact geographic depth/representation is a later-phase implementation decision.
 
 ## Payment
 

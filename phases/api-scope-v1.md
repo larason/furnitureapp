@@ -48,7 +48,7 @@ Public product discovery must not require authentication. A visitor who has neve
 - View product images, descriptions, prices, variants, and public availability
 - View whether a product is `IN_STOCK` or `MADE_TO_ORDER`
 
-Public catalog reads do not require a session, access token, or account record. Authentication is required only for capabilities that genuinely require an identified customer or protected data (cart, checkout, orders, profile, requests, enquiries).
+Public catalog reads do not require a session, access token, or account record. Authentication is required only for capabilities that genuinely require an identified customer or protected data (checkout, orders, profile, requests, enquiries). A guest may maintain a cart without an account; the cart binds to the customer's account on authentication.
 
 ---
 
@@ -230,8 +230,8 @@ All are `AUTHENTICATED_CUSTOMER` unless marked otherwise.
 | Browse products | PUBLIC_ANONYMOUS | No |
 | View product details | PUBLIC_ANONYMOUS | No |
 | Search/filter/sort products | PUBLIC_ANONYMOUS | No |
-| View cart | AUTHENTICATED_CUSTOMER | No |
-| Modify cart | AUTHENTICATED_CUSTOMER | Yes |
+| View cart | PUBLIC_ANONYMOUS or AUTHENTICATED_CUSTOMER (guest cart) | No |
+| Modify cart | PUBLIC_ANONYMOUS or AUTHENTICATED_CUSTOMER (guest cart) | Yes |
 | Checkout | AUTHENTICATED_CUSTOMER (account required) | Yes |
 | Pay | AUTHENTICATED_CUSTOMER | Yes |
 | View orders | AUTHENTICATED_CUSTOMER (own orders only) | No |

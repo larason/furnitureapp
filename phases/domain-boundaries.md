@@ -35,7 +35,9 @@ COMMERCE
 ├── Order
 ├── Order Item
 ├── Payment
-└── Fulfillment (Pickup / Delivery / Delivery Fee)
+├── Fulfillment (Pickup / Delivery / Delivery Fee)
+├── Delivery Fee Rule
+└── Delivery Region / Delivery Location
 
 ORDER OPERATIONS
 ├── Order Status
@@ -77,6 +79,10 @@ Product Image
 Inventory
     belongs to a purchasable product/variant
 
+Cart
+    may be guest-owned (no User) or bound to an Authenticated Customer;
+    becomes associated with the customer's account upon authentication
+
 Cart Item
     belongs to Cart
 
@@ -97,6 +103,13 @@ Fulfillment (Pickup/Delivery)
 
 Delivery Fee
     belongs to the Delivery fulfillment of an Order
+
+Delivery Fee Rule
+    is staff-managed delivery pricing configuration keyed by
+    Delivery Region / Delivery Location; does not belong to a single order
+
+Delivery Region / Delivery Location
+    belongs to the Delivery Fee Rule configuration (staff-managed)
 
 Payment
     belongs to Order
@@ -140,7 +153,7 @@ These are aggregate *candidates* for business-consistency thinking. The exact tr
 
 - **Catalog → Commerce:** Cart Items and Order Items reference products/variants. Order Items additionally preserve order-time snapshots.
 - **Catalog → Customer Communication:** Made-to-order Requests may reference a Product.
-- **Identity → Commerce:** Orders and Carts reference an Authenticated Customer.
+- **Identity → Commerce:** Orders reference an Authenticated Customer. Carts reference an Authenticated Customer when the user is authenticated; a guest cart exists without a User and is bound to the account upon authentication.
 - **Identity → Customer Communication:** Requests and Enquiries may reference a User; both may also exist without one (anonymous, with Contact Information).
 - **Commerce → Order Operations:** Orders carry Status, Status History, Cancellation, and Fulfillment.
 - **Commerce → Supporting:** Orders carry Addresses, Order Number, and Payment; notifications reference order events.
@@ -160,7 +173,8 @@ Coupons / promotions
 Loyalty points / customer segmentation
 Payment provider selection and provider-specific behavior (Phase Group G)
 Real email / push / SMS delivery (Phase Group R)
-Dynamic delivery-zone / distance / size pricing
+Automatic/algorithmic delivery pricing (distance/size/item-count calculation)
+Additional delivery regions/locations beyond what staff configure for Version 1
 Background jobs / queues (until volume requires them)
 GPS / real-time courier tracking
 Manufacturing workflow / production planning
@@ -168,10 +182,14 @@ Multi-vendor marketplace functionality
 Enterprise warehouse-management / ERP / route optimization
 ```
 
+Note: staff-managed delivery fees differentiated by region/location are **in scope**; only automatic/algorithmic computation is deferred.
+
 ---
 
-## 7. Open Boundary Notes
+## 7. Resolved Boundary Notes
 
-- **Cart identity/binding** (account-only vs guest-before-login) is an open domain question and affects the Cart ownership boundary — see `open-domain-questions.md`.
-- **Delivery fee setting point** (at checkout vs during fulfilment) affects whether the Delivery Fee belongs to checkout-time order data or post-payment fulfilment data — see `open-domain-questions.md`.
-- **Request-to-order conversion** affects whether a Made-to-order Request may later reference a created Order — see `open-domain-questions.md`.
+All Phase 1.2 open questions are resolved by the project owner. The resolutions affect boundaries as follows:
+
+- **Cart identity/binding:** Cart is **not** strictly bound to an authenticated customer. A guest may create, view, and modify a cart without an account; the cart becomes associated with the customer's account upon authentication. Checkout still requires an authenticated account. The exact merge/resolution behavior between a guest cart and an existing account cart is an implementation detail for the cart phase, not a domain boundary.
+- **Delivery fee ownership:** Delivery fees are staff-controlled and entered as part of product/delivery configuration, differentiated by delivery region/location. The fee applicable to an order is resolved and displayed at checkout once the customer inputs their delivery location and address. The Delivery Fee therefore belongs to checkout-time order data (part of the authoritative order total), and the Delivery Fee Rule is separate, staff-managed pricing configuration.
+- **Request-to-order conversion:** Confirmed **out of Version 1 scope**. A Made-to-order Request never becomes an Order in Version 1; requests are captured and managed as leads only. Orders are created only through the normal purchase workflow.
