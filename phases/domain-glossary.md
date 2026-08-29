@@ -216,7 +216,7 @@ A concept is marked `DEFERRED` when the approved Phase 1.1 decisions intentional
 - **Purpose:** Records how the order is paid and its financial state.
 - **Owner/parent:** Order (one order may relate to one or more payment transactions).
 - **Important distinctions:** Payment ≠ Order Status (payment state is distinct from order state). Payment ≠ Product availability. Payment state must be verified by the backend (provider callback/webhook), never by frontend claims.
-- **Version 1 relevance:** IN as a boundary. Provider selection and provider-specific behavior are deferred to Phase Group G.
+- **Version 1 relevance:** IN as a boundary. Provider selection and provider-specific behavior are deferred to Phase Group H (payments).
 
 ---
 

@@ -171,7 +171,7 @@ Wishlist
 Reviews / ratings
 Coupons / promotions
 Loyalty points / customer segmentation
-Payment provider selection and provider-specific behavior (Phase Group G)
+Payment provider selection and provider-specific behavior (Phase Group H)
 Real email / push / SMS delivery (Phase Group R)
 Automatic/algorithmic delivery pricing (distance/size/item-count calculation)
 Additional delivery regions/locations beyond what staff configure for Version 1

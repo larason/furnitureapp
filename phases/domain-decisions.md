@@ -67,7 +67,7 @@ Phase 1.1 decisions remain authoritative and are not re-opened here. Any interpr
 ## Decision 9 — Payment is a provider-agnostic boundary
 
 - **Decision:** Model `Payment` as the financial transaction associated with an Order, with payment state distinct from order state. No provider, provider fields, SDK, callbacks, or webhook payloads are designed in this phase.
-- **Reason:** Payment provider selection belongs to Phase Group G; the domain must not hard-code provider concepts.
+- **Reason:** Payment provider selection belongs to Phase Group H (payments); the domain must not hard-code provider concepts.
 - **Affected concepts:** Payment, Order Status.
 - **Later phases affected:** Phase 3.12 (payment schema), Phase Group H (payments).
 
@@ -165,3 +165,49 @@ Order status ≠ Payment status
 - **Reason:** Owner answer to Phase 1.2 open question 3, consistent with Phase 1.1 decisions 3 and 14.
 - **Affected concepts:** Made-to-order Request, Order, Staff/Admin follow-up.
 - **Later phases affected:** Phase 1.17 (request contract), Phase 10.3 (request status lifecycle), Phase 3.14 (request schema).
+
+---
+
+# Phase 1.3 — Additional Decisions
+
+## 1.3-DEC-01 — Stable rule IDs adopted
+
+- **Decision:** Assign stable IDs to all version-1 invariants (`IDENT-001`, `CAT-001`, `INV-001`, `VAR-001`, `CART-001`, `PRICE-001`, `CHECKOUT-001`, `FUL-001`, `ORD-001`, `CANCEL-001`, `PAY-001`, `REQ-001`, `ENQ-001`, `AUTHZ-001`, `SEC-001`, `DATA-001`, `CONC-001`, `IDEMP-001`, `ERR-001`) and to order-state rules (`OS-001..029`) in `domain-invariants.md` / `order-state-rules.md`.
+- **Reason:** Later API, database, Laravel, and automated-test documents can reference the same rule instead of re-inventing rules independently (Phase 1.3 §36).
+- **Affected domain:** All.
+- **Future implementation phase:** All downstream phases (B–S).
+
+## 1.3-DEC-02 — Backend authority formalized as the governing principle
+
+- **Decision:** Formalize that all money, inventory, purchasability, checkout, cancellation, order-transition, and payment-state decisions are backend-authoritative and enforced server-side; a rule enforced only in a frontend is not satisfied.
+- **Reason:** Phase 1.3 §4 and AGENTS.md core architectural principle.
+- **Affected domain:** Money (PRICE), Inventory (INV), Checkout, Orders, Payments, Cancellation.
+- **Future implementation phase:** Phase Group G (checkout), H (payments), I (orders), E (catalog/inventory).
+
+## 1.3-DEC-03 — Order-status transition matrix is deferred as an exhaustive artifact
+
+- **Decision:** Fix the primary permitted forward paths, the two fulfillment-specific lifecycles, cancellation entry, and invalid-transition principles (order-state-rules.md), while deferring the exhaustive transition matrix (every edge case) to the later order-state contract phase.
+- **Reason:** Enough precision now to prevent scope drift; full matrix is a later detail (Phase 1.3 §15–16).
+- **Affected domain:** Order lifecycle.
+- **Future implementation phase:** Phase Group I (order management), order-state contract phase.
+
+## 1.3-DEC-04 — Error semantics defined at domain level only
+
+- **Decision:** Define conceptual business errors (`ERR-001..014`) in the domain; defer HTTP status codes and JSON structure to the API contract phase.
+- **Reason:** Phase 1.3 §32; error contract belongs to Phase 1.8/OpenAPI.
+- **Affected domain:** API error handling.
+- **Future implementation phase:** Phase 1.8 (error contract), Phase Group B (exception/error foundation).
+
+## 1.3-DEC-05 — Testable invariants grouped for later test design
+
+- **Decision:** Convert each important invariant into at least one test scenario (`testable-invariants.md`), grouped by domain and mapped to intended test levels.
+- **Reason:** Phase 1.3 §35 and AGENTS.md testing strategy (tests alongside features).
+- **Affected domain:** All.
+- **Future implementation phase:** Phase Group S (QA), and each feature phase as tests are built.
+
+## 1.3-DEC-06 — Confirmed deferrals are preserved
+
+- **Decision:** Confirm as deferred: payment provider selection and provider-specific behavior; email/push/SMS delivery; saved address book; staff/admin permission matrix; attachment storage; file storage provider; exhaustive order transition matrix; and any quotation/refund policy.
+- **Reason:** These deferrals are approved in Phase 1.1/1.2 and must not leak into Version 1 design (Phase 1.3 §41).
+- **Affected domain:** Payments, Notifications, Addresses, Authorization, Attachments, Orders.
+- **Future implementation phase:** Group G/H (payments), Group R (notifications), Group D (permissions), later phases (storage/address book).
