@@ -61,10 +61,10 @@ Version 1.0 → 1.1 (compatible refinement) or → 2.0 (major business-model cha
 The frozen model (`logical-data-model-v1.md`) is the authoritative input to:
 
 ```text
-Phase 1.6 — Physical Database Design and ERD
+Phase 1.6 — Define API Resource Inventory
 ```
 
-which translates it into concrete MySQL design (tables, columns, keys, relationships, constraints, indexes, naming, migration strategy) before any Laravel application code is written.
+which converts the frozen logical model into an explicit inventory of API resources (what resources are exposed, who can access them, and the responsibility of each resource) before endpoint/relationship design begins. Physical database design is deferred to a later phase.
 
 ---
 
