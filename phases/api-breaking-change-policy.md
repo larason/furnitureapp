@@ -54,10 +54,11 @@ Potentially non-breaking if additive and compatible:
 
 ## 5. Enum Special Rule
 For this project (`product types`, `order statuses`, `payment states`, `fulfillment types`, `request/enquiry states`, `roles`):
+- The initial `v1` contract treats the core workflow enums as `CLOSED` by default unless a later resource contract explicitly declares them `OPEN` after a compatibility review.
 - If an enum is documented as `CLOSED` in its contract, adding a value is breaking (requires `v2`).
-- If `OPEN/EXTENSIBLE`, additive values are non-breaking, **provided** clients treat unknown non-critical values safely (display generically, ignore). Contracts in Phase 1.11+ must declare `OPEN` vs `CLOSED` per enum; this policy defines the interpretation.
+- If the contract explicitly declares `OPEN/EXTENSIBLE`, additive values are non-breaking only when clients are verified to handle unknown non-critical values safely (display generically, ignore). A later contract may declare `OPEN`, but this phase does not allow an unclassified enum to be treated as effectively open by default.
 
-**Interim rule for unclassified enums (until a later contract declares `CLOSED`):** Any Version 1 enum not yet explicitly declared `CLOSED` is treated as `OPEN/EXTENSIBLE` for additive values within `v1` — adding a new value is non-breaking **provided** client safe-handling has been verified (per `api-versioning-strategy.md` §4.4). Once declared `CLOSED`, addition becomes breaking and requires `v2`. This interim rule applies consistently across `api-breaking-change-policy.md` and `api-versioning-strategy.md`.
+**Default rule for this phase:** Any Version 1 enum not yet explicitly documented as `OPEN` is treated as `CLOSED` for compatibility purposes. This removes the blanket interim rule that previously made unclassified enums effectively extensible without a formal client review.
 
 ## 6. Error/Auth/Authorization Contract Sensitivity
 - **Error structure** (`error`, `code`, `message`, `validation format`), **authentication behavior**, and **authorization behavior** are part of the versioned contract. Changing error envelope, error codes, auth requirements, or access rules that previously allowed access are reviewed as potential breaking changes.

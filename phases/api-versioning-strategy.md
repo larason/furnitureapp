@@ -58,17 +58,22 @@ Any change that can reasonably cause a supported existing client to stop functio
 **Caution:** Additive changes can still break poorly designed clients. Specifically, **adding a new enum value** can break clients that assume exhaustive enumeration — see §5. Enum policy governs this.
 
 ### 4.4 Enum and State Compatibility
-Version 1 contains extensible value sets: `product types (IN_STOCK, MADE_TO_ORDER)`, `order statuses (PENDING_PAYMENT … CANCELLED)`, `payment states`, `fulfillment types (PICKUP, DELIVERY)`, `request/enquiry states`, `roles (CUSTOMER, STAFF, ADMIN)`.
+Version 1 contains operational value sets that are part of the business workflow and therefore must be treated as explicit compatibility boundaries. The following enums are defined as `CLOSED` for the initial `v1` contract unless a later resource contract explicitly reclassifies them as `OPEN` after a documented compatibility review:
 
-Rule: **Clients must treat unknown non-critical enum values safely unless the contract explicitly defines the value set as `CLOSED`.**
+| Enum / State Set | Initial classification in `v1` | Notes |
+|---|---|---|
+| Product modes (`IN_STOCK`, `MADE_TO_ORDER`) | `CLOSED` | Core product types are part of the business model and client behavior. |
+| Order status values (`PENDING_PAYMENT`, `PAID`, `ACCEPTED`, `PROCESSING`, `READY_FOR_PICKUP`, `SHIPPED`, `DELIVERED`, `COMPLETED`, `CANCELLED`) | `CLOSED` | Clients commonly branch on these states for tracking and fulfillment. |
+| Fulfilment types (`PICKUP`, `DELIVERY`) | `CLOSED` | Checkout and order flows depend on these values. |
+| User roles (`CUSTOMER`, `STAFF`, `ADMIN`) | `CLOSED` | Authorization behavior depends on these values. |
+| Payment states | `CLOSED` | Deferred to Phase Group H, but the value set must be explicit before implementation. |
+| Request / enquiry states | `CLOSED` | Deferred to later request/enquiry contract phases, but this phase treats the initial set as fixed unless explicitly reclassified. |
 
-Later API contracts (Phase 1.11+) must state for each enumeration whether it is:
-- `OPEN/EXTENSIBLE` — new values may be added within `v1`; clients must handle unknown values (ignore or display generically, not crash)
-- `CLOSED` — value set is fixed within `v1`; addition is breaking and requires major version
+Rule: **Any additive change to a `CLOSED` enum is a breaking change in `v1` and requires a new major version (`v2`).**
 
-No individual enum is declared `OPEN`/`CLOSED` in this phase; the policy is established for later contracts to apply.
+Later API contracts (Phase 1.11+) may declare a specific enum as `OPEN/EXTENSIBLE` only when the business case and client impact are explicit. An `OPEN` enum is allowed to add values within `v1` only if the contract states the compatibility requirement and clients have been verified to handle unknown values safely (ignore or display generically, not crash).
 
-**Interim rule for unclassified enums (until a later contract declares `CLOSED`):** Any Version 1 enum not yet explicitly declared `CLOSED` is treated as `OPEN/EXTENSIBLE` for additive values within `v1` — adding a new value is non-breaking **provided** clients have been verified to treat unknown values safely per the rule above. Once a contract declares an enum `CLOSED`, additive values become breaking and require `v2`. This interim rule applies consistently across `api-versioning-strategy.md` and `api-breaking-change-policy.md`.
+This phase does not use a blanket "unclassified enums are open" rule. Any enum not yet documented in a specific contract is treated as `CLOSED` by default until the owning contract explicitly marks it `OPEN`.
 
 ### 4.5 Response Compatibility
 Within `v1`, existing fields must not silently change meaning:
