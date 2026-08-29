@@ -82,7 +82,7 @@ This document records risks identified in the logical data model. Each risk note
 
 - **Description:** If delivery fee rules or addresses change, historical orders must keep the charged fee and the used address; Order and Delivery must not diverge.
 - **Mitigation in model:** Order.Delivery fee is the canonical snapshot (in the authoritative total); Order Address (delivery) is the canonical address/recipient/phone snapshot. Delivery carries non-authoritative projections copied once at creation and never edited independently, so no divergence path exists. The staff-managed rule is configuration, not part of the order.
-- **Residual risk:** Checkout must resolve the fee from staff rules and persist the canonical Order snapshot (and the Delivery projection) atomically with the order.
+- **Residual risk:** Checkout must resolve the fee from staff rules and persist the canonical Order delivery-fee snapshot, the canonical Order Address (delivery) snapshot, and the Delivery projections atomically with the order.
 - **Owner phase:** Phase 1.13 (checkout contract), Phase Group G.
 
 ### R-12 — Input file location (documentation note)
