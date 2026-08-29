@@ -77,6 +77,7 @@ Physical referential enforcement is a later decision; the logical expectation is
 
 - **Product ≠ Inventory:** stock facts live in Inventory only.
 - **Order-time facts are snapshots:** order items, delivery fee, addresses, totals preserve purchase-time values.
+- **Single owner for delivery snapshots:** the delivery fee snapshot is canonical on **Order**; the delivery address/recipient/phone snapshot is canonical on **Order Address (delivery)**. Delivery holds only non-authoritative operational projections copied once at Delivery creation and never edited independently; projections must always equal the authoritative Order values (no divergence path, since both sides are immutable after finalization).
 - **Client-controlled financial data is never authoritative** (CART-005, PRICE-001).
 - **Payment status ≠ order status:** distinct facts, never collapsed (PAY-001).
 - **Request ≠ Order; Enquiry ≠ Request:** separate entities (REQ-004, ENQ-004).

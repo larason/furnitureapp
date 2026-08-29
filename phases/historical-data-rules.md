@@ -15,8 +15,8 @@ Information that must be copied into a transaction because the source may change
 | Order-item unit price | Price may change; preserve charged price. | Catalog pricing at purchase |
 | Order-item quantity | Charged quantity. | Order |
 | Order-item subtotal | Charged line amount. | Derived at purchase |
-| Final delivery fee | Fee may change later; preserve charged fee. | Fulfilment/Order at finalization |
-| Transaction address information | Addresses are transaction data, not a saved book (ADDR-001). | Checkout input |
+| Final delivery fee | Fee may change later; preserve charged fee. **Canonical snapshot on Order**; Delivery holds a non-authoritative projection. | Order at finalization |
+| Transaction address information | Addresses are transaction data, not a saved book (ADDR-001). **Canonical snapshot on Order Address**; Delivery holds non-authoritative projections of recipient/phone/address. | Checkout input |
 
 ## 3. Immutable Transaction Facts
 

@@ -203,7 +203,7 @@ Note: displayed/unit price may be cached only as non-authoritative; final price 
 | Order status | REQUIRED | State machine in `order-state-rules.md`. |
 | Fulfillment type | REQUIRED | `PICKUP` / `DELIVERY`. |
 | Subtotal | DERIVED (persisted snapshot at finalization) | |
-| Delivery fee | SNAPSHOT | Finalized fee for the order (variable, staff-managed). |
+| Delivery fee | SNAPSHOT | Finalized fee for the order (variable, staff-managed). **Canonical owner**: Order (monetary fact in the authoritative total). Delivery carries a non-authoritative projection of this value. |
 | Discount | OPTIONAL | Not in Version 1 (deferred). |
 | Final total | DERIVED / SNAPSHOT (immutable after finalization) | |
 | Currency | REQUIRED | TZS. |
@@ -236,6 +236,7 @@ Must remain intact even if the product is renamed, repriced, deactivated, or rec
 - **Business owner:** Order domain.
 - **Relationships:** Belongs to Order; typed as billing or delivery.
 - **Privacy classification:** PRIVATE.
+- **Canonical owner of the delivery address snapshot:** for a `DELIVERY` order, the delivery address, recipient name, and contact phone are authoritative here (immutable historical snapshot). The Delivery entity holds non-authoritative operational projections of these facts.
 
 | Attribute | Class | Notes |
 |---|---|---|
@@ -290,16 +291,17 @@ Provider-specific fields/payloads are deferred to Phase Group H (see `data-model
 - **Business owner:** Order/Fulfilment domain.
 - **Relationships:** Belongs to Order; conditional on `DELIVERY`.
 - **Privacy classification:** PRIVATE (recipient/address).
+- **Projection rule:** Delivery fee, recipient name, phone, and delivery address are **non-authoritative operational projections**, copied once from the Order delivery-fee snapshot and the Order Address (delivery) snapshot at Delivery creation; they must always equal the authoritative Order values and are never edited independently.
 
 | Attribute | Class | Notes |
 |---|---|---|
 | Order association | REQUIRED | |
 | Fulfillment type | REQUIRED | `DELIVERY`. |
-| Delivery fee | REQUIRED, SNAPSHOT | Variable, staff-managed (PRICE-006). |
+| Delivery fee | REQUIRED, SNAPSHOT — non-authoritative projection | Projection of Order.Delivery fee (canonical owner: Order); must equal the Order value; never edited independently (PRICE-006). |
 | Delivery status | REQUIRED | Operational status. |
-| Recipient name | REQUIRED | |
-| Phone | REQUIRED | |
-| Delivery address | REQUIRED, SNAPSHOT | |
+| Recipient name | REQUIRED — non-authoritative projection | Projection of Order Address (delivery) recipient; never edited independently. |
+| Phone | REQUIRED — non-authoritative projection | Projection of Order Address (delivery) phone; never edited independently. |
+| Delivery address | REQUIRED, SNAPSHOT — non-authoritative projection | Projection of Order Address (delivery); canonical snapshot lives on Order Address; must equal it; never edited independently. |
 | Delivery notes | OPTIONAL | |
 
 No GPS/route/driver tracking (FUL-004).

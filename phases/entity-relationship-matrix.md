@@ -37,8 +37,8 @@ Conceptual relationships and cardinalities between Version 1 entities. These are
 - **Product ↔ Variant:** A product may have zero variants (directly purchasable) or many variants; when variants exist, the variant is the purchasable inventory unit (VAR-005).
 - **Inventory ↔ Product/Variant:** Inventory attaches to the purchasable unit — a product without variants, or each variant when variants exist.
 - **Order ↔ Payment:** An order may have one or more payment records (e.g., retries/failures); payment state is separate from order state (PAY-001).
-- **Order ↔ Delivery:** Delivery exists only when fulfillment type is `DELIVERY` (conditional).
-- **Order Address:** At most one billing address and at most one delivery address per order (0..1 each); billing and delivery are distinct (ADDR-003). A delivery address is present only when fulfillment = DELIVERY and is absent for PICKUP; this prevents duplicate transaction addresses and keeps order data unambiguous.
+- **Order ↔ Delivery:** Delivery exists only when fulfillment type is `DELIVERY` (conditional). Delivery fee, recipient, phone, and delivery address on Delivery are **non-authoritative projections** of the canonical Order snapshots (Order fee; Order Address delivery) — they are copied once at Delivery creation and never edited independently.
+- **Order Address:** At most one billing address and at most one delivery address per order (0..1 each); billing and delivery are distinct (ADDR-003). A delivery address is present only when fulfillment = DELIVERY and is absent for PICKUP; this prevents duplicate transaction addresses and keeps order data unambiguous. For a delivery order, Order Address (delivery) is the canonical owner of the delivery address/recipient/phone snapshot.
 - **Attachment owner:** An attachment belongs to exactly one request OR one enquiry (polymorphic ownership in logical terms).
 
 ## 4. Cross-Cutting Relationship Rules
