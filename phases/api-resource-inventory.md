@@ -83,7 +83,7 @@ Canonical values are those five; the following are defined shorthands/derived va
 - **Lifecycle:** CATALOG projection
 - **Ownership:** Inventory (authoritative quantities) → Catalog presentation
 - **Access scope:** Limited Read (Anonymous/Customer via Product), Manage (Staff/Admin via Inventory)
-- **Exposure:** PUBLIC_READ (limited: available/unavailable, stock indicator; e.g., IN STOCK / Only 2 left / Made to Order)
+ - **Exposure:** PUBLIC_READ (limited qualitative signal: e.g., IN STOCK / LOW STOCK / MADE TO ORDER — coarse buckets, no exact quantity; never `Only 2 left`)
 - **CRUD/Actions:** Read-only for customers; no direct Create/Update/Delete by customers. Staff/Admin adjust via Inventory resource.
 - **Parent/Subresource:** Product or Product Variant → Availability (embedded)
 - **Public exposure:** Limited to derived signal; must not expose reserved quantity, internal adjustments, staff-only notes.
@@ -248,8 +248,8 @@ Canonical values are those five; the following are defined shorthands/derived va
 - **Classification:** SUBRESOURCE/EMBEDDED RESOURCE of Request or Enquiry
 - **Lifecycle:** COMMUNICATION (created with parent, validated, security-checked)
 - **Ownership:** Request or Enquiry (exactly one polymorphic owner)
-- **Access scope:** Via owner (Anonymous creator via request/enquiry context? No direct global access; inherits owner auth), Customer via owner, Staff/Admin Manage
-- **Exposure:** CUSTOMER_OWNED via owner + STAFF/ADMIN; served with owner/role check, not public URL. INTERNAL_ONLY for storage internals.
+ - **Access scope:** Via owner — Anonymous: create response only (attachment data returned in create response, no subsequent anonymous read); Customer via owner (authenticated owner), Staff/Admin Manage (via owning request/enquiry). No direct global access; inherits owner auth.
+ - **Exposure:** CUSTOMER_OWNED via owner + STAFF/ADMIN; anonymous limited to create response, no read/list via context; served with owner/role check, not public URL. INTERNAL_ONLY for storage internals.
 - **CRUD/Actions:** Create with parent or add to existing (if allowed), Read via owner, No independent update, Delete → later policy (if needed). Security: type/size/malware checks.
 - **Parent/Subresource:** Request or Enquiry → Attachments
 - **Public exposure:** No.

@@ -67,8 +67,8 @@ This document records risks identified in the logical data model. Each risk note
 ### R-09 — Reservation strand (stock leak)
 
 - **Description:** Reserved inventory might never be released, stranding sellable stock.
-- **Mitigation in model:** Reservation invariant includes release on cancellation, reservation timeout/expiry, and permanent payment failure; payment failure leaves `PENDING_PAYMENT` with reservation intact pending release.
-- **Residual risk:** The exact timeout policy is a later checkout/payment decision; must be implemented with the reservation.
+- **Mitigation in model:** Reservation invariant includes release on cancellation, reservation timeout/expiry, and **terminal (permanent) payment failure**. **Retryable** payment failure keeps the Order in `PENDING_PAYMENT` with the reservation intact to allow retry. **Terminal** payment failure transitions the Order out of `PENDING_PAYMENT` (to a terminal failure/cancellation state per the payment contract) and **atomically releases the reservation** — it does not remain stranded in `PENDING_PAYMENT` until timeout.
+- **Residual risk:** The exact criteria distinguishing retryable vs terminal failure, the terminal state name, and the timeout duration are later checkout/payment decisions; implementation must enforce the atomic release on terminal failure and must not keep stock reserved after a terminal failure.
 - **Owner phase:** Phase Group G/H (checkout/payments).
 
 ### R-10 — Guest-cart authorization confusion
@@ -81,8 +81,8 @@ This document records risks identified in the logical data model. Each risk note
 ### R-11 — Delivery-fee/address snapshot vs rule drift
 
 - **Description:** If delivery fee rules or addresses change, historical orders must keep the charged fee and the used address; Order and Delivery must not diverge.
-- **Mitigation in model:** Order.Delivery fee is the canonical snapshot (in the authoritative total); Order Address (delivery) is the canonical address/recipient/phone snapshot. Delivery carries non-authoritative projections copied once at creation and never edited independently, so no divergence path exists. The staff-managed rule is configuration, not part of the order.
-- **Residual risk:** Checkout must resolve the fee from staff rules and persist the canonical Order delivery-fee snapshot, the canonical Order Address (delivery) snapshot, and the Delivery projections atomically with the order.
+- **Mitigation in model:** Order.Delivery fee is the canonical snapshot (in the authoritative total); Order Address (delivery) is the canonical address/recipient/phone snapshot. **Snapshot equality invariant:** Delivery projections **must equal** the canonical snapshots at creation (`Delivery.fee` = `Order.Delivery fee`; `Delivery` address/recipient/phone = `Order Address (delivery)` values) and **must not be edited independently** thereafter; equality is validated at creation and enforced by immutability thereafter, so no divergence path exists when the invariant holds. The staff-managed rule is configuration, not part of the order.
+- **Residual risk:** Checkout must resolve the fee from staff rules and **persist and validate all values atomically** — the canonical Order delivery-fee snapshot, the canonical Order Address (delivery) snapshot, and the Delivery projections (with equality checked) must be written in one atomic transaction with the order, as required.
 - **Owner phase:** Phase 1.13 (checkout contract), Phase Group G.
 
 ### R-12 — Input file location (documentation note)
