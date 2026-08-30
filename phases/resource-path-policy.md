@@ -57,4 +57,4 @@ Nesting expresses ownership (parent → child) where child cannot exist outside 
 - **Versioned base:** All contracted paths under `/api/v1`; no mixing unversioned `/products` with versioned `/api/v1/orders`.
 - **Depth:** Keep nesting shallow; typical two levels acceptable (`/orders/{order}/items`). Deeper chains require justification and should flatten via references.
 - **Relationship noun:** Use actual relationship noun (`variants`, `images`, `items`, `tracking`, `attachments`) not `children`, `relations`, `linked_entities`.
-- Availability is **representation** inside product or optional subresource `products/{product}/availability` if later required; not an independent top-level `availability` collection.
+- Availability is **representation** inside product or optional subresource `/api/v1/products/{product}/availability` if later required; not an independent top-level `availability` collection.
