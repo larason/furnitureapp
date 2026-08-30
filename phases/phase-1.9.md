@@ -73,7 +73,8 @@ docs/VISION.md
 
 phase-1.1-api-scope.md
 phase-1.2-domain-nouns.md
-phase-1.3-domain-invariants.md
+phase-1.3.md
+domain-invariants.md
 logical-data-model-v1.md
 freeze-record.md
 

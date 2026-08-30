@@ -24,14 +24,14 @@ Nesting expresses ownership (parent → child) where child cannot exist outside 
 - Order addresses: embedded inside Order or `/api/v1/orders/{order}/addresses` (transaction snapshot)
 - Tracking: `/api/v1/orders/{order}/tracking`
 - Status history: `/api/v1/orders/{order}/status-history` or via tracking; kebab-case `status-history`
- - Payment: `/api/v1/orders/{order}/payments` (collection, one-to-many over retries; current payment is latest in collection or `payments/{payment}` if individual addressable; canonical segment is `payments`)
+ - Payment: `/api/v1/orders/{order}/payments` (collection, one-to-many over retries). The collection is **deterministically ordered by ascending payment attempt sequence per order** (ties broken by `created_at`; ordering/attempt field defined in the payment contract); the **current payment** is the latest payment under that ordering, so clients must not infer "current" from arbitrary collection order. Alternative: expose a canonical `current_payment` relation on `Order` to avoid client-side selection — decision deferred to payment contract / Phase Group H. Canonical segment is `payments`; individual payment `payments/{payment}` if addressable.
 - Delivery: `/api/v1/orders/{order}/delivery` (conditional `0..1` only when fulfillment=`DELIVERY`; absent for `PICKUP`)
 - Request attachments: `/api/v1/requests/{request}/attachments`
 - Enquiry attachments: `/api/v1/enquiries/{enquiry}/attachments`
 - Category products (relationship view): `/api/v1/categories/{category}/products` may be used if useful, alongside filtering `/api/v1/products?category=...` — choice deferred to query/filter design, but both follow naming conventions if introduced.
 
 ## 3. Self-Context Paths
-- **Self-context prefix:** `/api/v1/me` represents the currently authenticated customer. Preferred for operations that only concern that customer to avoid exposing arbitrary user IDs.
+- **Self-context prefix:** `/api/v1/me` represents the currently authenticated customer. Preferred for operations that only concern that customer to avoid exposing arbitrary user IDs. **Documented guest-holder exception:** `/api/v1/me/cart` (and `/api/v1/me/cart/items`) is the sole self-context area that also accepts a valid `GUEST_TOKEN` holder (anonymous persistent cart per DM-DEC-04), so a guest can manage their cart ahead of authentication; every other `me` path requires an authenticated customer. The backend must validate the `GUEST_TOKEN` (well-formed, active, token–cart holder match) and bind the guest cart to the authenticated User on login — cart access is holder-scoped, never cross-customer (per `api-exposure-classification.md`, `relationship-security-review.md`).
 - Applied to:
   - `me` (self user): `/api/v1/me`
   - Profile: `/api/v1/me/profile`
@@ -39,7 +39,7 @@ Nesting expresses ownership (parent → child) where child cannot exist outside 
   - Notifications: `/api/v1/me/notifications`
   - Requests: `/api/v1/me/requests`, `/api/v1/me/requests/{request}` (own requests)
   - Enquiries: `/api/v1/me/enquiries`
-  - Cart: `/api/v1/me/cart` (and `/api/v1/me/cart/items`) — holder-scoped cart via `GUEST_TOKEN` or authenticated User; avoids arbitrary `carts/{cart}` exposure.
+  - Cart: `/api/v1/me/cart` (and `/api/v1/me/cart/items`) — the sole self-context endpoint with the documented guest-holder exception above (§3): holder-scoped cart resolver serving a `GUEST_TOKEN` holder or authenticated User; avoids arbitrary `carts/{cart}` exposure.
 - **When to use vs `users/{user}`:** `/api/v1/me/*` for customer self-service; `/api/v1/users` / `/api/v1/users/{user}` reserved for administrative user management (admin) subject to later authorization design. Do not use `/api/v1/users/{id}/profile` for ordinary customer self-service.
 
 ## 4. Admin Context Rules
