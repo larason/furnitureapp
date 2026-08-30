@@ -26,25 +26,27 @@ Two **required boolean** convenience fields:
 
 No alternative names are permitted (`currentPage`, `page_size`, `totalItems`, `lastPage`, `total_pages`) — exactly those six names project-wide.
 
-## 3. Illustrative Wire Shape
+## 3. Illustrative Wire Shape — Finalized as `meta.pagination` (Phase 1.13)
 
-Actual envelope (`data` / `meta` placement) is finalized in **Phase 1.13** (Response Envelope). The conceptual pairing is:
+Per `phase-1.13.md` and `docs/api/api-contract.md` §3 / `docs/api/api-conventions.md` §11 / `ADR/API-022`, the canonical placement is **`meta.pagination`** (not fields directly under `meta`). This policy's naming (§2) is retained; the deferred envelope wording is superseded:
 
 ```json
 {
   "data": [ /* items for current_page */ ],
   "meta": {
-    "current_page": 2,
-    "per_page": 20,
-    "total": 86,
-    "last_page": 5,
-    "has_next": true,
-    "has_previous": true
+    "pagination": {
+      "current_page": 2,
+      "per_page": 20,
+      "total": 86,
+      "last_page": 5,
+      "has_next": true,
+      "has_previous": true
+    }
   }
 }
 ```
 
-Only metadata naming is decided here; envelope keys (`data`/`meta`) are deferred to Phase 1.13.
+Only metadata field **naming** was decided here; envelope **placement** is now finalized as `meta.pagination` (not `meta` top-level).
 
 ## 4. Empty-Collection Conventions
 
@@ -76,6 +78,6 @@ Fields `from`, `to` (item index range), `links` object, etc., are **not included
 
 Invalid `page`/`per_page` values are **validation errors**, not clamped metadata. Metadata is only returned for valid paginated requests (or valid empty-collection responses).
 
-## 9. Out of Scope
+## 9. Out of Scope — Updated Supersession Note
 
-Final `data`/`meta` envelope key placement, HTTP status codes, OpenAPI schemas and Laravel `LengthAwarePaginator` configuration are deferred to Phase 1.13 and implementation.
+Field **naming** (`current_page`, `per_page`, `total`, `last_page`, `has_next`, `has_previous`) is canonical here. Envelope **placement** (`meta.pagination`) was deferred to Phase 1.13 at authoring and is now **finalized** as `meta.pagination` per `docs/api/api-contract.md` §3, `docs/api/api-conventions.md` §11 and `ADR/API-022` — this policy is now aligned (not conflicting). HTTP status codes, OpenAPI schemas and Laravel `LengthAwarePaginator` configuration remain out of scope for this policy and belong to implementation.
