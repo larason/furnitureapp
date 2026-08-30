@@ -27,13 +27,13 @@ Future database implementation must trace back to this frozen model.
 Read all of the following before beginning:
 
 ```text
-VISION.md
 AGENTS.md
+docs/VISION.md
 
 phase-1.1-api-scope.md
 phase-1.2-domain-nouns.md
-phase-1.3-domain-invariants.md
-phase-1.4 logical-data-model.md
+phase-1.3.md
+phase-1.4.md
 ```
 
 Also read the Phase 1.4 supporting documents if they exist:
