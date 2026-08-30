@@ -47,7 +47,7 @@ Potentially non-breaking if additive and compatible:
 - Adding optional product metadata (`materials`, `care_instructions` as optional)
 - Adding a new optional product image field (e.g., `image.caption` optional)
 - Adding a new endpoint (e.g., `GET /api/v1/availability` as alternative view)
-- Adding an optional filter (`?availability=made_to_order`)
+- Adding an optional filter (`?is_featured=true`)
 - Adding optional pagination metadata (`meta.total_pages` optional)
 - Adding a new notification type if clients handle unknown types safely (per `OPEN` enum rule)
 - Adding new optional category fields (`category.description` optional, `category.icon` optional)

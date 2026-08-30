@@ -86,15 +86,17 @@ The final product endpoint name/shape and its exact allowed filters are deferred
 
 - Missing filter means no constraint (all values). Unknown enum value does not become wildcard — it is a validation error. `?product_type=UNKNOWN` must not silently mean `*`.
 
-## 14. Filter Allow-Lists — Canonical Keys Per Resource
+## 14. Filter Allow-Lists — Canonical Keys Per Resource (Illustrative Candidates Only)
 
-- Every resource collection must declare an explicit `supported query parameters` allow-list. Any parameter outside the list is rejected as validation error (see `query-parameter-conventions.md` §5). This prevents arbitrary database column filtering and protects against `?password=...` or `?internal_note=...` becoming filters. Unknown `?status=` without resource prefix is a validation error on all V1 collections.
-- Admin collections may have richer allow-lists but remain authorization-controlled and use the same language; no separate admin grammar. Canonical keys are per resource:
+> **Not the definitive per-endpoint contract.** This section shows **illustrative candidate** allow-lists to guide later resource contracts. The **definitive** per-resource `supported query parameters` allow-lists — the ones enforced for unknown-parameter rejection — are defined by each resource contract (e.g., Product catalog `Group E`, Order `Group I`, Request/Enquiry `Group J`, Payment `Group H`). See §18.
+
+- Every resource collection **will** declare an explicit `supported query parameters` allow-list. Any parameter outside that definitive list is rejected as validation error (see `query-parameter-conventions.md` §5). This prevents arbitrary filtering and protects against `?password=...` or `?internal_note=...` becoming filters. Unknown `?status=` without resource prefix is a validation error on all V1 collections under the candidate model and will be under the definitive lists.
+- Admin collections may have richer allow-lists but remain authorization-controlled and use the same language; no separate admin grammar. **Illustrative candidate** canonical keys per resource (for later contracts to adopt or refine):
   - Orders: `order_status`, `customer`, date range (`created_from`/`created_to`), `payment_status`, `fulfillment_type`, `category`, `product_type`, `availability`
   - Requests: `request_status`, `customer`, date range
   - Enquiries: `enquiry_status`, `customer`, date range
   - Payments: `payment_status` (not `payment_state`)
-  - Generic `status` without prefix is not a valid allow-list entry in V1; `?payment_state=` is a validation error — use `payment_status`.
+  - Generic `status` without prefix is not a valid candidate allow-list entry in V1; `?payment_state=` is a validation error under the candidate — use `payment_status`.
 
 ## 15. Cross-parameter Validation
 
@@ -116,4 +118,4 @@ The final product endpoint name/shape and its exact allowed filters are deferred
 
 ## 18. Out of Scope
 
-No definitive per-endpoint filter lists, pagination response format, error JSON, HTTP status codes, Laravel query builders, or storage-level implementation are defined here; each resource contract will enumerate its supported filters.
+No definitive per-endpoint filter lists are contracted here — §14 above is **illustrative candidates only**; each resource contract (Group E / I / J / H) will enumerate its **definitive** supported filters and enforce unknown-parameter rejection. Pagination response format, error JSON, HTTP status codes, Laravel query builders, and storage-level implementation are also deferred.

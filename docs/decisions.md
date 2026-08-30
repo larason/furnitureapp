@@ -1,6 +1,6 @@
 # Architecture Decision Records — Furniture Platform
 
-> **Source:** Phases 1.1–1.13. New decisions are appended here per `phase-1.13.md §76` (do not create `api-response-decisions.md`).
+> **Source:** Phases 1.1–1.14. New decisions are appended here per `phase-1.13.md §76` / `phase-1.14.md §71` (do not create `api-response-decisions.md` or `api-input-decisions.md`).
 
 ---
 
@@ -121,6 +121,86 @@
 **Decision:** Within `v1`: no silent rename, type/meaning/nullability change, or removal; adding truly optional field is non-breaking. Money shape or timestamp format change is breaking per versioning policy.
 
 **Reason:** `phase-1.13.md §53-58`, `api-versioning-strategy.md`.
+
+---
+
+### ADR/API-IN-001 — JSON is the Default Request Format
+
+**Decision:** All normal create/update/action requests use `application/json` UTF-8; `multipart/form-data` only for attachment file uploads. Unsupported `Content-Type` → validation error, not silent guess.
+
+**Reason:** Single predictable transport (`phase-1.14.md §9-10`) for Next.js/Flutter/Admin; `multipart` isolated to file bytes.
+
+**Status:** Accepted | **Affected:** All `v1` endpoints
+
+---
+
+### ADR/API-IN-002 — Version 1 Enums Are CLOSED for Input
+
+**Decision:** Request enum fields (`product_type`, `fulfillment_type`, `order_status`/`request_status`/`enquiry_status`/`payment_status`, `role`) accept only documented `UPPER_SNAKE_CASE` values; `available`/`unavailable` is the single lowercase exception mirroring response. Unknown value → validation error, not `"other"`.
+
+**Reason:** Prevents `other` drift (`phase-1.14.md §5, §61`); aligns with response CLOSED policy and query `query-enum-policy.md`.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-IN-003 — Client-Supplied Totals Are Never Authoritative
+
+**Decision:** Backend calculates `subtotal`, `delivery_fee`, `total` from authoritative prices/stock; `{total:1000}` or `{delivery_fee:{amount:1,currency:"TZS"}}` from customer is ignored/rejected. Checkout input is only `fulfillment_type` + conditional `delivery_address`.
+
+**Reason:** `AGENTS.md §13`, `phase-1.14.md §23` — client totals would bypass money authority.
+
+**Status:** Accepted | **Affected:** Cart/Checkout/Order
+
+---
+
+### ADR/API-IN-004 — PATCH Is for Partial Modification Only (Allow-Listed)
+
+**Decision:** `PATCH` bodies contain **only fields being changed** (e.g., `{"phone":"+255..."}`), partial not full replacement; `PUT` means complete replacement where permitted (otherwise unused). Only documented mutable fields (`name`, `phone`) may be patched — not `role`, `account_status`, `order_total`, `price`.
+
+**Reason:** Prevents arbitrary field writes and role escalation (`phase-1.14.md §29-31`).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-IN-005 — Unknown Input Fields: Strict Rejection
+
+**Decision:** Unknown fields in create/update/action bodies are **rejected** (validation error) rather than silently accepted/stored. Forward-compatibility ignore only where explicitly documented. `user_id` ownership override via body is rejected — ownership from `auth` (`phase-1.14.md §39-40`).
+
+**Reason:** Catches typos, stale mobile clients, version mismatch, mass-assignment (`phase-1.14.md §53`, `query-parameter-conventions.md §5` allow-list).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-IN-006 — Server-Controlled Fields Are Never Client-Settable
+
+**Decision:** `id`, `created_at`, `updated_at`, `order_reference` (`OD-...`), `order_customer_identity`, `current_order_status`/`status`, `payment_status`/`payment_confirmation`, `inventory` (`quantity`/`reserved_quantity`), `final_order_total`, `status_history` are server-generated; if sent, ignored/rejected. Mass-assignment via `$request->all()` is forbidden — allow-list mapping `validated input → DTO → domain`.
+
+**Reason:** `phase-1.14.md §21, §41-42`, `AGENTS.md §3` backend authority.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-IN-007 — Money Input Mirrors Response (`{amount minor units, currency}`)
+
+**Decision:** Monetary inputs use same shape as responses: `{amount: int minor units 1 TZS=100, currency:"TZS"}`; never `"TZS 30,000"` string. Where `fulfillment_type=DELIVERY` is chosen, backend resolves `delivery_fee`; customer does not submit arbitrary fees.
+
+**Reason:** Single global money rule (`phase-1.13` + `phase-1.14.md §20`).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-IN-008 — Conditional, Nullable, and Sizing Rules
+
+**Decision:** `delivery_address` is **conditional** (required when `fulfillment_type=DELIVERY`, omitted/`null` for `PICKUP`); `null` only where explicitly nullable (`phase-1.14.md §14`); empty `""` not universal “not supplied”; whitespace trimmed server-authoritatively; arrays single-type, `items:[]` invalid where ≥1 required; duplicate `product_id` handling per contract; reasonable JSON/file/array/cart limits enforced; `multipart` field names remain `snake_case` consistent with JSON; checkout/payment idempotency deferred for later `Idempotency-Key`.
+
+**Reason:** Standardizes required/optional/conditional, empty/whitespace, array/nested, file-upload and size handling (`phase-1.14.md §12-16, §34-37, §56-58`).
+
+**Status:** Accepted
 
 ---
 

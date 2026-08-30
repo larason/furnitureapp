@@ -93,3 +93,53 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 ## 9. Sensitive / Never Serialized
 
 `password_hash`, `tokens`, `provider secrets`, internal `reserved_quantity` (public), staff private notes, internal filesystem paths, authorization flags, internal IDs (beyond `id` where not contracted).
+
+---
+
+## 10. Request Input per Resource — Space Reserved (Phase 1.14)
+
+> No final endpoint schemas are defined here; each table reserves `Create | Update (PATCH) | Action | Read-Only / Server-Generated | Role-Specific` shape per `phase-1.14.md §69`.
+
+### 10.1 Product (Staff/Admin) — Create / Update
+
+- **Create input (staff/admin):** `name`, `slug`, `description`, `category_id`, `product_type` (`IN_STOCK`/`MADE_TO_ORDER` CLOSED), `price:{amount,currency}` where purchasable (minor units), `is_active`/`is_published` flags. **Not accepted:** `id`, `created_at`, `updated_at`, `reserved_quantity`, `supplier internals`.
+- **Update (PATCH):** partial, only mutable fields (`name`, `description`, `price`, `is_active`, `category_id`) — not `id`/`created_at`/`available_quantity`.
+- **Read-only / server-generated:** `id`, `slug` uniqueness enforced server-side, `created_at`/`updated_at`, `availability`/`stock_indicator` derived from inventory, not client-set.
+- **Role:** Public cannot create/update products.
+
+### 10.2 Category (Staff/Admin)
+
+- **Create/Update:** `name`, `slug`, `description`, `image`. `id`, `created_at` server-generated. No `product` embedding in category create.
+
+### 10.3 Cart — Add / Update
+
+- **Add item (POST `/me/cart/items`):** `product_id` + optional `variant_id` + `quantity:int≥1`. **Not accepted:** `price`, `subtotal`, `stock`, `currency`.
+- **Update item (PATCH):** `quantity` only (partial). Empty `items:[]` invalid where ≥1 required. Duplicate `product_id` handling per contract (invalid/merged).
+- **Server-controlled:** `id`, `created_at`/`updated_at`, totals, availability.
+
+### 10.4 Checkout (Authenticated Customer)
+
+- **Input:** `fulfillment_type: PICKUP|DELIVERY` (CLOSED) + **conditional** `delivery_address:{name,phone,address_line,city,...}` required when `DELIVERY`, absent/`null` for `PICKUP`. Optional `notes`. **Not accepted:** `cart contents` beyond referencing current `me/cart`, `current prices`, `stock`, `delivery_fee`, `subtotal`, `total`, `order_reference`, `payment_status`, `user_id` (ownership from auth, not body).
+
+### 10.5 Order — Actions (Customer vs Staff/Admin)
+
+- **Customer actions:** `cancel` (within 20-min window) — minimal body e.g., `{"reason":...}` optional; no `{status:"CANCELLED"}`.
+- **Staff/Admin actions:** `accept`/`ship`/`deliver` — minimal `{"note":...}` where needed; status transitions are actions (`POST /orders/{order}/ship`), not `PATCH {"status":"SHIPPED"}`. **Read-only:** `order_reference`, `status`, `customer_id`, `created_at`, `payment_status`, `final totals`.
+
+### 10.6 Furniture Request & Enquiry (Anonymous or Authenticated)
+
+- **Request create:** `product_id` nullable + `quantity`, `dimensions`, `material`, `color`, `notes`, `contact:{name,phone,email}` (contact required; `user` optional, not fabricated), optional `attachment` via `multipart/form-data`. **Not accepted:** `order_id`, `request_status`, `inventory_reservation`.
+- **Enquiry create:** `name`, `phone`/`email` (at least one), `subject`, `message`, optional `attachment`. **Not accepted:** `status`, `staff assignment`, `closed_at`, `internal_note`.
+
+### 10.7 Profile & Cart vs Order
+
+- **Profile (PATCH `/me/profile`):** `name`, `phone` mutable; `email`/`password`/`role`/`account_status` require dedicated workflows, not ordinary `PATCH`. `id`, `created_at`, verification state server-generated.
+- **Identifiers:** Authenticated requests never require `{"user_id":"current-user"}`; server derives ownership. Anonymous requests must contain contact, not fake `user_id`.
+
+### 10.8 Payment (Generic)
+
+- **Generic principles only:** Customer does **not** send `{payment_status:"PAID"}` or `{amount:{...}}` as authoritative confirmation; amounts and confirmation are backend/provider-controlled. Provider-specific payloads **deferred to Group H**; no `payment_provider` request schema defined here.
+
+### 10.9 Common Input Rules Applied
+
+- `snake_case` (`product_id`, `delivery_address`), strict JSON types (`quantity:2` not `"2"`, booleans not `1`), `null` only where explicitly nullable, unknown fields **rejected** (validation error, not silently ignored) to catch typos/version drift, mass-assignment protection via allow-list (`validated input → DTO → domain`), idempotency-sensitive (`checkout`, `payment initiation`) noted for later key, size limits enforced.
