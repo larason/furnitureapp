@@ -71,6 +71,8 @@ Admin frontend ──> MySQL directly
 
 Business rules must not be duplicated independently in React, Flutter and Laravel.
 
+**Validation authority (Phase 1.15):** Frontend validation (Next.js, Flutter) is advisory/UX only; backend/domain validation is authoritative. The API must independently enforce all business invariants — transport → schema → auth → authorization → domain (cross-field/conditional/state) → concurrency/transaction → external — regardless of client-side checks. See `docs/api/api-contract.md §14` and `docs/api/api-conventions.md §16`.
+
 ---
 
 ## 4. Product/Business Model

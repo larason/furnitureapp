@@ -204,6 +204,116 @@
 
 ---
 
+### ADR/API-VAL-001 — Layered Validation (Not Monolithic)
+
+**Decision:** Validation is separated into distinct layers: Transport → Schema/input → Authentication → Authorization → Domain/business (including cross-field, conditional, state-dependent) → Concurrency/transaction → External-system. Each layer has clear ownership. Do not treat all validation as one generic validator and do not access business records before schema validation nor external providers before authorization.
+
+**Reason:** Prevents duplication across Next.js/Flutter/Laravel, avoids leaking authorization info, and enforces correct pipeline `phase-1.15.md §8, §37, §73`.
+
+**Status:** Accepted | **Affected:** All `v1` endpoints
+
+---
+
+### ADR/API-VAL-002 — Frontend Validation Advisory; Backend/Domain Authoritative
+
+**Decision:** Client validation (Next.js, Flutter) is UX optimization only (e.g., disable Checkout when stock appears unavailable). Laravel/domain is the authority for every business decision — stock, pricing, delivery fee, cancellation window (backend time), order transitions, inventory concurrency, payment confirmation. Clients never override via direct API calls.
+
+**Reason:** Backend authority is core architectural principle (`AGENTS.md §3`, `§12-13`) and `phase-1.15.md §14-15`. Duplicated critical logic in `Flutter.getValidation` vs `Laravel controller` is prohibited.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-003 — Version 1 Enums Are CLOSED (Strict)
+
+**Decision:** All V1 enums are CLOSED by default (`IN_STOCK`, `MADE_TO_ORDER`, `PICKUP`, `DELIVERY`, `PENDING_PAYMENT`→`CANCELLED`, etc.). Validation enforces documented values; unknown → validation error, not silently normalized to `OTHER/UNKNOWN/CUSTOM`. Adding a new value is a formal API compatibility decision per versioning policy. Physical DB enum representation does not dictate API semantics. Frozen exception: `availability` `available|unavailable` lowercase mirrors query filter; all other enums `UPPER_SNAKE_CASE`.
+
+**Reason:** `phase-1.15.md §5, §30-31, §56`; prevents `available` vs `AVAILABLE` drift and silent enum growth.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-004 — Business State Transitions Cannot Use Generic Field Writes
+
+**Decision:** Order/request status and similar controlled state must not be changed via generic `PATCH {status: "SHIPPED"}` or `{status: "CANCELLED"}`. Transitions are explicit actions (`POST /orders/{order}/cancel`, `/ship`, `/deliver`, etc.) validating `current state, requested transition, actor auth, business preconditions`. `PROCESSING→SHIPPED` may be valid; `COMPLETED→SHIPPED` invalid. State is authoritative server-side, not client-submitted.
+
+**Reason:** `phase-1.15.md §18, §29` — prevents bypassing transition validators and arbitrary state forcing.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-005 — Client-Supplied Financial Totals Never Authoritative
+
+**Decision:** Client sends `product_id`/`variant_id` + `quantity`, `fulfillment_type` + conditional `delivery_address`/`contact`; backend calculates authoritative `current price`, `subtotal`, `delivery_fee`, `total`. `{total:1000}` or `{delivery_fee:{amount:1,currency:"TZS"}}` from customer is rejected/ignored. `approved delivery fee` is business-determined, not customer-controlled.
+
+**Reason:** `AGENTS.md §13`, `phase-1.15.md §21-23` (`CART-005/PRICE-001`); prevents price manipulation. Complements ADR/API-IN-003 but re-affirmed as validation-layer rule.
+
+**Status:** Accepted | **Affected:** Cart, Checkout, Order, Payment
+
+---
+
+### ADR/API-VAL-006 — Critical Inventory Validation Must Remain Concurrency-Safe
+
+**Decision:** Inventory validation (`read → validate quantity → reserve/consume`) must be transactional/concurrency-safe (atomic update / transaction isolation / locking — mechanism deferred). Prohibits bare `SELECT stock; if stock>qty then UPDATE stock` without protection. UI `In Stock` is only informative; final check is Laravel/DB inside transaction. Failure must not leave partial reservation.
+
+**Reason:** `AGENTS.md §12` overselling prevention, `phase-1.15.md §20, §42-43` (INV-003).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-007 — Cross-Field, Conditional & State-Dependent Validation
+
+**Decision:** Rules examining multiple fields together are explicit: `DELIVERY→address required`, `PICKUP→fee zero / not customer-supplied`, `MADE_TO_ORDER→checkout prohibited`. Conditional fields (`delivery_address` conditional on `fulfillment_type`) not universally required. State-dependent checks current authoritative state (`Order=PROCESSING` vs `COMPLETED`). Validate relationships thoroughly (`variant exists AND belongs to product AND active AND purchasable`).
+
+**Reason:** `phase-1.15.md §16-18, §66-69` — prevents reducing business rules to isolated field validators.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-008 — Validation Error Categories, Codes vs Messages, Stability
+
+**Decision:** Categories: Structural `INVALID_TYPE/INVALID_FORMAT/INVALID_VALUE/MISSING_REQUIRED_FIELD`; Business `PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/ORDER_NOT_CANCELLABLE/INVALID_ORDER_TRANSITION`; Authorization `NOT_AUTHENTICATED/FORBIDDEN/RESOURCE_NOT_OWNED`; External later `PAYMENT_PROVIDER_ERROR`. Layer detecting error owns it. Machine-stable `code` separate from human `message`; frontend acts on code (`INSUFFICIENT_STOCK`) and may localize display. Messages must not leak `SQL/schema/stack/paths/secrets`. Renaming `INSUFFICIENT_STOCK` within `v1` is breaking; codes version-sensitive. Future contract supports field-level `field: delivery_address.city` and multiple determinable schema errors per request. Exact JSON deferred to Phase 1.16.
+
+**Reason:** `phase-1.15.md §32-35, §47-49`.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-009 — Server-Controlled Fields, Unknown Fields & Mass-Assignment Protection
+
+**Decision:** Server-controlled fields `id`, `created_at`/`updated_at`, `order_reference` (`OD-...`), `current_order_status`, `payment_status`/`confirmation`, inventory quantities, `final_order_total`/`approved_delivery_fee`, `customer identity`, `status_history` are never client-settable — REJECT/IGNORE if sent, ownership derived from `auth`. Unknown fields in strict create/update/action are rejected (validation error), not silently stored; ignore-forward only where explicitly documented. Mass assignment via `$request->all()→model fill` is forbidden — allow-list `validated → DTO → domain`.
+
+**Reason:** `phase-1.15.md §45-46, §60, §74`.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-010 — Validation Compatibility & Authorization Leakage
+
+**Decision:** Making a previously accepted input rejected, or making a field suddenly required, can be breaking within `v1` and follows versioning policy. Adding CLOSED enum values is a compatibility decision. Authorization design must not reveal whether `Order OD-xxx exists` to unauthenticated callers via enumeration; `Not Found vs Forbidden` mapping deferred to error phase but leakage prevention is normative now. Validation changes respect `api-versioning-strategy.md`.
+
+**Reason:** `phase-1.15.md §55-56, §38-39`.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-VAL-011 — Transactional Validation, Idempotency & Auditability (incl. Webhooks)
+
+**Decision:** Domain validation for `stock, order creation, reservation, critical transitions` must occur inside/immediately around transaction/concurrency control to prevent stale assumptions. Idempotency for **client-initiated** operations (`POST checkout`, `POST payment initiation` with same `Idempotency-Key`) must not duplicate business effects; validation cooperates with idempotency. **Webhook idempotency (generic, provider-agnostic):** Repeated deliveries of the same provider event must not create duplicate payment/order effects. This requires stable event identity (provider-supplied idempotency key / event identifier persisted alongside the webhook), deduplication via a durable store (e.g., unique constraint on `webhook_event_id` / idempotency key table), and atomic check-then-apply of state changes inside a transaction (lookup existing event → if seen, return prior result without reapplying; if new, apply payment/order mutations atomically). Provider-specific fields, payload schemas, and signature verification remain deferred to Group H.
+
+**Reason:** `phase-1.15.md §42-44, §71-72, §53-54`; payment rules require webhook handling be idempotent (`AGENTS.md §14`), extended here to a generic, provider-agnostic guarantee. Group H retains provider specifics.
+
+**Status:** Accepted
+
+---
+
 ### Pending: Error Contract, OpenAPI Operations, Payment Provider
 
-**Deferred:** Full error codes/statuses (error phase), complete `openapi.yaml` operations, provider-specific payment structures (Group H), cursor pagination tokens (Group T if ever).
+**Deferred:** Full error codes/statuses including field-level JSON and HTTP-status mapping (Phase 1.16), complete `openapi.yaml` operations, provider-specific payment fields/SDK/webhook payload validation (Group H), cursor pagination tokens (Group T if ever).

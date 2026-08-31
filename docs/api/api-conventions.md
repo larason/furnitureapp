@@ -1,6 +1,6 @@
-# API Conventions — Consolidated (Response, Serialization, Compatibility)
+# API Conventions — Consolidated (Response, Serialization, Compatibility, Validation)
 
-> **Authority:** Reusable serialization and response conventions for `v1` (`/api/v1`). Consolidates `phase-1.13.md` + `phase-1.11` / `phase-1.12` rules. Project must not create separate permanent `api-response-*` docs per tiny decision — this file plus `api-contract.md` / `api-resources.md` is the consolidated knowledge per `phase-1.13.md §2`.
+> **Authority:** Reusable serialization, response and validation conventions for `v1` (`/api/v1`). Consolidates `phase-1.13.md` + `phase-1.11` / `phase-1.12` + `phase-1.14` / `phase-1.15` rules. Project must not create separate permanent `api-response-*` or `api-validation-*` docs per tiny decision — this file plus `api-contract.md` / `api-resources.md` is the consolidated knowledge per `phase-1.13.md §2`.
 
 ## 1. Response Envelope
 
@@ -28,6 +28,7 @@
 - **Amount:** JSON number **integer minor units (cents, 1 TZS = 100)**. Never decimal string, never pre-formatted. Same physical model as query (`?min_price=50000000` = same value as `{"amount":50000000}`).
 - **Shape:** `{ "amount": 125000000, "currency": "TZS" }`. Bare `price: 1250000` without `currency` is not used; `price: "TZS 1,250,000"` is forbidden.
 - **Applies to:** `product.price`, `variant.price`, `order_item.unit_price`, `order.subtotal`, `order.delivery_fee`, `order.total`, `payment.amount` — identical shape. Zero-decimal currencies would be documented with minor-unit semantics preserved (TZS uses `cents` even if display hides cents).
+- **Single price contract:** `product.price` is **required, non-null** for every public product (`IN_STOCK` and `MADE_TO_ORDER`) — same `{amount,currency}`. For `MADE_TO_ORDER` it is display/starting-at price only (informational, never authoritative for checkout/cart). `MADE_TO_ORDER → checkout prohibited` regardless of price (`api-resources.md §10.1`). Making `price` nullable/omittable would be breaking per `api-contract.md §9`.
 - **Compatibility:** `price: number` → `price: {amount,currency}` within `v1` is breaking — chosen once here.
 
 ## 5. Nulls & Absence
@@ -93,6 +94,101 @@
 - **Action & role layering:** Create supplies business inputs → server supplies `id/timestamps/status`; `PATCH` contains only changed fields with allow-list (e.g., `name`/`phone` yes, `role`/`order_total` no); actions (`cancel`/`ship`) send minimal `{"note":...}` not full order + `{"status":"SHIPPED"}`. Same resource has different accepted inputs per actor: Customer `→ own profile`; Staff/Admin `→ operational order state`.
 - **Historical immutability:** Updating current product price never rewrites historical `order_item` snapshot; delivery fee policy changes never rewrite historical order fee.
 - **Idempotency-sensitive:** `checkout`, `payment initiation`, `critical order actions` require later `Idempotency-Key` design — duplicate tap/reload/retry must not duplicate business effects (not implemented here).
-- **Size/security:** Reasonable max JSON body / file upload / array size / message length enforced server-side; parameter pollution (`quantity=2&quantity=100`) → deterministic rejection; SQL injection/XSS/CSRF bypass never mitigated by frontend alone. `Content-Type` → JSON syntax → type/schema → authentication → authorization → domain validation → persistence (backend pipeline).
+- **Size/security:** Reasonable max JSON body / file upload / array size / message length enforced server-side; parameter pollution (`quantity=2&quantity=100`) → deterministic rejection; SQL injection/XSS/CSRF bypass never mitigated by frontend alone. Transport → Schema/type → Authentication → Authorization
+  → Domain → Concurrency/transaction → External → Persistence/workflow (backend pipeline).
 - **File uploads:** Attachments optional via `multipart/form-data` (or pre-uploaded reference per contract); storage provider not selected now; logical field names stay `snake_case` consistent with JSON.
 - **Mass-assignment protection:** Laravel must not `$request->all() → model fill`; validated input → DTO/command → domain logic. Domain model not coupled to HTTP request structure.
+
+## 16. Validation Conventions (Consolidated — Phase 1.15)
+
+> **Authority:** Single validation architecture for `v1`. Consolidates `phase-1.15.md`. No separate `validation.md` / `api-validation.md` per §2 documentation strategy. Reusable rules here; normative hierarchy in `api-contract.md §14`; business meaning in `docs/domain/business-rules.md`.
+
+### 16.1 Layers
+
+- **Transport:** `Content-Type` correct, JSON syntactically valid, size within limits, method/media supported. Not business error. `malformed JSON`, `unsupported content type`, `body too large` → transport failure.
+- **Schema/Input:** Field structure/types correct: `quantity int`, `email format`, `name length`, `fulfillment_type enum CLOSED`. Does not decide stock.
+- **Authentication vs Authorization:** `Authentication → who?` (valid session/token). `Authorization → allowed on resource?` (`Customer own order`, etc.). Valid structured request may still fail authorization. Do not conflate.
+- **Domain/Business:** Business-rule allowed? `IN_STOCK purchasable`, `MADE_TO_ORDER not checkout-eligible`, `within cancellation window`, `fulfillment matches delivery info`, `transition allowed`. Enforces Phase 1.3 invariants.
+- **Cross-field, Conditional, State-dependent, Concurrency:** Cross-field requires multiple fields together; conditional defines `PICKUP` vs `DELIVERY` requirements; state-dependent checks current authoritative state; concurrency ensures correctness under race (transactional).
+
+**Rule:** Never move domain rules entirely to client. Clients may duplicate for UX; API independently enforces invariants. Frontend validation advisory, backend authoritative.
+
+### 16.2 Type, Enum & Null Strictness
+
+- JSON types strict: `quantity:2` not `"2"`, booleans not `1`. No broad coercion. Enums **CLOSED**: `IN_STOCK`, `MADE_TO_ORDER`, `PICKUP`, `DELIVERY`, `PENDING_PAYMENT`…`CANCELLED` only; unknown → validation error, not `OTHER`. New enum value is compatibility decision. Exception `availability` lowercase `available|unavailable` frozen per `api-contract.md §3.9`; does not extend to others.
+- `null` only where explicitly nullable (e.g., `delivery_address:null` for `PICKUP`, `product_id:null` for custom request). `{"quantity":null}` where required is error.
+- Empty `""` not universal "not supplied"; whitespace trimmed server-authoritatively where appropriate; meaningful whitespace (e.g., `notes` formatting) preserved; enums exact case.
+
+### 16.3 Query, Pagination, Sorting, Filtering, Relationships
+
+- `page ≥1`, `1 ≤ per_page ≤100` (Phase 1.12). Only documented sort fields accepted; never map arbitrary input to DB columns (correctness + security). Only documented filter fields/operators; no arbitrary DSL. Query strings not inherently safe.
+- Relationships: `product_id`/`variant_id`/`category_id` — validate `exists` plus when required `belongs to parent, active, allowed in operation`. Example: `variant exists AND belongs to product AND active AND purchasable` — not `variant_id exists` alone.
+
+### 16.4 Validation Order & Pipeline
+
+```
+Transport → Schema/type → Authentication → Authorization → Domain (cross-field/state) → Concurrency/transaction → External → Persistence/workflow
+```
+
+- Do not access business records before schema validation; do not run external operations before authorization.
+- Do not leak authorization: `Order OD-xxx exists but not owned` must not be revealed via invalid queries; resource exposure/authorization design avoids enumeration. `Not Found vs Forbidden` mapping deferred to error phase but leakage prohibited now.
+- DB constraints (`uniqueness, non-null, foreign-key`) complement domain validation; DB cannot decide `MADE_TO_ORDER cannot checkout`. Keep separate; DB is last line of defense.
+
+### 16.5 Inventory, Pricing, Delivery Fee (Reusable)
+
+- **Inventory:** `read current stock → validate quantity → reserve/consume in transaction`. `SELECT then UPDATE` without concurrency control prohibited. `product exists, active, IN_STOCK, variant valid/belongs-to, stock sufficient` — current availability still checked.
+- **Pricing:** Customer sends `product_id+quantity` / checkout `fulfillment_type+address`; backend resolves `current price, subtotal, delivery_fee, total`. Never validate customer-submitted total as authoritative.
+- **Delivery fee:** `DELIVERY` → customer supplies delivery info; business determines fee. Customer override of `approved delivery fee` rejected.
+
+### 16.6 Cart / Checkout / Request / Enquiry / Profile / Cancellation / Transitions
+
+- **Cart:** `product exists, variant belongs to product, active, purchasable (IN_STOCK), quantity valid`. Inventory/pricing re-checked at checkout.
+- **Checkout:** `Transport→Schema→Auth→Authz→Cart valid→Products purchasable→Inventory→Fulfillment→Price server-side→Order/payment`. Do not collapse.
+- **Request:** `contact info, product ref when supplied, quantity when supplied, dimensions, material, color, notes, attachments`; `user=null` valid (anonymous). File: `size, content type, extension, signature not MIME alone, permissions, scanning`.
+- **Enquiry:** `contact info, subject where required, message, attachments`; User association optional.
+- **Profile:** Mutable fields each validated; `email/password/role/account_status` not ordinary fields — dedicated workflows.
+- **Cancellation:** `authenticated customer → owns order → exists → cancellation allowed → 20-min window valid (backend time, not client `cancelled_at`) → state eligible`. Not `status != COMPLETED` alone.
+- **Transitions:** Every transition validates `current state, requested transition, actor authorization, business preconditions` (e.g., `PROCESSING→SHIPPED` requires staff auth). Never allow `status=SHIPPED` generic write.
+
+### 16.7 Unknown, Immutable, Client-Controlled & Mass-Assignment
+
+- **Unknown fields:** Rejected (validation error) for strict create/update/action; catches typos, stale mobiles, mass-assignment. Ignore-forward only where documented.
+- **Immutable/Server-controlled:** Never client-settable: `id`, `created_at`, `updated_at`, `order_reference` (`OD-...`), `status`/`current_order_status`, `payment_status`/`payment_confirmation`, inventory (`quantity`/`reserved_quantity`/`available_quantity`), `final_order_total`/`approved_delivery_fee`, `customer identity`, `status_history`. If sent, ignored/rejected. Ownership from auth, not body.
+- **Client-controlled:** Explicit `ACCEPT/REJECT/IGNORE/SERVER-GENERATE` distinction. ACCEPT `quantity` after validation; REJECT `order total`/`status`/`created_at` generic writes. Do not allow arbitrary fields to flow.
+- **Mass-assignment:** Not `$request->all()→model fill`; `validated input → DTO/command → domain`.
+
+### 16.8 Errors, Messages & Compatibility
+
+- **Categories:** Structural `INVALID_TYPE/INVALID_FORMAT/INVALID_VALUE/MISSING_REQUIRED_FIELD`; Business `PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/ORDER_NOT_CANCELLABLE/INVALID_ORDER_TRANSITION`; Authorization `NOT_AUTHENTICATED/FORBIDDEN/RESOURCE_NOT_OWNED`; External later `PAYMENT_PROVIDER_ERROR` (Group H).
+- **Ownership:** Layer detecting error owns it (`string quantity→schema`, `not logged in→auth`, `doesn't own→authz`, `expired window→domain`, `provider rejected→external`). Not generic `INVALID_REQUEST` unless deliberately grouped.
+- **Field-level & multiple errors:** Future error contract must support `field: "fulfillment_type", code:"INVALID_VALUE"` and nested `delivery_address.city`. For form-heavy ops, return all safely determinable schema errors; domain failures may stop earlier when unsafe. Exact JSON deferred to error phase (Phase 1.16).
+- **Codes vs messages:** `machine-stable code` separate from `human-readable message`. Frontend acts on `INSUFFICIENT_STOCK`, not parsing English. Messages must not leak `SQL/schema/stack/paths/secrets/private records`; never return raw exception messages. Localization via frontend mapping; backend not required to produce every locale.
+- **Stability:** Renaming `INSUFFICIENT_STOCK→OUT_OF_STOCK_ERROR` within `v1` is breaking. Validation changes that reject previously accepted input or make field suddenly required are breaking; follow versioning policy. Adding `NEW_STATUS` to CLOSED enum is formal compatibility decision.
+- **Logging:** May log failures for diagnostics but never log `password, token, payment secrets, full private addresses` indiscriminately.
+
+### 16.9 Transactions, Concurrency, Idempotency (incl. Webhooks), Audit
+
+- Domain validation for `stock, order creation, reservation, critical transitions` inside/around transaction; prevent `validate→state change→assumption stale`. Identify `optimistic/pessimistic/atomic/isolation` needs; requirement: correct under concurrent ops. Do not choose mechanism now, but requirement is normative.
+- Idempotency at correct boundary: **Client-initiated** (`POST checkout`, `POST payment initiation` with same `Idempotency-Key`) must not duplicate. Validation + idempotency cooperate; duplicate retry must not create duplicates.
+- **Webhook idempotency (generic, provider-agnostic):** Repeated deliveries of the same provider event (e.g., payment webhook) must not duplicate effects. Requires stable event identity (provider event identifier / idempotency key persisted), deduplication via durable unique constraint, and atomic check-then-apply inside transaction; duplicate delivery returns prior result without reapplying inventory/payment/order mutations. Provider-specific payload fields and signature verification remain Group H (deferred).
+- Failure atomicity: failed validation must not leave partial state (reservation without order).
+- Auditability: important state changes (`cancellation, status transition, inventory adjustment, payment change`) eventually auditable; not every failed request needs permanent audit; no infrastructure now.
+- Rate limiting relationship noted (`login, password recovery, anonymous submissions, checkout, payment`) — not implemented now; record required.
+- External dependencies (payment) provider failures ≠ input validation errors; provider specifics Group H.
+
+### 16.10 Centralization & Architecture
+
+- One authoritative boundary per business rule (e.g., `20-min cancellation → domain/application layer`, not duplicated in `Next.js/Flutter/controller/model`). Clients may mirror for UX.
+- Purely structural validation may reuse, but no `UniversalBusinessValidator`; prefer `ValidateCheckoutInput`, `ValidateDeliverySelection`, `ValidateOrderCancellation`. Architecture: `HTTP Request → Request Validator → Application Command → Domain Validation → Domain/Application Service → Repository/Transaction`. Do not place every business rule inside Form Request.
+- Input definitions must align with `api-resources.md` resource definitions: resource read-only ≠ validator mutable.
+
+### 16.11 Testing Requirements
+
+- Every business validation rule must eventually have tests: `invalid product type, insufficient stock, invalid variant, missing delivery info, invalid enum, unknown field, unauthorized order, expired cancellation window, invalid transition, duplicate checkout` — success + failure.
+- Not tested only via React/Flutter UI; backend/domain level required.
+- Later API integration: `request→validation→authorization→business`.
+- Later E2E: `anonymous browse, authenticated checkout, request/enquiry submission, cancellation, tracking` — backend truth.
+
+### 16.12 Deferred
+
+Payment provider-specific fields/SDK/webhook payload validation → Group H. Laravel Form Requests/DTOs/domain validators/DB constraints/migrations/OpenAPI schemas/error middleware/auth impl/frontend forms → not created here (Explicitly Out of Scope).
