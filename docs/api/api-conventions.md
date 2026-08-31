@@ -1,6 +1,6 @@
-# API Conventions — Consolidated (Response, Serialization, Compatibility, Validation, Errors)
+# API Conventions — Consolidated (Response, Serialization, Compatibility, Validation, Errors, Authentication)
 
-> **Authority:** Reusable serialization, response, validation and error conventions for `v1` (`/api/v1`). Consolidates `phase-1.13.md` + `phase-1.11` / `phase-1.12` + `phase-1.14` / `phase-1.15` / `phase-1.16` rules. Project must not create separate permanent `api-response-*`, `api-validation-*` or `api-errors-*` docs per tiny decision — this file plus `api-contract.md` / `api-resources.md` is the consolidated knowledge per `phase-1.13.md §2`.
+> **Authority:** Reusable serialization, response, validation, error and authentication conventions for `v1` (`/api/v1`). Consolidates `phase-1.13.md` + `phase-1.11` / `phase-1.12` + `phase-1.14` / `phase-1.15` / `phase-1.16` / `phase-1.17` rules. Project must not create separate permanent `api-response-*`, `api-validation-*`, `api-errors-*` or `auth-*` docs per tiny decision — this file plus `api-contract.md` / `api-resources.md` is the consolidated knowledge per `phase-1.13.md §2`.
 
 ## 1. Response Envelope
 
@@ -254,3 +254,55 @@ Payment provider-specific fields/SDK/webhook payload validation → Group H. Lar
 ### 17.10 Deferred
 
 Payment provider-specific error codes/SDK/webhook failures (Group H), Laravel handlers/middleware/classes, rate-limit enforcement, OpenAPI/endpoint-specific schemas, Next.js/Flutter handlers — not implemented here (Explicitly Out of Scope §93).
+
+## 18. Authentication Conventions (Consolidated — Phase 1.17)
+
+> **Authority:** Single authentication conventions for `v1`. Consolidates `phase-1.17.md`. No separate `authentication.md` per §2. Reusable rules here; normative contract in `api-contract.md §17`; business meaning in `docs/domain/business-rules.md §17`; decisions in `decisions.md ADR/AUTH-*`.
+
+### 18.1 Actors, Roles & Hierarchy
+
+- **CLOSED roles:** `CUSTOMER`/`STAFF`/`ADMIN` (`UPPER_SNAKE_CASE`, CLOSED). No `MANAGER`/`DELIVERY_AGENT` etc. in V1. Role assignment is **server-controlled** — client self-promotion (`{"role":"ADMIN"}`) is rejected (422 `INVALID_VALUE` or 403 `FORBIDDEN`). Staff not via public registration; Admin via bootstrap.
+- **Ownership vs hierarchy:** `Customer owns own account`; `Staff/Admin own operational data`, not customer accounts. Hierarchy is permission, not ownership.
+
+### 18.2 Authentication Boundaries
+
+- **Public (no auth):** `GET /products`, `/products/{slug}`, `/categories`, `/categories/{slug}`, `search`, product details/prices/availability. Must remain SSR-renderable for SEO without login; no auth middleware on public catalog routes.
+- **Anonymous allowed but authenticatable:** `POST /requests` (made-to-order), `POST /enquiries` — `User=none` + contact when anonymous, linked to account when authenticated.
+- **Auth required:** `POST /checkout`, `GET /me/orders`, `GET /me/orders/{order}`, `POST /orders/{order}/cancel`, profile, own requests/enquiries history. Backend enforces; `401 AUTHENTICATION_REQUIRED` (or `CHECKOUT_REQUIRES_AUTHENTICATION`) on anonymous checkout — never frontend-only guard.
+- **Checkout boundary:** `Browse → no auth | Cart interaction → per cart policy | Checkout → auth REQUIRED`.
+- **Customer flexibility:** `Customer: maximum customer-facing commerce, minimum admin` — rich shopping without operational privileges.
+
+### 18.3 Cross-Client Identity & Session/Token Principles
+
+- One shared customer identity across `Next.js` and `Flutter` against same Laravel backend; registering on web allows login on app with same credentials (no duplicate accounts).
+- `Next.js` → **first-party browser session** (secure httpOnly cookie, not long-lived JS token); `Flutter` → **API credential/token**; `Admin` → administrative session. Same identity system, role gates after auth.
+- **Logout:** explicit, invalidates server-side session/credential; deleting frontend token alone insufficient if server state revocable.
+- **Multi-device:** multiple legitimate customer sessions (web/phone/tablet) **permitted**; logout on one does not invalidate others. Revocation of individual sessions, staff/admin stronger controls (shorter idle, visibility, forced logout, MFA/audit later) — deferred but not prohibited.
+- **Expiration:** conceptually `active → expired → revoked`; durations chosen later based on convenience vs privilege.
+
+### 18.4 Credential Handling & Data Minimization
+
+- Registration collects only **minimum**: `name`, `email`, `phone`, `password`; not `address book`/`delivery address` (separate flows).
+- Passwords **never** plaintext, only **secure one-way hash**; never return `password`, `password_hash`, `reset_token`, `session_token`, `refresh_secret`, private keys in API responses. Role is not permission — backend evaluates `role+resource+action+ownership+state` (Phase 1.18); exposing `database permissions`/`internal policy` in profile is prohibited.
+
+### 18.5 Verification, Recovery & Enumeration Protection
+
+- **Email verification:** `verified email → account attribute`; `verification process → secure time-limited mechanism`; `{"email_verified":true}` from client not authoritative. Requirement before checkout/full use deferred; if required, enforced server-side. Email delivery (Group R deferred). **Phone/SMS OTP** not an auth requirement by default.
+- **Password recovery:** secure **time-limited single-use token** (`request → token → set new password → invalidate`); no plaintext password in email/response; no raw reset secret stored. If V1 launches before email, recovery may be operationally unavailable — documented, not weakened with insecure `send reset in response`.
+- **Enumeration protection:** login and recovery responses avoid distinguishing `email exists` vs `not exists` unless explicitly justified; recovery is generic `"Request received."` rather than `"This email does not exist."`.
+
+### 18.6 Authentication Error Conventions
+
+- All auth failures use common error envelope `api-contract.md §15` — never `auth_success`/`login_result`/`token_response` separate envelope. Codes: `AUTHENTICATION_REQUIRED` (401, not 403 for unauthenticated), `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `INVALID_AUTHENTICATION`, `FORBIDDEN` (canonical; aliases `NOT_AUTHENTICATED`/`RESOURCE_NOT_OWNED` per §15.15). Authenticated endpoints use common response conventions (`data`/`meta`); auth payload may be specialized but consistent.
+- **Threat boundary:** responses must not allow `credential theft`/`stuffing`/`brute-force`/`session theft`/`token leakage`/`account enumeration`/`privilege escalation`/`role tampering`/`session fixation`/`password-reset abuse`/`cross-account access`/`staff impersonation` to succeed; brute-force rate limiting, failed-attempt protection, abuse detection are identified as later backend requirements.
+
+### 18.7 Security Principles & Versioning
+
+- **Account lifecycle:** staff approval is **Admin-only** (`PENDING`→`ACTIVE` etc. lifecycle deferred); self-approval prohibited; customer accounts belong to customers; staff cannot restrict browsing/ordering, access credentials, impersonate, or change customer role/password/lock account unless explicit Admin-only security policy (auditable). No hard-delete of customers with historical `orders/payments/requests/enquiries/notifications`; deletion as privacy operation later.
+- **Change operations:** `password change` via authenticated secure workflow (not `PATCH /me {password}`); `role change` privileged — customer/staff cannot change own role; admin may manage staff roles per authorization.
+- **Logging/audit:** consider `login success/failure`, `logout`, `password change/reset`, `staff approval`, `role change`, `session revocation` without logging passwords/tokens; staff approval auditable (`who/when/what`).
+- **Versioning:** auth behavior is Version 1 contract — breaking changes (credential semantics, login shape, requirements, removing flow) follow `api-versioning-strategy.md`.
+
+### 18.8 Deferred
+
+Laravel/Sanctum, User model/migrations, hashing, password reset/email verification/MFA, login controllers/middleware/policies, Next.js/Flutter screens, token/session storage, staff-admin UI, exact durations, email delivery (Group R) — not implemented here (Explicitly Out of Scope §87).

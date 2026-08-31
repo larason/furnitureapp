@@ -384,6 +384,86 @@
 
 ---
 
+### ADR/AUTH-001 — Three Human Actor Roles (CLOSED)
+
+**Decision:** V1 has exactly three CLOSED roles: `CUSTOMER` (primary, self-registers, owns own account, maximum commerce flexibility), `STAFF` (operational commerce, approved by Admin, no customer-account ownership), `ADMIN` (highest admin, staff approval/management, audited). No `MANAGER`/`DELIVERY_AGENT` etc. in V1; additions require compatibility/business review.
+
+**Reason:** `phase-1.17.md §5-6`, `api-contract.md §17.1` — minimal roles for small business, prevents privilege drift.
+
+**Status:** Accepted | **Affected:** All authZ, `api-contract.md §17.1`, `api-conventions.md §18.1`, `api-resources.md §12.1`
+
+---
+
+### ADR/AUTH-002 — Customer Self-Registration (No Staff Gate)
+
+**Decision:** Customers self-register via public registration without staff approval (`Visitor → Register → Customer account → Authenticate`). Staff/admin accounts are **not** via public registration. Minimal data `name`/`email`/`phone`/`password`; not `address book`.
+
+**Reason:** `phase-1.17.md §12-13`, `api-contract.md §17.2` — preserves public catalog UX and `IDENT-001`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTH-003 — Customer Account Ownership (Non-Negotiable)
+
+**Decision:** A customer’s account belongs to that customer. Staff have **no** ordinary permission to browse as customer, restrict browsing, restrict legitimate ordering, alter profile arbitrarily, access credentials, impersonate, or cancel access for convenience. Admin authority is bounded to explicit auditable security operations (review, disable compromised, force reset, revoke sessions) — not unrestricted impersonation, and no hard-delete when history exists.
+
+**Reason:** `phase-1.17.md §8`, `§48`, `api-contract.md §17.12`, `AGENTS.md §17` ownership — protects customer trust; distinguishes ownership vs operational access.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTH-004 — Staff Scope (Operate Commerce, Not Customer Accounts)
+
+**Decision:** Staff operate commerce workflows (`orders`, `requests`, `enquiries`, `operational notifications`, approved catalog/inventory/order ops) but **do not** control customer account ordering/browsing and never receive `Customer password`/`auth secrets`/`unrestricted impersonation`. Role ≠ permission — backend evaluates `role+resource+action+ownership+state` (Phase 1.18).
+
+**Reason:** `phase-1.17.md §9`, `§49`, `§51`, `api-contract.md §17.1/§17.12`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTH-005 — Staff Approval Is Admin-Only
+
+**Decision:** Only authorized `ADMIN` approves staff (`Staff candidate → Admin review → Approved → Active` or `Admin invite → activate`). Staff cannot self-approve or approve peers; customers cannot approve staff. Lifecycle `PENDING`/`ACTIVE`/`SUSPENDED`/`DISABLED` deferred to authorization phase; no new public role enum.
+
+**Reason:** `phase-1.17.md §18-19`, `api-contract.md §17.6`, `api-conventions.md §18.7` — prevents privilege escalation.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTH-006 — Checkout Requires Authenticated Customer; Anonymous Catalog & Requests Remain Public
+
+**Decision:** `Browse` (`products`, `categories`, `search`, `product details`, `prices`, `availability`) requires **no** auth; `Made-to-order Request` / `General Enquiry` allow `User=none` + contact (linked when authenticated); `Checkout` / `own orders` / `own tracking` / `own requests/enquiries history` require authenticated `CUSTOMER`. Backend enforces boundary (`401 AUTHENTICATION_REQUIRED` / `CHECKOUT_REQUIRES_AUTHENTICATION` on anonymous checkout); SEO pages remain SSR-public without login.
+
+**Reason:** `phase-1.17.md §22-24`, `§65`, `api-contract.md §17.11`, `api-conventions.md §18.2` — preserves `IDENT-001` vs `IDENT-002`/`ORD-002`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTH-007 — Shared Cross-Platform Identity & Session/Token Principles
+
+**Decision:** One shared customer identity across `Next.js` (first-party browser session, httpOnly cookie, not long-lived JS secret) and `Flutter` (API credential/token) against same Laravel backend; same credentials see same orders/profile. `Admin` shares same system. Logout invalidates server-side session/credential (deleting frontend token alone insufficient). Multiple customer sessions (web/phone/tablet) **permitted** (logout on one not all); revocation, shorter admin timeout, MFA, visibility, forced logout, audit logging evaluated later. Passwords only as secure one-way hash, never in responses; change via authenticated secure workflow (not `PATCH /me {password}`); `role` is server-controlled.
+
+**Reason:** `phase-1.17.md §29-36`, `§37`, `§56`, `api-contract.md §17.7/§17.10/§17.14`, `api-conventions.md §18.3-18.4`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTH-008 — Password Recovery & Verification (Secure, Email-Deferred, Anti-Enumeration)
+
+**Decision:** Recovery uses secure time-limited single-use token (`request → token → set new password → invalidate`), no plaintext password or reset secret in response/storage, generic `"Request received."` to avoid enumeration; email delivery deferred to Group R (contract supports recovery, may be operationally unavailable until then — not weakened). `email_verified_at` is server-set via secure token (`email_verified:true` from client not authoritative); whether verification required before checkout deferred. `Phone/SMS OTP` not an auth requirement by default. Login/recovery avoid distinguishing `email exists` vs `not exists` unless justified; brute-force rate limiting identified for later.
+
+**Reason:** `phase-1.17.md §38-42`, `§62-64`, `api-contract.md §17.8-17.9`.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment error codes/SDK/webhook payload validation (Group H, slots into `EXTERNAL_SERVICE_ERROR` family), cursor pagination tokens (Group T if ever). `Phase 1.16` error registry and status matrix now accepted — see `api-contract.md §15.15`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment error codes/SDK/webhook payload validation (Group H, slots into `EXTERNAL_SERVICE_ERROR` family), cursor pagination tokens (Group T if ever). `Phase 1.16` error registry and status matrix now accepted — see `api-contract.md §15.15`. `Phase 1.17` authentication contract now accepted — see `api-contract.md §17`.

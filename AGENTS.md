@@ -519,6 +519,13 @@ Authorization must be enforced on the backend for every protected operation.
 
 Frontend route protection is a UX/security layer, not the final authority.
 
+**Authentication ownership & role (Phase 1.17, mandatory):**
+
+- Customer authentication/authorization **must preserve account ownership** — a customer owns own account; `STAFF`/`ADMIN` do not own customer accounts and must not browse as customer, restrict legitimate browsing/ordering, or access customer credentials (`docs/api/api-contract.md §17.1`, `docs/domain/business-rules.md §17`).
+- **Never allow a client to self-assign `STAFF` or `ADMIN`** — roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN` and server-controlled; `{"role":"ADMIN"}` from client is rejected.
+- **Authentication and authorization are enforced server-side** — shared identity across Website/Flutter/Admin against same Laravel backend; checkout and private resources (`own orders`, etc.) require authenticated `CUSTOMER`, anonymous browsing/requests/enquiries remain public, and anonymous checkout is rejected.
+- **Frontend authentication state is never an authority** for backend permissions — SSR catalog pages remain public without login, and browser/Flutter session handling does not bypass 404 masking (`RESOURCE_NOT_FOUND`) for private ownership.
+
 ---
 
 ## 18. Security Baseline

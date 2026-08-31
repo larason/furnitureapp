@@ -200,7 +200,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 
 | Concern | Codes | HTTP | Notes |
 |---|---|---|---|
-| Missing/invalid auth | `AUTHENTICATION_REQUIRED` / `INVALID_AUTHENTICATION` / `CHECKOUT_REQUIRES_AUTHENTICATION` | 401 | Authenticate |
+| Missing/invalid auth | `AUTHENTICATION_REQUIRED` (canonical; `CHECKOUT_REQUIRES_AUTHENTICATION` is alias — identical 401 semantics) / `INVALID_AUTHENTICATION` | 401 | Authenticate — anonymous checkout uses canonical `AUTHENTICATION_REQUIRED` |
 | Cart invalid / empty | `CART_INVALID` | 422 | Correct cart |
 | Cart not found / holder mismatch (ownership) | `CART_NOT_FOUND` / `RESOURCE_NOT_FOUND` | 404 | **Masked** — holder-scoped cart is private; holder mismatch returns 404, never 403 `FORBIDDEN`, to avoid revealing another holder’s cart exists (per `api-contract.md §15.8`) |
 | Fulfillment cross-field | `INVALID_FULFILLMENT`, `INVALID_DELIVERY_INFORMATION` + `field: fulfillment_type` / `field: delivery_address.city` | 422 |
@@ -233,7 +233,42 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 ### 11.7 Cross-Cutting
 
 - **Validation:** All fields may also return `INVALID_TYPE`/`INVALID_FORMAT`/`INVALID_VALUE`/`MISSING_REQUIRED_FIELD` with `field` dot path. Unknown fields → 422.
-- **Auth:** `AUTHENTICATION_REQUIRED` (401) vs `FORBIDDEN` (403) kept distinct; 401 never masks as 403.
+- **Auth:** `AUTHENTICATION_REQUIRED` (401) vs `FORBIDDEN` (403) kept distinct; 401 never masks as 403. Private-resource 404 masking per `api-contract.md §15.8` (and cart holder 404 per §11.3) prevents enumeration.
 - **Rate limit:** Any operation may return `RATE_LIMITED` 429 with `Retry-After` header; body follows same envelope.
 - **Internal:** Unexpected failure → `500 INTERNAL_SERVER_ERROR` + `meta.request_id` only; full stack stays in server logs, never in `message`/`details`.
 - **Pagination/query** `page/per_page` out of range, `sort`/`filter` allow-list miss → 422 `INVALID_VALUE` with `field` indicating param.
+
+## 12. Authentication & Account Resources — Conceptual (Phase 1.17, No Endpoints)
+
+> No endpoint definitions here; this section documents the **conceptual resources** that the authentication contract will later expose via endpoints. Field-level schemas and routes belong to implementation phases. All role values are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`.
+
+### 12.1 User / Profile (Account)
+
+| Field | Type | Exposure | Auth | Notes |
+|---|---|---|---|---|
+| `id` | string (opaque) | CUSTOMER `own` / Admin `authorized` | authenticated | Opaque identifier, not DB leak |
+| `name` | string | own / authorized admin | authenticated for own; Staff not browse-as-customer | Trimmed, non-empty |
+| `email` | string | own / authorized admin | authenticated | Lowercased/trimmed, unique; not client-set `email_verified` |
+| `phone` | string | own / authorized admin | authenticated | Normalized; important for orders/delivery but not auth verification by default |
+| `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | own (own role) / authorized admin | authenticated | Server-controlled; client self-promotion rejected |
+| `email_verified_at` | ISO8601 `Z` or `null` | own | authenticated | Server-set via secure time-limited mechanism; client `email_verified:true` not authoritative |
+| `created_at` / `updated_at` | ISO8601 `Z` | own | authenticated | Audit |
+
+**Rules:** Customer is primary actor with full ownership of own account; `STAFF`/`ADMIN` do not own customer accounts (see `api-contract.md §17.1`). Profile `PATCH` is allow-listed (`name`, `phone`) — not `role`, `email_verified`, `password`, `account_status` (dedicated workflows). No `password`/`password_hash` ever serialized.
+
+### 12.2 Authentication (Conceptual Resource, Not Serialized Secrets)
+
+- **Concepts:** `registration` (public self-registration → `CUSTOMER`), `login` (shared identity across Website/Flutter/Admin, same Laravel backend), `logout` (invalidates server session/credential), `password reset` (secure single-use time-limited token; email delivery Group R deferred; generic “Request received.” to prevent enumeration), `email verification` (secure token → `email_verified_at`; phone/SMS OTP not required).
+- **Representation principles (when endpoints later defined):** Success uses `data` envelope per `api-contract.md §2/§17.13`; not `auth_success`/`login_result`. Error uses `errors` per §15: `AUTHENTICATION_REQUIRED` vs `FORBIDDEN` distinct, `INVALID_CREDENTIALS`/`SESSION_EXPIRED`. No `password`/`hash`/`reset_token`/`session_token` in any resource payload.
+
+### 12.3 Session / Credential (Conceptual, Not Directly Exposed)
+
+| Concern | Concept | Notes |
+|---|---|---|
+| `Next.js` | first-party browser session (secure httpOnly cookie) | Not long-lived JS secret; suitable for SSR; no auth on public catalog routes |
+| `Flutter` | API credential/token | Same identity as web; cross-platform no duplicate accounts |
+| `Admin` | administrative session | Same backend system, stronger controls (shorter idle, revocation, visibility, MFA/audit later) |
+| Lifecycle | `active → expired → revoked` (conceptual) | Multi-device permitted for Customer; logout on one does not kill others; revocation via logout/password change/admin action |
+| Threats identified | `credential theft`, `stuffing`, `brute-force`, `session theft`, `token leakage`, `enumeration`, `privilege escalation`, `role tampering`, `session fixation`, `password-reset abuse`, `cross-account`, `staff impersonation` | Mitigations deferred to implementation but boundaries fixed here |
+
+Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `api-contract.md §17.15` deferred.

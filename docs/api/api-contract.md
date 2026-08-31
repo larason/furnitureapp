@@ -735,7 +735,7 @@ Do not add arbitrary `retryable:true` field to every error; contract defines cla
 | `CART_ITEM_NOT_FOUND` | Cart item not found | 404 | Refresh cart |
 | `INVALID_CART_ITEM` | Cart item invalid | 422 | Correct item |
 | `CART_ITEM_UNAVAILABLE` | Cart item unavailable | 422 | Refresh |
-| `CHECKOUT_REQUIRES_AUTHENTICATION` | Checkout needs auth | 401 | Authenticate |
+| `CHECKOUT_REQUIRES_AUTHENTICATION` | Checkout needs auth (legacy alias — identical to `AUTHENTICATION_REQUIRED` 401; prefer `AUTHENTICATION_REQUIRED`; CLOSED, registered for compatibility) | 401 | Authenticate |
 | `CHECKOUT_NOT_ALLOWED` | Checkout not allowed (cart invalid etc.) | 422 | Correct cart |
 | `CART_INVALID` | Cart invalid for checkout | 422 | Correct cart |
 | `INSUFFICIENT_STOCK` | Requested stock unavailable | 409/422* | Refresh stock/retry after reconcile |
@@ -790,9 +790,134 @@ CLOSED enum policy extends to error codes/categories (`§85`); `available|unavai
 
 See `api-conventions.md §17` for reusable error-convention summary, `api-resources.md §11` for resource-specific error mappings, `docs/domain/business-rules.md §14` for business-error ↔ rule mapping, and `decisions.md ADR/API-ERR-001..006`.
 
-## 16. Links to Conventions & Resources
+## 17. Authentication Contract — Actors, Sessions, Recovery, Security (Phase 1.17)
 
-- Conventions: `docs/api/api-conventions.md` (envelope, naming, timestamps, money, nulls, booleans, enums, links, serialization, compatibility, **input**, **validation** §16, **errors** §17).
-- Resources: `docs/api/api-resources.md` (per-resource field tables with PUBLIC/CUSTOMER/STAFF exposure and per-resource input + validation + **errors** §10–11).
-- Domain: `docs/domain/business-rules.md` (business meaning, validation authority, **error ↔ rule mapping §14**).
+> **Authority note:** This section plus `api-conventions.md §18` and `api-resources.md §12` is the normative authentication contract for `v1`. `docs/domain/business-rules.md §17` governs business meaning; `decisions.md ADR/AUTH-*` records choices. No Laravel/Sanctum code, migrations, middleware, or frontend screens are implemented in this phase — architecture only. Roles are **CLOSED** (`CUSTOMER`, `STAFF`, `ADMIN`); adding `MANAGER`/`DELIVERY_AGENT` etc. requires compatibility review. Payment auth interactions remain compatible with Group H.
+
+### 17.1 Actors & Role Hierarchy — Customer Owns Account, Staff Operate, Admin Approves
+
+**Three human actors, shared identity system, different authorization scopes:**
+
+- `CUSTOMER` — primary user: `less admin permission + maximum customer-facing flexibility + full ownership of own account` (public self-registration, browse/search/order owned orders). `STAFF` — operational: receive/process orders, catalog/inventory/order ops, requests/enquiries, operational notifications — **not** customer-account owners, no customer privileges by default. `ADMIN` — highest application permission: `staff approval/management`, `administrative configuration`, `high-level operational management`, `authorized customer/account administration` (only under explicit security policy, not casual impersonation).
+
+Hierarchy:
+
+```
+CUSTOMER → limited admin, owns own account
+   ↓
+STAFF → operational permission
+   ↓
+ADMIN → highest admin permission (not unrestricted impersonation / business-invariant bypass)
+```
+
+**Critical distinction:** `ADMIN`/`STAFF` do **not** "own" customer accounts:
+
+```
+Customer → owns own account
+Staff/Admin → may have authorized admin access to specific operational data only
+```
+
+### 17.2 Customer Registration — Public Self-Registration Only
+
+- Customers: **public self-registration without staff approval** (`Visitor → Register → Customer account → Authenticate → Customer experience`). Staff must not gate every customer registration unless later business explicitly requires it. Minimal required data: `name`, `email`, `phone`, `password` (mandatory/optional deferred to detailed registration contract); do not require `address book`/`delivery address` at registration.
+- Staff: **not** via public registration — approved/invited administrative creation (`Staff candidate → Admin review → Approved → Staff account activated` or `Admin creates/invites → Staff activates`). Self-registration as `STAFF` via public form is prohibited.
+- Admin: **administrative creation / bootstrap** — no public `POST {role: ADMIN}` self-promotion (see §17.5). Initial admin via controlled deployment/setup.
+- All role assignment is **server-controlled**; clients cannot submit `role` to promote themselves (body `role: ADMIN` rejected).
+
+### 17.3 Customer Login — Shared Identity Across Website & Flutter
+
+Both `Next.js Website` and `Flutter App` authenticate against **same central Laravel authentication** and share one customer identity/account:
+
+```
+Next.js ──┐
+          ├──→ Laravel Authentication
+Flutter ──┘
+```
+
+- Customer registered on website can log in on Flutter with same credentials and see own orders/profile/requests; no duplicated accounts per client. Shared identity is normative; feature availability per client may differ later, but account is single.
+- Login does not distinguish `email exists` vs `not exists` in error responses (see §17.14) to prevent enumeration.
+
+### 17.4 Staff Authentication — Same System, STAFF Role, Authz After Auth
+
+Staff authenticate through same central system and receive `role: STAFF`. Authentication answers `Is this person really this staff account?`; authorization (Phase 1.18) answers `What may they do?` — concepts not collapsed. Staff approval is **Admin-controlled** (see §17.6). Staff account lifecycle concepts (`PENDING`/`ACTIVE`/`SUSPENDED`/`DISABLED`) are deferred to authorization/account phase — not a new public role enum.
+
+### 17.5 Admin Authentication — ADMIN Role, Server-Controlled, No Self-Promotion
+
+Admins authenticate as `role: ADMIN` via trusted administrative processes only. Client-submitted `{"role":"ADMIN"}` is rejected; role tampering yields `403 FORBIDDEN` (or `422` for invalid role value) per CLOSED enum. Bootstrap remains deployment-controlled; implementation deferred.
+
+### 17.6 Staff Approval — Admin Approves, No Self-Approval
+
+Invariant: **only authorized Admin approves staff**; staff cannot approve themselves, customers cannot approve staff. Onboarding is either `candidate → Admin review → Approved → Active` or `Admin invite → staff activates` — exact workflow deferred to authorization phase. This is non-negotiable (ownership of approval).
+
+### 17.7 Session / Token Principles — Browser vs Flutter, Cross-Platform, Revocation
+
+- `Next.js Website` → **first-party authenticated browser session** (secure, httpOnly cookies, no long-lived secrets exposed to JS unnecessarily) — suitable for SSR. `Flutter App` → **authenticated API credential/token** against same Laravel identity. `Admin` → administrative session/client, same backend identity, role-gated.
+- **Cross-platform identity** is mandatory (`Visitor → Register (web) → Login (Flutter) → same account`). No per-client account duplication.
+- **Logout:** every authenticated client has explicit logout that invalidates the applicable server-side session/credential; deleting frontend token alone is insufficient if server state is revocable.
+- **Multi-device baseline:** multiple legitimate customer sessions (web/phone/tablet/browser) are **permitted**; logout on one device does **not** invalidate all others. Revocation of individual sessions is a later security control.
+- **Staff/Admin sessions:** may have multiple approved sessions but support stronger controls (shorter idle timeout, revocation, visibility) — evaluated later.
+- **Expiration/revocation:** conceptually `active → expired → revoked`; durations chosen later based on customer convenience vs privilege. Revocation events: logout, password change, admin security action, compromised credential — mechanism deferred.
+
+### 17.8 Password Recovery — Secure, Time-Limited, Email-Deferred
+
+- Recovery uses **secure, time-limited, single-use token** (`Request reset → Secure mechanism → Time-limited token → Set new password → Invalidate token`). Do not send passwords, do not store raw reset secrets, do not return reset token in API response.
+- **Email delivery is Group R deferred:** contract supports secure recovery, but if V1 launches before email, recovery may be operationally unavailable — explicitly documented, not weakened with insecure `send reset password in response`. Actual email sending deferred.
+- Enumeration protection: recovery response is generic `"Request received."` rather than `"This email does not exist."`; existence not revealed.
+
+### 17.9 Verification — Email Verified Attribute, Not Client-Authoritative
+
+- `verified email → account attribute/state`; `verification process → secure time-limited mechanism`. Do not accept client-submitted `{"email_verified":true}` as authoritative.
+- Whether verification is required **before checkout or full account use** is deferred; if required, it is enforced server-side, not arbitrary frontend decision. Email sending (and thus full verification) deferred to Group R. **Phone/SMS OTP verification** is **not** an authentication requirement by default; phone remains important for orders/delivery but verification deferred unless business requires.
+
+### 17.10 Role Identity & Exposure — Canonical Roles, Not Permissions
+
+- Canonical V1 roles are **CLOSED** `CUSTOMER`/`STAFF`/`ADMIN` (always `UPPER_SNAKE_CASE`); arbitrary client-supplied roles rejected.
+- Client may legitimately receive its own `role` (e.g., profile `{"role":"CUSTOMER"}`) for UX routing, but **must not** receive `database permissions`, `internal policy names`, `security config`. Role ≠ permission — backend evaluates `role + resource + action + ownership + state` per Phase 1.18; `STAFF` does not imply universal permission.
+
+### 17.11 Cross-Client & Catalog Boundaries — Public Catalog vs Protected Commerce
+
+- **Public (anonymous):** `products`, `categories`, `search`, `product details`, `prices`, `availability`, `public content`, plus `Made-to-order Request` and `General Enquiry` (with `User=none` + contact, or associated with User when authenticated) — no authentication required, and authentication must **not** gate SSR catalog pages (`/products`, `/products/{slug}`, `/categories/{slug}`) for SEO.
+- **Protected:** `cart interaction` per finalized cart policy, `checkout` (authentication **REQUIRED**), `own orders/details/tracking`, `own requests/enquiries` history, `own notifications`, `profile eligible fields`. Backend enforces checkout boundary — anonymous checkout **MUST** be rejected with canonical `AUTHENTICATION_REQUIRED` 401 (`CHECKOUT_REQUIRES_AUTHENTICATION` is a legacy alias with identical 401 status and semantics — prefer `AUTHENTICATION_REQUIRED`; both remain CLOSED in registry `§15.15` for compatibility, one code path for clients).
+- Admin/customer site share same backend identity: `Next.js customer site → Laravel auth ← Admin Next.js ← Flutter`; role/authorization gates after identity.
+
+### 17.12 Authentication Requirements & Boundaries — What Each Actor May Not Do
+
+**Customer ownership invariant:** `authenticated User → resource belongs to user → access allowed`. Staff does **not** become owner by operating.
+
+Staff **must not** (unless later explicitly approved Admin-only security policy): `disable product browsing for a customer`, `block legitimate checkout`, `change customer's role`, `change customer's password`, `lock customer account`, `impersonate customer`, `access Customer password/auth secrets`, `restrict customer browsing/ordering via can_order switch`.
+
+Admin **must not** casually `modify historical purchase facts`, `payment confirmation`, `order history` or `bypass every business invariant`; such corrections require explicit controlled policy and audit. Admin customer-account ops (review, disable compromised account, force credential reset, revoke sessions) are **security/admin operations**, not ordinary staff operations, and must be auditable (`Who approved staff? When? What changed?`).
+
+Account deletion is **not** hard-delete; historical `orders/payments/requests/enquiries/notifications` must remain meaningful — evaluated as privacy/lifecycle operation later.
+
+Anonymous→Authenticated transition is supported (`anonymous visitor → register/login → authenticated commerce`) without losing public browsing context; **anonymous cart MUST move onto the authenticated customer account on login/register — backend merges guest cart onto user cart preserving ownership (per `docs/domain/business-rules.md §3 #4`, backend is authority). Only conflict handling for duplicate carts/items (e.g., same product in both carts, quantity merge strategy, max limits) is deferred to implementation**; session merge beyond cart ownership is also deferred.
+
+### 17.13 Error & Response Integration — Uses Common Contracts
+
+All authentication failures use **common error envelope** (`api-contract.md §15`) — no separate `auth_success`/`login_result`/`token_response` envelope. Examples: `AUTHENTICATION_REQUIRED` (401, not 403 for unauthenticated), `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `FORBIDDEN` (canonical; legacy `NOT_AUTHENTICATED`/`RESOURCE_NOT_OWNED` aliases per §15.15). Authenticated endpoints use common response conventions (`data`/`meta`) — auth payload may be specialized but not a new envelope. Errors must not leak existence details beyond generic patterns (see §17.14).
+
+### 17.14 Security Requirements — Credentials, Enumeration, Rate Limit, Threats
+
+- **Password storage:** never plaintext, only **secure one-way hash** appropriate to Laravel version; never return `password`, `password_hash`, `reset_token`, `session_token`, `refresh_secret`, private keys in API responses. Password change is **authenticated secure workflow** (not `PATCH /me {password}`), and is security-sensitive.
+- **Enumeration protection:** login and password-recovery responses avoid distinguishing `email exists` vs `not exists` unless explicitly justified; recovery is generic `"Request received."`.
+- **Brute-force/ abuse:** rate limiting, failed-attempt protection, abuse detection on auth endpoints is **identified as later backend requirement**, not implemented here.
+- **Data minimization:** registration stores only genuine need (`name`, `email`, `phone`, `password`); not `full address`, `identity document`, unnecessary demographic.
+- **Event logging / audit:** later implementation considers logging `login success/failure`, `logout`, `password change/reset`, `staff approval`, `role change`, `session revocation` without logging passwords/tokens; staff approval remains auditable (`who/when/what`).
+- **Threat model to address later (identified, not solved):** `credential theft`, `credential stuffing`, `brute-force login`, `session theft`, `token leakage`, `account enumeration`, `privilege escalation`, `role tampering`, `session fixation`, `password-reset abuse`, `cross-account access`, `staff/admin impersonation`.
+- **Priorities:** Customer → simple registration/login + ownership + cross-platform access, low friction but not at security cost; Staff → anti-sharing/role escalation; Admin → MFA, session visibility, forced logout, shorter lifetimes, audit logging (evaluated later).
+
+### 17.15 Versioning & Deferred Implementation
+
+- Authentication behavior is **Version 1 API contract**; breaking changes (`changing credential semantics`, `login response shape`, `auth requirements`, `removing flow`) follow `api-versioning-strategy.md`.
+- **Deferred (not implemented in this phase):** Laravel/Sanctum, User model/migrations, hashing, password reset/email verification/MFA, login controllers/middleware/policies, Next.js/Flutter login screens, token/session storage, staff-admin UI, exact session durations, email delivery (Group R).
+
+### 17.16 Cross-References
+
+See `api-conventions.md §18` for reusable authentication conventions, `api-resources.md §12` for conceptual `User`/`Authentication`/`Session` resources (no endpoints), `docs/domain/business-rules.md §17` for business invariants, `decisions.md ADR/AUTH-001..007`.
+
+## 18. Links to Conventions & Resources
+
+- Conventions: `docs/api/api-conventions.md` (envelope, naming, timestamps, money, nulls, booleans, enums, links, serialization, compatibility, **input**, **validation** §16, **errors** §17, **authentication** §18).
+- Resources: `docs/api/api-resources.md` (per-resource field tables with PUBLIC/CUSTOMER/STAFF exposure and per-resource input + validation + **errors** §10–11, **authentication** §12).
+- Domain: `docs/domain/business-rules.md` (business meaning, validation authority, **error ↔ rule mapping §14**, **authentication §17**).
 - OpenAPI: `docs/api/openapi.yaml` — updated only when OpenAPI phase is reached (this phase keeps rules precise enough for later OpenAPI).

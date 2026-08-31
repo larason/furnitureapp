@@ -193,6 +193,27 @@ Business failures must correspond to real rules above — do not invent behavior
 - **Security:** Raw exceptions/SQL/secrets never exposed; internal diagnostics stay in server logs; `request_id` connects client error to logs.
 - **Compatibility:** Removing/renaming codes or changing field-path format is breaking; improving messages is not. All error codes are versioned contract elements.
 
+## 17. Authentication & Account Business Rules (Phase 1.17)
+
+> Customers own their accounts and experience; Staff operate commerce but do not control customer accounts; Admin has highest admin authority and approves staff. All auth failures use common error contract (`api-contract.md §15`).
+
+| # | Business rule | Ref |
+|---|---|---|
+| 1 | **Customers can self-register without staff approval** via public registration (`Visitor → Register → Customer account → Authenticate`). Staff/admin accounts are not via public registration. | AUTH-001, IDENT-001 |
+| 2 | **Public catalog browsing is always anonymous-allowed** (`products`, `categories`, `search`, `product details`, `prices`, `availability`) and SSR pages (`/products`, `/products/{slug}`, `/categories/{slug}`) must render without login. | IDENT-003, SEO-001 |
+| 3 | **Checkout requires authentication** — anonymous checkout is rejected (`AUTHENTICATION_REQUIRED`/`CHECKOUT_REQUIRES_AUTHENTICATION` 401); backend enforces. | IDENT-002, ORD-002, CART-CHECKOUT-001 |
+| 4 | **Anonymous requests/enquiries are allowed** (`Made-to-order Request`, `General Enquiry` with `User=none` + required contact); when authenticated they link to own history (`My Requests`). | REQ-001, ENQ-001 |
+| 5 | **Staff are approved by Admin only** (`Staff candidate → Admin review → Approved → Active` or `Admin invite → activate`); self-registration as `STAFF` via public form is prohibited; staff cannot approve themselves and customers cannot approve staff. | AUTHZ-STAFF-001, STAFF-ONBOARD-001 |
+| 6 | **Staff cannot restrict ordinary customer browsing or ordering** — no `disable product browsing`, `block legitimate checkout`, `change role/password`, `lock account`, `impersonate`, `can_order` switch without explicit Admin-only security policy. | STAFF-RESTRICT-001, IDENT-006 |
+| 7 | **Customer accounts belong to customers** — staff must not browse as customer, alter profile arbitrarily, access credentials, or impersonate; admin customer-account ops (review, disable compromised, force reset, revoke sessions) are explicit auditable security operations, not casual management. Account hard-delete not assumed (historical orders/payments/requests must remain). | IDENT-006, OWN-001 |
+| 8 | **Shared cross-platform identity** — a customer registered on website is same account on Flutter app (one identity, no duplicates). `Next.js` uses first-party browser session (httpOnly cookie), `Flutter` uses API credential, same Laravel backend. | IDENT-007, X-PLATFORM-001 |
+| 9 | **Role assignment is server-controlled** — client self-promotion (`{"role":"ADMIN"}`) rejected; CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN`; adding `MANAGER` etc. requires review. | AUTHZ-ROLE-001 |
+| 10 | **Passwords are never plaintext** — stored only as secure one-way hash; never returned in API responses (`password`/`hash`/`reset_token`/`session_token` never serialized). Password change via authenticated secure workflow, not `PATCH /me {password}`; recovery via secure time-limited single-use token (email delivery Group R deferred; generic “Request received.” without enumeration). | SEC-PWD-001, SEC-CRED-001 |
+| 11 | **Verification & enumeration protection** — `email_verified_at` is server-set via secure token (`email_verified:true` from client not authoritative); login/recovery responses avoid distinguishing `email exists` vs `not exists` unless justified; brute-force rate limiting and abuse detection identified for later. | SEC-ENUM-001, SEC-RATE-001 |
+| 12 | **Sessions are revocable and multi-device permitted for Customer** — logout invalidates server session/credential; multiple sessions (web/phone/tablet) permitted, logout on one does not kill others; durations (`active→expired→revoked`) chosen later. | SESSION-001 |
+
+- Staff approval and role changes remain **auditable** (`who approved? when? what changed?`); security events (`login success/failure`, `logout`, `password change/reset`, `staff approval`, `role change`, `session revocation`) are identified for later logging without logging passwords/tokens.
+
 ## Quick Non-Negotiables (for staff)
 
 - Customers **can** browse, search, request, and enquire without an account.
