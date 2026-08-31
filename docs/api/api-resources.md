@@ -163,7 +163,7 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 ### 10.9 Common Input & Validation Rules Applied
 
 - `snake_case` (`product_id`, `delivery_address`), strict JSON types (`quantity:2` not `"2"`, booleans not `1`), `null` only where explicitly nullable, unknown fields **rejected** (validation error, not silently ignored) to catch typos/version drift, mass-assignment protection via allow-list (`validated input → DTO → domain`), idempotency-sensitive (`checkout`, `payment initiation`) noted for later key, size limits enforced.
-- **Validation extensions (Phase 1.15):** Layered hierarchy `Transport→Schema→Auth→Authz→Domain→Concurrency→External→Persistence`; CLOSED enums (unknown → error); cross-field `fulfillment_type↔delivery_address`; conditional `DELIVERY` required; state-dependent `PROCESSING→SHIPPED` vs `COMPLETED→SHIPPED invalid`; relationship `variant belongs to product && active && purchasable`; server-controlled `id/created_at/order_reference/status/payment_status/inventory/totals/history` REJECT/IGNORE; pricing `SERVER-GENERATE`; inventory concurrency-safe; cancellation 20-min backend time; transitions via actions not generic writes; error categories `INVALID_TYPE/INVALID_VALUE/PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/INVALID_ORDER_TRANSITION/NOT_AUTHENTICATED/FORBIDDEN` with field-level paths and multiple errors per request (schema all, domain early-stop when unsafe); messages non-leaking, codes stable within `v1` (rename `INSUFFICIENT_STOCK` breaking); logging without secrets; failure atomicity; audit for critical transitions.
+- **Validation extensions (Phase 1.15):** Layered hierarchy `Transport→Schema→Auth→Authz→Domain→Concurrency→External→Persistence`; CLOSED enums (unknown → error); cross-field `fulfillment_type↔delivery_address`; conditional `DELIVERY` required; state-dependent `PROCESSING→SHIPPED` vs `COMPLETED→SHIPPED invalid`; relationship `variant belongs to product && active && purchasable`; server-controlled `id/created_at/order_reference/status/payment_status/inventory/totals/history` REJECT/IGNORE; pricing `SERVER-GENERATE`; inventory concurrency-safe; cancellation 20-min backend time; transitions via actions not generic writes; error categories `INVALID_TYPE/INVALID_VALUE/PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/INVALID_ORDER_TRANSITION/AUTHENTICATION_REQUIRED/FORBIDDEN` (canonical; `NOT_AUTHENTICATED`/`RESOURCE_NOT_OWNED` are legacy aliases per `api-contract.md §15.15`) with field-level paths and multiple errors per request (schema all, domain early-stop when unsafe); messages non-leaking, codes stable within `v1` (rename `INSUFFICIENT_STOCK` breaking); logging without secrets; failure atomicity; audit for critical transitions.
 
 ### 10.10 Query & Collection Validation (Phase 1.15)
 
@@ -172,3 +172,68 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 ### 10.11 Validation Matrix Reference
 
 See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Checkout/Cancel/Request/Enquiry/Profile/Ship`). Each operation respects same layered validation. Frontend validation advisory; backend authoritative. Payment provider-specific deferred to Group H; no FormRequest/DTO/migration/OpenAPI schema implemented here.
+
+## 11. Error Considerations per Resource (Phase 1.16)
+
+> Each row lists the **subset of `api-contract.md §15.15` codes the resource may return** — not an exhaustive future-proof list. Endpoint-specific HTTP/code mapping is documented per endpoint later; do not invent undocumented `CHECKOUT_FAIL` codes locally (`api-contract.md §86`). All errors follow `{"errors":[{"code","message","field","details"}],"meta":{"request_id":...}}` with `meta.request_id` even for 500. Payment-specific extensions remain Group H.
+
+### 11.1 Product & Category (PUBLIC, Staff/Admin mutations)
+
+| Concern | Codes | HTTP | Notes |
+|---|---|---|---|
+| Unknown product/category, slug not addressable | `PRODUCT_NOT_FOUND`, `RESOURCE_NOT_FOUND` | 404 | Not `data:null` |
+| `MADE_TO_ORDER` added to cart / checkout | `PRODUCT_NOT_PURCHASABLE` | 422 | Distinct from `PRODUCT_UNAVAILABLE`; display price exists but prohibited (§45) |
+| Variant mismatch / inactive / not purchasable | `INVALID_PRODUCT_VARIANT` | 422 | Includes `belongs_to_product`/`active` checks; `field: variant_id` |
+| Schema on create/update: name/slug/type/price | `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `INVALID_FORMAT`, `INVALID_TYPE` | 422 | Multiple determinable errors returned together; dot paths; unknown fields → 422 |
+
+### 11.2 Cart (Holder-scoped)
+
+| Concern | Codes | HTTP |
+|---|---|---|
+| Cart not found / holder mismatch | `CART_NOT_FOUND` | 404 |
+| Item not found in cart | `CART_ITEM_NOT_FOUND` | 404 |
+| Invalid `product_id`/`variant_id`/`quantity` | `INVALID_VALUE`, `INVALID_TYPE`, `MISSING_REQUIRED_FIELD`, `INVALID_PRODUCT_VARIANT` | 422 |
+| Item unavailable / type not purchasable | `CART_ITEM_UNAVAILABLE`, `PRODUCT_NOT_PURCHASABLE` | 422 |
+| Empty `items:[]` where ≥1 required, duplicate semantics | `MISSING_REQUIRED_FIELD` / `INVALID_VALUE` + `field: items` | 422 |
+
+### 11.3 Checkout (Authenticated)
+
+| Concern | Codes | HTTP | Notes |
+|---|---|---|---|
+| Missing/invalid auth | `AUTHENTICATION_REQUIRED` / `INVALID_AUTHENTICATION` / `CHECKOUT_REQUIRES_AUTHENTICATION` | 401 | Authenticate |
+| Cart invalid / empty | `CART_INVALID` | 422 | Correct cart |
+| Cart not found / holder mismatch (ownership) | `CART_NOT_FOUND` / `RESOURCE_NOT_FOUND` | 404 | **Masked** — holder-scoped cart is private; holder mismatch returns 404, never 403 `FORBIDDEN`, to avoid revealing another holder’s cart exists (per `api-contract.md §15.8`) |
+| Fulfillment cross-field | `INVALID_FULFILLMENT`, `INVALID_DELIVERY_INFORMATION` + `field: fulfillment_type` / `field: delivery_address.city` | 422 |
+| Stock race / business invalid | `INSUFFICIENT_STOCK` (409/422*), `PRODUCT_NOT_PURCHASABLE`, `INVALID_PRODUCT_VARIANT` | 409 vs 422 per §15.10; `details: {available_quantity}` safe |
+| Idempotency duplicate (same `Idempotency-Key`) | — (no `errors`; replays original success response) | 201 (replay) | Deterministic replay of original `201`/`200` with same `data` and `order_reference`; no new order, no phantom reservation; `DUPLICATE_OPERATION` 409 is **not** used for Checkout idempotency replay (see `api-contract.md §15.10` — Checkout chooses replay over 409) |
+
+### 11.4 Order (Customer `me/orders`, Staff/Admin)
+
+| Concern | Codes | HTTP | Notes |
+|---|---|---|---|
+| Not found / not owned (customer probing) | `ORDER_NOT_FOUND` / `RESOURCE_NOT_FOUND` | 404 | **Masked** — not `403` to avoid enumeration (`api-contract.md §15.8`) |
+| Cancel outside window / state ineligible | `ORDER_NOT_CANCELLABLE` | 422/409* | `details` may include reason; not `order.created_at` leak beyond safe state |
+| Invalid transition `PATCH {status}` attempt | `INVALID_ORDER_TRANSITION` | 409/422* | Only `POST /orders/{order}/cancel|ship|deliver` allowed; generic `status` write rejected |
+| State conflict / concurrent update | `ORDER_STATE_CONFLICT`, `CONFLICT`, `RESOURCE_VERSION_CONFLICT` | 409 | Client must refresh/reconcile then retry |
+| Query `?order_status`, `?fulfillment_type` invalid | `INVALID_VALUE` | 422 | CLOSED enums; `?status` generic rejected |
+
+### 11.5 Furniture Request & Enquiry (Anonymous or Auth)
+
+| Concern | Codes | HTTP |
+|---|---|---|
+| Missing contact / message / subject | `MISSING_REQUIRED_FIELD`, `INVALID_VALUE` | 422 | `field: contact.email` etc.; multiple errors together |
+| Anonymous `user=null` missing — **not** error | — | — | Anonymous valid (REQ-001) |
+| Invalid attachment (size/type/signature) | `INVALID_ATTACHMENT`, `ATTACHMENT_TOO_LARGE`, `UNSUPPORTED_ATTACHMENT_TYPE` | 422 / 413 | Safe message, no path leak |
+| Not found (lookup) | `REQUEST_NOT_FOUND`, `ENQUIRY_NOT_FOUND` | 404 | Own-record visibility only |
+
+### 11.6 Payment (Generic)
+
+- Generic envelope only: `EXTERNAL_SERVICE_ERROR` family + `INTERNAL_SERVER_ERROR` on unexpected failure. No provider `error string` exposed; Group H will define `payment-specific` codes without altering `errors`/`meta.request_id` shape. Webhook idempotency duplicates → prior result, not second order/payment.
+
+### 11.7 Cross-Cutting
+
+- **Validation:** All fields may also return `INVALID_TYPE`/`INVALID_FORMAT`/`INVALID_VALUE`/`MISSING_REQUIRED_FIELD` with `field` dot path. Unknown fields → 422.
+- **Auth:** `AUTHENTICATION_REQUIRED` (401) vs `FORBIDDEN` (403) kept distinct; 401 never masks as 403.
+- **Rate limit:** Any operation may return `RATE_LIMITED` 429 with `Retry-After` header; body follows same envelope.
+- **Internal:** Unexpected failure → `500 INTERNAL_SERVER_ERROR` + `meta.request_id` only; full stack stays in server logs, never in `message`/`details`.
+- **Pagination/query** `page/per_page` out of range, `sort`/`filter` allow-list miss → 422 `INVALID_VALUE` with `field` indicating param.

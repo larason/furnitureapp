@@ -276,9 +276,9 @@
 
 ### ADR/API-VAL-008 — Validation Error Categories, Codes vs Messages, Stability
 
-**Decision:** Categories: Structural `INVALID_TYPE/INVALID_FORMAT/INVALID_VALUE/MISSING_REQUIRED_FIELD`; Business `PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/ORDER_NOT_CANCELLABLE/INVALID_ORDER_TRANSITION`; Authorization `NOT_AUTHENTICATED/FORBIDDEN/RESOURCE_NOT_OWNED`; External later `PAYMENT_PROVIDER_ERROR`. Layer detecting error owns it. Machine-stable `code` separate from human `message`; frontend acts on code (`INSUFFICIENT_STOCK`) and may localize display. Messages must not leak `SQL/schema/stack/paths/secrets`. Renaming `INSUFFICIENT_STOCK` within `v1` is breaking; codes version-sensitive. Future contract supports field-level `field: delivery_address.city` and multiple determinable schema errors per request. Exact JSON deferred to Phase 1.16.
+**Decision:** Categories: Structural `INVALID_TYPE/INVALID_FORMAT/INVALID_VALUE/MISSING_REQUIRED_FIELD`; Business `PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/ORDER_NOT_CANCELLABLE/INVALID_ORDER_TRANSITION`; Authorization `AUTHENTICATION_REQUIRED` (canonical; `NOT_AUTHENTICATED` legacy alias)/`FORBIDDEN` (canonical; `RESOURCE_NOT_OWNED` legacy alias per `api-contract.md §15.8`) ; External later `PAYMENT_PROVIDER_ERROR`. Layer detecting error owns it. Machine-stable `code` separate from human `message`; frontend acts on code (`INSUFFICIENT_STOCK`) and may localize display. Messages must not leak `SQL/schema/stack/paths/secrets`. Renaming `INSUFFICIENT_STOCK` within `v1` is breaking; codes version-sensitive. Future contract supports field-level `field: delivery_address.city` and multiple determinable schema errors per request. Exact JSON deferred to Phase 1.16.
 
-**Reason:** `phase-1.15.md §32-35, §47-49`.
+**Reason:** `phase-1.15.md §32-35, §47-49`; aligned with `api-contract.md §15.15` CLOSED registry (aliases `NOT_AUTHENTICATED`/`RESOURCE_NOT_OWNED` remain registered for compatibility, canonical codes are `AUTHENTICATION_REQUIRED`/`FORBIDDEN`/`RESOURCE_NOT_FOUND`).
 
 **Status:** Accepted
 
@@ -314,6 +314,76 @@
 
 ---
 
-### Pending: Error Contract, OpenAPI Operations, Payment Provider
+### ADR/API-ERR-001 — All Errors Use Single `errors` Array
 
-**Deferred:** Full error codes/statuses including field-level JSON and HTTP-status mapping (Phase 1.16), complete `openapi.yaml` operations, provider-specific payment fields/SDK/webhook payload validation (Group H), cursor pagination tokens (Group T if ever).
+**Decision:** Every API failure returns `{"errors":[{"code","message","field","details"}],"meta":{"request_id":...}}` — `errors` is always an array, even for single error. Never `error`, `message`, `success:false` envelope. Allows multiple field errors + future structured details without envelope drift. Successful responses use `data`, never both `data` and `errors`.
+
+**Reason:** `phase-1.16.md §9-11` — single predictable contract for Next.js/Flutter/Admin; easy branching `HTTP success → data` vs `HTTP error → errors`; generic across validation/business/auth conflicts.
+
+**Status:** Accepted | **Affected:** All `v1` endpoints
+
+---
+
+### ADR/API-ERR-002 — Every Public Error Has Stable Machine Code (`UPPER_SNAKE_CASE`, CLOSED)
+
+**Decision:** Each error has documented `code` in `UPPER_SNAKE_CASE` (`INSUFFICIENT_STOCK`, `ORDER_NOT_CANCELLABLE`). Codes are CLOSED, not database/Laravel exception names, no per-field explosion (`NAME_MISSING`) except where branch-required. Frontend branches on `code` (mapped to localized UI), not English `message`. Messages are human, improvable, action-oriented, never `SQLSTATE…` or stack traces.
+
+**Reason:** `phase-1.16.md §12-16, §54-58` — machine contract prevents brittle parsing; localization via frontend; closed registry prevents drift.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ERR-003 — HTTP Status and API Error Code Are Separate
+
+**Decision:** Response has both `HTTP status` (transport class: `400` malformed, `401` missing auth, `403` not authorized, `404` not addressable, `409` state/concurrency conflict, `422` well-formed business/validation invalid, `413` too large, `415` unsupported type, `405` unsupported method, `429` Rate Limited + `Retry-After`, `502/503/504` upstream, `500` unexpected) and machine `code`. Changing status is a contract change. Validation default is `422` unless conflict semantics make `409` more precise (inventory race, transition conflict documented per endpoint).
+
+**Reason:** `phase-1.16.md §17-19, §81` — standard HTTP semantics + machine business meaning; `INSUFFICIENT_STOCK` may map `409/422*` per resource, resolved per endpoint.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ERR-004 — Production Errors Never Expose Implementation Details (Security)
+
+**Decision:** Production responses never expose `database SQL`, stack traces, `password`/`auth`/`payment secrets`, `internal file paths`, server IPs, framework exception names (`ModelNotFoundException`), `other_customer_id`, `internal_reservation_id`, provider secrets. Client sees safe `code`/`message`/`field`/`details` + `meta.request_id`; server logs retain full exception/stack/deployment context. Unauthorized resource access (another customer's order) does not reveal existence via error. Security tests verify this.
+
+**Reason:** `phase-1.16.md §15, §28, §61, §88-89` — prevents data leakage and supports support workflow (`request_id` → logs).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ERR-005 — Field-Level Validation Uses Canonical Dot-Path, Multiple Errors
+
+**Decision:** Field errors carry `field` as canonical dot notation (`delivery_address.city`, `delivery_address.phone`) and arrays as `items.0.quantity`; one style across API. For ordinary schema validation, return **all safely determinable** field errors together, not first-only. Unknown-field and closed-enum failures fit same `{"code":"INVALID_VALUE","field":"fulfillment_type"}` shape. Business `details` (e.g., `available_quantity`) are structured safe object, never second message.
+
+**Reason:** `phase-1.16.md §25-27, §60` — precise UX (field highlighting), multi-error form improvement, safe details.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ERR-006 — Version 1 Error Codes Are Stable, Version-Sensitive, Non-Explosive
+
+**Decision:** Within `v1`, removing/renaming error code, changing semantics/status, changing field-path format, removing documented `details` are **breaking**; improving `message`, adding optional safe `details`, adding reviewed new code for new operation are **potentially non-breaking**. Error codes/categories are CLOSED like validation enums (`§85`); no `commerce.inventory.insufficient_stock` namespaces in V1; avoid explosion (`INSUFFICIENT_STOCK_FOR_SOFA` forbidden) and ambiguous `ERROR`/`FAILED` generic. Compatibility aligns with `api-versioning-strategy.md`.
+
+**Reason:** `phase-1.16.md §55, §84-86, §79-80` — protects Next.js/Flutter release trains; registry in `api-contract.md §15.15` stays controlled.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ERR-007 — Customer-Owned Resources Use 404 Masking; Request ID + Retry Semantics
+
+**Decision:** Private customer-owned lookup that fails ownership returns **`404 RESOURCE_NOT_FOUND` / `ORDER_NOT_FOUND`** (not `403`) to avoid leaking `exists` via enumeration (`GET /orders/1001…1003` non-distinguishing). Every error carries envelope `meta.request_id` (per-request correlation ID, not user/order/payment ID) for support triage. Retry semantics: `RETRYABLE` (502 transient) vs `NOT_RETRYABLE` (`INVALID_VALUE`, `FORBIDDEN`) vs `REQUIRES RECONCILIATION` (`409 CONFLICT`, `INSUFFICIENT_STOCK`) are documented conceptually, not per-error field; `429` uses standard `Retry-After` header. Internal `INTERNAL_SERVER_ERROR` reflects distinct `500` with `request_id` only.
+
+**Reason:** `phase-1.16.md §23-24, §30-32, §33-35, §88` — enumeration protection + operational support + deterministic idempotency semantics.
+
+**Status:** Accepted
+
+---
+
+### Pending: OpenAPI Operations, Payment Provider
+
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment error codes/SDK/webhook payload validation (Group H, slots into `EXTERNAL_SERVICE_ERROR` family), cursor pagination tokens (Group T if ever). `Phase 1.16` error registry and status matrix now accepted — see `api-contract.md §15.15`.

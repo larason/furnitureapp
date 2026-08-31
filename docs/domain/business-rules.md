@@ -155,13 +155,43 @@ Validation: `contact information, subject where required, message, attachments`.
 
 ---
 
-## Validation Architecture Reference (Phase 1.15 Summary)
+## 14. Error ↔ Business Rule Mapping (Phase 1.16)
+
+Business failures must correspond to real rules above — do not invent behavior through codes.
+
+| API error `code` | Business meaning | Invariant / Rule |
+|---|---|---|
+| `PRODUCT_NOT_PURCHASABLE` | Attempted to cart/checkout a `MADE_TO_ORDER` product (request-only) despite display price | CAT-003 |
+| `PRODUCT_UNAVAILABLE` / `PRODUCT_NOT_FOUND` / `INVALID_PRODUCT_VARIANT` | Referenced product/variant is inactive (`is_active=false`), does not exist, or variant not belonging/active/purchasable | CAT-004, INV-001 |
+| `INSUFFICIENT_STOCK` | Concurrent checkout depleted stock; requested qty unavailable | INV-002, INV-003, CART-004, CHECKOUT-005 |
+| `CART_INVALID` / `CART_ITEM_UNAVAILABLE` / `CHECKOUT_NOT_ALLOWED` | Cart contains non-purchasable/now-unavailable items or empty cart on checkout | CART-001, CART-004, CHECKOUT-005 |
+| `INVALID_FULFILLMENT` / `INVALID_DELIVERY_INFORMATION` | `DELIVERY` without valid address/contact, `PICKUP` fee misuse | FUL-003, ADDR-004, PRICE-006 |
+| `ORDER_NOT_CANCELLABLE` | Customer cancellation outside 20-min window or ineligible state | CANCEL-001/002, ORD-007 |
+| `INVALID_ORDER_TRANSITION` / `ORDER_STATE_CONFLICT` | Staff/customer attempted illegal state jump or concurrent conflict | ORD-007, FUL-005/006 |
+| `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE` | File attached to request/enquiry fails safe type/size/signature | ATTACH-001/003, REQ-003 |
+| `RESOURCE_NOT_FOUND` (generic) / `ORDER_NOT_FOUND` / `REQUEST_NOT_FOUND` / `ENQUIRY_NOT_FOUND` | Resource not addressable / not owned (404 masking prevents enumeration, see §15.8) | IDENT-006, ORD-002 |
+| `AUTHENTICATION_REQUIRED` / `FORBIDDEN` | Unauthenticated checkout / not owner of private resource | IDENT-002, IDENT-006, AUTHZ-002 |
+| `EXTERNAL_SERVICE_ERROR` | Temporary provider failure — never raw provider text (generic `INTERNAL_SERVER_ERROR` is an unexpected server failure, not a business rule; handled in API error contract `api-contract.md §15.15`) | PAY-002 |
+
+- **Not elaborate:** Do not create `INSUFFICIENT_STOCK_FOR_SOFA` explosion — one `INSUFFICIENT_STOCK` serves all products; `details` carries safe `available_quantity`/`requested_quantity` only.
+- **Security stays:** Error messages never leak `other_customer_id`, `internal_reservation_id`, `provider_secret` — map to codes above.
+- **Payment specifics deferred:** Provider reconciliation error codes belong to Group H; they will slot into `EXTERNAL_SERVICE_ERROR` family without breaking this table.
+
+## 15. Validation Architecture Reference (Phase 1.15 Summary)
 
 - **Layers:** Transport → Schema/input → Authentication → Authorization → Domain/business → Cross-field → State-dependent → Concurrency/transaction → External (payment provider deferred to Group H). See `docs/api/api-contract.md §14` for normative hierarchy and `api-conventions.md §16` for reusable rules.
 - **Enforcement:** `docs/api/api-contract.md §14` and `api-conventions.md §16` are authoritative for validation mechanics; this file is authoritative for business meaning.
 - **Centralization:** A business rule has one authoritative implementation boundary (e.g., 20-minute cancellation in domain/application layer, not reimplemented independently in Next.js/Flutter/controller/model).
 - **Compatibility:** Validation changes that reject previously accepted input or make a field suddenly required are breaking within `v1` (versioning policy); adding new closed enum values is a formal compatibility decision.
 - **Payment:** Generic validation architecture applies to Payment; provider-specific fields/SDK/webhook payload validation remain Group H.
+
+## 16. Error Architecture Reference (Phase 1.16 Summary)
+
+- **Envelope:** `{"errors":[{"code","message","field","details"}],"meta":{"request_id":"..."}}` — one structure for every failure, `errors` array even for single. See `api-contract.md §15.1-15.2` and `api-conventions.md §17.1`.
+- **Code vs message:** `code` (`INSUFFICIENT_STOCK`) is machine-stable, CLOSED, version-sensitive; `message` is human, localizable, improvable. Frontend branches on `code` + `HTTP status`, never parses English.
+- **HTTP mapping:** `400 INVALID_JSON`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 RESOURCE_NOT_FOUND` (masked for owned resources), `422 validation/business`, `409 conflict concurrency`, `413 REQUEST_TOO_LARGE`, `429 RATE_LIMITED` + `Retry-After`, `500 INTERNAL_SERVER_ERROR`. See `api-contract.md §15.4`.
+- **Security:** Raw exceptions/SQL/secrets never exposed; internal diagnostics stay in server logs; `request_id` connects client error to logs.
+- **Compatibility:** Removing/renaming codes or changing field-path format is breaking; improving messages is not. All error codes are versioned contract elements.
 
 ## Quick Non-Negotiables (for staff)
 

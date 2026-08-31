@@ -458,11 +458,11 @@ Authentication determines **who**; authorization determines **is actor allowed o
 
 ### 14.12 Validation Error Categories, Codes & Stability
 
-**Categories:**
+**Categories (canonical CLOSED codes per §15.15):**
 
 - Structural/Input: `INVALID_TYPE`, `INVALID_FORMAT`, `INVALID_VALUE`, `MISSING_REQUIRED_FIELD`
 - Business: `PRODUCT_NOT_PURCHASABLE`, `INSUFFICIENT_STOCK`, `ORDER_NOT_CANCELLABLE`, `INVALID_ORDER_TRANSITION`
-- Authorization: `NOT_AUTHENTICATED`, `FORBIDDEN`, `RESOURCE_NOT_OWNED`
+- Authorization: `FORBIDDEN` (canonical; `RESOURCE_NOT_OWNED` is legacy alias for `FORBIDDEN`/`RESOURCE_NOT_FOUND` per §15.8 masking) and `AUTHENTICATION_REQUIRED` (canonical; `NOT_AUTHENTICATED` is legacy alias)
 - External (later): `PAYMENT_PROVIDER_ERROR` (Group H; not normal input error)
 
 **Ownership:** layer detecting error has clear responsibility (`quantity is string → schema`; `not logged in → auth`; `doesn't own order → authorization`; `outside 20-min → domain`; `provider rejected → external`). Do not report all as generic `INVALID_REQUEST` unless contract deliberately groups them.
@@ -516,9 +516,283 @@ A business rule has **one authoritative implementation boundary** (e.g., `20-min
 
 ---
 
-## 15. Links to Conventions & Resources
+## 15. Error Contract — Machine-Readable, Secure, Versioned (Phase 1.16)
 
-- Conventions: `docs/api/api-conventions.md` (envelope, naming, timestamps, money, nulls, booleans, enums, links, serialization, compatibility, **input**, **validation** §16).
-- Resources: `docs/api/api-resources.md` (per-resource field tables with PUBLIC/CUSTOMER/STAFF exposure and per-resource input + validation §10–11).
-- Domain: `docs/domain/business-rules.md` (business meaning, validation authority).
+> **Authority note:** This section plus `api-conventions.md §17` is the normative error contract for `v1`. Errors are part of the public API contract — clients branch on `code` + `HTTP status` + `field`, never on English `message`. Payment provider-specific error codes/workflows remain **Group H**; generic external-service principles are defined here. No Laravel handler, exception class, middleware or OpenAPI error schema is implemented in this phase — architecture only. All `v1` error codes/categories remain **CLOSED** per §15.3 (same as validation enums).
+
+### 15.1 Standard Error Envelope (One Structure, Always Array)
+
+All API errors use one top-level member:
+
+```json
+{
+  "errors": [
+    {
+      "code": "PRODUCT_NOT_PURCHASABLE",
+      "message": "This product cannot be purchased."
+    }
+  ]
+}
+```
+
+- Top-level is always `errors` (**array**, even for single error) — never `error`, `message`, `errors.message`, `failure`, `success:false` envelope. This supports multiple validation/field errors and future structured errors without envelope drift (`§9-10`).
+- Successful responses use `data` (`§2`); error responses use `errors` and **never** include `data` sibling (no `{"data":null,"error":"..."}` or `{"success":false,"data":null}`); easy client branching `HTTP success → data` vs `HTTP error → errors` (`§63`).
+- Do not return multiple unrelated business errors merely to pad the array; one precise error is preferred when only one domain failure occurred.
+- Business-result metadata belongs in `meta` (e.g., `meta.request_id`), never business error objects inside `meta` (`§62`).
+
+### 15.2 Standard Error Object — Fields
+
+Conceptual fields per error object (`§11`):
+
+- `code` **(required)** — stable machine code `UPPER_SNAKE_CASE` (e.g., `INVALID_VALUE`, `INSUFFICIENT_STOCK`). Authoritative for client branching.
+- `message` **(required)** — concise human-readable, safe, action-oriented; not authoritative for machines; may evolve. Never `SQL…`, stack trace, or framework exception text.
+- `field` **(optional, string)** — for field-level validation failures; canonical dot-notation path (`fulfillment_type`, `delivery_address.city`, `items.0.quantity`). Only where relevant; not every error has a field.
+- `details` **(optional, object)** — structured safe context where useful, never a second message string. E.g., `{"available_quantity":2,"requested_quantity":5}` for `INSUFFICIENT_STOCK`. Only safe-for-caller data; no `other_customer_id`, `internal_reservation_id`, `provider_secret`, `database_key`, `staff_only_note` (`§27, §59, §61`).
+- `request_id` — **not** inside the error object itself; documented at envelope `meta.request_id` (`§15.12`).
+
+Only fields relevant to the particular error are present. Do not require every error to contain `field`/`details`.
+
+**Examples:**
+
+Single field error:
+
+```json
+{
+  "errors": [
+    { "code": "INVALID_VALUE", "message": "The selected fulfillment type is invalid.", "field": "fulfillment_type" }
+  ]
+}
+```
+
+Business error with details:
+
+```json
+{
+  "errors": [
+    {
+      "code": "INSUFFICIENT_STOCK",
+      "message": "The requested quantity is not available.",
+      "details": { "requested_quantity": 5, "available_quantity": 2 }
+    }
+  ]
+}
+```
+
+### 15.3 Error Codes — Stable, UPPER_SNAKE_CASE, CLOSED, Not Impl Leaks
+
+- **Naming:** `UPPER_SNAKE_CASE` (`AUTHENTICATION_REQUIRED`, `INSUFFICIENT_STOCK`, `ORDER_NOT_CANCELLABLE`). No `authenticationRequired`, `insufficient-stock`, `InsufficientStock` (`§13`).
+- **Stable:** Every public error has a documented stable `code`; renaming `INSUFFICIENT_STOCK → NOT_ENOUGH_INVENTORY` within `v1` is **breaking** (versioning policy); human messages may improve safely (`§14-15, §55, §84`).
+- **Not messages:** Do not use English prose as machine contract; frontend acts on `code` (`INSUFFICIENT_STOCK → refresh stock UI`), may localize to `"Only 2 units are currently available."` (`§16, §68-70`).
+- **CLOSED:** Documented code/category lists are **CLOSED** per global policy (`§85`); adding a new code for a newly introduced operation is potentially non-breaking but reviewed; removing/renaming is breaking.
+- **Not impl leaks:** Never expose `SQLSTATE_23000`, `MYSQL_DUPLICATE_ENTRY`, `ModelNotFoundException`, `ValidationException`, `Laravel Exception …`, raw parser traces, `password`/`secret`/`file path`/`stack` (`§56-57, §28`). Map impl exceptions to stable API codes.
+- **No namespaces in V1:** Prefer `INSUFFICIENT_STOCK` over `commerce.inventory.insufficient_stock` unless domain explosion justifies it (`§58`).
+- **Avoid explosion/ambiguity:** New code only when client must behave differently; `INSUFFICIENT_STOCK` is valuable, `INSUFFICIENT_STOCK_FOR_SOFA` is not (`§79`). Avoid generic `ERROR`/`FAILED`/`BAD_REQUEST`/`SOMETHING_WENT_WRONG` alone — HTTP status already gives broad class; code gives machine meaning (`§80`).
+
+**Controlled initial registry (see §15.15):** `VALIDATION_ERROR`, `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `INVALID_FORMAT`, `INVALID_TYPE`, `INVALID_JSON`, `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `REQUEST_TOO_LARGE`, `AUTHENTICATION_REQUIRED`, `INVALID_AUTHENTICATION`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `NOT_AUTHENTICATED`, `FORBIDDEN`, `RESOURCE_NOT_OWNED`, `RESOURCE_NOT_FOUND`, `PRODUCT_NOT_FOUND`, `PRODUCT_NOT_PURCHASABLE`, `PRODUCT_UNAVAILABLE`, `INVALID_PRODUCT_VARIANT`, `CART_NOT_FOUND`, `CART_ITEM_NOT_FOUND`, `INVALID_CART_ITEM`, `CART_ITEM_UNAVAILABLE`, `CHECKOUT_REQUIRES_AUTHENTICATION`, `CHECKOUT_NOT_ALLOWED`, `CART_INVALID`, `INSUFFICIENT_STOCK`, `INVALID_FULFILLMENT`, `INVALID_DELIVERY_INFORMATION`, `ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE`, `INVALID_ORDER_TRANSITION`, `ORDER_STATE_CONFLICT`, `REQUEST_NOT_FOUND`, `INVALID_REQUEST`, `ENQUIRY_NOT_FOUND`, `INVALID_ENQUIRY`, `INVALID_ATTACHMENT`, `ATTACHMENT_TOO_LARGE`, `UNSUPPORTED_ATTACHMENT_TYPE`, `CONFLICT`, `RESOURCE_VERSION_CONFLICT`, `DUPLICATE_OPERATION`, `RATE_LIMITED`, `EXTERNAL_SERVICE_ERROR`, `INTERNAL_SERVER_ERROR`. Payment-specific codes remain Group H. (`NOT_AUTHENTICATED` is a legacy alias for `AUTHENTICATION_REQUIRED`; `RESOURCE_NOT_OWNED` is a legacy alias for `FORBIDDEN`/`RESOURCE_NOT_FOUND` per §15.8 masking — canonical codes are `AUTHENTICATION_REQUIRED`/`FORBIDDEN`/`RESOURCE_NOT_FOUND`; aliases remain registered as CLOSED for compatibility but new clients must use canonical codes.)
+
+### 15.4 HTTP Status and API Error Code Are Separate
+
+Every response has **both** `HTTP status` and `API error `code`` (`§17`). Status gives transport class; code gives machine-readable business meaning.
+
+**Preliminary status matrix (convention, endpoint exceptions documented individually):**
+
+| Category | HTTP status | Notes |
+|---|---|---|
+| Malformed JSON syntax | 400 | `INVALID_JSON`, parser traces hidden (`§41`) |
+| Business/validation failure (well-formed but invalid) | 422 | Ordinary schema/domain/business failures (`§19`) — see §15.5 |
+| State/concurrency conflict (valid but cannot apply now) | 409 | Stock race, invalid transition as conflict (`§36-37, §67`) |
+| Authentication missing/invalid | 401 | `AUTHENTICATION_REQUIRED`/`INVALID_AUTHENTICATION` (`§20`) — never 403 for unauthenticated |
+| Authenticated but not authorized | 403 | `FORBIDDEN` (`§21`) — hide existence where needed per §15.8 |
+| Resource not addressable in context | 404 | `RESOURCE_NOT_FOUND` / `ORDER_NOT_FOUND` etc. (`§22`) |
+| Unsupported HTTP method | 405 | `METHOD_NOT_ALLOWED` — envelope still `{"errors":[...]}` (`§39`; `code` remains `METHOD_NOT_ALLOWED`, not ad-hoc `METHOD_NOT_SUPPORTED_ERROR`) |
+| Unsupported Content-Type | 415 | `UNSUPPORTED_MEDIA_TYPE` — envelope still `{"errors":[...]}` (`§40`; `code` remains `UNSUPPORTED_MEDIA_TYPE`) |
+| Payload exceeds limits | 413 | `REQUEST_TOO_LARGE` (`§42`) |
+| Rate limited | 429 | `RATE_LIMITED` + `Retry-After` header (`§35, §43`) |
+| Temporary upstream/provider failure | 502/503/504 | Mapped to `EXTERNAL_SERVICE_ERROR` family, not raw provider text (`§82-83`) |
+| Unexpected server failure | 500 | Generic `INTERNAL_SERVER_ERROR` only (`§29`) |
+
+Do not assign every business error to `500`; status choice is version-sensitive (incompatible status change is breaking, §84).
+
+**Validation default:** Structurally well-formed requests that fail input/domain/business validation use **`422 Unprocessable Content`** by default (`VALIDATION_ERROR`, `INVALID_VALUE`, `PRODUCT_NOT_PURCHASABLE`, `ORDER_NOT_CANCELLABLE`, etc.) unless the failure is more precisely a state/concurrency conflict where `409` better communicates *refresh/retry after reconcile* (`§19, §37`). The registry column notes `409/422*` where endpoint contract later resolves.
+
+### 15.5 Validation Error Representation
+
+Validation failures **must** be field-addressable and, where safe, multi-error (`§25-26`):
+
+- Single field dot path: `delivery_address.city`, `delivery_address.phone` — one canonical style across API (`§60`); arrays evaluated as `items.0.quantity` or documented alternative, but one style only.
+- Unknown-field and closed-enum failures use same shape: `{"code":"INVALID_VALUE","field":"fulfillment_type","message":"..."}` — no special `OTHER` normalization (`§54`).
+- Multiple field errors: For ordinary schema validation, **return all safely determinable errors** in one array rather than stopping at first trivial error. Example multi-error envelope (`§26`) is normative. Do not fabricate multiple unrelated business errors to fill array.
+
+Field-level details identify the exact problem; do not create per-field tiny codes like `NAME_MISSING` unless demonstrated — prefer reusable `MISSING_REQUIRED_FIELD` + `field` (`§54`).
+
+Business-rule specifics that need `details` stay safe: `INSUFFICIENT_STOCK` may include `requested_quantity`/`available_quantity`; never leak `internal_inventory_reservation_id` or `staff_only_note` (`§27, §61`).
+
+### 15.6 Authentication Errors (401)
+
+Use **401 Unauthorized** when authentication is missing or invalid (`§20, §52`):
+
+- Codes: `AUTHENTICATION_REQUIRED` (missing), `INVALID_AUTHENTICATION`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED`. Contract is included in error envelope; exact flows refined in Phase 1.17.
+- Do not use `403` for unauthenticated-required paths; do not invent provider payment codes here.
+
+### 15.7 Authorization Errors (403) & Ownership
+
+Use **403 Forbidden** when `authenticated && not authorized` (`§21, §53`):
+
+- Baseline code `FORBIDDEN` (canonical; `RESOURCE_NOT_OWNED` is a legacy alias registered in §15.15 but prefer `FORBIDDEN` or `RESOURCE_NOT_FOUND` masking per §15.8). Do not expose *why* private resource belongs to another customer.
+- All authorization/resource-existence decisions must respect §15.8 leakage rules; generic envelope prevents enumeration.
+
+### 15.8 Resource Not Found (404) & Customer Ownership / Enumeration Protection
+
+Use **404 Not Found** with `RESOURCE_NOT_FOUND` (or `ORDER_NOT_FOUND`, `PRODUCT_NOT_FOUND`, etc.) when resource not addressable in request context (`§22`):
+
+- For **private, customer-owned resources** (Orders, etc.), an ownership failure **should not** reveal existence. **Normative rule:** If `Customer A` requests `Customer B`'s order, respond with **`404 RESOURCE_NOT_FOUND`** (or resource-specific `ORDER_NOT_FOUND`) **from that customer's perspective**, not `403 FORBIDDEN`, to avoid leaking `Order OD-xxx exists` (`§23-24`, consistent with validation §14.10 and decisions API-VAL-010).
+- Probing `GET /orders/1001`…`1003` must not provide differential errors that enumerate private identifiers; authorization + error behavior cooperate to be non-distinguishing.
+- Internal unexpected errors never masquerade as `404`; `500` stays distinct.
+
+### 15.9 Business-Rule Errors (Explicit, Endpoint-Anchored)
+
+Do not collapse business failures into single `VALIDATION_ERROR` when client UX must differ (`§44`):
+
+- `PRODUCT_NOT_PURCHASABLE` / `PRODUCT_UNAVAILABLE` / `INVALID_PRODUCT_VARIANT` / `PRODUCT_NOT_FOUND` — `MADE_TO_ORDER` prohibited via cart/checkout despite having display price (`§45, §14.6`)
+- `CART_NOT_FOUND` / `CART_ITEM_NOT_FOUND` / `INVALID_CART_ITEM` / `CART_ITEM_UNAVAILABLE` (`§46`) — distinct from `ORDER_*`
+- `CHECKOUT_REQUIRES_AUTHENTICATION` / `CHECKOUT_NOT_ALLOWED` / `CART_INVALID` / `INSUFFICIENT_STOCK` / `INVALID_FULFILLMENT` / `INVALID_DELIVERY_INFORMATION` (`§47`)
+- `ORDER_NOT_FOUND` / `ORDER_NOT_CANCELLABLE` (20-min window, state) / `INVALID_ORDER_TRANSITION` / `ORDER_STATE_CONFLICT` (`§48`)
+- `REQUEST_NOT_FOUND` / `INVALID_REQUEST` (`§49`), `ENQUIRY_NOT_FOUND` / `INVALID_ENQUIRY` (`§50`) — concise vocabulary, not per-field explosion
+- `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE` (`§51`) — file validation
+
+Each later endpoint documents the **subset it may return** rather than inventing undocumented `CHECKOUT_FAIL` codes locally (`§86`); docs keep authoritative registry.
+
+### 15.10 Conflict & Concurrency Errors (409) & Idempotency
+
+Use **409 Conflict** when structurally valid request cannot complete due to current state/concurrency (`§36-37, §65, §67`):
+
+- Codes: `CONFLICT`, `ORDER_STATE_CONFLICT`, `RESOURCE_VERSION_CONFLICT`, `DUPLICATE_OPERATION`, or business `INSUFFICIENT_STOCK`/`INVALID_ORDER_TRANSITION` mapped to `409` when the semantics are *conflict/retry-after-refresh* vs `422` *correct-input*.
+- Inventory race example: client sees `stock=1`, another purchases, then checkout → `409 INSUFFICIENT_STOCK` (or `422` per resolved mapping — endpoint contract documents the choice and retry guidance) (`§37`).
+- Idempotency conflict: duplicate `Idempotency-Key` must have **deterministic** semantics — documented per operation as *return original result* / *409 `DUPLICATE_OPERATION`* / `422` — not ad-hoc; webhook duplicate deliveries follow same atomic `check-then-apply` per `§14.11`/`§16.9` (`§38, §66`). Error response must never correspond to a phantom reservation (commit status ≠ error, §65).
+
+### 15.11 Rate Limiting (429) & Standard Retry Header
+
+Use **429 Too Many Requests** with `RATE_LIMITED` where throttled (`§43`):
+
+- Never expose internal rate-limit algorithms; do not use arbitrary `retry_after_seconds`/`wait` fields — use standard **`Retry-After`** HTTP header for rate-limit guidance (`§35`). Body still follows `{"errors":[...]}` plus header.
+
+### 15.12 External-Service Errors (Generic, Payment Deferred)
+
+When future provider/upstream fails, **map** to stable project-level API error (`§82-83`):
+
+- Do not expose `provider error string`, internal `provider code`, or `provider credentials`. Client sees project-level `EXTERNAL_SERVICE_ERROR` (or more specific family when Group H refines payment) with HTTP `502/503/504` as appropriate; details stay safe and generic.
+- Payment-specific codes, reconciliation, webhook failures, timeout behavior are **Group H**; global envelope accommodates them without breaking existing codes (`§83`, `§53` note).
+
+### 15.13 Request / Correlation ID
+
+- Placement: **envelope-level** `meta.request_id` alongside `errors`, consistent with success `meta` (`§30, §62`). Example:
+
+```json
+{
+  "errors": [{ "code": "INTERNAL_SERVER_ERROR", "message": "An unexpected error occurred." }],
+  "meta": { "request_id": "01H9…-req" }
+}
+```
+
+- Purpose: connects customer-facing error → server logs/monitoring without embedding secrets; support workflow is *"Please provide your request ID"* (`§31, §90`). ID is per-request processing context, **not** `user_id`/`order_id`/`payment_id`/`session token` unless explicitly designed (`§32`), and must not contain sensitive information. Logging of `INTERNAL_SERVER_ERROR` keeps full exception/stack on server, client only sees generic envelope (`§29, §89`).
+
+### 15.14 Retry Guidance (Conceptual, Not Per-Error Field)
+
+API conceptually distinguishes (`§33-34`):
+
+- **Not retryable without changing input/state** — `INVALID_VALUE`, `MISSING_REQUIRED_FIELD`, `PRODUCT_NOT_PURCHASABLE`, `ORDER_NOT_CANCELLABLE`, `FORBIDDEN` (4xx validation/authorization)
+- **Retryable** — `temporary service unavailable` (502/503/504), transient upstream — client may retry as-is
+- **Requires re-read/reconciliation** — `CONFLICT`, `INSUFFICIENT_STOCK`, `INVALID_ORDER_TRANSITION` (409) — client must refresh resource/state before retry
+
+Do not add arbitrary `retryable:true` field to every error; contract defines classes that are candidates for retry. Final client behavior remains application-specific; `Retry-After` used only for `429` (`§35`).
+
+### 15.15 Error Code Registry (Controlled, CLOSED)
+
+| Code | Meaning | Typical HTTP | Client action |
+|---|---|---:|---|
+| `VALIDATION_ERROR` | General validation failure | 422 | Correct input |
+| `MISSING_REQUIRED_FIELD` | Required field absent | 422 | Supply field (`field` indicates which) |
+| `INVALID_VALUE` | Field value not in allowed set | 422 | Correct value |
+| `INVALID_FORMAT` | Field format invalid | 422 | Correct format |
+| `INVALID_TYPE` | Field type invalid | 422 | Correct type |
+| `INVALID_JSON` | Malformed JSON syntax | 400 | Fix payload |
+| `METHOD_NOT_ALLOWED` | HTTP method not allowed for resource | 405 | Use allowed method (`Allow` header) |
+| `UNSUPPORTED_MEDIA_TYPE` | Content-Type not supported | 415 | Use `application/json` or `multipart/form-data` where contract allows |
+| `REQUEST_TOO_LARGE` | Payload exceeds limits | 413 | Reduce payload |
+| `AUTHENTICATION_REQUIRED` | Authentication missing | 401 | Authenticate |
+| `INVALID_AUTHENTICATION` | Authentication invalid/expired | 401 | Re-authenticate |
+| `INVALID_CREDENTIALS` | Credentials invalid | 401 | Correct credentials |
+| `SESSION_EXPIRED` | Session expired | 401 | Re-authenticate |
+| `NOT_AUTHENTICATED` | Not authenticated (legacy alias — prefer `AUTHENTICATION_REQUIRED`; CLOSED, registered for compatibility) | 401 | Authenticate |
+| `FORBIDDEN` | Authenticated but not permitted | 403 | Stop/adjust access (no enumeration) |
+| `RESOURCE_NOT_OWNED` | Authenticated but not owner (legacy alias — prefer `FORBIDDEN` or `RESOURCE_NOT_FOUND` masking per §15.8; CLOSED) | 403 | Stop/adjust access or treat as not-found where ownership masked |
+| `RESOURCE_NOT_FOUND` | Resource unavailable in context | 404 | Reconcile / treat as not-found (404 masks ownership per §15.8) |
+| `PRODUCT_NOT_FOUND` | Product not found | 404 | Reconcile |
+| `PRODUCT_NOT_PURCHASABLE` | Product cannot be purchased (e.g., `MADE_TO_ORDER`) | 422 | Refresh/catalog; show request flow |
+| `PRODUCT_UNAVAILABLE` | Product inactive/unavailable | 422 | Refresh |
+| `INVALID_PRODUCT_VARIANT` | Variant invalid/belongs/active/purchasable | 422 | Correct variant |
+| `CART_NOT_FOUND` | Cart not found | 404 | Reconcile |
+| `CART_ITEM_NOT_FOUND` | Cart item not found | 404 | Refresh cart |
+| `INVALID_CART_ITEM` | Cart item invalid | 422 | Correct item |
+| `CART_ITEM_UNAVAILABLE` | Cart item unavailable | 422 | Refresh |
+| `CHECKOUT_REQUIRES_AUTHENTICATION` | Checkout needs auth | 401 | Authenticate |
+| `CHECKOUT_NOT_ALLOWED` | Checkout not allowed (cart invalid etc.) | 422 | Correct cart |
+| `CART_INVALID` | Cart invalid for checkout | 422 | Correct cart |
+| `INSUFFICIENT_STOCK` | Requested stock unavailable | 409/422* | Refresh stock/retry after reconcile |
+| `INVALID_FULFILLMENT` | Fulfillment choice invalid | 422 | Correct fulfillment |
+| `INVALID_DELIVERY_INFORMATION` | Delivery info invalid/incomplete | 422 | Correct address |
+| `ORDER_NOT_FOUND` | Order not found / not owned (masked) | 404 | Reconcile |
+| `ORDER_NOT_CANCELLABLE` | Cancellation not allowed (window/state) | 422/409* | Stop / show why |
+| `INVALID_ORDER_TRANSITION` | State transition invalid | 409/422* | Refresh/reconcile |
+| `ORDER_STATE_CONFLICT` | Order state conflict (concurrency) | 409 | Refresh/retry |
+| `REQUEST_NOT_FOUND` | Furniture request not found | 404 | Reconcile |
+| `INVALID_REQUEST` | Request payload invalid | 422 | Correct input |
+| `ENQUIRY_NOT_FOUND` | Enquiry not found | 404 | Reconcile |
+| `INVALID_ENQUIRY` | Enquiry invalid | 422 | Correct input |
+| `INVALID_ATTACHMENT` | Attachment validation failed | 422 | Correct file |
+| `ATTACHMENT_TOO_LARGE` | Attachment exceeds size | 413/422 | Reduce file |
+| `UNSUPPORTED_ATTACHMENT_TYPE` | Attachment type not allowed | 422 | Change type |
+| `CONFLICT` | Generic state/concurrency conflict | 409 | Refresh/retry |
+| `RESOURCE_VERSION_CONFLICT` | Version conflict | 409 | Refresh/retry |
+| `DUPLICATE_OPERATION` | Duplicate idempotent operation | 409 | Use prior result |
+| `RATE_LIMITED` | Too many requests | 429 | Retry after `Retry-After` |
+| `EXTERNAL_SERVICE_ERROR` | Temporary upstream/provider failure (generic) | 502/503/504 | Retry/contact support |
+| `INTERNAL_SERVER_ERROR` | Unexpected server failure | 500 | Retry/contact support with `request_id` |
+
+`*` `INSUFFICIENT_STOCK` / `ORDER_NOT_CANCELLABLE` / `INVALID_ORDER_TRANSITION` mapping `409 vs 422` is resolved per endpoint business contract; table shows convention with asterisk. Do not finalize resource-specific statuses prematurely where endpoint semantics not yet fixed.
+
+- Payment-specific extensions (Group H) slot into same table shape without altering global envelope.
+- Codes like `SQLSTATE_23000` / `ModelNotFoundException` are forbidden as public codes (`§56-57`).
+- Structured safe `details` may accompany rows where useful (`§15.2`), e.g., `INSUFFICIENT_STOCK` with `requested_quantity`/`available_quantity`; never internal reservation IDs.
+
+### 15.16 Security & Information-Disclosure Rules
+
+Production errors **never** expose (`§28, §58-59, §61, §88`):
+
+- `database SQL`, stack traces, `password`/`authentication secret`/`payment secret`, `internal file paths`, server IPs, framework exception names, `other_customer_id`, `internal_inventory_reservation_id`, `provider_secret`, `staff_only_note`.
+- Logging keeps full diagnostics server-side; client sees safe `code`/`message`/`field`/`details` + `meta.request_id` (`§89`).
+- Security tests must verify unauthorized access does **not** reveal `resource existence`, `private data`, `internal identifiers`, `database details` through errors (`§88`).
+- Error/transaction correspondence enforced: error response accurately reflects commit status — `INSUFFICIENT_STOCK` must not hide a phantom reservation (`§65`).
+
+### 15.17 Compatibility (Version-Sensitive)
+
+Within `v1`, **potentially breaking** (`§84`): remove/rename error code, change semantics, change field-path format (`delivery_address.city` → other), remove documented detail, change HTTP status incompatibly, make former error suddenly success.
+
+**Potentially non-breaking:** improve human `message`, add optional safe `details` field, add documentation, add new error code for newly introduced operation (reviewed for client impact). Error codes remain versioned API contract elements (`§55, §84-85`); human messages are not machine identifiers (`§92`).
+
+CLOSED enum policy extends to error codes/categories (`§85`); `available|unavailable` lowercase exception does not apply to error codes (always `UPPER_SNAKE_CASE`).
+
+### 15.18 What Remains Deferred
+
+- Laravel exception handlers/middleware/exception classes, rate-limiting implementation, payment provider-specific codes/webhook error handling (Group H), endpoint-specific error schemas, OpenAPI error schemas, Next.js/Flutter error-handling code (`§93`). Minimal business failures go through envelope; batch partial-success was evaluated and **not** adopted for core `checkout/order/payment/cancellation` — explicit business result per operation (`§64`).
+
+### 15.19 Cross-References
+
+See `api-conventions.md §17` for reusable error-convention summary, `api-resources.md §11` for resource-specific error mappings, `docs/domain/business-rules.md §14` for business-error ↔ rule mapping, and `decisions.md ADR/API-ERR-001..006`.
+
+## 16. Links to Conventions & Resources
+
+- Conventions: `docs/api/api-conventions.md` (envelope, naming, timestamps, money, nulls, booleans, enums, links, serialization, compatibility, **input**, **validation** §16, **errors** §17).
+- Resources: `docs/api/api-resources.md` (per-resource field tables with PUBLIC/CUSTOMER/STAFF exposure and per-resource input + validation + **errors** §10–11).
+- Domain: `docs/domain/business-rules.md` (business meaning, validation authority, **error ↔ rule mapping §14**).
 - OpenAPI: `docs/api/openapi.yaml` — updated only when OpenAPI phase is reached (this phase keeps rules precise enough for later OpenAPI).

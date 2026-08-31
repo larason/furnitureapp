@@ -538,7 +538,7 @@ Always consider:
 - Secure file upload handling
 - Webhook verification
 - Secret management
-- Error-message discipline
+- Error-message discipline — never expose raw framework, database, or infrastructure exceptions through API responses; map them to the documented API error contract (`docs/api/api-contract.md §15`, `docs/api/api-conventions.md §17`)
 - Auditability
 - Dependency updates
 
