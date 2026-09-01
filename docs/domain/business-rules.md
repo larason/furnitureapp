@@ -115,6 +115,15 @@ The computer system is always the final authority on what is allowed, what costs
 | 5 | Order status can only move along approved steps; neither the customer nor the app can force a jump. State transitions via controlled actions, not generic `PATCH {status:SHIPPED}` (API-VAL-004). | ORD-007 |
 | 6 | Every status change is recorded with the time (and who/what caused it). | ORD-008 |
 | 7 | Customers can follow their order through milestones (Paid, Accepted, Processing, Ready for Pickup / Shipped, Delivered, Completed). Only milestones for their fulfillment type are shown. | FUL-005/006 |
+| 8 | Order Items preserve historical `unit_price` and `quantity` and `line_total` — not changed when catalog price later changes to `1,200,000` or product deactivated; product is still shown as `1,000,000`. | ORD-005, ORD-HIST-001 |
+| 9 | Delivery information (delivery address, recipient contact) is preserved as snapshot per Order — later profile address change does not rewrite history; saved address book deferred. | ADDR-001, ORD-005 |
+| 10 | Delivery fee is variable, location-based, not customer-controlled; Staff/Admin add fee (`null` → `{amount,currency}` `PENDING→FINALIZED` before `PAID`); provisional `total` not final until fee finalized; payment blocked `409 DELIVERY_FEE_PENDING` while pending; historical fee immutable after finalization. | PRICE-006, CHK-FEE-002 |
+| 11 | Order `subtotal/delivery_fee/total/currency` are server-authoritative `{amount,currency}` integer minor units; customer `total` override rejected. | PRICE-001/002 |
+| 12 | Customer can access only own Orders — `Customer A → Customer B order` fails `404` masked; Staff operational view is separate and does not grant account control. | IDENT-006, OWN-001 |
+| 13 | Staff process Orders via authorized operational actions (`accept/process/ready-for-pickup/ship/deliver/complete` only if state + fulfillment permit) — no `STAFF → block_customer` or account control. | STAFF-OP-001 |
+| 14 | Admin has highest operational/administrative authority — approves staff, may perform authorized admin order operations, but still action-controlled and audited; no `PATCH {status:anything}` or historical silent rewrite without controlled correction. | AUTHZ-ADMIN-001 |
+| 15 | Order data is private and not publicly cacheable — `Cache-Control: private, no-store`; completed/cancelled orders remain readable to owner/staff, not deleted (`DELETE /orders` not customer). | IDENT-006 |
+| 16 | Payment is related to Order but defined in Group H — Order exposes limited `payment_status/amount` snapshot, not provider secrets; `Order PAID` is payment-confirmed via Group H webhook, distinct from `ACCEPTED`. | PAY-002 |
 
 ## 7. Order Status Paths
 

@@ -145,13 +145,84 @@
 | `delivery_fee_status` | enum `PENDING`/`FINALIZED` CLOSED | CUSTOMER | no | `FINALIZED` for `PICKUP` (fee 0 finalized at creation) and for `DELIVERY` after Staff/Admin sets fee; `PENDING` means provisional amounts — payment blocked (see `payment` and §23.11). Frontend must not display `total` as final when `PENDING`. |
 | `total` | `{amount,currency}` | CUSTOMER | no | `subtotal + (delivery_fee?.amount ?? 0)` — **provisional** when `delivery_fee_status=PENDING` (equals `subtotal`; not final amount), final when `FINALIZED` |
 | `currency` | `"TZS"` | CUSTOMER | no | Single currency |
-| `billing_address` | object | CUSTOMER | no | Snapshot |
-| `delivery_address` | object | CUSTOMER | yes | `null` for `PICKUP`; present snapshot for `DELIVERY` |
+| `billing_address` | object | CUSTOMER | yes | **V1 snapshot — not separately collected at checkout** (checkout input §10.4 / Line 262 provides only `fulfillment_type` + conditional `delivery_address`; no `billing_address` field). For `DELIVERY`, `billing_address` is a **copy of the `delivery_address` snapshot** provided at `CHK-001` (same `recipient_name, phone, address_line, city`); for `PICKUP`, `billing_address` is `null` (deferred — separate billing address collection is V2). Frontend must treat as nullable; `null` for `PICKUP` is valid. |
+| `delivery_address` | object | CUSTOMER | yes | `null` for `PICKUP`; present snapshot for `DELIVERY` (source: `CHK-001` `delivery_address` input, see `api-contract.md §24.9`) |
 | `delivery` | `{status, tracking_summary}` | CUSTOMER | yes | `null` for `PICKUP`; embeds delivery summary, not GPS |
 | `payment` | `{payment_status, amount:{amount,currency}}` limited | CUSTOMER | yes | `null` when `delivery_fee_status=PENDING` — payment initiation blocked until fee finalized (`PAY-001` returns `409 DELIVERY_FEE_PENDING`); present when `FINALIZED`. No secrets; full via admin |
 | `created_at` / `updated_at` | ISO8601 | CUSTOMER | no | `created_at` starts 20-min cancellation window |
 
 **STAFF/ADMIN extra (not on customer):** `customer:{id,name,email}`, operational `quantity` details, `payment.provider`, internal notes where authorized. `CANCELLED`/`SHIPPED` transitions remain controlled actions (`POST /orders/{order}/cancel` etc.), not `PATCH status`.
+
+### 3.1 Order Summary vs Detail
+
+- **Summary** (`GET /me/orders` collection): `id`, `order_reference`, `status`, `fulfillment_type`, `delivery_fee_status`, `subtotal`, `delivery_fee`, `total`, `currency`, `created_at`, `updated_at` — no `items` full array (or `items_count` only), no `delivery_address` detail, no `status_history` — lightweight for history list.
+- **Detail** (`GET /me/orders/{order}`): Full above plus `items[]` historical snapshots, `delivery_address` snapshot, `billing_address` snapshot, `delivery` summary, `payment` summary, `tracking` milestones — see `api-contract.md §24.8-24.16`.
+
+### 3.2 OrderItem — Historical Snapshot (Immutable)
+
+| Field | Type | Exposure | Notes |
+|---|---|---|---|
+| `product_id` | string | CUSTOMER | Snapshot reference |
+| `variant_id` | string \| null | CUSTOMER | Snapshot variant where applicable |
+| `sku` | string | CUSTOMER | Snapshot SKU |
+| `name` | string | CUSTOMER | Snapshot product name at purchase — not live `Product.name` |
+| `variant_name` | string \| null | CUSTOMER | Snapshot variant display |
+| `unit_price` | `{amount,currency}` | CUSTOMER | **Historical** price at transaction — integer minor units, never recomputed |
+| `quantity` | integer `1..100` | CUSTOMER | Historical quantity |
+| `line_total` | `{amount,currency}` | CUSTOMER | `unit_price.amount * quantity` snapshot |
+| `primary_image` | `{url}` | CUSTOMER | Optional display snapshot (optional) |
+
+Price/name/image remain even if product deactivated or price changed to `1,200,000`; quantity/price are not `PATCH`able (controlled admin correction only).
+
+### 3.3 Fulfillment & Delivery Snapshot
+
+- `fulfillment_type`: `PICKUP` / `DELIVERY` CLOSED — generally immutable.
+- `delivery_address`: `null` for `PICKUP`; `{recipient_name, phone, address_line, city}` snapshot for `DELIVERY` — historical, not live profile address. Saved address book deferred — no `saved_address_id`.
+- `delivery`: `{status, tracking_summary}` | `null` for `PICKUP`; delivery progress not GPS.
+- Contact snapshot (`recipient_name`, `phone`) preserved for operational fulfillment.
+
+### 3.4 Delivery Fee Lifecycle (Model B — `PENDING` → `FINALIZED` via `ORD-014`)
+
+- `delivery_fee: null, delivery_fee_status: PENDING` at creation for `DELIVERY` (provisional `total == subtotal`, `payment: null` blocked `409 DELIVERY_FEE_PENDING`); `delivery_fee: {amount:0}, status: FINALIZED` for `PICKUP`.
+- **Fee finalization endpoint `ORD-014` `POST /api/v1/orders/{order}/delivery-fee`** (Staff/Admin, `orders.set_delivery_fee`, `PENDING_PAYMENT`+`DELIVERY`+`PENDING`): `{"delivery_fee":{"amount":int minor units,currency:"TZS"},"reason":"..."}` → `delivery_fee: {amount,currency}, delivery_fee_status: FINALIZED, total = subtotal+delivery_fee, payment eligible`. `Idempotency-Key` **Required**, concurrency **Critical** (race with `PAY-001`), `amount` integer `>=0`, `currency:"TZS"` only, unknown fields `422`, `404` masked, `409` if already `FINALIZED` or not `PENDING_PAYMENT`. Single finalization; repeated same key replays; different amount with same key `409 DUPLICATE_OPERATION`. Audit `actor, order, old_fee, new_fee, reason, occurred_at`.
+- Once `FINALIZED` and especially after `PAID`, fee becomes historical — not changed by later policy. Audit via actor/time/old/new/reason (deferred logging).
+
+### 3.5 Status & State Machine (Closed)
+
+Statuses `PENDING_PAYMENT`, `PAID`, `ACCEPTED`, `PROCESSING`, `READY_FOR_PICKUP`, `SHIPPED`, `DELIVERED`, `COMPLETED`, `CANCELLED` CLOSED. Lifecycle `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→(READY_FOR_PICKUP | SHIPPED)→DELIVERED→COMPLETED` with branches per fulfillment; `PENDING_PAYMENT→CANCELLED` via `POST /me/orders/{order}/cancel` (own + 20-min + cancellable state). No `PATCH {status}`.
+
+### 3.6 Status History & Tracking
+
+- **Status History** (`order_status_history`): append-only, fields `status` CLOSED, `occurred_at` ISO8601 `Z`, `actor` (`customer:123`/`staff:45`/`system`), `note` where appropriate (e.g., ship note). Customer can view own history; cannot create/edit.
+- **Tracking** (`GET /me/orders/{order}/tracking` `ORD-003` customer, `GET /orders/{order}/tracking` `ORD-012` staff): customer-facing milestones derived from history. `PICKUP`: milestones up to `READY_FOR_PICKUP`; `DELIVERY`: up to `DELIVERED→COMPLETED`; no GPS.
+
+### 3.7 Representations by Actor
+
+| Data | Customer (own) | Staff (operational) | Admin |
+|---|---|---|---|
+| `order_reference`, `status`, `items` historical | Yes | Yes | Yes |
+| `delivery_address` | Own | Operational | Authorized |
+| `payment` limited | Limited (`payment_status`, `amount`) | Operational (as authorized) | Authorized |
+| `internal notes` | No | Yes if authorized | Yes |
+| `inventory internals` | No | As required | Yes |
+| `credentials` | No | No | No |
+
+Field-level before serialization; authorization before data fetch; `password`/`payment secret` never.
+
+### 3.8 Historical Data Mutability Matrix
+
+| Order field | Mutable after creation? | Customer | Staff | Admin |
+|---|---|---|---|---|
+| `order_reference` | No | Read | Read | Read |
+| `customer owner` | No | Read | Operational | Authorized |
+| `item quantity` | No | Read | Read | Controlled correction only |
+| `historical unit_price` | No | Read | Read | Controlled correction only |
+| `order created_at` | No | Read | Read | Read |
+| `fulfillment_type` | Generally No | Read | Operational | Controlled |
+| `delivery_fee` | `PENDING→FINALIZED` once before `PAID`; thereafter controlled correction only | Read | Authorized (audit) | Authorized (audit) |
+| `total` | Derived/finalized with fee | Read | Operational | Authorized |
+| `status` | Action-controlled only | Read | Action | Action |
+| `status_history` | Append-only | Read | Read/append via actions | Read/append via actions |
 
 ## 4. Cart & Cart Item (CUSTOMER / GUEST — `GET /api/v1/me/cart`, `POST/PATCH/DELETE /api/v1/me/cart/items{,/{item}}`)
 

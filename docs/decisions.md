@@ -859,8 +859,108 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/API-ORD-001 — Orders Are Customer-Owned Historical Records
+
+**Decision:** Order is a first-class `v1` resource (`Order`) created only via `POST /api/v1/checkout` (`CHK-001`). Once created it becomes a historical business record: `id` + `order_reference OD-*****` (unique, human-readable, server-generated) + `customer owner` + `items historical snapshots` + `subtotal/delivery_fee/total` authoritative + `fulfillment + delivery_address snapshot` + `status + status_history` + `payment relationship`. Not a live `Product` copy.
+
+**Reason:** `phases/phase-1.23.md §8-13, §21-23`, `AGENTS.md §11` (historical orders preserve price snapshot) — preserves auditability and prevents catalog mutation from rewriting history.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-002 — Customer Order Ownership Cannot Be Client-Supplied
+
+**Decision:** `Order.customer_id = authenticated principal` from checkout; `{"customer_id":"..."}` / `?customer_id=another` from client is rejected `422 INVALID_VALUE`; `Customer A → Customer B` order/tracking fails `404 ORDER_NOT_FOUND` (masked per `§15.8`). Staff operational access is separate (`orders.view_operational`) and does not own customer accounts.
+
+**Reason:** `phases/phase-1.23.md §10-11`, `api-contract.md §24.3` — prevents ownership tampering and enumeration.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-003 — Order Items Preserve Historical Purchase Information
+
+**Decision:** Each `OrderItem` stores at creation `product_id`, `variant_id`, `sku`, `name`, `variant_name`, `unit_price` (historical `{amount,currency}`), `quantity`, `line_total` — all snapshots. Even if `Sofa 1,000,000 → 1,200,000` or product deactivated, old Order still shows `1,000,000`. Price/quantity are not `PATCH`able via `PATCH /orders/{order}/items/{item}`; correction is controlled admin workflow (audit) only.
+
+**Reason:** `phases/phase-1.23.md §21-26`, `api-contract.md §24.8` — ensures historical financial integrity and display after catalog changes.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-004 — Order Cancellation Has a 20-Minute Customer Window
+
+**Decision:** `POST /me/orders/{order}/cancel` (`ORD-004`, `Idempotency-Key` required, `409` on race) requires `owns + state == PENDING_PAYMENT (cancellable) + within 20 minutes from authoritative `order.created_at` backend time`. Server computes `elapsed = now - created_at`; `cancelled_at` from client rejected. Success → `CANCELLED`; after window or on `PAID/COMPLETED` → `422/409 ORDER_NOT_CANCELLABLE`. Staff cannot use customer cancel; admin cancel is separate explicit workflow (audit). `CANCEL` ≠ `DELETE` — order remains readable.
+
+**Reason:** `phases/phase-1.23.md §50-55`, `AGENTS.md §8`/`§17` time authority, `api-contract.md §24.17` — prevents time tampering and late cancellation.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-005 — Order Status Transitions Are Controlled Actions
+
+**Decision:** Statuses `PENDING_PAYMENT`, `PAID`, `ACCEPTED`, `PROCESSING`, `READY_FOR_PICKUP`, `SHIPPED`, `DELIVERED`, `COMPLETED`, `CANCELLED` are CLOSED. No `PATCH {status: "COMPLETED"}`; only `POST .../accept|process|ready-for-pickup|ship|deliver|complete|cancel` with `actor+permission+current_state+fulfillment+preconditions` validated atomically inside transaction. Example `PENDING_PAYMENT→PAID` (System, `delivery_fee FINALIZED`), `PAID→ACCEPTED` (Staff), `ACCEPTED→PROCESSING`, `PROCESSING→READY_FOR_PICKUP` (PICKUP) / `SHIPPED` (DELIVERY), `SHIPPED→DELIVERED`, `→COMPLETED`. Invalid `PAID→COMPLETED`, `DELIVERED→SHIPPED`, `PICKUP→SHIPPED` rejected `409 INVALID_ORDER_TRANSITION`.
+
+**Reason:** `phases/phase-1.23.md §38-49, §126-128`, `api-contract.md §24.13` — prevents arbitrary state jumps; idempotency `POST` with same `Idempotency-Key` replays original.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-006 — Delivery Fee Is Not Customer-Controlled
+
+**Decision:** Variable location-based `delivery_fee` is Staff/Admin (`null→{amount,currency}`, `PENDING→FINALIZED` before `PAID` per Model B via `ORD-014 POST /orders/{order}/delivery-fee`). Customer `{"delivery_fee":0}` rejected; historical `delivery_fee` immutable after `FINALIZED` (especially after `PAID`). `PENDING` blocks `PAY-001` `409 DELIVERY_FEE_PENDING`; provisional `total == subtotal` not final. Flat `20,000` superseded. `ORD-014` requires `orders.set_delivery_fee`, `Idempotency-Key` Required, concurrency Critical, audited `actor,time,old,new,reason`.
+
+**Reason:** `phases/phase-1.23.md §29-31`, `api-contract.md §24.10-24.11 (ORD-014)`, `business-rules.md §5/§6` — preserves fee authority and financial finality before payment.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-010 — Delivery Fee Finalization Endpoint (Model B Gate)
+
+**Decision:** V1 adds dedicated `ORD-014 POST /api/v1/orders/{order}/delivery-fee` (Staff/Admin, `orders.set_delivery_fee` + `PENDING_PAYMENT`+`DELIVERY`+`PENDING`) — the only V1 gate that transitions `delivery_fee null→{amount,currency}` and `delivery_fee_status PENDING→FINALIZED` before `PAY-001`. Request `{"delivery_fee":{"amount":int minor units,currency:"TZS"},"reason":"..."}` (currency must be `TZS`, amount `>=0`, unknown fields `422`); Response `200` updated Order (`delivery_fee`, `delivery_fee_status: FINALIZED`, `total` final, `payment` now eligible). Single finalization; `409` if already `FINALIZED` or not `PENDING_PAYMENT`/`DELIVERY`; `Idempotency-Key` Required (same key replays, different amount same key `409 DUPLICATE_OPERATION`); concurrency Critical (race with `PAY-001`); audited.
+
+**Reason:** `phases/phase-1.23.md §31, §84`, `api-contract.md §24.10 (ORD-014)` — without a dedicated fee-assignment path, the `DELIVERY Orders block payment until FINALIZED` gate in `§24.5/§24.13` would be unimplementable; `ORD-014` closes the Model B loop with explicit permission, shape, idempotency and concurrency.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-007 — Pickup and Delivery Follow Distinct Order Paths
+
+**Decision:** `PICKUP`: `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` (no `SHIPPED/DELIVERED`). `DELIVERY`: `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED`. `delivery_address: null` for `PICKUP`, snapshot for `DELIVERY`. Tracking milestones filtered by fulfillment; operational fulfillment data uses same branches.
+
+**Reason:** `phases/phase-1.23.md §32-47`, `api-contract.md §24.13` — distinct fulfillment avoids invalid cross-branch transitions.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-008 — Customer Order Data Is Private
+
+**Decision:** All Order reads (`ORD-001`..`ORD-004` customer, `ORD-005`..`ORD-012` operational via `orders.view_operational`) are `Cache-Control: private, no-store`; no CDN public caching; authorization before serialization; `404` masking prevents enumeration; only permitted fields per actor (`internal notes` not to customer, `password/payment secret` never). Pagination `page/per_page` + `meta.pagination` stable `created_at DESC, id ASC`.
+
+**Reason:** `phases/phase-1.23.md §139-141`, `api-contract.md §24.23` — protects PII/financial data and prevents leakage.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ORD-009 — Payment Is Related to Order but Defined in Group H
+
+**Decision:** Order exposes limited `payment: {payment_status, amount:{amount,currency}} | null` (null while `delivery_fee PENDING`). `Order PAID` vs `Payment PAID` are distinct state machines; `PAY-001/002` + `WEBHOOK-001` remain `Group H` generic placeholders (`PROPOSED*`), no provider SDK/credentials/webhooks in Order contract. `Payment amount == final Order total (subtotal+delivery_fee when FINALIZED)` is the reconciliation invariant.
+
+**Reason:** `phases/phase-1.23.md §66-71, §132-135`, `api-contract.md §24.11` — keeps payment provider specifics separate while ensuring financial consistency.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`.
 
 

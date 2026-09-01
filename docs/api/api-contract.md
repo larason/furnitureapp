@@ -1,6 +1,6 @@
 # API Contract — Furniture E-Commerce Platform (Consolidated)
 
-> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.15 Baseline (Validation Conventions)
+> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.23 — Order API Contract (Customer-Owned Historical Records, State Machine, Delivery-Fee Model B)
 > **Authority:** This file is the canonical response-envelope, resource-representation and validation contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2` and `phase-1.15.md`.
 
 ---
@@ -1164,19 +1164,20 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `CART-004` | DELETE | `/api/v1/me/cart/items/{item}` | Cart | Customer + Anonymous (guest) | Yes for Customer, guest via `X-Guest-Cart-Id` | `AUTHENTICATED_OWNER` own cart or `GUEST` | Remove cart item (guest supported) | PROPOSED |
 | `CART-005` | POST | `/api/v1/me/cart/merge` | Cart | Customer | Yes | `AUTHENTICATED_OWNER` own cart (merges guest) | **Merge guest cart onto authenticated cart** — backend merges `X-Guest-Cart-Id` guest cart into user cart on demand (also performed automatically on `AUTH-002` login) | PROPOSED |
 | `CHK-001` | POST | `/api/v1/checkout` | Checkout | Customer | Yes | `AUTHENTICATED` customer, own cart, state/cart valid | Checkout → order creation (fulfillment+address) | PROPOSED |
-| `ORD-001` | GET | `/api/v1/me/orders` | Order | Customer | Yes | `AUTHENTICATED_OWNER` own orders (authorized dataset pagination) | List own orders | PROPOSED |
-| `ORD-002` | GET | `/api/v1/me/orders/{order}` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns order (404 masked) | Get own order detail | PROPOSED |
-| `ORD-003` | GET | `/api/v1/me/orders/{order}/tracking` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns order | Order tracking (current state + history milestones) | PROPOSED |
-| `ORD-004` | POST | `/api/v1/me/orders/{order}/cancel` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns + `cancel_own` + `eligible state + 20-min window` + backend state | Cancel own eligible order | PROPOSED |
-| `ORD-005` | GET | `/api/v1/orders` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` | List operational orders (staff view) | PROPOSED |
-| `ORD-006` | GET | `/api/v1/orders/{order}` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` (operational fields) | Get operational order detail | PROPOSED |
-| `ORD-007` | POST | `/api/v1/orders/{order}/accept` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.accept` + `Order=PAID` | Accept order `PAID→ACCEPTED` | PROPOSED |
-| `ORD-008` | POST | `/api/v1/orders/{order}/process` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.process` + `Order=ACCEPTED` | Process order `ACCEPTED→PROCESSING` | PROPOSED |
-| `ORD-009` | POST | `/api/v1/orders/{order}/ready-for-pickup` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.ready_for_pickup` + `Order=PROCESSING` (pickup fulfillment) | Ready for pickup `PROCESSING→READY_FOR_PICKUP` | PROPOSED |
-| `ORD-010` | POST | `/api/v1/orders/{order}/ship` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.ship` + `Order=PROCESSING` (delivery) | Ship order `PROCESSING→SHIPPED` | PROPOSED |
-| `ORD-011` | POST | `/api/v1/orders/{order}/deliver` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.deliver` + `Order=SHIPPED` | Deliver order `SHIPPED→DELIVERED` (delivery); completion via `ORD-013` `orders.complete` | PROPOSED |
-| `ORD-012` | GET | `/api/v1/orders/{order}/tracking` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` | Operational tracking (staff view) | PROPOSED |
-| `ORD-013` | POST | `/api/v1/orders/{order}/complete` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.complete` + `Order=DELIVERED` (delivery) or `Order=READY_FOR_PICKUP` (pickup) | Complete order `DELIVERED→COMPLETED` (delivery) or `READY_FOR_PICKUP→COMPLETED` (pickup) — controlled completion semantics | PROPOSED |
+| `ORD-001` | GET | `/api/v1/me/orders` | Order | Customer | Yes | `AUTHENTICATED_OWNER` own orders (authorized dataset pagination) | List own orders | **APPROVED** (Phase 1.23) |
+| `ORD-002` | GET | `/api/v1/me/orders/{order}` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns order (404 masked) | Get own order detail | **APPROVED** (Phase 1.23) |
+| `ORD-003` | GET | `/api/v1/me/orders/{order}/tracking` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns order | Order tracking (current state + history milestones) | **APPROVED** (Phase 1.23) |
+| `ORD-004` | POST | `/api/v1/me/orders/{order}/cancel` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns + `cancel_own` + `eligible state + 20-min window` + backend state | Cancel own eligible order | **APPROVED** (Phase 1.23) |
+| `ORD-005` | GET | `/api/v1/orders` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` | List operational orders (staff view) | **APPROVED** (Phase 1.23) |
+| `ORD-006` | GET | `/api/v1/orders/{order}` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` (operational fields) | Get operational order detail | **APPROVED** (Phase 1.23) |
+| `ORD-007` | POST | `/api/v1/orders/{order}/accept` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.accept` + `Order=PAID` + `delivery_fee FINALIZED` | Accept order `PAID→ACCEPTED` | **APPROVED** (Phase 1.23) |
+| `ORD-008` | POST | `/api/v1/orders/{order}/process` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.process` + `Order=ACCEPTED` | Process order `ACCEPTED→PROCESSING` | **APPROVED** (Phase 1.23) |
+| `ORD-009` | POST | `/api/v1/orders/{order}/ready-for-pickup` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.ready_for_pickup` + `Order=PROCESSING` (pickup fulfillment) | Ready for pickup `PROCESSING→READY_FOR_PICKUP` | **APPROVED** (Phase 1.23) |
+| `ORD-010` | POST | `/api/v1/orders/{order}/ship` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.ship` + `Order=PROCESSING` (delivery) | Ship order `PROCESSING→SHIPPED` | **APPROVED** (Phase 1.23) |
+| `ORD-011` | POST | `/api/v1/orders/{order}/deliver` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.deliver` + `Order=SHIPPED` | Deliver order `SHIPPED→DELIVERED` (delivery); completion via `ORD-013` `orders.complete` | **APPROVED** (Phase 1.23) |
+| `ORD-012` | GET | `/api/v1/orders/{order}/tracking` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` | Operational tracking (staff view) | **APPROVED** (Phase 1.23) |
+| `ORD-013` | POST | `/api/v1/orders/{order}/complete` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.complete` + `Order=DELIVERED` (delivery) or `Order=READY_FOR_PICKUP` (pickup) | Complete order `DELIVERED→COMPLETED` (delivery) or `READY_FOR_PICKUP→COMPLETED` (pickup) — controlled completion semantics | **APPROVED** (Phase 1.23) |
+| `ORD-014` | POST | `/api/v1/orders/{order}/delivery-fee` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.set_delivery_fee` + `PENDING_PAYMENT` + `DELIVERY` + `PENDING` | Finalize delivery fee `PENDING→FINALIZED` before payment (Model B gate) | **APPROVED** (Phase 1.23) |
 | `REQ-001` | POST | `/api/v1/requests` | Request | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse later) | Submit made-to-order request (anonymous allowed) | PROPOSED |
 | `REQ-002` | GET | `/api/v1/me/requests` | Request | Customer | Yes | `AUTHENTICATED_OWNER` own | List own requests | PROPOSED |
 | `REQ-003` | GET | `/api/v1/me/requests/{request}` | Request | Customer | Yes | `AUTHENTICATED_OWNER` owns request | Get own request detail | PROPOSED |
@@ -2361,5 +2362,426 @@ Idempotency, concurrency, cart-ownership, financial-authority and delivery-fee t
 - Domain: `business-rules.md §4a` (checkout invariants, delivery-fee timing, authority).
 - Decisions: `decisions.md CHK-001..CHK-009` (checkout + fee timing).
 - Order: `§24` (Phase 1.23) will take the Order created by `CHK-001` and define identity/history/status/cancellation/tracking.
+
+---
+
+## 24. Order API Contract (Phase 1.23)
+
+> **Authority:** Canonical domain API contract for the **Order** subsystem (`ORD-001`..`ORD-013`). Consolidates `phases/phase-1.23.md` and is consistent with `Catalog` (`§21`), `Cart` (`§22`), `Checkout` (`§23`), `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`).
+> **Core Principle:** Once an Order exists, it becomes a historical business record. Current Catalog data must not silently rewrite its historical meaning. Order is customer-owned, operationally managed, financially authoritative, stateful, private, and auditable. Payment (`Group H`) is related but distinct.
+
+### 24.1 Order as Historical Business Record
+
+An Order is:
+
+```
+historical — snapshot of what was purchased, at what price, with what fee
+customer-owned — belongs to exactly one authenticated CUSTOMER
+operationally managed — Staff/Admin process through controlled actions
+financially significant — subtotal/delivery_fee/total authoritative in minor units
+stateful — moves only along approved transitions, server-controlled
+auditable — every important transition is recorded (order_status_history)
+private — non-public, non-CDN-cacheable
+```
+
+It is **not** a live copy of `Product` catalog. Historical `unit_price`, `line_total`, `subtotal`, `delivery_fee`, `total`, `quantity`, `delivery_address`, `recipient contact` remain immutable after creation (except explicitly allowed fee finalization).
+
+```
+Customer
+   ↓
+Checkout (CHK-001)
+   ↓
+Order
+   ├── Items (historical snapshots)
+   ├── Fulfillment (PICKUP / DELIVERY)
+   ├── Payment relationship (Group H, separate state machine)
+   ├── Tracking (customer-facing progress)
+   └── Status history (audit, append-only)
+```
+
+### 24.2 Order Resource & Identity
+
+| Attribute | Contract |
+|---|---|
+| **Resource** | `Order` |
+| **Collection** | `GET /api/v1/me/orders` (customer self-context) — see §24.6 |
+| **Detail** | `GET /api/v1/me/orders/{order}` and `GET /api/v1/orders/{order}` (operational) — see §24.7, `api-resources.md §3` |
+| **Internal `id`** | Opaque API identifier `ord_...`, stable, server-generated, never client-supplied |
+| **Customer-facing `order_reference`** | `OD-*****` (e.g. `OD-2026-00123`), **unique**, **human-readable**, **stable**, **non-editable**, **server-generated** at Order creation (inside `CHK-001` transaction). Exact length/sequence mechanism is implementation detail; must be unique and not guessable as enumeration vector. |
+| **Immutability** | `id`, `order_reference`, `customer owner`, `items quantity`, `historical unit_price`, `original created_at` are immutable via normal APIs — not `PATCH`able. Correction is controlled admin workflow only (see §24.14). |
+
+### 24.3 Customer Ownership
+
+Every normal customer Order belongs to exactly one authenticated `CUSTOMER`:
+
+```
+Customer → Orders (1:N)
+```
+
+- Authenticated ownership is derived from `CHK-001` principal; `POST /checkout` sets `order.customer_id = authenticated principal`.
+- Client-supplied `{"customer_id":"..."}` is **rejected** (`INVALID_VALUE` 422) — ownership cannot be chosen.
+- Customer can retrieve **only own Orders** (`ORD-001`, `ORD-002`); `Customer A → Customer B order_id` fails with `404 ORDER_NOT_FOUND` (masked, never `403`) per `§15.8`.
+
+### 24.4 Creation Boundary — Checkout Only
+
+Normal customer Orders are created **only through `POST /api/v1/checkout` (`CHK-001`)**.
+
+- No public `POST /api/v1/orders` that lets the client construct an arbitrary Order with `price`/`total`/`status`/`customer_id`/`order_reference`/`inventory`/`payment`. That endpoint, if ever needed for admin, is separate and not customer-authoritative.
+- This protects `price`, `inventory`, `ownership`, `order status`, `totals` — all server-calculated/locked inside checkout transaction.
+
+### 24.5 Order Endpoint Inventory (Authoritative — aligned with Phase 1.19 `§19.1`, finalized in Phase 1.23)
+
+Order endpoints `ORD-001`..`ORD-014` are **`APPROVED`** (complete V1 Order contract — finalized in Phase 1.23). This supersedes the provisional `PROPOSED` label in `§19.1`/`§19.15` for the Order domain; `§19.15` remains `PROPOSED` for domains not yet finalized (e.g., pending tracking split in Phase 1.24 will add detail without re-proposing Order core). Clients may consume `ORD-001`..`ORD-014` as authoritative.
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `ORD-001` | `GET` | `/api/v1/me/orders` | Customer | Required | `AUTHENTICATED_OWNER` own orders | List own orders (paginated, filtered) | — | — |
+| `ORD-002` | `GET` | `/api/v1/me/orders/{order}` | Customer | Required | `AUTHENTICATED_OWNER` owns order (404 masked) | Get own order detail | — | — |
+| `ORD-003` | `GET` | `/api/v1/me/orders/{order}/tracking` | Customer | Required | `AUTHENTICATED_OWNER` owns order | Customer tracking (current status + history milestones, not GPS) | — | — |
+| `ORD-004` | `POST` | `/api/v1/me/orders/{order}/cancel` | Customer | Required | `AUTHENTICATED_OWNER` owns + `cancel_own` + eligible state + 20-min window + backend time | Cancel own eligible order | **Required** (`Idempotency-Key`) | **Critical** (race with staff accept) |
+| `ORD-005` | `GET` | `/api/v1/orders` | Staff/Admin | Required | `OPERATIONAL` `orders.view_operational` | List operational orders (staff view) | — | — |
+| `ORD-006` | `GET` | `/api/v1/orders/{order}` | Staff/Admin | Required | `OPERATIONAL` `orders.view_operational` | Get operational order detail | — | — |
+| `ORD-007` | `POST` | `/api/v1/orders/{order}/accept` | Staff/Admin | Required | `OPERATIONAL` `orders.accept` + `Order=PAID` + `delivery_fee FINALIZED` | Accept `PAID→ACCEPTED` | Required | Critical |
+| `ORD-008` | `POST` | `/api/v1/orders/{order}/process` | Staff/Admin | Required | `OPERATIONAL` `orders.process` + `Order=ACCEPTED` | Process `ACCEPTED→PROCESSING` | Required | Critical |
+| `ORD-009` | `POST` | `/api/v1/orders/{order}/ready-for-pickup` | Staff/Admin | Required | `OPERATIONAL` `orders.ready_for_pickup` + `Order=PROCESSING` + `fulfillment=PICKUP` | Ready for pickup `PROCESSING→READY_FOR_PICKUP` | Required | Critical |
+| `ORD-010` | `POST` | `/api/v1/orders/{order}/ship` | Staff/Admin | Required | `OPERATIONAL` `orders.ship` + `Order=PROCESSING` + `fulfillment=DELIVERY` | Ship `PROCESSING→SHIPPED` | Required | Critical |
+| `ORD-011` | `POST` | `/api/v1/orders/{order}/deliver` | Staff/Admin | Required | `OPERATIONAL` `orders.deliver` + `Order=SHIPPED` + `fulfillment=DELIVERY` | Deliver `SHIPPED→DELIVERED` | Required | Critical |
+| `ORD-012` | `GET` | `/api/v1/orders/{order}/tracking` | Staff/Admin | Required | `OPERATIONAL` `orders.view_operational` | Operational tracking (staff view, richer fields) | — | — |
+| `ORD-013` | `POST` | `/api/v1/orders/{order}/complete` | Staff/Admin | Required | `OPERATIONAL` `orders.complete` + `Order=READY_FOR_PICKUP|DELIVERED` | Complete `READY_FOR_PICKUP→COMPLETED` (pickup) or `DELIVERED→COMPLETED` (delivery) | Required | Critical |
+| `ORD-014` | `POST` | `/api/v1/orders/{order}/delivery-fee` | Staff/Admin | Required | `OPERATIONAL` `orders.set_delivery_fee` + `Order=PENDING_PAYMENT` + `fulfillment=DELIVERY` + `delivery_fee_status=PENDING` | Finalize delivery fee `PENDING→FINALIZED` before payment | **Required** (`Idempotency-Key`) | **Critical** (race with payment) |
+
+*Notes:* `ORD-001`..`ORD-004` are the customer-facing IDs referenced in Phase 1.23 (`§115`); they map to the already-approved `ORD-001`=history, `ORD-002`=detail, `ORD-003`=tracking, `ORD-004`=cancel in `§19.1`. Staff `ORD-005`..`ORD-014` are operational (`ORD-014` is the V1 delivery-fee finalization gate required by Model B; fee assignment is not `INV-003` inventory adjust). `PATCH {status:...}` is **prohibited** — transitions only via `POST .../accept|process|ready-for-pickup|ship|deliver|complete|cancel|delivery-fee` (API-VAL-004, ADR/API-END-003). Payment `PAY-001` may start for a fee-finalized `PENDING_PAYMENT` Order; verified success transitions the Order to `PAID`
+
+### 24.6 Customer Order Collection — `GET /api/v1/me/orders`
+
+- **Auth:** Required. **Authz:** `Own Orders` only — query over authorized dataset (`page`/`per_page` paginate own orders, not all then filtered).
+- **Pagination:** Global `page` (1-based, default 1) + `per_page` (default 20, 1–100) → `meta.pagination {current_page, per_page, total, last_page, has_next, has_previous}` per `§4`/`api-conventions.md §11`.
+- **Default sorting:** `created_at DESC, id ASC` (newest first) + `id ASC` tie-breaker; documented explicitly; `sort` allow-list only (see §24.15).
+- **Filters (allow-list only, per `§15` + `query-parameter-conventions`):** `order_status` CLOSED (`?order_status=PROCESSING`, not `?status`), `fulfillment_type` CLOSED (`PICKUP`/`DELIVERY`), `created_from`/`created_to` ISO8601 UTC with `Z` (optional date range). Unknown filter → `422 INVALID_VALUE`. No arbitrary `?field=value` DSL.
+- **Response:** Paginated Order Summary collection (`data: [OrderSummary...], meta.pagination`); each summary contains `id`, `order_reference`, `status`, `fulfillment_type`, `delivery_fee_status`, `subtotal`, `delivery_fee`, `total`, `currency`, `created_at` (order creation time), `updated_at`. Never `password`/`payment secret`/`reserved_quantity`.
+
+### 24.7 Customer Order Detail — `GET /api/v1/me/orders/{order}`
+
+- **Auth:** Required. **Authz:** `authenticated customer` + `Order belongs to customer` — otherwise `404 ORDER_NOT_FOUND` (masked).
+- **Response:** Full Customer Order Detail — see §24.11 (items, fulfillment, snapshots, financials, tracking summary, payment summary). Errors: `401 AUTHENTICATION_REQUIRED`, `404 ORDER_NOT_FOUND` (masked), `429 RATE_LIMITED`.
+
+### 24.8 Order Items — Historical Snapshot
+
+`Order → Items (1:N)` — owned by Order, `items: [OrderItemSnapshot]`.
+
+Each `OrderItem` preserves at creation time:
+
+| Field | Type | Notes |
+|---|---|---|
+| `product_id` | string | Reference to catalog product at transaction time |
+| `variant_id` | string \| null | Variant reference where applicable |
+| `sku` | string | Snapshot of `Product.sku` / `Variant.sku` |
+| `name` | string | Snapshot of `Product.name` |
+| `variant_name` | string \| null | Snapshot of variant display (`Charcoal Grey`) |
+| `unit_price` | `{amount:int, currency:"TZS"}` | **Historical** price at transaction — minor units, integer arithmetic; not recomputed from current catalog |
+| `quantity` | integer `1..100` | Historical quantity |
+| `line_total` | `{amount,currency}` | `unit_price.amount * quantity` — snapshot |
+| `primary_image` | `{url}` | Optional snapshot for display (not live catalog URL dependency for audit) |
+
+**Why historical:** If catalog price `Sofa 1,000,000 → 1,200,000` or product deactivated, old Order still shows `1,000,000` and remains understandable. Order Items never rely solely on live `Product` representation; deletion/deactivation of product does not erase history.
+
+**Immutability:** `PATCH /orders/{order}/items/{item}` to change price/quantity is **prohibited** (`405`/`422`). Operational correction is controlled admin workflow (audit, explicit permission, not normal API).
+
+### 24.9 Fulfillment & Delivery Snapshot
+
+- **Fulfillment:** `fulfillment_type` `PICKUP` / `DELIVERY` CLOSED, stored at Order creation, generally immutable (`Generally No` per §152 matrix). `PICKUP` vs `DELIVERY` drives branch validation (see §24.13).
+- **Pickup:** `delivery_address: null`, `delivery_fee: {amount:0, currency:"TZS"}`, `delivery_fee_status: FINALIZED` at creation; lifecycle `PROCESSING→READY_FOR_PICKUP→COMPLETED` (no `SHIPPED`/`DELIVERED`).
+- **Delivery:** `delivery_address: {recipient_name, phone, address_line, city}` **snapshot** from checkout (historical, not live profile address; later profile change does not rewrite). `customer contact` (`recipient_name`, `phone`) preserved for fulfillment even if `User` profile changes. Saved address book remains **deferred** — no `saved_address_id` dependency.
+- **Billing address (V1):** `billing_address` is a **snapshot, not separately collected** — checkout input (`CHK-001` §23.3 / `api-resources.md §10.4` Line 262) provides only `fulfillment_type` + conditional `delivery_address`; no `billing_address` field is accepted. For `DELIVERY`, `billing_address` is a **copy of the `delivery_address` snapshot** provided at `CHK-001`; for `PICKUP`, `billing_address` is `null` (deferred — separate billing collection is V2). Field is therefore **nullable (`object | null`)** in V1 and must be treated as `null` for `PICKUP` by clients (see `api-resources.md §3`).
+- **Delivery object:** `delivery: {status, tracking_summary}` | `null` for `PICKUP`; no GPS.
+
+### 24.10 Delivery Fee — Variable, Staff/Admin, Historical
+
+Variable, location-based, **not customer-controlled** (`PRICE-006`, CHK-006).
+
+- At `CHK-001` for `PICKUP`: `delivery_fee {amount:0}, delivery_fee_status FINALIZED` immediately.
+- At `CHK-001` for `DELIVERY`: `delivery_fee null, delivery_fee_status PENDING` (provisional `total = subtotal`), `payment null` blocked.
+- **Finalization endpoint `ORD-014` `POST /api/v1/orders/{order}/delivery-fee`** (Staff/Admin, `Idempotency-Key` **Required**, concurrency **Critical**): sets fee from `PENDING` → `FINALIZED` **before** `PAID`. `delivery_fee_status` must be `PENDING` and `fulfillment_type=DELIVERY` and `status=PENDING_PAYMENT`; otherwise `409 INVALID_ORDER_TRANSITION` / `ORDER_STATE_CONFLICT`. Transitions `delivery_fee null → {amount:int (>0, integer minor units), currency:"TZS"}` and `delivery_fee_status PENDING → FINALIZED`, recomputes `total = subtotal + delivery_fee.amount` authoritative, makes `payment` eligible. Single finalization; repeated calls with same `Idempotency-Key` replay original; same key with different `amount` → `409 DUPLICATE_OPERATION`; `PENDING→FINALIZED` only once before `PAID` (controlled admin correction after `PAID` is separate audited workflow, not normal staff).
+  - **Request:** `{"delivery_fee": {"amount": 35000, "currency":"TZS"}, "reason": "Mikocheni zone 2" }` (`reason` optional, trimmed, audit). Strict: `amount` integer `>=0` minor units, `currency` must be `"TZS"`, unknown fields `422`, customer cannot call (403).
+  - **Response:** `200` updated Order (`data: {id, order_reference, status: PENDING_PAYMENT, delivery_fee: {amount,currency}, delivery_fee_status: FINALIZED, total: {amount,currency}, payment: null (now eligible for PAY-001) }`).
+  - **Auth:** `OPERATIONAL` `orders.set_delivery_fee` (new permission, Staff/Admin where approved; not `products.manage` or `inventory.manage`; `ADMIN` may grant). `Staff` without permission → `403 FORBIDDEN`.
+  - **Errors:** `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 ORDER_NOT_FOUND` (masked if not operational view), `409 INVALID_ORDER_TRANSITION` (already FINALIZED or not PENDING_PAYMENT/DELIVERY), `422 INVALID_VALUE` (bad amount/currency), `409 ORDER_STATE_CONFLICT` (concurrent fee set vs payment), `429 RATE_LIMITED`.
+  - **Audit & Idempotency:** Logged `actor, order, old_delivery_fee, new_delivery_fee, reason, occurred_at`; durable `Idempotency-Key` store (unique constraint) prevents duplicate fee writes on retry; `delivery_fee` change after `FINALIZED` outside `ORD-014` is prohibited except controlled admin correction.
+- Once authoritative and especially after `PAID`, fee is historical record — not changed by later `delivery policy` change. Unrestricted repeated fee changes are prohibited; only `PENDING→FINALIZED` once before `PAID`, and controlled correction thereafter (audit, admin, not normal staff).
+- Financial representation uses `§3.8` money `{amount,currency}` integer minor units.
+
+### 24.11 Order Financials & Payment Relationship (Group H Boundary)
+
+Conceptually:
+
+```
+Order { subtotal, delivery_fee, total, currency:"TZS" }  (Order side, this contract)
+  └── Payment { payment_status, amount:{amount,currency}, currency } (Payment side, Group H)
+```
+
+- **Finality point (Model B):** `subtotal` authoritative at `CHK-001`; `delivery_fee` authoritative after `Staff sets fee, status FINALIZED`; `total = subtotal + delivery_fee.amount` becomes authoritative **before** `PAID`. `PENDING_PAYMENT → PAID` requires `delivery_fee_status=FINALIZED` (payment amount cannot be provisional). `PAY-001` (`POST /payments`) is `409 DELIVERY_FEE_PENDING` while pending (see `§23.6`/`§23.11`). Later Group H answers `Payment amount == final Order total`.
+- **Customer-visible amounts:** Customer sees `payment_status` + `amount` + `currency` + safe reference (`payment.id`, `order_reference`), never `provider secret`/`private credentials`/`raw authorization data`. Staff sees operational payment info as per `§18.11`; provider secrets remain `INTERNAL`.
+- **Order vs Payment state:** Related but distinct. `Order PAID` means payment confirmed by backend via Group H webhook verification; `Order ACCEPTED` means staff accepted operationally — not automatically `ACCEPTED` when `PAID`. Do not equate `Order.status = Payment.status`.
+
+### 24.12 Order Status — Closed Enum (Authoritative Lifecycle)
+
+Version 1 statuses are **CLOSED** (adding new value is breaking compatibility):
+
+```
+PENDING_PAYMENT, PAID, ACCEPTED, PROCESSING, READY_FOR_PICKUP, SHIPPED, DELIVERED, COMPLETED, CANCELLED
+```
+
+- `CANCELLED` is approved as terminal cancellation status (customer `20-min window` or explicit admin cancellation). Not every order uses every status.
+- `CANCELLED` is set only via controlled `POST .../cancel` action, not via generic `PATCH {status:"CANCELLED"}`.
+- Every status value is machine `UPPER_SNAKE_CASE` (`READY_FOR_PICKUP`), frontend maps to display.
+
+### 24.13 State Machine (Normative) — Server-Controlled, Fulfillment-Aware
+
+| Current State | Action (POST) | Actor | Fulfillment | Preconditions (in addition to auth) | Next State |
+|---|---|---|---|---|---|
+| `PENDING_PAYMENT` | `payment success` (System / Group H webhook) | System | Any | `delivery_fee_status=FINALIZED`, payment verified, idempotency, no cancelled | `PAID` |
+| `PENDING_PAYMENT` | `cancel` (`ORD-004`) | Customer (own) | Any | `owns + within 20-min + state cancellable + backend time` | `CANCELLED` |
+| `PAID` | `accept` (`ORD-007`) | Staff/Admin `orders.accept` | Any | — | `ACCEPTED` |
+| `ACCEPTED` | `process` (`ORD-008`) | Staff/Admin `orders.process` | Any | — | `PROCESSING` |
+| `PROCESSING` | `ready-for-pickup` (`ORD-009`) | Staff/Admin `orders.ready_for_pickup` | `PICKUP` only | — | `READY_FOR_PICKUP` |
+| `PROCESSING` | `ship` (`ORD-010`) | Staff/Admin `orders.ship` | `DELIVERY` only | — | `SHIPPED` |
+| `SHIPPED` | `deliver` (`ORD-011`) | Staff/Admin `orders.deliver` | `DELIVERY` only | — | `DELIVERED` |
+| `READY_FOR_PICKUP` | `complete` (`ORD-013`) | Staff/Admin `orders.complete` | `PICKUP` only | — | `COMPLETED` |
+| `DELIVERED` | `complete` (`ORD-013`) | Staff/Admin `orders.complete` | `DELIVERY` only | — | `COMPLETED` |
+| `PENDING_PAYMENT` | `admin cancel` (controlled, explicit) | Admin `orders.manage` (explicit) | Any | audit, not customer 20-min window | `CANCELLED` |
+
+**Pickup branch:** `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` (no `SHIPPED`/`DELIVERED`).
+
+**Delivery branch:** `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED`.
+
+**Invalid (rejected `409`/`422`):** `PAID→COMPLETED`, `COMPLETED→PROCESSING`, `DELIVERED→SHIPPED`, `PICKUP→SHIPPED`, `DELIVERY→READY_FOR_PICKUP`, any `PATCH {status}` without action, any transition on `COMPLETED`/`CANCELLED` (terminal), any `PICKUP order → ship`.
+
+All transitions evaluate `authenticated actor + permission + current state + fulfillment_type + business preconditions` (e.g., `delivery_fee FINALIZED` before `PAID`) atomically; state validation inside transaction.
+
+### 24.14 Mutability & Historical Data Matrix
+
+| Order field | Mutable after creation? | Customer | Staff | Admin |
+|---|---|---|---|---|
+| `order_reference` | **No** | Read | Read | Read |
+| `customer owner` | **No** | Read (own) | Operational | Authorized |
+| `item quantity` | **No** | Read | Read | Controlled correction only (audit, explicit workflow) |
+| `historical unit_price` | **No** | Read | Read | Controlled correction only |
+| `line_total` | **No** | Read | Read | Controlled correction only |
+| `order created_at` | **No** | Read | Read | Read |
+| `fulfillment_type` | **Generally No** | Read | Operational | Controlled (rejected for cross-branch change) |
+| `delivery_address snapshot` | **Generally No** | Read (own) | Operational | Authorized |
+| `delivery_fee` | `PENDING→FINALIZED` once before `PAID`; thereafter controlled correction only, not unrestricted | Read (own) | Authorized (`inventory/fee` permission, audit) | Authorized (audit) |
+| `delivery_fee_status` | `PENDING→FINALIZED` | Read | Read/Authorized (fee setter) | Authorized |
+| `total` | Derived, finalized with fee (see §24.11) | Read | Operational | Authorized |
+| `status` | **Action-controlled only** | Read | Action (`accept/process/ship/deliver/complete`) | Action (+ admin cancel) |
+| `status_history` | **Append-only** | Read | Read / append via actions | Read / append via actions |
+
+Historical `OrderItems`, `snapshot addresses`, `subtotal/total/delivery_fee` once `FINALIZED` are not patched via generic `PATCH /orders/{id}` for all fields.
+
+### 24.15 Collection Sorting, Pagination & Filtering
+
+- **Pagination:** `ORD-001` (customer) and `ORD-005` (staff) both use `page`/`per_page` → `meta.pagination` (`current_page, per_page, total, last_page, has_next, has_previous`) per `§4`.
+- **Customer sorting:** `created_at DESC, id ASC` (newest first) default; deterministic tie-breaker `id ASC` — documented; `sort` allow-list only (`created_at`, `total`, `order_reference` — `id` as tie-breaker, not arbitrary DB column).
+- **Customer filters (allow-list):** `order_status` (`?order_status=PROCESSING` CLOSED, not `?status`), `fulfillment_type` (`PICKUP`/`DELIVERY`), `created_from`/`created_to` ISO8601. Staff operational lists add `customer reference`, `order_reference` search as authorized.
+- **Performance:** Later implementation considers `indexes (customer_id, created_at, status, fulfillment_type)`, pagination, efficient joins, minimal N+1 — not designed here.
+
+### 24.16 Tracking & Status History
+
+- **Status History (audit):** `Order → StatusHistory 1:N`, append-only, generated by actions. Fields: `status` (CLOSED), `occurred_at` ISO8601 `Z`, `actor` / `context` (`customer:123`, `staff:45`, `system`), `note` where appropriate (e.g., `Ready for pickup — aisle 3`). Customer can view relevant history; cannot create/edit/delete; staff notes not exposed via customer representation.
+- **Tracking (customer-facing):** Derived from status history but not identical. `GET /me/orders/{order}/tracking` (`ORD-003`) returns customer progress milestones (not GPS). For `PICKUP`: milestones up to `READY_FOR_PICKUP`; for `DELIVERY`: up to `DELIVERED` → `COMPLETED`. Staff tracking (`ORD-012`) is operational view (richer, includes internal notes where authorized).
+- **Separation:** `Status History = audit sequence` vs `Tracking = customer progress representation`; both derive from same underlying history.
+
+### 24.17 Cancellation — Customer & Admin
+
+- **Customer (`ORD-004` `POST /me/orders/{order}/cancel`):**
+  - Conditions: `authenticated customer + owns Order + within 20 minutes from authoritative Order creation (`order.created_at` backend time) + Order state permits cancellation (`PENDING_PAYMENT` cancellable; `PAID`/`ACCEPTED`+ not cancellable)`.
+  - Server determines `current_time`, `order_created_at`, `elapsed = current_time - created_at`; client `cancelled_at` is rejected.
+  - Input: none or minimal `{"reason":"..."}` optional; server sets `cancelled_at`, resulting state `CANCELLED`, status history entry.
+  - Errors: `401 AUTHENTICATION_REQUIRED` if not authed, `404 ORDER_NOT_FOUND` (masked) if not own, `422/409 ORDER_NOT_CANCELLABLE` if window expired or state ineligible (`ORDER_NOT_CANCELLABLE` preferred over generic `BAD_REQUEST` per `§15`), `409 ORDER_STATE_CONFLICT` if raced with staff accept.
+  - Financial consequence: cancellation does not automatically imply refund — handled per business (see `business-rules.md §8`).
+
+- **Staff:** Not automatically given customer cancellation; no `STAFF → cancel any order` via same endpoint. If operational cancellation needed, explicit admin/operational action with authority.
+
+- **Admin:** Broader cancellation override must be explicitly defined (audit, not `DELETE /orders/{id}` generic; orders are never hard-deleted, history remains).
+
+### 24.18 Idempotency — Critical Order Actions
+
+Customer `POST /me/orders/{order}/cancel` and staff `POST .../accept|process|ready-for-pickup|ship|deliver|complete` are **IDEMPOTENCY_REQUIRED** (`Idempotency-Key`).
+
+- First `accept` with `K123 → 200 ACCEPTED`; retry `K123` → replay `200 ACCEPTED`, no second `ACCEPTED` history event.
+- Cancel with `K1`: `first → CANCELLED`; second `K1` → deterministic replay `CANCELLED` (no duplicate side effects); if later `CANCELLED→ACCEPTED` attempted, `409 INVALID_ORDER_TRANSITION`.
+- Implementation uses durable `Idempotency-Key` store with transaction (as for `CHK-001`).
+
+### 24.19 Concurrency — Critical Races
+
+Must be protected transactionally (state read + validation + transition inside atomic boundary):
+
+- `Customer cancel + Staff accept` same `PENDING_PAYMENT order` → one succeeds, other gets `409 ORDER_STATE_CONFLICT` (must re-read).
+- `Staff accept + Staff accept` (duplicate click) → idempotency replay or `409`.
+- `Staff ship + retry ship` → no duplicate `SHIPPED` event.
+- `Delivery fee SET + Payment PAID` race — fee finalization inside same transaction boundary as `PENDING_PAYMENT→PAID` check ensures payment never on provisional total.
+- `Admin vs Staff` simultaneous transition — same atomic check.
+
+### 24.20 Order and Inventory
+
+Order represents what was purchased; inventory is separate operational resource (`INV-001..003`).
+
+- Order Item `quantity` is historical, not live inventory quantity; current stock not stored inside Order Items.
+- Inventory mutation (`INV-003 adjust`) is staff `inventory.manage` audited and does not rewrite historical Order price.
+
+### 24.21 Authorization Matrix (Normative)
+
+| Operation | Customer | Staff | Admin |
+|---|---|---|---|
+| View own Orders (`ORD-001`, `ORD-002`) | **Yes** (`AUTHENTICATED_OWNER` own) | No as owner (operational view via `ORD-005/006`) | Authorized (but purpose-bound) |
+| View operational Orders (`ORD-005/006`) | No | **Yes** (`orders.view_operational`) | Yes |
+| Tracking own order (`ORD-003`) | **Yes** (own) | — | — |
+| Tracking operational (`ORD-012`) | — | **Yes** (operational) | Yes |
+| Cancel own eligible Order (`ORD-004`) | **Yes** (`owns + 20-min + cancellable state + backend time`) | No (customer action) | Authorized only if explicitly defined (admin cancel) |
+| Accept `PAID→ACCEPTED` (`ORD-007`) | No | **Yes** (`orders.accept` + `PAID` + `FINALIZED`) | Yes |
+| Process `ACCEPTED→PROCESSING` (`ORD-008`) | No | **Yes** (`orders.process`) | Yes |
+| Ready for Pickup `PROCESSING→READY_FOR_PICKUP` (`ORD-009`) | No | **Yes** (`orders.ready_for_pickup` + `PICKUP`) | Yes |
+| Ship `PROCESSING→SHIPPED` (`ORD-010`) | No | **Yes** (`orders.ship` + `DELIVERY`) | Yes |
+| Deliver `SHIPPED→DELIVERED` (`ORD-011`) | No | **Yes** (`orders.deliver` + `DELIVERY`) | Yes |
+| Complete `→COMPLETED` (`ORD-013`) | No | According to policy (`orders.complete` + `READY_FOR_PICKUP|DELIVERED`) | Yes |
+| Finalize delivery fee `PENDING→FINALIZED` before payment (`ORD-014`) | No | **Yes** (`orders.set_delivery_fee` + `PENDING_PAYMENT` + `DELIVERY` + `PENDING`) | Yes (where approved) |
+| Modify historical item price | No | No | Controlled correction only (audit) |
+| Change Order owner | No | No | Controlled admin workflow only (audit) |
+
+Staff view does not grant `change password / restrict account / self-approve / escalation`; admin does not get `PATCH {status: anything}` without lifecycle validation (see `§18`).
+
+### 24.22 Historical Data Access Matrix
+
+| Role | Order reference | Items & historical prices | Delivery address (own/operational) | Payment summary (limited) | Internal notes | Inventory internals | Credentials |
+|---|---|---|---|---|---|---|---|
+| Customer | Yes | Yes (own) | Own | Limited (own `payment_status`, `amount`) | No | No | No |
+| Staff | Yes | Yes | Operational | Operational (as authorized) | Yes if authorized | As required | No |
+| Admin | Yes | Yes | Authorized | Authorized | Yes | Yes | No |
+
+Private (`password`, `payment secret`, `auth token`) never.
+
+### 24.23 Caching, Privacy & Performance
+
+- **Privacy:** Customer Order reads (`ORD-001`..`ORD-004`) contain sensitive PII (delivery address, phone, totals) and financial data — `Cache-Control: private, no-store` / `PRIVATE`; `Staff/Admin` operational data `PRIVATE/INTERNAL`; do not publicly CDN-cache Orders.
+- **Performance:** Customer `GET /me/orders` must support growth; implementation considers `indexes (customer_id, created_at, status, fulfillment_type)`, pagination, stable ordering `created_at DESC, id ASC`, minimal joins, avoid N+1 for `items + payment + tracking` (detail). Not optimized here.
+- **Security:** Authorization before serialization; enumeration protection `404` masking for not-own order.
+
+### 24.24 Errors — Common Error Contract (`data` vs `errors`)
+
+- Uses `{"data":…}` success and `{"errors":[…],"meta":{"request_id":…}}` failure per `§15` — never custom `order_error` envelope.
+- Potential codes (CLOSED per `§15.15`, business meaning per `business-rules.md §14`): `ORDER_NOT_FOUND` (`404` masked), `ORDER_NOT_CANCELLABLE` (`422/409` — window expired or state ineligible, preferred over `BAD_REQUEST`), `INVALID_ORDER_TRANSITION` (`409` — `PAID→COMPLETED` etc.), `ORDER_STATE_CONFLICT` (`409` — concurrent race), `INVALID_VALUE`/`INVALID_TYPE` for bad filter, `AUTHENTICATION_REQUIRED` (`401`), `FORBIDDEN` (`403`), `RATE_LIMITED` (`429`), `DELIVERY_FEE_PENDING` (`409` — payment before fee finalized). Add only needed codes per registry.
+
+### 24.25 Compatibility — Version 1
+
+Within `v1`, do not change without compatibility review: `status field meaning`, `order_reference semantics`, `historical price semantics`, `fulfillment type meaning`, `money structure {amount,currency}`, `ownership semantics`, `pagination/sort/filter` shapes. New status is breaking (`api-versioning-strategy.md`).
+
+### 24.26 Order Response Examples
+
+**Customer Order Summary (collection `ORD-001`):**
+
+```json
+{
+  "data": [
+    {
+      "id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+      "order_reference": "OD-2026-00123",
+      "status": "PROCESSING",
+      "fulfillment_type": "DELIVERY",
+      "delivery_fee_status": "FINALIZED",
+      "subtotal": { "amount": 170000000, "currency": "TZS" },
+      "delivery_fee": { "amount": 2500000, "currency": "TZS" },
+      "total": { "amount": 172500000, "currency": "TZS" },
+      "currency": "TZS",
+      "created_at": "2026-09-01T10:15:00Z",
+      "updated_at": "2026-09-01T12:00:00Z"
+    }
+  ],
+  "meta": {
+    "pagination": { "current_page": 1, "per_page": 20, "total": 12, "last_page": 1, "has_next": false, "has_previous": false }
+  }
+}
+```
+
+**Customer Order Detail — DELIVERY finalized (`ORD-002`):**
+
+```json
+{
+  "data": {
+    "id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+    "order_reference": "OD-2026-00123",
+    "status": "PROCESSING",
+    "fulfillment_type": "DELIVERY",
+    "delivery_fee_status": "FINALIZED",
+    "items": [
+      {
+        "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+        "variant_id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+        "sku": "SOFA-MOD-3S-GRY",
+        "name": "Modern 3-Seater Fabric Sofa",
+        "variant_name": "Charcoal Grey",
+        "unit_price": { "amount": 125000000, "currency": "TZS" },
+        "quantity": 1,
+        "line_total": { "amount": 125000000, "currency": "TZS" }
+      }
+    ],
+    "subtotal": { "amount": 170000000, "currency": "TZS" },
+    "delivery_fee": { "amount": 2500000, "currency": "TZS" },
+    "total": { "amount": 172500000, "currency": "TZS" },
+    "currency": "TZS",
+    "delivery_address": {
+      "recipient_name": "Asha Mwangi",
+      "phone": "+255700000001",
+      "address_line": "Block C, Mikocheni B, Dar es Salaam",
+      "city": "Dar es Salaam"
+    },
+    "payment": {
+      "payment_status": "PAID",
+      "amount": { "amount": 172500000, "currency": "TZS" }
+    },
+    "created_at": "2026-09-01T10:15:00Z",
+    "updated_at": "2026-09-01T12:00:00Z"
+  }
+}
+```
+
+**PICKUP pending fee not applicable** — `delivery_fee_status: FINALIZED` at creation, `payment` present immediately when `PAID`. Completed Orders remain readable (`COMPLETED` still belongs to customer).
+
+### 24.27 Delivery Fee + Order + Payment Critical Gate (Consistency)
+
+```
+Checkout (CHK-001)
+  → Order PENDING_PAYMENT (delivery_fee=null/PENDING for DELIVERY, 0/FINALIZED for PICKUP)
+  → Staff/Admin sets delivery_fee (DELIVERY) → FINALIZED → final total authoritative
+  → Payment (Group H) verifies amount == final Order total (PAY-001 blocked 409 while PENDING)
+  → Order PAID → Staff workflow (ACCEPTED→...→COMPLETED)
+```
+
+There is never ambiguity about `What exact amount did the customer agree to/pay for this Order?` — the Order's `total` when `delivery_fee_status=FINALIZED` is the authoritative transaction amount; financial finality before `PAID` is normative.
+
+### 24.28 Cross-Phase Consistency Checks
+
+- **Catalog vs Order:** `Current Product (price/name/image)` ≠ `Historical OrderItem (snapshot)` — catalog change does not rewrite history (see §24.8).
+- **Cart vs Order:** `Cart intent (informational pricing, no reservation)` → `Order transaction (authoritative pricing, inventory locked)` — checkout revalidates before Order.
+- **Checkout vs Order:** `CHK-001 → creates Order PENDING_PAYMENT` — no direct `POST /orders` for customers.
+- **Auth vs Order:** `Order ownership → authenticated customer`; `Customer A → Customer B order` fails 404 masked.
+- **Authz vs Order:** `Customer → own Order`, `Staff → operational Order (view/process)`, `Admin → administrative Order` — staff does not gain account control.
+- **Error vs Order:** `ORDER_NOT_FOUND/ORDER_NOT_CANCELLABLE/INVALID_ORDER_TRANSITION/ORDER_STATE_CONFLICT` via common `errors` envelope, not custom.
+
+### 24.29 Required Security, Financial & Concurrency Tests (Future Implementation)
+
+Future automated tests must verify (as API/feature tests, not UI-only):
+
+- **Security:** `Customer A → Customer B Order 404`, `Customer A → Customer B tracking 404`, `Customer PATCH {status:COMPLETED} rejected 409`, `Customer POST {total:1} not authoritative`, `Customer POST {delivery_fee:0} rejected`, `Customer POST {customer_id:another} rejected`, `Customer cancel after 20min 422`, `Customer cancel COMPLETED 422`, `Staff view order without permission 403`, `Staff self-approve escalation 403`.
+- **Financial:** `historical price remains stable after catalog price change`, `subtotal correct`, `delivery_fee authoritative (null→finalized, 0 for PICKUP)`, `total = subtotal + delivery_fee when FINALIZED`, `customer cannot override total (rejected)`, `payment amount == final Order total (Group H)`.
+- **Concurrency:** `Customer cancel + Staff accept race → one 409`, `Staff accept + Staff accept race → idempotent replay`, `Staff ship + retry → no duplicate`, `Delivery fee SET + Payment race → payment blocked until finalized`, `Admin vs Staff transition → atomic`.
+- **Client workflows:** `Login → View own order → Track → Cancel within 20min` (customer), `Receive order → Accept → Process → Ship/ReadyForPickup → Deliver → Complete` (staff).
+
+### 24.30 Cross-References
+
+- Resources: `api-resources.md §3` (Order, OrderItem, Fulfillment, Tracking, StatusHistory — historical/field-level, mutable/immutable, representation levels).
+- Conventions: `api-conventions.md §24` (state transitions, historical snapshots, immutable financial data, ownership checks, controlled actions, private caching, concurrency).
+- Domain: `business-rules.md §6` (Orders belong to Customer, created via Checkout, reference server-generated, history preserved, 20-min cancellation, pickup/delivery branches, variable delivery fee, staff/admin authority).
+- Decisions: `decisions.md ORD-001..ORD-009` (customer-owned historical records, ownership not client-supplied, historical snapshots, 20-min window, controlled transitions, fee not customer-controlled, distinct pickup/delivery paths, private data, Group H payment).
+- Next: `Phase 1.24 Order Tracking & Fulfillment` will isolate `PICKUP vs DELIVERY / READY_FOR_PICKUP / SHIPPED / DELIVERED` timeline details without duplicating this core Order contract.
 
 

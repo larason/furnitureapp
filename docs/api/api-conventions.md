@@ -526,5 +526,48 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 - **Next.js & Flutter:** Both submit `fulfillment_type` + conditional address, receive validation errors/stock problems/totals via same contract, retry safely with same `Idempotency-Key`, handle timeout and display resulting Order — no business authority in browser/app. Staff/Admin interact with resulting Order via `ORD-005..013`; checkout exposes no admin ops.
 - **Payment remains Group H:** Checkout defines boundary where payment is required; provider integration, SDK, credentials, callbacks, webhooks, provider statuses belong to Group H, not here.
 
+## 24. Order API Conventions (Phase 1.23)
+
+> **Authority:** Reusable conventions governing the Order domain (`ORD-001`..`ORD-013` — historical record, ownership, fulfillment, delivery fee, status machine, tracking, authorization, privacy). Consolidates `phases/phase-1.23.md`.
+
+### 24.1 Order Is Historical, Customer-Owned, Operationally Managed
+
+- **Historical:** Once created via `CHK-001`, Order becomes authoritative snapshot (`items` historical prices/quantities/names, `subtotal/delivery_fee/total` authoritative, `delivery_address` snapshot). Current `Product.name/price/image` changes do not rewrite history; deactivation does not erase Order.
+- **Customer-owned:** `Order.customer_id = authenticated principal` from checkout; `{"customer_id":"..."}` from client rejected; `Customer A → Customer B order` fails `404 ORDER_NOT_FOUND` (masked). Saved address book deferred — no `saved_address_id`; address is per-order snapshot.
+- **Operational:** Staff `orders.view_operational` view and act via controlled actions; Admin broader but still action-controlled; no `PATCH {status: "COMPLETED"}` or `DELETE /orders/{order}` for customers.
+
+### 24.2 State Transitions — Controlled Actions, Fulfillment-Aware, Closed
+
+- **Closed statuses:** `PENDING_PAYMENT`, `PAID`, `ACCEPTED`, `PROCESSING`, `READY_FOR_PICKUP`, `SHIPPED`, `DELIVERED`, `COMPLETED`, `CANCELLED` (`UPPER_SNAKE_CASE` CLOSED, adding new value is breaking).
+- **Actions not field writes:** `POST /me/orders/{order}/cancel` (customer), `POST /orders/{order}/accept|process|ready-for-pickup|ship|deliver|complete|delivery-fee` (staff, `delivery-fee` is `ORD-014` fee finalization). `PATCH {status}` without action is rejected `409 INVALID_ORDER_TRANSITION`.
+- **Fulfillment-aware:** `PROCESSING→READY_FOR_PICKUP` only `PICKUP`; `PROCESSING→SHIPPED` only `DELIVERY`; `SHIPPED→DELIVERED` only `DELIVERY`; `READY_FOR_PICKUP→COMPLETED` only `PICKUP`, `DELIVERED→COMPLETED` only `DELIVERY`. Cross-branch `PICKUP→SHIPPED` rejected.
+- **Delivery-fee gate:** `PENDING_PAYMENT + delivery_fee_status=PENDING (DELIVERY) → ORD-014 POST /orders/{order}/delivery-fee (orders.set_delivery_fee) → FINALIZED`; `PENDING_PAYMENT→PAID` requires `delivery_fee_status=FINALIZED` (Model B). `PENDING` blocks `PAY-001` `409 DELIVERY_FEE_PENDING`; provisional `total` not final. Fee finalization is `Idempotency-Key` **Required**, concurrency **Critical** (race with payment), `amount` integer minor units, `currency:"TZS"` only, audited.
+- **Transition authorization:** Every transition evaluates `actor + permission + current_state + fulfillment_type + business preconditions` atomically; state read+validation+write inside transaction.
+
+### 24.3 Cancellation — 20-Minute Customer Window, Server Time
+
+- **Customer:** `POST /me/orders/{order}/cancel` requires `owns + state == PENDING_PAYMENT (cancellable) + within 20 minutes from `order.created_at` backend time + eligible`. Server computes `elapsed = now - created_at`; `cancelled_at` from client rejected. Success → `CANCELLED`; `ORDER_NOT_CANCELLABLE` (`422/409`) if window expired or state terminal.
+- **Staff/Admin:** No automatic customer-cancel via same endpoint; admin cancel is separate controlled workflow (audit, not 20-min window).
+- **History remains:** `CANCEL` ≠ `DELETE`; cancelled orders remain readable, not hard-deleted.
+
+### 24.4 Historical Snapshots & Immutable Financial Data
+
+- **Items:** `product_id`, `variant_id`, `sku`, `name`, `variant_name`, `unit_price` (historical `{amount,currency}`), `quantity`, `line_total` — all snapshot at `CHK-001`; immutable (controlled admin correction only with audit, not normal API).
+- **Financial:** `subtotal` authoritative at checkout, `delivery_fee` `null→{amount,currency}` `PENDING→FINALIZED` once before `PAID`, `total = subtotal+delivery_fee` final only when `FINALIZED`; `currency TZS` `{amount,currency}` integer minor units; no floating; no recompute from current catalog.
+- **Contact/Address:** `delivery_address` + `recipient_name/phone` snapshot preserved; later profile change does not rewrite.
+
+### 24.5 Ownership Checks, Field-Level Access & Query-Aware Authorization
+
+- **Ownership before data:** Verify `authenticated customer` + `owns Order` before serialization; `?customer_id=another` cannot expand; collection `GET /me/orders` paginates own dataset (`Customer A` only).
+- **Field-level:** Before serialization select `CUSTOMER` (own `order_reference`, `items`, `totals` limited), `STAFF` (operational `customer contact`, `delivery_address`, not `password`), `ADMIN` (authorized) — per `api-contract.md §24.22`; `reserved_quantity`/`payment secret` never to customer.
+- **Search before filter → sort → paginate:** Customer filters `order_status` CLOSED (not `status`), `fulfillment_type`, `created_from/to` ISO8601 — unknown filter `422`.
+
+### 24.6 Private Caching, Concurrency & Idempotency
+
+- **Private:** All Order reads are `Cache-Control: private, no-store` (PII + financial); no CDN public caching. Staff operational similarly private/internal.
+- **Concurrency — critical:** `Customer cancel + Staff accept` race, `Staff accept + accept` duplicate, `ship + ship retry`, `fee SET + PAID` race, `Admin vs Staff` transition — all require atomic `authorize + validate state + perform` inside transaction; failure returns `409 ORDER_STATE_CONFLICT` and caller must re-read.
+- **Idempotency — required:** `POST .../cancel|accept|process|ready-for-pickup|ship|deliver|complete` and `checkout` are `IDEMPOTENCY_REQUIRED` (`Idempotency-Key`); retry with same key replays original `201/200`, same key + different action body → `409 DUPLICATE_OPERATION`; no duplicate `SHIPPED` event on retry.
+- **History:** `order_status_history` append-only, generated by actions; `tracking` (`ORD-003` customer, `ORD-012` staff) derives from history but is separate customer-facing progress view (not GPS).
+
 
 
