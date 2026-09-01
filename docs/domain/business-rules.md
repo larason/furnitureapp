@@ -149,6 +149,25 @@ The computer system is always the final authority on what is allowed, what costs
 
 **Validation hierarchy:** `authenticated customer → owns order → order exists → customer cancellation allowed → 20-minute window valid → current order state eligible`. Failure atomicity required; do not leave reservation applied if later validation fails.
 
+## 8a. Tracking and Fulfillment
+
+> Tracking = customer-facing `timeline` of fulfillment progress (`PAID, ACCEPTED, PROCESSING, READY_FOR_PICKUP, SHIPPED, DELIVERED, COMPLETED` filtered by fulfillment); Fulfillment = operational `Order → Staff → Process → Ship/Deliver/ReadyForPickup → Complete` (small-scale, not logistics platform).
+
+| # | Business rule | Ref |
+|---|---|---|
+| 1 | **Pickup and Delivery follow distinct operational paths.** `PICKUP: PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` (no `SHIPPED`/`DELIVERED`); `DELIVERY: PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED` (no `READY_FOR_PICKUP`). Cross-branch `PICKUP→SHIPPED` rejected. | FUL-003, ORD-007 |
+| 2 | **Pickup uses `READY_FOR_PICKUP` before completion** — Staff marks `PROCESSING→READY_FOR_PICKUP` (`ORD-009`) when ready for collection; `READY_FOR_PICKUP→COMPLETED` (`ORD-013` explicit Staff confirms collection). Single pickup location V1. | FUL-002, ORD-009 |
+| 3 | **Delivery uses `SHIPPED` then `DELIVERED` before completion** — Staff ships `PROCESSING→SHIPPED` (`ORD-010`: left business), then marks `SHIPPED→DELIVERED` (`ORD-011`: delivery completed), then `DELIVERED→COMPLETED` (`ORD-013`). No GPS/`tracking_number`/`carrier`. | FUL-002, ORD-010 |
+| 4 | **Customer can track own Order** — `GET /me/orders/{order}/tracking` (`ORD-003`) own tracking `AUTHENTICATED_OWNER` only; `Customer A → Customer B tracking` fails `404` masked. Staff tracking `ORD-012` operational richer view. | ORD-003, FUL-001 |
+| 5 | **Staff operate fulfillment** — `orders.ready_for_pickup / ship / deliver / complete` with `valid state + fulfillment_type + permission` (`ORD-009/010/011/013`, `Idempotency-Key` Required, concurrency `Critical`); once authorized, no repetitive Admin approval. | STAFF-OP-001 |
+| 6 | **Customer cannot modify fulfillment state** — `POST {status:"SHIPPED"}` / `mark delivered` / `mark ready for pickup` from customer rejected `403/409` (`FULFILLMENT_ACTION_NOT_ALLOWED`); only Staff/Admin via `ORD-009/010/011`. | FUL-002, ORD-007 |
+| 7 | **Fulfillment events do not rewrite historical financial data** — `ship/ready/deliver` does not change `historical unit_price/subtotal/delivery_fee` (except `ORD-014` fee `PENDING→FINALIZED` before `PAID`), nor `billing_address` snapshot; inventory `reserved_quantity` not exposed via tracking. | ORD-HIST-001 |
+| 8 | **Tracking is read-only and derived** — customer `GET` only (`POST/PATCH/DELETE /tracking` prohibited), `current_status == Order.status`, `timeline` chronological `occurred_at ASC, id ASC` `ISO8601 Z`, `id` stable `evt_...`, `append-only` (customer cannot edit, staff cannot rewrite past — correction requires admin workflow), no `GPS`/`courier integration`/`assigned_staff` in V1, `REST GET` polling (no `WebSockets`). | FUL-001, FUL-004 |
+| 9 | **Privacy & caching** — customer tracking `private, no-store` (PII/financial, not CDN); `delivery_address` visible only to owns customer + authorized Staff/Admin; internal `staff notes` never to customer; lightweight (not `entire Order`). | FUL-001 |
+| 10 | **Payment boundary** — fulfillment/payment distinct (`PAID ≠ SHIPPED`); `SHIPPED` does not mean paid, `PENDING_PAYMENT` with `delivery_fee PENDING` blocks `PAY-001` `409`; tracking does not implement payment. | PAY-002 |
+
+**Tracking Authority Note (Phase 1.24):** Customer tracking `ORD-003` is `REST GET` polling (poll on open, pull-to-refresh) — no `WebSockets/SSE/GPS`. Staff fulfillment `ORD-009/010/011/013` are `Idempotency-Required`, `Critical` concurrency (e.g., `cancel+ship` race → `409 ORDER_STATE_CONFLICT`), validated `actor+permission+current state+fulfillment` atomically.
+
 ## 9. Made-to-Order Requests
 
 | # | Business rule | Ref |

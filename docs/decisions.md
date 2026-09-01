@@ -959,8 +959,78 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/API-ORD-010 — Delivery Fee Finalization Endpoint (Model B Gate)
+
+**Decision:** V1 adds dedicated `ORD-014 POST /api/v1/orders/{order}/delivery-fee` (Staff/Admin, `orders.set_delivery_fee` + `PENDING_PAYMENT`+`DELIVERY`+`PENDING`) — the only V1 gate that transitions `delivery_fee null→{amount,currency}` and `delivery_fee_status PENDING→FINALIZED` before `PAY-001`. Single finalization; `409` if already `FINALIZED` or not `PENDING_PAYMENT`/`DELIVERY`; `Idempotency-Key` Required, concurrency Critical (race with `PAY-001`), audited.
+
+**Reason:** `phases/phase-1.23.md §31, §84`, `api-contract.md §24.10 (ORD-014)` — without dedicated fee-assignment path, the `DELIVERY Orders block payment until FINALIZED` gate in `§24.5/§24.13` would be unimplementable; `ORD-014` closes the Model B loop with explicit permission, shape, idempotency and concurrency.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-FUL-001 — Tracking Is Read-Only for Customers
+
+**Decision:** Customer tracking via `GET /me/orders/{order}/tracking` (`ORD-003` customer, `ORD-012` staff operational) is `GET` only. No `POST/PATCH/DELETE /tracking` for customers. Timeline is `order_status_history`-derived, `chronological ASC, id ASC` `ISO8601 Z`, private `Cache-Control: private, no-store` (not CDN). `Customer A → Customer B tracking` fails `404 ORDER_NOT_FOUND` masked; `GET /me/orders/{order}/tracking` requires `AUTHENTICATED_OWNER` owns order.
+
+**Reason:** `phases/phase-1.24.md §14-21, §31`, `api-contract.md §25.6/§25.8` — read-only view preserves audit integrity; derived state prevents drift.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-FUL-002 — Fulfillment Actions Are Controlled Staff/Admin Operations
+
+**Decision:** Physical fulfillment branch (`ORD-009 ready-for-pickup for PICKUP`, `ORD-010 ship for DELIVERY`, `ORD-011 deliver for DELIVERY`, `ORD-013 complete`) are `POST` `Idempotency-Key` **Required**, concurrency **Critical**, fulfillment-type-aware (`PICKUP→SHIPPED` rejected `409 FULFILLMENT_ACTION_NOT_ALLOWED`), state-aware (`PROCESSING→SHIPPED` only from `PROCESSING`). `PATCH {status:"SHIPPED"}` rejected. All require `actor+permission+current_state+fulfillment` atomically.
+
+**Reason:** `phases/phase-1.24.md §23-27, §65-67`, `api-contract.md §25.10` — controlled actions prevent arbitrary state jumps; idempotency prevents duplicate `SHIPPED` events on retry.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-FUL-003 — Pickup and Delivery Use Distinct Fulfillment Paths
+
+**Decision:** `PICKUP: PROCESSING→READY_FOR_PICKUP→COMPLETED` (single pickup location V1, `ORD-009` then `ORD-013` explicit) vs `DELIVERY: PROCESSING→SHIPPED→DELIVERED→COMPLETED` (`ORD-010` then `ORD-011` then `ORD-013`). Cross-branch `PICKUP→SHIPPED` / `DELIVERY→READY_FOR_PICKUP` rejected `409`. Tracking timeline filtered by `fulfillment_type` (pickup never shows `SHIPPED`).
+
+**Reason:** `phases/phase-1.24.md §10-13, §91`, `api-contract.md §25.3-25.5` — distinct operational paths avoid forcing one flow onto both.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-FUL-004 — Tracking Is Derived From Authoritative Order/Fulfillment State
+
+**Decision:** `tracking.current_status == Order.status` (`§24.13`); `timeline` is filtered `order_status_history` (`status, occurred_at, id, label`) chronological `ASC`. No independent tracking state machine that can drift (`Order=PROCESSING` with `Tracking=DELIVERED` impossible). Not every internal event is shown; `delivery_fee FINALIZED` is financial flag, not timeline milestone.
+
+**Reason:** `phases/phase-1.24.md §19-22`, `api-contract.md §25.8-25.9` — single source of truth.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-FUL-005 — Fulfillment History Is Not Customer-Mutable (Append-Only)
+
+**Decision:** `order_status_history` is `append-only`; customer cannot `POST/PATCH/DELETE` history, staff cannot `rewrite past`; timeline `TimelineEvent {id: evt_..., status, occurred_at, label}` stable `id` from history `id`, `occurred_at` `ISO8601 Z`, `append-only` (retry with same `Idempotency-Key` replays original `SHIPPED`, not second event). Correction requires explicit admin workflow (audit `actor, order, old, new, reason, occurred_at`).
+
+**Reason:** `phases/phase-1.24.md §43-44`, `api-contract.md §25.14` — preserves audit integrity.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-FUL-006 — No Live GPS Tracking in Version 1
+
+**Decision:** V1 tracking = fulfillment/order milestones (`PAID, ACCEPTED, PROCESSING, READY_FOR_PICKUP, SHIPPED, DELIVERED, COMPLETED`) via `REST GET polling` + client refresh (`GET /me/orders/{order}/tracking` on open / pull-to-refresh / visibility-change). No `WebSockets/SSE/push`, no `real-time vehicle location`, no `tracking_number/carrier/tracking_url` (no external courier integration — not invented), no `assigned_staff/assigned_delivery` unless business needs.
+
+**Reason:** `phases/phase-1.24.md §52-59, §100`, `api-contract.md §25.17/§25.27` — small-scale commerce does not require live logistics; polling is starting architecture.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`** (Order `ORD-001..ORD-014` now `APPROVED` via `§24`/`§25`), target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`.
 
 

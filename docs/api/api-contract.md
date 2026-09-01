@@ -1,6 +1,6 @@
 # API Contract — Furniture E-Commerce Platform (Consolidated)
 
-> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.23 — Order API Contract (Customer-Owned Historical Records, State Machine, Delivery-Fee Model B)
+> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.24 — Order Tracking & Fulfillment (Pickup READY_FOR_PICKUP, Delivery SHIPPED→DELIVERED, Timeline Derived, REST Polling)
 > **Authority:** This file is the canonical response-envelope, resource-representation and validation contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2` and `phase-1.15.md`.
 
 ---
@@ -2215,8 +2215,9 @@ Implementation requirement (for later Laravel/database phases): **Inventory vali
 ```
 
 ```json
-// PICKUP — fee finalized at creation (or DELIVERY after Staff/Admin sets fee)
-// delivery_fee_status=FINALIZED marks final amounts; payment is present and can be initiated
+// PICKUP — fee finalized at creation, still PENDING_PAYMENT before PAY-001
+// delivery_fee_status=FINALIZED marks final amounts; payment is still null until PAY-001 (consistent with DELIVERY PENDING and ORD-014 FINALIZED)
+// Payment representation is created only by PAY-001, not by CHK-001 or ORD-014
 {
   "data": {
     "order_id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
@@ -2229,16 +2230,13 @@ Implementation requirement (for later Laravel/database phases): **Inventory vali
     "delivery_fee_status": "FINALIZED",
     "total": { "amount": 170000000, "currency": "TZS" },
     "currency": "TZS",
-    "payment": {
-      "payment_status": "PENDING",
-      "amount": { "amount": 170000000, "currency": "TZS" }
-    }
+    "payment": null
   }
 }
 ```
 
 - **Explicit pending representation:** `delivery_fee: null` + `delivery_fee_status: "PENDING"` marks provisional state; `total` equals `subtotal` but is **provisional** and MUST NOT be displayed or submitted as final amount. Frontend must check `delivery_fee_status === "PENDING"` and show “Delivery fee pending — Staff will confirm” instead of final total. `payment: null` signals payment blocked.
-- **Blocked payment:** When `delivery_fee_status=PENDING`, `POST /api/v1/payments` (`PAY-001`) MUST be rejected with `409 CONFLICT` `code: "DELIVERY_FEE_PENDING"` (or `422 INVALID_ORDER_TRANSITION` per registry, mapped to 409 in endpoint contract) — never accept provisional `total` as payment amount. After Staff/Admin sets fee (`delivery_fee: {amount: 2500000, currency:"TZS"}`, `delivery_fee_status: "FINALIZED"`, `total: {amount: 172500000,...}`), payment becomes eligible (`payment` present, `PAY-001` allowed and amount equals authoritative `total`). For `PICKUP`, `delivery_fee_status` is `FINALIZED` at creation (fee 0, total final immediately).
+- **Blocked payment & payment lifecycle (Group H boundary):** When `delivery_fee_status=PENDING`, `POST /api/v1/payments` (`PAY-001`) MUST be rejected with `409 CONFLICT` `code: "DELIVERY_FEE_PENDING"` (or `422 INVALID_ORDER_TRANSITION` per registry, mapped to 409) — never accept provisional `total` as payment amount. After Staff/Admin sets fee via `ORD-014` (`delivery_fee: {amount: 2500000, currency:"TZS"}`, `delivery_fee_status: "FINALIZED"`, `total: {amount: 172500000,...}`), `PAY-001` becomes eligible (`payment` still `null` until `PAY-001`; `payment` object is created **only** by `PAY-001`, not by `CHK-001` or `ORD-014`). For `PICKUP`, `delivery_fee_status` is `FINALIZED` at creation (`amount:0`, `total` final immediately, `payment: null` until `PAY-001`; `PAY-001` eligible immediately, no `DELIVERY_FEE_PENDING`). Checkout never creates `payment: {payment_status: PENDING}` — that representation is exposed **only after** `PAY-001` (`Order.status` still `PENDING_PAYMENT` until webhook confirms `PAID`).
 
 - Header on success: `Idempotency-Key` echo or original result metadata (implementation-defined).
 - **Failure** uses common `{"errors":[…],"meta":{"request_id":…}}` envelope per `§15`.
@@ -2501,7 +2499,7 @@ Variable, location-based, **not customer-controlled** (`PRICE-006`, CHK-006).
 
 - At `CHK-001` for `PICKUP`: `delivery_fee {amount:0}, delivery_fee_status FINALIZED` immediately.
 - At `CHK-001` for `DELIVERY`: `delivery_fee null, delivery_fee_status PENDING` (provisional `total = subtotal`), `payment null` blocked.
-- **Finalization endpoint `ORD-014` `POST /api/v1/orders/{order}/delivery-fee`** (Staff/Admin, `Idempotency-Key` **Required**, concurrency **Critical**): sets fee from `PENDING` → `FINALIZED` **before** `PAID`. `delivery_fee_status` must be `PENDING` and `fulfillment_type=DELIVERY` and `status=PENDING_PAYMENT`; otherwise `409 INVALID_ORDER_TRANSITION` / `ORDER_STATE_CONFLICT`. Transitions `delivery_fee null → {amount:int (>0, integer minor units), currency:"TZS"}` and `delivery_fee_status PENDING → FINALIZED`, recomputes `total = subtotal + delivery_fee.amount` authoritative, makes `payment` eligible. Single finalization; repeated calls with same `Idempotency-Key` replay original; same key with different `amount` → `409 DUPLICATE_OPERATION`; `PENDING→FINALIZED` only once before `PAID` (controlled admin correction after `PAID` is separate audited workflow, not normal staff).
+- **Finalization endpoint `ORD-014` `POST /api/v1/orders/{order}/delivery-fee`** (Staff/Admin, `Idempotency-Key` **Required**, concurrency **Critical**): sets fee from `PENDING` → `FINALIZED` **before** `PAID`. `delivery_fee_status` must be `PENDING` and `fulfillment_type=DELIVERY` and `status=PENDING_PAYMENT`; otherwise `409 INVALID_ORDER_TRANSITION` / `ORDER_STATE_CONFLICT`. Transitions `delivery_fee null → {amount:int (>=0, integer minor units), currency:"TZS"}` and `delivery_fee_status PENDING → FINALIZED`, recomputes `total = subtotal + delivery_fee.amount` authoritative, makes `payment` eligible. Single finalization; repeated calls with same `Idempotency-Key` replay original; same key with different `amount` → `409 DUPLICATE_OPERATION`; `PENDING→FINALIZED` only once before `PAID` (controlled admin correction after `PAID` is separate audited workflow, not normal staff). Zero-fee delivery (`amount: 0`) is explicitly valid where business offers free zone — validated as `>=0` across contract, conventions, and decisions.
   - **Request:** `{"delivery_fee": {"amount": 35000, "currency":"TZS"}, "reason": "Mikocheni zone 2" }` (`reason` optional, trimmed, audit). Strict: `amount` integer `>=0` minor units, `currency` must be `"TZS"`, unknown fields `422`, customer cannot call (403).
   - **Response:** `200` updated Order (`data: {id, order_reference, status: PENDING_PAYMENT, delivery_fee: {amount,currency}, delivery_fee_status: FINALIZED, total: {amount,currency}, payment: null (now eligible for PAY-001) }`).
   - **Auth:** `OPERATIONAL` `orders.set_delivery_fee` (new permission, Staff/Admin where approved; not `products.manage` or `inventory.manage`; `ADMIN` may grant). `Staff` without permission → `403 FORBIDDEN`.
@@ -2570,7 +2568,7 @@ All transitions evaluate `authenticated actor + permission + current state + ful
 | `order created_at` | **No** | Read | Read | Read |
 | `fulfillment_type` | **Generally No** | Read | Operational | Controlled (rejected for cross-branch change) |
 | `delivery_address snapshot` | **Generally No** | Read (own) | Operational | Authorized |
-| `delivery_fee` | `PENDING→FINALIZED` once before `PAID`; thereafter controlled correction only, not unrestricted | Read (own) | Authorized (`inventory/fee` permission, audit) | Authorized (audit) |
+| `delivery_fee` | `PENDING→FINALIZED` once before `PAID`; thereafter controlled correction only, not unrestricted | Read (own) | Authorized (`orders.set_delivery_fee` only, audit; `inventory.manage` explicitly excluded) | Authorized (audit; `inventory.manage` does not grant) |
 | `delivery_fee_status` | `PENDING→FINALIZED` | Read | Read/Authorized (fee setter) | Authorized |
 | `total` | Derived, finalized with fee (see §24.11) | Read | Operational | Authorized |
 | `status` | **Action-controlled only** | Read | Action (`accept/process/ship/deliver/complete`) | Action (+ admin cancel) |
@@ -2722,6 +2720,16 @@ Within `v1`, do not change without compatibility review: `status field meaning`,
         "unit_price": { "amount": 125000000, "currency": "TZS" },
         "quantity": 1,
         "line_total": { "amount": 125000000, "currency": "TZS" }
+      },
+      {
+        "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t2",
+        "variant_id": null,
+        "sku": "TABLE-OAK-COFFEE",
+        "name": "Oak Coffee Table",
+        "variant_name": null,
+        "unit_price": { "amount": 45000000, "currency": "TZS" },
+        "quantity": 1,
+        "line_total": { "amount": 45000000, "currency": "TZS" }
       }
     ],
     "subtotal": { "amount": 170000000, "currency": "TZS" },
@@ -2782,6 +2790,240 @@ Future automated tests must verify (as API/feature tests, not UI-only):
 - Conventions: `api-conventions.md §24` (state transitions, historical snapshots, immutable financial data, ownership checks, controlled actions, private caching, concurrency).
 - Domain: `business-rules.md §6` (Orders belong to Customer, created via Checkout, reference server-generated, history preserved, 20-min cancellation, pickup/delivery branches, variable delivery fee, staff/admin authority).
 - Decisions: `decisions.md ORD-001..ORD-009` (customer-owned historical records, ownership not client-supplied, historical snapshots, 20-min window, controlled transitions, fee not customer-controlled, distinct pickup/delivery paths, private data, Group H payment).
-- Next: `Phase 1.24 Order Tracking & Fulfillment` will isolate `PICKUP vs DELIVERY / READY_FOR_PICKUP / SHIPPED / DELIVERED` timeline details without duplicating this core Order contract.
+
+---
+
+## 25. Order Tracking and Fulfillment Contract (Phase 1.24)
+
+> **Authority:** Narrow contract for **fulfillment progress** (`PICKUP` / `DELIVERY`) and **customer tracking** built on finalized Order contract `§24`. Consolidates `phases/phase-1.24.md`. Tracking is `REST GET` polling, no WebSockets/GPS, no courier integration; fulfillment actions are `Idempotency-Required`, `Critical` concurrency, `CLOSED` enums.
+
+### 25.1 Core Principle — Tracking Read vs Fulfillment Write
+
+```
+Customer Tracking → read-only view (GET /me/orders/{order}/tracking, ORD-003)
+Staff Fulfillment → authorized state-changing POST (ORD-009 / ORD-010 / ORD-011 / ORD-013 + ORD-014 fee)
+```
+
+`Customer can see progress but cannot change it`; `Staff can change progress but cannot rewrite history`.
+
+### 25.2 Fulfillment vs Order vs Tracking
+
+- **Order:** commercial transaction (`PENDING_PAYMENT`→`COMPLETED`, financials, items).
+- **Fulfillment:** how goods reach/collect (`PICKUP` free, `DELIVERY` fee via `ORD-014` → `SHIPPED`→`DELIVERED`).
+- **Tracking:** customer-friendly `timeline` derived from `order_status_history` (read-only, not independent state machine).
+
+They are related but not one giant object; Order detail contains fulfillment summary, tracking is separate lightweight view.
+
+### 25.3 Fulfillment Types — Closed
+
+Version 1 `fulfillment_type` CLOSED `PICKUP` / `DELIVERY` (selected at `CHK-001`, stored in Order, generally immutable). `PICKUP` requires `READY_FOR_PICKUP` before `COMPLETED`; `DELIVERY` requires `SHIPPED→DELIVERED` before `COMPLETED`. Cross-branch `PICKUP→SHIPPED` or `DELIVERY→READY_FOR_PICKUP` is rejected `409 INVALID_ORDER_TRANSITION` unless explicitly designed.
+
+### 25.4 Pickup Fulfillment Flow
+
+```
+Order PENDING_PAYMENT → PAID → ACCEPTED → PROCESSING → READY_FOR_PICKUP → COMPLETED
+```
+
+- `PROCESSING→READY_FOR_PICKUP` via `ORD-009 POST /orders/{order}/ready-for-pickup` (Staff/Admin `orders.ready_for_pickup` + `PICKUP` + `PROCESSING`).
+- `READY_FOR_PICKUP→COMPLETED` via `ORD-013 POST /orders/{order}/complete` (explicit, Staff/Admin `orders.complete` + `READY_FOR_PICKUP`; not automatic customer-collect without Staff confirmation).
+- No `SHIPPED/DELIVERED` for pickup. Single pickup location (V1: one business location, configurable later — not multi-warehouse, recorded as dependency, not invented).
+
+### 25.5 Delivery Fulfillment Flow
+
+```
+Order PENDING_PAYMENT → PAID → ACCEPTED → PROCESSING → SHIPPED → DELIVERED → COMPLETED
+```
+
+- `PROCESSING→SHIPPED` via `ORD-010 POST /orders/{order}/ship` (Staff/Admin `orders.ship` + `DELIVERY` + `PROCESSING`).
+- `SHIPPED→DELIVERED` via `ORD-011 POST /orders/{order}/deliver` (Staff/Admin `orders.deliver` + `DELIVERY` + `SHIPPED`).
+- `DELIVERED→COMPLETED` via `ORD-013` (same).
+- No `READY_FOR_PICKUP` for delivery unless explicitly designed.
+
+### 25.6 Tracking Endpoint — Customer
+
+| Attribute | Contract |
+|---|---|
+| **ID** | `ORD-003` (canonical; `ORD-TRK-001` conceptual alias in Phase 1.24 maps to `ORD-003`) |
+| **Method/Path** | `GET /api/v1/me/orders/{order}/tracking` |
+| **Auth** | Required |
+| **Authz** | `AUTHENTICATED_OWNER` owns order (404 masked) |
+| **Purpose** | Customer-facing fulfillment progress — `current fulfillment state + milestones + next expected step + pickup/delivery mode` |
+| **Cache** | `private, no-store` (PII + financial, not CDN) |
+| **Pagination** | No (timeline short, append-only; paginate only if history grows large, then `page/per_page` per `§4`) |
+| **Success** | `200 {"data": {order_reference, fulfillment_type, current_status, timeline: [TimelineEvent...]}}` per `§25.7` |
+
+Staff/operational tracking is `ORD-012 GET /api/v1/orders/{order}/tracking` (`OPERATIONAL orders.view_operational`) — richer (`actor`, `note`) as authorized, not customer data.
+
+### 25.7 Tracking Response — Timeline Representation
+
+Conceptual (`ORD-003`):
+
+```json
+{
+  "data": {
+    "order_reference": "OD-2026-00123",
+    "fulfillment_type": "DELIVERY",
+    "current_status": "SHIPPED",
+    "delivery_fee_status": "FINALIZED",
+    "timeline": [
+      { "id": "evt_01h...", "status": "PENDING_PAYMENT", "occurred_at": "2026-09-01T10:15:00Z", "label": "Order received" },
+      { "id": "evt_01h...", "status": "PAID", "occurred_at": "2026-09-01T10:20:00Z", "label": "Payment confirmed" },
+      { "id": "evt_01h...", "status": "ACCEPTED", "occurred_at": "2026-09-01T10:25:00Z", "label": "Order accepted" },
+      { "id": "evt_01h...", "status": "PROCESSING", "occurred_at": "2026-09-01T11:00:00Z", "label": "Being prepared" },
+      { "id": "evt_01h...", "status": "SHIPPED", "occurred_at": "2026-09-01T14:00:00Z", "label": "Shipped" }
+    ]
+  }
+}
+```
+
+### 25.8 Tracking Is Read-Only & Derived From Order State
+
+- `GET` only. No `POST/PATCH/DELETE /orders/{order}/tracking` for customers. Timeline entries are **not** created by clients; they are generated by valid business actions (`accept/process/ship/deliver/complete`).
+- **Consistency:** `current_status` in tracking `==` authoritative `Order.status` (`§24.13`); `Order=PROCESSING` with `Tracking=DELIVERED` is impossible (`409` if drifted). Tracking derives from `order_status_history`, not independent state machine.
+- **Status History vs Timeline:** `Status History = authoritative historical events (order_status_history: status, occurred_at, actor/context, note)` → `Tracking Timeline = customer-friendly filtered view` (same underlying records, but timeline shows only milestones relevant to fulfillment fulfillment_type, with `label` for UI). Staff may see richer `actor/note` where authorized.
+
+### 25.9 Customer-Visible Timeline Is Filtered
+
+Not every internal event must be shown. Example filtered view: `PAID → ACCEPTED → PROCESSING → SHIPPED` (customer sees `Order accepted / Being prepared / Shipped`); internal `delivery_fee FINALIZED` event is not a visible timeline status (financial flag, not fulfillment milestone) but explains why `total` became final. Staff may see additional operational info (internal note) not serialized to customer.
+
+### 25.10 Fulfillment Actions — Controlled, State & Fulfillment-Type Aware
+
+| ID | Method | Path | Actor | Authz | Fulfillment | Current → Next | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `ORD-009` (`ORD-FUL-001`) | `POST` | `/api/v1/orders/{order}/ready-for-pickup` | Staff/Admin | `orders.ready_for_pickup` + `PROCESSING` + `PICKUP` | `PICKUP` | `PROCESSING→READY_FOR_PICKUP` | Required (`Idempotency-Key`) | Critical |
+| `ORD-010` (`ORD-FUL-002`) | `POST` | `/api/v1/orders/{order}/ship` | Staff/Admin | `orders.ship` + `PROCESSING` + `DELIVERY` | `DELIVERY` | `PROCESSING→SHIPPED` | Required | Critical |
+| `ORD-011` (`ORD-FUL-003`) | `POST` | `/api/v1/orders/{order}/deliver` | Staff/Admin | `orders.deliver` + `SHIPPED` + `DELIVERY` | `DELIVERY` | `SHIPPED→DELIVERED` | Required | Critical |
+| `ORD-013` (complete) | `POST` | `/api/v1/orders/{order}/complete` | Staff/Admin | `orders.complete` + `READY_FOR_PICKUP|DELIVERED` | `PICKUP|DELIVERY` | `READY_FOR_PICKUP→COMPLETED` / `DELIVERED→COMPLETED` | Required | Critical |
+
+`ORD-007 accept` + `ORD-008 process` remain under `§24.13` (not duplicated here unless delegated; this phase focuses on physical fulfillment branch `READY_FOR_PICKUP / SHIPPED / DELIVERED`). Fee `ORD-014` is `§24.10` (financial, not fulfillment). `PATCH {status:"SHIPPED"}` is rejected `409`.
+
+### 25.11 Complete — Explicit
+
+`COMPLETED` requires explicit `ORD-013` Staff/Admin action for both `PICKUP` (`READY_FOR_PICKUP→COMPLETED` after customer collects) and `DELIVERY` (`DELIVERED→COMPLETED` after delivery confirmed). Not automatic on `DELIVERED` alone; documents who confirmed completion. `DELIVERED→COMPLETED` and `READY_FOR_PICKUP→COMPLETED` only.
+
+### 25.12 Customer Cannot Mark Delivered / Ready
+
+- Customer `POST {status:"DELIVERED"}` / `POST {status:"READY_FOR_PICKUP"}` rejected `403 FORBIDDEN` / `409 INVALID_ORDER_TRANSITION` (not `order owner`, needs `orders.deliver` / `orders.ready_for_pickup`). Fulfillment is operational event; only Staff/Admin can change `PROCESSING→READY_FOR_PICKUP|SHIPPED` and `SHIPPED→DELIVERED`.
+
+### 25.13 Authorization — Tracking vs Fulfillment
+
+| Operation | Customer | Staff | Admin |
+|---|---|---|---|
+| View own tracking `ORD-003` | **Yes** (`owns`) | — | — |
+| View operational tracking `ORD-012` | — | **Yes** (`orders.view_operational`) | Yes |
+| Mark ready `ORD-009` | No | **Yes** (`ready_for_pickup` + `PICKUP`) | Yes |
+| Ship `ORD-010` | No | **Yes** (`ship` + `DELIVERY`) | Yes |
+| Deliver `ORD-011` | No | **Yes** (`deliver` + `DELIVERY`) | Yes |
+| Complete `ORD-013` | No | Per policy (`complete`) | Yes |
+| Modify historical tracking | No | No | No (controlled correction only, audit) |
+
+Staff access to tracking does not grant `change password / block customer / access credentials` (see `§18`). `Customer A → Customer B tracking` fails `404 ORDER_NOT_FOUND` (masked, never `403`).
+
+### 25.14 Timeline Conventions — Deterministic, Immutable, Privacy-Safe
+
+- **Timestamps:** Global `ISO8601 UTC Z` (`2026-09-01T09:45:00Z`) per `§3.4` — never mixed `30/08/2026` or Unix.
+- **Ordering:** `chronological ascending` (`PAID → ACCEPTED → PROCESSING → SHIPPED → DELIVERED`) for customer display; deterministic `occurred_at ASC, id ASC`.
+- **Event identity:** Stable `id` (`evt_...`) per `order_status_history` record — reuse history `id`, not new UUID for tracking view; customer sees `id` for stable React keys, not internal DB key exposure beyond `evt_` opaque.
+- **Immutability:** Historical events **append-only**; customer cannot edit; staff cannot rewrite past status history (`ship` retry does not create duplicate `SHIPPED` event — `Idempotency-Key` replay). Correction requires explicit admin workflow (audit `actor, order, old, new, reason, occurred_at`).
+- **Actor privacy:** Customer timeline shows `label` (`"Your order has been shipped."`), not `John Smith shipped`; staff operational timeline may show `actor (staff:45)` where authorized, per minimal exposure.
+- **Customer vs internal notes:** `customer-visible note` explicitly flagged; `internal note` (Staff operational) never serialized to `ORD-003` (only `ORD-012` if authorized).
+
+### 25.15 Delivery / Pickup Information in Tracking
+
+- **Delivery:** May include `delivery_address` summary (already in Order detail) + `delivery status`/`shipping milestone`; not `tracking_number/carrier/tracking_url` (no external courier integration in V1 — not invented), not `real-time GPS/vehicle location`, not `carrier integration`.
+- **Pickup:** `pickup status` (`READY_FOR_PICKUP` / `COMPLETED`), `pickup location` (V1 single business location, configurable later — not multi-warehouse), `collection instructions` (approved business copy) — not multi-location system invented.
+- **Privacy:** `delivery_address` (private) visible only to `owns` customer, authorized Staff/Admin (as in `§24.9`); not public.
+
+### 25.16 Fulfillment Does Not Own Financials, Payment, or Inventory
+
+- Tracking does **not** recalculate `delivery_fee` or `total`; it displays `Order.delivery_fee/total` authoritative from `§24.11` (financial remains in Order). 
+- `PAY-001` blocked `409 DELIVERY_FEE_PENDING` while `delivery_fee_status=PENDING` — tracking must not show Order as financially settled until `§24.27` gate (`FINALIZED→PAID`) says so.
+- Fulfillment actions (`ship/deliver`) must not change `historical unit_price`/`line_total`/`subtotal` or `billing_address` snapshot; only state. Inventory handling corresponds to Order but tracking does not expose `reserved_quantity` / adjust inventory (see `INV-003` separate).
+
+### 25.17 Recommended V1 Tracking Model — Polling
+
+`REST GET tracking + client refresh/polling` — no `WebSockets`, `Server-Sent Events`, `push` required in V1. Client `GET /me/orders/{order}/tracking` on open + on pull-to-refresh / visibility-change; avoid aggressive polling (contract does not require `WebSocket` nor live GPS). Notifications (`Group R`) may later consume fulfillment events (`ready/shipped/delivered`) but tracking does not depend on notification persistence.
+
+### 25.18 Required State/Fulfillment Matrix (Normative)
+
+| Fulfillment | State | Customer | Staff/Admin |
+|---|---|---|---|
+| `PICKUP` | `PROCESSING` | Track (`ORD-003`) — shows `Being prepared` | Process (`ORD-008`) |
+| `PICKUP` | `READY_FOR_PICKUP` | Track — shows `Ready for pickup` | Set ready (`ORD-009`) |
+| `PICKUP` | `COMPLETED` | Track — shows `Completed` | Complete/auto (`ORD-013`) |
+| `DELIVERY` | `PROCESSING` | Track — `Being prepared` | Process (`ORD-008`) |
+| `DELIVERY` | `SHIPPED` | Track — `Shipped` | Ship (`ORD-010`) |
+| `DELIVERY` | `DELIVERED` | Track — `Delivered` | Mark delivered (`ORD-011`) |
+| `DELIVERY` | `COMPLETED` | Track — `Completed` | Complete/auto (`ORD-013`) |
+
+Fulfillment/state combinations outside this table (`PICKUP` + `SHIPPED`) are invalid (`409`).
+
+### 25.19 Required Tracking Endpoint Matrix
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose |
+|---|---|---|---|---|---|---|
+| `ORD-003` (`ORD-TRK-001`) | `GET` | `/api/v1/me/orders/{order}/tracking` | Customer | Required | `AUTHENTICATED_OWNER` owns order | View customer tracking (timeline, milestones) |
+| `ORD-012` | `GET` | `/api/v1/orders/{order}/tracking` | Staff/Admin | Required | `OPERATIONAL orders.view_operational` | View operational tracking (richer: actor, note) |
+| `ORD-009` (`ORD-FUL-001`) | `POST` | `/api/v1/orders/{order}/ready-for-pickup` | Staff/Admin | Required | `OPERATIONAL orders.ready_for_pickup + PICKUP + PROCESSING` | Mark pickup ready |
+| `ORD-010` (`ORD-FUL-002`) | `POST` | `/api/v1/orders/{order}/ship` | Staff/Admin | Required | `OPERATIONAL orders.ship + DELIVERY + PROCESSING` | Ship delivery order |
+| `ORD-011` (`ORD-FUL-003`) | `POST` | `/api/v1/orders/{order}/deliver` | Staff/Admin | Required | `OPERATIONAL orders.deliver + DELIVERY + SHIPPED` | Mark delivered |
+| `ORD-013` | `POST` | `/api/v1/orders/{order}/complete` | Staff/Admin | Required | `OPERATIONAL orders.complete + READY_FOR_PICKUP|DELIVERED` | Complete order |
+
+`ORD-007/008` accept/process remain `§24.13` (not duplicated unless delegated); `ORD-014` fee finalization is `§24.10` financial. Tracking is `GET` only — no `POST/PATCH/DELETE /tracking`.
+
+### 25.20 Endpoint Contract Template (Per Fulfillment/Tracking Endpoint)
+
+Each fulfillment/tracking endpoint documents: `Endpoint ID / Method / Path / Purpose / Actors / Authentication / Authorization / Input (none or minimal Idempotency-Key header) / Validation (CLOSED enums, unknown fields 422) / Business preconditions (actor+permission+current state+fulfillment) / State transition / Response (200 tracking {data} or 200 Order + Location) / Errors (per §25.22) / Idempotency (Required for fulfillment, — for GET) / Concurrency (Critical for fulfillment) / Privacy (PRIVATE) / Caching (private, no-store)`.
+
+### 25.21 Errors — Tracking & Fulfillment (`§15` envelope)
+
+| Endpoint | Potential `code` (CLOSED) | HTTP | Condition |
+|---|---|---|---|
+| `ORD-003` customer tracking | `AUTHENTICATION_REQUIRED` | 401 | Not authed |
+| `ORD-003` not own | `ORDER_NOT_FOUND` / `RESOURCE_NOT_FOUND` (masked) | 404 | Customer A → Customer B tracking → 404 (never 403 leak) |
+| `ORD-009/010/011` fulfillment | `FORBIDDEN` | 403 | Not `STAFF` with `orders.ship` |
+| `ORD-010` ship on `PICKUP` / `ORD-009` ready on `DELIVERY` | `INVALID_ORDER_TRANSITION` + `FULFILLMENT_ACTION_NOT_ALLOWED` (422/409) | 409 | Wrong fulfillment for state |
+| `ORD-010` already `SHIPPED` retry with same key | — (replay `200`) | 200 | `Idempotency-Key` replay, not `409` |
+| `ORD-010` already `SHIPPED` no key | `ORDER_STATE_CONFLICT` | 409 | Concurrent second ship must re-read |
+| Any `PATCH {status:"SHIPPED"}` | `INVALID_ORDER_TRANSITION` | 409 | Controlled actions only (API-VAL-004) |
+| Tracking exposing another customer's address | `ORDER_NOT_FOUND` / `RESOURCE_NOT_FOUND` (masked) | 404 | Customer A → Customer B address → 404 masked (never 403 leak), privacy check before serialization |
+
+Only add `FULFILLMENT_ACTION_NOT_ALLOWED` if client benefits from distinguishing `INVALID_ORDER_TRANSITION` (state mismatch) vs fulfillment-type mismatch; otherwise use `INVALID_ORDER_TRANSITION`.
+
+### 25.22 Idempotency & Concurrency
+
+- **Idempotency `Required`:** `ORD-009/010/011/013` fulfillment + `ORD-014` fee + `ORD-004` cancel + `CHK-001`. `GET ORD-003/012` tracking is `SAFE`. Retry `ship` with same `Idempotency-Key → 200` replay original `SHIPPED` (no second `SHIPPED` history event); same key with different body (`ship` vs `deliver`) → `409 DUPLICATE_OPERATION`; different keys concurrent `Staff A ship + Staff B ship` → atomic `authorize+validate state+perform` inside transaction → one `200`, other `409 ORDER_STATE_CONFLICT`.
+- **Concurrency `Critical`:** `Staff A ship + Staff B ship`, `Staff deliver + Admin complete`, `Customer cancel + Staff ship` (20-min window race) — all require row-level lock / `order_status_history` append inside transaction; failure to lock must not create two `SHIPPED` events or allow `DELIVERED` without `SHIPPED`.
+
+### 25.23 Privacy, Caching & Size
+
+- Customer tracking `ORD-003` is **private** — `Cache-Control: private, no-store`; not public CDN; not `products` catalog cache. Operational `ORD-012` similarly `PRIVATE`.
+- Do not embed `entire Order + full customer profile + staff records + payment history` in tracking; keep tracking lightweight (`order_reference, fulfillment_type, current_status, delivery_fee_status, timeline[]`) — size limited, not paginated in V1 (timeline append-only, small; paginate only if history grows `page/per_page` per `§4`).
+- Staff see only customer info needed for fulfillment (`recipient, phone, address`) — not unrelated orders/history/credentials.
+
+### 25.24 Operational Review — Staff Without Friction
+
+Once authorized (`orders.ship`), Staff flow `Receive → Accept → Process → Ship/Ready → Deliver → Complete` must not require repetitive `Admin` approval; `Admin` retains `staff approval / role management` (§17–18) separate.
+
+### 25.25 Customer Experience — Tracking Without Staff Contact
+
+Customer `open own Order → see current state → understand progress (label: Processing / Ready for pickup / Shipped / Delivered) → see PICKUP vs DELIVERY mode → see relevant fulfillment info (pickup location instruction or delivery address summary)` — without needing Staff to push state.
+
+### 25.26 Next.js / Flutter Requirements
+
+Same `REST` contract for `Next.js` and `Flutter`: `GET /me/orders/{order}/tracking` returns `current_status + timeline` for `Order timeline, Current status, Pickup readiness, Shipping state, Delivery state`; `Flutter` can `refresh tracking` + `show timeline` + `handle new state` + `show fulfillment instructions` via polling/visibility-change, no Flutter-specific API.
+
+### 25.27 No Real-Time, No GPS, No Courier Integration
+
+V1 tracking = **fulfillment/order milestones** (`PAID, ACCEPTED, PROCESSING, READY_FOR_PICKUP, SHIPPED, DELIVERED, COMPLETED`), **not** `real-time vehicle location`, **not** `tracking_number/carrier/tracking_url` (no external carrier — not invented), **not** `assigned_staff/delivery` assignment unless business needs it, **not** `WebSockets` (polling `GET` is starting architecture).
+
+### 25.28 Cross-References
+
+- Order core: `§24` (identity, items, financial finality, state machine, cancellation, payment `Group H`).
+- Checkout/Cart/Catalog: `§23` / `§22` / `§21`.
+- Resources: `api-resources.md §3.6` (Tracking/StatusHistory — timeline, fulfillment, actor/privacy, ordering/immutability).
+- Conventions: `api-conventions.md §25` (timeline ordering `occurred_at ASC, id ASC`, fulfillment-aware actions, privacy `PRIVATE`, append-only history, idempotency, concurrency).
+- Domain: `business-rules.md §7/§8` (status paths, cancellation, pickup vs delivery, historical data, privacy).
+- Decisions: `decisions.md FUL-001..FUL-006` (read-only tracking, controlled fulfillment, distinct paths, derived from Order state, not customer-mutable, no GPS).
 
 
