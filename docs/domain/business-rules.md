@@ -12,12 +12,17 @@ The computer system is always the final authority on what is allowed, what costs
 
 | # | Business rule | Ref |
 |---|---|---|
-| 1 | Anyone can open the website or app and browse the catalog, look at categories, search for furniture, open product pages, view images, prices, and availability **without logging in**. | IDENT-001/003 |
-| 2 | Browsing, searching, and viewing products must never secretly require an account. | IDENT-003 |
-| 3 | Every product is either **In Stock** (buy it now) or **Made to Order** (request it). Closed enum `IN_STOCK` / `MADE_TO_ORDER` (CLOSED per API-VAL-003). | CAT-002 |
-| 4 | For "In Stock" products, the customer's main action is **Add to Cart / Buy**. | CAT-003 |
-| 5 | For "Made to Order" products, the customer's main action is **Request This Furniture** — you cannot buy it directly at checkout. | CAT-003 |
-| 6 | Products that are no longer active can no longer be purchased. | CAT-004 |
+| 1 | Anyone can open the website or app and browse the catalog, look at categories, search for furniture, open product pages, view images, prices, and availability **without logging in**. | IDENT-001/003, CAT-PUB-001 |
+| 2 | Browsing, searching, and viewing products must never secretly require an account. | IDENT-003, CAT-PUB-002 |
+| 3 | Only products and categories that are published and active (`is_active: true`) appear in public catalog listings and search results. | CAT-PUB-003, CAT-001 |
+| 4 | Every product is either **In Stock** (buy it now) or **Made to Order** (request it). Closed enum `IN_STOCK` / `MADE_TO_ORDER` (CLOSED per API-VAL-003). | CAT-002, CAT-TYPE-001 |
+| 5 | For "In Stock" products, the customer's main action is **Add to Cart / Buy**. | CAT-003, CART-ACT-001 |
+| 6 | For "Made to Order" products, the customer's main action is **Request This Furniture** — you cannot buy it directly at checkout. Price is an informational starting estimate. | CAT-003, REQ-ACT-001 |
+| 7 | Products or options that are no longer active can no longer be purchased or carted. Historical orders preserve the purchased snapshot. | CAT-004, ORD-HIST-001 |
+| 8 | Every variant belongs strictly to one parent product; a variant from Product B cannot be used with Product A. | VAR-OWN-001 |
+
+**Catalog Business Authority Note (Phase 1.20):** Public catalog reads (`CAT-001..CAT-006`) are strictly read-only and non-mutating. Public availability signals (`availability` and `stock_indicator`) are point-in-time informational reads; they do not reserve stock. Authoritative inventory verification and reservations occur exclusively at Checkout (`CHK-001`).
+
 
 ## 2. Stock and Availability
 

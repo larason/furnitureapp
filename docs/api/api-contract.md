@@ -1358,8 +1358,342 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ## 20. Links to Conventions & Resources
 
-- Conventions: `docs/api/api-conventions.md` (envelope, naming, timestamps, money, nulls, booleans, enums, links, serialization, compatibility, **input**, **validation** §16, **errors** §17, **authentication** §18, **authorization** §19, **endpoint inventory** §20).
-- Resources: `docs/api/api-resources.md` (per-resource field tables with PUBLIC/CUSTOMER/STAFF exposure and per-resource input + validation + **errors** §10–11, **authentication** §12, **authorization** §13, **endpoint mapping** §14).
+- Conventions: `docs/api/api-conventions.md` (envelope, naming, timestamps, money, nulls, booleans, enums, links, serialization, compatibility, **input**, **validation** §16, **errors** §17, **authentication** §18, **authorization** §19, **endpoint inventory** §20, **catalog conventions** §21).
+- Resources: `docs/api/api-resources.md` (per-resource field tables with PUBLIC/CUSTOMER/STAFF exposure, summary vs detail schemas §1–§2, and per-resource input + validation + **errors** §10–11, **authentication** §12, **authorization** §13, **endpoint mapping** §14).
 - Domain: `docs/domain/business-rules.md` (business meaning, validation authority, **error ↔ rule mapping §14**, **authentication §17**, **authorization §18**, **endpoint workflows §19**).
-- Decisions: `docs/decisions.md` (`ADR/API-END-*` endpoint inventory, `ADR/AUTH-*`, `ADR/AUTHZ-*`).
+- Decisions: `docs/decisions.md` (`ADR/API-END-*` endpoint inventory, `ADR/AUTH-*`, `ADR/AUTHZ-*`, `ADR/API-CAT-*` catalog decisions).
 - OpenAPI: `docs/api/openapi.yaml` — updated only when OpenAPI phase is reached (this phase keeps rules precise enough for later OpenAPI).
+
+---
+
+## 21. Catalog API Contract (Phase 1.20)
+
+> **Authority:** Canonical domain API contract for the **Catalog** subsystem (`CAT-001..CAT-006` public read operations and `CAT-007..CAT-012` administrative management baseline). Consolidates `phases/phase-1.20.md`.
+> **Core Principle:** Fast, public, predictable, SEO-compatible, cache-friendly, safe, and completely independent of customer authentication.
+
+### 21.1 Catalog Endpoint Contract Matrix
+
+| ID | Method | Path | Auth | Authorization | Pagination | Purpose | Caching |
+|---|---|---|---|---|---|---|---|
+| `CAT-001` | GET | `/api/v1/products` | No | Public read | Yes (`meta.pagination`) | List public products (search, filter, sort) | Public / Cacheable |
+| `CAT-002` | GET | `/api/v1/products/{product}` | No | Public read | No | Product detail (public-safe representation) | Public / Cacheable |
+| `CAT-003` | GET | `/api/v1/categories` | No | Public read | Yes (`meta.pagination`) | List public categories | Public / Cacheable |
+| `CAT-004` | GET | `/api/v1/categories/{category}` | No | Public read | No | Category detail | Public / Cacheable |
+| `CAT-005` | GET | `/api/v1/products/{product}/variants` | No | Public read | Optional | List variants belonging to product | Public / Cacheable |
+| `CAT-006` | GET | `/api/v1/products/{product}/variants/{variant}` | No | Public read | No | Single variant detail | Public / Cacheable |
+| `CAT-007` | POST | `/api/v1/products` | Yes | `products.manage` (Admin/Staff) | No | Create product | Non-cacheable |
+| `CAT-008` | PATCH | `/api/v1/products/{product}` | Yes | `products.manage` (Admin/Staff) | No | Update product | Non-cacheable |
+| `CAT-009` | POST | `/api/v1/products/{product}/images` | Yes | `products.manage` (Admin/Staff) | No | Add product image | Non-cacheable |
+| `CAT-010` | POST | `/api/v1/products/{product}/variants` | Yes | `products.manage` (Admin/Staff) | No | Add product variant | Non-cacheable |
+| `CAT-011` | POST | `/api/v1/categories` | Yes | `products.manage` (Admin/Staff) | No | Create category | Non-cacheable |
+| `CAT-012` | PATCH | `/api/v1/categories/{category}` | Yes | `products.manage` (Admin/Staff) | No | Update category | Non-cacheable |
+
+*Note on Rejected Duplicate Endpoints:*  
+- `GET /api/v1/categories/{category}/products` is **REJECTED** in favor of canonical `GET /api/v1/products?category={category}` (ADR/API-END-002).  
+- `GET /api/v1/products/{product}/images` is **REJECTED** as an independent read endpoint because `CAT-002` embeds ordered image objects (`images[]`).
+
+---
+
+### 21.2 Product Collection Contract (`CAT-001`)
+
+- **HTTP Method & Path:** `GET /api/v1/products`
+- **Purpose:** Public product discovery, catalog browsing, filtering, search, and category listing.
+- **Actor:** Public Anonymous, Customer, Staff, Admin.
+- **Authentication & Authorization:** None required; `PUBLIC_READ`.
+- **Request Body:** None allowed (GET requests do not accept request bodies).
+- **Supported Query Parameters:**
+
+| Parameter | Type | Validation / Rules | Description |
+|---|---|---|---|
+| `search` | string | Optional. Max 100 characters. Trimmed, case-insensitive. Empty string ignored. | Searches product name, description, SKU, and variant attributes. Untrusted input. |
+| `category` | string | Optional. Resolves against Category `slug` (canonical) or Category `id`. | Filters products belonging to the specified category. |
+| `product_type` | enum CLOSED | Optional. Must be `IN_STOCK` or `MADE_TO_ORDER`. | Filters products by type. Invalid value produces `INVALID_VALUE` (422). |
+| `availability` | enum CLOSED | Optional. Must be lowercase `available` or `unavailable`. | Filters by public availability. Display buckets (`IN_STOCK`, `LOW_STOCK`) rejected. |
+| `min_price` | integer / numeric string | Optional. Integer minor units (e.g. `50000000` = 500,000 TZS). Must be >= 0. | Minimum price threshold. |
+| `max_price` | integer / numeric string | Optional. Integer minor units. Must be >= `min_price`. | Maximum price threshold. `min_price > max_price` produces `INVALID_VALUE` (422). |
+| `sort` | enum allow-list | Optional. Allowed values: `created_at`, `price`, `name`. | Primary sort attribute. Unrecognized attributes produce `INVALID_VALUE` (422). |
+| `sort_direction` | enum CLOSED | Optional. Allowed values: `asc`, `desc` (case-insensitive, default `asc` for `name`/`price`, `desc` for `created_at`). | Sort direction. |
+| `page` | integer | Optional. Default `1`. Must be >= 1. | Current page number. |
+| `per_page` | integer | Optional. Default `20`. Must be between `1` and `100`. | Items per page. |
+
+- **Query Execution Pipeline:** `search` → `filter` (`category`, `product_type`, `availability`, price range) → `sort` → `paginate`.
+- **Deterministic Sort & Tie-Breaking:** Every query resolves with primary sort (`sort` + `sort_direction`) followed by `id ASC` as a unique tie-breaker. Default sort when omitted is catalog display order (`created_at DESC, id ASC`).
+- **Response Format (Product Summary Collection):**
+
+```json
+{
+  "data": [
+    {
+      "id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+      "name": "Modern 3-Seater Fabric Sofa",
+      "slug": "modern-3-seater-fabric-sofa",
+      "product_type": "IN_STOCK",
+      "price": {
+        "amount": 125000000,
+        "currency": "TZS"
+      },
+      "category": {
+        "id": "cat_01h8x8a1b2c3d4e5f6g7h8j9",
+        "name": "Living Room",
+        "slug": "living-room"
+      },
+      "primary_image": {
+        "id": "img_01h8x9a0b1c2d3e4f5g6h7j8",
+        "url": "https://cdn.furniture.co.tz/products/sofa-front.webp",
+        "alt_text": "Modern 3-Seater Fabric Sofa in Charcoal Grey"
+      },
+      "availability": "available",
+      "stock_indicator": "IN_STOCK"
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "current_page": 1,
+      "per_page": 20,
+      "total": 48,
+      "last_page": 3,
+      "has_next": true,
+      "has_previous": false
+    }
+  }
+}
+```
+
+- **Collection Error Scenarios:**
+  - `INVALID_VALUE` (422): invalid `product_type`, invalid `availability`, invalid `sort`, `min_price > max_price`.
+  - `INVALID_FORMAT` (422): non-numeric `page`, `per_page`, `min_price`, `max_price`.
+  - `RATE_LIMITED` (429): excessive requests exceeding public rate limit.
+
+---
+
+### 21.3 Product Detail Contract (`CAT-002`)
+
+- **HTTP Method & Path:** `GET /api/v1/products/{product}`
+- **Parameter `{product}`:** Public identifier — accepts either Product `slug` (canonical for Next.js SEO routing) or Product `id` (stable machine identity).
+- **Purpose:** Full product presentation, product landing pages, SSR SEO metadata, Add-to-Cart payload preparation, and Made-to-Order request initiation.
+- **Actor:** Public Anonymous, Customer, Staff, Admin.
+- **Authentication & Authorization:** None required; `PUBLIC_READ`.
+- **Response Format (Product Detail):**
+
+```json
+{
+  "data": {
+    "id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+    "name": "Modern 3-Seater Fabric Sofa",
+    "slug": "modern-3-seater-fabric-sofa",
+    "description": "Premium handcrafted living room sofa featuring high-density foam cushions and solid hardwood frame.",
+    "product_type": "IN_STOCK",
+    "price": {
+      "amount": 125000000,
+      "currency": "TZS"
+    },
+    "category": {
+      "id": "cat_01h8x8a1b2c3d4e5f6g7h8j9",
+      "name": "Living Room",
+      "slug": "living-room",
+      "description": "Sofas, coffee tables, and accent seating for modern homes."
+    },
+    "images": [
+      {
+        "id": "img_01h8x9a0b1c2d3e4f5g6h7j8",
+        "url": "https://cdn.furniture.co.tz/products/sofa-front.webp",
+        "alt_text": "Modern 3-Seater Fabric Sofa in Charcoal Grey - Front View",
+        "sort_order": 1,
+        "is_primary": true
+      },
+      {
+        "id": "img_01h8x9a0b1c2d3e4f5g6h7j9",
+        "url": "https://cdn.furniture.co.tz/products/sofa-angle.webp",
+        "alt_text": "Modern 3-Seater Fabric Sofa in Charcoal Grey - Angle View",
+        "sort_order": 2,
+        "is_primary": false
+      }
+    ],
+    "variants": [
+      {
+        "id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+        "sku": "SOFA-MOD-3S-GRY",
+        "name": "Charcoal Grey",
+        "price": {
+          "amount": 125000000,
+          "currency": "TZS"
+        },
+        "availability": "available",
+        "stock_indicator": "IN_STOCK"
+      },
+      {
+        "id": "var_01h8x9k1m2n3p4q5r6s7t8v0",
+        "sku": "SOFA-MOD-3S-BEI",
+        "name": "Warm Beige",
+        "price": {
+          "amount": 128000000,
+          "currency": "TZS"
+        },
+        "availability": "available",
+        "stock_indicator": "LOW_STOCK"
+      }
+    ],
+    "availability": "available",
+    "stock_indicator": "IN_STOCK",
+    "created_at": "2026-08-30T10:00:00Z",
+    "updated_at": "2026-08-31T14:30:00Z"
+  }
+}
+```
+
+- **Error Scenarios:**
+  - `RESOURCE_NOT_FOUND` (404): Product not found, unpublished, draft, or inactive (`is_active: false`). Response masks internal existence (`PRODUCT_EXISTS_BUT_IS_HIDDEN` is prohibited).
+
+---
+
+### 21.4 Category Collection & Detail Contracts (`CAT-003`, `CAT-004`)
+
+#### Category Collection (`CAT-003`)
+- **Path:** `GET /api/v1/categories`
+- **Purpose:** Public category navigation, menu generation, category landing page.
+- **Response Format (Category Summary Collection):**
+
+```json
+{
+  "data": [
+    {
+      "id": "cat_01h8x8a1b2c3d4e5f6g7h8j9",
+      "name": "Living Room",
+      "slug": "living-room",
+      "image": {
+        "url": "https://cdn.furniture.co.tz/categories/living-room.webp"
+      }
+    },
+    {
+      "id": "cat_01h8x8a1b2c3d4e5f6g7h8k0",
+      "name": "Dining Room",
+      "slug": "dining-room",
+      "image": {
+        "url": "https://cdn.furniture.co.tz/categories/dining-room.webp"
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "current_page": 1,
+      "per_page": 20,
+      "total": 6,
+      "last_page": 1,
+      "has_next": false,
+      "has_previous": false
+    }
+  }
+}
+```
+
+#### Category Detail (`CAT-004`)
+- **Path:** `GET /api/v1/categories/{category}` (`{category}` is slug or id)
+- **Response Format (Category Detail):**
+
+```json
+{
+  "data": {
+    "id": "cat_01h8x8a1b2c3d4e5f6g7h8j9",
+    "name": "Living Room",
+    "slug": "living-room",
+    "description": "Sofas, coffee tables, and accent seating for modern homes.",
+    "image": {
+      "url": "https://cdn.furniture.co.tz/categories/living-room.webp"
+    },
+    "created_at": "2026-08-20T08:00:00Z"
+  }
+}
+```
+- **Error:** `RESOURCE_NOT_FOUND` (404) if category does not exist or is inactive.
+
+---
+
+### 21.5 Product Variants Contracts (`CAT-005`, `CAT-006`)
+
+- **Collection (`CAT-005`):** `GET /api/v1/products/{product}/variants` — lists public variants belonging strictly to the specified parent product (returns array of standalone variant items).
+- **Detail (`CAT-006`):** `GET /api/v1/products/{product}/variants/{variant}` — retrieves a single variant. Validates that `{variant}` belongs to `{product}`; mismatch returns `RESOURCE_NOT_FOUND` (404).
+- **Standalone Variant Object Structure (`CAT-006` / `CAT-005`):**
+
+```json
+{
+  "id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+  "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+  "sku": "SOFA-MOD-3S-GRY",
+  "name": "Charcoal Grey",
+  "price": {
+    "amount": 125000000,
+    "currency": "TZS"
+  },
+  "availability": "available",
+  "stock_indicator": "IN_STOCK",
+  "created_at": "2026-08-30T10:00:00Z",
+  "updated_at": "2026-08-31T12:00:00Z"
+}
+```
+
+- **Embedded Variant Summary Structure (Embedded in `CAT-002` Product Detail):**
+  Embedded variants in `CAT-002` omit `product_id` (implicit in parent product) and timestamps (`created_at`, `updated_at`) to keep the payload clean:
+  `[{ "id": "var_...", "sku": "SOFA-MOD-3S-GRY", "name": "Charcoal Grey", "price": { "amount": 125000000, "currency": "TZS" }, "availability": "available", "stock_indicator": "IN_STOCK" }]`
+
+---
+
+### 21.6 Product Type Semantics & UI Action Mapping
+
+| `product_type` | Business Meaning | Primary Customer Action | Commercial Rule |
+|---|---|---|---|
+| `IN_STOCK` | Standard physical inventory item available for direct purchase. | **Add to Cart** (`CART-002`) | Can be added to cart and purchased through checkout if available. |
+| `MADE_TO_ORDER` | Custom furniture manufactured on request. | **Request Furniture** (`REQ-001`) | **Cannot be added to cart or checked out directly.** Price is informational starting estimate. Add-to-cart attempt returns `PRODUCT_NOT_PURCHASABLE` (422). |
+
+---
+
+### 21.7 Public Availability vs Internal Inventory Separation
+
+- **Public Availability (`availability`):** Coarse boolean-like enum (`available` | `unavailable`). Used in queries (`?availability=available`) and responses.
+- **Public Stock Indicator (`stock_indicator`):** Informational display bucket (`IN_STOCK` | `LOW_STOCK` | `MADE_TO_ORDER`). For customer UI badges only; **not filterable** via query parameters.
+- **Informational Nature:** Catalog availability is an informational point-in-time snapshot. It does not guarantee inventory reservation. Final authoritative validation occurs in a database transaction during Checkout (`CHK-001`).
+- **Internal Protection:** Internal stock fields (`physical_quantity`, `reserved_quantity`, `supplier_id`, internal warehouse notes, stock adjustments) are **strictly prohibited** from serialization on public catalog responses.
+
+---
+
+### 21.8 Summary vs Full Detail Representations
+
+| Entity | Summary Representation (Collections / Lists / Embedded) | Full Detail Representation (Detail Endpoints) |
+|---|---|---|
+| **Product** | `id`, `name`, `slug`, `product_type`, `price`, `category` (summary), `primary_image`, `availability`, `stock_indicator` | Summary fields + `description`, `images[]` (full ordered gallery), `variants[]` (embedded summary list), `created_at`, `updated_at` |
+| **Category** | `id`, `name`, `slug`, `image` | `id`, `name`, `slug`, `description`, `image`, `created_at` |
+| **Variant** | `id`, `sku`, `name`, `price`, `availability`, `stock_indicator` (embedded in `CAT-002`) | `id`, `product_id`, `sku`, `name`, `price`, `availability`, `stock_indicator`, `created_at`, `updated_at` (`CAT-005`, `CAT-006`) |
+
+
+---
+
+### 21.9 SEO, Slugs, Next.js & Flutter Compatibility
+
+- **Public Slug Identification:** `slug` is a URL-safe, unique kebab-case identifier (e.g. `modern-3-seater-sofa`) used by Next.js for crawlable, SEO-friendly page URLs (`/products/modern-3-seater-sofa`).
+- **Machine Identifier:** `id` is a stable, opaque string identifier used in machine operations (cart, checkout, orders, relations).
+- **Dual Resolution for Products and Categories:** Detail endpoints for Product (`CAT-002`) and Category (`CAT-004`) resolve transparently whether given a `slug` or an `id`. Product Variants (`CAT-005`, `CAT-006`) resolve strictly by Variant `id` (`var_...`) under parent `{product}` (which itself resolves by product slug or id).
+- **SSR & OpenGraph Readiness:** Product Detail response contains all necessary fields (`name`, `description`, `price`, primary image selected from `images[]` where `is_primary: true` [or `primary_image.url` on `CAT-001` summary], `availability`) for Next.js to generate OpenGraph tags, Twitter cards, canonical tags, and Schema.org `Product` JSON-LD structured data.
+- **Flutter Compatibility:** Flutter mobile client consumes the exact same JSON contract and models without requiring mobile-specific endpoints.
+
+---
+
+### 21.10 Caching, Cache Safety, and Response Determinism
+
+- **Cache Safety:** Public Catalog responses contain zero customer session data, zero cookies, zero customer identifiers, and zero user-specific state.
+- **Cache-Control Candidates:** Public GET responses can safely be cached via HTTP `Cache-Control`, CDN edge nodes, and Next.js ISR (Incremental Static Regeneration).
+- **Determinism:** Identical query parameters against identical catalog state yield identical JSON byte output.
+- **Invalidation Triggers:** Administrative catalog mutations (`CAT-007..CAT-012`, `INV-003`) trigger CDN/application cache invalidation for the affected product/category paths.
+
+---
+
+### 21.11 Catalog Security & Invariant Checklist
+
+| Threat / Risk | Defense Mechanism | Invariant / Rule |
+|---|---|---|
+| Anonymous access to draft/hidden products | Query automatically scopes `is_active: true` and published state; hidden items return `RESOURCE_NOT_FOUND` 404 | API-SEC-001 |
+| Internal inventory quantity leakage | `reserved_quantity` and warehouse units never mapped in public resource serializers | INV-PUB-001 |
+| Staff notes or cost prices leakage | Field-level serializer filtering strictly limits output to public whitelist | API-SEC-002 |
+| Cross-product variant injection | `CAT-006` and Cart operations validate `variant.product_id === product.id` | VAR-OWN-001 |
+| SQL injection via search or sort | Parameterized database queries; strict server-side allow-list for `sort` fields | SEC-INP-001 |
+| Enum tampering (`product_type`, `availability`) | Closed enum validation; invalid values immediately trigger `INVALID_VALUE` 422 | API-VAL-003 |
+| Unbounded response payload / DoS | Enforced pagination limits (`per_page` max 100); bounded gallery/variant lists | API-RES-001 |
+

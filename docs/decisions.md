@@ -594,6 +594,87 @@
 
 ---
 
+### ADR/API-CAT-001 — Public Catalog Requires No Authentication
+
+**Decision:** Public catalog endpoints (`CAT-001..CAT-006`: products, product details, categories, category details, variants) require zero client authentication, cookies, or user tokens (`PUBLIC_READ`). Next.js SSR and Flutter mobile clients access identical public catalog resources anonymously.
+
+**Reason:** `phases/phase-1.20.md §8`, `api-contract.md §21.1` — Customer product discovery, landing pages, and search engine crawling must never be gated behind an authentication barrier.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-002 — Product Type Is Closed Enum (`IN_STOCK`, `MADE_TO_ORDER`)
+
+**Decision:** The `product_type` attribute accepts only the closed enum values `IN_STOCK` and `MADE_TO_ORDER`. `IN_STOCK` products permit Add-to-Cart and checkout when available; `MADE_TO_ORDER` products route to the Request Furniture workflow (`REQ-001`) and strictly reject cart/checkout attempts with `PRODUCT_NOT_PURCHASABLE` (422).
+
+**Reason:** `phases/phase-1.20.md §5, §14, §23`, `AGENTS.md §4.1` — Made-to-order furniture requires custom manufacturing agreements and must not participate in standard physical inventory checkout.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-003 — Public Availability Is Informational and Decoupled from Internal Inventory
+
+**Decision:** The catalog exposes coarse public signals (`availability`: `available|unavailable`, `stock_indicator`: `IN_STOCK|LOW_STOCK|MADE_TO_ORDER`). Internal unit quantities (`physical_quantity`, `reserved_quantity`), supplier notes, and warehouse logs are strictly prohibited from public serialization. Catalog availability is an informational read; final stock reservation and validation occur exclusively during checkout in a database transaction.
+
+**Reason:** `phases/phase-1.20.md §15, §41, §42`, `api-contract.md §21.7` — Prevents competitor scraping, business data leakage, and race condition assumptions in clients.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-004 — Canonical Resource Identification (Public Slug and Machine ID)
+
+**Decision:** Product and Category catalog entities support dual identification: a URL-safe, unique kebab-case `slug` for SEO canonical URLs and Next.js page routes, and an opaque, stable string `id` for machine operations and foreign keys. Product (`CAT-002`) and Category (`CAT-004`) detail endpoints resolve transparently by either `slug` or `id`. Product Variants (`CAT-005`, `CAT-006`) resolve strictly by Variant `id` (`var_...`) under parent `{product}`.
+
+**Reason:** `phases/phase-1.20.md §33–§35`, `api-conventions.md §21.3` — Optimizes SEO search engine discovery while preserving internal identity stability across renames.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-005 — Canonical Category Filtering via Query Parameter (No Nested Routes)
+
+**Decision:** Category product retrieval is exclusively handled via `GET /api/v1/products?category={category_slug|category_id}`. Nested collection route `GET /api/v1/categories/{category}/products` is rejected as redundant.
+
+**Reason:** `phases/phase-1.20.md §32`, `docs/decisions.md ADR/API-END-002` — Consolidates all search, multi-faceted filtering, sorting, and pagination logic into a single high-performance pipeline (`CAT-001`).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-006 — Product Summary vs Full Detail Representations
+
+**Decision:** Product collection endpoints (`CAT-001`) return a lightweight **Product Summary** representation (id, name, slug, product_type, price, category summary, primary thumbnail image, availability badges). Product detail endpoints (`CAT-002`) return the **Full Product Detail** (summary fields plus full description, sorted gallery images array, full variants list, timestamps).
+
+**Reason:** `phases/phase-1.20.md §80–§82`, `api-contract.md §21.8` — Minimizes bandwidth and Edge caching payload size on high-traffic listing pages while providing full data for product detail views and SSR metadata.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-007 — Strict Variant-to-Product Ownership Constraint
+
+**Decision:** Product variants belong strictly to a single parent product (`Product 1 ──* ProductVariant`). A variant cannot exist independently or be combined with a mismatched product in cart or checkout operations (`VAR-OWN-001`). `CAT-006` validates parent-child ownership during resolution.
+
+**Reason:** `phases/phase-1.20.md §29, §55`, `api-contract.md §21.5` — Guarantees data integrity and prevents variant price/inventory hijacking across different products.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CAT-008 — Deterministic Query Execution Pipeline and Tie-Breaking Sort
+
+**Decision:** Collection queries strictly execute in the order `search → filter → sort → paginate`. Sort fields are restricted to a strict server-side allow-list (`created_at`, `price`, `name`). Queries sorting by non-unique fields append `id ASC` as a deterministic tie-breaker to ensure stable pagination. Default sort is catalog display order (`created_at DESC, id ASC`).
+
+**Reason:** `phases/phase-1.20.md §18–§19, §70`, `api-conventions.md §21.1–§21.2` — Eliminates pagination drifting/duplicate items between pages and prevents arbitrary SQL column injection.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`).
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`.
+

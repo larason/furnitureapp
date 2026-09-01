@@ -4,40 +4,132 @@
 
 ## 1. Product (PUBLIC)
 
-**Conceptual paths:** `GET /api/v1/products`, `GET /api/v1/products/{product}`, `GET /api/v1/categories/{category}/products`
+**Conceptual paths:** `GET /api/v1/products` (`CAT-001`), `GET /api/v1/products/{product}` (`CAT-002`), `GET /api/v1/products/{product}/variants` (`CAT-005`), `GET /api/v1/products/{product}/variants/{variant}` (`CAT-006`).  
+*Note:* `GET /api/v1/categories/{category}/products` is **REJECTED** in favor of canonical `GET /api/v1/products?category={category}` (ADR/API-END-002).
+
+### 1.1 Product Detail Representation (`CAT-002`)
 
 | Field | Type | Exposure | Nullable | Notes |
 |---|---|---|---|---|
-| `id` | string | PUBLIC | no | Opaque API identifier |
-| `name` | string | PUBLIC | no | |
-| `slug` | string | PUBLIC | no | SEO slug separate from `id` |
-| `description` | string | PUBLIC | no | SEO/public |
-| `product_type` | enum `IN_STOCK`,`MADE_TO_ORDER` | PUBLIC | no | CLOSED |
-| `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units; `125000000`=1,250,000.00 TZS; variant override per `VAR-005` |
-| `category` | `{id,slug,name}` summary | PUBLIC | no | Full via `categories/{category}` |
-| `images` | `[{id,url,alt_text,sort_order,is_primary}]` | PUBLIC | no | Embedded; not bare URL array |
-| `variants` | `[{id,sku,name,price:{amount,currency},availability}]` summary | PUBLIC | no | Full via `/products/{product}/variants/{variant}` |
-| `availability` | `"available"\|"unavailable"` | PUBLIC | no | Coarse public signal (filter `?availability=available`). Not `IN_STOCK`. |
-| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | **Display bucket only**, not filterable; `?availability=IN_STOCK` is validation error. |
+| `id` | string | PUBLIC | no | Stable opaque API identifier (e.g. `prod_01h8x9j2m4k5n6p7q8r9s0t1`) |
+| `name` | string | PUBLIC | no | Product display name |
+| `slug` | string | PUBLIC | no | URL-safe SEO slug unique in product namespace |
+| `description` | string | PUBLIC | no | Full public product description for SEO & landing page |
+| `product_type` | enum `IN_STOCK`,`MADE_TO_ORDER` | PUBLIC | no | CLOSED enum |
+| `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units; `125000000` = 1,250,000.00 TZS; required for all products |
+| `category` | `{id,slug,name,description:string\|null}` | PUBLIC | no | Embedded Category summary (`description` is nullable) |
+| `images` | `[{id,url,alt_text,sort_order,is_primary}]` | PUBLIC | no | Full gallery array, deterministically sorted by `sort_order ASC, id ASC` |
+| `variants` | `[{id,sku,name,price,availability,stock_indicator}]` | PUBLIC | no | Array of active variants belonging to this product |
+| `availability` | `"available"\|"unavailable"` | PUBLIC | no | Coarse public signal (filter `?availability=available`). Lowercase exception. |
+| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | **Display bucket only**, not filterable via query parameter |
 | `created_at` | ISO8601 UTC | PUBLIC | no | `2026-08-30T15:30:00Z` |
-| `updated_at` | ISO8601 UTC | PUBLIC | no | |
+| `updated_at` | ISO8601 UTC | PUBLIC | no | `2026-08-31T12:00:00Z` |
 
-**Not exposed publicly:** `reserved_quantity`, `physical_quantity`, supplier internals, staff notes, internal adjustments.
+### 1.2 Product Summary Representation (`CAT-001` Collection / Search)
 
-**Inventory detail (STAFF/ADMIN via authorized inventory view):** `{quantity, reserved_quantity, available_quantity}` as **integer item counts (units/pieces, not monetary minor units)** — e.g., `quantity: 12` means 12 items. Not TZS minor units; never multiply stock by 100. Never on public product.
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | PUBLIC | no | Stable opaque API identifier |
+| `name` | string | PUBLIC | no | Product display name |
+| `slug` | string | PUBLIC | no | URL-safe SEO slug |
+| `product_type` | enum `IN_STOCK`,`MADE_TO_ORDER` | PUBLIC | no | CLOSED enum |
+| `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` |
+| `category` | `{id,slug,name}` | PUBLIC | no | Lightweight category summary |
+| `primary_image` | `{id,url,alt_text}` | PUBLIC | yes | Primary thumbnail image object (`is_primary: true`) |
+| `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
+| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display badge bucket |
+
+**Not exposed publicly on any Product representation:** `reserved_quantity`, `physical_quantity`, supplier internals, warehouse location, staff notes, internal cost prices, margin data.
+
+**Inventory detail (STAFF/ADMIN via authorized inventory view `INV-002`):** `{quantity, reserved_quantity, available_quantity}` as **integer item counts (units/pieces, not monetary minor units)** — e.g., `quantity: 12` means 12 items. Not TZS minor units; never multiply stock by 100. Never on public product.
+
+---
 
 ## 2. Category
 
+**Conceptual paths:** `GET /api/v1/categories` (`CAT-003`), `GET /api/v1/categories/{category}` (`CAT-004`).
+
+### 2.1 Category Detail Representation (`CAT-004`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | PUBLIC | no | Opaque identifier (e.g. `cat_01h8x8a1b2c3d4e5f6g7h8j9`) |
+| `name` | string | PUBLIC | no | Category display name |
+| `slug` | string | PUBLIC | no | URL-safe unique slug (e.g. `living-room`) |
+| `description` | string | PUBLIC | yes | Category description for category landing page |
+| `image` | `{url}` | PUBLIC | yes | Category banner image object |
+| `created_at` | ISO8601 UTC | PUBLIC | no | `2026-08-20T08:00:00Z` |
+
+### 2.2 Category Summary Representation (`CAT-003` Collection)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | PUBLIC | no | Opaque identifier |
+| `name` | string | PUBLIC | no | Category display name |
+| `slug` | string | PUBLIC | no | URL-safe unique slug |
+| `image` | `{url}` | PUBLIC | yes | Category thumbnail image |
+
+*Note:* Products are not embedded in category responses. Category product listings use `GET /api/v1/products?category={category}` with collection pagination and filters.
+
+---
+
+## 2a. Product Variant (Embedded Summary & Standalone Detail)
+
+**Conceptual paths:** Embedded in `GET /api/v1/products/{product}` (`CAT-002`), or accessed via `GET /api/v1/products/{product}/variants` (`CAT-005`), `GET /api/v1/products/{product}/variants/{variant}` (`CAT-006`).
+
+### 2a.1 Standalone Product Variant Detail (`CAT-006` Detail & `CAT-005` Collection)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | PUBLIC | no | Variant opaque identifier (e.g. `var_01h8x9k1m2n3p4q5r6s7t8u9`) |
+| `product_id` | string | PUBLIC | no | Parent product ID (strictly enforces variant-product ownership) |
+| `sku` | string | PUBLIC | no | Public stock keeping unit / option code |
+| `name` | string | PUBLIC | no | Option / variant display name (e.g. "Charcoal Grey", "3-Seater Walnut") |
+| `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` override |
+| `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
+| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display badge bucket |
+| `created_at` | ISO8601 UTC | PUBLIC | no | Variant creation timestamp |
+| `updated_at` | ISO8601 UTC | PUBLIC | no | Variant update timestamp |
+
+### 2a.2 Embedded Product Variant Summary (Embedded in `CAT-002` Product Detail)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | PUBLIC | no | Variant opaque identifier |
+| `sku` | string | PUBLIC | no | Public stock keeping unit / option code |
+| `name` | string | PUBLIC | no | Option / variant display name |
+| `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` |
+| `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
+| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display badge bucket |
+
+*Note:* `product_id` and timestamps (`created_at`, `updated_at`) are omitted from the embedded summary in `CAT-002` to avoid redundancy with the parent Product container and maintain a lightweight payload. Standalone retrieval via `CAT-005` and `CAT-006` provides full timestamps and explicit `product_id`.
+
+---
+
+## 2b. Product Image (Embedded Representation)
+
+**Embedded in:** `Product Detail` (`CAT-002`) and `Product Summary` (`CAT-001`).
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | PUBLIC | no | Image identifier (e.g. `img_01h8x9a0b1c2d3e4f5g6h7j8`) |
+| `url` | string (URI) | PUBLIC | no | Full CDN URL to optimized public image |
+| `alt_text` | string | PUBLIC | no | Descriptive accessibility & SEO alt text |
+| `sort_order` | integer | PUBLIC | no | Display sequence position (1-indexed, ascending) |
+| `is_primary` | boolean | PUBLIC | no | `true` for primary cover image, `false` otherwise |
+
+---
+
+## 2c. Product Availability (Embedded Representation)
+
 | Field | Type | Exposure | Notes |
 |---|---|---|---|
-| `id` | string | PUBLIC | |
-| `name` | string | PUBLIC | |
-| `slug` | string | PUBLIC | Unique global |
-| `description` | string | PUBLIC | nullable |
-| `image` | `{url}` | PUBLIC | nullable |
-| `created_at` | ISO8601 | PUBLIC | |
+| `availability` | enum `"available"\|"unavailable"` | PUBLIC | Coarse public boolean-like signal; matches query parameter `?availability=available`. |
+| `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | Informational customer badge bucket only. Rejected if used in query filter. |
 
-Products not recursively embedded; use `GET /categories/{category}/products` with pagination.
+*Inventory Rule:* Informational on catalog; authoritative verification and deduction executed transactionally during checkout. Internal unit counts (`physical_quantity`, `reserved_quantity`, warehouse logs) remain strictly inaccessible.
+
+---
 
 ## 3. Order (CUSTOMER — `GET /api/v1/me/orders{,/{order}}`; ADMIN `GET /api/v1/orders`)
 

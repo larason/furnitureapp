@@ -382,3 +382,41 @@ Laravel Policies/Gates/middleware, Spatie, role/permission tables/migrations, au
 - **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` complete, `PAY-001`/`WEBHOOK-001`, `ADM-003` flagged concurrency-sensitive (atomic authz+state+perform).
 - **Anonymous mutation safety:** only `AUTH-001` register, `REQ-001`, `ENQ-001`, `AUTH-004/005` recovery approved as anonymous mutations; all reviewed for abuse/spam/rate-limit/file risk.
 - **Count & MVP:** `69` endpoints (`CAT 12` + `AUTH 7` + `USER 3` + `CART 5` inc. `CART-005` merge + `CHK 1` + `ORD 13` + `REQ 7` + `ENQ 7` inc. `ENQ-007` + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3`) is smallest coherent surface — no `GET /my-orders` duplicate, no `wishlist`/`reviews`/`coupons` unless approved; each endpoint justified for attack surface. Guest-cart `X-Guest-Cart-Id` handling is backend authority, not client ownership proof.
+
+## 21. Catalog API Conventions (Phase 1.20)
+
+> **Authority:** Conventions governing the Catalog domain (`CAT-001..CAT-006` public read operations, representations, filters, sorts, and SEO integration). Consolidates `phases/phase-1.20.md`.
+
+### 21.1 Query Pipeline Execution Order
+
+All catalog query evaluation on collection endpoints (`CAT-001`) strictly executes in the following sequence:
+1. **Search:** Text matching against product name, description, SKU, variant options (`search`).
+2. **Filter:** Strict condition evaluation (`category`, `product_type`, `availability`, `min_price`, `max_price`). Invalid parameters yield `INVALID_VALUE` (422), never silent truncation or unconstrained scans.
+3. **Sort:** Server-defined allow-list sorting (`sort`, `sort_direction`).
+4. **Tie-Breaker:** Deterministic append of `id ASC` to ensure repeatable pagination order across pages.
+5. **Paginate:** Slicing window using `page` and `per_page` returning `meta.pagination`.
+
+### 21.2 Deterministic Sort & Tie-Breaking Rule
+
+- **Allow-list Only:** Allowed sort fields are strictly limited to `created_at`, `price`, `name`. Arbitrary database column names in `?sort=` are rejected with `INVALID_VALUE` (422).
+- **Tie-Breaker:** When sorting by non-unique fields (e.g. `price`, `created_at`, `name`), the server deterministically appends `id ASC` to guarantee page-to-page stability during pagination.
+- **Default Sort:** When `sort` is omitted, the default sort order is `catalog display order` (`created_at DESC, id ASC`).
+
+### 21.3 Public Slug vs Machine Identifier Dual Resolution
+
+- **Dual Lookup for Products and Categories:** Single-resource detail endpoints for Product (`/api/v1/products/{product}`) and Category (`/api/v1/categories/{category}`) accept either the human-readable URL `slug` (e.g. `modern-3-seater-sofa`) or the opaque machine `id` (e.g. `prod_01h8x9...`). Product Variants (`/api/v1/products/{product}/variants/{variant}`) resolve strictly by Variant `id` (`var_...`) under parent `{product}`.
+- **Namespace Uniqueness:** Slugs are guaranteed unique within their respective entity namespaces (`Product.slug`, `Category.slug`).
+- **SEO Uniformity:** Next.js uses `slug` for SEO canonical URLs (`/products/modern-3-seater-sofa`), while Flutter and machine integrations may use either `slug` or `id`.
+
+### 21.4 Summary vs Full Detail Serialization Policy
+
+- **Collections (`CAT-001`, `CAT-003`):** Return **Summary representations** (lightweight payload, single primary thumbnail, essential pricing and badges) to optimize bandwidth, mobile performance, and edge cache hit ratios.
+- **Detail (`CAT-002`, `CAT-004`):** Return **Full Detail representations** (full description, complete gallery array with sort order, active variants list, complete category context).
+- **Field Consistency:** Field names, data types, and enum values are identical across Summary and Detail schemas; fields are never renamed between collection and detail views.
+
+### 21.5 Public Catalog No-Auth & Cache Safety Rule
+
+- **No Authentication Required:** Public catalog endpoints (`CAT-001..CAT-006`) must never require registration, cookies, tokens, or sessions.
+- **Zero Customer State:** Catalog responses contain zero customer-specific data. They are safe for aggressive HTTP caching (`public, max-age=...`), CDN caching, and Next.js Incremental Static Regeneration (ISR).
+- **Masking of Unpublished State:** Products or categories that are draft, hidden, or deactivated return standard `RESOURCE_NOT_FOUND` (404), never leaking internal visibility states.
+
