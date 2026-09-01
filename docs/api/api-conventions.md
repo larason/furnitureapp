@@ -306,3 +306,79 @@ Payment provider-specific error codes/SDK/webhook failures (Group H), Laravel ha
 ### 18.8 Deferred
 
 Laravel/Sanctum, User model/migrations, hashing, password reset/email verification/MFA, login controllers/middleware/policies, Next.js/Flutter screens, token/session storage, staff-admin UI, exact durations, email delivery (Group R) — not implemented here (Explicitly Out of Scope §87).
+
+## 19. Authorization Conventions (Consolidated — Phase 1.18)
+
+> **Authority:** Single authorization conventions for `v1`. Consolidates `phase-1.18.md`. No separate `authorization.md` per §2. Reusable rules here; normative contract in `api-contract.md §18`; business meaning in `docs/domain/business-rules.md §18`; decisions in `decisions.md ADR/AUTHZ-*`.
+
+### 19.1 Deny by Default & Least Privilege
+
+- **Deny by default** for all protected resources — `allow by default then blacklist` is prohibited. Explicitly classify `products → public read`, `categories → public read` as public; public catalog remains cacheable separately.
+- **Least privilege:** every actor gets only minimum for legitimate work. Customer retains `browse/search/add to cart/checkout/view own orders/cancel eligible own order/submit requests` without admin approval; staff get only operational perms needed.
+
+### 19.2 Server-Side, No Client-Supplied Authority
+
+- Authorization is **server-side only**; never trust client-supplied `role`, `ownership`, `permission`, `resource identity`. Client `{"role":"ADMIN"}` or `{"user_id":"another"}` is rejected; mass-assignment `role` is blocked at validation + authorization layers.
+- Frontend route protection is UX only, not final authority; backend evaluates `AUTHENTICATED IDENTITY + ROLE + RESOURCE + ACTION + OWNERSHIP + BUSINESS STATE + CONTEXT` (see §18.1) for every operation, including idempotent retries.
+
+### 19.3 Ownership, Resource & Action, State-Aware
+
+- **Resource-level:** `Order: customer → own, staff → operational, admin → authorized admin` — more precise than `STAFF → all DB`.
+- **Action-level:** `STAFF → may view order` ≠ `may process order` ≠ `may change customer password` (denied). Evaluate `role + resource + action`.
+- **State-aware:** `STAFF → ship` only if `Order = PROCESSING` and `operational order access + ship permission`; customer `cancel` only if `owns + cancellable state + 20-min window`. Authz evaluated at operation time, atomic with `validate state + perform` so state cannot change in between. Authorization does **not** substitute for domain validation.
+
+### 19.4 Public vs Private & Anonymous Boundaries
+
+- **Public:** `products`, `categories`, `search`, `product details` — `PUBLIC`, no auth. **Private:** `orders`, `profile`, `notifications`, `requests`, `enquiries`, `cart` — `AUTHENTICATED_OWNER` / `OPERATIONAL_STAFF` / `ADMINISTRATIVE`.
+- **Anonymous:** may `submit request/enquiry` via public endpoint + input validation (+ anti-abuse later) with `User=none` + contact; must not `GET /enquiries/{id}` unrestricted or fetch attachments via predictable public paths. `Request → Attachment` inherits parent; if cannot access parent, cannot access attachment. Notifications are owner-based; staff notifications are operational, not mixed.
+- **Staff not customer-admin:** staff cannot `change customer passwords/roles/disable accounts/impersonate/view credentials/change auth state`; such is security/admin.
+
+### 19.5 Ownership Checks, Query Awareness & Serialization
+
+- **Ownership via relationships:** `User → Orders/Notifications/Cart/Requests/Enquiries` — authorization uses these logical relationships, never `?user_id=another-customer` to expand scope.
+- **Authorization-aware queries:** pagination/search operate over **authorized dataset** (`Customer A /me/orders?page=2` paginates `Customer A` only, not all then client-filter); search results are authz-filtered.
+- **Field-level before serialization:** select representation by actor before fetching (`Order: customer → customer-facing fields, staff → operational, admin → administrative`); never `fetch all then assume frontend hides`. Sensitive fields (`password`, `provider secret`, `internal staff note` vs `historical order price`) follow `§18.11` matrix, even Admin receives only when operationally necessary.
+- **Cart binding:** `cart.owner` cannot be changed via `user_id`.
+
+### 19.6 Denial, Caching & Background Safety
+
+- **Denial:** use Phase 1.16 envelope — `401 AUTHENTICATION_REQUIRED` (not authenticated) vs `403 FORBIDDEN` vs `404 RESOURCE_NOT_FOUND` where hiding existence is safer. Do not leak via divergent errors.
+- **Caching:** private responses use private `Cache-Control`, not CDN-public; do not cache authz decisions across users (`Customer A → Order A` must not leak via cached `Customer B`); public catalog may be CDN.
+- **Background jobs/webhooks:** use explicit service authorization (`SYSTEM` not a user role) for `payment callback`, `notification dispatch`, `inventory cleanup`, `order timeout` (payment webhook auth is Group H); external webhooks are not `CUSTOMER`/`STAFF`/`ADMIN`.
+- **Policy implementation:** centralized `OrderPolicy.view/cancel/process/ship`, `ProductPolicy.view/manage` etc., not scattered `if ($user->role === 'admin')`. Use capability/resource/action policies; role is input, not whole model.
+
+### 19.7 Permission Vocabulary & Separation of Duties
+
+- **Baseline:** `RBAC + ownership + business-state`; avoid role explosion (`SENIOR_STAFF/ORDER_STAFF` etc. without justification) — start with `CUSTOMER/STAFF/ADMIN` CLOSED and explicit permissions like `products.view`/`products.manage` (catalog CRUD + images/variants, not stock) , `inventory.view`/`inventory.manage` (stock-quantity adjustments, not catalog), `orders.view_operational`/`orders.accept`/`orders.process`/`orders.ready_for_pickup`/`orders.ship`/`orders.deliver` (each distinct, see `api-contract.md §18.6` state preconditions; `process` does not cover `accept`/`ready_for_pickup`), `requests/enquiries.view/manage`, `staff.approve/manage`. Wildcard `admin.*` as sole model avoided; explicit sets are auditable.
+- **Separation of duties:** `Staff → operational processing`; `Admin → staff approval` — one role cannot request and approve own privilege. Customer permissions are ownership-based (`customer.orders.read_own` etc.) via policies, not huge permission tables; staff/admin explicit.
+- **Data minimization:** staff receive only operationally relevant customer data (`name`, `phone`, `delivery address`, `order items`); not `password`, `token`, `unrelated history`. Admin also minimized.
+- **Audit & changes:** `staff approval`, `role change`, `account security change`, `critical inventory/order correction` produce audit `actor/action/resource/target/timestamp/result` (no secrets); staff `order accepted/shipped`, `inventory adjusted` likewise; permission changes only by authorized Admin.
+
+### 19.8 Deferred
+
+Laravel Policies/Gates/middleware, Spatie, role/permission tables/migrations, authorization controllers, admin/customer UI, Flutter code, token middleware, impersonation, MFA, payment authorization — not implemented here (Explicitly Out of Scope §142).
+
+## 20. Endpoint Inventory Conventions (Phase 1.19)
+
+> **Authority:** Version 1 endpoint catalogue conventions. Consolidates `phase-1.19.md`. No separate per-endpoint docs; inventory lives in `api-contract.md §19` (authoritative table + per-endpoint blocks) and resource mapping in `api-resources.md §14`. Conventions here are reusable across endpoints.
+
+### 20.1 Stable IDs, Version Prefix, No Recycling
+
+- IDs `AUTH-xxx`, `CAT-xxx`, `CART-xxx`, `CHK-xxx`, `ORD-xxx`, `PAY-xxx`, `REQ-xxx`, `ENQ-xxx`, `NOT-xxx`, `USER-xxx`, `INV-xxx`, `ADM-xxx`, `WEBHOOK-xxx` are stable; removed IDs remain **retired, never recycled**. All paths use `/api/v1` per Phase 1.8; no unversioned V1 endpoints.
+
+### 20.2 Naming, Methods, and Query Reuse
+
+- **Naming:** lowercase, plural resources, kebab-case for actions (`ready-for-pickup`), shallow nesting (`/products/{product}/variants`), nouns + controlled `POST /orders/{order}/cancel` (not `PATCH {status}`) per Phase 1.9. No `pageSize`/`sortBy` aliases — only `page`/`per_page`, `search`, `category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction` per Phase 1.11. **Category filtering:** canonical `GET /products?category={category}`; `GET /categories/{category}/products` is **REJECTED** duplicate. **Images:** `GET /products/{product}/images` **REJECTED** (embedded in product detail). **Availability:** embedded `availability` + `stock_indicator` in `Product`, not separate endpoint.
+- **Methods:** `GET` read (`CAT-*`, `USER-001`, `ORD-001`), `POST` create/action (`AUTH-001`, `CART-002`, `CHK-001`, `ORD-007`), `PATCH` partial update (`USER-002`, `CART-003`, `CAT-008`), `DELETE` actual removal (`CART-004`) per Phase 1.10 — `DELETE` not for cancellation.
+- **Pagination:** `CAT-001`, `CAT-003`, `ORD-001`, `ORD-005`, `REQ-004`, `ENQ-004`, `NOT-001`, `ADM-001`, `INV-001` use `page`/`per_page` (1–100) + `meta.pagination` per Phase 1.12; single-resource endpoints not paginated.
+- **Response / Input / Validation / Errors:** reuse `data`/`meta` + `errors` (`§15`) envelopes, `snake_case`, money `{amount,currency}`, type strictness, `AUTHENTICATION_REQUIRED` canonical 401 (alias `CHECKOUT_REQUIRES_AUTHENTICATION`), CLOSED enums, field `delivery_address.city` + `items.0.quantity`, `meta.request_id` — no raw arrays or custom wrappers.
+
+### 20.3 Auth / Authz, Security, Idempotency, Concurrency per Endpoint
+
+- **Auth:** `CAT-001..006` public (no auth) remain SSR/SEO-friendly; `REQ-001`/`ENQ-001` + `AUTH-001/002/004/005` public with rate-limit safety; `CHK-001`/`ORD-001` require `AUTHENTICATION_REQUIRED` canonical 401; `ORD-005` staff `orders.view_operational`; `ADM-003` admin `staff.approve` (audited). No `STAFF → block_customer`.
+- **Authz:** every protected endpoint declares `owns resource?` / `operational access?` / `administrative access?` per `api-contract.md §18`; e.g., `ORD-002` ownership vs `ORD-010` operational `orders.ship` + `PROCESSING`.
+- **Security classification:** each endpoint tagged `PUBLIC` / `CUSTOMER` (`AUTHENTICATED_OWNER`) / `STAFF` (`OPERATIONAL`) / `ADMIN` (`ADMINISTRATIVE`) / `SYSTEM/WEBHOOK` for `WEBHOOK-001`; data `PUBLIC` vs `PRIVATE` vs `INTERNAL` helps prevent overexposure (`payment secrets` never).
+- **Idempotency:** `SAFE`: `CAT-*` `GET`, `CART-001` `GET`; `IDEMPOTENT`: `USER-002` `PATCH`, `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001`, `PAY-001`, `ORD-004` cancel, `ORD-007..011` + `ORD-013` `complete` state actions, `CART-005` merge, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` (+ `REQ-007`/`ENQ-007` attachments), `CART-002`.
+- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` complete, `PAY-001`/`WEBHOOK-001`, `ADM-003` flagged concurrency-sensitive (atomic authz+state+perform).
+- **Anonymous mutation safety:** only `AUTH-001` register, `REQ-001`, `ENQ-001`, `AUTH-004/005` recovery approved as anonymous mutations; all reviewed for abuse/spam/rate-limit/file risk.
+- **Count & MVP:** `69` endpoints (`CAT 12` + `AUTH 7` + `USER 3` + `CART 5` inc. `CART-005` merge + `CHK 1` + `ORD 13` + `REQ 7` + `ENQ 7` inc. `ENQ-007` + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3`) is smallest coherent surface — no `GET /my-orders` duplicate, no `wishlist`/`reviews`/`coupons` unless approved; each endpoint justified for attack surface. Guest-cart `X-Guest-Cart-Id` handling is backend authority, not client ownership proof.

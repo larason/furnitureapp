@@ -464,6 +464,136 @@
 
 ---
 
+### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
+
+**Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.
+
+**Reason:** `phase-1.18.md §6`, `api-contract.md §18.1` — minimal roles, least privilege, prevents explosion.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-002 — Customer Owns Own Account (Object-Level)
+
+**Decision:** For all customer-owned resources (`Orders`, `Notifications`, `Cart`, `Requests`, `Enquiries`, `Profile`) the authenticated principal `==` `resource owner` is required. Knowing `user_id` or submitting `{"user_id":"another"}` never grants access; `?user_id=` cannot expand scope; pagination/search operate over authorized dataset.
+
+**Reason:** `phase-1.18.md §14-15`, `api-contract.md §18.3`, `api-conventions.md §19.5`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-003 — Staff Are Operational, Not Customer-Account Administrators
+
+**Decision:** Staff may `view/operate` operational commerce (`orders.view_operational`, `orders.process/ship/deliver` with valid state, `requests/enquiries` operational, approved `inventory/catalog`) but must not `change customer passwords/roles/disable accounts/impersonate/view credentials/change auth state/transfer ownership/block browsing-or-ordering`. Staff capabilities are explicit per-resource/action, not `STAFF → all DB`.
+
+**Reason:** `phase-1.18.md §18-19`, `api-contract.md §18.2/§18.6`, `api-resources.md §13.1-13.7`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-004 — Admins Approve Staff (Server-Controlled, Audited)
+
+**Decision:** Only authenticated `ADMIN` with `staff.approve` may approve staff (`candidate → Admin → Active`). Staff cannot self-approve, customers cannot approve staff, and role changes (`CUSTOMER/STAFF` cannot assign) are privileged, validated, and audited (`actor/action/resource/target/timestamp/result`).
+
+**Reason:** `phase-1.18.md §27-28`, `api-contract.md §18.8`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-005 — Staff Cannot Arbitrarily Restrict Customer Browsing/Ordering
+
+**Decision:** No generic `STAFF → block_customer`. Staff cannot disable product browsing or block legitimate checkout/order; `Admin` may only restrict under explicit approved security policy with `reason/authorization/audit/impact/recovery`, and public catalog (`/products`, `/categories`) remains public even when account has problems unless specific legal/security mandate.
+
+**Reason:** `phase-1.18.md §20`, `§57-59`, `api-contract.md §18.2`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-006 — Authorization Is Role + Resource + Action + State (Deny by Default)
+
+**Decision:** Allow only if `authenticated AND authorized actor AND resource AND action AND ownership/context valid AND business-state valid`. **Deny by default** for protected resources (explicit `PUBLIC` for catalog). Authorization is evaluated at operation time, atomic with validation; `STAFF ship` needs both permission *and* `Order=PROCESSING`, `Customer cancel` needs `owner + eligible state + 20-min window`.
+
+**Reason:** `phase-1.18.md §9`, `§34-37`, `§77`, `api-contract.md §18.1/§18.9`, `api-conventions.md §19.1/§19.3`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-007 — Default Deny & Explicit Public, Field/Caching Safety
+
+**Decision:** `deny by default` with explicit `PUBLIC` classification for catalog; authorization before serialization — only permitted fields per actor (`reserved_quantity` not to `CUSTOMER`, `password` never). Private responses use private `Cache-Control`, not CDN-public; authorization decisions not cached across users; search/pagination over authorized dataset; service-to-service uses explicit service auth, not reused Admin credential.
+
+**Reason:** `phase-1.18.md §37-38`, `§64-70`, `api-contract.md §18.11/§18.16`.
+
+**Status:** Accepted
+
+---
+
+### ADR/AUTHZ-008 — Version 1 Roles Are Closed, Least Privilege Without Role Explosion
+
+**Decision:** Version 1 roles remain CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; no `*` wildcard as sole model; permission vocabulary uses smallest useful units (`products.view`/`products.manage` for catalog CRUD + images/variants — not stock, `inventory.view`/`inventory.manage` for stock-quantity adjustments — not catalog, `orders.view_operational`/`orders.accept`/`orders.process`/`orders.ready_for_pickup`/`orders.ship`/`orders.deliver` each distinct with state preconditions per `api-contract.md §18.6`, `requests/enquiries.view/manage`, `staff.approve/manage`) and RBAC + ownership + state baseline. Avoid super-roles; prefer explicit permissions; separation of duties `Staff → operational, Admin → staff approval`.
+
+**Reason:** `phase-1.18.md §30-31`, `§80-82`, `api-contract.md §18.15`.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-END-001 — Canonical Customer Order Path Uses Self-Context (`/me/orders`)
+
+**Decision:** Customer order collection/detail use `GET /me/orders` and `GET /me/orders/{order}` (self-context) with server-side ownership filtering, not `GET /orders` with client-supplied `?user_id` or duplicate `GET /my-orders`. Staff operational uses `GET /orders` / `GET /orders/{order}` with `orders.view_operational`. No duplicate forms (`/my-orders`, `/orders?mine=true`) preserved.
+
+**Reason:** `phase-1.19.md §40`, `api-contract.md §19.1` `ORD-001/002` vs `ORD-005/006` — single canonical per actor prevents enumeration and aligns with `api-conventions.md §19.5` authorization-aware pagination.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-END-002 — Category Filtering Uses Product Collection (No Separate Nested Retrieval)
+
+**Decision:** Category filtering uses `GET /api/v1/products?category={category}` (canonical, `category` query-convention) with combined `search`/`product_type`/`availability`/`price`/`sort`+`id ASC`+`meta.pagination`. `GET /api/v1/categories/{category}/products` is **REJECTED** for V1 as duplicate. `GET /products/{product}/images` also **REJECTED** (images embedded in product detail). Availability is embedded (`availability` + `stock_indicator`) not separate endpoint.
+
+**Reason:** `phase-1.19.md §18-19`, `api-contract.md §19.5/19.7` — simplicity, discoverability, single filtering pipeline per `api-conventions.md §20.2`.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-END-003 — Order State Changes Use Controlled Actions, Not Unrestricted PATCH
+
+**Decision:** Order status transitions use explicit `POST /orders/{order}/accept`, `/process`, `/ready-for-pickup`, `/ship`, `/deliver` (each distinct permission `orders.accept`/`process`/`ready_for_pickup`/`ship`/`deliver` + state precondition per `api-contract.md §18.6`), never generic `PATCH /orders/{order} {status: …}`. Customer cancellation uses `POST /me/orders/{order}/cancel` with `owns + eligible state + 20-min window` (not `DELETE /orders/{order}`).
+
+**Reason:** `phase-1.19.md §39/44`, `api-contract.md §19.1` `ORD-007..011` — prevents bypassing `valid state + permission` and keeps `CANCEL` idempotency semantics distinct.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-END-004 — Anonymous Request/Enquiry Creation Does Not Imply Anonymous Retrieval
+
+**Decision:** `POST /requests` (REQ-001) and `POST /enquiries` (ENQ-001) allow anonymous `User=none` + required contact. `GET /requests/{request}` is **not** automatically public; `GET /me/requests` (own) and `GET /requests` (staff operational) are separate. Anonymous retrieval, if ever needed, requires explicit secure access mechanism later — no predictable ID bearer.
+
+**Reason:** `phase-1.19.md §51`, `api-contract.md §19.1` `REQ-001` vs `REQ-002..005` — protects private request/enquiry data and attachments (inherit parent).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-END-005 — Smallest Coherent Surface (69 Endpoints, Payment Group H)
+
+**Decision:** V1 **current `PROPOSED` (target `APPROVED` after Phase 1.21)** — `69` total (`66` substantive + `3` Group H placeholders): `CAT 12` [`CAT-001..006` public + `CAT-007..012` management] + `AUTH 7` + `USER 3` + `CART 5` [`CART-001..005` inc. `CART-005` `merge` for guest-cart handoff] + `CHK 1` + `ORD 13` [`ORD-001..013` inc. `ORD-013` `complete`] + `REQ 7` + `ENQ 7` [`ENQ-001..007` inc. `ENQ-007` enquiry attachments] + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3` placeholders (`PROPOSED*`). Master table Status reflects current `PROPOSED`/`PROPOSED*` per `api-contract.md §19`/`§19.15`. Excludes `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` per MVP discipline. IDs remain retired if removed.
+
+**Reason:** `phase-1.19.md §121/124/126`, `api-contract.md §19.13` — smallest surface that fully supports anonymous browse, customer purchase (pickup/delivery), cancellation, made-to-order, staff operational, admin staff approval.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment error codes/SDK/webhook payload validation (Group H, slots into `EXTERNAL_SERVICE_ERROR` family), cursor pagination tokens (Group T if ever). `Phase 1.16` error registry and status matrix now accepted — see `api-contract.md §15.15`. `Phase 1.17` authentication contract now accepted — see `api-contract.md §17`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`).

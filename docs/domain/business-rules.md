@@ -214,6 +214,42 @@ Business failures must correspond to real rules above — do not invent behavior
 
 - Staff approval and role changes remain **auditable** (`who approved? when? what changed?`); security events (`login success/failure`, `logout`, `password change/reset`, `staff approval`, `role change`, `session revocation`) are identified for later logging without logging passwords/tokens.
 
+## 18. Authorization & Permissions Business Rules (Phase 1.18)
+
+> Least privilege, deny by default, server-side enforcement. Roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`.
+
+| # | Business rule | Ref |
+|---|---|---|
+| 1 | **Customer owns own account** — authenticated principal `==` resource owner is required for owner-based resources (`User → Orders/Notifications/Cart/Requests/Enquiries`). `user_id` knowledge or `{"user_id":"another"}` does not grant access. | OWN-001, IDENT-006 |
+| 2 | **Customers retain broad freedom over own commerce** — may `browse/search/view products/categories`, `manage cart`, `checkout`, `view/track/cancel eligible own orders`, `submit/view own requests/enquiries`, `manage own profile/notifications` without admin approval. | CUSTOMER-FREEDOM-001 |
+| 3 | **Public catalog remains public** — `products`, `categories`, `search`, `product details`, `prices`, `availability` require no auth (explicitly classified, not exception). | IDENT-001, CAT-PUBLIC-001 |
+| 4 | **Staff are operational users** — receive/process orders, perform authorized status actions (`ACCEPT/PROCESS/READY/ SHIP/DELIVER` only if state permits), approved inventory/catalog ops, handle requests/enquiries/notifications; staff do **not** own customer accounts and have zero customer-account control. | STAFF-OP-001 |
+| 5 | **Staff cannot restrict customer browsing/ordering — unconditional prohibition for STAFF** — no generic `STAFF → block_customer`; staff cannot `disable browsing`, `block legitimate checkout`, `change role/password`, `lock account`, `impersonate`, `view credentials`, `transfer Order→another customer`, or `modify customer ownership` under any policy. No Admin policy may grant this capability to `STAFF`. Only an authorized `ADMIN` may execute a **separate, explicitly approved restriction operation** via a distinct Admin-only endpoint/policy (audited, with `reason/authorization/audit/impact/recovery`), never via `STAFF` role. | STAFF-RESTRICT-001, IDENT-006 |
+| 6 | **Admin is highest administrative role** — approves/manages staff, manages operational users, performs authorized catalog/inventory/orders/requests/enquiries, system settings, authorized customer-account administration (`review`, `manage security state`, `revoke sessions`) where approved; still obeys `business invariants`, `auditability`, `data integrity`, `no silent rewrite of historical order price/payment confirmation/status history` without controlled correction workflow. | AUTHZ-ADMIN-001 |
+| 7 | **Role assignment and staff approval are server-controlled** — `CUSTOMER/STAFF` cannot assign roles; only `ADMIN` may `staff.approve`/`staff.manage` with authenticated + authorized + valid target + audit; staff cannot approve themselves; customers cannot approve staff; client payload `role` changes rejected. | ROLE-001, STAFF-APPROVAL-001 |
+| 8 | **Protected resources use deny-by-default** — access denied unless explicitly authorized via `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. `role` alone insufficient (`CUSTOMER + Order` ≠ any Order). | DENY-001 |
+| 9 | **Customer-owned resources require ownership checks** — `Customer A → Customer B` order/notification/request access must fail despite authenticated (object-level). `?user_id=another` or `order_id` swapping must not expand scope. | HORIZ-001, OWN-001 |
+| 10 | **Privileged business actions require authorization AND state** — `STAFF → ship` needs `ship` permission **and** `Order=PROCESSING`; `CUSTOMER → cancel` needs `owns + eligible state + 20-min window`. Valid role alone does not permit invalid transition. Authz evaluated at operation time, atomic with validation. | STATE-AUTHZ-001, CANCEL-001 |
+| 11 | **Anonymous requests/enquiries/post-registration browsing are allowed but attachment/notification access is private** — `POST` anonymous via public endpoint + validation; `GET /enquiries/{id}` unrestricted or predictable attachment paths prohibited; `Request → Attachment` inherits parent; notifications owner-based (staff operational, not merged). Cart access bound to owner; `cart.owner` not client-changeable. | ANON-001, ATTACH-001 |
+| 12 | **Field-level and query-aware authorization** — authorization before serialization; only permitted fields per actor (e.g., `reserved_quantity` not to `CUSTOMER`); search/pagination operate over **authorized dataset** (`/me/orders?page=2` paginates own orders); public vs private caching separated; background jobs use explicit service authorization, not reused Admin credential. | FIELD-001, QUERY-001 |
+| 13 | **Denial respects enumeration protection** — `not authenticated → 401`, `authenticated not permitted → 403` or `404 RESOURCE_NOT_FOUND` where hiding existence is safer (private ownership). Do not leak via divergent errors. | DENIAL-001 |
+
+## 19. Endpoint Workflow Coverage (Phase 1.19 — No New Business Rules)
+
+Endpoint review confirms already-approved business rules have endpoint support; no new business behavior is introduced in this phase (see `api-contract.md §19` for inventory):
+
+- `Anonymous browse` (`products/categories/search/product details/prices/availability`) → `CAT-001..004` — §1
+- `Customer registration/login → cart → checkout (PICKUP/DELIVERY) → payment placeholder → order → tracking` → `AUTH-001/002` (login merges `X-Guest-Cart-Id` guest cart) → `CART-001..005` (`CART-005` merge) → `CHK-001` → `PAY-001/002` → `ORD-001..004` → `ORD-003/012` — §§3,4,6,7,8,17 (guest-cart handoff is backend authority per §3 #4: anonymous `X-Guest-Cart-Id`/`guest_cart_id` cookie, opaque, `HttpOnly`, merged on `AUTH-002`/`CART-005`)
+- `Pickup` (`PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED`) and `Delivery` (`PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED`) → `ORD-007..011` + `ORD-013` with explicit `orders.accept/process/ready_for_pickup/ship/deliver/complete` + state (`ORD-013` `complete` closes `DELIVERED→COMPLETED` and `READY_FOR_PICKUP→COMPLETED` per `api-contract.md §19.1`) — §7, §18.10; state history records each transition (`order_status_history` per §6)
+- `Cancellation (20-min window, eligible state, own order)` → `ORD-004` — §8
+- `Made-to-order request (+ optional attachment, anonymous allowed, own history)` → `REQ-001..007` (`REQ-007` `POST /requests/{request}/attachments`) — §9, §11
+- `General enquiry (+ optional attachment, anonymous allowed)` → `ENQ-001..007` (`ENQ-007` `POST /enquiries/{enquiry}/attachments` mirrors `REQ-007`) — §10, §11
+- `Staff order processing / fulfillment / requests / enquiries / operational notifications` → `ORD-005/006` + `ORD-007..011` + `ORD-013` + `ORD-012` tracking, `REQ-004..006`, `ENQ-004..006` — §§6,18.4, §18.6
+- `Admin staff approval/management, catalog/inventory management` → `ADM-001..006`, `CAT-007..012`, `INV-001..003` — §§12,18.6, §17.1
+- `Payment` and `webhook` are generic placeholders owned by **Group H** — no new payment business rule in this phase — §5, §14
+
+If a workflow had lacked endpoint support, it would be flagged as incomplete per `api-contract.md §19.11` gating — none for V1.
+
 ## Quick Non-Negotiables (for staff)
 
 - Customers **can** browse, search, request, and enquire without an account.

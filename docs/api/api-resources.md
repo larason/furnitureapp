@@ -272,3 +272,104 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Threats identified | `credential theft`, `stuffing`, `brute-force`, `session theft`, `token leakage`, `enumeration`, `privilege escalation`, `role tampering`, `session fixation`, `password-reset abuse`, `cross-account`, `staff impersonation` | Mitigations deferred to implementation but boundaries fixed here |
 
 Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `api-contract.md §17.15` deferred.
+
+## 13. Authorization per Resource — Who May Do What (Phase 1.18, No Endpoints Yet)
+
+> No endpoint URLs here — authoritative endpoint inventory is Phase 1.19; this section records for each resource **who may read/create/update/delete/perform actions, ownership rule, and sensitive fields**. Any `GET /…` or `POST /…` shown in *Concern* column are **non-normative illustrative examples** only, not approved contracts. All role values are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; do not add `MANAGER` etc. Authorization is **deny by default** — `PUBLIC` resources explicitly classified; all else requires auth + policy. See `api-contract.md §18` for normative model.
+
+### 13.1 Products & Categories (Catalog — PUBLIC Read, Staff/Admin Manage)
+
+| Concern | Anonymous | Customer | Staff | Admin | Ownership / Sensitivity |
+|---|---|---|---|---|---|
+| Read products / View product details / List categories (public catalog) — *e.g., `GET /products` non-normative example; endpoints deferred to Phase 1.19* | **PUBLIC** Allow | Allow | Allow | Allow | `access: PUBLIC` — no auth, CDN cacheable; deny-by-default exception is intentional; paths are illustrative, not normative contracts |
+| `GET` public fields (`price`, `availability`) | Yes | Yes | Yes | Yes | `PUBLIC` — price/availability public per §18.11 |
+| `POST/PUT/PATCH` product, `manage images/variants` (catalog CRUD, no stock) | Deny (401) | Deny (403) | **Allow only with `products.manage`** where approved | **Allow** (explicit) | `products.manage` authorizes catalog CRUD + image/variant management only — not stock-quantity writes; per-permission, not `*` |
+| `PATCH` inventory/stock quantity (`/products/{product}/inventory`, stock adjustment) | Deny (401) | Deny (403) | **Allow only with `inventory.manage`** where approved | **Allow** (explicit) | `inventory.manage` authorizes stock-quantity adjustments only — not catalog CRUD; auditable per `api-contract.md §18.6`, separate capability |
+| Internal `reserved_quantity`, `supplier` fields | No | No | According to permission | Yes (when operationally necessary) | `PRIVATE` not public product; never to customer |
+
+### 13.2 Cart (Holder-Scoped, Owner-Bound)
+
+| Concern | Who | Rule | Sensitive |
+|---|---|---|---|
+| Read own cart / add item / update quantity | `AUTHENTICATED_OWNER` — `CUSTOMER` own cart only | `cart.owner == authenticated principal`; client `user_id`/`cart.owner` tampering rejected; `MADE_TO_ORDER` → `PRODUCT_NOT_PURCHASABLE` | Client totals never authoritative |
+| Anonymous cart → login merge | **Mandatory** per `business-rules.md §3 #4` | `guest cart MUST move onto user cart` on login (backend merges, preserving ownership); only conflict handling (duplicate product, quantity merge, limits) deferred | Backend is authority |
+| Any other holder's cart | Deny 404 `CART_NOT_FOUND`/`RESOURCE_NOT_FOUND` (masked, never 403) | Holder-scoped private, enumeration protection per `§15.8`/`§18.13` | |
+
+### 13.3 Orders, Tracking, Cancellation (Customer-Owned + Operational Staff)
+
+| Concern | Anonymous | Customer | Staff (Operational) | Admin |
+|---|---|---|---|---|
+| `GET /me/orders`, `GET /me/orders/{order}` (read own) | Deny 401 | **Allow** `AUTHENTICATED_OWNER` (`owns order`) — `401` vs `403` vs `404` masking per §15.8 | Deny as owner (not own) | As authorized (purpose-bound, not unrestricted) |
+| `GET` operational orders (staff view) | Deny | Deny | **Allow** `orders.view_operational` (sees operational fields only, not `password`/`token`) | Allow |
+| `POST /orders/{order}/cancel` (customer cancel) | Deny | **Allow** `cancel_own` only if `owns + eligible state + 20-min window + backend state check` (see §18.9) | Deny as customer (staff cannot cancel as customer) | Authorized admin operation only (security policy, audited) |
+| `POST /orders/{order}/accept|process|ready|ship|deliver` (state) | Deny | Deny (cannot `PATCH {status}`) | **Allow** `orders.accept` + `Order=PAID` (`accept: PAID→ACCEPTED`, ORD-007), `orders.process` + `Order=ACCEPTED` (`ACCEPTED→PROCESSING`, ORD-008), `orders.ready_for_pickup` + `Order=PROCESSING` (pickup, `PROCESSING→READY_FOR_PICKUP`, ORD-009), `orders.ship` + `Order=PROCESSING` (delivery, `PROCESSING→SHIPPED`, ORD-010), `orders.deliver` + `Order=SHIPPED` (`SHIPPED→DELIVERED`, ORD-011) — each requires explicit permission **and** valid state | Allow with same permission + state check; even Admin respects business-state unless explicit correction workflow (see `api-contract.md §19.1` ORD-007/009, §18.6) |
+| `GET` tracking / `GET` payment limited / `GET` delivery for own order | Deny | **Own** only (customer-facing fields) | Operational | Authorized |
+| Pagination/search over `/me/orders` | — | **Authorized dataset** (`Customer A` only) | Operational dataset | — |
+| Sensitive fields | — | `historical order price` own | `customer phone/delivery address` operational | `internal staff note` authorized; never `payment provider secret` |
+
+**Deny examples:** `Customer A → Order B` must fail despite authenticated (object-level); `STAFF → change customer password` must fail; `?user_id=another` must not expand scope.
+
+### 13.4 Furniture Requests & Enquiries (Anonymous Submit, Owner/Operational View)
+
+| Concern | Anonymous | Customer (authed) | Staff | Admin |
+|---|---|---|---|---|
+| `POST /requests`, `POST /enquiries` (submit) | **Allow** `PUBLIC` + input validation + anti-abuse later | Allow (→ `Request→User` for later `My Requests`) | Operational access later (not via anonymous) | Operational |
+| `GET` own requests/enquiries | — (no User) controlled anonymous access model deferred (no weak bearer-ID) | **Allow** `own` where supported | **Allow** `requests.view`/`manage`, `enquiries.view`/`manage` (sees contact, not `password`) | Allow |
+| `GET` another’s request/enq or `/enquiries/{id}` public | Deny (private, not globally readable) | Deny | Deny unrelated | As authorized |
+| Attachments (`Request → Attachment`) | Private to parent | Private to parent | Inherits parent (if cannot access parent, cannot access attachment) | Inherits parent | No predictable public paths |
+
+### 13.5 Notifications (Owner vs Operational, Not Merged)
+
+- **Customer:** `read` only own intended notifications; `GET /notifications/{another-user-notification}` must fail by ID. Owner-based, authorization-filtered search.
+- **Staff:** `view_operational` only operational notifications (`new order`, `new request`, `payment event`) — not private customer-account info unrelated to task.
+- **Admin:** administrative only where required, not merged with customer rule; same envelope.
+
+### 13.6 Payment, Delivery, Inventory (Generic + Group H)
+
+- **Payment:** `Customer` sees limited own payment (`payment_status`, `amount` without secrets); `Staff` operational as needed; `Admin` authorized admin; `provider secrets` remain `INTERNAL` never to any role via API. Payment-specific auth is Group H.
+- **Delivery:** `Customer` own order’s delivery; `Staff` operational delivery; `Admin` authorized. No public exposure of all deliveries.
+- **Inventory:** `Public` → `availability` (e.g., `IN_STOCK` indicator); `Staff/Admin` → `inventory operations` (`inventory.view`/`manage` where approved, auditable); never `historical order item quantity` edit via inventory permission. Internal `reserved_quantity` per §18.11.
+
+### 13.7 User / Profile, Staff, Roles (Account & Admin)
+
+| Resource / Action | Anonymous | Customer | Staff | Admin | Rule |
+|---|---|---|---|---|---|
+| `POST /register` (customer) | **Allow** | N/A (already authed) | Deny | Deny | Public self-registration only |
+| `GET /me/profile`, `PATCH` own `name`/`phone` | Deny 401 | **Allow own** (allow-list `name`/`phone` only, not `role`/`password`/`email_verified_at`/`account_status`) | Allow own (own profile) | Allow own | `user_id` swapping, `role` mass-assignment rejected |
+| `GET` another’s profile / `GET /users/{id}` | Deny | Deny (own only) | Deny (no browse-as-customer) | As authorized purpose-bound (review, not impersonation) | Customer owns account |
+| `POST` password change | Deny | **Allow own** via secure authenticated workflow (not `PATCH /me {password}`) | Own only | Own only | Security-sensitive |
+| `POST` password reset (anonymous) | Allow (public endpoint + anti-abuse) | — | — | — | Generic `"Request received."` |
+| `Approve staff` | Deny | Deny | Deny | **Allow** `staff.approve` (authenticated Admin + audit) | Staff cannot approve themselves |
+| `Manage staff`, `assign role` | Deny | Deny (cannot assign) | Deny (cannot assign) | **Allow** `staff.manage` / `users.manage_authorized` (explicit, audited) | Client `role` tampering rejected |
+| `Impersonate` (`Login as Customer`) | Deny | Deny | Deny (deferred unless secure design) | Deny (deferred; if ever required: explicit permission, audit, restricted ops, secure exit) | No unrestricted impersonation |
+| `Restrict customer browsing/ordering` | Deny | Deny | **Deny** (STAFF `→ block_customer` generic prohibited) | **Deny** unless explicit approved security policy with `reason/authorization/audit/impact/recovery` | Staff cannot restrict; Admin only under explicit policy |
+
+### 13.8 Cross-Cutting Conventions Applied
+
+- **Deny by default** for all except explicit `PUBLIC`; **field-level before serialization** — API exposes only permitted representation per actor (even Admin minimized). **Query-aware** (`?user_id=`) cannot expand; **pagination/search** over authorized dataset; **caching** private vs public separated (`Cache-Control` private later); **service-to-service** uses explicit service authorization (not reused Admin credential) for webhooks/jobs (Group H for payment). **Idempotency** does not bypass authz — every retry remains authorized. **Time-sensitive** (`20-min window`, `valid state`) evaluated at operation time.**
+
+*Do not define endpoint URLs, Laravel Policies, or middleware here.*
+
+## 14. Resource → Endpoint Mapping & Operations (Phase 1.19)
+
+> Maps each domain resource to its Version 1 endpoint IDs, operations, and access scope. Endpoint inventory is authoritative in `api-contract.md §19`; this section is resource-centric view. All endpoints use `/api/v1`, CLOSED enums, and global conventions.
+
+| Resource | Public | Customer | Staff | Admin | Endpoint(s) | Operations |
+|---|---|---|---|---|---|---|
+| **Category** | **Read** | Read | Read | **Manage** | `CAT-003`, `CAT-004`, `CAT-011`, `CAT-012` | `GET /categories` (CAT-003), `GET /categories/{category}` (CAT-004) public; `POST/PATCH` (CAT-011/012) Staff, Admin `products.manage` where approved (Staff only if approved) |
+| **Product** | **Read** | Read | Read | **Manage** | `CAT-001`, `CAT-002`, `CAT-005`, `CAT-006`, `CAT-007..010` | `GET /products` (CAT-001) with `?category/product_type/availability/min_price/sort/page` + `GET /products/{product}` (CAT-002) public; `GET variants` (CAT-005/006) public; `POST/PATCH` + images/variants (CAT-007..010) Staff, Admin `products.manage` where approved (Staff only if approved) |
+| **Inventory** | No | No | **Manage** | **Manage** | `INV-001`, `INV-002`, `INV-003` | `GET` collection/item `inventory.view` (INV-001/002) vs `POST /inventory/{product}/adjust` explicit action `inventory.manage` (INV-003) — not `PATCH {quantity}` |
+| **Cart** | Guest holder via `X-Guest-Cart-Id` (backend-issued, not public enumeration) | **Own** (merged guest) | No | No | `CART-001..005` | `GET` own/guest cart (CART-001), `POST` add item (CART-002), `PATCH` quantity (CART-003), `DELETE` item (CART-004) — each supports `GUEST` via `X-Guest-Cart-Id`/`guest_cart_id` cookie (backend authority); `POST /me/cart/merge` (CART-005) merges guest onto authenticated; `AUTH-002` login also merges automatically; `AUTHENTICATED_OWNER` own + guest handoff |
+| **Order** | No | **Own** | **Operational** | **Admin** | `CHK-001`, `ORD-001..013` | `POST /checkout` (CHK-001) → `GET /me/orders` (ORD-001), `GET /me/orders/{order}` (ORD-002), `GET /me/orders/{order}/tracking` (ORD-003), `POST /me/orders/{order}/cancel` (ORD-004) for Customer own; `GET /orders` (ORD-005), `GET /orders/{order}` (ORD-006), state actions `accept/process/ready-for-pickup/ship/deliver/complete` (ORD-007..011 + ORD-013) for Staff Operational (`ORD-013` `complete` covers `DELIVERED→COMPLETED`/`READY_FOR_PICKUP→COMPLETED`); `GET /orders/{order}/tracking` (ORD-012) operational |
+| **Payment** | No | **Limited own** (`PAY-001` Customer-only initiate) | Operational (limited, `PAY-002` view only) | Admin (limited, `PAY-002` view only; `PAY-001` is **Customer-only**, Admin does not initiate — see `api-contract.md §19.1`) | `PAY-001` Customer-only `POST /payments` initiate, `PAY-002` `GET /payments/{payment}` status (Customer/Staff/Admin limited), `WEBHOOK-001` system `POST /webhooks/payment/{provider}` — **Owner: Group H** (generic placeholders only) |
+| **Request** (made-to-order) | **Create** (anonymous allowed) | **Own** | **Manage** | **Manage** | `REQ-001..007` | `POST /requests` (REQ-001) public submit (preferred multipart with attachments); `GET /me/requests` (REQ-002), `GET /me/requests/{request}` (REQ-003) own; `GET /requests` (REQ-004), `GET /requests/{request}` (REQ-005), `PATCH /requests/{request}` (REQ-006) Staff `requests.view/manage`; `POST /requests/{request}/attachments` (REQ-007) **Scoped** token + parent (anonymous requires server-issued upload token, predictable ID insufficient) |
+| **Enquiry** | **Create** (anonymous allowed) | **Own** | **Manage** | **Manage** | `ENQ-001..007` | `POST /enquiries` (ENQ-001) public (preferred multipart with attachments); `GET /me/enquiries` (ENQ-002), `GET /me/enquiries/{enquiry}` (ENQ-003) own; `GET /enquiries` (ENQ-004), `GET /enquiries/{enquiry}` (ENQ-005), `PATCH /enquiries/{enquiry}` (ENQ-006) Staff operational; `POST /enquiries/{enquiry}/attachments` (ENQ-007) **Scoped** token + parent (same token model as `REQ-007`, predictable ID insufficient) |
+| **Notification** | No | **Own** (customer notifications, holder-scoped via `/me`) | **Operational own**, recipient-scoped (operational: new order/request/payment event) | **Admin limited own**, recipient-scoped (administrative as needed) | `NOT-001`, `NOT-002` | `GET /me/notifications` (NOT-001) own per actor (Customer own / Staff `OPERATIONAL` own / Admin `ADMIN` limited own), paginated, holder-scoped; `PATCH /me/notifications/{notification}` (NOT-002) read/unread only (content immutable), same actor distinction |
+| **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..007`, `USER-001..003`, `ADM-005/006` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only), `POST /me/password` (USER-003) own; `GET /users` (ADM-005), `GET /users/{user}` (ADM-006) Admin `users.manage_authorized` only |
+| **Staff / Roles** | No | No | No | **Manage** | `ADM-001..004` | `GET /staff` (ADM-001), `POST /staff/invitations` (ADM-002), `POST /staff/{staff}/approve` (ADM-003), `PATCH /staff/{staff}` (ADM-004) — all Admin `staff.manage`/`staff.approve` (audited, no self-approval) |
+
+Additional notes:
+
+- **Coverage:** `PAY-001/002`/`WEBHOOK-001` are `PROPOSED*` placeholders owned by Group H; all other V1 endpoints are **current `PROPOSED`**, target `APPROVED` after Phase 1.21 (see `api-contract.md §19.15`). No `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` (MVP discipline, §88). No `/my-orders` duplicate of `/me/orders`, no `/categories/{category}/products` duplicate (canonical `GET /products?category=`), no `/products/{product}/images` or `/availability` separate endpoints (embedded in `GET /products/{product}`).
+- **Security review:** All endpoints respect `PUBLIC` vs `CUSTOMER` vs `OPERATIONAL` vs `ADMIN`; anonymous cannot reach private data; `Customer A → B` IDOR blocked via `owns` + 404 masking; `Customer→Staff/Admin`, `Staff→Admin`, `role tampering`, `user_id` swapping all denied per `api-contract.md §18`; `products.manage` ≠ `inventory.manage` distinct; `staff cannot block customer` etc. verified.
+- **Business workflows:** `Anonymous browse CAT-001..004` → `Customer register/login AUTH-001/002 → cart CART-001..004 → checkout CHK-001 → payment PAY-001 → order ORD-001..004 → tracking ORD-003 → cancellation ORD-004 (20-min)` → `Staff ORD-005..013` (inc. `ORD-013` `DELIVERED/READY_FOR_PICKUP→COMPLETED`) + tracking `ORD-012`; `Request REQ-001 → REQ-007 → own REQ-002/003 → staff REQ-004..006`; `Admin ADM-001..004` approvals — all workflows endpoint-complete per `api-contract.md §19.11`.

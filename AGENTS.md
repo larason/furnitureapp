@@ -526,6 +526,16 @@ Frontend route protection is a UX/security layer, not the final authority.
 - **Authentication and authorization are enforced server-side** — shared identity across Website/Flutter/Admin against same Laravel backend; checkout and private resources (`own orders`, etc.) require authenticated `CUSTOMER`, anonymous browsing/requests/enquiries remain public, and anonymous checkout is rejected.
 - **Frontend authentication state is never an authority** for backend permissions — SSR catalog pages remain public without login, and browser/Flutter session handling does not bypass 404 masking (`RESOURCE_NOT_FOUND`) for private ownership.
 
+**Authorization (Phase 1.18, mandatory):**
+
+- **Authorization is enforced server-side** — decide `authenticated identity + role + resource + action + ownership + business-state + context` (`docs/api/api-contract.md §18.1`) for every protected operation; `role` alone never authorizes.
+- **Never trust client-supplied `role`, `ownership`, `permission`, or resource identity** as proof — `{"user_id":"another"}`, `?user_id=another`, `{"role":"ADMIN"}`, or `{"status":"DELIVERED"}` are rejected and do not bypass policy.
+- **Customer ownership must be preserved** — `Customer A → Customer B` order/request/notification access fails via object-level check; `Customer A → owns Order` is `AUTHENTICATED_OWNER`, staff is `OPERATIONAL` not owner.
+- **Staff operational access must not become customer-account administration** — staff have `orders.view_operational/process/ship` (with valid state) and approved `inventory/catalog` per `staff.*` permissions, but no `password/role/disable/impersonate/block browsing-or-ordering/transfer ownership` capabilities.
+- **Administrative authority must remain explicit and auditable** — only `ADMIN` may `staff.approve`/`staff.manage`/`users.manage_authorized`; no `*` wildcard; actions log `actor/action/resource/target/timestamp/result` without secrets.
+- **Protected resources use deny-by-default** — `products/categories → PUBLIC` explicitly public; all else denied unless explicitly authorized; field-level exposure is before serialization (only permitted fields per actor, private vs public cache separated).
+- **Business-state rules and authorization are both required** for state-changing operations — `STAFF ship` needs `ship` permission **and** `Order=PROCESSING`; `CUSTOMER cancel` needs `owns + eligible state + 20-minute window`.
+
 ---
 
 ## 18. Security Baseline
