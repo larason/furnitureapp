@@ -758,8 +758,109 @@ The two paths are mutually exclusive per request. The token is permanently retir
 
 ---
 
+### ADR/API-CHK-001 — Checkout Requires Authentication
+
+**Decision:** `POST /api/v1/checkout` (`CHK-001`) requires an authenticated `CUSTOMER`. Anonymous checkout is rejected with `401 AUTHENTICATION_REQUIRED` (alias `CHECKOUT_REQUIRES_AUTHENTICATION` — identical 401). Guest checkout is explicitly prohibited; `X-Guest-Cart-Id` guest token alone does not authorize checkout — a guest must register/login first, after which the guest cart is merged and checkout proceeds as authenticated.
+
+**Reason:** `phases/phase-1.22.md §45`, `docs/domain/business-rules.md §4a #1`, `AGENTS.md §3` — checkout creates a customer-owned Order (requires ownership identity) and involves payment; anonymous Order creation would bypass account privacy and ownership invariants.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-002 — Checkout Uses Customer's Own Active Cart
+
+**Decision:** The server derives the customer's **own active Cart** from the authenticated principal (`/me/cart` self-context). The client does not supply `cart_id` or `user_id` to select a cart. `POST /checkout` with a forged `cart_id` or `user_id` is rejected. Ownership is `cart.owner == authenticated principal`; holder mismatch yields 404 masked per enumeration protection.
+
+**Reason:** `phases/phase-1.22.md §28-29`, `api-contract.md §23.3/§23.13` — eliminates IDOR (`Customer A → Customer B cart`) and cart-substitution attacks and simplifies customer UX (no cart selection).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-003 — Checkout Is a Dedicated Business Workflow
+
+**Decision:** Checkout is neither `PATCH /me/cart` (cart field edit) nor `POST /orders` with client-controlled `total`/`status`/`reference`. It is a server-controlled transaction workflow: `validate cart → revalidate products/variants → revalidate inventory atomically → recalculate authoritative prices → decide fulfillment → snapshot address → create Order → hand off to payment (Group H)`. Direct `POST /orders` with client totals/statuses is prohibited.
+
+**Reason:** `phases/phase-1.22.md §10-11`, `api-contract.md §23.1` — prevents bypassing inventory checks, price authority, fulfillment validation, and transaction boundaries.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-004 — Checkout Revalidates Inventory Authoritatively
+
+**Decision:** Checkout re-reads authoritative product/variant state and stock at transaction time: `product exists→active→is_published→IN_STOCK→purchasable`, `variant exists→belongs to product→active→purchasable`, `requested quantity ≤ available_quantity`. Cart `In Stock` display is informational only. Inventory check and state-changing operation are atomic under concurrency (transaction/locking, `SELECT then UPDATE` without protection prohibited).
+
+**Reason:** `phases/phase-1.22.md §34-38`, `AGENTS.md §12` (INV-003), `api-contract.md §23.9` — prevents overselling under concurrent checkout (race `A sees 1, B buys, A fails safely`).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-005 — Checkout Recalculates Authoritative Pricing
+
+**Decision:** Backend recalculates **all** money at checkout from current catalog state (Model B — fee-after-order): `current unit prices → line totals → subtotal (authoritative at checkout, stored on Order PENDING_PAYMENT with delivery_fee pending for DELIVERY / 0 for PICKUP) → Staff/Admin sets authoritative delivery_fee (server/staff-controlled) → final total (subtotal + delivery_fee) authoritative, stored on Order` as integer minor units `{amount,currency:"TZS"}`. Frontend cached prices, `total`, `subtotal`, `discount`, `currency` overrides are rejected. Price change between cart view and checkout uses current authoritative price with price-transparency disclosure before final payment.
+
+**Reason:** `phases/phase-1.22.md §39-42`, `AGENTS.md §13`, `api-contract.md §23.7` — client totals are never authoritative; prevents price manipulation and floating-point errors.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-006 — Customer Cannot Set Delivery Fee
+
+**Decision:** Delivery fee is **variable, location-based, and added by Staff/Admin**. Customer may only choose `DELIVERY` (and supply `delivery_address`); Staff/Admin determine the appropriate fee; backend stores the authoritative `delivery_fee`. Client-supplied `{"delivery_fee": …}` is never authoritative and is rejected. Flat `TZS 20,000` rate is superseded and not reintroduced silently.
+
+**Reason:** `phases/phase-1.22.md §17-18, §21`, `docs/domain/business-rules.md §4a #10` — preserves business pricing authority and prevents delivery-fee manipulation.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-007 — Checkout Requires Idempotency
+
+**Decision:** `POST /checkout` is `IDEMPOTENCY_REQUIRED` via `Idempotency-Key` header. Same key + same logical input replays original `201` with same `order_reference` (no duplicate Order); same key + materially different input (`fulfillment_type`/`delivery_address` differ) yields `409 CONFLICT`/`DUPLICATE_OPERATION`. Client timeout does not prove failure — retry with same key reconciles. Durable `key→result` storage with unique constraint is required; exact header/storage details finalized in later idempotency phase but requirement is normative now.
+
+**Reason:** `phases/phase-1.22.md §49-53`, `api-contract.md §23.8` — prevents duplicate Orders/reservations/payments on network retry.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-008 — MADE_TO_ORDER Products Cannot Enter Normal Checkout
+
+**Decision:** `MADE_TO_ORDER` products are **never purchasable via normal checkout** — they belong to the Request workflow (`REQ-001`). Any cart containing a `MADE_TO_ORDER` item is rejected at checkout with `PRODUCT_NOT_PURCHASABLE` (422) even if display price exists and even if item somehow entered the cart. Cart admission already rejects `MADE_TO_ORDER`; checkout enforces second line of defense.
+
+**Reason:** `phases/phase-1.22.md §33`, `AGENTS.md §4.1`, `docs/domain/business-rules.md §4a #8` — made-to-order requests require custom manufacturing agreements and are not standard inventory purchases.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CHK-009 — Delivery Fee Timing (Model B: Fee-After-Order)
+
+**Decision:** Version 1 adopts **Model B — fee-after-order**:
+
+```
+Customer POST /checkout (fulfillment_type=DELIVERY + delivery_address)
+  → Order created PENDING_PAYMENT (delivery_address snapshotted, subtotal authoritative, delivery_fee pending)
+  → Staff/Admin reviews delivery and adds authoritative delivery_fee
+  → final total (subtotal + delivery_fee) becomes authoritative
+  → customer sees final amount
+  → payment (Group H) proceeds on final authoritative total
+```
+
+Payment must operate on the **final authoritative amount stored by the Order**; `customer pays before fee known → staff changes total` mismatch is forbidden. `PICKUP` remains `delivery_fee {amount:0}`. No new order status value is introduced — fee finalization occurs within `PENDING_PAYMENT` before `PAID`. Alternative Model A (synchronous fee during checkout) was not assumed due to current staff-added variable fee process.
+
+**Reason:** `phases/phase-1.22.md §19-20, §82-85`, `api-contract.md §23.6`, `docs/domain/business-rules.md §4a #11` — aligns with stated business process `Staff/Admin add the delivery fee directly` and avoids customer-controlled pricing while keeping payment consistent with stored Order total. Decision explicitly documented rather than guessed; affects Order contract, Payment Group H, Order statuses, and UI workflows.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`.
 
 

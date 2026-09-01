@@ -1980,4 +1980,386 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | `INSUFFICIENT_STOCK` | 422 | Product is purchasable but `available_quantity < requested_quantity` |
 | `RATE_LIMITED` | 429 | Excessive rapid cart mutations from the same client |
 
+---
+
+## 23. Checkout API Contract (Phase 1.22)
+
+> **Authority:** Canonical domain API contract for the **Checkout** subsystem (`CHK-001`). Consolidates `phases/phase-1.22.md`.
+> **Core Principle:** Checkout is a server-controlled transaction workflow. The client requests checkout; the server decides whether checkout is valid and what the authoritative transaction contains. Checkout converts the customer's current active Cart into an Order while enforcing catalog, cart, inventory, pricing, fulfillment, ownership, concurrency and idempotency invariants. Financial, inventory, identity, time and state authority are server-only.
+
+### 23.1 Endpoint CHK-001 — Checkout
+
+| Attribute | Version 1 Contract |
+|---|---|
+| **ID** | `CHK-001` |
+| **Method** | `POST` |
+| **Path** | `/api/v1/checkout` |
+| **Domain** | Checkout (Cart → Order creation) |
+| **Actor** | `CUSTOMER` only |
+| **Authentication** | **Required** — anonymous checkout is rejected with `401 AUTHENTICATION_REQUIRED` (alias `CHECKOUT_REQUIRES_AUTHENTICATION` identical). No guest checkout. |
+| **Authorization** | `AUTHENTICATED_OWNER` — authenticated customer may checkout **only their own active Cart**. Cart identity is derived from authenticated principal (`me/cart`), not from a client-supplied `cart_id`. |
+| **Purpose** | Validate the customer's purchase intent and create the resulting Order. |
+| **Idempotency** | **Required** — client must send `Idempotency-Key` header (see §23.8). Duplicate same-key requests replay original result; same key with materially different input yields conflict error. |
+| **Concurrency** | **Critical** — inventory validation and order/cart state transition are atomic (see §23.9). |
+| **Caching** | Not cacheable — `Cache-Control: private, no-store`. Contains private order financial and address data. |
+| **Payment boundary** | Checkout creates the Order; payment initiation/status remains **Phase Group H** (`PAY-001/002`, `WEBHOOK-001`). Checkout does not implement provider integration. |
+| **Status** | `PROPOSED` (target `APPROVED` after Phase 1.23 review) |
+
+*Why not `PATCH /me/cart` and not `POST /orders` directly:* Checkout is not a cart field change and not an arbitrary order creation. It performs validation, inventory checks, price calculation, fulfillment decision, transaction creation and payment handoff. Direct `POST /orders` with client-controlled `total`/`status`/`reference`/`inventory` is prohibited.
+
+### 23.2 Request — Body Only, No Query Params
+
+- **Content-Type:** `application/json` UTF-8. No query parameters for business values (`/checkout?delivery_fee=…` prohibited).
+- **Conceptual body for `DELIVERY`:**
+
+```json
+{
+  "fulfillment_type": "DELIVERY",
+  "delivery_address": {
+    "recipient_name": "Asha Mwangi",
+    "phone": "+255700000001",
+    "address_line": "Block C, Mikocheni B, Dar es Salaam",
+    "city": "Dar es Salaam"
+  }
+}
+```
+
+- **Conceptual body for `PICKUP`:**
+
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
+```
+
+Delivery address fields must follow the approved `OrderAddress` snapshot model (recipient name, phone, address line, city — exact set aligned with `api-resources.md §3` Order `delivery_address` snapshot). Saved address book is **deferred** — no `saved_address_id` is required; address is supplied inline.
+
+### 23.3 Input Fields — Allow-List & Server-Controlled
+
+| Field | Required | Type | Valid Values / Rule | Client Authority |
+|---|---|---|---|---|
+| `fulfillment_type` | **Yes** | enum CLOSED | `PICKUP` / `DELIVERY` only (`UPPER_SNAKE_CASE`). `shipping`/`courier`/`self-delivery`/`warehouse`/`COURIER`/`EXPRESS`/`LOCAL_DELIVERY` are rejected with `INVALID_FULFILLMENT` / `INVALID_VALUE`. | Client chooses; server validates |
+| `delivery_address` | **Conditional** | object | **Required when `fulfillment_type=DELIVERY`**; **must be absent or `null` when `fulfillment_type=PICKUP`**. Structure validated; cannot be used to alter ownership/identity/fee. | Client supplies info; server validates |
+| `delivery_address.recipient_name` | Conditional | string | Trimmed non-empty when DELIVERY | Client |
+| `delivery_address.phone` | Conditional | string | Normalized, required when DELIVERY | Client |
+| `delivery_address.address_line` | Conditional | string | Trimmed non-empty when DELIVERY | Client |
+| `delivery_address.city` | Conditional | string | Trimmed non-empty when DELIVERY | Client |
+| *Any* `delivery_fee` | **Prohibited** | — | Customer-supplied `{"delivery_fee": …}` is **never authoritative**; if sent, rejected with `INVALID_VALUE` per server-controlled field rule | **Server/Staff/Admin** only |
+| *Any* `total` / `subtotal` / `unit_price` / `line_total` / `discount` / `currency` override | **Prohibited** | — | Client `{"total":100000}` / `{"subtotal":…}` / `{"item_price":…}` / `{"currency":"USD"}` **rejected** with `INVALID_VALUE` (validation error); backend calculates authoritative money per `§3.8`/`§13.8` minor units `{amount:int,currency:"TZS"}` | **Server-calculated** |
+| *Any* `quantity` beyond cart, `available_quantity`, `reserved_quantity` | **Prohibited** | — | Inventory counts never client-supplied | **Server authority** |
+| *Any* `status` / `order_status` / `payment_status` | **Prohibited** | — | Customer cannot submit `{"status":"PAID"}` or `"COMPLETED"` via checkout | **Server decides** |
+| *Any* `order_reference` (`OD-…`) | **Prohibited** | — | Server-generated opaque reference | **Server-generated** |
+| *Any* `cart_id` | **Prohibited** | — | Server derives `current authenticated customer → current active Cart`. `{"cart_id":"..."}` as ownership mechanism is rejected | **Server derives** |
+| *Any* `user_id` / `customer_id` override | **Prohibited** | — | Ownership from authenticated session, not body | **Server derives** |
+| *Unknown fields* | — | — | Strict rejection (`INVALID_VALUE`/`MISSING_REQUIRED_FIELD` envelope) per `§13.14`/`§14.9` | — |
+
+Empty-string `""` is not treated as absent for required address fields unless contract says so; whitespace trimmed server-authoritatively; enums exact case `PICKUP` not `pickup`.
+
+### 23.4 Fulfillment — Closed Enum `PICKUP` / `DELIVERY`
+
+- **CLOSED enum:** Only `PICKUP` and `DELIVERY` exist in V1. No `COURIER`/`EXPRESS`/`WAREHOUSE` extension without formal compatibility review.
+- **`PICKUP`:** No delivery information required. Order records `fulfillment_type: PICKUP`, `delivery_address: null`, `delivery_fee: {amount:0,currency:"TZS"}` (same shape, not bare `0`). Pickup location model is deferred; customer receives pickup information via Order contract.
+- **`DELIVERY`:** Customer must provide valid `delivery_address`. Backend validates presence and structure. Staff/Admin later determine applicable delivery fee (see §23.5).
+- `fulfillment_type` is mutually exclusive with invented values; `PICKUP` + delivery address supplied yields validation error.
+
+### 23.5 Delivery & Delivery-Fee Authority
+
+**Invariant — server/staff authority (business-rules §5 #5, decisions CHK-006):**
+
+> Delivery fee is variable, location-based, and **added directly by Staff/Admin**. The customer chooses `DELIVERY`; Staff/Admin determine and add the appropriate fee; backend stores the authoritative fee; customer sees the resulting fee. Customer-supplied `delivery_fee` is never authoritative.
+
+```
+Customer → chooses DELIVERY (provides delivery_address)
+Staff/Admin → determines/adds appropriate delivery fee
+Backend → stores/calculates authoritative delivery_fee (minor units {amount,currency})
+Customer → sees resulting fee in Order
+```
+
+- Flat `TZS 20,000` assumption is **superseded**; no fixed rate is assumed.
+- Checkout request **must not** contain `delivery_fee`.
+- Currency is authoritative `TZS` from backend/business configuration; client `{"currency":"USD"}` does not change transaction currency.
+
+### 23.6 Delivery-Fee Timing — Approved Version 1 Workflow (Model B)
+
+**Decision (CHK-009):** Version 1 uses **Model B — fee-after-order**:
+
+```
+Customer selects DELIVERY → POST /checkout (with delivery_address)
+        ↓
+Order created (PENDING_PAYMENT) — delivery_address snapshotted,
+  subtotal authoritatively calculated,
+  delivery_fee = null, delivery_fee_status = PENDING (explicit provisional)
+        ↓
+Staff/Admin reviews delivery → adds authoritative delivery_fee (delivery_fee = {amount, currency}, delivery_fee_status = FINALIZED)
+        ↓
+Final total (subtotal + delivery_fee.amount) becomes authoritative and payment becomes eligible (payment: {amount: final total})
+        ↓
+Customer sees final amount (must check delivery_fee_status before displaying total as final)
+        ↓
+Payment workflow proceeds (Group H) — payment amount equals authoritative final Order total; PAY-001 blocked with 409 DELIVERY_FEE_PENDING while PENDING
+```
+
+**Rules following Model B:**
+- Order can be **created before final delivery fee is known**. The order is the business record that carries the delivery workflow.
+- Payment must operate on the **final authoritative amount stored by the Order**, not a pre-fee amount. `customer pays before fee known → staff changes fee → database total differs from payment amount` is **forbidden**. Payment initiation (`PAY-001`) is only valid after delivery_fee is finalized (or is zero where applicable).
+- Client price transparency: the final amount charged must equal the final customer-visible amount; do not silently charge a different amount without review opportunity (see §23.12).
+- This adds no new order status value; lifecycle remains `PENDING_PAYMENT → PAID → …` per `AGENTS.md §4.4`, with delivery_fee finalization occurring while in `PENDING_PAYMENT` before `PAID`. If payment-before-fee queuing is needed, it will be modeled as a staff fee-assignment step within `PENDING_PAYMENT`, not a new top-level status.
+- Alternative Model A (`fee known/assigned immediately during checkout before order creation`) is not assumed — if business later provides synchronous fee determination at checkout, it will be added as an explicit variant without changing client fee authority.
+
+Recorded in `docs/decisions.md CHK-009` and `docs/domain/business-rules.md §4a`.
+
+### 23.7 Financial Authority — Server Is Source of Truth
+
+> **Critical security rule:** Customer supplies only purchase intent. Server is source of truth for `unit_price`, `line subtotal`, `cart subtotal`, `delivery fee`, `order total`, `currency`, `payment amount`.
+
+```
+1. Load active Cart (own)
+2. Validate every item (exists, active, IN_STOCK, variant valid, purchasable)
+3. Resolve current authoritative catalog unit prices (recalculate; do not trust frontend cache)
+4. Calculate line totals (unit_price * quantity — minor-unit integer arithmetic, no float)
+5. Calculate subtotal (sum line totals)
+6. Determine fulfillment (PICKUP/DELIVERY)
+7. Create/prepare Order (PENDING_PAYMENT) with snapshots (items, prices, delivery_address snapshotted, subtotal authoritative, delivery_fee = null + delivery_fee_status = PENDING for DELIVERY / delivery_fee = {amount:0, currency:"TZS"} + delivery_fee_status = FINALIZED for PICKUP, payment = null when PENDING)
+8. Staff/Admin sets authoritative delivery_fee (for DELIVERY) per §23.5/§23.6 — server/staff-controlled, never client-supplied (transitions delivery_fee null → {amount,currency} and delivery_fee_status PENDING → FINALIZED)
+9. Calculate final total (subtotal + delivery_fee.amount) — authoritative, stored on Order; only final when delivery_fee_status = FINALIZED (provisional total equals subtotal while PENDING)
+10. Continue payment workflow (Group H) on final total — payment amount equals authoritative final Order total; blocked with 409 DELIVERY_FEE_PENDING while PENDING (payment remains null)
+```
+
+Aligned with Model B (fee-after-order): Order is created before delivery_fee is finalized; Steps 7→8→9 ensure `delivery_fee pending → staff assignment → final total` (see §23.6).
+
+Price recalculation is mandatory at checkout even if cart displayed `Sofa = 1,000,000` and price became `1,100,000` before checkout — backend uses currently authoritative catalog price and communicates changed amount to customer before final payment where workflow allows (price transparency §23.12). Same `city`/`address_line` fees are not silently invented.
+
+All money uses `§3.8` integer minor units `{amount,currency:"TZS"}`; changing shape is breaking.
+
+### 23.8 Idempotency — Required
+
+Checkout is **critical idempotency operation**. Network retry must not create two Orders, two reservations, or two payment attempts for the same logical checkout.
+
+- **Mechanism:** Client must send `Idempotency-Key: <opaque-uuid>` request header on `POST /checkout`. Server persists key → result mapping (durable store, unique constraint) and returns original result on replay.
+- **Semantics — same key, same logical attempt:**
+```
+Request A  key=K123 → Checkout created (201 + Order)
+Retry      key=K123 → Return original result (201 replay, same order_reference, same data), no new Order
+```
+- **Same key, materially different input** (`fulfillment_type` or `delivery_address` differs) → stable conflict/idempotency error `CONFLICT` / `DUPLICATE_OPERATION` (409) — do not silently execute different operation.
+- **Timeout handling:** Client timeout does not prove failure. Retry with **same** `Idempotency-Key` reconciles with original operation.
+- Storage and exact header name formatting finalized in later idempotency implementation phase; requirement (idempotency required) is normative now (deferred detail per `api-conventions.md §23.3`).
+
+### 23.9 Concurrency & Inventory Authority
+
+**Critical security rules:**
+- Server is source of truth for `availability`, `stock`, `reservation/consumption`. Client only supplies desired quantity — never `available_quantity`/`reserved_quantity`.
+- Time (`checkout timestamp`, cancellation/payment timestamps) is server-determined; 20-minute window uses server time.
+
+**Preconditions before success (all must hold):**
+```
+Customer authenticated
+AND customer has active Cart
+AND Cart contains at least one valid item
+AND all items are purchasable (exists, active, IN_STOCK, product_type IN_STOCK)
+AND variants exist, belong to product, active, purchasable
+AND inventory sufficient (requested quantity ≤ authoritative available_quantity at transaction point)
+AND fulfillment valid (PICKUP/DELIVERY)
+AND delivery information valid when DELIVERY
+AND authoritative pricing determinable
+AND idempotency key valid
+```
+
+Specific revalidation steps:
+- **Product state:** `exists → active → is_published → product_type IN_STOCK → purchasable`. Do not rely on catalog-cached state. `MADE_TO_ORDER` in cart → `CART_INVALID` / `PRODUCT_NOT_PURCHASABLE` (422), no partial order.
+- **Variant:** `exists → belongs to product → active → purchasable` (VAR-OWN-001).
+- **Inventory:** `requested quantity ≤ available authoritative quantity` at transaction point, checked **inside atomic boundary**. Race scenario `Customer A sees 1, B buys 1, A checks out → A fails safely` with no negative stock or oversell.
+
+Implementation requirement (for later Laravel/database phases): **Inventory validation and the corresponding state-changing operation (order creation, cart transition, inventory reservation/consumption) must be safe under concurrent checkout attempts** (atomic/transactional with appropriate locking/isolation; `SELECT then UPDATE` without protection prohibited). Exact locking strategy not designed here, but correctness under concurrency is normative (INV-003).
+
+### 23.10 Cart & Order Lifecycle Around Checkout
+
+- **Empty cart:** `POST /checkout` with empty `me/cart` → `422 CART_INVALID` (conceptual `CART_EMPTY` maps to `CART_INVALID` per registry) — never create empty order.
+- **Invalid cart item (stale/unavailable):** Any line with `is_purchasable:false` → `422 CART_INVALID` (or more specific `PRODUCT_NOT_PURCHASABLE`/`INVALID_PRODUCT_VARIANT`/`INSUFFICIENT_STOCK` with `field` path) — do not create partial order.
+- **MADE_TO_ORDER cart protection:** If cart somehow contains `MADE_TO_ORDER`, checkout rejects with `PRODUCT_NOT_PURCHASABLE` (422).
+- **Cart after successful checkout:** Active cart must no longer represent same unprocessed purchasable state. Either **clear cart items** or **mark cart inactive/completed** — the choice aligns with Cart contract Phase 1.21: cart items are cleared after successful order creation so a new empty active cart is ready. The successful order becomes the business record.
+- **Cart after failed checkout:** Failed validation/stock/fulfillment → cart **preserved** where safe (customer adjusts quantity then retries). Do not empty cart on ordinary `INSUFFICIENT_STOCK`/`CART_INVALID`.
+- **Payment failure aftermath:** deferred to Group H; payment failure does not automatically destroy valid cart intent unless approved payment/order workflow explicitly requires it.
+- **Partial order risk:** Failed checkout must not leave an incomplete order without clear reconciliation (`Order created but response says error` ambiguity prohibited). Transaction/idempotency design must prevent this; order creation + inventory + cart transition are atomically bounded (see §23.9).
+- **Delivery address snapshot:** `delivery_address` supplied at checkout becomes part of resulting Order's historical fulfillment data (snapshot), not a live mutable profile reference.
+
+### 23.11 Response — Checkout Result
+
+- **Success (`201 Created`):** Returns resulting order/checkout state sufficient for client to continue (order identity, reference, status, financial summary, fulfillment, and payment handoff placeholder). Exact `Payment` representation is Group H; provider-specific fields are not finalized here.
+
+```json
+// DELIVERY — fee pending (Model B, immediately after CHK-001)
+// delivery_fee is null, delivery_fee_status=PENDING marks provisional amounts;
+// payment is null and PAY-001 is blocked until finalization (409 DELIVERY_FEE_PENDING)
+{
+  "data": {
+    "order_id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+    "order_reference": "OD-12345",
+    "status": "PENDING_PAYMENT",
+    "fulfillment_type": "DELIVERY",
+    "delivery_address": {
+      "recipient_name": "Asha Mwangi",
+      "phone": "+255700000001",
+      "address_line": "Block C, Mikocheni B, Dar es Salaam",
+      "city": "Dar es Salaam"
+    },
+    "subtotal": { "amount": 170000000, "currency": "TZS" },
+    "delivery_fee": null,
+    "delivery_fee_status": "PENDING",
+    "total": { "amount": 170000000, "currency": "TZS" },
+    "currency": "TZS",
+    "payment": null
+  }
+}
+```
+
+```json
+// PICKUP — fee finalized at creation (or DELIVERY after Staff/Admin sets fee)
+// delivery_fee_status=FINALIZED marks final amounts; payment is present and can be initiated
+{
+  "data": {
+    "order_id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+    "order_reference": "OD-12346",
+    "status": "PENDING_PAYMENT",
+    "fulfillment_type": "PICKUP",
+    "delivery_address": null,
+    "subtotal": { "amount": 170000000, "currency": "TZS" },
+    "delivery_fee": { "amount": 0, "currency": "TZS" },
+    "delivery_fee_status": "FINALIZED",
+    "total": { "amount": 170000000, "currency": "TZS" },
+    "currency": "TZS",
+    "payment": {
+      "payment_status": "PENDING",
+      "amount": { "amount": 170000000, "currency": "TZS" }
+    }
+  }
+}
+```
+
+- **Explicit pending representation:** `delivery_fee: null` + `delivery_fee_status: "PENDING"` marks provisional state; `total` equals `subtotal` but is **provisional** and MUST NOT be displayed or submitted as final amount. Frontend must check `delivery_fee_status === "PENDING"` and show “Delivery fee pending — Staff will confirm” instead of final total. `payment: null` signals payment blocked.
+- **Blocked payment:** When `delivery_fee_status=PENDING`, `POST /api/v1/payments` (`PAY-001`) MUST be rejected with `409 CONFLICT` `code: "DELIVERY_FEE_PENDING"` (or `422 INVALID_ORDER_TRANSITION` per registry, mapped to 409 in endpoint contract) — never accept provisional `total` as payment amount. After Staff/Admin sets fee (`delivery_fee: {amount: 2500000, currency:"TZS"}`, `delivery_fee_status: "FINALIZED"`, `total: {amount: 172500000,...}`), payment becomes eligible (`payment` present, `PAY-001` allowed and amount equals authoritative `total`). For `PICKUP`, `delivery_fee_status` is `FINALIZED` at creation (fee 0, total final immediately).
+
+- Header on success: `Idempotency-Key` echo or original result metadata (implementation-defined).
+- **Failure** uses common `{"errors":[…],"meta":{"request_id":…}}` envelope per `§15`.
+
+### 23.12 Checkout Validation Errors & HTTP Mapping
+
+Potential stable API codes (CLOSED per §15.15/§15.3, business meaning per `business-rules.md §14`):
+
+| Failure | API `code` | HTTP |
+|---|---|---|
+| Missing/invalid auth (anonymous checkout) | `AUTHENTICATION_REQUIRED` (canonical; alias `CHECKOUT_REQUIRES_AUTHENTICATION`) | 401 |
+| Authenticated but not owner / holder mismatch | `CART_NOT_FOUND` / `RESOURCE_NOT_FOUND` (404 **masked** — never `403 FORBIDDEN` for holder-scoped cart, per §15.8) | 404 |
+| Empty cart | `CART_INVALID` (conceptual `CART_EMPTY` maps here) | 422 |
+| Cart contains invalid/stale item | `CART_INVALID` / `CART_ITEM_UNAVAILABLE` | 422 |
+| Product not purchasable (incl. `MADE_TO_ORDER` attempt) | `PRODUCT_NOT_PURCHASABLE` | 422 |
+| Variant invalid / belongs-to mismatch | `INVALID_PRODUCT_VARIANT` | 422 |
+| Insufficient stock / race | `INSUFFICIENT_STOCK` (`details: {requested_quantity, available_quantity}` safe) | 409 / 422* (*409 when concurrency conflict, 422 when schema business invalid — endpoint contract documents choice per §15.10) |
+| Invalid fulfillment value | `INVALID_FULFILLMENT` (`field: fulfillment_type`) | 422 |
+| Invalid/ incomplete delivery info | `INVALID_DELIVERY_INFORMATION` (`field: delivery_address.city` etc.) | 422 |
+| Generic `fulfillment_type`/`address` schema type/format | `INVALID_VALUE` / `INVALID_TYPE` / `INVALID_FORMAT` / `MISSING_REQUIRED_FIELD` | 422 |
+| Unknown field in body | `INVALID_VALUE` + `field` | 422 |
+| Idempotency key reuse with different input | `CONFLICT` / `DUPLICATE_OPERATION` | 409 |
+| Rate limited | `RATE_LIMITED` + `Retry-After` | 429 |
+| Unexpected failure | `INTERNAL_SERVER_ERROR` + `meta.request_id` | 500 |
+
+Checkout **must not** create an order, reduce inventory, or initiate payment on any validation failure; cart remains usable where safe. Checkout is not retryable by changing `total`/`fee`/`status` — client fixes input or stock, then retries with new idempotency key (or same key for true retry).
+
+### 23.13 Authorization & Ownership
+
+- Authenticated `CUSTOMER` may checkout **only own active Cart** (`cart.owner == authenticated principal`). `cart_id` or `user_id` swapping, `role` tampering, or `status` override are rejected and do not bypass policy.
+- Staff/Admin are **not** checkout actors via `CHK-001`. Staff do not manually approve ordinary customer checkout before an order can exist; flow remains `Customer → checkout → order created → staff processes order` unless the chosen delivery-fee model necessarily requires staff fee step before payment (which it does — fee addition is separate operational step, not a checkout gate).
+- Protected checkout response is private (`Cache-Control: private, no-store`); no address or financial data publicly cached.
+
+### 23.14 Security Review — Threats & Defenses
+
+| Threat | Defense |
+|---|---|
+| IDOR (Customer A checkout Customer B cart) | Self-context `/me/cart` ownership derived from auth; `cart_id` not client-controlled; holder mismatch → 404 masked |
+| Price manipulation (`total`/`subtotal`/`unit_price` override) | Backend recalculates all money; client `total` rejected per §23.3/§23.7 |
+| Delivery-fee manipulation | Customer `delivery_fee` rejected; fee staff/admin-only per §23.5 |
+| Quantity / stock manipulation | Client supplies quantity only; stock server-authoritative per §23.9 |
+| Order ownership manipulation | Order owner set from authenticated principal at creation; not from body |
+| Role tampering (`STAFF` checkout as customer) | Staff not authorized for `CHK-001`; role CLOSED and server-controlled |
+| Duplicate submission / replay | `Idempotency-Key` required; same-key replay returns original; different input → 409 |
+| Payment spoofing (`status: PAID` in body) | Checkout does not accept `status`/`payment_status`; payment verification is Group H webhook |
+| Cart substitution (`cart_id` hijack) | No `cart_id` in contract; server resolves own active cart |
+| Stock race / oversell | Atomic validation + mutation under transaction (§23.9) |
+| Currency manipulation | Currency `TZS` server-determined; client `currency` rejected |
+| Time manipulation (cancellation window) | Server time authority per §23.9 |
+
+### 23.15 Client Behavior — Next.js & Flutter
+
+- **Next.js:** Must be able to submit checkout, receive field validation errors (`field: delivery_address.city`), display stock problems (`INSUFFICIENT_STOCK`), display totals/fee info from Order, recover from network retry using same `Idempotency-Key` — without implementing business authority in browser.
+- **Flutter:** Must be able to submit checkout, retry safely with same key on timeout, display resulting Order, handle stock conflict (`409 INSUFFICIENT_STOCK`), continue payment flow — using same API contract.
+- **Admin/Staff:** Interact with resulting Order via `ORD-005..013`; checkout itself does not expose administrative operations.
+
+### 23.16 Checkout → Order Boundary
+
+> Checkout defines how purchase intent becomes an Order. Order API defines how that created Order is subsequently read and operationally managed.
+
+- Successful `CHK-001` **creates an Order** (`PENDING_PAYMENT`). The Order becomes a separate business resource (`ORD-001..013`) after creation.
+- Do not duplicate Order status-management behavior in Checkout.
+- Checkout is the **actual customer submission that creates the Order** (`place order`), not a provisional `start checkout` preview. A separate `review/quote` preview is not added unless delivery-fee timing or payment workflow truly requires it.
+
+### 23.17 Checkout Matrix (Normative)
+
+| Attribute | Version 1 |
+|---|---|
+| Endpoint | `POST /api/v1/checkout` |
+| Actor | Customer |
+| Authentication | Required |
+| Cart | Own active Cart (server-derived) |
+| Guest checkout | Not allowed (401) |
+| Fulfillment | `PICKUP`, `DELIVERY` (CLOSED) |
+| Delivery address | Required for `DELIVERY`, forbidden for `PICKUP` |
+| Delivery fee | Server/Staff/Admin controlled, never client-supplied |
+| Customer total input | Not allowed |
+| Product price input | Not allowed |
+| Stock input | Not allowed |
+| Order status input | Not allowed |
+| Order reference input | Not allowed |
+| Cart selection input | Not allowed |
+| Currency override | Not allowed |
+| Idempotency | Required (`Idempotency-Key`) |
+| Inventory check | Authoritative, atomic |
+| Pricing | Server-calculated (minor units) |
+| `MADE_TO_ORDER` | Not purchasable via checkout (422) |
+| Cart after success | Cleared/inactivated → Order is record |
+| Cart after validation failure | Preserved |
+| Payment | Deferred to Group H — checkout creates Order; payment amount = authoritative Order total after fee finalization |
+
+### 23.18 Validation Matrix (Normative)
+
+| Validation | Required |
+|---|---|
+| Authentication | Yes (`AUTHENTICATION_REQUIRED` 401) |
+| Cart ownership | Yes (own active Cart) |
+| Cart not empty | Yes (`CART_INVALID` 422) |
+| Product exists | Yes |
+| Product purchasable (`is_active && is_published && IN_STOCK`) | Yes |
+| Variant valid (`exists && belongs to product && active && purchasable`) | When applicable |
+| Quantity valid (1..100, integer) | Yes |
+| Current stock available (authoritative, atomic) | Yes |
+| Fulfillment valid (`PICKUP`/`DELIVERY` CLOSED) | Yes |
+| Delivery information (`delivery_address` object) | When `DELIVERY` |
+| Delivery fee authority | Server/Staff/Admin only |
+| Current price (authoritative recalculation) | Server |
+| Final total (subtotal + delivery_fee) | Server |
+| Idempotency (`Idempotency-Key`) | Yes |
+| Unknown-field rejection | Yes |
+
+### 23.19 Future Test Coverage (Checkout)
+
+Idempotency, concurrency, cart-ownership, financial-authority and delivery-fee tests are deferred to implementation but required per `§14.18`:
+`unauthenticated checkout, Customer A checkout Customer B cart, empty cart, MADE_TO_ORDER checkout, invalid variant, variant from another product, insufficient stock, concurrent checkout, tampered price/subtotal/total/delivery_fee/status/customer_id, duplicate checkout same key, same key different input, network retry after success`. Each must become automated API/feature test before Group G implementation is complete.
+
+### 23.20 Cross-References
+
+- Conventions: `api-conventions.md §23` (checkout conventions — idempotency, concurrency, financial/inventory/time/state authority).
+- Resources: `api-resources.md §4a` (Checkout resource, request allow-list, Cart→Checkout→Order relationship).
+- Domain: `business-rules.md §4a` (checkout invariants, delivery-fee timing, authority).
+- Decisions: `decisions.md CHK-001..CHK-009` (checkout + fee timing).
+- Order: `§24` (Phase 1.23) will take the Order created by `CHK-001` and define identity/history/status/cancellation/tracking.
+
 

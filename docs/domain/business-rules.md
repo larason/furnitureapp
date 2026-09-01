@@ -64,8 +64,31 @@ The computer system is always the final authority on what is allowed, what costs
 
 **Cart Validation & Domain Authority Note (Phase 1.21):** Cart mutations (`CART-001..CART-005`) are customer-isolated actions. The server computes all display subtotals and line totals using minor unit arithmetic (`{amount, currency}`). Clients can only specify product identity, variant choice, and quantity (1..100). Final inventory locking and payment calculation occur exclusively during Checkout (`CHK-001`).
 
+## 4a. Checkout — Transaction Boundary Before Order Creation (Phase 1.22)
 
+> Checkout is the most important transaction boundary before Order creation. No guest checkout; no `MADE_TO_ORDER` via normal checkout; no customer-controlled money/status.
 
+| # | Business rule | Ref |
+|---|---|---|
+| 1 | **Checkout requires authentication.** Only a logged-in `CUSTOMER` may call `POST /checkout`; anonymous checkout is rejected (`AUTHENTICATION_REQUIRED` 401). | IDENT-002, CHK-AUTH-001 |
+| 2 | **Checkout operates on the customer's own active Cart.** Server derives `own active Cart` from authenticated principal (`/me/cart`); `cart_id` or `user_id` override is rejected; `Customer A → Customer B` cart is blocked via ownership + 404 masking. | CART-OWN-001, CHK-OWN-001 |
+| 3 | **Checkout is a dedicated business workflow** — not a `PATCH /me/cart` field edit and not a direct `POST /orders` with client totals. It validates, checks inventory, recalculates prices, decides fulfillment, creates the Order and hands off to payment. | CHK-WORK-001 |
+| 4 | **Cart does not reserve inventory.** Adding to cart does not reserve; checkout is the point where inventory authority becomes critical and is re-checked authoritatively inside an atomic transaction. | INV-004, CART-RES-001, CHK-INV-001 |
+| 5 | **Checkout revalidates product/variant state** — `exists → active && is_published → IN_STOCK → purchasable`, `variant exists && belongs to product && active && purchasable`. Catalog cache is not trusted. | CAT-004, VAR-OWN-001, CHK-VAL-001 |
+| 6 | **Checkout revalidates inventory authoritatively** — `requested quantity ≤ available quantity at transaction point`; race `A sees 1, B buys 1, A checks out → A fails safely` with no negative stock/oversell. Protected by transaction/locking (mechanism deferred). | INV-002/003, CHK-INV-002 |
+| 7 | **Checkout recalculates authoritative pricing** — current catalog unit prices are resolved at checkout; `subtotal/delivery_fee/total` are server-calculated `{amount,currency:"TZS"}` integer minor units; client `total`/`price`/`currency` is rejected. | PRICE-001/002/003, CHK-PRICE-001 |
+| 8 | **`MADE_TO_ORDER` cannot enter normal checkout.** Any `MADE_TO_ORDER` product in cart is rejected (`PRODUCT_NOT_PURCHASABLE` 422); it must use the Request workflow (`REQ-001`). | CAT-003, REQ-ACT-001, CHK-TYPE-001 |
+| 9 | **Fulfillment is `PICKUP` or `DELIVERY` only** (CLOSED). `DELIVERY` requires valid `delivery_address` (recipient_name/phone/address_line/city); `PICKUP` requires no delivery address. | FUL-001, CHK-FUL-001 |
+| 10 | **Delivery fee is not customer-controlled.** Customer chooses `DELIVERY` (supplies address); **Staff/Admin add the variable location-based fee**; backend stores authoritative `delivery_fee`. Customer `delivery_fee` payload is rejected. Flat `20,000` rate superseded. | PRICE-006, FUL-002, CHK-FEE-001 |
+| 11 | **Delivery-fee timing is Model B (fee-after-order) in V1** — `checkout → Order PENDING_PAYMENT (subtotal authoritative, delivery_fee pending) → Staff/Admin sets delivery_fee → final total authoritative → payment (Group H) on final total`. Order can be created before final delivery fee; payment amount must equal final authoritative Order total. No silent `pay before fee → staff changes total` mismatch. | CHK-FEE-002, PRICE-006, ORD-001 |
+| 12 | **Customer cannot set authoritative subtotal, total, price, stock, status, reference, or cart ownership.** These are server-generated or server-calculated. | SEC-001, CHK-AUTH-002 |
+| 13 | **Empty cart checkout is prohibited** — `POST /checkout` with empty cart returns `CART_INVALID` (422, conceptual `CART_EMPTY`). No empty order is created. | CART-001, CHK-EMPTY-001 |
+| 14 | **Checkout is concurrency-sensitive and idempotency-required.** `Idempotency-Key` header required; same key replays original result; same key + different input → `409 CONFLICT`; inventory + order + cart mutations occur atomically. | CHK-IDEM-001, INV-003 |
+| 15 | **Cart after success is cleared/inactivated; cart after validation failure is preserved.** Stale `is_purchasable:false` lines remain until checkout rejects (`CART_INVALID`); failed checkout does not empty the cart where safe. | CART-STALE-001, CHK-CART-001 |
+| 16 | **Successful checkout creates an Order** (`PENDING_PAYMENT`) with historical snapshots (items, prices, addresses, fulfillment). Order lifecycle, delivery, payment and tracking are handled thereafter. | ORD-001, CHK-ORD-001 |
+| 17 | **Checkout does not implement payment provider logic.** Provider integration, callbacks, webhooks, provider statuses belong to Group H. | PAY-002, CHK-PAY-001 |
+
+**Checkout Authority Note (Phase 1.22):** Delivery address supplied at checkout becomes part of the Order's historical fulfillment snapshot (not a live profile reference). Saved address book is deferred. Checkout requires `Idempotency-Key`; inventory validation and state-changing operation are safe under concurrent checkout attempts. All financial calculations use integer minor units, never floating arithmetic.
 
 ## 5. Prices and Payment
 
