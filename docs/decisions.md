@@ -919,16 +919,6 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
-### ADR/API-ORD-010 — Delivery Fee Finalization Endpoint (Model B Gate)
-
-**Decision:** V1 adds dedicated `ORD-014 POST /api/v1/orders/{order}/delivery-fee` (Staff/Admin, `orders.set_delivery_fee` + `PENDING_PAYMENT`+`DELIVERY`+`PENDING`) — the only V1 gate that transitions `delivery_fee null→{amount,currency}` and `delivery_fee_status PENDING→FINALIZED` before `PAY-001`. Request `{"delivery_fee":{"amount":int minor units,currency:"TZS"},"reason":"..."}` (currency must be `TZS`, amount `>=0`, unknown fields `422`); Response `200` updated Order (`delivery_fee`, `delivery_fee_status: FINALIZED`, `total` final, `payment` now eligible). Single finalization; `409` if already `FINALIZED` or not `PENDING_PAYMENT`/`DELIVERY`; `Idempotency-Key` Required (same key replays, different amount same key `409 DUPLICATE_OPERATION`); concurrency Critical (race with `PAY-001`); audited.
-
-**Reason:** `phases/phase-1.23.md §31, §84`, `api-contract.md §24.10 (ORD-014)` — without a dedicated fee-assignment path, the `DELIVERY Orders block payment until FINALIZED` gate in `§24.5/§24.13` would be unimplementable; `ORD-014` closes the Model B loop with explicit permission, shape, idempotency and concurrency.
-
-**Status:** Accepted
-
----
-
 ### ADR/API-ORD-007 — Pickup and Delivery Follow Distinct Order Paths
 
 **Decision:** `PICKUP`: `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` (no `SHIPPED/DELIVERED`). `DELIVERY`: `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED`. `delivery_address: null` for `PICKUP`, snapshot for `DELIVERY`. Tracking milestones filtered by fulfillment; operational fulfillment data uses same branches.
@@ -961,9 +951,9 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ### ADR/API-ORD-010 — Delivery Fee Finalization Endpoint (Model B Gate)
 
-**Decision:** V1 adds dedicated `ORD-014 POST /api/v1/orders/{order}/delivery-fee` (Staff/Admin, `orders.set_delivery_fee` + `PENDING_PAYMENT`+`DELIVERY`+`PENDING`) — the only V1 gate that transitions `delivery_fee null→{amount,currency}` and `delivery_fee_status PENDING→FINALIZED` before `PAY-001`. Single finalization; `409` if already `FINALIZED` or not `PENDING_PAYMENT`/`DELIVERY`; `Idempotency-Key` Required, concurrency Critical (race with `PAY-001`), audited.
+**Decision:** V1 adds dedicated `ORD-014 POST /api/v1/orders/{order}/delivery-fee` (Staff/Admin, `orders.set_delivery_fee` + `PENDING_PAYMENT`+`DELIVERY`+`PENDING`) — the only V1 gate that transitions `delivery_fee null→{amount,currency}` and `delivery_fee_status PENDING→FINALIZED` before `PAY-001`. Request `{"delivery_fee":{"amount":int minor units,currency:"TZS"},"reason":"..."}` (currency must be `TZS`, amount `>=0`, unknown fields `422`); Response `200` updated Order (`delivery_fee`, `delivery_fee_status: FINALIZED`, `total` final, `payment` now eligible). Single finalization; `409` if already `FINALIZED` or not `PENDING_PAYMENT`/`DELIVERY`; `Idempotency-Key` Required (same key replays, different amount same key `409 DUPLICATE_OPERATION`); concurrency Critical (race with `PAY-001`); audited.
 
-**Reason:** `phases/phase-1.23.md §31, §84`, `api-contract.md §24.10 (ORD-014)` — without dedicated fee-assignment path, the `DELIVERY Orders block payment until FINALIZED` gate in `§24.5/§24.13` would be unimplementable; `ORD-014` closes the Model B loop with explicit permission, shape, idempotency and concurrency.
+**Reason:** `phases/phase-1.23.md §31, §84`, `api-contract.md §24.10 (ORD-014)` — without a dedicated fee-assignment path, the `DELIVERY Orders block payment until FINALIZED` gate in `§24.5/§24.13` would be unimplementable; `ORD-014` closes the Model B loop with explicit permission, shape, idempotency and concurrency.
 
 **Status:** Accepted
 
@@ -1029,8 +1019,118 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/API-REQ-001 — Anonymous Made-to-Order Requests (Public Intake, Required Contact)
+
+**Decision:** `POST /api/v1/requests` (`REQ-001`) accepts anonymous `User=none` + required contact (`name` + at least one of `phone`/`email`) as well as authenticated `Customer` (where `Request.user_id = authenticated principal` server-derived). `user_id = null` for anonymous is valid; `{"user_id":"..."}` from client rejected `422`. Even when authenticated, `name`/`phone`/`email` remain required in payload to create a self-contained historical contact snapshot (future profile change does not mutate past request).
+
+**Reason:** `phases/phase-1.25.md §12-16`, `api-contract.md §26.2/§26.5` — visitor must move from `MADE_TO_ORDER` Product page → Request without forced registration; self-contained snapshot ensures staff handling is reliable.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-002 — Authenticated Request Ownership (Server-Derived)
+
+**Decision:** Authenticated requests belong to the submitting customer (`Customer → owns Request`). `GET /me/requests` (`REQ-002`) and `GET /me/requests/{request}` (`REQ-003`) are `AUTHENTICATED_OWNER` ownership-scoped; `Customer A → Customer B request` fails `404 REQUEST_NOT_FOUND` masked. Anonymous requests have `no authenticated owner` and require a separate secure access mechanism if later retrieval is needed — not email equality.
+
+**Reason:** `phases/phase-1.25.md §18-20`, `api-contract.md §26.12/§26.22` — preserves privacy and prevents enumeration; `email` is contact, not authentication.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-003 — Request Is Not an Order (Separate Workflow)
+
+**Decision:** Submitting a made-to-order request does not create an `Order`, does not enter `Cart → Checkout → Payment`, does not reserve inventory, does not guarantee price/production/delivery/completion. `order_id`/`payment_*`/`delivery_fee` from client rejected. Request remains inquiry/intake for furniture the business may produce upon request.
+
+**Reason:** `phases/phase-1.25.md §9, §47-48, §51-53`, `api-contract.md §26.11` — keeps made-to-order commerce path distinct from normal purchasing.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-004 — Request Does Not Reserve Inventory (No Stock Effect)
+
+**Decision:** Made-to-order request submission has zero inventory effect — no `physical_quantity`/`reserved_quantity`/`available_quantity` change. Inventory remains backend-controlled and only checkout/orders affect stock.
+
+**Reason:** `phases/phase-1.25.md §52`, `api-contract.md §26.11` — a request is lead, not purchase.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-005 — Optional Attachments, Inline Multipart Preferred, Private
+
+**Decision:** Request attachments are **optional** (`0` or `1` on creation in V1). Preferred transport is `multipart/form-data` inline with `REQ-001` creation (field `attachment`). Separate `POST /requests/{request}/attachments` (`REQ-007`) requires scoped server-issued upload token (single-use/time-limited) + parent ownership; predictable request `id` alone insufficient. Validation: `size <=5 MB`, types `image/jpeg|png|webp|application/pdf`, actual content signature (client MIME not trusted). Access inherits parent (`Customer own → own attachment`, `Staff → operational`, `Anonymous → scoped token only`); no permanent public URLs; internal storage keys never exposed.
+
+**Reason:** `phases/phase-1.25.md §37-42, §81`, `api-contract.md §26.8` — supports reference furniture/sketch while keeping private data protected and storage provider deferred.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-006 — Anonymous Retrieval Not Supported Without Secure Mechanism
+
+**Decision:** V1 does **not** support `GET /requests/{request}` public for anonymous merely because creation is public. Predictable `id` is not bearer credential. Anonymous retrieval, if ever needed, requires explicit secure access mechanism (one-time link, verified contact, secure token) — out of scope. `GET /requests` collection is never publicly searchable; only `POST /requests` is public.
+
+**Reason:** `phases/phase-1.25.md §19, §65`, `api-contract.md §26.13` — prevents enumeration and private data exposure.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-007 — Payment Separation (Request Does Not Initiate Payment)
+
+**Decision:** Requests do not directly initiate payment; `payment_status`, `payment_id`, `payment_amount`, `card`, `mobile_money` fields are never accepted at `REQ-001`. Payment begins only through a later separately approved Order/payment workflow (Group H). No `quoted_price` produced at submission.
+
+**Reason:** `phases/phase-1.25.md §92, §49-51`, `api-contract.md §26.11` — payment boundary stays with Order; request is intake.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-008 — Dimensions Structured with Canonical cm Unit
+
+**Decision:** When `dimensions` supplied, it must be structured object `{length, width, height, unit:"cm"}` with allow-listed keys only and `unit` exactly `"cm"` CLOSED. Each dimension `>0` `<=10000`. Arbitrary keys rejected. Free-text dimensions not accepted.
+
+**Reason:** `phases/phase-1.25.md §32-33`, `api-contract.md §26.6` — avoids furniture-configuration DSL while giving measurable intent with one canonical unit.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-009 — Material & Color Free Text, Not Closed Enum
+
+**Decision:** `material` and `color` are free text (max 500/200) rather than closed enums. Incomplete closed enum would block customers; small-business flexibility requires strings. V1 status enum remains CLOSED but `material`/`color` intentionally open.
+
+**Reason:** `phases/phase-1.25.md §34-35`, `api-contract.md §26.7` — avoids premature enum restriction.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-010 — Minimal Request Status (SUBMITTED → IN_REVIEW → CLOSED)
+
+**Decision:** V1 defines minimal `request_status` CLOSED enum `SUBMITTED` (default at creation), `IN_REVIEW`, `CLOSED` (terminal). Expected `SUBMITTED→IN_REVIEW→CLOSED`; direct `SUBMITTED→CLOSED` permitted; `CLOSED` terminal. `QUOTED`/`APPROVED`/`REJECTED`/`PRODUCING` and similar not in V1. Staff `PATCH REQ-006` validates transition; customer cannot set `status`.
+
+**Reason:** `phases/phase-1.25.md §43-44, §99`, `api-contract.md §26.10` — small-business queue needs operational state without over-engineered CRM; CLOSED prevents arbitrary states.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-REQ-011 — Product Reference Policy: Optional product_id for V1
+
+**Decision:** For V1, `product_id` on `POST /api/v1/requests` (`REQ-001`) is **OPTIONAL (nullable)** — resolves `phases/phase-1.25.md §26-27` which left `product_id = null` as “only if business agrees” and `§27` “only if workflow” ambiguity. Both modes are approved: `product_id` referencing an existing `MADE_TO_ORDER` product, and `product_id = null` / omitted for a general/custom furniture request ("Can you make something like this?"). It is **not** Required (which would force all requests to originate from catalog) and **not** Absent (which would forbid catalog linking). Example including `product_id` in `§24` is illustrative, not a requiredness rule; nullable example is equally valid. Mirrored in `api-contract.md §26.3-26.4`, `api-resources.md §5.1/§5.2/§10.6`, `api-conventions.md §26.3`, `business-rules.md §9 #2`.
+
+**Reason:** `phases/phase-1.25.md §26-27`, `AGENTS.md §4.2` general-enquiry separation — small business needs both catalog-linked requests and free-form custom requests; forcing one mode would block legitimate use. Choosing `Optional` keeps contract single and avoids future breaking change.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`** (Order `ORD-001..ORD-014` now `APPROVED` via `§24`/`§25`), target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`** (Order `ORD-001..ORD-014` now `APPROVED` via `§24`/`§25`, Request `REQ-001..REQ-007` now `APPROVED` via `§26`), target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`.
 
 

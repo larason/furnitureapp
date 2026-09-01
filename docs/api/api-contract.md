@@ -1,6 +1,6 @@
 # API Contract — Furniture E-Commerce Platform (Consolidated)
 
-> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.24 — Order Tracking & Fulfillment (Pickup READY_FOR_PICKUP, Delivery SHIPPED→DELIVERED, Timeline Derived, REST Polling)
+> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.25 — Made-to-Order Request (Anonymous + Authenticated, MADE_TO_ORDER Product Link, Optional Attachments, PRIVATE)
 > **Authority:** This file is the canonical response-envelope, resource-representation and validation contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2` and `phase-1.15.md`.
 
 ---
@@ -2180,8 +2180,18 @@ Implementation requirement (for later Laravel/database phases): **Inventory vali
 - **MADE_TO_ORDER cart protection:** If cart somehow contains `MADE_TO_ORDER`, checkout rejects with `PRODUCT_NOT_PURCHASABLE` (422).
 - **Cart after successful checkout:** Active cart must no longer represent same unprocessed purchasable state. Either **clear cart items** or **mark cart inactive/completed** — the choice aligns with Cart contract Phase 1.21: cart items are cleared after successful order creation so a new empty active cart is ready. The successful order becomes the business record.
 - **Cart after failed checkout:** Failed validation/stock/fulfillment → cart **preserved** where safe (customer adjusts quantity then retries). Do not empty cart on ordinary `INSUFFICIENT_STOCK`/`CART_INVALID`.
-- **Payment failure aftermath:** deferred to Group H; payment failure does not automatically destroy valid cart intent unless approved payment/order workflow explicitly requires it.
-- **Partial order risk:** Failed checkout must not leave an incomplete order without clear reconciliation (`Order created but response says error` ambiguity prohibited). Transaction/idempotency design must prevent this; order creation + inventory + cart transition are atomically bounded (see §23.9).
+- **Inventory lifecycle for `PENDING_PAYMENT` delivery orders (Model B — reserved, not consumed, with explicit release/restore):**
+  - **At `CHK-001` (DELIVERY or PICKUP):** Validate `requested ≤ available` inside atomic transaction, then **reserve** stock: `reserved_quantity += quantity`, `available_quantity = physical_quantity - reserved_quantity`. Reserve happens atomically with order creation (`PENDING_PAYMENT`, `delivery_fee_status=PENDING` for DELIVERY / `0/FINALIZED` for PICKUP) and cart clearance. Stock is **reserved, not consumed** (`physical_quantity` unchanged).
+  - **During `PENDING_PAYMENT` before `ORD-014`:** Reservation held; no second reservation. `ORD-014` success (fee `PENDING→FINALIZED`) keeps reservation unchanged; `ORD-014` failure (validation, already finalized, wrong state/fulfillment) does **not** release reservation — order stays `PENDING_PAYMENT` with reservation held for retry or terminal release.
+  - **Release / restore (atomically with status change, idempotent via `Idempotency-Key` where applicable):** `reserved_quantity -= quantity`, `available_quantity += quantity` executed atomically when order reaches a terminal non-fulfilled state:
+    - Customer cancellation `ORD-004` (`PENDING_PAYMENT` within 20-min window) → release
+    - Admin cancellation / expiry (TTL — see `docs/domain/business-rules.md §2/§8` expiry, e.g., pending without fee finalization or without payment beyond configured window) → release
+    - Payment failure (Group H: provider decline/timeout, `PAY-001` failure) → release (if `CANCELLED`/`expired` terminal is chosen; payment failure does **not** keep indefinite hold)
+  - **On payment success (`PAID` via Group H webhook):** Reservation retained and **converted to consumption**: `physical_quantity -= quantity`, `reserved_quantity -= quantity` (so `available` unchanged, held stock becomes sold). Alternative implementation may keep `reserved` until `ACCEPTED`/`COMPLETED` then consume, but consumption must occur no later than `PAID`→fulfillment and must be atomic with `PENDING_PAYMENT→PAID`, never leaving `physical` overstated.
+  - **Indefinite holds prohibited:** Pending `DELIVERY` without fee finalization or without payment must not hold stock forever; an expiry/TTL (e.g., fee-finalization window + payment window, configured, not client-controlled) must eventually release if terminal state not reached. Expiry mechanism deferred to implementation but lifecycle above is normative.
+  - `PICKUP` pending follows same reserve → release on cancel/expiry/failure → consume on `PAID` path; no special case.
+- **Payment failure aftermath:** deferred to Group H; payment failure handling follows release rule above — reservation is released when order moves to terminal `CANCELLED`/expired, not kept indefinitely, and does not automatically destroy valid cart intent unless approved payment/order workflow explicitly requires it.
+- **Partial order risk:** Failed checkout must not leave an incomplete order without clear reconciliation (`Order created but response says error` ambiguity prohibited). Transaction/idempotency design must prevent this; order creation + inventory reserve + cart transition are atomically bounded (see §23.9). If checkout transaction fails after reserve, reservation is rolled back atomically (no orphan hold).
 - **Delivery address snapshot:** `delivery_address` supplied at checkout becomes part of resulting Order's historical fulfillment data (snapshot), not a live mutable profile reference.
 
 ### 23.11 Response — Checkout Result
@@ -2950,11 +2960,11 @@ Staff access to tracking does not grant `change password / block customer / acce
 |---|---|---|---|
 | `PICKUP` | `PROCESSING` | Track (`ORD-003`) — shows `Being prepared` | Process (`ORD-008`) |
 | `PICKUP` | `READY_FOR_PICKUP` | Track — shows `Ready for pickup` | Set ready (`ORD-009`) |
-| `PICKUP` | `COMPLETED` | Track — shows `Completed` | Complete/auto (`ORD-013`) |
+| `PICKUP` | `COMPLETED` | Track — shows `Completed` | Complete (`ORD-013`) |
 | `DELIVERY` | `PROCESSING` | Track — `Being prepared` | Process (`ORD-008`) |
 | `DELIVERY` | `SHIPPED` | Track — `Shipped` | Ship (`ORD-010`) |
 | `DELIVERY` | `DELIVERED` | Track — `Delivered` | Mark delivered (`ORD-011`) |
-| `DELIVERY` | `COMPLETED` | Track — `Completed` | Complete/auto (`ORD-013`) |
+| `DELIVERY` | `COMPLETED` | Track — `Completed` | Complete (`ORD-013`) |
 
 Fulfillment/state combinations outside this table (`PICKUP` + `SHIPPED`) are invalid (`409`).
 
@@ -2981,7 +2991,9 @@ Each fulfillment/tracking endpoint documents: `Endpoint ID / Method / Path / Pur
 |---|---|---|---|
 | `ORD-003` customer tracking | `AUTHENTICATION_REQUIRED` | 401 | Not authed |
 | `ORD-003` not own | `ORDER_NOT_FOUND` / `RESOURCE_NOT_FOUND` (masked) | 404 | Customer A → Customer B tracking → 404 (never 403 leak) |
-| `ORD-009/010/011` fulfillment | `FORBIDDEN` | 403 | Not `STAFF` with `orders.ship` |
+| `ORD-009` ready-for-pickup | `FORBIDDEN` | 403 | Not `STAFF`/`ADMIN` with `orders.ready_for_pickup` |
+| `ORD-010` ship | `FORBIDDEN` | 403 | Not `STAFF`/`ADMIN` with `orders.ship` |
+| `ORD-011` deliver | `FORBIDDEN` | 403 | Not `STAFF`/`ADMIN` with `orders.deliver` |
 | `ORD-010` ship on `PICKUP` / `ORD-009` ready on `DELIVERY` | `INVALID_ORDER_TRANSITION` + `FULFILLMENT_ACTION_NOT_ALLOWED` (422/409) | 409 | Wrong fulfillment for state |
 | `ORD-010` already `SHIPPED` retry with same key | — (replay `200`) | 200 | `Idempotency-Key` replay, not `409` |
 | `ORD-010` already `SHIPPED` no key | `ORDER_STATE_CONFLICT` | 409 | Concurrent second ship must re-read |
@@ -3025,5 +3037,407 @@ V1 tracking = **fulfillment/order milestones** (`PAID, ACCEPTED, PROCESSING, REA
 - Conventions: `api-conventions.md §25` (timeline ordering `occurred_at ASC, id ASC`, fulfillment-aware actions, privacy `PRIVATE`, append-only history, idempotency, concurrency).
 - Domain: `business-rules.md §7/§8` (status paths, cancellation, pickup vs delivery, historical data, privacy).
 - Decisions: `decisions.md FUL-001..FUL-006` (read-only tracking, controlled fulfillment, distinct paths, derived from Order state, not customer-mutable, no GPS).
+
+---
+
+## 26. Made-to-Order Request API Contract (Phase 1.25)
+
+> **Authority:** Canonical domain API contract for the **Made-to-Order Request** subsystem (`REQ-001`..`REQ-007`). Consolidates `phases/phase-1.25.md` and is consistent with `Catalog` (`§21`), `Cart` (`§22`), `Checkout` (`§23`), `Order` (`§24`), `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`).
+> **Core Principle:** A Made-to-Order Request is a separate commerce path from normal purchasing — an inquiry/intake mechanism for furniture the business may produce on request. It is **not** an Order, **not** a reservation, **not** a payment, **not** a price guarantee. It supports both existing `MADE_TO_ORDER` catalog product references and custom/general furniture descriptions, with optional attachments, contact-isolated history, and operational staff handling.
+
+### 26.1 Request Endpoint Inventory (Authoritative — aligned with Phase 1.19 `§19.1`)
+
+Request endpoints `REQ-001`..`REQ-005` are **`APPROVED`** (complete V1 Request contract — finalized in Phase 1.25). `REQ-006` (staff update) and `REQ-007` (attachment upload) are **`APPROVED`** where documented. This supersedes the provisional `PROPOSED` label in `§19.1` for the Request domain; `§19.15` remains `PROPOSED` only for domains not yet finalized. Clients may consume `REQ-001`..`REQ-007` as authoritative.
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `REQ-001` | `POST` | `/api/v1/requests` | Anonymous, Customer | **Optional** | **PUBLIC** submit (validated + anti-abuse) | Submit made-to-order request (anonymous allowed) | **None required** — not idempotent by default (duplicate tap may create second request; see §26.15) | Low |
+| `REQ-002` | `GET` | `/api/v1/me/requests` | Customer | Required | `AUTHENTICATED_OWNER` own requests | List own requests (paginated, filtered) | — | — |
+| `REQ-003` | `GET` | `/api/v1/me/requests/{request}` | Customer | Required | `AUTHENTICATED_OWNER` owns request (404 masked) | Get own request detail | — | — |
+| `REQ-004` | `GET` | `/api/v1/requests` | Staff, Admin | Required | `OPERATIONAL` `requests.view` | List operational requests (staff queue) | — | — |
+| `REQ-005` | `GET` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.view` | Get operational request detail | — | — |
+| `REQ-006` | `PATCH` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.manage` | Update operational request (limited staff fields, see §26.9) | Designed idempotent | Low/Medium (race `Staff A close + Staff B update`) |
+| `REQ-007` | `POST` | `/api/v1/requests/{request}/attachments` | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** | **Scoped upload token** + parent ownership; predictable ID alone insufficient | Upload request attachment — preferred is inline multipart on `REQ-001`; separate `POST` only with scoped token, private to parent | — | — |
+
+`*` `REQ-007` anonymous path requires server-issued upload token returned on `REQ-001` creation (single-use/time-limited); see §26.8.
+
+*Notes:* `GET /requests/{request}` is **not** automatically public; `GET /me/requests` is ownership-scoped. No `GET /requests` for anonymous. Canonical resource is `/requests` (not `/made-to-order-requests`/`/furniture-requests`/`/custom-furniture` — ADR/API-END-004). `REQ-001` is the `PUBLIC` anonymous creation entry point; all other reads are authenticated + authorized.
+
+### 26.2 Endpoint REQ-001 — Submit Made-to-Order Request (Public, Anonymous Allowed)
+
+| Attribute | Version 1 Contract |
+|---|---|
+| **ID** | `REQ-001` |
+| **Method** | `POST` |
+| **Path** | `/api/v1/requests` |
+| **Domain** | Request (intake, not purchase) |
+| **Actor** | `Anonymous` or `Customer` (authenticated) |
+| **Authentication** | **Optional** — `Anonymous` allowed with contact; `Customer` where `Authorization: Bearer` present |
+| **Authorization** | **PUBLIC** submit — no prior auth; anti-abuse/rate-limit candidate (see §26.15) |
+| **Purpose** | Submit a furniture request the business may produce on request; becomes operational intake, not an Order |
+| **Request body** | JSON `application/json` preferred; `multipart/form-data` where inline attachment sent (see §26.8) |
+| **Response** | `201 Created` `{"data": {Request}}` (customer view or created view) — same envelope `data` |
+| **Idempotency** | Not required in V1; duplicate submission creates distinct request (see §26.15); future `Idempotency-Key` optional |
+| **Caching** | Not cacheable — `Cache-Control: private, no-store` on error; success is creation, not cache |
+| **Payment/Inventory** | Creates **no** Order, **no** Payment, **no** inventory reservation |
+
+**Why optional auth:** Visitor must move directly from `MADE_TO_ORDER` Product page → `Request` without forced registration (`§8`). Anonymous `user_id = null` is valid; authenticated `Request.user_id = authenticated principal` derived server-side, never from `{"user_id":"..."}`.
+
+### 26.3 Input Fields — Allow-List & Server-Controlled (REQ-001)
+
+Canonical `POST /api/v1/requests` JSON body (when no file) or multipart fields (when file):
+
+```json
+{
+  "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+  "quantity": 1,
+  "name": "Asha Mwangi",
+  "phone": "+255700000001",
+  "email": "asha@example.com",
+  "dimensions": {
+    "length": 220,
+    "width": 90,
+    "height": 75,
+    "unit": "cm"
+  },
+  "material": "walnut, matte finish",
+  "color": "natural walnut with charcoal fabric",
+  "notes": "Need a 2.2m dining table for 6, rounded corners, delivery to Mikocheni if feasible."
+}
+```
+
+| Field | Required | Type | Valid Values / Rule | Client Authority | Notes |
+|---|---|---|---|---|---|
+| `product_id` | **Conditional** | string \| null | Nullable. When supplied must be existing, `is_active:true` and `publicly requestable` with `product_type = MADE_TO_ORDER` — see §26.4. `null` or omitted = custom/general request not tied to catalog product. | Client supplies reference; server validates | Custom “Can you make something like this?” is valid without product |
+| `quantity` | **Optional** | integer | `1..100` positive integer when supplied. `0`, `-1`, `1.5`, `"2"` rejected `422 INVALID_VALUE`. When omitted defaults to `1` (server default) or remains `null` per resource; not authoritative final order quantity | Client | Request quantity is not order quantity, not inventory allocation |
+| `name` | **Yes** | string | Trimmed, non-empty, max 120 chars, Unicode safe. Collapses internal whitespace. | Client | Required for **both** Anonymous and Customer — explicit contact data kept self-contained even when authenticated (see §26.5) |
+| `phone` | **Conditional** | string | At least one of `phone` or `email` required. `phone` when supplied: normalized E.164-ish, trimmed, max 30 chars | Client | Staff needs reachable contact |
+| `email` | **Conditional** | string | At least one of `phone` or `email` required. When supplied: lowercased/trimmed, RFC-ish format, max 255 | Client | `phone+email` both valid |
+| `dimensions` | **Optional** | object \| null | Structured only (see §26.6). Keys strictly allow-listed: `length`, `width`, `height`, `unit`. No arbitrary keys. Each dimension: number (`int` or decimal where business allows, `>0`, `<=10000`) → validated as `number` not string. `unit` must be exactly `"cm"` CLOSED (no `centimeter`/`inch` synonyms). `null` or omitted = no dimensions | Client | Free-text dimensions not accepted |
+| `material` | **Optional** | string | Free text, trimmed, max 500 chars. Not closed enum (small business flexibility) | Client | `oak`, `walnut` free text |
+| `color` | **Optional** | string | Free text, trimmed, max 200 chars. Not closed enum | Client | No color-management system |
+| `notes` | **Optional** | string | Free text, trimmed, max 5000 chars, safe handling (no HTML/SQL/code execution). Newlines preserved where meaningful. | Client | Human description |
+| `attachment` | **Optional** | file | Via `multipart/form-data` field `attachment` inline on creation (preferred) — see §26.8. Not JSON string | Client | One attachment per creation in V1 |
+| `user_id` | **Prohibited** | — | Never client-supplied; derived server-side `user_id = authenticated principal` or `null` | **Server derives** | `{"user_id":"..."}` rejected `422` |
+| `status` | **Prohibited** | — | Server-controlled `request_status`; if sent rejected `422` | **Server** | See §26.10 |
+| `order_id` / `payment_*` / `delivery_fee` | **Prohibited** | — | Request never creates order/payment/fee; if sent rejected | **Server** | See §26.11 |
+| `internal_notes` / `staff_internal_notes` | **Prohibited** | — | Customer/anonymous cannot set internal notes | **Staff/Admin** | See §26.9 |
+| `created_at` / `updated_at` | **Prohibited** | — | Server-generated ISO8601 `Z` | **Server** | |
+| *Unknown fields* | — | — | Strict rejection `422 INVALID_VALUE` + `field` per `§13.14` | — | Catches typos, stale clients |
+
+**Contact requiredness (final policy — resolves phase-1.25 §15 Potential, per ADR/API-REQ-001):** For **both** Anonymous and authenticated Customer, `name` is **required** and at least one of `phone` or `email` is **required** (both may be supplied). There is no path that may omit all contact by falling back to trusted account data; authenticated `user_id` supplements contact for ownership, not replaces it. `name` trimmed non-empty max 120, `phone` normalized max 30, `email` lowercased max 255. This replaces the “Potential” draft in phase-1.25 §15 and copies the accepted decision `docs/decisions.md ADR/API-REQ-001` into the normative input contract.
+
+**Contact rule (normative):** Even when authenticated, `name` + `phone`/`email` (at least one) are **required** in the submission payload to create a self-contained request record. The request's contact snapshot is historical and does not depend on future profile changes (see §26.5). Authenticated `user_id` supplements contact for ownership, not replaces it.
+
+**Product reference policy (final V1 decision — resolves phase-1.25 §26-27, per ADR/API-REQ-011):** For V1, `product_id` is **OPTIONAL (nullable)**. Both modes are allowed: `product_id` referencing an existing `MADE_TO_ORDER` product, and `product_id = null` / omitted for a general/custom furniture request ("Can you make something like this?"). It is **not** `Required` (which would force all requests to originate from catalog) and **not** `Absent` (which would forbid catalog linking). See §26.4, `api-resources.md §5.1/§5.2`, `api-conventions.md §26.3`, `business-rules.md §9 #2` and `decisions.md ADR/API-REQ-011` for mirrored rule.
+
+### 26.4 Product Reference — MADE_TO_ORDER Only
+
+- When `product_id` supplied:
+  - `product` must exist and be `is_active: true` and `is_published: true` and **publicly visible**.
+  - `product.product_type` must be `MADE_TO_ORDER`. If `IN_STOCK` product is supplied to `REQ-001`, backend validates and returns `409 PRODUCT_NOT_REQUESTABLE` (or `422 INVALID_REQUEST` per registry `§15.15` — this contract chooses `409 PRODUCT_NOT_REQUESTABLE` to distinguish purchasability rule from generic invalid).
+  - Request does not price-lock nor delivery-lock product; catalog price change does not rewrite request.
+- When `product_id` is `null`/omitted:
+  - Custom/general furniture request — valid. Request then depends on `quantity`/`dimensions`/`material`/`color`/`notes`/`attachment` + contact.
+  - Backend must distinguish `custom request` vs `product-linked request` for staff handling.
+- `product_id` requiredness (**final V1: OPTIONAL, per ADR/API-REQ-011**): **not mandatory** — V1 supports both `product-linked` and `custom` to match `AGENTS.md §4.2` general enquiry separation while keeping requests product-aware. `Required` (all catalog) and `Absent` (no catalog) are explicitly rejected for V1; `Optional (nullable)` is the approved policy.
+
+### 26.5 Anonymous vs Authenticated Submission — Contact & Ownership
+
+- **Anonymous:**
+  - `user_id = null` stored. `name` + `phone`/`email` required. Request is private intake; not auto-linked to later account merely because email matches (see §26.13). No anonymous retrieval in V1 (see §26.6).
+- **Authenticated Customer:**
+  - `Request.user_id = authenticated principal` derived server-side. `name`/`phone`/`email` still required in payload (self-contained record). Customer's current profile `name`/`phone`/`email` may be available as secondary source but request's contact snapshot is authoritative and historical (profile change later does not mutate past request).
+  - Request appears in `GET /me/requests` ownership-scoped.
+
+**Trust rule:** Never use `email = customer's email` as ownership proof for anonymous retrieval. Email is contact, not authentication.
+
+### 26.6 Dimensions — Structured, Allow-Listed, Unit Canonical
+
+When `dimensions` is supplied, shape is strictly:
+
+```json
+{
+  "length": 220,
+  "width": 90,
+  "height": 75,
+  "unit": "cm"
+}
+```
+
+- Allowed keys: `length`, `width`, `height` (each optional number `>0`, `<=10000`, type `number` not string) + `unit` (required when any dimension present, value exactly `"cm"` CLOSED).
+- No arbitrary keys (`depth`/`diameter` unless explicitly approved) — unknown dimension key → `422 INVALID_VALUE` `field: dimensions.depth`.
+- `unit` synonyms rejected (`centimeter`, `centimetres`, `in`, `inch` → `422`).
+- `dimensions: null` or omitted = no dimensions supplied — not error.
+
+This avoids a huge furniture-configuration DSL while giving Staff measurable intent.
+
+### 26.7 Material, Color, Notes — Free Text, Bounded
+
+- `material` / `color` are **free text** (not closed enums) to avoid restricting small-business vocabulary. Incomplete enum would block customers. V1 enums for status remain CLOSED but `material`/`color` are intentionally open strings.
+- `notes` max `5000` chars; server trims, does not execute/interpret as code/HTML/SQL/file-path/query syntax.
+- Server must safely handle Unicode, not mangle.
+
+### 26.8 Attachments — Optional, Inline Multipart Preferred, Private
+
+- **Optional:** Request may have `0` or `1` attachment on creation in V1 (multiple attachments deferred).
+- **Preferred transport:** `multipart/form-data` inline with `REQ-001` creation (field `attachment`). Do not invent pre-upload-then-attach-file flow unless approved; single-request flow is simpler for Laravel/Next.js/Flutter.
+- **Separate upload (`REQ-007`):** `POST /api/v1/requests/{request}/attachments` with `multipart/form-data` field `attachment`. Requires **scoped server-issued upload token** (single-use/time-limited token returned in `REQ-001` `201` response — not predictable request `id` alone). Scoped token + parent ownership checked atomically. Anonymous `REQ-007` requires that token; otherwise `401/404`.
+- **Security:** Validate `file size` (max `5 MB` V1), `allowed types` (`image/jpeg`, `image/png`, `image/webp`, `application/pdf` allow-list), `actual content signature` (client MIME/extension not trusted), filename sanitized, storage authorization. `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE`.
+- **Access:** Inherits Request authorization — `Customer → own request attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → no automatic public retrieval`. No permanent public storage URLs; later implementation may use signed/temporary URLs.
+- **Metadata exposure:** `filename/display name, content_type, size` only where authorized; never internal storage keys.
+
+### 26.9 Staff Operational Handling — REQ-006 (Controlled)
+
+- **Staff view/read:** `REQ-004`/`REQ-005` see full specifications, contact data, product context, attachments, status, timestamps — operational, not ownership.
+- **Staff mutation:** `PATCH /api/v1/requests/{request}` (REQ-006) may update only operational fields:
+
+  | Field | Staff writable? | Customer writable? | Notes |
+  |---|---|---|---|
+  | `status` | Limited (controlled transition `SUBMITTED→IN_REVIEW→CLOSED`) | No | Via controlled values only, not arbitrary text |
+  | `staff_internal_notes` | Yes | No | Separated from `customer_notes`; never exposed to customer |
+  | `customer_notes` / original description | No (preserve history) | No (submitted is immutable) | Original remains reconstructable |
+  | `product_id` / `quantity` / `dimensions` / `material` / `color` | Read | Read | Customer-provided data preserved |
+  | `user_id` / `ownership` | No | No | Never change |
+  | `order_id` / `payment_*` | No* | No | `*` only via separately approved Request-to-Order workflow (see §26.11) |
+
+- `PATCH` with `status` arbitrary value beyond CLOSED enum → `422 INVALID_VALUE`. Status changes use `request_status` CLOSED.
+- Original submission remains reconstructable: staff edits do not silently destroy historical context. Preserve `customer said: "Need 2.2m walnut table"` semantics.
+
+### 26.10 Request Status — Minimal V1 CLOSED Enum (Formally Approved — resolves §43-44 deferral)
+
+Version 1 defines a minimal operational status model **formally approved via `ADR/API-REQ-010`** (was deferred per `phase-1.25.md §43-44` unless formally approved; now approved as `SUBMITTED→IN_REVIEW→CLOSED`, so `request_status` and `REQ-006` are not deferred):
+
+```
+SUBMITTED → IN_REVIEW → CLOSED
+```
+
+| Status | Meaning | Set by | Terminal? |
+|---|---|---|---|
+| `SUBMITTED` | New intake, staff has not yet reviewed | Server at creation (default) | No |
+| `IN_REVIEW` | Staff has opened/acknowledged and is handling | Staff via `REQ-006` `status: IN_REVIEW` | No |
+| `CLOSED` | Staff has completed handling / closed intake | Staff via `REQ-006` `status: CLOSED` | Yes |
+
+- **CLOSED enum:** Only `SUBMITTED`, `IN_REVIEW`, `CLOSED` are valid (`UPPER_SNAKE_CASE`, CLOSED). `QUOTED`/`APPROVED`/`REJECTED`/`PRODUCING` and similar workflow states are **not** valid in V1 and must not be introduced by clients. Introducing a new status is a compatibility decision.
+- **Progression:** `SUBMITTED→IN_REVIEW→CLOSED` is expected. `IN_REVIEW→SUBMITTED` rejected `409 INVALID_REQUEST` / `CONFLICT`. Direct `SUBMITTED→CLOSED` is permitted for simple close without intermediate review. No `CLOSED`→any transition.
+- **Future:** A later `CONTACTED` status may be added if staff explicitly needs “customer contacted” milestone, but V1 defers it to avoid over-modeling.
+- **Exposure:** Status **is** exposed in V1 to support staff queue filtering and customer visibility; it is never client-settable at creation. Was deferred per §43-44, now approved per ADR/API-REQ-010.
+
+### 26.11 What Request Is Not — Explicit Boundaries
+
+- **Not an Order:** Submitting a request does not `reserve inventory`, `create an Order`, `charge payment`, `guarantee price`, `guarantee production/delivery/completion`. No `order_id` returned unless an actual Order has been created via **separately approved** workflow (see §26.17).
+- **Not a Quote:** No `quoted_price` produced at submission; business may later discuss price/availability but not authoritative from intake.
+- **Not a Purchase:** No payment fields (`payment_status`, `payment_id`, `payment_amount`, `card`, `mobile_money`) accepted from creator — rejected `422`. Payment belongs to Group H.
+- **Not Cart/Checkout:** `MADE_TO_ORDER` product remains not checkout-eligible; request flow is the sole intake.
+- **Not Inventory:** Zero stock effect.
+
+### 26.12 Customer Retrieval — Ownership-Scoped
+
+- `REQ-002 GET /api/v1/me/requests` and `REQ-003 GET /api/v1/me/requests/{request}` are `AUTHENTICATED_OWNER` — only authenticated Customer's own requests.
+- `customer_id` swapping (`?user_id=another`, `{"user_id":"..."}`) rejected; `Customer A → Customer B request` fails `404 REQUEST_NOT_FOUND` (masked per `§15.8`) never `403` enumeration.
+- Anonymous requests (`user_id null`) do **not** appear in `GET /me/requests` unless a secure claim/link mechanism is explicitly introduced later (deferred).
+
+### 26.13 Anonymous Retrieval — Not Supported Without Secure Mechanism
+
+- V1: **No `GET /requests/{request}` public for anonymous.** Predictable `id` is not a bearer credential.
+- If later needed, requires `secure access token / one-time link / verified contact mechanism` — out of scope.
+- `GET /requests` collection is **never** publicly searchable — anonymous callers receive `401/404` on `GET /requests` and `GET /requests/{request}` unless scoped token path.
+
+### 26.14 Staff/Admin Retrieval & Access Levels
+
+- `REQ-004 GET /api/v1/requests` and `REQ-005 GET /api/v1/requests/{request}` are `OPERATIONAL` `requests.view` — paginated, filtered, latest-first. Staff sees contact, product, specs, attachments, internal notes where authorized. Admin broader but still `authorized + auditability + data minimization`.
+- Pagination `page`/`per_page` uses global `meta.pagination`; sorting deterministic `created_at DESC, id ASC`.
+
+### 26.15 Privacy, Caching & Security
+
+- **Private data:** Request contact (`name`, `phone`, `email`), specs, notes, attachments are `PRIVATE` — never exposed via public Catalog. `Cache-Control: private, no-store` for `REQ-002/003` (own) and `REQ-004/005` operational. Not CDN public.
+- **Field-level exposure:** Customer view excludes `staff_internal_notes`; staff view includes as authorized; anonymous creation response excludes internal fields.
+- **Abuse surface:** Anonymous `POST /requests` is public mutation → `RATE-LIMIT CANDIDATE`. Later implementation considers `per-IP throttling, spam protection, body size limits, attachment limits` — identified, not implemented. CAPTCHA deferred unless rate-limit insufficient.
+- **Idempotency:** `POST /requests` is **not inherently idempotent** — duplicate submit creates two requests. Customer duplicate tap is acceptable duplicate (not uniqueness constraint on `email+message`). Future idempotency mechanism deferred; do not add hard uniqueness constraint.
+- **Concurrency:** Request intake low concurrency risk; operational `PATCH REQ-006` race `Staff A close + Staff B update` treated as state-transition concurrency (`409 CONFLICT` / `ORDER_STATE_CONFLICT` style).
+
+### 26.16 Query, Pagination, Filter, Search, Sorting — Global Conventions
+
+- **Collection pagination:** `REQ-002` (customer) and `REQ-004` (staff) use `page`/`per_page` (1–100) → `meta.pagination` per `§4` / `api-conventions.md §11`.
+- **Staff filters (allow-list only):** `search` (name/email/phone/reference/product), `request_status` CLOSED (`SUBMITTED`/`IN_REVIEW`/`CLOSED`), `product_id` (linked product), `created_from`/`created_to` ISO8601 `Z`, `sort` / `sort_direction`, `page`/`per_page`. Unknown filter → `422`.
+- **Customer filters:** implicitly scoped to own; `search` limited to own dataset.
+- **Sorting:** `created_at DESC, id ASC` (newest first) default for both staff queue and customer history; `id ASC` tie-breaker; no DB natural order.
+- **No request-specific pagination format** — global reuse.
+
+### 26.17 Future Request-to-Order Boundary — Outside V1
+
+Conceptual possibility `Request → business discussion → customer agreement → future Order workflow` is **explicitly outside V1 Request API** unless separately approved. `REQ-006` must not silently `create Order` or `payment` via generic update. No `order_id` field in V1 Request unless that workflow is contracted; `REQUEST_NOT_FOUND` / `RESOURCE_NOT_FOUND` continue to apply.
+
+### 26.18 Validation — Layered (per §14)
+
+```
+Transport (JSON/multipart, size) → Schema (types/enums/contact) → Auth (optional) → Authorization (PUBLIC create vs owns OPERATIONAL read) → Domain (product_type MADE_TO_ORDER when linked, quantity range, dimensions allow-list, notes bounds, attachment safe) → Concurrency (low) → Persistence
+```
+
+- **Contact (finalized — resolves §15 Potential, per ADR/API-REQ-001):** Schema requires `name` non-empty trimmed max 120 **and** at least one of `phone` (normalized max 30) / `email` (lowercased max 255) for **both** Anonymous and authenticated Customer (identical rule, no fallback to trusted account). `phone+email` both supplied is valid; `phone` empty + `email` empty → `MISSING_REQUIRED_FIELD`. Authenticated path does **not** waive contact.
+- **Cross-field:** `product_id` supplied → `product_type` must be `MADE_TO_ORDER` (otherwise `PRODUCT_NOT_REQUESTABLE`).
+- **Conditional:** `quantity` optional integer; `dimensions` object optional, `unit` required when any dimension present.
+- **State-dependent:** `PATCH REQ-006` `CLOSED` terminal (now approved, not deferred — see §26.10); transitions validated against current `request_status` (`SUBMITTED→IN_REVIEW→CLOSED`).
+
+### 26.19 Errors — Common Error Contract (`data` vs `errors`)
+
+Uses `{"data":…}` success and `{"errors":[…],"meta":{"request_id":…}}` failure per `§15`.
+
+| Failure | API `code` | HTTP |
+|---|---|---|
+| Missing required `name` or `phone`+`email` empty | `MISSING_REQUIRED_FIELD` (`field: name` / `field: phone`) | 422 |
+| Invalid format/type (`email` bad, `quantity` string) | `INVALID_FORMAT` / `INVALID_TYPE` / `INVALID_VALUE` | 422 |
+| `product_id` not found / inactive | `RESOURCE_NOT_FOUND` / `PRODUCT_NOT_FOUND` / `INVALID_REQUEST` | 404 / 422 |
+| `product_type = IN_STOCK` supplied to made-to-order request | `PRODUCT_NOT_REQUESTABLE` | 409 |
+| Invalid attachment (size/type/signature/filename) | `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE` | 422 / 413 |
+| Not authenticated where required (`GET /me/requests`) | `AUTHENTICATION_REQUIRED` | 401 |
+| Authenticated but not owner (`Customer A → B request`) | `REQUEST_NOT_FOUND` / `RESOURCE_NOT_FOUND` (404 **masked**, never `403`) | 404 |
+| Staff without `requests.view` / `requests.manage` | `FORBIDDEN` | 403 |
+| Invalid `request_status` enum | `INVALID_VALUE` (`field: request_status`) | 422 |
+| Invalid Request transition (`CLOSED→IN_REVIEW`) | `INVALID_REQUEST` / `CONFLICT` | 409 |
+| Anonymous `GET /requests` / `GET /requests/{id}` | `AUTHENTICATION_REQUIRED` / `RESOURCE_NOT_FOUND` | 401/404 |
+| Rate limited | `RATE_LIMITED` + `Retry-After` | 429 |
+| Unexpected | `INTERNAL_SERVER_ERROR` + `meta.request_id` | 500 |
+
+Only add codes with actual utility per `§15.15`; `PRODUCT_NOT_REQUESTABLE` distinguishes type rule.
+
+### 26.20 Representations & Response Examples
+
+**Customer created (REQ-001 anonymous or authenticated):**
+
+```json
+{
+  "data": {
+    "id": "req_01h8y5a1b2c3d4e5f6g7h8j9",
+    "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+    "quantity": 1,
+    "name": "Asha Mwangi",
+    "phone": "+255700000001",
+    "email": "asha@example.com",
+    "dimensions": {
+      "length": 220,
+      "width": 90,
+      "height": 75,
+      "unit": "cm"
+    },
+    "material": "walnut, matte finish",
+    "color": "natural walnut with charcoal fabric",
+    "notes": "Need a 2.2m dining table for 6, rounded corners.",
+    "request_status": "SUBMITTED",
+    "attachments": [
+      { "id": "att_01h...", "filename": "inspiration.jpg", "content_type": "image/jpeg", "size": 843210 }
+    ],
+    "created_at": "2026-09-01T10:15:00Z",
+    "updated_at": "2026-09-01T10:15:00Z"
+  }
+}
+```
+
+**Customer summary (REQ-002 collection) — lighter:**
+
+```json
+{
+  "data": [
+    {
+      "id": "req_01h8y5a1b2c3d4e5f6g7h8j9",
+      "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+      "quantity": 1,
+      "request_status": "SUBMITTED",
+      "created_at": "2026-09-01T10:15:00Z"
+    }
+  ],
+  "meta": {
+    "pagination": { "current_page": 1, "per_page": 20, "total": 3, "last_page": 1, "has_next": false, "has_previous": false }
+  }
+}
+```
+
+**Staff detail (REQ-005) — adds contact + internal:**
+
+```json
+{
+  "data": {
+    "id": "req_01h8y5a1b2c3d4e5f6g7h8j9",
+    "product": {
+      "id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+      "name": "Walnut Dining Table",
+      "slug": "walnut-dining-table"
+    },
+    "quantity": 1,
+    "name": "Asha Mwangi",
+    "phone": "+255700000001",
+    "email": "asha@example.com",
+    "dimensions": { "length": 220, "width": 90, "height": 75, "unit": "cm" },
+    "material": "walnut",
+    "color": "natural walnut",
+    "notes": "Need a 2.2m dining table for 6.",
+    "request_status": "IN_REVIEW",
+    "staff_internal_notes": "Called customer 2026-09-01, discussed walnut availability.",
+    "attachments": [{ "id": "att_01h...", "filename": "inspiration.jpg", "content_type": "image/jpeg", "size": 843210 }],
+    "user_id": "user_01h...",
+    "created_at": "2026-09-01T10:15:00Z",
+    "updated_at": "2026-09-01T11:00:00Z"
+  }
+}
+```
+
+- Customer `REQ-002`/`REQ-003` never exposes `staff_internal_notes`; `internal` field is operational only.
+- `user_id` nullable (`string | null`) in staff view; omitted or `null` for anonymous in customer view where relevant.
+
+### 26.21 Field Classification Matrix (Normative)
+
+| Field | Anonymous (REQ-001) | Customer (REQ-001) | Staff (REQ-004/005 read) | Server |
+|---|---:|---:|---:|---:|
+| `product_id` | Input | Input | Read | Validate (`MADE_TO_ORDER` when supplied) |
+| `quantity` | Input | Input | Read | Validate (1..100) |
+| `name` | Input | Input | Read | Store (trimmed) |
+| `phone` | Input | Input | Read | Store (normalized) |
+| `email` | Input | Input | Read | Store (lowercased) |
+| `dimensions` | Input | Input | Read | Validate (allow-list, unit `cm`) |
+| `material` | Input | Input | Read | Store |
+| `color` | Input | Input | Read | Store |
+| `notes` | Input | Input | Read | Store (safe) |
+| `attachment` | Input (multipart) | Input | Read | Validate |
+| `user_id` | No | No (derived) | No | Derive (`authenticated` or `null`) |
+| `request_status` | No | No | Controlled (`SUBMITTED→IN_REVIEW→CLOSED`) — **formally approved V1** (was deferred per §43-44, now approved ADR/API-REQ-010; Staff `REQ-006` mutation approved) | Server-generated |
+| `staff_internal_notes` | No | No | Staff/Admin writable | Server/store |
+| `order_id` | No | No | No* | Server later (only via approved Request-to-Order workflow) |
+| `created_at` / `updated_at` | No | No | No | Server-generated ISO8601 `Z` |
+
+`*` only through separately approved Request-to-Order process.
+
+### 26.22 Authorization Matrix (Normative — see §18)
+
+| Operation | Anonymous | Customer | Staff | Admin |
+|---|---|---:|---:|---:|
+| Create Request (`REQ-001`) | **Yes** (public, `Anonymous`/`Customer` only per §26.2) | **Yes** | **No** — operational-only (Staff/Admin do not create customer requests via `REQ-001`; handle via operational queue `REQ-004/005/006`) | **No** — operational-only |
+| List own Requests (`REQ-002`) | No | **Yes** (`AUTHENTICATED_OWNER` own) | No | Authorized (purpose-bound) |
+| View own Request (`REQ-003`) | No | **Yes** (404 masked if not own) | No | Authorized |
+| List operational Requests (`REQ-004`) | No | No | **Yes** (`requests.view`) | **Yes** |
+| View operational Request (`REQ-005`) | No | No | **Yes** (`requests.view`) | **Yes** |
+| Modify operational fields (`REQ-006`) | No | No/limited (not `status`/`internal_notes`/`ownership`) | **Yes** (`requests.manage`) | **Yes** |
+| Upload attachment (`REQ-007`) | **Scoped** token only | According to parent | According to parent | According to parent |
+| Manage customer account (request context) | No | Own only | No (staff cannot change ownership/credentials) | Authorized only |
+
+`Staff operational` is not ownership; Admin remains explicit + auditable.
+
+### 26.23 Security, Field-Level Exposure & History Preservation
+
+- History preservation: original customer-provided `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `contact` are preserved; staff `internal_notes` is separate and never customer-visible. Future audit of status changes `actor/action/resource/target/timestamp/result` identified.
+- Field-level before serialization: select representation by actor (`Customer → own without internal_notes`, `Staff → operational with internal_notes + contact`, `Admin → authorized`). Never `model.toArray()` mass-serialization.
+- Search results apply over authorized dataset; pagination cannot leak cross-ownership.
+
+### 26.24 Compatibility — Version 1
+
+Within `v1`, do not change without compatibility review: `field type`, `field meaning`, `requiredness`, `enum value semantics` (`request_status` CLOSED), `ownership semantics`, `pagination/sort/filter` shapes, `response envelope` (`data`/`meta`/`errors`). Adding optional `CONTACTED` status later is a formal compatibility decision; new status value is CLOSED-enum event.
+
+### 26.25 Cross-References
+
+- Resources: `api-resources.md §5` (Request, Request Attachment — ownership, relationships, public/private classification, customer/staff/admin representations, mutable/immutable, dimensions, status).
+- Conventions: `api-conventions.md §26` (anonymous creation, customer ownership, private data, attachment authorization, operational representation, dimensions canonical `cm`, free-text material/color, status CLOSED).
+- Domain: `business-rules.md §9` (Made-to-Order: anonymous allowed, product-linked or custom, no Order/inventory/payment, optional attachments, staff operational handling).
+- Decisions: `decisions.md ADR/API-REQ-001..ADR/API-REQ-007` (anonymous requests, ownership, not an order, no inventory, optional attachments, no anonymous retrieval, payment separation).
+- Order: `§24` historical records distinct from Request; Payment `Group H`; Tracking `§25` not Request.
+- Links to Conventions & Resources updated: `§20` now includes Request conventions `§26`.
 
 

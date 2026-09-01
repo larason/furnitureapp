@@ -622,5 +622,106 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 - **Idempotency `Required`:** `ORD-009/010/011/013` fulfillment, `ORD-014` fee, `ORD-004` cancel, `CHK-001`. Retry `Staff A ship + same Idempotency-Key → 200` replay original `SHIPPED` (no second event); same key different body `ship vs deliver → 409 DUPLICATE_OPERATION`.
 - **Concurrency `Critical`:** `Staff A ship + Staff B ship`, `Staff deliver + Admin complete`, `Customer cancel + Staff accept` — handled via state machine + transaction; `cancel` uses 20-min server time, not client `cancelled_at`.
 
+## 26. Made-to-Order Request Conventions (Phase 1.25)
+
+> **Authority:** Reusable conventions governing the Request domain (`REQ-001`..`REQ-007` — anonymous creation, customer ownership, private data, attachment authorization, dimensions, status, operational handling). Consolidates `phases/phase-1.25.md`.
+
+### 26.1 Anonymous Creation with Explicit Contact — Self-Contained Record
+
+- **Anonymous allowed:** `POST /api/v1/requests` (`REQ-001`) accepts `User=none` + required contact (`name` required + at least one of `phone` or `email`, per ADR/API-REQ-001). `user_id = null` is valid stored state.
+- **Authenticated still requires contact fields (final policy — resolves phase-1.25 §15 Potential):** Even when `Customer` is authenticated, `name` required + at least one of `phone`/`email` remain required (identical rule to Anonymous, per ADR/API-REQ-001 — no trusted-account fallback). The Request's contact snapshot is **historical and self-contained** — later `PATCH /me` profile change does not mutate past request. `Request.user_id` is derived server-side (`authenticated principal`) and supplements contact for ownership, not replaces it.
+- **Never trust `user_id` from body:** `{"user_id":"..."}` rejected `422` per `§13.10` server-controlled field rule.
+
+### 26.2 Customer Ownership — Server-Derived
+
+- Ownership rule: `Authenticated Request.user_id = authenticated principal` (derived, not supplied). `Anonymous Request.user_id = null`.
+- Retrieval is ownership-scoped: `GET /me/requests` paginates **own dataset only**; `GET /me/requests/{request}` verifies `owns` before serialization; `Customer A → Customer B request` fails `404 REQUEST_NOT_FOUND` masked.
+- `email = customer's email` is **not** ownership proof for anonymous retrieval — email is contact, not authentication. Anonymous → authenticated transition does not auto-attach old anonymous requests by email match.
+
+### 26.3 Product Reference — Nullable, MADE_TO_ORDER Validated (Final V1: OPTIONAL per ADR/API-REQ-011)
+
+- `product_id` is **OPTIONAL (nullable)** for V1 per `ADR/API-REQ-011` — resolves `phase-1.25 §26-27` ambiguity. When `null`/omitted = custom/general furniture request (`"Can you make something like this?"`) — valid, relies on `quantity/dimensions/material/color/notes/attachment`.
+- When supplied: `exists && is_active && is_published && product_type == MADE_TO_ORDER`; `IN_STOCK` product → `PRODUCT_NOT_REQUESTABLE` (409). Validation failure uses `field: product_id`.
+- Two valid modes: `product-linked request` and `custom request` — both supported in V1 to avoid forcing all requests through catalog; **not** Required, **not** Absent.
+
+### 26.4 Quantity Is Not Order Quantity
+
+- `quantity` is optional integer `1..100` (positive, bounded). `0`, `-1`, `1.5`, `"2"` string rejected. When omitted, defaults to `1` or remains `null` per resource.
+- The requested quantity is **informational intent only** — does not allocate inventory, guarantee production, or become final order quantity.
+
+### 26.5 Structured Dimensions — Allow-Listed, Unit Canonical
+
+- When `dimensions` supplied, it must be object with allow-listed keys only: `length`, `width`, `height` (each `number >0 <=10000`) + `unit` (required when any dimension present, exactly `"cm"` CLOSED).
+- No arbitrary keys (`depth`, `diameter` unless explicitly approved) — unknown key → `422` `field: dimensions.depth`.
+- Unit synonyms rejected (`centimeter`, `centimetres`, `in`, `inch` → `422`). Single canonical `cm` keeps processing simple.
+- `dimensions: null` or omitted = no dimensions — not error.
+- This avoids a large furniture-configuration DSL while giving Staff measurable intent.
+
+### 26.6 Material & Color — Free Text, Not Closed Enum
+
+- `material`/`color` are **free text** (not CLOSED enums). V1 enums are CLOSED for `request_status` but material/color would be incomplete and block customers if closed. Small-business flexibility requires strings (`material` max 500, `color` max 200, trimmed).
+- No elaborate color-management system in V1.
+
+### 26.7 Notes — Free Text, Bounded, Safe
+
+- `notes` free text, max `5000` chars, trimmed, Unicode-safe, not interpreted as code. Historical `notes` preserved; staff edits separate.
+
+### 26.8 Attachments — Optional, Inline Multipart Preferred, Private
+
+- **Optional:** `0` or `1` attachment on creation in V1; separate `POST /requests/{request}/attachments` (`REQ-007`) with scoped token `+` parent ownership for after-creation upload.
+- **Preferred:** `multipart/form-data` field `attachment` inline with `REQ-001` creation — simpler for Laravel/Next.js/Flutter; do not assume pre-upload-then-attach-file flow.
+- **Security:** Validate `size <=5 MB`, `type` allow-list (`image/jpeg`, `image/png`, `image/webp`, `application/pdf`), `actual content signature` (client MIME not trusted), filename sanitized, storage authorization. `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE`.
+- **Access:** Inherits Request authorization — `Customer own → own attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → scoped token only`. No permanent public storage URLs; future uses signed/temporary URLs. No internal storage keys exposed.
+- **Metadata:** `filename, content_type, size` safe; never expose internal keys.
+
+### 26.9 Request Status — Minimal CLOSED, Not Arbitrary (Formally Approved)
+
+- V1 statuses `SUBMITTED`, `IN_REVIEW`, `CLOSED` are **CLOSED** `UPPER_SNAKE_CASE` — **formally approved via ADR/API-REQ-010** (was deferred per phase-1.25 §43-44 unless formally approved; now approved, so `request_status` and `REQ-006` are not deferred). `QUOTED`/`APPROVED`/`REJECTED`/`PRODUCING` and similar workflow states are **not** valid in V1.
+- Default at creation `SUBMITTED`; staff `PATCH REQ-006` (now approved, not deferred) transitions `SUBMITTED→IN_REVIEW→CLOSED` (direct `SUBMITTED→CLOSED` permitted, `CLOSED` terminal, `IN_REVIEW→SUBMITTED` rejected). Customer never sets status.
+- Adding a new status is a compatibility decision; staff must not create arbitrary states.
+
+### 26.10 Privacy — Private Data, Not Public Catalog
+
+- Request contact (`name/phone/email`), specs, notes, attachments are **private** — never embedded in public Catalog responses.
+- Customer retrieval `REQ-002/003` uses `Cache-Control: private, no-store`; staff `REQ-004/005` operational similarly private; never CDN public. Catalog remains `public` cacheable, Request never.
+- Field-level before serialization: only permitted fields per actor (`staff_internal_notes` never to customer, `internal storage keys` never, `credentials` never).
+- Anonymous retrieval is **not supported** without explicit secure token — predictable `id` alone insufficient.
+
+### 26.11 Request Is Not Order / Quote / Payment / Inventory
+
+- Submitting a request does **not** `reserve inventory`, `create Order`, `guarantee price`, `guarantee production/delivery/completion`, `charge payment`, `create quoted_price`. No `order_id` returned unless an actual Order has been created via **separately approved** Request-to-Order workflow (out of scope).
+- `delivery_fee`, `payment_status`, `order_id` fields from client rejected.
+
+### 26.12 Operational Handling vs Ownership
+
+- Staff `requests.view` is **operational access**, not ownership. `Staff → owns Request` is false. Admin broader but still `authorized + auditability + data minimization`.
+- `PATCH REQ-006` may write only `request_status` (controlled) and `staff_internal_notes`; customer-provided fields remain immutable; original intake preserved.
+- `Request → Order` future boundary is **outside V1** — `PATCH` must not silently create Order/payment via generic update.
+
+### 26.13 Caching, Pagination, Filtering, Sorting — Global Reuse
+
+- **Pagination:** `REQ-002`/`REQ-004` use global `page`/`per_page` (1–100) → `meta.pagination` per `§11`; no request-specific pagination format.
+- **Filtering (staff `REQ-004` allow-list):** `search` (name/email/phone/reference/product), `request_status` CLOSED, `product_id`, `created_from`/`created_to` ISO8601 `Z`.
+- **Sorting:** `created_at DESC, id ASC` (newest first) + `id ASC` tie-breaker for both staff queue and customer history.
+- **Search privacy:** queries run over **authorized dataset** — `Customer A /me/requests?search=...` searches only own; `Staff search` cannot reveal outside permitted scope.
+
+### 26.14 Anonymous Mutation Safety & Rate Limiting
+
+- `POST /requests` anonymous creation is **public mutation** → `RATE-LIMIT CANDIDATE`; abuse controls identified (`per-IP throttling, spam protection, size limits`) but not implemented here; CAPTCHA deferred unless rate-limit insufficient.
+- Do not use `same email + same message` as hard uniqueness constraint — legitimate similar requests exist; rely on explicit idempotency/abuse controls.
+
+### 26.15 Idempotency & Duplicate Handling
+
+- `POST /requests` is **not inherently idempotent** — duplicate tap may create two requests. Duplicate submission risk is documented; explicit idempotency mechanism deferred. Do not block similar `phone+notes` as duplicate via DB unique constraint.
+- `PATCH REQ-006` is designed idempotent (same status update replays); concurrency race `Staff A close + Staff B update` handled as state transition concurrency (`409 CONFLICT`).
+
+### 26.16 Validation Hierarchy Applied to Request
+
+```
+Transport → Schema → Auth (optional) → Authorization → Domain (product MADE_TO_ORDER when linked, quantity 1..100, dimensions allow-list unit cm, notes bounds, attachment safe) → Concurrency Low → Persistence
+```
+
+Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; conditional: `phone`/`email` at least one; state-dependent: `PATCH REQ-006` validates current `request_status` before transition.
+
 
 

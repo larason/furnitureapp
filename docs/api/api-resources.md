@@ -280,16 +280,101 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 
 ---
 
-## 5. Furniture Request (`/requests`, `/me/requests`)
+## 5. Furniture Request (`/requests`, `/me/requests`) — Approved V1 (Phase 1.25)
 
-| Field | Exposure | Notes |
-|---|---|---|
-| `id` | CUSTOMER (own) / STAFF | |
-| `product_id` | CUSTOMER | nullable (custom request) |
-| `customer:{name,email,phone}` | own / STAFF | contact captured |
-| `request_status` | CUSTOMER/STAFF | CLOSED enum per request contract (values like `QUOTED` future) — query `?request_status=` |
-| `details, quantity, preferred_material` etc. | own / STAFF | |
-| `attachments` | via `/requests/{request}/attachments` | Private URLs, not fully embedded |
+**Conceptual paths:** `POST /api/v1/requests` (`REQ-001` public anonymous allowed), `GET /api/v1/me/requests` (`REQ-002` own), `GET /api/v1/me/requests/{request}` (`REQ-003` own), `GET /api/v1/requests` (`REQ-004` staff operational), `GET /api/v1/requests/{request}` (`REQ-005` staff operational), `PATCH /api/v1/requests/{request}` (`REQ-006` staff limited), `POST /api/v1/requests/{request}/attachments` (`REQ-007` scoped).
+*Note:* Canonical resource is `/requests` (not `/made-to-order-requests`/`/furniture-requests`); anonymous creation is `PUBLIC` but anonymous retrieval is **not** automatically public (requires scoped token via `REQ-007`).
+
+### 5.1 Request Detail Representation — Customer View (`REQ-001` response, `REQ-003`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `req_...` | CUSTOMER (own) | no | Stable opaque API identifier, server-generated, not guessable enumeration |
+| `product_id` | string \| null | CUSTOMER (own) | yes | Nullable — custom request when `null`; when present must be `MADE_TO_ORDER` product validated server-side |
+| `product` | `{id, name, slug}` \| null | CUSTOMER (own) | yes | Summary of linked product when `product_id` present; `null` for custom |
+| `quantity` | integer `1..100` \| null | CUSTOMER (own) | yes | Optional integer; not order quantity, not inventory allocation |
+| `name` | string | CUSTOMER (own) | no | Contact name snapshot, trimmed, max 120 |
+| `phone` | string \| null | CUSTOMER (own) | yes | Normalized, max 30; at least one of `phone`/`email` required |
+| `email` | string \| null | CUSTOMER (own) | yes | Lowercased/trimmed, max 255; at least one of `phone`/`email` required |
+| `dimensions` | `{length:number\|null, width:number\|null, height:number\|null, unit:"cm"}` \| null | CUSTOMER (own) | yes | Structured only; allowed keys `length,width,height,unit`; `unit` exactly `"cm"` CLOSED; each dimension `>0` and `<=10000`; `null` when no dimensions |
+| `material` | string \| null | CUSTOMER (own) | yes | Free text, max 500; not closed enum |
+| `color` | string \| null | CUSTOMER (own) | yes | Free text, max 200; not closed enum |
+| `notes` | string \| null | CUSTOMER (own) | yes | Free text, max 5000, safe handling |
+| `request_status` | enum `SUBMITTED`,`IN_REVIEW`,`CLOSED` CLOSED — **formally approved V1** (was deferred per phase-1.25 §43-44, now approved ADR/API-REQ-010) | CUSTOMER (own) | no | Machine status; `SUBMITTED` at creation, never client-settable; `?request_status=` query key maps here; Staff `REQ-006` mutation approved, not deferred |
+| `attachments` | `[{id, filename, content_type, size}]` | CUSTOMER (own) | no | Via subresource `REQ-007`; private URLs, not fully embedded; empty array when none |
+| `created_at` / `updated_at` | ISO8601 UTC `Z` | CUSTOMER (own) | no | Server-generated |
+
+**Contact requiredness (final — resolves phase-1.25 §15 Potential, per ADR/API-REQ-001):** `name` required and at least one of `phone`/`email` required for **both** Anonymous and authenticated Customer (identical rule; no trusted-account fallback).
+
+**Product reference policy (final V1 — resolves phase-1.25 §26-27, per ADR/API-REQ-011):** `product_id` is **OPTIONAL (nullable)** — both catalog-linked (`product_id` = existing `MADE_TO_ORDER`) and general/custom (`product_id = null`/omitted) allowed; **not** Required, **not** Absent.
+
+### 5.2 Request Summary Representation — Customer Collection (`REQ-002`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | CUSTOMER (own) | no | Opaque identifier |
+| `product_id` | string \| null | CUSTOMER (own) | yes | Nullable |
+| `product` | `{id, name, slug}` \| null | CUSTOMER (own) | yes | Summary or null |
+| `quantity` | integer \| null | CUSTOMER (own) | yes | |
+| `request_status` | enum `SUBMITTED`,`IN_REVIEW`,`CLOSED` | CUSTOMER (own) | no | |
+| `created_at` | ISO8601 UTC | CUSTOMER (own) | no | |
+
+**Not exposed on customer collection/view:** `staff_internal_notes`, `user_id` (except where ownership context requires), `order_id`, `payment` fields.
+
+### 5.3 Request Detail Representation — Staff View (`REQ-005`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string `req_...` | STAFF (`requests.view`) | no | Same `id` |
+| `product` | `{id, name, slug}` \| null | STAFF | yes | Full linked product context |
+| `quantity` | integer \| null | STAFF | yes | |
+| `name` | string | STAFF | no | Contact snapshot |
+| `phone` | string \| null | STAFF | yes | |
+| `email` | string \| null | STAFF | yes | |
+| `dimensions` | object \| null | STAFF | yes | Same structured `length,width,height,unit:"cm"` |
+| `material` | string \| null | STAFF | yes | |
+| `color` | string \| null | STAFF | yes | |
+| `notes` | string \| null | STAFF | yes | Customer notes preserved |
+| `request_status` | enum `SUBMITTED`,`IN_REVIEW`,`CLOSED` CLOSED — **formally approved V1** | STAFF | no | CLOSED; staff transition `SUBMITTED→IN_REVIEW→CLOSED` via approved `REQ-006` (was deferred per §43-44, now approved ADR/API-REQ-010) |
+| `staff_internal_notes` | string \| null | STAFF (`requests.manage` where authorized) | yes | Separated from `notes`; never customer-visible |
+| `user_id` | string \| null | STAFF | yes | `null` for anonymous; `user_...` when authenticated — derived, never client-supplied |
+| `attachments` | `[{id, filename, content_type, size}]` | STAFF | no | Private to parent |
+| `created_at` / `updated_at` | ISO8601 UTC | STAFF | no | |
+
+### 5.4 Request Attachment (Subresource `REQ-007`)
+
+| Field | Type | Exposure | Notes |
+|---|---|---|---|
+| `id` | string `att_...` | own / STAFF (parent-scoped) | Opaque attachment id |
+| `filename` | string | own / STAFF | Sanitized display name |
+| `content_type` | string | own / STAFF | Validated server-side (client MIME not trusted): allow `image/jpeg`, `image/png`, `image/webp`, `application/pdf` |
+| `size` | integer bytes | own / STAFF | Validated `<=5 MB` V1 |
+| `url` | string (URI) \| null | own / STAFF (private) | Safe access URL if authorized (signed/temporary later); never permanent public URL; internal storage keys never exposed |
+
+*Inventory/price/promise:* Request never reserves inventory, never guarantees price/production/delivery.
+
+### 5.5 Request Status & History (Minimal V1)
+
+Statuses `SUBMITTED` (default), `IN_REVIEW`, `CLOSED` are **CLOSED** (`UPPER_SNAKE_CASE`). Transitions `SUBMITTED→IN_REVIEW→CLOSED`; `CLOSED` terminal; direct `SUBMITTED→CLOSED` permitted. `QUOTED`/`APPROVED`/`REJECTED`/`PRODUCING` not in V1. Staff `PATCH REQ-006` validates transition; customer cannot set `request_status`. Original submission fields are immutable; `staff_internal_notes` is operational only.
+
+### 5.6 Representations by Actor (Field-Level Exposure)
+
+| Data | Customer (own) | Staff (operational) | Admin | Anonymous |
+|---|---|---|---|---|
+| `product_id` / `quantity` / `dimensions` / `material` / `color` / `notes` | Own | Operational | Authorized | Input only on creation (no read) |
+| `name` / `phone` / `email` (contact snapshot) | Own | Operational | Authorized | Input only |
+| `request_status` | Own (`SUBMITTED`→`CLOSED`) | Operational | Authorized | Not readable (no retrieval) |
+| `staff_internal_notes` | No | Yes if authorized | Yes | No |
+| `attachments` (metadata) | Own | Operational | Authorized | Scoped token only |
+| `user_id` | Own context (implicit) | Operational | Authorized | `null` |
+| `order_id` / `payment` | No | No* | No* | No |
+| `credentials` | No | No | No | No |
+
+`*` only via separately approved Request-to-Order workflow.
+
+### 5.7 Historical Data Preservation
+
+Original customer-provided `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `contact` are preserved as historical intake. Staff `internal_notes` separated; future `request_status` changes are append-style operational history (audit candidate). Changing current `Product` price/name does not rewrite past Request; deactivation of product does not erase Request history.
 
 ## 6. Enquiry (`/enquiries`, `/me/enquiries`)
 
@@ -385,11 +470,13 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 - **Staff/Admin actions:** `accept`/`ship`/`deliver` — minimal `{"note":...}` where needed; status transitions are actions (`POST /orders/{order}/ship`), not `PATCH {"status":"SHIPPED"}`. **Read-only:** `order_reference`, `status`, `customer_id`, `created_at`, `payment_status`, `final totals`.
 - **Validation:** Schema: `reason`/`note` optional string trimmed. State-dependent: cancellation validates `authenticated owner → owns order → exists → cancellation window (backend time, 20-min) → state eligible`; generic `status!=COMPLETED` insufficient. Transitions: each validates `current state, requested transition, actor auth, business preconditions` (e.g., `PROCESSING→SHIPPED` staff + delivery preconditions). No `PATCH {status:...}` bypass (API-VAL-004). Failure atomicity; concurrency Medium/High; audit: `order_status_history` captured. Query: `?order_status`, `?fulfillment_type` etc. CLOSED enum validation; `?status` generic rejected.
 
-### 10.6 Furniture Request & Enquiry (Anonymous or Authenticated)
+### 10.6 Furniture Request & Enquiry (Anonymous or Authenticated) — Phase 1.25 Detail for Request
 
-- **Request create:** `product_id` nullable + `quantity`, `dimensions`, `material`, `color`, `notes`, `contact:{name,phone,email}` (contact required; `user` optional, not fabricated), optional `attachment` via `multipart/form-data`. **Not accepted:** `order_id`, `request_status`, `inventory_reservation`.
-- **Enquiry create:** `name`, `phone`/`email` (at least one), `subject`, `message`, optional `attachment`. **Not accepted:** `status`, `staff assignment`, `closed_at`, `internal_note`.
-- **Validation:** Request: `contact info` required, `product_id` nullable (when supplied: exists/active/belongs), `quantity` when supplied integer≥1, `dimensions/material/color/notes` strings trimmed, `attachments` via `multipart` with size/type/extension/signature checks (client MIME not trusted). Anonymous `user=null` valid (REQ-001). Enquiry: `contact + message` required; `subject` where required; User association optional. Both: `request_status`/`enquiry_status` SERVER-GENERATE, never client-settable. Auth Optional; authorization contextual (own records). Concurrency Low.
+- **Request create (`REQ-001`):** `product_id` **OPTIONAL (nullable) for V1 per ADR/API-REQ-011** — both `product_id` referencing existing `MADE_TO_ORDER` product and `product_id = null` / omitted (general/custom request) allowed; **not** Required and **not** Absent. When supplied must be `MADE_TO_ORDER` active/published (else `PRODUCT_NOT_REQUESTABLE`). `quantity` integer `1..100` optional, `dimensions` structured `{length,width,height,unit:"cm"}` allow-listed optional, `material` free text optional, `color` free text optional, `notes` free text optional, `name` required + `phone`/`email` (at least one, both valid) — even when authenticated (self-contained record, per ADR/API-REQ-001), optional `attachment` via `multipart/form-data` field `attachment` (preferred inline). **Not accepted:** `user_id`, `request_status`, `staff_internal_notes`, `order_id`, `payment_*`, `delivery_fee`, `created_at`. **Validation:** Schema: `name` trimmed 120, `phone` normalized, `email` lowercased, `quantity` `1..100` strict integer, `dimensions` keys strictly `length,width,height,unit` (`unit` exactly `"cm"`), `material` 500, `color` 200, `notes` 5000; attachment `size<=5MB`, types `image/jpeg|png|webp|application/pdf`, signature verified. Domain: `product_id` optional — when supplied `exists && active && is_published && product_type MADE_TO_ORDER` else `PRODUCT_NOT_REQUESTABLE` (409); when `null`/omitted, custom request valid; `quantity` not order allocation. Auth Optional; `user_id` derived server-side (`null` anonymous, `authenticated principal` when customer); anonymous `user=null` valid. Authorization: PUBLIC create. Concurrency Low; idempotency not required in V1.
+- **Request update (`REQ-006` Staff only):** `PATCH /requests/{request}` — mutable only `request_status` (`SUBMITTED`→`IN_REVIEW`→`CLOSED` CLOSED, terminal `CLOSED`) + `staff_internal_notes`. Not mutable: `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `user_id`, `contact snapshot`, `order_id`. Validation: status transition validated against current state; arbitrary status text rejected; internal notes separated.
+- **Request attachment (`REQ-007`):** `POST /requests/{request}/attachments` `multipart/form-data` — preferred inline on `REQ-001`; separate POST requires scoped server-issued upload token (single-use/time-limited) + parent ownership; validates same file rules. Private to parent; no permanent public URLs.
+- **Enquiry create (deferred detail to Phase 1.26):** `name`, `phone`/`email` (at least one), `subject`, `message`, optional `attachment`. **Not accepted:** `status`, `staff assignment`, `closed_at`, `internal_note`.
+- **Validation common:** Unknown fields rejected, `request_status`/`enquiry_status` SERVER-GENERATE never client-settable, authorization contextual (own vs operational), failure atomicity.
 
 ### 10.7 Profile & Cart vs Order
 
