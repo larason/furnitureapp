@@ -586,7 +586,7 @@
 
 ### ADR/API-END-005 — Smallest Coherent Surface (69 Endpoints, Payment Group H)
 
-**Decision:** V1 **current `PROPOSED` (target `APPROVED` after Phase 1.21)** — `69` total (`66` substantive + `3` Group H placeholders): `CAT 12` [`CAT-001..006` public + `CAT-007..012` management] + `AUTH 7` + `USER 3` + `CART 5` [`CART-001..005` inc. `CART-005` `merge` for guest-cart handoff] + `CHK 1` + `ORD 13` [`ORD-001..013` inc. `ORD-013` `complete`] + `REQ 7` + `ENQ 7` [`ENQ-001..007` inc. `ENQ-007` enquiry attachments] + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3` placeholders (`PROPOSED*`). Master table Status reflects current `PROPOSED`/`PROPOSED*` per `api-contract.md §19`/`§19.15`. Excludes `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` per MVP discipline. IDs remain retired if removed.
+**Decision:** V1 `69` total (`66` substantive + `3` Group H placeholders): `CAT 12` [`CAT-001..006` public + `CAT-007..012` management] + `AUTH 7` + `USER 3` + `CART 5` [`CART-001..005` inc. `CART-005` `merge` for guest-cart handoff] + `CHK 1` + `ORD 14` [`ORD-001..014` inc. `ORD-014` delivery-fee] + `REQ 7` + `ENQ 7` [`ENQ-001..007` inc. `ENQ-007` enquiry attachments] + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3` placeholders (`PROPOSED*`). Master inventory table `api-contract.md §19/§19.15` snapshot remains `PROPOSED` pending final consolidated review, but `ORD-001..014` (`APPROVED` via `§24`/`§25`), `REQ-001..007` (`APPROVED` via `§26`), `ENQ-001..007` (`APPROVED` via `§27`) are individually `APPROVED` via their canonical contracts — `PROPOSED` now scopes only to the master-table snapshot, not to those domains. Excludes `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` per MVP discipline. IDs remain retired if removed.
 
 **Reason:** `phase-1.19.md §121/124/126`, `api-contract.md §19.13` — smallest surface that fully supports anonymous browse, customer purchase (pickup/delivery), cancellation, made-to-order, staff operational, admin staff approval.
 
@@ -861,7 +861,7 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ### ADR/API-ORD-001 — Orders Are Customer-Owned Historical Records
 
-**Decision:** Order is a first-class `v1` resource (`Order`) created only via `POST /api/v1/checkout` (`CHK-001`). Once created it becomes a historical business record: `id` + `order_reference OD-*****` (unique, human-readable, server-generated) + `customer owner` + `items historical snapshots` + `subtotal/delivery_fee/total` authoritative + `fulfillment + delivery_address snapshot` + `status + status_history` + `payment relationship`. Not a live `Product` copy.
+**Decision:** Order is a first-class `v1` resource (`Order`) created only via `POST /api/v1/checkout` (`CHK-001`). Once created it becomes a historical business record: `id` + `order_reference OD-*****` (unique, human-readable, server-generated) + `customer owner` + `items historical snapshots` + `subtotal authoritative; delivery_fee/total provisional for `DELIVERY` (delivery_fee `null`/`PENDING`, total = `subtotal` until `ORD-014` finalizes to `FINALIZED`, then `total` final and payable) and final at creation for `PICKUP` (`delivery_fee 0`/`FINALIZED`, `total` final immediately, `payment` still `null` until `PAY-001`)` + `fulfillment + delivery_address snapshot` + `status + status_history` + `payment relationship` (payment `null` while `PENDING_PAYMENT` until `PAY-001`). Not a live `Product` copy. Model B provisional totals must not be treated as payable amount before `ORD-014`.
 
 **Reason:** `phases/phase-1.23.md §8-13, §21-23`, `AGENTS.md §11` (historical orders preserve price snapshot) — preserves auditability and prevents catalog mutation from rewriting history.
 
@@ -1129,8 +1129,88 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/API-ENQ-001 — Anonymous General Enquiry Submission (Public Intake, Required Contact)
+
+**Decision:** `POST /api/v1/enquiries` (`ENQ-001`) accepts **anonymous `User=none` + required contact** (`name` required + at least one of `phone`/`email`, per `phases/phase-1.26.md §19/§97`) as well as **authenticated `Customer`** (where `Enquiry.user_id = authenticated principal` server-derived, `name`/`phone`/`email` Optional/derived with snapshot where supplied). `user_id = null` for anonymous is valid; `{"user_id":"..."}` from client rejected `422`. Anonymous enquiries are private intake with no automatic retrieval bearer.
+
+**Reason:** `phases/phase-1.26.md §11-13, §19-21`, `api-contract.md §27.2/§27.3` — visitor must submit general business question without forced registration; self-contained contact snapshot ensures staff can respond; Optional/derived for authenticated keeps frictionless UX without trusting client ownership.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-002 — Authenticated Enquiry Ownership (Server-Derived)
+
+**Decision:** Authenticated enquiries belong to the submitting customer (`Customer → owns Enquiry`, `Enquiry.user_id = authenticated principal` derived). `GET /me/enquiries` (`ENQ-002`) and `GET /me/enquiries/{enquiry}` (`ENQ-003`) are `AUTHENTICATED_OWNER` ownership-scoped; `Customer A → Customer B enquiry` fails `404 ENQUIRY_NOT_FOUND` masked per `§15.8`. Anonymous enquiries have `no authenticated owner` and require a separate secure access mechanism if later retrieval is needed — not email equality or predictable ID.
+
+**Reason:** `phases/phase-1.26.md §14, §52-53`, `api-contract.md §27.12/§27.22` — preserves privacy and prevents enumeration; `email` is contact, not authentication; `user_id` from body is never authoritative.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-003 — Enquiries Are Separate From Made-to-Order Requests
+
+**Decision:** General Enquiry (`ENQ-001`, `message` + `subject` + optional `product_id`/`order_id`) and Made-to-Order Request (`REQ-001`, `dimensions`/`material`/`color` etc.) are **distinct V1 resources** with separate intents, endpoints, validation, and storage. Customer asks `"What time do you open?"` / `"Do you deliver to Dodoma?"` via Enquiry; `"Can you make this furniture?"` via Request. No automatic `Enquiry ↔ Request` conversion in V1 without explicit business action.
+
+**Reason:** `phases/phase-1.26.md §8-9, §46`, `api-contract.md §27.4/§27.11` — distinct customer intents must not be forced into one generic communication resource; separation keeps Request's `MADE_TO_ORDER` product validation and dimensional intake clear from general messaging.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-004 — Enquiry Is Not an Order (Separate Workflow)
+
+**Decision:** Submitting a general enquiry does **not** create an `Order`, does not enter `Cart → Checkout → Payment`, does not reserve inventory, does not guarantee purchase. No `order_id` creation; `payment_*`/`delivery_fee`/`order_status` from client rejected. An enquiry may optionally reference an existing `order_id` for context (`order_id` nullable, ownership-validated), but that does not make it an Order operation nor allow Order modification via enquiry. `create_order:true` payload via enquiry rejected.
+
+**Reason:** `phases/phase-1.26.md §8, §31, §46-48`, `api-contract.md §27.11` — keeps general business communication distinct from commercial transaction; Order-specific support remains Order-linked.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-005 — Enquiry Does Not Initiate Payment or Reserve Inventory
+
+**Decision:** General enquiries have **zero payment or inventory effect** — no `physical_quantity`/`reserved_quantity` change, no `payment_status`/`payment_id`/`provider_reference` handling. Payment remains **Phase Group H** only. `payment_id`, `payment_status`, `amount_paid`, `provider_reference` fields from client rejected. Enquiry attachments, like Request attachments, are optional and not payment artifacts.
+
+**Reason:** `phases/phase-1.26.md §4, §48`, `api-contract.md §27.11` — payment boundary stays with Order/Group H; enquiry is communication; inventory remains backend-controlled and only checkout/orders affect stock.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-006 — Anonymous Enquiry Retrieval Is Not Supported Without Secure Mechanism
+
+**Decision:** V1 does **not** support `GET /enquiries/{enquiry}` public for anonymous merely because creation (`ENQ-001`) is public. Predictable `id` (`enq_...` or sequential) is not a bearer credential. Anonymous retrieval, if ever needed, requires explicit secure access mechanism (scoped token, one-time link, verified contact mechanism) — out of scope. `GET /enquiries` collection is never publicly searchable; only `POST /enquiries` is public. Customer `GET /me/enquiries` remains ownership-scoped; staff `GET /enquiries` operational.
+
+**Reason:** `phases/phase-1.26.md §15, §75`, `api-contract.md §27.13` — prevents enumeration and private communication exposure; identifiers are not authorization (§27.23).
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-007 — Enquiry Attachments Are Optional, Private, Inline Preferred
+
+**Decision:** Enquiry attachments are **optional** (`0` or `1` on creation in V1). Preferred transport is `multipart/form-data` inline with `ENQ-001` creation (field `attachment`), same upload architecture as `REQ-007`. Separate `POST /enquiries/{enquiry}/attachments` (`ENQ-007`) requires **scoped server-issued upload token** (single-use/time-limited) + parent ownership; predictable enquiry `id` alone insufficient. Validation: `size <=5 MB`, types `image/jpeg|png|webp|application/pdf`, actual content signature (client MIME not trusted), filename sanitized. Access inherits parent (`Customer own → own attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → scoped token only`); no permanent public URLs; internal storage keys never exposed.
+
+**Reason:** `phases/phase-1.26.md §35-38, §45-46`, `api-contract.md §27.8` — supports reference image/document for enquiry while keeping private data protected and sharing proven `REQ-007` architecture.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-ENQ-008 — Original Enquiry Message Is Immutable, Plain Text, Minimal OPEN/CLOSED Status
+
+**Decision:** Submitted `subject`/`message` + contact snapshot is **immutable history** after creation — preserved as plain text (`subject` 5–200, `message` 10–5000, validated bounds, `plain text only` in V1, no Markdown/HTML, no script execution, frontend escapes, backend safe storage + safe output encoding not destructive sanitization). Staff correction uses separate communication process, not rewrite. Status is minimal CLOSED `OPEN` (default, needs attention) → `CLOSED` (handled via `ENQ-006` `POST /enquiries/{enquiry}/close`, optional `reopen` `CLOSED→OPEN` if approved); `ASSIGNED`/`IN_PROGRESS` etc. not in V1. Customer never sets `enquiry_status`. `staff_internal_notes` separated, never customer-visible. Privacy `PRIVATE` (`CUSTOMER-PRIVATE` own, `STAFF-OPERATIONAL`, `ADMINISTRATIVE`), `Cache-Control: private, no-store` for `ENQ-002/003/004/005`, never CDN public, never SEO-indexed. Rate-limit candidate for anonymous spam.
+
+**Reason:** `phases/phase-1.26.md §23-26, §39-42, §64`, `api-contract.md §27.9-27.10/§27.15/§27.23` — protects historical truth of what customer asked, reduces XSS/attack surface, keeps V1 small without full messaging/CRM; minimal `OPEN/CLOSED` sufficient for small-business queue.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`** (Order `ORD-001..ORD-014` now `APPROVED` via `§24`/`§25`, Request `REQ-001..REQ-007` now `APPROVED` via `§26`), target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27` are individually `APPROVED` — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`.
 
 

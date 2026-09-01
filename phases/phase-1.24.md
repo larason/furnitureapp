@@ -1491,15 +1491,17 @@ Add to:
 docs/api/api-contract.md
 ```
 
-| Fulfillment | State            | Customer | Staff/Admin    |
-| ----------- | ---------------- | -------- | -------------- |
-| PICKUP      | PROCESSING       | Track    | Process        |
-| PICKUP      | READY_FOR_PICKUP | Track    | Set ready      |
-| PICKUP      | COMPLETED        | Track    | Complete/auto  |
-| DELIVERY    | PROCESSING       | Track    | Process        |
-| DELIVERY    | SHIPPED          | Track    | Ship           |
-| DELIVERY    | DELIVERED        | Track    | Mark delivered |
-| DELIVERY    | COMPLETED        | Track    | Complete/auto  |
+| Fulfillment | State            | Customer | Staff/Admin         |
+| ----------- | ---------------- | -------- | ------------------- |
+| PICKUP      | PENDING_PAYMENT  | Track    | View                |
+| PICKUP      | PROCESSING       | Track    | Process             |
+| PICKUP      | READY_FOR_PICKUP | Track    | Set ready           |
+| PICKUP      | COMPLETED        | Track    | Complete (ORD-013)  |
+| DELIVERY    | PENDING_PAYMENT  | Track    | View                |
+| DELIVERY    | PROCESSING       | Track    | Process             |
+| DELIVERY    | SHIPPED          | Track    | Ship                |
+| DELIVERY    | DELIVERED        | Track    | Mark delivered      |
+| DELIVERY    | COMPLETED        | Track    | Complete (ORD-013)  |
 
 Use only approved states/actions.
 
@@ -1515,8 +1517,9 @@ Add:
 | ORD-009 | POST   | `/api/v1/orders/{order}/ready-for-pickup`     | Staff/Admin | Yes  | `OPERATIONAL orders.ready_for_pickup + PICKUP + PROCESSING` | Mark pickup ready   |
 | ORD-010 | POST   | `/api/v1/orders/{order}/ship`                 | Staff/Admin | Yes  | `OPERATIONAL orders.ship + DELIVERY + PROCESSING` | Ship delivery order |
 | ORD-011 | POST   | `/api/v1/orders/{order}/deliver`              | Staff/Admin | Yes  | `OPERATIONAL orders.deliver + DELIVERY + SHIPPED` | Mark delivered      |
+| ORD-013 | POST   | `/api/v1/orders/{order}/complete`             | Staff/Admin | Yes  | `OPERATIONAL orders.complete + COMPLETED (READY_FOR_PICKUP\|DELIVERED)` | Complete order `READY_FOR_PICKUP→COMPLETED` / `DELIVERED→COMPLETED` |
 
-Canonical IDs per `api-contract.md §19.1 / §24.5 / §25.10` (`ORD-003` customer tracking, `ORD-009` ready-for-pickup, `ORD-010` ship, `ORD-011` deliver). Provisional `ORD-TRK-001` / `ORD-FUL-001–003` replaced. `ORD-013` `complete` (`DELIVERED→COMPLETED` / `READY_FOR_PICKUP→COMPLETED`) remains explicit Staff/Admin action `§24.13/§25.11`, not automatic.
+Canonical IDs per `api-contract.md §19.1 / §24.5 / §25.10` (`ORD-003` customer tracking, `ORD-009` ready-for-pickup, `ORD-010` ship, `ORD-011` deliver, `ORD-013` complete). Provisional `ORD-TRK-001` / `ORD-FUL-001–003` replaced. `ORD-013` `complete` (`DELIVERED→COMPLETED` / `READY_FOR_PICKUP→COMPLETED`) is explicit Staff/Admin action `§24.13/§25.11`, not automatic.
 
 ---
 

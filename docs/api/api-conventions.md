@@ -646,7 +646,7 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 
 ### 26.4 Quantity Is Not Order Quantity
 
-- `quantity` is optional integer `1..100` (positive, bounded). `0`, `-1`, `1.5`, `"2"` string rejected. When omitted, defaults to `1` or remains `null` per resource.
+- `quantity` is optional integer `1..100` (positive, bounded). `0`, `-1`, `1.5`, `"2"` string rejected. When omitted, remains `null` (unspecified, not implicitly `1`) — client must not assume a default; `null` explicitly indicates no quantity specified.
 - The requested quantity is **informational intent only** — does not allocate inventory, guarantee production, or become final order quantity.
 
 ### 26.5 Structured Dimensions — Allow-Listed, Unit Canonical
@@ -722,6 +722,98 @@ Transport → Schema → Auth (optional) → Authorization → Domain (product M
 ```
 
 Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; conditional: `phone`/`email` at least one; state-dependent: `PATCH REQ-006` validates current `request_status` before transition.
+
+## 27. General Enquiry Conventions (Phase 1.26)
+
+> **Authority:** Reusable conventions governing the Enquiry domain (`ENQ-001`..`ENQ-007` — anonymous creation, customer ownership, private communication, attachment authorization, optional product/order association, plain-text message, minimal status). Consolidates `phases/phase-1.26.md`.
+
+### 27.1 Anonymous Creation — Self-Contained Private Communication
+
+- **Anonymous allowed:** `POST /api/v1/enquiries` (`ENQ-001`) accepts `User=none` + required contact (`name` required + at least one of `phone` or `email`, per `§27.3`). `user_id = null` is valid stored state.
+- **Authenticated is Optional/derived (per phase-1.26 §97):** When `Customer` is authenticated, `name`/`phone`/`email` are **Optional/derived** — server derives trusted account identity and uses profile contact where not supplied, while still capturing explicit contact snapshot when provided. Historical snapshot preserved alongside `user_id`.
+- **Never trust `user_id` from body:** `{"user_id":"..."}` rejected `422` per `§13.10` server-controlled field rule.
+- **Enquiry is communication, not transaction:** No `payment*`/`delivery_fee`/`order_status` in payload; no `request_id` linkage.
+
+### 27.2 Customer Ownership — Server-Derived
+
+- Ownership rule: `Authenticated Enquiry.user_id = authenticated principal` (derived, not supplied). `Anonymous Enquiry.user_id = null`.
+- Retrieval is ownership-scoped: `GET /me/enquiries` paginates **own dataset only**; `GET /me/enquiries/{enquiry}` verifies `owns` before serialization; `Customer A → Customer B enquiry` fails `404 ENQUIRY_NOT_FOUND` masked.
+- `email = customer's email` is **not** ownership proof for anonymous retrieval — email is contact, not authentication. Anonymous → authenticated transition does not auto-attach old anonymous enquiries by email match.
+- Anonymous retrieval is **not supported** without explicit secure mechanism — predictable `id` alone insufficient (§27.3).
+
+### 27.3 Product & Order Association — Optional, Validated
+
+- `product_id` is **OPTIONAL (nullable)** — any public product may be referenced for context (`"Can you tell me more about this sofa?"`), validated `exists && active && is_published`, not restricted by `product_type`. `null`/omitted = general business enquiry.
+- `order_id` is **OPTIONAL (nullable)** — when supplied by authenticated customer, validated and **ownership-checked** (`order must belong to principal`); knowing `order_id` is not authorization. Anonymous `order_id` discouraged in V1; if supported later requires secure order-access token.
+- Do not add `request_id`/`cart_id`/`payment_id` associations in V1 — keep relationships intentional (`product_id` + `order_id` only where valuable, §27.4).
+
+### 27.4 Subject & Message — Required, Bounded, Plain Text Only
+
+- `subject` required, trimmed, **5–200** chars, useful for staff triage. Unconstrained blob rejected.
+- `message` required, trimmed, **10–5000** chars, **plain text only** in V1 (no Markdown/HTML), newlines preserved, not interpreted as code/HTML/SQL/script. Server validates length and stores safely; frontend escapes.
+- Do not silently transform meaningful customer text — use validation + safe storage + safe output encoding, not destructive sanitization.
+- Oversized `subject`/`message` → `422 MISSING_REQUIRED_FIELD`/`INVALID_VALUE` (size limits, `REQUEST_TOO_LARGE` where body exceeds transport limit).
+
+### 27.5 Category — Simple, Optional, CLOSED
+
+- When `category` supplied, must be `GENERAL`, `PRODUCT`, `DELIVERY`, `OTHER` (`UPPER_SNAKE_CASE`, CLOSED). Single small triage taxonomy; do not create large CRM categories without need.
+- `null`/omitted = uncategorized triageable via subject/message.
+- Unknown `category` value → `422 INVALID_VALUE` `field: category`.
+
+### 27.6 Attachments — Optional, Inline Multipart Preferred, Private (Shares Architecture with Request)
+
+- **Optional:** `0` or `1` attachment on creation in V1; separate `POST /enquiries/{enquiry}/attachments` (`ENQ-007`) with scoped token `+` parent ownership for after-creation upload.
+- **Preferred:** `multipart/form-data` field `attachment` inline with `ENQ-001` creation — shares upload strategy with `REQ-007`, no second architecture.
+- **Security:** Validate `size <=5 MB`, `type` allow-list (`image/jpeg`, `image/png`, `image/webp`, `application/pdf`), `actual content signature` (client MIME not trusted), filename sanitized, storage authorization. `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE`.
+- **Access:** Inherits Enquiry authorization — `Customer own → own attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → scoped token only`. No permanent public storage URLs; future uses signed/temporary URLs. No internal storage keys exposed.
+
+### 27.7 Enquiry Status — Minimal CLOSED `OPEN`/`CLOSED`
+
+- V1 defines minimal `enquiry_status` CLOSED `OPEN` (default at creation, needs attention) → `CLOSED` (handled). Customer never sets status. Staff `ENQ-006` (`POST /enquiries/{enquiry}/close` + optional `reopen`) validates transition; `OPEN→CLOSED` is sufficient if staff only need boolean. Adding `ASSIGNED`/`IN_PROGRESS` etc. requires explicit justification.
+- `CLOSED` may be terminal; `CLOSED→OPEN` reopen only if approved business needs it.
+
+### 27.8 Privacy — Private Communication, Not Public Catalog
+
+- Enquiry content (`subject`, `message`, `contact`, `product`/`order` context, attachments, status) is **private** — never embedded in public Catalog responses, never indexed for SEO.
+- Customer retrieval `ENQ-002/003` uses `Cache-Control: private, no-store`; staff `ENQ-004/005` operational similarly private; never CDN public. Catalog remains `public` cacheable, Enquiry never.
+- Field-level before serialization: only permitted fields per actor (`staff_internal_notes` never to customer, `internal storage keys` never, `credentials` never, private contact not to anonymous). Predictable `id` not authorization.
+
+### 27.9 Enquiry Is Not Order / Request / Payment / Inventory
+
+- Submitting an enquiry does **not** `reserve inventory`, `create Order`, `guarantee price`, `charge payment`, `create quoted_price`, `convert to Request`. No `order_id`/`payment_*` creation.
+- No `order_status`, `payment`, `amount` fields from client.
+- `Request` vs `Enquiry` remain separate domains — no automatic merge.
+
+### 27.10 Operational Handling vs Ownership
+
+- Staff `enquiries.view` is **operational access**, not ownership. `Staff → owns Enquiry` is false. Admin broader but still `authorized + auditability + data minimization`.
+- `ENQ-006` may write only `enquiry_status` (controlled) and `staff_internal_notes`; customer-provided fields remain immutable; original enquiry preserved.
+- Future `Enquiry → Order` boundary outside V1 — `ENQ-006` must not silently create Order/payment.
+
+### 27.11 Caching, Pagination, Filtering, Sorting — Global Reuse
+
+- **Pagination:** `ENQ-002`/`ENQ-004` use global `page`/`per_page` (1–100) → `meta.pagination` per `§11`; no enquiry-specific format.
+- **Filtering (staff `ENQ-004` allow-list):** `search` (name/email/phone/subject/message/reference), `enquiry_status` CLOSED, `category` CLOSED where used, `product_id`, `order_id`, `created_from`/`created_to` ISO8601 `Z`.
+- **Sorting:** `created_at DESC, id ASC` (newest first) + `id ASC` tie-breaker for both staff queue and customer history.
+- **Search privacy:** queries run over **authorized dataset** — `Customer A /me/enquiries?search=...` searches only own; `Staff search` cannot reveal outside permitted scope.
+
+### 27.12 Anonymous Mutation Safety & Rate Limiting
+
+- `POST /enquiries` anonymous creation is **public mutation** → `RATE-LIMIT CANDIDATE` (high priority); abuse controls identified (`per-IP throttling, spam prevention, size limits, attachment limits`) but not implemented here; CAPTCHA deferred unless rate-limit insufficient.
+- Do not use `same email + same message` as hard uniqueness constraint — legitimate repeated enquiries exist; rely on explicit idempotency/abuse controls where added.
+
+### 27.13 Idempotency & Duplicate Handling
+
+- `POST /enquiries` is **not inherently idempotent** — duplicate tap may create two enquiries. Duplicate submission risk is documented as operational noise; explicit idempotency mechanism deferred. Do not block similar `email+message` as duplicate via DB unique constraint.
+- `ENQ-006` close/reopen is designed idempotent (same close replays); concurrency race `Staff A close + Staff B close` handled as state transition concurrency (`409 CONFLICT`).
+
+### 27.14 Validation Hierarchy Applied to Enquiry
+
+```
+Transport → Schema → Auth (optional) → Authorization → Domain (contact valid, subject/message bounds, category CLOSED, product exists when linked, order ownership when linked, attachment safe, plain-text) → Concurrency Low → Persistence
+```
+
+Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`email` at least one for anonymous; state-dependent: `ENQ-006` validates current `enquiry_status` before transition; `subject`/`message` plain-text bounds.
 
 
 

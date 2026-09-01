@@ -376,9 +376,99 @@ Statuses `SUBMITTED` (default), `IN_REVIEW`, `CLOSED` are **CLOSED** (`UPPER_SNA
 
 Original customer-provided `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `contact` are preserved as historical intake. Staff `internal_notes` separated; future `request_status` changes are append-style operational history (audit candidate). Changing current `Product` price/name does not rewrite past Request; deactivation of product does not erase Request history.
 
-## 6. Enquiry (`/enquiries`, `/me/enquiries`)
+## 6. Enquiry (`/enquiries`, `/me/enquiries`) — Approved V1 (Phase 1.26)
 
-Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachments` via subresource, not merged with requests.
+**Conceptual paths:** `POST /api/v1/enquiries` (`ENQ-001` public anonymous allowed), `GET /api/v1/me/enquiries` (`ENQ-002` own), `GET /api/v1/me/enquiries/{enquiry}` (`ENQ-003` own), `GET /api/v1/enquiries` (`ENQ-004` staff operational), `GET /api/v1/enquiries/{enquiry}` (`ENQ-005` staff operational), `POST /api/v1/enquiries/{enquiry}/close` (+ optional `reopen`) (`ENQ-006` staff limited), `POST /api/v1/enquiries/{enquiry}/attachments` (`ENQ-007` scoped).
+*Note:* Canonical resource is `/enquiries` (not `/contacts`/`/messages`/`/support`); anonymous creation is `PUBLIC` but anonymous retrieval is **not** automatically public (requires scoped token via `ENQ-007`).
+
+### 6.1 Enquiry Detail Representation — Customer View (`ENQ-001` response, `ENQ-003`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `enq_...` | CUSTOMER (own) | no | Stable opaque API identifier, server-generated, not guessable enumeration |
+| `name` | string | CUSTOMER (own) | no (anonymous required, customer derived/fallback) | Contact name snapshot, trimmed, max 120 |
+| `email` | string \| null | CUSTOMER (own) | yes | Lowercased/trimmed, max 255; at least one of `email`/`phone` required for anonymous; authenticated optional/derived |
+| `phone` | string \| null | CUSTOMER (own) | yes | Normalized, max 30; at least one of `email`/`phone` required for anonymous |
+| `subject` | string | CUSTOMER (own) | no | Trimmed, 5–200 chars, plain text |
+| `message` | string | CUSTOMER (own) | no | Plain text only, 10–5000 chars, preserved newlines, safe handling |
+| `category` | enum `GENERAL`,`PRODUCT`,`DELIVERY`,`OTHER` \| null CLOSED | CUSTOMER (own) | yes | Optional triage, CLOSED `UPPER_SNAKE_CASE`; `null` when none |
+| `product_id` | string \| null | CUSTOMER (own) | yes | Nullable — when supplied must be existing `is_active:true` + `is_published:true` public product (any `product_type` allowed for enquiry context) |
+| `product` | `{id, name, slug}` \| null | CUSTOMER (own) | yes | Summary of linked product when `product_id` present; `null` otherwise |
+| `order_id` | string \| null | CUSTOMER (own) | yes | Nullable — when supplied must pass ownership check (authenticated `order` must belong to principal); `null` when not about an order |
+| `order` | `{id, order_reference, status}` \| null | CUSTOMER (own) | yes | Summary of linked order when `order_id` present and owned; `null` otherwise |
+| `enquiry_status` | enum `OPEN`,`CLOSED` CLOSED — minimal V1 | CUSTOMER (own) | no | Machine status; `OPEN` at creation, never client-settable; `?enquiry_status=` query key maps here; Staff `ENQ-006` mutation approved |
+| `attachments` | `[{id, filename, content_type, size}]` | CUSTOMER (own) | no | Via subresource `ENQ-007`; private URLs, not fully embedded; empty array when none |
+| `created_at` / `updated_at` | ISO8601 UTC `Z` | CUSTOMER (own) | no | Server-generated |
+
+**Contact requiredness (final — per phase-1.26 §19-21, §97, ADR/API-ENQ-001):** Anonymous: `name` required + at least one of `phone`/`email` required. Authenticated: `name`/`email`/`phone` Optional/derived (server derives from profile when not supplied, preserves snapshot when supplied). `subject` 5–200 required, `message` 10–5000 plain text required for both.
+
+**Product/Order association (final V1):** `product_id` is **OPTIONAL (nullable)** — any public product may be referenced for context, not restricted to `IN_STOCK`/`MADE_TO_ORDER`; `order_id` is **OPTIONAL (nullable)** — when supplied by authenticated customer must be owned order. Both may be `null`/omitted for general business enquiry.
+
+### 6.2 Enquiry Summary Representation — Customer Collection (`ENQ-002`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | CUSTOMER (own) | no | Opaque identifier |
+| `subject` | string | CUSTOMER (own) | no | |
+| `category` | enum \| null | CUSTOMER (own) | yes | |
+| `enquiry_status` | enum `OPEN`,`CLOSED` | CUSTOMER (own) | no | |
+| `created_at` | ISO8601 UTC | CUSTOMER (own) | no | |
+
+**Not exposed on customer collection/view:** `staff_internal_notes`, `user_id` (except where ownership context requires), `payment`/`order` financial secrets.
+
+### 6.3 Enquiry Detail Representation — Staff View (`ENQ-005`)
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string `enq_...` | STAFF (`enquiries.view`) | no | Same `id` |
+| `name` | string | STAFF | no | Contact snapshot |
+| `email` | string \| null | STAFF | yes | |
+| `phone` | string \| null | STAFF | yes | |
+| `subject` | string | STAFF | no | |
+| `message` | string | STAFF | no | Customer message preserved, plain text |
+| `category` | enum \| null | STAFF | yes | Same `GENERAL`/`PRODUCT`/`DELIVERY`/`OTHER` CLOSED |
+| `product` | `{id, name, slug}` \| null | STAFF | yes | Full linked product context where `product_id` present |
+| `order` | `{id, order_reference, status}` \| null | STAFF | yes | Full linked order context where `order_id` present and authorized |
+| `enquiry_status` | enum `OPEN`,`CLOSED` CLOSED | STAFF | no | CLOSED; staff transition `OPEN→CLOSED` (and `CLOSED→OPEN` if reopen approved) via `ENQ-006` |
+| `staff_internal_notes` | string \| null | STAFF (`enquiries.manage` where authorized) | yes | Separated from `message`; never customer-visible |
+| `user_id` | string \| null | STAFF | yes | `null` for anonymous; `user_...` when authenticated — derived, never client-supplied |
+| `attachments` | `[{id, filename, content_type, size}]` | STAFF | no | Private to parent |
+| `created_at` / `updated_at` | ISO8601 UTC | STAFF | no | |
+
+### 6.4 Enquiry Attachment (Subresource `ENQ-007`)
+
+| Field | Type | Exposure | Notes |
+|---|---|---|---|
+| `id` | string `att_...` | own / STAFF (parent-scoped) | Opaque attachment id |
+| `filename` | string | own / STAFF | Sanitized display name |
+| `content_type` | string | own / STAFF | Validated server-side (client MIME not trusted): allow `image/jpeg`, `image/png`, `image/webp`, `application/pdf` |
+| `size` | integer bytes | own / STAFF | Validated `<=5 MB` V1 |
+| `url` | string (URI) \| null | own / STAFF (private) | Safe access URL if authorized (signed/temporary later); never permanent public URL; internal storage keys never exposed |
+
+*Same file strategy as `REQ-007` — one upload architecture; 0 or 1 attachment per creation in V1; plain-text message, not Markdown/HTML.*
+
+### 6.5 Enquiry Status & History (Minimal V1)
+
+Statuses `OPEN` (default), `CLOSED` are **CLOSED** (`UPPER_SNAKE_CASE`). Transitions `OPEN→CLOSED`; `CLOSED→OPEN` (reopen) only if explicitly approved, otherwise `CLOSED` terminal. `ASSIGNED`/`IN_PROGRESS`/`WAITING_FOR_CUSTOMER`/`ESCALATED`/`RESOLVED`/`SUBMITTED` not in V1. Staff `ENQ-006` validates transition; customer cannot set `enquiry_status`. Original submission fields are immutable; `staff_internal_notes` is operational only. Staff response initially via ordinary business contact process (email/phone), not in-app thread (Group R deferred).
+
+### 6.6 Representations by Actor (Field-Level Exposure)
+
+| Data | Customer (own) | Staff (operational) | Admin | Anonymous |
+|---|---|---|---|---|
+| `subject` / `message` / `category` / `product`+`order` references | Own | Operational | Authorized | Input only on creation (no read) |
+| `name` / `phone` / `email` (contact snapshot) | Own | Operational | Authorized | Input only |
+| `enquiry_status` | Own (`OPEN`→`CLOSED`) | Operational | Authorized | Not readable (no retrieval) |
+| `staff_internal_notes` | No | Yes if authorized | Yes | No |
+| `attachments` (metadata) | Own | Operational | Authorized | Scoped token only |
+| `user_id` | Own context (implicit) | Operational | Authorized | `null` |
+| `payment` / `order financial` | No | No* | No* | No |
+| `credentials` | No | No | No | No |
+
+`*` only via separately authorized Order domain; enquiry does not modify payment.
+
+### 6.7 Historical Data Preservation
+
+Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phone`), `category`, `product_id`/`order_id`, `attachment` metadata are preserved as historical communication intake. Staff `internal_notes` separated; future `enquiry_status` changes are append-style operational history (audit candidate). Changing current `Product` price/name does not rewrite past Enquiry; order creation does not retroactively create enquiry.
 
 ## 7. Payment (generic — provider-specific deferred to Group H)
 
@@ -388,7 +478,7 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 
 - **Embedded:** `product.images`, `order.items` (snapshots), `order.billing_address`, `checkout → order delivery_address snapshot`.
 - **Summary/Reference:** `product.category`, `variant.product`, `cart → checkout (own active Cart, no cart_id)`.
-- **Subresource:** `products/{product}/variants`, `products/{product}/images/{image}`, `orders/{order}/tracking`, `orders/{order}/status-history`, `requests/{request}/attachments`.
+- **Subresource:** `products/{product}/variants`, `products/{product}/images/{image}`, `orders/{order}/tracking`, `orders/{order}/status-history`, `requests/{request}/attachments`, `enquiries/{enquiry}/attachments`.
 - **Workflow chain:** `Catalog (public, informational availability)` → `Cart (customer intent, no reservation, informational pricing)` → `Checkout CHK-001 (server revalidates inventory, recalculates authoritative prices, validates fulfillment, snaps address, idempotent, atomic)` → `Order (historical snapshot, authoritative totals, fulfillment, status history)` → `Payment (Group H, on final total after delivery_fee finalization)`.
 - **Deferred dynamic:** `?include` / `?fields` — not supported; use dedicated subresources.
 
@@ -454,7 +544,7 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
   | `delivery_address` | Conditional | **Required object when `DELIVERY`**, **absent/`null` when `PICKUP`**. Structure `{recipient_name, phone, address_line, city}` trimmed/non-empty. `field: delivery_address.city` on failure. |
   | `delivery_address.recipient_name` / `phone` / `address_line` / `city` | Conditional | Required non-empty when `DELIVERY` |
   | **Prohibited** | — | `delivery_fee`, `total`, `subtotal`, `unit_price`, `line_total`, `discount`, `currency` override, `available_quantity`, `reserved_quantity`, `status`/`payment_status`, `order_reference` (`OD-…`), `cart_id`, `user_id` — all **REJECTED** (`INVALID_VALUE`) if sent; ownership/identity from auth. Unknown fields rejected per `§13.14`. |
-- **Fulfillment semantics:** `PICKUP` → `delivery_address: null`, `delivery_fee: {amount:0,currency:"TZS"}`, `delivery_fee_status=FINALIZED` (final at creation), `total` final, `payment` present. `DELIVERY` → delivery_address snapshot stored in Order history (not mutable profile reference), `delivery_fee: null`, `delivery_fee_status=PENDING` (provisional `total` equals `subtotal`; `payment: null` and `PAY-001` blocked with `409 DELIVERY_FEE_PENDING` until finalized). Saved address book deferred — no `saved_address_id`. Enum CLOSED.
+- **Fulfillment semantics:** `PICKUP` → `delivery_address: null`, `delivery_fee: {amount:0,currency:"TZS"}`, `delivery_fee_status=FINALIZED` (final at creation), `total` final, `payment: null` until `PAY-001` (still `PENDING_PAYMENT`; `payment` object appears only after `PAY-001` creates it, same as `DELIVERY` — see `payment` field above). `DELIVERY` → delivery_address snapshot stored in Order history (not mutable profile reference), `delivery_fee: null`, `delivery_fee_status=PENDING` (provisional `total` equals `subtotal`; `payment: null` and `PAY-001` blocked with `409 DELIVERY_FEE_PENDING` until finalized). Saved address book deferred — no `saved_address_id`. Enum CLOSED.
 - **Delivery-fee authority & timing (CHK-006 / CHK-009):** Customer chooses `DELIVERY` (supplies address); **Staff/Admin add variable location-based fee**; backend stores authoritative `delivery_fee` (`null` → `{amount,currency}` on finalization) + `delivery_fee_status PENDING→FINALIZED`. Checkout never accepts `delivery_fee` from client. **Version 1 timing is Model B (fee-after-order):** `POST /checkout → Order created PENDING_PAYMENT (subtotal authoritative, delivery_fee=null, delivery_fee_status=PENDING, total provisional = subtotal, payment=null blocked) → Staff/Admin sets delivery_fee → delivery_fee_status=FINALIZED, total = subtotal+delivery_fee final, payment becomes eligible → payment (Group H) on final total`. Fee not silently pre-filled as flat `20,000`; payment must equal authoritative final Order total (blocked while `PENDING`). See `api-contract.md §23.6` and `§23.11`.
 - **Financial authority (server-controlled):** Client sends intent; server resolves `current catalog unit prices` (recalculated at checkout, not frontend cache), `line totals`, `subtotal`, `delivery_fee` (`null` pending / `{amount,currency}` finalized), `delivery_fee_status`, `total` (provisional `subtotal` when `PENDING`, final `subtotal+delivery_fee` when `FINALIZED` — minor-unit integer `{amount,currency:"TZS"}`), `order_reference OD-…`, `status PENDING_PAYMENT`, `payment` (`null` when `PENDING`, present when `FINALIZED`). `currency` is `TZS` from business config; `{"currency":"USD"}` rejected. Frontend must not display provisional `total` as final (check `delivery_fee_status`).
 - **Product/Variant/Inventory revalidation (authoritative, atomic):** `product exists → active && is_published && product_type IN_STOCK → purchasable`; `variant exists && belongs to product (VAR-OWN-001) && active && purchasable`; `requested quantity (1..100) ≤ available authoritative quantity at transaction point`. Race `A sees 1, B buys, A checks out → A fails safely` with no negative stock. `MADE_TO_ORDER` → `PRODUCT_NOT_PURCHASABLE` (422), even if cart somehow contains it. Stale `is_purchasable:false` lines → `CART_INVALID` (422).
@@ -472,11 +562,13 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 
 ### 10.6 Furniture Request & Enquiry (Anonymous or Authenticated) — Phase 1.25 Detail for Request
 
-- **Request create (`REQ-001`):** `product_id` **OPTIONAL (nullable) for V1 per ADR/API-REQ-011** — both `product_id` referencing existing `MADE_TO_ORDER` product and `product_id = null` / omitted (general/custom request) allowed; **not** Required and **not** Absent. When supplied must be `MADE_TO_ORDER` active/published (else `PRODUCT_NOT_REQUESTABLE`). `quantity` integer `1..100` optional, `dimensions` structured `{length,width,height,unit:"cm"}` allow-listed optional, `material` free text optional, `color` free text optional, `notes` free text optional, `name` required + `phone`/`email` (at least one, both valid) — even when authenticated (self-contained record, per ADR/API-REQ-001), optional `attachment` via `multipart/form-data` field `attachment` (preferred inline). **Not accepted:** `user_id`, `request_status`, `staff_internal_notes`, `order_id`, `payment_*`, `delivery_fee`, `created_at`. **Validation:** Schema: `name` trimmed 120, `phone` normalized, `email` lowercased, `quantity` `1..100` strict integer, `dimensions` keys strictly `length,width,height,unit` (`unit` exactly `"cm"`), `material` 500, `color` 200, `notes` 5000; attachment `size<=5MB`, types `image/jpeg|png|webp|application/pdf`, signature verified. Domain: `product_id` optional — when supplied `exists && active && is_published && product_type MADE_TO_ORDER` else `PRODUCT_NOT_REQUESTABLE` (409); when `null`/omitted, custom request valid; `quantity` not order allocation. Auth Optional; `user_id` derived server-side (`null` anonymous, `authenticated principal` when customer); anonymous `user=null` valid. Authorization: PUBLIC create. Concurrency Low; idempotency not required in V1.
+- **Request create (`REQ-001`):** `product_id` **OPTIONAL (nullable) for V1 per ADR/API-REQ-011** — both `product_id` referencing existing `MADE_TO_ORDER` product and `product_id = null` / omitted (general/custom request) allowed; **not** Required and **not** Absent. When supplied must be `MADE_TO_ORDER` active/published (else `PRODUCT_NOT_REQUESTABLE`). `quantity` integer `1..100` optional (when omitted remains `null` — unspecified, not implicitly `1` — per `api-conventions.md §26.4` and `api-contract.md §26.3`; `null` explicitly indicates no quantity specified), `dimensions` structured `{length,width,height,unit:"cm"}` allow-listed optional, `material` free text optional, `color` free text optional, `notes` free text optional, `name` required + `phone`/`email` (at least one, both valid) — even when authenticated (self-contained record, per ADR/API-REQ-001), optional `attachment` via `multipart/form-data` field `attachment` (preferred inline). **Not accepted:** `user_id`, `request_status`, `staff_internal_notes`, `order_id`, `payment_*`, `delivery_fee`, `created_at`. **Validation:** Schema: `name` trimmed 120, `phone` normalized, `email` lowercased, `quantity` `1..100` strict integer (when supplied), `dimensions` keys strictly `length,width,height,unit` (`unit` exactly `"cm"`), `material` 500, `color` 200, `notes` 5000; attachment `size<=5MB`, types `image/jpeg|png|webp|application/pdf`, signature verified. Domain: `product_id` optional — when supplied `exists && active && is_published && product_type MADE_TO_ORDER` else `PRODUCT_NOT_REQUESTABLE` (409); when `null`/omitted, custom request valid; `quantity` not order allocation and remains `null` when omitted. Auth Optional; `user_id` derived server-side (`null` anonymous, `authenticated principal` when customer); anonymous `user=null` valid. Authorization: PUBLIC create. Concurrency Low; idempotency not required in V1.
 - **Request update (`REQ-006` Staff only):** `PATCH /requests/{request}` — mutable only `request_status` (`SUBMITTED`→`IN_REVIEW`→`CLOSED` CLOSED, terminal `CLOSED`) + `staff_internal_notes`. Not mutable: `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `user_id`, `contact snapshot`, `order_id`. Validation: status transition validated against current state; arbitrary status text rejected; internal notes separated.
 - **Request attachment (`REQ-007`):** `POST /requests/{request}/attachments` `multipart/form-data` — preferred inline on `REQ-001`; separate POST requires scoped server-issued upload token (single-use/time-limited) + parent ownership; validates same file rules. Private to parent; no permanent public URLs.
-- **Enquiry create (deferred detail to Phase 1.26):** `name`, `phone`/`email` (at least one), `subject`, `message`, optional `attachment`. **Not accepted:** `status`, `staff assignment`, `closed_at`, `internal_note`.
-- **Validation common:** Unknown fields rejected, `request_status`/`enquiry_status` SERVER-GENERATE never client-settable, authorization contextual (own vs operational), failure atomicity.
+- **Enquiry create (`ENQ-001` — Approved V1 Phase 1.26):** `name` (required anonymous, optional/derived authenticated), `phone`/`email` (at least one for anonymous, optional/derived authenticated), `subject` required 5–200, `message` required plain text 10–5000, optional CLOSED `category` (`GENERAL`/`PRODUCT`/`DELIVERY`/`OTHER`), optional `product_id` (any public product, `null`/omitted = general enquiry), optional `order_id` (when supplied by authenticated customer must be owned — ownership-validated, `null`/omitted otherwise), optional `attachment` via `multipart/form-data` field `attachment` (preferred inline, 0 or 1, `<=5MB`, `image/jpeg|png|webp|application/pdf` signature-verified). **Not accepted:** `user_id`, `enquiry_status`, `staff_internal_notes`, `payment_*`/`delivery_fee`/`order_status`, `created_at`. **Validation:** Schema: `name` trimmed 120, `phone` normalized 30, `email` lowercased 255, `subject` 5–200 plain text, `message` 10–5000 plain text (no Markdown/HTML, no script execution, escapes on render), `category` CLOSED when supplied, `product_id` validated public exists when supplied, `order_id` ownership-validated when supplied (another customer's order → `ENQUIRY_NOT_FOUND` 404 masked), attachment same file rules as Request. Domain: `product_id` optional — when supplied `exists && active && is_published && publicly visible`; `order_id` optional — when supplied by customer `exists && owned`. Auth Optional; `user_id` derived server-side (`null` anonymous, `authenticated principal` when customer). Authorization: PUBLIC create. Concurrency Low; idempotency not required in V1.
+- **Enquiry update (`ENQ-006` Staff only):** `POST /enquiries/{enquiry}/close` (+ optional `reopen`) — mutable only `enquiry_status` (`OPEN`→`CLOSED`, `CLOSED`→`OPEN` if reopen approved, CLOSED enum) + `staff_internal_notes`. Not mutable: `subject`, `message`, `contact snapshot`, `category`, `product_id`, `order_id`, `user_id`, `payment_*`. Validation: status transition validated against current `enquiry_status`; arbitrary status rejected; internal notes separated; original submission immutable.
+- **Enquiry attachment (`ENQ-007`):** `POST /enquiries/{enquiry}/attachments` `multipart/form-data` — preferred inline on `ENQ-001`; separate POST requires scoped server-issued upload token (single-use/time-limited) + parent ownership; validates same file rules (`size/type/signature`). Private to parent; no permanent public URLs; same architecture as `REQ-007`.
+- **Validation common:** Unknown fields rejected, `request_status`/`enquiry_status` SERVER-GENERATE never client-settable, authorization contextual (own vs operational), failure atomicity. `subject`/`message` treated as untrusted plain-text (XSS-safe, no HTML/Markdown in V1).
 
 ### 10.7 Profile & Cart vs Order
 

@@ -1,6 +1,6 @@
 # API Contract — Furniture E-Commerce Platform (Consolidated)
 
-> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.25 — Made-to-Order Request (Anonymous + Authenticated, MADE_TO_ORDER Product Link, Optional Attachments, PRIVATE)
+> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.26 — General Enquiry (Anonymous + Authenticated, Optional Product/Order Association, Optional Attachments, Plain Text, OPEN/CLOSED PRIVATE)
 > **Authority:** This file is the canonical response-envelope, resource-representation and validation contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2` and `phase-1.15.md`.
 
 ---
@@ -1178,20 +1178,20 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `ORD-012` | GET | `/api/v1/orders/{order}/tracking` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.view_operational` | Operational tracking (staff view) | **APPROVED** (Phase 1.23) |
 | `ORD-013` | POST | `/api/v1/orders/{order}/complete` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.complete` + `Order=DELIVERED` (delivery) or `Order=READY_FOR_PICKUP` (pickup) | Complete order `DELIVERED→COMPLETED` (delivery) or `READY_FOR_PICKUP→COMPLETED` (pickup) — controlled completion semantics | **APPROVED** (Phase 1.23) |
 | `ORD-014` | POST | `/api/v1/orders/{order}/delivery-fee` | Order | Staff, Admin | Yes | `OPERATIONAL` `orders.set_delivery_fee` + `PENDING_PAYMENT` + `DELIVERY` + `PENDING` | Finalize delivery fee `PENDING→FINALIZED` before payment (Model B gate) | **APPROVED** (Phase 1.23) |
-| `REQ-001` | POST | `/api/v1/requests` | Request | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse later) | Submit made-to-order request (anonymous allowed) | PROPOSED |
-| `REQ-002` | GET | `/api/v1/me/requests` | Request | Customer | Yes | `AUTHENTICATED_OWNER` own | List own requests | PROPOSED |
-| `REQ-003` | GET | `/api/v1/me/requests/{request}` | Request | Customer | Yes | `AUTHENTICATED_OWNER` owns request | Get own request detail | PROPOSED |
-| `REQ-004` | GET | `/api/v1/requests` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | List operational requests | PROPOSED |
-| `REQ-005` | GET | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | Get operational request | PROPOSED |
-| `REQ-006` | PATCH | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.manage` | Update operational request state | PROPOSED |
-| `REQ-007` | POST | `/api/v1/requests/{request}/attachments` | Request | Anonymous* (scoped), Customer | **Scoped** — server-issued upload token (from `REQ-001` response, single-use/time-limited) + parent ownership; predictable ID alone insufficient | Upload request attachment — **preferred: multipart on `REQ-001` creation**; separate `POST` only with scoped token (anonymous requires token), private to parent | PROPOSED |
-| `ENQ-001` | POST | `/api/v1/enquiries` | Enquiry | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse) | Submit general enquiry (anonymous allowed) | PROPOSED |
-| `ENQ-002` | GET | `/api/v1/me/enquiries` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` own | List own enquiries | PROPOSED |
-| `ENQ-003` | GET | `/api/v1/me/enquiries/{enquiry}` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` owns enquiry | Get own enquiry detail | PROPOSED |
-| `ENQ-004` | GET | `/api/v1/enquiries` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | List operational enquiries | PROPOSED |
-| `ENQ-005` | GET | `/api/v1/enquiries/{enquiry}` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | Get operational enquiry | PROPOSED |
-| `ENQ-006` | PATCH | `/api/v1/enquiries/{enquiry}` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.manage` | Update operational enquiry state | PROPOSED |
-| `ENQ-007` | POST | `/api/v1/enquiries/{enquiry}/attachments` | Enquiry | Anonymous* (scoped), Customer | **Scoped** — server-issued upload token (from `ENQ-001` response, single-use/time-limited) + parent ownership; same token model as `REQ-007` | Upload enquiry attachment — **preferred: multipart on `ENQ-001` creation**; separate `POST` only with scoped token, private to parent | PROPOSED |
+| `REQ-001` | POST | `/api/v1/requests` | Request | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse later) | Submit made-to-order request (anonymous allowed) | APPROVED |
+| `REQ-002` | GET | `/api/v1/me/requests` | Request | Customer | Yes | `AUTHENTICATED_OWNER` own | List own requests | APPROVED |
+| `REQ-003` | GET | `/api/v1/me/requests/{request}` | Request | Customer | Yes | `AUTHENTICATED_OWNER` owns request | Get own request detail | APPROVED |
+| `REQ-004` | GET | `/api/v1/requests` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | List operational requests | APPROVED |
+| `REQ-005` | GET | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | Get operational request | APPROVED |
+| `REQ-006` | PATCH | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.manage` | Update operational request state (`request_status` CLOSED) | APPROVED |
+| `REQ-007` | POST | `/api/v1/requests/{request}/attachments` | Request | Anonymous* (scoped), Customer | **Scoped** — server-issued upload token (from `REQ-001` response, single-use/time-limited) + parent ownership; predictable ID alone insufficient | Upload request attachment — **preferred: multipart on `REQ-001` creation**; separate `POST` only with scoped token (anonymous requires token), private to parent | APPROVED |
+| `ENQ-001` | POST | `/api/v1/enquiries` | Enquiry | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse) | Submit general enquiry (anonymous allowed) | APPROVED |
+| `ENQ-002` | GET | `/api/v1/me/enquiries` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` own | List own enquiries | APPROVED |
+| `ENQ-003` | GET | `/api/v1/me/enquiries/{enquiry}` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` owns enquiry | Get own enquiry detail | APPROVED |
+| `ENQ-004` | GET | `/api/v1/enquiries` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | List operational enquiries | APPROVED |
+| `ENQ-005` | GET | `/api/v1/enquiries/{enquiry}` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | Get operational enquiry | APPROVED |
+| `ENQ-006` | POST | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.manage` | Close enquiry `OPEN→CLOSED` (reopen `CLOSED→OPEN` optional) | APPROVED |
+| `ENQ-007` | POST | `/api/v1/enquiries/{enquiry}/attachments` | Enquiry | Anonymous* (scoped), Customer | **Scoped** — server-issued upload token (from `ENQ-001` response, single-use/time-limited) + parent ownership; same token model as `REQ-007` | Upload enquiry attachment — **preferred: multipart on `ENQ-001` creation**; separate `POST` only with scoped token, private to parent | APPROVED |
 | `NOT-001` | GET | `/api/v1/me/notifications` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own — **Customer**: own (customer notifications); **Staff**: `OPERATIONAL` own, recipient-scoped (operational notifications: new order/request/payment event); **Admin**: `ADMIN` limited own, recipient-scoped (administrative notifications as needed) | List own notifications (holder-scoped via `/me`, paginated) | PROPOSED |
 | `NOT-002` | PATCH | `/api/v1/me/notifications/{notification}` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (read/unread only) — **Customer**: own; **Staff**: `OPERATIONAL` own, recipient-scoped; **Admin**: `ADMIN` limited own, recipient-scoped | Mark notification read/unread (only `read`/`unread` mutable; content immutable) | PROPOSED |
 | `INV-001` | GET | `/api/v1/inventory` | Inventory | Staff, Admin | Yes | `OPERATIONAL` `inventory.view` | List inventory (operational) | PROPOSED |
@@ -3109,7 +3109,7 @@ Canonical `POST /api/v1/requests` JSON body (when no file) or multipart fields (
 | Field | Required | Type | Valid Values / Rule | Client Authority | Notes |
 |---|---|---|---|---|---|
 | `product_id` | **Conditional** | string \| null | Nullable. When supplied must be existing, `is_active:true` and `publicly requestable` with `product_type = MADE_TO_ORDER` — see §26.4. `null` or omitted = custom/general request not tied to catalog product. | Client supplies reference; server validates | Custom “Can you make something like this?” is valid without product |
-| `quantity` | **Optional** | integer | `1..100` positive integer when supplied. `0`, `-1`, `1.5`, `"2"` rejected `422 INVALID_VALUE`. When omitted defaults to `1` (server default) or remains `null` per resource; not authoritative final order quantity | Client | Request quantity is not order quantity, not inventory allocation |
+| `quantity` | **Optional** | integer | `1..100` positive integer when supplied. `0`, `-1`, `1.5`, `"2"` rejected `422 INVALID_VALUE`. When omitted remains `null` (unspecified, not implicitly `1`) — see `api-conventions.md §26.4` and `api-resources.md §5.1`; not authoritative final order quantity | Client | Request quantity is not order quantity, not inventory allocation |
 | `name` | **Yes** | string | Trimmed, non-empty, max 120 chars, Unicode safe. Collapses internal whitespace. | Client | Required for **both** Anonymous and Customer — explicit contact data kept self-contained even when authenticated (see §26.5) |
 | `phone` | **Conditional** | string | At least one of `phone` or `email` required. `phone` when supplied: normalized E.164-ish, trimmed, max 30 chars | Client | Staff needs reachable contact |
 | `email` | **Conditional** | string | At least one of `phone` or `email` required. When supplied: lowercased/trimmed, RFC-ish format, max 255 | Client | `phone+email` both valid |
@@ -3119,7 +3119,7 @@ Canonical `POST /api/v1/requests` JSON body (when no file) or multipart fields (
 | `notes` | **Optional** | string | Free text, trimmed, max 5000 chars, safe handling (no HTML/SQL/code execution). Newlines preserved where meaningful. | Client | Human description |
 | `attachment` | **Optional** | file | Via `multipart/form-data` field `attachment` inline on creation (preferred) — see §26.8. Not JSON string | Client | One attachment per creation in V1 |
 | `user_id` | **Prohibited** | — | Never client-supplied; derived server-side `user_id = authenticated principal` or `null` | **Server derives** | `{"user_id":"..."}` rejected `422` |
-| `status` | **Prohibited** | — | Server-controlled `request_status`; if sent rejected `422` | **Server** | See §26.10 |
+| `request_status` | **Prohibited** | — | Server-controlled `request_status`; if sent rejected `422` (`field: request_status`) | **Server** | See §26.10 |
 | `order_id` / `payment_*` / `delivery_fee` | **Prohibited** | — | Request never creates order/payment/fee; if sent rejected | **Server** | See §26.11 |
 | `internal_notes` / `staff_internal_notes` | **Prohibited** | — | Customer/anonymous cannot set internal notes | **Staff/Admin** | See §26.9 |
 | `created_at` / `updated_at` | **Prohibited** | — | Server-generated ISO8601 `Z` | **Server** | |
@@ -3194,14 +3194,14 @@ This avoids a huge furniture-configuration DSL while giving Staff measurable int
 
   | Field | Staff writable? | Customer writable? | Notes |
   |---|---|---|---|
-  | `status` | Limited (controlled transition `SUBMITTED→IN_REVIEW→CLOSED`) | No | Via controlled values only, not arbitrary text |
+  | `request_status` | Limited (controlled transition `SUBMITTED→IN_REVIEW→CLOSED`) | No | Via controlled values only, not arbitrary text; request body field is `request_status` |
   | `staff_internal_notes` | Yes | No | Separated from `customer_notes`; never exposed to customer |
   | `customer_notes` / original description | No (preserve history) | No (submitted is immutable) | Original remains reconstructable |
   | `product_id` / `quantity` / `dimensions` / `material` / `color` | Read | Read | Customer-provided data preserved |
   | `user_id` / `ownership` | No | No | Never change |
   | `order_id` / `payment_*` | No* | No | `*` only via separately approved Request-to-Order workflow (see §26.11) |
 
-- `PATCH` with `status` arbitrary value beyond CLOSED enum → `422 INVALID_VALUE`. Status changes use `request_status` CLOSED.
+- `PATCH` with `request_status` arbitrary value beyond CLOSED enum → `422 INVALID_VALUE` (`field: request_status`). Status changes use `request_status` CLOSED.
 - Original submission remains reconstructable: staff edits do not silently destroy historical context. Preserve `customer said: "Need 2.2m walnut table"` semantics.
 
 ### 26.10 Request Status — Minimal V1 CLOSED Enum (Formally Approved — resolves §43-44 deferral)
@@ -3215,8 +3215,8 @@ SUBMITTED → IN_REVIEW → CLOSED
 | Status | Meaning | Set by | Terminal? |
 |---|---|---|---|
 | `SUBMITTED` | New intake, staff has not yet reviewed | Server at creation (default) | No |
-| `IN_REVIEW` | Staff has opened/acknowledged and is handling | Staff via `REQ-006` `status: IN_REVIEW` | No |
-| `CLOSED` | Staff has completed handling / closed intake | Staff via `REQ-006` `status: CLOSED` | Yes |
+| `IN_REVIEW` | Staff has opened/acknowledged and is handling | Staff via `REQ-006` `request_status: IN_REVIEW` | No |
+| `CLOSED` | Staff has completed handling / closed intake | Staff via `REQ-006` `request_status: CLOSED` | Yes |
 
 - **CLOSED enum:** Only `SUBMITTED`, `IN_REVIEW`, `CLOSED` are valid (`UPPER_SNAKE_CASE`, CLOSED). `QUOTED`/`APPROVED`/`REJECTED`/`PRODUCING` and similar workflow states are **not** valid in V1 and must not be introduced by clients. Introducing a new status is a compatibility decision.
 - **Progression:** `SUBMITTED→IN_REVIEW→CLOSED` is expected. `IN_REVIEW→SUBMITTED` rejected `409 INVALID_REQUEST` / `CONFLICT`. Direct `SUBMITTED→CLOSED` is permitted for simple close without intermediate review. No `CLOSED`→any transition.
@@ -3415,7 +3415,7 @@ Only add codes with actual utility per `§15.15`; `PRODUCT_NOT_REQUESTABLE` dist
 | View own Request (`REQ-003`) | No | **Yes** (404 masked if not own) | No | Authorized |
 | List operational Requests (`REQ-004`) | No | No | **Yes** (`requests.view`) | **Yes** |
 | View operational Request (`REQ-005`) | No | No | **Yes** (`requests.view`) | **Yes** |
-| Modify operational fields (`REQ-006`) | No | No/limited (not `status`/`internal_notes`/`ownership`) | **Yes** (`requests.manage`) | **Yes** |
+| Modify operational fields (`REQ-006`) | No | No/limited (not `request_status`/`internal_notes`/`ownership`) | **Yes** (`requests.manage`) | **Yes** |
 | Upload attachment (`REQ-007`) | **Scoped** token only | According to parent | According to parent | According to parent |
 | Manage customer account (request context) | No | Own only | No (staff cannot change ownership/credentials) | Authorized only |
 
@@ -3436,8 +3436,412 @@ Within `v1`, do not change without compatibility review: `field type`, `field me
 - Resources: `api-resources.md §5` (Request, Request Attachment — ownership, relationships, public/private classification, customer/staff/admin representations, mutable/immutable, dimensions, status).
 - Conventions: `api-conventions.md §26` (anonymous creation, customer ownership, private data, attachment authorization, operational representation, dimensions canonical `cm`, free-text material/color, status CLOSED).
 - Domain: `business-rules.md §9` (Made-to-Order: anonymous allowed, product-linked or custom, no Order/inventory/payment, optional attachments, staff operational handling).
-- Decisions: `decisions.md ADR/API-REQ-001..ADR/API-REQ-007` (anonymous requests, ownership, not an order, no inventory, optional attachments, no anonymous retrieval, payment separation).
-- Order: `§24` historical records distinct from Request; Payment `Group H`; Tracking `§25` not Request.
+- Decisions: `decisions.md ADR/API-REQ-001..ADR/API-REQ-011` (anonymous requests, ownership, not an order, no inventory, optional attachments, no anonymous retrieval, payment separation, dimensions, product optional).
+- Order: `§24` historical records distinct from Request; Payment `Group H`; Tracking `§25` not Request; Enquiry `§27` separate communication.
 - Links to Conventions & Resources updated: `§20` now includes Request conventions `§26`.
+
+---
+
+## 27. General Enquiry API Contract (Phase 1.26)
+
+> **Authority:** Canonical domain API contract for the **General Enquiry** subsystem (`ENQ-001`..`ENQ-007`). Consolidates `phases/phase-1.26.md` and is consistent with `Catalog` (`§21`), `Cart` (`§22`), `Checkout` (`§23`), `Order` (`§24`), `Request` (`§26` — separate intent), `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`).
+> **Core Principle:** A General Enquiry is a **request for information or communication with the business** — a private business communication. It is **not** a purchase, **not** a quote, **not** a product request, **not** an order, **not** a payment, **not** a support contract. Anonymous and authenticated visitors may submit enquiries; authenticated enquiries are customer-owned and retrieveable only by owner; Staff handle operationally.
+
+### 27.1 Enquiry Endpoint Inventory (Authoritative — aligned with Phase 1.19 `§19.1`)
+
+Enquiry endpoints `ENQ-001`..`ENQ-005` are **`APPROVED`** (complete V1 Enquiry contract — finalized in Phase 1.26). `ENQ-006` (staff close/reopen) and `ENQ-007` (attachment upload) are **`APPROVED`** where documented. This supersedes the provisional `PROPOSED` label in `§19.1` for the Enquiry domain; `§19.15` remains `PROPOSED` only for domains not yet finalized. Clients may consume `ENQ-001`..`ENQ-007` as authoritative.
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `ENQ-001` | `POST` | `/api/v1/enquiries` | Anonymous, Customer | **Optional** | **PUBLIC** submit (validated + anti-abuse) | Submit general enquiry (anonymous allowed) | **None required** — not idempotent by default (duplicate tap may create second enquiry; see §27.15) | Low |
+| `ENQ-002` | `GET` | `/api/v1/me/enquiries` | Customer | Required | `AUTHENTICATED_OWNER` own enquiries | List own enquiries (paginated) | — | — |
+| `ENQ-003` | `GET` | `/api/v1/me/enquiries/{enquiry}` | Customer | Required | `AUTHENTICATED_OWNER` owns enquiry (404 masked) | Get own enquiry detail | — | — |
+| `ENQ-004` | `GET` | `/api/v1/enquiries` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | List operational enquiries (staff queue) | — | — |
+| `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | Get operational enquiry detail | — | — |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` (+ optional `reopen`) | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Close / reopen enquiry (controlled state `OPEN→CLOSED`→`OPEN` where approved) | Designed idempotent | Low/Medium (race `Staff A close + Staff B close`) |
+| `ENQ-007` | `POST` | `/api/v1/enquiries/{enquiry}/attachments` | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** | **Scoped upload token** + parent ownership; predictable ID alone insufficient | Upload enquiry attachment — preferred is inline multipart on `ENQ-001`; separate `POST` only with scoped token, private to parent | — | — |
+
+`*` `ENQ-007` anonymous path requires server-issued upload token returned on `ENQ-001` creation (single-use/time-limited); see §27.8.
+
+*Notes:* `GET /enquiries/{enquiry}` is **not** automatically public; `GET /me/enquiries` is ownership-scoped. No `GET /enquiries` for anonymous. Canonical resource is `/enquiries` (not `/contacts`/`/messages`/`/support`). `ENQ-001` is the `PUBLIC` anonymous creation entry point; all other reads are authenticated + authorized. Enquiry is separate from `Request` (`REQ-001`) — do not merge (§27.11).
+
+### 27.2 Endpoint ENQ-001 — Submit General Enquiry (Public, Anonymous Allowed)
+
+| Attribute | Version 1 Contract |
+|---|---|
+| **ID** | `ENQ-001` |
+| **Method** | `POST` |
+| **Path** | `/api/v1/enquiries` |
+| **Domain** | Enquiry (communication, not purchase) |
+| **Actor** | `Anonymous` or `Customer` (authenticated) |
+| **Authentication** | **Optional** — `Anonymous` allowed with contact; `Customer` where `Authorization: Bearer` present |
+| **Authorization** | **PUBLIC** submit — no prior auth; anti-abuse/rate-limit candidate (see §27.15) |
+| **Purpose** | Submit a general enquiry to the business; becomes private operational communication |
+| **Request body** | JSON `application/json` preferred; `multipart/form-data` where inline attachment sent (see §27.8) |
+| **Response** | `201 Created` `{"data": {Enquiry}}` — same envelope `data`; includes `id`, `enquiry_status`, `created_at`, safe submission fields (`subject`, `message`, `product`/`order` reference where supplied, `attachment` metadata). No `staff notes`, no credentials |
+| **Idempotency** | Not required in V1; duplicate submission creates distinct enquiry (see §27.15); future `Idempotency-Key` optional |
+| **Caching** | Not cacheable — creation, `Cache-Control: private, no-store` |
+| **Boundaries** | Creates **no** Order, **no** Payment, **no** inventory reservation, **no** cart |
+
+**Why optional auth:** Visitor must move directly from `Contact / Enquiry` form → submit without forced registration. Anonymous `user_id = null` is valid; authenticated `Enquiry.user_id = authenticated principal` derived server-side, never from `{"user_id":"..."}`.
+
+### 27.3 Input Fields — Allow-List & Server-Controlled (ENQ-001)
+
+Canonical `POST /api/v1/enquiries` JSON body (when no file) or multipart fields (when file):
+
+```json
+{
+  "name": "Asha Mwangi",
+  "email": "asha@example.com",
+  "phone": "+255700000001",
+  "subject": "Do you deliver to Dodoma?",
+  "message": "Hello, I would like to know if you deliver the Modern Sofa to Dodoma and what the delivery time would be.",
+  "category": "DELIVERY",
+  "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+  "order_id": "ord_01h8y5a...",
+  "attachment": "(file)"
+}
+```
+
+| Field | Required | Type | Valid Values / Rule | Client Authority | Notes |
+|---|---|---|---|---|---|
+| `name` | **Yes (anonymous)** / **Optional/derived (authenticated)** | string | Trimmed, non-empty, max 120 chars, Unicode safe. Collapses internal whitespace. When authenticated and omitted, server derives from profile `name` if available. | Client (anonymous required, customer optional) | Self-contained contact snapshot; derived where not supplied |
+| `email` | **Conditional** | string \| null | At least one of `email` or `phone` required for **anonymous**; for **authenticated**, optional if profile provides contact, otherwise at least one required. When supplied: lowercased/trimmed, RFC-ish format, max 255 | Client | Staff needs reachable channel |
+| `phone` | **Conditional** | string \| null | At least one of `email` or `phone` required for anonymous; authenticated optional/derived. When supplied: normalized E.164-ish, trimmed, max 30 chars | Client | `phone+email` both valid |
+| `subject` | **Yes** | string | Required, trimmed, non-empty, min 5, max 200 chars. Not HTML. Not unconstrained blob. | Client | Useful for staff triage |
+| `message` | **Yes** | string | Required, trimmed, min 10, max 5000 chars. Plain text only in V1 (no Markdown/HTML). Newlines preserved where meaningful. Safe handling (no code/script execution). | Client | Customer enquiry body |
+| `category` | **Optional** | enum CLOSED \| null | When supplied must be `GENERAL`, `PRODUCT`, `DELIVERY`, `OTHER` (`UPPER_SNAKE_CASE`, CLOSED). `REFUND`, `COMPLAINT` etc. not valid unless explicitly approved. `null`/omitted = no category | Client | Simple triage, not full CRM taxonomy (see §27.5) |
+| `product_id` | **Optional** | string \| null | When supplied must be existing, `is_active:true` and `is_published:true` **public** product. Validated `exists + publicly visible` (see §27.6); not restricted to `IN_STOCK`/`MADE_TO_ORDER` — any public product reference is allowed for enquiry. `IN_STOCK`/`MADE_TO_ORDER` distinction not used to reject enquiry. `null`/omitted = general enquiry without product link | Client supplies reference; server validates | Optional context "Can you tell me more about this sofa?" |
+| `order_id` | **Optional** | string \| null | When supplied must be existing Order **owned by authenticated customer** (see §27.7). Anonymous `order_id` limited: anonymous enquiries may reference an `order_id` only where business approves order-specific support and `order_id` is validated without leaking ownership; in V1 **anonymous `order_id` is discouraged** and when supplied must still pass ownership check when authenticated. Unowned/unknown `order_id` → `404`/`422` ownership handling (see §27.14). `null`/omitted = not about a specific order | Client | Optional "I have a question about my order" |
+| `attachment` | **Optional** | file | Via `multipart/form-data` field `attachment` inline on creation (preferred) — see §27.8. Not JSON string | Client | 0 or 1 attachment per creation in V1 |
+| `user_id` | **Prohibited** | — | Never client-supplied; derived server-side `user_id = authenticated principal` or `null` | **Server derives** | `{"user_id":"..."}` rejected `422` |
+| `enquiry_status` | **Prohibited** | — | Server-controlled `OPEN`/`CLOSED`; if sent rejected `422` (`field: enquiry_status`) | **Server** | See §27.9 |
+| `staff_internal_notes` / `internal_notes` | **Prohibited** | — | Customer/anonymous cannot set internal notes | **Staff/Admin** | See §27.10 |
+| `payment_*` / `delivery_fee` / `order_reference` | **Prohibited** | — | Enquiry never creates order/payment/fee; if sent rejected | **Server** | See §27.11 |
+| `created_at` / `updated_at` | **Prohibited** | — | Server-generated ISO8601 `Z` | **Server** | |
+| *Unknown fields* | — | — | Strict rejection `422 INVALID_VALUE` + `field` per `§13.14` | — | Catches typos, stale clients |
+
+**Contact requiredness (normative for Enquiry — per phase-1.26 §19-21, §97):** For **anonymous**, `name` required and at least one of `phone`/`email` required. For **authenticated**, `name`/`email`/`phone` are **Optional/derived** — server derives trusted account identity and uses profile contact where not explicitly supplied, while still capturing contact snapshot actually provided. Historical contact snapshot is recorded as part of enquiry submission where provided. `name` trimmed max 120, `phone` normalized max 30, `email` lowercased max 255. Anonymous `user_id = null` is valid; customer `user_id` derived.
+
+**Contact rule (authenticated):** Authenticated customer may omit `name`/`email`/`phone` where account already provides reachable contact channel; backend associates enquiry with `user_id` automatically and records `contact snapshot` from payload if supplied (preserved historically), otherwise relies on derived account identity internally. The request contract captures contact details actually needed for communication — minimal requirement clearly documented above.
+
+### 27.4 Enquiry vs Made-to-Order Request — Explicit Separation
+
+| Concept | Customer asks | Resource | Result |
+|---|---|---|---|
+| **Made-to-Order Request** (`REQ-001`) | "Can you make this furniture?" | `/requests` | Intake for production on request; may include dimensions/material/color; not an order |
+| **General Enquiry** (`ENQ-001`) | "What time do you open?" / "Do you deliver to Dodoma?" / any general business question | `/enquiries` | Communication; no product manufacturing implied |
+
+- Do not merge `Enquiry` and `Request` into one generic `communication` resource.
+- No automatic `Enquiry → Request` or `Request → Enquiry` conversion without explicit business action (distinct intents).
+- An enquiry may mention an existing Order (`order_id` optional) but that does not make it an Order operation nor allow Order modification.
+
+### 27.5 Category — Simple, Optional, CLOSED
+
+- Version 1 may use minimal triage enum `GENERAL`, `PRODUCT`, `DELIVERY`, `OTHER` (`UPPER_SNAKE_CASE`, CLOSED). This is **optional** to include; Staff can triage via `subject`/`message` alone if category does not add operational value.
+- If no category supplied, enquiry is `category = null` (valid).
+- Do **not** create large support taxonomy `PRODUCT_AVAILABILITY`, `DELIVERY_DELAY`, `PAYMENT_PROBLEM`, `ACCOUNT_PROBLEM`, `COMPLAINT`, `REFUND` etc. without operational justification.
+- Adding a new category value is a compatibility decision (CLOSED).
+
+### 27.6 Product Association — Optional, Validated, Not Required
+
+- When `product_id` supplied:
+  - Product must exist and be `is_active: true` and `is_published: true` and publicly visible.
+  - No `product_type` restriction — both `IN_STOCK` and `MADE_TO_ORDER` products may be referenced for enquiry context (question about availability, details, etc.). This differs from Request where `product_id` must be `MADE_TO_ORDER` only.
+  - Do not require `product_id` for every enquiry; general contact enquiries omit it.
+- When `product_id` is `null`/omitted: general business enquiry — valid. Relies on `subject`/`message` + contact.
+
+### 27.7 Order Association — Optional, Ownership-Validated
+
+- When `order_id` supplied:
+  - For **authenticated Customer**: Order must exist **and** be **owned by authenticated principal** (`Enquiry.order.customer_id == auth principal`). `Customer A → Order B` (someone else's order) must be **rejected or 404-masked** to avoid leaking `Order OD-xxx exists` — knowing an `order_id` is not authorization (see §27.14). Staff/admin may have broader operational access per `orders.view_operational`.
+  - For **anonymous**: `order_id` association is **discouraged** in V1; if later supported for "I have a question about order X" without account, it must use a secure order-access token mechanism, not raw enumeration. In V1, anonymous `order_id` when supplied is validated but not treated as ownership proof.
+- Multiple associations (`product_id` + `order_id` simultaneously) are allowed where both are meaningful (e.g., "Question about Product X in my Order OD-123"); `cart_id`/`payment_id`/`request_id` associations are **not** added in V1 — keep relationships intentional, only `product_id` and `order_id` optional.
+
+### 27.8 Attachments — Optional, Inline Multipart Preferred, Private
+
+- **Optional:** Enquiry may have `0` or `1` attachment on creation in V1 (multiple deferred).
+- **Preferred transport:** `multipart/form-data` inline with `ENQ-001` creation (field `attachment`). Do not invent pre-upload-then-attach flow; single-request flow is simpler and shares architecture with `REQ-001`.
+- **Separate upload (`ENQ-007`):** `POST /api/v1/enquiries/{enquiry}/attachments` with `multipart/form-data` field `attachment`. Requires **scoped server-issued upload token** (single-use/time-limited token returned in `ENQ-001` `201` response — not predictable enquiry `id` alone). Scoped token + parent ownership checked atomically. Anonymous `ENQ-007` requires that token; otherwise `401/404`.
+- **Security:** Validate `file size` (max `5 MB` V1), `allowed types` (`image/jpeg`, `image/png`, `image/webp`, `application/pdf` allow-list), `actual content signature` (client MIME/extension not trusted), filename sanitized, storage authorization. `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE`.
+- **Authorization (inheritance):** Inherits Enquiry authorization — `Customer → own enquiry attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → scoped token only / no automatic retrieval`. No permanent public attachment URLs; later may use signed/temporary URLs.
+- **Metadata exposure:** `filename/display name, content_type, size` only where authorized; never internal storage keys. Same file strategy as `REQ-007` — no second upload architecture.
+
+### 27.9 Enquiry Status — Minimal V1 CLOSED `OPEN`/`CLOSED`
+
+Version 1 defines minimal operational state:
+
+```
+OPEN → CLOSED
+```
+
+| Status | Meaning | Set by | How |
+|---|---|---|---|
+| `OPEN` | New enquiry requiring staff attention | Server at creation (default) | `ENQ-001` creates `OPEN` |
+| `CLOSED` | Staff has handled / closed enquiry | Staff/Admin via `ENQ-006` | `POST /enquiries/{enquiry}/close` |
+
+- **CLOSED enum:** Only `OPEN`, `CLOSED` are valid (`UPPER_SNAKE_CASE`, CLOSED). Do not invent `ASSIGNED`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `ESCALATED`, `RESOLVED`, `SUBMITTED` for enquiry (that belongs to Request). `OPEN`/`CLOSED` is sufficient if staff only need `needs attention` boolean.
+- **Reopen (optional):** `POST /enquiries/{enquiry}/reopen` (`ENQ-006` variant) may transition `CLOSED→OPEN` for authorized Staff/Admin if business actually needs reopening; in V1 **optional** — if not approved, `CLOSED` is terminal and `OPEN → CLOSED` is the only transition.
+- **Customer cannot set status:** `{"enquiry_status":"CLOSED"}` from customer/anonymous on creation or via `PATCH` is rejected `422` (`field: enquiry_status`). Status changes only via controlled `ENQ-006` staff action (see also §27.10).
+- **Not a second state machine:** Do not use `SUBMITTED`/`IN_REVIEW` (Request) for enquiry — each domain keeps its own minimal state.
+
+**State transition matrix (V1):**
+
+| Current | Action | Actor | Next | Code if invalid |
+|---|---|---|---|---|
+| `OPEN` | Close | Staff/Admin (`enquiries.manage`) | `CLOSED` | — |
+| `CLOSED` | Reopen (if approved) | Authorized Staff/Admin | `OPEN` | `409 CONFLICT` / `INVALID_ENQUIRY` if not approved |
+
+If reopen not approved, table is simply `OPEN → CLOSED`.
+
+### 27.10 Staff Operational Handling — ENQ-006 (Controlled)
+
+- **Staff view/read:** `ENQ-004`/`ENQ-005` see contact (`name`, `email`, `phone`), `subject`, `message`, optional `product`/`order` reference with validated product info and order summary, `attachments` (metadata), `enquiry_status`, `timestamps` — operational, not ownership.
+- **Staff mutation:** `POST /api/v1/enquiries/{enquiry}/close` (ENQ-006) and optional `reopen` may update only operational fields:
+
+  | Field | Staff writable? | Customer writable? | Notes |
+  |---|---|---|---|
+  | `enquiry_status` | Limited (`OPEN→CLOSED`, optional `CLOSED→OPEN` if approved) — controlled actions | No | Via `POST /close`/`reopen`, not generic `PATCH {status}` |
+  | `staff_internal_notes` | Yes where authorized | No | Separated from customer `message`; never exposed to customer |
+  | `message` / `subject` / contact snapshot | No (preserve history) | No (submitted is immutable) | Original enquiry preserved |
+  | `product_id` / `order_id` | Read | Read | Validated references preserved |
+  | `user_id` / `ownership` | No | No | Never change |
+  | `payment_*` / `order_status` | No | No | Enquiry cannot modify order/payment |
+
+- `PATCH` with arbitrary `status` beyond CLOSED enum → `422 INVALID_VALUE`. Prefer `POST /enquiries/{enquiry}/close` over `PATCH {status:"CLOSED"}` for explicit business action if staff closing represents a distinct operation.
+- Original submission immutable: staff edits must not silently destroy historical `customer said: "Do you deliver to Dodoma?"`.
+- Internal notes are separate representation — `internal_notes` must not appear in customer response (`ENQ-002`/`ENQ-003`).
+- No messaging thread in V1: Staff response can initially occur through ordinary business contact process (email/phone), not in-app conversation (`Phase Group R` deferred). Do not implement chat.
+
+### 27.11 What Enquiry Is Not — Explicit Boundaries
+
+- **Not an Order:** Submitting an enquiry does not `reserve inventory`, `create Order`, `charge payment`. No `order_id` creation.
+- **Not a Quote/Purchase:** No `quoted_price`, `payment_*`, `delivery_fee`, `product_type` purchase effect.
+- **Not a Request:** `Request` asks "Can you make this furniture?" with dimensions/material/color; `Enquiry` asks general business information — separate workflows.
+- **Not Cart/Checkout/Payment:** `Cart`/`Checkout` (`CHK-001`)/`Payment` (`Group H`) remain distinct; no `cart_id`/`payment_id` in enquiry.
+- **Not Order Support that Modifies Order:** An enquiry may mention an Order but does not authorize arbitrary `update order status` / `create_order:true` via enquiry. Order-specific support remains Order-linked, not enquiry-driven.
+- **Not Inventory:** Zero stock effect.
+
+### 27.12 Customer Retrieval — Ownership-Scoped
+
+- `ENQ-002 GET /api/v1/me/enquiries` and `ENQ-003 GET /api/v1/me/enquiries/{enquiry}` are `AUTHENTICATED_OWNER` — only authenticated Customer's own enquiries.
+- `customer_id` swapping (`?user_id=another`, `{"user_id":"..."}`) rejected; `Customer A → Customer B enquiry` fails `404 ENQUIRY_NOT_FOUND` / `RESOURCE_NOT_FOUND` (masked per `§15.8`) never `403` enumeration.
+- Anonymous enquiries (`user_id null`) do **not** appear in `GET /me/enquiries` unless a secure claim/link mechanism is explicitly introduced later (deferred).
+- Customer history is paginated (`page`/`per_page` 1–100 → `meta.pagination`) if it can grow; sorting `created_at DESC, id ASC` (newest first) by convention.
+
+### 27.13 Anonymous Retrieval — Not Supported Without Secure Mechanism
+
+- V1: **No anonymous `GET /enquiries/{enquiry}`.** Predictable `ENQ-...` or numeric ID must not become a password. Anonymous enquiry creation is supported; anonymous retrieval is **not supported** unless a secure retrieval mechanism is explicitly approved.
+- If later needed, requires `secure token / one-time link / verified contact mechanism` — out of scope and must be explicitly contracted.
+- Anonymous callers receive `401 AUTHENTICATION_REQUIRED` / `404 RESOURCE_NOT_FOUND` on `GET /enquiries` and `GET /enquiries/{enquiry}` unless scoped token path.
+
+### 27.14 Staff/Admin Retrieval & Access Levels
+
+- `ENQ-004 GET /api/v1/enquiries` and `ENQ-005 GET /api/v1/enquiries/{enquiry}` are `OPERATIONAL` `enquiries.view` — paginated, filtered, newest-first. Staff sees contact, product/order context, attachments, internal notes where authorized. Admin broader but still `authorized + auditability + data minimization`.
+- **Staff queue filtering (allow-list):** `search` (name/email/phone/subject/message/reference, order ref), `enquiry_status` CLOSED (`OPEN`/`CLOSED`), `category` CLOSED where used, `product_id`, `order_id`, `created_from`/`created_to` ISO8601 `Z`, `sort`/`sort_direction`, `page`/`per_page`. Unknown filter → `422`. Search constrained to authorized Staff dataset, not global customer database search.
+- Staff cannot use enquiry access to: `change customer role`, `change customer password`, `block customer`, `restrict browsing`, `restrict ordering` — explicit authorization boundary.
+- Admin has legitimate higher authorization (audit `actor/action/resource/target/timestamp/result`) but still data-minimized; no blanket exposure of unrelated account data.
+
+### 27.15 Privacy, Caching, Abuse & Idempotency
+
+- **Private data:** Enquiry contact (`name`, `phone`, `email`), subject/message, product/order association, attachments are `PRIVATE` — never exposed via public Catalog, never indexed for SEO. Classification: `Catalog → PUBLIC`, `Enquiry → PRIVATE` (`CUSTOMER-PRIVATE` own, `STAFF-OPERATIONAL` authorized, `ADMINISTRATIVE` authorized, `INTERNAL` private). `Cache-Control: private, no-store` for `ENQ-002/003` (own) and `ENQ-004/005` operational. Not CDN public.
+- **Field-level exposure:** Customer view excludes `staff_internal_notes`, `internal_tags`; staff view includes as authorized; anonymous creation response excludes internal fields. No `password`/`hash`/`tokens`/`secrets` ever.
+- **Abuse surface:** Anonymous `POST /enquiries` is public mutation → `RATE-LIMIT CANDIDATE` (high priority). Later implementation considers `per-IP throttling, spam prevention, request-size limits, attachment limits` — identified, not implemented. CAPTCHA deferred unless rate-limit insufficient.
+- **Idempotency:** `POST /enquiries` is **not inherently idempotent** — duplicate submit after timeout may create two enquiries. Duplicate enquiry risk is operational noise, not hard uniqueness constraint on `email+message` (legitimate repeated enquiries can occur). Future `Idempotency-Key` optional; do not use `email+message` uniqueness as idempotency. Attachment retries can duplicate files — upload/idempotency strategy accounts for that later.
+- **Message safety:** Treat `message`/`subject` as untrusted input — not interpreted as code/HTML/SQL/file-path/query syntax; backend validates and stores safely; frontend escapes. HTML/Markdown **plain text only** in V1 (not Markdown/HTML) — reduces attack surface and complexity.
+- **Concurrency:** Enquiry intake low concurrency; operational `POST .../close` race `Staff A close + Staff B close` treated as state-transition concurrency (`409 CONFLICT`).
+
+### 27.16 Query, Pagination, Filter, Search, Sorting — Global Conventions
+
+- **Collection pagination:** `ENQ-002` (customer) and `ENQ-004` (staff) use `page`/`per_page` (1–100) → `meta.pagination` per `§4` / `api-conventions.md §11`.
+- **Staff filters (allow-list, §27.14):** `search`, `enquiry_status` CLOSED (`OPEN`/`CLOSED`), `category` CLOSED where used, `product`/`order` references, `created_from`/`created_to` ISO8601 `Z`, `sort` / `sort_direction`, `page`/`per_page`. Unknown filter → `422`.
+- **Customer filters:** implicitly scoped to own; `search` limited to own dataset.
+- **Sorting:** `created_at DESC, id ASC` (newest first) default for both staff queue and customer history; `id ASC` tie-breaker; no DB natural order.
+- **No enquiry-specific pagination format** — global reuse (`meta.pagination`).
+
+### 27.17 Enquiry and Customer Account — Ownership Derivation
+
+- Authenticated enquiry `Enquiry.user_id = authenticated principal` server-derived (own). `Anonymous enquiry.user_id = null`.
+- Customer retrieval `ENQ-002/003` verifies `owns` before serialization; `Customer A → Customer B enquiry` fails `404`.
+- `email = customer's email` is **not** ownership proof for anonymous retrieval — email is contact, not authentication. Anonymous → authenticated transition does not auto-attach old anonymous enquiries by email match (privacy). See §27.12/§27.13.
+- Enquiry `user_id` knowledge or `order_id` knowledge alone is not authorization — validated via ownership + authz.
+
+### 27.18 Validation — Layered (per §14)
+
+```
+Transport (JSON/multipart, size) → Schema (types/enums/contact) → Auth (optional) → Authorization (PUBLIC create vs owns OPERATIONAL read) → Domain (contact valid, subject/message bounds, category CLOSED, product exists when linked, order ownership when linked, attachment safe, plain-text) → Concurrency (low) → Persistence → (Notification later)
+```
+
+- **Contact (anonymous vs customer, per §27.3):** Anonymous: `name` required + at least one of `phone`/`email`; Customer: `name` optional/derived, `phone`/`email` optional/derived, at least one reachable contact via derived + supplied must exist. `phone+email` both valid.
+- **Cross-field:** `product_id` supplied → validated public product; `order_id` supplied → validated ownership when authenticated.
+- **Conditional:** `category` optional CLOSED; `attachment` optional file.
+- **State-dependent:** `POST .../close` validates current `enquiry_status == OPEN`; `CLOSED→CLOSED` replay is idempotent where approved, otherwise `409`.
+- **Message/Subject constraints:** `subject` 5–200, `message` 10–5000, plain text only, not interpreted as HTML/Markdown; server validates and stores safely; do not silently transform meaningful customer text (validation + safe storage + safe output encoding, not destructive sanitization).
+- **Enquiry remains lightweight:** No `payment*`/`delivery_fee`/`order_status` in payload; no `request_id` linkage in V1 (intentional relationship, only `product_id`/`order_id` where valuable).
+
+### 27.19 Errors — Common Error Contract (`data` vs `errors`)
+
+Uses `{"data":…}` success and `{"errors":[…],"meta":{"request_id":…}}` failure per `§15`.
+
+| Failure | API `code` | HTTP |
+|---|---|---|
+| Missing required `name` (anonymous) or `subject`/`message` | `MISSING_REQUIRED_FIELD` (`field: name` / `field: subject` / `field: message`) | 422 |
+| Anonymous without `phone` and `email` | `MISSING_REQUIRED_FIELD` (`field: phone` / `field: email`) | 422 |
+| Invalid format/type (`email` bad, `phone` bad, `category` unknown) | `INVALID_FORMAT` / `INVALID_TYPE` / `INVALID_VALUE` | 422 |
+| `product_id` not found / inactive / not publicly visible | `RESOURCE_NOT_FOUND` / `PRODUCT_NOT_FOUND` / `INVALID_ENQUIRY` | 404 / 422 |
+| `order_id` not found / not owned | `ORDER_NOT_FOUND` / `RESOURCE_NOT_FOUND` / `INVALID_ENQUIRY` (404 **masked** per §15.8, not `403` when ownership fails) | 404 |
+| Invalid attachment (size/type/signature/filename) | `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE` | 422 / 413 |
+| Not authenticated where required (`GET /me/enquiries`) | `AUTHENTICATION_REQUIRED` | 401 |
+| Authenticated but not owner (`Customer A → B enquiry`) | `ENQUIRY_NOT_FOUND` / `RESOURCE_NOT_FOUND` (404 **masked**, never `403`) | 404 |
+| Staff without `enquiries.view` / `enquiries.manage` | `FORBIDDEN` | 403 |
+| Invalid `enquiry_status` / `category` enum | `INVALID_VALUE` (`field: enquiry_status` / `field: category`) | 422 |
+| Invalid Enquiry transition (`CLOSED→CLOSED` re-close without idempotency, or `OPEN→OPEN`) | `INVALID_ENQUIRY` / `CONFLICT` | 409 |
+| Anonymous `GET /enquiries` / `GET /enquiries/{id}` | `AUTHENTICATION_REQUIRED` / `RESOURCE_NOT_FOUND` | 401/404 |
+| Rate limited (anonymous spam) | `RATE_LIMITED` + `Retry-After` | 429 |
+| Unexpected | `INTERNAL_SERVER_ERROR` + `meta.request_id` | 500 |
+
+Only add codes with actual utility per `§15.15`; `INVALID_ENQUIRY` is enquiry-specific invalid payload/state (distinct from `INVALID_REQUEST`).
+
+### 27.20 Representations & Response Examples
+
+**Customer created (ENQ-001 anonymous or authenticated — fields as authorized):**
+
+```json
+{
+  "data": {
+    "id": "enq_01h8y5a1b2c3d4e5f6g7h8j9",
+    "name": "Asha Mwangi",
+    "email": "asha@example.com",
+    "phone": "+255700000001",
+    "subject": "Do you deliver to Dodoma?",
+    "message": "Hello, I would like to know if you deliver the Modern Sofa to Dodoma and what the delivery time would be.",
+    "category": "DELIVERY",
+    "product": {
+      "id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+      "name": "Modern 3-Seater Fabric Sofa",
+      "slug": "modern-3-seater-fabric-sofa"
+    },
+    "order": null,
+    "enquiry_status": "OPEN",
+    "attachments": [
+      { "id": "att_01h...", "filename": "reference.jpg", "content_type": "image/jpeg", "size": 843210 }
+    ],
+    "created_at": "2026-09-01T10:15:00Z",
+    "updated_at": "2026-09-01T10:15:00Z"
+  }
+}
+```
+
+- `product` is `{id,name,slug}` summary where `product_id` supplied, `null` otherwise; `order` is `{id,order_reference,status}` summary where `order_id` supplied and validated, `null` otherwise.
+- Customer summary where history shows same `subject`/`message` limited.
+- Anonymous `ENQ-001` response may omit reversible anonymous-retrieval token (deferred) — ID alone is not bearer.
+
+**Customer summary (ENQ-002 collection) — lighter:**
+
+```json
+{
+  "data": [
+    {
+      "id": "enq_01h8y5a1b2c3d4e5f6g7h8j9",
+      "subject": "Do you deliver to Dodoma?",
+      "enquiry_status": "OPEN",
+      "created_at": "2026-09-01T10:15:00Z"
+    }
+  ],
+  "meta": {
+    "pagination": { "current_page": 1, "per_page": 20, "total": 3, "last_page": 1, "has_next": false, "has_previous": false }
+  }
+}
+```
+
+**Staff detail (ENQ-005) — adds contact + internal where authorized:**
+
+```json
+{
+  "data": {
+    "id": "enq_01h8y5a1b2c3d4e5f6g7h8j9",
+    "name": "Asha Mwangi",
+    "email": "asha@example.com",
+    "phone": "+255700000001",
+    "subject": "Do you deliver to Dodoma?",
+    "message": "Hello, I would like to know if you deliver the Modern Sofa to Dodoma ...",
+    "category": "DELIVERY",
+    "product": {
+      "id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+      "name": "Modern 3-Seater Fabric Sofa",
+      "slug": "modern-3-seater-fabric-sofa"
+    },
+    "order": {
+      "id": "ord_01h8y5a...",
+      "order_reference": "OD-000123",
+      "status": "DELIVERED"
+    },
+    "enquiry_status": "OPEN",
+    "staff_internal_notes": "Customer asked about Dodoma delivery; check courier zones 2026-09-01.",
+    "attachments": [{ "id": "att_01h...", "filename": "reference.jpg", "content_type": "image/jpeg", "size": 843210 }],
+    "user_id": "user_01h...",
+    "created_at": "2026-09-01T10:15:00Z",
+    "updated_at": "2026-09-01T11:00:00Z"
+  }
+}
+```
+
+- Customer `ENQ-002`/`ENQ-003` never exposes `staff_internal_notes`; internal field is operational only.
+- `user_id` nullable (`string | null`) in staff view; `null` for anonymous in customer view where relevant.
+- `staff_internal_notes` private to staff, never in customer response.
+
+### 27.21 Field Classification Matrix (Normative)
+
+| Field | Anonymous (ENQ-001) | Customer (ENQ-001) | Staff (ENQ-004/005 read) | Server |
+|---|---:|---:|---:|---:|
+| `name` | Input (required) | Input (Optional/derived, see §27.3) | Read | Store (trimmed, derived fallback) |
+| `email` | Input (≥1 of phone/email) | Input (Optional/derived) | Read | Store (lowercased) |
+| `phone` | Input (≥1 of phone/email) | Input (Optional/derived) | Read | Store (normalized) |
+| `subject` | Input (required) | Input (required) | Read | Store (trimmed, bounded 5–200) |
+| `message` | Input (required) | Input (required) | Read | Store (safe, plain text, 10–5000) |
+| `category` | Input (optional) | Input (optional) | Read | Validate CLOSED `GENERAL`/`PRODUCT`/`DELIVERY`/`OTHER` |
+| `product_id` | Input (optional) | Input (optional) | Read | Validate public product exists |
+| `order_id` | Input (optional, discouraged anonymous) | Input (optional) | Read | Validate + ownership check |
+| `attachment` | Input (multipart, optional) | Input (optional) | Read | Validate size/type/signature |
+| `user_id` | No | No (derived) | No | Derive (`authenticated` or `null`) |
+| `enquiry_status` | No | No | Controlled (`OPEN→CLOSED`, optional reopen) | Server-generated `OPEN` default, CLOSED enum |
+| `staff_internal_notes` | No | No | Staff/Admin writable | Server/store |
+| `order_id` link to payment/delivery_fee | No | No | No | Server later only via Order domain, not enquiry |
+| `created_at` / `updated_at` | No | No | No | Server-generated ISO8601 `Z` |
+
+### 27.22 Authorization Matrix (Normative — see §18)
+
+| Operation | Anonymous | Customer | Staff | Admin |
+|---|---|---:|---:|---:|
+| Create Enquiry (`ENQ-001`) | **Yes** (public, validated + anti-abuse) | **Yes** (→ `Enquiry.user_id` association for `ENQ-002/003`) | **No** — operational-only (Staff handle via `ENQ-004/005/006`) | **No** — operational-only |
+| List own Enquiries (`ENQ-002`) | No | **Yes** (`AUTHENTICATED_OWNER` own, `private, no-store`, paginated) | No | Authorized (purpose-bound) |
+| View own Enquiry (`ENQ-003`) | No (no anonymous retrieval) | **Yes** (404 masked if not own) | No | Authorized |
+| List operational Enquiries (`ENQ-004`) | No | No | **Yes** (`enquiries.view`, private, filter `OPEN` etc.) | **Yes** |
+| View operational Enquiry (`ENQ-005`) | No | No | **Yes** (`enquiries.view`) | **Yes** |
+| Close / Reopen enquiry (`ENQ-006`) | No | No | **Yes** (`enquiries.manage` + valid state) | **Yes** (same, audited) |
+| Upload attachment (`ENQ-007`) | **Scoped** token only | According to parent (`owns` + scoped) | According to parent | According to parent |
+| Manage customer account (enquiry context) | No | Own only | No (staff cannot change ownership/credentials) | Authorized only |
+
+`Staff operational` is not ownership; Admin remains explicit + auditable; Customer `User=none` anonymous enquiries are private intake with no retrieval bearer in V1.
+
+### 27.23 Security, Field-Level Exposure & History Preservation
+
+- History preservation: original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phone`), `category`, `product_id`, `order_id`, `attachment` metadata are **immutable history** — stored as submitted. Staff `internal_notes` is separate operational record and never customer-visible. Future audit of enquiry state changes `actor/action/resource/target/timestamp/result` identified (not implemented).
+- Field-level before serialization: select representation by actor (`Customer → own without internal_notes`, `Staff → operational with internal_notes + contact`, `Admin → authorized`). Never `model.toArray()` mass-serialization. Private enquiry responses `private, no-store`, not CDN public.
+- Search results apply over authorized dataset; pagination cannot leak cross-ownership. Customer `ENQ-002?search=...` searches only own; Staff `ENQ-004?search=` over permitted operational set.
+- **Threats addressed:** `anonymous spam/IDOR/customer-to-customer access (ENQ-002/003)/staff privilege escalation/role tampering/order association leakage/private attachment exposure/internal note leakage/XSS via message/oversized message/oversized attachment/search abuse/rate-limit bypass` — see §27.8, §27.14, §27.15, §27.19 for defenses (ownership check, 404 masking, plain-text only, size limits, field allow-list, validation, private caching).
+
+### 27.24 Compatibility — Version 1
+
+Within `v1`, do not change without compatibility review: `field type`, `field meaning`, `requiredness`, `enum value semantics` (`enquiry_status` CLOSED `OPEN`/`CLOSED`, `category` CLOSED), `ownership semantics`, `pagination/sort/filter` shapes, `response envelope` (`data`/`meta`/`errors`), `anonymous creation + no anonymous retrieval` contract. Adding optional `IN_PROGRESS`/`WAITING_FOR_CUSTOMER` statuses later is a formal compatibility decision; new status value is CLOSED-enum event. Closing does not mean delete.
+
+### 27.25 Cross-References
+
+- Resources: `api-resources.md §6` (Enquiry, Enquiry Attachment — ownership, relationships, public/private classification, customer/staff/admin representations, mutable/immutable, optional product/order association, status `OPEN`/`CLOSED`, plain-text message).
+- Conventions: `api-conventions.md §27` (anonymous creation, customer ownership, private data, attachment authorization `inherits parent`, product/order optional references, immutable original submission, simple status, XSS-safe plain text, rate-limit candidate).
+- Domain: `business-rules.md §10` (General Enquiry: anonymous/customer allowed, contact+message required, not an Order, separate from Request, optional product/order, optional attachment, staff operational, no anonymous retrieval, plain text, immutable message).
+- Decisions: `decisions.md ADR/API-ENQ-001..ADR/API-ENQ-008` (anonymous enquiry, ownership, separate from Request, not an Order, no payment/inventory, optional attachments, no anonymous retrieval, immutable message/plain text).
+- Request `§26` and Order `§24` remain distinct; Payment `Group H`; Tracking `§25` not Enquiry; Notification `Phase Group R` deferred.
+- Links to Conventions & Resources updated: `§20` now includes Enquiry conventions `§27`.
 
 
