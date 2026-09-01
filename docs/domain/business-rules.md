@@ -48,17 +48,24 @@ The computer system is always the final authority on what is allowed, what costs
 | 4 | A visitor can create a cart without an account, and the cart moves onto their account when they log in. Checkout still requires being logged in. | IDENT-008 |
 | 5 | Customers, staff, and admins all use the same account system; a person's role decides what they may do. | IDENT-007 |
 
-## 4. Cart and Checkout
+## 4. Cart and Shopping
 
 | # | Business rule | Ref |
 |---|---|---|
-| 1 | A cart can only contain real, purchasable items. | CART-001 |
-| 2 | At checkout, the system re-checks everything: the item still exists, is active, is buyable, the chosen option is valid, the price is current, and the stock is enough. | CART-004 |
-| 3 | The system, not the customer, works out the final to-pay amount. Nobody can type in their own total. Client-supplied `subtotal`/`delivery_fee`/`total` are never authoritative (API-VAL-005). | CART-005, PRICE-001/002 |
-| 4 | Customers may not choose "Delivery" without giving a valid delivery address and contact details. | FUL-003, ADDR-004 |
-| 5 | A cart that is no longer valid cannot become an order. | CHECKOUT-005 |
+| 1 | A customer's active cart belongs strictly to that customer and persists across devices and sessions. | CART-OWN-001 |
+| 2 | **Cart admission (new additions):** Only a real, purchasable, published, in-stock item (`product_type: IN_STOCK && is_active && is_published`) may be added to a cart. `MADE_TO_ORDER` products cannot be added and must use the request workflow instead. | CART-001, CART-TYPE-001 |
+| 3 | If a product has options/variants, the selected option must exist, be active, and belong strictly to that product. | VAR-OWN-001, CART-002 |
+| 4 | Adding an item to a cart **does not reserve stock** or hold inventory. | INV-004, CART-RES-001 |
+| 5 | Adding an item that is already in the cart increases the existing item's quantity rather than creating a duplicate line (up to the maximum of 100 units). | CART-MRG-001 |
+| 6 | Prices and subtotals shown in the cart are display numbers. The system re-checks and recalculates all prices and stock when the customer checks out. | CART-005, PRICE-001/002 |
+| 7 | **Stale cart retrieval:** After a valid item is admitted, it may later become unavailable (deactivated, unpublished, or sold out). A stale line is **not deleted** from the cart; it is retained and marked `is_purchasable: false` / `availability: "unavailable"` so the customer can see and address it. Checkout rejects any cart that contains a stale line. | CART-STALE-001 |
+| 8 | An unauthenticated guest can start a cart, which automatically transfers to their customer account upon login. | IDENT-008, CART-GST-001 |
+| 9 | Staff and administrators do not edit or manage customer shopping carts. | CART-SEC-001 |
 
-**Validation note:** Checkout is layered: Transport → Schema → Auth → Authorization (cart ownership) → Cart valid → Products purchasable → Inventory available → Fulfillment valid → Price calculated server-side → Order/payment workflow. Cross-field `fulfillment_type=DELIVERY → delivery address required`; `fulfillment_type=PICKUP → delivery fee zero/not customer-supplied`. Do not collapse into one generic validator.
+**Cart Validation & Domain Authority Note (Phase 1.21):** Cart mutations (`CART-001..CART-005`) are customer-isolated actions. The server computes all display subtotals and line totals using minor unit arithmetic (`{amount, currency}`). Clients can only specify product identity, variant choice, and quantity (1..100). Final inventory locking and payment calculation occur exclusively during Checkout (`CHK-001`).
+
+
+
 
 ## 5. Prices and Payment
 

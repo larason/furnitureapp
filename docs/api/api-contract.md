@@ -1697,3 +1697,287 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | Enum tampering (`product_type`, `availability`) | Closed enum validation; invalid values immediately trigger `INVALID_VALUE` 422 | API-VAL-003 |
 | Unbounded response payload / DoS | Enforced pagination limits (`per_page` max 100); bounded gallery/variant lists | API-RES-001 |
 
+---
+
+## 22. Cart API Contract (Phase 1.21)
+
+> **Authority:** Canonical domain API contract for the **Cart** subsystem (`CART-001..CART-005`). Consolidates `phases/phase-1.21.md`.
+> **Core Principle:** The Cart contains a customer's current purchase intent. It belongs strictly to the authenticated customer (with opaque guest-session handoff), persists across devices/sessions, does not reserve inventory, is not a pricing authority, and revalidates all commercial invariants at checkout.
+
+### 22.1 Cart Endpoint Contract Matrix
+
+| ID | Method | Path | Auth | Authorization | Pagination | Purpose | Caching |
+|---|---|---|---|---|---|---|---|
+| `CART-001` | GET | `/api/v1/me/cart` | Required (or Guest Token) | `AUTHENTICATED_OWNER` / `GUEST` | No | Get current active cart | Private / No-Store |
+| `CART-002` | POST | `/api/v1/me/cart/items` | Required (or Guest Token) | `AUTHENTICATED_OWNER` / `GUEST` | No | Add purchasable product/variant to cart | Non-cacheable |
+| `CART-003` | PATCH | `/api/v1/me/cart/items/{item}` | Required (or Guest Token) | `AUTHENTICATED_OWNER` / `GUEST` | No | Update cart item quantity | Non-cacheable |
+| `CART-004` | DELETE | `/api/v1/me/cart/items/{item}` | Required (or Guest Token) | `AUTHENTICATED_OWNER` / `GUEST` | No | Remove item from cart | Non-cacheable |
+| `CART-005` | POST | `/api/v1/me/cart/merge` | Required | `AUTHENTICATED_OWNER` | No | Explicitly merge guest cart into user cart | Non-cacheable |
+
+*Guest-Cart Token Transport (per `api-conventions.md §22.6`):* The server uses one of two mutually exclusive paths depending on client type. **Browser (Next.js):** token issued as `HttpOnly; Secure; SameSite=Strict` cookie (`guest_cart_id`) only — no `X-Guest-Cart-Id` response header is emitted. **Non-browser (Flutter):** token issued in the `X-Guest-Cart-Id` response header only (no `Set-Cookie`) and treated as a bearer secret stored in secure device storage. The token is permanently retired server-side upon merge (`AUTH-002` login or `CART-005`). Retired tokens are rejected and never recycled.
+
+---
+
+### 22.2 Endpoint CART-001 — Get Current Cart
+
+- **HTTP Method & Path:** `GET /api/v1/me/cart`
+- **Purpose:** Retrieve the customer's active shopping cart, itemized products, quantities, display prices, and subtotal.
+- **Actor:** Authenticated Customer (or anonymous guest with `X-Guest-Cart-Id`).
+- **Authentication:** Required for customer (`AUTHENTICATED_OWNER`); guest requires valid opaque guest token.
+- **Authorization:** Customer sees only own cart. IDOR is impossible via self-context `/me/cart`.
+- **Query Parameters:** None. Active cart items are not paginated (small, bounded collection per ADR/API-CART-008).
+- **Empty Cart Behavior:** If the cart contains no items, the API returns a valid empty active Cart representation (`items: []`, `items_count: 0`, `subtotal: {amount: 0, currency: "TZS"}`), never 404 or `null`.
+- **Response Format (Active Cart with Items):**
+
+```json
+{
+  "data": {
+    "id": "cart_01h8y0a1b2c3d4e5f6g7h8j9",
+    "items_count": 2,
+    "items": [
+      {
+        "id": "item_01h8y0b2c3d4e5f6g7h8j9k0",
+        "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+        "variant_id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+        "product": {
+          "id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+          "name": "Modern 3-Seater Fabric Sofa",
+          "slug": "modern-3-seater-fabric-sofa",
+          "product_type": "IN_STOCK",
+          "price": {
+            "amount": 125000000,
+            "currency": "TZS"
+          },
+          "primary_image": {
+            "id": "img_01h8x9a0b1c2d3e4f5g6h7j8",
+            "url": "https://cdn.furniture.co.tz/products/sofa-front.webp",
+            "alt_text": "Modern 3-Seater Fabric Sofa in Charcoal Grey"
+          }
+        },
+        "variant": {
+          "id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+          "sku": "SOFA-MOD-3S-GRY",
+          "name": "Charcoal Grey",
+          "price": {
+            "amount": 125000000,
+            "currency": "TZS"
+          }
+        },
+        "quantity": 1,
+        "unit_price": {
+          "amount": 125000000,
+          "currency": "TZS"
+        },
+        "line_total": {
+          "amount": 125000000,
+          "currency": "TZS"
+        },
+        "availability": "available",
+        "stock_indicator": "IN_STOCK",
+        "is_purchasable": true,
+        "created_at": "2026-09-01T08:00:00Z",
+        "updated_at": "2026-09-01T08:00:00Z"
+      },
+      {
+        "id": "item_01h8y0b2c3d4e5f6g7h8j9k1",
+        "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t2",
+        "variant_id": null,
+        "product": {
+          "id": "prod_01h8x9j2m4k5n6p7q8r9s0t2",
+          "name": "Solid Oak Coffee Table",
+          "slug": "solid-oak-coffee-table",
+          "product_type": "IN_STOCK",
+          "price": {
+            "amount": 45000000,
+            "currency": "TZS"
+          },
+          "primary_image": {
+            "id": "img_01h8x9a0b1c2d3e4f5g6h7k2",
+            "url": "https://cdn.furniture.co.tz/products/coffee-table.webp",
+            "alt_text": "Solid Oak Coffee Table"
+          }
+        },
+        "variant": null,
+        "quantity": 1,
+        "unit_price": {
+          "amount": 45000000,
+          "currency": "TZS"
+        },
+        "line_total": {
+          "amount": 45000000,
+          "currency": "TZS"
+        },
+        "availability": "available",
+        "stock_indicator": "IN_STOCK",
+        "is_purchasable": true,
+        "created_at": "2026-09-01T08:15:00Z",
+        "updated_at": "2026-09-01T08:15:00Z"
+      }
+    ],
+    "subtotal": {
+      "amount": 170000000,
+      "currency": "TZS"
+    },
+    "updated_at": "2026-09-01T08:15:00Z"
+  }
+}
+```
+
+---
+
+### 22.3 Endpoint CART-002 — Add Cart Item
+
+- **HTTP Method & Path:** `POST /api/v1/me/cart/items`
+- **Purpose:** Add a purchasable physical inventory product (and specific variant if applicable) to the cart.
+- **Request Body (JSON):**
+
+```json
+{
+  "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+  "variant_id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+  "quantity": 2
+}
+```
+
+- **Input Validation Rules:**
+  - `product_id`: required string. Must reference an existing, published, active (`is_active: true && is_published: true`) product. An active draft (`is_published: false`) is rejected with `PRODUCT_NOT_PURCHASABLE` (422).
+  - `product_type`: must be `IN_STOCK`. If `product_type === MADE_TO_ORDER`, the backend strictly rejects with `PRODUCT_NOT_PURCHASABLE` (422).
+  - `variant_id`: conditional. If the product defines variants, `variant_id` is required, must reference an active variant, and must strictly belong to `product_id` (`VAR-OWN-001`). If the product has no variants, `variant_id` must be `null` or omitted. Mismatched variant returns `INVALID_PRODUCT_VARIANT` (422).
+  - `quantity`: required integer, strict minimum `1`, maximum `100` per item (ADR/API-CART-008). Non-integers, strings, negative values, and `0` are rejected with `INVALID_VALUE` (422).
+  - Client-supplied financial and inventory fields (`price`, `subtotal`, `total`, `discount`, `stock`) are strictly rejected with `INVALID_VALUE` (422). Silently ignoring them is inconsistent with the global unknown-field rejection rule and would hide client payload errors.
+- **Item Aggregation & Duplicate Handling:** If the caller adds an item whose `(product_id, variant_id)` already exists in the cart, the server merges the items by incrementing the existing line's quantity: `new_quantity = existing_quantity + added_quantity` (clamped to max `100`).
+- **Inventory Check Semantics:** The backend performs an informational availability check on add/update using these mutually exclusive predicates: if the product fails the purchasability flags (`is_active: false` or `is_published: false`), returns `PRODUCT_UNAVAILABLE` (422); if the product is purchasable but `available_quantity < requested_quantity`, returns `INSUFFICIENT_STOCK` (422). Successful addition **does not place an inventory hold or lock** (ADR/API-CART-002).
+- **Response:** Returns the full updated Cart Object (`201 Created` on new line, `200 OK` on quantity merge). For guest callers: browser clients receive a `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict` header only; Flutter clients receive an `X-Guest-Cart-Id: <token>` response header only. The server never issues both simultaneously (see `api-conventions.md §22.6`).
+
+---
+
+### 22.4 Endpoint CART-003 — Update Cart Item Quantity
+
+- **HTTP Method & Path:** `PATCH /api/v1/me/cart/items/{item}`
+- **Purpose:** Adjust the quantity of an existing cart item.
+- **Parameter `{item}`:** Opaque Cart Item ID (`item_...`).
+- **Request Body (JSON):**
+
+```json
+{
+  "quantity": 3
+}
+```
+
+- **Validation Rules:**
+  - `{item}` must exist in the caller's active cart. Attempting to update another customer's item returns `CART_ITEM_NOT_FOUND` (404).
+  - Only `quantity` is mutable via this endpoint. Changing `product_id` or `variant_id` requires deleting the old item and adding the new item.
+  - `quantity` must be an integer between `1` and `100`. Setting `quantity: 0` is rejected with `INVALID_VALUE` (422); removal must use `DELETE` (`CART-004`).
+- **Response:** Returns the updated Cart Object (`200 OK`).
+
+---
+
+### 22.5 Endpoint CART-004 — Remove Cart Item
+
+- **HTTP Method & Path:** `DELETE /api/v1/me/cart/items/{item}`
+- **Purpose:** Remove an item from the customer's active cart.
+- **Parameter `{item}`:** Opaque Cart Item ID (`item_...`).
+- **Validation Rules:**
+  - `{item}` must belong to the caller's active cart.
+  - Removal is an intent deletion; it does not require inventory or catalog stock validation.
+- **Response:** `204 No Content` on successful deletion. If the item is already absent, idempotent `204 No Content` is returned.
+
+---
+
+### 22.6 Endpoint CART-005 — Merge Guest Cart
+
+- **HTTP Method & Path:** `POST /api/v1/me/cart/merge`
+- **Purpose:** Explicitly merge an anonymous guest cart into the authenticated customer's account cart.
+- **Authentication:** Required (`AUTHENTICATED_OWNER`).
+- **Guest Token Input:** The server reads the guest token from the transport channel appropriate to the client type: `guest_cart_id` cookie (browser path) or `X-Guest-Cart-Id` request header (Flutter path). A client must not send the token value in a JSON body field, as this would expose the bearer credential in request logs.
+- **Merge Semantics:**
+  - Matches items by `(product_id, variant_id)`: sums quantities up to the `100` unit limit.
+  - Copies unique items into the customer's cart.
+  - Deactivates/clears the guest cart record so it cannot be re-merged or accessed.
+  - Note: This merge is also executed automatically upon customer login (`AUTH-002`).
+- **Response:** Returns the merged updated Cart Object (`200 OK`).
+
+---
+
+### 22.7 Cart & Cart Item Representations
+
+#### Cart Object Structure
+
+| Field | Type | Exposure | Nullable | Description |
+|---|---|---|---|---|
+| `id` | string | CUSTOMER / GUEST | no | Opaque Cart identifier (`cart_...`) |
+| `items_count` | integer | CUSTOMER / GUEST | no | Total number of distinct item lines in the cart |
+| `items` | `CartItem[]` | CUSTOMER / GUEST | no | Array of item lines in deterministic insertion order |
+| `subtotal` | `{amount: int, currency: "TZS"}` | CUSTOMER / GUEST | no | Informational sum of line totals (minor units) |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation |
+
+#### Cart Item Object Structure
+
+| Field | Type | Exposure | Nullable | Description |
+|---|---|---|---|---|
+| `id` | string | CUSTOMER / GUEST | no | Unique Cart Item line identifier (`item_...`) |
+| `product_id` | string | CUSTOMER / GUEST | no | Stable Product identifier |
+| `variant_id` | string | CUSTOMER / GUEST | yes | Variant identifier (`null` if product has no variants) |
+| `product` | `ProductSummary` | CUSTOMER / GUEST | no | Embedded Product summary (id, name, slug, product_type, price, primary_image) |
+| `variant` | `VariantSummary` | CUSTOMER / GUEST | yes | Embedded Variant summary (id, sku, name, price); `null` if no variant |
+| `quantity` | integer | CUSTOMER / GUEST | no | Selected item quantity (1..100) |
+| `unit_price` | `{amount: int, currency: "TZS"}` | CUSTOMER / GUEST | no | Current catalog unit price (minor units) |
+| `line_total` | `{amount: int, currency: "TZS"}` | CUSTOMER / GUEST | no | `unit_price.amount * quantity` (minor units) |
+| `availability` | enum `"available"\|"unavailable"` | CUSTOMER / GUEST | no | Live availability status |
+| `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | CUSTOMER / GUEST | no | Current inventory badge bucket |
+| `is_purchasable` | boolean | CUSTOMER / GUEST | no | `true` if item is active and in stock; `false` if stale/unavailable |
+| `created_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Line item creation timestamp |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Line item last updated timestamp |
+
+---
+
+### 22.8 Stale Cart Items & State Signaling
+
+- **Preservation Policy (No Silent Deletion):** If a product or variant is deactivated (`is_active: false`), unpublished, or depletes stock while in a customer's cart, the item is **not** silently deleted from the cart.
+- **Signaling:** The item is returned with `availability: "unavailable"` and `is_purchasable: false`.
+- **Client UX:** Next.js and Flutter UI display an explicit warning badge ("This item is no longer available") and prompt the customer to remove or adjust it.
+- **Checkout Enforcement:** Checkout (`CHK-001`) strictly rejects any cart containing `is_purchasable === false` items with `CART_INVALID` (422).
+
+---
+
+### 22.9 Pricing, Inventory & Authority Decoupling
+
+```text
++-------------------+      +-------------------+      +--------------------------+
+|      CATALOG      | ---> |       CART        | ---> |         CHECKOUT         |
+| Live Master Data  |      | Customer Intent   |      | Transactional Authority  |
+| - unit price      |      | - display price   |      | - locks inventory        |
+| - stock counts    |      | - no stock hold   |      | - authoritative total    |
+| - active status   |      | - informative sum |      | - creates order snapshot |
++-------------------+      +-------------------+      +--------------------------+
+```
+
+1. **Non-Reservation:** Items in a cart do **not** reduce `available_quantity` or increase `reserved_quantity`. Inventory reservation occurs strictly during the atomic Checkout transaction (`CHK-001`).
+2. **Pricing Integrity:** Cart `unit_price`, `line_total`, and `subtotal` are informational display numbers computed server-side. The client cannot supply prices or totals.
+3. **Checkout Recalculation:** All prices, stock levels, delivery fees, and line totals are authoritatively recomputed from database state at checkout.
+
+---
+
+### 22.10 Security, Isolation & IDOR Protection
+
+- **Ownership Isolation:** All cart access is routed through the `/api/v1/me/cart` self-context. The caller's authenticated identity (or validated guest token) is the sole authority for cart lookup.
+- **IDOR Defense:** Item endpoints (`PATCH /me/cart/items/{item}`, `DELETE /me/cart/items/{item}`) verify `item.cart_id === caller_cart.id`. If a user attempts to update or delete an item ID belonging to another user, the server returns `CART_ITEM_NOT_FOUND` (404 masking).
+- **Staff & Admin Isolation:** Staff and Admin roles have **zero** cart modification endpoints. Staff operations begin strictly at the Order stage (`ORD-005..013`).
+- **Cache Isolation:** Cart endpoints return `Cache-Control: private, no-cache, no-store, must-revalidate`. Customer cart data is never cached in public CDNs or shared caches.
+
+---
+
+### 22.11 Cart Error Scenarios & Matrix
+
+| Error Code | HTTP Status | Trigger Condition |
+|---|---|---|
+| `AUTHENTICATION_REQUIRED` | 401 | Protected cart endpoint accessed without authentication or valid guest token |
+| `CART_ITEM_NOT_FOUND` | 404 | Specified cart item does not exist or belongs to another customer |
+| `INVALID_VALUE` | 422 | Quantity ≤ 0, > 100, non-integer, malformed, or client-supplied financial field present |
+| `INVALID_PRODUCT_VARIANT` | 422 | `variant_id` does not belong to `product_id`, or the variant is inactive |
+| `PRODUCT_NOT_PURCHASABLE` | 422 | `product_type === MADE_TO_ORDER` — the product must use the request workflow, not the cart |
+| `PRODUCT_UNAVAILABLE` | 422 | Product exists but fails purchasability flags (`is_active: false` or `is_published: false`) |
+| `INSUFFICIENT_STOCK` | 422 | Product is purchasable but `available_quantity < requested_quantity` |
+| `RATE_LIMITED` | 429 | Excessive rapid cart mutations from the same client |
+
+

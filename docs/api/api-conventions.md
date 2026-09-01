@@ -420,3 +420,62 @@ All catalog query evaluation on collection endpoints (`CAT-001`) strictly execut
 - **Zero Customer State:** Catalog responses contain zero customer-specific data. They are safe for aggressive HTTP caching (`public, max-age=...`), CDN caching, and Next.js Incremental Static Regeneration (ISR).
 - **Masking of Unpublished State:** Products or categories that are draft, hidden, or deactivated return standard `RESOURCE_NOT_FOUND` (404), never leaking internal visibility states.
 
+## 22. Cart API Conventions (Phase 1.21)
+
+> **Authority:** Conventions governing the Cart domain (`CART-001..CART-005`, customer purchase intent, item aggregation, informational pricing, and guest-cart handoff). Consolidates `phases/phase-1.21.md`.
+
+### 22.1 Cart Item Aggregation and Duplicate Handling
+
+- **Identity Match:** Two cart items represent the same purchasable unit if and only if they share the same `product_id` and the same `variant_id` (or both have `variant_id === null`).
+- **Merge Behavior:** When adding an item that already exists in the caller's cart, the server merges the items and increments the quantity (`existing_quantity + added_quantity`), clamped to the maximum allowed limit (`100` units per line). It does not create duplicate rows.
+
+### 22.2 Informational Cart Pricing & Calculation
+
+- **Display Numbers Only:** `unit_price`, `line_total`, and `subtotal` in cart responses are informational server-calculated display numbers reflecting current catalog values.
+- **Client Input Prohibition:** Clients cannot submit prices, discounts, delivery fees, or subtotals. Any client-supplied financial values are strictly ignored or rejected.
+- **No Price Lock:** Cart pricing is not a transaction lock; authoritative pricing recalculation occurs at Checkout (`CHK-001`).
+
+### 22.3 Non-Reservation Inventory Semantics
+
+- **No Stock Hold:** Adding an item to a cart does not decrement `available_quantity` or increment `reserved_quantity`.
+- **Race Tolerance:** An item displayed as available in a cart may become out of stock prior to checkout. Final atomic reservation is deferred to the Checkout database transaction.
+
+### 22.4 Stale Cart Item Preservation and Signaling
+
+- **No Silent Deletion:** When a product or variant becomes inactive, draft, or out of stock after being added to a cart, the server preserves the cart line and sets `availability: "unavailable"` and `is_purchasable: false`.
+- **Checkout Block:** A cart containing any line with `is_purchasable === false` is rejected at checkout with `CART_INVALID` (422), requiring the customer to adjust their cart.
+
+### 22.5 Private / No-Store Cache Policy
+
+- **Strict Isolation:** All Cart endpoints must return HTTP headers `Cache-Control: private, no-cache, no-store, must-revalidate` and `Pragma: no-cache`. Customer cart data must never enter shared edge caches or public CDNs.
+
+### 22.6 Guest Cart Token: Transport, Security, and Rotation
+
+The guest cart token is a bearer credential. Possessing it grants access to the associated guest cart. Its transport must match the client's ability to protect it from JavaScript exposure.
+
+**Two mutually exclusive transport paths — the server uses exactly one per client interaction:**
+
+1. **Browser (Next.js web) — Cookie-only path:**
+   - On first `CART-002` response, the server sets `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict; Path=/api`.
+   - The server does **not** include `X-Guest-Cart-Id` in any response header for browser clients. A browser-readable response header would defeat the `HttpOnly` protection and expose the token to any JavaScript running on the page, including third-party scripts.
+   - The browser automatically sends the cookie on subsequent cart requests; the server reads `guest_cart_id` from the `Cookie` header.
+   - Next.js server-side code must never forward the raw cookie value into client-accessible state.
+
+2. **Non-browser (Flutter mobile) — Header-as-bearer-secret path:**
+   - On first `CART-002` response, the server returns the token in the `X-Guest-Cart-Id` response header (no `Set-Cookie`).
+   - Flutter must treat this token with the same confidentiality as an auth token: store it in secure device storage (e.g., `flutter_secure_storage`), never log it, never embed it in URLs.
+   - Flutter sends it back as the `X-Guest-Cart-Id` request header on subsequent cart calls.
+   - The `CART-005` merge endpoint accepts the guest token via this request header.
+
+**Rotation and expiry:**
+- The guest token is a one-time credential for the lifetime of the guest session. It is permanently retired (invalidated server-side) upon successful merge (`AUTH-002` login or `CART-005`). It cannot be reused after retirement.
+- The server must not accept a retired guest token.
+- Tokens not merged after a configurable idle period (implementation-defined) may be expired by the server.
+
+**What the server must never do:**
+- Return the token in a response header on a browser-originating request.
+- Accept a client-supplied token value as proof of identity without server-side lookup.
+- Recycle a retired guest token ID.
+
+
+

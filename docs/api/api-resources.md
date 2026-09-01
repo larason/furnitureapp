@@ -152,9 +152,39 @@
 
 **STAFF/ADMIN extra (not on customer):** `customer:{id,name,email}`, operational `quantity` details, `payment.provider`, internal notes where authorized. `CANCELLED`/`SHIPPED` transitions remain controlled actions (`POST /orders/{order}/cancel` etc.), not `PATCH status`.
 
-## 4. Cart (`GET /api/v1/me/cart`, `GET /api/v1/me/cart/items`)
+## 4. Cart & Cart Item (CUSTOMER / GUEST — `GET /api/v1/me/cart`, `POST/PATCH/DELETE /api/v1/me/cart/items{,/{item}}`)
 
-- `id`, `items: [{product_id, variant_id, quantity}]`, `updated_at`. Cart totals are **not** authoritative — backend computes `subtotal`/`total` at checkout (client totals ignored). Holder-scoped (`GUEST_TOKEN` or User).
+### 4.1 Cart Representation
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | CUSTOMER / GUEST | no | Opaque Cart identifier (`cart_01h8y0a1...`) |
+| `items_count` | integer | CUSTOMER / GUEST | no | Number of distinct lines in the cart, including stale/unavailable lines (matches `items[].length`) |
+| `items` | `CartItem[]` | CUSTOMER / GUEST | no | Ordered list of cart item objects |
+| `subtotal` | `{amount:int,currency:"TZS"}` | CUSTOMER / GUEST | no | Informational server-calculated subtotal (minor units) |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation |
+
+### 4.2 Cart Item Representation
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | CUSTOMER / GUEST | no | Cart Item line identifier (`item_01h8y0b2...`) |
+| `product_id` | string | CUSTOMER / GUEST | no | Referenced product identifier |
+| `variant_id` | string | CUSTOMER / GUEST | yes | Referenced variant identifier (`null` if product has no variants) |
+| `product` | `ProductSummary` | CUSTOMER / GUEST | no | Embedded Product summary (id, name, slug, product_type, price, primary_image) |
+| `variant` | `VariantSummary` | CUSTOMER / GUEST | yes | Embedded Variant summary (id, sku, name, price); `null` if no variant |
+| `quantity` | integer | CUSTOMER / GUEST | no | Selected unit quantity (1..100) |
+| `unit_price` | `{amount:int,currency:"TZS"}` | CUSTOMER / GUEST | no | Current catalog unit price (minor units) |
+| `line_total` | `{amount:int,currency:"TZS"}` | CUSTOMER / GUEST | no | Informational `unit_price * quantity` (minor units) |
+| `availability` | enum `"available"\|"unavailable"` | CUSTOMER / GUEST | no | Current live availability status |
+| `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | CUSTOMER / GUEST | no | Current inventory badge bucket |
+| `is_purchasable` | boolean | CUSTOMER / GUEST | no | `true` if item is active and in stock; `false` if stale/unavailable |
+| `created_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Line addition timestamp |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Line update timestamp |
+
+*Authority & Reservation Rules:* Cart totals and prices are informational display values. Adding an item does not reserve stock or guarantee price locks. Final inventory checks and authoritative calculations occur during Checkout (`CHK-001`).
+
+---
 
 ## 5. Furniture Request (`/requests`, `/me/requests`)
 
@@ -217,12 +247,20 @@ Similar to Request: `enquiry_status` query key, `subject`, `message`, `attachmen
 - **Create/Update:** `name`, `slug`, `description`, `image`. `id`, `created_at` server-generated. No `product` embedding in category create.
 - **Validation:** Schema: `name`/`slug` length/pattern; `slug` unique global; enum N/A. Mutable: `name`, `slug`, `description`, `image`. Immutable: `id`, `created_at`. Unknown fields rejected. Business: `slug unique` enforced transactionally; no inventory logic.
 
-### 10.3 Cart — Add / Update
+### 10.3 Cart — Add / Update / Remove / Merge (Phase 1.21 Contract)
 
-- **Add item (POST `/me/cart/items`):** `product_id` + optional `variant_id` + `quantity:int≥1`. **Not accepted:** `price`, `subtotal`, `stock`, `currency`.
-- **Update item (PATCH):** `quantity` only (partial). Empty `items:[]` invalid where ≥1 required. Duplicate `product_id` handling per contract (invalid/merged).
-- **Server-controlled:** `id`, `created_at`/`updated_at`, totals, availability.
-- **Validation:** Schema: `product_id` string required; `variant_id` nullable; `quantity` integer ≥1 strict (not `"2"`). Cross-field/relationship: `variant belongs to product` when supplied, `variant active`. Domain: `product exists && active && product_type=IN_STOCK` (concept `MADE_TO_ORDER` prohibited), `variant purchasable`, `quantity valid`; inventory **not** reserved at cart stage but checked at checkout; concurrency Medium (add/update may affect same cart). Unknown fields rejected; client-supplied price/stock ignored. Query `page/per_page` validated per §16.3.
+- **Add item (POST `/me/cart/items`):** `product_id` string required + `variant_id` (conditional: required if product has variants; `null` or omitted if the product has no variants) + `quantity: integer (1..100)`. **Rejected:** `price`, `subtotal`, `total`, `stock`, `currency`, `discount`, `delivery_fee`.
+- **Update item (PATCH `/me/cart/items/{item}`):** `quantity: integer (1..100)` only. Mutable: `quantity` only. Immutable: `id`, `product_id`, `variant_id`, `created_at`.
+- **Remove item (DELETE `/me/cart/items/{item}`):** No request body. Removes specific item from caller's active cart.
+- **Merge guest cart (POST `/me/cart/merge`):** `X-Guest-Cart-Id` header or `{"guest_cart_id": "guest_..."}`. Merges guest items into authenticated cart.
+- **Server-controlled:** `id`, `items_count`, `subtotal`, `line_total`, `unit_price`, `availability`, `stock_indicator`, `is_purchasable`, `created_at`/`updated_at`.
+- **Validation Pipeline:**
+  - *Schema:* `product_id` string required; `variant_id` string nullable; `quantity` integer strict (1..100).
+  - *Auth & Authz:* `AUTHENTICATED_OWNER` or validated guest token (`GUEST`). Cross-customer cart item mutation rejected with `CART_ITEM_NOT_FOUND` (404 masking).
+  - *Domain / Invariants:* `product exists && is_active && is_published && product_type=IN_STOCK` — all three flags required for cart admission; an active draft (`is_published: false`) is rejected with `PRODUCT_NOT_PURCHASABLE` (422); `MADE_TO_ORDER` strictly rejected with `PRODUCT_NOT_PURCHASABLE` (422); `variant belongs to product` (`VAR-OWN-001`) and `variant is_active`; quantity bounded 1..100; duplicate items merged by summing quantities.
+  - *Inventory Semantics:* Informational availability check on add/update; **no inventory reservation** occurs at the cart stage. Stock lock occurs exclusively at Checkout (`CHK-001`).
+  - *Stale Items:* Inactive or out-of-stock items in cart marked `is_purchasable: false` and `availability: unavailable` rather than silently deleted.
+  - *Concurrency:* Medium/Safe. Duplicate additions merge; last valid mutation wins. Non-cacheable mutations.
 
 ### 10.4 Checkout (Authenticated Customer)
 

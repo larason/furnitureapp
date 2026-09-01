@@ -674,7 +674,92 @@
 
 ---
 
+### ADR/API-CART-001 — Cart Is Customer-Owned and Session-Persistent
+
+**Decision:** The authoritative shopping cart belongs strictly to the authenticated customer account (`/api/v1/me/cart`) and persists across devices and sessions. Next.js and Flutter access the identical server-side cart.
+
+**Reason:** `phases/phase-1.21.md §9, §54, §55`, `AGENTS.md §3` — Ensures a unified multi-platform customer shopping experience without fractured local-storage state.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-002 — Cart Does Not Reserve Inventory
+
+**Decision:** Adding items to a cart (`CART-002`) or updating quantities (`CART-003`) does not reserve physical stock or increment `reserved_quantity`. Inventory reservation occurs strictly during the atomic Checkout transaction (`CHK-001`).
+
+**Reason:** `phases/phase-1.21.md §31, §32`, `docs/domain/business-rules.md §4 #4` — Prevents inventory lockup caused by abandoned carts while maintaining concurrency safety.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-003 — Cart Pricing Is Informational and Server-Calculated
+
+**Decision:** All cart monetary values (`unit_price`, `line_total`, `subtotal`) are server-calculated display numbers representing current catalog prices in minor units (`{amount, currency}`). Clients cannot submit prices or subtotals. Authoritative transaction pricing is recomputed at Checkout.
+
+**Reason:** `phases/phase-1.21.md §18, §19, §59`, `docs/api/api-conventions.md §22.2` — Prevents client-side price tampering and guarantees financial calculation integrity.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-004 — Made-to-Order Products Strictly Excluded from Cart
+
+**Decision:** Only `IN_STOCK` products may be added to a cart. `MADE_TO_ORDER` products route to the furniture request workflow (`REQ-001`) and are strictly rejected by the Cart API with `PRODUCT_NOT_PURCHASABLE` (422).
+
+**Reason:** `phases/phase-1.21.md §22, §46`, `AGENTS.md §4.1` — Custom manufacturing requests require separate administrative review and commercial terms before order creation.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-005 — Cart Item Duplicate Addition Merges Quantities
+
+**Decision:** Adding an item with an existing `(product_id, variant_id)` identity in the cart merges the lines and increments the quantity (`existing_quantity + added_quantity`, clamped to the maximum limit of 100), rather than creating duplicate lines or rejecting the request.
+
+**Reason:** `phases/phase-1.21.md §28, §29`, `docs/api/api-conventions.md §22.1` — Provides a seamless ecommerce user experience across web and mobile retries.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-006 — Stale Cart Items Are Preserved and Flagged as Non-Purchasable
+
+**Decision:** If an item in a customer's cart becomes inactive or out of stock, the server retains the cart line and sets `availability: "unavailable"` and `is_purchasable: false`. The customer sees an explicit warning in the UI, and Checkout rejects the cart until the stale item is removed or adjusted.
+
+**Reason:** `phases/phase-1.21.md §41, §71`, `docs/api/api-conventions.md §22.4` — Avoids silent cart modifications and clearly communicates product availability changes to the customer.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-007 — Guest Cart Token: Client-Type-Split Transport
+
+**Decision:** The guest cart token is a bearer credential. Its transport is split by client type to prevent JavaScript exposure in browsers:
+- **Browser (Next.js):** Token issued exclusively as `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict`. The `X-Guest-Cart-Id` response header is **never** emitted for browser requests, as it would be readable by page JavaScript (including third-party scripts) and defeat the `HttpOnly` protection.
+- **Non-browser (Flutter):** Token issued exclusively in the `X-Guest-Cart-Id` response header (no `Set-Cookie`). Flutter must store it in secure device storage and send it as a request header — never in a JSON body field (request log exposure risk).
+
+The two paths are mutually exclusive per request. The token is permanently retired server-side upon merge (`AUTH-002` login or `CART-005`) and may not be recycled or reused after retirement.
+
+**Reason:** `phases/phase-1.21.md §10, §11`, `api-conventions.md §22.6` — A browser-readable response header carrying the same token as an `HttpOnly` cookie allows any JS running on the page to steal the credential and impersonate the guest cart from a different client. Splitting by client type eliminates this exposure without sacrificing Flutter usability.
+
+**Status:** Accepted
+
+---
+
+### ADR/API-CART-008 — Quantity Limits and Validation Boundary
+
+**Decision:** Cart item quantities are strictly constrained to positive integers between `1` and `100` per line. Setting `quantity: 0` is rejected (removal requires `DELETE /me/cart/items/{item}`). Active cart item lists are not paginated.
+
+**Reason:** `phases/phase-1.21.md §26, §27, §78`, `docs/api/api-resources.md §4` — Protects database resources, prevents accidental massive orders, and simplifies cart UI rendering.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see `api-contract.md §19.15`), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`.
+
 
