@@ -312,6 +312,26 @@ Business failures must correspond to real rules above — do not invent behavior
 | 12 | **Field-level and query-aware authorization** — authorization before serialization; only permitted fields per actor (e.g., `reserved_quantity` not to `CUSTOMER`); search/pagination operate over **authorized dataset** (`/me/orders?page=2` paginates own orders); public vs private caching separated; background jobs use explicit service authorization, not reused Admin credential. | FIELD-001, QUERY-001 |
 | 13 | **Denial respects enumeration protection** — `not authenticated → 401`, `authenticated not permitted → 403` or `404 RESOURCE_NOT_FOUND` where hiding existence is safer (private ownership). Do not leak via divergent errors. | DENIAL-001 |
 
+## 14. User/Profile — Customer Owns Account (Phase 1.28)
+
+> A Customer owns their account. Their profile is self-managed within the fields the business permits. Staff do not control or restrict customer accounts as part of normal e-commerce operations. Admin has the highest administrative authority, but sensitive account operations must remain explicit and controlled.
+
+| # | Business rule | Ref |
+|---|---|---|
+| 1 | **Every authenticated actor has a profile.** `Customer → owns own profile`; `Staff → owns own profile`; `Admin → owns own profile` — each sees own via `GET /me` (self-context), never via client-supplied `user_id` substitution. | USER-OWN-001, IDENT-006 |
+| 2 | **Customers own their accounts and control allowed profile fields.** `name` and `phone` are customer-mutable via `PATCH /me` allow-list; `id`/`role`/`permissions`/`verification state`/`account_state` are **server-controlled** and never changed via `PATCH /me` (even if client submits `{"role":"ADMIN"}` it is rejected). | USER-MUTABLE-001, SEC-001 |
+| 3 | **Role is server-controlled, never client-mutable.** `CUSTOMER`/`STAFF`/`ADMIN` are CLOSED; client self-promotion `{"role":"ADMIN"}` / `{"permissions":["*"]}` is rejected; role management belongs to Admin-only Phase 1.29 (`staff.approve`/`staff.manage`), not to `/me`. | AUTHZ-ROLE-001, USER-ROLE-001 |
+| 4 | **Staff cannot arbitrarily control Customer accounts.** Staff cannot `change customer role`, `disable customer`, `modify customer ordering/browsing ability`, `change password`, `view credentials`, `impersonate`, or `transfer ownership` through User/Profile APIs. Staff calling `GET /me` sees **Staff identity only**. | STAFF-RESTRICT-001, USER-OWN-001 |
+| 5 | **Admin has highest administrative authority but sensitive operations remain explicit.** Customer management via `GET /users` / `GET /users/{user}` (`users.manage_authorized`) is **authorized Admin only**, audited, data-minimized, never via relaxed `/me`; credentials (`password`/`hash`/`tokens`) never exposed even to Admin via normal User/Profile serialization. | AUTHZ-ADMIN-001, USER-ADMIN-001 |
+| 6 | **Credential operations are separate from ordinary profile updates.** `Password change` (`POST /auth/change-password`) and `security-sensitive email change` are **Authentication/security workflows**, not `PATCH /me {password}` / `PATCH {email_verified:true}`. Staff cannot normally change Customer passwords. | SEC-PWD-001, USER-CRED-001 |
+| 7 | **Profile changes do not alter historical business records.** Changing `name`/`phone` via `PATCH /me` must never modify `Order customer`, `Order historical contact snapshot`, `Order delivery information`, `Request contact history`, `Enquiry contact history`. Saved address book remains **deferred** — no `addresses[]` in Profile. | ORD-HIST-001, USER-HIST-001 |
+| 8 | **Profile is lightweight and private.** `GET /me` contains only `id`/`role`/`name`/`email`/`phone`/`email_verified`/`created_at`/`updated_at` — not `orders[]`/`cart`/`requests[]`/`enquiries[]`/`notifications[]`. Response is `PRIVATE` (`Cache-Control: private, no-store`), not publicly cacheable. `GET /me` is `AUTHENTICATED_OWNER` self only; `GET /users/{id}` for another user is `404` masked where ownership fails. | USER-PRIV-001, CACHE-001 |
+| 9 | **Shared identity across platforms.** Same `User` identity works on `Next.js` and `Flutter` via same Laravel backend (`customer changes phone on website → Flutter sees same via GET /me`); backend authoritative; local role/profile cache not authoritative. | X-PLATFORM-001, USER-XPLAT-001 |
+| 10 | **No self-delete or self-disable via Profile in V1.** `DELETE /me` and `PATCH /me {status: DISABLED}` are **not exposed** until retention/privacy model with `anonymization`/`soft deletion` is explicitly approved; hard deletion would conflict with `Orders`/`Requests`/`Enquiries` retention. | USER-DEL-001 |
+| 11 | **Customer visibility is isolated.** `Customer A → Customer B profile` or `Customer → Staff profile` via any future generic `GET /users/{id}` must fail; `Customer` sees only own via `/me`. `Staff receives only operational customer info` (`delivery address` snapshot in `Order`, not unrestricted browse). | IDENT-006, OWN-001 |
+
+Authority for wire semantics: `api-contract.md §29` / `api-conventions.md §29` / `api-resources.md §8` + `§13.1`; decisions `decisions.md ADR/USER-*`.
+
 ## 19. Endpoint Workflow Coverage (Phase 1.19 — No New Business Rules)
 
 Endpoint review confirms already-approved business rules have endpoint support; no new business behavior is introduced in this phase (see `api-contract.md §19` for inventory):

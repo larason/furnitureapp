@@ -15,3 +15,13 @@ Orders: Simple status workflow + history
 Delivery: Pickup or delivery
 Made-to-order: Request/quotation workflow
 General enquiries: Separate enquiry system
+
+
+1.28  User/Profile API Contract
+1.29  Staff/Admin Operational API Contract
+1.30  Cross-Domain API Contract Review
+1.31  Canonical API Examples
+1.32  OpenAPI Contract Specification
+1.33  API Contract Security Review
+1.34  API Contract Consistency & Completeness Review
+1.35  Version 1 API Contract Freeze

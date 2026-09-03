@@ -854,5 +854,47 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 - **CLOSED enum:** `ORDER_RECEIVED`, `ORDER_ACCEPTED`, `ORDER_PROCESSING`, `ORDER_READY_FOR_PICKUP`, `ORDER_SHIPPED`, `ORDER_DELIVERED`, `ORDER_COMPLETED`, `ORDER_CANCELLED`, `NEW_ORDER`, `NEW_MADE_TO_ORDER_REQUEST`, `NEW_ENQUIRY` — `UPPER_SNAKE_CASE`, validated `?type=ORDER_SHIPPED` against registry; unknown → `422 INVALID_VALUE` `field: type`. No per-product variants (`SOFA_SHIPPED`). `PAYMENT_*` deferred to Group H. Adding type within `v1` is contract change.
 - **Machine logic on `type`, not `message`:** `type=ORDER_SHIPPED` → client renders `Your order OD-12345 has been shipped.`; frontend must not parse English `message` for logic; `type` + structured `target` allows `Next.js`/`Flutter` consistent rendering and deep-link.
 
+## 29. User/Profile Conventions (Phase 1.28)
+
+> **Authority:** Reusable conventions governing the User/Profile domain (`USER-001`/`USER-002` — self-context `/me`, server-controlled identity/role, credential separation, allow-list, private caching, cross-platform authoritative identity). Consolidates `phases/phase-1.28.md`.
+
+### 29.1 Self-Context — `/me` Is Always the Authenticated Actor
+
+- **Single self-context path:** `GET /api/v1/me` and `PATCH /api/v1/me` derive identity from `authenticated principal` (session/token). Client never supplies `user_id`, `customer_id`, `account_id` via query/body/URL to select another profile.
+- **No identity substitution:** `?user_id=`, `/me?user_id=123`, `?as_user=...`, `{"user_id":"another"}` are rejected and do not bypass policy. `GET /me?user_id=123` prohibited.
+- **Role-agnostic self:** `Customer → owns own account via /me`; `Staff → sees Staff own account via /me`; `Admin → sees Admin own account via /me` — never impersonation through `/me`. `GET /users/{id}` remains administrative (`users.manage_authorized` Phase 1.29), not self-service.
+- **Why `/me` over `/users/{id}` for self-service:** Makes ownership explicit, reduces IDOR risk, and forces object-level ownership check before serialization.
+
+### 29.2 Server-Controlled Identity & Role
+
+- **Never trust client-supplied identity:** Backend obtains `authenticated principal` from authentication system; does not trust `request body user_id`, `query user_id`, `URL user_id`.
+- **Role is server-controlled, never client-mutable:** `PATCH /me {role: ADMIN}` must fail; mass assignment `{"role":"ADMIN","permissions":["*"],"is_admin":true}` must not alter authorization. Field allow-list `§29.4` is normative; server-controlled fields `id`, `role`, `permissions`, `timestamps`, `verification state`, `account_state`, `staff_approval_state` are never changed via profile update.
+- **Role mapping (mirrors `§18.1`):** CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` (`UPPER_SNAKE_CASE`); no `MANAGER`/`SUPPORT` etc. in V1. Client self-promotion (`{"role":"ADMIN"}`) rejected `422 INVALID_VALUE` or `403 FORBIDDEN` per CLOSED enum; adding role requires compatibility review.
+
+### 29.3 Credential Separation — Profile vs Authentication
+
+- **Profile (`PATCH /me`):** `ordinary personal data` — `name`, `phone` (allow-list). Do not treat `email` (identity), `password` (credential), `role`/`permissions`/`account_state`/`verification` as ordinary profile fields simply because they are stored on same `User` row.
+- **Authentication (`AUTH-*`):** `credentials/session/security` — `password` change (canonical `POST /api/v1/auth/change-password` `AUTH-008`), password reset (`POST /auth/password/*`), email verification, email security-change workflow. `POST /api/v1/me/password` (`USER-003` legacy) is **RETIRED** and **not duplicated** as authoritative — canonical is `POST /api/v1/auth/change-password` per `api-contract.md §29.8` (`USER-004`). Canonical profile route is `PATCH /api/v1/me` (not `/me/profile`).
+- **Credential handling:** `password` never serialized; password change requires `authenticated user + ownership of own credential + current credential verification` where model requires it; `Staff cannot normally change Customer passwords`; `Admin access to Customer credentials must not expose current password` — use dedicated recovery/security workflow where needed.
+
+### 29.4 Profile Field Allow-List & Partial Semantics
+
+- **Allow-list:** `customer_profile.mutable: name, phone` (plus `email` only where explicitly permitted via **dedicated security workflow**, not ordinary allow-list). `server-controlled: id, role, permissions, timestamps, verification state, account state`. Unknown fields rejected (`422 INVALID_VALUE` with `field`) per strict `unknown-field → error` rule (`§15` + `api-resources.md §8.4`).
+- **Partial PATCH:** Only fields included in request are changed; omitted field remains unchanged; do not interpret omission as `set to null` unless field explicitly permits clearing. `phone: null` allowed only if contract permits clearing; `name: null` never valid.
+- **Nullability documented:** `phone = null` valid if business permits; `email` nullable forbidden (required). Contract must state choice; see `api-resources.md §8.1`.
+- **Mass-assignment protection:** Laravel must not `$request->all() → model fill`; `validated input → DTO/command → domain` per `AGENTS.md §3`.
+
+### 29.5 Private Caching — `/me` Is Never Publicly Cached
+
+- **Classification:** `GET /me` → **PRIVATE** — `Cache-Control: private, no-store` (not CDN, not public catalog cache). `PATCH /me` → **NON-CACHEABLE** mutation.
+- **Do not leak:** Private profile responses must not be cached in shared CDN or cross-user `Cache-Control`.
+- **Lightweight:** Keep `GET /me` compact enough for frequent `app starts → GET /me` calls without loading `orders/notifications/cart/requests/enquiries`.
+
+### 29.6 Cross-Platform Authoritative Identity
+
+- **Shared identity:** Same `User` (`id`, `role`, `email_verified`, `profile`) across `Next.js` (browser session httpOnly cookie) and `Flutter` (API credential) via same Laravel backend; `website phone change → Flutter sees same`.
+- **Backend authoritative:** Local `Next.js`/`Flutter` cached profile/role state is advisory only; `role`, `account_state`, `verification`, `authorization` must be refreshed from backend — do not assume cached role valid indefinitely after `Staff role changes` / `account disabled` / `permission change`.
+- **Synchronization:** Server is source of truth; `Next.js`/`Flutter` may cache for UX but must revalidate via `GET /me` where operational decisions matter.
+
 
 

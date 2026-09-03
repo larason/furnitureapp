@@ -1289,8 +1289,78 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/USER-001 — `/me` Is the Self-Service Identity Boundary
+
+**Decision:** Version 1 self-service account API uses **`GET /api/v1/me` (`USER-001`) and `PATCH /api/v1/me` (`USER-002`)** as the **only** Customer/Staff/Admin self-service surface. Identity is derived from `authenticated principal`; client does not supply `user_id`/`customer_id`/`account_id` via query, body, or URL. `GET /me?user_id=123`, `?as_user=...`, `/users/{id}` for self-service are rejected; `Staff → Customer profile via /me` impossible. `GET /users/{id}` remains administrative (`users.manage_authorized` Phase 1.29) not self-service.
+
+**Reason:** `phases/phase-1.28.md §12-14`, `api-contract.md §29.2/§29.3`, `api-conventions.md §29.1` — makes ownership explicit, reduces IDOR, and forces server-derived identity per `AGENTS.md §17` authentication ownership.
+
+**Status:** Accepted
+
+---
+
+### ADR/USER-002 — Customer Account Ownership
+
+**Decision:** **Customers own their accounts and control allowed profile fields.** `name`/`phone` are customer-mutable via `PATCH /me` allow-list; `id`/`role`/`permissions`/`verification state`/`account_state` are server-controlled and never changed via `PATCH /me` (`PATCH {role:ADMIN}` rejected `422` with `field: role`, mass-assignment prevented). `Customer A → Customer B profile` via any future `/users/{id}` must fail object-level check with 404 masking; `Customer cannot transfer ownership`, `change owner`, `grant privileges`. Staff operational view receives only `operational where needed` customer data via `Order`/`Request`/`Enquiry` snapshot, not unrestricted browse.
+
+**Reason:** `phases/phase-1.28.md §10, §30`, `api-contract.md §29.5/§29.6/§29.12`, `business-rules.md §14 #1-2, #4-5, #8` — preserves `IDENT-006`/`OWN-001` ownership; prevents privilege escalation via profile update.
+
+**Status:** Accepted
+
+---
+
+### ADR/USER-003 — Role Is Server-Controlled
+
+**Decision:** `role` is `CLOSED` `CUSTOMER`/`STAFF`/`ADMIN` (`UPPER_SNAKE_CASE`) and **read-only via Profile** (`GET /me` returns `role`, `PATCH /me {role: ADMIN}` must fail with `422 INVALID_VALUE` and `field: role` per `api-contract.md §29.6`). Roles remain `CLOSED by default`; adding `MANAGER`/`DELIVERY_AGENT` etc. requires compatibility review. Role management belongs to Admin-only Phase 1.29 (`staff.approve`/`staff.manage`/`users.manage_authorized`), not to `/me`.
+
+**Reason:** `phases/phase-1.28.md §17-18`, `api-contract.md §29.4/§29.6`, `api-conventions.md §29.2` — prevents vertical escalation via mass-assignment; keeps `api-contract.md §17.5` server-controlled role.
+
+**Status:** Accepted
+
+---
+
+### ADR/USER-004 — Credential Operations Are Separate From Profile Updates
+
+**Decision:** **Credential/security operations are separate from ordinary `PATCH /me`.** `Password change` uses `POST /api/v1/auth/change-password` (or project's established Auth path) with `{"current_password":"...","new_password":"..."}` — not `PATCH /me {password:...}`; `email` change (when supported) uses **dedicated security workflow** (`authenticated request → security confirmation → new email verification → changed`), not silent `PATCH {email: new}`. `password`/`hash`/`tokens`/`secrets` never serialized; verification state `email_verified` server-controlled (`{"email_verified":true}` from client rejected). `Staff cannot normally change Customer passwords`; Admin access to Customer credentials must not expose current password.
+
+**Reason:** `phases/phase-1.28.md §21, §35-37`, `api-contract.md §29.7/§29.8`, `api-conventions.md §29.3`, `business-rules.md §14 #6` — keeps `Profile → ordinary personal data`; `Authentication → credentials/session/security`; prevents credential exposure.
+
+**Status:** Accepted
+
+---
+
+### ADR/USER-005 — Staff Cannot Control Customer Accounts
+
+**Decision:** **Staff cannot arbitrarily control Customer accounts through User/Profile.** `Staff cannot: change customer role, disable customer, modify customer ordering/browsing ability, change password, view credentials, impersonate, transfer ownership, block browsing-or-ordering, grant privileges`. Their `/me` is self-only. Customer administration is **Admin-only** via `GET /users` / `GET /users/{user}` (`users.manage_authorized`) with `reason/authorization/audit` — never via `STAFF` role. This is the `USER-005` separation: Staff operational access does not confer customer-account administration.
+
+**Reason:** `phases/phase-1.28.md §28-29`, `api-contract.md §29.12`, `business-rules.md §14 #4-5`, `api-conventions.md §29.1` — preserves `AGENTS.md §17` Staff restriction as unconditional prohibition.
+
+**Status:** Accepted
+
+---
+
+### ADR/USER-006 — Profile Does Not Embed Orders/Cart/Requests/Enquiries/Notifications
+
+**Decision:** **`GET /me` is account-only.** It does **not embed** `orders[]`, `cart`, `requests[]`, `enquiries[]`, `notifications[]`. Use `GET /me/orders` (`ORD-001`), `GET /me/cart` (`CART-001`), `GET /me/requests` (`REQ-002`), `GET /me/enquiries` (`ENQ-002`), `GET /me/notifications` (`NOT-001`). Keeps representation lightweight (`private, no-store`) for frequent `app starts → GET /me` and leaves `Order`/`Request`/`Enquiry`/`Notification` as authoritative sources.
+
+**Reason:** `phases/phase-1.28.md §43-48`, `api-contract.md §29.4/§29.10`, `api-resources.md §8.1` — prevents `everything-about-this-customer` fat resource; preserves historical snapshots in `Order`/`Request`/`Enquiry`.
+
+**Status:** Accepted
+
+---
+
+### ADR/USER-007 — Saved Address Book Is Deferred
+
+**Decision:** **Saved address book is explicitly deferred for V1.** Version 1 profile does **not include** `addresses[]`/`saved_addresses[]`/`default_address`. Order/Checkout captures transaction-specific delivery information as `delivery_address` snapshot (`api-resources.md §3.3` / `api-contract.md §24.9/§23.3`). Billing address remains V1 deferred (nullable). Future `saved_addresses` will be a separate domain, not a retroactive Profile field.
+
+**Reason:** `phases/phase-1.28.md §41`, `api-contract.md §29.4/§29.10/§29.11`, `business-rules.md §14 #7` — keeps `Profile lightweight`, `Order` historical.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27`, `NOT-001..002` `APPROVED` via `§28` are individually `APPROVED` — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`, `Phase 1.27` notification — `§28`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27`, `NOT-001..002` `APPROVED` via `§28`, `USER-001..002` `APPROVED` via `§29` are individually `APPROVED` — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`, `Phase 1.27` notification — `§28`, `Phase 1.28` user/profile — `§29`.
 
 

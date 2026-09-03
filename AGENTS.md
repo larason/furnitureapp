@@ -536,6 +536,13 @@ Frontend route protection is a UX/security layer, not the final authority.
 - **Protected resources use deny-by-default** — `products/categories → PUBLIC` explicitly public; all else denied unless explicitly authorized; field-level exposure is before serialization (only permitted fields per actor, private vs public cache separated).
 - **Business-state rules and authorization are both required** for state-changing operations — `STAFF ship` needs `ship` permission **and** `Order=PROCESSING`; `CUSTOMER cancel` needs `owns + eligible state + 20-minute window`.
 
+**User/Profile ownership & security (Phase 1.28, mandatory):**
+
+- **Never trust client-supplied user identity for self-service authorization** — `GET /api/v1/me` and `PATCH /api/v1/me` derive identity from `authenticated principal` only; `?user_id=another`, `{"user_id":"another"}`, `GET /me?user_id=123`, or `GET /api/v1/users/{id}` without `users.manage_authorized` must not return another user's profile (`docs/api/api-contract.md §29.2`, `docs/api/api-conventions.md §29.1`).
+- **Never allow profile updates to modify role, permissions, ownership, or security state** — `PATCH /api/v1/me {role: ADMIN}`, `{"permissions":["*"]}`, `{"account_state":"ACTIVE"}`, `{"email_verified":true}`, `{"user_id":"..."}` are rejected (`422 INVALID_VALUE` `field: role`); only `name`/`phone` are on the customer-profile allow-list (`docs/api/api-contract.md §29.6`, `docs/api/api-resources.md §8.4`, `docs/api/api-conventions.md §29.4`).
+- **Credential changes must use dedicated authentication/security workflows** — `password` via `POST /api/v1/auth/change-password` (not `PATCH /me {password}`), `email` security change via dedicated workflow (`authenticated request → security confirmation → verification → changed`), `role`/`permissions`/`account_state` via Admin-only Phase 1.29 (`docs/api/api-contract.md §29.7/§29.8`).
+- **Customer accounts are customer-owned; Staff operational access does not confer customer-account administration** — staff `GET /me` sees self only; staff cannot `change customer role/disable customer/modify ordering ability/impersonate/view credentials/transfer ownership` via User/Profile (`docs/api/api-contract.md §29.12`, `docs/domain/business-rules.md §14`, `AGENTS.md §17` authentication ownership).
+
 ---
 
 ## 18. Security Baseline

@@ -665,7 +665,7 @@ CLOSED enum; do not create per-product variants (`SOFA_SHIPPED`). Adding type wi
 
 ### 11.7 Profile & Cart vs Order
 
-- **Profile (PATCH `/me/profile`):** `name`, `phone` mutable; `email`/`password`/`role`/`account_status` require dedicated workflows, not ordinary `PATCH`. `id`, `created_at`, verification state server-generated.
+- **Profile (PATCH `/me`):** `name`, `phone` mutable; `email`/`password`/`role`/`account_status` require dedicated workflows, not ordinary `PATCH`. `id`, `created_at`, verification state server-generated. **Canonical profile route is `PATCH /api/v1/me` (not `/me/profile`); `/me/profile` is not a canonical alias in this contract.**
 - **Identifiers:** Authenticated requests never require `{"user_id":"current-user"}`; server derives ownership. Anonymous requests must contain contact, not fake `user_id`.
 - **Validation:** Schema: `name`/`phone` string trimmed, `phone` normalized, `email` format not mutable via this endpoint. Mutable: `name`, `phone` only (allow-list). Immutable: `email`/`password`/`role`/`account_status`/`id`/`created_at`. Auth required, Authz own profile only.
 
@@ -752,23 +752,82 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 - **Internal:** Unexpected failure → `500 INTERNAL_SERVER_ERROR` + `meta.request_id` only; full stack stays in server logs, never in `message`/`details`.
 - **Pagination/query** `page/per_page` out of range, `sort`/`filter` allow-list miss → 422 `INVALID_VALUE` with `field` indicating param.
 
+## 8. User/Profile — Self-Service Account (Phase 1.28)
+
+> **Authority:** This section is the canonical **User/Profile resource** for V1 self-service. It defines self-service representation, staff/admin boundary, ownership, relationships, read-only/mutable/sensitive classification per `phase-1.28.md`. Endpoint inventory is authoritative in `api-contract.md §29`; conventions in `api-conventions.md §29`.
+
+### 8.1 User/Profile — Self-Service Representation (`USER-001` / `USER-002`)
+
+**Self-service boundary:** `GET /api/v1/me` and `PATCH /api/v1/me` are the **only** Customer/Staff/Admin self-service profile surface. Identity is derived from `authenticated principal`; `user_id` query/body is never trusted.
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `user_...` | Recipient only (own) | no | Stable opaque, server-generated; never client-supplied or mutable |
+| `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | Recipient only (own) read-only | no | Server-controlled; `UPPER_SNAKE_CASE`; `PATCH /me {role:ADMIN}` rejected |
+| `name` | string | Own | no | Trimmed non-empty, length validated; mutable via `PATCH /me` allow-list |
+| `email` | string | Own | no | Lowercased/trimmed unique; read via Profile, **change via dedicated security workflow** (`POST /auth/*`), not ordinary `PATCH` |
+| `phone` | string \| null | Own | yes | Normalized; nullable if business permits clearing; mutable via `PATCH /me` allow-list; `phone_verified` (if later) server-controlled |
+| `email_verified` | boolean | Own | no | Server-controlled read-only alias for `email_verified_at`; client `{"email_verified":true}` rejected; derived from `email_verified_at: ISO8601 Z \| null` authoritative attribute |
+| `created_at` | ISO8601 `Z` | Own | no | Server-generated |
+| `updated_at` | ISO8601 `Z` | Own | no | Server-generated |
+
+**Not serialized (even to Admin via normal `/me`):** `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, `permissions`/`authorization flags`, `internal staff notes`/`internal account flags`, `payment credentials`.
+
+**Lightweight:** `GET /me` contains **only account data** — not `orders[]`, `cart`, `requests[]`, `enquiries[]`, `notifications[]`, `addresses[]`/`saved_addresses[]` (deferred), `notification preferences`. Those via `GET /me/orders`, `GET /me/cart`, `GET /me/requests`, `GET /me/enquiries`, `GET /me/notifications`. Historical `Order`/`Request`/`Enquiry` snapshot (`delivery_address`, `contact`) is preserved separately — profile change never rewrites those.
+
+### 8.2 Staff/Admin Profile Representation Boundary
+
+| Data | Customer `GET /me` | Staff `GET /me` (own) | Staff operational view of Customer (via `Order`/`Request`/`Enquiry`) | Admin `GET /me` or `GET /users/{user}` where authorized |
+|---|---|---|---|---|
+| `id`, `name`, `email`, `phone`, `role`, `email_verified`, `created_at/updated_at` | **Own** | **Own** (same fields: `id`, `role:STAFF`, `name`, `email`, `phone`, `email_verified`) | **Operational only** — customer contact/order snapshot (`recipient_name`, `phone`, `delivery_address`) relevant to `Order` fulfillment, not unrestricted profile browse | **Own** plus authorized `GET /users/{user}` where `users.manage_authorized` (Phase 1.29) |
+| `STAFF/ADMIN → another Customer profile via /me` | No | **No** | No | Only via `ADM-005/006` authorized endpoint, not self-service |
+| `role` management | No | No | No | Authorized separate (`staff.approve`/`staff.manage`) |
+
+Self-service `PATCH /me` is **own only** for all roles; Staff cannot edit Customer profile through `/me` and cannot restrict customer browsing/ordering.
+
+### 8.3 Ownership & Relationships (Logical)
+
+- **Ownership:** `User 1 — * Order`, `User 1 — * Notification`, `User 1 — 1 Cart (active, holder-scoped)`, `User 1 — * Request`, `User 1 — * Enquiry` (authenticated) — `User → resource owner == authenticated principal` required for owner-based resources (`api-contract.md §29` + `§18.3`). Anonymous `Request`/`Enquiry` have `user_id = null` and are not owner-matchable via `email`.
+- **Cross-platform identity:** `Next.js Website` and `Flutter App` share **same `User` identity** (`api-contract.md §29.9`) via Laravel backend; `Customer changes phone on website → server updated → Flutter GET /me sees same`.
+- **Historical preservation:** Changing `name`/`phone` via `PATCH /me` does **not** transfer or rewrite historical `Order customer`, `Request contact snapshot`, `Enquiry contact snapshot`, `Notification target`. Those remain immutable once created.
+
+### 8.4 Field Classification (Normative — Phase 1.15 layered validation)
+
+| Classification | Fields | `GET /me` | `PATCH /me` (`USER-002`) | Dedicated workflow |
+|---|---|---|---|---|
+| **Server-controlled identity** | `id`, `created_at`, `updated_at` | Read | **No** (rejected `INVALID_VALUE`) | — |
+| **Server-controlled authorization** | `role`, `permissions`, `account_state`/`staff_approval_state`/`suspension`/`disablement` | Read (`role`/`account_state` where relevant) | **No** — `PATCH {role: ADMIN}` must fail | Admin `users.manage_authorized` / `staff.manage` (Phase 1.29) |
+| **Server-controlled verification** | `email_verified` / `email_verified_at` | Read | **No** — `{"email_verified":true}` rejected | `AUTH-006/007` secure verification |
+| **Mutable profile (allow-list)** | `name`, `phone` | Read | **Yes** — partial `PATCH`; omission leaves unchanged; `null` only if contract explicitly permits per field | — |
+| **Security-sensitive contact** | `email` | Read | **Prefer dedicated security operation** — treat as identity/auth, not ordinary profile (`api-contract.md §29.7`): authenticated request → security confirmation → new email verification → changed | `POST /auth/change-email` or equivalent (deferred specifics) |
+| **Credentials (never serialized)** | `password`/`password_hash`/tokens/secrets | **Never** | **Never** via `PATCH /me` — separate `POST /auth/change-password` (`AUTH-*` canonical) with `current_password` verification | `POST /auth/change-password` |
+| **Sensitive never via Profile** | `payment credentials`, `provider secrets` | Never | Never | `Group H` / `Group R` |
+
+Mass-assignment must be prevented — only allow-listed fields may be updated; unknown fields rejected per `api-contract.md §15.15` strict `unknown-field → 422` rule.
+
+### 8.5 Privacy, Caching & Validation Notes
+
+- **Privacy:** `GET /me` is `PRIVATE` — `Cache-Control: private, no-store` (not CDN, not public catalog cache). `PATCH /me` is non-cacheable mutation. Customer must not see `internal staff notes`/`internal flags`; Staff must not see Admin-only fields via operational view; Admin still does not see credentials.
+- **Validation (schema → domain → authz):** `name → valid string/length` (trimmed, collapses whitespace), `phone → approved format` (normalized, max 30, not auto `phone_verified:true`), `email → valid format` (lowercased) but change via security workflow. Do not perform business authorization through field validation. `INVALID_VALUE`/`INVALID_FORMAT`/`MISSING_REQUIRED_FIELD` per `api-contract.md §15`.
+- **Cross-references:** Validation `api-contract.md §29.6/§29.13`; authorization `api-contract.md §29.12`; error codes `AUTHENTICATION_REQUIRED` (401), `INVALID_VALUE` (422 for immutable fields), `FORBIDDEN` (403) where appropriate; business-rules `business-rules.md §14`.
+
 ## 13. Authentication & Account Resources — Conceptual (Phase 1.17, No Endpoints)
 
 > No endpoint definitions here; this section documents the **conceptual resources** that the authentication contract will later expose via endpoints. Field-level schemas and routes belong to implementation phases. All role values are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`.
 
-### 13.1 User / Profile (Account)
+### 13.1 User / Profile (Account) — Conceptual Anchor (Detailed in §8)
 
 | Field | Type | Exposure | Auth | Notes |
 |---|---|---|---|---|
 | `id` | string (opaque) | CUSTOMER `own` / Admin `authorized` | authenticated | Opaque identifier, not DB leak |
-| `name` | string | own / authorized admin | authenticated for own; Staff not browse-as-customer | Trimmed, non-empty |
-| `email` | string | own / authorized admin | authenticated | Lowercased/trimmed, unique; not client-set `email_verified` |
-| `phone` | string | own / authorized admin | authenticated | Normalized; important for orders/delivery but not auth verification by default |
-| `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | own (own role) / authorized admin | authenticated | Server-controlled; client self-promotion rejected |
-| `email_verified_at` | ISO8601 `Z` or `null` | own | authenticated | Server-set via secure time-limited mechanism; client `email_verified:true` not authoritative |
-| `created_at` / `updated_at` | ISO8601 `Z` | own | authenticated | Audit |
+| `name` | string | own / authorized admin | authenticated for own; Staff not browse-as-customer | Trimmed, non-empty; **mutable via `PATCH /me` allow-list** (`§8`) |
+| `email` | string | own / authorized admin | authenticated | Lowercased/trimmed, unique; not client-set `email_verified`; **change via security workflow, not ordinary `PATCH`** (`§8`/`§29.7`) |
+| `phone` | string \| null | own / authorized admin | authenticated | Normalized; important for orders/delivery but not auth verification by default; **nullable, mutable via `PATCH /me`** (`§8`) |
+| `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | own (own role) / authorized admin | authenticated | Server-controlled; client self-promotion rejected; **read-only via Profile** (`§8`) |
+| `email_verified` | boolean | own | authenticated | Server-controlled read-only alias for `email_verified_at` (`email_verified_at: ISO8601 Z \| null` authoritative backing attribute, not wire field); client `{"email_verified":true}` rejected |
+| `created_at` / `updated_at` | ISO8601 `Z` | own | authenticated | Audit; **server-controlled** |
 
-**Rules:** Customer is primary actor with full ownership of own account; `STAFF`/`ADMIN` do not own customer accounts (see `api-contract.md §17.1`). Profile `PATCH` is allow-listed (`name`, `phone`) — not `role`, `email_verified`, `password`, `account_status` (dedicated workflows). No `password`/`password_hash` ever serialized.
+**Rules:** Customer is primary actor with full ownership of own account; `STAFF`/`ADMIN` do not own customer accounts (see `api-contract.md §17.1` / `§29`). Profile `PATCH` (`USER-002`) is **allow-listed (`name`, `phone`)** — not `role`, `email_verified_at`, `password`, `account_state` (dedicated workflows). `email` change is **security-sensitive** — not ordinary `PATCH` (`§29.7`). No `password`/`password_hash` ever serialized. For full V1 resource representation, field matrix, and security boundary see `§8`.
 
 ### 13.2 Authentication (Conceptual Resource, Not Serialized Secrets)
 
@@ -849,7 +908,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | Resource / Action | Anonymous | Customer | Staff | Admin | Rule |
 |---|---|---|---|---|---|
 | `POST /register` (customer) | **Allow** | N/A (already authed) | Deny | Deny | Public self-registration only |
-| `GET /me/profile`, `PATCH` own `name`/`phone` | Deny 401 | **Allow own** (allow-list `name`/`phone` only, not `role`/`password`/`email_verified_at`/`account_status`) | Allow own (own profile) | Allow own | `user_id` swapping, `role` mass-assignment rejected |
+| `GET /me`, `PATCH /me` own `name`/`phone` | Deny 401 | **Allow own** (allow-list `name`/`phone` only, not `role`/`password`/`email_verified_at`/`account_status`; canonical `PATCH /api/v1/me`, legacy `/me/profile` **not canonical**) | Allow own (own profile) | Allow own | `user_id` swapping, `role` mass-assignment rejected |
 | `GET` another’s profile / `GET /users/{id}` | Deny | Deny (own only) | Deny (no browse-as-customer) | As authorized purpose-bound (review, not impersonation) | Customer owns account |
 | `POST` password change | Deny | **Allow own** via secure authenticated workflow (not `PATCH /me {password}`) | Own only | Own only | Security-sensitive |
 | `POST` password reset (anonymous) | Allow (public endpoint + anti-abuse) | — | — | — | Generic `"Request received."` |
@@ -880,7 +939,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | **Request** (made-to-order) | **Create** (anonymous allowed) | **Own** | **Manage** | **Manage** | `REQ-001..007` | `POST /requests` (REQ-001) public submit (preferred multipart with attachments); `GET /me/requests` (REQ-002), `GET /me/requests/{request}` (REQ-003) own; `GET /requests` (REQ-004), `GET /requests/{request}` (REQ-005), `PATCH /requests/{request}` (REQ-006) Staff `requests.view/manage`; `POST /requests/{request}/attachments` (REQ-007) **Scoped** token + parent (anonymous requires server-issued upload token, predictable ID insufficient) |
 | **Enquiry** | **Create** (anonymous allowed) | **Own** | **Manage** | **Manage** | `ENQ-001..007` | `POST /enquiries` (ENQ-001) public (preferred multipart with attachments); `GET /me/enquiries` (ENQ-002), `GET /me/enquiries/{enquiry}` (ENQ-003) own; `GET /enquiries` (ENQ-004), `GET /enquiries/{enquiry}` (ENQ-005), `PATCH /enquiries/{enquiry}` (ENQ-006) Staff operational; `POST /enquiries/{enquiry}/attachments` (ENQ-007) **Scoped** token + parent (same token model as `REQ-007`, predictable ID insufficient) |
 | **Notification** | No | **Own** (customer notifications, holder-scoped via `/me`) | **Operational own**, recipient-scoped (operational: new order/request/payment event) | **Admin limited own**, recipient-scoped (administrative as needed) | `NOT-001`, `NOT-002` | `GET /me/notifications` (NOT-001) own per actor (Customer own / Staff `OPERATIONAL` own / Admin `ADMIN` limited own), paginated, holder-scoped; `PATCH /me/notifications/{notification}` (NOT-002) read/unread only (content immutable), same actor distinction |
-| **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..007`, `USER-001..003`, `ADM-005/006` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only), `POST /me/password` (USER-003) own; `GET /users` (ADM-005), `GET /users/{user}` (ADM-006) Admin `users.manage_authorized` only |
+| **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..008`, `USER-001..002`, `ADM-005/006` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only, canonical `PATCH /api/v1/me`; legacy `/me/profile` retired), `POST /auth/change-password` (AUTH-008, canonical; legacy `POST /me/password` `USER-003` **RETIRED**) own; `GET /users` (ADM-005), `GET /users/{user}` (ADM-006) Admin `users.manage_authorized` only |
 | **Staff / Roles** | No | No | No | **Manage** | `ADM-001..004` | `GET /staff` (ADM-001), `POST /staff/invitations` (ADM-002), `POST /staff/{staff}/approve` (ADM-003), `PATCH /staff/{staff}` (ADM-004) — all Admin `staff.manage`/`staff.approve` (audited, no self-approval) |
 
 Additional notes:
