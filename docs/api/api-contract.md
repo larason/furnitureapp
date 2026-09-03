@@ -1208,8 +1208,8 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `ADM-002` | POST | `/api/v1/staff/invitations` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.approve` | Invite staff (admin creates/invites) | PROPOSED |
 | `ADM-003` | POST | `/api/v1/staff/{staff}/approve` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.approve` + audit | Approve staff | PROPOSED |
 | `ADM-004` | PATCH | `/api/v1/staff/{staff}` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | Update staff | PROPOSED |
-| `ADM-005` | GET | `/api/v1/users` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | List users (authorized admin) | PROPOSED |
-| `ADM-006` | GET | `/api/v1/users/{user}` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | Get user detail (authorized) | PROPOSED |
+| `ADM-008` | GET | `/api/v1/users` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | List users (authorized admin) | PROPOSED |
+| `ADM-009` | GET | `/api/v1/users/{user}` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | Get user detail (authorized) | PROPOSED |
 | `PAY-001` | POST | `/api/v1/payments` | Payment | Customer | Yes | `AUTHENTICATED_OWNER` own order | Initiate payment (generic placeholder, Group H) | PROPOSED* |
 | `PAY-002` | GET | `/api/v1/payments/{payment}` | Payment | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own / `OPERATIONAL` / `ADMIN` limited | Get payment status (generic) | PROPOSED* |
 | `WEBHOOK-001` | POST | `/api/v1/webhooks/payment/{provider}` | Payment | System/Webhook | Signature | `SYSTEM` service auth (Group H) | Payment provider callback (Group H) | PROPOSED* |
@@ -4087,7 +4087,7 @@ Do not combine everything into one mutable `User` object.
 The most important account endpoint represents the **authenticated actor's own identity**, not an arbitrary `user_id` lookup.
 
 - **Path:** `/api/v1/me` — self-context derived from `authenticated principal` (session/token). Client does **not** supply `user_id`, `customer_id`, `account_id` via query, body, or URL to select whose profile is returned.
-- **Why `/me` over `/users/{id}` for self-service:** Makes ownership explicit and reduces IDOR risk. `GET /users/{id}` remains **administrative** (`ADM-005/006` `users.manage_authorized` only) and is not available to ordinary Customer/Staff self-service.
+- **Why `/me` over `/users/{id}` for self-service:** Makes ownership explicit and reduces IDOR risk. `GET /users/{id}` remains **administrative** (`ADM-008/009` `users.manage_authorized` only) and is not available to ordinary Customer/Staff self-service.
 
 ```
 GET /api/v1/me  →  authenticated principal  →  safe profile representation
@@ -4107,7 +4107,7 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 > **Canonical password route:** `POST /api/v1/auth/change-password` is the **single** canonical password-change endpoint (see `§29.8` `USER-004`). `POST /api/v1/me/password` (`USER-003` legacy alias) is **RETIRED** — do not implement as a second authoritative endpoint; `§19.1` `USER-003` is retained only as a retired alias for traceability, not as a duplicate operational path.
 
 - **No customer collection:** `GET /api/v1/users` is **not** available to Customers. Customer self-service does not require a public User collection.
-- **No customer lookup:** `GET /api/v1/users/{id}` is **not** customer-accessible. If Admin later needs User lookup, that belongs to Phase 1.29 `ADM-005/006` (this phase defines resource concepts only).
+- **No customer lookup:** `GET /api/v1/users/{id}` is **not** customer-accessible. If Admin later needs User lookup, that belongs to Phase 1.29 `ADM-008/009` (this phase defines resource concepts only).
 - **Staff lookup / Customer management:** Staff directory and customer administration belong to Phase 1.29 — not defined here.
 
 ### 29.4 User/Profile Representation — Customer View (`USER-001` response)
@@ -4131,7 +4131,7 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 
 | Field | Anonymous | Customer (own) | Staff (own `GET /me` + operational where authorized) | Admin |
 |---|---|---|---|---|
-| `id` | No | **Yes** (own) | Operational where needed (via separate Admin `users` endpoint, not `GET /me` of another user) | **Authorized** (`ADM-005/006` where approved) |
+| `id` | No | **Yes** (own) | Operational where needed (via separate Admin `users` endpoint, not `GET /me` of another user) | **Authorized** (`ADM-008/009` where approved) |
 | `name` | No | **Yes** (read + `PATCH` mutable) | Own mutable (`PATCH /me`) ; operational where needed for `Order` contact snapshot only, not unrestricted profile browse | **Authorized** |
 | `email` | No | **Yes** (read); **Change via security workflow**, not ordinary `PATCH` (see `§29.7`) | Own read; operational where needed (fulfillment contact snapshot) | **Authorized** (where approved; change via security workflow) |
 | `phone` | No | **Yes** (read + `PATCH` mutable) | Own mutable; operational where needed | **Authorized** |
@@ -4144,7 +4144,7 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 
 - **Customer → `own` only** — `Customer A → Customer B profile` via any future `/users/{id}` must fail object-level check (see `§29.12`).
 - **Staff → customer profile:** Staff must not receive unrestricted Customer profiles merely because they process Orders; only operationally relevant customer information (`name`, `phone`, `delivery address` snapshot) via authorized resource representations (`Order`, `Request`, `Enquiry`), not via generic profile browse.
-- **Admin → customer profiles:** Authorized visibility belongs to `ADM-005/006` (`users.manage_authorized`) in Phase 1.29 — not via `/me`.
+- **Admin → customer profiles:** Authorized visibility belongs to `ADM-008/009` (`users.manage_authorized`) in Phase 1.29 — not via `/me`.
 - **Private:** `GET /me` is **PRIVATE** — `Cache-Control: private, no-store` (not CDN, not public catalog cache); `PATCH /me` is **NON-CACHEABLE** mutation.
 
 ### 29.6 Profile Update — `PATCH /api/v1/me` (`USER-002`)
@@ -4291,5 +4291,469 @@ Within `v1`, treat as **contract-sensitive** and do not change casually: `role` 
 - Domain: `business-rules.md §14` (Customers own accounts, permitted profile updates, staff does not control customer accounts, cannot restrict browsing/ordering, admin authority explicit, profile does not alter historical Orders/Requests/Enquiries, saved addresses deferred).
 - Decisions: `decisions.md ADR/USER-001..007` (`/me` boundary, customer ownership, role server-controlled, credential separation, staff cannot control customer accounts, profile lightweight, saved addresses deferred).
 - Links to Conventions & Resources updated: `§20` now includes User/Profile conventions `§29`.
+
+---
+
+## 30. Staff/Admin Operational API Contract (Phase 1.29)
+
+> **Authority:** Canonical domain API contract for **Staff/Admin operational workflows** — privileged commerce operations that remain fully server-controlled, auditable, and customer-account-protective. Consolidates `phases/Phase-1.29.md` and is consistent with `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`), `Catalog` (`§21`), `Order` (`§24`), `Tracking/Fulfillment` (`§25`), `Request` (`§26`), `Enquiry` (`§27`), `Notification` (`§28`), `User/Profile` (`§29`).
+> **Core Principle:** **Staff operate commerce; Admin administers Staff and approves privileged configuration. Neither invents business state, controls customer accounts, or bypasses inventory/financial invariants.** All privileged mutations are explicit controlled actions (`POST /orders/{order}/accept`, `POST /inventory/{inventory}/adjust`, `POST /staff/{user}/approve`), never generic `PATCH /admin/orders/{id}` or `PATCH /admin/users/{id} {role:ADMIN}`. Customer accounts remain protected: Staff have zero customer-account administration authority.
+
+### 30.1 Actors & Closed Role Model
+
+| Actor | Meaning | Self-service | Operational scope |
+|---|---|---|---|
+| `CUSTOMER` | Owns own commerce (`browse`, `cart`, `checkout`, `own orders/requests/enquiries/notifications/profile`) | `GET/PATCH /me` own only | No privileged ops |
+| `STAFF` | Day-to-day operations (`products/catalog operational`, `inventory`, `orders/fulfillment`, `delivery-fee`, `requests`, `enquiries`, `operational notifications`) | `GET/PATCH /me` own only | **No** customer-account control, no role assignment, no approve/suspend |
+| `ADMIN` | Highest administrative authority (`approve/manage Staff`, plus may perform Staff ops where permitted) | `GET/PATCH /me` own only | Explicit Admin-only under `/api/v1/admin/*`; still no generic superuser bypass |
+
+- **CLOSED:** `CUSTOMER`/`STAFF`/`ADMIN` only (`UPPER_SNAKE_CASE`). `STAFF` not via public registration; `ADMIN` via bootstrap/admin-controlled invitation.
+- **Hierarchy (permission, not ownership):** `ADMIN → STAFF → CUSTOMER` for permission inheritance only — not customer-account ownership. `Staff → owns Customer account` is **false**.
+- **No self-promotion:** `{"role":"ADMIN"}` / `{"permissions":["*"]}` / `{"account_state":"ACTIVE"}` from any client is rejected `422 INVALID_VALUE` `field: role` per `§14.9`/`§29.6`; role changes only via Admin controlled actions (§30.14).
+
+### 30.2 Privileged Design Principles
+
+- **No generic admin PATCH for state:** `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions (`POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/set-delivery-fee`, `POST /inventory/{inventory}/adjust`, `POST /staff/{user}/approve`).
+- **Default deny:** `authenticated + role + resource + action + ownership/context + business-state + operational scope` — all must pass; `role` alone never authorizes.
+- **Customer accounts remain protected (§30.8):** Staff must not `disable/block customer browsing/ordering`, `change role/permissions`, `change ownership`, `impersonate`, `change password`, `edit security attributes`, `delete account` via ordinary ops.
+- **No ID-only auth:** possession of `orderId`/`productId`/`requestId` grants nothing; server-side policy always.
+- **Sensitive fields never client-controlled:** `role`, `permissions`, `approval actor`, `timestamps`, `order totals`, `delivery_fee` derived, `audit actor` server-derived.
+
+### 30.3 Staff/Admin API Surface — Operational (unprefixed) vs Administrative (`/admin`)
+
+- **Canonical namespace (frozen for V1):** Staff/Admin **operational** endpoints reuse the authoritative unprefixed paths already established in `§19.1`/`§30.5-§30.11` — `GET/POST /api/v1/orders`, `GET/POST /api/v1/inventory`, `GET /api/v1/requests`, `GET /api/v1/enquiries`, `POST /api/v1/orders/{order}/accept|process|ready-for-pickup|ship|deliver|complete|delivery-fee` — distinguished by `OPERATIONAL` authorization (`orders.view_operational`, `inventory.view/manage`, etc.), **not** by a separate `/api/v1/staff/*` prefix. `§30.5-§30.11` tables are authoritative; `phases/Phase-1.29.md §5.1-§5.2` conceptual `POST /api/v1/staff/orders/{order}/accept` / `start-processing` / `complete-pickup` / `set-delivery-fee` map canonically to `POST /api/v1/orders/{order}/accept` / `process` (`ORD-008`) / `complete` (`ORD-013`) / `delivery-fee` (`ORD-014`) per `§24.13`/`§30.7` (`process` not `start-processing`, `complete` not `complete-pickup`, `delivery-fee` not `set-delivery-fee`).
+- **Administrative:** `ADMIN`-only functions use `/api/v1/admin/*` — `GET/POST /api/v1/admin/staff`, `POST /api/v1/admin/staff/{user}/approve|suspend|reactivate`, `GET /api/v1/admin/audit-logs`, `GET /api/v1/admin/products` (`CAT-013/014` operational catalog reads).
+- **Reuse without duplication:** where `ADMIN` may perform same operational action, endpoint is `STAFF or ADMIN` on the **same** operational path (e.g., both `STAFF` and `ADMIN` may `POST /api/v1/orders/{order}/ship` if `orders.ship` granted) — do not duplicate `GET /admin/orders` alongside `GET /orders`.
+- **Operational vs Administrative split is contractual:** `orders.view_operational` may be `STAFF or ADMIN`; `staff.approve` is `ADMIN` only. Wire routes are stable per `§30.5`/`§30.21` tables; frontend must use canonical paths before building.
+
+### 30.4 Operational Catalog Contract
+
+Public vs Operational representations remain separate (see `api-resources.md §1` vs §9 operational). Operational may include `internal inventory`, `unpublished state`, `operational metadata`, `internal notes` where approved — never leak through public `GET /products`.
+
+#### 30.4.1 Operational catalog endpoints (Authoritative)
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `CAT-007` | `POST` | `/api/v1/products` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Create product | — | — |
+| `CAT-008` | `PATCH` | `/api/v1/products/{product}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Update permitted product fields | Designed idempotent | Low |
+| `CAT-009` | `POST` | `/api/v1/products/{product}/images` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Manage product images/media metadata | — | — |
+| `CAT-010` | `POST` | `/api/v1/products/{product}/variants` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Manage permitted variants | — | — |
+| `CAT-011` | `POST` | `/api/v1/categories` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Create category | — | — |
+| `CAT-012` | `PATCH` | `/api/v1/categories/{category}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Update category | Designed idempotent | Low |
+| `CAT-013` | `GET` | `/api/v1/admin/products` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | List products for operations (operational read, includes unpublished/draft) | — | — |
+| `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | Retrieve product operationally (operational read, includes internal flags/inventory) | — | — |
+
+- Do not introduce product states contradicting `§21` domain model; use existing `is_active`/`is_published`/`product_type`.
+- `CAT-007`/`008` request bodies contain only `name/slug/description/category_id/product_type/price/is_active/is_published` allow-list; `id/created_at/availability/stock_indicator/reserved_quantity` server-controlled.
+- **Operational catalog reads (`CAT-013/014`) are stable read endpoints:** `GET /api/v1/admin/products` (`CAT-013`) and `GET /api/v1/admin/products/{product}` (`CAT-014`) are authoritative operational reads (not `INV-002` inventory detail). `CAT-013` supports pagination `page`/`per_page` → `meta.pagination` (deterministic `created_at DESC, id ASC`), allow-list filters `search`, `category`, `product_type` CLOSED, `is_active` boolean, `is_published` boolean, `availability` (operational view only); arbitrary field filtering rejected `422`. Response is operational product representation (see `api-resources.md §10.1` — includes `is_active`, `is_published`, `operational inventory` where authorized, never leaked via public `GET /products`). `CAT-014` returns single operational product with same fields plus `images`/`variants` operational detail. Both are `PRIVATE` (`Cache-Control: private, no-store`), never CDN public; `PRODUCT_NOT_FOUND` 404 if not authorized. `CAT-013/014` fulfill `phases/Phase-1.29.md §7.1` list/retrieve requirement; `INV-002` remains inventory detail only.
+
+### 30.5 Inventory Operational Contract
+
+Inventory is operational, not customer-editable (see `api-resources.md §9`).
+
+#### 30.5.1 Inventory endpoints (Authoritative)
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `INV-001` | `GET` | `/api/v1/inventory` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (paginated, filtered) | — | — |
+| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory by product/variant | — | — |
+| `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable `reason` | Controlled stock adjustment (not `PATCH {quantity:999}`) | **Required** (`Idempotency-Key`) — same key replays `200` prior success (no second delta applied), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION` | **Critical** (race with concurrent adjust/checkout) |
+
+- **No arbitrary `PATCH /inventory/{id}`:** only explicit `POST .../adjust`.
+- **Request:** `{"quantity_delta": 10, "reason": "STOCK_RECEIPT"}` (`quantity_delta` integer may be negative where business permits, but resulting `new_quantity = current_quantity + quantity_delta` must respect business invariants; `reason` CLOSED enum per §30.5.2). Unknown fields rejected.
+- **Response:** `200 {"data": {inventory: {id, product_id, variant_id, quantity, reserved_quantity, available_quantity, updated_at}}}` with server-calculated `new_quantity` transactional; `quantity` is item units, not TZS minor units.
+- **Validation:** `inventory exists`, `actor authorized`, `reason CLOSED`, `quantity_delta integer`, `resulting quantity >=0` where business prohibits negative, `concurrent modification` detected via transaction/locking.
+- **Errors:** `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 RESOURCE_NOT_FOUND`, `409 CONFLICT` (`RESOURCE_VERSION_CONFLICT`), `422 INVALID_VALUE`/`MISSING_REQUIRED_FIELD`, `429 RATE_LIMITED`.
+
+#### 30.5.2 Adjustment reasons (CLOSED)
+
+`STOCK_RECEIPT`, `CORRECTION`, `DAMAGE`, `RETURN`, `AUDIT_ADJUSTMENT` — `UPPER_SNAKE_CASE` CLOSED; adding new reason is compatibility review; unknown `reason` → `422 INVALID_VALUE` `field: reason`.
+
+### 30.6 Staff Order Listing & Detail (Operational Representations)
+
+Operational order representation is distinct from customer-facing (§24.11). Operational may include `customer contact snapshot` (`name/email/phone` limited, purpose-bound), `delivery_address snapshot`, `fulfillment_type`, `delivery_fee/delivery_fee_status`, `subtotal/total` authoritative, `payment summary safe fields`, `internal operational metadata where approved`, `fulfillment state`, `cancellation eligibility/state`, `timestamps` — never `password/tokens/payment secrets/raw card`.
+
+#### 30.6.1 Order listing — `GET /api/v1/orders` (`ORD-005`)
+
+- **Actor:** `STAFF or ADMIN` with `orders.view_operational`.
+- **Purpose:** Operational order queue for fulfilment; not customer history (`GET /me/orders` is customer history).
+- **Allowed filters (allow-list):** `order_status` CLOSED, `fulfillment_type` CLOSED (`PICKUP`/`DELIVERY`), `payment_status` where approved (`PENDING_PAYMENT`/`PAID`), `delivery_fee_status` (`PENDING`/`FINALIZED`), `created_from`/`created_to` ISO8601 `Z`, `search` (`order_reference`, customer `name/email/phone` operational only where permitted), `page`/`per_page`. Arbitrary field filtering rejected `422`.
+- **Pagination:** `page`/`per_page` → `meta.pagination` per `§4`; deterministic `created_at DESC, id ASC`.
+- **Response:** `200 {"data": [OrderSummaryOperational...], "meta": {"pagination": {...}}}` — operational summaries include `order_reference`, `status`, `fulfillment_type`, `delivery_fee_status`, `customer:{name,email}` limited.
+- **Privacy:** only operationally necessary customer data; not `entire customer account`.
+
+#### 30.6.2 Order detail — `GET /api/v1/orders/{order}` (`ORD-006`)
+
+- **Actor:** `STAFF or ADMIN` `orders.view_operational`.
+- **Response:** full operational detail including `customer limited contact`, `items historical snapshots`, `fulfillment snapshot`, `totals`, `payment safe summary`, `status_history richer actor/note where authorized`.
+- **Not embedded:** customer's other orders, full cart, password/security profile, unrelated enquiries/requests — unless separate authorized relationship.
+
+### 30.7 Controlled Order State Actions — Full State Machine
+
+Actions exactly match `§24.13` / `§25.4` / `§25.5` state transitions; no `PATCH {status:"DELIVERED"}` bypass.
+
+| Current | Action POST | Actor | Fulfillment | Preconditions | Next | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|
+| `PAID` (+ `delivery_fee FINALIZED`) | `/orders/{order}/accept` `ORD-007` | `STAFF or ADMIN` `orders.accept` | Any | `PAID` authoritative + `delivery_fee FINALIZED` | `ACCEPTED` | Required | Critical |
+| `ACCEPTED` | `/orders/{order}/process` `ORD-008` | `STAFF or ADMIN` `orders.process` | Any | `ACCEPTED` | `PROCESSING` | Required | Critical |
+| `PROCESSING` | `/orders/{order}/ready-for-pickup` `ORD-009` | `STAFF or ADMIN` `orders.ready_for_pickup` | `PICKUP` only | — | `READY_FOR_PICKUP` | Required | Critical |
+| `PROCESSING` | `/orders/{order}/ship` `ORD-010` | `STAFF or ADMIN` `orders.ship` | `DELIVERY` only | — | `SHIPPED` | Required | Critical |
+| `SHIPPED` | `/orders/{order}/deliver` `ORD-011` | `STAFF or ADMIN` `orders.deliver` | `DELIVERY` only | — | `DELIVERED` | Required | Critical |
+| `READY_FOR_PICKUP\|DELIVERED` | `/orders/{order}/complete` `ORD-013` | `STAFF or ADMIN` `orders.complete` | `PICKUP`/`DELIVERY` matching | `READY_FOR_PICKUP` for pickup, `DELIVERED` for delivery | `COMPLETED` | Required | Critical |
+
+- `PAID` before `ACCEPT` requires payment confirmation via Group H (`PAID` = payment webhook verified, not customer claim).
+- Each action validates atomically `actor authorization + current order state + fulfillment_type + payment prerequisites + required fields + concurrency/version + business invariants` inside transaction; failure returns `409 CONFLICT` / `ORDER_STATE_CONFLICT` / `INVALID_ORDER_TRANSITION`; repeat same `Idempotency-Key` replays original `200` (no duplicate transition); same key different body → `409 DUPLICATE_OPERATION`.
+- Customer cannot invoke any staff transition (`403 FORBIDDEN`).
+- `PICKUP → ship/deliver` and `DELIVERY → ready-for-pickup` rejected `409 INVALID_ORDER_TRANSITION` / `FULFILLMENT_ACTION_NOT_ALLOWED`.
+
+**Per-action contract (example `ORD-007` accept):**
+
+1. lock/recheck current state, 2. verify `orders.accept`, 3. transition `PAID→ACCEPTED` transactionally, 4. set `occurred_at` now, 5. append `order_status_history` (`status: ACCEPTED`, `actor: staff:{id}`), 6. trigger business notification (`ORDER_ACCEPTED`) without allowing notification failure to roll back transition (see `§28.15` failure isolation; eventual consistency acceptable).
+
+### 30.8 Variable Delivery-Fee Workflow (Staff/Admin Only)
+
+Delivery-fee rule aligns with `§23.5` / `§24.10` Model B:
+
+```
+Customer submits checkout DELIVERY → Order PENDING_PAYMENT (delivery_fee=null, delivery_fee_status=PENDING) → payment blocked 409 DELIVERY_FEE_PENDING
+  → Staff/Admin POST .../delivery-fee {delivery_fee:{amount,currency}} → delivery_fee FINALIZED, total=subtotal+delivery_fee authoritative → customer notified → PAY-001 eligible (Group H on final total)
+Pickup: DELIVERY not chosen → delivery_fee {amount:0,currency:TZS}, delivery_fee_status FINALIZED at creation, total final immediately.
+```
+
+#### 30.8.1 Delivery-fee action — `POST /api/v1/orders/{order}/delivery-fee` (`ORD-014`)
+
+- **Request:** `{"delivery_fee": {"amount": 15000, "currency": "TZS"}}` (`amount` integer minor units `>=0`, `currency` exactly `"TZS"`). `reason` optional audited field where business uses it. Unknown fields rejected; `{"total":99999}` rejected `422 INVALID_VALUE` (`field: total` per `§30.4` sensitive field never client-controlled).
+- **Server controls:** `subtotal`, `total` (`subtotal + delivery_fee.amount` via minor-unit integer arithmetic, see `§3.8`), `currency`, `order identifiers`, `actor`, `timestamps`; client never controls `total`.
+- **Validation:** `order exists`, `actor STAFF or ADMIN` with `orders.set_delivery_fee`, `fulfillment_type==DELIVERY`, `order status PENDING_PAYMENT`, `delivery_fee_status==PENDING` (already `FINALIZED` → `409 INVALID_ORDER_TRANSITION`), `fee non-negative`, `currency precision` `TZS minor units`, `concurrent modification` detected; `PICKUP` order → `422 BUSINESS_RULE_VIOLATION`.
+- **Financial immutability:** After `FINALIZED` and especially after `PAID`, fee is historical — not changed via normal ops (`409` if retry different amount with same key `DUPLICATE_OPERATION`; `ORD-014` single finalization — repeated same key replays). No `PATCH total`.
+- **Response:** `200 {"data": {id, order_reference, status: PENDING_PAYMENT, delivery_fee:{amount,currency}, delivery_fee_status: FINALIZED, total:{amount,currency}}}` (see example §30.18).
+- **Idempotency:** Required (`Idempotency-Key`); **Critical concurrency** (race `fee SET + Payment` → atomic check).
+- **Audit:** `actor, order, old_fee, new_fee, reason, occurred_at`; payment eligibility change triggers notification.
+
+### 30.9 Made-to-Order Operational Contract
+
+Requests (`REQ-*`, `§26`) are operational queue — not automatically converted to Order.
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose |
+|---|---|---|---|---|---|---|
+| `REQ-004` | `GET` | `/api/v1/requests` | Staff, Admin | Required | `OPERATIONAL` `requests.view` | List requests (paginated, filtered `request_status` CLOSED, `product_id`, `search`, `created_from/to`) |
+| `REQ-005` | `GET` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.view` | View request (includes `staff_internal_notes` where authorized) |
+| `REQ-006` | `PATCH` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.manage` | Update approved status (`SUBMITTED→IN_REVIEW→CLOSED`) + internal info; original customer fields immutable |
+
+- No quotation/payment invented here; `order_id` not created via ordinary request handling.
+- `staff_internal_notes` separated from `customer notes`; never customer-visible.
+- Staff sees only authorized requests; Admin broader but still purpose-bound.
+
+### 30.10 General Enquiry Operational Contract
+
+Enquiries (`ENQ-*`, `§27`) separate from Requests/Orders.
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose |
+|---|---|---|---|---|---|---|
+| `ENQ-004` | `GET` | `/api/v1/enquiries` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | List enquiries (paginated, filtered `enquiry_status` CLOSED, `category` CLOSED, `product_id`/`order_id`/`search` allow-list) |
+| `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | View enquiry |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` (+ optional `reopen`) | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Controlled close `OPEN→CLOSED` (+ optional reopen `CLOSED→OPEN`) |
+
+- Original `message` immutable; customer content separated from `staff_internal_notes`.
+- No `enquiry → order` automatic conversion.
+
+### 30.11 Notification Operational Contract
+
+Reuse `§28` types; operational vs creating notifications distinct.
+
+| Operation | Path | Actor | Authorization |
+|---|---|---|---|
+| List own operational notifications | `GET /api/v1/me/notifications` `NOT-001` filtered `type: NEW_ORDER` etc. | Staff, Admin | `AUTHENTICATED_OWNER` / `OPERATIONAL` own recipient-scoped |
+| Mark own read | `PATCH /api/v1/me/notifications/{notification}` `NOT-002` `{read: boolean}` | Staff, Admin | `AUTHENTICATED_OWNER` own (`read` only) |
+
+- Staff must not fabricate arbitrary customer notifications — notifications normally generated from business events (`ORDER_ACCEPTED` etc.); if manual notification action exists it is a separately contracted controlled operation.
+- Cannot change `recipient`, `type`, `source`, `target`, `content`, `business-event identity`.
+
+### 30.12 Customer Data Visibility — Purpose-Limited
+
+For normal order fulfilment expose only `identifying purchaser + contacting where operationally necessary + fulfilling pickup/delivery + resolving order`. Do not return `all previous orders`, `entire notification history`, `unrelated requests/enquiries`, `authentication information`, `security credentials`. `Customer account ≠ Staff operational workspace`. Field-level before serialization per `§18.11`.
+
+### 30.13 Staff Management Contract — Admin-Only
+
+Staff lifecycle is `ADMIN` only. Uses existing CLOSED `CUSTOMER`/`STAFF`/`ADMIN` role model (no second role system).
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `ADM-001` | `GET` | `/api/v1/admin/staff` | Admin | Required | `ADMINISTRATIVE` `staff.manage` | List Staff (paginated) | — | — |
+| `ADM-002` | `GET` | `/api/v1/admin/staff/{user}` | Admin | Required | `ADMINISTRATIVE` `staff.manage` | Get Staff detail | — | — |
+| `ADM-003` | `POST` | `/api/v1/admin/staff` | Admin | Required | `ADMINISTRATIVE` `staff.manage` | Invite/create Staff via approved mechanism (not `POST {password}` generic; credential issuance via Authentication, email delivery Group R — see §30.13.1) | — | Low |
+| `ADM-004` | `POST` | `/api/v1/admin/staff/{user}/approve` | Admin | Required | `ADMINISTRATIVE` `staff.approve` + audit + no self-approval | Approve Staff `PENDING→ACTIVE` | Required | Critical |
+| `ADM-005` | `POST` | `/api/v1/admin/staff/{user}/suspend` | Admin | Required | `ADMINISTRATIVE` `staff.manage` + audit | Suspend/deactivate Staff where lifecycle supports (`ACTIVE→SUSPENDED`) | Required | Critical |
+| `ADM-006` | `POST` | `/api/v1/admin/staff/{user}/reactivate` | Admin | Required | `ADMINISTRATIVE` `staff.manage` + audit | Reactivate Staff (`SUSPENDED→ACTIVE`) | Required | Critical |
+
+- `ADM-003` invite does **not** accept arbitrary `password` in generic user-management body — authentication/credential issuance belongs to Auth contract (see §30.13.1).
+- Paginated collections use `page`/`per_page` → `meta.pagination` per `§4`.
+- No `Admin → change customer role` via Staff management; see §30.14.
+
+#### 30.13.1 Staff creation & credentials
+
+The `POST /admin/staff` invite defines `name`/`email`/`phone` + role intent `STAFF` (server-controlled). Plaintext password is **not** accepted; credential is created via secure `Authentication` activation flow (time-limited activation token, Group R email deferred). Record mechanism in Auth decision set, not invented here.
+
+### 30.14 Role & Permission Mutation
+
+No generic `PATCH /admin/users/{id} {role: ADMIN}` — role changes are privileged controlled operations, `ADMIN`-only, explicitly named, audited, self-escalation prevented.
+
+- V1 closed roles `CUSTOMER`/`STAFF`/`ADMIN` only; any endpoint that changes role must be Admin-only, audited, `validated against self-escalation (Admin cannot approve themselves)` and `approved transition policy` (e.g., `staff_state: PENDING→ACTIVE`, `staff_state: SUSPENDED→ACTIVE`; `role: CUSTOMER→STAFF` only via invitation/approval and reserve role changes for explicit role transitions; approval is `staff_state` change, not `role` change, not `PENDING_STAFF→STAFF` as role transition; `STAFF→ADMIN` not via staff role ops).
+- Staff approval modeled as dedicated `POST .../approve` lifecycle action rather than arbitrary `PATCH {role}`.
+
+### 30.15 Customer Account Administration Boundary
+
+No automatic `/admin/customers/*` merely because Admin is highest role. V1 default:
+
+```
+Customer account is customer-owned.
+Staff cannot control it.
+Admin does not receive unrestricted customer-control API automatically.
+```
+
+Suspension, fraud controls, legal retention remain **deferred to explicit contracts** with separate business rules and audit requirements — not smuggled here.
+
+### 30.16 Audit Contract (Mandatory Creation)
+
+Privileged actions that change operational/administrative state **must** produce an audit event — server-derived actor, never client-provided.
+
+**Minimum audited operations:** `staff approval`/`suspend`/`reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order state transitions`, `operational request/enquiry state changes`, `privileged catalog changes`, `administrative configuration changes`.
+
+**Audit event fields (canonical):** `actor_id`, `actor_role`, `action`, `resource_type`, `resource_id`, `previous_state`, `resulting_state`, `timestamp` ISO8601 `Z`, `request_id/correlation_id` where available — never `client-provided actor`, no secrets.
+
+#### 30.16.1 Audit read API (read-only)
+
+Conceptual: `GET /api/v1/admin/audit-logs` (`ADMIN` only, `ADMINISTRATIVE` `audit.view` where approved). Filters allow-list: `actor`, `action`, `resource_type`, `resource_id`, `created_from/created_to`. `PRIVATE`/`no-store`; pagination per `§4`. No `PATCH/DELETE /audit-logs` via ordinary API. If V1 decides audit history is internal-only, omit read endpoint and record `audit internal-only V1` in `decisions.md` — **creation of audit events remains mandatory regardless**.
+
+### 30.17 Concurrency Requirements
+
+Operational mutations can race; each documents its rule (see `api-conventions.md §30.5`).
+
+- **Critical:** `inventory adjust`, `order accept/process/ready/ship/deliver/complete/delivery-fee`, `staff approve/suspend/reactivate` — via `transactional row locking` / `expected-version` / `state revalidation inside transaction` / `Idempotency-Key` where retry-sensitive.
+- Must return `409 CONFLICT` (`RESOURCE_VERSION_CONFLICT`/`ORDER_STATE_CONFLICT`/`CONFLICT`) when another operation changed resource first — do not rely on UI.
+
+### 30.18 Idempotency Classification
+
+- **IDEMPOTENCY_REQUIRED:** `delivery-fee assignment` (`ORD-014`), `order state transitions` (`ORD-007..011,013`), `inventory adjustments` (`INV-003`), `staff approval/suspend/reactivate` (`ADM-004..006`), any mobile-retried action. Repeat same key → replay prior success `200`; same key different body → `409 DUPLICATE_OPERATION`; do not make non-idempotent safe by ignoring repeat.
+- **Designed idempotent:** `PATCH` catalog category/product where same values → same result (not necessarily `Idempotency-Key` required).
+
+### 30.19 Error Contract — Operational
+
+Reuse `§15` CLOSED codes/statuses. No database/stack leakage.
+
+| HTTP | `code` example | Condition |
+|---|---|---|
+| `401` | `AUTHENTICATION_REQUIRED` | Not authenticated where privileged auth required |
+| `403` | `FORBIDDEN` | Authenticated but not permitted (`Staff → Admin approve`, `Customer → staff ship`) |
+| `404` | `RESOURCE_NOT_FOUND` / `ORDER_NOT_FOUND` | Not addressable in context (private ownership masking per `§15.8`) |
+| `409` | `CONFLICT`/`ORDER_STATE_CONFLICT`/`RESOURCE_VERSION_CONFLICT` | Invalid predecessor state or concurrent modification |
+| `422` | `INVALID_VALUE`/`INVALID_FORMAT`/`MISSING_REQUIRED_FIELD`/`BUSINESS_RULE_VIOLATION` | Well-formed but business-invalid (`delivery_fee for PICKUP`, `reason unknown`) |
+| `429` | `RATE_LIMITED` + `Retry-After` | Throttled |
+| `500` | `INTERNAL_SERVER_ERROR` + `meta.request_id` | Unexpected |
+
+**Examples:**
+
+- `Staff attempts Admin approve → 403 FORBIDDEN`
+- `Invalid state transition (PROCESSING→DELIVERED without SHIPPED) → 409 CONFLICT`
+- `Delivery fee supplied for PICKUP → 422 BUSINESS_RULE_VIOLATION` `field: delivery_fee`
+- `Another operator changed order first → 409 CONFLICT`
+- `Reason unknown for inventory adjust → 422 INVALID_VALUE` `field: reason`
+
+### 30.20 Security Requirements
+
+Verify against:
+
+- **Horizontal escalation:** changing `id` to another operational resource not authorized → denied.
+- **Vertical escalation:** `STAFF → ADMIN approve/manage` denied `403`.
+- **Customer-account escalation:** `STAFF → customer profile/password/role/browsing restriction` denied `403`.
+- **Mass assignment:** `role/permissions/internal_status/ownership` never via generic body.
+- **State skipping:** `PATCH {status:DELIVERED}` rejected; `PROCESSING→DELIVERED` without `SHIPPED` rejected `409`.
+- **Financial:** `subtotal/delivery_fee/total/payment_state` only via authorized `ORD-014`; client `total` rejected.
+- **Inventory:** `quantity` not via `PATCH {quantity:999}`; only `POST .../adjust` with `reason`.
+- **Enumeration:** `GET /orders/{id}` operational uses `resource-exposure policy` (§15.8 — `404` masking where ownership precludes; operational enumeration handled via `orders.view_operational` filter, not differential leaks).
+- **Audit spoofing:** actor derived from auth.
+
+### 30.21 Endpoint Inventory Updates (Stable IDs — extend `§19.1` with Phase 1.29 approvals)
+
+Existing IDs remain **retired never recycled**. Phase 1.29 adds/confirms:
+
+| ID | Method | Path | Domain | Actors | Auth | Authorization | Purpose | Idempotency | Concurrency | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `CAT-007`..`012` | `POST`/`PATCH` | `/api/v1/products`, `/api/v1/products/{product}`, `/api/v1/products/{product}/images`, `/api/v1/products/{product}/variants`, `/api/v1/categories`, `/api/v1/categories/{category}` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Operational catalog writes (create/update product, manage images/variants, create/update category) | —/Designed idempotent for PATCH/`CAT-008,012` | Low | **PROPOSED** (target `APPROVED` after review, see §30.15) |
+| `CAT-013` | `GET` | `/api/v1/admin/products` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | List products for operations (operational read, filters `search/category/product_type/is_active/is_published/availability`, paginated) | — | — | **PROPOSED** |
+| `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | Retrieve product operationally (includes `is_active/is_published`/inventory) | — | — | **PROPOSED** |
+| `INV-001` | `GET` | `/api/v1/inventory` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (operational) | — | — | **PROPOSED** |
+| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory detail | — | — | **PROPOSED** |
+| `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable reason | Controlled inventory adjustment | **Required** | **Critical** | **PROPOSED** |
+| `ORD-005` | `GET` | `/api/v1/orders` | Order | Staff, Admin | Required | `OPERATIONAL` `orders.view_operational` | List operational orders | — | — | **APPROVED** (Phase 1.23) — §30.6.1 contractual detail added |
+| `ORD-006` | `GET` | `/api/v1/orders/{order}` | Order | Staff, Admin | Required | `OPERATIONAL` `orders.view_operational` | Get operational order detail | — | — | **APPROVED** (Phase 1.23) |
+| `ORD-007`..`011,013,014` | `POST` | `/api/v1/orders/{order}/accept\|process\|ready-for-pickup\|ship\|deliver\|complete\|delivery-fee` | Order | Staff, Admin | Required | `OPERATIONAL` `orders.*` + state+fulfillment as §30.7/§30.8 | Controlled order state & delivery-fee | **Required** | **Critical** | **APPROVED** (Phase 1.23) — §30.7 contractual detail added |
+| `REQ-004` | `GET` | `/api/v1/requests` | Request | Staff, Admin | Required | `OPERATIONAL` `requests.view` | List requests (operational) | — | — | **APPROVED** (Phase 1.25) |
+| `REQ-005` | `GET` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.view` | Get request (operational) | — | — | **APPROVED** |
+| `REQ-006` | `PATCH` | `/api/v1/requests/{request}` | Request | Staff, Admin | Required | `OPERATIONAL` `requests.manage` | Update operational request state | Designed idempotent | Low/Medium | **APPROVED** |
+| `ENQ-004` | `GET` | `/api/v1/enquiries` | Enquiry | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | List enquiries (operational) | — | — | **APPROVED** (Phase 1.26) |
+| `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | Get enquiry (operational) | — | — | **APPROVED** |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Close/reopen enquiry | Designed idempotent | Low/Medium | **APPROVED** |
+| `ADM-001` | `GET` | `/api/v1/admin/staff` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` | List Staff | — | — | **PROPOSED** |
+| `ADM-002` | `GET` | `/api/v1/admin/staff/{user}` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` | Get Staff detail | — | — | **PROPOSED** |
+| `ADM-003` | `POST` | `/api/v1/admin/staff` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` | Invite/create Staff (see §30.13.1) | — | Low | **PROPOSED** |
+| `ADM-004` | `POST` | `/api/v1/admin/staff/{user}/approve` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.approve` + audit, no self-approval | Approve Staff | **Required** | **Critical** | **PROPOSED** |
+| `ADM-005` | `POST` | `/api/v1/admin/staff/{user}/suspend` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` + audit | Suspend/deactivate Staff | **Required** | **Critical** | **PROPOSED** |
+| `ADM-006` | `POST` | `/api/v1/admin/staff/{user}/reactivate` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` + audit | Reactivate Staff | **Required** | **Critical** | **PROPOSED** |
+| `ADM-007` | `GET` | `/api/v1/admin/audit-logs` | Audit | Admin | Required | `ADMINISTRATIVE` `audit.view` where approved | List audit logs (read-only, filters `actor/action/resource_type/resource_id/created_from/to`) | — | — | **PROPOSED** (or internal-only per §30.16.1) |
+
+- No endpoint exists only implicitly; each record documents `Endpoint ID, Method, Path, Domain, Resource, Purpose, Allowed actor(s), Authentication requirement, Authorization rule, Request body, Query parameters, Response shape, Possible errors, Idempotency behavior, Concurrency behavior, Business-state constraints, Audit requirement, Notification/event side effects`.
+- `ADM-003` replaces legacy `INVITATION`/generic naming — canonical is `POST /admin/staff` invite.
+
+### 30.22 Resource Updates (extend `api-resources.md`)
+
+See `api-resources.md §10` (Staff/Admin Operational Resources). At minimum distinguish `Public Catalog Resource` (customer `GET /products`), `Operational Product Resource` (staff `GET /inventory` + `CAT-007..012` operational fields), `Inventory Resource` (staff `INV-*`), `Order Operational Resource` (staff `ORD-005/006` + actions), `Made-to-Order Request Operational Resource` (staff `REQ-004/005/006`), `General Enquiry Operational Resource` (staff `ENQ-004/005/006`), `Notification Operational Resource` (staff queue), `User/Staff Resource` (admin `ADM-001..006`), `Audit Resource` (only if exposed `ADM-007`). For every resource document `owner`, `privileged readers`, `privileged writers`, `customer visibility` (not exposed), `immutable fields` (e.g., order history), `server-controlled fields`, `state machine` where applicable, `audit requirements`.
+
+### 30.23 Cross-Domain Checks — Staff/Admin Consistency
+
+- **Orders:** Staff/Admin actions agree with `§24` Order contract and `§25` Tracking/Fulfillment — no contradicting state branch (Group H consumes `final authoritative total` `subtotal+delivery_fee` from `§24.27`/`§30.8`, no second calculation).
+- **Checkout:** Delivery-fee workflow does not contradict `§23.6` Model B (`CHK-001 pending → ORD-014 FINALIZED → Group H payment on final total`).
+- **Payment:** Contract stops before gateway behavior; Group H consumes `final amount` only.
+- **Notifications:** Operational mutations generate approved business notifications per `§28` without becoming source of truth.
+- **Users:** Staff/Admin does not violate `§29` `/me` ownership (`GET /me` own only; `GET /users/{id}` requires `users.manage_authorized`, not operational).
+- **Authorization:** Every privileged endpoint agrees with `§18` (`authenticated identity + role + resource + action + ownership + business-state`).
+
+### 30.24 Canonical Examples — Staff/Admin Operational Workflows
+
+All examples use canonical envelope `{"data":...}` / `{"errors":[...],"meta":{"request_id":"..."}}` per `§2`/`§15`.
+
+#### A. Staff lists orders `GET /api/v1/orders` (`ORD-005`) — 200
+
+```json
+{
+  "data": [
+    {
+      "id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+      "order_reference": "OD-2026-00123",
+      "status": "PAID",
+      "fulfillment_type": "DELIVERY",
+      "delivery_fee_status": "FINALIZED",
+      "total": { "amount": 172500000, "currency": "TZS" },
+      "customer": { "name": "Asha Mwangi", "email": "asha@example.com" },
+      "created_at": "2026-09-01T10:15:00Z"
+    }
+  ],
+  "meta": { "pagination": { "current_page": 1, "per_page": 20, "total": 12, "last_page": 1, "has_next": false, "has_previous": false } }
+}
+```
+
+#### B. Staff accepts order `POST /api/v1/orders/{order}/accept` (`ORD-007`) — 200
+
+```json
+{
+  "data": {
+    "id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+    "order_reference": "OD-2026-00123",
+    "status": "ACCEPTED",
+    "updated_at": "2026-09-01T11:00:00Z"
+  }
+}
+```
+
+- Idempotent replay with same `Idempotency-Key` returns same `200`; `PAID` required else `409 CONFLICT`.
+
+#### C. Staff starts processing `POST /api/v1/orders/{order}/process` (`ORD-008`) — 200
+
+```json
+{
+  "data": { "id": "ord_01h8y5a1...", "order_reference": "OD-2026-00123", "status": "PROCESSING", "updated_at": "2026-09-01T12:00:00Z" }
+}
+```
+
+- Valid only `ACCEPTED→PROCESSING`; otherwise `409`.
+
+#### D. Staff sets delivery fee `POST /api/v1/orders/{order}/delivery-fee` (`ORD-014`) — 200
+
+Request:
+
+```json
+{ "delivery_fee": { "amount": 2500000, "currency": "TZS" } }
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "id": "ord_01h8y5a1b2c3d4e5f6g7h8j9",
+    "order_reference": "OD-2026-00123",
+    "status": "PENDING_PAYMENT",
+    "fulfillment_type": "DELIVERY",
+    "delivery_fee": { "amount": 2500000, "currency": "TZS" },
+    "delivery_fee_status": "FINALIZED",
+    "total": { "amount": 172500000, "currency": "TZS" },
+    "payment": null
+  }
+}
+```
+
+- `total` server-calculated `subtotal + delivery_fee.amount`; `PICKUP` → `422`; already `FINALIZED` → `409` (same key different amount → `409 DUPLICATE_OPERATION`).
+
+#### E. Staff marks pickup ready `POST /api/v1/orders/{order}/ready-for-pickup` (`ORD-009`) — 200
+
+```json
+{
+  "data": { "id": "ord_01h8y5a1...", "order_reference": "OD-2026-00124", "status": "READY_FOR_PICKUP", "updated_at": "2026-09-01T14:00:00Z" }
+}
+```
+
+- Valid only `PICKUP` + `PROCESSING`; `DELIVERY` → `409`.
+
+#### F. Staff ships delivery order `POST /api/v1/orders/{order}/ship` (`ORD-010`) — 200
+
+```json
+{
+  "data": { "id": "ord_01h8y5a1...", "order_reference": "OD-2026-00123", "status": "SHIPPED", "updated_at": "2026-09-01T15:00:00Z" }
+}
+```
+
+#### G. Admin approves Staff `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`) — 200
+
+```json
+{
+  "data": {
+    "id": "user_01h8y9a0b1c2d3e4f5g6h7j8",
+    "role": "STAFF",
+    "staff_state": "ACTIVE",
+    "updated_at": "2026-09-01T16:00:00Z"
+  }
+}
+```
+
+- `STAFF` self-approve → `403`; audited `actor, user, action: approve, previous: PENDING, new: ACTIVE`.
+
+#### H. Staff attempts Admin-only action — 403
+
+```
+POST /api/v1/admin/staff/user_01h8y9a0b1c2d3e4f5g6h7j8/approve  (as STAFF)
+→ 403 FORBIDDEN
+{
+  "errors": [{ "code": "FORBIDDEN", "message": "You do not have permission to perform this action." }],
+  "meta": { "request_id": "01H9-req-abc123" }
+}
+```
+
+- Standard `errors` envelope per `§15`; no stack/database leak.
+
+### 30.25 Explicit Non-Goals — Not in Phase 1.29
+
+Payment gateway/authorization/capture/refund, payment provider specifics, push/email/SMS delivery, customer password management/reset, customer account deletion, saved address book, live GPS delivery tracking, full CRM, chat/messaging, quotation engine for requests, automatic request-to-order conversion, advanced role/permission builder, custom roles (`MANAGER` etc.), arbitrary per-user permissions, generic `superadmin` role, staff self-registration, staff ability to control customer accounts, inventory reservation semantics beyond `§23`. Group H owns payment; Group R owns email/notification delivery.
+
+### 30.26 Definition of Done — Phase 1.29 Exit Criteria
+
+Phase 1.29 is complete only when: `STAFF/ADMIN capabilities separated`, `closed role model CUSTOMER/STAFF/ADMIN intact`, `staff operational scope documented`, `admin-only operations documented`, `customer-account control boundaries explicit`, `operational catalog actions defined`, `inventory controlled actions defined`, `order listing/detail defined`, `order state transitions explicitly defined`, `pickup/delivery branches defined`, `variable delivery-fee assignment explicit + Staff/Admin-only + total server-calculated`, `final payment amount dependency for Group H documented`, `made-to-order operational endpoints defined`, `enquiry operational endpoints defined`, `notification operational access defined`, `staff lifecycle/approval defined`, `role/permission mutation rules defined`, `audit creation (& optional read) defined`, `concurrency rules defined`, `idempotency defined`, `errors via §15`, `authorization via §18`, `endpoint inventory stable IDs`, `resource doc updated` (§30.22), `cross-domain checks pass` (§30.23), `canonical examples exist` (§30.24), `no payment implementation smuggled`, `no undocumented privileged endpoint remains`.
+
+### 30.27 Cross-References
+
+- Conventions: `api-conventions.md §30` (no generic PATCH, default deny, customer-account protection, controlled actions, delivery-fee authority, inventory adjust, audit, concurrency, idempotency, field-level before serialization).
+- Resources: `api-resources.md §10` (Staff/Admin Operational Resources — public vs operational catalog/inventory/order/request/enquiry/notification/staff/audit).
+- Domain: `business-rules.md §15` (operational vs administrative, operational catalog/inventory, controlled order transitions, delivery-fee authority, staff lifecycle Admin-only, audit).
+- Decisions: `decisions.md ADR/STAFF-001..008` (closed roles, STAFF operational not customer-admin, controlled actions, delivery-fee Staff/Admin only, inventory adjust, staff approval Admin-only, role mutation controlled, audit mandatory).
+- Links to Conventions & Resources updated: `§20` now includes Staff/Admin conventions `§30`.
 
 

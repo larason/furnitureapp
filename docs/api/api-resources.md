@@ -811,6 +811,102 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 - **Validation (schema → domain → authz):** `name → valid string/length` (trimmed, collapses whitespace), `phone → approved format` (normalized, max 30, not auto `phone_verified:true`), `email → valid format` (lowercased) but change via security workflow. Do not perform business authorization through field validation. `INVALID_VALUE`/`INVALID_FORMAT`/`MISSING_REQUIRED_FIELD` per `api-contract.md §15`.
 - **Cross-references:** Validation `api-contract.md §29.6/§29.13`; authorization `api-contract.md §29.12`; error codes `AUTHENTICATION_REQUIRED` (401), `INVALID_VALUE` (422 for immutable fields), `FORBIDDEN` (403) where appropriate; business-rules `business-rules.md §14`.
 
+## 10. Staff/Admin Operational Resources — Privileged Boundaries (Phase 1.29)
+
+> **Authority:** This section defines **operational resource representations** that are distinct from public customer views. Each resource distinguishes `Public Catalog Resource` vs `Operational Product Resource` vs `Inventory Resource` etc. For every resource: `owner`, `privileged readers/writers`, `customer visibility`, `immutable/server-controlled fields`, `state machine` if applicable, `audit requirements`. This complements `§1` Product, `§2` Category, `§3` Order, `§4` Cart, `§5` Request, `§6` Enquiry, `§7` Notification, `§8` User/Profile.
+
+### 10.1 Operational Product Resource (distinct from Public Product §1)
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | System (catalog) |
+| **Privileged readers** | `STAFF`/`ADMIN` with `products.manage` where approved — via `CAT-007..012` operational views and `INV-002` inventory-linked product operational detail |
+| **Privileged writers** | `STAFF`/`ADMIN` with `products.manage` — controlled `POST /products` / `PATCH /products/{product}` / `POST .../images` / `POST .../variants` |
+| **Customer visibility** | **Not exposed** — public `GET /products` (§1) shows `PUBLIC` fields only (`id/name/slug/description/product_type/price/category/images/variants/availability/stock_indicator`); operational flags `is_active/is_published` internal, `reserved_quantity/available_quantity/supplier` never public |
+| **Immutable** | `id`, `created_at`, `availability`/`stock_indicator` derived, `reserved_quantity` server-derived |
+| **Server-controlled** | `id`, `slug` uniqueness server, `created_at`/`updated_at`, `availability`/`stock_indicator`, inventory quantities |
+| **State** | `is_active` / `is_published` publication state (existing §21 model); no invented `DRAFT` vs `ARCHIVED` beyond approved |
+| **Audit** | Privileged catalog changes audited (`actor/old/new/timestamp`) |
+
+### 10.2 Inventory Resource (Operational, not Customer-Editable)
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | System (operational) |
+| **Privileged readers** | `STAFF`/`ADMIN` `inventory.view` — `GET /inventory` (`INV-001`), `GET /inventory/{inventory}` (`INV-002`, by product/variant) |
+| **Privileged writers** | `STAFF`/`ADMIN` `inventory.manage` — `POST /inventory/{inventory}/adjust` (`INV-003`) only; no `PATCH {quantity:999}` |
+| **Customer visibility** | **None** — public catalog shows `availability`/`stock_indicator` only (coarse); `quantity/reserved_quantity/available_quantity` never customer-visible |
+| **Immutable** | Derived `available_quantity = quantity - reserved_quantity` (read-only) |
+| **Server-controlled** | `quantity`, `reserved_quantity`, `available_quantity`, `updated_at`; server calculates `new_quantity = current + quantity_delta` transactionally; prevents negative where business prohibits |
+| **Validation** | `quantity_delta` integer, `reason` CLOSED (`STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT`), resulting `new_quantity >=0`, concurrent revalidation inside transaction |
+| **Audit** | Every `INV-003` adjustment audited (`actor/inventory/old/new/reason/occurred_at`); concurrency `Critical` |
+| **Field exposure** | `quantity` = integer units (not TZS minor units) |
+
+### 10.3 Order Operational Resource (extends §3 Order historical)
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | `Customer` (customer-owned), operationally managed by `STAFF`/`ADMIN` |
+| **Privileged readers** | `STAFF`/`ADMIN` `orders.view_operational` — `GET /orders` (`ORD-005`) + `GET /orders/{order}` (`ORD-006`) + `GET /orders/{order}/tracking` (`ORD-012`) |
+| **Privileged writers** | `STAFF`/`ADMIN` `orders.accept/process/ready_for_pickup/ship/deliver/complete/set_delivery_fee` — controlled `POST .../accept` etc. (`ORD-007..011,013,014`), never `PATCH {status}` |
+| **Customer visibility** | Customer sees **own** orders only via `GET /me/orders` (§3); customer-facing representation excludes `customer contact beyond own`, `internal notes` where not own |
+| **Immutable** | `id`, `order_reference`, `customer owner`, `items quantity/historical unit_price/line_total`, `created_at`, `status_history` append-only; `fulfillment_type` generally immutable; `historical financial` immutable after `FINALIZED`/`PAID` |
+| **Server-controlled** | `id`, `order_reference` (`OD-...`), `status`, `subtotal/total` authoritative, `delivery_fee_status`, `status_history`, `timestamps`, `actor` |
+| **State machine** | `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` (PICKUP) and `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED` (DELIVERY), `CANCELLED` terminal; fulfillment-branch validated (`READY_FOR_PICKUP` never → `DELIVERED`); `delivery_fee PENDING→FINALIZED` via `ORD-014` before `PAID` |
+| **Audit** | Every state transition + delivery-fee change audited (`actor/previous→new/timestamp/request_id`) |
+| **Sensitive never** | `password`, `tokens`, `payment secrets`, `raw card` |
+
+### 10.4 Made-to-Order Request Operational Resource
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | Customer (or `null` anonymous) — staff operational relationship, not owns |
+| **Privileged readers** | `STAFF`/`ADMIN` `requests.view` — `GET /requests` (`REQ-004`), `GET /requests/{request}` (`REQ-005`, includes `staff_internal_notes` where authorized) |
+| **Privileged writers** | `STAFF`/`ADMIN` `requests.manage` — `PATCH /requests/{request}` (`REQ-006`) only `request_status` (`SUBMITTED→IN_REVIEW→CLOSED`) + `staff_internal_notes`; original `product_id/quantity/dimensions/material/color/notes/contact` immutable |
+| **Customer visibility** | Customer sees own requests `GET /me/requests` (§5); never internal notes |
+| **Audit** | `request_status` changes audited |
+
+### 10.5 General Enquiry Operational Resource
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | Customer (or `null` anonymous) — staff operational, not owns |
+| **Privileged readers** | `STAFF`/`ADMIN` `enquiries.view` — `GET /enquiries` (`ENQ-004`), `GET /enquiries/{enquiry}` (`ENQ-005`) |
+| **Privileged writers** | `STAFF`/`ADMIN` `enquiries.manage` — `POST /enquiries/{enquiry}/close` (`ENQ-006`) only `enquiry_status` (`OPEN→CLOSED`) + `staff_internal_notes`; original `subject/message/contact/category/product_id/order_id` immutable |
+| **Customer visibility** | Customer sees own enquiries `GET /me/enquiries` (§6); never internal notes |
+| **Audit** | `enquiry_status` changes audited |
+
+### 10.6 Notification Operational Resource
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | `recipient_user_id` (server-derived) |
+| **Privileged readers** | `STAFF`/`ADMIN` `notifications.view_operational` — `GET /me/notifications` filtered `type: NEW_ORDER` etc. (operational queue, recipient-scoped) |
+| **Privileged writers** | **None for normal Staff/Admin** — notifications generated from business events (`ORDER_SHIPPED` etc.), not manual `POST /notifications {recipient:...}`; if manual notification exists it is a separately contracted controlled action |
+| **Customer visibility** | Customer sees own `GET /me/notifications` (§7) |
+| **Sensitive** | Never `channel` until implemented, no delivery logs, no secrets |
+
+### 10.7 User/Staff Resource (Admin-Managed)
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | System (identity) — each User owns own account via `/me` (§8); Admin manages staff lifecycle |
+| **Privileged readers** | `ADMIN` `staff.manage`/`users.manage_authorized` — `GET /admin/staff` (`ADM-001`), `GET /admin/staff/{user}` (`ADM-002`), `GET /users` (`ADM-008`), `GET /users/{user}` (`ADM-009`) |
+| **Privileged writers** | `ADMIN` `staff.approve`/`staff.manage` — `POST /admin/staff` (`ADM-003` invite), `POST .../approve` (`ADM-004`), `POST .../suspend` (`ADM-005`), `POST .../reactivate` (`ADM-006`) — all audited, no self-approval, role `STAFF` server-controlled |
+| **Customer visibility** | Customer sees own `GET /me` only; never staff list |
+| **Staff visibility** | Staff sees own `GET /me` only; not customer browse |
+| **Server-controlled** | `id`, `role`, `permissions`, `account_state`, `timestamps`, `verification state` never via `PATCH /me` |
+
+### 10.8 Audit Resource (internal, optionally exposed read-only)
+
+| Aspect | Contract |
+|---|---|
+| **Owner** | System |
+| **Privileged readers** | `ADMIN` `audit.view` where approved — `GET /admin/audit-logs` (`ADM-007`) read-only, filters `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`/`no-store`, `meta.pagination`; otherwise `internal-only V1` with no read endpoint |
+| **Privileged writers** | **None via ordinary API** — audit events generated server-side from privileged actions; no `PATCH/DELETE /audit-logs` |
+| **Customer visibility** | **None** |
+| **Audit creation mandatory** | All `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes` produce event (`actor_id/role/action/resource_type/resource_id/previous_state/resulting_state/timestamp/request_id`) |
+
 ## 13. Authentication & Account Resources — Conceptual (Phase 1.17, No Endpoints)
 
 > No endpoint definitions here; this section documents the **conceptual resources** that the authentication contract will later expose via endpoints. Field-level schemas and routes belong to implementation phases. All role values are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`.
@@ -939,8 +1035,13 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | **Request** (made-to-order) | **Create** (anonymous allowed) | **Own** | **Manage** | **Manage** | `REQ-001..007` | `POST /requests` (REQ-001) public submit (preferred multipart with attachments); `GET /me/requests` (REQ-002), `GET /me/requests/{request}` (REQ-003) own; `GET /requests` (REQ-004), `GET /requests/{request}` (REQ-005), `PATCH /requests/{request}` (REQ-006) Staff `requests.view/manage`; `POST /requests/{request}/attachments` (REQ-007) **Scoped** token + parent (anonymous requires server-issued upload token, predictable ID insufficient) |
 | **Enquiry** | **Create** (anonymous allowed) | **Own** | **Manage** | **Manage** | `ENQ-001..007` | `POST /enquiries` (ENQ-001) public (preferred multipart with attachments); `GET /me/enquiries` (ENQ-002), `GET /me/enquiries/{enquiry}` (ENQ-003) own; `GET /enquiries` (ENQ-004), `GET /enquiries/{enquiry}` (ENQ-005), `PATCH /enquiries/{enquiry}` (ENQ-006) Staff operational; `POST /enquiries/{enquiry}/attachments` (ENQ-007) **Scoped** token + parent (same token model as `REQ-007`, predictable ID insufficient) |
 | **Notification** | No | **Own** (customer notifications, holder-scoped via `/me`) | **Operational own**, recipient-scoped (operational: new order/request/payment event) | **Admin limited own**, recipient-scoped (administrative as needed) | `NOT-001`, `NOT-002` | `GET /me/notifications` (NOT-001) own per actor (Customer own / Staff `OPERATIONAL` own / Admin `ADMIN` limited own), paginated, holder-scoped; `PATCH /me/notifications/{notification}` (NOT-002) read/unread only (content immutable), same actor distinction |
-| **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..008`, `USER-001..002`, `ADM-005/006` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only, canonical `PATCH /api/v1/me`; legacy `/me/profile` retired), `POST /auth/change-password` (AUTH-008, canonical; legacy `POST /me/password` `USER-003` **RETIRED**) own; `GET /users` (ADM-005), `GET /users/{user}` (ADM-006) Admin `users.manage_authorized` only |
-| **Staff / Roles** | No | No | No | **Manage** | `ADM-001..004` | `GET /staff` (ADM-001), `POST /staff/invitations` (ADM-002), `POST /staff/{staff}/approve` (ADM-003), `PATCH /staff/{staff}` (ADM-004) — all Admin `staff.manage`/`staff.approve` (audited, no self-approval) |
+| **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..008`, `USER-001..002`, `ADM-008/009` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only, canonical `PATCH /api/v1/me`; legacy `/me/profile` retired), `POST /auth/change-password` (AUTH-008, canonical; legacy `POST /me/password` `USER-003` **RETIRED**) own; `GET /users` (ADM-008), `GET /users/{user}` (ADM-009) Admin `users.manage_authorized` only |
+| **Staff / Roles** | No | No | No | **Manage** | `ADM-001..007` | `GET /admin/staff` (ADM-001), `GET /admin/staff/{user}` (ADM-002), `POST /admin/staff` (ADM-003 invite/create, not `POST {password}` generic), `POST /admin/staff/{user}/approve` (ADM-004), `POST /admin/staff/{user}/suspend` (ADM-005), `POST /admin/staff/{user}/reactivate` (ADM-006) — all Admin `staff.manage`/`staff.approve` (audited, no self-approval, `Idempotency-Key` Required for approve/suspend/reactivate, Critical concurrency), plus `GET /admin/audit-logs` (ADM-007) read-only where approved |
+| **Audit Log** | No | No | No | **Read (optional)** | `ADM-007` | `GET /admin/audit-logs` Admin `audit.view` where approved — read-only, filters `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`/`no-store`, `meta.pagination`; `PATCH/DELETE /audit-logs` prohibited; creation audit mandatory even if read is internal-only |
+| **Operational Product** (distinct from Public) | No | No | **Read/Manage** (operational) | **Manage** | `CAT-007..012` + `INV-002` | Operational product view: includes `is_active/is_published`, `internal inventory quantity/reserved/available` where authorized, `operational metadata` — never via public `GET /products` (public remains `PUBLIC` cacheable; operational is `PRIVATE`) |
+| **Operational Order** | No | No | **Operational** | **Operational/Admin** | `ORD-005..014` | Staff/Admin operational order queue/detail + controlled actions (`accept/process/ready-for-pickup/ship/deliver/complete/delivery-fee`) — financial `delivery_fee` via `ORD-014` `POST .../delivery-fee` (`Idempotency-Key` Required, Critical); fulfillment branch validated |
+
+| **Staff / Roles** | No | No | No | **Manage** | `ADM-001..006` | `GET /admin/staff` (ADM-001), `GET /admin/staff/{user}` (ADM-002), `POST /admin/staff` (ADM-003), `POST /admin/staff/{user}/approve` (ADM-004), `POST /admin/staff/{user}/suspend` (ADM-005), `POST /admin/staff/{user}/reactivate` (ADM-006) — managed duplicates above retained for traceability |
 
 Additional notes:
 

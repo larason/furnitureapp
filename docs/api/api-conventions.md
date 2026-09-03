@@ -896,5 +896,47 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 - **Backend authoritative:** Local `Next.js`/`Flutter` cached profile/role state is advisory only; `role`, `account_state`, `verification`, `authorization` must be refreshed from backend — do not assume cached role valid indefinitely after `Staff role changes` / `account disabled` / `permission change`.
 - **Synchronization:** Server is source of truth; `Next.js`/`Flutter` may cache for UX but must revalidate via `GET /me` where operational decisions matter.
 
+## 30. Staff/Admin Operational Conventions (Phase 1.29)
+
+> **Authority:** Reusable conventions governing Staff/Admin operational API — privileged controlled actions, customer-account protection, inventory/catalog separation, delivery-fee authority, audit, concurrency, idempotency, field-level before serialization. Consolidates `phases/Phase-1.29.md`.
+
+### 30.1 No Generic Administrative PATCH
+
+- `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions: `POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/set-delivery-fee` (canonical `POST .../delivery-fee` per `§30.8`), `POST /inventory/{inventory}/adjust`, `POST /admin/staff/{user}/approve|suspend|reactivate`.
+- Mass-assignment of `role`, `permissions`, `account_state`, `audit actor`, `timestamps`, `totals` via generic body is rejected `422 INVALID_VALUE` `field: role`.
+
+### 30.2 Default Deny & Least Privilege
+
+- `authenticated identity + role + resource + action + ownership/context + business-state + operational scope` — all required; `role` alone never authorizes.
+- `STAFF` has zero customer-account control even if `orders.view_operational` granted; `ADMIN` still requires `staff.approve` for approval.
+
+### 30.3 Customer-Account Protection
+
+- Staff must not `disable/block browsing/ordering`, `change role/permissions`, `change ownership`, `impersonate`, `change password`, `edit security attributes`, `delete account` via ordinary ops. Any `STAFF → disable customer` is `403 FORBIDDEN` — no `*` wildcard bypass.
+- Admin direct customer-account operations require explicit separate contract (deferred) — not smuggled via `ADM-001..006` staff management.
+
+### 30.4 Operational vs Public Representation
+
+- Public `GET /products` shows `PUBLIC` fields only (`price/availability` coarse). Operational `GET /inventory` / `CAT-007..012` may show `quantity/reserved/available`, `is_active/is_published` internal, `operational notes` where approved — never via public path. Private responses use `Cache-Control: private, no-store`; public remains `public` CDN-cacheable.
+- Field-level exposure is **before serialization** — select `CUSTOMER` vs `STAFF` vs `ADMIN` representation from distinct allow-lists; never fetch `model.toArray()` mass-serialized.
+
+### 30.5 Inventory Conventions
+
+- Inventory is `operational` not customer-editable. Control via `POST /inventory/{inventory}/adjust` with `{quantity_delta:int, reason: CLOSED}`; server calculates `new_quantity = current + quantity_delta` transactionally; `quantity` = units (not TZS). `quantity_delta` may be negative where business permits but resulting `new_quantity >=0` where prohibited.
+- Reasons CLOSED `STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT`.
+
+### 30.6 Delivery-Fee Conventions
+
+- Variable delivery-fee is **Staff/Admin only** via `POST /orders/{order}/delivery-fee` (`ORD-014`) with `{"delivery_fee":{"amount":int minor units (>=0), "currency":"TZS"}}`; server recalculates `total = subtotal + delivery_fee.amount` (`minor-unit integer arithmetic`); `PICKUP → 422 BUSINESS_RULE_VIOLATION`; already `FINALIZED` → `409 INVALID_ORDER_TRANSITION`; same `Idempotency-Key` different amount → `409 DUPLICATE_OPERATION`; never accept `{"total":...}` from client.
+
+### 30.7 Concurrency & Idempotency
+
+- **Critical concurrency:** `inventory adjust`, `order accept/process/ready/ship/deliver/complete/delivery-fee`, `staff approve/suspend/reactivate` — transactional `row locking / expected-version / state revalidation inside transaction` + `409 CONFLICT` on stale.
+- **Idempotency Required:** `delivery-fee assignment`, `order state transitions`, `inventory adjustments`, `staff approval/suspend/reactivate` — same key replays prior success `200`, different body with same key → `409 DUPLICATE_OPERATION`.
+
+### 30.8 Audit Conventions
+
+- Every privileged state change creates audit event (`actor_id/role/action/resource_type/resource_id/previous_state/resulting_state/timestamp/request_id`) — server-derived actor, no secrets, no client-provided actor. At minimum `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes`. Audit read `GET /admin/audit-logs` (if exposed) is read-only, filtered `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`, `meta.pagination`; no `PATCH/DELETE` audit via ordinary API.
+
 
 

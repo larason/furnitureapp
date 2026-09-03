@@ -1359,8 +1359,88 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/STAFF-001 — Closed Role Model Remains CUSTOMER/STAFF/ADMIN
+
+**Decision:** V1 roles remain **CLOSED** `CUSTOMER`/`STAFF`/`ADMIN` (`UPPER_SNAKE_CASE`). Hierarchy is permission not ownership. `STAFF` does not own customer accounts; `ADMIN` approves Staff. Client `{"role":"ADMIN"}` / `{"permissions":["*"]}` rejected `422 INVALID_VALUE` `field: role`; role mutation only via Admin controlled actions (`POST /admin/staff/{user}/approve|suspend|reactivate`), not generic `PATCH /admin/users/{id}`.
+
+**Reason:** `phases/Phase-1.29.md §3-4`, `AGENTS.md §17` authentication ownership, `api-contract.md §30.1`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-002 — STAFF Operational Scope Is Commerce, Not Customer-Account Administration
+
+**Decision:** Staff operate `products/catalog operational`, `inventory`, `orders/fulfillment`, `delivery-fee`, `requests`, `enquiries`, `operational notifications` where explicitly authorized (`products.manage`, `inventory.view/manage`, `orders.view_operational/accept/process/ship` etc.). Staff have **zero** customer-account control (`disable/block/change role/impersonate/password/credentials/delete`). No hidden staff endpoint bypasses this.
+
+**Reason:** `Phase-1.29.md §5.3/§30.8`, `api-contract.md §30.2/§30.12`, `business-rules.md §15 #2-3`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-003 — No Generic Administrative PATCH for State
+
+**Decision:** State-changing privileged operations use **explicit controlled actions** (`POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/delivery-fee`, `POST /inventory/{inventory}/adjust`, `POST /admin/staff/{user}/approve`) — never generic `PATCH /admin/orders/{id}` that accepts arbitrary status/role/totals. Mass-assignment of `role/permissions/account_state/audit actor/timestamps` via generic body is rejected.
+
+**Reason:** `Phase-1.29.md §5.1`, `api-contract.md §30.2`, `api-conventions.md §30.1`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-004 — Variable Delivery Fee Is Staff/Admin Only, Server-Calculated
+
+**Decision:** `PICKUP fee 0 FINALIZED at creation`; `DELIVERY fee pending at checkout → Staff/Admin sets via ORD-014 POST /orders/{order}/delivery-fee {delivery_fee:{amount,currency}} → FINALIZED → total=subtotal+fee authoritative → payment eligible`. Customer `delivery_fee`/`total` payload rejected; server recalculates `total = subtotal + delivery_fee.amount` (`minor units integer arithmetic`); `PICKUP → 422 BUSINESS_RULE_VIOLATION`; already `FINALIZED → 409`.
+
+**Reason:** `Phase-1.29.md §17-19`, `api-contract.md §30.8`, `business-rules.md §15 #9`, `api-conventions.md §30.6`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-005 — Inventory Adjustments Are Controlled Actions with Reason
+
+**Decision:** Inventory mutations only via `POST /inventory/{inventory}/adjust {quantity_delta:int, reason:CLOSED}` (`reason` = `STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT` CLOSED); server calculates `new_quantity = current + delta` transactionally, prevents negative where prohibited; `quantity` = units not TZS. No `PATCH {quantity:999}`. `Idempotency-Key` Required, `Critical` concurrency, audited. Customer never controls inventory.
+
+**Reason:** `Phase-1.29.md §8`, `api-contract.md §30.5`, `api-resources.md §10.2`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-006 — Staff Lifecycle Is Admin-Only, Audited, No Self-Approval
+
+**Decision:** Staff `list/get/invite/approve/suspend/reactivate` via `GET /admin/staff` / `GET /admin/staff/{user}` / `POST /admin/staff` / `POST .../approve|suspend|reactivate` (`ADM-001..006`) — `ADMIN` `staff.manage`/`staff.approve` only, `no STAFF self-approve`, `Idempotency-Key` Required for approve/suspend/reactivate, `Critical` concurrency, audited (`actor/previous→new/timestamp`). Invite `POST /admin/staff` does not accept arbitrary `password` — credential via Authentication activation.
+
+**Reason:** `Phase-1.29.md §24-26`, `api-contract.md §30.13`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-007 — Role/Permission Mutation Is Privileged Controlled Operation
+
+**Decision:** No generic `PATCH /admin/users/{id} {role:ADMIN}`. Role changes are `ADMIN`-only, explicitly named (`approve` lifecycle vs arbitrary `PATCH`), audited, self-escalation prevented, validated against `approved transition policy` (`staff_state: PENDING→ACTIVE`, `staff_state: SUSPENDED→ACTIVE`; `role: CUSTOMER→STAFF` only via invite/approval and reserve role changes for explicit role transitions). Approval is `staff_state` change, not `role` change. V1 closed roles `CUSTOMER/STAFF/ADMIN` only.
+
+**Reason:** `Phase-1.29.md §27`, `api-contract.md §30.14`.
+
+**Status:** Accepted
+
+---
+
+### ADR/STAFF-008 — Audit Creation Is Mandatory for Privileged State Changes
+
+**Decision:** Every privileged state change creates audit event (`actor_id/role/action/resource_type/resource_id/previous→new/timestamp/request_id`) — server-derived actor, no secrets, no client-provided actor. At minimum `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes`. Optional read `GET /admin/audit-logs` read-only, filtered `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`; `PATCH/DELETE` audit prohibited. Creation remains mandatory even if read is internal-only V1.
+
+**Reason:** `Phase-1.29.md §31-32`, `api-contract.md §30.16`, `api-resources.md §10.8`.
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27`, `NOT-001..002` `APPROVED` via `§28`, `USER-001..002` `APPROVED` via `§29` are individually `APPROVED` — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`, `Phase 1.27` notification — `§28`, `Phase 1.28` user/profile — `§29`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27`, `NOT-001..002` `APPROVED` via `§28`, `USER-001..002` `APPROVED` via `§29`, `Phase 1.29` operational detail — `§30` Staff/Admin adds controlled actions/audit/inventory-fee/staff lifecycle (catalog operational `CAT-007..012`/`INV-*`/`ADM-*` remain `PROPOSED` pending consolidated review, order `ORD-005..014` already `APPROVED` with §30 detail) are individually `APPROVED` where marked — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`, `Phase 1.27` notification — `§28`, `Phase 1.28` user/profile — `§29`, `Phase 1.29` staff/admin operational — `§30`.
 
 
