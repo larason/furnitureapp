@@ -378,10 +378,10 @@ Laravel Policies/Gates/middleware, Spatie, role/permission tables/migrations, au
 - **Auth:** `CAT-001..006` public (no auth) remain SSR/SEO-friendly; `REQ-001`/`ENQ-001` + `AUTH-001/002/004/005` public with rate-limit safety; `CHK-001`/`ORD-001` require `AUTHENTICATION_REQUIRED` canonical 401; `ORD-005` staff `orders.view_operational`; `ADM-003` admin `staff.approve` (audited). No `STAFF → block_customer`.
 - **Authz:** every protected endpoint declares `owns resource?` / `operational access?` / `administrative access?` per `api-contract.md §18`; e.g., `ORD-002` ownership vs `ORD-010` operational `orders.ship` + `PROCESSING`.
 - **Security classification:** each endpoint tagged `PUBLIC` / `CUSTOMER` (`AUTHENTICATED_OWNER`) / `STAFF` (`OPERATIONAL`) / `ADMIN` (`ADMINISTRATIVE`) / `SYSTEM/WEBHOOK` for `WEBHOOK-001`; data `PUBLIC` vs `PRIVATE` vs `INTERNAL` helps prevent overexposure (`payment secrets` never).
-- **Idempotency:** `SAFE`: `CAT-*` `GET`, `CART-001` `GET`; `IDEMPOTENT`: `USER-002` `PATCH`, `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001`, `PAY-001`, `ORD-004` cancel, `ORD-007..011` + `ORD-013` `complete` state actions, `CART-005` merge, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` (+ `REQ-007`/`ENQ-007` attachments), `CART-002`.
-- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` complete, `PAY-001`/`WEBHOOK-001`, `ADM-003` flagged concurrency-sensitive (atomic authz+state+perform).
+- **Idempotency:** `SAFE`: `CAT-*` `GET`, `CART-001` `GET`; `IDEMPOTENT`: `USER-002` `PATCH`, `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001`, `PAY-001`, `ORD-004` cancel, `ORD-007..011` + `ORD-013` `complete` + `ORD-014` `delivery-fee` state actions, `CART-005` merge, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` (+ `REQ-007`/`ENQ-007` attachments), `CART-002`.
+- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` complete + `ORD-014` delivery-fee, `PAY-001`/`WEBHOOK-001`, `ADM-003` flagged concurrency-sensitive (atomic authz+state+perform).
 - **Anonymous mutation safety:** only `AUTH-001` register, `REQ-001`, `ENQ-001`, `AUTH-004/005` recovery approved as anonymous mutations; all reviewed for abuse/spam/rate-limit/file risk.
-- **Count & MVP:** `69` endpoints (`CAT 12` + `AUTH 7` + `USER 3` + `CART 5` inc. `CART-005` merge + `CHK 1` + `ORD 13` + `REQ 7` + `ENQ 7` inc. `ENQ-007` + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3`) is smallest coherent surface — no `GET /my-orders` duplicate, no `wishlist`/`reviews`/`coupons` unless approved; each endpoint justified for attack surface. Guest-cart `X-Guest-Cart-Id` handling is backend authority, not client ownership proof.
+- **Count & MVP:** `70` endpoints (`CAT 12` + `AUTH 7` + `USER 3` + `CART 5` inc. `CART-005` merge + `CHK 1` + `ORD 14` + `REQ 7` + `ENQ 7` inc. `ENQ-007` + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3`) is smallest coherent surface — no `GET /my-orders` duplicate, no `wishlist`/`reviews`/`coupons` unless approved; each endpoint justified for attack surface. Guest-cart `X-Guest-Cart-Id` handling is backend authority, not client ownership proof.
 
 ## 21. Catalog API Conventions (Phase 1.20)
 
@@ -814,6 +814,45 @@ Transport → Schema → Auth (optional) → Authorization → Domain (contact v
 ```
 
 Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`email` at least one for anonymous; state-dependent: `ENQ-006` validates current `enquiry_status` before transition; `subject`/`message` plain-text bounds.
+
+## 28. Notification Conventions (Phase 1.27)
+
+> **Authority:** Reusable conventions governing the Notification domain (`NOT-001`..`NOT-004` — recipient-scoped, downstream of business state, IN_APP primary, private, CLOSED types, `read_at` semantics). Consolidates `phases/phase-1.27.md`.
+
+### 28.1 Notification Ownership — Recipient-Scoped, Server-Derived
+
+- **Customer:** `Notification.recipient_user_id = customer` server-derived. `GET /me/notifications` paginates **own dataset only**; `GET /me/notifications/{notification}` verifies `owns` before serialization; `Customer A → Customer B notification` fails `404 RESOURCE_NOT_FOUND` masked per `§15.8`. `email` equality not ownership proof.
+- **Staff/Admin:** Operational `notifications.read_operational` — shared queue or personal operational set per policy, not `global notification` where client determines visibility. Anonymous in-app notifications not supported (no authenticated recipient).
+- **Never trust `recipient_user_id` from client:** `{"recipient_user_id":"..."}` rejected `422` per `§13.10` server-controlled field.
+
+### 28.2 Read-State Semantics — `read_at` Contract
+
+- **Single source of truth:** `read_at = null` → unread (`is_read=false`); `read_at = timestamp` → read (`is_read=true`). `is_read` is derived, not second source.
+- **Does not mean business status:** `read` ≠ `Order processed` / `payment succeeded` / `request handled` — never overload `read` with domain state.
+- **Mark read:** `PATCH /me/notifications/{notification} {read: true}` — only `read` boolean allowed; `type`/`title`/`message`/`recipient`/`target`/`created_at` rejected. Server derives recipient from auth; Staff cannot mark Customer notifications via Staff credentials.
+
+### 28.3 Target References — Server-Generated, Not Capability Tokens
+
+- **Server-generated:** `{type: ORDER|REQUEST|ENQUIRY, id: ...}` and `{source_type, source_id}` traceability are server-generated. Client-submitted `{"target":{"type":"ORDER","id":"another-order"}}` rejected.
+- **Not a capability token:** `target` does not grant access to `Order B`; normal Order/Request/Enquiry authorization still required on follow-up `GET`. Staff operational `target` still authorization-checked.
+- **Minimal context:** `title`/`message` include only server-derived `order_reference`, safe display fields; do not embed `entire Order`, `full profile`, `internal notes`, `payment secrets`.
+
+### 28.4 Event-Derived Communication — Downstream Only
+
+- **Source of truth:** `Order` / `Request` / `Enquiry` / `Payment` / `Fulfillment` authoritative. `Business Event → Notification` (e.g., `Order SHIPPED → ORDER_SHIPPED`). If `Notification says SHIPPED` but `Order says PROCESSING`, `Order` wins.
+- **No client creation:** `POST /notifications` for normal customers/Staff/Admin prohibited; `type`/`title`/`message`/`recipient`/`target` server-generated from authoritative data (`order_reference` safely encoded, XSS-safe).
+- **Failure isolation:** `Order creation → SHIPPED` must remain `SHIPPED` even if notification generation fails; Staff can still discover Order via operational queue. `Checkout → Order` must not fail due to notification persistence. Eventual consistency (`state updates immediately, notification appears shortly after`) acceptable; background/queued dispatch is future candidate (outbox pattern candidate, not implemented here).
+- **Deduplication / idempotency:** Same source event processed twice must not create two identical notifications for same recipient; use event IDs / idempotency at processing boundary. `Notification → Delivery attempt(s)` model keeps logical message single while allowing future multi-channel.
+
+### 28.5 Private Caching — No Public Cache
+
+- **Never public-cache:** `GET /me/notifications` → `Cache-Control: private, no-store` (Customer), operational → `private/internal`. Not CDN. Consistent with `Order`/`Request`/`Enquiry` private collections.
+- **Multi-device sync:** Server-side `read_at` authoritative ensures `Flutter read → website shows read` across devices; local device state is optimization only.
+
+### 28.6 Machine-Readable Notification Types — CLOSED
+
+- **CLOSED enum:** `ORDER_RECEIVED`, `ORDER_ACCEPTED`, `ORDER_PROCESSING`, `ORDER_READY_FOR_PICKUP`, `ORDER_SHIPPED`, `ORDER_DELIVERED`, `ORDER_COMPLETED`, `ORDER_CANCELLED`, `NEW_ORDER`, `NEW_MADE_TO_ORDER_REQUEST`, `NEW_ENQUIRY` — `UPPER_SNAKE_CASE`, validated `?type=ORDER_SHIPPED` against registry; unknown → `422 INVALID_VALUE` `field: type`. No per-product variants (`SOFA_SHIPPED`). `PAYMENT_*` deferred to Group H. Adding type within `v1` is contract change.
+- **Machine logic on `type`, not `message`:** `type=ORDER_SHIPPED` → client renders `Your order OD-12345 has been shipped.`; frontend must not parse English `message` for logic; `type` + structured `target` allows `Next.js`/`Flutter` consistent rendering and deep-link.
 
 
 

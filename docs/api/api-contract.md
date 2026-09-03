@@ -1,6 +1,6 @@
 # API Contract — Furniture E-Commerce Platform (Consolidated)
 
-> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.26 — General Enquiry (Anonymous + Authenticated, Optional Product/Order Association, Optional Attachments, Plain Text, OPEN/CLOSED PRIVATE)
+> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.27 — Notification API Contract (IN_APP primary, PRIVATE, CLOSED types, read_at)
 > **Authority:** This file is the canonical response-envelope, resource-representation and validation contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2` and `phase-1.15.md`.
 
 ---
@@ -1136,7 +1136,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 
 ## 19. Version 1 Endpoint Inventory — Concrete Catalogue (Phase 1.19 — Current `PROPOSED`, Target `APPROVED` after Phase 1.21 Review)
 
-> **Authority note:** This section is the **authoritative Version 1 endpoint inventory** — stable IDs, versioned paths, actors, auth/authz, purpose, and contract references. It answers *What exists? Who uses it? What does it do?* Implementation (routes/controllers/middleware/FormRequests) remains deferred. All paths use `/api/v1` per Phase 1.8; roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; reuse global conventions (query Phase 1.11, pagination Phase 1.12, response Phase 1.13, input Phase 1.14, validation Phase 1.15, errors Phase 1.16, auth Phase 1.17, authz Phase 1.18). Payment/webhook endpoints are placeholders owned by Group H (see §19.12). **Current status (accepted):** `PROPOSED` (Phase 1.19) for all V1 endpoints (`PROPOSED*` for `PAY-001/002`/`WEBHOOK-001` Group H placeholders); **Target status:** `APPROVED` after Phase 1.21 review — no V1 endpoint is `APPROVED` until then. Master table `Status` column reflects **current** `PROPOSED`/`PROPOSED*`; target `APPROVED` retained for implementation tracking (see §19.15).
+> **Authority note:** This section is the **authoritative Version 1 endpoint inventory** — stable IDs, versioned paths, actors, auth/authz, purpose, and contract references. It answers *What exists? Who uses it? What does it do?* Implementation (routes/controllers/middleware/FormRequests) remains deferred. All paths use `/api/v1` per Phase 1.8; roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; reuse global conventions (query Phase 1.11, pagination Phase 1.12, response Phase 1.13, input Phase 1.14, validation Phase 1.15, errors Phase 1.16, auth Phase 1.17, authz Phase 1.18). Payment/webhook endpoints are placeholders owned by Group H (see §19.12). **Current status (accepted):** `APPROVED` for `ORD-001..014` (Phase 1.23), `REQ-001..007` (Phase 1.25), `ENQ-001..007` (Phase 1.26), `NOT-001/002` (Phase 1.27) per their canonical `§24`/`§26`/`§27`/`§28` contracts; `PROPOSED` for remaining V1 endpoints (`CAT-*`, `AUTH-*`, `USER-*`, `CART-*`, `CHK-001`, `INV-*`, `ADM-*`, etc.) and `PROPOSED*` for `PAY-001/002`/`WEBHOOK-001` Group H placeholders; **Target status:** `APPROVED` for remaining `PROPOSED` after review. Master table `Status` column reflects **current** `APPROVED`/`PROPOSED`/`PROPOSED*` as marked per row (see §19.15).
 
 ### 19.1 Master Endpoint Table (Stable IDs, Do Not Recycle)
 
@@ -1184,16 +1184,16 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `REQ-004` | GET | `/api/v1/requests` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | List operational requests | APPROVED |
 | `REQ-005` | GET | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | Get operational request | APPROVED |
 | `REQ-006` | PATCH | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.manage` | Update operational request state (`request_status` CLOSED) | APPROVED |
-| `REQ-007` | POST | `/api/v1/requests/{request}/attachments` | Request | Anonymous* (scoped), Customer | **Scoped** — server-issued upload token (from `REQ-001` response, single-use/time-limited) + parent ownership; predictable ID alone insufficient | Upload request attachment — **preferred: multipart on `REQ-001` creation**; separate `POST` only with scoped token (anonymous requires token), private to parent | APPROVED |
+| `REQ-007` | POST | `/api/v1/requests/{request}/attachments` | Request | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** — server-issued upload token (from `REQ-001` response, single-use/time-limited) + parent ownership; predictable ID alone insufficient | Upload request attachment — **preferred: multipart on `REQ-001` creation**; separate `POST` only with scoped token (anonymous requires token), private to parent | APPROVED |
 | `ENQ-001` | POST | `/api/v1/enquiries` | Enquiry | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse) | Submit general enquiry (anonymous allowed) | APPROVED |
 | `ENQ-002` | GET | `/api/v1/me/enquiries` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` own | List own enquiries | APPROVED |
 | `ENQ-003` | GET | `/api/v1/me/enquiries/{enquiry}` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` owns enquiry | Get own enquiry detail | APPROVED |
 | `ENQ-004` | GET | `/api/v1/enquiries` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | List operational enquiries | APPROVED |
 | `ENQ-005` | GET | `/api/v1/enquiries/{enquiry}` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | Get operational enquiry | APPROVED |
 | `ENQ-006` | POST | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.manage` | Close enquiry `OPEN→CLOSED` (reopen `CLOSED→OPEN` optional) | APPROVED |
-| `ENQ-007` | POST | `/api/v1/enquiries/{enquiry}/attachments` | Enquiry | Anonymous* (scoped), Customer | **Scoped** — server-issued upload token (from `ENQ-001` response, single-use/time-limited) + parent ownership; same token model as `REQ-007` | Upload enquiry attachment — **preferred: multipart on `ENQ-001` creation**; separate `POST` only with scoped token, private to parent | APPROVED |
-| `NOT-001` | GET | `/api/v1/me/notifications` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own — **Customer**: own (customer notifications); **Staff**: `OPERATIONAL` own, recipient-scoped (operational notifications: new order/request/payment event); **Admin**: `ADMIN` limited own, recipient-scoped (administrative notifications as needed) | List own notifications (holder-scoped via `/me`, paginated) | PROPOSED |
-| `NOT-002` | PATCH | `/api/v1/me/notifications/{notification}` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (read/unread only) — **Customer**: own; **Staff**: `OPERATIONAL` own, recipient-scoped; **Admin**: `ADMIN` limited own, recipient-scoped | Mark notification read/unread (only `read`/`unread` mutable; content immutable) | PROPOSED |
+| `ENQ-007` | POST | `/api/v1/enquiries/{enquiry}/attachments` | Enquiry | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** — server-issued upload token (from `ENQ-001` response, single-use/time-limited) + parent ownership; same token model as `REQ-007` | Upload enquiry attachment — **preferred: multipart on `ENQ-001` creation**; separate `POST` only with scoped token, private to parent | APPROVED |
+| `NOT-001` | GET | `/api/v1/me/notifications` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own — **Customer**: own (customer notifications); **Staff**: `OPERATIONAL` own, recipient-scoped (operational notifications: new order/request/payment event); **Admin**: `ADMIN` limited own, recipient-scoped (administrative notifications as needed) | List own notifications (holder-scoped via `/me`, paginated) | APPROVED |
+| `NOT-002` | PATCH | `/api/v1/me/notifications/{notification}` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (read/unread only) — **Customer**: own; **Staff**: `OPERATIONAL` own, recipient-scoped; **Admin**: `ADMIN` limited own, recipient-scoped | Mark notification read/unread (only `read`/`unread` mutable; content immutable) | APPROVED |
 | `INV-001` | GET | `/api/v1/inventory` | Inventory | Staff, Admin | Yes | `OPERATIONAL` `inventory.view` | List inventory (operational) | PROPOSED |
 | `INV-002` | GET | `/api/v1/inventory/{product}` | Inventory | Staff, Admin | Yes | `OPERATIONAL` `inventory.view` | Get product inventory detail | PROPOSED |
 | `INV-003` | POST | `/api/v1/inventory/{product}/adjust` | Inventory | Staff, Admin | Yes | `OPERATIONAL` `inventory.manage` + auditable reason | Adjust inventory (explicit action, not `PATCH {quantity:999}`) | PROPOSED |
@@ -1213,7 +1213,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `PAY-002` | GET | `/api/v1/payments/{payment}` | Payment | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own / `OPERATIONAL` / `ADMIN` limited | Get payment status (generic) | PROPOSED* |
 | `WEBHOOK-001` | POST | `/api/v1/webhooks/payment/{provider}` | Payment | System/Webhook | Signature | `SYSTEM` service auth (Group H) | Payment provider callback (Group H) | PROPOSED* |
 
-> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). All other endpoints are **current `PROPOSED`**, target `APPROVED` after Phase 1.21 review (see authority note and §19.15).
+> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002` are **already `APPROVED`** as marked per row (`§24`/`§26`/`§27`/`§28`); all other endpoints remain **current `PROPOSED`**, target `APPROVED` for remaining after review (see authority note and §19.15).
 
 ### 19.2 Endpoint Detail Template & Per-Endpoint Contract Summary
 
@@ -2183,10 +2183,10 @@ Implementation requirement (for later Laravel/database phases): **Inventory vali
 - **Inventory lifecycle for `PENDING_PAYMENT` delivery orders (Model B — reserved, not consumed, with explicit release/restore):**
   - **At `CHK-001` (DELIVERY or PICKUP):** Validate `requested ≤ available` inside atomic transaction, then **reserve** stock: `reserved_quantity += quantity`, `available_quantity = physical_quantity - reserved_quantity`. Reserve happens atomically with order creation (`PENDING_PAYMENT`, `delivery_fee_status=PENDING` for DELIVERY / `0/FINALIZED` for PICKUP) and cart clearance. Stock is **reserved, not consumed** (`physical_quantity` unchanged).
   - **During `PENDING_PAYMENT` before `ORD-014`:** Reservation held; no second reservation. `ORD-014` success (fee `PENDING→FINALIZED`) keeps reservation unchanged; `ORD-014` failure (validation, already finalized, wrong state/fulfillment) does **not** release reservation — order stays `PENDING_PAYMENT` with reservation held for retry or terminal release.
-  - **Release / restore (atomically with status change, idempotent via `Idempotency-Key` where applicable):** `reserved_quantity -= quantity`, `available_quantity += quantity` executed atomically when order reaches a terminal non-fulfilled state:
-    - Customer cancellation `ORD-004` (`PENDING_PAYMENT` within 20-min window) → release
-    - Admin cancellation / expiry (TTL — see `docs/domain/business-rules.md §2/§8` expiry, e.g., pending without fee finalization or without payment beyond configured window) → release
-    - Payment failure (Group H: provider decline/timeout, `PAY-001` failure) → release (if `CANCELLED`/`expired` terminal is chosen; payment failure does **not** keep indefinite hold)
+  - **Release / restore (atomically with status change, idempotent via `Idempotency-Key` where applicable, status-history appended):** `reserved_quantity -= quantity`, `available_quantity += quantity` executed atomically when order reaches a terminal non-fulfilled state (`CANCELLED`, not `EXPIRED`):
+    - Customer cancellation `ORD-004` (`PENDING_PAYMENT` within 20-min window, `POST /api/v1/orders/{order}/cancel`, idempotent) → atomic release + `order_status_history` append → `CANCELLED`
+    - Admin cancellation / System expiry (`Admin: POST /api/v1/orders/{order}/cancel` with `orders.manage` / `System: TTL expiry via Group H` — see `docs/domain/business-rules.md §2/§8` expiry, e.g., pending without fee finalization or without payment beyond configured window, `System` actor) → atomic release + `order_status_history` append, idempotent (`Admin Idempotency-Key` / `System event-id`), `CANCELLED` (not `EXPIRED`)
+    - Payment failure (Group H: provider decline/timeout, `PAY-001` failure) → atomic release + `order_status_history` append → `CANCELLED` (not `EXPIRED`; payment failure does **not** keep indefinite hold)
   - **On payment success (`PAID` via Group H webhook):** Reservation retained and **converted to consumption**: `physical_quantity -= quantity`, `reserved_quantity -= quantity` (so `available` unchanged, held stock becomes sold). Alternative implementation may keep `reserved` until `ACCEPTED`/`COMPLETED` then consume, but consumption must occur no later than `PAID`→fulfillment and must be atomic with `PENDING_PAYMENT→PAID`, never leaving `physical` overstated.
   - **Indefinite holds prohibited:** Pending `DELIVERY` without fee finalization or without payment must not hold stock forever; an expiry/TTL (e.g., fee-finalization window + payment window, configured, not client-controlled) must eventually release if terminal state not reached. Expiry mechanism deferred to implementation but lifecycle above is normative.
   - `PICKUP` pending follows same reserve → release on cancel/expiry/failure → consume on `PAID` path; no special case.
@@ -2556,7 +2556,7 @@ PENDING_PAYMENT, PAID, ACCEPTED, PROCESSING, READY_FOR_PICKUP, SHIPPED, DELIVERE
 | `SHIPPED` | `deliver` (`ORD-011`) | Staff/Admin `orders.deliver` | `DELIVERY` only | — | `DELIVERED` |
 | `READY_FOR_PICKUP` | `complete` (`ORD-013`) | Staff/Admin `orders.complete` | `PICKUP` only | — | `COMPLETED` |
 | `DELIVERED` | `complete` (`ORD-013`) | Staff/Admin `orders.complete` | `DELIVERY` only | — | `COMPLETED` |
-| `PENDING_PAYMENT` | `admin cancel` (controlled, explicit) | Admin `orders.manage` (explicit) | Any | audit, not customer 20-min window | `CANCELLED` |
+| `PENDING_PAYMENT` | `cancel` (Admin: `POST /api/v1/orders/{order}/cancel` + `orders.manage` / System: TTL expiry via Group H / System) | Admin `orders.manage` / System (Group H, TTL) | Any | Idempotent (Admin `Idempotency-Key` / System event-id), atomic `reserved_quantity` release + `available_quantity` restore + `order_status_history` append; use `CANCELLED` (not `EXPIRED`); audit, not customer 20-min window | `CANCELLED` |
 
 **Pickup branch:** `PENDING_PAYMENT→PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` (no `SHIPPED`/`DELIVERED`).
 
@@ -3555,8 +3555,8 @@ Canonical `POST /api/v1/enquiries` JSON body (when no file) or multipart fields 
 
 - When `order_id` supplied:
   - For **authenticated Customer**: Order must exist **and** be **owned by authenticated principal** (`Enquiry.order.customer_id == auth principal`). `Customer A → Order B` (someone else's order) must be **rejected or 404-masked** to avoid leaking `Order OD-xxx exists` — knowing an `order_id` is not authorization (see §27.14). Staff/admin may have broader operational access per `orders.view_operational`.
-  - For **anonymous**: `order_id` association is **discouraged** in V1; if later supported for "I have a question about order X" without account, it must use a secure order-access token mechanism, not raw enumeration. In V1, anonymous `order_id` when supplied is validated but not treated as ownership proof.
-- Multiple associations (`product_id` + `order_id` simultaneously) are allowed where both are meaningful (e.g., "Question about Product X in my Order OD-123"); `cart_id`/`payment_id`/`request_id` associations are **not** added in V1 — keep relationships intentional, only `product_id` and `order_id` optional.
+  - For **anonymous** (no auth, no scoped token): any `order_id` supplied must be **rejected with `422 INVALID_VALUE` `field: order_id`** in V1 — anonymous callers cannot submit `order_id`. `order_id` is allowed only for **authenticated owners** (`Order owned`) or callers presenting a **scoped order-access token** where business approves order-specific support (token validated, not raw enumeration). Staff/admin operational access also allowed.
+- Multiple associations (`product_id` + `order_id` simultaneously) are allowed **only when the caller satisfies the order-access requirement** (authenticated owner or scoped token) — e.g., "Question about Product X in my Order OD-123" is valid for an owner with both fields; anonymous `product_id` + `order_id` without token remains `422` for `order_id` (but `product_id` alone remains allowed). `cart_id`/`payment_id`/`request_id` associations are **not** added in V1 — keep relationships intentional, only `product_id` and `order_id` optional.
 
 ### 27.8 Attachments — Optional, Inline Multipart Preferred, Private
 
@@ -3841,7 +3841,224 @@ Within `v1`, do not change without compatibility review: `field type`, `field me
 - Conventions: `api-conventions.md §27` (anonymous creation, customer ownership, private data, attachment authorization `inherits parent`, product/order optional references, immutable original submission, simple status, XSS-safe plain text, rate-limit candidate).
 - Domain: `business-rules.md §10` (General Enquiry: anonymous/customer allowed, contact+message required, not an Order, separate from Request, optional product/order, optional attachment, staff operational, no anonymous retrieval, plain text, immutable message).
 - Decisions: `decisions.md ADR/API-ENQ-001..ADR/API-ENQ-008` (anonymous enquiry, ownership, separate from Request, not an Order, no payment/inventory, optional attachments, no anonymous retrieval, immutable message/plain text).
-- Request `§26` and Order `§24` remain distinct; Payment `Group H`; Tracking `§25` not Enquiry; Notification `Phase Group R` deferred.
-- Links to Conventions & Resources updated: `§20` now includes Enquiry conventions `§27`.
+- Request `§26` and Order `§24` remain distinct; Payment `Group H`; Tracking `§25` not Enquiry; Notification `§28` now authoritative (IN_APP).
+- Links to Conventions & Resources updated: `§20` now includes Enquiry conventions `§27` and Notification conventions `§28`.
+
+---
+
+## 28. Notification API Contract (Phase 1.27)
+
+> **Authority:** Canonical domain API contract for the **Notification** subsystem (`NOT-001`..`NOT-004`). Consolidates `phases/phase-1.27.md` and is consistent with `Order` (`§24`), `Tracking/Fulfillment` (`§25`), `Request` (`§26`), `Enquiry` (`§27`), `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`).
+> **Core Principle:** **Notifications communicate business state; they do not create, authorize, or become the source of truth for that state.** The authoritative data remains `Order` / `Request` / `Enquiry` / `Payment` / `Fulfillment` / `User`. If a Notification says `Order shipped` but `Order` says `PROCESSING`, `Order` wins. Notifications are downstream communication derived from authoritative business events.
+
+### 28.1 Notification Resource
+
+A Notification is an independent API resource representing a logical in-app message derived from a business event.
+
+**Canonical fields (IN_APP V1):**
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `not_...` | Recipient only | no | Stable opaque identifier, server-generated |
+| `recipient_user_id` | string | Recipient only | no | Derived server-side, never client-supplied |
+| `type` | enum CLOSED | Recipient only | no | Machine type `ORDER_SHIPPED`, `NEW_ORDER` etc. (`§28.4`); CLOSED |
+| `title` | string | Recipient only | no | Short human title, server-generated |
+| `message` | string | Recipient only | no | Human message, server-generated, safe-encoded; not used for machine logic |
+| `read_at` | ISO8601 `Z` \| null | Recipient only | yes | `null` → unread, timestamp → read; server-owned; see `§28.8` |
+| `is_read` | boolean | Recipient only | no | Derived `read_at != null`; convenience, not second source of truth |
+| `target` | `{type, id}` \| null | Recipient only | yes | Safe navigation reference `{type: ORDER\|REQUEST\|ENQUIRY, id: ...}`; authorization still required on target fetch; does not grant access |
+| `source` | `{type, id}` \| null | Recipient only | yes | Traceability `{type: ORDER\|REQUEST\|ENQUIRY\|PAYMENT, id: ...}`; does not grant access |
+| `created_at` | ISO8601 `Z` | Recipient only | no | Server-generated, authoritative event-derived time |
+
+**Not exposed:** `recipient` email/phone, internal delivery attempts (`SMTP log`), payment secrets, internal notes, full Order payload. `channel` is not exposed in V1 responses unless delivery channels beyond `IN_APP` actually exist (`EMAIL`/`SMS`/`PUSH` deferred).
+
+### 28.2 Recipients — Customer / Staff / Admin
+
+- **Customer:** Personal `notifications.read_own` / `notifications.mark_read_own`. Each notification has single `recipient_user_id = customer`. Only own notifications via `GET /me/notifications`.
+- **Staff:** Operational `notifications.read_operational`. Shared operational queue model preferred: `Order created → Staff notification/queue → any authorized Staff can handle; Order remains source of truth`. Alternatively role-filtered personal operational notifications (`recipient_user_id = staff`). For V1 small-business: **Customer = personal read state; Staff = shared operational queue** (separate semantics, see `§28.7`).
+- **Admin:** Administrative `notifications.read_operational` where required (`staff approval/security/critical operational`). Not every Staff notification auto-forwarded to Admin.
+
+No `global notification` — backend decides recipients per event.
+
+### 28.3 Channel Architecture
+
+- **V1 primary channel:** `IN_APP` only. Logical `Notification` record is the API contract.
+- **Future channels:** `EMAIL` (Group R), `PUSH` (Flutter), `SMS` — each is a **delivery attempt** derived from `Notification`, not a separate `CustomerNotification` / `StaffNotification` resource. `Notification → Delivery attempt(s)` extensibility preserved; `Notification` contract does not change when `EMAIL` added.
+- **V1 response:** Do not expose `channel: EMAIL` / `SMS` / `PUSH` unless actually implemented. Do not claim undelivered capabilities.
+
+### 28.4 Notification Types — CLOSED Registry (V1)
+
+All types are `UPPER_SNAKE_CASE`, CLOSED. Unknown type → `422 INVALID_VALUE`.
+
+| Type | Recipient | Source | Description |
+|---|---|---|---|
+| `ORDER_RECEIVED` | Customer | Order | Order created (`CHK-001` → `PENDING_PAYMENT`) |
+| `ORDER_ACCEPTED` | Customer | Order | `PAID → ACCEPTED` (`ORD-007`) |
+| `ORDER_PROCESSING` | Customer | Order | `ACCEPTED → PROCESSING` (`ORD-008`) |
+| `ORDER_READY_FOR_PICKUP` | Customer | Fulfillment | `PROCESSING → READY_FOR_PICKUP` (`ORD-009`) |
+| `ORDER_SHIPPED` | Customer | Fulfillment | `PROCESSING → SHIPPED` (`ORD-010`) |
+| `ORDER_DELIVERED` | Customer | Fulfillment | `SHIPPED → DELIVERED` (`ORD-011`) |
+| `ORDER_COMPLETED` | Customer | Order | `... → COMPLETED` (`ORD-013`) |
+| `ORDER_CANCELLED` | Customer | Order | `... → CANCELLED` (`ORD-004`) |
+| `NEW_ORDER` | Staff | Order | New Order operational alert |
+| `NEW_MADE_TO_ORDER_REQUEST` | Staff | Request | `REQ-001` |
+| `NEW_ENQUIRY` | Staff | Enquiry | `ENQ-001` |
+
+Only events actually required by approved workflows (`§24`/`§26`/`§27`) are registered. Do not create per-product variants (`SOFA_SHIPPED`). Adding `ORDER_SOMETHING_NEW` within `v1` is a contract change; review client behavior. `PAYMENT_*` types remain **Group H**.
+
+### 28.5 Customer Notifications
+
+- Triggered by customer-relevant business events (`ORDER_ACCEPTED`, `READY_FOR_PICKUP`, `SHIPPED`, etc.). `type` + structured `target` (`{type: ORDER, id: ord_...}`) allows `Next.js`/`Flutter` to deep-link to `Order detail` / `Tracking`; target fetch still requires normal Order authorization.
+- Machine logic must depend on `type` (`ORDER_SHIPPED`), not `message` (`Your order OD-12345 has been shipped.`). `message` may be server-generated or localized client-side from `type` + context (`order_reference`); frontend must not parse English.
+- `payment` context deferred to Group H.
+
+### 28.6 Staff Operational Notifications
+
+- Operational events (`NEW_ORDER`, `NEW_MADE_TO_ORDER_REQUEST`, `NEW_ENQUIRY`) create Staff-visible notifications. Notification is an alert; **Order/Request/Enquiry collection remains the source of truth** — Staff can refresh operational queue independently if notification delivery is delayed.
+- For V1 small-business: `Customer: personal read_at`; `Staff: operational queue` — `one Staff reads` does not necessarily mean `all Staff should stop seeing the item`. Shared queue should use `handled/acknowledged` semantics separate from personal `read_at` if needed; do not conflate `read` with `handled`.
+
+### 28.7 Admin Notifications
+
+- Administrative scope (`staff approval/security/critical operational`). Not every operational notification auto-broadcast to Admin. Admin visibility/mutation separate from Staff.
+
+### 28.8 Read/Unread State
+
+- **Semantics:** `read_at = null` → unread; `read_at = timestamp` → read. `read_at` is server-owned. `is_read` is derived convenience.
+- **Does not mean:** `Order processed`, `payment succeeded`, `request handled` — never overload read state with business status.
+- **Mark read:** `PATCH /api/v1/me/notifications/{notification} {read: true}` or `POST .../read` — canonical is `PATCH` with `{read: boolean}` (only `read` allowed, no `type`/`title`/`recipient`/`target` mutation). Server derives recipient from authentication; `{"recipient_user_id":"..."}` or `{"user_id":"another"}` rejected.
+- **Mark all read:** `POST /api/v1/me/notifications/read-all` applies only to authenticated actor's accessible notifications where approved; do not accept `user_id`.
+- **Authorization:** Only recipient may mark own notification read; Staff cannot mark Customer notifications via Staff credentials; Admin visibility does not change recipient read state.
+- **Synchronization:** Server-side authoritative; `Next.js` and `Flutter` see consistent state via server (`read on Flutter → website shows read`).
+
+### 28.9 Notification Targets
+
+- Targets are server-generated `{type, id}` (e.g., `{type: ORDER, id: ord_01h...}`) referencing `Order` / `Request` / `Enquiry`. Do not allow customer to construct `{target: {type: ORDER, id: another-order}}` to create unauthorized navigation.
+- **Not a capability token:** `Notification {target: ORDER, id: B}` does not grant access to `Order B` nor bypass Order ownership validation; normal `GET /me/orders/{order}` authorization still applies.
+- Source reference `{source_type, source_id}` traceability similarly server-generated, not client-supplied.
+
+### 28.10 Collection, Pagination, Filtering, Ordering
+
+- **Collection:** `GET /api/v1/me/notifications` — `AUTHENTICATED_OWNER` own (or `OPERATIONAL` own for Staff/Admin via same path with role). Collection already contains `title`, `message`, `type`, `read_at`, `target`, `created_at` — separate `GET /me/notifications/{notification}` detail only if UI needs deep-linking, otherwise collection sufficient.
+- **Pagination:** Standard `page`/`per_page` (1–100) → `meta.pagination` per `§4`; deterministic `created_at DESC, id ASC` (newest first) + stable ID tie-breaker. Do not invent cursor pagination unless needed. Do not create notification-specific pagination metadata.
+- **Filtering:** Allow-list only: `unread=true` (`?unread=true` boolean), `type=ORDER_SHIPPED` (validated against CLOSED registry), `page`/`per_page`. Do not add free-text search in V1. Staff filters `unread`, `type`, `created_from/created_to` only if operationally useful.
+- **Metadata:** `meta.unread_count` (or `meta.pagination` + `meta.unread_count`) preferred if efficiently computable; choose one of `GET .../unread-count` vs `meta.unread_count`, not both without reason. Do not add both.
+- **Ordering:** Newest first, deterministic `created_at DESC, id ASC`.
+
+### 28.11 Event Sources
+
+Authoritative events that may create notifications (only approved workflows):
+
+| Business Event | Customer notified? | Staff notified? |
+|---|---|---|
+| `Order created` (`PENDING_PAYMENT`) | Yes | Yes (`NEW_ORDER`) |
+| `Payment confirmed` (`PAID`) | No | Per Group H |
+| `Order accepted` (`ACCEPTED`) | Yes | Via Order queue |
+| `Order processing` (`PROCESSING`) | Yes | Via Order queue |
+| `Ready for pickup` (`READY_FOR_PICKUP`) | Yes | Via Order queue |
+| `Shipped` (`SHIPPED`) | Yes | Via Order queue |
+| `Delivered` (`DELIVERED`) | Yes | Via Order queue |
+| `Completed` (`COMPLETED`) | Yes | Via Order queue |
+| `Order cancelled` (`CANCELLED`) | Yes | Yes if relevant |
+| `New Made-to-Order Request` (`REQ-001`) | No | Yes |
+| `New Enquiry` (`ENQ-001`) | No | Yes |
+| Payment event | Per Group H | Per Group H |
+
+Do not send notification for every internal event. `PAYMENT_*` mapping belongs to Group H.
+
+### 28.12 Notification Creation Rules
+
+- **No client creation:** `POST /notifications` for normal customers/Staff/Admin is prohibited. Notifications are generated by trusted backend events only. `{"type":"ORDER_SHIPPED","title":"...","recipient_user_id":"..."}` from client rejected `422`/`403`.
+- **No arbitrary content:** `title`/`message`/`target`/`recipient`/`type`/`created_at` server-generated from authoritative data (`order_reference`, `product name` safely encoded). Do not allow client-submitted arbitrary content to become system Notification.
+- **Data minimization:** Notification contains only contextual data to tell recipient what happened (`order_reference`, `type`, `target.id`); do not embed `entire Order`, `full customer profile`, `full delivery address`, `internal notes`, `payment secrets`.
+- **XSS:** Product name, customer name, request text, enquiry subject may appear in notifications — treat as untrusted, render safely (backend/frontend encode).
+
+### 28.13 Privacy
+
+- **Classification:** `Customer notifications → PRIVATE`, `Staff operational → PRIVATE/INTERNAL`, `Admin → ADMINISTRATIVE`. Never public.
+- **Object-level:** `Customer A → Customer B notification` via `GET /me/notifications/{id}` must fail `404 RESOURCE_NOT_FOUND` (masked per `§15.8`), not `403` leaking existence; `GET /me/notifications?unread=true` paginates only own. Staff `view_operational` only operational queue, not private customer notifications unrelated to task; Admin limited.
+- **No privilege escalation:** Notification `target` does not bypass target resource authorization.
+
+### 28.14 Caching
+
+- **Never public-cache:** `GET /me/notifications` → `Cache-Control: private, no-store` (Customer), operational → `private/internal`. Not CDN public.
+- **Multi-device:** Server authoritative `read_at` ensures `Flutter read → website shows read`.
+
+### 28.15 Failure / Retry Principles
+
+- **Downstream only:** `Order shipped → Order is SHIPPED` authoritative. If `Notification generation temporarily fails`, Order must still remain `SHIPPED`. `Notification failure must not roll back business transaction` unless explicitly required.
+- **No critical-path dependency:** `Checkout → Order` must not fail because notification cannot be persisted; Staff can still discover Order via operational queue. System remains resilient; eventual consistency (`Order state updates immediately, notification appears shortly afterward`) acceptable.
+- **Idempotency / deduplication:** Same source event delivered twice (e.g., `Order SHIPPED` processed twice) must not create two identical notifications for same recipient. Use event IDs / idempotency key at processing boundary. `Notification → Delivery attempt(s)` model preserves future multi-channel without duplicating logical message.
+- **Retry:** Later infrastructure may retry creation/delivery safely (outbox/event pattern candidate, not implemented here). Do not make controller response depend on completing every delivery. Background/queued dispatch is future candidate.
+
+### 28.16 Channel Architecture
+
+- Logical `Notification` is channel-agnostic. Future `EMAIL` (Group R) `→ Email delivery attempt` and `PUSH` (Flutter) `→ Push delivery` are both derived from `Notification`. Existing `IN_APP` contract remains valid when `EMAIL` added.
+
+### 28.17 Email Deferral
+
+- Real `EMAIL` delivery remains **Group R**. `Business event → Notification → Email delivery` (Group R). Notification contract does not depend on email; `anonymous request/enquiry` does not create persistent in-app notification without authenticated recipient — may trigger `email` in Group R later, but not in-app.
+
+### 28.18 Endpoint Inventory (Authoritative)
+
+| ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
+|---|---|---|---|---|---|---|---|---|
+| `NOT-001` | `GET` | `/api/v1/me/notifications` | Customer, Staff, Admin | Required | `AUTHENTICATED_OWNER` own (Customer), `OPERATIONAL` own recipient-scoped (Staff), `ADMIN` limited own recipient-scoped (Admin) per `§18` | List own notifications (paginated, unread filter) | — | — |
+| `NOT-002` | `PATCH` | `/api/v1/me/notifications/{notification}` | Customer, Staff, Admin | Required | `AUTHENTICATED_OWNER` own / `OPERATIONAL` own for Staff — only recipient may mark own read (`read: boolean` only) | Mark notification read/unread | Designed idempotent | Low |
+
+Potential (only if approved): `NOT-003 POST /api/v1/me/notifications/read-all` (mark all accessible read) and `NOT-004 GET /api/v1/notifications/operations` (shared operational queue) — include only if frontend genuinely needs and through same `Notification` resource (no `CustomerNotification`/`StaffNotification` split). Do not create `GET /me/notifications/{notification}` detail unless UI needs deep-linking.
+
+*Notes:* `NOT-001` via `/me` holder-scoped; no `POST /notifications` for clients. `NOT-002` body `{read: true}` or `{read: false}` only; server derives recipient.
+
+### 28.19 Authorization Matrix (Normative — see §18)
+
+| Operation | Anonymous | Customer | Staff | Admin |
+|---|---|---:|---:|---:|
+| List own notifications (`NOT-001`) | No | **Yes** (`AUTHENTICATED_OWNER` own, private, paginated) | **Yes** where applicable (`notifications.read_operational` / `OPERATIONAL` own) | **Yes** where applicable (`ADMIN` limited own) |
+| Mark own notification read (`NOT-002`) | No | **Yes** (only own, `read` only) | **Yes** for own/operational own | **Yes** where applicable (does not change recipient state without scope) |
+| Create notification | No | No | No | No* |
+| View another customer's notification | No | No | No | Only if explicitly approved |
+| Change notification content (`type`/`title`/`message`/`recipient`/`target`/`created_at`) | No | No | No | No* |
+| Mark all read (`NOT-003` if approved) | No | **Yes** (own accessible) | **Yes** where applicable | **Yes** where applicable |
+
+`*` Admin broadcast not part of V1; Staff cannot mark Customer notifications via Staff credentials; Staff operational queue read does not equal handled.
+
+### 28.20 Notification Type Registry (Normative — CLOSED)
+
+See `§28.4` table. `PAYMENT_*` deferred to Group H. `type` validated against registry; unknown → `422 INVALID_VALUE` `field: type`. Message locale: `type` + structured context (`order_reference`) preferred; frontend renders display text, not parsing English.
+
+### 28.21 Event-to-Notification Matrix (Normative)
+
+| Business Event | Customer | Staff |
+|---|---|---|
+| `Order created` | Yes (`ORDER_RECEIVED`) | Yes (`NEW_ORDER`) |
+| `Order accepted` | Yes (`ORDER_ACCEPTED`) | Via Order queue |
+| `Order processing` | Yes (`ORDER_PROCESSING`) | Via Order queue |
+| `Ready for pickup` | Yes (`ORDER_READY_FOR_PICKUP`) | Via Order queue |
+| `Shipped` | Yes (`ORDER_SHIPPED`) | Via Order queue |
+| `Delivered` | Yes (`ORDER_DELIVERED`) | Via Order queue |
+| `Completed` | Yes (`ORDER_COMPLETED`) | Via Order queue |
+| `New Made-to-Order Request` | No | Yes (`NEW_MADE_TO_ORDER_REQUEST`) |
+| `New Enquiry` | No | Yes (`NEW_ENQUIRY`) |
+
+Prevents random notification creation; implementation must reference this matrix.
+
+### 28.22 Security, Field-Level Exposure & History Preservation
+
+- History preservation: Notification is append-only logical message; `read_at` toggle does not rewrite `type`/`title`/`message`/`target`. Staff operational queue vs personal read semantics separated.
+- Field-level before serialization: `Customer → own without internal delivery logs`, `Staff → operational without private customer notifications`, `Admin → limited`. Never `model.toArray()`.
+- Threats: `Customer A → B notification IDOR`, `Customer cannot create/change recipient/target`, `Staff cannot read unrelated private notifications`, `Notification cannot expose internal notes/credentials/provider secrets` — see `§28.13`.
+
+### 28.23 Compatibility — Version 1
+
+Within `v1`, do not change without review: `field type`, `field meaning`, `enum value semantics` (`type` CLOSED, `read_at` semantics), `target` semantics, `recipient` semantics, `pagination/filter` shapes, `response envelope` (`data`/`meta`/`errors`). Adding `ORDER_SOMETHING_NEW` within `v1` is a contract change. `NOT-001` collection metadata `unread_count` vs `GET .../unread-count` choice is stable once published.
+
+### 28.24 Cross-References
+
+- Resources: `api-resources.md §7` (Notification — recipient, relationships, representation, read state `read_at`, target `type/id`, source, privacy `PRIVATE`).
+- Conventions: `api-conventions.md §28` (ownership, read-state `read_at null`→unread, target server-generated, event-derived, private caching, CLOSED types).
+- Domain: `business-rules.md §13` (Notifications communicate business events, not authoritative; Customer private, Staff operational, Admin administrative; failure does not roll back transaction; Email Group R).
+- Decisions: `decisions.md ADR/NOT-001..008` (downstream, private, not capability token, recipient-scoped read, not source of truth, IN_APP, Group R, failure does not roll back).
+- Order `§24` / Tracking `§25` / Request `§26` / Enquiry `§27` remain sources of truth; Payment `Group H`; Email `Group R`.
+- Links to Conventions & Resources updated: `§20` now includes Notification conventions `§28`.
 
 

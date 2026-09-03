@@ -232,7 +232,7 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 | `historical unit_price` | No | Read | Read | Controlled correction only |
 | `order created_at` | No | Read | Read | Read |
 | `fulfillment_type` | Generally No | Read | Operational | Controlled |
-| `delivery_fee` | `PENDING→FINALIZED` once before `PAID`; thereafter controlled correction only | Read | Authorized (audit) | Authorized (audit) |
+| `delivery_fee` | `PENDING→FINALIZED` once before `PAID`; thereafter immutable (historical fee — no correction via normal Staff/Admin operations) | Read | Authorized (audit) | Authorized (audit) |
 | `total` | Derived/finalized with fee | Read | Operational | Authorized |
 | `status` | Action-controlled only | Read | Action | Action |
 | `status_history` | Append-only | Read | Read/append via actions | Read/append via actions |
@@ -275,7 +275,7 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 
 - **Request:** `fulfillment_type: PICKUP|DELIVERY` (CLOSED) + conditional `delivery_address` (required when `DELIVERY`, absent/null when `PICKUP`). No `cart_id`, no money, no status, no reference, no ownership override.
 - **Response (created Order summary):** `order_id`, `order_reference (OD-…)`, `status (PENDING_PAYMENT)`, `fulfillment_type`, `delivery_address` (null for PICKUP, snapshot for DELIVERY), `subtotal {amount,currency}`, `delivery_fee {amount,currency} | null` (`{amount:0, currency:"TZS"}` + `delivery_fee_status=FINALIZED` for `PICKUP`; `null` + `delivery_fee_status=PENDING` for `DELIVERY` pending fee), `delivery_fee_status: PENDING|FINALIZED` CLOSED, `total {amount,currency}` (provisional equals `subtotal` when `PENDING`, final `subtotal+delivery_fee` when `FINALIZED`), `currency: TZS`, `payment null` (still `PENDING_PAYMENT` before `PAY-001`; `PAY-001` blocked `409 DELIVERY_FEE_PENDING` when `PENDING`, otherwise eligible; `payment` object `{payment_status, amount}` appears only after `PAY-001` creates it). Same money shape `{amount:int,currency:"TZS"}` everywhere; server-calculated; provisional amounts explicitly marked by `delivery_fee_status`.
-- **Relationships:** `Cart (intent, informational)` → **`Checkout (validates, recalculates, applies inventory transaction — reservation or consumption, strategy selected by Order/Payment lifecycle)`** → `Order (snapshot, authoritative)` → `Payment (Group H)` on final total. Delivery fee finalization (Staff/Admin adding fee) occurs on the Order between creation and payment — see `api-contract.md §23.6`. Inventory semantics remain neutral here; Checkout does not pre-select `reserve` vs `consume` until the lifecycle decides (per phase-1.22.md 1242-1254).
+- **Relationships:** `Cart (intent, informational)` → **`Checkout (validates, recalculates, atomically reserves inventory at CHK-001: reserved_quantity += quantity, available = physical - reserved, held through PENDING_PAYMENT)`** → `Order (snapshot, authoritative — PENDING_PAYMENT reserved, not yet consumed)` → `Payment (Group H)` on final total. **Reservation lifecycle (V1, align api-contract.md §23.10 / §24.13):** `release` atomically (`reserved -= quantity, available += quantity` + status-history `CANCELLED`) on customer `ORD-004` cancel (20-min), admin `POST /orders/{order}/cancel` + `orders.manage` / System TTL expiry via Group H, or Group H payment failure; `commit` atomically (`physical -= quantity, reserved -= quantity`) on `PAID` via Group H webhook (`PENDING_PAYMENT→PAID`, not EXPIRED). Delivery fee finalization occurs on the Order between creation and payment — see `api-contract.md §23.6` / `§23.10` / `§24.13`. No `reserve vs consume` indecision in V1.
 - **Security:** `AUTHENTICATION_REQUIRED` (no guest checkout), `AUTHENTICATED_OWNER` own cart, `Idempotency-Key` required, private/no-store, atomic inventory + order + cart transition.
 
 ---
@@ -470,11 +470,104 @@ Statuses `OPEN` (default), `CLOSED` are **CLOSED** (`UPPER_SNAKE_CASE`). Transit
 
 Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phone`), `category`, `product_id`/`order_id`, `attachment` metadata are preserved as historical communication intake. Staff `internal_notes` separated; future `enquiry_status` changes are append-style operational history (audit candidate). Changing current `Product` price/name does not rewrite past Enquiry; order creation does not retroactively create enquiry.
 
-## 7. Payment (generic — provider-specific deferred to Group H)
+## 7. Notification (`/me/notifications`) — Approved V1 (Phase 1.27)
+
+**Conceptual paths:** `GET /api/v1/me/notifications` (`NOT-001` own, paginated, holder-scoped), `PATCH /api/v1/me/notifications/{notification}` (`NOT-002` mark read/unread), `POST /api/v1/me/notifications/read-all` (`NOT-003` optional if approved), `GET /api/v1/notifications/operations` (`NOT-004` optional shared operational queue).
+*Note:* Canonical collection is `GET /me/notifications` holder-scoped via `recipient_user_id`; no `POST /notifications` for clients; no `CustomerNotification` / `StaffNotification` split — one `Notification` resource with authorization/recipient scope. Anonymous in-app notifications not supported.
+
+### 7.1 Notification Detail Representation — Customer / Staff / Admin View
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `not_...` | Recipient only | no | Stable opaque identifier, server-generated |
+| `recipient_user_id` | string | Recipient only | no | Derived server-side (never client-supplied) |
+| `type` | enum CLOSED | Recipient only | no | Machine type `ORDER_SHIPPED`, `NEW_ORDER` etc. per `§7.5`; CLOSED |
+| `title` | string | Recipient only | no | Short title, server-generated |
+| `message` | string | Recipient only | no | Human message, server-generated, safe-encoded; not used for machine logic |
+| `read_at` | ISO8601 `Z` \| null | Recipient only | yes | `null` → unread, timestamp → read; server-owned (see `§7.2`) |
+| `is_read` | boolean | Recipient only | no | Derived `read_at != null`; convenience, not second source of truth |
+| `target` | `{type, id}` \| null | Recipient only | yes | Safe reference `{type: ORDER\|REQUEST\|ENQUIRY, id: ...}`; does not grant access, target fetch still auth-checked |
+| `source` | `{type, id}` \| null | Recipient only | yes | Traceability `{type: ORDER\|REQUEST\|ENQUIRY\|PAYMENT, id: ...}`; does not grant access |
+| `created_at` | ISO8601 `Z` | Recipient only | no | Server-generated, authoritative |
+
+**Not exposed:** `channel` (`EMAIL`/`SMS`/`PUSH` deferred — V1 `IN_APP` only, do not expose until implemented), delivery logs (`SMTP`), payment secrets, internal notes, full Order payload, `recipient` email/phone.
+
+### 7.2 Read State — `read_at` Contract
+
+| State | `read_at` | `is_read` | Set by |
+|---|---|---|---|
+| Unread | `null` | `false` | Server at creation |
+| Read | ISO8601 `Z` timestamp | `true` | Recipient via `NOT-002` `PATCH {read: true}` |
+
+Do not overload read state with business status (`Order shipped` ≠ `Notification read`). `is_read` is derived from `read_at` to avoid two sources of truth.
+
+### 7.3 Notification Collection Representation (`NOT-001`)
+
+```json
+{
+  "data": [
+    {
+      "id": "not_01h8y5a1b2c3d4e5f6g7h8j9",
+      "type": "ORDER_SHIPPED",
+      "title": "Order shipped",
+      "message": "Your order OD-12345 has been shipped.",
+      "read_at": null,
+      "is_read": false,
+      "target": { "type": "ORDER", "id": "ord_01h..." },
+      "source": { "type": "ORDER", "id": "ord_01h..." },
+      "created_at": "2026-09-01T14:00:00Z"
+    }
+  ],
+  "meta": {
+    "pagination": { "current_page": 1, "per_page": 20, "total": 12, "last_page": 1, "has_next": false, "has_previous": false },
+    "unread_count": 3
+  }
+}
+```
+
+`meta.unread_count` preferred if efficiently computable; choose `meta.unread_count` vs `GET .../unread-count` not both. Deterministic ordering `created_at DESC, id ASC` (newest first).
+
+### 7.4 Notification Types — CLOSED Registry (V1)
+
+| Type | Recipient | Source | Notes |
+|---|---|---|---|
+| `ORDER_RECEIVED` | Customer | Order | `PENDING_PAYMENT` created |
+| `ORDER_ACCEPTED` | Customer | Order | `ACCEPTED` |
+| `ORDER_PROCESSING` | Customer | Order | `PROCESSING` if useful |
+| `ORDER_READY_FOR_PICKUP` | Customer | Fulfillment | `READY_FOR_PICKUP` |
+| `ORDER_SHIPPED` | Customer | Fulfillment | `SHIPPED` |
+| `ORDER_DELIVERED` | Customer | Fulfillment | `DELIVERED` |
+| `ORDER_COMPLETED` | Customer | Order | `COMPLETED` if useful |
+| `ORDER_CANCELLED` | Customer | Order | `CANCELLED` |
+| `NEW_ORDER` | Staff | Order | Operational |
+| `NEW_MADE_TO_ORDER_REQUEST` | Staff | Request | `REQ-001` |
+| `NEW_ENQUIRY` | Staff | Enquiry | `ENQ-001` |
+
+CLOSED enum; do not create per-product variants (`SOFA_SHIPPED`). Adding type within `v1` requires compatibility review. `PAYMENT_*` deferred to Group H.
+
+### 7.5 Representations by Actor (Field-Level Exposure)
+
+| Data | Customer (own) | Staff (operational) | Admin |
+|---|---|---|---|
+| `type` / `title` / `message` / `read_at` / `target` / `source` | Own | Operational where applicable | Limited operational |
+| `recipient_user_id` | Own (implicit) | Own (implicit) | Limited |
+| `internal delivery logs` | No | No | No |
+| `credentials` / `payment secrets` | No | No | No |
+
+`*` Staff operational queue vs personal `read_at` semantics: `Customer: personal read_at`; `Staff: operational queue` — shared queue should not auto-hide for all Staff when one reads; separate `handled` semantics if needed.
+
+### 7.6 Privacy & Source of Truth
+
+- **Classification:** `Customer → PRIVATE`, `Staff operational → PRIVATE/INTERNAL`, `Admin → ADMINISTRATIVE`. Never public. `Cache-Control: private, no-store`.
+- **Source of truth:** `Order` / `Request` / `Enquiry` authoritative; Notification is downstream communication. If Notification says `SHIPPED` but Order says `PROCESSING`, Order wins.
+- **Not a capability token:** `target: {type: ORDER, id: B}` does not grant access to `Order B`; normal authorization still required.
+- **Object-level:** `Customer A → Customer B notification` `404 RESOURCE_NOT_FOUND` masked; `Customer cannot create/change recipient/target/type`.
+
+## 8. Payment (generic — provider-specific deferred to Group H)
 
 - Response shape: `{id, payment_status: CLOSED, amount:{amount,currency}, currency:"TZS", created_at}`. No provider secrets, no `payment_status=success` client-writable field. Provider reference / webhook details are `INTERNAL` until Group H.
 
-## 8. Relationships Summary
+## 9. Relationships Summary
 
 - **Embedded:** `product.images`, `order.items` (snapshots), `order.billing_address`, `checkout → order delivery_address snapshot`.
 - **Summary/Reference:** `product.category`, `variant.product`, `cart → checkout (own active Cart, no cart_id)`.
@@ -482,17 +575,17 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
 - **Workflow chain:** `Catalog (public, informational availability)` → `Cart (customer intent, no reservation, informational pricing)` → `Checkout CHK-001 (server revalidates inventory, recalculates authoritative prices, validates fulfillment, snaps address, idempotent, atomic)` → `Order (historical snapshot, authoritative totals, fulfillment, status history)` → `Payment (Group H, on final total after delivery_fee finalization)`.
 - **Deferred dynamic:** `?include` / `?fields` — not supported; use dedicated subresources.
 
-## 9. Sensitive / Never Serialized
+## 10. Sensitive / Never Serialized
 
 `password_hash`, `tokens`, `provider secrets`, internal `reserved_quantity` (public), staff private notes, internal filesystem paths, authorization flags, internal IDs (beyond `id` where not contracted).
 
 ---
 
-## 10. Request Input per Resource — Consolidated (Phases 1.14 & 1.15 Validation)
+## 11. Request Input per Resource — Consolidated (Phases 1.14 & 1.15 Validation)
 
 > No final endpoint schemas are defined here; each sub-section reserves `Create | Update (PATCH) | Action | Read-Only / Server-Generated | Role-Specific` shape per `phase-1.14.md §69` plus explicit validation layers per `phase-1.15.md`: **input validation (schema), mutable vs immutable vs conditional fields, business validation, concurrency**. See `api-contract.md §14` and `api-conventions.md §16` for normative rules. This section is resource-specific instantiation of those rules — not a replacement.
 
-### 10.1 Product (Staff/Admin) — Create / Update
+### 11.1 Product (Staff/Admin) — Create / Update
 
 - **Create input (staff/admin):** `name`, `slug`, `description`, `category_id`, `product_type` (`IN_STOCK`/`MADE_TO_ORDER` CLOSED), `price:{amount,currency}` **required for every published product including `MADE_TO_ORDER`** (minor units; for `MADE_TO_ORDER` it is a display/starting-at price, never used as checkout total). `is_active`/`is_published` flags. **Not accepted:** `id`, `created_at`, `updated_at`, `reserved_quantity`, `supplier internals`.
 - **Update (PATCH):** partial, only mutable fields (`name`, `description`, `price`, `is_active`, `category_id`) — not `id`/`created_at`/`available_quantity`.
@@ -501,7 +594,7 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
 - **Price contract (single contract, Phase 1.15 fix):** `price` is **non-null required** for every exposed product (`IN_STOCK` and `MADE_TO_ORDER`) — same shape `{amount:int minor units, currency:"TZS"}` per `api-contract.md §3.8`. For `MADE_TO_ORDER` it is informational/SEO display price only; domain validation prohibits `MADE_TO_ORDER` from normal checkout/cart regardless of price, and no money is calculated from it. Alternative of `null`/omission was rejected to keep one consistent representation (`data.price` always object, never `null`). Changing `price` to nullable or omittable would be a breaking change per `api-contract.md §9`.
 - **Validation (schema → domain):** Schema: `name` non-empty after trim, length max; `slug` snake/kebab lowercase, unique; `product_type` CLOSED enum; `price:{amount int≥0, currency:"TZS"}` **required, strict types**; `category_id` exists. Domain: `category active`, `price authority` staff-only; `MADE_TO_ORDER` price not treated as purchasable unit price; inventory fields not client-writable. Unknown fields rejected; empty `""` not treated as omitted unless contract says so. Concurrency: creation not high-contention; no inventory reservation here.
 
-### 10.1a Product — Validation Details (Phase 1.15 Matrix)
+### 11.1a Product — Validation Details (Phase 1.15 Matrix)
 
 | Aspect | Rule |
 |---|---|
@@ -512,12 +605,12 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
 | Business validation | `category exists && active`; `slug unique`; `price non-negative minor units` (informational for `MADE_TO_ORDER`, purchasable unit price for `IN_STOCK`); stock derived server-side |
 | Request type | `CREATE` / `PATCH` (no generic `PUT` unless full replacement documented) |
 
-### 10.2 Category (Staff/Admin)
+### 11.2 Category (Staff/Admin)
 
 - **Create/Update:** `name`, `slug`, `description`, `image`. `id`, `created_at` server-generated. No `product` embedding in category create.
 - **Validation:** Schema: `name`/`slug` length/pattern; `slug` unique global; enum N/A. Mutable: `name`, `slug`, `description`, `image`. Immutable: `id`, `created_at`. Unknown fields rejected. Business: `slug unique` enforced transactionally; no inventory logic.
 
-### 10.3 Cart — Add / Update / Remove / Merge (Phase 1.21 Contract)
+### 11.3 Cart — Add / Update / Remove / Merge (Phase 1.21 Contract)
 
 - **Add item (POST `/me/cart/items`):** `product_id` string required + `variant_id` (conditional: required if product has variants; `null` or omitted if the product has no variants) + `quantity: integer (1..100)`. **Rejected:** `price`, `subtotal`, `total`, `stock`, `currency`, `discount`, `delivery_fee`.
 - **Update item (PATCH `/me/cart/items/{item}`):** `quantity: integer (1..100)` only. Mutable: `quantity` only. Immutable: `id`, `product_id`, `variant_id`, `created_at`.
@@ -532,7 +625,7 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
   - *Stale Items:* Inactive or out-of-stock items in cart marked `is_purchasable: false` and `availability: unavailable` rather than silently deleted.
   - *Concurrency:* Medium/Safe. Duplicate additions merge; last valid mutation wins. Non-cacheable mutations.
 
-### 10.4 Checkout — `POST /api/v1/checkout` (`CHK-001`, Phase 1.22)
+### 11.4 Checkout — `POST /api/v1/checkout` (`CHK-001`, Phase 1.22)
 
 > Checkout is a dedicated server-controlled workflow that converts the customer's **own active Cart** (`/me/cart`, not a client-supplied `cart_id`) into an Order. Not a `PATCH /me/cart` and not `POST /orders` with client totals.
 
@@ -546,7 +639,7 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
   | **Prohibited** | — | `delivery_fee`, `total`, `subtotal`, `unit_price`, `line_total`, `discount`, `currency` override, `available_quantity`, `reserved_quantity`, `status`/`payment_status`, `order_reference` (`OD-…`), `cart_id`, `user_id` — all **REJECTED** (`INVALID_VALUE`) if sent; ownership/identity from auth. Unknown fields rejected per `§13.14`. |
 - **Fulfillment semantics:** `PICKUP` → `delivery_address: null`, `delivery_fee: {amount:0,currency:"TZS"}`, `delivery_fee_status=FINALIZED` (final at creation), `total` final, `payment: null` until `PAY-001` (still `PENDING_PAYMENT`; `payment` object appears only after `PAY-001` creates it, same as `DELIVERY` — see `payment` field above). `DELIVERY` → delivery_address snapshot stored in Order history (not mutable profile reference), `delivery_fee: null`, `delivery_fee_status=PENDING` (provisional `total` equals `subtotal`; `payment: null` and `PAY-001` blocked with `409 DELIVERY_FEE_PENDING` until finalized). Saved address book deferred — no `saved_address_id`. Enum CLOSED.
 - **Delivery-fee authority & timing (CHK-006 / CHK-009):** Customer chooses `DELIVERY` (supplies address); **Staff/Admin add variable location-based fee**; backend stores authoritative `delivery_fee` (`null` → `{amount,currency}` on finalization) + `delivery_fee_status PENDING→FINALIZED`. Checkout never accepts `delivery_fee` from client. **Version 1 timing is Model B (fee-after-order):** `POST /checkout → Order created PENDING_PAYMENT (subtotal authoritative, delivery_fee=null, delivery_fee_status=PENDING, total provisional = subtotal, payment=null blocked) → Staff/Admin sets delivery_fee → delivery_fee_status=FINALIZED, total = subtotal+delivery_fee final, payment becomes eligible → payment (Group H) on final total`. Fee not silently pre-filled as flat `20,000`; payment must equal authoritative final Order total (blocked while `PENDING`). See `api-contract.md §23.6` and `§23.11`.
-- **Financial authority (server-controlled):** Client sends intent; server resolves `current catalog unit prices` (recalculated at checkout, not frontend cache), `line totals`, `subtotal`, `delivery_fee` (`null` pending / `{amount,currency}` finalized), `delivery_fee_status`, `total` (provisional `subtotal` when `PENDING`, final `subtotal+delivery_fee` when `FINALIZED` — minor-unit integer `{amount,currency:"TZS"}`), `order_reference OD-…`, `status PENDING_PAYMENT`, `payment` (`null` when `PENDING`, present when `FINALIZED`). `currency` is `TZS` from business config; `{"currency":"USD"}` rejected. Frontend must not display provisional `total` as final (check `delivery_fee_status`).
+- **Financial authority (server-controlled):** Client sends intent; server resolves `current catalog unit prices` (recalculated at checkout, not frontend cache), `line totals`, `subtotal`, `delivery_fee` (`null` pending / `{amount,currency}` finalized), `delivery_fee_status`, `total` (provisional `subtotal` when `PENDING`, final `subtotal+delivery_fee` when `FINALIZED` — minor-unit integer `{amount,currency:"TZS"}`), `order_reference OD-…`, `status PENDING_PAYMENT`, `payment` (`null` when `PENDING` and `null` when `FINALIZED` until `PAY-001` — `FINALIZED` only marks payment `eligible`, not present; `payment` object appears only after `PAY-001` creates it, per `payment` field above and `Checkout contract` `PENDING_PAYMENT` `payment null`). `currency` is `TZS` from business config; `{"currency":"USD"}` rejected. Frontend must not display provisional `total` as final (check `delivery_fee_status`).
 - **Product/Variant/Inventory revalidation (authoritative, atomic):** `product exists → active && is_published && product_type IN_STOCK → purchasable`; `variant exists && belongs to product (VAR-OWN-001) && active && purchasable`; `requested quantity (1..100) ≤ available authoritative quantity at transaction point`. Race `A sees 1, B buys, A checks out → A fails safely` with no negative stock. `MADE_TO_ORDER` → `PRODUCT_NOT_PURCHASABLE` (422), even if cart somehow contains it. Stale `is_purchasable:false` lines → `CART_INVALID` (422).
 - **Cart preconditions:** `cart exists && not empty (CART_INVALID) && no stale item && all quantities valid`. Empty cart → `CART_INVALID` (422, conceptual `CART_EMPTY` maps here).
 - **Validation layered pipeline:** `Transport → Schema (type/enum/address) → Auth → Authz(cart owns) → Cart valid (not empty/stale) → Products purchasable → Variants valid → Inventory concurrency-safe → Fulfillment cross-field (DELIVERY→address) → Price server-calculated → Transaction/Idempotency → Persistence (Order creation + inventory reserve/consume + cart clear atomically)`. Failure atomicity: no phantom reservation or incomplete order on error; failed checkout preserves cart.
@@ -554,13 +647,13 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
 - **Cart after checkout:** Success → active cart cleared/inactivated (order is record); failure (validation/stock) → cart preserved for adjustment; payment-failure behavior deferred to Group H.
 - **Relationship:** `Cart (customer intent, informational pricing, no reservation)` → **`CHK-001` (revalidates inventory, recalculates authoritative pricing, chooses fulfillment, snaps address)** → `Order (historical snapshot, authoritative totals, fulfillment, status history)` → `Payment (Group H)` on final total. Delivery fee finalization happens on Order between creation and payment (Model B).
 
-### 10.5 Order — Actions (Customer vs Staff/Admin)
+### 11.5 Order — Actions (Customer vs Staff/Admin)
 
 - **Customer actions:** `cancel` (within 20-min window) — minimal body e.g., `{"reason":...}` optional; no `{status:"CANCELLED"}`.
 - **Staff/Admin actions:** `accept`/`ship`/`deliver` — minimal `{"note":...}` where needed; status transitions are actions (`POST /orders/{order}/ship`), not `PATCH {"status":"SHIPPED"}`. **Read-only:** `order_reference`, `status`, `customer_id`, `created_at`, `payment_status`, `final totals`.
 - **Validation:** Schema: `reason`/`note` optional string trimmed. State-dependent: cancellation validates `authenticated owner → owns order → exists → cancellation window (backend time, 20-min) → state eligible`; generic `status!=COMPLETED` insufficient. Transitions: each validates `current state, requested transition, actor auth, business preconditions` (e.g., `PROCESSING→SHIPPED` staff + delivery preconditions). No `PATCH {status:...}` bypass (API-VAL-004). Failure atomicity; concurrency Medium/High; audit: `order_status_history` captured. Query: `?order_status`, `?fulfillment_type` etc. CLOSED enum validation; `?status` generic rejected.
 
-### 10.6 Furniture Request & Enquiry (Anonymous or Authenticated) — Phase 1.25 Detail for Request
+### 11.6 Furniture Request & Enquiry (Anonymous or Authenticated) — Phase 1.25 Detail for Request
 
 - **Request create (`REQ-001`):** `product_id` **OPTIONAL (nullable) for V1 per ADR/API-REQ-011** — both `product_id` referencing existing `MADE_TO_ORDER` product and `product_id = null` / omitted (general/custom request) allowed; **not** Required and **not** Absent. When supplied must be `MADE_TO_ORDER` active/published (else `PRODUCT_NOT_REQUESTABLE`). `quantity` integer `1..100` optional (when omitted remains `null` — unspecified, not implicitly `1` — per `api-conventions.md §26.4` and `api-contract.md §26.3`; `null` explicitly indicates no quantity specified), `dimensions` structured `{length,width,height,unit:"cm"}` allow-listed optional, `material` free text optional, `color` free text optional, `notes` free text optional, `name` required + `phone`/`email` (at least one, both valid) — even when authenticated (self-contained record, per ADR/API-REQ-001), optional `attachment` via `multipart/form-data` field `attachment` (preferred inline). **Not accepted:** `user_id`, `request_status`, `staff_internal_notes`, `order_id`, `payment_*`, `delivery_fee`, `created_at`. **Validation:** Schema: `name` trimmed 120, `phone` normalized, `email` lowercased, `quantity` `1..100` strict integer (when supplied), `dimensions` keys strictly `length,width,height,unit` (`unit` exactly `"cm"`), `material` 500, `color` 200, `notes` 5000; attachment `size<=5MB`, types `image/jpeg|png|webp|application/pdf`, signature verified. Domain: `product_id` optional — when supplied `exists && active && is_published && product_type MADE_TO_ORDER` else `PRODUCT_NOT_REQUESTABLE` (409); when `null`/omitted, custom request valid; `quantity` not order allocation and remains `null` when omitted. Auth Optional; `user_id` derived server-side (`null` anonymous, `authenticated principal` when customer); anonymous `user=null` valid. Authorization: PUBLIC create. Concurrency Low; idempotency not required in V1.
 - **Request update (`REQ-006` Staff only):** `PATCH /requests/{request}` — mutable only `request_status` (`SUBMITTED`→`IN_REVIEW`→`CLOSED` CLOSED, terminal `CLOSED`) + `staff_internal_notes`. Not mutable: `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `user_id`, `contact snapshot`, `order_id`. Validation: status transition validated against current state; arbitrary status text rejected; internal notes separated.
@@ -570,35 +663,35 @@ Original customer-provided `subject`, `message`, `contact` (`name`/`email`/`phon
 - **Enquiry attachment (`ENQ-007`):** `POST /enquiries/{enquiry}/attachments` `multipart/form-data` — preferred inline on `ENQ-001`; separate POST requires scoped server-issued upload token (single-use/time-limited) + parent ownership; validates same file rules (`size/type/signature`). Private to parent; no permanent public URLs; same architecture as `REQ-007`.
 - **Validation common:** Unknown fields rejected, `request_status`/`enquiry_status` SERVER-GENERATE never client-settable, authorization contextual (own vs operational), failure atomicity. `subject`/`message` treated as untrusted plain-text (XSS-safe, no HTML/Markdown in V1).
 
-### 10.7 Profile & Cart vs Order
+### 11.7 Profile & Cart vs Order
 
 - **Profile (PATCH `/me/profile`):** `name`, `phone` mutable; `email`/`password`/`role`/`account_status` require dedicated workflows, not ordinary `PATCH`. `id`, `created_at`, verification state server-generated.
 - **Identifiers:** Authenticated requests never require `{"user_id":"current-user"}`; server derives ownership. Anonymous requests must contain contact, not fake `user_id`.
 - **Validation:** Schema: `name`/`phone` string trimmed, `phone` normalized, `email` format not mutable via this endpoint. Mutable: `name`, `phone` only (allow-list). Immutable: `email`/`password`/`role`/`account_status`/`id`/`created_at`. Auth required, Authz own profile only.
 
-### 10.8 Payment (Generic)
+### 11.8 Payment (Generic)
 
 - **Generic principles only:** Customer does **not** send `{payment_status:"PAID"}` or `{amount:{...}}` as authoritative confirmation; amounts and confirmation are backend/provider-controlled. Provider-specific payloads **deferred to Group H**; no `payment_provider` request schema defined here.
 - **Validation note:** Generic transport/schema/auth/authz apply; external-provider verification (webhook signature, idempotency, verification) is Group H, not business-input validation. External failures ≠ input `INVALID_VALUE`.
 
-### 10.9 Common Input & Validation Rules Applied
+### 11.9 Common Input & Validation Rules Applied
 
 - `snake_case` (`product_id`, `delivery_address`), strict JSON types (`quantity:2` not `"2"`, booleans not `1`), `null` only where explicitly nullable, unknown fields **rejected** (validation error, not silently ignored) to catch typos/version drift, mass-assignment protection via allow-list (`validated input → DTO → domain`), idempotency-sensitive (`checkout`, `payment initiation`) noted for later key, size limits enforced.
 - **Validation extensions (Phase 1.15):** Layered hierarchy `Transport→Schema→Auth→Authz→Domain→Concurrency→External→Persistence`; CLOSED enums (unknown → error); cross-field `fulfillment_type↔delivery_address`; conditional `DELIVERY` required; state-dependent `PROCESSING→SHIPPED` vs `COMPLETED→SHIPPED invalid`; relationship `variant belongs to product && active && purchasable`; server-controlled `id/created_at/order_reference/status/payment_status/inventory/totals/history` REJECT/IGNORE; pricing `SERVER-GENERATE`; inventory concurrency-safe; cancellation 20-min backend time; transitions via actions not generic writes; error categories `INVALID_TYPE/INVALID_VALUE/PRODUCT_NOT_PURCHASABLE/INSUFFICIENT_STOCK/INVALID_ORDER_TRANSITION/AUTHENTICATION_REQUIRED/FORBIDDEN` (canonical; `NOT_AUTHENTICATED`/`RESOURCE_NOT_OWNED` are legacy aliases per `api-contract.md §15.15`) with field-level paths and multiple errors per request (schema all, domain early-stop when unsafe); messages non-leaking, codes stable within `v1` (rename `INSUFFICIENT_STOCK` breaking); logging without secrets; failure atomicity; audit for critical transitions.
 
-### 10.10 Query & Collection Validation (Phase 1.15)
+### 11.10 Query & Collection Validation (Phase 1.15)
 
 - `page` positive int, `per_page 1–100` (validation error otherwise; missing→default 20). `product_type` CLOSED (`IN_STOCK`/`MADE_TO_ORDER`), `fulfillment_type` CLOSED, `order_status`/`request_status`/`enquiry_status`/`payment_status` CLOSED (not `payment_state`), `sort` allow-list (`created_at`, `price`, `name` plus tie-breaker `id ASC`), `min_price`/`max_price` minor-unit integers with `min≤max`. Filter fields allow-list only. All query enums CLOSED; `?availability=IN_STOCK` is error (use `available|unavailable`); `?status` generic rejected. Strict type for `quantity`, `page`, etc.; not `"2"` strings.
 
-### 10.11 Validation Matrix Reference
+### 11.11 Validation Matrix Reference
 
 See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Checkout/Cancel/Request/Enquiry/Profile/Ship`). Each operation respects same layered validation. Frontend validation advisory; backend authoritative. Payment provider-specific deferred to Group H; no FormRequest/DTO/migration/OpenAPI schema implemented here.
 
-## 11. Error Considerations per Resource (Phase 1.16)
+## 12. Error Considerations per Resource (Phase 1.16)
 
 > Each row lists the **subset of `api-contract.md §15.15` codes the resource may return** — not an exhaustive future-proof list. Endpoint-specific HTTP/code mapping is documented per endpoint later; do not invent undocumented `CHECKOUT_FAIL` codes locally (`api-contract.md §86`). All errors follow `{"errors":[{"code","message","field","details"}],"meta":{"request_id":...}}` with `meta.request_id` even for 500. Payment-specific extensions remain Group H.
 
-### 11.1 Product & Category (PUBLIC, Staff/Admin mutations)
+### 12.1 Product & Category (PUBLIC, Staff/Admin mutations)
 
 | Concern | Codes | HTTP | Notes |
 |---|---|---|---|
@@ -607,7 +700,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Variant mismatch / inactive / not purchasable | `INVALID_PRODUCT_VARIANT` | 422 | Includes `belongs_to_product`/`active` checks; `field: variant_id` |
 | Schema on create/update: name/slug/type/price | `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `INVALID_FORMAT`, `INVALID_TYPE` | 422 | Multiple determinable errors returned together; dot paths; unknown fields → 422 |
 
-### 11.2 Cart (Holder-scoped)
+### 12.2 Cart (Holder-scoped)
 
 | Concern | Codes | HTTP |
 |---|---|---|
@@ -617,7 +710,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Item unavailable / type not purchasable | `CART_ITEM_UNAVAILABLE`, `PRODUCT_NOT_PURCHASABLE` | 422 |
 | Empty `items:[]` where ≥1 required, duplicate semantics | `MISSING_REQUIRED_FIELD` / `INVALID_VALUE` + `field: items` | 422 |
 
-### 11.3 Checkout (Authenticated)
+### 12.3 Checkout (Authenticated)
 
 | Concern | Codes | HTTP | Notes |
 |---|---|---|---|
@@ -628,7 +721,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Stock race / business invalid | `INSUFFICIENT_STOCK` (409/422*), `PRODUCT_NOT_PURCHASABLE`, `INVALID_PRODUCT_VARIANT` | 409 vs 422 per §15.10; `details: {available_quantity}` safe |
 | Idempotency duplicate (same `Idempotency-Key`) | — (no `errors`; replays original success response) | 201 (replay) | Deterministic replay of original `201`/`200` with same `data` and `order_reference`; no new order, no phantom reservation; `DUPLICATE_OPERATION` 409 is **not** used for Checkout idempotency replay (see `api-contract.md §15.10` — Checkout chooses replay over 409) |
 
-### 11.4 Order (Customer `me/orders`, Staff/Admin)
+### 12.4 Order (Customer `me/orders`, Staff/Admin)
 
 | Concern | Codes | HTTP | Notes |
 |---|---|---|---|
@@ -638,7 +731,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | State conflict / concurrent update | `ORDER_STATE_CONFLICT`, `CONFLICT`, `RESOURCE_VERSION_CONFLICT` | 409 | Client must refresh/reconcile then retry |
 | Query `?order_status`, `?fulfillment_type` invalid | `INVALID_VALUE` | 422 | CLOSED enums; `?status` generic rejected |
 
-### 11.5 Furniture Request & Enquiry (Anonymous or Auth)
+### 12.5 Furniture Request & Enquiry (Anonymous or Auth)
 
 | Concern | Codes | HTTP |
 |---|---|---|
@@ -647,11 +740,11 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Invalid attachment (size/type/signature) | `INVALID_ATTACHMENT`, `ATTACHMENT_TOO_LARGE`, `UNSUPPORTED_ATTACHMENT_TYPE` | 422 / 413 | Safe message, no path leak |
 | Not found (lookup) | `REQUEST_NOT_FOUND`, `ENQUIRY_NOT_FOUND` | 404 | Own-record visibility only |
 
-### 11.6 Payment (Generic)
+### 12.6 Payment (Generic)
 
 - Generic envelope only: `EXTERNAL_SERVICE_ERROR` family + `INTERNAL_SERVER_ERROR` on unexpected failure. No provider `error string` exposed; Group H will define `payment-specific` codes without altering `errors`/`meta.request_id` shape. Webhook idempotency duplicates → prior result, not second order/payment.
 
-### 11.7 Cross-Cutting
+### 12.7 Cross-Cutting
 
 - **Validation:** All fields may also return `INVALID_TYPE`/`INVALID_FORMAT`/`INVALID_VALUE`/`MISSING_REQUIRED_FIELD` with `field` dot path. Unknown fields → 422.
 - **Auth:** `AUTHENTICATION_REQUIRED` (401) vs `FORBIDDEN` (403) kept distinct; 401 never masks as 403. Private-resource 404 masking per `api-contract.md §15.8` (and cart holder 404 per §11.3) prevents enumeration.
@@ -659,11 +752,11 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 - **Internal:** Unexpected failure → `500 INTERNAL_SERVER_ERROR` + `meta.request_id` only; full stack stays in server logs, never in `message`/`details`.
 - **Pagination/query** `page/per_page` out of range, `sort`/`filter` allow-list miss → 422 `INVALID_VALUE` with `field` indicating param.
 
-## 12. Authentication & Account Resources — Conceptual (Phase 1.17, No Endpoints)
+## 13. Authentication & Account Resources — Conceptual (Phase 1.17, No Endpoints)
 
 > No endpoint definitions here; this section documents the **conceptual resources** that the authentication contract will later expose via endpoints. Field-level schemas and routes belong to implementation phases. All role values are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`.
 
-### 12.1 User / Profile (Account)
+### 13.1 User / Profile (Account)
 
 | Field | Type | Exposure | Auth | Notes |
 |---|---|---|---|---|
@@ -677,12 +770,12 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 
 **Rules:** Customer is primary actor with full ownership of own account; `STAFF`/`ADMIN` do not own customer accounts (see `api-contract.md §17.1`). Profile `PATCH` is allow-listed (`name`, `phone`) — not `role`, `email_verified`, `password`, `account_status` (dedicated workflows). No `password`/`password_hash` ever serialized.
 
-### 12.2 Authentication (Conceptual Resource, Not Serialized Secrets)
+### 13.2 Authentication (Conceptual Resource, Not Serialized Secrets)
 
 - **Concepts:** `registration` (public self-registration → `CUSTOMER`), `login` (shared identity across Website/Flutter/Admin, same Laravel backend), `logout` (invalidates server session/credential), `password reset` (secure single-use time-limited token; email delivery Group R deferred; generic “Request received.” to prevent enumeration), `email verification` (secure token → `email_verified_at`; phone/SMS OTP not required).
 - **Representation principles (when endpoints later defined):** Success uses `data` envelope per `api-contract.md §2/§17.13`; not `auth_success`/`login_result`. Error uses `errors` per §15: `AUTHENTICATION_REQUIRED` vs `FORBIDDEN` distinct, `INVALID_CREDENTIALS`/`SESSION_EXPIRED`. No `password`/`hash`/`reset_token`/`session_token` in any resource payload.
 
-### 12.3 Session / Credential (Conceptual, Not Directly Exposed)
+### 13.3 Session / Credential (Conceptual, Not Directly Exposed)
 
 | Concern | Concept | Notes |
 |---|---|---|
@@ -694,11 +787,11 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 
 Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `api-contract.md §17.15` deferred.
 
-## 13. Authorization per Resource — Who May Do What (Phase 1.18, No Endpoints Yet)
+## 14. Authorization per Resource — Who May Do What (Phase 1.18, No Endpoints Yet)
 
 > No endpoint URLs here — authoritative endpoint inventory is Phase 1.19; this section records for each resource **who may read/create/update/delete/perform actions, ownership rule, and sensitive fields**. Any `GET /…` or `POST /…` shown in *Concern* column are **non-normative illustrative examples** only, not approved contracts. All role values are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; do not add `MANAGER` etc. Authorization is **deny by default** — `PUBLIC` resources explicitly classified; all else requires auth + policy. See `api-contract.md §18` for normative model.
 
-### 13.1 Products & Categories (Catalog — PUBLIC Read, Staff/Admin Manage)
+### 14.1 Products & Categories (Catalog — PUBLIC Read, Staff/Admin Manage)
 
 | Concern | Anonymous | Customer | Staff | Admin | Ownership / Sensitivity |
 |---|---|---|---|---|---|
@@ -708,7 +801,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | `PATCH` inventory/stock quantity (`/products/{product}/inventory`, stock adjustment) | Deny (401) | Deny (403) | **Allow only with `inventory.manage`** where approved | **Allow** (explicit) | `inventory.manage` authorizes stock-quantity adjustments only — not catalog CRUD; auditable per `api-contract.md §18.6`, separate capability |
 | Internal `reserved_quantity`, `supplier` fields | No | No | According to permission | Yes (when operationally necessary) | `PRIVATE` not public product; never to customer |
 
-### 13.2 Cart (Holder-Scoped, Owner-Bound)
+### 14.2 Cart (Holder-Scoped, Owner-Bound)
 
 | Concern | Who | Rule | Sensitive |
 |---|---|---|---|
@@ -716,7 +809,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | Anonymous cart → login merge | **Mandatory** per `business-rules.md §3 #4` | `guest cart MUST move onto user cart` on login (backend merges, preserving ownership); only conflict handling (duplicate product, quantity merge, limits) deferred | Backend is authority |
 | Any other holder's cart | Deny 404 `CART_NOT_FOUND`/`RESOURCE_NOT_FOUND` (masked, never 403) | Holder-scoped private, enumeration protection per `§15.8`/`§18.13` | |
 
-### 13.3 Orders, Tracking, Cancellation (Customer-Owned + Operational Staff)
+### 14.3 Orders, Tracking, Cancellation (Customer-Owned + Operational Staff)
 
 | Concern | Anonymous | Customer | Staff (Operational) | Admin |
 |---|---|---|---|---|
@@ -730,7 +823,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 
 **Deny examples:** `Customer A → Order B` must fail despite authenticated (object-level); `STAFF → change customer password` must fail; `?user_id=another` must not expand scope.
 
-### 13.4 Furniture Requests & Enquiries (Anonymous Submit, Owner/Operational View)
+### 14.4 Furniture Requests & Enquiries (Anonymous Submit, Owner/Operational View)
 
 | Concern | Anonymous | Customer (authed) | Staff | Admin |
 |---|---|---|---|---|
@@ -739,19 +832,19 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | `GET` another’s request/enq or `/enquiries/{id}` public | Deny (private, not globally readable) | Deny | Deny unrelated | As authorized |
 | Attachments (`Request → Attachment`) | Private to parent | Private to parent | Inherits parent (if cannot access parent, cannot access attachment) | Inherits parent | No predictable public paths |
 
-### 13.5 Notifications (Owner vs Operational, Not Merged)
+### 14.5 Notifications (Owner vs Operational, Not Merged)
 
 - **Customer:** `read` only own intended notifications; `GET /notifications/{another-user-notification}` must fail by ID. Owner-based, authorization-filtered search.
 - **Staff:** `view_operational` only operational notifications (`new order`, `new request`, `payment event`) — not private customer-account info unrelated to task.
 - **Admin:** administrative only where required, not merged with customer rule; same envelope.
 
-### 13.6 Payment, Delivery, Inventory (Generic + Group H)
+### 14.6 Payment, Delivery, Inventory (Generic + Group H)
 
 - **Payment:** `Customer` sees limited own payment (`payment_status`, `amount` without secrets); `Staff` operational as needed; `Admin` authorized admin; `provider secrets` remain `INTERNAL` never to any role via API. Payment-specific auth is Group H.
 - **Delivery:** `Customer` own order’s delivery; `Staff` operational delivery; `Admin` authorized. No public exposure of all deliveries.
 - **Inventory:** `Public` → `availability` (e.g., `IN_STOCK` indicator); `Staff/Admin` → `inventory operations` (`inventory.view`/`manage` where approved, auditable); never `historical order item quantity` edit via inventory permission. Internal `reserved_quantity` per §18.11.
 
-### 13.7 User / Profile, Staff, Roles (Account & Admin)
+### 14.7 User / Profile, Staff, Roles (Account & Admin)
 
 | Resource / Action | Anonymous | Customer | Staff | Admin | Rule |
 |---|---|---|---|---|---|
@@ -765,13 +858,13 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | `Impersonate` (`Login as Customer`) | Deny | Deny | Deny (deferred unless secure design) | Deny (deferred; if ever required: explicit permission, audit, restricted ops, secure exit) | No unrestricted impersonation |
 | `Restrict customer browsing/ordering` | Deny | Deny | **Deny** (STAFF `→ block_customer` generic prohibited) | **Deny** unless explicit approved security policy with `reason/authorization/audit/impact/recovery` | Staff cannot restrict; Admin only under explicit policy |
 
-### 13.8 Cross-Cutting Conventions Applied
+### 14.8 Cross-Cutting Conventions Applied
 
 - **Deny by default** for all except explicit `PUBLIC`; **field-level before serialization** — API exposes only permitted representation per actor (even Admin minimized). **Query-aware** (`?user_id=`) cannot expand; **pagination/search** over authorized dataset; **caching** private vs public separated (`Cache-Control` private later); **service-to-service** uses explicit service authorization (not reused Admin credential) for webhooks/jobs (Group H for payment). **Idempotency** does not bypass authz — every retry remains authorized. **Time-sensitive** (`20-min window`, `valid state`) evaluated at operation time.**
 
 *Do not define endpoint URLs, Laravel Policies, or middleware here.*
 
-## 14. Resource → Endpoint Mapping & Operations (Phase 1.19)
+## 15. Resource → Endpoint Mapping & Operations (Phase 1.19)
 
 > Maps each domain resource to its Version 1 endpoint IDs, operations, and access scope. Endpoint inventory is authoritative in `api-contract.md §19`; this section is resource-centric view. All endpoints use `/api/v1`, CLOSED enums, and global conventions.
 

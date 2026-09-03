@@ -586,7 +586,7 @@
 
 ### ADR/API-END-005 — Smallest Coherent Surface (69 Endpoints, Payment Group H)
 
-**Decision:** V1 `69` total (`66` substantive + `3` Group H placeholders): `CAT 12` [`CAT-001..006` public + `CAT-007..012` management] + `AUTH 7` + `USER 3` + `CART 5` [`CART-001..005` inc. `CART-005` `merge` for guest-cart handoff] + `CHK 1` + `ORD 14` [`ORD-001..014` inc. `ORD-014` delivery-fee] + `REQ 7` + `ENQ 7` [`ENQ-001..007` inc. `ENQ-007` enquiry attachments] + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3` placeholders (`PROPOSED*`). Master inventory table `api-contract.md §19/§19.15` snapshot remains `PROPOSED` pending final consolidated review, but `ORD-001..014` (`APPROVED` via `§24`/`§25`), `REQ-001..007` (`APPROVED` via `§26`), `ENQ-001..007` (`APPROVED` via `§27`) are individually `APPROVED` via their canonical contracts — `PROPOSED` now scopes only to the master-table snapshot, not to those domains. Excludes `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` per MVP discipline. IDs remain retired if removed.
+**Decision:** V1 `70` total (`67` substantive + `3` Group H placeholders): `CAT 12` [`CAT-001..006` public + `CAT-007..012` management] + `AUTH 7` + `USER 3` + `CART 5` [`CART-001..005` inc. `CART-005` `merge` for guest-cart handoff] + `CHK 1` + `ORD 14` [`ORD-001..014` inc. `ORD-014` delivery-fee] + `REQ 7` + `ENQ 7` [`ENQ-001..007` inc. `ENQ-007` enquiry attachments] + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3` placeholders (`PROPOSED*`). Master inventory table `api-contract.md §19/§19.15` snapshot remains `PROPOSED` pending final consolidated review, but `ORD-001..014` (`APPROVED` via `§24`/`§25`), `REQ-001..007` (`APPROVED` via `§26`), `ENQ-001..007` (`APPROVED` via `§27`) are individually `APPROVED` via their canonical contracts — `PROPOSED` now scopes only to the master-table snapshot, not to those domains. Excludes `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` per MVP discipline. IDs remain retired if removed.
 
 **Reason:** `phase-1.19.md §121/124/126`, `api-contract.md §19.13` — smallest surface that fully supports anonymous browse, customer purchase (pickup/delivery), cancellation, made-to-order, staff operational, admin staff approval.
 
@@ -1209,8 +1209,88 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/NOT-001 — Notification Is Downstream of Business State
+
+**Decision:** A Notification is a user-facing or operational message derived from an authoritative business event (`Order SHIPPED → ORDER_SHIPPED`). The Notification does not create, authorize, or become the source of truth for `Order` / `Request` / `Enquiry` / `Payment` / `Fulfillment` / `User`. If Notification says `SHIPPED` but `Order` says `PROCESSING`, `Order` wins.
+
+**Reason:** `phases/phase-1.27.md §9-11`, `api-contract.md §28.1` — keeps Order/Request/Enquiry authoritative; prevents notification drift from becoming business state.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-002 — Customers Have Private Notifications
+
+**Decision:** Customer in-app notifications are `PRIVATE`, recipient-scoped via `GET /me/notifications` (`NOT-001`). `Customer A → Customer B` notification fails `404 RESOURCE_NOT_FOUND` masked per `§15.8`; no global notification; backend decides recipients; anonymous in-app notifications not supported.
+
+**Reason:** `phases/phase-1.27.md §13, §17`, `api-contract.md §28.2/§28.13` — object-level authorization prevents IDOR and enumeration.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-003 — Notification Does Not Grant Resource Access
+
+**Decision:** A Notification `target: {type: ORDER, id: ord_...}` is a server-generated navigation reference, not an authorization credential. Following a notification still requires normal `GET /me/orders/{order}` ownership/operational authorization; `Customer cannot create/change recipient/target/type` and `target: another-order` rejected.
+
+**Reason:** `phases/phase-1.27.md §25-26`, `api-contract.md §28.9` — target is capability-free; prevents privilege escalation via notification tampering.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-004 — Notification Read State Is Recipient-Scoped
+
+**Decision:** `read_at = null` → unread, `read_at = timestamp` → read (`is_read` derived). `read_at` is server-owned; only recipient may mark own notification read via `PATCH /me/notifications/{notification} {read: true}` (`NOT-002`); Staff cannot mark Customer notifications via Staff credentials; Admin visibility does not mutate recipient state; server authoritative across `Next.js` + `Flutter` multi-device.
+
+**Reason:** `phases/phase-1.27.md §27-28, §50`, `api-contract.md §28.8`, `api-conventions.md §28.2` — single source of truth prevents device-local divergence and overloading read with business status.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-005 — Notification Is Not the Source of Truth
+
+**Decision:** `Order` / `Request` / `Enquiry` authoritative even when Notification disagrees. `NOT-001` collection may include `title`/`message`/`type`/`target`, but full resource fetch remains required; notification payload does not duplicate entire business resource and does not populate authoritative state.
+
+**Reason:** `phases/phase-1.27.md §11, §83-84`, `api-contract.md §28.1/§28.6` — downstream communication, not transaction record.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-006 — In-App Notifications Are Version 1 (Channel-Deferred)
+
+**Decision:** `IN_APP` is the primary V1 channel; `Notification` record is logical message. `EMAIL` (Group R), `PUSH`/`SMS` are future delivery attempts (`Notification → Delivery attempt(s)`), not separate `CustomerNotification`/`StaffNotification` resources; `channel` not exposed until implemented. V1 responses do not claim `EMAIL`/`SMS`/`PUSH` capabilities.
+
+**Reason:** `phases/phase-1.27.md §2, §64`, `api-contract.md §28.3` — keeps contract stable when `EMAIL` added via Group R; avoids `IN_APP`/`EMAIL` duplication explosion.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-007 — Email Delivery Is Deferred to Group R
+
+**Decision:** Real `EMAIL` delivery remains **Group R**. `Business event → Notification → Email delivery` (Group R). Anonymous `request/enquiry` does not create persistent in-app notification without authenticated recipient; may trigger `email` in Group R later. `NOT-001`/`NOT-002` contract remains valid when `EMAIL` added.
+
+**Reason:** `phases/phase-1.27.md §2, §62`, `api-contract.md §28.17` — defers SMTP/push infrastructure while keeping logical notification contract forward-compatible.
+
+**Status:** Accepted
+
+---
+
+### ADR/NOT-008 — Notification Failure Does Not Roll Back Business Transactions
+
+**Decision:** `Notification generation temporarily fails` or `Staff notification fails` must not roll back `Order shipped` / `Checkout → Order` / `Payment` / `Request` / `Enquiry` transactions; Order remains `SHIPPED` even if notification fails. Duplicate source event (`SHIPPED` processed twice) must not create two identical notifications (idempotency at event boundary). Order/Request queue remains source of truth if notification delayed.
+
+**Reason:** `phases/phase-1.27.md §88-92, §125-126`, `api-contract.md §28.15` — notification is downstream, eventual consistency acceptable; background/queued dispatch with idempotency is future candidate (outbox).
+
+**Status:** Accepted
+
+---
+
 ### Pending: OpenAPI Operations, Payment Provider
 
-**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27` are individually `APPROVED` — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`.
+**Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27`, `NOT-001..002` `APPROVED` via `§28` are individually `APPROVED` — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` review pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`, `Phase 1.27` notification — `§28`.
 
 
