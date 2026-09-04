@@ -345,7 +345,7 @@ Authority for wire semantics: `api-contract.md §29` / `api-conventions.md §29`
 | 5 | **No generic administrative PATCH for state.** `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id} {role:ADMIN}` that changes business state is prohibited; use explicit controlled `POST .../accept|ship|deliver|delivery-fee|adjust|approve`. | API-VAL-004 |
 | 6 | **Operational catalog is separate from public.** Public catalog (`GET /products`) is `PUBLIC` cacheable; operational product/inventory fields (`quantity/reserved/available`, `is_active/is_published` internal, `operational notes`) are staff-only via `CAT-007..012` / `INV-002`, `PRIVATE` not leaked. | CAT-001 |
 | 7 | **Inventory is operational, controlled action.** Only `POST /inventory/{inventory}/adjust {quantity_delta, reason}` (`reason` CLOSED `STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT`) may change stock; server calculates `new_quantity = current + delta` transactionally; no `PATCH {quantity:999}`; prevents negative where business prohibits. | INV-001/002 |
-| 8 | **Order fulfillment uses controlled actions with state+fulfillment validation.** `PAID→ACCEPTED→PROCESSING→(READY_FOR_PICKUP\|SHIPPED)→DELIVERED→COMPLETED` (pickup/delivery branches); `Staff ship` needs `orders.ship` + `PROCESSING` + `DELIVERY`; `Customer cancel` needs `owns+eligible+20-min`; each action validates atomically, audited, `Idempotency-Key` Required, `Critical` concurrency (race → `409 CONFLICT`). | ORD-007..014 |
+| 8 | **Order fulfillment uses controlled actions with state+fulfillment validation.** `PICKUP: PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED` and `DELIVERY: PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED` (separate branches); `Staff ship` needs `orders.ship` + `PROCESSING` + `DELIVERY`; `Customer cancel` needs `owns+eligible+20-min`; each action validates atomically, audited, `Idempotency-Key` Required, `Critical` concurrency (race → `409 CONFLICT`). | ORD-007..011, ORD-013, ORD-014, ORD-004 |
 | 9 | **Variable delivery fee is Staff/Admin only.** `PICKUP fee 0 FINALIZED at creation`; `DELIVERY fee pending at checkout → Staff/Admin sets fee via ORD-014 POST .../delivery-fee {delivery_fee:{amount,currency}} → FINALIZED → total=subtotal+fee authoritative → payment eligible`; customer `delivery_fee` payload rejected; never `total` client-controlled. | PRICE-006, FUL-002 |
 | 10 | **Made-to-order and enquiries handled operationally, not as orders.** Staff `GET /requests`/`GET /requests/{id}` + `PATCH {request_status}` (`SUBMITTED→IN_REVIEW→CLOSED`) + internal notes; Staff `GET /enquiries` + `POST .../close`; original customer content immutable; never automatic `request→order` conversion without explicit workflow. | REQ-005, ENQ-007 |
 | 11 | **Audit is mandatory.** `actor_id/role/action/resource_type/resource_id/previous→new/timestamp/request_id` audited for `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes`; server-derived actor, no secrets; optional read `GET /admin/audit-logs` read-only. | AUDIT-001 |
@@ -366,6 +366,33 @@ Endpoint review confirms already-approved business rules have endpoint support; 
 - `Payment` and `webhook` are generic placeholders owned by **Group H** — no new payment business rule in this phase — §5, §14
 
 If a workflow had lacked endpoint support, it would be flagged as incomplete per `api-contract.md §19.11` gating — none for V1.
+
+## 20. Cross-Domain Invariants (Phase 1.30 — Verified 2026-09-03)
+
+Per `api-contract.md §31.27`, the 20 invariants below were verified across `§15`/`§17`/`§18`/`§21`/`§22`/`§23`/`§24`/`§25`/`§26`/`§27`/`§28`/`§29`/`§30`:
+
+1. Public catalog browsing does not require authentication.
+2. Checkout requires an authenticated `CUSTOMER`.
+3. Customers can only access their own private commerce resources.
+4. Staff cannot control or restrict ordinary customer accounts.
+5. Admin has the highest approved operational authority.
+6. Version 1 roles are CLOSED `CUSTOMER|STAFF|ADMIN`.
+7. Order status transitions are controlled actions.
+8. Order financial totals are server-authoritative.
+9. Customer cannot set delivery fee.
+10. Pickup has zero delivery fee.
+11. Delivery fee is assigned by Staff/Admin (`ORD-014`).
+12. Payment consumes the final server-authoritative amount.
+13. Made-to-order requests do not automatically create orders.
+14. Enquiries do not automatically create orders.
+15. Notifications do not become the source of truth.
+16. Historical order values remain immutable.
+17. Cart does not reserve inventory.
+18. Checkout revalidates inventory/pricing atomically.
+19. Privileged state changes are auditable.
+20. Core business transactions do not depend on successful notification delivery.
+
+Additional invariants from `§31`: `total = subtotal + delivery_fee` (minor units `TZS`), `delivery_fee` nullable `PENDING` + `FINALIZED` via `ORD-014`, `cart→order` historical snapshot, `MADE_TO_ORDER` not purchasable, `Idempotency-Key` required on `CHK-001`/`ORD-004`/`ORD-007..011`/`ORD-013`/`ORD-014`/`INV-003`/`ADM-004..006` (and `ORD-012` is safe `GET`, no key), `409` on stale state, `404` masked for private.
 
 ## Quick Non-Negotiables (for staff)
 

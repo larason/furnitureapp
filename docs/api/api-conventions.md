@@ -938,5 +938,11 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 - Every privileged state change creates audit event (`actor_id/role/action/resource_type/resource_id/previous_state/resulting_state/timestamp/request_id`) — server-derived actor, no secrets, no client-provided actor. At minimum `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes`. Audit read `GET /admin/audit-logs` (if exposed) is read-only, filtered `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`, `meta.pagination`; no `PATCH/DELETE` audit via ordinary API.
 
+## 31. Cross-Domain Review — Global Conventions Verified (Phase 1.30)
+
+> **Authority:** `api-contract.md §31` is canonical; this section records that `api-conventions.md` was verified as part of Phase 1.30 16-category review.
+
+All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opaque `id` + `slug` + `OD-*****`, `meta.pagination`, allow-list filtering + `id ASC` tie-breaker, `data`/`errors` + `meta.request_id`, ISO8601 `Z`, `TZS` minor units `{amount,currency}`, `Transport→Schema→Auth→Authz→Domain→Concurrency` validation, `Idempotency-Key` on `CHK-001`/`ORD-007..014`/`INV-003`/`ADM-004..006`, shared Laravel identity `Next.js` cookie + `Flutter` token) were verified consistent across `§21` catalog, `§22` cart, `§23` checkout, `§24` order, `§25` tracking, `§26` request, `§27` enquiry, `§28` notification, `§29` user/profile, `§30` staff/admin. No domain-specific drift remains.
+
 
 

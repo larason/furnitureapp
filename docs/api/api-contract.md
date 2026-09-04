@@ -4756,4 +4756,546 @@ Phase 1.29 is complete only when: `STAFF/ADMIN capabilities separated`, `closed 
 - Decisions: `decisions.md ADR/STAFF-001..008` (closed roles, STAFF operational not customer-admin, controlled actions, delivery-fee Staff/Admin only, inventory adjust, staff approval Admin-only, role mutation controlled, audit mandatory).
 - Links to Conventions & Resources updated: `§20` now includes Staff/Admin conventions `§30`.
 
+---
+
+## 31. Cross-Domain API Contract Review (Phase 1.30)
+
+> **Authority:** This section is the **Phase 1.30 cross-domain consistency review** of the entire Group A Version 1 contract (`§2` envelope, `§17` auth, `§18` authz, `§19` inventory, `§21` catalog, `§22` cart, `§23` checkout, `§24` order, `§25` tracking/fulfillment, `§26` request, `§27` enquiry, `§28` notification, `§29` user/profile, `§30` staff/admin). It implements `phases/phase-1.30.md` review method `§4` (16 categories) and produces the required invariants, matrices, and corrections. No implementation code is introduced; only contract documentation is stabilized.
+
+### 31.1 Global Conventions — Unified
+
+| Convention | Canonical (all domains) | Verified |
+|---|---|---|
+| **Version prefix** | `/api/v1` on every endpoint; no unversioned `v1` mix | `§1`, `§19.1`, `§30.3` unified |
+| **HTTP methods** | `GET` read (`CAT-*`, `USER-001`, `ORD-001`), `POST` create/action (`AUTH-001`, `CART-002`, `CHK-001`, `ORD-007`), `PATCH` partial update (`USER-002`, `CART-003`), `DELETE` actual removal (`CART-004`) — not for cancel | `§12` |
+| **Naming** | `snake_case` fields (`product_type`, `delivery_fee`, `order_reference`), lowercase plural resources, kebab-case action (`ready-for-pickup`) | `§2` |
+| **Identifiers** | `id` opaque stable (`prod_…`, `ord_…`, `user_…`), `slug` SEO for product/category, `order_reference` `OD-*****` customer-facing (never raw DB ID) | `§10` |
+| **Pagination** | `page`/`per_page` (1–100, default 20) → `meta.pagination {current_page,per_page,total,last_page,has_next,has_previous}` | `§11` |
+| **Filtering/sorting** | Allow-list only (`search`, `category`, `product_type CLOSED`, `availability available\|unavailable`, `min_price/max_price` minor units, `sort` allow-list + `id ASC` tie-breaker) | `§21.2` |
+| **Response envelope** | Single `data` (`data: object` or `data: []` + `meta.pagination`), or `errors` array — never `result`/`payload` | `§2` |
+| **Error envelope** | `{"errors":[{"code","message","field","details"}],"meta":{"request_id":…}}` with `code` `UPPER_SNAKE_CASE` CLOSED, `field` dot-path | `§15` |
+| **Date/time** | ISO8601 UTC with `Z` (`2026-09-01T10:15:00Z`) for all `created_at`, `updated_at`, `occurred_at`, `read_at`, `staff_state` timestamps | `§3` |
+| **Currency** | Integer minor units `1 TZS = 100` as `{amount:int,currency:"TZS"}` for `product.price`, `variant.price`, `order_item.unit_price`, `order.subtotal`, `delivery_fee`, `total`, `payment.amount` — never float, never `"TZS 1,250,000"` | `§4` |
+| **Validation** | `Transport→Schema→Auth→Authz→Domain→Concurrency→External→Persistence`; unknown fields rejected `422` | `§14` |
+| **Request ID** | `meta.request_id` on every error (and optional `meta` on success) per-request correlation, not `user_id`/`order_id` | `§15.12` |
+| **Idempotency** | `Idempotency-Key` header on `CHK-001`, `ORD-004`, `ORD-007..011,013,014`, `INV-003`, `ADM-004..006`, `PAY-001` | `§30.18` |
+| **Authentication** | `Next.js` httpOnly cookie session + `Flutter` Bearer token, shared Laravel identity (same `AUTH-002` login) | `§17.7` |
+
+No domain-specific convention drift remains. `GET /api/v1/me/orders` vs `GET /api/v1/customer/orders` duplicate was rejected — canonical is `GET /api/v1/me/orders` (self-context).
+
+### 31.2 Actor Model — Closed
+
+Roles are **CLOSED** `CUSTOMER`/`STAFF`/`ADMIN` (`UPPER_SNAKE_CASE`) per `§17.1`/`§30.1`. No `SUPER_ADMIN`/`MANAGER`/`OPERATOR`/`MODERATOR`/`SUPPORT`/`EDITOR`/`WAREHOUSE`/`DELIVERY_AGENT`/`GUEST` introduced. `Anonymous` is authentication state (`unauthenticated`), not a fourth role. Client `{"role":"ADMIN"}` rejected `422 INVALID_VALUE` `field: role` per `§29.6`/`§30.2`.
+
+### 31.3 Authentication vs Authorization
+
+Each protected endpoint enforces `authenticated? + which actor? + which permission? + which resource/context?` Token ≠ authorization. Verified:
+
+- `Customer → STAFF` endpoints (`ORD-005..014`, `INV-001..003`, `ADM-001..007`) → `403 FORBIDDEN` (`§18.6` `orders.ship` requires `ship` permission + `PROCESSING`).
+- `Customer → ADMIN` endpoints (`ADM-001..009`, `ADM-007`) → `403 FORBIDDEN`.
+- `Staff → ADMIN`-only (`ADM-004 approve`, `ADM-005 suspend`, `ADM-008/009 users.manage_authorized`, `ADM-007 audit.view`) → `403 FORBIDDEN` (`§30.13` no self-approval).
+- `Admin` may perform explicitly approved `STAFF` operations (`STAFF or ADMIN` on `ORD-007..011` per `§30.3`) with same permission + state check, still audited.
+- `Anonymous` only `GET /products`, `/categories`, `POST /auth/register|login`, `POST /requests`/`enquiries` (`REQ-001`/`ENQ-001`) per `§19.4` **plus** `Guest` (`GUEST` holder via `X-Guest-Cart-Id`/`guest_cart_id` cookie — opaque `HttpOnly` `Secure` bearer, not `user_id`, `CART-001..004` only via valid guest token, merged on `AUTH-002`/`CART-005` per `§31.5`/`business-rules.md §3 #4`) **plus** `Anonymous*` parent-scoped attachment (`REQ-007`/`ENQ-007` — `Scoped` `Anonymous*` via server-issued single-use upload token + parent `requests.view`/`enquiries.view` inheritance, predictable ID alone insufficient, `0 or 1` attachment per `REQ-001`/`ENQ-001` `multipart/form-data` inline preferred) per `§31.19`; `§31.3` allow-list now explicitly includes `Guest` `CART-001..004` and `Anonymous*` `REQ-007`/`ENQ-007` with those conditions.
+
+### 31.4 `/me` Boundary
+
+Canonical self-context remains `GET /api/v1/me` (`USER-001`) and `PATCH /api/v1/me` (`USER-002`) per `§29.2`. No duplicate profile endpoint elsewhere. `role`, `permissions`, `account security state`, `account status`, `ownership`, `internal IDs`, `audit fields`, `administrative approval`, `staff_state` never client-controlled via `/me` (`§29.6` allow-list `name`, `phone` only). Staff/Admin operational APIs do not expose generic customer profile-management route; `GET /users/{id}` remains `ADM-008/009` `ADMIN`-only (`§29.2`).
+
+### 31.5 Customer Ownership
+
+| Resource | Primary owner | Customer | Staff | Admin |
+|---|---|---|---|---|
+| **Cart** | Customer | `Own` (`AUTHENTICATED_OWNER` `CART-001..004`, guest holder via `X-Guest-Cart-Id` merged on `AUTH-002`) | **No** ordinary access | **No** ordinary access |
+| **Order** | Customer | `Own` (`GET /me/orders`, `GET /me/orders/{order}`, `ORD-003` tracking, `ORD-004` cancel) `404` masked `Customer A→B` | `Operational` (`ORD-005/006`, `ORD-007..011,013,014` with valid state) — purpose-limited fields per `§30.12` | `Operational/admin` |
+| **Request** | Customer when authenticated (`user_id` server-derived, `null` anonymous) | `Own` (`GET /me/requests`) | `Operational` (`REQ-004/005`, `REQ-006` limited) | `Administrative` |
+| **Enquiry** | Customer when authenticated | `Own` (`GET /me/enquiries`) | `Operational` (`ENQ-004/005`, `ENQ-006` limited) | `Administrative` |
+| **Notification** | Recipient (`recipient_user_id` server-derived) | `Own` (`GET /me/notifications` `NOT-001`) | `Operational recipient scope` (`NOT-001` filtered `NEW_ORDER`) | `Admin scope` |
+| **Profile** | User | `Own` (`GET/PATCH /me`) | `Own` (`GET/PATCH /me`) — not browse-as-customer | `Own` (`GET/PATCH /me`) + `ADM-008/009` `ADMIN`-only for `GET /users` |
+| **Inventory** | Business | **No** (sees `availability`/`stock_indicator` only) | `Operational` (`INV-001/002` view, `INV-003` adjust `inventory.manage`) | `Administrative` |
+| **Catalog** | Business | `Public read` (`CAT-001..006`, `availability` only) | `Operational` (`CAT-013/014` read + `CAT-007..012` manage where approved) | `Administrative` |
+| **Audit** | Business | **No** | **Normally no** | `Read-only if exposed` (`ADM-007` `audit.view`, otherwise internal-only per `§30.16.1`) |
+
+Matches `phases/phase-1.30.md §9` table and prior contracts; no contradiction.
+
+### 31.6 Resource Identifiers
+
+- `id` opaque stable (`prod_…`, `cat_…`, `var_…`, `ord_…`, `user_…`, `req_…`, `enq_…`, `not_…`) server-generated, never client-supplied.
+- `slug` URL-safe kebab-case for product/category SEO (`/products/modern-3-seater-sofa`), dual resolution `slug|id` on `CAT-002`/`CAT-004` per `§21.9`.
+- `order_reference` `OD-*****` unique human-readable per `§24.2` (`OD-2026-00123`), distinct from `id`; never raw DB ID in customer-facing workflows; staff routes use `order` opaque `id` but authorization does not shortcut via ID knowledge.
+- `order_status_history` `evt_…` opaque for tracking timeline `id` per `§25.7`.
+
+### 31.7 Endpoint Inventory Completeness
+
+All **75** Version 1 endpoints (**72** committed + **3** Group H placeholders `PROPOSED*`) exist once with stable IDs, unique path/method, and are documented in `§19.1`/`§30.21` and `api-resources.md §15` (`CAT` 14 + `AUTH` 8 + `USER` 2 + `CART` 5 + `CHK` 1 + `ORD` 14 + `REQ` 7 + `ENQ` 7 + `NOT` 2 + `INV` 3 + `ADM` 9 + `PAY` 2 + `WEBHOOK` 1 = **75**):
+
+- `CAT-001..014` (6 public reads + 6 operational writes + 2 operational reads `CAT-013/014` **PROPOSED**),
+- `AUTH-001..008` (register/login/logout/password/verify/change-password, `USER-003` retired),
+- `USER-001/002` (`GET/PATCH /me`),
+- `CART-001..005` (guest holder via `X-Guest-Cart-Id` + merge),
+- `CHK-001` (`POST /checkout`),
+- `ORD-001..014` (`ORD-001..004` customer, `ORD-005/006` operational, `ORD-007..011,013,014` controlled actions),
+- `REQ-001..007` / `ENQ-001..007` (anonymous `REQ-001`/`ENQ-001` + owner/operational + scoped `REQ-007`/`ENQ-007` attachments),
+- `NOT-001/002` canonical (`NOT-003`/`NOT-004` deferred, `NOT-004` not duplicated — see `§30.21` correction),
+- `INV-001..003`,
+- `ADM-001..009` (`ADM-001/002` staff list/detail, `ADM-003` invite, `ADM-004` approve, `ADM-005` suspend, `ADM-006` reactivate, `ADM-007` audit-logs, `ADM-008/009` users list/detail),
+- `PAY-001/002` + `WEBHOOK-001` (Group H placeholders `PROPOSED*`).
+
+No undocumented, duplicated, or conflicting path/method remains; duplicate `ADM-005/006` for users vs suspend was corrected to `ADM-008/009` for users; duplicate `NOT-004` for same `GET /me/notifications` removed (canonical `NOT-001` only).
+
+### 31.8 Endpoint Ownership
+
+- `/me/...` for authenticated user's own resources (`/me/cart`, `/me/orders`, `/me/requests`, `/me/enquiries`, `/me/notifications`, `/me`).
+- Unprefixed operational `/api/v1/orders`, `/api/v1/inventory`, `/api/v1/requests`, `/api/v1/enquiries` with `OPERATIONAL` authorization (`orders.view_operational`, `inventory.manage`, etc.) per `§30.3` canonical (not `/staff/...` prefix — `phases/Phase-1.29.md §5.1-5.2` conceptual `staff/orders` maps to canonical).
+- `/admin/...` for `ADMIN`-only (`/admin/staff`, `/admin/staff/{user}/approve|suspend|reactivate`, `/admin/audit-logs`, `/admin/products` `CAT-013/014`).
+- Public catalog `GET /products`, `/categories`, `/products/{product}` remain `PUBLIC` (`§21.1`).
+
+No customer action under `/staff`, no staff lifecycle under `/me`, no admin action under general authenticated routes.
+
+### 31.9 Request/Response Consistency
+
+Shared concepts have one meaning/type/nullability/format/mutability:
+
+| Field | Meaning | Type | Nullability | Mutability |
+|---|---|---|---|---|
+| `id` | Opaque stable identifier | `string` | `no` | `server-generated`, immutable |
+| `created_at`/`updated_at`/`occurred_at`/`read_at` | Server timestamps | `ISO8601 Z` | `read_at` yes (`null` unread) | `server-generated` |
+| `status` (`order_status`, `request_status`, `enquiry_status`) | Machine state | `UPPER_SNAKE_CASE` CLOSED | `no` | Controlled action only |
+| `currency` | Money currency | `"TZS"` only | `no` | `server-controlled` |
+| `quantity` | Item count | `integer 1..100` | `no` (request quantity optional) | Client supplies `1..100`, server validates |
+| `unit_price`/`subtotal`/`delivery_fee`/`total` | Money amounts | `{amount:int minor units,currency:"TZS"}` | `delivery_fee` yes (`null` when `PENDING`) | `server-calculated`, never client |
+| `delivery_fee` | Variable fee | `{amount,currency}` | `yes` (`null` `PENDING`, `{amount:0}` `FINALIZED` for `PICKUP`) | `STAFF/ADMIN` via `ORD-014` only |
+
+`total` always `subtotal + delivery_fee.amount` (when `FINALIZED`; provisional `total == subtotal` when `PENDING`); no endpoint redefines `total` as `subtotal` alone.
+
+### 31.10 Server-Controlled Fields
+
+Cross-domain `never client-set` list enforced via `§15` `422` + `§18` authz: `user_id`, `role`, `permissions`, `order_reference` (`OD-…`), `order_status`, `payment_status`/`payment_state`, `subtotal`, `delivery_fee` (except `ORD-014` Staff/Admin), `total`, `inventory current quantity` (`quantity`, `reserved_quantity`, `available_quantity`), `created_at`, `updated_at`, `approved_by`/`approved_at`, `audit actor`, `business-event identity`, `notification recipient`/`source`, `historical order line values` (`unit_price`, `line_total`, `delivery_address` snapshot). Same rule regardless of endpoint.
+
+### 31.11 Order Lifecycle — Unified
+
+`§24.13`/`§30.7` unified state machine (no `CONFIRMED`/`PREPARING`/`OUT_FOR_DELIVERY`/`CANCELLED_BY_STAFF`):
+
+```
+PENDING_PAYMENT → PAID → ACCEPTED → PROCESSING
+PICKUP:  PROCESSING → READY_FOR_PICKUP → COMPLETED
+DELIVERY: PROCESSING → SHIPPED → DELIVERED → COMPLETED
+         CANCELLED terminal (via ORD-004 customer or admin cancel); no transition from COMPLETED/CANCELLED
+```
+
+All references (`business-rules.md §7`, `api-resources.md §10.3`) now use two separate branches (`READY_FOR_PICKUP→COMPLETED` vs `SHIPPED→DELIVERED→COMPLETED`), not `(READY_FOR_PICKUP|SHIPPED)→DELIVERED`.
+
+### 31.12 Cancellation — Unified
+
+- Window `20 minutes` from `order.created_at` server time (`§24.17`); client `cancelled_at` rejected.
+- Cancellable states per `§24.17`: `PENDING_PAYMENT` only for customer `ORD-004` (`owns + 20-min + backend time + eligible state`); after `ACCEPTED` customer cancellation no longer allowed — `Staff accept` does not create contradiction (`Customer may cancel after Staff acceptance` is **false**).
+- Not deletion: `POST /me/orders/{order}/cancel` sets `CANCELLED`, retains history (`§24.17`.
+
+### 31.13 Fulfillment Branches
+
+`fulfillment_type` `PICKUP`/`DELIVERY` CLOSED per `§23.4`. `PICKUP` never receives `ship`/`deliver` (`ORD-010`/`ORD-011` require `DELIVERY`); `DELIVERY` never receives `ready-for-pickup` (`ORD-009` requires `PICKUP`). Branch immutable after creation unless approved transition exists.
+
+### 31.14 Delivery Fee — Cross-Domain Unified
+
+| Question | Answer | Source |
+|---|---|---|
+| Who chooses `fulfillment_type`? | **Customer** (`CHK-001` `fulfillment_type: PICKUP\|DELIVERY` CLOSED) | `§23.4` |
+| Who chooses delivery fee? | **Staff/Admin** via `ORD-014 POST /orders/{order}/delivery-fee` | `§30.8` |
+| Can Customer provide delivery fee? | **No** — `{"delivery_fee":…}` rejected `422` per `§23.3`/`§30.8.1` | `§23.13` |
+| Is pickup charged fee? | **No** — `PICKUP → delivery_fee {amount:0,currency:TZS}, delivery_fee_status FINALIZED` at creation | `§24.10` |
+| Is fee part of total? | **Yes** — `total = subtotal + delivery_fee.amount` server-calculated integer minor units | `§30.8` |
+| Can client submit total? | **No** — `{"total":…}` rejected `422` `field: total` | `§13.10` |
+| Can payment calculate fee? | **No** — Group H consumes authoritative `total` only | `§23.11` |
+| When does payment receive amount? | **Only after `delivery_fee_status=FINALIZED`** — `PAY-001` blocked `409 DELIVERY_FEE_PENDING` while `PENDING` | `§23.11`/`§24.11` |
+
+Identical across `Checkout` (`§23.6` Model B), `Order` (`§24.11`), `Staff/Admin` (`§30.8`), `Payment` boundary (`§23.11`), `Tracking` (`§25` displays `delivery_fee_status`), `Notifications` (`§28`).
+
+### 31.15 Delivery Fee State — One Model
+
+Canonical pending representation: **nullable `delivery_fee` + dedicated `delivery_fee_status` CLOSED `PENDING|FINALIZED`** per `§24.10`/`§30.8`. No additional `order_status = PENDING_DELIVERY_FEE`. `PICKUP: delivery_fee {amount:0}, status FINALIZED` at `CHK-001`; `DELIVERY: delivery_fee null, status PENDING` at `CHK-001` → `ORD-014` → `delivery_fee {amount,currency}, status FINALIZED` (once, before `PAID`; after `PAID` immutable). Not `null` as undocumented state machine.
+
+### 31.16 Payment Boundary
+
+```
+Checkout (CHK-001) → Order (PENDING_PAYMENT, subtotal authoritative) → ORD-014 Staff/Admin fee FINALIZED → Authoritative financial amount (total) → Group H Payment (PAY-001/PAY-002/WEBHOOK-001)
+```
+
+Group A defines **order/payment relationship** (`payment: null while PENDING`, `PAY-001` eligible only when `FINALIZED`, `Order PAID` = Group H webhook verified, distinct from `ACCEPTED`) per `§24.11`/`§23.11`, but **not** gateway specifics, webhooks, capture, refund, or provider state — deferred to Group H per `§24`/`§30` non-goals.
+
+### 31.17 Inventory and Checkout
+
+- `Catalog availability` (`availability`/`stock_indicator`) informational point-in-time per `§21.7` (`INV-001`).
+- `Cart` does **not** reserve stock (`CART-002` informational check only, no `reserved_quantity` increment) per `§22.9`.
+- `Checkout` (`CHK-001`) revalidates stock/pricing inside atomic transaction (`requested ≤ available` at transaction point, `SELECT then UPDATE` without lock prohibited) per `§23.9`.
+- Server calculates authoritative `quantity`/`unit_price`/`line_total`/`subtotal` at `CHK-001`; concurrent checkout cannot oversell (deterministic: `422 INSUFFICIENT_STOCK` when valid request exceeds available stock at validation; `409 INSUFFICIENT_STOCK` when transaction race/stale state depletes stock, no negative stock `INV-002` per `§15.10`).
+- `INV-003` adjustments audited, cannot invalidate `COMPLETED` order history — historical `order_item.quantity`/`unit_price` remain immutable per `§24.14`.
+
+### 31.18 Cart and Order Boundary + Historical Snapshot + Catalog vs Order
+
+- `Cart` (mutable intent) vs `Order` (historical transaction) separate: `CHK-001` creates `Order` `PENDING_PAYMENT` from authoritative cart snapshot, then cart cleared/inactivated per `§23.10`; order history never depends on mutable cart.
+- Historical snapshot per `§24.8`: `product_id`, `variant_id` where applicable, `product name`, `unit_price` (`{amount,currency}` historical), `quantity`, `line_total`, `delivery_address` snapshot for delivery — preserved even if `Product` renamed or price changed to `1,200,000`, or profile changed.
+- `Catalog` = current business truth (price, name, image, `is_active`, `is_published`); `Order` = historical transaction truth; `current Product` change never rewrites `Order` per `§24.1`.
+
+### 31.19 Made-to-Order, Enquiry, Attachment
+
+- `Made-to-Order Request` (`REQ-001` anonymous + contact, `REQ-002/003` owner, `REQ-004/005` operational `requests.view`, `REQ-006` limited `requests.manage`, `REQ-007` scoped attachment) separate from `Cart`/`Order`/`Payment` — never auto-creates Order, never reserves inventory, never locks price, never triggers payment unless explicitly approved `Request→Order` workflow per `§26.11`.
+- `MADE_TO_ORDER` products discoverable (`CAT-001..006` `product_type: MADE_TO_ORDER` display/starting-at price) but `CART-002`/`CHK-001` reject with `PRODUCT_NOT_PURCHASABLE` `422` (`§22.3`/`§23.9`); no `STAFF` endpoint bypasses request workflow.
+- `Generic requests` without linked product supported (`product_id` nullable, custom `dimensions`/`material`/`color`/`notes` per `§26.4`) — reflected consistently in `REQ-001` allow-list.
+- `General Enquiry` (`ENQ-001` anonymous + contact, `ENQ-002/003` owner, `ENQ-004/005` operational `enquiries.view`, `ENQ-006` `enquiries.manage` `OPEN→CLOSED`) distinct: `Enquiry ≠ Order` and `Enquiry ≠ Request`; customer `subject`/`message` immutable, internal `staff_internal_notes` separate per `§27.10`.
+- Attachments (`REQ-007`/`ENQ-007`, `0 or 1` per `REQ-001`/`ENQ-001`, `multipart/form-data` inline preferred, `image/jpeg|png|webp|application/pdf`, `≤5 MB`, filename sanitized, content signature not MIME alone, private URL) inherit parent authorization; attachment ID alone never bypasses (`Customer B` cannot fetch `Customer A` attachment) per `§26.8`.
+
+### 31.20 Notification/Event + Trigger Matrix + Failure
+
+- `Business Event` (`Order accepted`, `Shipped`, `New enquiry`) vs `Notification` (`ORDER_ACCEPTED`, `NEW_ENQUIRY` downstream) per `§28.1`. Notification never source of truth — if `Notification=SHIPPED` but `Order=PROCESSING`, `Order` wins.
+- Trigger matrix (per `§28.4`/`§28.11`, `phases/phase-1.27.md`):
+
+| Business event | Customer notification | Staff notification | Admin notification |
+|---|---|---|---|
+| New order (`CHK-001` → `PENDING_PAYMENT`) | `ORDER_RECEIVED` Yes | `NEW_ORDER` Yes | According to operational scope |
+| Order accepted (`ORD-007`) | `ORDER_ACCEPTED` Yes | Optional/approved | Optional/approved |
+| Order processing (`ORD-008`) | `ORDER_PROCESSING` Yes | Optional/approved | Optional/approved |
+| Ready for pickup (`ORD-009`) | `ORDER_READY_FOR_PICKUP` Yes | Optional | Optional |
+| Shipped (`ORD-010`) | `ORDER_SHIPPED` Yes | Optional | Optional |
+| Delivered (`ORD-011`) | `ORDER_DELIVERED` Yes | Optional | Optional |
+| Completed (`ORD-013`) | `ORDER_COMPLETED` Yes | Optional | Optional |
+| Cancelled (`ORD-004`) | `ORDER_CANCELLED` Yes | Operationally relevant | Operationally relevant |
+| New made-to-order request (`REQ-001`) | No/appropriate customer confirmation only (no persistent in-app without recipient) | `NEW_MADE_TO_ORDER_REQUEST` Yes | Appropriate |
+| New enquiry (`ENQ-001`) | No/appropriate customer confirmation only | `NEW_ENQUIRY` Yes | Appropriate |
+
+No invented `SOFA_SHIPPED` type; `PAYMENT_*` deferred to Group H.
+
+- Failure: `Order acceptance succeeds → Notification generation fails → Order remains accepted` per `§28.15`. Core business transaction never rolls back on notification failure; email/push delivery deferred to Group R.
+
+### 31.21 Error Envelope + HTTP Status + Enum Closure + Nullability + Date/Time + Currency
+
+- **Error envelope:** `{"errors":[{"code","message","field","details"}],"meta":{"request_id":…}}` universally; no `{"error":…}` or `{"message":…,"details":…}` per `§15`.
+- **HTTP status (global mapping):**
+
+| Code | Condition | Example |
+|---|---|---|
+| `401 AUTHENTICATION_REQUIRED` | authentication required/invalid | anonymous checkout, unauthenticated `GET /me/orders` |
+| `403 FORBIDDEN` | authenticated but not allowed | `Customer→STAFF` endpoint, `Staff→ADM-004 approve`, `Staff → customer profile` |
+| `404 RESOURCE_NOT_FOUND` / `ORDER_NOT_FOUND` etc. | not found/exposed per policy (`404` masking for private) | `Customer A→B order` `404`, `Customer A→B notification` `404` |
+| `409 CONFLICT` / `ORDER_STATE_CONFLICT` / `RESOURCE_VERSION_CONFLICT` / `DUPLICATE_OPERATION` | state/concurrency/conflict | invalid transition `PROCESSING→DELIVERED`, `INV-003` concurrent adjust, duplicate `Idempotency-Key` different body |
+| `422 INVALID_VALUE` / `INVALID_FORMAT` / `MISSING_REQUIRED_FIELD` / `BUSINESS_RULE_VIOLATION` | validation/business rule | `made-to-order` cart, `PICKUP` fee `422`, `STAFF {role:ADMIN}` `422` |
+| `429 RATE_LIMITED` + `Retry-After` | rate limited | `AUTH-001`, `REQ-001`/`ENQ-001` anonymous |
+| `500 INTERNAL_SERVER_ERROR` + `meta.request_id` | unexpected | never raw SQL/stack/secret |
+
+Deterministic mapping (no `409`/`422` both for same condition): `INSUFFICIENT_STOCK` → `422` when valid request exceeds available stock (correct the request), `409` when transaction race/stale depletes stock (retry after refresh); `INVALID_ORDER_TRANSITION` → `422 BUSINESS_RULE_VIOLATION` when business-rule invalid (wrong fulfillment branch, PICKUP→SHIPPED), `409 CONFLICT`/`ORDER_STATE_CONFLICT` when stale state (already transitioned); `ORDER_NOT_CANCELLABLE` → `422` when outside 20-min window/ineligible state, `409` when race (`cancel` vs `Staff accept`). Client retry vs correct-request is unambiguous.
+
+- **Enum closure:** All `actor role`, `fulfillment_type PICKUP|DELIVERY`, `product_type IN_STOCK|MADE_TO_ORDER`, `order_status` 9 values, `payment_status`, `notification type` `ORDER_*`/`NEW_*`, `request_status SUBMITTED|IN_REVIEW|CLOSED`, `enquiry_status OPEN|CLOSED`, `inventory reason` 5 values, `audit action` if exposed, `category` where defined are **CLOSED** (`UPPER_SNAKE_CASE` except `availability` `available|unavailable` lower) — no `OTHER`/`CUSTOM`/`EXTENSIBLE` without explicit versioning.
+- **Nullability:** `delivery_address` conditionally required (`DELIVERY` required, `PICKUP` `null`), `delivery_fee` nullable (`null` `PENDING`, `{amount,currency}` `FINALIZED`, `{amount:0}` for `PICKUP`), `payment_state` nullable (`null` while `PENDING_PAYMENT` before `PAY-001`), `order cancellation data` server-generated, `request product_id` nullable, `enquiry order_id` nullable, `attachment` optional `0 or 1`, `notification read_at` nullable (`null` unread) — explicit per `§3`/`§24`/`§26`/`§27`/`§28`.
+- **Date/time:** All `created_at`, `cancellation deadline` (server `created_at` + 20 min), `payment occurred_at`, `fulfillment occurred_at`, `notification read_at`, `request/enquiry created_at`, `staff approval occurred_at`, `audit timestamp` are `ISO8601 Z` (`§3.4`).
+- **Currency/money:** `TZS` `1 TZS = 100` minor units `{amount:int,currency:"TZS"}` universally for `Cart` `unit_price`/`line_total`/`subtotal`, `Checkout`/`Order` `subtotal`/`delivery_fee`/`total`, `Payment` `amount`; precision integer, no float per `§3.8`/`§4`.
+
+### 31.22 Idempotency + Concurrency
+
+| Resource | Idempotency | Concurrency |
+|---|---|---|
+| **Checkout `CHK-001`** | **Required** `Idempotency-Key` — same key + same `fulfillment_type`/`delivery_address` replays `201` same `order_reference`; same key different body → `409 DUPLICATE_OPERATION`; `409` on `INSUFFICIENT_STOCK` race | **Critical** — atomic `validate stock → reserve → create Order` inside transaction; no oversell |
+| **Operational order actions `ORD-007..011,013`** | **Required** — same key replays `200` same `ACCEPTED`/`SHIPPED` etc., same key different state → `409` | **Critical** — `lock/recheck state` inside transaction; `409 ORDER_STATE_CONFLICT` on stale |
+| **Delivery fee `ORD-014`** | **Required** — same key replays `200` `FINALIZED`; same key different `amount` → `409 DUPLICATE_OPERATION`; single `PENDING→FINALIZED` | **Critical** — race `fee SET` vs `PAY-001` atomic (`PAY-001` blocked `409` while `PENDING`) |
+| **Inventory `INV-003`** | **Required** — same key replays `200` prior success (no second delta), same key different `quantity_delta`/`reason` → `409` | **Critical** — `transactional row locking` |
+| **Staff approval/suspend `ADM-004..006`** | **Required** | **Critical** |
+| **Customer cancel `ORD-004`** | **Required** | **Critical** (race `cancel` vs `Staff accept`) |
+| **Made-to-order `REQ-001`/`ENQ-001`** | **None required** — not idempotent (duplicate tap may create second request/enquiry) | Low |
+
+No domain uses different convention for same condition; `INV-003` no longer `where retry-sensitive`.
+
+### 31.23 Field-Level Authorization + Customer/Staff/Admin Matrix + Security Review
+
+**Field-level (per `§18.11`/`§30.2`):**
+
+| Field | `public` | `customer-readable` | `customer-writable` | `staff-readable` | `staff-writable` | `admin-readable` | `admin-writable` | `server-only` | `historical` |
+|---|---|---|---|---|---|---|---|---|---|
+| `product.price` | Yes (`availability` only `available|unavailable` + `stock_indicator`) | Yes | No | Yes | `products.manage` | Yes | `products.manage` | — | — |
+| `inventory quantity` | No | No | No | `inventory.view` | `inventory.manage` (via `INV-003` only) | Yes | `inventory.manage` | `available_quantity` derived | — |
+| `order subtotal/total` | No | Own `subtotal`/`total`/`delivery_fee` | No | Operational `subtotal`/`total` | No (only `ORD-014` sets `delivery_fee`) | Authorized | No | `total` server-calculated | `Order` historical `total` after `FINALIZED` |
+| `order status` | No | Own `status` | No (`POST .../cancel` only if eligible) | Operational | `orders.accept|process|ship` etc. (valid state) | Authorized | `orders.*` | `status_history` server | append-only |
+| `user role` | No | Own `role` read-only | No | Own `role` read-only | No | `staff.manage` read | `staff.approve` via `ADM-004` only | `role` server-controlled | — |
+| `staff_state` | No | No | No | No | No | `staff.manage` read | `ADM-004/005/006` (`PENDING→ACTIVE` etc.) | `staff_state` server | audited |
+| `notification recipient` | No | Own `recipient_user_id` implicit | No | Own | No (no `POST /notifications`) | Limited | No | `recipient` server | — |
+
+**Customer/Staff/Admin boundary matrix (agrees with `§18.4`/`§30.7`):**
+
+| Capability | Customer | Staff | Admin |
+|---|:---|:---|:---|
+| Browse catalog | **Yes** (`PUBLIC` `GET /products`, `/categories`) | **Yes** | **Yes** |
+| Own profile (`GET/PATCH /me` `name`/`phone`) | **Yes** | **Yes** (own) | **Yes** (own) |
+| Own cart (`GET/POST/PATCH/DELETE /me/cart`) | **Yes** (own + guest merge) | **No** ordinary access | **No** ordinary access |
+| Own orders (`GET /me/orders`, `GET /me/orders/{order}`, `GET /me/orders/{order}/tracking`, `POST /me/orders/{order}/cancel` 20-min) | **Yes** | **Operational** (`GET /orders`, ship etc. with valid state) | **Operational** |
+| Accept order (`POST /orders/{order}/accept` `PAID→ACCEPTED`) | **No** | **Yes** (`orders.accept` + `PAID` + `FINALIZED`) | **Yes** |
+| Set delivery fee (`POST /orders/{order}/delivery-fee`) | **No** | **Yes** (`orders.set_delivery_fee`) | **Yes** |
+| Process order (`ACCEPTED→PROCESSING`) | **No** | **Yes** | **Yes** |
+| Fulfill pickup (`PROCESSING→READY_FOR_PICKUP→COMPLETED`) | **No** | **Yes** | **Yes** |
+| Ship delivery (`PROCESSING→SHIPPED`) | **No** | **Yes** | **Yes** |
+| Manage inventory (`POST /inventory/{inventory}/adjust`) | **No** | **Yes** (`inventory.manage`) | **Yes** |
+| Operational request queue (`GET /requests`, `PATCH`) | **No** | **Yes** | **Yes** |
+| Operational enquiry queue (`GET /enquiries`, `POST .../close`) | **No** | **Yes** | **Yes** |
+| Approve Staff (`POST /admin/staff/{user}/approve`) | **No** | **No** | **Yes** (`staff.approve` audited) |
+| Change roles (`role: CUSTOMER→STAFF`) | **No** | **No** | **Admin-only** controlled (`staff_state` vs `role` separation) |
+| Customer account restriction | **No** | **No** (explicit `403`) | **Not automatically** (explicit contract only) |
+| Read audit log (`GET /admin/audit-logs`) | **No** | **Normally no** | **Yes**, if exposed (`audit.view`) |
+| Payment gateway administration | **No** | **No** | **No** (Group H / explicit contract) |
+
+**Threat review → contract rule:**
+
+| Risk | Rule enforced |
+|---|---|
+| Horizontal escalation (`Customer A→B`) | `404 RESOURCE_NOT_FOUND` masked per `§15.8` on `Order`/`Request`/`Enquiry`/`Notification`/`Profile` |
+| Vertical escalation (`Customer→STAFF`, `Staff→ADMIN`) | `403 FORBIDDEN` per `§18.6`/`§30.20` (`Staff→ADM-004` approve `403`) |
+| IDOR (`?user_id=another`, `order_id` swap) | `user_id` never trusted; `cart.owner == principal` per `§22.3` |
+| Mass assignment (`role`, `permissions`) | `422 INVALID_VALUE` `field: role` per `§29.6`/`§30.2` |
+| State manipulation (`PATCH {status:DELIVERED}`) | `409 INVALID_ORDER_TRANSITION` per `§24.13`/`§30.7` |
+| Financial tampering (`subtotal`, `total`) | `422` rejected, server `total = subtotal + delivery_fee` per `§30.8` |
+| Inventory tampering (`PATCH {quantity:999}`) | Only `POST .../adjust` with `reason` per `§30.5` |
+| Customer-account takeover (`Staff → customer password`) | `403` per `§30.12`/`§18.3` (`Staff → owns Customer` false) |
+| Enumeration (`GET /orders/1001…1003`) | `404` masking, not `403` leak per `§15.8` |
+| Attachment bypass | `Request→Attachment` inherits parent; private URL per `§26.8` |
+| Audit spoofing | `actor` server-derived per `§30.16` |
+| Replay (`INV-003` delta double-apply) | `Idempotency-Key` **Required** same-key replay per `§30.18` |
+| Duplicate operations/stale writes | `409 CONFLICT`/`RESOURCE_VERSION_CONFLICT` per `§15.10` |
+
+### 31.24 Client Compatibility
+
+- **Next.js website:** `PUBLIC` catalog `GET /products`/`/categories` no login (`SSR` SEO per `§21.9`), `OpenGraph`/`JSON-LD` from `CAT-002` detail; authenticated customer operations (`CHK-001`, `ORD-001`, `REQ-001` anonymous allowed) usable; `STAFF/ADMIN` operational routes explicitly protected (`§30.1`).
+- **Flutter application:** Same `§19.1` contract usable from mobile — shared auth (`AUTH-002` same identity), network retries safe via `Idempotency-Key` (`CHK-001`, `ORD-007..011` no duplicate financial/operational), server state authoritative (`Flutter` `quantity`/`total` never trusted), no client-side transition trusted (`§14.8` `STATUS` rejected).
+- **Administrative interfaces:** Operational data sufficient without excessive customer info per `§30.12` (purpose-limited `name/phone/delivery_address` only); `STAFF` completes normal work without customer-account admin; `ADMIN`-only (`ADM-001..009`, `ADM-007`) clearly separated.
+
+### 31.25 Documentation Consistency — Obsolete Requirements Removed or Superseded
+
+Scanned terms (`phases/phase-1.30.md §44`):
+
+- `20,000` / `flat fee`: All `Flat TZS 20,000 assumption is superseded` per `§23.5`/`§24.10`/`§30.8`; no `20,000` remains as payable amount — variable `delivery_fee` via `ORD-014`.
+- `guest checkout` / `anonymous checkout`: Explicit **No** (`§23.1`/`business-rules.md §3` `CHK-AUTH-001` `401 AUTHENTICATION_REQUIRED`); cart guest holder (`X-Guest-Cart-Id`) merges on `AUTH-002` but never checks out anonymously.
+- `MADE_TO_ORDER`: Discoverable but `CART-002`/`CHK-001` reject `422 PRODUCT_NOT_PURCHASABLE` per `§22.3`/`§23.9`; no bypass.
+- `CANCELLED`/`COMPLETED`/`STAFF`/`ADMIN`/`PATCH`/`DELETE`: Only via controlled `POST .../cancel`/`complete`/`approve`, never generic `PATCH {status}`.
+- `customer block`/`suspend customer`: `Staff → block customer` `403` per `§18.3`/`§30.12`; `suspend` is `staff_state` (`ADM-005/006`), not customer.
+- `payment`/`notification`/`email`/`push`: Payment gateway deferred to Group H (placeholders `PAY-001/002`), push/email deferred to Group R per `§28.16`.
+- `address`/`role`/`permission`/`status`: `delivery_address` conditionally required, `role` CLOSED, `permission` `*` wildcard prohibited per `§18.7`.
+- All public `GET /products` with internal `reserved_quantity` leakage removed.
+
+### 31.26 Decision Reconciliation
+
+| # | Conflict / Ambiguity | Documents | Affected behavior | Resolution (authoritative) |
+|---|---|---|---|---|
+| 1 | Operational route prefix `POST /api/v1/staff/orders/{order}/accept` (`start-processing`/`complete-pickup`/`set-delivery-fee`) vs `POST /api/v1/orders/{order}/accept` (`process`/`complete`/`delivery-fee`) (`ORD-007..014`) per `phases/Phase-1.29.md` vs `§30.3`/`§30.7` | `Phase-1.29.md:240-249,§14-18` vs `§19.1`/`§30.3`/`§30.5` | Wire route for staff actions, frontend build | **RESOLVED:** Canonical = unprefixed `§19.1`/`§30.3` (`GET/POST /api/v1/orders`, `/api/v1/inventory`) with `OPERATIONAL` authz; `Phase` conceptual `staff/...` maps to canonical `accept`/`process`/`complete`/`delivery-fee` (`process` not `start-processing`); `§30.3` updated. |
+| 2 | Operational catalog reads promised (`§30.4.1` line `filtering by published/active` ) but `CAT-007..012` writes only; `INV-002` not product read | `§30.4.1` vs `Phase-1.29 §7.1` | Staff list/retrieve unpublished products | **RESOLVED:** Added stable `CAT-013 GET /api/v1/admin/products` and `CAT-014 GET /api/v1/admin/products/{product}` **PROPOSED** (`PRIVATE`, filters `is_active`/`is_published`), `INV-002` remains inventory detail. |
+| 3 | Duplicate stable ID `ADM-005/006` for `GET /users` vs `POST /admin/staff/{user}/suspend|reactivate` | `§19.1`/`§10.7` vs `§30.13` | User list/detail vs staff lifecycle | **RESOLVED:** Users reassigned to `ADM-008/009` (`GET /users`, `GET /users/{user}`), staff suspend/reactivate retain `ADM-005/006`; `NOT-004` duplicate `GET /me/notifications` removed (canonical `NOT-001` only). |
+| 4 | Duplicate `NOT-004` `GET /me/notifications` same as `NOT-001` | `§30.21` vs `§30.11`/`api-resources.md §15` | Notification listing | **RESOLVED:** Removed `NOT-004` from `§30.21`; `NOT-001` canonical operational variant with `OPERATIONAL` authz; deferred `NOT-004 GET /notifications/operations` remains deferred potential only. |
+| 5 | `INV-003` idempotency `where retry-sensitive` weakens delta-based adjust (retry could double `quantity_delta`) vs `§30.18`/`ADR/STAFF-005` `Idempotency-Key Required` | `§30.5.1` vs `§30.18` | Duplicate inventory delta | **RESOLVED:** `§30.5.1` now **Required** — same key replays `200` no second delta, same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION` unconditional. |
+| 6 | State machine `(READY_FOR_PICKUP\|SHIPPED)→DELIVERED` implies `READY_FOR_PICKUP→DELIVERED` | `api-resources.md:855` vs `§24.13`/`§30.7` | Pickup branch | **RESOLVED:** `api-resources.md §10.3` now two branches `READY_FOR_PICKUP→COMPLETED` vs `SHIPPED→DELIVERED→COMPLETED`. |
+| 7 | Role vs staff_state `PENDING_STAFF→STAFF` lists role transition for approval vs contract `role:STAFF` + `staff_state:ACTIVE` per `§30.4`/`§30.13` | `decisions.md:1422` / `api-contract.md:4498` vs `§30.13` | Staff approval | **RESOLVED:** Approval is `staff_state: PENDING→ACTIVE` / `SUSPENDED→ACTIVE`; `role: CUSTOMER→STAFF` reserved for explicit role transitions; `PENDING_STAFF→STAFF` removed as role transition. |
+| 8 | Delivery-fee shape `delivery_fee:15000` vs `delivery_fee:{amount,currency}` | `Phase-1.29.md:677` vs `§30.8.1` | Checkout fee | **RESOLVED:** Phase example corrected to `{"delivery_fee":{"amount":15000,"currency":"TZS"}}`; `§30.8.1` authoritative; `{"total":…}` also corrected. |
+| 9 | Error vocabulary `401 UNAUTHENTICATED` / `404 NOT_FOUND` vs `AUTHENTICATION_REQUIRED`/`RESOURCE_NOT_FOUND` (Phase 1.16) | `Phase-1.29.md:1145` vs `§15`/`§30.19` | Machine-readable errors | **RESOLVED:** Phase corrected to `AUTHENTICATION_REQUIRED`, `RESOURCE_NOT_FOUND`, `INVALID_VALUE / BUSINESS_RULE_VIOLATION`, `INTERNAL_SERVER_ERROR`. |
+| 10 | Inventory `order exists` validation via body for `INV-003` | `§30.5.1` (pre-fix) vs `inventory` domain | Stock receipt | **RESOLVED:** Validation now `inventory exists`, not `order exists`. |
+
+All other domains verified consistent; remaining `DEFERRED` items are explicitly deferred (Group H payment, Group R email/push, `NOT-003`/`NOT-004` optional notification ops, `saved addresses`).
+
+### 31.27 Contract Invariants (Basis for Automated Tests)
+
+1. Public catalog browsing does not require authentication (`GET /products`, `/categories` `PUBLIC`).
+2. Checkout requires an authenticated `CUSTOMER` (`POST /checkout` `401` otherwise, no guest checkout).
+3. Customers can only access their own private commerce resources (`Customer A→B` `404` masked).
+4. Staff cannot control or restrict ordinary customer accounts (`Staff→block customer` `403`).
+5. Admin has the highest approved operational authority (`ADM-001..009` `ADMIN`-only).
+6. Version 1 roles are CLOSED `CUSTOMER|STAFF|ADMIN` (`UPPER_SNAKE_CASE`).
+7. Order status transitions are controlled actions (`POST /orders/{order}/accept|process|…`, never `PATCH {status}`).
+8. Order financial totals are server-authoritative (`total = subtotal + delivery_fee.amount` integer minor units `TZS`).
+9. Customer cannot set delivery fee (`{"delivery_fee":…}` from customer rejected `422`).
+10. Pickup has zero delivery fee (`delivery_fee {amount:0}, status FINALIZED` at `CHK-001`).
+11. Delivery fee is assigned by Staff/Admin via `ORD-014` (`PENDING→FINALIZED` before `PAID`).
+12. Payment consumes the final server-authoritative amount (`PAY-001` blocked `409` while `PENDING`).
+13. Made-to-order requests do not automatically create orders (`REQ-001` never `order_id`).
+14. Enquiries do not automatically create orders (`ENQ-001` never `order_id`).
+15. Notifications do not become the source of truth (`Order` wins over `ORDER_SHIPPED` notification).
+16. Historical order values remain immutable (`product name`/`unit_price`/`quantity`/`line_total`/`delivery_address` snapshot).
+17. Cart does not reserve inventory (`CART-002` no `reserved_quantity` increment).
+18. Checkout revalidates inventory/pricing inside atomic transaction (no oversell, no `SELECT then UPDATE` without lock).
+19. Privileged state changes are auditable (`actor/action/resource/target/timestamp/request_id` server-derived).
+20. Core business transactions do not depend on successful notification delivery (`Order accept` remains `ACCEPTED` if notification fails, `§28.15`).
+
+### 31.28 Required Corrections Applied (Phase 1.30)
+
+For every inconsistency in `§31.26`, authoritative documentation was updated: `§30.3` canonical route, `CAT-013/014` added (`§30.4.1` + `§30.21`), `ADM-008/009` reassigned for users / `NOT-004` removed, `INV-003` idempotency unconditional + same-key conflict, state machine two branches, role vs `staff_state` separation, delivery-fee shape `{"amount","currency"}`, error vocabulary `AUTHENTICATION_REQUIRED` etc., inventory `inventory exists`. Repository is more consistent after this phase than before per `phases/phase-1.30.md §47`.
+
+### 31.29 Final Review Tables — Required Contract-Level Tables
+
+#### A. Endpoint Ownership Matrix (Endpoint ID → Method → Path → Actor → Purpose)
+
+| Endpoint ID | Method | Path | Actor | Purpose |
+|---|---|---|---|---|
+| `CAT-001` | `GET` | `/api/v1/products` | Anonymous, Customer, Staff, Admin | List public products (search/filter/paginate) |
+| `CAT-002` | `GET` | `/api/v1/products/{product}` | Anonymous, Customer, Staff, Admin | Product detail |
+| `CAT-003` | `GET` | `/api/v1/categories` | Anonymous, Customer, Staff, Admin | List categories |
+| `CAT-004` | `GET` | `/api/v1/categories/{category}` | Anonymous, Customer, Staff, Admin | Category detail |
+| `CAT-005` | `GET` | `/api/v1/products/{product}/variants` | Anonymous, Customer, Staff, Admin | List variants |
+| `CAT-006` | `GET` | `/api/v1/products/{product}/variants/{variant}` | Anonymous, Customer, Staff, Admin | Variant detail |
+| `CAT-007` | `POST` | `/api/v1/products` | Staff, Admin (`products.manage`) | Create product |
+| `CAT-008` | `PATCH` | `/api/v1/products/{product}` | Staff, Admin | Update product |
+| `CAT-009` | `POST` | `/api/v1/products/{product}/images` | Staff, Admin | Manage images |
+| `CAT-010` | `POST` | `/api/v1/products/{product}/variants` | Staff, Admin | Manage variants |
+| `CAT-011` | `POST` | `/api/v1/categories` | Staff, Admin | Create category |
+| `CAT-012` | `PATCH` | `/api/v1/categories/{category}` | Staff, Admin | Update category |
+| `CAT-013` | `GET` | `/api/v1/admin/products` | Staff, Admin | List products for operations |
+| `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Staff, Admin | Retrieve product operationally |
+| `AUTH-001` | `POST` | `/api/v1/auth/register` | Anonymous | Register `CUSTOMER` |
+| `AUTH-002` | `POST` | `/api/v1/auth/login` | Anonymous, Customer, Staff, Admin | Login (merges guest cart) |
+| `AUTH-003` | `POST` | `/api/v1/auth/logout` | Customer, Staff, Admin | Logout |
+| `AUTH-004` | `POST` | `/api/v1/auth/password/forgot` | Anonymous, Customer | Request password reset |
+| `AUTH-005` | `POST` | `/api/v1/auth/password/reset` | Anonymous | Reset password |
+| `AUTH-006` | `POST` | `/api/v1/email/verify/resend` | Customer | Resend verification |
+| `AUTH-007` | `POST` | `/api/v1/email/verify` | Customer | Verify email |
+| `AUTH-008` | `POST` | `/api/v1/auth/change-password` | Customer, Staff, Admin | Change own password |
+| `USER-001` | `GET` | `/api/v1/me` | Customer, Staff, Admin | Get own profile |
+| `USER-002` | `PATCH` | `/api/v1/me` | Customer, Staff, Admin | Update own profile |
+| `CART-001` | `GET` | `/api/v1/me/cart` | Customer, Guest | Get own/guest cart |
+| `CART-002` | `POST` | `/api/v1/me/cart/items` | Customer, Guest | Add cart item |
+| `CART-003` | `PATCH` | `/api/v1/me/cart/items/{item}` | Customer, Guest | Update quantity |
+| `CART-004` | `DELETE` | `/api/v1/me/cart/items/{item}` | Customer, Guest | Remove cart item |
+| `CART-005` | `POST` | `/api/v1/me/cart/merge` | Customer | Merge guest cart |
+| `CHK-001` | `POST` | `/api/v1/checkout` | Customer | Checkout → Order |
+| `ORD-001` | `GET` | `/api/v1/me/orders` | Customer | List own orders |
+| `ORD-002` | `GET` | `/api/v1/me/orders/{order}` | Customer | Get own order detail |
+| `ORD-003` | `GET` | `/api/v1/me/orders/{order}/tracking` | Customer | Customer tracking |
+| `ORD-004` | `POST` | `/api/v1/me/orders/{order}/cancel` | Customer | Cancel own eligible order |
+| `ORD-005` | `GET` | `/api/v1/orders` | Staff, Admin | List operational orders |
+| `ORD-006` | `GET` | `/api/v1/orders/{order}` | Staff, Admin | Get operational order detail |
+| `ORD-007` | `POST` | `/api/v1/orders/{order}/accept` | Staff, Admin | Accept `PAID→ACCEPTED` |
+| `ORD-008` | `POST` | `/api/v1/orders/{order}/process` | Staff, Admin | Process `ACCEPTED→PROCESSING` |
+| `ORD-009` | `POST` | `/api/v1/orders/{order}/ready-for-pickup` | Staff, Admin | Ready for pickup |
+| `ORD-010` | `POST` | `/api/v1/orders/{order}/ship` | Staff, Admin | Ship `PROCESSING→SHIPPED` |
+| `ORD-011` | `POST` | `/api/v1/orders/{order}/deliver` | Staff, Admin | Deliver `SHIPPED→DELIVERED` |
+| `ORD-012` | `GET` | `/api/v1/orders/{order}/tracking` | Staff, Admin | Operational tracking |
+| `ORD-013` | `POST` | `/api/v1/orders/{order}/complete` | Staff, Admin | Complete |
+| `ORD-014` | `POST` | `/api/v1/orders/{order}/delivery-fee` | Staff, Admin | Finalize delivery fee |
+| `REQ-001` | `POST` | `/api/v1/requests` | Anonymous, Customer | Submit request |
+| `REQ-002` | `GET` | `/api/v1/me/requests` | Customer | List own requests |
+| `REQ-003` | `GET` | `/api/v1/me/requests/{request}` | Customer | Get own request |
+| `REQ-004` | `GET` | `/api/v1/requests` | Staff, Admin | List requests |
+| `REQ-005` | `GET` | `/api/v1/requests/{request}` | Staff, Admin | Get request |
+| `REQ-006` | `PATCH` | `/api/v1/requests/{request}` | Staff, Admin | Update request state |
+| `REQ-007` | `POST` | `/api/v1/requests/{request}/attachments` | Anonymous*, Customer, Staff, Admin | Upload request attachment |
+| `ENQ-001` | `POST` | `/api/v1/enquiries` | Anonymous, Customer | Submit enquiry |
+| `ENQ-002` | `GET` | `/api/v1/me/enquiries` | Customer | List own enquiries |
+| `ENQ-003` | `GET` | `/api/v1/me/enquiries/{enquiry}` | Customer | Get own enquiry |
+| `ENQ-004` | `GET` | `/api/v1/enquiries` | Staff, Admin | List enquiries |
+| `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Get enquiry |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Staff, Admin | Close/reopen enquiry |
+| `ENQ-007` | `POST` | `/api/v1/enquiries/{enquiry}/attachments` | Anonymous*, Customer, Staff, Admin | Upload enquiry attachment |
+| `NOT-001` | `GET` | `/api/v1/me/notifications` | Customer, Staff, Admin | List own notifications |
+| `NOT-002` | `PATCH` | `/api/v1/me/notifications/{notification}` | Customer, Staff, Admin | Mark read/unread |
+| `INV-001` | `GET` | `/api/v1/inventory` | Staff, Admin | List inventory |
+| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Get inventory detail |
+| `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Staff, Admin | Adjust inventory |
+| `ADM-001` | `GET` | `/api/v1/admin/staff` | Admin | List Staff |
+| `ADM-002` | `GET` | `/api/v1/admin/staff/{user}` | Admin | Get Staff detail |
+| `ADM-003` | `POST` | `/api/v1/admin/staff` | Admin | Invite/create Staff |
+| `ADM-004` | `POST` | `/api/v1/admin/staff/{user}/approve` | Admin | Approve Staff |
+| `ADM-005` | `POST` | `/api/v1/admin/staff/{user}/suspend` | Admin | Suspend Staff |
+| `ADM-006` | `POST` | `/api/v1/admin/staff/{user}/reactivate` | Admin | Reactivate Staff |
+| `ADM-007` | `GET` | `/api/v1/admin/audit-logs` | Admin | List audit logs |
+| `ADM-008` | `GET` | `/api/v1/users` | Admin | List users |
+| `ADM-009` | `GET` | `/api/v1/users/{user}` | Admin | Get user detail |
+| `PAY-001` | `POST` | `/api/v1/payments` | Customer | Initiate payment (Group H) |
+| `PAY-002` | `GET` | `/api/v1/payments/{payment}` | Customer, Staff, Admin | Get payment status (Group H) |
+| `WEBHOOK-001` | `POST` | `/api/v1/webhooks/payment/{provider}` | System | Payment webhook (Group H) |
+
+*`ADM-008/009` replace legacy `ADM-005/006` users mapping; `NOT-004` removed as duplicate — canonical is `NOT-001` with `OPERATIONAL` variant.*
+
+#### B. Resource Permission Matrix (Resource → Customer / Staff / Admin)
+
+| Resource | Customer | Staff | Admin |
+|---|---|---|---|
+| **Category** (`CAT-*`) | `Public read` (`CAT-003/004`) | `Operational read` (`CAT-013/014` where approved) + `Manage` (`CAT-011/012`) | `Manage` |
+| **Product** (`CAT-001/002` public, `CAT-007..014` operational) | `Public read` (`CAT-001/002` `availability` only) | `Operational read` (`CAT-013/014`) + `Manage` (`CAT-007..010`) where approved | `Manage` |
+| **Inventory** (`INV-*`) | No (sees `availability`/`stock_indicator` only) | `Operational` (`INV-001/002` view, `INV-003` adjust) | `Operational` |
+| **Cart** (`CART-*`) | `Own` (guest merge) | No ordinary | No ordinary |
+| **Checkout** (`CHK-001`) | `Own` transaction (`POST /checkout` only) | No (operational follows on `Order`) | No (fee via `ORD-014`) |
+| **Order** (`ORD-*`) | `Own` (`ORD-001..004`) | `Operational` (`ORD-005/006`, `ORD-007..011,013,014` with valid state) | `Operational` |
+| **Request** (`REQ-*`) | `Create` + `Own` (`REQ-002/003`) | `Operational` (`REQ-004/005` view, `REQ-006` manage) | `Operational` |
+| **Enquiry** (`ENQ-*`) | `Create` + `Own` (`ENQ-002/003`) | `Operational` (`ENQ-004/005` view, `ENQ-006` manage) | `Operational` |
+| **Notification** (`NOT-*`) | `Own` (`NOT-001/002`) | `Operational own` (`NOT-001` filtered) | `Admin limited own` |
+| **User/Profile** (`USER-*`, `ADM-008/009`) | `Own` (`GET/PATCH /me`) | `Own` (`GET/PATCH /me`) | `Own` + `ADM-008/009` `users.manage_authorized` |
+| **Staff** (`ADM-001..006`) | No | No | `Manage` (`staff.manage`/`staff.approve` audited) |
+| **Audit** (`ADM-007`) | No | Normally no | `Read-only` (`audit.view` if exposed) |
+
+#### C. State Transition Matrix (State → Action → Next → Actor → Conditions)
+
+| Current | Action `POST` | Next | Actor | Conditions |
+|---|---|---|---|---|
+| `PENDING_PAYMENT` | (Group H webhook) | `PAID` | System | `delivery_fee_status=FINALIZED`, payment verified |
+| `PENDING_PAYMENT` | `POST /me/orders/{order}/cancel` (`ORD-004`) | `CANCELLED` | Customer (own) | `owns + 20-min + PENDING_PAYMENT` cancellable + backend time |
+| `PAID` + `FINALIZED` | `POST /orders/{order}/accept` (`ORD-007`) | `ACCEPTED` | Staff/Admin `orders.accept` | `PAID` |
+| `ACCEPTED` | `POST /orders/{order}/process` (`ORD-008`) | `PROCESSING` | Staff/Admin `orders.process` | `ACCEPTED` |
+| `PROCESSING` | `POST /orders/{order}/ready-for-pickup` (`ORD-009`) | `READY_FOR_PICKUP` | Staff/Admin `orders.ready_for_pickup` | `PICKUP` only |
+| `PROCESSING` | `POST /orders/{order}/ship` (`ORD-010`) | `SHIPPED` | Staff/Admin `orders.ship` | `DELIVERY` only |
+| `SHIPPED` | `POST /orders/{order}/deliver` (`ORD-011`) | `DELIVERED` | Staff/Admin `orders.deliver` | `DELIVERY` + `SHIPPED` |
+| `READY_FOR_PICKUP` | `POST /orders/{order}/complete` (`ORD-013`) | `COMPLETED` | Staff/Admin `orders.complete` | `PICKUP` |
+| `DELIVERED` | `POST /orders/{order}/complete` (`ORD-013`) | `COMPLETED` | Staff/Admin `orders.complete` | `DELIVERY` |
+| `PENDING_PAYMENT` | `POST /orders/{order}/delivery-fee` (`ORD-014`) | `PENDING→FINALIZED` (fee status) | Staff/Admin `orders.set_delivery_fee` | `PENDING_PAYMENT` + `DELIVERY` + `PENDING` |
+
+`§30.18` `Idempotency-Key` **Required** on all state/fee transitions; `409` on invalid predecessor or `DUPLICATE_OPERATION` same-key different body.
+
+#### D. Financial Authority Matrix (Value → Customer / Staff / Admin / Server / Payment System)
+
+| Value | Customer | Staff | Admin | Server | Payment System (Group H) |
+|---|---|---|---|---|---|
+| `subtotal` | No (`422`) | No (reads operational) | No | **Yes** — calculates from authoritative `unit_price` at `CHK-001` | No (consumes) |
+| `delivery_fee` | No (`422` if sent) | **Yes** (`ORD-014` `{"delivery_fee":{"amount","currency"}}`) | **Yes** (`ORD-014`) | **Yes** — stores authoritative, calculates `total` | No (consumes) |
+| `total` | No (`422` if `{"total":…}` sent) | No (reads, never `PATCH {total}`) | No | **Yes** — `subtotal + delivery_fee.amount` integer minor units | No (consumes final `total`) |
+| `payment state` | No (`{"payment_status":"PAID"}` rejected) | No | No | No (Group H webhook sets `PAID`) | **Yes** — verifies via provider, sets `PAID` |
+
+All money `TZS` integer minor units; no float.
+
+#### E. Notification Trigger Matrix (Business Event → Recipient/Type)
+
+| Business event | Customer notification | Staff notification | Admin notification |
+|---|---|---|---|
+| New order (`CHK-001` → `PENDING_PAYMENT`) | `ORDER_RECEIVED` Yes | `NEW_ORDER` Yes | According to operational scope |
+| Order accepted (`ORD-007`) | `ORDER_ACCEPTED` Yes | Optional/approved | Optional/approved |
+| Order processing (`ORD-008`) | `ORDER_PROCESSING` Yes | Optional/approved | Optional/approved |
+| Ready for pickup (`ORD-009`) | `ORDER_READY_FOR_PICKUP` Yes | Optional | Optional |
+| Shipped (`ORD-010`) | `ORDER_SHIPPED` Yes | Optional | Optional |
+| Delivered (`ORD-011`) | `ORDER_DELIVERED` Yes | Optional | Optional |
+| Completed (`ORD-013`) | `ORDER_COMPLETED` Yes | Optional | Optional |
+| Cancelled (`ORD-004`) | `ORDER_CANCELLED` Yes | Operationally relevant | Operationally relevant |
+| New made-to-order request (`REQ-001`) | No/confirmation only | `NEW_MADE_TO_ORDER_REQUEST` Yes | Appropriate |
+| New enquiry (`ENQ-001`) | No/confirmation only | `NEW_ENQUIRY` Yes | Appropriate |
+
+Per `§28.4`; `PAYMENT_*` Group H deferred.
+
+### 31.30 Contract Test Scenarios (Future Automated Verification)
+
+**Authentication:** anonymous `GET /products` succeeds `200`; anonymous `POST /checkout` fails `401 AUTHENTICATION_REQUIRED`; unauthenticated `GET /orders` (`ORD-005`) fails `401` (`§31.3`).
+
+**Authorization:** `Customer GET /orders` (`ORD-005`) → `403 FORBIDDEN`; `Staff POST /admin/staff/{user}/approve` (`ADM-004`) → `403`; `Staff PATCH /me {role:ADMIN}` → `422 field: role`; `Customer A GET /me/orders/{order-B}` → `404 RESOURCE_NOT_FOUND` masked (`§31.5`).
+
+**Order:** valid `Staff POST /orders/{order}/ship` (`PROCESSING→SHIPPED` `DELIVERY`) succeeds `200`; invalid `PROCESSING→DELIVERED` without `SHIPPED` fails `422 BUSINESS_RULE_VIOLATION` (wrong branch, correct request), stale `SHIPPED` already applied fails `409 ORDER_STATE_CONFLICT` (refresh then retry); direct `PATCH /orders/{order} {status:DELIVERED}` fails `422 INVALID_VALUE` (never `PATCH {status}`) — `409` only for stale version conflict (`§31.11`).
+
+**Cancellation:** `Customer POST /me/orders/{order}/cancel` within 20 min `PENDING_PAYMENT` succeeds `200`; after `ACCEPTED` or after 20 min fails `422 ORDER_NOT_CANCELLABLE` (outside window/ineligible state, correct request), race `cancel` vs `Staff accept` fails `409 ORDER_STATE_CONFLICT` (refresh) (`§31.12`).
+
+**Delivery fee:** `Customer POST /checkout {delivery_fee:{amount:100}}` fails `422` (server-authoritative fee, `§31.14`/`§23.3` — `CHK-001` never accepts `delivery_fee`); `Staff POST /orders/{order}/delivery-fee {delivery_fee:{amount:2500000,currency:TZS}}` on `DELIVERY PENDING_PAYMENT PENDING` succeeds `200` `FINALIZED` with server-calculated `total = subtotal + delivery_fee.amount`; `Admin` same succeeds; `pickup` order `POST …/delivery-fee` fails `422`; `Client POST /checkout {total:{amount:99999}}` and `POST /orders/{order}/delivery-fee {total:{amount:99999}}` fail `422 field: total`; `PAY-001` while `PENDING` fails `409 DELIVERY_FEE_PENDING`, after `FINALIZED` succeeds and amount equals authoritative `total` (`§31.14`).
+
+**Inventory:** `Customer POST /inventory/{inventory}/adjust` → `403`; concurrent `Staff A adjust + Staff B adjust` with different `Idempotency-Key` and independent valid `quantity_delta` → both `200` (serialized `current + delta` inside row-locked `INV-003` transaction, e.g., `100→110→120`, no spurious `409`); same `Idempotency-Key` same `quantity_delta`/`reason` replays `200` (no second delta), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION`; `409` only for idempotency conflict or explicit version precondition (e.g., `If-Match`/`expected_version` stale, not for independent deltas) (`§31.22`/`§30.5.2` `INV-003`).
+
+**Requests/Enquiries:** anonymous `POST /requests {product_id: MADE_TO_ORDER}` per `§26.4` succeeds `201`; `Staff GET /requests` succeeds; `Customer PATCH /requests/{request} {request_status:CLOSED}` → `403`; customer `subject/message` immutable after `REQ-001` (`§31.19`); `POST /requests/{request}/attachments` without scoped parent token (`Anonymous*` valid token required per `§26.8`/`§30.19`) fails `401/404`, and `GET` private attachment URL (from `GET /requests/{request} → attachments[].url` private URL, not `GET /requests/{request}/attachments` which is not in `§19.1`/`§30.21` inventory) without parent authorization fails `404`.
+
+**Notifications:** `Customer A GET /me/notifications` sees own only (canonical `NOT-001` list, not `GET /me/notifications/{notification}` which is deferred unless needed per `§28`/`§30.21` — `GET /me/notifications/{not_B}` is not in inventory); `Customer A PATCH /me/notifications/{not_B} {read:true}` → `404` masked (or `GET /me/notifications` does not include `not_B`); `Staff` cannot `POST /notifications` (`422`/`403`); notification `read_at` update via `PATCH /me/notifications/{notification} {read:true}` (`NOT-002`) only owner; `Order accept→notification fail` → `Order` still `ACCEPTED` (`§31.20`).
+
+**Staff lifecycle:** `Staff POST /admin/staff/{user}/approve` → `403`; `Staff approve self` → `403`; `Admin POST /admin/staff/{user}/approve` succeeds `200` audited `staff_state PENDING→ACTIVE`; repeat same key replays `200` (`§31.22`).
+
+### 31.31 Cross-References
+
+- Conventions: `api-conventions.md §30` (staff/admin) + `§31` review (global conventions, idempotency `INV-003` unconditional, `NOT-001` canonical).
+- Resources: `api-resources.md §10`/`§15` (matrices above mirror `§31.29B`).
+- Domain: `docs/domain/business-rules.md §20` invariants (20 invariants) and `docs/api/api-contract.md §31.27` canonical invariants table.
+- Decisions: `decisions.md ADR/STAFF-001..008` + `§31.26` reconciliation table (`10` conflicts RESOLVED, `0` CONFLICT/AMBIGUOUS remaining).
+- Versioning: `§1` `v1` `/api/v1` stable; `§31.25` obsolete `20,000` flat fee superseded.
+
+### 31.32 Stop Condition
+
+**STOP after §31 cross-domain review is complete and consolidated documentation updated.** Do not begin `canonical API example generation` (`Phase 1.31`), `OpenAPI authoring`, `Laravel implementation`, migrations, models, controllers, policies, middleware, frontend clients, or payment integration. Next phase uses this stabilized contract as input.
+
+**Next phase: 1.31 — Define Canonical API Examples.**
+
 
