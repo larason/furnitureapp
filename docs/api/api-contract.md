@@ -5298,4 +5298,13 @@ Per `§28.4`; `PAYMENT_*` Group H deferred.
 
 **Next phase: 1.31 — Define Canonical API Examples.**
 
+---
+
+## 32. Canonical API Examples (Phase 1.31)
+
+> **Location:** `docs/api/api-examples.md` is the single consolidated Phase 1.31 artifact per `phases/phase-1.31.md:66` (`docs/api/api-contract.md` preferred, but examples exceed scale — 45 canonical examples across catalog, auth, cart, checkout, order, tracking, staff/admin, delivery fee, inventory, requests, enquiries, notifications, admin, errors, lifecycles). Do not create `docs/api/examples/*.md` per endpoint.
+> **Authority:** Examples follow `§2` data envelope, `§15` errors `{"errors":…}`, `TZS` minor units `{amount:int,currency:"TZS"}`, `ISO8601 Z` dates, `CLOSED` enums, `Idempotency-Key` where `IDEMPOTENCY_REQUIRED`, and `§17`/`§18` authz. No `role: ADMIN` in request, no `PATCH {status}`, no client `total`/`delivery_fee` where server-authoritative, no secrets. See `docs/api/api-examples.md:1` for full request/response payloads and `§31.30` test scenarios for future verification.
+
+This section references the canonical examples: `docs/api/api-examples.md:3` (public catalog `CAT-001/002`), `docs/api/api-examples.md:4` (auth `AUTH-001/002` + `401`), `docs/api/api-examples.md:5` (user/profile `USER-001/002`), `docs/api/api-examples.md:6` (cart `CART-001..004`), `docs/api/api-examples.md:7` (checkout `PICKUP`/`DELIVERY` `CHK-001` + `Idempotency-Key`), `docs/api/api-examples.md:8` (order list/detail/cancel/tracking `ORD-001..004` + `ORD-003` tracking), `docs/api/api-examples.md:9` (staff `ORD-005` list + `ORD-006` operational detail concrete + `ORD-007..011,013` state actions + `ORD-014` delivery fee server totals + `INV-003`), `docs/api/api-examples.md:10` (made-to-order `REQ-001` anonymous vs authenticated + `REQ-006/007`), `docs/api/api-examples.md:11` (enquiry `ENQ-001/006`), `docs/api/api-examples.md:12` (notification `NOT-001` customer `§12.1` + `NOT-001` operational staff concrete `§12.2` + `NOT-002` mark-read `PATCH {read:true}` concrete `§12.3` with `404` masking + downstream `§12.4`), `docs/api/api-examples.md:13` (admin `ADM-004` approve), `docs/api/api-examples.md:14` (authz failures), `docs/api/api-examples.md:16` (error matrix `401`/`403`/`404`/`409`/`422`/`429`/`500`), `docs/api/api-examples.md:19` (lifecycles `PICKUP`/`DELIVERY` with fee pending → `FINALIZED` before `PAY-001`). All `45` required examples (`phases/phase-1.31.md:70`) are present with concrete request/response payloads (including `ORD-006`, operational `NOT-001`, and `NOT-002` mark-read per Phase 1.31 `§37`/`§39`) and cross-referenced by stable `Endpoint ID` (`CAT-001`, `AUTH-001`, `CHK-001`, `ORD-001`, `NOT-002`, etc.) for `docs/api/openapi.yaml` Phase 1.32.
+
 
