@@ -782,15 +782,13 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440010
 ```json
 {
   "data": {
-    "inventory": {
-      "id": "inv_01h8y0a1b2c3d4e5f6g7h8j9",
-      "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
-      "variant_id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
-      "quantity": 110,
-      "reserved_quantity": 2,
-      "available_quantity": 108,
-      "updated_at": "2026-01-15T09:30:00Z"
-    }
+    "id": "inv_01h8y0a1b2c3d4e5f6g7h8j9",
+    "product_id": "prod_01h8x9j2m4k5n6p7q8r9s0t1",
+    "variant_id": "var_01h8x9k1m2n3p4q5r6s7t8u9",
+    "quantity": 110,
+    "reserved_quantity": 2,
+    "available_quantity": 108,
+    "updated_at": "2026-01-15T09:30:00Z"
   }
 }
 ```

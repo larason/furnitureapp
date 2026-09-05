@@ -41,6 +41,10 @@ tags:
   description: Admin staff lifecycle
 - name: Audit
   description: Audit logs
+- name: Payment
+  description: Group H placeholder - payment initiation and status (generic, provider-specific deferred)
+- name: Webhooks
+  description: Group H placeholder - payment provider callbacks (system auth, Group H)
 components:
   securitySchemes:
     bearerAuth:
@@ -54,6 +58,13 @@ components:
       name: X-Upload-Token
       description: Scoped single-use upload token issued server-side for anonymous* attachment upload (REQ-007/ENQ-007). Must
         be presented with parent ownership check; not a bearer substitute.
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: Provider webhook signature header for SYSTEM service authentication. Provider-specific HMAC/signature
+        verification (e.g., Stripe-Signature, provider HMAC) is verified server-side per Group H. Requests without a valid
+        signature MUST be rejected with 401. This scheme replaces unauthenticated access.
   parameters:
     Page:
       name: page
@@ -157,10 +168,10 @@ components:
         type: string
         format: uuid
         example: 550e8400-e29b-41d4-a716-446655440000
-      description: Opaque bearer credential (cryptographically secure, high-entropy UUIDv4 CSPRNG ≥122 bits, not
-        UUIDv1/sequential/counter, not guessable, unpredictable) scoped strictly to its bound guest cart
-        (authorizes that cart only); never authorizes account operations and never authorizes merge by itself
-        (merge requires authenticated principal + valid guest token + server-side check); retired after merge
+      description: Opaque bearer credential (cryptographically secure, high-entropy UUIDv4 CSPRNG ≥122 bits, not UUIDv1/sequential/counter,
+        not guessable, unpredictable) scoped strictly to its bound guest cart (authorizes that cart only); never authorizes
+        account operations and never authorizes merge by itself (merge requires authenticated principal + valid guest token
+        + server-side check); retired after merge
     UploadToken:
       name: X-Upload-Token
       in: header
@@ -291,6 +302,11 @@ components:
       properties:
         pagination:
           $ref: '#/components/schemas/PaginationMeta'
+        unread_count:
+          type: integer
+          minimum: 0
+          example: 1
+          description: Optional unread count for notification collections (NOT-001), omitted otherwise
     ErrorItem:
       type: object
       required:
@@ -300,6 +316,58 @@ components:
         code:
           type: string
           example: INVALID_VALUE
+          enum:
+          - VALIDATION_ERROR
+          - MISSING_REQUIRED_FIELD
+          - INVALID_VALUE
+          - INVALID_FORMAT
+          - INVALID_TYPE
+          - INVALID_JSON
+          - METHOD_NOT_ALLOWED
+          - UNSUPPORTED_MEDIA_TYPE
+          - REQUEST_TOO_LARGE
+          - AUTHENTICATION_REQUIRED
+          - INVALID_AUTHENTICATION
+          - INVALID_CREDENTIALS
+          - SESSION_EXPIRED
+          - FORBIDDEN
+          - RESOURCE_NOT_FOUND
+          - PRODUCT_NOT_FOUND
+          - PRODUCT_NOT_PURCHASABLE
+          - PRODUCT_UNAVAILABLE
+          - INVALID_PRODUCT_VARIANT
+          - CART_NOT_FOUND
+          - CART_ITEM_NOT_FOUND
+          - INVALID_CART_ITEM
+          - CART_ITEM_UNAVAILABLE
+          - CHECKOUT_REQUIRES_AUTHENTICATION
+          - CHECKOUT_NOT_ALLOWED
+          - CART_INVALID
+          - INSUFFICIENT_STOCK
+          - INVALID_FULFILLMENT
+          - INVALID_DELIVERY_INFORMATION
+          - BUSINESS_RULE_VIOLATION
+          - ORDER_NOT_FOUND
+          - ORDER_NOT_CANCELLABLE
+          - INVALID_ORDER_TRANSITION
+          - ORDER_STATE_CONFLICT
+          - REQUEST_NOT_FOUND
+          - INVALID_REQUEST
+          - ENQUIRY_NOT_FOUND
+          - INVALID_ENQUIRY
+          - INVALID_ATTACHMENT
+          - ATTACHMENT_TOO_LARGE
+          - UNSUPPORTED_ATTACHMENT_TYPE
+          - CONFLICT
+          - RESOURCE_VERSION_CONFLICT
+          - DUPLICATE_OPERATION
+          - RATE_LIMITED
+          - EXTERNAL_SERVICE_ERROR
+          - INTERNAL_SERVER_ERROR
+          - NOT_AUTHENTICATED
+          - RESOURCE_NOT_OWNED
+          - DELIVERY_FEE_PENDING
+          description: Stable machine code CLOSED per §15.15, includes deprecated aliases for compatibility
         message:
           type: string
         field:
@@ -404,6 +472,26 @@ components:
           type:
           - string
           - 'null'
+        image:
+          type:
+          - object
+          - 'null'
+          properties:
+            url:
+              type: string
+              format: uri
+              readOnly: true
+          readOnly: true
+          description: Category banner image, nullable
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: '2026-01-10T08:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     ProductSummary:
       type: object
       required:
@@ -433,6 +521,23 @@ components:
           $ref: '#/components/schemas/Availability'
         stock_indicator:
           $ref: '#/components/schemas/StockIndicator'
+        primary_image:
+          type:
+          - object
+          - 'null'
+          properties:
+            id:
+              type: string
+              readOnly: true
+            url:
+              type: string
+              format: uri
+              readOnly: true
+            alt_text:
+              type: string
+              readOnly: true
+          readOnly: true
+          description: Primary thumbnail image, nullable if no image
     Product:
       type: object
       required:
@@ -444,6 +549,9 @@ components:
       - category
       - availability
       - stock_indicator
+      - description
+      - created_at
+      - updated_at
       properties:
         id:
           type: string
@@ -472,9 +580,58 @@ components:
           type: string
           format: date-time
           readOnly: true
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImage'
+          readOnly: true
+          description: Full gallery array, deterministically sorted by sort_order ASC, id ASC
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/VariantSummary'
+          readOnly: true
+          description: Array of active variants belonging to this product
+    OperationalProduct:
+      allOf:
+      - $ref: '#/components/schemas/Product'
+      - type: object
+        required:
+        - is_active
+        - is_published
+        properties:
+          is_active:
+            type: boolean
+            description: Operational flag — whether product is active (visible in catalog only when true and is_published true). PRIVATE, never via public GET /products.
+          is_published:
+            type: boolean
+            description: Publication flag — whether product is published. PRIVATE, never via public GET /products.
+          inventory:
+            type:
+            - object
+            - 'null'
+            description: Operational inventory where authorized ( quantity / reserved_quantity / available_quantity ). Null or omitted when not authorized. PRIVATE, never via public catalog.
+            properties:
+              quantity:
+                type: integer
+                minimum: 0
+                readOnly: true
+                description: Physical quantity on hand
+              reserved_quantity:
+                type: integer
+                minimum: 0
+                readOnly: true
+                description: Quantity reserved for pending orders
+              available_quantity:
+                type: integer
+                minimum: 0
+                readOnly: true
+                description: Computed available = quantity - reserved_quantity
+            additionalProperties: false
     Variant:
       type: object
       required:
+      - product_id
       - id
       - sku
       - name
@@ -482,6 +639,10 @@ components:
       - availability
       - stock_indicator
       properties:
+        product_id:
+          type: string
+          readOnly: true
+          description: Parent product id, strict ownership
         id:
           type: string
           readOnly: true
@@ -495,6 +656,16 @@ components:
           $ref: '#/components/schemas/Availability'
         stock_indicator:
           $ref: '#/components/schemas/StockIndicator'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: '2026-01-10T08:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: '2026-01-10T08:00:00Z'
     User:
       type: object
       required:
@@ -513,6 +684,7 @@ components:
         email:
           type: string
           format: email
+          readOnly: true
         phone:
           type:
           - string
@@ -591,30 +763,75 @@ components:
       - quantity
       - unit_price
       - line_total
+      - availability
+      - stock_indicator
+      - is_purchasable
+      - created_at
+      - updated_at
       properties:
         id:
           type: string
           readOnly: true
+          example: item_01h8y0b2c3d4e5f6g7h8j9k0
         product_id:
           type: string
+          example: prod_01h8x9j2m4k5n6p7q8r9s0t1
         variant_id:
           type:
           - string
           - 'null'
+          example: var_01h8x9k1m2n3p4q5r6s7t8u9
+          description: Nullable if product has no variants
+        product:
+          $ref: '#/components/schemas/ProductSummary'
+          readOnly: true
+          description: Embedded Product summary
+        variant:
+          anyOf:
+          - $ref: '#/components/schemas/VariantSummary'
+          - type: 'null'
+          readOnly: true
+          description: Embedded Variant summary, null if no variant
         quantity:
           type: integer
           minimum: 1
           maximum: 100
+          example: 1
         unit_price:
           $ref: '#/components/schemas/Money'
+          readOnly: true
+          description: Current catalog unit price
         line_total:
           $ref: '#/components/schemas/Money'
+          readOnly: true
+          description: unit_price * quantity
+        availability:
+          $ref: '#/components/schemas/Availability'
+          readOnly: true
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
+          readOnly: true
+        is_purchasable:
+          type: boolean
+          readOnly: true
+          example: true
+          description: False if stale/unavailable
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: '2026-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     Cart:
       type: object
       required:
       - id
       - items
       - subtotal
+      - items_count
       properties:
         id:
           type: string
@@ -630,6 +847,12 @@ components:
           type: string
           format: date-time
           readOnly: true
+        items_count:
+          type: integer
+          minimum: 0
+          readOnly: true
+          example: 1
+          description: Number of distinct lines, matches items.length
     AddCartItemRequest:
       type: object
       required:
@@ -810,11 +1033,52 @@ components:
           items:
             type: array
             items:
-              type: object
+              $ref: '#/components/schemas/OrderItem'
+            readOnly: true
+            description: Historical snapshots, immutable
           delivery_address:
             anyOf:
             - $ref: '#/components/schemas/DeliveryAddressSnapshot'
             - type: 'null'
+          billing_address:
+            anyOf:
+            - $ref: '#/components/schemas/DeliveryAddressSnapshot'
+            - type: 'null'
+            readOnly: true
+            description: Billing address snapshot, null for PICKUP (V1)
+          delivery:
+            anyOf:
+            - type: object
+              properties:
+                status:
+                  type: string
+                tracking_summary:
+                  type: string
+              readOnly: true
+            - type: 'null'
+            readOnly: true
+            description: Delivery summary, null for PICKUP
+          payment:
+            anyOf:
+            - type: object
+              required:
+              - payment_status
+              - amount
+              properties:
+                payment_status:
+                  type: string
+                  enum:
+                  - PENDING
+                  - PAID
+                  - FAILED
+                  readOnly: true
+                amount:
+                  $ref: '#/components/schemas/Money'
+                  readOnly: true
+              readOnly: true
+            - type: 'null'
+            readOnly: true
+            description: Payment summary, null while PENDING_PAYMENT
     OrderOperationalDetail:
       type: object
       allOf:
@@ -822,18 +1086,33 @@ components:
       - type: object
         properties:
           customer:
-            type: object
+            type:
+            - object
+            - 'null'
             properties:
               id:
                 type: string
+                readOnly: true
               name:
                 type: string
+                readOnly: true
               email:
                 type: string
+                format: email
+                readOnly: true
+              phone:
+                type:
+                - string
+                - 'null'
+                readOnly: true
+            readOnly: true
+            description: Purpose-limited customer data, null if not applicable
           status_history:
             type: array
             items:
-              type: object
+              $ref: '#/components/schemas/StatusHistoryItem'
+            readOnly: true
+            description: Append-only history, chronological occurred_at ASC, id ASC
     StatusHistoryItem:
       type: object
       required:
@@ -867,6 +1146,11 @@ components:
           type:
           - string
           - 'null'
+        label:
+          type: string
+          readOnly: true
+          example: Order received
+          description: Customer-visible label for status
     TrackingTimeline:
       type: object
       required:
@@ -887,6 +1171,20 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StatusHistoryItem'
+        delivery_summary:
+          type:
+          - object
+          - 'null'
+          readOnly: true
+          description: 'Delivery summary: PICKUP {pickup_status,location,instructions} or DELIVERY {delivery_address summary,
+            delivery status}'
+          properties:
+            pickup_status:
+              type: string
+            location:
+              type: string
+            delivery_status:
+              type: string
     SetDeliveryFeeRequest:
       type: object
       required:
@@ -966,7 +1264,6 @@ components:
       type: object
       required:
       - id
-      - quantity
       - name
       - phone
       - request_status
@@ -979,11 +1276,19 @@ components:
           - string
           - 'null'
         quantity:
-          type: integer
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 100
+          description: Optional, 1..100, null when unspecified
         name:
           type: string
         phone:
-          type: string
+          type:
+          - string
+          - 'null'
+          description: Nullable — null when email supplied (at least one of phone/email required). Consistent with CreateRequestRequest allowing phone null.
         email:
           type:
           - string
@@ -994,34 +1299,155 @@ components:
           type: string
           format: date-time
           readOnly: true
+        product:
+          anyOf:
+          - type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              slug:
+                type: string
+            readOnly: true
+          - type: 'null'
+          readOnly: true
+          description: Summary of linked MADE_TO_ORDER product, null for custom
+        dimensions:
+          type:
+          - object
+          - 'null'
+          properties:
+            length:
+              type:
+              - number
+              - 'null'
+              minimum: 0
+              exclusiveMinimum: 0
+              maximum: 10000
+            width:
+              type:
+              - number
+              - 'null'
+            height:
+              type:
+              - number
+              - 'null'
+            unit:
+              type: string
+              enum:
+              - cm
+              example: cm
+          readOnly: true
+          description: Structured dimensions, null when no dimensions
+        material:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+          description: Free text, max 500
+        color:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+          description: Free text, max 200
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 5000
+          description: Free text, max 5000
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+          readOnly: true
+          description: Private attachments via REQ-007, empty array when none
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        user_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+          description: Null for anonymous, derived from auth
     CreateRequestRequest:
       type: object
       required:
-      - quantity
       - name
-      - phone
       properties:
         product_id:
           type:
           - string
           - 'null'
         quantity:
-          type: integer
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 100
+          description: Optional 1..100
         name:
           type: string
         phone:
-          type: string
+          type:
+          - string
+          - 'null'
+          maxLength: 30
+          description: At least one of phone/email required
         email:
           type:
           - string
           - 'null'
+          format: email
+          maxLength: 255
+          description: At least one of phone/email required
+        dimensions:
+          type:
+          - object
+          - 'null'
+          properties:
+            length:
+              type:
+              - number
+              - 'null'
+            width:
+              type:
+              - number
+              - 'null'
+            height:
+              type:
+              - number
+              - 'null'
+            unit:
+              type: string
+              enum:
+              - cm
+          description: Structured dimensions
+        material:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        color:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 5000
       additionalProperties: false
     Enquiry:
       type: object
       required:
       - id
       - name
-      - email
       - subject
       - message
       - enquiry_status
@@ -1043,11 +1469,58 @@ components:
           type: string
           format: date-time
           readOnly: true
+        phone:
+          type:
+          - string
+          - 'null'
+          maxLength: 30
+        category:
+          type:
+          - string
+          - 'null'
+          enum:
+          - GENERAL
+          - PRODUCT
+          - DELIVERY
+          - OTHER
+          description: CLOSED, nullable
+        product:
+          anyOf:
+          - type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              slug:
+                type: string
+          - type: 'null'
+          readOnly: true
+        order:
+          anyOf:
+          - type: object
+            properties:
+              id:
+                type: string
+              order_reference:
+                type: string
+              status:
+                $ref: '#/components/schemas/OrderStatus'
+          - type: 'null'
+          readOnly: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     CreateEnquiryRequest:
       type: object
       required:
       - name
-      - email
       - subject
       - message
       properties:
@@ -1064,10 +1537,26 @@ components:
           type:
           - string
           - 'null'
+          enum:
+          - GENERAL
+          - PRODUCT
+          - DELIVERY
+          - OTHER
         product_id:
           type:
           - string
           - 'null'
+        phone:
+          type:
+          - string
+          - 'null'
+          maxLength: 30
+          description: At least one of phone/email required for anonymous
+        order_id:
+          type:
+          - string
+          - 'null'
+          description: Optional nullable, must be owned if supplied
       additionalProperties: false
     Attachment:
       type: object
@@ -1101,9 +1590,17 @@ components:
         type:
           type: string
           enum:
-          - ORDER_SHIPPED
+          - ORDER_RECEIVED
           - ORDER_ACCEPTED
+          - ORDER_PROCESSING
+          - ORDER_READY_FOR_PICKUP
+          - ORDER_SHIPPED
+          - ORDER_DELIVERED
+          - ORDER_COMPLETED
+          - ORDER_CANCELLED
           - NEW_ORDER
+          - NEW_MADE_TO_ORDER_REQUEST
+          - NEW_ENQUIRY
         title:
           type: string
         message:
@@ -1122,9 +1619,37 @@ components:
           properties:
             type:
               type: string
+              enum:
+              - ORDER
+              - REQUEST
+              - ENQUIRY
             id:
               type: string
         created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        recipient_user_id:
+          type: string
+          readOnly: true
+          description: Recipient user id, server-controlled
+        source:
+          type:
+          - object
+          - 'null'
+          properties:
+            type:
+              type: string
+              enum:
+              - ORDER
+              - REQUEST
+              - ENQUIRY
+              - PAYMENT
+            id:
+              type: string
+          readOnly: true
+          description: Source resource reference
+        updated_at:
           type: string
           format: date-time
           readOnly: true
@@ -1182,6 +1707,30 @@ components:
           type: string
           format: date-time
           readOnly: true
+        previous_state:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+          description: Previous state
+        resulting_state:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+          description: Resulting state
+        request_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+          description: Request correlation id
+        details:
+          type:
+          - object
+          - 'null'
+          readOnly: true
+          description: Structured details, nullable
     AuthLoginResponse:
       type: object
       required:
@@ -1376,6 +1925,123 @@ components:
           - 'null'
           format: uri
       additionalProperties: false
+    ProductImage:
+      type: object
+      required:
+      - id
+      - url
+      - alt_text
+      - sort_order
+      - is_primary
+      properties:
+        id:
+          type: string
+          readOnly: true
+          example: img_01h8x9a0b1c2d3e4f5g6h7j8
+        url:
+          type: string
+          format: uri
+          readOnly: true
+          example: https://cdn.example.com/products/oak-table.webp
+        alt_text:
+          type: string
+          readOnly: true
+          example: Solid Oak Dining Table front view
+        sort_order:
+          type: integer
+          minimum: 1
+          readOnly: true
+          example: 1
+        is_primary:
+          type: boolean
+          readOnly: true
+          example: true
+    VariantSummary:
+      type: object
+      required:
+      - id
+      - sku
+      - name
+      - price
+      - availability
+      - stock_indicator
+      properties:
+        id:
+          type: string
+          readOnly: true
+          example: var_01h8x9k1m2n3p4q5r6s7t8u9
+        sku:
+          type: string
+          example: OAK-TABLE-6S-NAT
+        name:
+          type: string
+          example: Natural Oak
+        price:
+          $ref: '#/components/schemas/Money'
+        availability:
+          $ref: '#/components/schemas/Availability'
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
+    OrderItem:
+      type: object
+      required:
+      - product_id
+      - sku
+      - name
+      - unit_price
+      - quantity
+      - line_total
+      properties:
+        product_id:
+          type: string
+          readOnly: true
+          example: prod_01h8x9j2m4k5n6p7q8r9s0t1
+        variant_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+          example: var_01h8x9k1m2n3p4q5r6s7t8u9
+        sku:
+          type: string
+          readOnly: true
+          example: OAK-TABLE-6S-NAT
+        name:
+          type: string
+          readOnly: true
+          example: Solid Oak Dining Table
+          description: Snapshot at purchase
+        variant_name:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+          example: Natural Oak
+        unit_price:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+          description: Historical unit price at purchase
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+          readOnly: true
+          example: 1
+        line_total:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+          description: unit_price * quantity snapshot
+        primary_image:
+          type:
+          - object
+          - 'null'
+          properties:
+            url:
+              type: string
+              format: uri
+              readOnly: true
+          readOnly: true
+          description: Optional display snapshot
 paths:
   /auth/register:
     post:
@@ -1406,6 +2072,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /auth/login:
     post:
       operationId: AUTH-002
@@ -1430,6 +2098,8 @@ paths:
                 $ref: '#/components/schemas/AuthLoginResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /auth/logout:
     post:
       operationId: AUTH-003
@@ -1624,6 +2294,10 @@ paths:
                       $ref: '#/components/schemas/ProductSummary'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
     post:
       operationId: CAT-007
       tags:
@@ -1843,6 +2517,10 @@ paths:
                       $ref: '#/components/schemas/Category'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
     post:
       operationId: CAT-011
       tags:
@@ -1983,6 +2661,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /me/cart/items/{item}:
     patch:
       operationId: CART-003
@@ -2130,6 +2810,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /me/orders:
     get:
       operationId: ORD-001
@@ -2332,6 +3018,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.accept + Order=PAID
   /orders/{order}/process:
     post:
@@ -2364,6 +3054,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.process + Order=ACCEPTED
   /orders/{order}/ready-for-pickup:
     post:
@@ -2396,6 +3090,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.ready_for_pickup + Order=PROCESSING + PICKUP
   /orders/{order}/ship:
     post:
@@ -2428,6 +3126,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.ship + Order=PROCESSING + DELIVERY
   /orders/{order}/deliver:
     post:
@@ -2460,6 +3162,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.deliver + Order=SHIPPED
   /orders/{order}/complete:
     post:
@@ -2492,6 +3198,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.complete
   /orders/{order}/delivery-fee:
     post:
@@ -2534,6 +3244,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '404':
+          $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN orders.set_delivery_fee + Order=PENDING_PAYMENT+DELIVERY+PENDING
   /orders/{order}/tracking:
     get:
@@ -2621,7 +3335,7 @@ paths:
           $ref: '#/components/responses/NotFound'
   /inventory/{inventory}/adjust:
     post:
-      operationId: INV-003-adjust
+      operationId: INV-003
       tags:
       - Inventory
       summary: Adjust inventory alias
@@ -2656,6 +3370,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       description: Requires STAFF/ADMIN inventory.manage
   /requests:
     post:
@@ -2682,6 +3398,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/MadeToOrderRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
     get:
       operationId: REQ-004
       tags:
@@ -2898,6 +3618,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Enquiry'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       requestBody:
         required: true
         content:
@@ -3147,31 +3871,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
-  /staff/notifications:
-    get:
-      operationId: NOT-001-staff
-      tags:
-      - Notifications
-      summary: Staff notifications alias
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Notification'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
   /admin/staff:
     get:
       operationId: ADM-001
@@ -3436,3 +4135,238 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/products:
+    get:
+      operationId: CAT-013
+      tags:
+      - Catalog
+      summary: List operational products (admin/staff)
+      description: Operational product list with is_active/is_published and operational inventory fields where authorized.
+        Requires STAFF/ADMIN products.manage (ADMINISTRATIVE). Paginated via page/per_page + meta.pagination. PROPOSED (operational
+        catalog, §30.4.1).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OperationalProduct'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/products/{product}:
+    get:
+      operationId: CAT-014
+      tags:
+      - Catalog
+      summary: Get operational product detail (admin/staff)
+      description: Operational product detail with is_active/is_published, inventory quantities where authorized, and full
+        images/variants. Requires STAFF/ADMIN products.manage. PROPOSED (§30.4.1).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OperationalProduct'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /payments:
+    post:
+      operationId: PAY-001
+      tags:
+      - Payment
+      summary: Initiate payment (Group H placeholder)
+      description: Initiate payment for an order with finalized total (delivery_fee_status=FINALIZED). Amount is server-calculated
+        from Order total (subtotal+delivery_fee) minor units TZS. Customer cannot supply amount. Requires AUTHENTICATED_OWNER
+        own order, Idempotency-Key Required, delivery_fee must be FINALIZED else 409 DELIVERY_FEE_PENDING. PROPOSED* placeholder
+        — provider-specific payload deferred to Group H.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - order_id
+              properties:
+                order_id:
+                  type: string
+                  description: Order id (opaque ord_...) with finalized total — sole identifier for payment initiation. order_reference (OD-*****) is server-generated, never client-supplied; do not send order_reference.
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      payment_id:
+                        type: string
+                      order_id:
+                        type: string
+                      amount:
+                        $ref: '#/components/schemas/Money'
+                      status:
+                        type: string
+                        enum:
+                        - PENDING
+                        - PAID
+                        - FAILED
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      x-group: H
+      x-deferred: true
+  /payments/{payment}:
+    get:
+      operationId: PAY-002
+      tags:
+      - Payment
+      summary: Get payment status (Group H placeholder)
+      description: Get payment status for own order payment. Requires AUTHENTICATED_OWNER own order or OPERATIONAL/ADMIN with
+        orders.view_operational. PROPOSED* placeholder.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: payment
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Payment id
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      payment_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - PENDING
+                        - PAID
+                        - FAILED
+                      amount:
+                        $ref: '#/components/schemas/Money'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /webhooks/payment/{provider}:
+    post:
+      operationId: WEBHOOK-001
+      tags:
+      - Webhooks
+      summary: Payment provider webhook callback (Group H placeholder)
+      description: System/Webhook endpoint for payment provider callbacks. Requires SYSTEM service auth via signature (not
+        bearerAuth customer). Provider-specific payload and signature verification deferred to Group H. Must be idempotent.
+        Requires valid X-Webhook-Signature header; unauthenticated requests are rejected 401.
+      security:
+      - webhookSignature: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - stripe
+          - flutterwave
+          - pesapal
+        description: Payment provider identifier
+      - name: X-Webhook-Signature
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Provider webhook HMAC/signature for SYSTEM verification (Group H). Rejects forged events with 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event_id:
+                  type: string
+                  description: Provider event id for idempotency
+                payment_id:
+                  type: string
+                status:
+                  type: string
+                  enum:
+                  - PAID
+                  - FAILED
+      responses:
+        '200':
+          description: OK
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
