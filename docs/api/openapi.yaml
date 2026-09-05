@@ -1,0 +1,3186 @@
+openapi: 3.2.0
+info:
+  title: Furniture E-Commerce Platform API
+  version: 1.0.0
+  description: Version 1 API for furniture e-commerce platform. Supports Next.js website and Flutter mobile app against shared
+    Laravel backend. Public catalog browsing is unauthenticated and cacheable. Customer flows require authenticated CUSTOMER.
+    Staff/Admin operational APIs are protected. Money uses integer minor units {amount,currency:"TZS"}, dates ISO8601 Z, enums
+    CLOSED, errors {"errors":[...],"meta":{"request_id":"..."}}.
+  contact:
+    name: API Support
+    url: https://api.example.com/docs
+servers:
+- url: https://api.example.com/api/v1
+  description: Documentation / example server
+tags:
+- name: Authentication
+  description: Public identity
+- name: Users
+  description: Authenticated self /me
+- name: Catalog
+  description: Public product/category
+- name: Cart
+  description: Holder-scoped cart
+- name: Checkout
+  description: Customer checkout
+- name: Orders
+  description: Customer own orders
+- name: Tracking
+  description: Order tracking
+- name: Requests
+  description: Made-to-order requests
+- name: Enquiries
+  description: General enquiries
+- name: Notifications
+  description: In-app notifications
+- name: Inventory
+  description: Operational inventory
+- name: Staff Operations
+  description: Staff operational
+- name: Admin
+  description: Admin staff lifecycle
+- name: Audit
+  description: Audit logs
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Shared identity Bearer token
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    ProductPath:
+      name: product
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Product id or slug
+    VariantPath:
+      name: variant
+      in: path
+      required: true
+      schema:
+        type: string
+    CategoryPath:
+      name: category
+      in: path
+      required: true
+      schema:
+        type: string
+    ItemPath:
+      name: item
+      in: path
+      required: true
+      schema:
+        type: string
+    OrderPath:
+      name: order
+      in: path
+      required: true
+      schema:
+        type: string
+    RequestPath:
+      name: request
+      in: path
+      required: true
+      schema:
+        type: string
+    EnquiryPath:
+      name: enquiry
+      in: path
+      required: true
+      schema:
+        type: string
+    NotificationPath:
+      name: notification
+      in: path
+      required: true
+      schema:
+        type: string
+    InventoryPath:
+      name: inventory
+      in: path
+      required: true
+      schema:
+        type: string
+    UserPath:
+      name: user
+      in: path
+      required: true
+      schema:
+        type: string
+    StaffPath:
+      name: staff
+      in: path
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 550e8400-e29b-41d4-a716-446655440000
+      description: Idempotency key
+    GuestCartId:
+      name: X-Guest-Cart-Id
+      in: header
+      required: false
+      schema:
+        type: string
+  headers:
+    RequestId:
+      description: Request ID
+      schema:
+        type: string
+        example: 01H9-req-abc123
+    RateLimitRetryAfter:
+      description: Retry-After
+      schema:
+        type: integer
+  responses:
+    Unauthorized:
+      description: '401'
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: '403'
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: '404'
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: '409'
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: '422'
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: '429'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RateLimitRetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: '500'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    Money:
+      type: object
+      required:
+      - amount
+      - currency
+      properties:
+        amount:
+          type: integer
+          minimum: 0
+          example: 125000000
+        currency:
+          type: string
+          enum:
+          - TZS
+          example: TZS
+      example:
+        amount: 125000000
+        currency: TZS
+    PaginationMeta:
+      type: object
+      required:
+      - current_page
+      - per_page
+      - total
+      - last_page
+      - has_next
+      - has_previous
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 86
+        last_page:
+          type: integer
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+    CollectionMeta:
+      type: object
+      required:
+      - pagination
+      properties:
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+    ErrorItem:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          example: INVALID_VALUE
+        message:
+          type: string
+        field:
+          type:
+          - string
+          - 'null'
+        details:
+          type:
+          - object
+          - 'null'
+          additionalProperties: true
+    ErrorResponse:
+      type: object
+      required:
+      - errors
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorItem'
+        meta:
+          type: object
+          required:
+          - request_id
+          properties:
+            request_id:
+              type: string
+              example: 01H9-req-abc123
+    Role:
+      type: string
+      enum:
+      - CUSTOMER
+      - STAFF
+      - ADMIN
+    ProductType:
+      type: string
+      enum:
+      - IN_STOCK
+      - MADE_TO_ORDER
+    FulfillmentType:
+      type: string
+      enum:
+      - PICKUP
+      - DELIVERY
+    OrderStatus:
+      type: string
+      enum:
+      - PENDING_PAYMENT
+      - PAID
+      - ACCEPTED
+      - PROCESSING
+      - READY_FOR_PICKUP
+      - SHIPPED
+      - DELIVERED
+      - COMPLETED
+      - CANCELLED
+    DeliveryFeeStatus:
+      type: string
+      enum:
+      - PENDING
+      - FINALIZED
+    RequestStatus:
+      type: string
+      enum:
+      - SUBMITTED
+      - IN_REVIEW
+      - CLOSED
+    EnquiryStatus:
+      type: string
+      enum:
+      - OPEN
+      - CLOSED
+    Availability:
+      type: string
+      enum:
+      - available
+      - unavailable
+    StockIndicator:
+      type: string
+      enum:
+      - IN_STOCK
+      - LOW_STOCK
+      - MADE_TO_ORDER
+    Category:
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      properties:
+        id:
+          type: string
+          readOnly: true
+          example: cat_01h8x8a1b2c3d4e5f6g7h8j9
+        name:
+          type: string
+          example: Living Room
+        slug:
+          type: string
+          example: living-room
+        description:
+          type:
+          - string
+          - 'null'
+    ProductSummary:
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      - product_type
+      - price
+      - category
+      - availability
+      - stock_indicator
+      properties:
+        id:
+          type: string
+          readOnly: true
+        name:
+          type: string
+        slug:
+          type: string
+        product_type:
+          $ref: '#/components/schemas/ProductType'
+        price:
+          $ref: '#/components/schemas/Money'
+        category:
+          $ref: '#/components/schemas/Category'
+        availability:
+          $ref: '#/components/schemas/Availability'
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
+    Product:
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      - product_type
+      - price
+      - category
+      - availability
+      - stock_indicator
+      properties:
+        id:
+          type: string
+          readOnly: true
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        product_type:
+          $ref: '#/components/schemas/ProductType'
+        price:
+          $ref: '#/components/schemas/Money'
+        category:
+          $ref: '#/components/schemas/Category'
+        availability:
+          $ref: '#/components/schemas/Availability'
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    Variant:
+      type: object
+      required:
+      - id
+      - sku
+      - name
+      - price
+      - availability
+      - stock_indicator
+      properties:
+        id:
+          type: string
+          readOnly: true
+        sku:
+          type: string
+        name:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        availability:
+          $ref: '#/components/schemas/Availability'
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
+    User:
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - role
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type:
+          - string
+          - 'null'
+        role:
+          $ref: '#/components/schemas/Role'
+        email_verified:
+          type: boolean
+          readOnly: true
+        staff_state:
+          type:
+          - string
+          - 'null'
+          enum:
+          - PENDING
+          - ACTIVE
+          - SUSPENDED
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    UpdateMeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Allow-list name/phone only
+    AuthRegisterRequest:
+      type: object
+      required:
+      - name
+      - email
+      - phone
+      - password
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+      additionalProperties: false
+    AuthLoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+      additionalProperties: false
+    CartItem:
+      type: object
+      required:
+      - id
+      - product_id
+      - quantity
+      - unit_price
+      - line_total
+      properties:
+        id:
+          type: string
+          readOnly: true
+        product_id:
+          type: string
+        variant_id:
+          type:
+          - string
+          - 'null'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+        unit_price:
+          $ref: '#/components/schemas/Money'
+        line_total:
+          $ref: '#/components/schemas/Money'
+    Cart:
+      type: object
+      required:
+      - id
+      - items
+      - subtotal
+      properties:
+        id:
+          type: string
+          readOnly: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+        subtotal:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    AddCartItemRequest:
+      type: object
+      required:
+      - product_id
+      - quantity
+      properties:
+        product_id:
+          type: string
+        variant_id:
+          type:
+          - string
+          - 'null'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+      additionalProperties: false
+    UpdateCartItemRequest:
+      type: object
+      required:
+      - quantity
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+      additionalProperties: false
+    DeliveryAddressInput:
+      type: object
+      required:
+      - recipient_name
+      - phone
+      - address_line
+      - city
+      properties:
+        recipient_name:
+          type: string
+        phone:
+          type: string
+        address_line:
+          type: string
+        city:
+          type: string
+      additionalProperties: false
+    DeliveryAddressSnapshot:
+      type: object
+      required:
+      - recipient_name
+      - phone
+      - address_line
+      - city
+      properties:
+        recipient_name:
+          type: string
+        phone:
+          type: string
+        address_line:
+          type: string
+        city:
+          type: string
+      readOnly: true
+    CheckoutRequest:
+      type: object
+      required:
+      - fulfillment_type
+      properties:
+        fulfillment_type:
+          $ref: '#/components/schemas/FulfillmentType'
+        delivery_address:
+          anyOf:
+          - $ref: '#/components/schemas/DeliveryAddressInput'
+          - type: 'null'
+      additionalProperties: false
+    CheckoutResponseData:
+      type: object
+      required:
+      - order_id
+      - order_reference
+      - status
+      - fulfillment_type
+      - subtotal
+      - total
+      - currency
+      properties:
+        order_id:
+          type: string
+          readOnly: true
+        order_reference:
+          type: string
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        fulfillment_type:
+          $ref: '#/components/schemas/FulfillmentType'
+        delivery_address:
+          anyOf:
+          - $ref: '#/components/schemas/DeliveryAddressSnapshot'
+          - type: 'null'
+        subtotal:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+        delivery_fee:
+          readOnly: true
+          anyOf:
+          - $ref: '#/components/schemas/Money'
+          - type: 'null'
+        delivery_fee_status:
+          $ref: '#/components/schemas/DeliveryFeeStatus'
+          readOnly: true
+        total:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+        currency:
+          type: string
+          enum:
+          - TZS
+          readOnly: true
+        payment:
+          type:
+          - object
+          - 'null'
+          readOnly: true
+    OrderSummary:
+      type: object
+      required:
+      - id
+      - order_reference
+      - status
+      - fulfillment_type
+      - delivery_fee_status
+      - subtotal
+      - total
+      - currency
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+        order_reference:
+          type: string
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        fulfillment_type:
+          $ref: '#/components/schemas/FulfillmentType'
+        delivery_fee_status:
+          $ref: '#/components/schemas/DeliveryFeeStatus'
+        subtotal:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+        delivery_fee:
+          readOnly: true
+          anyOf:
+          - $ref: '#/components/schemas/Money'
+          - type: 'null'
+        total:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+        currency:
+          type: string
+          enum:
+          - TZS
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    OrderDetail:
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/OrderSummary'
+      - type: object
+        properties:
+          items:
+            type: array
+            items:
+              type: object
+          delivery_address:
+            anyOf:
+            - $ref: '#/components/schemas/DeliveryAddressSnapshot'
+            - type: 'null'
+    OrderOperationalDetail:
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/OrderDetail'
+      - type: object
+        properties:
+          customer:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              email:
+                type: string
+          status_history:
+            type: array
+            items:
+              type: object
+    StatusHistoryItem:
+      type: object
+      required:
+      - id
+      - status
+      - occurred_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        occurred_at:
+          type: string
+          format: date-time
+          readOnly: true
+        actor:
+          type:
+          - object
+          - 'null'
+          properties:
+            type:
+              type: string
+              enum:
+              - CUSTOMER
+              - STAFF
+              - SYSTEM
+            id:
+              type: string
+        note:
+          type:
+          - string
+          - 'null'
+    TrackingTimeline:
+      type: object
+      required:
+      - order_reference
+      - fulfillment_type
+      - current_status
+      - timeline
+      properties:
+        order_reference:
+          type: string
+        fulfillment_type:
+          $ref: '#/components/schemas/FulfillmentType'
+        current_status:
+          $ref: '#/components/schemas/OrderStatus'
+        delivery_fee_status:
+          $ref: '#/components/schemas/DeliveryFeeStatus'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusHistoryItem'
+    SetDeliveryFeeRequest:
+      type: object
+      required:
+      - delivery_fee
+      properties:
+        delivery_fee:
+          $ref: '#/components/schemas/Money'
+      additionalProperties: false
+    Inventory:
+      type: object
+      required:
+      - id
+      - product_id
+      - quantity
+      - reserved_quantity
+      - available_quantity
+      properties:
+        id:
+          type: string
+          readOnly: true
+        product_id:
+          type: string
+        variant_id:
+          type:
+          - string
+          - 'null'
+        quantity:
+          type: integer
+          readOnly: true
+        reserved_quantity:
+          type: integer
+          readOnly: true
+        available_quantity:
+          type: integer
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    InventoryAdjustRequest:
+      type: object
+      required:
+      - quantity_delta
+      - reason
+      properties:
+        quantity_delta:
+          type: integer
+        reason:
+          type: string
+          enum:
+          - STOCK_RECEIPT
+          - CORRECTION
+          - DAMAGE
+          - RETURN
+          - AUDIT_ADJUSTMENT
+      additionalProperties: false
+    MadeToOrderRequest:
+      type: object
+      required:
+      - id
+      - quantity
+      - name
+      - phone
+      - request_status
+      properties:
+        id:
+          type: string
+          readOnly: true
+        product_id:
+          type:
+          - string
+          - 'null'
+        quantity:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type:
+          - string
+          - 'null'
+        request_status:
+          $ref: '#/components/schemas/RequestStatus'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    CreateRequestRequest:
+      type: object
+      required:
+      - quantity
+      - name
+      - phone
+      properties:
+        product_id:
+          type:
+          - string
+          - 'null'
+        quantity:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    Enquiry:
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - subject
+      - message
+      - enquiry_status
+      properties:
+        id:
+          type: string
+          readOnly: true
+        name:
+          type: string
+        email:
+          type: string
+        subject:
+          type: string
+        message:
+          type: string
+        enquiry_status:
+          $ref: '#/components/schemas/EnquiryStatus'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    CreateEnquiryRequest:
+      type: object
+      required:
+      - name
+      - email
+      - subject
+      - message
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        subject:
+          type: string
+        message:
+          type: string
+        category:
+          type:
+          - string
+          - 'null'
+        product_id:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    Attachment:
+      type: object
+      required:
+      - id
+      - url
+      - filename
+      properties:
+        id:
+          type: string
+          readOnly: true
+        url:
+          type: string
+          format: uri
+          readOnly: true
+        filename:
+          type: string
+    Notification:
+      type: object
+      required:
+      - id
+      - type
+      - title
+      - message
+      - is_read
+      - created_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+        type:
+          type: string
+          enum:
+          - ORDER_SHIPPED
+          - ORDER_ACCEPTED
+          - NEW_ORDER
+        title:
+          type: string
+        message:
+          type: string
+        read_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        is_read:
+          type: boolean
+          readOnly: true
+        target:
+          type: object
+          properties:
+            type:
+              type: string
+            id:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    MarkNotificationReadRequest:
+      type: object
+      required:
+      - read
+      properties:
+        read:
+          type: boolean
+      additionalProperties: false
+    StaffInviteRequest:
+      type: object
+      required:
+      - name
+      - email
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    AuditLog:
+      type: object
+      required:
+      - id
+      - actor_id
+      - actor_role
+      - action
+      - resource_type
+      - resource_id
+      - timestamp
+      properties:
+        id:
+          type: string
+          readOnly: true
+        actor_id:
+          type: string
+          readOnly: true
+        actor_role:
+          $ref: '#/components/schemas/Role'
+          readOnly: true
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+    AuthLoginResponse:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - user
+          - token
+          - token_type
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            token:
+              type: string
+              description: Bearer token for Flutter/mobile; Next.js uses httpOnly cookie
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            token_type:
+              type: string
+              enum:
+              - Bearer
+              example: Bearer
+    MessageResponse:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - message
+          properties:
+            message:
+              type: string
+              example: Request received.
+paths:
+  /auth/register:
+    post:
+      operationId: AUTH-001
+      tags:
+      - Authentication
+      summary: Register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/login:
+    post:
+      operationId: AUTH-002
+      tags:
+      - Authentication
+      summary: Login
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/GuestCartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthLoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      operationId: AUTH-003
+      tags:
+      - Authentication
+      summary: Logout
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No content
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/password/forgot:
+    post:
+      operationId: AUTH-004
+      tags:
+      - Authentication
+      summary: Forgot password
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /auth/password/reset:
+    post:
+      operationId: AUTH-005
+      tags:
+      - Authentication
+      summary: Reset password
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /auth/change-password:
+    post:
+      operationId: AUTH-008
+      tags:
+      - Authentication
+      summary: Change password
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /email/verify:
+    post:
+      operationId: AUTH-007
+      tags:
+      - Authentication
+      summary: Verify email
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /email/verify/resend:
+    post:
+      operationId: AUTH-006
+      tags:
+      - Authentication
+      summary: Resend verify
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /me:
+    get:
+      operationId: USER-001
+      tags:
+      - Users
+      summary: Get own profile
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      operationId: USER-002
+      tags:
+      - Users
+      summary: Update own profile
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /products:
+    get:
+      operationId: CAT-001
+      tags:
+      - Catalog
+      summary: List products
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductSummary'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+    post:
+      operationId: CAT-007
+      tags:
+      - Catalog
+      summary: Create product
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+  /products/{product}:
+    get:
+      operationId: CAT-002
+      tags:
+      - Catalog
+      summary: Product detail
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: CAT-008
+      tags:
+      - Catalog
+      summary: Update product
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+  /products/{product}/variants:
+    get:
+      operationId: CAT-005
+      tags:
+      - Catalog
+      summary: List variants
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Variant'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+    post:
+      operationId: CAT-010
+      tags:
+      - Catalog
+      summary: Create variant
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Variant'
+  /products/{product}/variants/{variant}:
+    get:
+      operationId: CAT-006
+      tags:
+      - Catalog
+      summary: Variant detail
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      - $ref: '#/components/parameters/VariantPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Variant'
+  /products/{product}/images:
+    post:
+      operationId: CAT-009
+      tags:
+      - Catalog
+      summary: Add image
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Attachment'
+  /categories:
+    get:
+      operationId: CAT-003
+      tags:
+      - Catalog
+      summary: List categories
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+    post:
+      operationId: CAT-011
+      tags:
+      - Catalog
+      summary: Create category
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+  /categories/{category}:
+    get:
+      operationId: CAT-004
+      tags:
+      - Catalog
+      summary: Category detail
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CategoryPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+    patch:
+      operationId: CAT-012
+      tags:
+      - Catalog
+      summary: Update category
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/CategoryPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+  /me/cart:
+    get:
+      operationId: CART-001
+      tags:
+      - Cart
+      summary: Get cart
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/GuestCartId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+  /me/cart/items:
+    post:
+      operationId: CART-002
+      tags:
+      - Cart
+      summary: Add item
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCartItemRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /me/cart/items/{item}:
+    patch:
+      operationId: CART-003
+      tags:
+      - Cart
+      summary: Update item
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ItemPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCartItemRequest'
+    delete:
+      operationId: CART-004
+      tags:
+      - Cart
+      summary: Remove item
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ItemPath'
+      responses:
+        '204':
+          description: No content
+  /me/cart/merge:
+    post:
+      operationId: CART-005
+      tags:
+      - Cart
+      summary: Merge guest cart
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+  /checkout:
+    post:
+      operationId: CHK-001
+      tags:
+      - Checkout
+      summary: Checkout
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+            examples:
+              pickup:
+                summary: PICKUP
+                value:
+                  fulfillment_type: PICKUP
+              delivery:
+                summary: DELIVERY
+                value:
+                  fulfillment_type: DELIVERY
+                  delivery_address:
+                    recipient_name: Asha Mwangi
+                    phone: '+255700000001'
+                    address_line: Jengo Street 12
+                    city: Dar es Salaam
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CheckoutResponseData'
+              examples:
+                pickup:
+                  summary: PICKUP
+                  value:
+                    data:
+                      order_id: ord_01h8y5a1b2c3d4e5f6g7h8j9
+                      order_reference: OD-2026-00042
+                      status: PENDING_PAYMENT
+                      fulfillment_type: PICKUP
+                      subtotal:
+                        amount: 125000000
+                        currency: TZS
+                      delivery_fee:
+                        amount: 0
+                        currency: TZS
+                      delivery_fee_status: FINALIZED
+                      total:
+                        amount: 125000000
+                        currency: TZS
+                      currency: TZS
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /me/orders:
+    get:
+      operationId: ORD-001
+      tags:
+      - Orders
+      summary: List own orders
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderSummary'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /me/orders/{order}:
+    get:
+      operationId: ORD-002
+      tags:
+      - Orders
+      summary: Get own order
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/orders/{order}/cancel:
+    post:
+      operationId: ORD-004
+      tags:
+      - Orders
+      summary: Cancel own order
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /me/orders/{order}/tracking:
+    get:
+      operationId: ORD-003
+      tags:
+      - Tracking
+      summary: Customer tracking
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TrackingTimeline'
+  /orders:
+    get:
+      operationId: ORD-005
+      tags:
+      - Staff Operations
+      summary: List operational orders
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderSummary'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /orders/{order}:
+    get:
+      operationId: ORD-006
+      tags:
+      - Staff Operations
+      summary: Get operational order
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderOperationalDetail'
+  /orders/{order}/accept:
+    post:
+      operationId: ORD-007
+      tags:
+      - Staff Operations
+      summary: Accept
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/process:
+    post:
+      operationId: ORD-008
+      tags:
+      - Staff Operations
+      summary: Process
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/ready-for-pickup:
+    post:
+      operationId: ORD-009
+      tags:
+      - Staff Operations
+      summary: Ready for pickup
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/ship:
+    post:
+      operationId: ORD-010
+      tags:
+      - Staff Operations
+      summary: Ship
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/deliver:
+    post:
+      operationId: ORD-011
+      tags:
+      - Staff Operations
+      summary: Deliver
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/complete:
+    post:
+      operationId: ORD-013
+      tags:
+      - Staff Operations
+      summary: Complete
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/delivery-fee:
+    post:
+      operationId: ORD-014
+      tags:
+      - Staff Operations
+      summary: Set delivery fee
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDeliveryFeeRequest'
+            example:
+              delivery_fee:
+                amount: 2500000
+                currency: TZS
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /orders/{order}/tracking:
+    get:
+      operationId: ORD-012
+      tags:
+      - Tracking
+      summary: Operational tracking
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TrackingTimeline'
+  /inventory:
+    get:
+      operationId: INV-001
+      tags:
+      - Inventory
+      summary: List inventory
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Inventory'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /inventory/{inventory}:
+    get:
+      operationId: INV-002
+      tags:
+      - Inventory
+      summary: Get inventory
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/InventoryPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Inventory'
+    post:
+      operationId: INV-003
+      tags:
+      - Inventory
+      summary: Adjust inventory
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/InventoryPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryAdjustRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Inventory'
+  /inventory/{inventory}/adjust:
+    post:
+      operationId: INV-003-adjust
+      tags:
+      - Inventory
+      summary: Adjust inventory alias
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/InventoryPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryAdjustRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Inventory'
+  /requests:
+    post:
+      operationId: REQ-001
+      tags:
+      - Requests
+      summary: Submit request
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequestRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MadeToOrderRequest'
+    get:
+      operationId: REQ-004
+      tags:
+      - Requests
+      summary: List operational requests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MadeToOrderRequest'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /requests/{request}:
+    get:
+      operationId: REQ-005
+      tags:
+      - Requests
+      summary: Get operational request
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MadeToOrderRequest'
+    patch:
+      operationId: REQ-006
+      tags:
+      - Requests
+      summary: Update request
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MadeToOrderRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request_status:
+                  $ref: '#/components/schemas/RequestStatus'
+                staff_internal_notes:
+                  type:
+                  - string
+                  - 'null'
+              additionalProperties: false
+  /requests/{request}/attachments:
+    post:
+      operationId: REQ-007
+      tags:
+      - Requests
+      summary: Upload attachment
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Attachment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/requests:
+    get:
+      operationId: REQ-002
+      tags:
+      - Requests
+      summary: List own requests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MadeToOrderRequest'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /me/requests/{request}:
+    get:
+      operationId: REQ-003
+      tags:
+      - Requests
+      summary: Get own request
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MadeToOrderRequest'
+  /enquiries:
+    post:
+      operationId: ENQ-001
+      tags:
+      - Enquiries
+      summary: Submit enquiry
+      security: []
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Enquiry'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnquiryRequest'
+    get:
+      operationId: ENQ-004
+      tags:
+      - Enquiries
+      summary: List operational enquiries
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Enquiry'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /enquiries/{enquiry}:
+    get:
+      operationId: ENQ-005
+      tags:
+      - Enquiries
+      summary: Get operational enquiry
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/EnquiryPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Enquiry'
+  /enquiries/{enquiry}/close:
+    post:
+      operationId: ENQ-006
+      tags:
+      - Enquiries
+      summary: Close enquiry
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/EnquiryPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Enquiry'
+  /enquiries/{enquiry}/attachments:
+    post:
+      operationId: ENQ-007
+      tags:
+      - Enquiries
+      summary: Upload attachment
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/EnquiryPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Attachment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/enquiries:
+    get:
+      operationId: ENQ-002
+      tags:
+      - Enquiries
+      summary: List own enquiries
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Enquiry'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /me/enquiries/{enquiry}:
+    get:
+      operationId: ENQ-003
+      tags:
+      - Enquiries
+      summary: Get own enquiry
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/EnquiryPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Enquiry'
+  /me/notifications:
+    get:
+      operationId: NOT-001
+      tags:
+      - Notifications
+      summary: List notifications
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /me/notifications/{notification}:
+    patch:
+      operationId: NOT-002
+      tags:
+      - Notifications
+      summary: Mark read
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/NotificationPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkNotificationReadRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Notification'
+  /staff/notifications:
+    get:
+      operationId: NOT-001-staff
+      tags:
+      - Notifications
+      summary: Staff notifications alias
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /admin/staff:
+    get:
+      operationId: ADM-001
+      tags:
+      - Admin
+      summary: List staff
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+    post:
+      operationId: ADM-002
+      tags:
+      - Admin
+      summary: Invite staff
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+  /admin/staff/{user}:
+    get:
+      operationId: ADM-001-detail
+      tags:
+      - Admin
+      summary: Get staff
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/UserPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+  /admin/staff/{staff}/approve:
+    post:
+      operationId: ADM-003
+      tags:
+      - Admin
+      summary: Approve staff
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/StaffPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+  /admin/staff/{staff}/suspend:
+    post:
+      operationId: ADM-005
+      tags:
+      - Admin
+      summary: Suspend staff
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/StaffPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+  /admin/staff/{staff}/reactivate:
+    post:
+      operationId: ADM-006
+      tags:
+      - Admin
+      summary: Reactivate staff
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/StaffPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+  /admin/audit-logs:
+    get:
+      operationId: ADM-007
+      tags:
+      - Audit
+      summary: List audit logs
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /users:
+    get:
+      operationId: ADM-008
+      tags:
+      - Admin
+      summary: List users
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /users/{user}:
+    get:
+      operationId: ADM-009
+      tags:
+      - Admin
+      summary: Get user
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/UserPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+  /staff/orders:
+    get:
+      operationId: ORD-005-staff-alias
+      tags:
+      - Staff Operations
+      summary: Staff orders alias
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderSummary'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /staff/orders/{order}:
+    get:
+      operationId: ORD-006-staff-alias
+      tags:
+      - Staff Operations
+      summary: Staff order alias
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderOperationalDetail'
+  /staff/orders/{order}/accept:
+    post:
+      operationId: ORD-007-staff-alias
+      tags:
+      - Staff Operations
+      summary: Accept alias
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderSummary'
+  /staff/inventory:
+    get:
+      operationId: INV-001-staff-alias
+      tags:
+      - Inventory
+      summary: Staff inventory alias
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Inventory'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /staff/inventory/{inventory}:
+    get:
+      operationId: INV-002-staff-alias
+      tags:
+      - Inventory
+      summary: Staff inventory alias
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/InventoryPath'
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Inventory'
+  /staff/products:
+    get:
+      operationId: CAT-013-staff-alias
+      tags:
+      - Catalog
+      summary: Staff products alias
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductSummary'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /staff/requests:
+    get:
+      operationId: REQ-004-staff-alias
+      tags:
+      - Requests
+      summary: Staff requests alias
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MadeToOrderRequest'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /staff/requests/{request}:
+    get:
+      operationId: REQ-005-staff-alias
+      tags:
+      - Requests
+      summary: Staff request alias
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestPath'
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MadeToOrderRequest'
+  /staff/enquiries:
+    get:
+      operationId: ENQ-004-staff-alias
+      tags:
+      - Enquiries
+      summary: Staff enquiries alias
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Enquiry'
+                  meta:
+                    $ref: '#/components/schemas/CollectionMeta'
+  /staff/enquiries/{enquiry}:
+    get:
+      operationId: ENQ-005-staff-alias
+      tags:
+      - Enquiries
+      summary: Staff enquiry alias
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/EnquiryPath'
+      responses:
+        '200':
+          description: Alias
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Enquiry'
