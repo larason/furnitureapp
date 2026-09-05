@@ -48,6 +48,12 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Shared identity Bearer token
+    uploadToken:
+      type: apiKey
+      in: header
+      name: X-Upload-Token
+      description: Scoped single-use upload token issued server-side for anonymous* attachment upload (REQ-007/ENQ-007). Must
+        be presented with parent ownership check; not a bearer substitute.
   parameters:
     Page:
       name: page
@@ -149,6 +155,20 @@ components:
       required: false
       schema:
         type: string
+        format: uuid
+        example: 550e8400-e29b-41d4-a716-446655440000
+      description: Opaque bearer credential (cryptographically secure, high-entropy UUIDv4 CSPRNG ≥122 bits, not
+        UUIDv1/sequential/counter, not guessable, unpredictable) scoped strictly to its bound guest cart
+        (authorizes that cart only); never authorizes account operations and never authorizes merge by itself
+        (merge requires authenticated principal + valid guest token + server-side check); retired after merge
+    UploadToken:
+      name: X-Upload-Token
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Scoped single-use upload token for anonymous* parent; required when uploading attachment to anonymous request/enquiry
+        without bearerAuth; verified with parent ownership atomically
   headers:
     RequestId:
       description: Request ID
@@ -873,8 +893,26 @@ components:
       - delivery_fee
       properties:
         delivery_fee:
-          $ref: '#/components/schemas/Money'
+          type: object
+          required:
+          - amount
+          - currency
+          properties:
+            amount:
+              type: integer
+              minimum: 0
+              maximum: 5000000
+              example: 2500000
+              description: Minor units (1 TZS = 100), 0..5000000
+            currency:
+              type: string
+              enum:
+              - TZS
+              example: TZS
+          additionalProperties: false
       additionalProperties: false
+      description: Staff/Admin only; amount 0..5000000 minor units (50,000 TZS max); currency TZS only; total = subtotal +
+        delivery_fee server-calculated
     Inventory:
       type: object
       required:
@@ -914,6 +952,7 @@ components:
       properties:
         quantity_delta:
           type: integer
+          description: Delta applied transactionally; new quantity must remain >=0; reason CLOSED; idempotent via Idempotency-Key
         reason:
           type: string
           enum:
@@ -1179,6 +1218,164 @@ components:
             message:
               type: string
               example: Request received.
+    ChangePasswordRequest:
+      type: object
+      required:
+      - current_password
+      - password
+      - password_confirmation
+      properties:
+        current_password:
+          type: string
+          format: password
+          writeOnly: true
+          description: Current password for re-authentication
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 8
+          maxLength: 128
+          description: New password (8-128 chars)
+        password_confirmation:
+          type: string
+          format: password
+          writeOnly: true
+          description: Confirmation of new password
+      additionalProperties: false
+    ForgotPasswordRequest:
+      type: object
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: Registered email (generic response, no enumeration)
+      additionalProperties: false
+    ResetPasswordRequest:
+      type: object
+      required:
+      - email
+      - token
+      - password
+      - password_confirmation
+      properties:
+        email:
+          type: string
+          format: email
+        token:
+          type: string
+          description: Single-use time-limited reset token
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 8
+        password_confirmation:
+          type: string
+          format: password
+          writeOnly: true
+      additionalProperties: false
+    ProductCreateRequest:
+      type: object
+      required:
+      - name
+      - slug
+      - product_type
+      - price
+      - category_id
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]+$
+          description: URL-safe kebab-case
+        description:
+          type: string
+          maxLength: 5000
+        product_type:
+          $ref: '#/components/schemas/ProductType'
+        price:
+          $ref: '#/components/schemas/Money'
+        category_id:
+          type: string
+          description: Existing category id or slug
+        is_active:
+          type: boolean
+          default: true
+        is_published:
+          type: boolean
+          default: true
+      additionalProperties: false
+    ProductUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]+$
+        description:
+          type: string
+          maxLength: 5000
+        product_type:
+          $ref: '#/components/schemas/ProductType'
+        price:
+          $ref: '#/components/schemas/Money'
+        category_id:
+          type: string
+        is_active:
+          type: boolean
+        is_published:
+          type: boolean
+      additionalProperties: false
+    CategoryCreateRequest:
+      type: object
+      required:
+      - name
+      - slug
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]+$
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+        image:
+          type:
+          - string
+          - 'null'
+          format: uri
+      additionalProperties: false
+    CategoryUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]+$
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+        image:
+          type:
+          - string
+          - 'null'
+          format: uri
+      additionalProperties: false
 paths:
   /auth/register:
     post:
@@ -1260,6 +1457,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
   /auth/password/reset:
     post:
       operationId: AUTH-005
@@ -1274,6 +1481,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
   /auth/change-password:
     post:
       operationId: AUTH-008
@@ -1289,6 +1506,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
   /email/verify:
     post:
       operationId: AUTH-007
@@ -1416,12 +1645,19 @@ paths:
                     $ref: '#/components/schemas/Product'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationError'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Product'
+              $ref: '#/components/schemas/ProductCreateRequest'
+      description: Requires STAFF/ADMIN products.manage; server derives id/created_at/availability; role escalation rejected
   /products/{product}:
     get:
       operationId: CAT-002
@@ -1466,12 +1702,22 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Product'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationError'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Product'
+              $ref: '#/components/schemas/ProductUpdateRequest'
+      description: Requires STAFF/ADMIN products.manage; readOnly fields (id, availability, stock_indicator, created_at) rejected
+        if sent
   /products/{product}/variants:
     get:
       operationId: CAT-005
@@ -1616,12 +1862,21 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Category'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationError'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Category'
+              $ref: '#/components/schemas/CategoryCreateRequest'
+      description: Requires STAFF/ADMIN products.manage
   /categories/{category}:
     get:
       operationId: CAT-004
@@ -1664,12 +1919,18 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Category'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Category'
+              $ref: '#/components/schemas/CategoryUpdateRequest'
   /me/cart:
     get:
       operationId: CART-001
@@ -1720,6 +1981,8 @@ paths:
                     $ref: '#/components/schemas/Cart'
         '422':
           $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /me/cart/items/{item}:
     patch:
       operationId: CART-003
@@ -1742,12 +2005,22 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Cart'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateCartItemRequest'
+      description: Holder-scoped; Customer A -> Customer B item returns 404 CART_ITEM_NOT_FOUND masked (not 403); ownership
+        via /me context
     delete:
       operationId: CART-004
       tags:
@@ -1760,6 +2033,14 @@ paths:
       responses:
         '204':
           description: No content
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Holder-scoped; Customer A -> Customer B item returns 404 CART_ITEM_NOT_FOUND masked (not 403); ownership
+        via /me context
   /me/cart/merge:
     post:
       operationId: CART-005
@@ -1901,6 +2182,8 @@ paths:
                     $ref: '#/components/schemas/OrderDetail'
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /me/orders/{order}/cancel:
     post:
       operationId: ORD-004
@@ -1926,6 +2209,14 @@ paths:
                     $ref: '#/components/schemas/OrderSummary'
         '409':
           $ref: '#/components/responses/Conflict'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /me/orders/{order}/tracking:
     get:
       operationId: ORD-003
@@ -1948,6 +2239,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/TrackingTimeline'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /orders:
     get:
       operationId: ORD-005
@@ -1973,6 +2268,11 @@ paths:
                       $ref: '#/components/schemas/OrderSummary'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      description: Requires STAFF/ADMIN orders.view_operational
   /orders/{order}:
     get:
       operationId: ORD-006
@@ -1995,6 +2295,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderOperationalDetail'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /orders/{order}/accept:
     post:
       operationId: ORD-007
@@ -2018,6 +2324,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.accept + Order=PAID
   /orders/{order}/process:
     post:
       operationId: ORD-008
@@ -2041,6 +2356,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.process + Order=ACCEPTED
   /orders/{order}/ready-for-pickup:
     post:
       operationId: ORD-009
@@ -2064,6 +2388,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.ready_for_pickup + Order=PROCESSING + PICKUP
   /orders/{order}/ship:
     post:
       operationId: ORD-010
@@ -2087,6 +2420,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.ship + Order=PROCESSING + DELIVERY
   /orders/{order}/deliver:
     post:
       operationId: ORD-011
@@ -2110,6 +2452,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.deliver + Order=SHIPPED
   /orders/{order}/complete:
     post:
       operationId: ORD-013
@@ -2133,6 +2484,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.complete
   /orders/{order}/delivery-fee:
     post:
       operationId: ORD-014
@@ -2166,6 +2526,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/OrderSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN orders.set_delivery_fee + Order=PENDING_PAYMENT+DELIVERY+PENDING
   /orders/{order}/tracking:
     get:
       operationId: ORD-012
@@ -2188,6 +2557,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/TrackingTimeline'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /inventory:
     get:
       operationId: INV-001
@@ -2213,6 +2586,11 @@ paths:
                       $ref: '#/components/schemas/Inventory'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      description: Requires STAFF/ADMIN inventory.view
   /inventory/{inventory}:
     get:
       operationId: INV-002
@@ -2235,34 +2613,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Inventory'
-    post:
-      operationId: INV-003
-      tags:
-      - Inventory
-      summary: Adjust inventory
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/InventoryPath'
-      - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InventoryAdjustRequest'
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Inventory'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /inventory/{inventory}/adjust:
     post:
       operationId: INV-003-adjust
@@ -2292,6 +2648,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Inventory'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires STAFF/ADMIN inventory.manage
   /requests:
     post:
       operationId: REQ-001
@@ -2341,6 +2706,11 @@ paths:
                       $ref: '#/components/schemas/MadeToOrderRequest'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      description: Requires STAFF/ADMIN requests.view
   /requests/{request}:
     get:
       operationId: REQ-005
@@ -2363,6 +2733,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/MadeToOrderRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
     patch:
       operationId: REQ-006
       tags:
@@ -2384,6 +2760,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/MadeToOrderRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
       requestBody:
         required: true
         content:
@@ -2406,8 +2788,10 @@ paths:
       summary: Upload attachment
       security:
       - bearerAuth: []
+      - uploadToken: []
       parameters:
       - $ref: '#/components/parameters/RequestPath'
+      - $ref: '#/components/parameters/UploadToken'
       requestBody:
         required: true
         content:
@@ -2434,6 +2818,16 @@ paths:
                     $ref: '#/components/schemas/Attachment'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Requires parent ownership + scoped upload token (X-Upload-Token) for anonymous* or bearerAuth for authenticated;
+        attachment inherits parent auth; no permanent public URL
   /me/requests:
     get:
       operationId: REQ-002
@@ -2481,6 +2875,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/MadeToOrderRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /enquiries:
     post:
       operationId: ENQ-001
@@ -2530,6 +2928,11 @@ paths:
                       $ref: '#/components/schemas/Enquiry'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      description: Requires STAFF/ADMIN enquiries.view
   /enquiries/{enquiry}:
     get:
       operationId: ENQ-005
@@ -2552,6 +2955,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Enquiry'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /enquiries/{enquiry}/close:
     post:
       operationId: ENQ-006
@@ -2574,6 +2983,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Enquiry'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /enquiries/{enquiry}/attachments:
     post:
       operationId: ENQ-007
@@ -2582,8 +2997,10 @@ paths:
       summary: Upload attachment
       security:
       - bearerAuth: []
+      - uploadToken: []
       parameters:
       - $ref: '#/components/parameters/EnquiryPath'
+      - $ref: '#/components/parameters/UploadToken'
       requestBody:
         required: true
         content:
@@ -2610,6 +3027,16 @@ paths:
                     $ref: '#/components/schemas/Attachment'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Requires parent ownership + scoped upload token (X-Upload-Token) for anonymous* or bearerAuth for authenticated;
+        attachment inherits parent auth; no permanent public URL
   /me/enquiries:
     get:
       operationId: ENQ-002
@@ -2657,6 +3084,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Enquiry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /me/notifications:
     get:
       operationId: NOT-001
@@ -2710,6 +3141,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Notification'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /staff/notifications:
     get:
       operationId: NOT-001-staff
@@ -2760,8 +3197,13 @@ paths:
                       $ref: '#/components/schemas/User'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      description: Requires ADMIN users.manage_authorized
     post:
-      operationId: ADM-002
+      operationId: ADM-003
       tags:
       - Admin
       summary: Invite staff
@@ -2787,7 +3229,7 @@ paths:
                     $ref: '#/components/schemas/User'
   /admin/staff/{user}:
     get:
-      operationId: ADM-001-detail
+      operationId: ADM-002
       tags:
       - Admin
       summary: Get staff
@@ -2807,9 +3249,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/staff/{staff}/approve:
     post:
-      operationId: ADM-003
+      operationId: ADM-004
       tags:
       - Admin
       summary: Approve staff
@@ -2830,6 +3278,15 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: Requires ADMIN staff.approve; audited; self-approval rejected 422
   /admin/staff/{staff}/suspend:
     post:
       operationId: ADM-005
@@ -2853,6 +3310,14 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /admin/staff/{staff}/reactivate:
     post:
       operationId: ADM-006
@@ -2876,6 +3341,14 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /admin/audit-logs:
     get:
       operationId: ADM-007
@@ -2901,6 +3374,11 @@ paths:
                       $ref: '#/components/schemas/AuditLog'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      description: Requires ADMIN audit.view
   /users:
     get:
       operationId: ADM-008
@@ -2926,6 +3404,10 @@ paths:
                       $ref: '#/components/schemas/User'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /users/{user}:
     get:
       operationId: ADM-009
@@ -2948,239 +3430,9 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/User'
-  /staff/orders:
-    get:
-      operationId: ORD-005-staff-alias
-      tags:
-      - Staff Operations
-      summary: Staff orders alias
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/OrderSummary'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
-  /staff/orders/{order}:
-    get:
-      operationId: ORD-006-staff-alias
-      tags:
-      - Staff Operations
-      summary: Staff order alias
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/OrderPath'
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/OrderOperationalDetail'
-  /staff/orders/{order}/accept:
-    post:
-      operationId: ORD-007-staff-alias
-      tags:
-      - Staff Operations
-      summary: Accept alias
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/OrderPath'
-      - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/OrderSummary'
-  /staff/inventory:
-    get:
-      operationId: INV-001-staff-alias
-      tags:
-      - Inventory
-      summary: Staff inventory alias
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Inventory'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
-  /staff/inventory/{inventory}:
-    get:
-      operationId: INV-002-staff-alias
-      tags:
-      - Inventory
-      summary: Staff inventory alias
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/InventoryPath'
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Inventory'
-  /staff/products:
-    get:
-      operationId: CAT-013-staff-alias
-      tags:
-      - Catalog
-      summary: Staff products alias
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ProductSummary'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
-  /staff/requests:
-    get:
-      operationId: REQ-004-staff-alias
-      tags:
-      - Requests
-      summary: Staff requests alias
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/MadeToOrderRequest'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
-  /staff/requests/{request}:
-    get:
-      operationId: REQ-005-staff-alias
-      tags:
-      - Requests
-      summary: Staff request alias
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/RequestPath'
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/MadeToOrderRequest'
-  /staff/enquiries:
-    get:
-      operationId: ENQ-004-staff-alias
-      tags:
-      - Enquiries
-      summary: Staff enquiries alias
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Enquiry'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
-  /staff/enquiries/{enquiry}:
-    get:
-      operationId: ENQ-005-staff-alias
-      tags:
-      - Enquiries
-      summary: Staff enquiry alias
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/EnquiryPath'
-      responses:
-        '200':
-          description: Alias
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Enquiry'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'

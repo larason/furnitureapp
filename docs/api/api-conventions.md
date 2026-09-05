@@ -946,3 +946,64 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
 
 
 
+
+## 32. Security Review Conventions (Phase 1.33)
+
+> **Authority:** Phase 1.33 security review. Consolidates fixes for nullable, auth credential schemas, mass assignment, IDOR, rate limiting, CSRF/CORS, transport, cache, idempotency scoping, guest cart, delivery fee bounds, and OpenAPI security model.
+
+### 32.1 OpenAPI Version and Nullable (Fixed)
+
+- **Version:** `openapi: 3.2.0` (JSON Schema 2020-12). `nullable: true` is **invalid** in 3.1+; it is silently ignored. All 26 occurrences replaced:
+  - `type: string, nullable: true` → `type: [string, 'null']` (e.g., `ErrorItem.field`, `User.phone`, `Cart.variant_id`, `Notification.read_at`)
+  - `$ref: '#/components/schemas/Money', nullable: true` → `anyOf: [{ $ref }, {type: 'null'}]` + `readOnly` sibling (e.g., `CheckoutResponseData.delivery_fee`, `OrderSummary.delivery_fee`, `DeliveryAddressInput/DeliveryAddressSnapshot` delivery_address)
+- Tooling verification: `grep nullable` → 0, `'null'` string occurrences 26, `anyOf` 5. Schema-aware linters now validate `null` values.
+
+### 32.2 Authentication Credential Schemas (New)
+
+- `ChangePasswordRequest: {current_password writeOnly required, password writeOnly 8-128, password_confirmation writeOnly} additionalProperties:false` — `POST /auth/change-password` `AUTH-008` now has strict requestBody, `401` for unauthenticated, `422` for validation, `429` for brute-force.
+- `ForgotPasswordRequest: {email format:email required}` and `ResetPasswordRequest: {email, token, password, password_confirmation} additionalProperties:false` — `AUTH-004/005` now have strict schemas, generic `MessageResponse` response `Request received.` to prevent enumeration, `429 + Retry-After` for rate limiting.
+
+### 32.3 Catalog Management Allow-Lists (Mass-Assignment Fix)
+
+- `ProductCreateRequest: {name, slug, description, product_type, price, category_id, is_active, is_published} additionalProperties:false` (required `name,slug,product_type,price,category_id`) — `POST /products` `CAT-007` now uses this, not `Product` response schema.
+- `ProductUpdateRequest` (all optional, same allow-list), `CategoryCreateRequest {name,slug,description,image}`, `CategoryUpdateRequest` — `CAT-008/011/012` updated. `readOnly` fields `id, created_at, updated_at, availability, stock_indicator, reserved_quantity` absent; `role`, `quantity`, `approved_by` rejected `422`. Laravel must use `validated()->only(allowList) → DTO`.
+
+### 32.4 Guest Cart Token Opaque UUID, Cryptographically Secure High-Entropy, Scoped Bearer Credential
+
+- `GuestCartId` parameter `format: uuid` (`UUIDv4` CSPRNG, cryptographically secure, high-entropy ≥122 bits, not `UUIDv1`/sequential/counter, unpredictable, not guessable) and `guest_cart_id` cookie (same `UUIDv4` CSPRNG), description opaque bearer credential scoped strictly to its bound guest cart (authorizes that cart only); never authorizes account operations and never authorizes merge by itself (merge requires authenticated principal + valid guest token + server-side check); retired after merge. Prevents sequential `guest_123`/`UUIDv1` hijacking and guessing.
+
+### 32.5 Scoped Upload Token for Attachments
+
+- SecuritySchemes `uploadToken: {type: apiKey, in: header, name: X-Upload-Token}` + parameter `UploadToken`. `REQ-007`/`ENQ-007` `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` now `security: [{bearerAuth: []}, {uploadToken: []}]` (either authenticated or scoped single-use token bound to parent). Requires parent ownership atomically, inherits `Request→Attachment` auth, no permanent public URL, `url` temporary signed, `401/403/404/422/429` documented. `X-Upload-Token` header required for anonymous* upload.
+
+### 32.6 Canonical Routes and Alias Deprecation
+
+- Removed 10 alias paths `/staff/orders`, `/staff/orders/{order}`, `/staff/orders/{order}/accept`, `/staff/inventory`, `/staff/inventory/{inventory}`, `/staff/products`, `/staff/requests`, `/staff/requests/{request}`, `/staff/enquiries`, `/staff/enquiries/{enquiry}` and duplicate `POST /inventory/{inventory}` (kept `GET`) — canonical are `/orders`, `/inventory/{inventory}/adjust`, `/products`, `/requests`, `/enquiries`. Reduces attack surface, prevents divergent role checks. If alias needed later, `308` redirect to canonical with identical `Policy`.
+
+### 32.7 IDOR and 404 Masking
+
+- All private holder-scoped endpoints (`CART-003/004 PATCH/DELETE /me/cart/items/{item}`, `REQ-003 GET /me/requests/{request}`, `REQ-005 GET /requests/{request}`, `ENQ-003/005`, `NOT-002`, `ORD-002/003/004`, `ORD-006`, `ADM-001-detail`, `ADM-009`) now document `401 Unauthorized`, `404 NotFound (RESOURCE_NOT_FOUND masked — do not return 403 for not-owned)` to avoid existence oracle, and `422` where validation, `429` where rate-limited. Customer A → Customer B returns `404` not `403`.
+
+### 32.8 Role-Aware Authorization in OpenAPI
+
+- All operational endpoints (`ORD-005..014`, `INV-001/002/adjust`, `REQ-004/005/006`, `ENQ-004/005/006`, `ADM-001..009`) now have `401`, `403 Forbidden` (for insufficient role), `404` where applicable, `409 Conflict` for state/idempotency, `422` for validation. Description includes `Requires STAFF/ADMIN <permission> + <state>` (e.g., `ORD-007 Requires STAFF/ADMIN orders.accept + Order=PAID`). `403` not used for masked private customer resources.
+
+### 32.9 Idempotency-Key Scoping
+
+- `Idempotency-Key: uuid` is opaque, not authentication. Durable store key is composite `(authenticated_identity + endpoint + key)` unique; reuse across different identity → treated as new key. Expires 24h; never log with PII; same key + different body → `409 DUPLICATE_OPERATION`; same key + same body → replay `200/201`. Scoped per `CHK-001`, `ORD-004/007..014`, `INV-003-adjust`, `ADM-003/005/006`.
+
+### 32.10 Financial Bounds
+
+- `SetDeliveryFeeRequest.delivery_fee.amount` `>=0` and `<=5000000` minor units (50,000 TZS max), `currency` only `TZS`; `PICKUP` must be `0` `FINALIZED`; `DELIVERY` `PENDING→FINALIZED once before PAID`, then immutable; concurrent `ORD-014` vs `PAY-001` → `409 DELIVERY_FEE_PENDING`. `InventoryAdjustRequest.quantity_delta` transactionally `new_quantity >=0`.
+
+### 32.11 Rate Limiting (Abuse Protection)
+
+- All security-sensitive ops `429 + Retry-After` (standard header). Identified thresholds: `POST /auth/register 5/h/IP`, `POST /auth/login 10/min/IP`, `POST /auth/password/* 3/min/IP`, `POST /requests|enquiries 3/min/IP anonymous 10/min/user`, `POST /checkout 5/min/user`, `POST /me/cart/items 30/min/user`, `POST /me/orders/{order}/cancel 5/min/user`, `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` `10/h` per `X-Upload-Token ID + parent resource (request/enquiry ID) + IP` for anonymous (scoped token, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `POST /inventory/{inventory}/adjust 20/min/staff`, `POST /admin/staff/* 30/min/admin`, `GET /products 100/min/IP`. Anonymous submissions require validation + scoped token + not enumerating parents.
+
+### 32.12 CSRF, CORS, Transport, Cache
+
+- **Transport:** `https://api.example.com/api/v1` only deployed, `Secure` cookies `HttpOnly SameSite=Strict Path=/api`, `HSTS` `max-age=31536000 includeSubDomains`, `TLS 1.2+`, `HTTP→HTTPS` redirect.
+- **CSRF:** Cookie-auth mutations require `X-CSRF-Token` double-submit validated server-side despite `SameSite=Strict`; bearer-only Flutter exempt.
+- **CORS:** `Access-Control-Allow-Origin` allow-list `https://www.example.com, https://admin.example.com` (never `*` with credentials), `Allow-Methods GET,POST,PATCH,DELETE`, `Allow-Headers Content-Type, Authorization, Idempotency-Key, X-Guest-Cart-Id, X-Upload-Token, X-CSRF-Token`, `Vary: Origin`, `Max-Age`.
+- **Cache:** `Cache-Control: private, no-store` for `Cart, Checkout, Orders, Tracking, Notifications, Profile, Request/Enquiry private` (`PRIVATE`, `Vary: Authorization, Cookie`); `Cache-Control: public, max-age=300, s-maxage=600` + `CDN-Cache-Control` for `CAT-001..006` `PUBLIC`.
+

@@ -1204,10 +1204,13 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `CAT-010` | POST | `/api/v1/products/{product}/variants` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Manage variants (Staff only if approved) | PROPOSED |
 | `CAT-011` | POST | `/api/v1/categories` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Create category (Staff only if approved) | PROPOSED |
 | `CAT-012` | PATCH | `/api/v1/categories/{category}` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Update category (Staff only if approved) | PROPOSED |
-| `ADM-001` | GET | `/api/v1/staff` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | List staff | PROPOSED |
-| `ADM-002` | POST | `/api/v1/staff/invitations` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.approve` | Invite staff (admin creates/invites) | PROPOSED |
-| `ADM-003` | POST | `/api/v1/staff/{staff}/approve` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.approve` + audit | Approve staff | PROPOSED |
-| `ADM-004` | PATCH | `/api/v1/staff/{staff}` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | Update staff | PROPOSED |
+| `ADM-001` | GET | `/api/v1/admin/staff` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | List staff | PROPOSED |
+| `ADM-002` | GET | `/api/v1/admin/staff/{user}` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | Get staff detail | PROPOSED |
+| `ADM-003` | POST | `/api/v1/admin/staff` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | Invite staff (admin creates/invites) | PROPOSED |
+| `ADM-004` | POST | `/api/v1/admin/staff/{user}/approve` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.approve` + audit | Approve staff | PROPOSED |
+| `ADM-005` | POST | `/api/v1/admin/staff/{user}/suspend` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` + audit | Suspend staff (`ACTIVE→SUSPENDED`) | PROPOSED |
+| `ADM-006` | POST | `/api/v1/admin/staff/{user}/reactivate` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` + audit | Reactivate staff (`SUSPENDED→ACTIVE`) | PROPOSED |
+| `ADM-007` | GET | `/api/v1/admin/audit-logs` | Audit | Admin | Yes | `ADMINISTRATIVE` `audit.view` | List audit logs | PROPOSED |
 | `ADM-008` | GET | `/api/v1/users` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | List users (authorized admin) | PROPOSED |
 | `ADM-009` | GET | `/api/v1/users/{user}` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | Get user detail (authorized) | PROPOSED |
 | `PAY-001` | POST | `/api/v1/payments` | Payment | Customer | Yes | `AUTHENTICATED_OWNER` own order | Initiate payment (generic placeholder, Group H) | PROPOSED* |
@@ -1233,7 +1236,7 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 - `CAT-005/006` Variants — *Purpose:* independent variant retrieval when product summary insufficient; not required if clients always use embedded variants. *Response:* `Variant` collection/detail.
 
 **Authentication (Rate-Limited, No Role Tampering):**
-- `AUTH-001` `POST /auth/register` — *Request:* `name`, `email`, `phone`, `password` (minimal, not `role`/`address book`); `role: ADMIN/STAFF` rejected (422/403). *Response:* `User` `data` (no `password_hash`/tokens). *Errors:* `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `CONFLICT` (duplicate email), `RATE_LIMITED`. *Auth:* No. `STAFF` not via this endpoint (must be `ADM-002/003`).
+- `AUTH-001` `POST /auth/register` — *Request:* `name`, `email`, `phone`, `password` (minimal, not `role`/`address book`); `role: ADMIN/STAFF` rejected (422/403). *Response:* `User` `data` (no `password_hash`/tokens). *Errors:* `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `CONFLICT` (duplicate email), `RATE_LIMITED`. *Auth:* No. `STAFF` not via this endpoint (must be `ADM-003`).
 - `AUTH-002` `POST /auth/login` — *Request:* `email`, `password`; *Response:* `data` with safe profile + session/credential per `§17.7` (httpOnly cookie for Web, token for Flutter, never long-lived JS secret). **Guest-cart merge (automatic on login):** on successful login, backend merges guest cart (identified by `X-Guest-Cart-Id` header or `guest_cart_id` cookie) onto the authenticated user cart — backend-authoritative, idempotent, preserves items; if guest cart is empty, no-op; if same product+variant exists in both, quantity is merged (strategy deferred to implementation); if guest cart conflicts exceed stock, backend resolves per `inventory rules §12`. Guest cart token is not a client ownership proof — it is an opaque backend-issued identifier. *Errors:* `INVALID_CREDENTIALS` 401 generic (no `email exists` distinction), `RATE_LIMITED`.
 - `AUTH-003` `POST /auth/logout` — *Auth:* Yes, *Authz:* self; must be `POST` (not `GET`), invalidates server state. *Errors:* `AUTHENTICATION_REQUIRED` 401 if not authed.
 
@@ -1307,7 +1310,7 @@ Availability is **embedded** in `Product` (`availability: available|unavailable`
 
 - **Security review:** `Anonymous → private data?` No (catalog only public). `Customer A → Customer B` (IDOR) blocked via object-level `owns` + 404 masking. `Customer→Staff/Admin` privilege escalation blocked (role tampering, `user_id` swapping). `Staff → block customer / change password / impersonate / transfer ownership` blocked. `PATCH {status}` rejected (controlled actions). `Staff over-permission` limited to per-permission (`products.manage` ≠ `inventory.manage`). `Admin overexposure` minimized (field-level). `Public inventory` safe (no `reserved_quantity`), `payment secrets` never, `attachments` private to parent.
 - **Idempotency:** `SAFE`: `CAT-*` `GET`; `IDEMPOTENT`: `USER-002` `PATCH` (designed), `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001` checkout, `PAY-001` payment initiation, `ORD-004` cancel, `ORD-007..011` state actions, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` submit, `CART-002` add (consider later).
-- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` (status transitions), `PAY-001`/`WEBHOOK-001`, `ADM-003` staff approval — flagged as concurrency-sensitive (atomic validation + state + authz).
+- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` (status transitions), `PAY-001`/`WEBHOOK-001`, `ADM-004..006` staff approval/suspend/reactivate — flagged as concurrency-sensitive (atomic validation + state + authz, per `§30.13`/`§30.16` audit).
 - **Rate-limit candidates:** `AUTH-001` register, `AUTH-002` login, `AUTH-004/005` recovery, `REQ-001`/`ENQ-001` anonymous submit, `CHK-001` checkout, `PAY-001` payment — to be implemented later.
 
 ### 19.11 Workflow Coverage & Completeness Gate
@@ -4297,7 +4300,7 @@ Within `v1`, treat as **contract-sensitive** and do not change casually: `role` 
 ## 30. Staff/Admin Operational API Contract (Phase 1.29)
 
 > **Authority:** Canonical domain API contract for **Staff/Admin operational workflows** — privileged commerce operations that remain fully server-controlled, auditable, and customer-account-protective. Consolidates `phases/Phase-1.29.md` and is consistent with `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`), `Catalog` (`§21`), `Order` (`§24`), `Tracking/Fulfillment` (`§25`), `Request` (`§26`), `Enquiry` (`§27`), `Notification` (`§28`), `User/Profile` (`§29`).
-> **Core Principle:** **Staff operate commerce; Admin administers Staff and approves privileged configuration. Neither invents business state, controls customer accounts, or bypasses inventory/financial invariants.** All privileged mutations are explicit controlled actions (`POST /orders/{order}/accept`, `POST /inventory/{inventory}/adjust`, `POST /staff/{user}/approve`), never generic `PATCH /admin/orders/{id}` or `PATCH /admin/users/{id} {role:ADMIN}`. Customer accounts remain protected: Staff have zero customer-account administration authority.
+> **Core Principle:** **Staff operate commerce; Admin administers Staff and approves privileged configuration. Neither invents business state, controls customer accounts, or bypasses inventory/financial invariants.** All privileged mutations are explicit controlled actions (`POST /orders/{order}/accept`, `POST /inventory/{inventory}/adjust`, `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`)), never generic `PATCH /admin/orders/{id}` or `PATCH /admin/users/{id} {role:ADMIN}`. Customer accounts remain protected: Staff have zero customer-account administration authority.
 
 ### 30.1 Actors & Closed Role Model
 
@@ -4313,7 +4316,7 @@ Within `v1`, treat as **contract-sensitive** and do not change casually: `role` 
 
 ### 30.2 Privileged Design Principles
 
-- **No generic admin PATCH for state:** `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions (`POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/set-delivery-fee`, `POST /inventory/{inventory}/adjust`, `POST /staff/{user}/approve`).
+- **No generic admin PATCH for state:** `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions (`POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/delivery-fee` (`ORD-014`), `POST /inventory/{inventory}/adjust`, `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`)).
 - **Default deny:** `authenticated + role + resource + action + ownership/context + business-state + operational scope` — all must pass; `role` alone never authorizes.
 - **Customer accounts remain protected (§30.8):** Staff must not `disable/block customer browsing/ordering`, `change role/permissions`, `change ownership`, `impersonate`, `change password`, `edit security attributes`, `delete account` via ordinary ops.
 - **No ID-only auth:** possession of `orderId`/`productId`/`requestId` grants nothing; server-side policy always.
@@ -5307,4 +5310,87 @@ Per `§28.4`; `PAYMENT_*` Group H deferred.
 
 This section references the canonical examples: `docs/api/api-examples.md:3` (public catalog `CAT-001/002`), `docs/api/api-examples.md:4` (auth `AUTH-001/002` + `401`), `docs/api/api-examples.md:5` (user/profile `USER-001/002`), `docs/api/api-examples.md:6` (cart `CART-001..004`), `docs/api/api-examples.md:7` (checkout `PICKUP`/`DELIVERY` `CHK-001` + `Idempotency-Key`), `docs/api/api-examples.md:8` (order list/detail/cancel/tracking `ORD-001..004` + `ORD-003` tracking), `docs/api/api-examples.md:9` (staff `ORD-005` list + `ORD-006` operational detail concrete + `ORD-007..011,013` state actions + `ORD-014` delivery fee server totals + `INV-003`), `docs/api/api-examples.md:10` (made-to-order `REQ-001` anonymous vs authenticated + `REQ-006/007`), `docs/api/api-examples.md:11` (enquiry `ENQ-001/006`), `docs/api/api-examples.md:12` (notification `NOT-001` customer `§12.1` + `NOT-001` operational staff concrete `§12.2` + `NOT-002` mark-read `PATCH {read:true}` concrete `§12.3` with `404` masking + downstream `§12.4`), `docs/api/api-examples.md:13` (admin `ADM-004` approve), `docs/api/api-examples.md:14` (authz failures), `docs/api/api-examples.md:16` (error matrix `401`/`403`/`404`/`409`/`422`/`429`/`500`), `docs/api/api-examples.md:19` (lifecycles `PICKUP`/`DELIVERY` with fee pending → `FINALIZED` before `PAY-001`). All `45` required examples (`phases/phase-1.31.md:70`) are present with concrete request/response payloads (including `ORD-006`, operational `NOT-001`, and `NOT-002` mark-read per Phase 1.31 `§37`/`§39`) and cross-referenced by stable `Endpoint ID` (`CAT-001`, `AUTH-001`, `CHK-001`, `ORD-001`, `NOT-002`, etc.) for `docs/api/openapi.yaml` Phase 1.32.
 
+
+
+---
+
+## 32. Security Review (Phase 1.33) — Contract Hardening
+
+> **Authority:** Phase 1.33 security review (§15.16 update). All CRITICAL/HIGH findings FIXED before implementation. See `docs/decisions.md ADR/API-SEC-001..010` and `api-conventions.md §32`.
+
+### 32.1 Authentication Credential Schemas (New)
+
+- `POST /auth/change-password` `AUTH-008` now requires `ChangePasswordRequest {current_password writeOnly, password writeOnly 8-128, password_confirmation writeOnly} additionalProperties:false` — `401` unauthenticated, `422` validation, `429` brute-force. `POST /auth/password/forgot` → `ForgotPasswordRequest {email}` generic `MessageResponse`, `429`; `POST /auth/password/reset` → `ResetPasswordRequest {email, token, password, password_confirmation}`.
+
+### 32.2 Catalog Write Allow-Lists
+
+- `POST /products` `CAT-007` → `ProductCreateRequest`, `PATCH /products/{product}` `CAT-008` → `ProductUpdateRequest`, `POST /categories` `CAT-011` → `CategoryCreateRequest`, `PATCH /categories/{category}` `CAT-012` → `CategoryUpdateRequest` — all `additionalProperties:false`, `readOnly` fields `id, created_at, availability, stock_indicator` absent.
+
+### 32.3 Transportation and Identity
+
+- `GuestCartId` `X-Guest-Cart-Id` (header) and `guest_cart_id` (cookie) `format: uuid` **cryptographically secure, high-entropy** (`UUIDv4` CSPRNG, ≥122 bits entropy, not `UUIDv1`/sequential/counter, unpredictable, not guessable), opaque bearer credential scoped strictly to bound guest cart (authorizes that cart only), retired after merge. `X-Upload-Token` scoped single-use for `REQ-007/ENQ-007` with `security: [{bearerAuth: []}, {uploadToken: []}]`. `Idempotency-Key` composite `(identity+endpoint+key)` 24h expiry, not auth token.
+
+### 32.4 Rate Limiting, CSRF, CORS, Cache
+
+- Rate limits identified per §32.11 (register 5/h/IP, login 10/min/IP, requests/enquiries 3/min/IP, checkout 5/min/user, attachments `10/h` per `X-Upload-Token ID + parent + IP` for anonymous (scoped, no user key) and `10/h per user` for authenticated, inventory 20/min/staff, admin 30/min). All `429` with standard `Retry-After`.
+- `CSRF` `X-CSRF-Token` double-submit for cookie-auth mutations; `CORS` allow-list `https://www.example.com, https://admin.example.com`, never `*` with credentials; `Transport` `HTTPS` `HSTS` `TLS 1.2+`; `Cache` `private, no-store` for private, `public, max-age=300` for catalog.
+
+### 32.5 Financial and Inventory Bounds
+
+- `SetDeliveryFeeRequest.amount` `0..5000000` minor units (50,000 TZS max), `currency TZS` only; `PICKUP` orders are created at `CHK-001` with `delivery_fee: {amount:0, currency:TZS}, delivery_fee_status: FINALIZED` — not via `ORD-014`; `POST /orders/{order}/delivery-fee` (`ORD-014`) for `PICKUP` must be rejected `422 BUSINESS_RULE_VIOLATION` per `§30.8.1` (even with `amount:0`); `DELIVERY` `PENDING→FINALIZED once before PAID` immutable (via `ORD-014` only). `InventoryAdjustRequest.quantity_delta` transactional `new_quantity >=0`, `reason` CLOSED.
+
+### 32.6 Authorization and IDOR
+
+- All private holder-scoped endpoints now `401` + `404` masked (not `403`) for Customer A→B; Staff/Admin operational `401` + `403` + `404` + `409` where state. Canonical routes only, alias `/staff/*` removed. Descriptions include `Requires STAFF/ADMIN <permission> + <state>`.
+
+
+---
+
+## 33. Security Test Matrix and Attack Scenarios (Phase 1.33)
+
+### 33.1 Contract-Level Security Test Matrix (Required §63)
+
+| Security test                     | CUSTOMER | STAFF | ADMIN |
+|-----------------------------------|----------|-------|-------|
+| Access public catalog (`CAT-001`) | Yes      | Yes   | Yes   |
+| Access another customer's order via customer route (`ORD-002` `GET /me/orders/{order}` A→B) | No (404 masked) | No (404 masked) | No (404 masked) |
+| Access another customer's order via operational route (`ORD-006` `GET /orders/{order}`) | No (403) | Yes (requires `orders.view_operational` + audit, 404 if order not exists) | Yes (requires `orders.view_operational` + audit) |
+| Access Staff order queue (`ORD-005`) | No (403) | Yes | Yes |
+| Approve Staff (`ADM-004`) | No (403) | No (403) | Yes (audited, 409 if already ACTIVE, 422 self-approval) |
+| Set delivery fee (`ORD-014`) | No (403) | Yes (requires `orders.set_delivery_fee` + `PENDING_PAYMENT+DELIVERY+PENDING`, 0..5000000) | Yes |
+| Change customer role (`PATCH /me {role}`) | No (422 field:role) | No (422) | Controlled/Admin-only if approved (not via `/me`) |
+| Change own role | No | No | No |
+| Modify order status directly (`PATCH {status}`) | No (422, must use `POST /orders/{order}/ship` etc.) | No (422) | No (422) |
+| Adjust inventory (`INV-003-adjust`) | No (401+403) | Yes (20/min, audited) | Yes |
+| Read another user's notifications (`NOT-002` A→B) | No (404 masked) | No (404 masked) | According to approved scope (own only, operational queue separate) |
+| Read audit logs (`ADM-007`) | No | Normally no (403) | Yes if exposed (PRIVATE, paginated) |
+
+*Subject to operational scope explicitly approved. All tests must enforce `401` for unauthenticated, `404` masked for private ownership, `403` for insufficient role, `409` for state/idempotency conflicts.*
+
+### 33.2 Attack Scenario Set (Required §64) — Future Automated/Security Tests
+
+**Attachment retrieval contract (actual mechanism, parent-scope — not a separate `GET /attachments/{id}` collection):** `GET /requests/{request} → attachments[].url` and `GET /enquiries/{enquiry} → attachments[].url` return private temporary signed URLs (not permanent public, not guessable, `Cache-Control: private, no-store`, `temporary`); fetching the private URL requires parent-scope authorization — `Customer` owner via `GET /me/requests/{request}` / `GET /me/enquiries/{enquiry}` (404 masked otherwise) or `Staff` `requests.view`/`enquiries.view` + valid `X-Upload-Token` where `Anonymous*` scoped, verified atomically with parent ownership; `GET /requests/{request}/attachments` and `GET /requests/{request}/attachments/{attachment}` are **not defined** in `§19.1`/`§30.21` — tests must target the private URL, not a non-existent collection GET; cross-resource private URL reuse must be `404`.
+
+Document future tests for:
+
+1. Customer accesses another customer's order (`GET /me/orders/{order_B}` → `404` not `403`).
+2. Customer modifies role to ADMIN (`PATCH /me {role:ADMIN}` → `422`).
+3. Staff accesses Admin staff approval (`POST /admin/staff/{staff}/approve` with STAFF token → `403`).
+4. Staff manipulates order status (`PATCH /orders/{order} {status:DELIVERED}` → `422`; must use `POST .../deliver` with `SHIPPED→DELIVERED` check).
+5. Customer submits delivery fee (`POST /checkout {delivery_fee:{amount:1}}` → `422 field:delivery_fee`).
+6. Customer submits forged total (`POST /checkout {total:{amount:1}}` → `422 field:total`).
+7. Staff submits forged audit actor (`POST /orders/{order}/delivery-fee {actor_id: ...}` → `422` rejected, actor server-derived).
+8. Staff operational cross-resource with authorized scope (Staff **with** `requests.view`, authorized scope: all operational requests, shared per `§30.13`/`§30.21` — V1 intentionally shared, not per-staff assignment → `GET /requests/{request_B}` (exists, within shared scope) → `200`; if assignment scoping existed, cross-scope outside authorized set → `404` masked; separate missing-permission case: Staff **without** `requests.view` → `GET /requests/{request_B}` → `403`).
+9. Customer accesses another user's notification (`PATCH /me/notifications/{notification_B}` → `404`).
+10. Attachment private URL cross-resource (private signed URL for `att_B` obtained via `GET /requests/{request_B} → attachments[].url` or `GET /enquiries/{enquiry_B} → attachments[].url` reused in `request_A`/`enquiry_A` context, or direct fetch of `att_B` private URL without parent `request_B`/`enquiry_B` ownership → `404` parent-scope authorization; `GET /requests/{request}/attachments/{attachment}` is not a defined surface — retrieval is via private URL with parent-scope check, no guessable public URL, no cross-resource retrieval).
+11. Checkout is replayed (`POST /checkout Idempotency-Key same → replay 201 same OD-..., different body → 409`).
+12. Inventory adjustment is replayed (`POST /inventory/{inventory}/adjust same key same body → replay 200 no double delta; different body → 409`).
+13. Delivery fee is concurrently changed (`STAFF A ORD-014 + STAFF B ORD-014` → first commit `200`, second `409` state conflict; `ORD-014` vs `PAY-001` race by commit order — if `PAY-001` observes `delivery_fee_status=PENDING` → `409 DELIVERY_FEE_PENDING`, if `ORD-014` commits first (`FINALIZED` + `total` recalculated `subtotal+delivery_fee`) then `PAY-001` must succeed with finalized total — not always `409`; test both orderings `fee-first` (`ORD-014` commit → `PAY-001` `200` with finalized total) and `payment-first` (`PAY-001` observes `PENDING` → `409`)).
+14. Cancellation races fulfillment (`POST /me/orders/{order}/cancel` (`PENDING_PAYMENT`, within 20min, owned) vs `POST /orders/{order}/ship` (`PROCESSING`, `DELIVERY`) — one commits, only the loser returns `409 ORDER_STATE_CONFLICT`; `cancel-first` (`CANCELLED` committed) → `ship` `409`, `ship-first` (`SHIPPED` committed) → `cancel` `409`; test both orderings with atomic `state+ownership+window` validation).
+15. Public request endpoint is abused with repeated submissions (`POST /requests` 3/min/IP → `429` after limit).
+16. Unknown privileged fields are added to a request (`POST /products {id, role, total}` → `422`).
+17. Error response attempts to enumerate private resources (`GET /me/orders/{order_B}` returns `404` not `403`, no `other_customer_id` in details).
+18. Public catalog response exposes internal fields (`GET /products` must not contain `reserved_quantity, quantity, staff_notes`).
+
+Each scenario must be tested per `api-conventions.md §32.7` (IDOR 404 masking), `§32.8` (role-aware), `§32.9` (idempotency scoped), `§32.11` (rate limiting), and `api-contract.md §15.8` (error disclosure).
 

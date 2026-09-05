@@ -1050,3 +1050,26 @@ Additional notes:
 - **Business workflows:** `Anonymous browse CAT-001..004` → `Customer register/login AUTH-001/002 → cart CART-001..004 → checkout CHK-001 → payment PAY-001 → order ORD-001..004 → tracking ORD-003 → cancellation ORD-004 (20-min)` → `Staff ORD-005..013` (inc. `ORD-013` `DELIVERED/READY_FOR_PICKUP→COMPLETED`) + tracking `ORD-012`; `Request REQ-001 → REQ-007 → own REQ-002/003 → staff REQ-004..006`; `Admin ADM-001..004` approvals — all workflows endpoint-complete per `api-contract.md §19.11`.
 
 > **Phase 1.30 Cross-Domain Review (2026-09-03):** All resources (`Category`, `Product`, `Inventory`, `Cart`, `Checkout`, `Order`, `Request`, `Enquiry`, `Notification`, `User`, `Staff`, `Audit`) verified per `api-contract.md §31.5`/`§31.9` ownership, `§31.9` request/response types, `§31.10` server-controlled fields, `§31.29B` permission matrix; no duplicate `ADM-005/006`/`NOT-004` IDs, state machine unified `READY_FOR_PICKUP→COMPLETED` vs `SHIPPED→DELIVERED→COMPLETED`, delivery-fee shape `{"amount","currency"}` (`TZS` minor units) consistent.
+
+---
+
+## 15. Security Review — Request Schemas and Authorization (Phase 1.33)
+
+### 15.1 New Request Schemas (Mass-Assignment Fix)
+
+- `ChangePasswordRequest {current_password writeOnly, password writeOnly 8-128, password_confirmation writeOnly} additionalProperties:false` — `AUTH-008`.
+- `ForgotPasswordRequest {email format:email} additionalProperties:false` — `AUTH-004`; `ResetPasswordRequest {email, token, password, password_confirmation} additionalProperties:false` — `AUTH-005`.
+- `ProductCreateRequest {name, slug, description, product_type, price, category_id, is_active, is_published} additionalProperties:false` — `CAT-007` (required `name,slug,product_type,price,category_id`); `ProductUpdateRequest` (all optional, same allow-list) — `CAT-008`.
+- `CategoryCreateRequest {name, slug, description, image}` and `CategoryUpdateRequest` — `CAT-011/012`.
+
+`readOnly` fields `id, created_at, updated_at, availability, stock_indicator, reserved_quantity` absent; `role`, `quantity`, `approved_by` rejected `422` via `additionalProperties:false` and allow-list `validated()->only()->DTO`.
+
+### 15.2 Upload Token and Guest Cart
+
+- `X-Upload-Token` scoped single-use header `uploadToken apiKey` for `REQ-007/ENQ-007` with `security: [{bearerAuth: []}, {uploadToken: []}]`; parent ownership verified atomically; no permanent public URL.
+- `X-Guest-Cart-Id` format `uuid`, opaque, retired after merge.
+
+### 15.3 Authorization and IDOR
+
+- All private holder-scoped `GET /me/requests/{request}`, `GET /me/enquiries/{enquiry}`, `PATCH /me/notifications/{notification}`, `CART-003/004`, `ORD-002/003/004` now document `401` + `404` masked (not `403`) for horizontal `Customer A→B`. Staff/Admin `ORD-005..014`, `INV-001/adjust`, `REQ-004/005`, `ENQ-004/005`, `ADM-001..009` document `401` + `403` + `404` + `409` where state. Canonical routes only; alias `/staff/*` removed per `decisions.md ADR/API-SEC-005`.
+

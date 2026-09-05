@@ -736,7 +736,7 @@
 
 ### ADR/API-CART-007 — Guest Cart Token: Client-Type-Split Transport
 
-**Decision:** The guest cart token is a bearer credential. Its transport is split by client type to prevent JavaScript exposure in browsers:
+**Decision:** The guest cart token is a bearer credential **scoped strictly to its bound guest cart** (cryptographically secure, high-entropy `UUIDv4` CSPRNG ≥122 bits, not `UUIDv1`/sequential/counter, unpredictable, not guessable) — it authorizes read/write to that guest cart only (anonymous cart request has no authenticated principal, so validating this token necessarily authorizes access to its bound cart); it **never authorizes account operations** and **never authorizes merge by itself** (merge requires authenticated principal + valid guest token + server-side ownership check). Its transport is split by client type to prevent JavaScript exposure in browsers:
 - **Browser (Next.js):** Token issued exclusively as `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict`. The `X-Guest-Cart-Id` response header is **never** emitted for browser requests, as it would be readable by page JavaScript (including third-party scripts) and defeat the `HttpOnly` protection.
 - **Non-browser (Flutter):** Token issued exclusively in the `X-Guest-Cart-Id` response header (no `Set-Cookie`). Flutter must store it in secure device storage and send it as a request header — never in a JSON body field (request log exposure risk).
 
@@ -1447,4 +1447,124 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 **Deferred:** Complete `openapi.yaml` operations, provider-specific payment auth (Group H, `EXTERNAL_SERVICE_ERROR`), cursor pagination tokens (Group T). `Phase 1.16` error registry — `api-contract.md §15.15`, `Phase 1.17` auth — `§17`, `Phase 1.18` authorization — `§18`, `Phase 1.19` endpoint inventory — `§19` master table snapshot remains `PROPOSED` (see `api-contract.md §19.15`; `ORD-001..014` `APPROVED` via `§24`/`§25`, `REQ-001..007` `APPROVED` via `§26`, `ENQ-001..007` `APPROVED` via `§27`, `NOT-001..002` `APPROVED` via `§28`, `USER-001..002` `APPROVED` via `§29`, `Phase 1.29` operational detail — `§30` Staff/Admin adds controlled actions/audit/inventory-fee/staff lifecycle (catalog operational `CAT-007..012`/`INV-*`/`ADM-*` remain `PROPOSED` pending consolidated review, order `ORD-005..014` already `APPROVED` with §30 detail) and `Phase 1.30` cross-domain review — `§31` (see above) are individually `APPROVED` where marked — `PROPOSED` now scopes only to the master-table snapshot, not to those domains; consolidated `APPROVED` pending), `Phase 1.20` catalog contract — `§21`, `Phase 1.21` cart contract — `§22`, `Phase 1.22` checkout contract — `§23`, `Phase 1.23` order contract — `§24`, `Phase 1.24` tracking+fulfillment — `§25`, `Phase 1.25` made-to-order request — `§26`, `Phase 1.26` general enquiry — `§27`, `Phase 1.27` notification — `§28`, `Phase 1.28` user/profile — `§29`, `Phase 1.29` staff/admin operational — `§30`, `Phase 1.30` cross-domain review — `§31`.
 
+
+
+### Phase 1.33 — API Contract Security Review (Completed 2026-09-05)
+
+**Result:** Formal security review per `phases/phase-1.33.md` across 60+ checkpoints (auth, enumeration, mass assignment, financial, inventory, replay, concurrency, attachment, notification, audit, rate limiting, cache, CSRF, CORS, transport, OpenAPI). **15 findings classified, 13 FIX NOW, 2 DEFER WITH ACCEPTANCE.** All CRITICAL/HIGH resolved before implementation. No new business workflow introduced; contract now machine-enforceable for implementation.
+
+**Deferred Findings Register — DEFER WITH ACCEPTANCE (2):**
+
+| Finding ID | Severity | Affected Scope | Rationale | Acceptance |
+|---|---|---|---|---|
+| `SEC-2026-014` | LOW | `openapi.yaml` `Cache-Control` response headers not machine-verified (`GET /products` public `max-age`, `GET /me/orders` `private, no-store`, etc. rely on prose in `api-conventions.md §32.12`/`api-contract.md §32.4`; no `Cache-Control` header schema in OpenAPI) | `Cache-Control` is deployment/CDN behavior, not contract-breaking for `v1` implementation gate; prose is authoritative and implementation will enforce `private, no-store` for `PRIVATE` and `public, max-age=300` for `PUBLIC` per `api-conventions.md §32.12`; machine verification deferred to `Phase Group B` when Laravel middleware is implemented and can expose header schemas | **Accepted** — owner `API Architect` on `2026-09-05`; mitigation: prose controls + review checklist `§32.12`; residual risk `LOW`; revisit in `Phase 2.1` with `Cache-Control` header tests |
+| `SEC-2026-015` | LOW | `openapi.yaml` `Notification.type` enum partial (`openapi.yaml:1040-1044` enumerates `ORDER_SHIPPED, ORDER_ACCEPTED, NEW_ORDER` vs full registry `ORDER_RECEIVED, ORDER_PROCESSING, ORDER_READY_FOR_PICKUP, ORDER_SHIPPED, ORDER_DELIVERED, ORDER_COMPLETED, ORDER_CANCELLED, NEW_MADE_TO_ORDER_REQUEST, NEW_ENQUIRY` in `api-resources.md §8.1`/`api-contract.md §28`) | Full registry deferred from `Phase 1.32` OpenAPI `PROPOSED` snapshot; `v1` `CLOSED` enforcement will be completed when `Group R` email/push delivery expands `Notification` types; current `3` values cover `Phase 1.27` `IN_APP` primary and do not block Staff/Customer flows; no security bypass (unknown type → `422` per `CLOSED` rule) | **Accepted** — owner `API Architect` on `2026-09-05`; mitigation: `CLOSED` validation + registry in `api-contract.md §28` authoritative; residual risk `LOW`; revisit in `Phase 1.34` when OpenAPI is finalized to full registry |
+
+> Both deferrals are `LOW`, not `CRITICAL/HIGH`; they do not expose financial tampering, IDOR, or privilege escalation; they are tracked above with explicit `Severity / Scope / Rationale / Acceptance` per `phases/phase-1.33.md:1321-1339` `DEFER WITH ACCEPTANCE` requirement. No `CRITICAL/HIGH` remains unresolved.
+
+---
+
+### ADR/API-SEC-001 — Guest Cart Token Cryptographically Secure High-Entropy UUID, Scoped Bearer Credential
+
+**Decision:** `X-Guest-Cart-Id` (`GuestCartId` parameter) and `guest_cart_id` cookie format is `uuid` **cryptographically secure, high-entropy `UUIDv4` CSPRNG (≥122 bits entropy, not `UUIDv1`/sequential/counter, unpredictable, not guessable)** (`550e8400-e29b-41d4-a716-446655440000`, `HttpOnly Secure` cookie `guest_cart_id` for browser, `X-Guest-Cart-Id` header for Flutter, mutually exclusive per client type). Token is an opaque **bearer credential scoped strictly to its bound guest cart** — it authorizes read/write to that guest cart only (anonymous cart request has no authenticated principal, so validating this token necessarily authorizes access to its bound cart); it **never authorizes account operations** (profile, orders, checkout) and **never authorizes merge by itself** (merge `AUTH-002`/`CART-005` requires authenticated principal + valid guest token + server-side ownership check); retired after merge.
+
+**Reason:** Predictable sequential/`UUIDv1`/counter guest IDs allow hijacking guest carts before login merge. `UUIDv4` CSPRNG high-entropy prevents guessing/enumeration; `format: uuid` alone does not guarantee unpredictability.
+
+**Status:** Accepted | **Affected:** `openapi.yaml:146`, `api-contract.md §19.2`, `api-conventions.md §22.6`
+
+---
+
+### ADR/API-SEC-002 — Authentication Credential Operations Strict Schemas, Anti-Enumeration
+
+**Decision:** `POST /auth/change-password` requires `ChangePasswordRequest {current_password writeOnly, password writeOnly 8-128, password_confirmation writeOnly} additionalProperties:false`; `POST /auth/password/forgot` requires `ForgotPasswordRequest {email format:email} additionalProperties:false`; `POST /auth/password/reset` requires `ResetPasswordRequest {email, token, password, password_confirmation} additionalProperties:false`. All return `422` for validation, `429` with `Retry-After` for rate limiting, `401` for auth where needed. Responses are generic `MessageResponse {data:{message}}` to avoid account enumeration (`INVALID_CREDENTIALS` generic, `Request received.` for forgot).
+
+**Reason:** Missing requestBody allowed bypass of `current_password` re-auth and mass-assignment of `role`. Anti-enumeration per `api-contract.md §17.8`.
+
+**Status:** Accepted | **Affected:** `openapi.yaml:1249-1291`, `api-contract.md §17.8`, `api-resources.md §8.4`
+
+---
+
+### ADR/API-SEC-003 — Catalog Management Request Schemas Separate From Response Schemas (Mass-Assignment Protection)
+
+**Decision:** `POST /products` uses `ProductCreateRequest {name,slug,description,product_type,price,category_id,is_active,is_published} additionalProperties:false` (required `name,slug,product_type,price,category_id`); `PATCH /products/{product}` uses `ProductUpdateRequest` (all optional, same allow-list); `POST /categories` → `CategoryCreateRequest {name,slug,description, image}`; `PATCH /categories/{category}` → `CategoryUpdateRequest`. `readOnly` fields `id, created_at, updated_at, availability, stock_indicator, reserved_quantity` absent from request schemas; `additionalProperties:false` rejects `role`, `quantity`, `approved_by` etc. with `422 INVALID_VALUE field: id`. Laravel must use `validated()->only(allowList) → DTO` never `$request->all()`.
+
+**Reason:** Reusing `Product` response schema as requestBody permits `id` hijack, inventory override, privilege confusion. `api-contract.md §13.10/13.14` server-controlled fields never client-settable.
+
+**Status:** Accepted | **Affected:** `openapi.yaml:1373-1399,1423-1449,1575-1599,1621-1647`, `api-contract.md §13.10`, `decisions.md ADR/API-IN-006`
+
+---
+
+### ADR/API-SEC-004 — Scoped Upload Token for Attachment Access
+
+**Decision:** `POST /requests/{request}/attachments` (`REQ-007`) and `POST /enquiries/{enquiry}/attachments` (`ENQ-007`) require `security: [{bearerAuth: []}, {uploadToken: []}]` where `uploadToken` is `apiKey` in header `X-Upload-Token` (scoped single-use, time-limited, server-issued, bound to parent `request/enquiry` id). Anonymous `*` via token inherits parent authorization (`Request→Attachment`); no permanent public URL; `url` in `Attachment` is temporary signed; fetch requires parent auth. Token verified atomically with parent ownership: `404 NotFound` masked if parent inaccessible, `403` if token invalid, `422` for invalid file, `429` for rate limit, `401` for missing auth.
+
+**Reason:** Previously `security: []` (public) or `bearerAuth` only; anonymous request/enquiries need attachment upload without bearer but with scoped token; predictable `att_...` ID alone must not authorize.
+
+**Status:** Accepted | **Affected:** `openapi.yaml:115,146,2401,2577`, `api-contract.md §26.8/27.8`, `api-resources.md §5.4/6.4`
+
+---
+
+### ADR/API-SEC-005 — Canonical Operational Routes, Alias Deprecation (Attack Surface Reduction)
+
+**Decision:** Canonical operational routes are `GET /orders`, `POST /orders/{order}/accept|process|ready-for-pickup|ship|deliver|complete`, `GET /inventory`, `POST /inventory/{inventory}/adjust`, `GET /products` (staff via same `products.view`), `GET /requests`, `GET /enquiries`. Duplicate alias paths `/staff/orders`, `/staff/orders/{order}`, `/staff/orders/{order}/accept`, `/staff/inventory`, `/staff/inventory/{inventory}`, `/staff/products`, `/staff/requests`, `/staff/requests/{request}`, `/staff/enquiries`, `/staff/enquiries/{enquiry}` removed from `openapi.yaml`. Also removed duplicate `POST /inventory/{inventory}` (kept `POST /inventory/{inventory}/adjust` canonical). If alias needed later, it must be `308` redirect to canonical with identical `Policy`.
+
+**Reason:** Duplicate paths double attack surface; divergent `role` checks between `/orders/*` vs `/staff/*` enable vertical escalation via non-canonical path.
+
+**Status:** Accepted | **Affected:** `openapi.yaml:2951-3186`, `api-contract.md §19.1`
+
+---
+
+### ADR/API-SEC-006 — Idempotency-Key Scoped to Identity + Endpoint, Not Auth Token
+
+**Decision:** `Idempotency-Key: uuid` is opaque, not authentication. Durable store key is composite `(authenticated_identity + endpoint + key)` unique; reuse across different identity → treated as new key (no cross-account replay). Key expires 24h; never log full key with PII; same key + different body → `409 CONFLICT DUPLICATE_OPERATION`; same key + same body → replay `200/201` with original `order_reference`. `Idempotency-Key` Requires `bearerAuth` context where endpoint is `AUTHENTICATED_OWNER`/`OPERATIONAL`/`ADMINISTRATIVE`.
+
+**Reason:** Global `key` UNIQUE allows `Customer A` to replay `Customer B`'s UUID if leaked/logged, or probe existence. Scoping prevents key-as-token.
+
+**Status:** Accepted | **Affected:** `api-conventions.md §20.3`, `api-contract.md §23.6/30.13`, `openapi.yaml:137`
+
+---
+
+### ADR/API-SEC-007 — Financial Value Bounds and Immutability (Delivery Fee, Inventory)
+
+**Decision:** `SetDeliveryFeeRequest.delivery_fee.amount` must be `>=0` and `<=5000000` minor units (50,000 TZS max) per `api-resources.md §3.4`; `currency` only `TZS`; `PICKUP` must be `0` `FINALIZED`; `DELIVERY` `null → {amount,currency}` `PENDING→FINALIZED once before PAID`, then immutable; concurrent `ORD-014` vs `PAY-001` → `409 DELIVERY_FEE_PENDING`. `InventoryAdjustRequest.quantity_delta` transactionally `new_quantity = current + delta` must remain `>=0`; `reason` CLOSED `STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT` `additionalProperties:false`.
+
+**Reason:** Unbounded `amount: 99999999900` hijacks order total before `PAID` (insider/compromised staff).
+
+**Status:** Accepted | **Affected:** `openapi.yaml:871-876`, `api-resources.md §3.4/10.2`, `api-contract.md §23.11`
+
+---
+
+### ADR/API-SEC-008 — Rate Limiting Requirements (Abuse Protection)
+
+**Decision:** All security-sensitive operations require rate limiting `429 + Retry-After` (standard `Retry-After` header, not custom field). Thresholds (infra may tune, contract identifies need): `POST /auth/register 5/h/IP`, `POST /auth/login 10/min/IP + 5/min/user`, `POST /auth/password/forgot|reset 3/min/IP`, `POST /requests 3/min/IP (anonymous) 10/min/user`, `POST /enquiries 3/min/IP`, `POST /checkout 5/min/user`, `POST /me/cart/items 30/min/user`, `POST /me/orders/{order}/cancel 5/min/user`, `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` `10/h` per `X-Upload-Token ID + parent resource + IP` for anonymous (scoped, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `POST /inventory/{inventory}/adjust 20/min/staff`, `POST /admin/staff/* 30/min/admin`. `GET /products` public cacheable but still `100/min/IP` to prevent scraping. `Attachment` inline `0 or 1` per `REQ-001/ENQ-001` via `multipart`. Anonymous submissions require validation + `X-Upload-Token` scope + not enumerating private parents.
+
+**Reason:** Anonymous public `REQ-001/ENQ-001` and auth endpoints are spam/credential-stuffing vectors. Contract previously “to be implemented later” insufficient for launch.
+
+**Status:** Accepted | **Affected:** `api-contract.md §15.11/19`, `api-conventions.md §17.7`, `openapi.yaml:158`
+
+---
+
+### ADR/API-SEC-009 — Transport, CSRF, CORS, Cache Security
+
+**Decision:** 
+- **Transport:** `https://api.example.com/api/v1` only in deployed envs; `Secure` flag on cookies `HttpOnly SameSite=Strict Path=/api`, `HSTS` `max-age=31536000 includeSubDomains`, redirect `HTTP→HTTPS`, `TLS 1.2+`.
+- **CSRF:** Cookie-auth mutations (`POST /checkout`, `POST /me/orders/{order}/cancel`, `PATCH /me`, `POST /requests`) require `CSRF-Token` header (`X-CSRF-Token` double-submit) validated server-side despite `SameSite=Strict`; bearer-only Flutter path exempt. Documented in `api-conventions.md §15`.
+- **CORS:** `Access-Control-Allow-Origin` allow-list `https://www.example.com, https://admin.example.com` (never `*` when `Allow-Credentials true`), `Allow-Methods GET,POST,PATCH,DELETE`, `Allow-Headers Content-Type, Authorization, Idempotency-Key, X-Guest-Cart-Id, X-Upload-Token, X-CSRF-Token`, `Vary: Origin`, `Access-Control-Max-Age`. CORS ≠ auth; server-side authz mandatory.
+- **Cache:** `Cache-Control: private, no-store` for `Cart, Checkout, Orders, Tracking, Notifications, Profile, Request/Enquiry private` (`PRIVATE` not CDN, `Vary: Authorization, Cookie`); `Cache-Control: public, max-age=300, s-maxage=600` + `CDN-Cache-Control` for `CAT-001..006` `PUBLIC` (no private fields). OpenAPI documents header via `Cache-Control` response header spec where needed.
+
+**Reason:** `SameSite=Strict` alone insufficient for older browsers; wildcard CORS with credentials breaks auth; private orders must not be CDN-cached.
+
+**Status:** Accepted | **Affected:** `api-conventions.md §15/20`, `api-contract.md §16-18`, `openapi.yaml:13`
+
+---
+
+### ADR/API-SEC-010 — Error Disclosure, 404 Masking, Audit Integrity (Reaffirmed)
+
+**Decision:** Production errors never expose `SQL/table names/file paths/class names/stack traces/storage paths/auth internals/policy impl`. Customer-private `GET /me/orders/{order}`, `GET /me/requests/{request}`, `GET /me/enquiries/{enquiry}`, `PATCH /me/notifications/{notification}`, `CART-003/004` use `404 RESOURCE_NOT_FOUND` masked (not `403`) to avoid existence oracle; probing `GET /orders/1001..1003` non-distinguishing. Every error carries `meta.request_id` (per-request correlation, not user/order/payment ID). Audit actor `actor_id/role` server-derived, `timestamp` ISO8601 Z server-generated, `client cannot control actor_id/approved_by/timestamp`, history immutable (`PATCH/DELETE /audit-logs` prohibited). `GET /admin/audit-logs` `ADMIN` only, `PRIVATE no-store`, paginated, filtered allow-list, no secret leakage.
+
+**Reason:** Reaffirms `ADR/API-ERR-004/007` and `ADR/STAFF-008` with explicit `404` masking for horizontal targets.
+
+**Status:** Accepted | **Affected:** `api-contract.md §15.8/15.12`, `api-conventions.md §17.5`, `openapi.yaml:162-222`
+
+---
 

@@ -406,3 +406,20 @@ Additional invariants from `§31`: `total = subtotal + delivery_fee` (minor unit
 - Customers can cancel within 20 minutes of ordering.
 - "Cancelled" does not automatically mean refunded.
 - **Frontend validation is advisory; backend validation is authoritative — never trust client-supplied business state.**
+
+---
+
+## 19. Security Review — Abuse Protection and Operational Boundaries (Phase 1.33)
+
+> Customers remain free to browse and purchase; Staff remain operational not account-administrative; Admin remains audited. Security does not weaken business workflows.
+
+| # | Business rule | Ref |
+|---|---|---|
+| 1 | **Rate limiting protects abuse-prone operations** — `register 5/h/IP`, `login 10/min/IP`, `password recovery 3/min/IP`, `anonymous requests/enquiries 3/min/IP`, `checkout 5/min/user`, `cart writes 30/min/user`, `cancellation 5/min/user`, `attachments 10/h per X-Upload-Token ID + parent + IP` for anonymous (scoped, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `inventory adjust 20/min/staff`, `admin staff approve 30/min/admin` — `429 RATE_LIMITED` with standard `Retry-After` header. Anonymous spam does not become private data enumeration. | SEC-RATE-001 |
+| 2 | **Guest cart tokens are opaque bearer credentials (cryptographically secure, high-entropy `UUIDv4` CSPRNG ≥122 bits, not `UUIDv1`/sequential/counter, unpredictable, not guessable) scoped strictly to bound guest cart** — `X-Guest-Cart-Id` (header) and `guest_cart_id` (cookie) `uuid` authorizes that cart only (anonymous cart request has no authenticated principal, so validating this token necessarily authorizes access to its bound guest cart); never authorizes account operations and never authorizes merge by itself (merge requires authenticated principal + valid guest token + server-side check); retired after merge; predictable `guest_123`/`UUIDv1` rejected. | CART-GST-001 |
+| 3 | **Attachment uploads require parent ownership + scoped token** — `REQ-007/ENQ-007` `X-Upload-Token` single-use time-limited, verified atomically with parent `request/enquiry` ownership; `Customer A → Customer B` attachment pollution returns `404` masked; no permanent public URL; `url` temporary signed. | ATTACH-001 |
+| 4 | **Financial values remain server-controlled and bounded** — `delivery_fee` `0..5000000` minor units (50,000 TZS max) `TZS` only; `PICKUP` `0 FINALIZED`; `DELIVERY` `PENDING→FINALIZED once before PAID` then immutable; `total = subtotal + delivery_fee` server-calculated; huge/negative fee rejected `422`. | PRICE-006 |
+| 5 | **Idempotency keys are not authentication** — `Idempotency-Key` `uuid` scoped to `(identity+endpoint+key)` 24h; cross-identity reuse treated as new; same key + different body → `409 DUPLICATE_OPERATION`; never log with PII. | IDEMP-001 |
+| 6 | **Transport and browser boundaries enforced** — `HTTPS` `HSTS` `TLS 1.2+` in deployed envs; `Secure HttpOnly SameSite=Strict` cookies; `CSRF` `X-CSRF-Token` double-submit for cookie-auth mutations; `CORS` allow-list not `*` with credentials; `CORS ≠ auth`. | SEC-TRANS-001 |
+| 7 | **Caching respects privacy** — `Cart, Checkout, Orders, Tracking, Notifications, Profile, private Request/Enquiry` `Cache-Control: private, no-store` `Vary: Authorization, Cookie`; public catalog `public, max-age=300` CDN-cacheable with no private fields. | CACHE-001 |
+
