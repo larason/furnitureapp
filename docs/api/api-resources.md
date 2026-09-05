@@ -1,6 +1,8 @@
 # API Resources — Canonical Representations (v1)
 
-> **Resources:** Policy-level field tables, relationship exposure and validation per `phase-1.13.md §72` + `phase-1.14.md` + `phase-1.15.md`. Not per-endpoint JSON schemas. Field enum values are `CLOSED`; `availability` filter vs response vocabularies are separated; money is integer minor-unit `{amount,currency}` everywhere. Validation is layered (Transport→Schema→Auth→Authz→Domain→Concurrency) — backend authoritative, frontend advisory.
+> **Version:** `v1` · **Status:** FROZEN (Phase 1.35 — Version 1 API Contract Freeze, 2026-09-05)  
+> **Authority:** Policy-level field tables, relationship exposure and validation for `v1`. Field enum values are `CLOSED`; `availability` filter vs response vocabularies are separated; money is integer minor-unit `{amount,currency}` everywhere. Validation is layered (Transport→Schema→Auth→Authz→Domain→Concurrency) — backend authoritative, frontend advisory. This file plus `api-contract.md` / `api-conventions.md` / `openapi.yaml` is the consolidated frozen knowledge baseline per `phase-1.35.md`.
+
 
 ## 1. Product (PUBLIC)
 
@@ -834,7 +836,7 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 |---|---|
 | **Owner** | System (operational) |
 | **Privileged readers** | `STAFF`/`ADMIN` `inventory.view` — `GET /inventory` (`INV-001`), `GET /inventory/{inventory}` (`INV-002`, by product/variant) |
-| **Privileged writers** | `STAFF`/`ADMIN` `inventory.manage` — `POST /inventory/{inventory}/adjust` (`INV-003`) only; no `PATCH {quantity:999}` |
+| **Privileged writers** | `STAFF`/`ADMIN` `inventory.manage` — `POST /inventory/{product}/adjust` (`INV-003`) only; no `PATCH {quantity:999}` |
 | **Customer visibility** | **None** — public catalog shows `availability`/`stock_indicator` only (coarse); `quantity/reserved_quantity/available_quantity` never customer-visible |
 | **Immutable** | Derived `available_quantity = quantity - reserved_quantity` (read-only) |
 | **Server-controlled** | `quantity`, `reserved_quantity`, `available_quantity`, `updated_at`; server calculates `new_quantity = current + quantity_delta` transactionally; prevents negative where business prohibits |

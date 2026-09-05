@@ -1568,3 +1568,25 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### Phase 1.35 — Version 1 API Contract Freeze (Completed 2026-09-05)
+
+**Result:** Formal freeze of the Version 1 API Contract concluding Phase Group A. All 75 endpoint operations (72 substantive + 3 Group H placeholders), schemas, error codes (49 closed codes), state transitions, financial bounds, and actor boundaries are frozen. Implementation teams in Phase Group B (Laravel Backend Foundation) must treat this contract as immutable input.
+
+---
+
+### ADR/API-FRZ-001 — Formal Freeze of Version 1 API Contract Baseline
+
+**Decision:** The Version 1 API Contract is officially **FROZEN** as of **2026-09-05**.
+- **Contract Version:** `v1` (`/api/v1` namespace)
+- **Contract Status:** `FROZEN`
+- **Canonical OpenAPI Specification:** `docs/api/openapi.yaml` (SHA-256: `ab81f5d140ff3a209215fd459bc2539ee1f4a878d1fc790ee438931a7b978642`, 75 operations across 64 paths)
+- **Reference Documents:** `AGENTS.md`, `docs/VISION.md`, `docs/api/api-contract.md`, `docs/api/api-resources.md`, `docs/api/api-conventions.md`, `docs/api/openapi.yaml`, `docs/domain/business-rules.md`, `docs/decisions.md`
+- **Known Deferred Items (Maintained as Non-Goals for Group A):** Payment gateway integration details and provider credentials (Group H), real email/SMS/push delivery (Group R), saved customer address book, live GPS courier tracking, chat platform, custom role builders, multi-vendor marketplace abstractions.
+- **Change Policy:** After this freeze, implementation teams must NOT alter externally observable API contracts (paths, verbs, schemas, field nullability, enums, error codes, state machines, financial calculation rules, or authorization logic). Any proposed modification must follow the formal Post-Freeze Change Process: `Change Request → Impact Analysis → Breaking/Non-Breaking Classification → Contract Review → ADR in docs/decisions.md → OpenAPI Update → Example Update → Verification`. Internal implementation details (DB indexes, query optimizations, internal service classes, logging) remain flexible provided they adhere to the frozen contract.
+
+**Reason:** Concludes Group A (Phases 1.16 through 1.35). Establishes a stable, unambiguous contract baseline so backend (Laravel), frontend (Next.js), and mobile (Flutter) teams can implement their systems in parallel without API drift or redesign during construction (`phase-1.35.md §1-47`).
+
+**Status:** ACCEPTED / FROZEN | **Freeze Date:** 2026-09-05 | **Affected:** Entire Version 1 API surface across Laravel, Next.js, and Flutter
+
+---
+

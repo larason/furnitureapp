@@ -3333,7 +3333,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-  /inventory/{inventory}/adjust:
+  /inventory/{product}/adjust:
     post:
       operationId: INV-003
       tags:
@@ -3342,7 +3342,7 @@ paths:
       security:
       - bearerAuth: []
       parameters:
-      - $ref: '#/components/parameters/InventoryPath'
+      - $ref: '#/components/parameters/ProductPath'
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -3900,7 +3900,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
-      description: Requires ADMIN users.manage_authorized
+      description: Requires ADMIN staff.manage
     post:
       operationId: ADM-003
       tags:
@@ -3954,7 +3954,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-  /admin/staff/{staff}/approve:
+  /admin/staff/{user}/approve:
     post:
       operationId: ADM-004
       tags:
@@ -3963,7 +3963,7 @@ paths:
       security:
       - bearerAuth: []
       parameters:
-      - $ref: '#/components/parameters/StaffPath'
+      - $ref: '#/components/parameters/UserPath'
       - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
@@ -3986,7 +3986,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
       description: Requires ADMIN staff.approve; audited; self-approval rejected 422
-  /admin/staff/{staff}/suspend:
+  /admin/staff/{user}/suspend:
     post:
       operationId: ADM-005
       tags:
@@ -3995,7 +3995,7 @@ paths:
       security:
       - bearerAuth: []
       parameters:
-      - $ref: '#/components/parameters/StaffPath'
+      - $ref: '#/components/parameters/UserPath'
       - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
@@ -4017,7 +4017,7 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '409':
           $ref: '#/components/responses/Conflict'
-  /admin/staff/{staff}/reactivate:
+  /admin/staff/{user}/reactivate:
     post:
       operationId: ADM-006
       tags:
@@ -4026,7 +4026,7 @@ paths:
       security:
       - bearerAuth: []
       parameters:
-      - $ref: '#/components/parameters/StaffPath'
+      - $ref: '#/components/parameters/UserPath'
       - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
@@ -4142,8 +4142,8 @@ paths:
       - Catalog
       summary: List operational products (admin/staff)
       description: Operational product list with is_active/is_published and operational inventory fields where authorized.
-        Requires STAFF/ADMIN products.manage (ADMINISTRATIVE). Paginated via page/per_page + meta.pagination. PROPOSED (operational
-        catalog, §30.4.1).
+        Requires STAFF/ADMIN products.manage (ADMINISTRATIVE) / products.view (OPERATIONAL) where approved. Paginated via page/per_page
+        + meta.pagination. PROPOSED (operational catalog, §30.4.1).
       security:
       - bearerAuth: []
       parameters:
@@ -4179,7 +4179,8 @@ paths:
       - Catalog
       summary: Get operational product detail (admin/staff)
       description: Operational product detail with is_active/is_published, inventory quantities where authorized, and full
-        images/variants. Requires STAFF/ADMIN products.manage. PROPOSED (§30.4.1).
+        images/variants. Requires STAFF/ADMIN products.manage (ADMINISTRATIVE) / products.view (OPERATIONAL) where approved.
+        PROPOSED (§30.4.1).
       security:
       - bearerAuth: []
       parameters:
@@ -4350,6 +4351,10 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+              - event_id
+              - payment_id
+              - status
               properties:
                 event_id:
                   type: string

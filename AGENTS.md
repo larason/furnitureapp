@@ -282,6 +282,10 @@ Breaking changes require explicit identification and a migration strategy.
 
 Prefer OpenAPI documentation as the authoritative machine-readable API contract when implementation begins.
 
+**Version 1 API Contract Freeze (Phase 1.35):**
+The Version 1 API contract is frozen. Do not change API paths, request/response schemas, enums, authorization behavior, business-state transitions, financial rules, or other externally observable API behavior without following the post-freeze contract-change process. The contract is documented in `docs/api/api-contract.md`, `docs/api/api-resources.md`, `docs/api/api-conventions.md`, and `docs/api/openapi.yaml`. Internal implementation details (DB indexes, query optimizations, service structuring) are permitted as long as externally observable behavior remains identical.
+
+
 ---
 
 ## 8. Frontend Principles

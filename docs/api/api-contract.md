@@ -1,7 +1,8 @@
 # API Contract — Furniture E-Commerce Platform (Consolidated)
 
-> **Version:** `v1` — base `/api/v1` · **Status:** Phase 1.27 — Notification API Contract (IN_APP primary, PRIVATE, CLOSED types, read_at)
-> **Authority:** This file is the canonical response-envelope, resource-representation and validation contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2` and `phase-1.15.md`.
+> **Version:** `v1` — base `/api/v1` · **Status:** FROZEN (Phase 1.35 — Version 1 API Contract Freeze, 2026-09-05)  
+> **Authority:** This file is the canonical response-envelope, resource-representation, validation, and endpoint contract for `v1`. Phase instruction files are temporary working docs; this file plus `api-conventions.md` / `api-resources.md` / `openapi.yaml` are the consolidated project knowledge per `phase-1.13.md §2`, `phase-1.15.md`, and `phase-1.35.md`.
+
 
 ---
 
@@ -588,7 +589,7 @@ Business error with details:
 - **No namespaces in V1:** Prefer `INSUFFICIENT_STOCK` over `commerce.inventory.insufficient_stock` unless domain explosion justifies it (`§58`).
 - **Avoid explosion/ambiguity:** New code only when client must behave differently; `INSUFFICIENT_STOCK` is valuable, `INSUFFICIENT_STOCK_FOR_SOFA` is not (`§79`). Avoid generic `ERROR`/`FAILED`/`BAD_REQUEST`/`SOMETHING_WENT_WRONG` alone — HTTP status already gives broad class; code gives machine meaning (`§80`).
 
-**Controlled initial registry (see §15.15):** `VALIDATION_ERROR`, `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `INVALID_FORMAT`, `INVALID_TYPE`, `INVALID_JSON`, `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `REQUEST_TOO_LARGE`, `AUTHENTICATION_REQUIRED`, `INVALID_AUTHENTICATION`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `NOT_AUTHENTICATED`, `FORBIDDEN`, `RESOURCE_NOT_OWNED`, `RESOURCE_NOT_FOUND`, `PRODUCT_NOT_FOUND`, `PRODUCT_NOT_PURCHASABLE`, `PRODUCT_UNAVAILABLE`, `INVALID_PRODUCT_VARIANT`, `CART_NOT_FOUND`, `CART_ITEM_NOT_FOUND`, `INVALID_CART_ITEM`, `CART_ITEM_UNAVAILABLE`, `CHECKOUT_REQUIRES_AUTHENTICATION`, `CHECKOUT_NOT_ALLOWED`, `CART_INVALID`, `INSUFFICIENT_STOCK`, `INVALID_FULFILLMENT`, `INVALID_DELIVERY_INFORMATION`, `BUSINESS_RULE_VIOLATION`, `ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE`, `INVALID_ORDER_TRANSITION`, `ORDER_STATE_CONFLICT`, `REQUEST_NOT_FOUND`, `INVALID_REQUEST`, `ENQUIRY_NOT_FOUND`, `INVALID_ENQUIRY`, `INVALID_ATTACHMENT`, `ATTACHMENT_TOO_LARGE`, `UNSUPPORTED_ATTACHMENT_TYPE`, `CONFLICT`, `RESOURCE_VERSION_CONFLICT`, `DUPLICATE_OPERATION`, `RATE_LIMITED`, `EXTERNAL_SERVICE_ERROR`, `INTERNAL_SERVER_ERROR`. Payment-specific codes remain Group H. (`NOT_AUTHENTICATED` is a legacy alias for `AUTHENTICATION_REQUIRED`; `RESOURCE_NOT_OWNED` is a legacy alias for `FORBIDDEN`/`RESOURCE_NOT_FOUND` per §15.8 masking — canonical codes are `AUTHENTICATION_REQUIRED`/`FORBIDDEN`/`RESOURCE_NOT_FOUND`; aliases remain registered as CLOSED for compatibility but new clients must use canonical codes.)
+**Controlled initial registry (see §15.15):** `VALIDATION_ERROR`, `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `INVALID_FORMAT`, `INVALID_TYPE`, `INVALID_JSON`, `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `REQUEST_TOO_LARGE`, `AUTHENTICATION_REQUIRED`, `INVALID_AUTHENTICATION`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `NOT_AUTHENTICATED`, `FORBIDDEN`, `RESOURCE_NOT_OWNED`, `RESOURCE_NOT_FOUND`, `PRODUCT_NOT_FOUND`, `PRODUCT_NOT_PURCHASABLE`, `PRODUCT_UNAVAILABLE`, `INVALID_PRODUCT_VARIANT`, `CART_NOT_FOUND`, `CART_ITEM_NOT_FOUND`, `INVALID_CART_ITEM`, `CART_ITEM_UNAVAILABLE`, `CHECKOUT_REQUIRES_AUTHENTICATION`, `CHECKOUT_NOT_ALLOWED`, `CART_INVALID`, `INSUFFICIENT_STOCK`, `INVALID_FULFILLMENT`, `INVALID_DELIVERY_INFORMATION`, `BUSINESS_RULE_VIOLATION`, `ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE`, `INVALID_ORDER_TRANSITION`, `ORDER_STATE_CONFLICT`, `DELIVERY_FEE_PENDING`, `REQUEST_NOT_FOUND`, `INVALID_REQUEST`, `ENQUIRY_NOT_FOUND`, `INVALID_ENQUIRY`, `INVALID_ATTACHMENT`, `ATTACHMENT_TOO_LARGE`, `UNSUPPORTED_ATTACHMENT_TYPE`, `CONFLICT`, `RESOURCE_VERSION_CONFLICT`, `DUPLICATE_OPERATION`, `RATE_LIMITED`, `EXTERNAL_SERVICE_ERROR`, `INTERNAL_SERVER_ERROR`. Payment-specific codes remain Group H. (`NOT_AUTHENTICATED` is a legacy alias for `AUTHENTICATION_REQUIRED`; `RESOURCE_NOT_OWNED` is a legacy alias for `FORBIDDEN`/`RESOURCE_NOT_FOUND` per §15.8 masking — canonical codes are `AUTHENTICATION_REQUIRED`/`FORBIDDEN`/`RESOURCE_NOT_FOUND`; aliases remain registered as CLOSED for compatibility but new clients must use canonical codes.)
 
 ### 15.4 HTTP Status and API Error Code Are Separate
 
@@ -746,6 +747,7 @@ Do not add arbitrary `retryable:true` field to every error; contract defines cla
 | `ORDER_NOT_CANCELLABLE` | Cancellation not allowed (window/state) | 422/409* | Stop / show why |
 | `INVALID_ORDER_TRANSITION` | State transition invalid | 409/422* | Refresh/reconcile |
 | `ORDER_STATE_CONFLICT` | Order state conflict (concurrency) | 409 | Refresh/retry |
+| `DELIVERY_FEE_PENDING` | Delivery fee pending — `DELIVERY` order payment blocked until Staff/Admin finalize fee via `ORD-014` (`delivery_fee_status=PENDING`) | 409 | Wait for Staff to finalize fee (`ORD-014`) then retry `PAY-001`; `PICKUP` never blocked |
 | `REQUEST_NOT_FOUND` | Furniture request not found | 404 | Reconcile |
 | `INVALID_REQUEST` | Request payload invalid | 422 | Correct input |
 | `ENQUIRY_NOT_FOUND` | Enquiry not found | 404 | Reconcile |
@@ -1312,8 +1314,8 @@ Availability is **embedded** in `Product` (`availability: available|unavailable`
 ### 19.10 Security, Idempotency, Concurrency per Endpoint
 
 - **Security review:** `Anonymous → private data?` No (catalog only public). `Customer A → Customer B` (IDOR) blocked via object-level `owns` + 404 masking. `Customer→Staff/Admin` privilege escalation blocked (role tampering, `user_id` swapping). `Staff → block customer / change password / impersonate / transfer ownership` blocked. `PATCH {status}` rejected (controlled actions). `Staff over-permission` limited to per-permission (`products.manage` ≠ `inventory.manage`). `Admin overexposure` minimized (field-level). `Public inventory` safe (no `reserved_quantity`), `payment secrets` never, `attachments` private to parent.
-- **Idempotency:** `SAFE`: `CAT-*` `GET`; `IDEMPOTENT`: `USER-002` `PATCH` (designed), `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001` checkout, `PAY-001` payment initiation, `ORD-004` cancel, `ORD-007..011` state actions, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` submit, `CART-002` add (consider later).
-- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` (status transitions), `PAY-001`/`WEBHOOK-001`, `ADM-004..006` staff approval/suspend/reactivate — flagged as concurrency-sensitive (atomic validation + state + authz, per `§30.13`/`§30.16` audit).
+- **Idempotency:** `SAFE`: `CAT-*` `GET`; `IDEMPOTENT`: `USER-002` `PATCH` (designed), `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001` checkout, `PAY-001` payment initiation, `ORD-004` cancel, `ORD-007..011` + `ORD-013` `complete` state actions, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` submit, `CART-002` add (consider later).
+- **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` `complete` (status transitions), `PAY-001`/`WEBHOOK-001`, `ADM-004..006` staff approval/suspend/reactivate — flagged as concurrency-sensitive (atomic validation + state + authz, per `§30.13`/`§30.16` audit).
 - **Rate-limit candidates:** `AUTH-001` register, `AUTH-002` login, `AUTH-004/005` recovery, `REQ-001`/`ENQ-001` anonymous submit, `CHK-001` checkout, `PAY-001` payment — to be implemented later.
 
 ### 19.11 Workflow Coverage & Completeness Gate
@@ -4303,7 +4305,7 @@ Within `v1`, treat as **contract-sensitive** and do not change casually: `role` 
 ## 30. Staff/Admin Operational API Contract (Phase 1.29)
 
 > **Authority:** Canonical domain API contract for **Staff/Admin operational workflows** — privileged commerce operations that remain fully server-controlled, auditable, and customer-account-protective. Consolidates `phases/Phase-1.29.md` and is consistent with `Authentication` (`§17`), `Authorization` (`§18`), `Validation` (`§14`), `Error` (`§15`), `Catalog` (`§21`), `Order` (`§24`), `Tracking/Fulfillment` (`§25`), `Request` (`§26`), `Enquiry` (`§27`), `Notification` (`§28`), `User/Profile` (`§29`).
-> **Core Principle:** **Staff operate commerce; Admin administers Staff and approves privileged configuration. Neither invents business state, controls customer accounts, or bypasses inventory/financial invariants.** All privileged mutations are explicit controlled actions (`POST /orders/{order}/accept`, `POST /inventory/{inventory}/adjust`, `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`)), never generic `PATCH /admin/orders/{id}` or `PATCH /admin/users/{id} {role:ADMIN}`. Customer accounts remain protected: Staff have zero customer-account administration authority.
+> **Core Principle:** **Staff operate commerce; Admin administers Staff and approves privileged configuration. Neither invents business state, controls customer accounts, or bypasses inventory/financial invariants.** All privileged mutations are explicit controlled actions (`POST /orders/{order}/accept`, `POST /inventory/{product}/adjust`, `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`)), never generic `PATCH /admin/orders/{id}` or `PATCH /admin/users/{id} {role:ADMIN}`. Customer accounts remain protected: Staff have zero customer-account administration authority.
 
 ### 30.1 Actors & Closed Role Model
 
@@ -4319,7 +4321,7 @@ Within `v1`, treat as **contract-sensitive** and do not change casually: `role` 
 
 ### 30.2 Privileged Design Principles
 
-- **No generic admin PATCH for state:** `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions (`POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/delivery-fee` (`ORD-014`), `POST /inventory/{inventory}/adjust`, `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`)).
+- **No generic admin PATCH for state:** `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions (`POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/delivery-fee` (`ORD-014`), `POST /inventory/{product}/adjust`, `POST /api/v1/admin/staff/{user}/approve` (`ADM-004`)).
 - **Default deny:** `authenticated + role + resource + action + ownership/context + business-state + operational scope` — all must pass; `role` alone never authorizes.
 - **Customer accounts remain protected (§30.8):** Staff must not `disable/block customer browsing/ordering`, `change role/permissions`, `change ownership`, `impersonate`, `change password`, `edit security attributes`, `delete account` via ordinary ops.
 - **No ID-only auth:** possession of `orderId`/`productId`/`requestId` grants nothing; server-side policy always.
@@ -4363,7 +4365,7 @@ Inventory is operational, not customer-editable (see `api-resources.md §9`).
 |---|---|---|---|---|---|---|---|---|
 | `INV-001` | `GET` | `/api/v1/inventory` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (paginated, filtered) | — | — |
 | `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory by product/variant | — | — |
-| `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable `reason` | Controlled stock adjustment (not `PATCH {quantity:999}`) | **Required** (`Idempotency-Key`) — same key replays `200` prior success (no second delta applied), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION` | **Critical** (race with concurrent adjust/checkout) |
+| `INV-003` | `POST` | `/api/v1/inventory/{product}/adjust` | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable `reason` | Controlled stock adjustment (not `PATCH {quantity:999}`) | **Required** (`Idempotency-Key`) — same key replays `200` prior success (no second delta applied), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION` | **Critical** (race with concurrent adjust/checkout) |
 
 - **No arbitrary `PATCH /inventory/{id}`:** only explicit `POST .../adjust`.
 - **Request:** `{"quantity_delta": 10, "reason": "STOCK_RECEIPT"}` (`quantity_delta` integer may be negative where business permits, but resulting `new_quantity = current_quantity + quantity_delta` must respect business invariants; `reason` CLOSED enum per §30.5.2). Unknown fields rejected.
@@ -4590,7 +4592,7 @@ Existing IDs remain **retired never recycled**. Phase 1.29 adds/confirms:
 | `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | Retrieve product operationally (includes `is_active/is_published`/inventory) | — | — | **PROPOSED** |
 | `INV-001` | `GET` | `/api/v1/inventory` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (operational) | — | — | **PROPOSED** |
 | `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory detail | — | — | **PROPOSED** |
-| `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable reason | Controlled inventory adjustment | **Required** | **Critical** | **PROPOSED** |
+| `INV-003` | `POST` | `/api/v1/inventory/{product}/adjust` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable reason | Controlled inventory adjustment | **Required** | **Critical** | **PROPOSED** |
 | `ORD-005` | `GET` | `/api/v1/orders` | Order | Staff, Admin | Required | `OPERATIONAL` `orders.view_operational` | List operational orders | — | — | **APPROVED** (Phase 1.23) — §30.6.1 contractual detail added |
 | `ORD-006` | `GET` | `/api/v1/orders/{order}` | Order | Staff, Admin | Required | `OPERATIONAL` `orders.view_operational` | Get operational order detail | — | — | **APPROVED** (Phase 1.23) |
 | `ORD-007`..`011,013,014` | `POST` | `/api/v1/orders/{order}/accept\|process\|ready-for-pickup\|ship\|deliver\|complete\|delivery-fee` | Order | Staff, Admin | Required | `OPERATIONAL` `orders.*` + state+fulfillment as §30.7/§30.8 | Controlled order state & delivery-fee | **Required** | **Critical** | **APPROVED** (Phase 1.23) — §30.7 contractual detail added |
@@ -5034,7 +5036,7 @@ No domain uses different convention for same condition; `INV-003` no longer `whe
 | Process order (`ACCEPTED→PROCESSING`) | **No** | **Yes** | **Yes** |
 | Fulfill pickup (`PROCESSING→READY_FOR_PICKUP→COMPLETED`) | **No** | **Yes** | **Yes** |
 | Ship delivery (`PROCESSING→SHIPPED`) | **No** | **Yes** | **Yes** |
-| Manage inventory (`POST /inventory/{inventory}/adjust`) | **No** | **Yes** (`inventory.manage`) | **Yes** |
+| Manage inventory (`POST /inventory/{product}/adjust`) | **No** | **Yes** (`inventory.manage`) | **Yes** |
 | Operational request queue (`GET /requests`, `PATCH`) | **No** | **Yes** | **Yes** |
 | Operational enquiry queue (`GET /enquiries`, `POST .../close`) | **No** | **Yes** | **Yes** |
 | Approve Staff (`POST /admin/staff/{user}/approve`) | **No** | **No** | **Yes** (`staff.approve` audited) |
@@ -5192,7 +5194,7 @@ For every inconsistency in `§31.26`, authoritative documentation was updated: `
 | `NOT-002` | `PATCH` | `/api/v1/me/notifications/{notification}` | Customer, Staff, Admin | Mark read/unread |
 | `INV-001` | `GET` | `/api/v1/inventory` | Staff, Admin | List inventory |
 | `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Get inventory detail |
-| `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Staff, Admin | Adjust inventory |
+| `INV-003` | `POST` | `/api/v1/inventory/{product}/adjust` | Staff, Admin | Adjust inventory |
 | `ADM-001` | `GET` | `/api/v1/admin/staff` | Admin | List Staff |
 | `ADM-002` | `GET` | `/api/v1/admin/staff/{user}` | Admin | Get Staff detail |
 | `ADM-003` | `POST` | `/api/v1/admin/staff` | Admin | Invite/create Staff |
@@ -5282,7 +5284,7 @@ Per `§28.4`; `PAYMENT_*` Group H deferred.
 
 **Delivery fee:** `Customer POST /checkout {delivery_fee:{amount:100}}` fails `422` (server-authoritative fee, `§31.14`/`§23.3` — `CHK-001` never accepts `delivery_fee`); `Staff POST /orders/{order}/delivery-fee {delivery_fee:{amount:2500000,currency:TZS}}` on `DELIVERY PENDING_PAYMENT PENDING` succeeds `200` `FINALIZED` with server-calculated `total = subtotal + delivery_fee.amount`; `Admin` same succeeds; `pickup` order `POST …/delivery-fee` fails `422`; `Client POST /checkout {total:{amount:99999}}` and `POST /orders/{order}/delivery-fee {total:{amount:99999}}` fail `422 field: total`; `PAY-001` while `PENDING` fails `409 DELIVERY_FEE_PENDING`, after `FINALIZED` succeeds and amount equals authoritative `total` (`§31.14`).
 
-**Inventory:** `Customer POST /inventory/{inventory}/adjust` → `403`; concurrent `Staff A adjust + Staff B adjust` with different `Idempotency-Key` and independent valid `quantity_delta` → both `200` (serialized `current + delta` inside row-locked `INV-003` transaction, e.g., `100→110→120`, no spurious `409`); same `Idempotency-Key` same `quantity_delta`/`reason` replays `200` (no second delta), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION`; `409` only for idempotency conflict or explicit version precondition (e.g., `If-Match`/`expected_version` stale, not for independent deltas) (`§31.22`/`§30.5.2` `INV-003`).
+**Inventory:** `Customer POST /inventory/{product}/adjust` → `403`; concurrent `Staff A adjust + Staff B adjust` with different `Idempotency-Key` and independent valid `quantity_delta` → both `200` (serialized `current + delta` inside row-locked `INV-003` transaction, e.g., `100→110→120`, no spurious `409`); same `Idempotency-Key` same `quantity_delta`/`reason` replays `200` (no second delta), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION`; `409` only for idempotency conflict or explicit version precondition (e.g., `If-Match`/`expected_version` stale, not for independent deltas) (`§31.22`/`§30.5.2` `INV-003`).
 
 **Requests/Enquiries:** anonymous `POST /requests {product_id: MADE_TO_ORDER}` per `§26.4` succeeds `201`; `Staff GET /requests` succeeds; `Customer PATCH /requests/{request} {request_status:CLOSED}` → `403`; customer `subject/message` immutable after `REQ-001` (`§31.19`); `POST /requests/{request}/attachments` without scoped parent token (`Anonymous*` valid token required per `§26.8`/`§30.19`) fails `401/404`, and `GET` private attachment URL (from `GET /requests/{request} → attachments[].url` private URL, not `GET /requests/{request}/attachments` which is not in `§19.1`/`§30.21` inventory) without parent authorization fails `404`.
 
@@ -5331,7 +5333,7 @@ This section references the canonical examples: `docs/api/api-examples.md:3` (pu
 
 ### 32.3 Transportation and Identity
 
-- `GuestCartId` `X-Guest-Cart-Id` (header) and `guest_cart_id` (cookie) `format: uuid` **cryptographically secure, high-entropy** (`UUIDv4` CSPRNG, ≥122 bits entropy, not `UUIDv1`/sequential/counter, unpredictable, not guessable), opaque bearer credential scoped strictly to bound guest cart (authorizes that cart only), retired after merge. `X-Upload-Token` scoped single-use for `REQ-007/ENQ-007` with `security: [{bearerAuth: []}, {uploadToken: []}]`. `Idempotency-Key` composite `(identity+endpoint+key)` 24h expiry, not auth token.
+- `GuestCartId` `X-Guest-Cart-Id` (header) and `guest_cart_id` (cookie) `format: uuid` **cryptographically secure, high-entropy** (`UUIDv4` CSPRNG, ≥122 bits entropy, not `UUIDv1`/sequential/counter, unpredictable, not guessable), opaque bearer credential scoped strictly to bound guest cart (authorizes that cart only), retired after merge. `X-Upload-Token` scoped **single-use upload-only** for `REQ-007/ENQ-007` with `security: [{bearerAuth: []}, {uploadToken: []}]` — **not used for attachment reads** (reads use parent-scope `requests.view`/`enquiries.view` or the private signed URL capability, see §33.2). `Idempotency-Key` composite `(identity+endpoint+key)` 24h expiry, not auth token.
 
 ### 32.4 Rate Limiting, CSRF, CORS, Cache
 
@@ -5372,7 +5374,7 @@ This section references the canonical examples: `docs/api/api-examples.md:3` (pu
 
 ### 33.2 Attack Scenario Set (Required §64) — Future Automated/Security Tests
 
-**Attachment retrieval contract (actual mechanism, parent-scope — not a separate `GET /attachments/{id}` collection):** `GET /requests/{request} → attachments[].url` and `GET /enquiries/{enquiry} → attachments[].url` return private temporary signed URLs (not permanent public, not guessable, `Cache-Control: private, no-store`, `temporary`); fetching the private URL requires parent-scope authorization — `Customer` owner via `GET /me/requests/{request}` / `GET /me/enquiries/{enquiry}` (404 masked otherwise) or `Staff` `requests.view`/`enquiries.view` + valid `X-Upload-Token` where `Anonymous*` scoped, verified atomically with parent ownership; `GET /requests/{request}/attachments` and `GET /requests/{request}/attachments/{attachment}` are **not defined** in `§19.1`/`§30.21` — tests must target the private URL, not a non-existent collection GET; cross-resource private URL reuse must be `404`.
+**Attachment retrieval contract (actual mechanism, parent-scope — not a separate `GET /attachments/{id}` collection):** `GET /requests/{request} → attachments[].url` and `GET /enquiries/{enquiry} → attachments[].url` return private temporary signed URLs (not permanent public, not guessable, `Cache-Control: private, no-store`, `temporary`); fetching the private URL requires parent-scope authorization — `Customer` owner via `GET /me/requests/{request}` / `GET /me/enquiries/{enquiry}` (404 masked otherwise) or `Staff` `requests.view`/`enquiries.view` (parent-scope, verified atomically with parent ownership; **no `X-Upload-Token` — token is single-use upload-only for `REQ-007/ENQ-007` and is expired after upload; Staff reads use parent-scope or the separate short-lived signed-URL read capability**); `GET /requests/{request}/attachments` and `GET /requests/{request}/attachments/{attachment}` are **not defined** in `§19.1`/`§30.21` — tests must target the private URL, not a non-existent collection GET; cross-resource private URL reuse must be `404`.
 
 Document future tests for:
 
@@ -5387,9 +5389,9 @@ Document future tests for:
 9. Customer accesses another user's notification (`PATCH /me/notifications/{notification_B}` → `404`).
 10. Attachment private URL cross-resource (private signed URL for `att_B` obtained via `GET /requests/{request_B} → attachments[].url` or `GET /enquiries/{enquiry_B} → attachments[].url` reused in `request_A`/`enquiry_A` context, or direct fetch of `att_B` private URL without parent `request_B`/`enquiry_B` ownership → `404` parent-scope authorization; `GET /requests/{request}/attachments/{attachment}` is not a defined surface — retrieval is via private URL with parent-scope check, no guessable public URL, no cross-resource retrieval).
 11. Checkout is replayed (`POST /checkout Idempotency-Key same → replay 201 same OD-..., different body → 409`).
-12. Inventory adjustment is replayed (`POST /inventory/{inventory}/adjust same key same body → replay 200 no double delta; different body → 409`).
+12. Inventory adjustment is replayed (`POST /inventory/{product}/adjust same key same body → replay 200 no double delta; different body → 409`).
 13. Delivery fee is concurrently changed (`STAFF A ORD-014 + STAFF B ORD-014` → first commit `200`, second `409` state conflict; `ORD-014` vs `PAY-001` race by commit order — if `PAY-001` observes `delivery_fee_status=PENDING` → `409 DELIVERY_FEE_PENDING`, if `ORD-014` commits first (`FINALIZED` + `total` recalculated `subtotal+delivery_fee`) then `PAY-001` must succeed with finalized total — not always `409`; test both orderings `fee-first` (`ORD-014` commit → `PAY-001` `200` with finalized total) and `payment-first` (`PAY-001` observes `PENDING` → `409`)).
-14. Cancellation races fulfillment (`POST /me/orders/{order}/cancel` (`PENDING_PAYMENT`, within 20min, owned) vs `POST /orders/{order}/ship` (`PROCESSING`, `DELIVERY`) — one commits, only the loser returns `409 ORDER_STATE_CONFLICT`; `cancel-first` (`CANCELLED` committed) → `ship` `409`, `ship-first` (`SHIPPED` committed) → `cancel` `409`; test both orderings with atomic `state+ownership+window` validation).
+14. Concurrent state conflict from a common starting state (valid initial state shared by both competitors) — **split by state** because one order cannot be `PENDING_PAYMENT` and `PROCESSING` at the same race start: **(a) PENDING_PAYMENT — Customer cancel (`POST /me/orders/{order}/cancel`, within 20min, owned, `PENDING_PAYMENT`) vs Staff delivery-fee finalization (`POST /orders/{order}/delivery-fee` `PENDING→FINALIZED`, `DELIVERY`) or vs concurrent cancel/payment — one commits, loser returns `409 ORDER_STATE_CONFLICT`/`ORDER_NOT_CANCELLABLE`/`INVALID_ORDER_TRANSITION`; test both orderings `cancel-first` vs `fee-first`; (b) PROCESSING (DELIVERY) — Staff ship (`POST /orders/{order}/ship`) vs concurrent ship (idempotent) — first `200 SHIPPED`, retry same `Idempotency-Key` replays `200`, different key concurrent loser `409 ORDER_STATE_CONFLICT`; atomic `state+ownership+window` validation. The previous `cancel(PENDING_PAYMENT) vs ship(PROCESSING)` pairing is invalid as a single race and is therefore split by valid initial state.**
 15. Public request endpoint is abused with repeated submissions (`POST /requests` 3/min/IP → `429` after limit).
 16. Unknown privileged fields are added to a request (`POST /products {id, role, total}` → `422`).
 17. Error response attempts to enumerate private resources (`GET /me/orders/{order_B}` returns `404` not `403`, no `other_customer_id` in details).
@@ -5403,13 +5405,85 @@ Each scenario must be tested per `api-conventions.md §32.7` (IDOR 404 masking),
 ## 34. Final Review Summary — Phase 1.34 Consistency & Completeness (2026-09-05)
 
 > **Review date:** 2026-09-05
-> **Documents reviewed:** `AGENTS.md`, `docs/VISION.md`, `docs/api/api-contract.md` (5396L, §1-33), `docs/api/api-resources.md` (1075L), `docs/api/api-conventions.md` (1009L), `docs/api/openapi.yaml` (3438L, 64 paths, 75 operationIds), `docs/api/api-examples.md` (1224L, 45 payloads), `docs/domain/business-rules.md` (425L), `docs/decisions.md` (1561L), `phases/phase-1.34.md` (DOD 50/50)
+> **Documents reviewed:** `AGENTS.md`, `docs/VISION.md`, `docs/api/api-contract.md` (5489L, §1-34), `docs/api/api-resources.md` (1075L), `docs/api/api-conventions.md` (1009L), `docs/api/openapi.yaml` (3438L, 64 paths, 75 operationIds), `docs/api/api-examples.md` (1224L, 45 payloads), `docs/domain/business-rules.md` (425L), `docs/decisions.md` (1561L), `phases/phase-1.34.md` (DOD 50/50)
 > **Endpoints reviewed:** 75 stable IDs (CAT 14 + AUTH 8 + USER 2 + CART 5 + CHK 1 + ORD 14 + REQ 7 + ENQ 7 + NOT 2 + INV 3 + ADM 9 + PAY 2 + WEBHOOK 1) — all present in `§19.1`/`§30.21`/`api-resources.md:15`/`openapi.yaml`/`api-examples.md`
 > **Schemas reviewed:** 59 schemas (`Product`, `ProductSummary`, `ProductImage`, `Variant`, `VariantSummary`, `Category`, `User`, `Cart`, `CartItem`, `Order`, `OrderSummary`, `OrderDetail`, `OrderOperationalDetail`, `OrderItem`, `TrackingTimeline`, `StatusHistoryItem`, `MadeToOrderRequest`, `CreateRequestRequest`, `Enquiry`, `CreateEnquiryRequest`, `Notification`, `Inventory`, `AuditLog`, `Money`, `CollectionMeta`, `PaginationMeta`, `ErrorItem`, etc.) — all required fields, types, enums, formats, examples checked
 > **Examples reviewed:** 45 canonical payloads (`CAT-001/002`, `AUTH-001/002`, `USER-001/002`, `CART-001..004`, `CHK-001`, `ORD-001..014`, `REQ-001`, `ENQ-001`, `NOT-001/002`, `INV-003`, `ADM-004`, `PAY-001` placeholder) — 29 JSON blocks validated against schemas
-> **OpenAPI validation status:** `YAML parses PASS`, `openapi: 3.2.0` with `type: [string,'null']` / `anyOf` for 3.2, `0` missing `$ref` (380 refs), `75` operationIds unique, `0` `nullable:` key, `ErrorItem.code` enum 49 CLOSED values, `Money` `TZS` minor units consistent, `ISO8601 Z` timestamps, `404` masking, `429` RateLimited with `Retry-After` on all security-sensitive ops
+> **OpenAPI validation status:** `YAML parses PASS`, `openapi: 3.2.0` with `type: [string,'null']` / `anyOf` for 3.2, `0` missing `$ref` (380 refs), `75` operationIds unique, `0` `nullable:` key, `ErrorItem.code` enum 50 CLOSED values, `Money` `TZS` minor units consistent, `ISO8601 Z` timestamps, `404` masking, `429` RateLimited with `Retry-After` on all security-sensitive ops
 > **Critical findings:** `F-C01` 5 missing paths (PAY-001/002/WEBHOOK-001/CAT-013/014) — FIXED by adding to `openapi.yaml`; `F-C02` duplicate `NOT-001-staff` `/staff/notifications` — FIXED by removal; `F-C03` `INV-003-adjust` renamed → `INV-003` — FIXED; `F-C01-C03` closed, `CRITICAL 0` remaining
 > **High findings:** `F-H01` examples missing ~30 IDs — FIXED by expanding `api-examples.md` coverage note (operational `CAT/ADM` deferred per §20 Non-Goals) and `F-H02` `INV-002` param drift `{product}` → `{inventory}` unified — FIXED; `F-H01` schema expansions `Product` `images/variants`, `CartItem` `product/variant/is_purchasable`, `OrderItem` snapshot, `MadeToOrderRequest` `dimensions/material/color/notes`, `Enquiry` `phone/category/order`, `Notification` 11 enum — FIXED (11/20 example validations now PASS)
 > **Medium/Low findings:** `F-M01` stale count `69 → 75` — FIXED at `§19.13`; `F-L` `USER-003` retired correctly never recycled PASS; `F-L` additional `unread_count` for `NOT-001` — FIXED via `CollectionMeta.unread_count` optional; `X-C01` `CheckoutResponseData.order_id` vs `Order.id` naming — documented as `order_id` deprecated alias, `id` canonical; `X-C02` etc. PASS
 > **Deferred decisions:** `2` `LOW` `DEFER WITH ACCEPTANCE` tracked in `docs/decisions.md:1456` `SEC-2026-014` (`Cache-Control` header not machine-verified) and `SEC-2026-015` (`Notification.type` partial 3→11) — both `LOW`, not `CRITICAL/HIGH`, accepted with mitigation and revisit in `Phase 1.35/Group B/R`; `Group H` `PAY-001/002/WEBHOOK-001` `PROPOSED*` and `Group R` email/push, `saved address book`, `live GPS` consistently marked `deferred` per `§55`
-> **Final readiness status:** **READY for API Contract Freeze (Phase 1.35)** — no `CRITICAL`/`HIGH` gaps remain, no placeholder paths, no `nullable:true`, no unexplained enumeration, financial authority unambiguous (`subtotal` server `CHK-001`, `delivery_fee` Staff `ORD-014` `0..5000000`, `total` server), state machine complete (`PENDING_PAYMENT`→`COMPLETED`/`CANCELLED` 13 transitions, terminal states immutable), authorization explicit per endpoint (`anonymous/CUSTOMER/STAFF/ADMIN` + owner/state), error vocabulary CLOSED (49 codes), pagination `meta.pagination` + `id ASC` tie-breaker, `TZS` minor units, `ISO8601 Z`, `CLOSED` enums, `404` masking, `429` `Retry-After` on all abuse-prone ops, traceability `capability → contract → endpoint → example → openapi → test` exists for all 75 IDs; **no implementation code started** per `§62` DOD.
+> **Final readiness status:** **READY for API Contract Freeze (Phase 1.35)** — no `CRITICAL`/`HIGH` gaps remain, no placeholder paths, no `nullable:true`, no unexplained enumeration, financial authority unambiguous (`subtotal` server `CHK-001`, `delivery_fee` Staff `ORD-014` `0..5000000`, `total` server), state machine complete (`PENDING_PAYMENT`→`COMPLETED`/`CANCELLED` 13 transitions, terminal states immutable), authorization explicit per endpoint (`anonymous/CUSTOMER/STAFF/ADMIN` + owner/state), error vocabulary CLOSED (50 codes), pagination `meta.pagination` + `id ASC` tie-breaker, `TZS` minor units, `ISO8601 Z`, `CLOSED` enums, `404` masking, `429` `Retry-After` on all abuse-prone ops, traceability `capability → contract → endpoint → example → openapi → test` exists for all 75 IDs; **no implementation code started** per `§62` DOD.
+
+---
+
+## 35. Version 1 API Contract Freeze Baseline (Phase 1.35 — 2026-09-05)
+
+```text
+================================================================================
+VERSION 1 API CONTRACT STATUS: FROZEN
+================================================================================
+Contract Version:    v1
+Contract Status:     FROZEN
+Freeze Date:         2026-09-05
+OpenAPI File:        docs/api/openapi.yaml
+OpenAPI SHA-256:     ab81f5d140ff3a209215fd459bc2539ee1f4a878d1fc790ee438931a7b978642
+Endpoint Count:      75 operations across 64 paths (72 substantive + 3 Group H placeholders)
+Error Codes:         50 CLOSED codes
+Actor Roles:         CUSTOMER, STAFF, ADMIN (CLOSED)
+Order Lifecycle:     13 permitted transitions (PENDING_PAYMENT -> COMPLETED/CANCELLED)
+Cancellation Window: 20 minutes (server-authoritative time)
+Financial Contract:  Integer minor units (1 TZS = 100), TZS only, server-calculated totals
+================================================================================
+```
+
+### 35.1 Frozen Baseline Documents
+
+The canonical Version 1 API Contract baseline consists of:
+
+1. `AGENTS.md` — Core architectural principles, actor ownership, and post-freeze rule
+2. `docs/VISION.md` — Project scope, small-business architecture, and deferred features
+3. `docs/api/api-contract.md` — Consolidated API contract (envelope, resources, endpoints, validation, errors, security, invariants)
+4. `docs/api/api-resources.md` — Canonical resource field definitions, exposure levels, and schemas
+5. `docs/api/api-conventions.md` — Shared conventions (headers, pagination, sorting, filters, money, idempotency, security)
+6. `docs/api/openapi.yaml` — Canonical machine-readable OpenAPI 3.2 specification (SHA-256: `ab81f5d140ff3a209215fd459bc2539ee1f4a878d1fc790ee438931a7b978642`)
+7. `docs/domain/business-rules.md` — Authoritative domain business rules and non-negotiables
+8. `docs/decisions.md` — Architecture Decision Records (ADRs) through ADR/API-FRZ-001
+
+### 35.2 Post-Freeze Governance & Change Rules
+
+Following the completion of Phase 1.35, the Version 1 API Contract is officially **FROZEN**.
+
+#### Allowed Without Contract Review
+Internal implementation changes that do not alter externally observable API behavior:
+- Database schema indexing, foreign key naming, and storage engine configuration
+- Internal Laravel service, action, repository, and controller organization
+- Internal caching mechanism and key storage (preserving documented `Cache-Control`)
+- Database query optimizations and Eloquent eager-loading structures
+- Internal class, variable, and helper function naming
+- Application logging and internal observability instrumentation
+
+#### Strictly Prohibited Without Formal Contract-Change Review
+Any modification to externally observable contract behavior:
+- Adding, removing, or renaming endpoint paths
+- Modifying HTTP methods or status codes
+- Adding required request fields or changing field requiredness/nullability
+- Removing or renaming response fields relied upon by clients
+- Modifying field types or wire formats (e.g. changing money structure or timestamp format)
+- Altering enum members or adding unapproved enum values (enums remain CLOSED)
+- Adding, removing, or renaming error codes in the closed error registry
+- Altering authentication requirements or authorization boundaries
+- Altering customer resource ownership or 404 masking behavior
+- Modifying order state machine statuses, branches, or permitted transitions
+- Modifying financial rules, server-calculated totals, or delivery-fee authority
+- Changing pagination metadata placement (`meta.pagination`) or sorting tie-breaker (`id ASC`)
+
+#### Post-Freeze Change Process
+Any change to frozen contract behavior must follow:
+```text
+Change Request → Impact Analysis → Breaking/Non-Breaking Classification →
+Contract Review → Architecture Decision Record (docs/decisions.md) →
+OpenAPI Update → Example Update → Verification → Release Decision
+```
+
