@@ -1590,3 +1590,23 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/BACKEND-001 — Phase 2.1 Laravel Backend Foundation Baseline
+
+**Decision:** The existing Laravel application at `backend/laravel` is preserved as the project's backend (no re-scaffold). `composer create-project` was used in Group A; Phase 2.1 only verifies and configures it.
+
+- **Installed baseline (recorded from actual runtime, not guessed):** Laravel Framework `13.29.0`, PHP `8.5.10`, Composer `2.10.3`.
+- **Routing/bootstrap mechanism:** Laravel 13 `bootstrap/app.php` `withRouting()` is the mechanism. API routes are registered via `api: routes/api.php` with `apiPrefix: 'api'` — the sole API version boundary, yielding `/api/v1`. The framework liveness route `/up` (web) is retained for infrastructure checks only. No `/v1` or unversioned API paths are added.
+- **Health endpoint:** `GET /api/v1/health` added as an **infrastructure-only** endpoint (not a Group A business resource, not present in `openapi.yaml`). Response is minimal `{"status":"ok"}` with no PHP/Laravel version, DB credentials, env vars, filesystem paths, or stack traces. A feature test (`tests/Feature/HealthEndpointTest.php`) covers it.
+- **Environment (local dev only):** `APP_ENV=local`, `APP_DEBUG=true`, `APP_URL=http://127.0.0.1:8000`, valid `APP_KEY`. `.env` remains untracked; `.env.example` is the committed template (no real credentials).
+- **Database baseline:** local driver `mysql` (MariaDB `11.8.8` on `127.0.0.1:3306`), dev database `furnitureapp`, `utf8mb4`. Only the untouched Laravel skeleton framework migrations were applied locally (`users`, `cache`, `jobs`, `sessions`, plus `migrations` metadata) so the web scaffold and `database`-based session/cache drivers boot. **No domain migrations were introduced**, per Phase 2.1 §21.
+- **Deferred (deliberate, per contract):** no authentication package (e.g., Sanctum) installed; no authorization package (e.g., Spatie Permission) installed; no Redis/queue/cache infrastructure introduced; queue/cache/session remain `database`-driven on framework tables. These are decided in their dedicated phases.
+- **CORS baseline:** no `config/cors.php` published; framework `HandleCors` is inert (no configured paths → no headers emitted). No wildcard `*` CORS. Production allow-list per `ADR/API-SEC-009` is configured deliberately in a later phase.
+- **Error handling:** no redesign. Laravel's `bootstrap/app.php` already renders JSON for `api/*` or JSON-expecting requests; the frozen Group A `errors[]` envelope is implemented in later API foundation phases.
+- **Welcome route:** retained; `GET /` returns the Laravel development page (acceptable per §27). No frontend pages are built in Laravel.
+
+**Reason:** Phase 2.1 establishes a clean, verified, project-specific Laravel foundation for later domain phases while preserving the frozen Group A contract and the existing `backend/laravel` installation.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (routes/api.php, bootstrap/app.php, .env/.env.example), `docs/api/*` (unchanged), `docs/decisions.md`
+
+---
+
