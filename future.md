@@ -1,5 +1,5 @@
 # Future plans
-* make the designs as simple and small as possible since its still a small business wit small catalogue of products, No bloated images and layout, keep it consistency, follow the inspiration from [https://www.urbanladder.com/](https://www.urbanladder.com/).
+* make the designs as simple and small as possible since its still a small business wit small catalogue of products, No bloated images and layout, keep it consistency, follow the theme and colour inspiration from [https://www.urbanladder.com/](https://www.urbanladder.com/) BUT not the design system since it must use explicitly material ui for react/nextjs and material 3 for flutter, NO custom designs just pure frameworks adaptation.
 * implement material ui for react web application and material 3 for flutter app. do not create custom buttons, cards, forms, navbars other than that provided by the design frameworks(material ui for react and material 3 for flutter).
 * During the Laravel backend implementation phase, ensure form requests and DTO mappers enforce FormRequest::validated() strictly
   rather than passing $request->all() to models, directly honoring the additionalProperties: false rules established in the schemas.
