@@ -56,19 +56,17 @@ For this phase, treat health/status as an **operational application endpoint**, 
 
 ### Implementation decision for this phase
 
-Unless the existing repository already contains a health/status endpoint, use:
+The canonical operational endpoint for this phase is:
 
 ```text
 GET /health
 ```
 
-as the operational endpoint.
-
 Keep it outside `/api/v1`.
 
 This is an implementation-level operational endpoint, not a new Version 1 business API contract.
 
-If the existing repository already has an established health/status route, preserve that route instead of creating `/health`.
+If the existing repository already contains a health/status endpoint (for example, the framework default `GET /up` or a legacy `GET /api/v1/health`), migrate that functionality to the single canonical `GET /health` and ensure no duplicate health aliases remain. The implementation, tests, verification commands, checklist, and response contract must all reference the same canonical route.
 
 ---
 
@@ -776,8 +774,8 @@ Do not wait for:
 
 Before marking Phase 2.9 complete:
 
-* [ ] one canonical health endpoint exists
-* [ ] default route is `GET /health` unless an existing repository health route already exists
+* [ ] one canonical health endpoint exists (`GET /health`)
+* [ ] the canonical route is `GET /health` outside `/api/v1` (any legacy `/up` or `/api/v1/health` aliases have been removed/consolidated)
 * [ ] endpoint remains outside `/api/v1`
 * [ ] endpoint requires no authentication
 * [ ] endpoint performs no mutations

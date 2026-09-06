@@ -25,6 +25,10 @@ return Application::configure(basePath: dirname(__DIR__))
             AssignRequestId::class,
         ]);
 
+        $middleware->prependToGroup('web', [
+            AssignRequestId::class,
+        ]);
+
         $middleware->appendToGroup('api', [
             ValidateJsonBody::class,
         ]);
