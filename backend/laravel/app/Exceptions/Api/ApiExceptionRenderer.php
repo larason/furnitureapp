@@ -4,12 +4,14 @@ namespace App\Exceptions\Api;
 
 use App\Support\ApiErrorCode;
 use App\Support\ApiErrorResponse;
+use App\Support\ApiLogContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -35,6 +37,10 @@ class ApiExceptionRenderer
         }
 
         if ($e instanceof ApiException) {
+            if ($e->status() >= 500) {
+                $this->log($request, $e, $e->errorCode(), $e->status());
+            }
+
             return $this->response->error($e->status(), $e->errorCode(), $e->getMessage(), $request, $e->field(), $e->details(), $e->headers());
         }
 
@@ -77,6 +83,10 @@ class ApiExceptionRenderer
         if ($e instanceof HttpExceptionInterface) {
             $status = $e->getStatusCode();
 
+            if ($status >= 500) {
+                $this->log($request, $e, $this->httpExceptionCode($status), $status);
+            }
+
             return $this->response->error(
                 $status,
                 $this->httpExceptionCode($status),
@@ -86,7 +96,17 @@ class ApiExceptionRenderer
             );
         }
 
+        $this->log($request, $e, ApiErrorCode::INTERNAL_SERVER_ERROR, 500);
+
         return $this->response->error(500, ApiErrorCode::INTERNAL_SERVER_ERROR, 'An unexpected error occurred.', $request);
+    }
+
+    private function log(Request $request, Throwable $exception, ApiErrorCode $code, int $status): void
+    {
+        try {
+            Log::error('api.exception', ApiLogContext::forException($request, $exception, $code, $status));
+        } catch (Throwable) {
+        }
     }
 
     private function httpExceptionCode(int $status): ApiErrorCode
