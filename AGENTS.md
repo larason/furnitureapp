@@ -1294,6 +1294,10 @@ A feature is not complete because a screen renders. It is complete when the requ
 
 Important architecture decisions, assumptions, API changes and operational procedures should be documented near the relevant code or in project documentation.
 
+### Rule 16 - Comments
+
+Limit the number of comments as minimum as possible when writing any code. This include uneccessary long notes and information.
+
 ---
 
 # 28. Definition of Done

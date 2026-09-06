@@ -133,6 +133,6 @@ class ApiRoutingSmokeTest extends TestCase
 
     public function test_health_and_infrastructure_marker_are_not_domain_routes(): void
     {
-        $this->getJson('/api/v1/health')->assertOk()->assertJson(['status' => 'ok']);
+        $this->getJson('/health')->assertOk()->assertExactJson(['status' => 'ok']);
     }
 }

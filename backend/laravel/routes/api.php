@@ -42,12 +42,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.')->group(function (): void {
 
-    // Infrastructure endpoint owned by Phase 2.9 (added in Phase 2.1).
-    // Not a business resource; minimal availability signal only.
-    Route::get('/health', function () {
-        return response()->json(['status' => 'ok']);
-    })->name('health');
-
     // ---------------------------------------------------------------------
     // PUBLIC — unauthenticated by contract (SSR/SEO catalog + anonymous flows)
     // ---------------------------------------------------------------------

@@ -1,913 +1,882 @@
 # Group B phases instructions
 
-# Phase 2.7 — Exception/Error Handling Foundation
+# Phase 2.9 — Health/Status Endpoint
 
 ## Objective
 
-Implement the Laravel backend's centralized exception and API error-handling foundation for Version 1.
+Implement a minimal, reliable Laravel health/status endpoint that can be used to determine whether the application process is running and able to respond to HTTP requests.
 
-The implementation must make Laravel consistently translate expected and unexpected failures into the frozen `/api/v1` error contract, without introducing business/domain rules that belong to later phases.
+The endpoint must be:
 
-The result must provide a stable foundation for Form Requests, DTOs, authentication, authorization, domain services, persistence, and later logging.
+* lightweight
+* deterministic
+* safe to expose
+* independent of business/domain functionality
+* suitable for local and later operational checks
+* compatible with the existing routing, exception, and logging foundations
 
----
-
-## 1. Phase Context
-
-Phases 2.1–2.5 have already been implemented as part of the project foundation, including:
-
-* Laravel application initialization
-* environment configuration
-* database connection
-* base application structure
-
-Phase 2.6 established the API routing foundation.
-
-Do **not** redo or refactor those phases unless a small change is strictly required for this phase.
-
-Phase 2.7 is limited to exception/error handling infrastructure.
-
-The next phases remain responsible for their own concerns:
-
-* **2.8:** logging foundation
-* **2.9:** health/status endpoint
-* **2.10:** coding standards/static analysis
-* **2.11:** test framework setup
-* **Group C:** database/domain implementation
-* **Group D:** authentication/authorization
+Do not turn this phase into a full production monitoring, readiness, dependency-discovery, or observability implementation.
 
 ---
 
-## 2. Authoritative Sources
+# 1. Phase Context
 
-Before modifying code, read the current versions of:
+Phases 2.1–2.5 are already complete.
 
-1. `AGENTS.md`
-2. `docs/api/api-contract.md`
-3. `docs/api/api-resources.md`
-4. `docs/api/api-conventions.md`
-5. `docs/domain/business-rules.md`
+Phase 2.6 established API routing.
 
-Treat the frozen Version 1 API documentation as authoritative.
+Phase 2.7 established centralized API exception/error handling.
 
-Do not introduce a second error specification such as:
+Phase 2.8 established the logging foundation.
 
-* `docs/api/api-errors.md`
-* `docs/api/validation-errors.md`
+Now implement:
 
-The existing consolidated API conventions explicitly define the reusable error architecture.
+**Phase 2.9 — Health/status endpoint**
 
-Do not silently alter the frozen contract.
+The roadmap places this immediately before coding standards/static analysis, test-framework setup, and CI.
 
----
+Do not redo previous phases.
 
-# 3. Core Requirements
-
-## 3.1 Centralized exception handling
-
-Create a single authoritative API exception-handling mechanism.
-
-Expected responsibilities include:
-
-* determining whether the request is an API request covered by `/api/v1`
-* converting known application/API exceptions into the correct contract response
-* converting framework exceptions into the correct contract response
-* converting unexpected exceptions into a safe `500` response
-* preventing raw Laravel/framework exceptions from reaching clients
-* preserving the request correlation ID
-* ensuring errors use the frozen JSON structure
-
-Do not distribute error formatting across individual controllers.
-
-A controller must not independently invent its own error envelope.
+Do not continue into Phase 2.10.
 
 ---
 
-# 4. Frozen Error Envelope
+# 2. Important Contract Boundary
 
-All API failures must follow the frozen structure:
+The provided frozen API documentation does **not** define a Version 1 health/status endpoint or its response schema.
 
-```json
-{
-  "errors": [
-    {
-      "code": "INVALID_VALUE",
-      "message": "The selected fulfillment type is invalid.",
-      "field": "fulfillment_type"
-    }
-  ],
-  "meta": {
-    "request_id": "..."
-  }
-}
-```
+Therefore:
 
-The implementation must enforce these rules:
+* do not invent a new `/api/v1` contract without explicit evidence
+* do not add an endpoint to the frozen Version 1 endpoint inventory merely because health functionality is needed
+* do not change `docs/api/api-contract.md`, `docs/api/api-resources.md`, or `docs/api/api-conventions.md` to manufacture a new V1 business/API contract
+* do not reuse an existing V1 resource envelope for an operational endpoint unless the repository already establishes that behavior
 
-* top-level member is `errors`
-* `errors` is always an array
-* no `error` singular member
-* no `success: false`
-* no `data` member in an error response
-* each error has a required `code`
-* each error has a required safe human-readable `message`
-* `field` is optional
-* `details` is optional
-* `request_id` belongs under `meta.request_id`
-* `request_id` must not be duplicated inside each error object
+For this phase, treat health/status as an **operational application endpoint**, not a customer/business API resource.
 
-These are frozen Version 1 conventions.
+### Implementation decision for this phase
 
----
-
-# 5. Error Code Rules
-
-Implement a centralized representation for application error codes rather than scattering arbitrary strings throughout the codebase.
-
-The error code itself is part of the machine-readable contract.
-
-Codes must:
-
-* use `UPPER_SNAKE_CASE`
-* remain stable
-* not expose framework exception names
-* not expose SQLSTATE values
-* not expose database implementation details
-* not use generic `ERROR` or `FAILED` codes
-* not invent endpoint-specific variants unnecessarily
-
-The currently frozen vocabulary includes, among others:
-
-### Structural
+The canonical operational endpoint for this phase is:
 
 ```text
-INVALID_TYPE
-INVALID_FORMAT
-INVALID_VALUE
-MISSING_REQUIRED_FIELD
+GET /health
 ```
 
-### Business
+Keep it outside `/api/v1`.
+
+This is an implementation-level operational endpoint, not a new Version 1 business API contract.
+
+If the existing repository already contains a health/status endpoint (for example, the framework default `GET /up` or a legacy `GET /api/v1/health`), migrate that functionality to the single canonical `GET /health` and ensure no duplicate health aliases remain. The implementation, tests, verification commands, checklist, and response contract must all reference the same canonical route.
+
+---
+
+# 3. Scope
+
+The endpoint must answer one basic question:
+
+> Is the Laravel application currently alive enough to respond to a health request?
+
+The initial implementation should verify application-level liveness only.
+
+A healthy response should not require:
+
+* customer authentication
+* Staff authentication
+* Admin authentication
+* database business records
+* product data
+* inventory data
+* carts
+* orders
+* payments
+* notifications
+* queues
+* external payment providers
+* third-party APIs
+
+Keep the endpoint cheap enough to be called frequently.
+
+---
+
+# 4. Liveness vs Readiness
+
+Do not conflate health concepts.
+
+For this phase, implement **liveness**.
+
+Liveness means:
 
 ```text
-PRODUCT_NOT_PURCHASABLE
-INSUFFICIENT_STOCK
-ORDER_NOT_CANCELLABLE
-INVALID_ORDER_TRANSITION
+The Laravel process can receive and successfully produce a health response.
 ```
 
-### Authentication/authorization
+Do not implement full readiness semantics such as:
 
 ```text
-AUTHENTICATION_REQUIRED
-INVALID_CREDENTIALS
-SESSION_EXPIRED
-INVALID_AUTHENTICATION
-FORBIDDEN
+database ready
+payment provider ready
+queue workers ready
+email provider ready
+file storage ready
+external dependencies ready
 ```
 
-### General HTTP/API failures
+unless the repository already has an explicit requirement for them.
+
+A later production-readiness phase can add broader dependency checks.
+
+---
+
+# 5. Endpoint Characteristics
+
+The health endpoint should be:
 
 ```text
-RESOURCE_NOT_FOUND
-CONFLICT
-RATE_LIMITED
-INVALID_JSON
-REQUEST_TOO_LARGE
-UNSUPPORTED_MEDIA_TYPE
-METHOD_NOT_ALLOWED
-INTERNAL_SERVER_ERROR
-EXTERNAL_SERVICE_ERROR
-```
-
-Use the authoritative contract and error registry when deciding whether a particular code already exists.
-
-Do not add new Version 1 error codes merely because a more specific message seems convenient.
-
-## Error codes are a CLOSED contract; adding or changing them requires the established contract-change process.
-
-# 6. HTTP Status Mapping
-
-Centralize the mapping between API failure categories and HTTP status.
-
-The foundation must support the frozen conventions:
-
-| HTTP status   | Typical contract meaning                            |
-| ------------- | --------------------------------------------------- |
-| `400`         | Malformed request / invalid JSON                    |
-| `401`         | Authentication required/invalid authentication      |
-| `403`         | Authenticated but not authorized                    |
-| `404`         | Resource not addressable / masked private resource  |
-| `409`         | State/concurrency conflict                          |
-| `413`         | Request too large                                   |
-| `415`         | Unsupported media type                              |
-| `422`         | Well-formed request but validation/business invalid |
-| `429`         | Rate limited                                        |
-| `500`         | Unexpected internal failure                         |
-| `502/503/504` | Temporary external/upstream failure                 |
-
-The HTTP status and error `code` are separate contract elements. Do not encode the status by inventing duplicate error codes.
-
-Do not change these mappings casually.
-
----
-
-# 7. Request ID Foundation
-
-Every API error response must contain:
-
-```json
-"meta": {
-  "request_id": "..."
-}
-```
-
-The request ID must be:
-
-* unique per request
-* safe for clients to receive
-* unrelated to `user_id`
-* unrelated to `order_id`
-* unrelated to `payment_id`
-* free of secrets or sensitive information
-* suitable for correlating the eventual server-side logs
-
-The request ID should be created or propagated at the HTTP boundary so that errors generated at different layers use the same identifier.
-
-The error handler must not generate a different request ID for each exception during the same request.
-
-The frozen contract explicitly makes `meta.request_id` part of every error response.
-
-Do not implement the full logging system in this phase. Phase 2.8 owns logging.
-
----
-
-# 8. Exception Taxonomy
-
-Establish a small, maintainable exception taxonomy sufficient for the API layer.
-
-Separate at least these conceptual categories:
-
-### Client/input failures
-
-Used when the request itself is malformed or invalid.
-
-Examples:
-
-* malformed JSON
-* invalid type
-* invalid format
-* invalid value
-* missing required field
-* unsupported media type
-* request too large
-
-### Authentication failures
-
-Used for authentication-related failures.
-
-Do not confuse:
-
-* unauthenticated → `401`
-* authenticated but forbidden → `403`
-
-### Authorization failures
-
-Represent authorization failures centrally.
-
-Do not expose private resource existence when the frozen contract requires 404 masking.
-
-### Resource-not-found failures
-
-Provide a normalized mechanism for an addressable resource that cannot be returned.
-
-The mechanism must support masked-not-found behavior for private customer-owned resources.
-
-### Business/domain failures
-
-Provide the foundation for later application/domain exceptions such as:
-
-* `PRODUCT_NOT_PURCHASABLE`
-* `INSUFFICIENT_STOCK`
-* `ORDER_NOT_CANCELLABLE`
-* `INVALID_ORDER_TRANSITION`
-
-Do not implement these business rules yet.
-
-### Conflict failures
-
-Provide a normalized representation for later concurrency/state conflicts.
-
-### External failures
-
-Provide the generic infrastructure necessary for later upstream failures.
-
-Do not implement payment-provider-specific exceptions in this phase.
-
-### Unexpected failures
-
-Anything not deliberately mapped must become a safe `500 INTERNAL_SERVER_ERROR` API response.
-
-Never expose the underlying exception directly.
-
----
-
-# 9. Framework Exception Mapping
-
-Add centralized mappings for framework-level failures that can occur before application/domain code exists.
-
-The implementation should handle, where applicable:
-
-* route not found
-* unsupported HTTP method
-* malformed JSON
-* HTTP authentication failures
-* authorization failures
-* validation failures where the framework currently produces them
-* request size failures
-* unsupported media type
-* application-defined exceptions
-* unexpected exceptions
-
-Do not expose:
-
-* `ModelNotFoundException`
-* SQL exceptions
-* SQLSTATE values
-* stack traces
-* framework class names
-* filesystem paths
-* server IP addresses
-* internal configuration
-* secrets
-* authentication tokens
-* payment provider secrets
-
-The client receives only the safe contract representation.
-
-The server-side exception object must remain available for later logging.
-
-These disclosure restrictions are explicitly frozen in the API conventions.
-
----
-
-# 10. Validation Error Foundation
-
-Prepare the error infrastructure so later Form Requests can produce contract-compliant validation responses.
-
-The handler must be capable of representing multiple validation errors in a single response.
-
-Example:
-
-```json
-{
-  "errors": [
-    {
-      "code": "MISSING_REQUIRED_FIELD",
-      "message": "The field is required.",
-      "field": "name"
-    },
-    {
-      "code": "INVALID_VALUE",
-      "message": "The selected fulfillment type is invalid.",
-      "field": "fulfillment_type"
-    }
-  ],
-  "meta": {
-    "request_id": "..."
-  }
-}
-```
-
-Field paths must use canonical dot notation:
-
-```text
-delivery_address.city
-items.0.quantity
-```
-
-Do not return Laravel's internal validation representation directly if it differs from the frozen contract.
-
-The API layer must be prepared to return all safely determinable schema errors rather than only the first one.
-
-Do **not** implement the actual endpoint Form Requests in Phase 2.7.
-
----
-
-# 11. Critical Mass-Assignment Boundary
-
-Preserve the requirement established for Phase 2.6 and the frozen contract:
-
-Never implement code that does:
-
-```php
-$request->all()
-```
-
-and passes that collection directly into:
-
-* models
-* repositories
-* services
-* DTO constructors
-* commands
-* persistence operations
-
-The future pipeline must remain:
-
-```text
-Request
-→ FormRequest/schema validation
-→ validated()
-→ explicit allow-list
-→ DTO/Command
-→ application/domain logic
-→ persistence
-```
-
-In particular, the exception-handling work must not create helper abstractions that accidentally encourage unrestricted request data propagation.
-
-The frozen API contract explicitly prohibits `$request->all() → model fill` and requires validated input to flow through controlled DTO/command boundaries.
-
----
-
-# 12. `additionalProperties: false` Compatibility
-
-Do not weaken strict request handling while building the error layer.
-
-Future strict create/update/action inputs must be able to surface unknown fields as contract-compliant validation errors rather than silently ignoring them.
-
-For example:
-
-```json
-{
-  "errors": [
-    {
-      "code": "INVALID_VALUE",
-      "message": "The request contains an unsupported field.",
-      "field": "unexpected_field"
-    }
-  ],
-  "meta": {
-    "request_id": "..."
-  }
-}
-```
-
-Do not create a generic "accept anything and let the model decide" request abstraction.
-
-Unknown fields are explicitly rejected for strict V1 inputs.
-
----
-
-# 13. 404 Masking / Enumeration Protection
-
-The error infrastructure must support resource-not-found masking.
-
-For private customer-owned resources:
-
-```text
-Customer A requests Customer B's order
-→ do not return 403 exposing ownership existence
-→ return the contractually appropriate 404
-```
-
-The error infrastructure must therefore not force every authorization failure into `403`.
-
-The eventual authorization/resource layer must be able to deliberately raise or map to the masked not-found representation.
-
-Do not implement customer ownership logic now.
-
-Only establish the error-handling mechanism required to support it.
-
-The frozen contract explicitly requires 404 masking to prevent identifier enumeration.
-
----
-
-# 14. Rate-Limit Error Compatibility
-
-The error layer must already support the frozen rate-limit contract.
-
-When later rate limiting produces a `429`, the API response must use:
-
-```text
-HTTP 429
+GET /health
 ```
 
 with:
 
-```text
-Retry-After: <value>
-```
+* no request body
+* no authentication requirement
+* no customer state
+* no business authorization
+* no mutation
+* no database writes
+* no external side effects
 
-The response body must use:
+It should be safe to call from:
+
+* local development
+* deployment verification
+* process supervision
+* simple uptime checks
+* future infrastructure health probes
+
+---
+
+# 6. Success Response
+
+Because the uploaded project sources do not define a frozen health-response schema, use the smallest stable implementation response necessary for operational use.
+
+Recommended response:
 
 ```json
 {
-  "errors": [
-    {
-      "code": "RATE_LIMITED",
-      "message": "Too many requests."
-    }
-  ],
-  "meta": {
-    "request_id": "..."
-  }
+  "status": "ok"
 }
 ```
 
-Do **not** create:
+Return:
+
+```text
+HTTP 200
+```
+
+Do not add speculative fields such as:
+
+```text
+version
+environment
+hostname
+server_ip
+database_status
+queue_status
+payment_status
+memory_usage
+uptime
+```
+
+unless the repository or a later approved contract explicitly requires them.
+
+Keep the response deliberately small.
+
+---
+
+# 7. Failure Response
+
+For the minimal liveness endpoint, failure means the application cannot successfully execute its health operation.
+
+Do not manufacture dependency-specific failure states that are not implemented.
+
+If an actual exception occurs while handling the health request:
+
+* allow the centralized Phase 2.7 exception handling to protect the client
+* do not expose stack traces
+* do not expose Laravel exception class names
+* do not expose filesystem paths
+* do not expose database credentials
+* do not expose server internals
+
+The project's security baseline explicitly requires raw framework, database, and infrastructure exceptions to remain out of API responses.
+
+---
+
+# 8. Relationship to Phase 2.7 Error Handling
+
+Do not create a second exception-handling mechanism for `/health`.
+
+The health endpoint must use the existing centralized exception/error infrastructure where applicable.
+
+Do not add endpoint-specific JSON error construction such as:
+
+```php
+return response()->json([
+    'error' => 'health_failed',
+]);
+```
+
+Do not create a second error envelope.
+
+The Phase 2.7 error handling remains authoritative for failures where exception translation is required.
+
+---
+
+# 9. Relationship to Phase 2.8 Logging
+
+Use the existing logging foundation.
+
+Do not create a health-specific logging subsystem.
+
+Normal successful health checks generally should not generate high-volume application logs.
+
+Avoid logging every successful request to `/health` at ERROR/WARNING levels.
+
+If an unexpected health-check exception occurs:
+
+* it should be diagnosable through the existing exception/logging infrastructure
+* the request ID should remain available through the existing correlation mechanism
+* sensitive data must not be logged
+
+The project requires important failures to be diagnosable through application/API logging.
+
+---
+
+# 10. Request Correlation
+
+If the existing HTTP foundation establishes a request ID, preserve it for `/health`.
+
+Do not create a separate health-specific request ID mechanism.
+
+A health request should therefore participate in the same general correlation model used elsewhere.
+
+Do not include request IDs in the success body unless already required by the operational contract.
+
+The existing API request-ID convention is intended to correlate client-visible errors with server logs.
+
+---
+
+# 11. Authentication
+
+Do not require authentication for the basic liveness endpoint.
+
+Reason:
+
+A liveness check must be usable by an operational process before customer authentication, staff authorization, or application business functionality is necessarily available.
+
+Do not:
+
+* invoke customer authentication
+* invoke Staff/Admin authorization
+* query user roles
+* create sessions
+* access customer data
+* depend on bearer tokens
+
+---
+
+# 12. Database Dependency
+
+Do not make the minimal liveness endpoint depend on a successful database query unless the existing repository explicitly defines health as database-dependent.
+
+The endpoint should be capable of answering:
+
+```text
+Is the application process alive?
+```
+
+independently of:
+
+```text
+Is every dependency healthy?
+```
+
+Do not add:
+
+```php
+DB::select(...)
+```
+
+merely to prove that the database exists.
+
+The database connection was already established in Phase 2.4.
+
+A later readiness/production-health design may intentionally include dependency checks.
+
+---
+
+# 13. External Dependency Checks
+
+Do not call:
+
+* payment providers
+* email providers
+* SMS providers
+* storage services
+* third-party APIs
+* webhooks
+* queues
+* notification providers
+
+from the basic health endpoint.
+
+A health endpoint must not generate external side effects or create unnecessary load.
+
+Payment and provider-specific behavior remain deferred to later work. The project architecture explicitly separates external/provider failures from basic validation and infrastructure concerns.
+
+---
+
+# 14. Security and Information Disclosure
+
+Do not return infrastructure information.
+
+The response must not reveal:
+
+* database hostname
+* database name
+* database credentials
+* Redis details
+* filesystem paths
+* server hostname
+* server IP
+* PHP version
+* Laravel version
+* package versions
+* environment variable values
+* secret configuration
+* internal service URLs
+* queue configuration
+* payment configuration
+* deployment topology
+
+Do not expose "debug health" through the public endpoint.
+
+This follows the project's security requirement to prevent infrastructure and implementation details from leaking through responses.
+
+---
+
+# 15. Environment Information
+
+Do not return:
 
 ```json
 {
-  "retry_after_seconds": 30
+  "environment": "production"
 }
 ```
 
-Do not put retry timing into the error body unless the frozen contract is later changed.
+or similar environment metadata unless explicitly required.
 
-Do not disclose the internal rate-limit algorithm.
+An externally accessible health endpoint should reveal as little as necessary.
 
-This is especially important because the project contract explicitly requires the standard `Retry-After` header.
-
-Do not implement the complete rate-limiting policy matrix in this phase; later backend work will attach the documented limiters.
+Environment-specific diagnostics belong in server-side operational tooling and logs.
 
 ---
 
-# 15. Error Message Rules
+# 16. Cache Behavior
 
-Messages are human-readable and not the machine contract.
+Do not introduce caching that could make a liveness result stale.
 
-Messages must:
+The health endpoint must return an explicit no-store response contract so that a
+browser or intermediary cannot serve a stale cached 200 after the process has
+died:
 
-* be safe for the client
-* be understandable
-* avoid implementation details
-* avoid sensitive data
-* avoid internal identifiers
-* avoid exception class names
-* avoid SQL
-* avoid filesystem paths
-* avoid provider secrets
-* not require frontend parsing for business decisions
+```http
+Cache-Control: no-store
+```
 
-Frontend logic will branch on:
+The health endpoint should represent the application's current ability to respond.
+Every successful health response must include `Cache-Control: no-store` (and must
+not be cacheable by shared or private caches). Equivalent deployment-level
+guarantees (e.g., CDN rule `Cache-Control: no-store` for the health path) are
+acceptable only if verified. Tests must assert the header.
+
+Do not place it behind application-level response caching.
+
+Do not introduce CDN caching rules as part of this phase.
+
+---
+
+# 17. HTTP Semantics
+
+The endpoint must:
+
+* accept only `GET`
+* reject inappropriate mutation methods
+* return a normal HTTP success code on success
+* not modify state
+
+Do not add:
 
 ```text
-code
-field
-details
-HTTP status
+POST /health
+PATCH /health
+DELETE /health
 ```
 
-not on message text.
-
-The conventions explicitly separate stable machine codes from human-readable messages.
-
-Do not attempt to implement localization in Laravel.
-
----
-
-# 16. Safe `details`
-
-Support an optional structured `details` object.
-
-It must be possible for later domain code to safely return structured information such as:
-
-```json
-"details": {
-  "requested_quantity": 5,
-  "available_quantity": 2
-}
-```
-
-Do not allow:
-
-* internal IDs
-* reservation IDs
-* provider secrets
-* database records
-* stack information
-* credentials
-* private customer data
-
-The error formatter should not automatically serialize arbitrary exception properties into `details`.
-
-Only explicitly supplied safe details may be exposed.
-
----
-
-# 17. Response Headers
-
-Ensure the API error response foundation does not interfere with required headers established elsewhere.
-
-In particular:
-
-* preserve `Retry-After` when applicable
-* preserve the request/correlation identifier mechanism
-* do not replace standard HTTP semantics with JSON-only metadata
-* do not leak internal response/debug headers
-
-Do not implement the entire CORS, CSRF, cache, or security-header system here unless an already-established Phase 2.6 foundation requires a minimal compatibility change.
-
----
-
-# 18. Architectural Requirements
-
-Keep the implementation small.
-
-Prefer a structure similar in responsibility to:
+Do not create multiple aliases such as:
 
 ```text
-HTTP boundary
-    ↓
-API exception handler
-    ↓
-exception-to-contract mapper
-    ↓
-error response factory/formatter
+/status
+/api/status
+/api/v1/status
+/system/health
 ```
 
-Exact class names and locations should follow the existing Laravel project structure.
-
-Avoid:
-
-* giant exception handlers containing business rules
-* a universal exception class for every possible failure
-* controller-specific error formatting
-* duplicated error JSON construction
-* domain logic inside the exception handler
-* database queries inside error formatting
-* hidden authorization logic inside generic error formatting
-* speculative abstraction layers
-
-The exception layer should translate failures, not decide business policy.
+Use one canonical operational endpoint.
 
 ---
 
-# 19. No Business Logic in Error Handling
+# 18. Routing
 
-The exception layer must not determine:
+Register the route in the appropriate existing Laravel routing location.
 
-* whether a product is purchasable
-* whether inventory is sufficient
-* whether an order can be cancelled
-* whether a transition is valid
-* whether a user owns a resource
-* whether delivery is permitted
-* what delivery fee applies
-* what an order total is
-* whether payment succeeded
+Do not place the operational health route inside the customer/business API group solely for convenience.
 
-It only maps an already-determined failure into the API contract.
-
-The frozen architecture requires business rules to have one authoritative boundary rather than being duplicated in infrastructure such as Form Requests or controllers.
-
----
-
-# 20. API Scope
-
-Only the Version 1 API namespace is in scope:
-
-```text
-/api/v1
-```
-
-Do not redesign existing route paths.
+Do not duplicate the route in several route files.
 
 Do not recreate removed `/staff/...` aliases.
 
-Do not add new public endpoints.
-
-Do not add health/status behavior; Phase 2.9 owns that.
+Do not alter the existing `/api/v1` route topology except where absolutely required to preserve correct route separation.
 
 ---
 
-# 21. Testing
+# 19. Controller / Handler Design
 
-Add focused tests for the exception/error foundation.
+Keep the implementation extremely small.
 
-Tests should verify at minimum:
+A health handler should do little more than return the operational response.
 
-### Envelope
+Avoid:
 
-* every mapped API error has `errors`
-* `errors` is an array
-* no `data` member appears in an error response
-* `meta.request_id` exists
-* `request_id` is not placed inside the error object
+* service layers with no real responsibility
+* repositories
+* database queries
+* model loading
+* business services
+* DTOs for a one-field liveness response
+* generic "system status engine"
+* health-check registries
+* plugin architectures
 
-### Codes
+Do not overengineer the endpoint.
 
-* codes are returned in the canonical form
-* unsupported/internal framework names are never exposed
+---
 
-### HTTP mapping
+# 20. Response Stability
 
-Verify representative mappings for:
+Even though the health response is not a frozen V1 business resource, treat the response as an operational interface.
 
-* `400`
-* `401`
-* `403`
-* `404`
-* `409`
-* `413`
-* `415`
-* `422`
-* `429`
-* `500`
-* `502`
-* `503`
-* `504`
+Once implemented:
 
-The `502`/`503`/`504` cases must verify the frozen external/upstream-failure mapping to `EXTERNAL_SERVICE_ERROR` (per §6 and `api-contract.md §15.12`), with a safe generic message and no provider/upstream detail leakage. Where the underlying failure carries retry guidance, it must use the standard `Retry-After` HTTP header (as with `429`), never a JSON retry field.
+* keep the response stable
+* do not casually rename `status`
+* do not add environment-sensitive behavior
+* do not change HTTP semantics without reason
 
-### Validation
+Operational tooling may depend on it.
 
-Verify multiple field errors can be returned.
+---
 
-Verify canonical nested field paths are preserved.
+# 21. Content Type
 
-### Security
+Return JSON consistently if the existing Laravel application uses JSON for the operational endpoint.
 
-Verify unexpected exceptions do not expose:
+Ensure the response has an appropriate JSON content type.
 
-* stack traces
-* SQL
-* filesystem paths
-* framework exception class names
-* secrets
-* private implementation details
+Do not return HTML.
 
-### Request ID
+Do not return framework debug pages.
 
-Verify every API error contains a valid request ID.
+---
 
-Verify the same request uses one request ID consistently.
+# 22. Testing
 
-### 404 masking compatibility
+Add focused tests for the health endpoint.
 
-Verify the error infrastructure can represent a masked `404` without exposing ownership information.
+At minimum verify:
 
-### Rate-limit compatibility
-
-Verify the `429` representation supports the standard:
+### Success
 
 ```text
-Retry-After
+GET /health
+→ HTTP 200
 ```
 
-header.
+and the body contains the expected minimal health representation.
 
-Do not implement the full business test matrix from later domain phases yet.
+### Method restriction
+
+Verify inappropriate methods are rejected.
+
+### No authentication dependency
+
+Verify the endpoint works without a customer, Staff, or Admin session/token.
+
+### No business dependency
+
+Verify the endpoint does not require:
+
+* products
+* orders
+* carts
+* inventory
+* payment records
+
+### Exception safety
+
+Trigger a controlled failure where practical and verify:
+
+* internal details are not exposed
+* stack traces are not returned
+* the centralized exception handling remains effective
+
+### Logging/correlation compatibility
+
+Verify that an unexpected server-side failure remains diagnosable through the existing Phase 2.8 logging path and request correlation mechanism.
+
+Do not build a second testing framework.
 
 ---
 
-# 22. Minimal Code Comments
+# 23. Minimal Code Comments
 
-Keep comments in code to an absolute minimum.
+Keep comments in new code to the absolute minimum.
 
-Do not write comments that merely restate what the code does.
-
-Avoid comments such as:
+Do not write:
 
 ```php
-// Return the response
-return $response;
+// Health check endpoint
 ```
 
-Prefer clear names and straightforward structure.
+above an obviously named health handler.
 
-A comment is justified only when it explains a non-obvious constraint, compatibility requirement, security decision, or framework workaround that cannot reasonably be expressed through the code itself.
+Do not add explanatory essays to the route or controller.
 
-Do not add long explanatory block comments, implementation essays, or duplicated contract documentation inside source files.
+A comment is justified only where a non-obvious operational/security constraint cannot be made clear through naming and structure.
 
-The authoritative explanation belongs in the project documentation, not repetitive inline comments.
+Prefer self-explanatory code.
 
 ---
 
-# 23. Validation Commands
+# 24. Documentation
 
-After implementation, run the project's existing verification commands appropriate to its current state.
+Because the frozen API documents do not define a health endpoint, do not modify the V1 API contract documentation merely to record `/health`.
+
+Document the operational endpoint only where the existing project documentation structure already has an appropriate location.
+
+A small note is sufficient:
+
+```text
+GET /health
+Operational liveness endpoint.
+```
+
+Do not create a large health/monitoring specification.
+
+Do not document unsupported future dependencies.
+
+---
+
+# 25. No Monitoring Platform
+
+Do not add:
+
+* Prometheus
+* Grafana
+* Sentry
+* Datadog
+* New Relic
+* OpenTelemetry
+* cloud monitoring agents
+* distributed tracing
+* uptime SaaS integrations
+
+The AGENTS roadmap places broader production logging/monitoring and error tracking later in the production-readiness phase.
+
+---
+
+# 26. No Readiness Framework
+
+Do not create a general abstraction such as:
+
+```text
+HealthCheckInterface
+ReadinessCheck
+DependencyCheck
+HealthRegistry
+SystemStatusManager
+```
+
+unless the repository already contains such infrastructure.
+
+For this phase, a minimal liveness endpoint is preferable.
+
+---
+
+# 27. No Database Health Table
+
+Do not create:
+
+* health tables
+* heartbeat tables
+* system-status tables
+* monitoring tables
+* uptime tables
+
+The endpoint does not need database storage.
+
+---
+
+# 28. No Business Status Exposure
+
+Do not return business state through the health endpoint.
+
+For example, do not expose:
+
+```text
+orders_processing
+products_available
+inventory_status
+payments_enabled
+delivery_enabled
+customers_registered
+```
+
+The health endpoint is about application operation, not business metrics.
+
+---
+
+# 29. No Deployment Logic
+
+Do not add:
+
+* automatic restart behavior
+* deployment hooks
+* migrations
+* cache clearing
+* queue restarting
+* self-healing behavior
+* environment mutation
+
+The endpoint must observe the application, not modify it.
+
+---
+
+# 30. No Secret Validation
+
+Do not use the health endpoint to test whether secrets are present by returning secret configuration state.
+
+For example, do not return:
+
+```json
+{
+  "payment_secret_configured": true
+}
+```
+
+or:
+
+```json
+{
+  "database_password_present": true
+}
+```
+
+Configuration diagnostics belong in controlled server-side tooling.
+
+---
+
+# 31. Performance Requirements
+
+The health endpoint must be extremely lightweight.
+
+Avoid:
+
+* database queries
+* external network calls
+* file scans
+* model hydration
+* large serialization
+* logging large payloads
+* expensive configuration processing
+
+The normal successful execution path should be simple and fast.
+
+---
+
+# 32. Review Against Previous Phases
+
+Before completion verify compatibility with:
+
+### Phase 2.6
+
+* route registration remains clean
+* no duplicate route aliases
+* `/api/v1` remains unchanged
+
+### Phase 2.7
+
+* no second exception-handler architecture
+* no raw framework errors exposed
+* existing error handling remains intact
+
+### Phase 2.8
+
+* existing logger is reused
+* request correlation remains intact
+* no sensitive health diagnostics are logged
+
+---
+
+# 33. Verification Commands
+
+Run the currently available project verification commands.
 
 At minimum:
 
 ```bash
-php artisan route:list
 php artisan test
+php artisan route:list
 ```
 
-Also run the relevant focused test subset for the new exception/error-handling code.
+Verify that the health route appears exactly once.
 
-Do not introduce new test-framework infrastructure in Phase 2.7 if Phase 2.11 has not yet established it.
+Verify that the V1 route collection has not been unintentionally changed.
 
-Use the test facilities already available in the repository.
+Perform a direct request against:
 
----
+```text
+GET /health
+```
 
-# 24. Review Checklist
+and verify the expected HTTP status and response.
 
-Before marking the phase complete, verify:
+Do not wait for:
 
-* [ ] `/api/v1` routes continue to use the existing routing foundation
-* [ ] one centralized API exception/error boundary exists
-* [ ] error responses use `errors` only
-* [ ] no `data` appears in error responses
-* [ ] error codes are centralized/stable
-* [ ] HTTP status mappings follow the frozen contract
-* [ ] `meta.request_id` is present on API errors
-* [ ] nested field paths use canonical dot notation
-* [ ] multiple validation errors are representable
-* [ ] private-resource 404 masking is supported
-* [ ] unexpected exceptions are sanitized
-* [ ] SQL/framework/stack/secret leakage is prevented
-* [ ] `429` can emit standard `Retry-After`
-* [ ] no custom retry JSON field has been introduced
-* [ ] no `$request->all()` mass-assignment path has been introduced
-* [ ] strict unknown-field errors remain compatible with `additionalProperties: false`
-* [ ] no business/domain rules have been implemented
-* [ ] no authentication system has been implemented
-* [ ] no authorization system has been implemented
-* [ ] no logging subsystem has been implemented
-* [ ] no health endpoint has been implemented
-* [ ] comments in new code are minimal and only explain non-obvious constraints
-* [ ] focused tests pass
-* [ ] existing tests still pass
+* Phase 2.10 static analysis
+* Phase 2.11 test-framework expansion
+* Phase 2.12 CI
 
 ---
 
-# 25. Definition of Done
+# 34. Review Checklist
 
-Phase 2.7 is complete only when:
+Before marking Phase 2.9 complete:
 
-1. Laravel has one consistent API exception/error handling foundation.
-2. All handled API failures can be rendered using the frozen V1 error envelope.
-3. The error contract includes the required `meta.request_id`.
-4. HTTP statuses and machine-readable error codes follow the frozen conventions.
-5. Validation errors can represent multiple field-level failures using canonical field paths.
-6. Private-resource 404 masking is technically supported.
-7. Unexpected exceptions are sanitized and never expose internal implementation details.
-8. The rate-limit representation is compatible with `429` plus standard `Retry-After`.
-9. The implementation does not weaken strict request validation or the validated-input → DTO/command boundary.
-10. Tests cover the error-handling foundation.
-11. No unrelated business functionality has been introduced.
+* [ ] one canonical health endpoint exists (`GET /health`)
+* [ ] the canonical route is `GET /health` outside `/api/v1` (any legacy `/up` or `/api/v1/health` aliases have been removed/consolidated)
+* [ ] endpoint remains outside `/api/v1`
+* [ ] endpoint requires no authentication
+* [ ] endpoint performs no mutations
+* [ ] endpoint does not depend on business data
+* [ ] endpoint does not call payment/external providers
+* [ ] endpoint does not require queues
+* [ ] endpoint does not expose infrastructure details
+* [ ] endpoint does not expose environment configuration
+* [ ] endpoint does not expose secrets
+* [ ] endpoint does not expose framework debug information
+* [ ] response is minimal and stable
+* [ ] inappropriate methods are rejected
+* [ ] Phase 2.7 exception handling remains authoritative
+* [ ] Phase 2.8 logging remains authoritative
+* [ ] request correlation remains compatible
+* [ ] successful health requests do not generate unnecessary error-level log noise
+* [ ] focused health tests pass
+* [ ] existing tests pass
+* [ ] route list shows no duplicate health aliases
+* [ ] comments in new code are minimal
+
+---
+
+# 35. Definition of Done
+
+Phase 2.9 is complete only when:
+
+1. Laravel exposes one canonical operational liveness endpoint.
+2. The endpoint responds successfully when the application is alive.
+3. It does not require authentication or business-domain state.
+4. It does not introduce a new `/api/v1` business contract.
+5. Its response contains only minimal health information.
+6. It does not disclose infrastructure, secrets, or framework internals.
+7. It uses the existing exception-handling foundation.
+8. It remains compatible with the existing logging/correlation foundation.
+9. Focused automated tests pass.
+10. Existing backend tests remain green.
+11. No monitoring platform, readiness framework, or dependency-health subsystem has been introduced.
 12. New code contains only the minimum necessary comments.
 
 ---
 
-# 26. Explicitly Out of Scope
+# 36. Explicitly Out of Scope
 
-Do **not** implement during Phase 2.7:
+Do **not** implement during Phase 2.9:
 
-* database migrations
-* domain models
-* domain validators
-* business-rule implementation
-* Form Requests for actual business endpoints
-* DTO implementations for actual business resources
+* `/api/v1/health`
+* `/api/v1/status`
+* customer-facing status endpoints
+* database health dashboards
+* readiness probes for every dependency
+* payment-provider checks
+* email/SMS-provider checks
+* queue-worker health systems
+* external-service health aggregation
+* monitoring platforms
+* metrics collection
+* Prometheus
+* Grafana
+* Sentry
+* Datadog
+* New Relic
+* OpenTelemetry
+* distributed tracing
+* uptime SaaS integration
+* business metrics
+* order/inventory/product status reporting
+* database health tables
+* audit logs
+* deployment automation
+* self-healing
 * authentication
-* Laravel Sanctum
-* authorization policies/permissions
-* customer/staff/admin role enforcement
-* product/catalog behavior
-* inventory behavior
-* cart behavior
-* checkout behavior
-* order lifecycle behavior
-* payment integration
-* payment-provider errors
-* webhook implementation
-* delivery-fee logic
-* request/enquiry domain behavior
-* attachment processing
-* notification behavior
-* logging subsystem
-* audit subsystem
-* health/status endpoint
-* OpenAPI implementation
-* frontend error handling
-* Flutter error handling
-* Next.js error handling
-* CI setup
-* static-analysis setup
-* new endpoint creation
-
-The frozen API conventions defer Laravel endpoint handlers, domain validation, and endpoint-specific middleware to later backend phases. Phase 2.7 must implement the centralized API exception/error boundary described in this document.
+* authorization
+* domain models
+* migrations
+* static analysis
+* CI implementation
+* frontend health UI
+* Flutter health UI
+* Next.js health UI
 
 ---
 
-# 27. STOP Condition
+# 37. STOP Condition
 
-Stop immediately when the Phase 2.7 definition of done is satisfied.
+Stop immediately when the Phase 2.9 definition of done is satisfied.
 
-Do not continue into Phase 2.8.
+Do not continue into Phase 2.10.
 
-Do not begin logging implementation merely because exception objects are now available.
+Do not implement static analysis.
 
-Do not begin authentication or authorization.
+Do not implement coding standards tooling.
 
-Do not begin Form Requests or DTOs for domain endpoints.
+Do not implement the test-framework expansion assigned to Phase 2.11.
 
-Do not redesign the frozen API contract.
+Do not implement CI.
 
-If an existing implementation detail appears to conflict with the frozen API error contract, make the smallest necessary compatibility correction and document the discrepancy rather than expanding the scope of this phase.
+Do not expand `/health` into a readiness or monitoring platform.
+
+Do not add database or external dependency checks without an explicit later requirement.
+
+Do not modify the frozen Version 1 API contract.
+
+Do not commit, stage, or push changes. Leave source-control operations to the project owner, consistent with the repository instructions.

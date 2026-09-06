@@ -63,6 +63,13 @@ class ApiErrorResponse
     {
         $requestId = $request->attributes->get('request_id');
 
-        return $requestId !== null ? (string) $requestId : (string) Str::uuid();
+        if (is_string($requestId) && $requestId !== '') {
+            return $requestId;
+        }
+
+        $requestId = (string) Str::uuid();
+        $request->attributes->set('request_id', $requestId);
+
+        return $requestId;
     }
 }
