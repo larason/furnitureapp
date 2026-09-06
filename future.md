@@ -1,6 +1,7 @@
 # Future plans
 * make the designs as simple and small as possible since its still a small business wit small catalogue of products, No bloated images and layout, keep it consistency, follow the theme and colour inspiration from [https://www.urbanladder.com/](https://www.urbanladder.com/) BUT not the design system since it must use explicitly material ui for react/nextjs and material 3 for flutter, NO custom designs just pure frameworks adaptation.
 * implement material ui for react web application and material 3 for flutter app. do not create custom buttons, cards, forms, navbars other than that provided by the design frameworks(material ui for react and material 3 for flutter).
+* Known risks: Log::withContext shared context is overwritten per request (no cross-request leak in FPM, but in long-lived Octane would need clearing — out of scope for file-based foundation). storage/logs/laravel.log rotation is default LOG_STACK=single; production should set LOG_CHANNEL=daily via env.
 
 
 # tech stack
