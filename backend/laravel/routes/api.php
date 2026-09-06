@@ -44,8 +44,9 @@ Route::prefix('v1')->name('api.')->group(function (): void {
 
     // Infrastructure endpoint owned by Phase 2.9 (added in Phase 2.1).
     // Not a business resource; minimal availability signal only.
+    // Must not be cacheable — a stale cached 200 could mask a dead process.
     Route::get('/health', function () {
-        return response()->json(['status' => 'ok']);
+        return response()->json(['status' => 'ok'])->header('Cache-Control', 'no-store');
     })->name('health');
 
     // ---------------------------------------------------------------------
