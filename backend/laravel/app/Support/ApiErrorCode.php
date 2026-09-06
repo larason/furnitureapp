@@ -1,0 +1,31 @@
+<?php
+
+namespace App\Support;
+
+/**
+ * CLOSED Version 1 error-code vocabulary (docs/api/api-contract.md §15.3).
+ *
+ * Codes are part of the machine-readable contract: UPPER_SNAKE_CASE,
+ * stable, never framework exception names or SQLSTATE values. Adding or
+ * renaming a code requires the post-freeze contract-change process.
+ */
+enum ApiErrorCode: string
+{
+    case VALIDATION_ERROR = 'VALIDATION_ERROR';
+    case MISSING_REQUIRED_FIELD = 'MISSING_REQUIRED_FIELD';
+    case INVALID_VALUE = 'INVALID_VALUE';
+    case INVALID_FORMAT = 'INVALID_FORMAT';
+    case INVALID_TYPE = 'INVALID_TYPE';
+    case INVALID_JSON = 'INVALID_JSON';
+    case METHOD_NOT_ALLOWED = 'METHOD_NOT_ALLOWED';
+    case UNSUPPORTED_MEDIA_TYPE = 'UNSUPPORTED_MEDIA_TYPE';
+    case REQUEST_TOO_LARGE = 'REQUEST_TOO_LARGE';
+    case AUTHENTICATION_REQUIRED = 'AUTHENTICATION_REQUIRED';
+    case INVALID_AUTHENTICATION = 'INVALID_AUTHENTICATION';
+    case FORBIDDEN = 'FORBIDDEN';
+    case RESOURCE_NOT_FOUND = 'RESOURCE_NOT_FOUND';
+    case CONFLICT = 'CONFLICT';
+    case RATE_LIMITED = 'RATE_LIMITED';
+    case INTERNAL_SERVER_ERROR = 'INTERNAL_SERVER_ERROR';
+    case EXTERNAL_SERVICE_ERROR = 'EXTERNAL_SERVICE_ERROR';
+}
