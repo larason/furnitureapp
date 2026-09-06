@@ -1,7 +1,10 @@
 <?php
 
+use App\Exceptions\Api\ApiExceptionRenderer;
 use App\Http\Middleware\AdministrativeAccess;
+use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\OperationalAccess;
+use App\Http\Middleware\ValidateJsonBody;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -16,15 +19,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // This is an API-only backend: unauthenticated callers must get a
-        // 401 from the `auth` middleware, never an HTML redirect to a `login`
-        // route (which does not exist here). Phase 2.7 remaps this into the
-        // frozen `errors[]` contract with `AUTHENTICATION_REQUIRED`.
         $middleware->redirectGuestsTo(null);
 
-        // Group D authorization attachment points (roles/policies/permissions).
-        // The framework-provided `auth` alias guards every protected group;
-        // these aliases mark the Staff/Admin boundary for later enforcement.
+        $middleware->prependToGroup('api', [
+            AssignRequestId::class,
+        ]);
+
+        $middleware->appendToGroup('api', [
+            ValidateJsonBody::class,
+        ]);
+
         $middleware->alias([
             'operational' => OperationalAccess::class,
             'admin' => AdministrativeAccess::class,
@@ -34,4 +38,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(fn (Throwable $e, Request $request) => app(ApiExceptionRenderer::class)->render($e, $request));
     })->create();
