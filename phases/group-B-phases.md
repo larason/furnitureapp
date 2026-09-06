@@ -1,1221 +1,1537 @@
 # Group B phases instructions
 
-# Phase 2.1 — Laravel Backend Foundation Baseline & Project Setup Verification
+# Phase 2.6 — API Routing Foundation
 
 ## 1. Purpose
 
-Begin **Group B — Laravel Backend Foundation** using the Laravel application that already exists at:
+Implement the Laravel **API routing foundation** for the already-frozen Version 1 API contract.
 
-```text
-backend/laravel
-```
+Phases 2.1–2.5 have already established:
 
-The project was created from the project root with:
+* repository/project setup
+* Laravel application initialization
+* environment configuration
+* database connection
+* base application structure
 
-```bash
-composer create-project --prefer-dist laravel/laravel backend/laravel
-```
+Do **not** redo those phases.
 
-The Laravel application is therefore **already scaffolded**.
+This phase establishes the route architecture that later Laravel implementation phases will populate with:
 
-This phase must **not recreate or replace the Laravel project**.
+* authentication
+* catalog
+* cart
+* checkout
+* orders
+* requests
+* enquiries
+* notifications
+* inventory
+* Staff/Admin operations
 
-The purpose of Phase 2.1 is to establish a clean, verified, project-specific Laravel foundation that is ready for the domain implementation phases that follow.
-
-The phase must:
-
-* verify the existing Laravel installation
-* verify PHP/Composer/Laravel compatibility
-* establish the repository's backend conventions
-* configure local environment safely
-* establish the API application baseline
-* verify database connectivity configuration
-* verify the development server
-* establish health/status verification
-* remove only scaffold behavior that conflicts with the API project
-* preserve the frozen Group A contract
-* prepare the Laravel application for migrations/models and API implementation in later phases
-
-This is the **first implementation phase** after Group A.
+The API contract is frozen. The routing implementation must conform to it rather than redefining it. The repository's roadmap explicitly places **Phase 2.6 — API routing foundation** here, followed by exception/error handling in 2.7.
 
 ---
 
-# 2. Critical Starting Rule
+# 2. Mandatory First Actions
 
-The Laravel project already exists.
+Before modifying routing code:
 
-Do **not** run:
+### Read the current repository instructions
 
-```bash
-composer create-project
-laravel new
-composer install
-```
-
-to recreate the project unless the existing installation is actually broken and the repair is explicitly required.
-
-Do not delete:
-
-```text
-backend/laravel
-```
-
-Do not rebuild the Laravel application from scratch.
-
-The starting assumption is:
-
-```text
-backend/laravel
-        ↓
-existing Laravel installation
-        ↓
-verify and configure
-        ↓
-establish project baseline
-```
-
----
-
-# 3. Dependencies
-
-Group A must be complete before beginning this phase.
-
-Treat the following as frozen inputs:
+Read:
 
 ```text
 AGENTS.md
-docs/VISION.md
+```
 
+and any more-specific applicable `AGENTS.md` files.
+
+Do not rely only on an earlier copy of the instructions.
+
+### Read the frozen API contract
+
+At minimum inspect:
+
+```text
 docs/api/api-contract.md
 docs/api/api-resources.md
 docs/api/api-conventions.md
 docs/api/openapi.yaml
-
-docs/domain/business-rules.md
 docs/decisions.md
 ```
 
-Group A is:
-
-```text
-Phase 1.16 through Phase 1.35
-```
-
-The implementation agent must also inspect the actual current repository state before modifying anything.
+The uploaded API conventions explicitly identify themselves as the frozen Version 1 baseline and state that they govern `/api/v1`.
 
 ---
 
-# 4. Mandatory First Action — Read Project Instructions
+# 3. Scope
 
-Before executing project changes, read:
-
-```text
-AGENTS.md
-```
-
-from the project root.
-
-Also inspect any additional `AGENTS.md` files located inside relevant directories, especially:
+This phase covers:
 
 ```text
-backend/
-backend/laravel/
+Laravel route registration
+API version grouping
+route naming conventions
+route/controller organization
+middleware attachment points
+route parameter constraints
+public/private route separation
+canonical path verification
+route-list verification
+rate-limiter plumbing
+route-level API security boundaries
 ```
 
-if they exist.
-
-The most specific applicable instructions take precedence where the repository's agent-instruction hierarchy defines such behavior.
-
-Do not assume that the roadmap reproduced elsewhere in conversation overrides the actual repository `AGENTS.md`.
-
-The implementation agent must obey:
-
-* project conventions
-* prohibited files/directories
-* testing requirements
-* formatting requirements
-* commit/change conventions
-* architecture constraints
-* security rules
-* scope restrictions
-
-from the repository instructions.
+This phase does **not** implement the business domain.
 
 ---
 
-# 5. Mandatory Group A Contract Review
+# 4. Explicit Out-of-Scope
 
-Before modifying Laravel files, read enough of the frozen API contract to understand:
+Do not implement in Phase 2.6:
 
-* API version
-* authentication model
-* authorization model
-* roles
-* endpoint structure
-* error contract
-* resource boundaries
-* money representation
-* date/time representation
-* enum policy
-* order state model
-* delivery-fee workflow
+* database migrations
+* domain models
+* repositories
+* business services
+* FormRequest classes for domain operations
+* DTO implementations for domain operations
+* authentication workflows
+* authorization policies
+* payment processing
+* order business logic
+* catalog business logic
+* inventory business logic
+* notification business logic
+* attachment storage implementation
+* health endpoint business logic
+* full exception/error handler
+* logging architecture
+* CI configuration
 
-Especially verify:
+Those belong to subsequent phases.
+
+---
+
+# 5. Frozen API Version
+
+All Version 1 routes must live under:
 
 ```text
 /api/v1
 ```
 
-and the three roles:
+No unversioned Version 1 API routes are allowed.
+
+The frozen convention explicitly requires `/api/v1` and states that removed endpoint IDs remain retired rather than recycled.
+
+Do not introduce:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+/api
+/v1
+/api/v2
 ```
 
-The agent must not begin implementation by redesigning any Group A behavior.
+as alternate Version 1 route surfaces.
 
 ---
 
-# 6. Project Structure
+# 6. Canonical Route Vocabulary
 
-The backend application must remain at:
+Use the **current canonical routes**, not the earlier conceptual `/staff/...` paths.
 
-```text
-backend/laravel
-```
-
-Do not move it to:
+The frozen conventions explicitly removed the former Staff-prefixed aliases and retained canonical routes without the redundant Staff prefix:
 
 ```text
-laravel/
-api/
-server/
-backend/
+/orders
+/inventory/{product}/adjust
+/products
+/requests
+/enquiries
 ```
 
-or another location.
+This was done specifically to reduce attack surface and prevent divergent authorization behavior.
 
-The expected relationship is:
+Therefore do **not** implement:
 
 ```text
-project-root/
-├── backend/
-│   └── laravel/
-├── docs/
-├── AGENTS.md
-└── ...
+/api/v1/staff/orders
+/api/v1/staff/orders/{order}
+/api/v1/staff/inventory
+/api/v1/staff/products
+/api/v1/staff/requests
+/api/v1/staff/enquiries
 ```
 
-Preserve this structure.
+as V1 canonical routes.
+
+Do not add aliases "for convenience."
 
 ---
 
-# 7. Laravel Installation Verification
+# 7. Route Namespace Architecture
 
-Navigate to:
+Use route groups to separate:
 
-```bash
-cd backend/laravel
+```text
+public
+authenticated customer/self
+operational
+administrative
 ```
 
-Verify:
+The exact Laravel grouping mechanism must follow the installed Laravel version and existing application structure.
 
-```bash
-php artisan --version
-php -v
-composer --version
+Conceptually:
+
+```text
+/api/v1
+    ├── public
+    ├── auth
+    ├── me
+    ├── orders
+    ├── requests
+    ├── enquiries
+    ├── notifications
+    ├── products
+    ├── inventory
+    └── admin
 ```
 
-Also verify:
+Do not encode authorization merely through URL naming.
 
-```bash
-php artisan about
+A route such as:
+
+```text
+/api/v1/orders
 ```
 
-where supported by the installed Laravel version.
-
-Record the actual installed:
-
-* Laravel version
-* PHP version
-* Composer version
-
-Do not hard-code guessed version numbers into documentation.
+is operational only because its middleware/policy layer later establishes the approved authorization, not because the path itself says `staff`.
 
 ---
 
-# 8. Dependency Integrity
+# 8. Public Route Group
 
-Run the appropriate dependency verification for the existing project.
+Public routes must remain genuinely public where the contract requires it.
 
 At minimum:
 
-```bash
-composer validate
-```
-
-and:
-
-```bash
-composer install
-```
-
-only when needed to ensure the existing dependency state is complete.
-
-Do not unnecessarily rewrite the lock file.
-
-If `composer.lock` already exists, preserve it unless dependency correction is genuinely required.
-
-Inspect:
-
 ```text
-composer.json
-composer.lock
+GET /api/v1/products
+GET /api/v1/products/{product}
+GET /api/v1/categories
+GET /api/v1/categories/{category}
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+POST /api/v1/requests
+POST /api/v1/enquiries
 ```
 
-for unexpected or unrelated dependencies.
+The exact final endpoint inventory must determine which of these are present.
 
-Do not install authentication, payment, API, permission, or infrastructure packages merely because they might be useful later.
+The frozen conventions explicitly require public catalog routes to remain unauthenticated for SSR/SEO and define anonymous request/enquiry submission.
 
-Those decisions belong to their dedicated implementation phases.
+Do not attach the authenticated-user middleware to public catalog routes.
 
 ---
 
-# 9. PHP Extension Verification
+# 9. Authentication Route Separation
 
-Verify that the Laravel project has the PHP extensions required by its current dependency set.
+Keep authentication routes distinct from authenticated self-service routes.
 
-Use the existing Laravel/Composer requirements as the source of truth.
+Conceptually:
 
-Do not invent a large list of mandatory extensions.
+```text
+/api/v1/auth/...
+```
 
-If a required extension is missing, report it clearly and document the local prerequisite rather than modifying application code to work around it.
+versus:
+
+```text
+/api/v1/me/...
+```
+
+Do not put registration/login under `/me`.
+
+Do not attach authenticated middleware to registration/login.
+
+Password security operations already defined by the frozen contract must retain their documented route paths and security behavior.
+
+For example, the frozen conventions define:
+
+```text
+POST /auth/change-password
+POST /auth/forgot-password
+POST /auth/reset-password
+```
+
+with strict request schemas.
 
 ---
 
-# 10. Environment Configuration
+# 10. Authenticated `/me` Route Group
 
-Inspect:
+Self-service routes should be grouped under:
 
 ```text
-.env.example
-.env
+/api/v1/me
 ```
 
-Do not commit `.env`.
+Examples include:
 
-Ensure the local environment can be created from the project template.
+```text
+GET   /api/v1/me
+PATCH /api/v1/me
 
-The local `.env` must contain appropriate application configuration for development.
+GET   /api/v1/me/cart
+POST  /api/v1/me/cart/items
+PATCH /api/v1/me/cart/items/{item}
+DELETE /api/v1/me/cart/items/{item}
 
-Do not place:
+GET   /api/v1/me/orders
+GET   /api/v1/me/orders/{order}
+POST  /api/v1/me/orders/{order}/cancel
+GET   /api/v1/me/orders/{order}/tracking
 
-* production secrets
-* real credentials
-* payment credentials
-* real customer data
-* real API keys
+GET   /api/v1/me/requests
+GET   /api/v1/me/requests/{request}
 
-into repository files.
+GET   /api/v1/me/enquiries
+GET   /api/v1/me/enquiries/{enquiry}
+
+GET   /api/v1/me/notifications
+```
+
+Use one authenticated-user middleware boundary for the group where practical.
+
+Do not make clients send `user_id` to determine whose `/me` data is retrieved.
 
 ---
 
-# 11. Application Key
+# 11. Customer Ownership at Route Level
 
-Verify the Laravel application key behavior.
+Route grouping alone does not establish resource ownership.
 
-A local development environment must have a valid `APP_KEY`.
+The routing foundation must leave a clear middleware/policy attachment point for:
 
-If the existing local environment is missing one, generate it using Laravel's standard mechanism.
+```text
+authenticated principal
++
+owner/resource authorization
+```
 
-Do not commit the resulting local `.env`.
+The frozen contract requires private-resource 404 masking rather than exposing whether another customer's resource exists.
 
-Do not replace a deliberately configured application key without a legitimate reason.
+Therefore do not build route middleware that turns every unauthorized private-resource access into a generic exposed `403`.
+
+The detailed policy/error implementation comes later.
 
 ---
 
-# 12. Application Environment
+# 12. Guest Cart Routing
 
-For local development, establish the appropriate development environment.
+The frozen API contains guest-cart behavior.
 
-Use the repository's existing conventions where defined.
+Do not remove or redesign it during route setup.
 
-The implementation agent should verify:
+The guest-cart identifier is an opaque UUIDv4 bearer credential scoped only to its cart.
+
+The route foundation must therefore preserve support for the appropriate cart endpoints and their required header/cookie transport:
 
 ```text
-APP_ENV
-APP_DEBUG
-APP_URL
+X-Guest-Cart-Id
 ```
 
-and ensure they are appropriate for local development.
-
-Do not configure production settings in this phase.
+The server must treat this as a scoped guest-cart credential, not as user identity.
 
 ---
 
-# 13. API Application Baseline
+# 13. Guest Cart Security
 
-The Laravel application is ultimately an API backend for:
-
-```text
-Next.js website
-Flutter application
-```
-
-The phase should therefore verify that Laravel can serve API requests cleanly.
-
-Do not build domain endpoints yet.
-
-The API baseline should establish:
+Do not implement guest-cart authorization by:
 
 ```text
-/api/v1
+$request->input('user_id')
 ```
 
-as the future API namespace without prematurely implementing all routes.
+or:
+
+```text
+$request->input('guest_cart_id')
+```
+
+as identity proof.
+
+The actual guest-cart ownership resolution must later be server-side.
+
+The frozen convention explicitly states that the guest token does not authorize account operations and cannot itself authorize a merge.
 
 ---
 
-# 14. Route Baseline
+# 14. Operational Order Routes
 
-Inspect the current Laravel route files.
+Register the canonical order operations according to the frozen endpoint inventory.
 
-Determine whether the installed Laravel version uses:
+Do not prefix them with `/staff`.
+
+Conceptually:
 
 ```text
-routes/api.php
+GET  /api/v1/orders
+GET  /api/v1/orders/{order}
+
+POST /api/v1/orders/{order}/accept
+POST /api/v1/orders/{order}/process
+POST /api/v1/orders/{order}/ready-for-pickup
+POST /api/v1/orders/{order}/ship
+POST /api/v1/orders/{order}/deliver
+POST /api/v1/orders/{order}/complete
+POST /api/v1/orders/{order}/delivery-fee
 ```
 
-and/or the current Laravel routing/bootstrap mechanism.
+**Important:** use the exact action names and endpoint IDs in the frozen `api-contract.md`/OpenAPI rather than blindly copying these conceptual names if they differ.
 
-Do not assume a particular Laravel version's file layout.
+The routing foundation must never introduce a generic:
 
-Use the structure that exists in the installed project.
+```text
+PATCH /api/v1/orders/{order}
+```
 
-Do not migrate the entire routing system simply to match an older Laravel tutorial.
+for status mutation.
+
+The contract explicitly uses controlled POST actions for order transitions.
 
 ---
 
-# 15. API Versioning Baseline
+# 15. Customer Order Routes vs Operational Order Routes
 
-Establish the API version boundary:
-
-```text
-/api/v1
-```
-
-Use one clean mechanism for this.
-
-Do not scatter:
+Do not confuse:
 
 ```text
-/v1
-/api/v1
-/api
+/api/v1/me/orders/{order}
 ```
 
-across unrelated route definitions.
+with:
 
-The actual endpoint implementation begins later.
+```text
+/api/v1/orders/{order}
+```
 
-This phase only establishes the routing/application foundation needed to support the frozen contract.
+They represent different authorization contexts.
+
+Customer:
+
+```text
+AUTHENTICATED_OWNER
+```
+
+Operational:
+
+```text
+STAFF/ADMIN operational permission
+```
+
+The controller/resource implementation comes later, but the route structure must preserve this distinction.
 
 ---
 
-# 16. Health Endpoint
+# 16. Inventory Routing
 
-Create a minimal backend health/status endpoint for local infrastructure verification.
+Use the frozen canonical inventory path.
 
-Preferred conceptual endpoint:
-
-```text
-GET /api/v1/health
-```
-
-Only create this if it does not conflict with the frozen Group A endpoint inventory.
-
-If `/health` was intentionally excluded from the frozen public API contract, keep the health mechanism internal/development-only instead.
-
-The purpose is:
+The convention states:
 
 ```text
-HTTP request
-        ↓
-Laravel application
-        ↓
-routing
-        ↓
-response
+POST /api/v1/inventory/{product}/adjust
 ```
 
-not business functionality.
+for the inventory adjustment operation.
 
-The health response must not expose:
+Do not create:
 
-* PHP version
-* Laravel version
-* database credentials
-* environment variables
-* filesystem paths
-* internal infrastructure
-* debug stack traces
+```text
+POST /api/v1/inventory/{inventory}
+POST /api/v1/staff/inventory/{inventory}/adjust
+```
 
-A minimal response is preferable.
+as alternative V1 endpoints.
+
+The parameter is the canonical product resource identifier where the frozen endpoint contract specifies `{product}`.
 
 ---
 
-# 17. Health Endpoint Contract Rule
+# 17. Product Operational Routes
 
-The health endpoint must not be mistaken for a domain API resource.
-
-It should not expose:
+Use the canonical product-management route family:
 
 ```text
-users
-orders
-products
-inventory
-payments
+GET   /api/v1/products
+POST  /api/v1/products
+GET   /api/v1/products/{product}
+PATCH /api/v1/products/{product}
 ```
 
-It exists only to verify application availability.
+where the endpoint inventory distinguishes public GET operations from Staff/Admin mutation access.
 
-If added, document it as an infrastructure endpoint and ensure it does not contradict the frozen API contract.
+This means authorization cannot be inferred only from the path because the same product resource has different audience/operation semantics.
+
+The frozen contract explicitly separates catalog management request schemas from response schemas and requires strict allow-lists.
 
 ---
 
-# 18. Database Configuration Baseline
+# 18. Category Routes
 
-Inspect the application's database configuration.
-
-Do not create migrations yet.
-
-Verify that Laravel can be configured for the project's MySQL backend.
-
-The database driver must be consistent with the selected architecture:
+Use the canonical category paths defined by the frozen contract:
 
 ```text
-Laravel
+GET   /api/v1/categories
+GET   /api/v1/categories/{category}
+POST  /api/v1/categories
+PATCH /api/v1/categories/{category}
+```
+
+The category route family has the same public/protected split as products (`CAT-003/004` vs `CAT-011/012`):
+
+```text
+PUBLIC    GET   /api/v1/categories
+PUBLIC    GET   /api/v1/categories/{category}
+PROTECTED POST  /api/v1/categories
+PROTECTED PATCH /api/v1/categories/{category}
+```
+
+The `GET` operations are `PUBLIC` reads (`CAT-003/004`): Anonymous, Customer, Staff and Admin may call them without authentication.
+
+The `POST`/`PATCH` operations are `ADMINISTRATIVE` catalog mutations (`CAT-011/012`): they require authenticated `STAFF`/`ADMIN` identity **and** the `products.manage` permission where approved, enforced by backend authorization middleware/policies — never by frontend-only checks or path inference. These routes must never be registered in a public, unauthenticated route group.
+
+Authorization must therefore be attached at route-registration time (e.g. middleware `auth` + permission policy) per operation, not inferred from the shared `/api/v1/categories` path.
+
+Only register methods that actually exist in the endpoint inventory.
+
+Do not add:
+
+```text
+/api/v1/categories/{category}/products
+```
+
+The frozen convention explicitly rejects that duplicate route in favor of:
+
+```text
+GET /api/v1/products?category={category}
+```
+
+for product filtering.
+
+---
+
+# 19. Product Variant Routing
+
+Where the frozen contract exposes variants, preserve shallow nested routing:
+
+```text
+/api/v1/products/{product}/variants
+/api/v1/products/{product}/variants/{variant}
+```
+
+Use the exact methods from the endpoint inventory.
+
+Variant resolution must later confirm that:
+
+```text
+variant belongs to product
+```
+
+Do not treat `variant` as globally interchangeable with a product.
+
+The API conventions explicitly require parent validation for product/variant relationships.
+
+---
+
+# 20. No Product Image Endpoint
+
+Do not add:
+
+```text
+GET /api/v1/products/{product}/images
+```
+
+The frozen contract embeds product images inside the product detail representation instead of exposing that duplicate endpoint.
+
+If image-upload or image-management routes exist elsewhere in the frozen Admin contract, implement only those exact approved endpoints.
+
+---
+
+# 21. Made-to-Order Request Routes
+
+Use:
+
+```text
+POST /api/v1/requests
+```
+
+for submission.
+
+Authenticated customer retrieval:
+
+```text
+GET /api/v1/me/requests
+GET /api/v1/me/requests/{request}
+```
+
+Operational retrieval:
+
+```text
+GET /api/v1/requests
+GET /api/v1/requests/{request}
+```
+
+or the exact paths specified in the frozen endpoint inventory.
+
+Do not restore the removed:
+
+```text
+/api/v1/staff/requests
+```
+
+aliases.
+
+---
+
+# 22. General Enquiry Routes
+
+Use:
+
+```text
+POST /api/v1/enquiries
+```
+
+for public submission.
+
+Authenticated customer retrieval:
+
+```text
+GET /api/v1/me/enquiries
+GET /api/v1/me/enquiries/{enquiry}
+```
+
+Operational retrieval:
+
+```text
+GET /api/v1/enquiries
+GET /api/v1/enquiries/{enquiry}
+```
+
+or the exact frozen inventory paths.
+
+Again, do not recreate `/staff/enquiries`.
+
+---
+
+# 23. Attachment Routes
+
+Where the frozen contract defines request/enquiry attachment uploads, register:
+
+```text
+POST /api/v1/requests/{request}/attachments
+POST /api/v1/enquiries/{enquiry}/attachments
+```
+
+The frozen security contract defines the `X-Upload-Token` security scheme for anonymous/scoped attachment uploads and requires the token to be bound to the parent resource.
+
+Do not create public unrestricted attachment routes.
+
+Do not place upload implementation/storage logic into this routing phase.
+
+---
+
+# 24. Notification Routes
+
+Register the approved notification routes from the frozen endpoint inventory.
+
+At minimum the authenticated customer path is conceptually:
+
+```text
+GET /api/v1/me/notifications
+```
+
+Use the exact approved read-state operation for marking notifications read.
+
+Do not create arbitrary notification creation routes for clients.
+
+Notification creation remains a server-side business consequence.
+
+---
+
+# 25. Admin Staff Routes
+
+Admin-only Staff lifecycle operations belong under:
+
+```text
+/api/v1/admin/staff
+```
+
+Examples:
+
+```text
+GET  /api/v1/admin/staff
+GET  /api/v1/admin/staff/{user}
+POST /api/v1/admin/staff
+POST /api/v1/admin/staff/{user}/approve
+POST /api/v1/admin/staff/{user}/suspend
+POST /api/v1/admin/staff/{user}/reactivate
+```
+
+Use only the methods/routes actually present in the frozen inventory.
+
+Attach clear Admin-only middleware/policy placeholders.
+
+Do not let these routes be callable merely because a request reaches `/admin`.
+
+---
+
+# 26. Administrative Authorization Attachment Points
+
+The route foundation must make it straightforward for later phases to attach:
+
+```text
+authentication middleware
+role/permission middleware or policies
+rate limiting
+request validation
+request IDs
+authorization
+```
+
+Do not implement authorization logic in closures inside route definitions.
+
+Avoid:
+
+```php
+Route::post(..., function () {
+    if (auth()->user()->role === 'ADMIN') {
+        ...
+    }
+});
+```
+
+Use controllers and later policy/middleware layers.
+
+---
+
+# 27. Middleware Ordering
+
+Preserve the documented validation pipeline:
+
+```text
+Transport
     ↓
-MySQL
-```
-
-Do not introduce PostgreSQL, SQLite, MongoDB, or another database architecture unless the project decision explicitly changes.
-
----
-
-# 19. Local Database Configuration
-
-Configure the local development `.env` with the appropriate MySQL connection values.
-
-Do not commit real credentials.
-
-Use the project's actual local database conventions if already documented.
-
-Do not create production databases.
-
-Do not modify unrelated host-level database configuration.
-
----
-
-# 20. Database Connectivity Verification
-
-After the local database is available, verify the Laravel application can connect to it.
-
-Use a safe Laravel/database verification approach.
-
-Do not create domain tables yet.
-
-The goal is only to prove:
-
-```text
-Laravel
+Schema/type
     ↓
-database configuration
+Authentication
     ↓
-MySQL connection
+Authorization
+    ↓
+Domain
+    ↓
+Concurrency/transaction
+    ↓
+External
+    ↓
+Persistence/workflow
 ```
 
-works.
+The frozen conventions explicitly require this ordering and state that business records should not be accessed before schema validation or external operations before authorization.
 
-If the database is unavailable, report the specific configuration/environment problem.
+Phase 2.6 only establishes routing/middleware attachment points.
 
-Do not fabricate a successful result.
+Do not implement all later layers prematurely.
 
 ---
 
-# 21. Migration Baseline
+# 28. Route Model Binding
 
-Do not begin domain migrations in Phase 2.1.
+Use Laravel route model binding only where it aligns with the frozen resource identifier semantics and later authorization requirements.
 
-Do not create tables for:
+Do not allow implicit binding to bypass object-level authorization.
+
+For private resources, the eventual behavior must support the frozen 404 masking policy.
+
+Do not expose whether a resource exists merely because Laravel successfully resolved a model before authorization.
+
+---
+
+# 29. Explicit Parameter Constraints
+
+Add route parameter constraints only where they reflect the frozen contract.
+
+Examples:
 
 ```text
-users
-products
-orders
-cart
-inventory
-requests
-enquiries
-notifications
-payments
+{product}
+{category}
+{order}
+{request}
+{enquiry}
+{notification}
+{user}
 ```
 
-unless they are already created by the untouched Laravel skeleton and the project explicitly requires them.
+If a resource uses opaque machine IDs, use the project's approved identifier constraint.
 
-Domain migrations belong to subsequent foundation/domain phases.
+Do not impose UUID constraints on identifiers that are not defined as UUIDs.
+
+Do not change identifier design during this phase.
 
 ---
 
-# 22. Authentication Package Decision
+# 30. Route Name Convention
 
-Do not install an authentication package automatically.
+Give routes stable Laravel route names where useful.
 
-First inspect the current Laravel project and the approved Authentication Contract.
-
-The authentication implementation must later match:
+Prefer a predictable structure such as:
 
 ```text
-Phase 1.17
+api.products.index
+api.products.show
+api.checkout.store
+api.orders.index
+api.orders.show
+api.orders.accept
 ```
 
-If a package such as Sanctum is selected in a future authentication phase, that decision must be deliberate.
+The exact naming convention should be consistent across the backend.
 
-Phase 2.1 should not silently choose the authentication architecture.
+Do not use route names as the external API contract.
 
----
+External clients consume:
 
-# 23. Authorization Package Decision
+```text
+HTTP method + path
+```
 
-Do not install Spatie Permission or another authorization package automatically.
-
-The project already has a defined conceptual authorization model.
-
-The later implementation phase must first establish whether Laravel native policies/gates plus the application's role model are sufficient.
-
-Do not introduce a permission package merely because Staff/Admin authorization exists.
+not Laravel route names.
 
 ---
 
-# 24. API Error Baseline
+# 31. Controller Organization
 
-Do not redesign the error contract.
+Route declarations should reference controllers rather than embedding business logic.
 
-The frozen contract from Phase 1.16 requires the standard shape:
+Conceptual organization:
+
+```text
+app/Http/Controllers/Api/V1/
+```
+
+with resource/domain groupings as appropriate.
+
+Do not build large controllers merely because the entire endpoint set is being registered.
+
+Do not implement domain actions inside route files.
+
+---
+
+# 32. Route File Organization
+
+Use the routing structure provided by the installed Laravel version.
+
+Do not force the application into an older Laravel `routes/api.php` pattern if the current application uses a different bootstrap configuration.
+
+Route registration should remain easy to inspect.
+
+Prefer grouping by API concern rather than scattering individual route declarations across unrelated files.
+
+---
+
+# 33. Rate Limiting Requirement
+
+The routing foundation must support the project's rate-limiting architecture.
+
+The frozen API conventions require security-sensitive rate-limited responses to return:
+
+```http
+429 Too Many Requests
+Retry-After: <value>
+```
+
+and explicitly prohibit replacing this with a custom JSON `retry_after_seconds` field.
+
+This requirement is mandatory for Laravel implementation.
+
+---
+
+# 34. Rate Limiter Response Contract
+
+When Laravel's rate limiter rejects a request, the API response must eventually conform to the frozen error contract:
 
 ```json
 {
   "errors": [
     {
-      "code": "...",
+      "code": "RATE_LIMITED",
       "message": "..."
     }
-  ]
+  ],
+  "meta": {
+    "request_id": "..."
+  }
 }
 ```
 
-Phase 2.1 may establish the infrastructure required for future API error handling, but the complete error implementation belongs to later API foundation phases.
+with:
 
-Do not allow Laravel's default HTML exception pages to become the intended production API contract.
+```http
+Retry-After: <seconds>
+```
 
----
+Use the actual approved error envelope/code from the frozen contract.
 
-# 25. JSON API Baseline
+Do not invent an alternative throttling response.
 
-Verify that future API routes can return JSON consistently.
-
-Do not build all error handling in this phase.
-
-Do ensure that basic API behavior is not accidentally coupled to Blade/web responses.
-
-The backend is an API service even though Laravel may retain its default web scaffolding.
+The conventions explicitly define `429 RATE_LIMITED` plus the standard `Retry-After` header.
 
 ---
 
-# 26. Default Scaffold Review
+# 35. Rate-Limiter Middleware Foundation
 
-Inspect Laravel's default scaffold.
+Implement the routing/middleware attachment mechanism so that rate limiting can be applied per route/group without redesigning routing later.
 
-Identify what is:
+Use Laravel's supported rate-limiting infrastructure.
+
+Do not build a custom distributed rate-limiter in Phase 2.6.
+
+The routing layer must provide a clean place to apply named rate limiters later.
+
+---
+
+# 36. Rate-Limit Threshold Source of Truth
+
+Do not invent new thresholds in Phase 2.6.
+
+The frozen convention already records the approved security-sensitive thresholds, including:
 
 ```text
-required
-useful
-irrelevant
-potentially conflicting
+/auth/register
+/auth/login
+/auth/password/*
+/requests
+/enquiries
+/checkout
+/me/cart/items
+/me/orders/{order}/cancel
+attachment uploads
+/inventory/{product}/adjust
+/admin/staff/*
+/products
 ```
 
-Do not delete default files indiscriminately.
+with their approved rate categories.
 
-Do not remove Laravel functionality merely because it is not currently used.
+The detailed authentication-specific rate-limiting implementation remains Phase 4.11.
 
-Only remove or alter scaffold behavior where it conflicts with:
-
-* project architecture
-* security
-* API-only backend behavior
-* repository instructions
+Phase 2.6 establishes the routing architecture and contract-compliant throttling response behavior needed later.
 
 ---
 
-# 27. Welcome Route Review
+# 37. Strict Request Validation Requirement
 
-If Laravel's default welcome/web route exists, determine whether it conflicts with the project's backend architecture.
-
-It is acceptable for:
+This is mandatory for all later Laravel implementation and must be established as a routing/foundation rule now:
 
 ```text
-http://127.0.0.1:8000
+FormRequest::validated()
+        ↓
+DTO / Command Mapper
+        ↓
+Domain/Application logic
 ```
 
-to respond with a development landing page while the API operates under:
+Never:
 
 ```text
-/api/v1
+$request->all()
+        ↓
+$model->fill(...)
 ```
 
-unless project instructions require otherwise.
-
-Do not create frontend pages in Laravel.
-
-The production website remains Next.js.
+The frozen conventions explicitly require unknown fields to be rejected and explicitly prohibit `$request->all()` mass assignment.
 
 ---
 
-# 28. Development Server Verification
+# 38. `additionalProperties: false` Enforcement
 
-From:
+The OpenAPI schemas use strict request objects with `additionalProperties: false`.
 
-```bash
-cd backend/laravel
-```
+Laravel must honor the same behavior.
 
-verify:
+Therefore future FormRequests must:
 
-```bash
-php artisan serve
-```
+* validate only documented fields
+* reject undocumented fields
+* use `validated()`
+* pass only validated fields to DTOs/commands
+* never pass `$request->all()` into models
 
-starts successfully.
-
-The expected local development URL is:
+The frozen catalog-management convention explicitly requires:
 
 ```text
-http://127.0.0.1:8000
+validated()->only(allowList) → DTO
 ```
 
-Verify at least:
+for the catalog write endpoints.
+
+---
+
+# 39. DTO Mapper Requirement
+
+When DTOs are introduced, their constructors/mappers must consume validated data only.
+
+Preferred conceptual flow:
 
 ```text
-GET http://127.0.0.1:8000
+HTTP request
+   ↓
+FormRequest validation
+   ↓
+validated()
+   ↓
+DTO::fromValidated(...)
+   ↓
+application command/service
 ```
 
-and, if the health endpoint is introduced:
+Do not create:
 
 ```text
-GET http://127.0.0.1:8000/api/v1/health
+DTO::fromRequest($request)
 ```
 
-Use the actual application's response rather than assuming success.
+that internally calls:
+
+```php
+$request->all()
+```
+
+This would violate the frozen input-security contract.
 
 ---
 
-# 29. Route Inspection
+# 40. Unknown Field Security
 
-Use Laravel's route inspection tooling appropriate to the installed Laravel version.
+Do not silently ignore unknown privileged request fields.
 
-Verify that:
+For example:
 
-* the intended API route is registered
-* route paths are correct
-* HTTP methods are correct
-* no duplicate health route exists
-* no unexpected catch-all route intercepts API requests
+```json
+{
+  "name": "Modern Sofa",
+  "role": "ADMIN"
+}
+```
 
-Do not add business routes yet.
-
----
-
-# 30. Configuration Cache Safety
-
-Verify that local configuration works both:
+must not become:
 
 ```text
-without cached configuration
+name accepted
+role silently ignored
 ```
 
-and:
+where the contract specifies strict unknown-field rejection.
+
+The frozen convention explicitly says unknown fields are rejected for strict create/update/action inputs.
+
+The full rejection mechanism belongs to the request-validation phase, but the routing foundation must not create a generic request pipeline that inherently encourages permissive payload handling.
+
+---
+
+# 41. Public vs Protected Middleware
+
+Do not attach authentication globally to the entire `/api/v1` group if public routes exist.
+
+Instead structure routes so public operations explicitly remain public while protected groups receive the relevant middleware.
+
+The frozen contract requires public catalog routes to remain unauthenticated.
+
+---
+
+# 42. Do Not Use Frontend Role Checks
+
+The route foundation must not depend on:
 
 ```text
-with normal Laravel configuration caching where applicable
+Next.js route protection
+Flutter route guards
+Admin UI hiding buttons
 ```
 
-Do not leave a development environment dependent on stale cached configuration.
+for authorization.
 
-Do not commit framework cache artifacts.
+Laravel must eventually enforce all protected routes.
 
----
-
-# 31. Storage and Filesystem Baseline
-
-Verify the Laravel storage structure is usable.
-
-Do not yet implement:
-
-* customer attachment storage
-* request attachments
-* enquiry attachments
-* product media
-* private file downloads
-
-Those belong to later resource implementation.
-
-Only establish that the standard Laravel application can initialize its expected storage directories.
+The uploaded `AGENTS.md` explicitly states that frontend validation/auth state is advisory and backend/domain validation and authorization are authoritative.
 
 ---
 
-# 32. Logging Baseline
+# 43. CSRF/Cookie Route Considerations
 
-Verify Laravel can write development logs.
+The frozen contract distinguishes browser cookie-authenticated mutations from bearer-only mobile requests.
 
-Do not redesign logging architecture yet.
+The API conventions require CSRF protection for cookie-authenticated mutations and exempt bearer-only Flutter traffic.
 
-Do not log:
+Phase 2.6 should ensure the middleware architecture leaves a clean attachment point for this behavior.
 
-* passwords
-* access tokens
-* secrets
-* payment credentials
-* full sensitive customer records
+Do not disable CSRF globally merely to make API requests easier during development.
 
-This phase establishes application viability, not production observability architecture.
+The complete authentication implementation belongs to Group D.
 
 ---
 
-# 33. Queue Baseline
+# 44. CORS Considerations
 
-Do not implement business queues or jobs yet.
+Do not use CORS as authorization.
 
-Inspect the queue configuration and confirm that it does not prevent Laravel from booting.
+If CORS configuration is touched during this phase, preserve the frozen allow-list architecture:
 
-Do not introduce Redis, RabbitMQ, SQS, or another queue system merely because future notifications may require queues.
+```text
+https://www.example.com
+https://admin.example.com
+```
 
-Queue architecture belongs to a later phase.
-
----
-
-# 34. Cache Baseline
-
-Likewise, do not introduce Redis or another cache system merely because later API operations may use caching.
-
-Verify the current Laravel configuration can boot normally.
-
-Caching strategy belongs to a later performance/infrastructure phase.
-
----
-
-# 35. CORS Baseline
-
-Do not treat CORS as authorization.
-
-Review the installed Laravel configuration and project requirements.
-
-Do not open CORS broadly to:
+and never use:
 
 ```text
 *
 ```
 
-merely to make frontend development convenient.
+with credentialed browser traffic.
 
-If CORS configuration is needed now, use the narrowest development configuration consistent with the approved architecture.
+The frozen conventions explicitly define the allowed origins and headers.
 
-The production configuration must be handled deliberately later.
+Full CORS tuning can remain with the appropriate infrastructure/authentication phase.
 
 ---
 
-# 36. Backend URL Convention
+# 45. Cache-Sensitive Route Grouping
 
-Record that local Laravel development uses:
+Route organization must preserve the distinction between:
 
 ```text
-http://127.0.0.1:8000
+PUBLIC
+PRIVATE
+INTERNAL/OPERATIONAL
 ```
 
-for the development server.
+The frozen contract specifies public caching for catalog endpoints and private/no-store behavior for customer/operational data.
 
-Do not hard-code this URL into API business logic.
-
-Next.js and Flutter client configuration should later receive the API base URL through environment/configuration.
-
----
-
-# 37. Environment Safety Audit
-
-Check repository status before and after the phase.
-
-Ensure the implementation agent does not accidentally stage/commit:
+Do not attach a public caching policy to:
 
 ```text
-.env
-storage/logs/*
-bootstrap/cache/*
-local database files
-IDE files
-OS files
-credentials
-tokens
+/orders
+/me/*
+/inventory
+/admin/*
 ```
 
-Use the existing `.gitignore`.
-
-Only modify `.gitignore` when a genuine project-specific omission is discovered.
+Route grouping should make it easy for later middleware to apply the correct cache policy.
 
 ---
 
-# 38. Coding Standards Baseline
+# 46. Route Discovery Verification
 
-Inspect the repository's existing PHP code style and tooling.
-
-Use project-defined tools where present.
-
-If none are configured yet, do not install a large collection of formatting/linting tools merely for this phase.
-
-The later backend foundation phases can establish:
-
-* Pint
-* PHPStan
-* testing tools
-* architectural checks
-
-as deliberate project dependencies.
-
----
-
-# 39. Testing Baseline
-
-Run the existing Laravel test suite:
-
-```bash
-php artisan test
-```
-
-or the repository's approved equivalent.
-
-The goal is to establish a clean baseline.
-
-If the untouched Laravel skeleton has no meaningful tests yet, document that fact rather than fabricating coverage.
-
-At minimum verify the application boots successfully under the test environment.
-
----
-
-# 40. Static Validation
-
-Run available validation commands appropriate to the repository.
-
-At minimum consider:
-
-```text
-composer validate
-php artisan test
-php artisan route:list
-php artisan about
-```
-
-Use commands that actually exist in the installed Laravel version.
-
-Do not claim a validation passed if it was not executed.
-
----
-
-# 41. Security Baseline
-
-Perform a lightweight security check for the newly established foundation.
+After implementation, inspect the Laravel route table using the installed framework's route-list command.
 
 Verify:
 
-* `.env` is not tracked
-* debug mode is appropriate for local development only
-* production secrets are absent
-* health response does not disclose internals
-* no anonymous privileged route was created
-* no wildcard CORS authorization assumption was introduced
-* no authentication bypass was added
-* no role field is accepted by any new route
+* all intended routes appear
+* no removed alias appears
+* no duplicate route appears
+* no unintended public privileged route exists
+* methods are correct
+* prefixes are correct
+* middleware assignment is visible
+* route names are unique
 
 ---
 
-# 42. API Base URL Test
+# 47. Canonical Route Security Check
 
-Verify the Laravel server responds at:
+Explicitly verify that these **must not exist**:
 
 ```text
-http://127.0.0.1:8000
+/api/v1/staff/orders
+/api/v1/staff/inventory
+/api/v1/staff/products
+/api/v1/staff/requests
+/api/v1/staff/enquiries
 ```
 
-and the Version 1 API namespace responds according to the baseline established in this phase.
+as legacy duplicates.
 
-Do not create placeholder business endpoints simply to make all future URLs respond.
-
-A missing future endpoint is not a foundation failure.
+The frozen security review removed these aliases specifically to reduce the attack surface.
 
 ---
 
-# 43. Documentation Changes
+# 48. Route Collision Review
 
-Update the smallest necessary existing documentation.
-
-Potential locations:
+Check for collisions such as:
 
 ```text
-AGENTS.md
-docs/api/api-conventions.md
-docs/decisions.md
+/products/{product}
+/products/{action}
 ```
 
-Only document decisions actually made during this phase.
-
-Examples:
+or:
 
 ```text
-Laravel application location
-backend/laravel
-
-Local development command
-cd backend/laravel && php artisan serve
-
-Local development URL
-http://127.0.0.1:8000
-
-API version prefix
-/api/v1
+/orders/{order}
+/orders/{fixed-action}
 ```
 
-Do not create a new `backend-setup.md` merely for these facts unless the repository documentation structure explicitly calls for it.
+Ensure fixed literal routes are registered/resolved correctly relative to parameter routes as appropriate for the Laravel version.
+
+Do not use broad wildcards that can capture unrelated routes.
 
 ---
 
-# 44. Architectural Decision Recording
+# 49. API Route Naming and Versioning Test
 
-Record any new architectural decision made during Phase 2.1 in:
+The following must be distinguishable:
 
 ```text
-docs/decisions.md
+GET /api/v1/products
+GET /api/v1/products/{product}
 ```
 
-Examples:
+and:
 
-* selected API bootstrap mechanism
-* health endpoint inclusion/exclusion
-* Laravel authentication package deferred
-* authorization package deferred
-* development database conventions
-* API CORS baseline
+```text
+GET /api/v1/categories
+GET /api/v1/categories/{category}
+```
 
-Do not record routine implementation details as architectural decisions.
+Likewise:
+
+```text
+GET /api/v1/orders
+GET /api/v1/orders/{order}
+```
+
+Do not accidentally create a dynamic route that captures a fixed action incorrectly.
 
 ---
 
-# 45. No Contract Changes
+# 50. Route-Model Identifier Semantics
 
-Phase 2.1 must not modify the frozen Group A contract unless a genuine implementation-blocking contradiction is discovered.
+Respect the frozen catalog rule:
 
-If a contradiction is found:
+* Product/Category details may resolve by slug or opaque machine ID.
+* Variant detail resolves by variant ID under its product parent.
 
-```text
-implementation discovery
-        ↓
-identify contract issue
-        ↓
-STOP affected implementation
-        ↓
-use post-freeze contract-change process
+The conventions explicitly document this dual-resolution behavior.
+
+Do not hard-code a route constraint that permits only numeric IDs if the frozen contract permits slug resolution.
+
+---
+
+# 51. No Business Logic in Routes
+
+Do not place:
+
+* database queries
+* pricing calculations
+* order transitions
+* inventory adjustments
+* permission decisions
+* DTO mapping
+* notification creation
+
+inside route declarations.
+
+For Phase 2.6, route declarations should establish **transport and middleware topology**, not business behavior.
+
+---
+
+# 52. Route Documentation
+
+Where the routing structure differs from an obvious Laravel default, add a concise comment or documentation note.
+
+Document:
+
+* API version boundary
+* route grouping strategy
+* canonical route aliases policy
+* middleware attachment points
+* rate-limit attachment point
+
+Do not produce a large routing manual.
+
+---
+
+# 53. Required Validation
+
+Run the appropriate project checks after routing changes.
+
+At minimum:
+
+```bash
+php artisan route:list
+php artisan test
 ```
 
-Do not silently edit:
+and any already-configured repository checks from `AGENTS.md`.
+
+Do not claim tests pass unless they were actually executed.
+
+---
+
+# 54. Route Smoke Tests
+
+Add or prepare lightweight routing tests where the existing test infrastructure supports them.
+
+At minimum verify:
+
+### Public
+
+```text
+GET /api/v1/products
+GET /api/v1/categories
+```
+
+do not require authentication.
+
+### Protected
+
+```text
+GET /api/v1/me
+GET /api/v1/me/orders
+```
+
+do require authentication.
+
+### Operational
+
+```text
+GET /api/v1/orders
+GET /api/v1/inventory
+```
+
+do not become public.
+
+### Admin
+
+```text
+GET /api/v1/admin/staff
+```
+
+does not become publicly accessible.
+
+Do not implement full business responses yet merely to satisfy these routing tests.
+
+---
+
+# 55. Rate-Limit Smoke Test
+
+Where the rate-limiter response is wired in this phase, verify that an intentionally throttled request produces:
+
+```http
+429 Too Many Requests
+Retry-After: <seconds>
+```
+
+and the canonical error response structure.
+
+Do not expose:
+
+* internal limiter algorithm
+* bucket state
+* infrastructure keys
+* internal counters
+
+The documented contract requires `Retry-After`; it specifically rejects a custom JSON retry field.
+
+---
+
+# 56. Strict Input Pipeline Smoke Test
+
+Where a minimal validation test is practical, verify the future contract direction with a representative request object:
+
+```json
+{
+  "name": "Example",
+  "unexpected_field": "should_not_be_accepted"
+}
+```
+
+The test should document the expected strict rejection behavior.
+
+Do not use `$request->all()` in the test implementation or production implementation.
+
+The actual domain FormRequest work remains in later phases.
+
+---
+
+# 57. OpenAPI Route Coverage Check
+
+Compare the Laravel route list against:
 
 ```text
 docs/api/openapi.yaml
 ```
 
-to make Laravel implementation easier.
+for the routes that Phase 2.6 registers.
 
-The API contract remains frozen.
+Every implemented route must correspond to an approved OpenAPI operation.
+
+Do not add "temporary" API routes that are absent from the frozen specification.
+
+If a routing-only infrastructure endpoint is necessary, verify that the frozen contract explicitly allows it or defer it to Phase 2.9.
 
 ---
 
-# 46. No Domain Implementation
+# 58. Health Endpoint Boundary
 
-Do not create the full application domain in Phase 2.1.
+Do **not** implement the health endpoint as part of 2.6.
 
-Do not implement:
+The roadmap explicitly assigns:
 
 ```text
-User model
-Product model
-Category model
-Variant model
-Cart model
-Order model
-OrderItem model
-Inventory model
-Request model
-Enquiry model
-Notification model
-Payment model
-AuditLog model
+Phase 2.9 — Health/status endpoint
 ```
 
-unless a later phase explicitly calls for one of these.
+to a later phase.
 
-This phase establishes the application foundation only.
+Phase 2.6 may establish route-grouping conventions that 2.9 will use.
+
+Do not pull Phase 2.9 forward.
 
 ---
 
-# 47. No API Endpoint Implementation Beyond Foundation
+# 59. Exception Handling Boundary
 
-Do not implement:
+Likewise, do not implement the complete API exception/error layer here.
+
+The roadmap assigns:
 
 ```text
-/products
-/me/cart
-/checkout
-/me/orders
-/staff/orders
-/staff/inventory
-/requests
-/enquiries
-/notifications
-/admin/staff
+Phase 2.7 — Exception/error handling foundation
 ```
 
-in Phase 2.1.
+after routing.
 
-Their contracts are already frozen.
+Phase 2.6 may establish middleware/route structure needed by 2.7.
 
-Implementation begins in later dependency-ordered phases.
-
----
-
-# 48. Required Repository State Review
-
-At completion, inspect:
-
-```bash
-git status
-```
-
-Confirm that all changed files are intentional.
-
-Review the diff before declaring the phase complete.
-
-Do not modify unrelated frontend or mobile files during this phase.
-
-Do not reformat the repository globally.
+Do not duplicate error handling in every route.
 
 ---
 
-# 49. Definition of Done
+# 60. Route Inventory Reconciliation
 
-Phase 2.1 is complete only when:
+Before completion, compare the route set with the frozen endpoint inventory.
 
-* [ ] The current repository `AGENTS.md` has been read.
-* [ ] Any applicable nested agent instructions have been read.
-* [ ] Group A frozen contract documents have been reviewed.
-* [ ] Existing Laravel project at `backend/laravel` has been preserved.
-* [ ] Laravel version has been verified.
-* [ ] PHP version has been verified.
-* [ ] Composer version has been verified.
-* [ ] `composer.json` and `composer.lock` have been inspected.
-* [ ] Dependency integrity has been checked.
-* [ ] Local `.env` configuration is valid.
-* [ ] `.env` remains untracked.
-* [ ] `APP_KEY` is valid for local development.
-* [ ] Local application configuration is appropriate.
-* [ ] MySQL configuration is established.
-* [ ] Database connectivity has been verified where a local database is available.
-* [ ] No domain migrations have been introduced.
-* [ ] API version boundary `/api/v1` is established consistently.
-* [ ] The Laravel routing mechanism matches the installed Laravel version.
-* [ ] No duplicate or conflicting API version mechanism exists.
-* [ ] A minimal health endpoint has been added only if compatible with the frozen contract.
-* [ ] Health output does not leak internal information.
-* [ ] Default scaffold behavior has been reviewed.
-* [ ] No unnecessary scaffold deletion has occurred.
-* [ ] Laravel development server starts successfully.
-* [ ] `http://127.0.0.1:8000` has been verified.
-* [ ] API baseline route behavior has been verified.
-* [ ] Route registration has been inspected.
-* [ ] Configuration/cache behavior has been checked.
-* [ ] Storage baseline is functional.
-* [ ] Development logging works without sensitive-data leakage.
-* [ ] No premature queue architecture has been introduced.
-* [ ] No premature cache architecture has been introduced.
-* [ ] CORS has not been treated as authorization.
-* [ ] No authentication package has been installed without an approved decision.
-* [ ] No authorization package has been installed without an approved decision.
-* [ ] Existing Laravel tests pass, or the baseline failure state is documented.
-* [ ] Composer validation passes.
-* [ ] Repository changes have been reviewed.
-* [ ] No secrets or generated local artifacts were accidentally introduced.
-* [ ] Relevant documentation has been updated.
-* [ ] No Group A contract has been silently changed.
-* [ ] No business-domain implementation has been started.
-* [ ] No frontend or Flutter implementation has been started.
-
----
-
-# 50. Expected Initial Backend State
-
-At the end of this phase, the backend should conceptually be:
+Explicitly detect:
 
 ```text
-backend/laravel
-        │
-        ├── Laravel application boots
-        ├── local environment works
-        ├── MySQL configuration works
-        ├── API namespace is established
-        ├── health/baseline verification works
-        └── ready for domain implementation
+missing route
+extra route
+alias route
+wrong method
+wrong prefix
+wrong authentication boundary
+wrong middleware group
 ```
 
-It should **not** yet contain the completed ecommerce domain.
+No unexplained differences are allowed.
+
+The frozen conventions state that the V1 endpoint catalogue is authoritative and removed endpoint IDs are retired rather than reused.
 
 ---
 
-# 51. STOP Condition
+# 61. Security Review
 
-**STOP after the existing Laravel project is verified, configured, documented, and ready for the next dependency-ordered implementation phase.**
+Before completion verify:
+
+* no public privileged route
+* no Admin route accessible without the appropriate future authorization middleware
+* no Customer ownership route accepts arbitrary user IDs as authorization
+* no legacy `/staff/...` aliases
+* no arbitrary route wildcard
+* no route exposes internal infrastructure
+* guest-cart credentials remain scoped
+* upload-token routes remain protected
+* rate-limited routes have the `Retry-After` response architecture
+* route groups do not accidentally bypass CSRF/auth middleware
+* no client role controls authorization
+
+---
+
+# 62. Definition of Done
+
+Phase 2.6 is complete only when:
+
+* [ ] Current `AGENTS.md` and applicable nested instructions were read.
+* [ ] Frozen Group A API contract was reviewed.
+* [ ] `docs/api/openapi.yaml` was reviewed.
+* [ ] `/api/v1` is the only Version 1 API prefix.
+* [ ] Existing Laravel routing structure for the installed version is respected.
+* [ ] Public routes are separated from authenticated/protected routes.
+* [ ] `/me` routes have a clean authenticated middleware boundary.
+* [ ] Operational routes use the frozen canonical paths.
+* [ ] Removed `/staff/...` aliases are not implemented.
+* [ ] Admin routes have a clear Admin-only middleware/policy attachment point.
+* [ ] Product/category routes match the frozen endpoint inventory.
+* [ ] Variant route structure matches the frozen contract.
+* [ ] Cart routes preserve guest-cart support where required.
+* [ ] Guest-cart token transport remains compatible with `X-Guest-Cart-Id`.
+* [ ] Order customer routes are distinct from operational routes.
+* [ ] Order state actions are not represented as generic status PATCH routes.
+* [ ] Inventory uses the canonical `/inventory/{product}/adjust` route.
+* [ ] Request/enquiry routes use the canonical non-Staff-prefixed routes.
+* [ ] Attachment routes preserve the scoped upload-token boundary.
+* [ ] Notification route structure matches the frozen contract.
+* [ ] Route model binding does not bypass later ownership authorization.
+* [ ] Public catalog routes are not forced through authentication.
+* [ ] Route names are unique and consistent.
+* [ ] No business logic has been placed in route declarations.
+* [ ] Middleware attachment points exist for authentication, authorization, rate limiting, CSRF where applicable, and later request validation.
+* [ ] Rate-limiter infrastructure is capable of returning `429` with standard `Retry-After`.
+* [ ] Rate limiting does not expose internal limiter details.
+* [ ] Future FormRequest/DTO implementation is explicitly required to use `validated()` and not `$request->all()`.
+* [ ] Strict unknown-field rejection is preserved as the implementation requirement corresponding to `additionalProperties: false`.
+* [ ] `php artisan route:list` passes/works.
+* [ ] Existing tests pass, or any baseline failure is accurately documented.
+* [ ] Route smoke tests cover public/protected/operational/Admin boundaries where the test framework is available.
+* [ ] Laravel route coverage has been compared with OpenAPI.
+* [ ] No Phase 2.7 exception system has been prematurely implemented.
+* [ ] No Phase 2.9 health endpoint has been prematurely implemented.
+* [ ] No domain/database implementation has been started.
+
+---
+
+# 63. STOP Condition
+
+**STOP after the Laravel Version 1 routing topology is implemented and verified.**
 
 Do not continue into:
 
-* database schema design
-* user migrations
-* product migrations
+* exception/error handling
+* custom API error middleware
+* logging architecture
+* health/status implementation
 * authentication implementation
-* authorization implementation
-* Eloquent domain models
-* API Resources
-* controllers
+* FormRequests
+* DTOs
+* models
+* migrations
+* policies
 * business services
-* repositories
-* order workflow implementation
-* payment implementation
-* notification implementation
-* Next.js integration
-* Flutter integration
+* inventory logic
+* order logic
+* payment logic
 
-Do not use this phase to "get ahead" of the roadmap.
+The next implementation phase is:
 
-Phase 2.1 establishes the stable Laravel foundation only.
+**Phase 2.7 — Exception/Error Handling Foundation.**
 
-**Next phase: Phase 2.2 — Laravel Project Conventions, Code Quality & Backend Development Standards.**
-
-**Group B is now officially started.**
-
+Phase 2.6 must leave Laravel with a clean, canonical, security-aware routing foundation that the subsequent phases can build upon without changing the frozen API surface.
