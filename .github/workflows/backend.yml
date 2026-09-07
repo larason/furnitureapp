@@ -1,0 +1,45 @@
+name: Backend Quality
+
+on:
+  push:
+    branches: [main, review]
+  pull_request:
+    branches: [main, review]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, pdo_sqlite, sqlite3, bcmath, fileinfo, openssl, tokenizer, xml, ctype, json
+          coverage: none
+
+      - name: Install dependencies
+        working-directory: backend/laravel
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        working-directory: backend/laravel
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+
+      - name: Format check
+        working-directory: backend/laravel
+        run: composer format:check
+
+      - name: Static analysis
+        working-directory: backend/laravel
+        run: composer analyse
+
+      - name: Tests
+        working-directory: backend/laravel
+        run: composer test

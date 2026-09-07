@@ -38,6 +38,21 @@ php artisan test tests/Feature/ApiErrorHandlingTest.php  # one file
 
 `composer test` and focused runs return non-zero on failure (verified). No speculative domain factories/fixtures; only `UserFactory` from the skeleton is present.
 
+## CI Baseline (Phase 2.12)
+
+Workflow: `.github/workflows/backend.yml` — `Backend Quality` on `push`/`pull_request` to `main`/`review` (GitHub Actions, `contents: read`).
+
+```bash
+composer install --no-interaction --prefer-dist --no-progress  # from lock
+test -f .env || cp .env.example .env
+php artisan key:generate                                      # ephemeral test env
+composer format:check
+composer analyse
+composer test
+```
+
+Each step fails the job on non-zero; no `|| true`, no auto-fix commits, no secrets. Local reproduction uses the same `composer` commands.
+
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).

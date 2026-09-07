@@ -1682,3 +1682,19 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/BACKEND-006 — Phase 2.12 CI Baseline
+
+**Decision:** GitHub Actions (`.github/workflows/backend.yml`) as the single canonical CI for the Laravel backend (`Backend Quality` on `push`/`pull_request` to `main`/`review`, `contents: read`, `ubuntu-latest`, PHP 8.5).
+
+- **Runtime:** `shivammathur/setup-php@v2` with PHP 8.5 (matches `composer.json` `^8.3` and local 8.5.10; compatible with Laravel 13, Pint, PHPStan, PHPUnit) + extensions `dom, curl, libxml, mbstring, zip, pdo, pdo_sqlite, sqlite3, bcmath, fileinfo, openssl, tokenizer, xml, ctype, json` (no unused extensions, no Node).
+- **Dependencies:** `composer install --no-interaction --prefer-dist --no-progress` from committed `composer.lock` (reproducible, no `composer update` in CI).
+- **Env:** `cp .env.example .env && php artisan key:generate` (ephemeral, no production secrets; `phpunit.xml` provides `APP_ENV=testing`, `DB sqlite :memory:`, `CACHE array`, `QUEUE sync`, `MAIL array`, `SESSION array`).
+- **Quality gate (explicit steps, each fails the job):** `composer format:check` (non-mutating Pint), `composer analyse` (PHPStan level 5 on `app`, `bootstrap/app.php`, `config`, `routes`, `database`), `composer test` (PHPUnit 46 tests covering Phase 2.7–2.9). No `|| true`, no auto-fix commits, no coverage gate, no deployment, no monitoring, no `api/v1` domain work.
+- **Parity:** CI calls the same `composer` scripts documented for local reproduction; failure category is identifiable by step name.
+
+**Reason:** Establishes the Group B automated quality gate that later Group C–W phases can extend without duplicating CI.
+
+**Status:** Accepted | **Affected:** `.github/workflows/backend.yml`, `backend/laravel/README.md` (CI docs), `docs/decisions.md`
+
+---
+
