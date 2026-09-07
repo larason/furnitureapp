@@ -60,7 +60,7 @@ class UserSchemaTest extends TestCase
     {
         $user = $this->createUser(['email' => 'controlled@example.com', 'account_state' => 'ACTIVE']);
 
-        $this->assertNull($user->account_state, 'account_state must not be mass-assigned from input');
+        $this->assertNull($user->fresh()->account_state, 'account_state must not be mass-assigned from input');
     }
 
     public function test_profile_relationships_are_one_to_one_and_optional(): void

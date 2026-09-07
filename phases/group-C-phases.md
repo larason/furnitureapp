@@ -1,181 +1,52 @@
 # Group C phases instructions
 
-# Phase 3.1 — Users Schema
+# Phase 3.2 — Roles/permissions model
 
-## Objective
+## Purpose
 
-Implement the database schema and Laravel model foundation for the project's unified user identity.
+Implement the database and application foundation for **RBAC (role-based access control)** using the single `users` identity created in Phase 3.1.
 
-The architecture for this phase is:
+This phase establishes:
 
-```text
-                         ┌────────────────────┐
-                         │       users        │
-                         │────────────────────│
-                         │ id                 │
-                         │ name               │
-                         │ email              │
-                         │ phone              │
-                         │ password           │
-                         │ account state      │
-                         │ timestamps         │
-                         └─────────┬──────────┘
-                                   │
-                       ┌───────────┴───────────┐
-                       │                       │
-                    1 : 1                   1 : 1
-                       │                       │
-             ┌─────────▼──────────┐  ┌────────▼──────────┐
-             │ customer_profiles  │  │  staff_profiles   │
-             │────────────────────│  │───────────────────│
-             │ user_id            │  │ user_id           │
-             │ customer-specific  │  │ staff-specific    │
-             │ data only          │  │ data only         │
-             └────────────────────┘  └───────────────────┘
-```
+* the V1 role model;
+* the explicit permission vocabulary;
+* role-to-permission assignments;
+* user-to-role assignment;
+* deny-by-default authorization primitives;
+* the Laravel relationships and authorization abstractions that later phases can use.
 
-Use one authentication identity for all authenticated people.
+This phase must **not** implement authentication workflows, login/session/token handling, customer account administration, staff administration endpoints, or domain-specific operational authorization. Those belong to later phases.
 
-Do not create separate authentication tables such as:
+The resulting model must support the authoritative rule:
 
-```text
-customers
-staff
-admins
-```
-
-The same Laravel `User` identity must be capable of representing a customer, staff member, or admin.
-
-The project's conventions explicitly define one shared `User` identity across Next.js, Flutter, and administrative access.
+> `authenticated identity + role + resource + action + ownership/context + business-state` determine authorization; role alone never authorizes.
 
 ---
 
-# 1. Phase Context
+## Dependencies
 
-Phase Group B is complete.
+Required before starting:
 
-Now begin:
+* Phase 2.1–2.12 backend foundation is complete.
+* Phase 3.1 Users Schema is complete.
+* `users`, `customer_profiles`, and `staff_profiles` exist and their migrations/tests pass.
+* Existing Laravel coding standards, static analysis, test framework, exception handling, and logging conventions are already established.
+* `docs/VISION.md`
+* `docs/api/api-contract.md`
+* `docs/api/api-resources.md`
+* `docs/api/api-conventions.md`
+* `docs/domain/business-rules.md`
+* `AGENTS.md`
 
-**Phase Group C — Database and Domain Model**
-
-Current phase:
-
-**Phase 3.1 — Users schema**
-
-Next phase:
-
-**Phase 3.2 — Roles/permissions model**
-
-Do not implement Phase 3.2 in this phase.
-
-The Group C roadmap explicitly separates Users schema from Roles/permissions model.
+Do not reopen decisions already frozen by those documents.
 
 ---
 
-# 2. Authoritative Sources
+## Authoritative constraints
 
-Before changing the repository, read:
+### 1. Roles are CLOSED
 
-1. `AGENTS.md`
-2. `docs/api/api-contract.md`
-3. `docs/api/api-resources.md`
-4. `docs/api/api-conventions.md`
-5. `docs/domain/business-rules.md`
-6. the existing Laravel schema/model structure from Group B
-
-Treat the frozen API contract as authoritative.
-
-Do not silently introduce fields that have no business or contract requirement.
-
----
-
-# 3. Architecture Decision
-
-Use:
-
-```text
-users
-customer_profiles
-staff_profiles
-```
-
-as the database identity/profile structure.
-
-Authentication identity belongs to `users`.
-
-Specialized profile attributes belong in the appropriate profile table.
-
-Roles and permissions are **not** represented by separate authentication tables.
-
-Role and permission assignment will be implemented in Phase 3.2.
-
-Authentication workflows will be implemented later in Group D.
-
----
-
-# 4. `users` Table Responsibility
-
-The `users` table is the central identity/authentication table.
-
-It should contain only cross-role identity/authentication state.
-
-Required conceptual fields are:
-
-```text
-id
-name
-email
-phone
-password
-account state
-timestamps
-```
-
-Use the actual naming required by the existing project/API conventions.
-
-The schema must support the project's requirement that:
-
-* email identifies the authentication account
-* password is stored only as a secure one-way hash
-* phone may be nullable according to the existing contract
-* account state is server-controlled
-* timestamps are server-controlled
-
-The authentication conventions define registration data as `name`, `email`, `phone`, and `password`, with password storage as a secure one-way hash.
-
----
-
-# 5. Do Not Add Role Column
-
-Do **not** add:
-
-```text
-role
-```
-
-to `users` as the authoritative RBAC implementation.
-
-Do not add:
-
-```text
-is_admin
-is_staff
-is_customer
-```
-
-either.
-
-The V1 role system is server-controlled and belongs to the authorization/RBAC model.
-
-Phase 3.2 will establish how roles and permissions are persisted.
-
-The frozen conventions explicitly distinguish roles from ordinary profile fields and state that the role is server-controlled.
-
----
-
-# 6. V1 Role Vocabulary
-
-The schema must be compatible with the frozen V1 role vocabulary:
+V1 has exactly these user roles:
 
 ```text
 CUSTOMER
@@ -183,1265 +54,895 @@ STAFF
 ADMIN
 ```
 
-These are closed roles.
+Use the exact uppercase values.
 
 Do not introduce:
 
 ```text
-WAREHOUSE_STAFF
-CATALOG_MANAGER
-SUPPORT
-MANAGER
 SUPER_ADMIN
-DELIVERY_AGENT
+MANAGER
+SUPPORT
+ORDER_STAFF
+INVENTORY_STAFF
+MODERATOR
+GUEST
+SYSTEM
 ```
 
-as V1 roles.
+or other additional user roles.
 
-More granular staff capabilities are represented through permissions rather than creating a role explosion.
+`SYSTEM` may exist conceptually as an internal execution actor for jobs/webhooks later, but it is **not** a user RBAC role.
 
-The project explicitly defines `CUSTOMER`, `STAFF`, and `ADMIN` as the V1 closed roles and discourages additional roles.
+Adding another user role is a V1 compatibility decision and must not happen casually.
 
----
+### 2. Role is server-controlled
 
-# 7. `users.email`
+A client must never be able to:
 
-`email` is a required identity attribute.
+* choose its own role;
+* promote itself;
+* demote itself;
+* assign a role to another user;
+* submit `role` as an ordinary profile field;
+* submit a permission list;
+* submit wildcard permissions;
+* change authorization through mass assignment.
 
-The current conventions state that `email` is required and not nullable.
+Examples that must never be treated as authoritative:
 
-Implement appropriate database uniqueness.
-
-The uniqueness requirement must support case-consistent authentication behavior.
-
-Do not solve email normalization entirely through a database constraint.
-
-Do not invent a separate email-identity table.
-
-The exact application-level normalization behavior belongs to later authentication implementation.
-
----
-
-# 8. `users.phone`
-
-`phone` may be nullable according to the current contract.
-
-Do not make it required merely because the proposed SQL example used a nullable field differently.
-
-Do not add unnecessary phone-specific tables.
-
-Do not introduce SMS/OTP functionality.
-
-Phone/SMS authentication is not required by default and is outside this phase.
-
----
-
-# 9. `users.password`
-
-Create the database field needed to store the user's password credential securely.
-
-The field must be suitable for a one-way password hash.
-
-Do not store plaintext passwords.
-
-Do not create:
-
-```text
-password_plaintext
-password_confirmation
+```json
+{
+  "role": "ADMIN"
+}
 ```
 
-Do not create reset tokens or verification secrets in the `users` table as part of this phase.
-
-Password reset and verification are later authentication workflows.
-
-The authentication conventions explicitly require secure one-way password hashing and prohibit returning credential material through the API.
-
----
-
-# 10. Account State
-
-The user identity must support server-controlled account state.
-
-Do not allow client profile operations to mutate account state.
-
-The API conventions explicitly identify `account_state` as server-controlled.
-
-### Important implementation constraint
-
-Do not invent a new set of account-state enum values unless the authoritative domain/API documentation already defines them.
-
-The repository mentions lifecycle concepts such as:
-
-```text
-PENDING
-ACTIVE
+```json
+{
+  "permissions": ["*"]
+}
 ```
 
-for staff approval, but exact lifecycle semantics are deferred.
-
-Therefore:
-
-* inspect existing contract/domain definitions first
-* if an authoritative account-state definition already exists, implement it exactly
-* otherwise use the minimum schema representation necessary to preserve the deferred lifecycle without pretending to finalize the enum
-
-Do not hard-code an unapproved V1 account-state vocabulary.
-
----
-
-# 11. `customer_profiles`
-
-Create a one-to-one customer profile extension table only for customer-specific information that is actually supported by the current project.
-
-At minimum the relationship should be:
-
-```text
-customer_profiles.user_id → users.id
+```json
+{
+  "is_admin": true
+}
 ```
 
-with one customer profile per user.
+The backend owns role and authorization state.
 
-Enforce the one-to-one relationship with a unique constraint on `user_id`.
+### 3. Staff must not become customer administrators
 
----
+The model must make it impossible to infer customer-account administration from ordinary staff operations.
 
-# 12. Customer Profile Fields
+`STAFF` must not gain permissions for:
 
-Do **not** copy the proposed fields:
+* changing customer passwords;
+* changing customer roles;
+* changing customer permissions;
+* disabling or blocking customer accounts;
+* changing customer security state;
+* impersonating customers;
+* transferring customer ownership;
+* accessing customer credentials;
+* deleting customer accounts.
 
-```text
-default_shipping_address_id
-loyalty_points
-preferences
-```
+Staff operational access is separate from customer-account administration.
 
-into Phase 3.1 unless those fields are already explicitly established in the authoritative project requirements.
-
-Reason:
-
-* saved address book functionality is not currently part of the users schema phase
-* loyalty points are not established as a V1 domain requirement
-* arbitrary preference JSON has no current contract requirement
-
-The frozen profile conventions currently identify `name` and `phone` as the ordinary customer-profile fields, with identity/security fields handled separately.
-
-Do not invent customer data merely to make the profile extension table look complete.
-
----
-
-# 13. Profile Responsibility Clarification
-
-The database design may contain `name` and `phone` in either the central identity layer or customer-profile layer depending on the final model chosen during implementation, but the implementation must preserve the API semantics:
-
-```text
-name
-phone
-```
-
-are ordinary profile data.
-
-The following remain authentication/security concerns:
-
-```text
-email
-password
-role
-permissions
-account_state
-verification state
-```
-
-The conventions explicitly require this separation of responsibility even where data is ultimately stored on related user records.
-
-Do not duplicate the same authoritative `name` or `phone` values in both `users` and `customer_profiles`.
-
-Choose one authoritative storage location.
-
-For this project, because `name`, `email`, and `phone` are part of the shared registration identity and `User` is the common cross-platform identity, prefer keeping `name`, `email`, and `phone` on `users` unless the existing repository already establishes a different model.
-
-`customer_profiles` should therefore contain only genuinely customer-specific attributes introduced by later requirements.
-
-If no such attributes are currently required, keep the table intentionally minimal rather than inventing fields.
-
----
-
-# 14. `staff_profiles`
-
-Create a one-to-one staff profile extension table for staff/admin-specific information that is genuinely required by the project.
-
-At minimum:
-
-```text
-staff_profiles.user_id → users.id
-```
-
-with a unique constraint on `user_id`.
-
-This permits:
-
-```text
-User
- ├── customer profile
- └── staff profile
-```
-
-to remain separate from authentication.
-
----
-
-# 15. Staff Profile Fields
-
-Do **not** automatically add:
-
-```text
-employee_id
-department
-```
-
-from the proposed example unless these fields are supported by the project's actual requirements.
-
-The current frozen business/API sources define Staff primarily by operational capability and permissions, not by employee-code or department attributes.
-
-Avoid speculative schema.
-
-If an internal staff attribute is not needed by current requirements, defer it.
-
----
-
-# 16. Admin Profile
-
-Do **not** create an `admin_profiles` table.
-
-Admins use the same `staff_profiles` extension model if administrative-specific profile data is required.
-
-The architectural model is:
-
-```text
-users
- ├── CUSTOMER → customer profile
- └── STAFF/ADMIN → staff profile
-```
-
-Role membership determines which capability/profile interpretation applies later.
-
-Do not create separate authentication identities for Admin.
-
----
-
-# 17. RBAC Relationship
-
-Phase 3.1 must be designed to work with a later RBAC implementation.
-
-The relationship should eventually resemble:
-
-```text
-users
-   │
-   └── RBAC roles/permissions
-```
-
-and independently:
-
-```text
-users
-   ├── customer_profiles
-   └── staff_profiles
-```
-
-Do not store permissions directly in profile JSON.
-
-Do not create ad hoc:
-
-```text
-permissions JSON
-roles JSON
-is_admin boolean
-```
-
-inside `users`.
-
-Phase 3.2 will establish the authoritative role/permission schema.
-
----
-
-# 18. RBAC Package Boundary
-
-The user has specified an RBAC package such as `spatie/laravel-permission`.
-
-For this roadmap:
-
-* **do not implement the package integration in Phase 3.1**
-* **do not create its role/permission tables manually**
-* **do not assign roles in Phase 3.1**
-* **do not add package-specific traits to `User` unless the project already uses the package**
-
-Phase 3.2 is explicitly named:
-
-**Roles/permissions model**
-
-Use that phase to evaluate and implement the RBAC package/model consistently.
-
-This preserves the dependency order defined by the roadmap.
-
----
-
-# 19. Important Staff/Customer Flexibility
-
-The unified `users` architecture must not make a user permanently incapable of belonging to another operational role simply because a profile row exists.
-
-The project's motivation for a unified identity is valid:
-
-```text
-one User identity
-+
-role/permission model
-+
-optional profile extension
-```
-
-However, do not implement role switching or multi-role assignment in Phase 3.1.
-
-That behavior is a Phase 3.2/Group D design concern.
-
-The schema should simply avoid architectural assumptions that make future role changes impossible.
-
----
-
-# 20. One User, One Authentication Identity
-
-There must be exactly one authentication identity per account.
-
-Do not create:
-
-```text
-customer_users
-staff_users
-admin_users
-```
-
-Do not create multiple password fields.
-
-Do not create separate authentication guards in the database schema.
-
-The project explicitly requires a shared identity across website and Flutter clients.
-
----
-
-# 21. Foreign Keys
-
-Profile tables must reference `users.id`.
-
-Use an actual foreign-key constraint.
-
-The relationship must not be represented only by a convention such as:
-
-```text
-customer_profiles.user_id
-```
-
-with no database enforcement.
-
-Use the project's existing migration style.
-
----
-
-# 22. Delete Behavior
-
-Decide delete behavior deliberately.
-
-The current project does not support destructive deletion of users in normal workflows, especially where historical orders/payments/requests/enquiries may exist.
-
-The authentication conventions explicitly caution against hard-deleting customers with historical records.
-
-Therefore:
-
-* do not build a user-deletion workflow
-* do not add cascade deletion from `users` to future business history
-* choose foreign-key behavior that will not unexpectedly destroy historical domain data
-
-For profile extension rows that are purely dependent on `users`, cascading profile deletion can be considered only if it does not conflict with future retention/audit requirements.
-
-Do not implement destructive account workflows in this phase.
-
----
-
-# 23. Timestamps
-
-Use the project's standard timestamp conventions.
-
-User/profile rows should use:
-
-```text
-created_at
-updated_at
-```
-
-where appropriate.
-
-Do not add arbitrary audit timestamps such as:
-
-```text
-last_login_at
-approved_at
-suspended_at
-email_verified_at
-password_changed_at
-```
-
-unless the authoritative requirements already establish them for this schema.
-
-Those attributes may be needed later, but this phase must not guess.
-
----
-
-# 24. Remember Token
-
-If the current Laravel authentication model requires a `remember_token` column for its planned web authentication mechanism, preserve the standard framework-compatible field.
-
-Do not treat the remember token as an API credential.
-
-Do not expose it through the API.
-
-Do not log it.
-
-Do not create additional token columns as part of Phase 3.1.
-
----
-
-# 25. API Serialization
-
-Do not create API resources or endpoints in Phase 3.1.
-
-However, the model design must remain compatible with the frozen serialization requirements.
-
-Never serialize:
-
-```text
-password
-password_hash
-remember_token
-session credentials
-RBAC internals
-security secrets
-```
-
-The project's serialization rules require explicit allow-lists and identify credentials/tokens as internal-only.
-
----
-
-# 26. No Authentication Implementation
+### 4. No wildcard authorization model
 
 Do not implement:
 
-* registration
-* login
-* logout
-* password recovery
-* email verification
-* Sanctum
-* Passport
-* API tokens
-* browser authentication
-* session handling
-* MFA
+```text
+*
+admin.*
+staff.*
+all
+full_access
+superuser
+```
 
-Those belong to Group D.
+as the mechanism by which a role becomes authorized.
 
-The current source explicitly defers Laravel/Sanctum, user authentication implementation, hashing workflows, reset flows, and token/session handling to the authentication group.
-
-Phase 3.1 only creates the database/model prerequisites.
+The authorization vocabulary must remain explicit and auditable.
 
 ---
 
-# 27. Model Implementation
+# Implementation instructions
 
-Create the Eloquent `User` model foundation required for the schema.
+## 3.2.1 Decide the RBAC persistence approach
 
-Keep the model small.
+Inspect the current Laravel project before adding dependencies.
 
-It may contain:
+Use **one** authorization implementation only.
 
-* correct table association if needed
-* guarded/fillable configuration
-* casts appropriate to actual persisted fields
-* relationships to profile models
-* authentication compatibility required by the current Laravel version
+A maintained Laravel RBAC package such as `spatie/laravel-permission` may be used when compatible with the existing Laravel version and project conventions. Do not install it blindly if an equivalent authorization foundation already exists.
 
-Do not place:
+Before introducing the package:
 
-* authentication workflows
-* authorization rules
-* business rules
-* password-reset logic
-* role assignment logic
-* profile mutation workflows
+* inspect `composer.json`;
+* inspect currently installed authorization/security packages;
+* check whether migrations, models, middleware, gates, or policies already provide conflicting role/permission behavior;
+* avoid installing two overlapping RBAC systems.
 
-inside the model.
+If a package is chosen, use its normal relational role/permission model rather than maintaining a parallel custom role/permission implementation.
+
+Do not hard-code package-specific behavior into controllers.
+
+Do not commit to a package merely because it is familiar; choose one coherent implementation and document the decision.
+
+If a package is not appropriate, implement a small explicit relational RBAC model using Laravel conventions.
 
 ---
 
-# 28. Mass Assignment
+## 3.2.2 Role persistence
 
-Continue the established project rule:
+Represent roles as first-class authorization entities rather than adding another authorization boolean to `users`.
+
+Do **not** add:
 
 ```text
-validated input
-→ explicit allow-list
-→ DTO/Command
-→ domain/application logic
-→ persistence
+users.is_admin
+users.is_staff
+users.is_customer
 ```
 
-Never introduce:
-
-```php
-$user->fill($request->all());
-```
-
-or:
-
-```php
-$user->update($request->all());
-```
-
-The project explicitly requires validated input → DTO/command and prohibits unrestricted request-to-model assignment.
-
----
-
-# 29. Password Mass Assignment
-
-Treat passwords specially.
-
-Even though the users table contains the password credential:
-
-* do not permit generic profile updates to write passwords
-* do not add password to ordinary profile allow-lists
-* do not expose password in serialization
-* do not create generic user-update helpers that accept arbitrary fields
-
-The authentication workflow will later own password changes.
-
----
-
-# 30. Role Mass Assignment
-
-Likewise, do not make role assignment a model fillable field.
-
-This must remain impossible through generic input.
-
-The frozen contract explicitly prohibits client modification of:
+Do **not** add:
 
 ```text
-role
+users.role
+```
+
+merely as a shortcut if the selected RBAC implementation stores roles relationally.
+
+The role authority must live in the RBAC model.
+
+Use a stable role identifier/name containing exactly:
+
+```text
+CUSTOMER
+STAFF
+ADMIN
+```
+
+Role records must be uniquely identifiable.
+
+Do not permit duplicate logical roles.
+
+Do not introduce role hierarchies such as:
+
+```text
+ADMIN > STAFF > CUSTOMER
+```
+
+as implicit authorization behavior.
+
+A user's possession of `ADMIN` must not automatically authorize an operation unless the corresponding explicit permission exists.
+
+---
+
+## 3.2.3 Permission persistence
+
+Create explicit permissions as first-class authorization capabilities.
+
+Use a stable naming convention:
+
+```text
+resource.action
+```
+
+or the exact equivalent supported by the selected authorization implementation.
+
+Permission names are part of the V1 authorization contract. Keep them deterministic and avoid synonyms for the same capability.
+
+Use this V1 permission vocabulary:
+
+### Customer-owned capabilities
+
+Customer capabilities are primarily enforced through ownership and policy rather than creating a large customer permission matrix.
+
+Do not create hundreds of permissions such as:
+
+```text
+customer.orders.read_own
+customer.orders.cancel_own
+customer.cart.read_own
+...
+```
+
+unless the selected implementation genuinely requires them.
+
+Ownership rules remain policy-level authorization.
+
+### Staff/Admin operational capabilities
+
+Establish the explicit operational permission set below:
+
+```text
+products.view
+products.manage
+
+inventory.view
+inventory.manage
+
+orders.view_operational
+orders.accept
+orders.process
+orders.ready_for_pickup
+orders.ship
+orders.deliver
+
+requests.view
+requests.manage
+
+enquiries.view
+enquiries.manage
+
+staff.approve
+staff.manage
+
+users.manage_authorized
+```
+
+These names are capabilities, not unconditional access.
+
+For example:
+
+```text
+orders.ship
+```
+
+means the actor may potentially perform the ship operation, but authorization still requires the applicable order ownership/operational scope and business-state precondition.
+
+Similarly:
+
+```text
+products.manage
+```
+
+must not silently include inventory quantity management.
+
+`inventory.manage` is separate from catalog management.
+
+`orders.process` must not implicitly authorize:
+
+```text
+orders.accept
+orders.ready_for_pickup
+orders.ship
+orders.deliver
+```
+
+The separation is intentional.
+
+---
+
+## 3.2.4 Permission-to-role matrix
+
+Seed the initial V1 role/permission assignments explicitly.
+
+Use this baseline:
+
+### CUSTOMER
+
+Customer authorization is ownership-based.
+
+Do not grant broad operational permissions.
+
+The customer role must not have:
+
+```text
+products.manage
+inventory.view
+inventory.manage
+orders.view_operational
+orders.accept
+orders.process
+orders.ready_for_pickup
+orders.ship
+orders.deliver
+requests.manage
+enquiries.manage
+staff.approve
+staff.manage
+users.manage_authorized
+```
+
+Public catalog access does not require an authenticated customer role.
+
+### STAFF
+
+Grant only operational capabilities justified by the V1 business model:
+
+```text
+products.view
+products.manage
+
+inventory.view
+inventory.manage
+
+orders.view_operational
+orders.accept
+orders.process
+orders.ready_for_pickup
+orders.ship
+orders.deliver
+
+requests.view
+requests.manage
+
+enquiries.view
+enquiries.manage
+```
+
+Do **not** grant:
+
+```text
+staff.approve
+staff.manage
+users.manage_authorized
+```
+
+Do not create an implicit `customer_admin` capability.
+
+Do not grant customer security/account-management permissions.
+
+### ADMIN
+
+Grant the full set of explicitly defined operational capabilities:
+
+```text
+products.view
+products.manage
+
+inventory.view
+inventory.manage
+
+orders.view_operational
+orders.accept
+orders.process
+orders.ready_for_pickup
+orders.ship
+orders.deliver
+
+requests.view
+requests.manage
+
+enquiries.view
+enquiries.manage
+
+staff.approve
+staff.manage
+
+users.manage_authorized
+```
+
+However, even `ADMIN` must remain subject to the explicit authorization policy for the target resource and operation.
+
+Do not implement an unconditional wildcard bypass.
+
+---
+
+## 3.2.5 Treat public access separately from RBAC
+
+Public catalog access is not a `CUSTOMER` permission.
+
+These resources are explicitly public:
+
+```text
+products
+categories
+search
+product details
+```
+
+Authentication is not required for normal public catalog reads.
+
+Do not create:
+
+```text
+PUBLIC
+ANONYMOUS
+GUEST
+```
+
+as user roles just to represent public access.
+
+Public/private access is an endpoint/resource policy concern.
+
+---
+
+## 3.2.6 User-to-role relationship
+
+Add the relationship required by the selected RBAC implementation:
+
+```text
+User -> roles
+Role -> users
+Role -> permissions
+Permission -> roles
+```
+
+The exact Laravel relationship implementation may differ depending on the selected package, but the resulting semantics must be equivalent.
+
+A user may have a role set that supports the system model without requiring role-specific copies of the same user identity.
+
+For V1, the business model expects one effective role per ordinary user:
+
+```text
+CUSTOMER
+STAFF
+ADMIN
+```
+
+Do not build a complicated multi-role precedence system unless the chosen implementation requires it.
+
+If the package technically supports multiple roles, establish an application invariant that ordinary users have one effective V1 role.
+
+Do not invent role-merging precedence rules.
+
+---
+
+## 3.2.7 Default-role behavior
+
+Do not make role assignment depend on an Eloquent model-created event.
+
+Phase 3.1 intentionally avoided automatic profile creation because role assignment belongs to this phase and authentication workflows belong to Group D.
+
+Now establish the authoritative provisioning rule:
+
+* new self-registered customers receive `CUSTOMER`;
+* `STAFF` and `ADMIN` must never be self-assigned;
+* staff creation/approval is an administrative workflow;
+* the backend must reject any client attempt to choose a privileged role.
+
+Do not implement the registration or staff-approval workflow in this phase.
+
+Only establish the RBAC model and, where necessary for seed/bootstrap behavior, the role assignment primitives.
+
+---
+
+## 3.2.8 Bootstrap/seed data
+
+Create deterministic seed data for:
+
+### Roles
+
+```text
+CUSTOMER
+STAFF
+ADMIN
+```
+
+### Permissions
+
+Every V1 permission defined in this phase must have exactly one canonical seeded identifier/name.
+
+### Role assignments
+
+Seed only the agreed role-permission mappings.
+
+Do not seed real customer accounts.
+
+Do not create fake staff/admin accounts unless the existing project has an established local-development bootstrap convention.
+
+If a local development administrator is needed, make it clearly development-only and ensure it cannot become production seed behavior accidentally.
+
+---
+
+## 3.2.9 Central authorization abstraction
+
+Establish a small authorization layer that later domain policies can depend on.
+
+Prefer Laravel-native authorization concepts where appropriate:
+
+* Gates;
+* Policies;
+* permission checks;
+* authorization services/abstractions.
+
+Do not scatter raw role comparisons through controllers:
+
+```php
+if ($user->role === 'ADMIN') {
+    ...
+}
+```
+
+Do not make controllers responsible for reconstructing the entire authorization model.
+
+Use centralized policy/capability checks.
+
+The authoritative convention explicitly calls for centralized policies such as:
+
+```text
+OrderPolicy.view
+OrderPolicy.cancel
+OrderPolicy.process
+OrderPolicy.ship
+
+ProductPolicy.view
+ProductPolicy.manage
+```
+
+rather than scattered role checks.
+
+At this phase, create only the reusable foundation required for those policies.
+
+Do not fully implement all domain policies yet.
+
+---
+
+## 3.2.10 Ownership remains separate from RBAC
+
+Do not make a permission such as:
+
+```text
+orders.view
+```
+
+mean "can view every order".
+
+Operational order viewing and customer ownership are different concepts.
+
+The eventual authorization calculation must be able to answer:
+
+```text
+Who is the authenticated principal?
+What role do they have?
+What permission do they have?
+What resource are they accessing?
+What action are they performing?
+Do they own the resource?
+What operational context applies?
+What business state applies?
+```
+
+Customer A must never gain access to Customer B's order merely because both are authenticated.
+
+Staff operational access is not ownership.
+
+Customer ownership and private-resource masking remain policy concerns.
+
+---
+
+## 3.2.11 Admin authority must remain explicit
+
+The model must support explicit Admin-only permissions for:
+
+```text
+staff.approve
+staff.manage
+users.manage_authorized
+```
+
+These capabilities must not be inherited by STAFF.
+
+Do not expose a generic:
+
+```text
+admin.*
+```
+
+shortcut.
+
+Do not introduce an "is super admin" escape hatch.
+
+Do not make role-changing self-service possible.
+
+The architecture must preserve the separation of duties:
+
+```text
+STAFF  -> operational processing
+ADMIN  -> privileged staff management/approval
+```
+
+Staff approval must remain Admin-controlled and auditable.
+
+---
+
+# Database requirements
+
+Create the required RBAC tables/migrations according to the chosen implementation.
+
+At minimum the resulting persistence model must represent:
+
+```text
+roles
 permissions
-account_state
-verification
-```
-
-through normal profile operations.
-
----
-
-# 31. Profile Relationships
-
-Establish clear Eloquent relationships:
-
-```text id="qz6v2t"
-User
- ├── customerProfile
- └── staffProfile
-```
-
-Use one-to-one relationships.
-
-Do not automatically assume that every user has both profiles.
-
-Profile existence is determined by later role/application behavior.
-
-Do not create both profile rows automatically for every user.
-
----
-
-# 32. Do Not Use Eloquent Events for Profile Creation Yet
-
-Do not implement the earlier proposed behavior:
-
-```text
-User created
-→ automatically create customer profile
-```
-
-unless the actual application design later establishes this as necessary.
-
-The problem is that role assignment itself belongs to Phase 3.2 and customer registration belongs to Group D.
-
-Creating role-dependent profiles before the role model and lifecycle exist can create invalid states.
-
-In Phase 3.1, establish the schema relationships only.
-
-Profile creation policy should be implemented together with the role/authentication workflow once those dependencies exist.
-
----
-
-# 33. Schema for Future Role Changes
-
-The schema must allow a user to later transition through supported role-management workflows without duplicating authentication records.
-
-Avoid database rules such as:
-
-```text
-user_id may exist only in customer_profiles forever
-```
-
-or:
-
-```text
-every users row must have exactly one profile
-```
-
-unless such constraints are actually required by the final authorization design.
-
-The authentication identity remains stable while profile/role capabilities can evolve.
-
----
-
-# 34. Unique Profile Ownership
-
-Each profile extension must contain:
-
-```text
-UNIQUE(user_id)
-```
-
-so a user cannot accidentally have two customer profiles or two staff profiles.
-
-Do not rely solely on application code for this one-to-one relationship.
-
----
-
-# 35. Indexing
-
-Create indexes needed for actual constraints/query patterns.
-
-At minimum:
-
-* unique `users.email`
-* appropriate phone uniqueness/index behavior according to the contract
-* unique `customer_profiles.user_id`
-* unique `staff_profiles.user_id`
-
-Do not create dozens of speculative indexes.
-
-Phase 3.17 will conduct the broader foreign-key/index/constraint review.
-
----
-
-# 36. Migration Order
-
-Ensure migrations execute in dependency order:
-
-```text
-users
-    ↓
-customer_profiles
-    ↓
-staff_profiles
-```
-
-Profile migrations must not execute before `users`.
-
-Do not create role/permission migrations here.
-
-Do not create future address tables here.
-
----
-
-# 37. Migration Rollback
-
-Every migration added in Phase 3.1 must have a correct rollback.
-
-The rollback must:
-
-* reverse constraints safely
-* remove tables in dependency order
-* not rely on manually deleting rows
-* not require future domain tables
-
-Test both migration and rollback behavior as far as the current test setup permits.
-
----
-
-# 38. Existing Database Awareness
-
-Inspect the current database state before adding migrations.
-
-If a `users` table already exists from Laravel initialization:
-
-* do not blindly create a second `users` table
-* determine whether the existing migration should be adapted
-* preserve any framework-required structure that remains useful
-* make the smallest coherent change
-
-Similarly, if profile tables already exist, extend/reconcile rather than duplicating them.
-
-Do not leave duplicate migrations that attempt to create the same table.
-
----
-
-# 39. Schema Naming
-
-Use the project's existing naming conventions:
-
-```text
-users
-customer_profiles
-staff_profiles
+role <-> permissions
+user <-> roles
 ```
 
 Use:
 
-```text
-user_id
-created_at
-updated_at
-```
+* foreign keys;
+* uniqueness constraints;
+* appropriate indexes;
+* stable identifiers;
+* timestamps where appropriate;
+* the existing project's normal migration conventions.
 
-and standard Laravel/MySQL naming conventions.
+Do not duplicate authorization state into unrelated tables.
 
-Do not mix:
+Do not store serialized JSON permission arrays as the authoritative permission model.
 
-```text
-userID
-customerId
-employeeID
-```
+Do not store permissions as comma-separated strings.
 
-with project `snake_case`.
+Do not use a free-form text blob as the role registry.
 
----
-
-# 40. MySQL Compatibility
-
-Implement the schema using features supported by the project's actual MySQL version.
-
-Do not assume unsupported database features.
-
-Check current Laravel/MySQL configuration before choosing:
-
-* string lengths
-* JSON behavior
-* index lengths
-* generated columns
-* check constraints
-* collation
-
-Do not introduce advanced MySQL-specific features without a real requirement.
+The database must be rebuildable from migrations.
 
 ---
 
-# 41. Charset and Collation
+# Model requirements
 
-Preserve the project's existing database charset/collation configuration.
+Update the `User` model only as required to expose the RBAC relationship.
 
-Do not introduce table-specific charset/collation differences unless required.
-
-Email uniqueness and text comparisons should follow the project's consistent database identity behavior.
-
-Do not solve application identity normalization using arbitrary table-level collation changes.
-
----
-
-# 42. Sensitive Data
-
-Treat the users table as highly sensitive.
-
-Do not:
-
-* log password fields
-* expose password hashes
-* seed real customer data
-* place credentials in migration files
-* place real emails/passwords in committed fixtures
-* serialize authentication fields by default
-
-The project security baseline requires secret management and explicitly prohibits sensitive credential exposure.
-
----
-
-# 43. Testing
-
-Add schema/model-focused tests appropriate to the phase.
-
-At minimum verify:
-
-### Users table
-
-* users table can be created
-* required identity fields exist
-* email uniqueness is enforced
-* nullable phone behavior matches the contract
-* password field exists and can hold the intended hash representation
-* timestamps exist where intended
-
-### Profile relationships
-
-* customer profile references users
-* staff profile references users
-* each profile relationship is one-to-one
-* duplicate profile rows for the same user are rejected
-
-### Referential integrity
-
-* profile cannot reference a nonexistent user
-* migration order is correct
-* rollback succeeds
-
-### Security structure
-
-Verify that model/API serialization does not expose:
+The model must not expose:
 
 ```text
 password
 remember_token
-future credential fields
+authorization internals
+permission secrets
 ```
 
-where current model serialization tests exist.
+through API serialization.
+
+Do not expand the `UserResource` yet unless the existing project needs the relationship for a specific internal test.
+
+Remember that serialization is an actor-sensitive boundary; authorization state is server-controlled.
+
+Do not create a public user listing endpoint.
+
+Do not create customer-management APIs.
 
 ---
 
-# 44. Test the Schema, Not Future Authentication
+# Authorization semantics
 
-Do not write tests that require:
+Establish these invariants:
 
-* Sanctum
-* login
-* registration
-* password recovery
-* role assignment
-* authorization policies
-
-Those dependencies do not exist yet.
-
-The Phase 3.1 tests should validate the database/model foundation only.
-
----
-
-# 45. Factories
-
-Do not create the final `UserFactory` unless the existing test framework and current tests genuinely require one.
-
-If the repository already has Laravel's default `UserFactory`, adapt it only as necessary to keep current tests working.
-
-Do not add:
+### CUSTOMER
 
 ```text
-CustomerFactory
-StaffFactory
-AdminFactory
+Customer access = authenticated self + ownership + business rules
 ```
 
-in this phase unless a real current test requires them.
-
-Those should be introduced when the corresponding domain/authentication behavior exists.
-
----
-
-# 46. Seeders
-
-Do not create production-like customer/staff/admin seed data.
-
-Do not assign roles before Phase 3.2.
-
-Do not seed passwords intended for production.
-
-If an existing Laravel development seeder requires a user, keep it minimal and clearly non-production.
-
-Do not create a complete RBAC seed system in Phase 3.1.
-
----
-
-# 47. No Address Book
-
-Do not create:
+### STAFF
 
 ```text
-addresses
-customer_addresses
-shipping_addresses
-default_shipping_address_id
+Staff access = authenticated staff + explicit permission + operational scope + business-state rules
 ```
 
-in Phase 3.1.
-
-Saved addresses are deferred.
-
-Checkout's delivery address is a separate later domain concern and is eventually handled by the checkout/order architecture.
-
----
-
-# 48. No Loyalty System
-
-Do not create:
+### ADMIN
 
 ```text
-loyalty_points
-loyalty_tiers
-rewards
-customer_rewards
+Admin access = authenticated admin + explicit permission + applicable resource/business rules
 ```
 
-There is no current requirement establishing these.
-
-Avoid speculative commerce features.
-
----
-
-# 49. No Preferences JSON
-
-Do not add:
+### Anonymous
 
 ```text
-preferences JSON
+Anonymous access = explicitly public resource/action only
 ```
 
-merely to hold hypothetical UI preferences such as room style or 3D-view preferences.
+### System/background actor
 
-Those preferences are not part of the frozen V1 user/profile contract.
-
-If product UX later requires persisted preferences, introduce them through a separately justified phase.
+Background jobs, payment callbacks, notification dispatch, inventory cleanup, and order timeouts are not represented by a CUSTOMER/STAFF/ADMIN role. Their authorization boundary will be handled by the applicable later phase.
 
 ---
 
-# 50. No Employee Metadata Without Requirement
+# Validation and security checks
 
-Do not create:
+Implement tests alongside the RBAC foundation.
+
+## Role integrity tests
+
+Verify:
+
+* only `CUSTOMER`, `STAFF`, `ADMIN` exist in V1 seed data;
+* duplicate role creation is rejected;
+* unknown roles cannot become effective user roles;
+* a client cannot self-assign `STAFF`;
+* a client cannot self-assign `ADMIN`;
+* role data is not accepted through ordinary profile mutation.
+
+## Permission integrity tests
+
+Verify:
+
+* all canonical V1 permissions are seeded;
+* permissions are uniquely identified;
+* wildcard permissions are not used as an authorization shortcut;
+* STAFF does not receive Admin-only permissions;
+* CUSTOMER does not receive staff operational permissions.
+
+## Separation-of-duties tests
+
+Explicitly test:
 
 ```text
-employee_id
-department
-job_title
-manager_id
+STAFF cannot staff.approve
+STAFF cannot staff.manage
+STAFF cannot users.manage_authorized
+STAFF cannot customer security/account administration
 ```
 
-unless the authoritative project requirements establish them.
-
-Staff permissions determine operational capability; arbitrary organizational metadata is not a reason to expand this schema.
-
----
-
-# 51. API Contract Compatibility
-
-Do not add or alter API endpoints.
-
-This phase is database/model work.
-
-Do not implement:
+Explicitly test that:
 
 ```text
-GET /api/v1/me
-PATCH /api/v1/me
-GET /api/v1/users/{id}
+ADMIN may have staff.approve
+ADMIN may have staff.manage
+ADMIN may have users.manage_authorized
 ```
 
-even though the schema will eventually support them.
+subject to the later domain policy implementation.
 
-Those endpoints already have frozen semantics and will be implemented in later phases.
+## Authorization primitive tests
 
-The current contract defines `/me` as authenticated-principal context and explicitly prohibits user-ID substitution.
+Verify that:
+
+* permission checks deny when no permission exists;
+* deny-by-default is preserved;
+* role alone is not treated as sufficient authorization;
+* missing authenticated identity cannot pass authenticated checks;
+* ownership is not inferred from client-supplied `user_id`;
+* authorization state cannot be supplied from request payloads.
+
+## Persistence tests
+
+Verify:
+
+* migrations run from an empty database;
+* migrations roll back cleanly;
+* foreign keys are valid;
+* uniqueness constraints work;
+* seed data is deterministic;
+* rebuilding the database produces the same RBAC baseline.
+
+## Security tests
+
+Verify that no path exists in this phase allowing:
+
+```json
+{
+  "role": "ADMIN"
+}
+```
+
+or:
+
+```json
+{
+  "permissions": ["*"]
+}
+```
+
+to alter authorization.
+
+Verify that authorization information cannot be changed through mass assignment.
+
+Follow the established error envelope and do not leak framework/database implementation details.
 
 ---
 
-# 52. Authorization Compatibility
+# Code-quality requirements
 
-Do not implement authorization policies.
+Keep the implementation small and cohesive.
 
-However, preserve the data model necessary for:
+Prefer:
 
 ```text
-customer-owned account
-staff operational identity
-admin identity
+Role
+Permission
+User relationship
+Authorization abstraction
+Seeders
+Migrations
+Focused tests
 ```
-
-without granting any database-level implied authority.
-
-Role and permission enforcement are later concerns.
-
----
-
-# 53. Authentication Compatibility
-
-Do not implement authentication.
-
-The schema should simply make later authentication possible.
-
-In particular:
-
-* one `User` model
-* one email identity
-* one password credential field
-* one account-state location
-* no duplicated authentication tables
-
-The actual Sanctum/session/token model comes later.
-
----
-
-# 54. Code Comments
-
-Keep comments in migrations and models to the absolute minimum.
-
-Do not add comments that merely restate column names.
 
 Avoid:
 
-```php
-// Create users table
-Schema::create('users', function (...) {
-```
+* giant authorization services;
+* generic "everything is allowed" helpers;
+* duplicated role checks;
+* copied permission strings across controllers;
+* hidden authorization behavior inside unrelated models;
+* premature domain-specific policies for features not yet implemented.
 
-Prefer self-explanatory code.
+Use constants/enums/value objects where they improve correctness and match existing project conventions.
 
-A comment is justified only for a non-obvious schema/security/compatibility decision.
+Use dependency injection where it materially improves testability.
 
-Do not place the entire architecture explanation inside migration comments.
-
----
-
-# 55. Documentation
-
-Do not create a new large users-schema document.
-
-If necessary, update the existing project architecture/decision documentation with the finalized architectural decision:
-
-```text
-single users identity
-+
-customer_profiles
-+
-staff_profiles
-+
-RBAC introduced separately
-```
-
-Keep the note short.
-
-Do not document unsupported fields as though they are implemented.
+Keep code comments to the absolute minimum. Explain non-obvious authorization decisions through names, structure, tests, or the existing architecture/decision documentation rather than large comment blocks.
 
 ---
 
-# 56. Verification
+# Documentation / decision record
 
-Run the established project checks.
+Update `docs/decisions.md` only if necessary to record a durable architectural choice such as:
 
-At minimum:
+* selected RBAC implementation/package;
+* why an existing authorization mechanism was reused;
+* why roles are relational rather than stored as booleans;
+* why customer authorization remains ownership/policy-based;
+* why wildcard admin permissions are intentionally excluded.
 
-```bash
-php artisan migrate
-php artisan migrate:rollback
-php artisan test
-```
+Do not create a permanent Phase-3.2 markdown file merely to duplicate this instruction.
 
-Use a safe test/local database.
-
-Then rebuild the schema from migrations:
-
-```text
-fresh migration sequence
-→ users
-→ customer_profiles
-→ staff_profiles
-```
-
-Confirm the schema can be created without manual intervention.
-
-Do not run destructive migration commands against a production database.
+If the selected RBAC package requires an important configuration assumption, document only that durable decision.
 
 ---
 
-# 57. Model Verification
+# Explicitly out of scope
 
-Verify the Eloquent relationship behavior manually or through tests:
+Do **not** implement:
 
-```text
-User
-  → customerProfile
-User
-  → staffProfile
-```
+* user registration;
+* login/logout;
+* password hashing workflows;
+* password reset;
+* email verification;
+* MFA;
+* Sanctum/Passport/token issuance;
+* browser session handling;
+* Flutter authentication;
+* authentication middleware;
+* staff approval endpoints;
+* staff suspension/reactivation endpoints;
+* customer administration endpoints;
+* customer disable/block functionality;
+* impersonation;
+* order authorization rules;
+* inventory authorization rules;
+* product authorization endpoints;
+* request/enquiry authorization endpoints;
+* admin UI;
+* staff UI;
+* customer UI;
+* Flutter authorization UI;
+* payment authorization;
+* audit-event storage implementation;
+* notification authorization;
+* authorization caching.
 
-Confirm:
-
-* no duplicate profile rows can exist
-* profile foreign keys are enforced
-* profile relationships do not require both profile rows
-
----
-
-# 58. Security Review
-
-Before completion, explicitly inspect for:
-
-```text id="2b4d4c"
-password exposure
-remember-token exposure
-duplicate authentication tables
-role stored as insecure boolean
-permission JSON
-arbitrary role mutation path
-missing foreign keys
-missing unique user/profile relationship
-cascade deletion risks
-real credentials in seeders
-real customer data
-```
-
-The project treats security as mandatory from the first backend implementation.
+Authentication is Group D. Domain authorization is implemented with the corresponding domain phases.
 
 ---
 
-# 59. Definition of Done
+# Definition of done
 
-Phase 3.1 is complete only when:
+Phase 3.2 is complete only when:
 
-1. A single `users` table is the authoritative identity/authentication table.
-2. No separate `customers`, `staff`, or `admins` authentication tables exist.
-3. The `User` model maps cleanly to the central user identity.
-4. `users.email` is correctly constrained as the required identity field.
-5. `users.phone` follows the documented nullability.
-6. The password field is suitable for secure hashing and is never treated as ordinary profile data.
-7. Account state is server-controlled and ready for later lifecycle implementation.
-8. `customer_profiles` exists as a one-to-one extension only where justified.
-9. `staff_profiles` exists as a one-to-one extension only where justified.
-10. Profile foreign keys and unique constraints are enforced by MySQL.
-11. No unsupported loyalty/address/preferences/employee metadata was invented.
-12. No role/permission implementation was added to this phase.
-13. The schema is ready for Phase 3.2 RBAC implementation.
-14. Authentication workflows remain deferred to Group D.
-15. Migration and rollback work correctly.
-16. Focused schema/model tests pass.
-17. Existing tests remain passing.
-18. No API contract was changed.
-19. New code contains only the minimum necessary comments.
-20. The resulting schema can be rebuilt from migrations.
+1. The project has one coherent RBAC implementation.
+2. V1 contains exactly `CUSTOMER`, `STAFF`, and `ADMIN`.
+3. V1 permissions are explicit, stable, and seeded.
+4. Role/permission relationships are persisted with proper constraints.
+5. User-to-role relationships are established on the Phase 3.1 `User`.
+6. STAFF has only the agreed operational capabilities.
+7. ADMIN has the agreed explicit administrative capabilities without a wildcard escape hatch.
+8. CUSTOMER does not receive staff/admin operational permissions.
+9. Customer ownership is clearly separated from staff operational authorization.
+10. Staff cannot acquire customer-account administration capabilities through the RBAC model.
+11. Client-supplied role/permission values cannot alter authorization.
+12. No mass-assignment path exists for authorization state.
+13. Authorization primitives are centralized and reusable by future domain policies.
+14. Migration tests pass from an empty database and rollback successfully.
+15. RBAC tests cover role integrity, permission mapping, deny-by-default, and separation of duties.
+16. Static analysis, formatting, and the existing test suite pass.
+17. No authentication or business-domain workflow has been pulled forward from later phases.
+18. The implementation contains only the minimum comments necessary.
 
 ---
 
-# 60. Review Checklist
+# STOP condition
 
-Before completion:
+Stop after the RBAC database/model/foundation and its tests are complete.
 
-* [ ] one central `users` authentication identity exists
-* [ ] no `customers` authentication table
-* [ ] no `staff` authentication table
-* [ ] no `admins` authentication table
-* [ ] no `role` boolean/string shortcut in `users`
-* [ ] no `is_admin`/`is_staff` shortcut
-* [ ] email is required and uniquely constrained
-* [ ] phone follows the documented nullable behavior
-* [ ] password storage field exists and is not exposed
-* [ ] authentication secrets are not stored in profile tables
-* [ ] account-state storage does not invent unsupported enum values
-* [ ] customer profile relationship is one-to-one
-* [ ] staff profile relationship is one-to-one
-* [ ] `customer_profiles.user_id` is unique
-* [ ] `staff_profiles.user_id` is unique
-* [ ] profile foreign keys reference `users.id`
-* [ ] migrations execute in dependency order
-* [ ] rollbacks work
-* [ ] no address-book schema was added
-* [ ] no loyalty schema was added
-* [ ] no arbitrary preferences JSON was added
-* [ ] no speculative employee metadata was added
-* [ ] no RBAC package integration was implemented prematurely
-* [ ] no role assignments were introduced
-* [ ] no authentication workflows were introduced
-* [ ] no API endpoints were added/changed
-* [ ] no `$request->all()` mass-assignment path was introduced
-* [ ] schema/model tests pass
-* [ ] existing tests pass
-* [ ] static analysis still passes
-* [ ] formatting still passes
-* [ ] no secrets or real customer data were added
-* [ ] comments are minimal
+Do not continue into Phase 3.3 Categories Schema.
 
----
+Do not implement authentication, staff approval, user management endpoints, or domain-specific authorization workflows merely because the RBAC foundation now exists.
 
-# 61. Explicitly Out of Scope
-
-Do **not** implement during Phase 3.1:
-
-* RBAC roles
-* RBAC permissions
-* `spatie/laravel-permission` integration
-* role/permission pivot tables
-* role assignment
-* permission assignment
-* customer registration
-* login
-* logout
-* Sanctum
-* Passport
-* browser sessions
-* API tokens
-* password reset
-* email verification
-* MFA
-* authentication middleware
-* authorization middleware
-* policies
-* gates
-* customer profile API
-* `/me` API implementation
-* `/users/{id}` API implementation
-* user administration API
-* staff approval workflow
-* staff suspension/reactivation workflow
-* customer account disabling
-* customer impersonation
-* address book
-* saved shipping addresses
-* loyalty points
-* loyalty tiers
-* customer preferences
-* employee hierarchy
-* employee department management
-* audit-log infrastructure
-* notification infrastructure
-* product domain
-* category domain
-* inventory domain
-* cart domain
-* order domain
-* payment domain
-* delivery domain
-* furniture-request domain
-* enquiry domain
-
----
-
-# 62. STOP Condition
-
-Stop immediately when the Phase 3.1 definition of done is satisfied.
-
-Do not continue into Phase 3.2.
-
-Do not install or configure the RBAC package yet.
-
-Do not assign roles.
-
-Do not implement authentication.
-
-Do not implement registration/login.
-
-Do not add speculative profile fields.
-
-Do not create address, loyalty, or preference tables.
-
-Do not create customer/staff/admin authentication tables.
-
-Do not change the frozen Version 1 API contract.
-
-Do not commit, stage, or push changes. Leave source-control operations to the project owner.
+Do not commit, stage, or push changes.

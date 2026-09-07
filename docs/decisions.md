@@ -1713,3 +1713,22 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/BACKEND-008 — Phase 3.2 Roles/Permissions (RBAC) Model
+
+**Decision:** Adopt **`spatie/laravel-permission` 8.3.0** as the single RBAC implementation. Verified compatible with Laravel 13 (`illuminate/auth ^12|^13`, `php ^8.3`, resolves cleanly with the existing lockfile); the project owner specified this package in `AGENTS.md`, no equivalent authorization foundation existed, and its relational model is used as-is rather than maintaining a parallel custom implementation.
+
+- **Schema (package-published migration `2026_09_07_221947_create_permission_tables.php`):** `roles`, `permissions` (unique `name`+`guard_name`), `role_has_permissions`, `model_has_roles`, `model_has_permissions` — FKs + `ON DELETE CASCADE`, composite PKs/unique constraints. `config/permission.php` uses default guard `web`, `teams=false`, `enable_wildcard_permission=false`. Empty-DB migration, rollback (drops RBAC tables), and re-seed verified on MySQL and in sqlite `:memory:` tests.
+- **Roles are CLOSED `CUSTOMER` / `STAFF` / `ADMIN`** (`App\Support\RoleName`, string-backed enum per project convention). No `users.role`/`is_admin`/booleans; role authority lives in the RBAC model. No hierarchy, no wildcard.
+- **Permissions** (`App\Support\PermissionName`, 17 canonical `resource.action` capabilities; `App\Support\PermissionCatalog` is the single source of truth used by seeder and tests). `PermissionCatalog::forRole()` encodes the §3.2.4 matrix: CUSTOMER `[]` (ownership-based), STAFF = 14 operational capabilities (no `staff.approve`/`staff.manage`/`users.manage_authorized`), ADMIN = all 17 (explicit, no wildcard escape hatch).
+- **User-to-role:** `User` uses the package `HasRoles` trait (`roles()`, `assignRole()`, `hasRole()`, `hasPermissionTo()`, `checkPermissionTo()`). Assignment is explicit (no Eloquent model-created event); V1 effective-role invariant is one role per ordinary user, enforced by provisioning workflows (Group D), not by a multi-role precedence system.
+- **Central primitive:** `App\Authorization\Authorization::allows(?User, PermissionName|string)` is deny-by-default — `null` identity or a missing permission is `false` (uses non-throwing `checkPermissionTo`). Future domain policies (OrderPolicy, ProductPolicy, etc.) depend on this instead of scattered `if ($user->role === 'ADMIN')` checks.
+- **Security:** no mass-assignment path can set role/permission/authorization state (`User` fillable is `name/email/phone` only); no client-supplied `{"role":"ADMIN"}`/`{"permissions":["*"]}` can alter authorization (covered by tests).
+- **Seed:** `RbacSeeder` (idempotent, deterministic — roles, permissions, matrix; re-seed produces identical baseline). Wired into `DatabaseSeeder`; the pre-existing hard-coded `test@example.com` bootstrap was made idempotent so `db:seed` is repeatable.
+- **Tests:** `tests/Feature/RbacTest.php` (15 tests) — role integrity, duplicate rejection, no self-assignment/mass-assignment, full permission seed + uniqueness, wildcard disabled, CUSTOMER/STAFF/ADMIN capability matrix, separation of duties, deny-by-default, identity-based checks, deterministic seed.
+
+**Reason:** Delivers the frozen V1 RBAC foundation (authoritative, explicit, auditable, deny-by-default) so Group D authentication and later domain policies can depend on it without reinventing authorization.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`composer.json`/`composer.lock` (spatie/laravel-permission), `config/permission.php`, `database/migrations/2026_09_07_221947_create_permission_tables.php`, `database/seeders/{RbacSeeder,DatabaseSeeder}.php`, `app/Models/User.php`, `app/Support/{RoleName,PermissionName,PermissionCatalog}.php`, `app/Authorization/Authorization.php`, `tests/Feature/RbacTest.php`), `docs/decisions.md`
+
+---
+
