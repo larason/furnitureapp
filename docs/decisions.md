@@ -1682,3 +1682,53 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/BACKEND-006 — Phase 2.12 CI Baseline
+
+**Decision:** GitHub Actions (`.github/workflows/backend.yml`) as the single canonical CI for the Laravel backend (`Backend Quality` on `push`/`pull_request` to `main`/`review`, `contents: read`, `ubuntu-latest`, PHP 8.5).
+
+- **Runtime:** `shivammathur/setup-php@v2` with PHP 8.5 (matches `composer.json` `^8.3` and local 8.5.10; compatible with Laravel 13, Pint, PHPStan, PHPUnit) + extensions `dom, curl, libxml, mbstring, zip, pdo, pdo_sqlite, sqlite3, bcmath, fileinfo, openssl, tokenizer, xml, ctype, json` (no unused extensions, no Node).
+- **Dependencies:** `composer install --no-interaction --prefer-dist --no-progress` from committed `composer.lock` (reproducible, no `composer update` in CI).
+- **Env:** `cp .env.example .env && php artisan key:generate` (ephemeral, no production secrets; `phpunit.xml` provides `APP_ENV=testing`, `DB sqlite :memory:`, `CACHE array`, `QUEUE sync`, `MAIL array`, `SESSION array`).
+- **Quality gate (explicit steps, each fails the job):** `composer format:check` (non-mutating Pint), `composer analyse` (PHPStan level 5 on `app`, `bootstrap/app.php`, `config`, `routes`, `database`), `composer test` (PHPUnit 46 tests covering Phase 2.7–2.9). No `|| true`, no auto-fix commits, no coverage gate, no deployment, no monitoring, no `api/v1` domain work.
+- **Parity:** CI calls the same `composer` scripts documented for local reproduction; failure category is identifiable by step name.
+
+**Reason:** Establishes the Group B automated quality gate that later Group C–W phases can extend without duplicating CI.
+
+**Status:** Accepted | **Affected:** `.github/workflows/backend.yml`, `backend/laravel/README.md` (CI docs), `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-007 — Phase 3.1 Users Schema
+
+**Decision:** One unified `users` identity/authentication table plus two optional one-to-one profile extensions, per the frozen V1 model (`docs/domain/business-rules.md §14`, `api-contract.md §17.1/§29`):
+
+- **`users`** — `id, name, email (unique, required), phone (nullable), password (secure one-way hash; hidden, never serialized), email_verified_at (framework/contract-established), account_state (nullable string; server-controlled, deferred lifecycle — no invented enum), remember_token (framework), timestamps`. No `role`/`is_admin`/`is_staff`/`permissions` columns; RBAC is deferred to Phase 3.2.
+- **`customer_profiles`** / **`staff_profiles`** — intentionally minimal: `user_id (FK → users.id, UNIQUE, cascade delete), timestamps`. No loyalty/address/preferences/employee metadata (deferred). Admins share `staff_profiles`; no `admin_profiles`, no separate `customers`/`staff`/`admins` authentication tables.
+- **Models** — `User` (`customerProfile`, `staffProfile` `hasOne`; `#[Fillable(['name','email','phone'])]` — `password`, `account_state`, timestamps and role/security fields are **not** mass-assignable; `#[Hidden(['password','remember_token'])]`). Credential assignment is explicit-only: `password` is set directly (or via `forceFill`) in the future dedicated authentication workflow, never through a generic `fill()`/`update()` path (`docs/api/api-conventions.md §29.8` `POST /auth/change-password`; `ADR/API-ENQ-...`/`USER-004`). `UserFactory` assigns `password` in `afterMaking` (not via mass assignment); schema tests set `$user->password` directly before `save()`. `CustomerProfile`/`StaffProfile` (`belongsTo`, fillable `user_id`, no factories per Phase 3.1). No Eloquent event auto-creates profiles (role/registration lifecycle is Group D/Phase 3.2).
+- **Tests** (`tests/Feature/UserSchemaTest.php`) verify identity fields, email uniqueness, nullable phone, secure hash, `account_state` not fillable, one-to-one/optional relationships, duplicate-profile rejection, FK enforcement, and no credential serialization. Migration order (`users → customer_profiles → staff_profiles`) and rollback verified against the local MySQL `furnitureapp` DB.
+
+**Reason:** Establishes the unified-identity schema prerequisite for Phase 3.2 RBAC and Group D authentication without inventing unsupported fields or roles.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`database/migrations/0001_01_01_000000_create_users_table.php`, `database/migrations/2026_09_07_*_create_*_profiles_table.php`, `app/Models/{User,CustomerProfile,StaffProfile}.php`, `tests/Feature/UserSchemaTest.php`), `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-008 — Phase 3.2 Roles/Permissions (RBAC) Model
+
+**Decision:** Adopt **`spatie/laravel-permission` 8.3.0** as the single RBAC implementation. Verified compatible with Laravel 13 (`illuminate/auth ^12|^13`, `php ^8.3`, resolves cleanly with the existing lockfile); the project owner specified this package in `AGENTS.md`, no equivalent authorization foundation existed, and its relational model is used as-is rather than maintaining a parallel custom implementation.
+
+- **Schema (package-published migration `2026_09_07_221947_create_permission_tables.php`):** `roles`, `permissions` (unique `name`+`guard_name`), `role_has_permissions`, `model_has_roles`, `model_has_permissions` — FKs + `ON DELETE CASCADE`, composite PKs/unique constraints. `config/permission.php` uses default guard `web`, `teams=false`, `enable_wildcard_permission=false`. Empty-DB migration, rollback (drops RBAC tables), and re-seed verified on MySQL and in sqlite `:memory:` tests.
+- **Roles are CLOSED `CUSTOMER` / `STAFF` / `ADMIN`** (`App\Support\RoleName`, string-backed enum per project convention). No `users.role`/`is_admin`/booleans; role authority lives in the RBAC model. No hierarchy, no wildcard.
+- **Permissions** (`App\Support\PermissionName`, 17 canonical `resource.action` capabilities; `App\Support\PermissionCatalog` is the single source of truth used by seeder and tests). `PermissionCatalog::forRole()` encodes the §3.2.4 matrix: CUSTOMER `[]` (ownership-based), STAFF = 14 operational capabilities (no `staff.approve`/`staff.manage`/`users.manage_authorized`), ADMIN = all 17 (explicit, no wildcard escape hatch).
+- **User-to-role:** `User` uses the package `HasRoles` trait (`roles()`, `assignRole()`, `hasRole()`, `hasPermissionTo()`, `checkPermissionTo()`). Assignment is explicit (no Eloquent model-created event); V1 effective-role invariant is one role per ordinary user, enforced by provisioning workflows (Group D), not by a multi-role precedence system.
+- **Central primitive:** `App\Authorization\Authorization::allows(?User, PermissionName|string)` is deny-by-default — `null` identity or a missing permission is `false` (uses non-throwing `checkPermissionTo`). Future domain policies (OrderPolicy, ProductPolicy, etc.) depend on this instead of scattered `if ($user->role === 'ADMIN')` checks.
+- **Security:** no mass-assignment path can set role/permission/authorization state (`User` fillable is `name/email/phone` only); no client-supplied `{"role":"ADMIN"}`/`{"permissions":["*"]}` can alter authorization (covered by tests).
+- **Seed:** `RbacSeeder` (idempotent, deterministic — roles, permissions, matrix; re-seed produces identical baseline). Wired into `DatabaseSeeder`; the pre-existing hard-coded `test@example.com` bootstrap was made idempotent so `db:seed` is repeatable.
+- **Tests:** `tests/Feature/RbacTest.php` (15 tests) — role integrity, duplicate rejection, no self-assignment/mass-assignment, full permission seed + uniqueness, wildcard disabled, CUSTOMER/STAFF/ADMIN capability matrix, separation of duties, deny-by-default, identity-based checks, deterministic seed.
+
+**Reason:** Delivers the frozen V1 RBAC foundation (authoritative, explicit, auditable, deny-by-default) so Group D authentication and later domain policies can depend on it without reinventing authorization.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`composer.json`/`composer.lock` (spatie/laravel-permission), `config/permission.php`, `database/migrations/2026_09_07_221947_create_permission_tables.php`, `database/seeders/{RbacSeeder,DatabaseSeeder}.php`, `app/Models/User.php`, `app/Support/{RoleName,PermissionName,PermissionCatalog}.php`, `app/Authorization/Authorization.php`, `tests/Feature/RbacTest.php`), `docs/decisions.md`
+
+---
+
