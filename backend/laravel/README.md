@@ -41,6 +41,19 @@ php artisan boost:install
 
 Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
 
+## Backend Quality Baseline (Phase 2.10)
+
+Coding standard: Laravel preset via Pint (`pint.json`). Static analysis: Larastan/PHPStan level 5 (`phpstan.neon`) on `app`, `bootstrap/app.php`, `config`, `routes`, `database`.
+
+```bash
+composer format        # fix formatting (Pint)
+composer format:check  # verify formatting without changes
+composer analyse       # static analysis (PHPStan)
+composer test          # existing backend tests
+```
+
+Workflow: `format → format:check → analyse → test` (later phases add CI). No broad suppressions; baseline is clean at level 5.
+
 ## Contributing
 
 Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).

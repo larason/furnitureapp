@@ -1,21 +1,24 @@
 # Group B phases instructions
 
-# Phase 2.9 — Health/Status Endpoint
+# Phase 2.10 — Coding Standards and Static Analysis
 
 ## Objective
 
-Implement a minimal, reliable Laravel health/status endpoint that can be used to determine whether the application process is running and able to respond to HTTP requests.
+Establish and enforce the Laravel backend coding-quality baseline.
 
-The endpoint must be:
+This phase must provide:
 
-* lightweight
-* deterministic
-* safe to expose
-* independent of business/domain functionality
-* suitable for local and later operational checks
-* compatible with the existing routing, exception, and logging foundations
+* consistent PHP code formatting
+* a defined coding standard for the repository
+* static analysis for PHP code
+* repeatable local quality commands
+* configuration that is compatible with the current Laravel application
+* documentation of the quality commands and scope
+* a clean baseline for later testing and CI phases
 
-Do not turn this phase into a full production monitoring, readiness, dependency-discovery, or observability implementation.
+The goal is not to "fix everything imaginable" or redesign the codebase.
+
+Keep the implementation small, dependency-aware, and appropriate for the current project size.
 
 ---
 
@@ -25,858 +28,921 @@ Phases 2.1–2.5 are already complete.
 
 Phase 2.6 established API routing.
 
-Phase 2.7 established centralized API exception/error handling.
+Phase 2.7 established exception/error handling.
 
-Phase 2.8 established the logging foundation.
+Phase 2.8 established logging.
+
+Phase 2.9 established the health/status endpoint.
 
 Now implement:
 
-**Phase 2.9 — Health/status endpoint**
+**Phase 2.10 — Coding standards and static analysis**
 
-The roadmap places this immediately before coding standards/static analysis, test-framework setup, and CI.
+The roadmap places Phase 2.11 immediately afterward for test-framework setup and Phase 2.12 for CI.
 
-Do not redo previous phases.
-
-Do not continue into Phase 2.10.
+Do not implement those later phases here.
 
 ---
 
-# 2. Important Contract Boundary
+# 2. Authoritative Sources
 
-The provided frozen API documentation does **not** define a Version 1 health/status endpoint or its response schema.
+Before modifying the repository, read the current versions of:
+
+1. `AGENTS.md`
+2. `docs/api/api-contract.md`
+3. `docs/api/api-resources.md`
+4. `docs/api/api-conventions.md`
+5. `docs/domain/business-rules.md`
+
+Also inspect the current backend:
+
+* `composer.json`
+* existing `composer.lock`
+* Laravel configuration
+* existing scripts/commands
+* current PHP version requirement
+* existing formatting/linting/static-analysis configuration, if any
+* current tests and test configuration
+
+Do not assume the repository has the exact tools or versions you expect.
+
+---
+
+# 3. Source-of-Truth Rule
+
+The project explicitly requires:
+
+* small cohesive modules
+* explicit naming
+* single responsibility
+* type safety
+* dependency injection where useful
+* small services/actions instead of huge controllers
+* centralized validation
+* centralized API clients
+* consistent error handling
+* formatting/linting/static analysis
+
+It explicitly warns against:
+
+* giant controllers
+* giant components
+* copy-pasted business rules
+* magic strings scattered throughout the code
+* database queries embedded everywhere
+* premature microservices
+* premature generic abstractions
+* overengineering for hypothetical future features.
+
+Treat these as repository engineering rules.
+
+Do not replace them with a generic framework-specific style guide that conflicts with the project.
+
+---
+
+# 4. Inspect Before Installing
+
+Before adding any new quality tool:
+
+1. inspect `composer.json`
+2. inspect `composer.lock`
+3. search for existing formatter/linter/static-analysis configuration
+4. inspect existing scripts in `composer.json`
+5. inspect any existing developer documentation
+6. determine the PHP version actually supported by the project
+7. determine whether a formatter or analyzer is already installed
+
+If the repository already has a suitable tool, reuse it.
+
+Do not install a duplicate formatter, analyzer, or overlapping tool.
+
+---
+
+# 5. Tool Selection
+
+The uploaded project sources require the **capability** of formatting, linting, and static analysis, but they do not prescribe specific tools.
 
 Therefore:
 
-* do not invent a new `/api/v1` contract without explicit evidence
-* do not add an endpoint to the frozen Version 1 endpoint inventory merely because health functionality is needed
-* do not change `docs/api/api-contract.md`, `docs/api/api-resources.md`, or `docs/api/api-conventions.md` to manufacture a new V1 business/API contract
-* do not reuse an existing V1 resource envelope for an operational endpoint unless the repository already establishes that behavior
+* do not claim that a particular tool is mandated by `AGENTS.md`
+* choose the smallest mature tooling set compatible with the existing Laravel/PHP project
+* prefer tools already present in the repository
+* if no formatter exists, a Laravel/PHP-compatible formatter may be introduced
+* if no static analyzer exists, introduce one appropriate to the repository's PHP version and current architecture
 
-For this phase, treat health/status as an **operational application endpoint**, not a customer/business API resource.
+A reasonable implementation may use the Laravel/PHP ecosystem's standard tools, but the final choice must be based on the repository rather than assumption.
 
-### Implementation decision for this phase
-
-The canonical operational endpoint for this phase is:
-
-```text
-GET /health
-```
-
-Keep it outside `/api/v1`.
-
-This is an implementation-level operational endpoint, not a new Version 1 business API contract.
-
-If the existing repository already contains a health/status endpoint (for example, the framework default `GET /up` or a legacy `GET /api/v1/health`), migrate that functionality to the single canonical `GET /health` and ensure no duplicate health aliases remain. The implementation, tests, verification commands, checklist, and response contract must all reference the same canonical route.
+Do not introduce multiple overlapping static-analysis products.
 
 ---
 
-# 3. Scope
+# 6. Formatting Standard
 
-The endpoint must answer one basic question:
+Establish one canonical PHP formatting standard.
 
-> Is the Laravel application currently alive enough to respond to a health request?
+The formatter must be:
 
-The initial implementation should verify application-level liveness only.
+* deterministic
+* runnable locally
+* suitable for the Laravel codebase
+* able to check or format PHP source consistently
+* configured in version-controlled project configuration
 
-A healthy response should not require:
-
-* customer authentication
-* Staff authentication
-* Admin authentication
-* database business records
-* product data
-* inventory data
-* carts
-* orders
-* payments
-* notifications
-* queues
-* external payment providers
-* third-party APIs
-
-Keep the endpoint cheap enough to be called frequently.
+The project should not depend on each developer's IDE formatting preferences.
 
 ---
 
-# 4. Liveness vs Readiness
+# 7. Formatting Scope
 
-Do not conflate health concepts.
+Apply formatting standards to source files that belong to the Laravel backend.
 
-For this phase, implement **liveness**.
-
-Liveness means:
+Include appropriate PHP code such as:
 
 ```text
-The Laravel process can receive and successfully produce a health response.
+app/
+bootstrap/ where applicable
+config/
+routes/
+database/
+tests/ if tests already exist
 ```
 
-Do not implement full readiness semantics such as:
+Exclude generated/vendor content.
 
-```text
-database ready
-payment provider ready
-queue workers ready
-email provider ready
-file storage ready
-external dependencies ready
-```
+Do not format:
 
-unless the repository already has an explicit requirement for them.
+* `vendor/`
+* framework-generated external files
+* binary files
+* environment files
+* secrets
+* generated artifacts that should not be manually changed
 
-A later production-readiness phase can add broader dependency checks.
+Follow the actual repository layout rather than blindly applying these exact directories.
 
 ---
 
-# 5. Endpoint Characteristics
+# 8. Formatting Policy
 
-The health endpoint should be:
+The formatter must become the canonical mechanism.
+
+Do not maintain multiple conflicting formatting rules such as:
 
 ```text
-GET /health
+IDE-specific formatting
++
+manual formatting convention
++
+formatter with different output
 ```
 
-with:
+The repository should have one source of truth.
 
-* no request body
-* no authentication requirement
-* no customer state
-* no business authorization
-* no mutation
-* no database writes
-* no external side effects
-
-It should be safe to call from:
-
-* local development
-* deployment verification
-* process supervision
-* simple uptime checks
-* future infrastructure health probes
+The formatting command must be documented and reproducible.
 
 ---
 
-# 6. Success Response
+# 9. Existing Code Cleanup
 
-Because the uploaded project sources do not define a frozen health-response schema, use the smallest stable implementation response necessary for operational use.
+When introducing the formatter:
 
-Recommended response:
+* inspect the current codebase
+* format existing project code where necessary
+* avoid unrelated functional refactoring
+* avoid changing business behavior
+* avoid changing API behavior
+* avoid changing database behavior
 
-```json
-{
-  "status": "ok"
-}
-```
+Formatting-only changes are acceptable when required to establish the baseline.
 
-Return:
-
-```text
-HTTP 200
-```
-
-Do not add speculative fields such as:
-
-```text
-version
-environment
-hostname
-server_ip
-database_status
-queue_status
-payment_status
-memory_usage
-uptime
-```
-
-unless the repository or a later approved contract explicitly requires them.
-
-Keep the response deliberately small.
+Do not use the formatting pass as an excuse to rewrite the architecture.
 
 ---
 
-# 7. Failure Response
+# 10. Static Analysis
 
-For the minimal liveness endpoint, failure means the application cannot successfully execute its health operation.
+Introduce a PHP static-analysis baseline appropriate to the current project.
 
-Do not manufacture dependency-specific failure states that are not implemented.
+The analyzer should detect issues such as:
 
-If an actual exception occurs while handling the health request:
+* invalid types
+* incompatible method signatures
+* impossible/nullability assumptions
+* unreachable or inconsistent code where supported
+* incorrect property/method usage
+* invalid return types
+* invalid parameter types
+* obvious API misuse
+* incorrect collection/value assumptions where detectable
 
-* allow the centralized Phase 2.7 exception handling to protect the client
-* do not expose stack traces
-* do not expose Laravel exception class names
-* do not expose filesystem paths
-* do not expose database credentials
-* do not expose server internals
-
-The project's security baseline explicitly requires raw framework, database, and infrastructure exceptions to remain out of API responses.
+Static analysis should run against project code, not third-party vendor code.
 
 ---
 
-# 8. Relationship to Phase 2.7 Error Handling
+# 11. Analysis Scope
 
-Do not create a second exception-handling mechanism for `/health`.
+Start with the application code actually controlled by this repository.
 
-The health endpoint must use the existing centralized exception/error infrastructure where applicable.
+Do not analyze external vendor internals unless the chosen tool explicitly supports this safely and there is a demonstrated need.
 
-Do not add endpoint-specific JSON error construction such as:
+The initial scope should normally include:
+
+```text
+app/
+routes/ where analyzable
+config/ where analyzable
+database/ application PHP files where applicable
+tests/ if present
+```
+
+Adapt to the repository structure.
+
+Do not include generated/vendor code merely to increase the reported issue count.
+
+---
+
+# 12. Analysis Level
+
+Do not start with an unrealistically strict analysis level that forces hundreds of unrelated suppressions.
+
+Establish the strongest useful baseline that the current foundation can reasonably satisfy.
+
+Prioritize:
+
+1. correctness
+2. type safety
+3. meaningful defects
+4. maintainability
+5. gradual tightening later
+
+Do not create a configuration whose primary effect is to silence the analyzer.
+
+---
+
+# 13. Baseline Errors
+
+The initial repository may contain issues discovered by static analysis.
+
+Handle them deliberately.
+
+For every existing finding:
+
+* fix it when the fix is small and unambiguous
+* avoid changing behavior solely to satisfy an analyzer when the intended behavior is unclear
+* do not blanket-ignore the entire project
+* do not add broad suppression rules without justification
+* do not create fake types solely to trick the analyzer
+
+If a specific existing issue cannot reasonably be fixed during Phase 2.10, keep the suppression narrow and document the reason.
+
+Prefer reducing the baseline rather than hiding it.
+
+---
+
+# 14. No Business Logic Refactoring
+
+Do not use static-analysis findings as a reason to implement future domain architecture.
+
+Do not introduce:
+
+* domain services that do not yet have a business requirement
+* repositories solely for static-analysis aesthetics
+* interfaces with only one trivial implementation
+* generic result wrappers
+* generic exception hierarchies
+* complex dependency-injection containers
+* abstract factories without a real use case
+
+The project explicitly discourages premature generic abstractions and overengineering.
+
+---
+
+# 15. Type-Safety Standard
+
+Use explicit PHP types wherever appropriate.
+
+Prefer:
 
 ```php
-return response()->json([
-    'error' => 'health_failed',
-]);
+public function handle(Request $request): Response
 ```
 
-Do not create a second error envelope.
+over untyped signatures when the actual type is known.
 
-The Phase 2.7 error handling remains authoritative for failures where exception translation is required.
+Use:
 
----
+* parameter types
+* return types
+* typed properties
+* nullable types where required
+* appropriate union/intersection types when actually needed
+* precise collection/value documentation where native PHP types are insufficient
 
-# 9. Relationship to Phase 2.8 Logging
-
-Use the existing logging foundation.
-
-Do not create a health-specific logging subsystem.
-
-Normal successful health checks generally should not generate high-volume application logs.
-
-Avoid logging every successful request to `/health` at ERROR/WARNING levels.
-
-If an unexpected health-check exception occurs:
-
-* it should be diagnosable through the existing exception/logging infrastructure
-* the request ID should remain available through the existing correlation mechanism
-* sensitive data must not be logged
-
-The project requires important failures to be diagnosable through application/API logging.
+Do not add artificial typing that misrepresents runtime behavior.
 
 ---
 
-# 10. Request Correlation
+# 16. Nullability
 
-If the existing HTTP foundation establishes a request ID, preserve it for `/health`.
+Respect the actual application contract.
 
-Do not create a separate health-specific request ID mechanism.
+Do not suppress nullability warnings simply because the analyzer complains.
 
-A health request should therefore participate in the same general correlation model used elsewhere.
+Instead determine:
 
-Do not include request IDs in the success body unless already required by the operational contract.
+* whether a value can actually be null
+* where it is guaranteed to exist
+* whether the code should check it
+* whether the type declaration is wrong
 
-The existing API request-ID convention is intended to correlate client-visible errors with server logs.
+Do not weaken types to `mixed` as a shortcut.
 
 ---
 
-# 11. Authentication
+# 17. `mixed` and Loose Typing
 
-Do not require authentication for the basic liveness endpoint.
+Avoid unnecessary:
 
-Reason:
+```php
+mixed
+```
 
-A liveness check must be usable by an operational process before customer authentication, staff authorization, or application business functionality is necessarily available.
+and broad array shapes where a more precise type is practical.
+
+Do not use:
+
+```php
+array<string, mixed>
+```
+
+as the default solution for everything.
+
+However, do not create complicated custom types simply to avoid a small amount of `mixed`.
+
+Favor clear, maintainable typing.
+
+---
+
+# 18. Request Validation Boundary
+
+Preserve the project rule that strict request validation uses:
+
+```text
+Request
+→ FormRequest/schema validation
+→ validated()
+→ explicit allow-list
+→ DTO/Command
+→ application/domain logic
+→ persistence
+```
+
+Never weaken this architecture to satisfy static analysis.
+
+In particular, do not introduce patterns such as:
+
+```php
+$model->fill($request->all());
+```
+
+or generic request-to-model helpers.
+
+The frozen API conventions explicitly require validated input → DTO/command → domain and prohibit unrestricted `$request->all()` mass assignment.
+
+---
+
+# 19. `additionalProperties: false`
+
+Static-analysis and code-quality work must not undermine the frozen strict-request contract.
+
+Future endpoint validation must remain capable of rejecting unknown fields.
+
+Do not add helper methods whose purpose is effectively:
+
+```text
+accept arbitrary request fields
+```
+
+Do not convert strict payloads into generic untyped arrays merely because it is convenient.
+
+---
+
+# 20. API Contract Stability
+
+Static-analysis changes must not alter the external Version 1 API contract.
 
 Do not:
 
-* invoke customer authentication
-* invoke Staff/Admin authorization
-* query user roles
-* create sessions
-* access customer data
-* depend on bearer tokens
+* rename routes
+* rename response fields
+* change error codes
+* change HTTP status mappings
+* change enum values
+* change authentication behavior
+* change authorization behavior
+* change business-state transitions
+* change financial semantics
+
+The Version 1 API is frozen.
+
+If a quality fix appears to require an external API change, do not silently make it.
+
+Stop at that point and preserve the contract.
 
 ---
 
-# 12. Database Dependency
+# 21. Laravel-Specific Dynamic Behavior
 
-Do not make the minimal liveness endpoint depend on a successful database query unless the existing repository explicitly defines health as database-dependent.
+Laravel can contain framework-managed or dynamically resolved behavior that static analyzers cannot fully infer.
 
-The endpoint should be capable of answering:
+Handle such areas carefully.
+
+Do not silence all framework-related diagnostics globally.
+
+Use narrow, justified configuration or annotations only where necessary.
+
+Prefer correct type declarations and explicit code over broad analyzer suppression.
+
+---
+
+# 22. Configuration Quality
+
+Place tool configuration in appropriate project-managed configuration files.
+
+Do not hard-code developer-specific paths.
+
+Do not include:
+
+* local usernames
+* absolute machine paths
+* secrets
+* machine-specific environment assumptions
+
+The configuration must work across developer environments.
+
+---
+
+# 23. Composer Integration
+
+Add convenient Composer scripts where appropriate so developers can run the quality checks consistently.
+
+A practical structure may be:
 
 ```text
-Is the application process alive?
+composer format
+composer format:check
+composer analyse
 ```
 
-independently of:
+Exact script names are flexible.
+
+The important requirement is that the commands are:
+
+* predictable
+* documented
+* repeatable
+* consistent across developers
+
+Do not create a large command abstraction.
+
+---
+
+# 24. Check vs Fix
+
+Where the chosen formatter supports both operations, expose both concepts:
 
 ```text
-Is every dependency healthy?
+format
+format:check
 ```
 
-Do not add:
+The check command must fail when source formatting does not match the configured standard.
+
+This provides the foundation for the later automated quality gate.
+
+Do not implement the CI pipeline yet.
+
+---
+
+# 25. Static Analysis Exit Status
+
+The static-analysis command must return a failing process status when configured analysis failures remain.
+
+Do not configure it so that the command always succeeds.
+
+Avoid:
+
+```bash
+static-analyzer || true
+```
+
+or equivalent "success regardless of failure" wrappers.
+
+The future CI phase depends on meaningful exit codes.
+
+---
+
+# 26. Local Developer Workflow
+
+Document the intended local workflow:
+
+```text
+format
+→ format check
+→ static analysis
+→ later tests
+```
+
+The CI phase will eventually combine these into an automated quality gate.
+
+Do not implement that automation yet.
+
+The AGENTS quality philosophy explicitly anticipates a later automated sequence involving format, lint, static analysis, tests, and build.
+
+---
+
+# 27. Linting
+
+The project requires formatting/linting/static analysis as part of code quality.
+
+Where the chosen formatter provides the project's necessary style enforcement, do not install a redundant second linter merely to create another command.
+
+If an actual linting gap exists that the formatter and static analyzer do not cover, introduce only the smallest additional linting tool that provides meaningful value.
+
+Do not create overlapping tools with duplicate diagnostics.
+
+---
+
+# 28. Code Comments
+
+Keep code comments to the absolute minimum.
+
+Do not add comments merely to explain obvious code.
+
+Avoid:
 
 ```php
-DB::select(...)
+// Check if the user exists
+if ($user !== null) {
 ```
 
-merely to prove that the database exists.
+Prefer clear naming and simple control flow.
 
-The database connection was already established in Phase 2.4.
+Comments are justified only when explaining a genuinely non-obvious:
 
-A later readiness/production-health design may intentionally include dependency checks.
+* security constraint
+* framework workaround
+* static-analysis limitation
+* compatibility requirement
+* operational constraint
 
----
+Do not add long explanatory comments to satisfy documentation expectations.
 
-# 13. External Dependency Checks
-
-Do not call:
-
-* payment providers
-* email providers
-* SMS providers
-* storage services
-* third-party APIs
-* webhooks
-* queues
-* notification providers
-
-from the basic health endpoint.
-
-A health endpoint must not generate external side effects or create unnecessary load.
-
-Payment and provider-specific behavior remain deferred to later work. The project architecture explicitly separates external/provider failures from basic validation and infrastructure concerns.
+The source documentation should carry architectural explanation.
 
 ---
 
-# 14. Security and Information Disclosure
+# 29. Documentation
 
-Do not return infrastructure information.
+Update developer documentation only as needed.
 
-The response must not reveal:
+At minimum document:
 
-* database hostname
-* database name
+* formatting command
+* formatting check command
+* static-analysis command
+* where tool configuration lives
+* any intentionally narrow suppression that future developers should understand
+
+Do not create a large coding-style manual if the tool configuration already expresses the standard.
+
+Do not create a second API or architecture specification.
+
+---
+
+# 30. Security
+
+Static-analysis and formatting tools must not introduce security problems.
+
+Never place into tool configuration:
+
+* passwords
+* tokens
+* API keys
+* payment credentials
+* production secrets
 * database credentials
-* Redis details
-* filesystem paths
-* server hostname
-* server IP
-* PHP version
-* Laravel version
-* package versions
-* environment variable values
-* secret configuration
-* internal service URLs
-* queue configuration
-* payment configuration
-* deployment topology
 
-Do not expose "debug health" through the public endpoint.
+Do not log tool environment variables.
 
-This follows the project's security requirement to prevent infrastructure and implementation details from leaking through responses.
+Do not run analyzers with commands that dump secret-bearing environment configuration.
+
+The project prohibits committing secrets, tokens, and production credentials to source control.
 
 ---
 
-# 15. Environment Information
+# 31. Dependency Management
 
-Do not return:
+When adding quality tools:
 
-```json
-{
-  "environment": "production"
-}
-```
+* use Composer-managed dependencies
+* select versions compatible with the current PHP/Laravel constraints
+* update `composer.lock` consistently
+* do not manually copy tool binaries into the repository
+* do not commit vendor code
 
-or similar environment metadata unless explicitly required.
+Do not upgrade unrelated application dependencies simply because a quality tool has a newer ecosystem version.
 
-An externally accessible health endpoint should reveal as little as necessary.
-
-Environment-specific diagnostics belong in server-side operational tooling and logs.
+Only change the dependency set necessary for this phase.
 
 ---
 
-# 16. Cache Behavior
+# 32. Generated Files
 
-Do not introduce caching that could make a liveness result stale.
-
-The health endpoint must return an explicit no-store response contract so that a
-browser or intermediary cannot serve a stale cached 200 after the process has
-died:
-
-```http
-Cache-Control: no-store
-```
-
-The health endpoint should represent the application's current ability to respond.
-Every successful health response must include `Cache-Control: no-store` (and must
-not be cacheable by shared or private caches). Equivalent deployment-level
-guarantees (e.g., CDN rule `Cache-Control: no-store` for the health path) are
-acceptable only if verified. Tests must assert the header.
-
-Do not place it behind application-level response caching.
-
-Do not introduce CDN caching rules as part of this phase.
-
----
-
-# 17. HTTP Semantics
-
-The endpoint must:
-
-* accept only `GET`
-* reject inappropriate mutation methods
-* return a normal HTTP success code on success
-* not modify state
+Do not commit generated cache files or machine-local artifacts created by quality tools unless the repository already intentionally tracks them.
 
 Do not add:
 
 ```text
-POST /health
-PATCH /health
-DELETE /health
+.idea/
+.vscode/
+.phpunit.result.cache
+vendor/
+machine-local caches
 ```
 
-Do not create multiple aliases such as:
+merely because a tool generated them.
 
-```text
-/status
-/api/status
-/api/v1/status
-/system/health
-```
-
-Use one canonical operational endpoint.
+Respect existing `.gitignore` conventions.
 
 ---
 
-# 18. Routing
+# 33. Quality Baseline for New Code
 
-Register the route in the appropriate existing Laravel routing location.
+After Phase 2.10, new backend code should be expected to satisfy:
 
-Do not place the operational health route inside the customer/business API group solely for convenience.
+* formatter
+* formatting check
+* static analysis
+* project naming conventions
+* type-safety expectations
+* existing architecture boundaries
 
-Do not duplicate the route in several route files.
+Do not treat static analysis as an optional developer preference.
 
-Do not recreate removed `/staff/...` aliases.
-
-Do not alter the existing `/api/v1` route topology except where absolutely required to preserve correct route separation.
-
----
-
-# 19. Controller / Handler Design
-
-Keep the implementation extremely small.
-
-A health handler should do little more than return the operational response.
-
-Avoid:
-
-* service layers with no real responsibility
-* repositories
-* database queries
-* model loading
-* business services
-* DTOs for a one-field liveness response
-* generic "system status engine"
-* health-check registries
-* plugin architectures
-
-Do not overengineer the endpoint.
+It becomes part of the backend development baseline.
 
 ---
 
-# 20. Response Stability
+# 34. Scope of Refactoring
 
-Even though the health response is not a frozen V1 business resource, treat the response as an operational interface.
+Allow only small corrective refactors needed to make the foundation pass the quality baseline.
 
-Once implemented:
+Examples:
 
-* keep the response stable
-* do not casually rename `status`
-* do not add environment-sensitive behavior
-* do not change HTTP semantics without reason
+* adding a missing return type
+* fixing an obvious nullable assumption
+* correcting an invalid parameter type
+* removing dead imports
+* replacing obviously unsafe loose typing
+* fixing straightforward analyzer findings
 
-Operational tooling may depend on it.
-
----
-
-# 21. Content Type
-
-Return JSON consistently if the existing Laravel application uses JSON for the operational endpoint.
-
-Ensure the response has an appropriate JSON content type.
-
-Do not return HTML.
-
-Do not return framework debug pages.
+Do not undertake broad application restructuring.
 
 ---
 
-# 22. Testing
+# 35. Testing Relationship
 
-Add focused tests for the health endpoint.
+Phase 2.11 owns the dedicated test-framework setup.
 
-At minimum verify:
+However, existing tests must not be broken by the quality work.
 
-### Success
+Run whatever current test command is already available.
 
-```text
-GET /health
-→ HTTP 200
-```
+Do not:
 
-and the body contains the expected minimal health representation.
+* establish a new test framework
+* redesign testing architecture
+* add comprehensive domain tests
+* add integration suites for future business modules
 
-### Method restriction
-
-Verify inappropriate methods are rejected.
-
-### No authentication dependency
-
-Verify the endpoint works without a customer, Staff, or Admin session/token.
-
-### No business dependency
-
-Verify the endpoint does not require:
-
-* products
-* orders
-* carts
-* inventory
-* payment records
-
-### Exception safety
-
-Trigger a controlled failure where practical and verify:
-
-* internal details are not exposed
-* stack traces are not returned
-* the centralized exception handling remains effective
-
-### Logging/correlation compatibility
-
-Verify that an unexpected server-side failure remains diagnosable through the existing Phase 2.8 logging path and request correlation mechanism.
-
-Do not build a second testing framework.
+Those belong to later phases.
 
 ---
 
-# 23. Minimal Code Comments
+# 36. Health Endpoint Compatibility
 
-Keep comments in new code to the absolute minimum.
+Do not use Phase 2.10 as an opportunity to redesign `/health`.
 
-Do not write:
-
-```php
-// Health check endpoint
-```
-
-above an obviously named health handler.
-
-Do not add explanatory essays to the route or controller.
-
-A comment is justified only where a non-obvious operational/security constraint cannot be made clear through naming and structure.
-
-Prefer self-explanatory code.
-
----
-
-# 24. Documentation
-
-Because the frozen API documents do not define a health endpoint, do not modify the V1 API contract documentation merely to record `/health`.
-
-Document the operational endpoint only where the existing project documentation structure already has an appropriate location.
-
-A small note is sufficient:
-
-```text
-GET /health
-Operational liveness endpoint.
-```
-
-Do not create a large health/monitoring specification.
-
-Do not document unsupported future dependencies.
-
----
-
-# 25. No Monitoring Platform
+Only make formatting/type corrections needed for the existing Phase 2.9 implementation.
 
 Do not add:
 
-* Prometheus
-* Grafana
-* Sentry
-* Datadog
-* New Relic
-* OpenTelemetry
-* cloud monitoring agents
-* distributed tracing
-* uptime SaaS integrations
-
-The AGENTS roadmap places broader production logging/monitoring and error tracking later in the production-readiness phase.
+* readiness framework
+* dependency health checks
+* monitoring
+* metrics
+* health storage
 
 ---
 
-# 26. No Readiness Framework
+# 37. Error/Logging Compatibility
 
-Do not create a general abstraction such as:
+Do not redesign Phase 2.7 or Phase 2.8.
 
-```text
-HealthCheckInterface
-ReadinessCheck
-DependencyCheck
-HealthRegistry
-SystemStatusManager
+Static analysis must preserve:
+
+* centralized exception handling
+* frozen API error envelope
+* request correlation
+* safe logging
+* sensitive-data protections
+
+A static-analysis fix must not reintroduce raw exception responses or unsafe request logging.
+
+---
+
+# 38. Verification
+
+At minimum, run:
+
+```bash
+composer format
+composer format:check
+composer analyse
 ```
 
-unless the repository already contains such infrastructure.
+using the actual command names chosen for the repository.
 
-For this phase, a minimal liveness endpoint is preferable.
-
----
-
-# 27. No Database Health Table
-
-Do not create:
-
-* health tables
-* heartbeat tables
-* system-status tables
-* monitoring tables
-* uptime tables
-
-The endpoint does not need database storage.
-
----
-
-# 28. No Business Status Exposure
-
-Do not return business state through the health endpoint.
-
-For example, do not expose:
-
-```text
-orders_processing
-products_available
-inventory_status
-payments_enabled
-delivery_enabled
-customers_registered
-```
-
-The health endpoint is about application operation, not business metrics.
-
----
-
-# 29. No Deployment Logic
-
-Do not add:
-
-* automatic restart behavior
-* deployment hooks
-* migrations
-* cache clearing
-* queue restarting
-* self-healing behavior
-* environment mutation
-
-The endpoint must observe the application, not modify it.
-
----
-
-# 30. No Secret Validation
-
-Do not use the health endpoint to test whether secrets are present by returning secret configuration state.
-
-For example, do not return:
-
-```json
-{
-  "payment_secret_configured": true
-}
-```
-
-or:
-
-```json
-{
-  "database_password_present": true
-}
-```
-
-Configuration diagnostics belong in controlled server-side tooling.
-
----
-
-# 31. Performance Requirements
-
-The health endpoint must be extremely lightweight.
-
-Avoid:
-
-* database queries
-* external network calls
-* file scans
-* model hydration
-* large serialization
-* logging large payloads
-* expensive configuration processing
-
-The normal successful execution path should be simple and fast.
-
----
-
-# 32. Review Against Previous Phases
-
-Before completion verify compatibility with:
-
-### Phase 2.6
-
-* route registration remains clean
-* no duplicate route aliases
-* `/api/v1` remains unchanged
-
-### Phase 2.7
-
-* no second exception-handler architecture
-* no raw framework errors exposed
-* existing error handling remains intact
-
-### Phase 2.8
-
-* existing logger is reused
-* request correlation remains intact
-* no sensitive health diagnostics are logged
-
----
-
-# 33. Verification Commands
-
-Run the currently available project verification commands.
-
-At minimum:
+Also run:
 
 ```bash
 php artisan test
-php artisan route:list
 ```
 
-Verify that the health route appears exactly once.
+if the current project test setup supports it.
 
-Verify that the V1 route collection has not been unintentionally changed.
+If a formatter/check command is intentionally separated, execute both the write/fix and read-only verification paths.
 
-Perform a direct request against:
-
-```text
-GET /health
-```
-
-and verify the expected HTTP status and response.
-
-Do not wait for:
-
-* Phase 2.10 static analysis
-* Phase 2.11 test-framework expansion
-* Phase 2.12 CI
+Verify all configured quality commands return meaningful exit statuses.
 
 ---
 
-# 34. Review Checklist
+# 39. Repository Inspection After Tooling
 
-Before marking Phase 2.9 complete:
+After running the tools, inspect the resulting change set.
 
-* [ ] one canonical health endpoint exists (`GET /health`)
-* [ ] the canonical route is `GET /health` outside `/api/v1` (any legacy `/up` or `/api/v1/health` aliases have been removed/consolidated)
-* [ ] endpoint remains outside `/api/v1`
-* [ ] endpoint requires no authentication
-* [ ] endpoint performs no mutations
-* [ ] endpoint does not depend on business data
-* [ ] endpoint does not call payment/external providers
-* [ ] endpoint does not require queues
-* [ ] endpoint does not expose infrastructure details
-* [ ] endpoint does not expose environment configuration
-* [ ] endpoint does not expose secrets
-* [ ] endpoint does not expose framework debug information
-* [ ] response is minimal and stable
-* [ ] inappropriate methods are rejected
-* [ ] Phase 2.7 exception handling remains authoritative
-* [ ] Phase 2.8 logging remains authoritative
-* [ ] request correlation remains compatible
-* [ ] successful health requests do not generate unnecessary error-level log noise
-* [ ] focused health tests pass
-* [ ] existing tests pass
-* [ ] route list shows no duplicate health aliases
-* [ ] comments in new code are minimal
+Verify that the phase has not created:
+
+* generated junk
+* vendor changes
+* IDE files
+* environment files
+* secrets
+* unrelated dependency upgrades
+* unrelated application rewrites
+
+Only retain changes required for Phase 2.10.
 
 ---
 
-# 35. Definition of Done
+# 40. Static-Analysis Review
 
-Phase 2.9 is complete only when:
+Review the final analyzer configuration for:
 
-1. Laravel exposes one canonical operational liveness endpoint.
-2. The endpoint responds successfully when the application is alive.
-3. It does not require authentication or business-domain state.
-4. It does not introduce a new `/api/v1` business contract.
-5. Its response contains only minimal health information.
-6. It does not disclose infrastructure, secrets, or framework internals.
-7. It uses the existing exception-handling foundation.
-8. It remains compatible with the existing logging/correlation foundation.
-9. Focused automated tests pass.
-10. Existing backend tests remain green.
-11. No monitoring platform, readiness framework, or dependency-health subsystem has been introduced.
-12. New code contains only the minimum necessary comments.
+* unnecessary suppressions
+* broad ignored directories
+* ignored error categories
+* dead configuration
+* duplicate configuration
+* machine-specific paths
+* PHP-version mismatch
+* framework-specific false-positive handling
+
+The final configuration should make genuine failures visible.
+
+Do not optimize the configuration merely to make the command green.
 
 ---
 
-# 36. Explicitly Out of Scope
+# 41. Definition of Done
 
-Do **not** implement during Phase 2.9:
+Phase 2.10 is complete only when:
 
-* `/api/v1/health`
-* `/api/v1/status`
-* customer-facing status endpoints
-* database health dashboards
-* readiness probes for every dependency
-* payment-provider checks
-* email/SMS-provider checks
-* queue-worker health systems
-* external-service health aggregation
-* monitoring platforms
-* metrics collection
-* Prometheus
-* Grafana
+1. The repository has one canonical formatting standard.
+2. Formatting can be applied through a documented command.
+3. Formatting can be checked without modifying files.
+4. Static analysis can be run through a documented command.
+5. Static analysis returns failure when configured errors remain.
+6. The selected tools are Composer-managed and compatible with the project.
+7. Existing application code has been brought to the agreed baseline where practical.
+8. New quality tooling does not alter the frozen API contract.
+9. Existing Phase 2.6–2.9 behavior remains intact.
+10. Sensitive configuration and credentials are not committed.
+11. Any analyzer suppressions are narrow and justified.
+12. Existing tests, where currently available, remain functional.
+13. Documentation identifies the local quality commands.
+14. New code comments remain minimal.
+15. The repository is ready for Phase 2.11 test-framework setup.
+
+---
+
+# 42. Review Checklist
+
+Before completion:
+
+* [ ] repository coding standard is defined
+* [ ] formatter is installed or existing formatter standardized
+* [ ] formatter configuration is version-controlled
+* [ ] formatter command works
+* [ ] formatting check works
+* [ ] static analyzer is installed or existing analyzer standardized
+* [ ] analyzer configuration is version-controlled
+* [ ] analyzer command works
+* [ ] analyzer has meaningful failure exit codes
+* [ ] analysis excludes vendor/generated code appropriately
+* [ ] analyzer suppressions are minimal
+* [ ] PHP types are improved where appropriate
+* [ ] no broad `mixed`/loose-typing workaround was introduced
+* [ ] no `$request->all()` mass-assignment path was introduced
+* [ ] `validated()` → DTO/command boundary remains intact
+* [ ] `additionalProperties: false` assumptions remain intact
+* [ ] API contract remains unchanged
+* [ ] Phase 2.7 error handling remains unchanged
+* [ ] Phase 2.8 logging remains unchanged
+* [ ] Phase 2.9 health endpoint remains unchanged except for necessary quality corrections
+* [ ] no test-framework redesign was introduced
+* [ ] no CI pipeline was introduced
+* [ ] no external monitoring tooling was introduced
+* [ ] no secrets were added
+* [ ] no unnecessary dependencies were upgraded
+* [ ] no generated artifacts were added
+* [ ] code comments are minimal
+* [ ] relevant tests pass
+* [ ] quality commands pass
+
+---
+
+# 43. Explicitly Out of Scope
+
+Do **not** implement during Phase 2.10:
+
+* test-framework setup
+* test-framework replacement
+* CI/CD
+* GitHub Actions/GitLab CI/other CI pipelines
+* deployment automation
+* comprehensive test suites
+* integration-test architecture
+* end-to-end testing
+* static-analysis of frontend code
+* Next.js linting
+* Flutter analysis
+* frontend formatting
+* application monitoring
+* error tracking
 * Sentry
 * Datadog
 * New Relic
 * OpenTelemetry
-* distributed tracing
-* uptime SaaS integration
-* business metrics
-* order/inventory/product status reporting
-* database health tables
-* audit logs
-* deployment automation
-* self-healing
+* database migrations
+* domain models
+* domain services
+* repositories introduced solely for abstraction
 * authentication
 * authorization
-* domain models
-* migrations
-* static analysis
-* CI implementation
-* frontend health UI
-* Flutter health UI
-* Next.js health UI
+* product/catalog features
+* cart features
+* checkout features
+* order features
+* payment integration
+* webhook implementation
+* audit-log infrastructure
+* queue infrastructure
+* notification implementation
+* API contract changes
+* new API endpoints
+* `/api/v1` redesign
+* health/readiness redesign
 
 ---
 
-# 37. STOP Condition
+# 44. STOP Condition
 
-Stop immediately when the Phase 2.9 definition of done is satisfied.
+Stop immediately when the Phase 2.10 definition of done is satisfied.
 
-Do not continue into Phase 2.10.
+Do not continue into Phase 2.11.
 
-Do not implement static analysis.
+Do not establish the test framework beyond using whatever test capability already exists.
 
-Do not implement coding standards tooling.
+Do not create CI.
 
-Do not implement the test-framework expansion assigned to Phase 2.11.
+Do not upgrade unrelated dependencies.
 
-Do not implement CI.
+Do not refactor the application architecture merely because static analysis suggests a different design.
 
-Do not expand `/health` into a readiness or monitoring platform.
+Do not change the frozen Version 1 API contract.
 
-Do not add database or external dependency checks without an explicit later requirement.
-
-Do not modify the frozen Version 1 API contract.
+Do not add broad analyzer suppressions simply to achieve a green build.
 
 Do not commit, stage, or push changes. Leave source-control operations to the project owner, consistent with the repository instructions.
