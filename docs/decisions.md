@@ -1698,3 +1698,18 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/BACKEND-007 — Phase 3.1 Users Schema
+
+**Decision:** One unified `users` identity/authentication table plus two optional one-to-one profile extensions, per the frozen V1 model (`docs/domain/business-rules.md §14`, `api-contract.md §17.1/§29`):
+
+- **`users`** — `id, name, email (unique, required), phone (nullable), password (secure one-way hash; hidden, never serialized), email_verified_at (framework/contract-established), account_state (nullable string; server-controlled, deferred lifecycle — no invented enum), remember_token (framework), timestamps`. No `role`/`is_admin`/`is_staff`/`permissions` columns; RBAC is deferred to Phase 3.2.
+- **`customer_profiles`** / **`staff_profiles`** — intentionally minimal: `user_id (FK → users.id, UNIQUE, cascade delete), timestamps`. No loyalty/address/preferences/employee metadata (deferred). Admins share `staff_profiles`; no `admin_profiles`, no separate `customers`/`staff`/`admins` authentication tables.
+- **Models** — `User` (`customerProfile`, `staffProfile` `hasOne`; `#[Fillable(['name','email','phone'])]` — `password`, `account_state`, timestamps and role/security fields are **not** mass-assignable; `#[Hidden(['password','remember_token'])]`). Credential assignment is explicit-only: `password` is set directly (or via `forceFill`) in the future dedicated authentication workflow, never through a generic `fill()`/`update()` path (`docs/api/api-conventions.md §29.8` `POST /auth/change-password`; `ADR/API-ENQ-...`/`USER-004`). `UserFactory` assigns `password` in `afterMaking` (not via mass assignment); schema tests set `$user->password` directly before `save()`. `CustomerProfile`/`StaffProfile` (`belongsTo`, fillable `user_id`, no factories per Phase 3.1). No Eloquent event auto-creates profiles (role/registration lifecycle is Group D/Phase 3.2).
+- **Tests** (`tests/Feature/UserSchemaTest.php`) verify identity fields, email uniqueness, nullable phone, secure hash, `account_state` not fillable, one-to-one/optional relationships, duplicate-profile rejection, FK enforcement, and no credential serialization. Migration order (`users → customer_profiles → staff_profiles`) and rollback verified against the local MySQL `furnitureapp` DB.
+
+**Reason:** Establishes the unified-identity schema prerequisite for Phase 3.2 RBAC and Group D authentication without inventing unsupported fields or roles.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`database/migrations/0001_01_01_000000_create_users_table.php`, `database/migrations/2026_09_07_*_create_*_profiles_table.php`, `app/Models/{User,CustomerProfile,StaffProfile}.php`, `tests/Feature/UserSchemaTest.php`), `docs/decisions.md`
+
+---
+
