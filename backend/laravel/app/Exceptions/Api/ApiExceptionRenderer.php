@@ -144,7 +144,7 @@ class ApiExceptionRenderer
 
     private function validationCode(ValidationException $e, string $field): ApiErrorCode
     {
-        $failed = $e->validator?->failed() ?? [];
+        $failed = $e->validator->failed();
 
         foreach (array_keys($failed[$field] ?? []) as $rule) {
             if (in_array($rule, $this->missingRules(), true)) {

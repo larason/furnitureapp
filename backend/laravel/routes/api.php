@@ -108,7 +108,7 @@ Route::prefix('v1')->name('api.')->group(function (): void {
     // CATALOG WRITES — ADMINISTRATIVE (Admin; Staff only where approved)
     // Same path family as public reads; authorization is per-operation.
     // ---------------------------------------------------------------------
-    Route::middleware('auth', 'admin')->group(function (): void {
+    Route::middleware(['auth', 'admin'])->group(function (): void {
         Route::post('/products', [ProductController::class, 'store'])->name('products.store');
         Route::patch('/products/{product}', [ProductController::class, 'update'])->name('products.update');
         Route::post('/products/{product}/images', [ProductController::class, 'storeImage'])->name('products.images.store');

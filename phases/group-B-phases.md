@@ -1,21 +1,23 @@
 # Group B phases instructions
 
-# Phase 2.9 — Health/Status Endpoint
+# Phase 2.11 — Test Framework Setup
 
 ## Objective
 
-Implement a minimal, reliable Laravel health/status endpoint that can be used to determine whether the application process is running and able to respond to HTTP requests.
+Establish the Laravel backend's test-framework foundation so future phases can add unit, API/feature, security, domain, integration, and regression tests consistently.
 
-The endpoint must be:
+This phase must establish:
 
-* lightweight
-* deterministic
-* safe to expose
-* independent of business/domain functionality
-* suitable for local and later operational checks
-* compatible with the existing routing, exception, and logging foundations
+* the project's supported test framework
+* test configuration
+* test directory conventions
+* test environment configuration
+* base test helpers/fixtures only where genuinely reusable
+* reliable local test execution
+* clear commands for running the full suite and focused tests
+* a clean foundation for later domain/API test development
 
-Do not turn this phase into a full production monitoring, readiness, dependency-discovery, or observability implementation.
+Do not implement the project's comprehensive business test suite in this phase.
 
 ---
 
@@ -25,858 +27,1268 @@ Phases 2.1–2.5 are already complete.
 
 Phase 2.6 established API routing.
 
-Phase 2.7 established centralized API exception/error handling.
+Phase 2.7 established exception/error handling.
 
-Phase 2.8 established the logging foundation.
+Phase 2.8 established logging.
+
+Phase 2.9 established the health/status endpoint.
+
+Phase 2.10 established coding standards and static analysis.
 
 Now implement:
 
-**Phase 2.9 — Health/status endpoint**
+**Phase 2.11 — Test Framework Setup**
 
-The roadmap places this immediately before coding standards/static analysis, test-framework setup, and CI.
+Phase 2.12 will establish CI.
 
-Do not redo previous phases.
+Do not implement Phase 2.12 in this phase.
 
-Do not continue into Phase 2.10.
+The roadmap explicitly requires the project to proceed one micro-phase at a time.
 
 ---
 
-# 2. Important Contract Boundary
+# 2. Authoritative Sources
 
-The provided frozen API documentation does **not** define a Version 1 health/status endpoint or its response schema.
+Before modifying the repository, read:
+
+1. `AGENTS.md`
+2. `docs/api/api-contract.md`
+3. `docs/api/api-resources.md`
+4. `docs/api/api-conventions.md`
+5. `docs/domain/business-rules.md`
+
+Also inspect the actual Laravel repository:
+
+* `composer.json`
+* `composer.lock`
+* existing test files
+* `phpunit.xml` if present
+* `tests/`
+* existing test helpers
+* existing test bootstrap
+* `.env.example`
+* test environment configuration
+* any existing Composer test scripts
+* Phase 2.7 exception/error tests
+* Phase 2.8 logging tests
+* Phase 2.9 health endpoint tests
+* Phase 2.10 quality scripts
+
+Do not assume the repository is still in its default Laravel state.
+
+---
+
+# 3. Inspect Before Installing
+
+First determine whether a test framework already exists.
+
+Check for:
+
+```text
+PHPUnit
+Pest
+phpunit.xml
+pest.php
+tests/
+```
+
+and existing Composer scripts.
+
+If a working test framework already exists:
+
+* reuse it
+* do not replace it
+* improve only what is necessary for this phase
+
+If no usable framework exists, introduce the smallest mature framework appropriate for the existing Laravel/PHP version.
+
+Do not install multiple competing test frameworks.
+
+---
+
+# 4. Framework Selection
+
+The uploaded project documents require a testing capability but do not mandate PHPUnit or Pest specifically.
 
 Therefore:
 
-* do not invent a new `/api/v1` contract without explicit evidence
-* do not add an endpoint to the frozen Version 1 endpoint inventory merely because health functionality is needed
-* do not change `docs/api/api-contract.md`, `docs/api/api-resources.md`, or `docs/api/api-conventions.md` to manufacture a new V1 business/API contract
-* do not reuse an existing V1 resource envelope for an operational endpoint unless the repository already establishes that behavior
+* do not claim that a particular framework is required by `AGENTS.md`
+* prefer the framework already used by the repository
+* if choosing a new framework, choose one that integrates cleanly with Laravel
+* keep the choice conventional and maintainable
+* avoid experimental or overly specialized testing frameworks
 
-For this phase, treat health/status as an **operational application endpoint**, not a customer/business API resource.
-
-### Implementation decision for this phase
-
-The canonical operational endpoint for this phase is:
-
-```text
-GET /health
-```
-
-Keep it outside `/api/v1`.
-
-This is an implementation-level operational endpoint, not a new Version 1 business API contract.
-
-If the existing repository already contains a health/status endpoint (for example, the framework default `GET /up` or a legacy `GET /api/v1/health`), migrate that functionality to the single canonical `GET /health` and ensure no duplicate health aliases remain. The implementation, tests, verification commands, checklist, and response contract must all reference the same canonical route.
+Do not add additional test libraries merely because they might be useful someday.
 
 ---
 
-# 3. Scope
+# 5. Composer Dependency Management
 
-The endpoint must answer one basic question:
+If a testing dependency must be added:
 
-> Is the Laravel application currently alive enough to respond to a health request?
+* use Composer
+* choose a version compatible with the current PHP/Laravel version
+* update `composer.lock`
+* do not modify unrelated runtime dependencies
+* do not commit vendor code
+* do not upgrade Laravel or PHP merely to obtain a newer testing tool
 
-The initial implementation should verify application-level liveness only.
+Only change dependencies required for the test framework.
 
-A healthy response should not require:
+---
 
-* customer authentication
-* Staff authentication
-* Admin authentication
-* database business records
-* product data
-* inventory data
-* carts
+# 6. Test Environment
+
+Create or standardize an isolated test environment.
+
+Tests must not depend on developer production configuration.
+
+Do not use production credentials.
+
+Do not use real payment credentials.
+
+Do not connect tests to a production database.
+
+The project defines separate LOCAL, STAGING, and PRODUCTION environments and prohibits production secrets in local development.
+
+---
+
+# 7. Test Database Strategy
+
+Establish the mechanism future backend tests will use for database-backed testing.
+
+At this stage there may be no domain tables yet.
+
+Therefore:
+
+* make the test database configuration ready
+* do not create future domain migrations solely for tests
+* do not create test-only business tables
+* do not invent fixtures for entities that do not yet exist
+
+The database/domain schemas begin in Group C.
+
+The test framework should be ready to execute migration-based tests once those schemas exist.
+
+---
+
+# 8. Database Isolation
+
+Future database tests must not contaminate each other.
+
+Establish the test infrastructure so tests can use appropriate isolation mechanisms such as the Laravel-supported transaction or refresh strategy when database-backed tests are introduced.
+
+Use the simplest correct mechanism compatible with the current application.
+
+Do not invent a custom database-reset framework.
+
+Do not optimize database testing before the domain schema exists.
+
+---
+
+# 9. Test Directory Structure
+
+Use a clear structure consistent with Laravel and the project's current repository.
+
+At minimum, distinguish:
+
+```text
+tests/
+    Unit/
+    Feature/
+```
+
+Use additional directories only when they are genuinely needed later.
+
+A reasonable conceptual separation is:
+
+### Unit
+
+Pure logic with minimal framework/database dependencies.
+
+Examples later:
+
+* calculations
+* state transition validation
+* delivery-fee calculations
+* value objects
+
+### Feature
+
+HTTP/API and application-integration behavior.
+
+Examples later:
+
+* authentication
+* catalog endpoints
+* cart
+* checkout
 * orders
-* payments
-* notifications
-* queues
-* external payment providers
-* third-party APIs
+* requests
+* enquiries
+* authorization
 
-Keep the endpoint cheap enough to be called frequently.
+Do not build all of those now.
 
 ---
 
-# 4. Liveness vs Readiness
+# 10. Test Naming
 
-Do not conflate health concepts.
+Establish predictable test naming.
 
-For this phase, implement **liveness**.
+Use descriptive test names that explain behavior rather than implementation.
 
-Liveness means:
-
-```text
-The Laravel process can receive and successfully produce a health response.
-```
-
-Do not implement full readiness semantics such as:
+Prefer:
 
 ```text
-database ready
-payment provider ready
-queue workers ready
-email provider ready
-file storage ready
-external dependencies ready
+customer_cannot_cancel_order_after_cancellation_window
 ```
 
-unless the repository already has an explicit requirement for them.
+over:
 
-A later production-readiness phase can add broader dependency checks.
+```text
+testCancelMethod2
+```
+
+Test names should make failures understandable without opening the implementation.
 
 ---
 
-# 5. Endpoint Characteristics
+# 11. Test Organization
 
-The health endpoint should be:
+Keep tests cohesive.
+
+One test should have a clear behavioral purpose.
+
+Avoid giant test classes containing unrelated domains.
+
+Avoid deeply nested helper hierarchies.
+
+Avoid generic fixtures that exist only to shorten a few tests.
+
+Follow the same project code-quality principles applied to production code:
+
+* small cohesive modules
+* explicit naming
+* single responsibility
+* avoid premature abstraction.
+
+---
+
+# 12. Base Test Class
+
+If the framework/repository requires a common application test base, establish one.
+
+Keep it minimal.
+
+It may provide common application bootstrap behavior required by Laravel.
+
+Do not turn the base class into a giant collection of domain helpers.
+
+Avoid methods such as:
+
+```text
+createCustomer()
+createPaidOrder()
+createDeliveryOrder()
+createInventory()
+createStaff()
+createAdmin()
+```
+
+when those domain entities do not yet exist.
+
+Future domain-specific helpers should be introduced with the corresponding domain phase.
+
+---
+
+# 13. HTTP Testing Foundation
+
+Prepare the framework for future API/feature tests.
+
+The project API uses:
+
+```text
+/api/v1
+```
+
+and the frozen API architecture requires consistent response/error behavior.
+
+The test infrastructure should make it easy for later tests to verify:
+
+* HTTP method
+* path
+* status
+* JSON body
+* headers
+* request ID
+* authentication behavior
+* authorization behavior
+* validation behavior
+
+Do not implement comprehensive endpoint tests now.
+
+---
+
+# 14. API Test Assertions
+
+Do not create a custom assertion layer unless repeated real needs justify it.
+
+Laravel's existing JSON/HTTP testing facilities should be preferred.
+
+Future API tests must be able to verify the frozen contract, including:
+
+```text
+data
+errors
+meta
+meta.request_id
+field
+details
+HTTP status
+```
+
+The frozen API contract requires consistent `errors` envelopes and request correlation.
+
+Do not duplicate the entire API contract into test helper code.
+
+---
+
+# 15. Phase 2.7 Error Tests
+
+Ensure the existing Phase 2.7 error-handling tests execute under the standardized test framework.
+
+Where useful, add a small foundational test set covering:
+
+* error envelope
+* HTTP status mapping
+* request ID presence
+* unexpected exception sanitization
+* validation error representation
+
+Do not expand this into the full application error matrix.
+
+---
+
+# 16. Phase 2.8 Logging Tests
+
+Ensure the Phase 2.8 logging tests execute correctly.
+
+At minimum preserve the ability to test:
+
+* request correlation
+* unexpected-exception logging
+* sensitive-data exclusions
+
+Do not add comprehensive operational logging tests for future payment/webhook/queue systems.
+
+---
+
+# 17. Phase 2.9 Health Tests
+
+Ensure the Phase 2.9 health endpoint has a focused test suite.
+
+At minimum verify:
 
 ```text
 GET /health
+→ expected success
 ```
 
-with:
+and appropriate method/authentication behavior.
 
-* no request body
-* no authentication requirement
-* no customer state
-* no business authorization
-* no mutation
-* no database writes
-* no external side effects
-
-It should be safe to call from:
-
-* local development
-* deployment verification
-* process supervision
-* simple uptime checks
-* future infrastructure health probes
+Do not add readiness or infrastructure tests that do not exist in the implementation.
 
 ---
 
-# 6. Success Response
+# 18. Test Configuration
 
-Because the uploaded project sources do not define a frozen health-response schema, use the smallest stable implementation response necessary for operational use.
+Establish version-controlled test configuration.
 
-Recommended response:
+Configure:
 
-```json
-{
-  "status": "ok"
-}
-```
+* application environment
+* test bootstrap
+* test discovery
+* test directories
+* appropriate output
+* appropriate failure behavior
 
-Return:
+Do not place developer-specific configuration in the test framework.
 
-```text
-HTTP 200
-```
-
-Do not add speculative fields such as:
-
-```text
-version
-environment
-hostname
-server_ip
-database_status
-queue_status
-payment_status
-memory_usage
-uptime
-```
-
-unless the repository or a later approved contract explicitly requires them.
-
-Keep the response deliberately small.
+Do not commit secrets in test configuration.
 
 ---
 
-# 7. Failure Response
+# 19. Environment Variables
 
-For the minimal liveness endpoint, failure means the application cannot successfully execute its health operation.
+Tests must use safe test values.
 
-Do not manufacture dependency-specific failure states that are not implemented.
+Use existing configuration infrastructure where possible.
 
-If an actual exception occurs while handling the health request:
+Do not hard-code production-like credentials.
 
-* allow the centralized Phase 2.7 exception handling to protect the client
-* do not expose stack traces
-* do not expose Laravel exception class names
-* do not expose filesystem paths
-* do not expose database credentials
-* do not expose server internals
+Do not add fake payment credentials that resemble real production secrets.
 
-The project's security baseline explicitly requires raw framework, database, and infrastructure exceptions to remain out of API responses.
+Use clearly non-production test configuration.
 
 ---
 
-# 8. Relationship to Phase 2.7 Error Handling
+# 20. Time Handling Foundation
 
-Do not create a second exception-handling mechanism for `/health`.
+Future business rules rely on backend-controlled time, including the 20-minute order-cancellation window.
 
-The health endpoint must use the existing centralized exception/error infrastructure where applicable.
+The test infrastructure should make deterministic time testing possible using the Laravel/framework facilities already available.
 
-Do not add endpoint-specific JSON error construction such as:
+Do not introduce a custom time abstraction solely for testing.
 
-```php
-return response()->json([
-    'error' => 'health_failed',
-]);
-```
+Do not implement cancellation behavior now.
 
-Do not create a second error envelope.
-
-The Phase 2.7 error handling remains authoritative for failures where exception translation is required.
+The frozen API/domain conventions require the cancellation window to use backend time rather than client-supplied timestamps. This test foundation must eventually support deterministic verification of that rule.
 
 ---
 
-# 9. Relationship to Phase 2.8 Logging
+# 21. Randomness and IDs
 
-Use the existing logging foundation.
+Do not make foundational tests depend on unpredictable values unless randomness itself is under test.
 
-Do not create a health-specific logging subsystem.
+Where the framework already provides deterministic/fake mechanisms, use them appropriately.
 
-Normal successful health checks generally should not generate high-volume application logs.
+Do not create a custom global ID generator for testing.
 
-Avoid logging every successful request to `/health` at ERROR/WARNING levels.
-
-If an unexpected health-check exception occurs:
-
-* it should be diagnosable through the existing exception/logging infrastructure
-* the request ID should remain available through the existing correlation mechanism
-* sensitive data must not be logged
-
-The project requires important failures to be diagnosable through application/API logging.
+Do not hard-code assumptions about future opaque IDs or order references beyond what is already defined by the contract.
 
 ---
 
-# 10. Request Correlation
+# 22. External Services
 
-If the existing HTTP foundation establishes a request ID, preserve it for `/health`.
+The test framework must default to isolated tests.
 
-Do not create a separate health-specific request ID mechanism.
-
-A health request should therefore participate in the same general correlation model used elsewhere.
-
-Do not include request IDs in the success body unless already required by the operational contract.
-
-The existing API request-ID convention is intended to correlate client-visible errors with server logs.
-
----
-
-# 11. Authentication
-
-Do not require authentication for the basic liveness endpoint.
-
-Reason:
-
-A liveness check must be usable by an operational process before customer authentication, staff authorization, or application business functionality is necessarily available.
-
-Do not:
-
-* invoke customer authentication
-* invoke Staff/Admin authorization
-* query user roles
-* create sessions
-* access customer data
-* depend on bearer tokens
-
----
-
-# 12. Database Dependency
-
-Do not make the minimal liveness endpoint depend on a successful database query unless the existing repository explicitly defines health as database-dependent.
-
-The endpoint should be capable of answering:
-
-```text
-Is the application process alive?
-```
-
-independently of:
-
-```text
-Is every dependency healthy?
-```
-
-Do not add:
-
-```php
-DB::select(...)
-```
-
-merely to prove that the database exists.
-
-The database connection was already established in Phase 2.4.
-
-A later readiness/production-health design may intentionally include dependency checks.
-
----
-
-# 13. External Dependency Checks
-
-Do not call:
+Do not allow ordinary test runs to call:
 
 * payment providers
 * email providers
 * SMS providers
-* storage services
 * third-party APIs
-* webhooks
-* queues
-* notification providers
+* real webhooks
+* production storage
+* external monitoring
 
-from the basic health endpoint.
-
-A health endpoint must not generate external side effects or create unnecessary load.
-
-Payment and provider-specific behavior remain deferred to later work. The project architecture explicitly separates external/provider failures from basic validation and infrastructure concerns.
+External integration tests can be introduced deliberately in later phases.
 
 ---
 
-# 14. Security and Information Disclosure
+# 23. File/System Isolation
 
-Do not return infrastructure information.
+Prepare the test environment so future tests can safely use temporary storage where needed.
 
-The response must not reveal:
+Do not create permanent test files in production/application storage.
 
-* database hostname
-* database name
-* database credentials
-* Redis details
-* filesystem paths
-* server hostname
-* server IP
-* PHP version
-* Laravel version
-* package versions
-* environment variable values
-* secret configuration
-* internal service URLs
-* queue configuration
-* payment configuration
-* deployment topology
+Do not allow test execution to modify developer data unexpectedly.
 
-Do not expose "debug health" through the public endpoint.
-
-This follows the project's security requirement to prevent infrastructure and implementation details from leaking through responses.
+Do not build a custom file-testing framework before attachment/upload functionality exists.
 
 ---
 
-# 15. Environment Information
+# 24. Queue Isolation
 
-Do not return:
+Do not introduce queue infrastructure.
 
-```json
-{
-  "environment": "production"
-}
-```
+If current application code already references queues, configure tests so ordinary tests do not unintentionally dispatch real asynchronous work.
 
-or similar environment metadata unless explicitly required.
+Use the framework's standard fake/synchronous testing mechanisms where already applicable.
 
-An externally accessible health endpoint should reveal as little as necessary.
-
-Environment-specific diagnostics belong in server-side operational tooling and logs.
+Future queue behavior belongs to later phases.
 
 ---
 
-# 16. Cache Behavior
+# 25. Mail/Notification Isolation
 
-Do not introduce caching that could make a liveness result stale.
+Do not implement notification functionality.
 
-The health endpoint must return an explicit no-store response contract so that a
-browser or intermediary cannot serve a stale cached 200 after the process has
-died:
+If the current framework/application already has mail/notification hooks, ensure tests can safely fake or suppress external delivery.
 
-```http
-Cache-Control: no-store
-```
+Do not send real emails during ordinary test execution.
 
-The health endpoint should represent the application's current ability to respond.
-Every successful health response must include `Cache-Control: no-store` (and must
-not be cacheable by shared or private caches). Equivalent deployment-level
-guarantees (e.g., CDN rule `Cache-Control: no-store` for the health path) are
-acceptable only if verified. Tests must assert the header.
-
-Do not place it behind application-level response caching.
-
-Do not introduce CDN caching rules as part of this phase.
+Actual notification features belong to later phases.
 
 ---
 
-# 17. HTTP Semantics
+# 26. Authentication Test Preparation
 
-The endpoint must:
+Authentication is not implemented yet.
 
-* accept only `GET`
-* reject inappropriate mutation methods
-* return a normal HTTP success code on success
-* not modify state
+Therefore do not implement *additional* product-level authentication fixtures:
 
-Do not add:
+* token factories
+* login helpers (beyond framework `actingAs`)
+* role helpers for future domain roles
+* customer/admin identity builders for future business entities
+
+The skeleton `UserFactory` and existing framework-level authentication boundary tests that use Laravel's `actingAs` (as proven in Phase 2.7–2.9 for `401`/`403` via `tests/Feature/ApiErrorHandlingTest` and `ApiRoutingSmokeTest`) **remain and continue to run**. Only new product-level fixtures for future domain authentication are deferred.
+
+When authentication is implemented later, the test framework should support authenticated-request testing through the framework's standard facilities.
+
+---
+
+# 27. Authorization Test Preparation
+
+Do not implement authorization policies in Phase 2.11.
+
+Only ensure the test architecture is capable of later testing:
 
 ```text
-POST /health
-PATCH /health
-DELETE /health
+CUSTOMER
+STAFF
+ADMIN
 ```
 
-Do not create multiple aliases such as:
+ownership and permissions when those capabilities are introduced.
+
+Do not invent fake authorization infrastructure solely for tests.
+
+---
+
+# 28. Factories and Seeders
+
+Do not create comprehensive model factories yet.
+
+The database/domain model begins in Group C.
+
+Create factories only for models that already exist and actually need them for current tests.
+
+Do not generate speculative factories for:
 
 ```text
-/status
-/api/status
-/api/v1/status
-/system/health
+Product
+Order
+Payment
+Delivery
+Inventory
+FurnitureRequest
+Enquiry
+Notification
 ```
 
-Use one canonical operational endpoint.
+if those models do not yet exist.
+
+Likewise, do not create domain seeders merely to make the test suite look complete.
 
 ---
 
-# 18. Routing
+# 29. Fixtures
 
-Register the route in the appropriate existing Laravel routing location.
+Prefer small, local fixtures over a giant global fixture system.
 
-Do not place the operational health route inside the customer/business API group solely for convenience.
+When future tests need representative payloads, introduce them in the relevant domain/API phase.
 
-Do not duplicate the route in several route files.
-
-Do not recreate removed `/staff/...` aliases.
-
-Do not alter the existing `/api/v1` route topology except where absolutely required to preserve correct route separation.
+Do not create hundreds of fixture records now.
 
 ---
 
-# 19. Controller / Handler Design
+# 30. Test Data Security
 
-Keep the implementation extremely small.
+Do not put sensitive information into committed test fixtures.
 
-A health handler should do little more than return the operational response.
+Never commit:
 
-Avoid:
+* real passwords
+* API keys
+* tokens
+* production customer data
+* real payment credentials
+* real personal addresses
+* real phone numbers where unnecessary
 
-* service layers with no real responsibility
-* repositories
-* database queries
-* model loading
-* business services
-* DTOs for a one-field liveness response
-* generic "system status engine"
-* health-check registries
-* plugin architectures
+Use clearly synthetic test data.
 
-Do not overengineer the endpoint.
+The project security baseline prohibits committing secrets and production credentials.
 
 ---
 
-# 20. Response Stability
+# 31. Assertion Quality
 
-Even though the health response is not a frozen V1 business resource, treat the response as an operational interface.
+Tests should verify observable behavior rather than private implementation details.
 
-Once implemented:
-
-* keep the response stable
-* do not casually rename `status`
-* do not add environment-sensitive behavior
-* do not change HTTP semantics without reason
-
-Operational tooling may depend on it.
-
----
-
-# 21. Content Type
-
-Return JSON consistently if the existing Laravel application uses JSON for the operational endpoint.
-
-Ensure the response has an appropriate JSON content type.
-
-Do not return HTML.
-
-Do not return framework debug pages.
-
----
-
-# 22. Testing
-
-Add focused tests for the health endpoint.
-
-At minimum verify:
-
-### Success
+Prefer:
 
 ```text
-GET /health
-→ HTTP 200
+HTTP 422
+error code INVALID_VALUE
+field fulfillment_type
 ```
 
-and the body contains the expected minimal health representation.
+over:
 
-### Method restriction
+```text
+validator class contains rule X
+```
 
-Verify inappropriate methods are rejected.
+when testing API behavior.
 
-### No authentication dependency
+Prefer state/business outcomes over internal method-call counts unless interaction testing is specifically justified.
 
-Verify the endpoint works without a customer, Staff, or Admin session/token.
-
-### No business dependency
-
-Verify the endpoint does not require:
-
-* products
-* orders
-* carts
-* inventory
-* payment records
-
-### Exception safety
-
-Trigger a controlled failure where practical and verify:
-
-* internal details are not exposed
-* stack traces are not returned
-* the centralized exception handling remains effective
-
-### Logging/correlation compatibility
-
-Verify that an unexpected server-side failure remains diagnosable through the existing Phase 2.8 logging path and request correlation mechanism.
-
-Do not build a second testing framework.
+Do not over-specify implementation details that would make harmless refactoring break tests.
 
 ---
 
-# 23. Minimal Code Comments
+# 32. Test the Contract, Not the English Message
 
-Keep comments in new code to the absolute minimum.
+For API error tests, assert:
 
-Do not write:
+```text
+code
+field
+details
+HTTP status
+meta.request_id
+```
+
+rather than relying primarily on exact English messages.
+
+The frozen API conventions define the machine-readable code as the stable client contract and the message as human-readable text.
+
+Messages may evolve without necessarily changing the contract.
+
+---
+
+# 33. Closed Enums
+
+Future tests must treat V1 enums as closed.
+
+The test foundation must not encourage assertions like:
+
+```text
+status is any string
+```
+
+Later tests should verify exact documented enum values.
+
+The V1 API conventions explicitly define closed enums and require exact documented values.
+
+Do not introduce new enum values during this phase.
+
+---
+
+# 34. Strict Request Validation
+
+Future API tests must be capable of verifying the strict-request policy.
+
+In particular:
+
+* unknown fields are rejected where required
+* `additionalProperties: false` semantics are preserved
+* server-controlled fields cannot be submitted
+* `validated()` data flows through controlled boundaries
+
+Do not create test helpers that encourage unrestricted payload construction through:
 
 ```php
-// Health check endpoint
+$request->all()
 ```
 
-above an obviously named health handler.
+or equivalent.
 
-Do not add explanatory essays to the route or controller.
-
-A comment is justified only where a non-obvious operational/security constraint cannot be made clear through naming and structure.
-
-Prefer self-explanatory code.
+The existing contract explicitly rejects unknown fields for strict operations and prohibits unrestricted mass assignment.
 
 ---
 
-# 24. Documentation
+# 35. Test Isolation from API Contract Changes
 
-Because the frozen API documents do not define a health endpoint, do not modify the V1 API contract documentation merely to record `/health`.
+Do not encode an unofficial second version of the API in tests.
 
-Document the operational endpoint only where the existing project documentation structure already has an appropriate location.
+Tests should reference the frozen contract through:
 
-A small note is sufficient:
+* actual route definitions
+* actual response behavior
+* authoritative constants/enums where they already exist
+
+Do not duplicate every API schema as manually maintained test metadata.
+
+That creates two sources of truth.
+
+---
+
+# 36. Static Analysis Compatibility
+
+The new tests must be compatible with the Phase 2.10 static-analysis baseline.
+
+Run static analysis against test code if the chosen project configuration includes tests.
+
+Resolve genuine type issues rather than suppressing the analyzer broadly.
+
+Do not exclude the entire `tests/` directory simply because tests are difficult to type.
+
+---
+
+# 37. Formatting Compatibility
+
+Apply the Phase 2.10 formatting standard to test code.
+
+Tests are first-class project code.
+
+Do not maintain a separate test formatting style.
+
+---
+
+# 38. Test Commands
+
+Provide simple, documented commands for:
+
+### Full test suite
 
 ```text
-GET /health
-Operational liveness endpoint.
+composer test
 ```
 
-Do not create a large health/monitoring specification.
+or the repository's equivalent.
 
-Do not document unsupported future dependencies.
+### Focused test execution
 
----
-
-# 25. No Monitoring Platform
-
-Do not add:
-
-* Prometheus
-* Grafana
-* Sentry
-* Datadog
-* New Relic
-* OpenTelemetry
-* cloud monitoring agents
-* distributed tracing
-* uptime SaaS integrations
-
-The AGENTS roadmap places broader production logging/monitoring and error tracking later in the production-readiness phase.
-
----
-
-# 26. No Readiness Framework
-
-Do not create a general abstraction such as:
+The framework's standard mechanism should make it possible to run:
 
 ```text
-HealthCheckInterface
-ReadinessCheck
-DependencyCheck
-HealthRegistry
-SystemStatusManager
+one test file
+one test class
+one named test
 ```
 
-unless the repository already contains such infrastructure.
-
-For this phase, a minimal liveness endpoint is preferable.
+Do not create a complicated custom CLI wrapper unless genuinely necessary.
 
 ---
 
-# 27. No Database Health Table
+# 39. Composer Integration
 
-Do not create:
+Where appropriate, add a Composer script for the normal test suite.
 
-* health tables
-* heartbeat tables
-* system-status tables
-* monitoring tables
-* uptime tables
-
-The endpoint does not need database storage.
-
----
-
-# 28. No Business Status Exposure
-
-Do not return business state through the health endpoint.
-
-For example, do not expose:
+For example:
 
 ```text
-orders_processing
-products_available
-inventory_status
-payments_enabled
-delivery_enabled
-customers_registered
+composer test
 ```
 
-The health endpoint is about application operation, not business metrics.
+The exact command may differ according to the chosen framework.
+
+The important requirement is consistency.
+
+The command must return:
+
+* success when tests pass
+* failure when tests fail
+
+Do not hide failures with constructs such as:
+
+```bash
+test-command || true
+```
+
+The later CI phase depends on meaningful exit status.
 
 ---
 
-# 29. No Deployment Logic
+# 40. Test Output
 
-Do not add:
+Configure normal test execution to provide useful failure information without excessive noise.
 
-* automatic restart behavior
-* deployment hooks
-* migrations
-* cache clearing
-* queue restarting
-* self-healing behavior
-* environment mutation
+The default developer command should make failures easy to diagnose.
 
-The endpoint must observe the application, not modify it.
+Do not customize output excessively.
+
+Do not suppress failed-test details simply to make logs shorter.
 
 ---
 
-# 30. No Secret Validation
+# 41. Test Bootstrap
 
-Do not use the health endpoint to test whether secrets are present by returning secret configuration state.
+Keep test bootstrap code minimal.
 
-For example, do not return:
+It should establish only what all tests genuinely need.
 
-```json
-{
-  "payment_secret_configured": true
-}
-```
+Avoid putting application-specific business setup into the global bootstrap.
 
-or:
+Do not initialize:
 
-```json
-{
-  "database_password_present": true
-}
-```
+* product fixtures
+* customer records
+* orders
+* payments
+* inventory
+* external services
 
-Configuration diagnostics belong in controlled server-side tooling.
+globally.
+
+Future test suites should control their own fixtures.
 
 ---
 
-# 31. Performance Requirements
+# 42. Parallel Testing
 
-The health endpoint must be extremely lightweight.
+Do not make parallel testing a mandatory requirement in this phase.
+
+If the existing Laravel/test framework supports parallel execution naturally, ensure the test configuration does not prevent it.
+
+Do not optimize for parallel execution before there is a meaningful test suite.
+
+Avoid introducing complexity that is not currently needed.
+
+---
+
+# 43. Coverage
+
+Do not introduce an aggressive mandatory coverage threshold in this phase.
+
+There is not yet a sufficiently developed business/domain test suite to justify an arbitrary percentage.
+
+The test framework should be compatible with coverage reporting where supported.
+
+Later quality phases can establish meaningful coverage expectations based on actual critical workflows.
+
+Do not manipulate coverage by excluding production code merely to achieve a target.
+
+---
+
+# 44. Regression Test Foundation
+
+Make it easy to add a regression test whenever a production bug is fixed.
+
+The AGENTS testing strategy explicitly requires regression tests when production bugs are corrected.
+
+Do not build a separate regression framework.
+
+Normal tests should serve this purpose.
+
+---
+
+# 45. Security Test Foundation
+
+Ensure the test setup can later support security-focused API tests.
+
+Future tests must be able to verify:
+
+* authentication boundaries
+* authorization boundaries
+* IDOR protection
+* 404 masking
+* rate limiting
+* CSRF behavior where applicable
+* CORS behavior where applicable
+* strict input validation
+* sensitive-data protection
+* mass-assignment protection
+
+Do not implement those business/security systems now.
+
+Only make the test infrastructure capable of testing them.
+
+---
+
+# 46. Logging Test Safety
+
+Tests must not accidentally emit sensitive logs into persistent development logs.
+
+Where logging is tested:
+
+* use isolated test configuration
+* use controlled log destinations/fakes where appropriate
+* assert sensitive values are absent
+* avoid printing credentials to test output
+
+This is especially important because Phase 2.8 established sensitive-data logging restrictions.
+
+---
+
+# 47. HTTP Error Compatibility
+
+Keep the test foundation compatible with the frozen error architecture.
+
+Future tests must be able to verify the canonical relationships:
+
+```text
+400 → INVALID_JSON
+401 → AUTHENTICATION_REQUIRED
+403 → FORBIDDEN
+404 → RESOURCE_NOT_FOUND
+409 → CONFLICT
+413 → REQUEST_TOO_LARGE
+415 → UNSUPPORTED_MEDIA_TYPE
+422 → validation/business error
+429 → RATE_LIMITED + Retry-After
+500 → INTERNAL_SERVER_ERROR
+502/503/504 → external-service family
+```
+
+Do not add new error mappings merely to simplify tests.
+
+---
+
+# 48. Rate-Limit Test Preparation
+
+Do not implement rate limiting yet.
+
+However, the test infrastructure should later allow headers to be asserted, especially:
+
+```text
+Retry-After
+```
+
+for `429 RATE_LIMITED`.
+
+Do not create fake rate-limit middleware merely for this phase.
+
+The frozen API contract requires standard `Retry-After` behavior.
+
+---
+
+# 49. Request ID Test Preparation
+
+Tests must be capable of checking that:
+
+```text
+API error meta.request_id
+==
+server-side request correlation identifier
+```
+
+where the logging test infrastructure permits this without depending on production logging.
+
+Do not create a second request-ID mechanism specifically for tests.
+
+---
+
+# 50. Test Naming and Comments
+
+Keep test-code comments to the absolute minimum.
+
+Do not comment obvious Arrange/Act/Assert sections mechanically.
 
 Avoid:
 
-* database queries
-* external network calls
-* file scans
-* model hydration
-* large serialization
-* logging large payloads
-* expensive configuration processing
+```php
+// Arrange
+// Act
+// Assert
+```
 
-The normal successful execution path should be simple and fast.
+unless the test is genuinely difficult to follow without them.
 
----
+Prefer clear test names and straightforward structure.
 
-# 32. Review Against Previous Phases
-
-Before completion verify compatibility with:
-
-### Phase 2.6
-
-* route registration remains clean
-* no duplicate route aliases
-* `/api/v1` remains unchanged
-
-### Phase 2.7
-
-* no second exception-handler architecture
-* no raw framework errors exposed
-* existing error handling remains intact
-
-### Phase 2.8
-
-* existing logger is reused
-* request correlation remains intact
-* no sensitive health diagnostics are logged
+A comment is justified only for a non-obvious testing constraint, framework workaround, or security requirement.
 
 ---
 
-# 33. Verification Commands
+# 51. Documentation
 
-Run the currently available project verification commands.
+Document the minimum developer workflow.
+
+At minimum specify:
+
+```text
+composer test
+```
+
+or the actual repository equivalent.
+
+Also document:
+
+* how to run a focused test
+* where tests live
+* how the test environment is configured
+* any important database isolation requirement
+
+Do not create a large testing manual.
+
+---
+
+# 52. No CI
+
+Do not implement:
+
+* GitHub Actions
+* GitLab CI
+* Bitbucket pipelines
+* Jenkins
+* deployment checks
+* branch protections
+* CI quality gates
+
+Phase 2.12 owns CI.
+
+The repository's roadmap explicitly separates test-framework setup from CI baseline.
+
+---
+
+# 53. No Comprehensive Business Tests
+
+Do not implement the future test matrix yet.
+
+The project eventually needs tests for areas such as:
+
+```text
+invalid product type
+insufficient stock
+invalid variant
+missing delivery information
+invalid enum
+unknown field
+unauthorized order
+expired cancellation window
+invalid transition
+duplicate checkout
+```
+
+but those belong alongside the corresponding business/domain implementations.
+
+The API conventions explicitly require such business rules to have backend/domain-level tests eventually.
+
+Do not create fake domain implementations just to test them now.
+
+---
+
+# 54. No Domain Factories
+
+Do not implement factories for domain entities that have not yet been built.
+
+Group C will establish the database/domain model.
+
+The test framework should be ready for those factories later.
+
+---
+
+# 55. No Frontend Testing
+
+Do not configure:
+
+* Next.js testing
+* React testing
+* MUI component testing
+* Flutter tests
+* Dart analysis/testing
+
+This phase is Laravel backend test infrastructure only.
+
+---
+
+# 56. No E2E Framework
+
+Do not introduce:
+
+* Playwright
+* Cypress
+* browser automation
+* mobile device automation
+
+The project's end-to-end test strategy comes later in Quality Assurance.
+
+The current phase only establishes backend test-framework infrastructure.
+
+---
+
+# 57. No External Integration Test Infrastructure
+
+Do not introduce test environments for:
+
+* payment gateways
+* SMS providers
+* email providers
+* cloud object storage
+* third-party APIs
+
+Those integrations belong to later phases.
+
+---
+
+# 58. Verification
+
+Run the repository's test command after setup.
 
 At minimum:
 
 ```bash
+composer test
+```
+
+using the actual script name chosen for the project.
+
+Also run:
+
+```bash
 php artisan test
-php artisan route:list
 ```
 
-Verify that the health route appears exactly once.
+when the repository uses Laravel's standard test entry point.
 
-Verify that the V1 route collection has not been unintentionally changed.
+Run the Phase 2.7–2.9 focused tests and confirm they remain green.
 
-Perform a direct request against:
+Run the Phase 2.10 formatting/static-analysis commands as configured.
 
-```text
-GET /health
-```
-
-and verify the expected HTTP status and response.
-
-Do not wait for:
-
-* Phase 2.10 static analysis
-* Phase 2.11 test-framework expansion
-* Phase 2.12 CI
+Do not wait for CI to verify the work.
 
 ---
 
-# 34. Review Checklist
+# 59. Verification of Failure Behavior
 
-Before marking Phase 2.9 complete:
+Intentionally verify that the test command fails when a test fails.
 
-* [ ] one canonical health endpoint exists (`GET /health`)
-* [ ] the canonical route is `GET /health` outside `/api/v1` (any legacy `/up` or `/api/v1/health` aliases have been removed/consolidated)
-* [ ] endpoint remains outside `/api/v1`
-* [ ] endpoint requires no authentication
-* [ ] endpoint performs no mutations
-* [ ] endpoint does not depend on business data
-* [ ] endpoint does not call payment/external providers
-* [ ] endpoint does not require queues
-* [ ] endpoint does not expose infrastructure details
-* [ ] endpoint does not expose environment configuration
-* [ ] endpoint does not expose secrets
-* [ ] endpoint does not expose framework debug information
-* [ ] response is minimal and stable
-* [ ] inappropriate methods are rejected
-* [ ] Phase 2.7 exception handling remains authoritative
-* [ ] Phase 2.8 logging remains authoritative
-* [ ] request correlation remains compatible
-* [ ] successful health requests do not generate unnecessary error-level log noise
-* [ ] focused health tests pass
-* [ ] existing tests pass
-* [ ] route list shows no duplicate health aliases
-* [ ] comments in new code are minimal
+Do not merely confirm that the command exits successfully once.
+
+The test process must have a meaningful non-zero exit status on failure.
+
+Similarly, verify focused test execution works.
 
 ---
 
-# 35. Definition of Done
+# 60. Repository Inspection
 
-Phase 2.9 is complete only when:
+After setup, inspect the change set.
 
-1. Laravel exposes one canonical operational liveness endpoint.
-2. The endpoint responds successfully when the application is alive.
-3. It does not require authentication or business-domain state.
-4. It does not introduce a new `/api/v1` business contract.
-5. Its response contains only minimal health information.
-6. It does not disclose infrastructure, secrets, or framework internals.
-7. It uses the existing exception-handling foundation.
-8. It remains compatible with the existing logging/correlation foundation.
-9. Focused automated tests pass.
-10. Existing backend tests remain green.
-11. No monitoring platform, readiness framework, or dependency-health subsystem has been introduced.
-12. New code contains only the minimum necessary comments.
+Ensure it contains only:
 
----
+* test-framework dependencies
+* test configuration
+* necessary test directory/bootstrap changes
+* focused foundation tests
+* documentation required for local testing
 
-# 36. Explicitly Out of Scope
+Do not leave behind:
 
-Do **not** implement during Phase 2.9:
-
-* `/api/v1/health`
-* `/api/v1/status`
-* customer-facing status endpoints
-* database health dashboards
-* readiness probes for every dependency
-* payment-provider checks
-* email/SMS-provider checks
-* queue-worker health systems
-* external-service health aggregation
-* monitoring platforms
-* metrics collection
-* Prometheus
-* Grafana
-* Sentry
-* Datadog
-* New Relic
-* OpenTelemetry
-* distributed tracing
-* uptime SaaS integration
-* business metrics
-* order/inventory/product status reporting
-* database health tables
-* audit logs
-* deployment automation
-* self-healing
-* authentication
-* authorization
-* domain models
-* migrations
-* static analysis
-* CI implementation
-* frontend health UI
-* Flutter health UI
-* Next.js health UI
+* generated reports
+* machine-local test artifacts
+* coverage files
+* IDE files
+* secret-bearing environment files
+* unrelated dependency upgrades
 
 ---
 
-# 37. STOP Condition
+# 61. Definition of Done
 
-Stop immediately when the Phase 2.9 definition of done is satisfied.
+Phase 2.11 is complete only when:
 
-Do not continue into Phase 2.10.
+1. A single supported backend test framework is established.
+2. The test framework runs successfully against the current Laravel application.
+3. The test environment is isolated from production.
+4. Test configuration is version-controlled.
+5. `tests/Unit` and `tests/Feature` conventions are established or preserved.
+6. A normal full-suite test command exists.
+7. Focused test execution works.
+8. Test failures produce non-zero exit status.
+9. Existing Phase 2.7–2.9 tests run successfully.
+10. The framework is ready for database-backed tests once Group C creates the domain schemas.
+11. No speculative factories, domain fixtures, or business implementations have been introduced.
+12. Static analysis and formatting remain compatible with the Phase 2.10 baseline.
+13. Test documentation is sufficient for another developer to run tests locally.
+14. New test code contains only the minimum necessary comments.
+15. The repository is ready for Phase 2.12 CI baseline.
 
-Do not implement static analysis.
+---
 
-Do not implement coding standards tooling.
+# 62. Review Checklist
 
-Do not implement the test-framework expansion assigned to Phase 2.11.
+Before completion:
 
-Do not implement CI.
+* [ ] existing test framework was inspected first
+* [ ] no duplicate test framework was introduced
+* [ ] selected framework is compatible with PHP/Laravel
+* [ ] Composer dependencies are appropriate
+* [ ] `composer.lock` is consistent
+* [ ] test environment is isolated
+* [ ] production credentials are not used
+* [ ] test database configuration is safe
+* [ ] `tests/Unit` exists or existing convention is preserved
+* [ ] `tests/Feature` exists or existing convention is preserved
+* [ ] common test bootstrap is minimal
+* [ ] no speculative domain factories were added
+* [ ] no speculative domain fixtures were added
+* [ ] HTTP/API tests can inspect status/body/headers
+* [ ] request ID testing is possible
+* [ ] error-envelope testing is possible
+* [ ] Phase 2.7 tests pass
+* [ ] Phase 2.8 tests pass
+* [ ] Phase 2.9 tests pass
+* [ ] full test command succeeds
+* [ ] focused test execution succeeds
+* [ ] intentional test failure produces non-zero exit status
+* [ ] formatting remains compliant
+* [ ] static analysis remains compliant
+* [ ] no CI was added
+* [ ] no E2E framework was added
+* [ ] no frontend test framework was added
+* [ ] no external integration-test infrastructure was added
+* [ ] no secrets were added
+* [ ] no generated artifacts were committed
+* [ ] code comments are minimal
+* [ ] documentation explains the test commands
 
-Do not expand `/health` into a readiness or monitoring platform.
+---
 
-Do not add database or external dependency checks without an explicit later requirement.
+# 63. Explicitly Out of Scope
 
-Do not modify the frozen Version 1 API contract.
+Do **not** implement during Phase 2.11:
+
+* CI/CD
+* GitHub Actions
+* GitLab CI
+* Jenkins
+* automated deployment gates
+* comprehensive domain tests
+* database/domain migrations
+* business-rule implementations
+* Product factories unless Product already exists and genuinely requires one for current tests
+* Order factories
+* Payment factories
+* Inventory factories
+* User authentication implementation
+* authorization implementation
+* role/permission implementation
+* catalog implementation
+* cart implementation
+* checkout implementation
+* order implementation
+* payment implementation
+* webhook implementation
+* delivery implementation
+* furniture-request implementation
+* enquiry implementation
+* notification implementation
+* rate-limiter implementation
+* audit-log implementation
+* frontend testing
+* Next.js testing
+* Flutter testing
+* browser E2E testing
+* mobile E2E testing
+* payment-provider integration testing
+* external API integration infrastructure
+* production monitoring
+* error tracking
+* test dashboards
+* mandatory coverage thresholds
+* parallel-test optimization
+* custom test orchestration frameworks
+* API contract redesign
+* new API endpoints
+
+---
+
+# 64. STOP Condition
+
+Stop immediately when the Phase 2.11 definition of done is satisfied.
+
+Do not continue into Phase 2.12.
+
+Do not create CI.
+
+Do not create domain factories for future entities.
+
+Do not implement business rules simply to increase test coverage.
+
+Do not introduce frontend or E2E test tooling.
+
+Do not introduce external-service test environments.
+
+Do not replace the established testing framework merely because another tool has attractive features.
+
+Do not change the frozen Version 1 API contract.
 
 Do not commit, stage, or push changes. Leave source-control operations to the project owner, consistent with the repository instructions.
