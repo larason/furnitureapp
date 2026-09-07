@@ -1666,3 +1666,19 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/BACKEND-005 — Phase 2.11 Test Framework Setup
+
+**Decision:** Reuse the existing PHPUnit-based test framework (PHPUnit 12, `phpunit.xml`) — `tests/Unit` for pure logic, `tests/Feature` for HTTP/API — rather than introducing Pest or a second framework. `Tests\TestCase` remains the minimal Laravel application bootstrap.
+
+- **Isolation:** `phpunit.xml` defines `APP_ENV=testing`, `DB_CONNECTION=sqlite :memory:`, `CACHE_STORE=array`, `QUEUE_CONNECTION=sync`, `MAIL_MAILER=array`, `SESSION_DRIVER=array`, `BCRYPT_ROUNDS=4`; no production credentials or external services are used. Database-backed tests use `RefreshDatabase` (migrations run per test via `sqlite :memory:`), ready for Group C schemas without creating domain tables now.
+- **Structure:** `tests/Unit` / `tests/Feature` preserved; no speculative `Product`/`Order`/`Payment` factories or fixtures; only `UserFactory` from the skeleton remains. No global business helpers in `TestCase`; domain helpers will be added with their domain phases.
+- **HTTP foundation:** Laravel's `getJson`/`postJson`/`withHeaders`/`actingAs` remain the API test surface, already proven by Phase 2.7–2.9 tests (error envelope, `meta.request_id`, auth boundaries, health).
+- **Commands:** `composer test` (`php artisan config:clear && php artisan test`) for full suite, `php artisan test --filter=...` / `php artisan test tests/Feature/...` for focused execution; both return non-zero on failure (verified with an intentional failing test). No CI, E2E, or frontend test tooling introduced.
+- **Quality:** Tests are formatted with Pint and clean at PHPStan level 5 (which includes `tests/`).
+
+**Reason:** Provides a single, conventional, isolated test foundation that later phases can extend for unit, feature, security, and regression tests without recreating infrastructure.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`phpunit.xml` (unchanged), `tests/` (existing), `tests/TestCase.php` (unchanged), `composer.json` (`test` script preserved)), `docs/decisions.md`
+
+---
+

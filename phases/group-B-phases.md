@@ -1,24 +1,23 @@
 # Group B phases instructions
 
-# Phase 2.10 — Coding Standards and Static Analysis
+# Phase 2.11 — Test Framework Setup
 
 ## Objective
 
-Establish and enforce the Laravel backend coding-quality baseline.
+Establish the Laravel backend's test-framework foundation so future phases can add unit, API/feature, security, domain, integration, and regression tests consistently.
 
-This phase must provide:
+This phase must establish:
 
-* consistent PHP code formatting
-* a defined coding standard for the repository
-* static analysis for PHP code
-* repeatable local quality commands
-* configuration that is compatible with the current Laravel application
-* documentation of the quality commands and scope
-* a clean baseline for later testing and CI phases
+* the project's supported test framework
+* test configuration
+* test directory conventions
+* test environment configuration
+* base test helpers/fixtures only where genuinely reusable
+* reliable local test execution
+* clear commands for running the full suite and focused tests
+* a clean foundation for later domain/API test development
 
-The goal is not to "fix everything imaginable" or redesign the codebase.
-
-Keep the implementation small, dependency-aware, and appropriate for the current project size.
+Do not implement the project's comprehensive business test suite in this phase.
 
 ---
 
@@ -34,19 +33,23 @@ Phase 2.8 established logging.
 
 Phase 2.9 established the health/status endpoint.
 
+Phase 2.10 established coding standards and static analysis.
+
 Now implement:
 
-**Phase 2.10 — Coding standards and static analysis**
+**Phase 2.11 — Test Framework Setup**
 
-The roadmap places Phase 2.11 immediately afterward for test-framework setup and Phase 2.12 for CI.
+Phase 2.12 will establish CI.
 
-Do not implement those later phases here.
+Do not implement Phase 2.12 in this phase.
+
+The roadmap explicitly requires the project to proceed one micro-phase at a time.
 
 ---
 
 # 2. Authoritative Sources
 
-Before modifying the repository, read the current versions of:
+Before modifying the repository, read:
 
 1. `AGENTS.md`
 2. `docs/api/api-contract.md`
@@ -54,725 +57,1058 @@ Before modifying the repository, read the current versions of:
 4. `docs/api/api-conventions.md`
 5. `docs/domain/business-rules.md`
 
-Also inspect the current backend:
+Also inspect the actual Laravel repository:
 
 * `composer.json`
-* existing `composer.lock`
-* Laravel configuration
-* existing scripts/commands
-* current PHP version requirement
-* existing formatting/linting/static-analysis configuration, if any
-* current tests and test configuration
+* `composer.lock`
+* existing test files
+* `phpunit.xml` if present
+* `tests/`
+* existing test helpers
+* existing test bootstrap
+* `.env.example`
+* test environment configuration
+* any existing Composer test scripts
+* Phase 2.7 exception/error tests
+* Phase 2.8 logging tests
+* Phase 2.9 health endpoint tests
+* Phase 2.10 quality scripts
 
-Do not assume the repository has the exact tools or versions you expect.
+Do not assume the repository is still in its default Laravel state.
 
 ---
 
-# 3. Source-of-Truth Rule
+# 3. Inspect Before Installing
 
-The project explicitly requires:
+First determine whether a test framework already exists.
+
+Check for:
+
+```text
+PHPUnit
+Pest
+phpunit.xml
+pest.php
+tests/
+```
+
+and existing Composer scripts.
+
+If a working test framework already exists:
+
+* reuse it
+* do not replace it
+* improve only what is necessary for this phase
+
+If no usable framework exists, introduce the smallest mature framework appropriate for the existing Laravel/PHP version.
+
+Do not install multiple competing test frameworks.
+
+---
+
+# 4. Framework Selection
+
+The uploaded project documents require a testing capability but do not mandate PHPUnit or Pest specifically.
+
+Therefore:
+
+* do not claim that a particular framework is required by `AGENTS.md`
+* prefer the framework already used by the repository
+* if choosing a new framework, choose one that integrates cleanly with Laravel
+* keep the choice conventional and maintainable
+* avoid experimental or overly specialized testing frameworks
+
+Do not add additional test libraries merely because they might be useful someday.
+
+---
+
+# 5. Composer Dependency Management
+
+If a testing dependency must be added:
+
+* use Composer
+* choose a version compatible with the current PHP/Laravel version
+* update `composer.lock`
+* do not modify unrelated runtime dependencies
+* do not commit vendor code
+* do not upgrade Laravel or PHP merely to obtain a newer testing tool
+
+Only change dependencies required for the test framework.
+
+---
+
+# 6. Test Environment
+
+Create or standardize an isolated test environment.
+
+Tests must not depend on developer production configuration.
+
+Do not use production credentials.
+
+Do not use real payment credentials.
+
+Do not connect tests to a production database.
+
+The project defines separate LOCAL, STAGING, and PRODUCTION environments and prohibits production secrets in local development.
+
+---
+
+# 7. Test Database Strategy
+
+Establish the mechanism future backend tests will use for database-backed testing.
+
+At this stage there may be no domain tables yet.
+
+Therefore:
+
+* make the test database configuration ready
+* do not create future domain migrations solely for tests
+* do not create test-only business tables
+* do not invent fixtures for entities that do not yet exist
+
+The database/domain schemas begin in Group C.
+
+The test framework should be ready to execute migration-based tests once those schemas exist.
+
+---
+
+# 8. Database Isolation
+
+Future database tests must not contaminate each other.
+
+Establish the test infrastructure so tests can use appropriate isolation mechanisms such as the Laravel-supported transaction or refresh strategy when database-backed tests are introduced.
+
+Use the simplest correct mechanism compatible with the current application.
+
+Do not invent a custom database-reset framework.
+
+Do not optimize database testing before the domain schema exists.
+
+---
+
+# 9. Test Directory Structure
+
+Use a clear structure consistent with Laravel and the project's current repository.
+
+At minimum, distinguish:
+
+```text
+tests/
+    Unit/
+    Feature/
+```
+
+Use additional directories only when they are genuinely needed later.
+
+A reasonable conceptual separation is:
+
+### Unit
+
+Pure logic with minimal framework/database dependencies.
+
+Examples later:
+
+* calculations
+* state transition validation
+* delivery-fee calculations
+* value objects
+
+### Feature
+
+HTTP/API and application-integration behavior.
+
+Examples later:
+
+* authentication
+* catalog endpoints
+* cart
+* checkout
+* orders
+* requests
+* enquiries
+* authorization
+
+Do not build all of those now.
+
+---
+
+# 10. Test Naming
+
+Establish predictable test naming.
+
+Use descriptive test names that explain behavior rather than implementation.
+
+Prefer:
+
+```text
+customer_cannot_cancel_order_after_cancellation_window
+```
+
+over:
+
+```text
+testCancelMethod2
+```
+
+Test names should make failures understandable without opening the implementation.
+
+---
+
+# 11. Test Organization
+
+Keep tests cohesive.
+
+One test should have a clear behavioral purpose.
+
+Avoid giant test classes containing unrelated domains.
+
+Avoid deeply nested helper hierarchies.
+
+Avoid generic fixtures that exist only to shorten a few tests.
+
+Follow the same project code-quality principles applied to production code:
 
 * small cohesive modules
 * explicit naming
 * single responsibility
-* type safety
-* dependency injection where useful
-* small services/actions instead of huge controllers
-* centralized validation
-* centralized API clients
-* consistent error handling
-* formatting/linting/static analysis
-
-It explicitly warns against:
-
-* giant controllers
-* giant components
-* copy-pasted business rules
-* magic strings scattered throughout the code
-* database queries embedded everywhere
-* premature microservices
-* premature generic abstractions
-* overengineering for hypothetical future features.
-
-Treat these as repository engineering rules.
-
-Do not replace them with a generic framework-specific style guide that conflicts with the project.
+* avoid premature abstraction.
 
 ---
 
-# 4. Inspect Before Installing
+# 12. Base Test Class
 
-Before adding any new quality tool:
+If the framework/repository requires a common application test base, establish one.
 
-1. inspect `composer.json`
-2. inspect `composer.lock`
-3. search for existing formatter/linter/static-analysis configuration
-4. inspect existing scripts in `composer.json`
-5. inspect any existing developer documentation
-6. determine the PHP version actually supported by the project
-7. determine whether a formatter or analyzer is already installed
+Keep it minimal.
 
-If the repository already has a suitable tool, reuse it.
+It may provide common application bootstrap behavior required by Laravel.
 
-Do not install a duplicate formatter, analyzer, or overlapping tool.
+Do not turn the base class into a giant collection of domain helpers.
 
----
-
-# 5. Tool Selection
-
-The uploaded project sources require the **capability** of formatting, linting, and static analysis, but they do not prescribe specific tools.
-
-Therefore:
-
-* do not claim that a particular tool is mandated by `AGENTS.md`
-* choose the smallest mature tooling set compatible with the existing Laravel/PHP project
-* prefer tools already present in the repository
-* if no formatter exists, a Laravel/PHP-compatible formatter may be introduced
-* if no static analyzer exists, introduce one appropriate to the repository's PHP version and current architecture
-
-A reasonable implementation may use the Laravel/PHP ecosystem's standard tools, but the final choice must be based on the repository rather than assumption.
-
-Do not introduce multiple overlapping static-analysis products.
-
----
-
-# 6. Formatting Standard
-
-Establish one canonical PHP formatting standard.
-
-The formatter must be:
-
-* deterministic
-* runnable locally
-* suitable for the Laravel codebase
-* able to check or format PHP source consistently
-* configured in version-controlled project configuration
-
-The project should not depend on each developer's IDE formatting preferences.
-
----
-
-# 7. Formatting Scope
-
-Apply formatting standards to source files that belong to the Laravel backend.
-
-Include appropriate PHP code such as:
+Avoid methods such as:
 
 ```text
-app/
-bootstrap/ where applicable
-config/
-routes/
-database/
-tests/ if tests already exist
+createCustomer()
+createPaidOrder()
+createDeliveryOrder()
+createInventory()
+createStaff()
+createAdmin()
 ```
 
-Exclude generated/vendor content.
+when those domain entities do not yet exist.
 
-Do not format:
-
-* `vendor/`
-* framework-generated external files
-* binary files
-* environment files
-* secrets
-* generated artifacts that should not be manually changed
-
-Follow the actual repository layout rather than blindly applying these exact directories.
+Future domain-specific helpers should be introduced with the corresponding domain phase.
 
 ---
 
-# 8. Formatting Policy
+# 13. HTTP Testing Foundation
 
-The formatter must become the canonical mechanism.
+Prepare the framework for future API/feature tests.
 
-Do not maintain multiple conflicting formatting rules such as:
+The project API uses:
 
 ```text
-IDE-specific formatting
-+
-manual formatting convention
-+
-formatter with different output
+/api/v1
 ```
 
-The repository should have one source of truth.
+and the frozen API architecture requires consistent response/error behavior.
 
-The formatting command must be documented and reproducible.
+The test infrastructure should make it easy for later tests to verify:
 
----
+* HTTP method
+* path
+* status
+* JSON body
+* headers
+* request ID
+* authentication behavior
+* authorization behavior
+* validation behavior
 
-# 9. Existing Code Cleanup
-
-When introducing the formatter:
-
-* inspect the current codebase
-* format existing project code where necessary
-* avoid unrelated functional refactoring
-* avoid changing business behavior
-* avoid changing API behavior
-* avoid changing database behavior
-
-Formatting-only changes are acceptable when required to establish the baseline.
-
-Do not use the formatting pass as an excuse to rewrite the architecture.
+Do not implement comprehensive endpoint tests now.
 
 ---
 
-# 10. Static Analysis
+# 14. API Test Assertions
 
-Introduce a PHP static-analysis baseline appropriate to the current project.
+Do not create a custom assertion layer unless repeated real needs justify it.
 
-The analyzer should detect issues such as:
+Laravel's existing JSON/HTTP testing facilities should be preferred.
 
-* invalid types
-* incompatible method signatures
-* impossible/nullability assumptions
-* unreachable or inconsistent code where supported
-* incorrect property/method usage
-* invalid return types
-* invalid parameter types
-* obvious API misuse
-* incorrect collection/value assumptions where detectable
-
-Static analysis should run against project code, not third-party vendor code.
-
----
-
-# 11. Analysis Scope
-
-Start with the application code actually controlled by this repository.
-
-Do not analyze external vendor internals unless the chosen tool explicitly supports this safely and there is a demonstrated need.
-
-The initial scope should normally include:
+Future API tests must be able to verify the frozen contract, including:
 
 ```text
-app/
-routes/ where analyzable
-config/ where analyzable
-database/ application PHP files where applicable
-tests/ if present
+data
+errors
+meta
+meta.request_id
+field
+details
+HTTP status
 ```
 
-Adapt to the repository structure.
+The frozen API contract requires consistent `errors` envelopes and request correlation.
 
-Do not include generated/vendor code merely to increase the reported issue count.
-
----
-
-# 12. Analysis Level
-
-Do not start with an unrealistically strict analysis level that forces hundreds of unrelated suppressions.
-
-Establish the strongest useful baseline that the current foundation can reasonably satisfy.
-
-Prioritize:
-
-1. correctness
-2. type safety
-3. meaningful defects
-4. maintainability
-5. gradual tightening later
-
-Do not create a configuration whose primary effect is to silence the analyzer.
+Do not duplicate the entire API contract into test helper code.
 
 ---
 
-# 13. Baseline Errors
+# 15. Phase 2.7 Error Tests
 
-The initial repository may contain issues discovered by static analysis.
+Ensure the existing Phase 2.7 error-handling tests execute under the standardized test framework.
 
-Handle them deliberately.
+Where useful, add a small foundational test set covering:
 
-For every existing finding:
+* error envelope
+* HTTP status mapping
+* request ID presence
+* unexpected exception sanitization
+* validation error representation
 
-* fix it when the fix is small and unambiguous
-* avoid changing behavior solely to satisfy an analyzer when the intended behavior is unclear
-* do not blanket-ignore the entire project
-* do not add broad suppression rules without justification
-* do not create fake types solely to trick the analyzer
-
-If a specific existing issue cannot reasonably be fixed during Phase 2.10, keep the suppression narrow and document the reason.
-
-Prefer reducing the baseline rather than hiding it.
+Do not expand this into the full application error matrix.
 
 ---
 
-# 14. No Business Logic Refactoring
+# 16. Phase 2.8 Logging Tests
 
-Do not use static-analysis findings as a reason to implement future domain architecture.
+Ensure the Phase 2.8 logging tests execute correctly.
 
-Do not introduce:
+At minimum preserve the ability to test:
 
-* domain services that do not yet have a business requirement
-* repositories solely for static-analysis aesthetics
-* interfaces with only one trivial implementation
-* generic result wrappers
-* generic exception hierarchies
-* complex dependency-injection containers
-* abstract factories without a real use case
+* request correlation
+* unexpected-exception logging
+* sensitive-data exclusions
 
-The project explicitly discourages premature generic abstractions and overengineering.
+Do not add comprehensive operational logging tests for future payment/webhook/queue systems.
 
 ---
 
-# 15. Type-Safety Standard
+# 17. Phase 2.9 Health Tests
 
-Use explicit PHP types wherever appropriate.
+Ensure the Phase 2.9 health endpoint has a focused test suite.
+
+At minimum verify:
+
+```text
+GET /health
+→ expected success
+```
+
+and appropriate method/authentication behavior.
+
+Do not add readiness or infrastructure tests that do not exist in the implementation.
+
+---
+
+# 18. Test Configuration
+
+Establish version-controlled test configuration.
+
+Configure:
+
+* application environment
+* test bootstrap
+* test discovery
+* test directories
+* appropriate output
+* appropriate failure behavior
+
+Do not place developer-specific configuration in the test framework.
+
+Do not commit secrets in test configuration.
+
+---
+
+# 19. Environment Variables
+
+Tests must use safe test values.
+
+Use existing configuration infrastructure where possible.
+
+Do not hard-code production-like credentials.
+
+Do not add fake payment credentials that resemble real production secrets.
+
+Use clearly non-production test configuration.
+
+---
+
+# 20. Time Handling Foundation
+
+Future business rules rely on backend-controlled time, including the 20-minute order-cancellation window.
+
+The test infrastructure should make deterministic time testing possible using the Laravel/framework facilities already available.
+
+Do not introduce a custom time abstraction solely for testing.
+
+Do not implement cancellation behavior now.
+
+The frozen API/domain conventions require the cancellation window to use backend time rather than client-supplied timestamps. This test foundation must eventually support deterministic verification of that rule.
+
+---
+
+# 21. Randomness and IDs
+
+Do not make foundational tests depend on unpredictable values unless randomness itself is under test.
+
+Where the framework already provides deterministic/fake mechanisms, use them appropriately.
+
+Do not create a custom global ID generator for testing.
+
+Do not hard-code assumptions about future opaque IDs or order references beyond what is already defined by the contract.
+
+---
+
+# 22. External Services
+
+The test framework must default to isolated tests.
+
+Do not allow ordinary test runs to call:
+
+* payment providers
+* email providers
+* SMS providers
+* third-party APIs
+* real webhooks
+* production storage
+* external monitoring
+
+External integration tests can be introduced deliberately in later phases.
+
+---
+
+# 23. File/System Isolation
+
+Prepare the test environment so future tests can safely use temporary storage where needed.
+
+Do not create permanent test files in production/application storage.
+
+Do not allow test execution to modify developer data unexpectedly.
+
+Do not build a custom file-testing framework before attachment/upload functionality exists.
+
+---
+
+# 24. Queue Isolation
+
+Do not introduce queue infrastructure.
+
+If current application code already references queues, configure tests so ordinary tests do not unintentionally dispatch real asynchronous work.
+
+Use the framework's standard fake/synchronous testing mechanisms where already applicable.
+
+Future queue behavior belongs to later phases.
+
+---
+
+# 25. Mail/Notification Isolation
+
+Do not implement notification functionality.
+
+If the current framework/application already has mail/notification hooks, ensure tests can safely fake or suppress external delivery.
+
+Do not send real emails during ordinary test execution.
+
+Actual notification features belong to later phases.
+
+---
+
+# 26. Authentication Test Preparation
+
+Authentication is not implemented yet.
+
+Therefore do not implement *additional* product-level authentication fixtures:
+
+* token factories
+* login helpers (beyond framework `actingAs`)
+* role helpers for future domain roles
+* customer/admin identity builders for future business entities
+
+The skeleton `UserFactory` and existing framework-level authentication boundary tests that use Laravel's `actingAs` (as proven in Phase 2.7–2.9 for `401`/`403` via `tests/Feature/ApiErrorHandlingTest` and `ApiRoutingSmokeTest`) **remain and continue to run**. Only new product-level fixtures for future domain authentication are deferred.
+
+When authentication is implemented later, the test framework should support authenticated-request testing through the framework's standard facilities.
+
+---
+
+# 27. Authorization Test Preparation
+
+Do not implement authorization policies in Phase 2.11.
+
+Only ensure the test architecture is capable of later testing:
+
+```text
+CUSTOMER
+STAFF
+ADMIN
+```
+
+ownership and permissions when those capabilities are introduced.
+
+Do not invent fake authorization infrastructure solely for tests.
+
+---
+
+# 28. Factories and Seeders
+
+Do not create comprehensive model factories yet.
+
+The database/domain model begins in Group C.
+
+Create factories only for models that already exist and actually need them for current tests.
+
+Do not generate speculative factories for:
+
+```text
+Product
+Order
+Payment
+Delivery
+Inventory
+FurnitureRequest
+Enquiry
+Notification
+```
+
+if those models do not yet exist.
+
+Likewise, do not create domain seeders merely to make the test suite look complete.
+
+---
+
+# 29. Fixtures
+
+Prefer small, local fixtures over a giant global fixture system.
+
+When future tests need representative payloads, introduce them in the relevant domain/API phase.
+
+Do not create hundreds of fixture records now.
+
+---
+
+# 30. Test Data Security
+
+Do not put sensitive information into committed test fixtures.
+
+Never commit:
+
+* real passwords
+* API keys
+* tokens
+* production customer data
+* real payment credentials
+* real personal addresses
+* real phone numbers where unnecessary
+
+Use clearly synthetic test data.
+
+The project security baseline prohibits committing secrets and production credentials.
+
+---
+
+# 31. Assertion Quality
+
+Tests should verify observable behavior rather than private implementation details.
 
 Prefer:
 
-```php
-public function handle(Request $request): Response
+```text
+HTTP 422
+error code INVALID_VALUE
+field fulfillment_type
 ```
 
-over untyped signatures when the actual type is known.
-
-Use:
-
-* parameter types
-* return types
-* typed properties
-* nullable types where required
-* appropriate union/intersection types when actually needed
-* precise collection/value documentation where native PHP types are insufficient
-
-Do not add artificial typing that misrepresents runtime behavior.
-
----
-
-# 16. Nullability
-
-Respect the actual application contract.
-
-Do not suppress nullability warnings simply because the analyzer complains.
-
-Instead determine:
-
-* whether a value can actually be null
-* where it is guaranteed to exist
-* whether the code should check it
-* whether the type declaration is wrong
-
-Do not weaken types to `mixed` as a shortcut.
-
----
-
-# 17. `mixed` and Loose Typing
-
-Avoid unnecessary:
-
-```php
-mixed
-```
-
-and broad array shapes where a more precise type is practical.
-
-Do not use:
-
-```php
-array<string, mixed>
-```
-
-as the default solution for everything.
-
-However, do not create complicated custom types simply to avoid a small amount of `mixed`.
-
-Favor clear, maintainable typing.
-
----
-
-# 18. Request Validation Boundary
-
-Preserve the project rule that strict request validation uses:
+over:
 
 ```text
-Request
-→ FormRequest/schema validation
-→ validated()
-→ explicit allow-list
-→ DTO/Command
-→ application/domain logic
-→ persistence
+validator class contains rule X
 ```
 
-Never weaken this architecture to satisfy static analysis.
+when testing API behavior.
 
-In particular, do not introduce patterns such as:
+Prefer state/business outcomes over internal method-call counts unless interaction testing is specifically justified.
+
+Do not over-specify implementation details that would make harmless refactoring break tests.
+
+---
+
+# 32. Test the Contract, Not the English Message
+
+For API error tests, assert:
+
+```text
+code
+field
+details
+HTTP status
+meta.request_id
+```
+
+rather than relying primarily on exact English messages.
+
+The frozen API conventions define the machine-readable code as the stable client contract and the message as human-readable text.
+
+Messages may evolve without necessarily changing the contract.
+
+---
+
+# 33. Closed Enums
+
+Future tests must treat V1 enums as closed.
+
+The test foundation must not encourage assertions like:
+
+```text
+status is any string
+```
+
+Later tests should verify exact documented enum values.
+
+The V1 API conventions explicitly define closed enums and require exact documented values.
+
+Do not introduce new enum values during this phase.
+
+---
+
+# 34. Strict Request Validation
+
+Future API tests must be capable of verifying the strict-request policy.
+
+In particular:
+
+* unknown fields are rejected where required
+* `additionalProperties: false` semantics are preserved
+* server-controlled fields cannot be submitted
+* `validated()` data flows through controlled boundaries
+
+Do not create test helpers that encourage unrestricted payload construction through:
 
 ```php
-$model->fill($request->all());
+$request->all()
 ```
 
-or generic request-to-model helpers.
+or equivalent.
 
-The frozen API conventions explicitly require validated input → DTO/command → domain and prohibit unrestricted `$request->all()` mass assignment.
+The existing contract explicitly rejects unknown fields for strict operations and prohibits unrestricted mass assignment.
 
 ---
 
-# 19. `additionalProperties: false`
+# 35. Test Isolation from API Contract Changes
 
-Static-analysis and code-quality work must not undermine the frozen strict-request contract.
+Do not encode an unofficial second version of the API in tests.
 
-Future endpoint validation must remain capable of rejecting unknown fields.
+Tests should reference the frozen contract through:
 
-Do not add helper methods whose purpose is effectively:
+* actual route definitions
+* actual response behavior
+* authoritative constants/enums where they already exist
+
+Do not duplicate every API schema as manually maintained test metadata.
+
+That creates two sources of truth.
+
+---
+
+# 36. Static Analysis Compatibility
+
+The new tests must be compatible with the Phase 2.10 static-analysis baseline.
+
+Run static analysis against test code if the chosen project configuration includes tests.
+
+Resolve genuine type issues rather than suppressing the analyzer broadly.
+
+Do not exclude the entire `tests/` directory simply because tests are difficult to type.
+
+---
+
+# 37. Formatting Compatibility
+
+Apply the Phase 2.10 formatting standard to test code.
+
+Tests are first-class project code.
+
+Do not maintain a separate test formatting style.
+
+---
+
+# 38. Test Commands
+
+Provide simple, documented commands for:
+
+### Full test suite
 
 ```text
-accept arbitrary request fields
+composer test
 ```
 
-Do not convert strict payloads into generic untyped arrays merely because it is convenient.
+or the repository's equivalent.
 
----
+### Focused test execution
 
-# 20. API Contract Stability
-
-Static-analysis changes must not alter the external Version 1 API contract.
-
-Do not:
-
-* rename routes
-* rename response fields
-* change error codes
-* change HTTP status mappings
-* change enum values
-* change authentication behavior
-* change authorization behavior
-* change business-state transitions
-* change financial semantics
-
-The Version 1 API is frozen.
-
-If a quality fix appears to require an external API change, do not silently make it.
-
-Stop at that point and preserve the contract.
-
----
-
-# 21. Laravel-Specific Dynamic Behavior
-
-Laravel can contain framework-managed or dynamically resolved behavior that static analyzers cannot fully infer.
-
-Handle such areas carefully.
-
-Do not silence all framework-related diagnostics globally.
-
-Use narrow, justified configuration or annotations only where necessary.
-
-Prefer correct type declarations and explicit code over broad analyzer suppression.
-
----
-
-# 22. Configuration Quality
-
-Place tool configuration in appropriate project-managed configuration files.
-
-Do not hard-code developer-specific paths.
-
-Do not include:
-
-* local usernames
-* absolute machine paths
-* secrets
-* machine-specific environment assumptions
-
-The configuration must work across developer environments.
-
----
-
-# 23. Composer Integration
-
-Add convenient Composer scripts where appropriate so developers can run the quality checks consistently.
-
-A practical structure may be:
+The framework's standard mechanism should make it possible to run:
 
 ```text
-composer format
-composer format:check
-composer analyse
+one test file
+one test class
+one named test
 ```
 
-Exact script names are flexible.
-
-The important requirement is that the commands are:
-
-* predictable
-* documented
-* repeatable
-* consistent across developers
-
-Do not create a large command abstraction.
+Do not create a complicated custom CLI wrapper unless genuinely necessary.
 
 ---
 
-# 24. Check vs Fix
+# 39. Composer Integration
 
-Where the chosen formatter supports both operations, expose both concepts:
+Where appropriate, add a Composer script for the normal test suite.
+
+For example:
 
 ```text
-format
-format:check
+composer test
 ```
 
-The check command must fail when source formatting does not match the configured standard.
+The exact command may differ according to the chosen framework.
 
-This provides the foundation for the later automated quality gate.
+The important requirement is consistency.
 
-Do not implement the CI pipeline yet.
+The command must return:
+
+* success when tests pass
+* failure when tests fail
+
+Do not hide failures with constructs such as:
+
+```bash
+test-command || true
+```
+
+The later CI phase depends on meaningful exit status.
 
 ---
 
-# 25. Static Analysis Exit Status
+# 40. Test Output
 
-The static-analysis command must return a failing process status when configured analysis failures remain.
+Configure normal test execution to provide useful failure information without excessive noise.
 
-Do not configure it so that the command always succeeds.
+The default developer command should make failures easy to diagnose.
+
+Do not customize output excessively.
+
+Do not suppress failed-test details simply to make logs shorter.
+
+---
+
+# 41. Test Bootstrap
+
+Keep test bootstrap code minimal.
+
+It should establish only what all tests genuinely need.
+
+Avoid putting application-specific business setup into the global bootstrap.
+
+Do not initialize:
+
+* product fixtures
+* customer records
+* orders
+* payments
+* inventory
+* external services
+
+globally.
+
+Future test suites should control their own fixtures.
+
+---
+
+# 42. Parallel Testing
+
+Do not make parallel testing a mandatory requirement in this phase.
+
+If the existing Laravel/test framework supports parallel execution naturally, ensure the test configuration does not prevent it.
+
+Do not optimize for parallel execution before there is a meaningful test suite.
+
+Avoid introducing complexity that is not currently needed.
+
+---
+
+# 43. Coverage
+
+Do not introduce an aggressive mandatory coverage threshold in this phase.
+
+There is not yet a sufficiently developed business/domain test suite to justify an arbitrary percentage.
+
+The test framework should be compatible with coverage reporting where supported.
+
+Later quality phases can establish meaningful coverage expectations based on actual critical workflows.
+
+Do not manipulate coverage by excluding production code merely to achieve a target.
+
+---
+
+# 44. Regression Test Foundation
+
+Make it easy to add a regression test whenever a production bug is fixed.
+
+The AGENTS testing strategy explicitly requires regression tests when production bugs are corrected.
+
+Do not build a separate regression framework.
+
+Normal tests should serve this purpose.
+
+---
+
+# 45. Security Test Foundation
+
+Ensure the test setup can later support security-focused API tests.
+
+Future tests must be able to verify:
+
+* authentication boundaries
+* authorization boundaries
+* IDOR protection
+* 404 masking
+* rate limiting
+* CSRF behavior where applicable
+* CORS behavior where applicable
+* strict input validation
+* sensitive-data protection
+* mass-assignment protection
+
+Do not implement those business/security systems now.
+
+Only make the test infrastructure capable of testing them.
+
+---
+
+# 46. Logging Test Safety
+
+Tests must not accidentally emit sensitive logs into persistent development logs.
+
+Where logging is tested:
+
+* use isolated test configuration
+* use controlled log destinations/fakes where appropriate
+* assert sensitive values are absent
+* avoid printing credentials to test output
+
+This is especially important because Phase 2.8 established sensitive-data logging restrictions.
+
+---
+
+# 47. HTTP Error Compatibility
+
+Keep the test foundation compatible with the frozen error architecture.
+
+Future tests must be able to verify the canonical relationships:
+
+```text
+400 → INVALID_JSON
+401 → AUTHENTICATION_REQUIRED
+403 → FORBIDDEN
+404 → RESOURCE_NOT_FOUND
+409 → CONFLICT
+413 → REQUEST_TOO_LARGE
+415 → UNSUPPORTED_MEDIA_TYPE
+422 → validation/business error
+429 → RATE_LIMITED + Retry-After
+500 → INTERNAL_SERVER_ERROR
+502/503/504 → external-service family
+```
+
+Do not add new error mappings merely to simplify tests.
+
+---
+
+# 48. Rate-Limit Test Preparation
+
+Do not implement rate limiting yet.
+
+However, the test infrastructure should later allow headers to be asserted, especially:
+
+```text
+Retry-After
+```
+
+for `429 RATE_LIMITED`.
+
+Do not create fake rate-limit middleware merely for this phase.
+
+The frozen API contract requires standard `Retry-After` behavior.
+
+---
+
+# 49. Request ID Test Preparation
+
+Tests must be capable of checking that:
+
+```text
+API error meta.request_id
+==
+server-side request correlation identifier
+```
+
+where the logging test infrastructure permits this without depending on production logging.
+
+Do not create a second request-ID mechanism specifically for tests.
+
+---
+
+# 50. Test Naming and Comments
+
+Keep test-code comments to the absolute minimum.
+
+Do not comment obvious Arrange/Act/Assert sections mechanically.
 
 Avoid:
 
-```bash
-static-analyzer || true
-```
-
-or equivalent "success regardless of failure" wrappers.
-
-The future CI phase depends on meaningful exit codes.
-
----
-
-# 26. Local Developer Workflow
-
-Document the intended local workflow:
-
-```text
-format
-→ format check
-→ static analysis
-→ later tests
-```
-
-The CI phase will eventually combine these into an automated quality gate.
-
-Do not implement that automation yet.
-
-The AGENTS quality philosophy explicitly anticipates a later automated sequence involving format, lint, static analysis, tests, and build.
-
----
-
-# 27. Linting
-
-The project requires formatting/linting/static analysis as part of code quality.
-
-Where the chosen formatter provides the project's necessary style enforcement, do not install a redundant second linter merely to create another command.
-
-If an actual linting gap exists that the formatter and static analyzer do not cover, introduce only the smallest additional linting tool that provides meaningful value.
-
-Do not create overlapping tools with duplicate diagnostics.
-
----
-
-# 28. Code Comments
-
-Keep code comments to the absolute minimum.
-
-Do not add comments merely to explain obvious code.
-
-Avoid:
-
 ```php
-// Check if the user exists
-if ($user !== null) {
+// Arrange
+// Act
+// Assert
 ```
 
-Prefer clear naming and simple control flow.
+unless the test is genuinely difficult to follow without them.
 
-Comments are justified only when explaining a genuinely non-obvious:
+Prefer clear test names and straightforward structure.
 
-* security constraint
-* framework workaround
-* static-analysis limitation
-* compatibility requirement
-* operational constraint
-
-Do not add long explanatory comments to satisfy documentation expectations.
-
-The source documentation should carry architectural explanation.
+A comment is justified only for a non-obvious testing constraint, framework workaround, or security requirement.
 
 ---
 
-# 29. Documentation
+# 51. Documentation
 
-Update developer documentation only as needed.
+Document the minimum developer workflow.
 
-At minimum document:
-
-* formatting command
-* formatting check command
-* static-analysis command
-* where tool configuration lives
-* any intentionally narrow suppression that future developers should understand
-
-Do not create a large coding-style manual if the tool configuration already expresses the standard.
-
-Do not create a second API or architecture specification.
-
----
-
-# 30. Security
-
-Static-analysis and formatting tools must not introduce security problems.
-
-Never place into tool configuration:
-
-* passwords
-* tokens
-* API keys
-* payment credentials
-* production secrets
-* database credentials
-
-Do not log tool environment variables.
-
-Do not run analyzers with commands that dump secret-bearing environment configuration.
-
-The project prohibits committing secrets, tokens, and production credentials to source control.
-
----
-
-# 31. Dependency Management
-
-When adding quality tools:
-
-* use Composer-managed dependencies
-* select versions compatible with the current PHP/Laravel constraints
-* update `composer.lock` consistently
-* do not manually copy tool binaries into the repository
-* do not commit vendor code
-
-Do not upgrade unrelated application dependencies simply because a quality tool has a newer ecosystem version.
-
-Only change the dependency set necessary for this phase.
-
----
-
-# 32. Generated Files
-
-Do not commit generated cache files or machine-local artifacts created by quality tools unless the repository already intentionally tracks them.
-
-Do not add:
+At minimum specify:
 
 ```text
-.idea/
-.vscode/
-.phpunit.result.cache
-vendor/
-machine-local caches
+composer test
 ```
 
-merely because a tool generated them.
+or the actual repository equivalent.
 
-Respect existing `.gitignore` conventions.
+Also document:
 
----
+* how to run a focused test
+* where tests live
+* how the test environment is configured
+* any important database isolation requirement
 
-# 33. Quality Baseline for New Code
-
-After Phase 2.10, new backend code should be expected to satisfy:
-
-* formatter
-* formatting check
-* static analysis
-* project naming conventions
-* type-safety expectations
-* existing architecture boundaries
-
-Do not treat static analysis as an optional developer preference.
-
-It becomes part of the backend development baseline.
+Do not create a large testing manual.
 
 ---
 
-# 34. Scope of Refactoring
+# 52. No CI
 
-Allow only small corrective refactors needed to make the foundation pass the quality baseline.
+Do not implement:
 
-Examples:
+* GitHub Actions
+* GitLab CI
+* Bitbucket pipelines
+* Jenkins
+* deployment checks
+* branch protections
+* CI quality gates
 
-* adding a missing return type
-* fixing an obvious nullable assumption
-* correcting an invalid parameter type
-* removing dead imports
-* replacing obviously unsafe loose typing
-* fixing straightforward analyzer findings
+Phase 2.12 owns CI.
 
-Do not undertake broad application restructuring.
-
----
-
-# 35. Testing Relationship
-
-Phase 2.11 owns the dedicated test-framework setup.
-
-However, existing tests must not be broken by the quality work.
-
-Run whatever current test command is already available.
-
-Do not:
-
-* establish a new test framework
-* redesign testing architecture
-* add comprehensive domain tests
-* add integration suites for future business modules
-
-Those belong to later phases.
+The repository's roadmap explicitly separates test-framework setup from CI baseline.
 
 ---
 
-# 36. Health Endpoint Compatibility
+# 53. No Comprehensive Business Tests
 
-Do not use Phase 2.10 as an opportunity to redesign `/health`.
+Do not implement the future test matrix yet.
 
-Only make formatting/type corrections needed for the existing Phase 2.9 implementation.
+The project eventually needs tests for areas such as:
 
-Do not add:
+```text
+invalid product type
+insufficient stock
+invalid variant
+missing delivery information
+invalid enum
+unknown field
+unauthorized order
+expired cancellation window
+invalid transition
+duplicate checkout
+```
 
-* readiness framework
-* dependency health checks
-* monitoring
-* metrics
-* health storage
+but those belong alongside the corresponding business/domain implementations.
 
----
+The API conventions explicitly require such business rules to have backend/domain-level tests eventually.
 
-# 37. Error/Logging Compatibility
-
-Do not redesign Phase 2.7 or Phase 2.8.
-
-Static analysis must preserve:
-
-* centralized exception handling
-* frozen API error envelope
-* request correlation
-* safe logging
-* sensitive-data protections
-
-A static-analysis fix must not reintroduce raw exception responses or unsafe request logging.
+Do not create fake domain implementations just to test them now.
 
 ---
 
-# 38. Verification
+# 54. No Domain Factories
 
-At minimum, run:
+Do not implement factories for domain entities that have not yet been built.
+
+Group C will establish the database/domain model.
+
+The test framework should be ready for those factories later.
+
+---
+
+# 55. No Frontend Testing
+
+Do not configure:
+
+* Next.js testing
+* React testing
+* MUI component testing
+* Flutter tests
+* Dart analysis/testing
+
+This phase is Laravel backend test infrastructure only.
+
+---
+
+# 56. No E2E Framework
+
+Do not introduce:
+
+* Playwright
+* Cypress
+* browser automation
+* mobile device automation
+
+The project's end-to-end test strategy comes later in Quality Assurance.
+
+The current phase only establishes backend test-framework infrastructure.
+
+---
+
+# 57. No External Integration Test Infrastructure
+
+Do not introduce test environments for:
+
+* payment gateways
+* SMS providers
+* email providers
+* cloud object storage
+* third-party APIs
+
+Those integrations belong to later phases.
+
+---
+
+# 58. Verification
+
+Run the repository's test command after setup.
+
+At minimum:
 
 ```bash
-composer format
-composer format:check
-composer analyse
+composer test
 ```
 
-using the actual command names chosen for the repository.
+using the actual script name chosen for the project.
 
 Also run:
 
@@ -780,169 +1116,179 @@ Also run:
 php artisan test
 ```
 
-if the current project test setup supports it.
+when the repository uses Laravel's standard test entry point.
 
-If a formatter/check command is intentionally separated, execute both the write/fix and read-only verification paths.
+Run the Phase 2.7–2.9 focused tests and confirm they remain green.
 
-Verify all configured quality commands return meaningful exit statuses.
+Run the Phase 2.10 formatting/static-analysis commands as configured.
+
+Do not wait for CI to verify the work.
 
 ---
 
-# 39. Repository Inspection After Tooling
+# 59. Verification of Failure Behavior
 
-After running the tools, inspect the resulting change set.
+Intentionally verify that the test command fails when a test fails.
 
-Verify that the phase has not created:
+Do not merely confirm that the command exits successfully once.
 
-* generated junk
-* vendor changes
+The test process must have a meaningful non-zero exit status on failure.
+
+Similarly, verify focused test execution works.
+
+---
+
+# 60. Repository Inspection
+
+After setup, inspect the change set.
+
+Ensure it contains only:
+
+* test-framework dependencies
+* test configuration
+* necessary test directory/bootstrap changes
+* focused foundation tests
+* documentation required for local testing
+
+Do not leave behind:
+
+* generated reports
+* machine-local test artifacts
+* coverage files
 * IDE files
-* environment files
-* secrets
+* secret-bearing environment files
 * unrelated dependency upgrades
-* unrelated application rewrites
-
-Only retain changes required for Phase 2.10.
 
 ---
 
-# 40. Static-Analysis Review
+# 61. Definition of Done
 
-Review the final analyzer configuration for:
+Phase 2.11 is complete only when:
 
-* unnecessary suppressions
-* broad ignored directories
-* ignored error categories
-* dead configuration
-* duplicate configuration
-* machine-specific paths
-* PHP-version mismatch
-* framework-specific false-positive handling
-
-The final configuration should make genuine failures visible.
-
-Do not optimize the configuration merely to make the command green.
-
----
-
-# 41. Definition of Done
-
-Phase 2.10 is complete only when:
-
-1. The repository has one canonical formatting standard.
-2. Formatting can be applied through a documented command.
-3. Formatting can be checked without modifying files.
-4. Static analysis can be run through a documented command.
-5. Static analysis returns failure when configured errors remain.
-6. The selected tools are Composer-managed and compatible with the project.
-7. Existing application code has been brought to the agreed baseline where practical.
-8. New quality tooling does not alter the frozen API contract.
-9. Existing Phase 2.6–2.9 behavior remains intact.
-10. Sensitive configuration and credentials are not committed.
-11. Any analyzer suppressions are narrow and justified.
-12. Existing tests, where currently available, remain functional.
-13. Documentation identifies the local quality commands.
-14. New code comments remain minimal.
-15. The repository is ready for Phase 2.11 test-framework setup.
+1. A single supported backend test framework is established.
+2. The test framework runs successfully against the current Laravel application.
+3. The test environment is isolated from production.
+4. Test configuration is version-controlled.
+5. `tests/Unit` and `tests/Feature` conventions are established or preserved.
+6. A normal full-suite test command exists.
+7. Focused test execution works.
+8. Test failures produce non-zero exit status.
+9. Existing Phase 2.7–2.9 tests run successfully.
+10. The framework is ready for database-backed tests once Group C creates the domain schemas.
+11. No speculative factories, domain fixtures, or business implementations have been introduced.
+12. Static analysis and formatting remain compatible with the Phase 2.10 baseline.
+13. Test documentation is sufficient for another developer to run tests locally.
+14. New test code contains only the minimum necessary comments.
+15. The repository is ready for Phase 2.12 CI baseline.
 
 ---
 
-# 42. Review Checklist
+# 62. Review Checklist
 
 Before completion:
 
-* [ ] repository coding standard is defined
-* [ ] formatter is installed or existing formatter standardized
-* [ ] formatter configuration is version-controlled
-* [ ] formatter command works
-* [ ] formatting check works
-* [ ] static analyzer is installed or existing analyzer standardized
-* [ ] analyzer configuration is version-controlled
-* [ ] analyzer command works
-* [ ] analyzer has meaningful failure exit codes
-* [ ] analysis excludes vendor/generated code appropriately
-* [ ] analyzer suppressions are minimal
-* [ ] PHP types are improved where appropriate
-* [ ] no broad `mixed`/loose-typing workaround was introduced
-* [ ] no `$request->all()` mass-assignment path was introduced
-* [ ] `validated()` → DTO/command boundary remains intact
-* [ ] `additionalProperties: false` assumptions remain intact
-* [ ] API contract remains unchanged
-* [ ] Phase 2.7 error handling remains unchanged
-* [ ] Phase 2.8 logging remains unchanged
-* [ ] Phase 2.9 health endpoint remains unchanged except for necessary quality corrections
-* [ ] no test-framework redesign was introduced
-* [ ] no CI pipeline was introduced
-* [ ] no external monitoring tooling was introduced
+* [ ] existing test framework was inspected first
+* [ ] no duplicate test framework was introduced
+* [ ] selected framework is compatible with PHP/Laravel
+* [ ] Composer dependencies are appropriate
+* [ ] `composer.lock` is consistent
+* [ ] test environment is isolated
+* [ ] production credentials are not used
+* [ ] test database configuration is safe
+* [ ] `tests/Unit` exists or existing convention is preserved
+* [ ] `tests/Feature` exists or existing convention is preserved
+* [ ] common test bootstrap is minimal
+* [ ] no speculative domain factories were added
+* [ ] no speculative domain fixtures were added
+* [ ] HTTP/API tests can inspect status/body/headers
+* [ ] request ID testing is possible
+* [ ] error-envelope testing is possible
+* [ ] Phase 2.7 tests pass
+* [ ] Phase 2.8 tests pass
+* [ ] Phase 2.9 tests pass
+* [ ] full test command succeeds
+* [ ] focused test execution succeeds
+* [ ] intentional test failure produces non-zero exit status
+* [ ] formatting remains compliant
+* [ ] static analysis remains compliant
+* [ ] no CI was added
+* [ ] no E2E framework was added
+* [ ] no frontend test framework was added
+* [ ] no external integration-test infrastructure was added
 * [ ] no secrets were added
-* [ ] no unnecessary dependencies were upgraded
-* [ ] no generated artifacts were added
+* [ ] no generated artifacts were committed
 * [ ] code comments are minimal
-* [ ] relevant tests pass
-* [ ] quality commands pass
+* [ ] documentation explains the test commands
 
 ---
 
-# 43. Explicitly Out of Scope
+# 63. Explicitly Out of Scope
 
-Do **not** implement during Phase 2.10:
+Do **not** implement during Phase 2.11:
 
-* test-framework setup
-* test-framework replacement
 * CI/CD
-* GitHub Actions/GitLab CI/other CI pipelines
-* deployment automation
-* comprehensive test suites
-* integration-test architecture
-* end-to-end testing
-* static-analysis of frontend code
-* Next.js linting
-* Flutter analysis
-* frontend formatting
-* application monitoring
-* error tracking
-* Sentry
-* Datadog
-* New Relic
-* OpenTelemetry
-* database migrations
-* domain models
-* domain services
-* repositories introduced solely for abstraction
-* authentication
-* authorization
-* product/catalog features
-* cart features
-* checkout features
-* order features
-* payment integration
+* GitHub Actions
+* GitLab CI
+* Jenkins
+* automated deployment gates
+* comprehensive domain tests
+* database/domain migrations
+* business-rule implementations
+* Product factories unless Product already exists and genuinely requires one for current tests
+* Order factories
+* Payment factories
+* Inventory factories
+* User authentication implementation
+* authorization implementation
+* role/permission implementation
+* catalog implementation
+* cart implementation
+* checkout implementation
+* order implementation
+* payment implementation
 * webhook implementation
-* audit-log infrastructure
-* queue infrastructure
+* delivery implementation
+* furniture-request implementation
+* enquiry implementation
 * notification implementation
-* API contract changes
+* rate-limiter implementation
+* audit-log implementation
+* frontend testing
+* Next.js testing
+* Flutter testing
+* browser E2E testing
+* mobile E2E testing
+* payment-provider integration testing
+* external API integration infrastructure
+* production monitoring
+* error tracking
+* test dashboards
+* mandatory coverage thresholds
+* parallel-test optimization
+* custom test orchestration frameworks
+* API contract redesign
 * new API endpoints
-* `/api/v1` redesign
-* health/readiness redesign
 
 ---
 
-# 44. STOP Condition
+# 64. STOP Condition
 
-Stop immediately when the Phase 2.10 definition of done is satisfied.
+Stop immediately when the Phase 2.11 definition of done is satisfied.
 
-Do not continue into Phase 2.11.
-
-Do not establish the test framework beyond using whatever test capability already exists.
+Do not continue into Phase 2.12.
 
 Do not create CI.
 
-Do not upgrade unrelated dependencies.
+Do not create domain factories for future entities.
 
-Do not refactor the application architecture merely because static analysis suggests a different design.
+Do not implement business rules simply to increase test coverage.
+
+Do not introduce frontend or E2E test tooling.
+
+Do not introduce external-service test environments.
+
+Do not replace the established testing framework merely because another tool has attractive features.
 
 Do not change the frozen Version 1 API contract.
-
-Do not add broad analyzer suppressions simply to achieve a green build.
 
 Do not commit, stage, or push changes. Leave source-control operations to the project owner, consistent with the repository instructions.
