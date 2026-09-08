@@ -17,6 +17,8 @@ class DatabaseSeeder extends Seeder
     {
         app(RbacSeeder::class)->run();
 
+        $this->call(CategorySeeder::class);
+
         // User::factory(10)->create();
 
         if (! User::where('email', 'test@example.com')->exists()) {

@@ -1,829 +1,1012 @@
 # Group C phases instructions
 
-# Phase 3.2 — Roles/permissions model
+# Phase 3.3 — Categories Schema
 
 ## Purpose
 
-Implement the database and application foundation for **RBAC (role-based access control)** using the single `users` identity created in Phase 3.1.
+Implement the database foundation for the furniture catalog's category taxonomy.
 
 This phase establishes:
 
-* the V1 role model;
-* the explicit permission vocabulary;
-* role-to-permission assignments;
-* user-to-role assignment;
-* deny-by-default authorization primitives;
-* the Laravel relationships and authorization abstractions that later phases can use.
+* the hierarchical `categories` table;
+* parent/child category relationships;
+* category metadata needed by public catalog navigation;
+* the agreed furniture taxonomy;
+* the category-to-category recommendation relationship structure;
+* Eloquent relationships and focused schema/model tests.
 
-This phase must **not** implement authentication workflows, login/session/token handling, customer account administration, staff administration endpoints, or domain-specific operational authorization. Those belong to later phases.
+The design must support a clear navigation tree today while leaving room for future product-category relationships and automated recommendation/cross-selling features.
 
-The resulting model must support the authoritative rule:
+This phase is **schema/model foundation only**.
 
-> `authenticated identity + role + resource + action + ownership/context + business-state` determine authorization; role alone never authorizes.
+Do not implement product APIs, recommendation APIs, recommendation algorithms, search ranking, or product-category assignment workflows in this phase.
 
 ---
 
-## Dependencies
+# Dependencies
 
 Required before starting:
 
-* Phase 2.1–2.12 backend foundation is complete.
-* Phase 3.1 Users Schema is complete.
-* `users`, `customer_profiles`, and `staff_profiles` exist and their migrations/tests pass.
-* Existing Laravel coding standards, static analysis, test framework, exception handling, and logging conventions are already established.
+* Phase 2.1–2.12 completed.
+* Phase 3.1 Users Schema completed.
+* Phase 3.2 Roles/permissions model completed.
+* Laravel migrations/models/testing conventions established.
+* Existing database connection and migration test infrastructure working.
+
+Authoritative inputs:
+
 * `docs/VISION.md`
 * `docs/api/api-contract.md`
 * `docs/api/api-resources.md`
 * `docs/api/api-conventions.md`
 * `docs/domain/business-rules.md`
+* `docs/decisions.md`
 * `AGENTS.md`
 
-Do not reopen decisions already frozen by those documents.
+Do not reopen unrelated architectural decisions.
 
 ---
 
-## Authoritative constraints
+# 3.3.1 Category hierarchy model
 
-### 1. Roles are CLOSED
+Use an **adjacency-list hierarchy**.
 
-V1 has exactly these user roles:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
-
-Use the exact uppercase values.
-
-Do not introduce:
+The category table must contain:
 
 ```text
-SUPER_ADMIN
-MANAGER
-SUPPORT
-ORDER_STAFF
-INVENTORY_STAFF
-MODERATOR
-GUEST
-SYSTEM
-```
-
-or other additional user roles.
-
-`SYSTEM` may exist conceptually as an internal execution actor for jobs/webhooks later, but it is **not** a user RBAC role.
-
-Adding another user role is a V1 compatibility decision and must not happen casually.
-
-### 2. Role is server-controlled
-
-A client must never be able to:
-
-* choose its own role;
-* promote itself;
-* demote itself;
-* assign a role to another user;
-* submit `role` as an ordinary profile field;
-* submit a permission list;
-* submit wildcard permissions;
-* change authorization through mass assignment.
-
-Examples that must never be treated as authoritative:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-```json
-{
-  "permissions": ["*"]
-}
-```
-
-```json
-{
-  "is_admin": true
-}
-```
-
-The backend owns role and authorization state.
-
-### 3. Staff must not become customer administrators
-
-The model must make it impossible to infer customer-account administration from ordinary staff operations.
-
-`STAFF` must not gain permissions for:
-
-* changing customer passwords;
-* changing customer roles;
-* changing customer permissions;
-* disabling or blocking customer accounts;
-* changing customer security state;
-* impersonating customers;
-* transferring customer ownership;
-* accessing customer credentials;
-* deleting customer accounts.
-
-Staff operational access is separate from customer-account administration.
-
-### 4. No wildcard authorization model
-
-Do not implement:
-
-```text
-*
-admin.*
-staff.*
-all
-full_access
-superuser
-```
-
-as the mechanism by which a role becomes authorized.
-
-The authorization vocabulary must remain explicit and auditable.
-
----
-
-# Implementation instructions
-
-## 3.2.1 Decide the RBAC persistence approach
-
-Inspect the current Laravel project before adding dependencies.
-
-Use **one** authorization implementation only.
-
-A maintained Laravel RBAC package such as `spatie/laravel-permission` may be used when compatible with the existing Laravel version and project conventions. Do not install it blindly if an equivalent authorization foundation already exists.
-
-Before introducing the package:
-
-* inspect `composer.json`;
-* inspect currently installed authorization/security packages;
-* check whether migrations, models, middleware, gates, or policies already provide conflicting role/permission behavior;
-* avoid installing two overlapping RBAC systems.
-
-If a package is chosen, use its normal relational role/permission model rather than maintaining a parallel custom role/permission implementation.
-
-Do not hard-code package-specific behavior into controllers.
-
-Do not commit to a package merely because it is familiar; choose one coherent implementation and document the decision.
-
-If a package is not appropriate, implement a small explicit relational RBAC model using Laravel conventions.
-
----
-
-## 3.2.2 Role persistence
-
-Represent roles as first-class authorization entities rather than adding another authorization boolean to `users`.
-
-Do **not** add:
-
-```text
-users.is_admin
-users.is_staff
-users.is_customer
-```
-
-Do **not** add:
-
-```text
-users.role
-```
-
-merely as a shortcut if the selected RBAC implementation stores roles relationally.
-
-The role authority must live in the RBAC model.
-
-Use a stable role identifier/name containing exactly:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
-
-Role records must be uniquely identifiable.
-
-Do not permit duplicate logical roles.
-
-Do not introduce role hierarchies such as:
-
-```text
-ADMIN > STAFF > CUSTOMER
-```
-
-as implicit authorization behavior.
-
-A user's possession of `ADMIN` must not automatically authorize an operation unless the corresponding explicit permission exists.
-
----
-
-## 3.2.3 Permission persistence
-
-Create explicit permissions as first-class authorization capabilities.
-
-Use a stable naming convention:
-
-```text
-resource.action
-```
-
-or the exact equivalent supported by the selected authorization implementation.
-
-Permission names are part of the V1 authorization contract. Keep them deterministic and avoid synonyms for the same capability.
-
-Use this V1 permission vocabulary:
-
-### Customer-owned capabilities
-
-Customer capabilities are primarily enforced through ownership and policy rather than creating a large customer permission matrix.
-
-Do not create hundreds of permissions such as:
-
-```text
-customer.orders.read_own
-customer.orders.cancel_own
-customer.cart.read_own
-...
-```
-
-unless the selected implementation genuinely requires them.
-
-Ownership rules remain policy-level authorization.
-
-### Staff/Admin operational capabilities
-
-Establish the explicit operational permission set below:
-
-```text
-products.view
-products.manage
-
-inventory.view
-inventory.manage
-
-orders.view_operational
-orders.accept
-orders.process
-orders.ready_for_pickup
-orders.ship
-orders.deliver
-
-requests.view
-requests.manage
-
-enquiries.view
-enquiries.manage
-
-staff.approve
-staff.manage
-
-users.manage_authorized
-```
-
-These names are capabilities, not unconditional access.
-
-For example:
-
-```text
-orders.ship
-```
-
-means the actor may potentially perform the ship operation, but authorization still requires the applicable order ownership/operational scope and business-state precondition.
-
-Similarly:
-
-```text
-products.manage
-```
-
-must not silently include inventory quantity management.
-
-`inventory.manage` is separate from catalog management.
-
-`orders.process` must not implicitly authorize:
-
-```text
-orders.accept
-orders.ready_for_pickup
-orders.ship
-orders.deliver
-```
-
-The separation is intentional.
-
----
-
-## 3.2.4 Permission-to-role matrix
-
-Seed the initial V1 role/permission assignments explicitly.
-
-Use this baseline:
-
-### CUSTOMER
-
-Customer authorization is ownership-based.
-
-Do not grant broad operational permissions.
-
-The customer role must not have:
-
-```text
-products.manage
-inventory.view
-inventory.manage
-orders.view_operational
-orders.accept
-orders.process
-orders.ready_for_pickup
-orders.ship
-orders.deliver
-requests.manage
-enquiries.manage
-staff.approve
-staff.manage
-users.manage_authorized
-```
-
-Public catalog access does not require an authenticated customer role.
-
-### STAFF
-
-Grant only operational capabilities justified by the V1 business model:
-
-```text
-products.view
-products.manage
-
-inventory.view
-inventory.manage
-
-orders.view_operational
-orders.accept
-orders.process
-orders.ready_for_pickup
-orders.ship
-orders.deliver
-
-requests.view
-requests.manage
-
-enquiries.view
-enquiries.manage
-```
-
-Do **not** grant:
-
-```text
-staff.approve
-staff.manage
-users.manage_authorized
-```
-
-Do not create an implicit `customer_admin` capability.
-
-Do not grant customer security/account-management permissions.
-
-### ADMIN
-
-Grant the full set of explicitly defined operational capabilities:
-
-```text
-products.view
-products.manage
-
-inventory.view
-inventory.manage
-
-orders.view_operational
-orders.accept
-orders.process
-orders.ready_for_pickup
-orders.ship
-orders.deliver
-
-requests.view
-requests.manage
-
-enquiries.view
-enquiries.manage
-
-staff.approve
-staff.manage
-
-users.manage_authorized
-```
-
-However, even `ADMIN` must remain subject to the explicit authorization policy for the target resource and operation.
-
-Do not implement an unconditional wildcard bypass.
-
----
-
-## 3.2.5 Treat public access separately from RBAC
-
-Public catalog access is not a `CUSTOMER` permission.
-
-These resources are explicitly public:
-
-```text
-products
 categories
-search
-product details
+  id
+  parent_id
+  name
+  slug
+  space_type
+  display_order
+  is_active
+  created_at
+  updated_at
 ```
 
-Authentication is not required for normal public catalog reads.
+`parent_id` references another row in `categories`.
 
-Do not create:
+Root categories have:
 
 ```text
-PUBLIC
-ANONYMOUS
-GUEST
+parent_id = null
 ```
 
-as user roles just to represent public access.
+Child categories reference their immediate parent.
 
-Public/private access is an endpoint/resource policy concern.
+This provides a simple relational tree suitable for:
+
+* catalog navigation;
+* breadcrumbs;
+* recursive category retrieval;
+* future product-category joins;
+* category-specific recommendations.
+
+Do not introduce nested-set, materialized-path, closure-table, or graph-database infrastructure in V1.
 
 ---
 
-## 3.2.6 User-to-role relationship
+# 3.3.2 Three-level taxonomy
 
-Add the relationship required by the selected RBAC implementation:
-
-```text
-User -> roles
-Role -> users
-Role -> permissions
-Permission -> roles
-```
-
-The exact Laravel relationship implementation may differ depending on the selected package, but the resulting semantics must be equivalent.
-
-A user may have a role set that supports the system model without requiring role-specific copies of the same user identity.
-
-For V1, the business model expects one effective role per ordinary user:
+The initial taxonomy is intentionally three levels:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+Level 1 = room/context
+Level 2 = furniture grouping
+Level 3 = specific furniture type
 ```
 
-Do not build a complicated multi-role precedence system unless the chosen implementation requires it.
+Seed the following canonical hierarchy.
 
-If the package technically supports multiple roles, establish an application invariant that ordinary users have one effective V1 role.
+## Furnitures Root
 
-Do not invent role-merging precedence rules.
+```text
+Furnitures Root
+├── Living Room
+│   ├── Seating
+│   │   ├── Sofas
+│   │   ├── Sectionals
+│   │   ├── Armchairs
+│   │   ├── Recliners
+│   │   ├── Loveseats
+│   │   └── Stools/Poufs
+│   ├── Tables
+│   │   ├── Coffee Tables
+│   │   ├── End/Side Tables
+│   │   ├── Console Tables
+│   │   └── Nesting Tables
+│   └── Storage & Media
+│       ├── TV Stands/Showcases
+│       ├── Bookcases
+│       └── Display Cabinets
+├── Bedroom
+│   ├── Beds
+│   │   ├── Platform Beds
+│   │   ├── Canopy Beds
+│   │   ├── Storage Beds
+│   │   ├── Daybeds
+│   │   └── Bunk Beds
+│   ├── Storage
+│   │   ├── Dressers
+│   │   ├── Nightstands
+│   │   ├── Wardrobes
+│   │   └── Chest of Drawers
+│   └── Vanity & Seating
+│       ├── Vanity Tables
+│       └── Bedroom Benches
+├── Dining Room & Kitchen
+│   ├── Dining Sets & Tables
+│   │   ├── Dining Tables
+│   │   └── Kitchen Islands
+│   ├── Dining Seating
+│   │   ├── Dining Chairs
+│   │   ├── Bar & Counter Stools
+│   │   └── Dining Benches
+│   └── Dining Storage
+│       ├── Sideboards/Buffets
+│       ├── Bar Carts
+│       └── China Cabinets
+├── Home Office & Corporate Workspaces
+│   ├── Desks
+│   │   ├── Executive Desks
+│   │   ├── Standing/Adjustable Desks
+│   │   ├── Corner/L-Shaped Desks
+│   │   └── Writing Desks
+│   ├── Office Seating
+│   │   ├── Ergonomic Task Chairs
+│   │   ├── Executive Chairs
+│   │   └── Visitor Chairs
+│   └── Office Storage
+│       ├── Filing Cabinets
+│       ├── Credenzas
+│       └── Office Bookcases
+├── Outdoor & Patio
+│   ├── Outdoor Seating
+│   │   ├── Patio Sofas
+│   │   ├── Loungers
+│   │   └── Hammocks
+│   └── Outdoor Dining
+│       ├── Patio Tables
+│       └── Outdoor Bar Sets
+└── Entryway & Accent
+    ├── Entryway Furniture
+    │   ├── Shoe Cabinets
+    │   ├── Coat Racks
+    │   └── Entryway Benches
+    └── Accent Pieces
+        ├── Accent Tables
+        ├── Accent Chairs
+        └── Room Dividers
+```
+
+Treat this as the initial V1 seed taxonomy.
+
+Do not add additional category branches merely because they seem useful.
+
+Do not create category records for individual brands, materials, colors, styles, dimensions, or prices.
 
 ---
 
-## 3.2.7 Default-role behavior
+# 3.3.3 Category depth
 
-Do not make role assignment depend on an Eloquent model-created event.
+The intended taxonomy depth is three levels below the root category.
 
-Phase 3.1 intentionally avoided automatic profile creation because role assignment belongs to this phase and authentication workflows belong to Group D.
-
-Now establish the authoritative provisioning rule:
-
-* new self-registered customers receive `CUSTOMER`;
-* `STAFF` and `ADMIN` must never be self-assigned;
-* staff creation/approval is an administrative workflow;
-* the backend must reject any client attempt to choose a privileged role.
-
-Do not implement the registration or staff-approval workflow in this phase.
-
-Only establish the RBAC model and, where necessary for seed/bootstrap behavior, the role assignment primitives.
-
----
-
-## 3.2.8 Bootstrap/seed data
-
-Create deterministic seed data for:
-
-### Roles
+The database uses `parent_id`; it should not depend on hard-coded columns such as:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+level_1_id
+level_2_id
+level_3_id
 ```
 
-### Permissions
+Do not create separate tables for each hierarchy level.
 
-Every V1 permission defined in this phase must have exactly one canonical seeded identifier/name.
+The implementation must protect against:
 
-### Role assignments
+* a category being its own parent;
+* direct cyclic relationships;
+* accidental recursive loops.
 
-Seed only the agreed role-permission mappings.
+The required invariant is a **no-cycle invariant**: when a parent assignment is persisted, model/application validation must reject it if the assigned parent is the category itself or any descendant of the category. Walking the assigned parent's ancestor chain satisfies this and prevents self-parenting (`A → A`), two-node cycles (`A → B → A`), and deeper loops (`A → B → C → A`) alike.
 
-Do not seed real customer accounts.
+This ancestor check is bounded by taxonomy depth; it is not a complicated recursive graph-validation subsystem. Closure tables, materialized paths, and lock-based traversal validation remain out of scope.
 
-Do not create fake staff/admin accounts unless the existing project has an established local-development bootstrap convention.
-
-If a local development administrator is needed, make it clearly development-only and ensure it cannot become production seed behavior accidentally.
+The seeded taxonomy must contain only the approved hierarchy.
 
 ---
 
-## 3.2.9 Central authorization abstraction
+# 3.3.4 Category table
 
-Establish a small authorization layer that later domain policies can depend on.
+Create the migration using the project's existing Laravel conventions.
 
-Prefer Laravel-native authorization concepts where appropriate:
-
-* Gates;
-* Policies;
-* permission checks;
-* authorization services/abstractions.
-
-Do not scatter raw role comparisons through controllers:
+Recommended structure:
 
 ```php
-if ($user->role === 'ADMIN') {
-    ...
-}
+Schema::create('categories', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('parent_id')
+        ->nullable()
+        ->constrained('categories')
+        ->nullOnDelete();
+
+    $table->string('name');
+    $table->string('slug')->unique();
+
+    $table->enum('space_type', [
+        'home',
+        'office',
+        'hybrid',
+    ])->default('home');
+
+    $table->integer('display_order')->default(0);
+    $table->boolean('is_active')->default(true);
+
+    $table->timestamps();
+
+    $table->index(['parent_id', 'display_order']);
+    $table->index(['is_active', 'display_order']);
+    $table->index('space_type');
+});
 ```
 
-Do not make controllers responsible for reconstructing the entire authorization model.
-
-Use centralized policy/capability checks.
-
-The authoritative convention explicitly calls for centralized policies such as:
-
-```text
-OrderPolicy.view
-OrderPolicy.cancel
-OrderPolicy.process
-OrderPolicy.ship
-
-ProductPolicy.view
-ProductPolicy.manage
-```
-
-rather than scattered role checks.
-
-At this phase, create only the reusable foundation required for those policies.
-
-Do not fully implement all domain policies yet.
+Adapt the exact migration syntax to the existing Laravel/database conventions rather than duplicating an already-established index or constraint pattern.
 
 ---
 
-## 3.2.10 Ownership remains separate from RBAC
+# 3.3.5 Category field semantics
 
-Do not make a permission such as:
+## `id`
+
+Server-generated primary key.
+
+Never client-controlled.
+
+## `parent_id`
+
+Nullable foreign key to `categories.id`.
+
+`null` means root category.
+
+Normal delete behavior should detach children rather than cascade-delete an entire taxonomy branch.
+
+Use `nullOnDelete()`.
+
+Do not allow the API layer to create arbitrary recursive structures later without validation.
+
+## `name`
+
+Human-readable category name.
+
+Examples:
 
 ```text
-orders.view
+Living Room
+Sofas
+Coffee Tables
+Executive Desks
 ```
 
-mean "can view every order".
+Store the display label here.
 
-Operational order viewing and customer ownership are different concepts.
+Do not use `name` as the stable API identifier.
 
-The eventual authorization calculation must be able to answer:
+## `slug`
+
+Stable URL/navigation identifier.
+
+Must be unique across the category tree.
+
+Generate and validate slugs server-side according to the project's slug convention.
+
+Do not allow two categories to share the same slug.
+
+## `space_type`
+
+Use:
 
 ```text
-Who is the authenticated principal?
-What role do they have?
-What permission do they have?
-What resource are they accessing?
-What action are they performing?
-Do they own the resource?
-What operational context applies?
-What business state applies?
+home
+office
+hybrid
 ```
 
-Customer A must never gain access to Customer B's order merely because both are authenticated.
+This field describes the primary usage context.
 
-Staff operational access is not ownership.
+Do not use it as the hierarchy itself.
 
-Customer ownership and private-resource masking remain policy concerns.
+Do not infer `space_type` automatically from arbitrary category names.
+
+The initial seeded data should assign sensible values according to the taxonomy.
+
+Where a category spans contexts, use `hybrid` rather than duplicating the category merely to support another space.
+
+## `display_order`
+
+Integer used for deterministic sibling ordering.
+
+Lower values appear first unless the application's existing ordering convention specifies otherwise.
+
+Do not use database insertion order as presentation order.
+
+## `is_active`
+
+Controls whether the category is intended to be publicly available in the active catalog.
+
+This is server-controlled.
+
+An inactive category must not automatically mean its historical product associations are deleted.
+
+Do not implement the category activation/deactivation API in this phase.
 
 ---
 
-## 3.2.11 Admin authority must remain explicit
+# 3.3.6 `space_type` assignment
 
-The model must support explicit Admin-only permissions for:
+Use these initial values:
 
-```text
-staff.approve
-staff.manage
-users.manage_authorized
-```
+### Home-oriented
 
-These capabilities must not be inherited by STAFF.
-
-Do not expose a generic:
+Examples:
 
 ```text
-admin.*
+Living Room
+Bedroom
+Dining Room & Kitchen
+Outdoor & Patio
+Entryway & Accent
 ```
 
-shortcut.
+### Office-oriented
 
-Do not introduce an "is super admin" escape hatch.
-
-Do not make role-changing self-service possible.
-
-The architecture must preserve the separation of duties:
+Examples:
 
 ```text
-STAFF  -> operational processing
-ADMIN  -> privileged staff management/approval
+Home Office & Corporate Workspaces
 ```
 
-Staff approval must remain Admin-controlled and auditable.
+Use the taxonomy's actual context rather than mechanically assigning every category based on its level.
+
+Use `hybrid` only where a category genuinely serves both home and office/hybrid contexts.
+
+Do not create multiple copies of a category solely to support different `space_type` values.
+
+## Explicit seed mapping
+
+The seed must not invent or infer `space_type` values. The assignment rule is:
+
+* the root container `furnitures-root` is `hybrid` because it spans every context;
+* each level-1 room uses its documented value above;
+* every level-2 and level-3 category **inherits** the `space_type` of its level-1 room root.
+
+Applying that rule to the canonical taxonomy produces the complete slug-to-`space_type` mapping:
+
+```text
+hybrid (1): furnitures-root
+
+home (61): living-room, seating, sofas, sectionals, armchairs, recliners, loveseats, stools-poufs, tables, coffee-tables, end-side-tables, console-tables, nesting-tables, storage-media, tv-stands-showcases, bookcases, display-cabinets, bedroom, beds, platform-beds, canopy-beds, storage-beds, daybeds, bunk-beds, storage, dressers, nightstands, wardrobes, chest-of-drawers, vanity-seating, vanity-tables, bedroom-benches, dining-room-kitchen, dining-sets-tables, dining-tables, kitchen-islands, dining-seating, dining-chairs, bar-counter-stools, dining-benches, dining-storage, sideboards-buffets, bar-carts, china-cabinets, outdoor-patio, outdoor-seating, patio-sofas, loungers, hammocks, outdoor-dining, patio-tables, outdoor-bar-sets, entryway-accent, entryway-furniture, shoe-cabinets, coat-racks, entryway-benches, accent-pieces, accent-tables, accent-chairs, room-dividers
+
+office (14): home-office-corporate-workspaces, desks, executive-desks, standing-adjustable-desks, corner-l-shaped-desks, writing-desks, office-seating, ergonomic-task-chairs, executive-chairs, visitor-chairs, office-storage, filing-cabinets, credenzas, office-bookcases
+```
+
+Tests must enforce this mapping for every seeded category.
 
 ---
 
-# Database requirements
+# 3.3.7 Category recommendation relationship
 
-Create the required RBAC tables/migrations according to the chosen implementation.
-
-At minimum the resulting persistence model must represent:
+Create a separate:
 
 ```text
-roles
-permissions
-role <-> permissions
-user <-> roles
+category_recommendations
+```
+
+table.
+
+This is a relational foundation for future category-driven cross-selling.
+
+Required columns:
+
+```text
+id
+category_id
+recommended_category_id
+relation_type
+priority
+created_at
+updated_at
 ```
 
 Use:
 
-* foreign keys;
-* uniqueness constraints;
-* appropriate indexes;
-* stable identifiers;
-* timestamps where appropriate;
-* the existing project's normal migration conventions.
+```php
+Schema::create('category_recommendations', function (Blueprint $table) {
+    $table->id();
 
-Do not duplicate authorization state into unrelated tables.
+    $table->foreignId('category_id')
+        ->constrained('categories')
+        ->cascadeOnDelete();
 
-Do not store serialized JSON permission arrays as the authoritative permission model.
+    $table->foreignId('recommended_category_id')
+        ->constrained('categories')
+        ->cascadeOnDelete();
 
-Do not store permissions as comma-separated strings.
+    $table->string('relation_type');
+    $table->integer('priority')->default(1);
 
-Do not use a free-form text blob as the role registry.
+    $table->timestamps();
 
-The database must be rebuildable from migrations.
+    $table->unique(
+        ['category_id', 'recommended_category_id'],
+        'cat_rec_unique'
+    );
+
+    $table->index(
+        ['category_id', 'relation_type', 'priority']
+    );
+});
+```
+
+The exact relation type storage should follow the project's established CLOSED-enum conventions when this becomes part of a public API contract.
+
+For this phase, establish the canonical vocabulary needed by the supplied model:
+
+```text
+COMPLEMENTARY
+PAIR_WITH
+COMPLETE_THE_LOOK
+ALTERNATIVE
+```
+
+Do not add recommendation relation types beyond those required by the current design.
 
 ---
 
-# Model requirements
+# 3.3.8 Recommendation directionality
 
-Update the `User` model only as required to expose the RBAC relationship.
-
-The model must not expose:
+Treat the recommendation relationship as directed:
 
 ```text
-password
-remember_token
-authorization internals
-permission secrets
+source category
+        ↓
+recommended category
 ```
 
-through API serialization.
+For example:
 
-Do not expand the `UserResource` yet unless the existing project needs the relationship for a specific internal test.
+```text
+Sofas → Coffee Tables
+```
 
-Remember that serialization is an actor-sensitive boundary; authorization state is server-controlled.
+does not automatically imply:
 
-Do not create a public user listing endpoint.
+```text
+Coffee Tables → Sofas
+```
 
-Do not create customer-management APIs.
+unless a separate row exists.
+
+This makes recommendation priority and context controllable independently in future releases.
+
+Do not automatically mirror every recommendation in the seed data.
 
 ---
 
-# Authorization semantics
+# 3.3.9 Recommendation uniqueness
 
-Establish these invariants:
-
-### CUSTOMER
+Prevent duplicate category pair records:
 
 ```text
-Customer access = authenticated self + ownership + business rules
+(category_id, recommended_category_id)
 ```
 
-### STAFF
+must be unique.
+
+Therefore this pair cannot appear twice:
 
 ```text
-Staff access = authenticated staff + explicit permission + operational scope + business-state rules
+Sofas → Coffee Tables
+Sofas → Coffee Tables
 ```
 
-### ADMIN
+Do not include `relation_type` in the uniqueness constraint unless the business decision explicitly requires multiple relationship types for the same pair.
 
-```text
-Admin access = authenticated admin + explicit permission + applicable resource/business rules
-```
-
-### Anonymous
-
-```text
-Anonymous access = explicitly public resource/action only
-```
-
-### System/background actor
-
-Background jobs, payment callbacks, notification dispatch, inventory cleanup, and order timeouts are not represented by a CUSTOMER/STAFF/ADMIN role. Their authorization boundary will be handled by the applicable later phase.
+The supplied design uses one relationship row per category pair, so preserve that behavior.
 
 ---
 
-# Validation and security checks
+# 3.3.10 Recommendation priority
 
-Implement tests alongside the RBAC foundation.
+Use:
 
-## Role integrity tests
+```text
+priority
+```
+
+as an integer.
+
+Higher numbers indicate higher recommendation precedence.
+
+Default:
+
+```text
+1
+```
+
+Do not implement ranking algorithms in this phase.
+
+Do not interpret priority as product sales volume, popularity, stock level, conversion rate, or machine-learning score.
+
+Those are future recommendation-engine inputs.
+
+---
+
+# 3.3.11 Seed category recommendations
+
+Seed the explicit high-value category relationships supplied for future recommendation/cross-selling use.
+
+The initial conceptual mappings are:
+
+```text
+Sofas/Sectionals
+→ Coffee Tables
+→ End Tables
+→ TV Stands
+→ Accent Rugs
+
+Beds
+→ Nightstands
+→ Dressers
+→ Wardrobes
+→ Bedroom Benches
+
+Dining Tables
+→ Dining Chairs
+→ Sideboards/Buffets
+→ Bar Carts
+
+Standing/Executive Desks
+→ Ergonomic Task Chairs
+→ Filing Cabinets
+→ Desk Organizers
+
+TV Stands/Showcases
+→ Sofas
+→ Bookcases
+→ Media Cabinets
+
+Vanity Tables
+→ Accent Mirrors
+→ Dressers
+→ Bedroom Stools
+```
+
+Important:
+
+Only create recommendation mappings where a corresponding canonical category exists in the approved taxonomy.
+
+Do not invent categories solely to satisfy the recommendation table.
+
+For example, because some supplied recommendation names such as:
+
+```text
+Accent Rugs
+Accent Mirrors
+Bedroom Stools
+Media Cabinets
+Desk Organizers
+```
+
+are not explicit categories in the provided taxonomy, **do not silently create them**.
+
+Record these as deferred recommendation mappings until their categories are formally introduced.
+
+This keeps the taxonomy authoritative and prevents recommendation data from creating undocumented categories.
+
+## Canonical seed rows
+
+The conceptual mappings above resolve to canonical taxonomy slugs as follows:
+
+* `Sofas/Sectionals` splits into two sources: `sofas` and `sectionals`.
+* `Standing/Executive Desks` splits into two sources: `standing-adjustable-desks` and `executive-desks`.
+* `End Tables` resolves to the canonical `end-side-tables` (End/Side Tables).
+* `TV Stands` (as a target of `sofas`/`sectionals`) resolves to the canonical `tv-stands-showcases` (TV Stands/Showcases).
+* `Bedroom Stools` does **not** resolve to `stools-poufs` (a Living Room seating type); it is deferred below.
+
+The seed contains exactly these rows — one exact source slug and target slug per row:
+
+| source slug | target slug | relation_type | priority |
+|---|---|---|---|
+| sofas | coffee-tables | COMPLETE_THE_LOOK | 5 |
+| sofas | tv-stands-showcases | COMPLETE_THE_LOOK | 4 |
+| sofas | end-side-tables | COMPLETE_THE_LOOK | 3 |
+| sectionals | coffee-tables | COMPLETE_THE_LOOK | 5 |
+| sectionals | tv-stands-showcases | COMPLETE_THE_LOOK | 4 |
+| sectionals | end-side-tables | COMPLETE_THE_LOOK | 3 |
+| beds | nightstands | COMPLETE_THE_LOOK | 5 |
+| beds | dressers | COMPLETE_THE_LOOK | 4 |
+| beds | wardrobes | COMPLETE_THE_LOOK | 3 |
+| beds | bedroom-benches | COMPLETE_THE_LOOK | 2 |
+| dining-tables | dining-chairs | PAIR_WITH | 5 |
+| dining-tables | sideboards-buffets | COMPLEMENTARY | 3 |
+| dining-tables | bar-carts | COMPLEMENTARY | 2 |
+| executive-desks | ergonomic-task-chairs | PAIR_WITH | 5 |
+| executive-desks | filing-cabinets | COMPLEMENTARY | 3 |
+| standing-adjustable-desks | ergonomic-task-chairs | PAIR_WITH | 5 |
+| standing-adjustable-desks | filing-cabinets | COMPLEMENTARY | 3 |
+| tv-stands-showcases | sofas | COMPLEMENTARY | 4 |
+| tv-stands-showcases | bookcases | COMPLEMENTARY | 2 |
+| vanity-tables | dressers | COMPLEMENTARY | 2 |
+
+## Deferred mappings
+
+These supplied targets have no canonical category in the approved taxonomy. They are **not** seeded and **must not** be created as categories. They stay deferred until their categories are formally introduced:
+
+* `Accent Rugs` — requested by `sofas`, `sectionals`
+* `Media Cabinets` — requested by `tv-stands-showcases`
+* `Desk Organizers` — requested by `executive-desks`, `standing-adjustable-desks`
+* `Accent Mirrors` — requested by `vanity-tables`
+* `Bedroom Stools` — requested by `vanity-tables`
+
+Tests must enforce the canonical rows exactly: no omitted rows and no additional or non-canonical rows.
+
+---
+
+# 3.3.12 Avoid premature product relationships
+
+Do not create the final product-category association in this phase.
+
+The next catalog schema phase will establish the Product model and determine whether products have:
+
+* one primary category;
+* multiple categories;
+* a many-to-many category relationship;
+* another catalog-specific association.
+
+Phase 3.3 only needs to make categories structurally ready for that future relationship.
+
+Therefore do not create:
+
+```text
+product_category
+```
+
+or equivalent tables yet unless the existing Product schema already exists and requires it.
+
+The authoritative Group C sequence places Product Schema after Categories Schema.
+
+---
+
+# 3.3.13 Eloquent `Category` model
+
+Create the category model using Laravel relationship types.
+
+At minimum:
+
+```php
+public function parent(): BelongsTo
+{
+    return $this->belongsTo(Category::class, 'parent_id');
+}
+
+public function children(): HasMany
+{
+    return $this->hasMany(Category::class, 'parent_id')
+        ->orderBy('display_order');
+}
+
+public function recommendedCategories(): BelongsToMany
+{
+    return $this->belongsToMany(
+        Category::class,
+        'category_recommendations',
+        'category_id',
+        'recommended_category_id'
+    )
+    ->withPivot('relation_type', 'priority')
+    ->orderByPivot('priority', 'desc');
+}
+
+public function recommendedByCategories(): BelongsToMany
+{
+    return $this->belongsToMany(
+        Category::class,
+        'category_recommendations',
+        'recommended_category_id',
+        'category_id'
+    )
+    ->withPivot('relation_type', 'priority');
+}
+```
+
+Use the inverse recommendation relationship so future recommendation queries do not require manually rebuilding the join.
+
+Do not add product relationships yet.
+
+---
+
+# 3.3.14 Model constraints and mass assignment
+
+Follow the project's mass-assignment rules.
+
+Do not use:
+
+```php
+$request->all()
+```
+
+to create or update categories.
+
+When category write operations are introduced later:
+
+```text
+validated input
+→ explicit allow-list
+→ DTO/command/domain logic
+→ persistence
+```
+
+Server-controlled fields include:
+
+* `id`;
+* timestamps;
+* recommendation records;
+* relationship ownership;
+* any future audit fields.
+
+The established backend convention explicitly prohibits request-wide mass assignment.
+
+---
+
+# 3.3.15 Category naming and slug consistency
+
+Seed category names exactly according to the approved taxonomy.
+
+Generate deterministic slugs.
+
+Examples:
+
+```text
+Living Room
+→ living-room
+
+Coffee Tables
+→ coffee-tables
+
+Home Office & Corporate Workspaces
+→ home-office-corporate-workspaces
+```
+
+Do not change a canonical category name merely to produce a shorter slug.
+
+Do not use numeric category IDs as public URLs.
+
+Do not create duplicate categories with different capitalization solely because of slug differences.
+
+---
+
+# 3.3.16 Seed ordering
+
+Set deterministic `display_order` values for siblings.
+
+Example:
+
+```text
+Living Room
+  Seating             1
+  Tables              2
+  Storage & Media     3
+```
+
+Likewise, order the Level-1 room categories deterministically.
+
+The exact numeric spacing may use simple sequential values.
+
+Do not depend on auto-increment IDs for UI ordering.
+
+When a category has children, their order must be deterministic in the seed data.
+
+---
+
+# 3.3.17 Seed strategy
+
+Use idempotent deterministic seeders.
+
+The seeding process should be safe for local database reconstruction.
+
+Do not rely on hard-coded numeric IDs.
+
+Resolve parent relationships by stable slug or another deterministic key.
+
+Recommendation seeds should likewise resolve both categories by stable identifiers rather than assumed primary-key values.
+
+Do not seed production-like products, orders, users, or recommendations involving nonexistent products.
+
+---
+
+# 3.3.18 Database integrity
+
+Add and test:
+
+* primary key on `categories.id`;
+* foreign key `categories.parent_id → categories.id`;
+* unique category slug;
+* foreign keys from `category_recommendations`;
+* cascading deletion of recommendation rows when a referenced category is removed;
+* nulling of `parent_id` when a category parent is removed;
+* unique recommendation pair;
+* useful hierarchy/recommendation indexes.
+
+Test both sides of the recommendation relationship.
+
+---
+
+# 3.3.19 Authorization considerations
+
+This phase does not create category-management endpoints.
+
+The future public catalog remains explicitly public.
+
+Future staff/admin category-management operations must use the RBAC foundation from Phase 3.2 and explicit catalog permissions, rather than client-controlled role fields or frontend checks.
+
+The authorization architecture requires explicit permissions such as `products.view` / `products.manage`, with authorization still evaluated together with resource/action/context rather than role alone.
+
+Do not implement those domain policies or endpoints here.
+
+---
+
+# 3.3.20 Tests
+
+Create focused tests for the schema and model.
+
+## Migration tests
 
 Verify:
 
-* only `CUSTOMER`, `STAFF`, `ADMIN` exist in V1 seed data;
-* duplicate role creation is rejected;
-* unknown roles cannot become effective user roles;
-* a client cannot self-assign `STAFF`;
-* a client cannot self-assign `ADMIN`;
-* role data is not accepted through ordinary profile mutation.
+* fresh migration succeeds;
+* rollback succeeds;
+* categories can exist with `parent_id = null`;
+* child category can reference parent category;
+* parent deletion nulls child `parent_id`;
+* duplicate slug is rejected;
+* recommendation foreign keys are enforced;
+* recommendation pair uniqueness is enforced.
 
-## Permission integrity tests
+## Hierarchy tests
 
 Verify:
 
-* all canonical V1 permissions are seeded;
-* permissions are uniquely identified;
-* wildcard permissions are not used as an authorization shortcut;
-* STAFF does not receive Admin-only permissions;
-* CUSTOMER does not receive staff operational permissions.
+* root category has no parent;
+* child resolves its parent;
+* parent resolves its children;
+* children are ordered by `display_order`;
+* self-parenting is rejected by application validation;
+* seeded hierarchy has the intended structure.
 
-## Separation-of-duties tests
+## Recommendation tests
 
-Explicitly test:
-
-```text
-STAFF cannot staff.approve
-STAFF cannot staff.manage
-STAFF cannot users.manage_authorized
-STAFF cannot customer security/account administration
-```
-
-Explicitly test that:
+Verify:
 
 ```text
-ADMIN may have staff.approve
-ADMIN may have staff.manage
-ADMIN may have users.manage_authorized
+Category A → Category B
 ```
 
-subject to the later domain policy implementation.
+is returned by `recommendedCategories`.
 
-## Authorization primitive tests
+Verify the inverse relationship:
+
+```text
+Category B ← Category A
+```
+
+is returned by `recommendedByCategories`.
+
+Verify:
+
+* pivot `relation_type` is available;
+* pivot `priority` is available;
+* priority ordering is deterministic;
+* duplicate pair records are rejected.
+
+## Seed tests
+
+Verify:
+
+* all approved root categories exist;
+* all approved second-level categories exist;
+* all approved third-level categories exist;
+* each child points to the intended parent;
+* slugs are unique;
+* recommendation mappings only reference categories that actually exist;
+* deferred mappings are not represented by undocumented fake categories.
+
+---
+
+# 3.3.21 Category API readiness
+
+The database and model should be ready for a later public category-read API.
+
+The later API may expose:
+
+```text
+category
+parent
+children
+slug
+space_type
+display_order
+is_active
+```
+
+but this phase must not implement those endpoints.
+
+Do not add:
+
+```text
+GET /categories
+GET /categories/{slug}
+POST /categories
+PATCH /categories/{id}
+DELETE /categories/{id}
+```
+
+yet.
+
+The category read API belongs to the later catalog API work.
+
+---
+
+# 3.3.22 Recommendation API readiness
+
+This phase must make future recommendation queries straightforward but must not implement a recommendation engine.
+
+The future system should be able to conceptually perform:
+
+```text
+Product
+→ primary/associated Category
+→ recommended Categories
+→ eligible Products
+→ availability/inventory filtering
+→ ranking
+→ recommendation response
+```
+
+That is a future application/query concern.
+
+Do not implement:
+
+* random product selection;
+* "frequently bought together";
+* sales-history analysis;
+* collaborative filtering;
+* machine learning;
+* recommendation scoring;
+* product ranking;
+* inventory-aware recommendation selection;
+* product exclusion rules.
+
+The category relationship table is merely the durable rule/configuration layer.
+
+---
+
+# Security and correctness checks
 
 Verify that:
 
-* permission checks deny when no permission exists;
-* deny-by-default is preserved;
-* role alone is not treated as sufficient authorization;
-* missing authenticated identity cannot pass authenticated checks;
-* ownership is not inferred from client-supplied `user_id`;
-* authorization state cannot be supplied from request payloads.
+* category IDs are server-controlled;
+* recommendation IDs are server-controlled;
+* no client input can assign arbitrary category ownership;
+* no API layer trusts a client-supplied role for category administration;
+* no mass-assignment path can manipulate server-controlled fields;
+* database relationships cannot be silently bypassed;
+* invalid parent relationships are rejected before persistence;
+* recursive/cyclic relationships are not permitted through the future category write boundary.
 
-## Persistence tests
+Do not expose internal database exceptions through API responses.
 
-Verify:
-
-* migrations run from an empty database;
-* migrations roll back cleanly;
-* foreign keys are valid;
-* uniqueness constraints work;
-* seed data is deterministic;
-* rebuilding the database produces the same RBAC baseline.
-
-## Security tests
-
-Verify that no path exists in this phase allowing:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-or:
-
-```json
-{
-  "permissions": ["*"]
-}
-```
-
-to alter authorization.
-
-Verify that authorization information cannot be changed through mass assignment.
-
-Follow the established error envelope and do not leak framework/database implementation details.
+Follow the established error and logging discipline.
 
 ---
 
@@ -831,118 +1014,115 @@ Follow the established error envelope and do not leak framework/database impleme
 
 Keep the implementation small and cohesive.
 
-Prefer:
+Expected components:
 
 ```text
-Role
-Permission
-User relationship
-Authorization abstraction
-Seeders
-Migrations
+Category model
+Category migration
+CategoryRecommendation migration
+Category seed data
+Recommendation seed data
 Focused tests
 ```
 
 Avoid:
 
-* giant authorization services;
-* generic "everything is allowed" helpers;
-* duplicated role checks;
-* copied permission strings across controllers;
-* hidden authorization behavior inside unrelated models;
-* premature domain-specific policies for features not yet implemented.
+* recommendation service classes;
+* recommendation controllers;
+* category APIs;
+* product APIs;
+* search infrastructure;
+* recursive tree utility frameworks;
+* graph databases;
+* caching layers;
+* machine-learning infrastructure;
+* generic taxonomy abstractions.
 
-Use constants/enums/value objects where they improve correctness and match existing project conventions.
+Use meaningful names and existing Laravel conventions.
 
-Use dependency injection where it materially improves testability.
+Keep code comments to the absolute minimum.
 
-Keep code comments to the absolute minimum. Explain non-obvious authorization decisions through names, structure, tests, or the existing architecture/decision documentation rather than large comment blocks.
+Prefer expressive model relationships, seed data, tests, and clear names over explanatory comment blocks.
 
 ---
 
 # Documentation / decision record
 
-Update `docs/decisions.md` only if necessary to record a durable architectural choice such as:
+Update `docs/decisions.md` only for durable decisions that are genuinely architectural, such as:
 
-* selected RBAC implementation/package;
-* why an existing authorization mechanism was reused;
-* why roles are relational rather than stored as booleans;
-* why customer authorization remains ownership/policy-based;
-* why wildcard admin permissions are intentionally excluded.
+* adjacency-list hierarchy chosen for V1;
+* recommendation relationships modeled as a directed relational table;
+* recommendation mappings intentionally separated from product associations;
+* unsupported recommendation targets deferred rather than creating undocumented categories.
 
-Do not create a permanent Phase-3.2 markdown file merely to duplicate this instruction.
-
-If the selected RBAC package requires an important configuration assumption, document only that durable decision.
+Do not create a permanent Phase-3.3 markdown document merely to duplicate this phase instruction.
 
 ---
 
 # Explicitly out of scope
 
-Do **not** implement:
+Do not implement:
 
-* user registration;
-* login/logout;
-* password hashing workflows;
-* password reset;
-* email verification;
-* MFA;
-* Sanctum/Passport/token issuance;
-* browser session handling;
-* Flutter authentication;
-* authentication middleware;
-* staff approval endpoints;
-* staff suspension/reactivation endpoints;
-* customer administration endpoints;
-* customer disable/block functionality;
-* impersonation;
-* order authorization rules;
-* inventory authorization rules;
-* product authorization endpoints;
-* request/enquiry authorization endpoints;
-* admin UI;
-* staff UI;
-* customer UI;
-* Flutter authorization UI;
-* payment authorization;
-* audit-event storage implementation;
-* notification authorization;
-* authorization caching.
+* Product model;
+* product-category associations;
+* Product Variants;
+* Product Images;
+* Inventory;
+* category CRUD API;
+* category admin UI;
+* category frontend pages;
+* Flutter category screens;
+* recommendation API;
+* recommendation engine;
+* product recommendation ranking;
+* sales-based recommendations;
+* "Frequently Bought Together" calculation;
+* machine-learning recommendations;
+* full-text category search;
+* breadcrumb API;
+* category caching;
+* URL routing implementation;
+* category authorization policies.
 
-Authentication is Group D. Domain authorization is implemented with the corresponding domain phases.
+These belong to later phases.
 
 ---
 
 # Definition of done
 
-Phase 3.2 is complete only when:
+Phase 3.3 is complete only when:
 
-1. The project has one coherent RBAC implementation.
-2. V1 contains exactly `CUSTOMER`, `STAFF`, and `ADMIN`.
-3. V1 permissions are explicit, stable, and seeded.
-4. Role/permission relationships are persisted with proper constraints.
-5. User-to-role relationships are established on the Phase 3.1 `User`.
-6. STAFF has only the agreed operational capabilities.
-7. ADMIN has the agreed explicit administrative capabilities without a wildcard escape hatch.
-8. CUSTOMER does not receive staff/admin operational permissions.
-9. Customer ownership is clearly separated from staff operational authorization.
-10. Staff cannot acquire customer-account administration capabilities through the RBAC model.
-11. Client-supplied role/permission values cannot alter authorization.
-12. No mass-assignment path exists for authorization state.
-13. Authorization primitives are centralized and reusable by future domain policies.
-14. Migration tests pass from an empty database and rollback successfully.
-15. RBAC tests cover role integrity, permission mapping, deny-by-default, and separation of duties.
-16. Static analysis, formatting, and the existing test suite pass.
-17. No authentication or business-domain workflow has been pulled forward from later phases.
-18. The implementation contains only the minimum comments necessary.
+1. `categories` exists with the approved adjacency-list structure.
+2. Root categories support `parent_id = null`.
+3. Parent/child relationships work correctly.
+4. The approved furniture taxonomy is seeded deterministically.
+5. Category slugs are unique and deterministic.
+6. `space_type`, `display_order`, and `is_active` are persisted.
+7. Category ordering is deterministic.
+8. Self-parenting is prevented.
+9. `category_recommendations` exists as a directed relational mapping.
+10. Recommendation pair uniqueness is enforced.
+11. Recommendation priority is persisted.
+12. The Category model exposes parent/children relationships.
+13. The Category model exposes both recommendation directions.
+14. Recommendation seeds only reference categories that actually exist.
+15. Undocumented recommendation target categories are explicitly deferred rather than invented.
+16. Migrations run successfully from an empty database and roll back successfully.
+17. Model, hierarchy, recommendation, and seed tests pass.
+18. Existing formatting, static analysis, and test suites pass.
+19. No product/recommendation API or business logic has been pulled into this phase.
+20. Code comments remain minimal.
 
 ---
 
 # STOP condition
 
-Stop after the RBAC database/model/foundation and its tests are complete.
+Stop after the category schema, recommendation mapping schema, models, deterministic seed data, migrations, and tests are complete.
 
-Do not continue into Phase 3.3 Categories Schema.
+Do not continue into Phase 3.4 Products Schema.
 
-Do not implement authentication, staff approval, user management endpoints, or domain-specific authorization workflows merely because the RBAC foundation now exists.
+Do not implement product-category associations before the Product schema establishes the appropriate relationship model.
+
+Do not implement recommendation APIs or algorithms.
 
 Do not commit, stage, or push changes.
