@@ -18,7 +18,7 @@ use App\Http\Controllers\Api\V1\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 // constant
-$products='/products';
+$products = '/products';
 /*
 |--------------------------------------------------------------------------
 | Version 1 API Routes
@@ -42,7 +42,7 @@ $products='/products';
 |
 */
 
-Route::prefix('v1')->name('api.')->group(function (): void {
+Route::prefix('v1')->name('api.')->group(function () use ($products): void {
 
     // ---------------------------------------------------------------------
     // PUBLIC — unauthenticated by contract (SSR/SEO catalog + anonymous flows)
@@ -110,7 +110,7 @@ Route::prefix('v1')->name('api.')->group(function (): void {
     // CATALOG WRITES — ADMINISTRATIVE (Admin; Staff only where approved)
     // Same path family as public reads; authorization is per-operation.
     // ---------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->group(function (): void {
+    Route::middleware(['auth', 'admin'])->group(function () use ($products): void {
         Route::post($products, [ProductController::class, 'store'])->name('products.store');
         Route::patch($products.'/{product}', [ProductController::class, 'update'])->name('products.update');
         Route::post($products.'/{product}/images', [ProductController::class, 'storeImage'])->name('products.images.store');
@@ -175,7 +175,7 @@ Route::prefix('v1')->name('api.')->group(function (): void {
     // --------------------------------------------------------------------
     // ADMIN — Admin-only staff lifecycle, user visibility, audit logs
     // --------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function (): void {
+    Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () use ($products): void {
         Route::get($products, [ProductController::class, 'adminIndex'])->name('products.index');
         Route::get($products.'/{product}', [ProductController::class, 'adminShow'])->name('products.show');
         Route::get('/staff', [AdminController::class, 'staffIndex'])->name('staff.index');
