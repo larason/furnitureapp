@@ -87,17 +87,20 @@ class CategoryConcurrentReparentTest extends TestCase
 
     private function runReparent(Category $moved, Category $parent): int
     {
+        $error = null;
+
         try {
             $moved->changeParent($parent->id);
-
-            return self::STATUS_OK;
-        } catch (DomainException) {
-            return self::STATUS_CYCLE;
-        } catch (QueryException) {
-            return self::STATUS_LOCKED;
-        } catch (\Throwable) {
-            return self::STATUS_ERROR;
+        } catch (\Throwable $e) {
+            $error = $e;
         }
+
+        return match (true) {
+            $error === null => self::STATUS_OK,
+            $error instanceof DomainException => self::STATUS_CYCLE,
+            $error instanceof QueryException => self::STATUS_LOCKED,
+            default => self::STATUS_ERROR,
+        };
     }
 
     private function isKnownOutcome(int $code): bool

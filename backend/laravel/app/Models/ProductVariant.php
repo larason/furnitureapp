@@ -34,44 +34,59 @@ class ProductVariant extends Model
 
     protected static function booted(): void
     {
-        static::saving(function (ProductVariant $variant) {
-            if (trim($variant->variant_name ?? '') === '') {
-                throw new DomainException('A variant name is required.');
-            }
+        static::saving(fn (ProductVariant $variant) => $variant->assertValid());
+    }
 
-            if (trim($variant->sku ?? '') === '') {
-                throw new DomainException('A variant SKU is required.');
-            }
+    public function assertValid(): void
+    {
+        if (trim($this->variant_name ?? '') === '') {
+            throw new DomainException('A variant name is required.');
+        }
 
-            self::assertMoneyPairs($variant);
+        if (trim($this->sku ?? '') === '') {
+            throw new DomainException('A variant SKU is required.');
+        }
 
-            if ($variant->width_cm !== null && $variant->width_cm <= 0) {
-                throw new DomainException('Variant width must be greater than zero.');
-            }
-            if ($variant->height_cm !== null && $variant->height_cm <= 0) {
-                throw new DomainException('Variant height must be greater than zero.');
-            }
-            if ($variant->depth_cm !== null && $variant->depth_cm <= 0) {
-                throw new DomainException('Variant depth must be greater than zero.');
-            }
-            if ($variant->weight_kg !== null && $variant->weight_kg <= 0) {
-                throw new DomainException('Variant weight must be greater than zero.');
-            }
+        self::assertMoneyPairs($this);
+        self::assertPositiveMeasurements($this);
+        self::assertSingleDefault($this);
+    }
 
-            if ($variant->is_default) {
-                $query = ProductVariant::query()
-                    ->where('product_id', $variant->product_id)
-                    ->where('is_default', true);
+    private static function assertPositiveMeasurements(ProductVariant $variant): void
+    {
+        $measurements = [
+            'width_cm' => 'width',
+            'height_cm' => 'height',
+            'depth_cm' => 'depth',
+            'weight_kg' => 'weight',
+        ];
 
-                if ($variant->exists) {
-                    $query->whereKeyNot($variant->id);
-                }
+        foreach ($measurements as $field => $label) {
+            $value = $variant->{$field};
 
-                if ($query->exists()) {
-                    throw new DomainException('A product can only have one default variant.');
-                }
+            if ($value !== null && $value <= 0) {
+                throw new DomainException("Variant {$label} must be greater than zero.");
             }
-        });
+        }
+    }
+
+    private static function assertSingleDefault(ProductVariant $variant): void
+    {
+        if (! $variant->is_default) {
+            return;
+        }
+
+        $query = ProductVariant::query()
+            ->where('product_id', $variant->product_id)
+            ->where('is_default', true);
+
+        if ($variant->exists) {
+            $query->whereKeyNot($variant->id);
+        }
+
+        if ($query->exists()) {
+            throw new DomainException('A product can only have one default variant.');
+        }
     }
 
     public function product(): BelongsTo
@@ -96,19 +111,19 @@ class ProductVariant extends Model
     private static function assertMoneyPairs(ProductVariant $variant): void
     {
         $pairs = [
-            ['compare_at_price_amount', 'compare_at_price_currency'],
-            ['cost_price_amount', 'cost_price_currency'],
+            'compare_at_price' => ['compare_at_price_amount', 'compare_at_price_currency'],
+            'cost_price' => ['cost_price_amount', 'cost_price_currency'],
         ];
 
-        foreach ($pairs as $pair) {
-            $amount = $variant->{$pair[0]};
-            $currency = $variant->{$pair[1]};
+        foreach ($pairs as [$amountField, $currencyField]) {
+            $amount = $variant->{$amountField};
+            $currency = $variant->{$currencyField};
 
             if ($amount !== null && $currency === null) {
-                throw new DomainException(ucfirst($pair[0]).' requires a matching currency.');
+                throw new DomainException(ucfirst($amountField).' requires a matching currency.');
             }
             if ($amount === null && $currency !== null) {
-                throw new DomainException(ucfirst($pair[1]).' requires a matching amount.');
+                throw new DomainException(ucfirst($currencyField).' requires a matching amount.');
             }
         }
     }

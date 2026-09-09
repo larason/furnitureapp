@@ -94,13 +94,7 @@ return new class extends Migration
             return;
         }
 
-        try {
-            DB::statement('ALTER TABLE product_variants DROP CONSTRAINT chk_compare_at_price_null_together');
-        } catch (Throwable) {
-        }
-        try {
-            DB::statement('ALTER TABLE product_variants DROP CONSTRAINT chk_cost_price_null_together');
-        } catch (Throwable) {
-        }
+        DB::statement('ALTER TABLE product_variants DROP CONSTRAINT chk_compare_at_price_null_together');
+        DB::statement('ALTER TABLE product_variants DROP CONSTRAINT chk_cost_price_null_together');
     }
 };

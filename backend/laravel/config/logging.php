@@ -5,7 +5,7 @@ use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
 use Monolog\Processor\PsrLogMessageProcessor;
 
-$storagePath='logs/laravel.log';
+$storagePath = 'logs/laravel.log';
 
 return [
 
