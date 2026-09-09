@@ -6,6 +6,10 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+$apiAdmin='/api/v1/admin/staff';
+$apiProducts='/api/v1/products';
+$apiRequests='/api/v1/requests';
+$apiEnquiries='/api/v1/enquiries';
 /**
  * Phase 2.6 routing-foundation smoke tests.
  *
@@ -23,12 +27,12 @@ class ApiRoutingSmokeTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)->getJson('/api/v1/admin/staff')->assertForbidden();
+        $this->actingAs($user)->getJson($apiAdmin)->assertForbidden();
         $this->actingAs($user)->getJson('/api/v1/admin/audit-logs')->assertForbidden();
-        $this->actingAs($user)->postJson('/api/v1/admin/staff')->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/users')->assertForbidden();
+        $this->actingAs($user)->postJson($apiAdmin)->assertForbidden();
+        $this->actingAs($user)->getJson($apiProducts)->assertForbidden();
         $this->actingAs($user)->getJson('/api/v1/admin/products')->assertForbidden();
-        $this->actingAs($user)->postJson('/api/v1/products')->assertForbidden();
+        $this->actingAs($user)->postJson($apiProducts)->assertForbidden();
         $this->actingAs($user)->patchJson('/api/v1/categories/demo-category')->assertForbidden();
     }
 
@@ -41,16 +45,16 @@ class ApiRoutingSmokeTest extends TestCase
         $this->actingAs($user)->postJson('/api/v1/orders/OD-1/ship')->assertForbidden();
         $this->actingAs($user)->getJson('/api/v1/inventory')->assertForbidden();
         $this->actingAs($user)->postJson('/api/v1/inventory/prod-1/adjust')->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/requests')->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/enquiries')->assertForbidden();
+        $this->actingAs($user)->getJson($apiRequests)->assertForbidden();
+        $this->actingAs($user)->getJson($apiEnquiries)->assertForbidden();
     }
 
     public function test_public_catalog_routes_do_not_require_authentication(): void
     {
-        $this->getJson('/api/v1/products')->assertStatus(501);
-        $this->getJson('/api/v1/products/demo-sofa')->assertStatus(501);
-        $this->getJson('/api/v1/products/demo-sofa/variants')->assertStatus(501);
-        $this->getJson('/api/v1/products/demo-sofa/variants/var-1')->assertStatus(501);
+        $this->getJson($apiProducts)->assertStatus(501);
+        $this->getJson($apiProducts.'/demo-sofa')->assertStatus(501);
+        $this->getJson($apiProducts.'/demo-sofa/variants')->assertStatus(501);
+        $this->getJson($apiProducts.'/demo-sofa/variants/var-1')->assertStatus(501);
         $this->getJson('/api/v1/categories')->assertStatus(501);
         $this->getJson('/api/v1/categories/demo-category')->assertStatus(501);
     }
@@ -61,16 +65,16 @@ class ApiRoutingSmokeTest extends TestCase
         $this->postJson('/api/v1/auth/login')->assertStatus(501);
         $this->postJson('/api/v1/auth/password/forgot')->assertStatus(501);
         $this->postJson('/api/v1/auth/password/reset')->assertStatus(501);
-        $this->postJson('/api/v1/requests')->assertStatus(501);
-        $this->postJson('/api/v1/enquiries')->assertStatus(501);
+        $this->postJson($apiRequests)->assertStatus(501);
+        $this->postJson($apiEnquiries)->assertStatus(501);
     }
 
     public function test_customer_self_service_routes_require_authentication(): void
     {
         $this->getJson('/api/v1/me')->assertUnauthorized();
         $this->getJson('/api/v1/me/orders')->assertUnauthorized();
-        $this->getJson('/api/v1/me/requests')->assertUnauthorized();
-        $this->getJson('/api/v1/me/enquiries')->assertUnauthorized();
+        $this->getJson($apiRequests)->assertUnauthorized();
+        $this->getJson($apiEnquiries)->assertUnauthorized();
         $this->getJson('/api/v1/me/notifications')->assertUnauthorized();
         $this->getJson('/api/v1/me/cart')->assertUnauthorized();
     }
@@ -83,8 +87,8 @@ class ApiRoutingSmokeTest extends TestCase
         $this->getJson('/api/v1/inventory')->assertUnauthorized();
         $this->getJson('/api/v1/inventory/inv-1')->assertUnauthorized();
         $this->postJson('/api/v1/inventory/prod-1/adjust')->assertUnauthorized();
-        $this->getJson('/api/v1/requests')->assertUnauthorized();
-        $this->getJson('/api/v1/enquiries')->assertUnauthorized();
+        $this->getJson($apiRequests)->assertUnauthorized();
+        $this->getJson($apiEnquiries)->assertUnauthorized();
     }
 
     public function test_administrative_routes_do_not_become_public(): void
@@ -93,7 +97,7 @@ class ApiRoutingSmokeTest extends TestCase
         $this->getJson('/api/v1/admin/products')->assertUnauthorized();
         $this->getJson('/api/v1/users')->assertUnauthorized();
         $this->getJson('/api/v1/admin/audit-logs')->assertUnauthorized();
-        $this->postJson('/api/v1/products')->assertUnauthorized();
+        $this->postJson($apiProducts)->assertUnauthorized();
         $this->postJson('/api/v1/categories')->assertUnauthorized();
         $this->patchJson('/api/v1/categories/demo')->assertUnauthorized();
     }
@@ -128,7 +132,7 @@ class ApiRoutingSmokeTest extends TestCase
         $this->get('/v1/products')->assertNotFound();
         $this->get('/api/products')->assertNotFound();
         $this->get('/api/v2/products')->assertNotFound();
-        $this->getJson('/api/v1/products')->assertStatus(501);
+        $this->getJson($apiProducts)->assertStatus(501);
     }
 
     public function test_health_and_infrastructure_marker_are_not_domain_routes(): void

@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+$secret='SuperSecret123!';
+
 class ApiLoggingTest extends TestCase
 {
     public function test_request_id_correlates_response_and_logs(): void
@@ -128,8 +130,8 @@ class ApiLoggingTest extends TestCase
         Route::middleware('api')->post('/api/v1/__test__/boom-body', fn () => throw new \RuntimeException('boom'));
 
         $response = $this->postJson('/api/v1/__test__/boom-body', [
-            'password' => 'SuperSecret123!',
-            'password_confirmation' => 'SuperSecret123!',
+            'password' => $secret,
+            'password_confirmation' => $secret,
             'delivery_address' => '123 Private Street, Dar es Salaam',
             'payment_secret' => 'sk_test_secret',
         ]);
@@ -139,7 +141,7 @@ class ApiLoggingTest extends TestCase
         $this->assertCount(1, $captured);
         $contextJson = json_encode($captured[0]->context);
 
-        $this->assertStringNotContainsString('SuperSecret123!', $contextJson);
+        $this->assertStringNotContainsString($secret, $contextJson);
         $this->assertStringNotContainsString('123 Private Street', $contextJson);
         $this->assertStringNotContainsString('sk_test_secret', $contextJson);
     }

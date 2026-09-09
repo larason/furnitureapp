@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+$apiErrorHandling='/api/v1/__test__/throttle';
+$apiThrottleId='/api/v1/__test__/throttle-id';
+
 /**
  * Phase 2.7 exception/error-handling foundation tests.
  *
@@ -104,11 +107,11 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_rate_limited_returns_429_with_retry_after_header(): void
     {
-        Route::middleware('throttle:1,1')->get('/api/v1/__test__/throttle', fn () => response()->json(['ok' => true]));
+        Route::middleware('throttle:1,1')->get($apiErrorHandling, fn () => response()->json(['ok' => true]));
 
-        $this->getJson('/api/v1/__test__/throttle')->assertOk();
+        $this->getJson($apiErrorHandling)->assertOk();
 
-        $response = $this->getJson('/api/v1/__test__/throttle');
+        $response = $this->getJson($apiErrorHandling);
 
         $response->assertStatus(429);
         $this->assertErrorEnvelope($response, 'RATE_LIMITED');
@@ -120,15 +123,15 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_abort_with_http_status_preserves_that_status(): void
     {
-        Route::get('/api/v1/__test__/abort-409', fn () => abort(409));
-        Route::get('/api/v1/__test__/abort-503', fn () => abort(503, 'maintenance', ['Retry-After' => '60']));
+        Route::get($apiErrorHandling.'abort-409', fn () => abort(409));
+        Route::get($apiErrorHandling.'abort-503', fn () => abort(503, 'maintenance', ['Retry-After' => '60']));
 
-        $conflict = $this->getJson('/api/v1/__test__/abort-409');
+        $conflict = $this->getJson($apiErrorHandling.'abort-409');
 
         $conflict->assertStatus(409);
         $this->assertSame('CONFLICT', $conflict->json('errors.0.code'));
 
-        $unavailable = $this->getJson('/api/v1/__test__/abort-503');
+        $unavailable = $this->getJson($apiErrorHandling.'abort-503');
 
         $unavailable->assertStatus(503);
         $this->assertSame('EXTERNAL_SERVICE_ERROR', $unavailable->json('errors.0.code'));
@@ -147,11 +150,11 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_throttled_request_preserves_consistent_request_id(): void
     {
-        Route::middleware('throttle:1,1')->get('/api/v1/__test__/throttle-id', fn () => response()->json(['ok' => true]));
+        Route::middleware('throttle:1,1')->get($apiThrottleId, fn () => response()->json(['ok' => true]));
 
-        $this->getJson('/api/v1/__test__/throttle-id')->assertOk();
+        $this->getJson($apiThrottleId)->assertOk();
 
-        $throttled = $this->getJson('/api/v1/__test__/throttle-id');
+        $throttled = $this->getJson($apiThrottleId);
 
         $throttled->assertStatus(429);
         $this->assertSame('RATE_LIMITED', $throttled->json('errors.0.code'));
