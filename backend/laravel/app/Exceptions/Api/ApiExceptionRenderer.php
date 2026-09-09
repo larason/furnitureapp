@@ -139,21 +139,27 @@ class ApiExceptionRenderer
     {
         $failed = $e->validator->failed();
 
-        foreach (array_keys($failed[$field] ?? []) as $rule) {
-            if (in_array($rule, $this->missingRules(), true)) {
-                return ApiErrorCode::MISSING_REQUIRED_FIELD;
-            }
+        return $this->firstRuleCode(array_keys($failed[$field] ?? []));
+    }
 
-            if (in_array($rule, $this->formatRules(), true)) {
-                return ApiErrorCode::INVALID_FORMAT;
-            }
+    private function firstRuleCode(array $rules): ApiErrorCode
+    {
+        $code = ApiErrorCode::INVALID_VALUE;
 
-            if (in_array($rule, $this->typeRules(), true)) {
-                return ApiErrorCode::INVALID_TYPE;
+        foreach ($rules as $rule) {
+            $code = match (true) {
+                in_array($rule, $this->missingRules(), true) => ApiErrorCode::MISSING_REQUIRED_FIELD,
+                in_array($rule, $this->formatRules(), true) => ApiErrorCode::INVALID_FORMAT,
+                in_array($rule, $this->typeRules(), true) => ApiErrorCode::INVALID_TYPE,
+                default => ApiErrorCode::INVALID_VALUE,
+            };
+
+            if ($code !== ApiErrorCode::INVALID_VALUE) {
+                break;
             }
         }
 
-        return ApiErrorCode::INVALID_VALUE;
+        return $code;
     }
 
     private function missingRules(): array

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+final class UnexpectedTestBoomException extends \RuntimeException {}
+
 /**
  * Phase 2.7 exception/error-handling foundation tests.
  *
@@ -94,7 +96,7 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_unexpected_exception_is_sanitized(): void
     {
-        Route::get('/api/v1/__test__/boom', fn () => throw new \RuntimeException('/etc/secrets RuntimeException'));
+        Route::get('/api/v1/__test__/boom', fn () => throw new UnexpectedTestBoomException('/etc/secrets RuntimeException'));
 
         $response = $this->getJson('/api/v1/__test__/boom');
 
@@ -102,6 +104,7 @@ class ApiErrorHandlingTest extends TestCase
         $this->assertErrorEnvelope($response, 'INTERNAL_SERVER_ERROR');
         $content = $response->getContent();
         $this->assertStringNotContainsString('RuntimeException', $content);
+        $this->assertStringNotContainsString('UnexpectedTestBoomException', $content);
         $this->assertStringNotContainsString('/etc/secrets', $content);
         $this->assertStringNotContainsString('stack', strtolower($content));
     }

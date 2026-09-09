@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+final class LoggingTestBoomException extends \Exception {}
+
 class ApiLoggingTest extends TestCase
 {
     private const SECRET = 'SuperSecret123!';
@@ -22,7 +24,7 @@ class ApiLoggingTest extends TestCase
             }
         });
 
-        Route::middleware('api')->get('/api/v1/__test__/boom-corr', fn () => throw new \RuntimeException('boom'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-corr', fn () => throw new LoggingTestBoomException('boom'));
 
         $response = $this->getJson('/api/v1/__test__/boom-corr');
 
@@ -72,19 +74,20 @@ class ApiLoggingTest extends TestCase
             }
         });
 
-        Route::middleware('api')->get('/api/v1/__test__/boom-log', fn () => throw new \RuntimeException('secret stack at /app/Models/Foo.php'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-log', fn () => throw new LoggingTestBoomException('secret stack at /app/Models/Foo.php'));
 
         $response = $this->getJson('/api/v1/__test__/boom-log');
 
         $response->assertStatus(500);
         $this->assertSame('INTERNAL_SERVER_ERROR', $response->json('errors.0.code'));
+        $this->assertStringNotContainsString('LoggingTestBoomException', $response->getContent());
         $this->assertStringNotContainsString('RuntimeException', $response->getContent());
         $this->assertStringNotContainsString('/app/Models', $response->getContent());
 
         $this->assertCount(1, $captured);
         $this->assertSame('error', $captured[0]->level);
         $this->assertSame(500, $captured[0]->context['status'] ?? null);
-        $this->assertStringContainsString('RuntimeException', $captured[0]->context['exception_class'] ?? '');
+        $this->assertStringContainsString('LoggingTestBoomException', $captured[0]->context['exception_class'] ?? '');
     }
 
     public function test_sensitive_headers_and_tokens_not_logged(): void
@@ -96,7 +99,7 @@ class ApiLoggingTest extends TestCase
             }
         });
 
-        Route::middleware('api')->get('/api/v1/__test__/boom-sensitive', fn () => throw new \RuntimeException('boom'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-sensitive', fn () => throw new LoggingTestBoomException('boom'));
 
         $response = $this->withHeaders([
             'Authorization' => 'Bearer secret-access-token',
@@ -127,7 +130,7 @@ class ApiLoggingTest extends TestCase
             }
         });
 
-        Route::middleware('api')->post('/api/v1/__test__/boom-body', fn () => throw new \RuntimeException('boom'));
+        Route::middleware('api')->post('/api/v1/__test__/boom-body', fn () => throw new LoggingTestBoomException('boom'));
 
         $response = $this->postJson('/api/v1/__test__/boom-body', [
             'password' => self::SECRET,
@@ -174,7 +177,7 @@ class ApiLoggingTest extends TestCase
             }
         });
 
-        Route::middleware('api')->get('/api/v1/__test__/boom-inject', fn () => throw new \RuntimeException('boom'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-inject', fn () => throw new LoggingTestBoomException('boom'));
 
         $malicious = "evil\nFAKE LOG LINE\r\n[2025-01-01] fake.critical: injected";
 
@@ -199,7 +202,7 @@ class ApiLoggingTest extends TestCase
     {
         $valid = (string) Str::uuid();
 
-        Route::middleware('api')->get('/api/v1/__test__/boom-trusted', fn () => throw new \RuntimeException('boom'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-trusted', fn () => throw new LoggingTestBoomException('boom'));
 
         $response = $this->withHeaders(['X-Request-Id' => $valid])->getJson('/api/v1/__test__/boom-trusted');
 
@@ -216,7 +219,7 @@ class ApiLoggingTest extends TestCase
             }
         });
 
-        Route::middleware('api')->post('/api/v1/__test__/boom-bodies', fn () => throw new \RuntimeException('boom'));
+        Route::middleware('api')->post('/api/v1/__test__/boom-bodies', fn () => throw new LoggingTestBoomException('boom'));
 
         $body = ['enquiry_message' => 'Free-form private enquiry text that must not appear in logs verbatim'];
 
