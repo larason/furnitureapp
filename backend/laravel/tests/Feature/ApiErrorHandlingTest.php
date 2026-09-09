@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+final class UnexpectedTestBoomException extends \RuntimeException {}
+
 /**
  * Phase 2.7 exception/error-handling foundation tests.
  *
@@ -17,6 +19,10 @@ use Tests\TestCase;
 class ApiErrorHandlingTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const API_ERROR_HANDLING = '/api/v1/__test__/throttle';
+
+    private const API_THROTTLE_ID = '/api/v1/__test__/throttle-id';
 
     public function test_unknown_api_route_returns_not_found_envelope(): void
     {
@@ -90,7 +96,7 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_unexpected_exception_is_sanitized(): void
     {
-        Route::get('/api/v1/__test__/boom', fn () => throw new \RuntimeException('/etc/secrets RuntimeException'));
+        Route::get('/api/v1/__test__/boom', fn () => throw new UnexpectedTestBoomException('/etc/secrets RuntimeException'));
 
         $response = $this->getJson('/api/v1/__test__/boom');
 
@@ -98,17 +104,18 @@ class ApiErrorHandlingTest extends TestCase
         $this->assertErrorEnvelope($response, 'INTERNAL_SERVER_ERROR');
         $content = $response->getContent();
         $this->assertStringNotContainsString('RuntimeException', $content);
+        $this->assertStringNotContainsString('UnexpectedTestBoomException', $content);
         $this->assertStringNotContainsString('/etc/secrets', $content);
         $this->assertStringNotContainsString('stack', strtolower($content));
     }
 
     public function test_rate_limited_returns_429_with_retry_after_header(): void
     {
-        Route::middleware('throttle:1,1')->get('/api/v1/__test__/throttle', fn () => response()->json(['ok' => true]));
+        Route::middleware('throttle:1,1')->get(self::API_ERROR_HANDLING, fn () => response()->json(['ok' => true]));
 
-        $this->getJson('/api/v1/__test__/throttle')->assertOk();
+        $this->getJson(self::API_ERROR_HANDLING)->assertOk();
 
-        $response = $this->getJson('/api/v1/__test__/throttle');
+        $response = $this->getJson(self::API_ERROR_HANDLING);
 
         $response->assertStatus(429);
         $this->assertErrorEnvelope($response, 'RATE_LIMITED');
@@ -120,15 +127,15 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_abort_with_http_status_preserves_that_status(): void
     {
-        Route::get('/api/v1/__test__/abort-409', fn () => abort(409));
-        Route::get('/api/v1/__test__/abort-503', fn () => abort(503, 'maintenance', ['Retry-After' => '60']));
+        Route::get(self::API_ERROR_HANDLING.'abort-409', fn () => abort(409));
+        Route::get(self::API_ERROR_HANDLING.'abort-503', fn () => abort(503, 'maintenance', ['Retry-After' => '60']));
 
-        $conflict = $this->getJson('/api/v1/__test__/abort-409');
+        $conflict = $this->getJson(self::API_ERROR_HANDLING.'abort-409');
 
         $conflict->assertStatus(409);
         $this->assertSame('CONFLICT', $conflict->json('errors.0.code'));
 
-        $unavailable = $this->getJson('/api/v1/__test__/abort-503');
+        $unavailable = $this->getJson(self::API_ERROR_HANDLING.'abort-503');
 
         $unavailable->assertStatus(503);
         $this->assertSame('EXTERNAL_SERVICE_ERROR', $unavailable->json('errors.0.code'));
@@ -147,11 +154,11 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_throttled_request_preserves_consistent_request_id(): void
     {
-        Route::middleware('throttle:1,1')->get('/api/v1/__test__/throttle-id', fn () => response()->json(['ok' => true]));
+        Route::middleware('throttle:1,1')->get(self::API_THROTTLE_ID, fn () => response()->json(['ok' => true]));
 
-        $this->getJson('/api/v1/__test__/throttle-id')->assertOk();
+        $this->getJson(self::API_THROTTLE_ID)->assertOk();
 
-        $throttled = $this->getJson('/api/v1/__test__/throttle-id');
+        $throttled = $this->getJson(self::API_THROTTLE_ID);
 
         $throttled->assertStatus(429);
         $this->assertSame('RATE_LIMITED', $throttled->json('errors.0.code'));

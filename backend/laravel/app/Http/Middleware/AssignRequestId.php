@@ -25,7 +25,7 @@ class AssignRequestId
         return $response;
     }
 
-    public function terminate(Request $request, Response $response): void
+    public function terminate(): void
     {
         Context::forget('request_id');
 

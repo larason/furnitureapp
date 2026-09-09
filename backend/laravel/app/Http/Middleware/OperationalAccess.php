@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -29,7 +28,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class OperationalAccess
 {
-    public function handle(Request $request, Closure $next): Response
+    public function handle(): Response
     {
         throw new AuthorizationException('The requested operational operation is not available.');
     }

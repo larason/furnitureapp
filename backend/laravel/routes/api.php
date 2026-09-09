@@ -17,6 +17,9 @@ use App\Http\Controllers\Api\V1\RequestController;
 use App\Http\Controllers\Api\V1\WebhookController;
 use Illuminate\Support\Facades\Route;
 
+// constant
+$products = '/products';
+$productPath = '/{product}';
 /*
 |--------------------------------------------------------------------------
 | Version 1 API Routes
@@ -40,15 +43,15 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::prefix('v1')->name('api.')->group(function (): void {
+Route::prefix('v1')->name('api.')->group(function () use ($products, $productPath): void {
 
     // ---------------------------------------------------------------------
     // PUBLIC — unauthenticated by contract (SSR/SEO catalog + anonymous flows)
     // ---------------------------------------------------------------------
-    Route::get('/products', [ProductController::class, 'index'])->name('products.index');
-    Route::get('/products/{product}', [ProductController::class, 'show'])->name('products.show');
-    Route::get('/products/{product}/variants', [ProductController::class, 'indexVariants'])->name('products.variants.index');
-    Route::get('/products/{product}/variants/{variant}', [ProductController::class, 'showVariant'])->name('products.variants.show');
+    Route::get($products, [ProductController::class, 'index'])->name('products.index');
+    Route::get($products.$productPath, [ProductController::class, 'show'])->name('products.show');
+    Route::get($products.'/{product}/variants', [ProductController::class, 'indexVariants'])->name('products.variants.index');
+    Route::get($products.'/{product}/variants/{variant}', [ProductController::class, 'showVariant'])->name('products.variants.show');
 
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
     Route::get('/categories/{category}', [CategoryController::class, 'show'])->name('categories.show');
@@ -108,11 +111,11 @@ Route::prefix('v1')->name('api.')->group(function (): void {
     // CATALOG WRITES — ADMINISTRATIVE (Admin; Staff only where approved)
     // Same path family as public reads; authorization is per-operation.
     // ---------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->group(function (): void {
-        Route::post('/products', [ProductController::class, 'store'])->name('products.store');
-        Route::patch('/products/{product}', [ProductController::class, 'update'])->name('products.update');
-        Route::post('/products/{product}/images', [ProductController::class, 'storeImage'])->name('products.images.store');
-        Route::post('/products/{product}/variants', [ProductController::class, 'storeVariant'])->name('products.variants.store');
+    Route::middleware(['auth', 'admin'])->group(function () use ($products, $productPath): void {
+        Route::post($products, [ProductController::class, 'store'])->name('products.store');
+        Route::patch($products.$productPath, [ProductController::class, 'update'])->name('products.update');
+        Route::post($products.'/{product}/images', [ProductController::class, 'storeImage'])->name('products.images.store');
+        Route::post($products.'/{product}/variants', [ProductController::class, 'storeVariant'])->name('products.variants.store');
 
         Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
         Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
@@ -173,9 +176,9 @@ Route::prefix('v1')->name('api.')->group(function (): void {
     // --------------------------------------------------------------------
     // ADMIN — Admin-only staff lifecycle, user visibility, audit logs
     // --------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function (): void {
-        Route::get('/products', [ProductController::class, 'adminIndex'])->name('products.index');
-        Route::get('/products/{product}', [ProductController::class, 'adminShow'])->name('products.show');
+    Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {
+        Route::get($products, [ProductController::class, 'adminIndex'])->name('products.index');
+        Route::get($products.$productPath, [ProductController::class, 'adminShow'])->name('products.show');
         Route::get('/staff', [AdminController::class, 'staffIndex'])->name('staff.index');
         Route::post('/staff', [AdminController::class, 'staffStore'])->name('staff.store');
         Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->name('staff.show');
