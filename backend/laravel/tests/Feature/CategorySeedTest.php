@@ -15,11 +15,53 @@ class CategorySeedTest extends TestCase
     public function test_seed_is_idempotent_and_deterministic(): void
     {
         $this->seed(CategorySeeder::class);
+        $firstCategories = $this->canonicalCategories();
+        $firstRecommendations = $this->canonicalRecommendations();
+
         $this->seed(CategorySeeder::class);
+        $secondCategories = $this->canonicalCategories();
+        $secondRecommendations = $this->canonicalRecommendations();
 
         $this->assertSame(76, Category::count());
         $this->assertSame(76, Category::pluck('slug')->unique()->count());
         $this->assertSame(20, DB::table('category_recommendations')->count());
+
+        $this->assertSame($firstCategories, $secondCategories, 'Categories canonical state must be identical after repeated seeds');
+        $this->assertSame($firstRecommendations, $secondRecommendations, 'Recommendation priorities and targets must be identical after repeated seeds');
+    }
+
+    private function canonicalCategories(): array
+    {
+        return DB::table('categories')
+            ->orderBy('slug')
+            ->get(['slug', 'name', 'parent_id', 'space_type', 'display_order'])
+            ->map(fn ($row) => [
+                'slug' => $row->slug,
+                'name' => $row->name,
+                'parent_slug' => $row->parent_id ? DB::table('categories')->where('id', $row->parent_id)->value('slug') : null,
+                'space_type' => $row->space_type,
+                'display_order' => (int) $row->display_order,
+            ])
+            ->all();
+    }
+
+    private function canonicalRecommendations(): array
+    {
+        return DB::table('category_recommendations')
+            ->join('categories as source', 'source.id', '=', 'category_recommendations.category_id')
+            ->join('categories as target', 'target.id', '=', 'category_recommendations.recommended_category_id')
+            ->orderBy('source.slug')
+            ->orderBy('target.slug')
+            ->orderBy('category_recommendations.relation_type')
+            ->orderBy('category_recommendations.priority')
+            ->get([
+                'source.slug as source_slug',
+                'target.slug as target_slug',
+                'category_recommendations.relation_type',
+                'category_recommendations.priority',
+            ])
+            ->map(fn ($row) => [$row->source_slug, $row->target_slug, $row->relation_type, (int) $row->priority])
+            ->all();
     }
 
     public function test_single_root_container_exists_with_null_parent(): void

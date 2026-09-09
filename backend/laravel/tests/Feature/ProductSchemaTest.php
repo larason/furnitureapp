@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Support\AssemblyRequired;
 use DomainException;
 use Illuminate\Database\QueryException;
@@ -174,14 +175,17 @@ class ProductSchemaTest extends TestCase
         ]);
     }
 
-    public function test_soft_deleted_products_are_excluded_by_default(): void
+    public function test_deleting_product_hard_deletes_and_cascades_variants(): void
     {
         $category = $this->createCategory(['slug' => 'sofas']);
         $product = Product::factory()->for($category)->create(['slug' => 'nordic-sofa']);
+        $variant = ProductVariant::factory()->for($product)->create();
+
         $product->delete();
 
         $this->assertNull(Product::where('slug', 'nordic-sofa')->first());
-        $this->assertNotNull(Product::withTrashed()->where('slug', 'nordic-sofa')->first());
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+        $this->assertDatabaseMissing('product_variants', ['id' => $variant->id]);
     }
 
     public function test_product_does_not_require_variant_inventory_or_media_at_schema_level(): void

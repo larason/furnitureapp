@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\ProductVariantService;
 use DomainException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -180,6 +181,48 @@ class ProductVariantSchemaTest extends TestCase
         ]);
     }
 
+    public function test_compare_at_price_amount_without_currency_rejected_by_database(): void
+    {
+        $product = $this->createProduct();
+
+        $this->expectException(QueryException::class);
+        DB::table('product_variants')->insert([
+            'product_id' => $product->id,
+            'sku' => 'SKU-DB-COMPARE-AMOUNT-ONLY',
+            'variant_name' => 'DB Compare Amount Only',
+            'price_amount' => 10000,
+            'price_currency' => 'TZS',
+            'compare_at_price_amount' => 20000,
+            'compare_at_price_currency' => null,
+            'is_default' => false,
+            'is_active' => true,
+            'display_order' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function test_compare_at_price_currency_without_amount_rejected_by_database(): void
+    {
+        $product = $this->createProduct();
+
+        $this->expectException(QueryException::class);
+        DB::table('product_variants')->insert([
+            'product_id' => $product->id,
+            'sku' => 'SKU-DB-COMPARE-CURRENCY-ONLY',
+            'variant_name' => 'DB Compare Currency Only',
+            'price_amount' => 10000,
+            'price_currency' => 'TZS',
+            'compare_at_price_amount' => null,
+            'compare_at_price_currency' => 'TZS',
+            'is_default' => false,
+            'is_active' => true,
+            'display_order' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
     public function test_cost_price_is_optional_and_requires_currency_when_present(): void
     {
         $product = $this->createProduct();
@@ -292,6 +335,53 @@ class ProductVariantSchemaTest extends TestCase
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('A product can only have one default variant.');
         ProductVariant::factory()->for($product)->asDefault()->create(['sku' => 'SKU-DEFAULT-2']);
+    }
+
+    public function test_database_prevents_two_defaults_via_direct_insert_bypassing_model_validation(): void
+    {
+        $product = $this->createProduct();
+
+        DB::table('product_variants')->insert([
+            'product_id' => $product->id,
+            'sku' => 'SKU-DB-DEFAULT-1',
+            'variant_name' => 'DB Variant 1',
+            'price_amount' => 10000,
+            'price_currency' => 'TZS',
+            'is_default' => true,
+            'is_active' => true,
+            'display_order' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->expectException(QueryException::class);
+
+        DB::table('product_variants')->insert([
+            'product_id' => $product->id,
+            'sku' => 'SKU-DB-DEFAULT-2',
+            'variant_name' => 'DB Variant 2',
+            'price_amount' => 20000,
+            'price_currency' => 'TZS',
+            'is_default' => true,
+            'is_active' => true,
+            'display_order' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function test_transactional_default_switch_leaves_exactly_one_default(): void
+    {
+        $product = $this->createProduct();
+        $first = ProductVariant::factory()->for($product)->asDefault()->create(['sku' => 'SKU-SWITCH-1']);
+        $second = ProductVariant::factory()->for($product)->create(['sku' => 'SKU-SWITCH-2']);
+
+        app(ProductVariantService::class)->setAsDefault($second);
+
+        $this->assertTrue($second->fresh()->is_default);
+        $this->assertFalse($first->fresh()->is_default);
+        $this->assertSame(1, ProductVariant::where('product_id', $product->id)->where('is_default', true)->count());
+        $this->assertSame($second->id, $product->fresh()->defaultVariant->id);
     }
 
     public function test_different_products_can_each_have_a_default_variant(): void
