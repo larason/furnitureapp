@@ -1,41 +1,55 @@
 # Group C phases instructions
 
-# Phase 3.4 — Products Schema
+# Phase 3.5 — Product Variants Schema
 
 ## Purpose
 
-Implement the core `products` catalog entity and establish the relational foundation required by the subsequent product phases.
+Implement the `product_variants` schema and model as the canonical representation of a product's distinct sellable configurations.
 
-This phase must prepare the catalog for:
+A Product is the parent catalog concept.
 
-* furniture product descriptions and metadata;
-* category association;
-* product variants;
-* variant-level pricing;
-* variant dimensions and physical specifications;
-* materials and configurable attributes;
-* inventory/stock;
-* product images and staged-room media;
-* 3D and AR assets;
-* future room-style compatibility and recommendation features.
+A Product Variant represents a distinct purchasable configuration such as:
 
-The important architectural boundary is:
+```text
+3-Seater / Forest Green / Velvet
+2-Seater / Natural Beige / Linen
+King / Walnut / Solid Oak
+```
 
-> `products` represents the parent catalog concept. A sellable SKU, its price, physical dimensions, and stock are variant/inventory concerns and must not be collapsed into the base product.
+Each variant may have its own:
 
-The Group C roadmap explicitly places Product Schema before Product Variants, Product Images, and Inventory, so this phase must establish the parent structure without prematurely implementing those later schemas.
+* SKU;
+* customer-facing variant name;
+* price;
+* compare-at price;
+* internal cost price;
+* dimensions;
+* weight;
+* configurable attributes;
+* default/display status.
+
+This phase must prepare the database for the later:
+
+* product images/media phase;
+* inventory phase;
+* cart phase;
+* checkout/order item snapshot phase;
+* public Variant API phase.
+
+The variant is the pricing and sellable-unit boundary. Inventory remains separate.
 
 ---
 
 # Dependencies
 
-Required:
+Required before starting:
 
 * Phase 2.1–2.12 completed.
 * Phase 3.1 Users Schema completed.
 * Phase 3.2 Roles/permissions model completed.
 * Phase 3.3 Categories Schema completed.
-* Existing migration, testing, formatting, and static-analysis conventions operational.
+* Phase 3.4 Products Schema completed.
+* Existing Laravel migration/model/test conventions operational.
 
 Authoritative inputs:
 
@@ -47,1048 +61,1251 @@ Authoritative inputs:
 * `docs/decisions.md`
 * `AGENTS.md`
 
-Do not reopen unrelated API, authentication, payment, or checkout decisions.
+Do not reopen unrelated authentication, authorization, checkout, payment, or order decisions.
 
 ---
 
-# 3.4.1 Product entity responsibility
+# 3.5.1 Variant responsibility
 
-`products` is the parent catalog record.
+`product_variants` is the canonical representation of a product's sellable configuration.
 
-It describes the conceptual item customers browse, such as:
+Conceptually:
 
-```text id="u8g9ai"
-Nordic Velvet Lounge Chair
+```text
+Product
+├── Variant A
+│   ├── SKU
+│   ├── price
+│   ├── dimensions
+│   └── attributes
+├── Variant B
+│   ├── SKU
+│   ├── price
+│   ├── dimensions
+│   └── attributes
+└── Variant C
+    ├── SKU
+    ├── price
+    ├── dimensions
+    └── attributes
 ```
 
-A product may later have multiple sellable variants:
-
-```text id="m0u3m1"
-Forest Green / Natural Oak
-Charcoal / Black Oak
-Natural Beige / Walnut
-```
-
-The product record itself must therefore **not** become the source of truth for:
-
-* variant-specific price;
-* variant-specific SKU;
-* variant-specific stock;
-* variant-specific dimensions where those dimensions differ between variants.
-
-Those belong to later product-variant/inventory phases.
-
----
-
-# 3.4.2 Core products table
-
-Create:
-
-```text id="t4i5wc"
-products
-```
-
-with the following conceptual structure:
-
-```text id="x22qj8"
-id
-category_id
-name
-slug
-sku_prefix
-short_description
-description
-brand
-room_type
-assembly_required
-primary_material
-is_active
-is_featured
-timestamps
-soft-deletion metadata
-```
-
-Recommended Laravel migration:
-
-```php id="8mjz3f"
-Schema::create('products', function (Blueprint $table) {
-    $table->id();
-
-    $table->foreignId('category_id')
-        ->constrained('categories')
-        ->restrictOnDelete();
-
-    $table->string('name');
-    $table->string('slug')->unique();
-    $table->string('sku_prefix')->nullable()->unique();
-
-    $table->text('short_description')->nullable();
-    $table->longText('description')->nullable();
-
-    $table->string('brand')->nullable();
-    $table->string('room_type')->nullable();
-    $table->string('assembly_required')->default('none');
-    $table->string('primary_material')->nullable();
-
-    $table->boolean('is_active')->default(true);
-    $table->boolean('is_featured')->default(false);
-
-    $table->timestamps();
-    $table->softDeletes();
-
-    $table->index(['category_id', 'is_active']);
-    $table->index(['is_active', 'is_featured']);
-    $table->index('room_type');
-});
-```
-
-Adapt exact syntax to existing project conventions.
-
-Do not blindly copy the supplied migration if the existing Laravel version/project conventions require a different constraint method.
-
----
-
-# 3.4.3 Category relationship
-
-A product has one primary catalog category in this phase:
-
-```text id="w6iw5k"
-Category 1 ─── N Products
-```
-
-Use:
-
-```php id="x2n0wu"
-public function category(): BelongsTo
-{
-    return $this->belongsTo(Category::class);
-}
-```
-
-Do not create a `product_categories` many-to-many table yet.
-
-This phase must establish the simplest authoritative relationship consistent with the current catalog design.
-
-A future requirement for products to belong to multiple categories can be introduced as a compatibility-reviewed schema change.
-
-Do not build that complexity speculatively.
-
----
-
-# 3.4.4 Category deletion behavior
-
-Do not cascade-delete products when a category is deleted.
-
-Products are durable catalog entities and may later participate in:
-
-* orders;
-* order-item snapshots;
-* requests;
-* inventory;
-* historical reporting;
-* recommendations.
-
-Therefore prefer:
-
-```text id="48rxz3"
-Category deleted
-→ product remains
-→ deletion is restricted or handled through an explicit future category-management workflow
-```
-
-Use `restrictOnDelete()` or the project's equivalent restrictive foreign-key behavior.
-
-Do not use:
-
-```php id="7ymxm6"
-->cascadeOnDelete()
-```
-
-for `products.category_id`.
-
-A category removal must not silently destroy product data.
-
----
-
-# 3.4.5 Product identity
-
-## `id`
-
-Server-generated primary key.
-
-Never client-controlled.
-
-## `name`
-
-Customer-facing product name.
-
-Examples:
-
-```text id="84v0w7"
-Nordic Velvet Lounge Chair
-Walnut Executive Desk
-Modern Oak Dining Table
-```
-
-Use the existing project string-length convention.
-
-## `slug`
-
-Stable unique catalog URL identifier.
-
-Examples:
-
-```text id="f8h0q5"
-nordic-velvet-lounge-chair
-walnut-executive-desk
-modern-oak-dining-table
-```
-
-Must be unique.
-
-Do not use product IDs as SEO URLs.
-
-Do not make slugs dependent on variant names.
-
-## `sku_prefix`
-
-Optional product-level identifier prefix.
-
-Example:
-
-```text id="y19qg2"
-SOF-NORDIC
-```
-
-This is **not** a sellable SKU.
-
-Actual sellable SKU belongs to Phase 3.5 Product Variants.
-
-Use this field only as an optional product-level naming/reference aid.
-
-Do not use it for inventory identity.
-
-Do not require it to exist for every product.
-
-If uniqueness is enabled, uniqueness must apply to non-null values according to the database engine's semantics.
-
----
-
-# 3.4.6 Product descriptions
-
-### `short_description`
-
-Compact catalog summary.
-
-Suitable for:
-
-* listing cards;
-* category pages;
-* search results;
-* short product previews.
-
-### `description`
-
-Full product description.
-
-Suitable for:
-
-* product details;
-* material/usage information;
-* furniture characteristics;
-* customer-facing long-form content.
-
-Do not treat either field as trusted HTML.
-
-Future rich content must have a defined sanitization/rendering contract.
-
-Do not implement a rich-text editor or HTML sanitization pipeline in this phase.
-
----
-
-# 3.4.7 Brand
-
-`brand` is nullable.
-
-Keep it as a simple string in V1.
-
-Do not create a brands table in Phase 3.4.
-
-Do not assume every furniture business item has a standardized external brand entity.
-
-A dedicated Brand schema can be introduced later if the business requirements justify it.
-
----
-
-# 3.4.8 Room context
-
-Use:
-
-```text id="q7sblf"
-room_type
-```
-
-as a product-level contextual hint.
-
-Examples:
-
-```text id="p93q2f"
-Living Room
-Bedroom
-Dining Room
-Office
-Outdoor
-Entryway
-Hybrid
-```
-
-However, do not duplicate the category hierarchy unnecessarily.
-
-The category remains the authoritative catalog classification.
-
-`room_type` exists to support future room-context discovery and compatibility.
-
-Do not turn `room_type` into an uncontrolled collection of multiple values in this phase.
-
-Do not create a `rooms` table yet.
-
-Do not make `room_type` the recommendation engine.
-
-Do not make product recommendations depend solely on matching `room_type`.
-
----
-
-# 3.4.9 Room-style compatibility readiness
-
-The product model must remain extensible for future room-staging and recommendation metadata.
-
-Do not add arbitrary JSON such as:
-
-```json id="fv7wxd"
-{
-  "room_styles": [
-    "modern",
-    "minimalist",
-    "scandinavian"
-  ]
-}
-```
-
-as the authoritative room-style system.
-
-At this phase, do not create the full room-style taxonomy.
-
-Instead:
-
-* retain `room_type` as a simple current product attribute;
-* keep the product entity independent from future staging entities;
-* leave room-style compatibility for a later schema decision.
-
-Future structures may include normalized compatibility records or a controlled attribute system once requirements are sufficiently defined.
-
-Do not prematurely create either a complex style graph or machine-learning recommendation fields.
-
----
-
-# 3.4.10 Assembly requirements
-
-Use:
-
-```text id="5v4bny"
-assembly_required
-```
-
-with the V1 controlled values:
-
-```text id="jng1w7"
-none
-partial
-full
-```
-
-Do not use unrestricted strings for these known business values.
-
-Prefer a Laravel enum/cast or equivalent centralized constant representation if consistent with the existing project.
-
-Reject unknown values.
-
-Do not add additional assembly states such as:
-
-```text id="0o0wwq"
-SELF_ASSEMBLY
-PROFESSIONAL_ONLY
-OPTIONAL
-```
-
-unless the V1 contract explicitly expands.
-
----
-
-# 3.4.11 Primary material
-
-Use:
-
-```text id="8os3ac"
-primary_material
-```
-
-as a customer-facing descriptive field.
-
-Examples:
-
-```text id="c1n3h8"
-Solid Oak
-Velvet & Solid Oak
-Solid Teak
-Engineered Wood
-```
-
-This field is a summary, not a complete materials database.
-
-The project conventions already distinguish furniture material/color from CLOSED enums and permit bounded free text for such descriptive attributes.
-
-Do not create:
-
-```text id="g57f89"
-materials
-product_materials
-material_types
-```
-
-in this phase.
-
-A future normalized material structure can be introduced when the requirements justify filtering, composition percentages, supplier data, or material-specific behavior.
-
----
-
-# 3.4.12 Variations readiness
-
-The product schema must prepare for variants without duplicating variant data.
-
-Do not add:
-
-```text id="5k22w1"
+Do not duplicate variant-specific data into `products`.
+
+Do not place the following on `products`:
+
+```text
+sku
+price
+compare_at_price
+cost_price
 color
 fabric
 finish
 size
-variant_price
-variant_sku
-variant_stock
-variant_width
-variant_height
-variant_depth
+width
+height
+depth
+weight
 ```
 
-directly to `products`.
-
-Those characteristics belong to `product_variants` in Phase 3.5.
-
-Conceptually:
-
-```text id="5svz9j"
-Product
-├── Variant A
-│   ├── SKU
-│   ├── attributes
-│   ├── dimensions
-│   └── price
-├── Variant B
-│   ├── SKU
-│   ├── attributes
-│   ├── dimensions
-│   └── price
-└── Variant C
-    ├── SKU
-    ├── attributes
-    ├── dimensions
-    └── price
-```
-
-This avoids storing multiple potentially conflicting sources of truth.
+The Product table remains the parent catalog entity established in Phase 3.4.
 
 ---
 
-# 3.4.13 Pricing readiness
+# 3.5.2 Variant table
 
-Do **not** add a product-level `price` field merely because a product has a price.
+Create:
 
-The project's API conventions define money as integer minor units:
+```text
+product_variants
+```
 
-```json id="y1npf4"
+with this structure:
+
+```text
+id
+product_id
+sku
+variant_name
+
+price_amount
+price_currency
+
+compare_at_price_amount
+compare_at_price_currency
+
+cost_price_amount
+cost_price_currency
+
+width_cm
+height_cm
+depth_cm
+weight_kg
+
+attributes
+
+is_default
+is_active
+display_order
+
+created_at
+updated_at
+```
+
+Recommended Laravel migration:
+
+```php
+Schema::create('product_variants', function (Blueprint $table) {
+    $table->id();
+
+    $table->foreignId('product_id')
+        ->constrained('products')
+        ->cascadeOnDelete();
+
+    $table->string('sku')->unique();
+    $table->string('variant_name');
+
+    $table->unsignedBigInteger('price_amount');
+    $table->char('price_currency', 3)->default('TZS');
+
+    $table->unsignedBigInteger('compare_at_price_amount')->nullable();
+    $table->char('compare_at_price_currency', 3)->nullable();
+
+    $table->unsignedBigInteger('cost_price_amount')->nullable();
+    $table->char('cost_price_currency', 3)->nullable();
+
+    $table->decimal('width_cm', 10, 2)->nullable();
+    $table->decimal('height_cm', 10, 2)->nullable();
+    $table->decimal('depth_cm', 10, 2)->nullable();
+    $table->decimal('weight_kg', 10, 2)->nullable();
+
+    $table->json('attributes')->nullable();
+
+    $table->boolean('is_default')->default(false);
+    $table->boolean('is_active')->default(true);
+    $table->unsignedInteger('display_order')->default(0);
+
+    $table->timestamps();
+
+    $table->index(['product_id', 'is_active', 'display_order']);
+    $table->index(['product_id', 'is_default']);
+});
+```
+
+Adapt exact Laravel syntax to the project's established migration conventions.
+
+Do not blindly introduce duplicate indexes if an existing migration convention already covers them.
+
+---
+
+# 3.5.3 Product relationship
+
+Every variant belongs to exactly one product:
+
+```text
+Product 1 ─── N ProductVariants
+```
+
+Implement:
+
+```php
+public function product(): BelongsTo
+{
+    return $this->belongsTo(Product::class);
+}
+```
+
+On `Product` add:
+
+```php
+public function variants(): HasMany
+{
+    return $this->hasMany(ProductVariant::class);
+}
+```
+
+Do not expose variants through a global unscoped relationship when the intended operation is under a product.
+
+The future canonical variant resource is nested:
+
+```text
+/api/v1/products/{product}/variants
+/api/v1/products/{product}/variants/{variant}
+```
+
+and a variant detail lookup must be constrained to its parent product.
+
+This prevents a valid Variant ID belonging to Product B from being accepted under Product A.
+
+---
+
+# 3.5.4 Foreign-key delete behavior
+
+A product's variants represent child catalog configurations.
+
+For this phase, use:
+
+```text
+Product deletion
+→ Variant deletion
+```
+
+through the normal relational cascade because a variant has no independent meaning without its parent product.
+
+However, do not implement destructive product deletion workflows in this phase.
+
+The database relationship exists so that future product lifecycle operations cannot leave orphan variants.
+
+Historical order records must not depend on live variant rows for their financial identity; that protection belongs to the later Order Item Snapshot phase.
+
+---
+
+# 3.5.5 SKU
+
+`sku` is the authoritative machine identifier for a sellable variant.
+
+Examples:
+
+```text
+SOFA-NORDIC-3S-GRN
+SOFA-NORDIC-3S-BEI
+BED-OAK-KING-WAL
+```
+
+Requirements:
+
+* required;
+* unique globally;
+* stable;
+* server-controlled;
+* never reused casually.
+
+The `sku_prefix` from `products` may be used when generating human-readable SKU conventions later, but it is not the SKU itself.
+
+Do not permit two variants to share the same SKU.
+
+Do not use `variant_name` as the SKU.
+
+Do not use database IDs as SKU values.
+
+---
+
+# 3.5.6 Variant ID
+
+Variant primary key is server-generated.
+
+Do not expose any mechanism allowing clients to choose a variant ID.
+
+The variant ID is the machine identifier used by later cart/order/catalog APIs.
+
+A client selecting:
+
+```json
+{
+  "variant_id": 501
+}
+```
+
+is expressing purchase intent only.
+
+The backend must resolve that ID under the relevant Product and validate that the variant belongs to that Product.
+
+---
+
+# 3.5.7 Variant name
+
+`variant_name` is the customer-facing label for the configuration.
+
+Examples:
+
+```text
+Forest Green / Oak
+3-Seater / Emerald Green / Velvet
+King / Walnut
+Natural Beige / Linen
+```
+
+It is descriptive rather than authoritative.
+
+Do not encode price, stock, or business state into the string.
+
+Do not parse `variant_name` to determine color, size, material, or dimensions.
+
+Those values belong in structured fields.
+
+---
+
+# 3.5.8 Pricing model
+
+Pricing belongs to the variant.
+
+The project's frozen V1 money convention requires:
+
+```json
 {
   "amount": 35000000,
   "currency": "TZS"
 }
 ```
 
-with `1 TZS = 100` minor units.
+where the amount is an integer in minor units and `1 TZS = 100` minor units. It applies to product and variant pricing, and a bare decimal price or formatted currency string is not valid.
 
-Financial authority is server-side. Client-supplied totals/prices are not authoritative.
+Therefore the database should use integer amount fields rather than:
 
-Actual sellable pricing belongs to the Product Variant schema.
-
-Therefore Phase 3.4 must **not** create:
-
-```text id="w5y0fq"
-decimal price
-decimal compare_at_price
-decimal cost_price
+```text
+DECIMAL(12,2)
 ```
 
-on `products`.
+for money.
 
-Phase 3.5 must decide the exact variant-level financial representation using the already-established money convention.
+Use:
 
-This prevents inconsistent decimal-vs-minor-unit implementations across the catalog.
+```text
+price_amount
+price_currency
+```
+
+rather than a serialized JSON money object in the database.
+
+This separates:
+
+```text
+Database storage
+→ integer amount + currency
+
+API representation
+→ {amount, currency}
+```
+
+without losing exactness.
 
 ---
 
-# 3.4.14 Inventory readiness
+# 3.5.9 Variant price
 
-Do not add inventory quantities to `products`.
+`price_amount` is required.
+
+`price_currency` defaults to:
+
+```text
+TZS
+```
+
+At V1, the expected catalog currency is TZS.
+
+Do not allow arbitrary client-provided currencies to change the product's financial meaning.
+
+Do not calculate price from:
+
+```text
+variant_name
+attributes
+product name
+category
+inventory
+```
+
+Price must be explicitly persisted as the authoritative variant price.
+
+---
+
+# 3.5.10 Compare-at price
+
+Support optional:
+
+```text
+compare_at_price_amount
+compare_at_price_currency
+```
+
+for merchandising/display of a prior or reference price.
+
+Rules:
+
+* both amount and currency are null together when absent;
+* if amount exists, currency must exist;
+* compare-at price is not the authoritative checkout price;
+* actual sale/checkout price is `price_amount`.
+
+Do not implement pricing promotions or discount engines in this phase.
 
 Do not add:
 
-```text id="3q9n3l"
+```text
+discount_percent
+sale_start_at
+sale_end_at
+coupon_code
+```
+
+here.
+
+---
+
+# 3.5.11 Internal cost price
+
+Support optional:
+
+```text
+cost_price_amount
+cost_price_currency
+```
+
+for internal operational/accounting use.
+
+This field is highly sensitive.
+
+It must:
+
+* never be included in public catalog serialization;
+* never be included in customer-facing variant responses;
+* never be exposed merely because the caller is authenticated;
+* never be accepted from a public customer API.
+
+The future Admin/Staff representation must expose only what the applicable authorization policy permits.
+
+Field-level serialization is mandatory; internal values must not be exposed through automatic model serialization.
+
+Do not implement cost accounting or margin calculations in this phase.
+
+---
+
+# 3.5.12 Product price representation compatibility
+
+The frozen API convention requires a non-null public `product.price` even though variant pricing is the sellable pricing boundary.
+
+Do **not** create a second authoritative `products.price` column solely to duplicate variant pricing.
+
+Instead, later Product API serialization must derive the required public product-level `price` representation from the product's valid variant/pricing state according to the catalog contract.
+
+That derivation belongs to the later Catalog API phase.
+
+Do not implement the derivation algorithm now.
+
+Do not introduce a second price source of truth.
+
+---
+
+# 3.5.13 Dimensions
+
+Store variant physical dimensions separately:
+
+```text
+width_cm
+height_cm
+depth_cm
+```
+
+Use centimeters consistently.
+
+Do not store:
+
+```text
+"85 x 90 x 80 cm"
+```
+
+as a single text value.
+
+Do not store units in the numeric columns.
+
+Do not create:
+
+```text
+width_unit
+height_unit
+depth_unit
+```
+
+for V1.
+
+The database value is numeric; future API serialization can express the structured dimensions explicitly.
+
+---
+
+# 3.5.14 Weight
+
+Store:
+
+```text
+weight_kg
+```
+
+as a numeric value in kilograms.
+
+Do not store:
+
+```text
+"18.5 kg"
+```
+
+as the database value.
+
+Do not mix kilograms and pounds in the same field.
+
+Do not introduce unit-conversion infrastructure in this phase.
+
+---
+
+# 3.5.15 Physical measurement validation
+
+Where a dimension/weight is provided:
+
+* it must be greater than zero;
+* unreasonable negative values must be rejected;
+* numeric precision must be sufficient for furniture measurements;
+* null remains valid where a specification is genuinely unavailable.
+
+Do not silently convert zero into null.
+
+Do not use negative numbers as a sentinel for "unknown".
+
+Do not invent minimum/maximum furniture dimensions unless explicitly required by the business rules.
+
+---
+
+# 3.5.16 Variant attributes JSON
+
+Use:
+
+```text
+attributes
+```
+
+as an optional structured JSON object for flexible variant options.
+
+Example:
+
+```json
+{
+  "color": "Forest Green",
+  "fabric": "Velvet",
+  "leg_finish": "Natural Oak",
+  "size": "3-Seater"
+}
+```
+
+This exists for variant-specific options that do not warrant dedicated relational columns yet.
+
+Do not duplicate fixed physical specifications into this JSON:
+
+```json
+{
+  "width_cm": 85,
+  "height_cm": 90,
+  "depth_cm": 80,
+  "weight_kg": 18.5
+}
+```
+
+Those belong in dedicated columns.
+
+Do not place price or inventory values inside `attributes`.
+
+Do not place:
+
+```text
+price
+cost_price
 stock
+reserved_quantity
+warehouse
+```
+
+inside `attributes`.
+
+---
+
+# 3.5.17 Attribute rules
+
+`attributes` must be a JSON object when present.
+
+Prefer shallow key/value attributes:
+
+```json
+{
+  "color": "Forest Green",
+  "fabric": "Velvet",
+  "finish": "Natural Oak"
+}
+```
+
+Avoid deeply nested arbitrary structures.
+
+Do not allow arrays or arbitrary executable content to become an implicit variant schema.
+
+Do not use JSON attributes for authorization state or business state.
+
+Do not create an EAV system in this phase.
+
+The JSON field is a bounded extensibility mechanism, not a replacement for relational modeling.
+
+---
+
+# 3.5.18 Attribute naming
+
+Use canonical `snake_case` keys.
+
+Examples:
+
+```text
+color
+fabric
+finish
+leg_finish
+size
+configuration
+```
+
+Do not mix:
+
+```text
+legFinish
+leg-finish
+Leg Finish
+```
+
+The API convention uses `snake_case` consistently across JSON fields.
+
+Do not create arbitrary duplicate representations of the same attribute.
+
+---
+
+# 3.5.19 Attribute semantics
+
+An attribute value is descriptive configuration data.
+
+It must not become a hidden source of truth for:
+
+* price;
+* inventory;
+* availability;
+* product status;
+* authorization;
+* payment state.
+
+For example:
+
+```json
+{
+  "color": "Forest Green"
+}
+```
+
+is valid.
+
+This is not:
+
+```json
+{
+  "stock": 15
+}
+```
+
+because stock belongs to the Inventory domain.
+
+---
+
+# 3.5.20 Variant default
+
+Use:
+
+```text
+is_default
+```
+
+to identify the default variant for customer/catalog presentation.
+
+V1 invariant:
+
+```text
+A Product has at most one default Variant.
+```
+
+A product may temporarily have no default variant during controlled internal provisioning if the future workflow allows it, but a public product representation must obey the catalog contract's requirements before publication.
+
+Do not permit two default variants for the same product.
+
+Because the standard MySQL uniqueness constraint does not directly express "only one row where `is_default = true`" portably, enforce this invariant in the application/service layer and test it.
+
+When changing the default variant later, the operation must be transactional so concurrent updates cannot leave two defaults.
+
+Do not implement that mutation workflow in this phase.
+
+---
+
+# 3.5.21 Variant active state
+
+Use:
+
+```text
+is_active
+```
+
+to control whether the variant is eligible for future catalog/purchase behavior.
+
+An inactive variant is not automatically deleted.
+
+Do not equate inactive with out-of-stock.
+
+These are different concepts:
+
+```text
+is_active
+→ catalog/business availability
+
+inventory
+→ physical stock availability
+```
+
+Inventory availability will be established in Phase 3.7 and later Catalog API phases.
+
+---
+
+# 3.5.22 Display order
+
+Use:
+
+```text
+display_order
+```
+
+for deterministic presentation of variants belonging to a Product.
+
+Do not depend on database insertion order.
+
+Use non-negative integer values.
+
+Do not interpret `display_order` as priority for recommendation algorithms or stock ranking.
+
+---
+
+# 3.5.23 Variant/product integrity
+
+The following must always be true:
+
+```text
+Variant.product_id references an existing Product.
+Variant.sku is globally unique.
+Variant.price_amount exists.
+Variant dimensions are numeric when supplied.
+Variant attributes are structured JSON when supplied.
+```
+
+A variant cannot exist independently of a product.
+
+Do not allow a variant to move between Products through an ordinary public update.
+
+If variant reassignment is ever supported internally, it must be an explicit controlled operation with appropriate integrity checks.
+
+Do not implement reassignment now.
+
+---
+
+# 3.5.24 Inventory separation
+
+Do not add:
+
+```text
 quantity
 reserved_quantity
 available_quantity
 warehouse_location
+stock_status
 ```
 
-to `products`.
+to `product_variants`.
 
-Inventory is variant-specific and is scheduled as Phase 3.7.
+Inventory is Phase 3.7.
 
-The eventual model should conceptually support:
+The eventual relationship is:
 
-```text id="r4tsf9"
+```text
 Product
    ↓
 Product Variant
    ↓
-Inventory record(s)
+Inventory / Stock
 ```
 
-This is necessary because two variants of the same sofa can have different stock.
+This allows the same variant to have different inventory positions later.
 
-Client inputs must never become authoritative inventory quantities. The server owns availability, stock, reservation, and consumption.
+The server remains the authority for availability and stock; client-submitted inventory values are never authoritative.
 
 ---
 
-# 3.4.15 Product media readiness
+# 3.5.25 Media separation
 
-Do not create `product_media` in this phase.
+Do not add image/video paths to `product_variants`.
 
-The roadmap assigns product images/media to Phase 3.6.
+Variant-specific media will be connected in Phase 3.6.
 
-The Product model should later expose relationships such as:
+The final relationship may conceptually be:
 
-```text id="xggfqt"
-Product → media
+```text
+Product
+├── Variants
+└── Media
+      └── optionally linked to a specific Variant
 ```
 
-without placing media paths directly in `products`.
+The variant itself must remain independent of file storage.
 
 Do not add:
 
-```text id="ac7ltu"
+```text
 image_url
-video_url
 thumbnail_url
-staged_room_url
+video_url
+file_path
 ```
 
-to the product table.
-
-This keeps product metadata separate from physical media records.
+to this table.
 
 ---
 
-# 3.4.16 3D/AR readiness
+# 3.5.26 Product assets separation
 
-Do not add 3D or AR file paths directly to `products`.
+Do not add:
 
-Do not create:
-
-```text id="9fwb0d"
+```text
 glb_url
 usdz_url
 gltf_url
-3d_model_path
 ar_model_path
 ```
 
-inside the base product table.
+to `product_variants` in this phase.
 
-The future `product_assets` structure should own these files.
+3D/AR assets belong to the later product asset/media architecture.
 
-Therefore do not add `has_3d_model` as an authoritative boolean in Phase 3.4.
+A future asset may optionally target a product or a specific variant depending on the finalized Phase 3.6 asset model.
 
-A derived property can later answer:
-
-```text id="yoywip"
-Product has eligible 3D/AR assets
-```
-
-based on related asset records.
-
-Avoid duplicated state such as:
-
-```text product.has_3d_model = false
-product_assets contains GLB
-```
-
-which can become inconsistent.
+Do not decide that relationship prematurely here.
 
 ---
 
-# 3.4.17 Product active/featured state
+# 3.5.27 Room-staging compatibility
 
-Use:
+Variant attributes may eventually influence staging, but do not encode recommendation/staging logic into the variant.
 
-```text id="n2i4iu"
-is_active
-is_featured
+Do not add:
+
+```text
+room_style_score
+ar_scale
+staging_priority
+recommended_room
+compatibility_score
 ```
 
-### `is_active`
+to `product_variants`.
 
-Controls whether the product is active in the catalog.
+Physical dimensions provide future room-planning inputs.
 
-It is server-controlled.
+Variant attributes provide future visual/configuration inputs.
 
-Do not expose a client-controlled field that can make a product active through ordinary public requests.
-
-### `is_featured`
-
-Controls whether the product is intentionally highlighted.
-
-It is a merchandising flag, not an algorithmic ranking.
-
-Do not interpret `is_featured` as:
-
-* best seller;
-* highest margin;
-* most recommended;
-* highest inventory;
-* sponsored product.
-
-Those are separate concerns.
+The actual recommendation/staging engine belongs to later application/API work.
 
 ---
 
-# 3.4.18 Soft deletion
+# 3.5.28 Variant financial authority
 
-Use soft deletes for products:
+The authoritative hierarchy is:
 
-```php id="ed5z2b"
-$table->softDeletes();
+```text
+Variant.price
+    ↓
+Cart informational price
+    ↓
+Checkout resolves current authoritative price
+    ↓
+Order item snapshots historical unit price
 ```
 
-The purpose is preservation of catalog history and protection against destructive deletion of entities that can later participate in business records.
+Do not allow:
 
-Do not implement hard-delete workflows.
+```text
+Product.price
+Variant.price
+Cart.price
+OrderItem.price
+```
 
-Do not add cascading business-data deletion.
+to become competing mutable sources of truth.
 
-Later phases must account for soft-deleted products when querying:
+The project convention explicitly states that the server owns financial values and clients supply intent rather than authoritative totals/prices.
 
-* public catalog;
-* product variants;
-* inventory;
-* product media;
-* historical order data.
+The later Order Item Snapshot phase will preserve historical pricing at purchase time.
 
 ---
 
-# 3.4.19 Product model
+# 3.5.29 Variant model
 
 Create:
 
-```text id="7o5z9m"
-App\Models\Product
+```text
+App\Models\ProductVariant
 ```
 
-with relationships required at this phase:
+with:
 
-```php id="lbj0s3"
-public function category(): BelongsTo
+```php
+public function product(): BelongsTo
 {
-    return $this->belongsTo(Category::class);
+    return $this->belongsTo(Product::class);
 }
 ```
 
-Do not add relationships to models that do not exist yet.
+On `Product`:
 
-Do not pre-create empty relationships to:
+```php
+public function variants(): HasMany
+{
+    return $this->hasMany(ProductVariant::class);
+}
 
-```text ProductVariant
-ProductMedia
-ProductAsset
-ProductStock
+public function defaultVariant(): HasOne
+{
+    return $this->hasOne(ProductVariant::class)
+        ->where('is_default', true);
+}
 ```
 
-unless the corresponding classes/tables already exist as part of an existing implementation.
+Prefer `HasOne` for `defaultVariant()` because the business invariant is one default variant at most.
 
-Those relationships should be introduced in their respective phases.
+Do not use `HasMany` for a logically singular default relation.
+
+If the project prefers a method such as `defaultVariant()` returning a query constrained by the same invariant, preserve the type semantics consistently.
 
 ---
 
-# 3.4.20 Product casts
+# 3.5.30 Casts
 
-Use appropriate casts for:
+Use appropriate Laravel casts for:
 
-```text id="vs6js8"
-is_active
-is_featured
+```text
+attributes → array/object representation
+is_default → boolean
+is_active → boolean
+display_order → integer
+numeric dimensions/weight → appropriate numeric representation
 ```
 
-and `assembly_required` if represented by a Laravel enum.
+Money amount columns must remain integer-valued.
 
-Do not cast customer-visible strings into arbitrary custom structures without a defined contract.
+Do not convert money to floating-point values.
 
-Do not add a JSON `attributes` field to `products`.
-
-Variant attributes belong to Product Variants.
+Do not use floating-point arithmetic for financial calculations.
 
 ---
 
-# 3.4.21 Product attributes and extensibility
+# 3.5.31 Attribute validation boundary
 
-The product table should contain only attributes that are genuinely product-level.
+Because `attributes` is flexible, the future write boundary must validate:
 
-Good examples:
-
-```text id="r6t2b7"
-name
-brand
-room_type
-assembly_required
-primary_material
+```text
+object shape
+key naming
+supported keys
+value types
+size limits
 ```
 
-Avoid turning `products` into a flexible attribute warehouse containing:
+Do not accept unlimited arbitrary JSON payloads.
 
-```text id="z3n5i7"
+Do not allow arbitrary nested objects that could produce large or unpredictable documents.
+
+The exact V1 attribute vocabulary may remain open until the Variant API phase, but the database should not prevent legitimate furniture options such as:
+
+```text
 color
-size
-width
-height
-weight
 fabric
 finish
-stock
-sale_price
-3d_model
-room_style
-warehouse
+size
+configuration
+leg_finish
 ```
 
-This is precisely why the later variant, inventory, media, and asset schemas exist.
-
-Do not introduce a generic EAV schema in this phase.
-
-Do not introduce an unbounded JSON metadata field as a substitute for proper relational design.
+Do not convert these to CLOSED enums until the API/domain requirements explicitly establish a complete vocabulary.
 
 ---
 
-# 3.4.22 Product slug and naming integrity
+# 3.5.32 Product/variant publication integrity
 
-Validate:
+A future public Product representation must not expose a product as purchasable merely because a variant row exists.
 
-* product name is non-empty;
-* slug is unique;
-* slug is normalized according to project convention;
-* slug conflicts are detected;
-* slug is not generated from variant names;
-* product ID remains the stable internal identifier.
+Later catalog availability must consider:
 
-Do not allow multiple active products with the same slug.
-
-Avoid silently overwriting an existing product when generating slugs.
-
----
-
-# 3.4.23 Product/category integrity
-
-The product's category must reference an existing category.
-
-A product must not reference an inactive/nonexistent category through invalid foreign keys.
-
-The application layer must decide, in a future write API, whether a product may be assigned to an inactive category.
-
-Do not implement that product-management policy now.
-
-Database integrity handles existence; domain authorization/validation handles business rules.
-
----
-
-# 3.4.24 Future recommendation readiness
-
-The schema must support the future flow:
-
-```text id="gso9eq"
-Product
-   ↓
-Primary Category
-   ↓
-Category Recommendations
-   ↓
-Eligible Product Variants
-   ↓
-Inventory/availability
-   ↓
-Recommendation ranking
+```text
+Product.is_active
+Variant.is_active
+Inventory availability
+Product type/business rules
 ```
 
-Phase 3.4 must not add recommendation-specific fields such as:
+Do not calculate final availability in Phase 3.5.
 
-```text id="l6c0p6"
-recommendation_score
-recommended_product_ids
-frequently_bought
-cross_sell_score
-ml_embedding
+This phase only supplies the variant data required by those later decisions.
+
+---
+
+# 3.5.33 Stable serialization readiness
+
+The future Variant representation must use explicit allow-lists.
+
+Expected public fields can include:
+
+```text
+id
+sku
+variant_name
+price
+compare_at_price
+dimensions
+weight
+attributes
+is_default
 ```
 
-The Category recommendation graph from Phase 3.3 remains independent of the Product table.
+subject to the exact frozen Product/Variant API contract.
 
-Do not duplicate category recommendation mappings into products.
+Do not serialize:
 
----
-
-# 3.4.25 Future room-staging readiness
-
-The base product should remain compatible with later staging relationships.
-
-Conceptually:
-
-```text id="la33bv"
-Product
-   ├── Product Media
-   │      └── staged room images
-   │
-   └── Product Assets
-          ├── GLB
-          ├── GLTF
-          └── USDZ
+```text
+cost_price
+internal storage metadata
+audit internals
+future inventory internals
 ```
 
-Potential future metadata may include:
+to customers.
 
-```text id="a0ag8g"
-room style
-interior theme
-placement suitability
-staging context
-AR availability
-```
-
-but these should belong to dedicated future structures rather than becoming an uncontrolled `products` JSON blob.
-
-Do not create the full staging metadata model in Phase 3.4.
+The project requires explicit serialization per audience and forbids indiscriminate model serialization.
 
 ---
 
-# 3.4.26 Product seeding
+# 3.5.34 Security and mass assignment
 
-Create minimal deterministic product factory support only as needed for testing.
+Future variant creation/update must follow:
 
-Do not seed the production furniture catalog yet unless the project already defines authoritative seed products.
-
-If development seed products are required:
-
-* associate them with real seeded categories;
-* use realistic names;
-* generate deterministic slugs;
-* do not create variants;
-* do not create stock;
-* do not create media;
-* do not create AR assets;
-* do not invent production pricing.
-
-Factories must not accidentally imply that variant/stock/media functionality already exists.
-
----
-
-# 3.4.27 Database indexes
-
-Add indexes for the access patterns expected from the base catalog:
-
-```text id="yz6skc"
-slug
-category_id
-category_id + is_active
-is_active + is_featured
-room_type
-```
-
-Do not add speculative indexes for future variant/inventory queries to the products table.
-
-Later schema phases should index their own tables according to actual access patterns.
-
----
-
-# 3.4.28 Database constraints
-
-Enforce:
-
-* primary key on `id`;
-* foreign key from `category_id` to `categories.id`;
-* restrictive category deletion behavior;
-* unique `slug`;
-* appropriate uniqueness for `sku_prefix` if retained as a product-level identifier;
-* non-null required product identity fields;
-* valid default for `assembly_required`.
-
-Do not encode complex recommendation, inventory, or variant business rules in database constraints at this stage.
-
----
-
-# 3.4.29 Security and mass assignment
-
-When product write APIs are introduced later:
-
-```text id="oz8ndm"
-validated request
-→ explicit product allow-list
+```text
+validated input
+→ explicit allow-list
 → DTO/command
-→ domain validation/authorization
+→ domain validation
+→ authorization
 → persistence
 ```
 
-Never use:
+Never:
 
-```php id="0x6q3d"
+```php
 $request->all()
 ```
 
-to hydrate a Product model.
+Never permit clients to set:
 
-Client must never directly control:
-
-* IDs;
-* timestamps;
-* soft-delete timestamps;
-* future inventory fields;
-* future order/business state;
-* server-derived product relationships;
-* authorization fields.
-
-The project's backend conventions explicitly prohibit request-wide mass assignment and require explicit allow-lists.
-
----
-
-# 3.4.30 API serialization readiness
-
-Do not implement a Product API in this phase.
-
-However, the model must remain compatible with the project's API serialization rules.
-
-A future public Product representation may contain:
-
-```text id="k5j6da"
+```text
 id
-name
-slug
-category
-short_description
-description
-brand
-room_type
-assembly_required
-primary_material
-is_featured
-variants
-media
-3d/ar assets
-availability
+product_id   // except through the trusted parent route/context
+price currency without validation
+created_at
+updated_at
+cost_price through public/customer APIs
+inventory
+is_default without privileged authorization
 ```
 
-but those fields must be assembled through explicit representation/resource classes rather than:
+In particular, a nested route such as:
 
-```php id="i6ht0w"
-$model->toArray()
+```text
+POST /products/{product}/variants
 ```
 
-The project requires field-level serialization before output and prohibits indiscriminate model serialization, particularly when later product data includes stock, internal cost, storage paths, or other sensitive fields.
+must derive the parent Product from the server-side route/model context rather than trusting a separate body `product_id`.
 
-In particular, future internal variant `cost_price`, inventory quantities, storage keys, and internal operational metadata must not automatically enter public catalog responses.
+The project explicitly requires server authority for identity and forbids client-controlled resource ownership.
 
 ---
 
-# 3.4.31 Tests
+# 3.5.35 API route readiness
 
-Create focused tests alongside implementation.
+Do not implement Variant endpoints in this phase.
+
+However, the schema must support the later canonical routes:
+
+```text
+GET /api/v1/products/{product}/variants
+GET /api/v1/products/{product}/variants/{variant}
+```
+
+The variant detail must be resolved under its Product.
+
+Do not create alternate routes such as:
+
+```text
+GET /api/v1/variants/{id}
+GET /api/v1/product-variants/{id}
+```
+
+unless the frozen API contract explicitly introduces them.
+
+The project convention specifically defines shallow product/variant nesting.
+
+---
+
+# 3.5.36 Tests
+
+Create focused tests alongside the migration and model.
 
 ## Migration tests
 
 Verify:
 
-* products migration succeeds on an empty database;
-* products migration rolls back;
-* valid category can own products;
-* invalid `category_id` is rejected by the foreign key;
-* deleting a referenced category does not cascade-delete products;
-* slug uniqueness is enforced;
-* indexes/constraints are created as intended;
-* soft deletes function correctly.
+* migration succeeds from an empty database;
+* rollback succeeds;
+* variant requires a valid Product;
+* deleting a Product removes its variants through the foreign key;
+* SKU uniqueness is enforced;
+* required price exists;
+* nullable compare-at/cost price fields behave correctly;
+* dimension and weight columns support the expected precision;
+* JSON attributes field works;
+* indexes are created correctly.
 
-## Model tests
+## Relationship tests
 
 Verify:
 
-* `Product → category`;
-* category association resolves correctly;
-* active/featured casts return booleans;
-* assembly requirement representation is valid;
-* soft-deleted products are excluded by default;
-* `withTrashed()` behavior works where appropriate.
+```text
+Product → variants
+Variant → product
+Product → defaultVariant
+```
 
-## Integrity tests
+Test that:
 
-Verify that:
+* product returns its variants;
+* variant returns its parent product;
+* default variant returns the default record;
+* non-default variants do not appear as the default.
 
-* no product requires a product variant at the base-schema level;
-* no product requires inventory to exist;
-* no product requires media;
-* no product requires 3D/AR assets;
-* product-level price does not become a second financial source of truth;
-* variant-only attributes are not stored as product columns.
+## Default-variant integrity tests
 
-## Seed/factory tests
+Verify:
 
-Where factories exist, verify:
+* a product can have one default variant;
+* application validation prevents two defaults;
+* changing defaults leaves exactly one default;
+* no accidental duplicate default can be produced by the intended application operation.
 
-* generated product has a valid category;
-* slugs are unique;
-* factory does not fabricate future-phase relationships.
+Where concurrent default changes are implemented later, add transactional/concurrency tests there rather than prematurely implementing the workflow in this phase.
+
+## Pricing tests
+
+Verify:
+
+* prices are stored as integer minor units;
+* no floating-point price representation is used;
+* TZS is represented correctly;
+* compare-at price may be null;
+* cost price may be null;
+* cost price is not present in the public representation tests.
+
+## Attribute tests
+
+Verify:
+
+* null attributes are supported;
+* valid JSON object attributes are persisted;
+* structured variant options round-trip correctly;
+* product-level fields are not duplicated into attributes;
+* inventory values are not represented as variant attributes.
+
+## Ownership/integrity tests
+
+Verify that a variant belongs to exactly one Product.
+
+Where a future nested API test is introduced:
+
+```text
+Product A + Variant belonging to Product B
+→ must not resolve successfully
+```
+
+That API authorization/lookup test belongs to the later Variant API phase, but the data model must make the relationship explicit now.
 
 ---
 
-# 3.4.32 Static analysis and quality
+# 3.5.37 Factories
 
-Run the established project checks:
+Do not create production catalog seed data in this phase.
 
-```text id="qbd7hk"
-format check
-static analysis
-unit tests
-feature tests
+A `ProductVariantFactory` may be created for automated tests.
+
+Factory requirements:
+
+* generates a real Product relationship;
+* generates a unique SKU;
+* generates valid positive dimensions when supplied;
+* generates valid integer minor-unit pricing;
+* generates structured attributes;
+* does not create inventory;
+* does not create media;
+* does not create orders.
+
+Avoid making every generated variant `is_default = true`.
+
+Provide a deterministic mechanism for creating a single default variant when a test needs one.
+
+---
+
+# 3.5.38 Code quality
+
+Keep the implementation cohesive.
+
+Expected components:
+
+```text
+ProductVariant migration
+ProductVariant model
+Product relationship updates
+Factory
+Focused tests
 ```
 
-Fix all findings introduced by this phase.
+Avoid:
 
-Do not broaden the changes to unrelated code.
+* Variant controllers;
+* Variant API resources;
+* inventory services;
+* price calculation services;
+* recommendation services;
+* media services;
+* AR services;
+* search/filter services.
 
-Do not suppress analyzer warnings globally.
-
-Do not add large abstraction frameworks for a single Product model.
+Do not create generic "attribute management" abstractions before the actual API/domain requirements require them.
 
 Keep comments to the absolute minimum.
+
+Prefer clear names, relationships, constraints, and tests.
+
+---
+
+# 3.5.39 Documentation / durable decisions
+
+Update `docs/decisions.md` only for durable architectural decisions that are genuinely useful, such as:
+
+* variants are the sellable/pricing unit;
+* money is stored as integer minor units;
+* variant attributes are structured JSON for V1 flexibility;
+* dimensions use centimeters and weight uses kilograms;
+* inventory remains separated from variants;
+* product-level public price is derived rather than duplicated as another financial source of truth.
+
+Do not create a permanent Phase-3.5 markdown document merely to duplicate this instruction.
 
 ---
 
@@ -1096,75 +1313,77 @@ Keep comments to the absolute minimum.
 
 Do not implement:
 
-* Product Variant schema;
-* variant attributes;
-* variant SKU generation;
-* variant pricing;
-* compare-at pricing;
-* internal cost pricing;
-* variant dimensions;
-* variant weight;
-* inventory/stock tables;
-* warehouse schema;
-* product images;
-* product video;
-* staged-room media;
+* product inventory;
+* warehouse locations;
+* stock quantities;
+* reserved quantities;
+* availability calculation;
+* Product Media;
+* Product Images;
+* staged-room images;
 * 3D assets;
 * AR assets;
-* material normalization;
-* room-style taxonomy;
-* staging metadata schema;
-* product recommendation algorithms;
-* recommendation API;
-* product catalog API;
-* Product CRUD endpoints;
-* staff product-management endpoints;
-* Admin product-management endpoints;
-* search/filter API;
-* SEO API;
-* Next.js product pages;
-* Flutter product screens;
-* product availability calculations.
-
-These belong to later phases.
+* recommendation engine;
+* product search;
+* product filtering;
+* Product CRUD API;
+* Variant CRUD API;
+* customer cart;
+* checkout;
+* payment;
+* order creation;
+* historical order pricing;
+* discounts;
+* coupons;
+* promotion rules;
+* price scheduling;
+* cost accounting;
+* room-staging engine;
+* recommendation scoring;
+* Next.js catalog pages;
+* Flutter catalog screens.
 
 ---
 
 # Definition of done
 
-Phase 3.4 is complete only when:
+Phase 3.5 is complete only when:
 
-1. `products` exists as the parent catalog entity.
-2. Each product has a valid primary category.
-3. Category deletion cannot silently destroy products.
-4. Product names and slugs are modeled correctly.
-5. Optional product-level SKU prefix is available without being treated as a sellable SKU.
-6. Product descriptions are separated into short and full descriptions.
-7. Brand is supported as optional product-level metadata.
-8. `room_type` is available for future room-context behavior without replacing category taxonomy.
-9. `assembly_required` uses the agreed controlled values.
-10. `primary_material` supports customer-facing material description without pretending to be a normalized materials database.
-11. `is_active` and `is_featured` exist with server-controlled semantics.
-12. Soft deletion is supported.
-13. Product/category Eloquent relationship exists.
-14. Indexes and foreign-key constraints are appropriate.
-15. Variant-specific price, SKU, dimensions, and attributes are not duplicated onto products.
-16. Inventory quantities are not stored on products.
-17. Media and AR storage paths are not stored on products.
-18. Product structure is ready for later Product Variant, Product Media, Product Asset, and Inventory relationships.
-19. Tests cover migration, category integrity, model relationships, soft deletion, and core constraints.
-20. Formatting, static analysis, and the existing test suite pass.
-21. No product API or later-phase business functionality has been implemented.
-22. Code comments remain minimal.
+1. `product_variants` exists and references `products`.
+2. Every variant has a globally unique SKU.
+3. Variant name is modeled separately from SKU.
+4. Variant pricing is stored as integer minor units.
+5. Currency is represented explicitly.
+6. Compare-at pricing is optional and separate from authoritative price.
+7. Internal cost pricing is optional and protected from public serialization.
+8. Variant dimensions are stored separately as numeric centimeters.
+9. Weight is stored separately as numeric kilograms.
+10. Flexible variant attributes are stored as structured JSON.
+11. Product-level fields are not duplicated unnecessarily into variant attributes.
+12. `is_default` supports one default variant per product.
+13. `is_active` supports variant-level activation independently from inventory.
+14. `display_order` provides deterministic variant ordering.
+15. Product/Variant Eloquent relationships are implemented.
+16. `defaultVariant()` is modeled as a logically singular relationship.
+17. Product deletion cannot leave orphan variants.
+18. Variant schema is ready for future media and inventory relationships.
+19. No inventory data has been placed in the variant table.
+20. No media or AR paths have been placed in the variant table.
+21. No floating-point financial representation exists.
+22. Tests cover migration, relationships, SKU uniqueness, pricing, attributes, default variant integrity, and core constraints.
+23. Factories, where added, do not fabricate later-phase inventory/media/order data.
+24. Formatting, static analysis, and the existing test suite pass.
+25. No Variant API or later catalog business logic has been implemented.
+26. Code comments remain minimal.
 
 ---
 
 # STOP condition
 
-Stop after the base Product schema, Product model, migration/factory support, constraints, indexes, and tests are complete.
+Stop after the Product Variant migration, model relationships, factory support, constraints, and tests are complete.
 
-Do not continue into Phase 3.5 Product Variants.
+Do not continue into Phase 3.6 Product Images Schema.
 
-Do not implement pricing, stock, media, 3D/AR assets, product recommendation logic, or product APIs.
+Do not implement inventory, media, AR assets, Variant APIs, cart behavior, availability calculation, or checkout pricing logic.
 
 Do not commit, stage, or push changes.

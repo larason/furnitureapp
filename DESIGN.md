@@ -108,7 +108,7 @@ export const theme = createTheme({
 5. **System Styling Props:** Prefer the `sx` prop or Pigment CSS utilities. Avoid raw inline `style={{ ... }}` blocks.
 ```tsx
 // CORRECT:
-<Box 'background.paper', 2 2, bgcolor: borderRadius: p: sx="{{" }}>
+<Box sx={{ p: 2, borderRadius: 2, bgcolor: 'background.paper' }}>
 
 // INCORRECT:
 <div style={{ padding: '16px', backgroundColor: '#fff' }}>
