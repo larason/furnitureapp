@@ -1,37 +1,41 @@
 # Group C phases instructions
 
-# Phase 3.3 — Categories Schema
+# Phase 3.4 — Products Schema
 
 ## Purpose
 
-Implement the database foundation for the furniture catalog's category taxonomy.
+Implement the core `products` catalog entity and establish the relational foundation required by the subsequent product phases.
 
-This phase establishes:
+This phase must prepare the catalog for:
 
-* the hierarchical `categories` table;
-* parent/child category relationships;
-* category metadata needed by public catalog navigation;
-* the agreed furniture taxonomy;
-* the category-to-category recommendation relationship structure;
-* Eloquent relationships and focused schema/model tests.
+* furniture product descriptions and metadata;
+* category association;
+* product variants;
+* variant-level pricing;
+* variant dimensions and physical specifications;
+* materials and configurable attributes;
+* inventory/stock;
+* product images and staged-room media;
+* 3D and AR assets;
+* future room-style compatibility and recommendation features.
 
-The design must support a clear navigation tree today while leaving room for future product-category relationships and automated recommendation/cross-selling features.
+The important architectural boundary is:
 
-This phase is **schema/model foundation only**.
+> `products` represents the parent catalog concept. A sellable SKU, its price, physical dimensions, and stock are variant/inventory concerns and must not be collapsed into the base product.
 
-Do not implement product APIs, recommendation APIs, recommendation algorithms, search ranking, or product-category assignment workflows in this phase.
+The Group C roadmap explicitly places Product Schema before Product Variants, Product Images, and Inventory, so this phase must establish the parent structure without prematurely implementing those later schemas.
 
 ---
 
 # Dependencies
 
-Required before starting:
+Required:
 
 * Phase 2.1–2.12 completed.
 * Phase 3.1 Users Schema completed.
 * Phase 3.2 Roles/permissions model completed.
-* Laravel migrations/models/testing conventions established.
-* Existing database connection and migration test infrastructure working.
+* Phase 3.3 Categories Schema completed.
+* Existing migration, testing, formatting, and static-analysis conventions operational.
 
 Authoritative inputs:
 
@@ -43,219 +47,170 @@ Authoritative inputs:
 * `docs/decisions.md`
 * `AGENTS.md`
 
-Do not reopen unrelated architectural decisions.
+Do not reopen unrelated API, authentication, payment, or checkout decisions.
 
 ---
 
-# 3.3.1 Category hierarchy model
+# 3.4.1 Product entity responsibility
 
-Use an **adjacency-list hierarchy**.
+`products` is the parent catalog record.
 
-The category table must contain:
+It describes the conceptual item customers browse, such as:
 
-```text
-categories
-  id
-  parent_id
-  name
-  slug
-  space_type
-  display_order
-  is_active
-  created_at
-  updated_at
+```text id="u8g9ai"
+Nordic Velvet Lounge Chair
 ```
 
-`parent_id` references another row in `categories`.
+A product may later have multiple sellable variants:
 
-Root categories have:
-
-```text
-parent_id = null
+```text id="m0u3m1"
+Forest Green / Natural Oak
+Charcoal / Black Oak
+Natural Beige / Walnut
 ```
 
-Child categories reference their immediate parent.
+The product record itself must therefore **not** become the source of truth for:
 
-This provides a simple relational tree suitable for:
+* variant-specific price;
+* variant-specific SKU;
+* variant-specific stock;
+* variant-specific dimensions where those dimensions differ between variants.
 
-* catalog navigation;
-* breadcrumbs;
-* recursive category retrieval;
-* future product-category joins;
-* category-specific recommendations.
-
-Do not introduce nested-set, materialized-path, closure-table, or graph-database infrastructure in V1.
+Those belong to later product-variant/inventory phases.
 
 ---
 
-# 3.3.2 Three-level taxonomy
+# 3.4.2 Core products table
 
-The initial taxonomy is intentionally three levels:
+Create:
 
-```text
-Level 1 = room/context
-Level 2 = furniture grouping
-Level 3 = specific furniture type
+```text id="t4i5wc"
+products
 ```
 
-Seed the following canonical hierarchy.
+with the following conceptual structure:
 
-## Furnitures Root
-
-```text
-Furnitures Root
-├── Living Room
-│   ├── Seating
-│   │   ├── Sofas
-│   │   ├── Sectionals
-│   │   ├── Armchairs
-│   │   ├── Recliners
-│   │   ├── Loveseats
-│   │   └── Stools/Poufs
-│   ├── Tables
-│   │   ├── Coffee Tables
-│   │   ├── End/Side Tables
-│   │   ├── Console Tables
-│   │   └── Nesting Tables
-│   └── Storage & Media
-│       ├── TV Stands/Showcases
-│       ├── Bookcases
-│       └── Display Cabinets
-├── Bedroom
-│   ├── Beds
-│   │   ├── Platform Beds
-│   │   ├── Canopy Beds
-│   │   ├── Storage Beds
-│   │   ├── Daybeds
-│   │   └── Bunk Beds
-│   ├── Storage
-│   │   ├── Dressers
-│   │   ├── Nightstands
-│   │   ├── Wardrobes
-│   │   └── Chest of Drawers
-│   └── Vanity & Seating
-│       ├── Vanity Tables
-│       └── Bedroom Benches
-├── Dining Room & Kitchen
-│   ├── Dining Sets & Tables
-│   │   ├── Dining Tables
-│   │   └── Kitchen Islands
-│   ├── Dining Seating
-│   │   ├── Dining Chairs
-│   │   ├── Bar & Counter Stools
-│   │   └── Dining Benches
-│   └── Dining Storage
-│       ├── Sideboards/Buffets
-│       ├── Bar Carts
-│       └── China Cabinets
-├── Home Office & Corporate Workspaces
-│   ├── Desks
-│   │   ├── Executive Desks
-│   │   ├── Standing/Adjustable Desks
-│   │   ├── Corner/L-Shaped Desks
-│   │   └── Writing Desks
-│   ├── Office Seating
-│   │   ├── Ergonomic Task Chairs
-│   │   ├── Executive Chairs
-│   │   └── Visitor Chairs
-│   └── Office Storage
-│       ├── Filing Cabinets
-│       ├── Credenzas
-│       └── Office Bookcases
-├── Outdoor & Patio
-│   ├── Outdoor Seating
-│   │   ├── Patio Sofas
-│   │   ├── Loungers
-│   │   └── Hammocks
-│   └── Outdoor Dining
-│       ├── Patio Tables
-│       └── Outdoor Bar Sets
-└── Entryway & Accent
-    ├── Entryway Furniture
-    │   ├── Shoe Cabinets
-    │   ├── Coat Racks
-    │   └── Entryway Benches
-    └── Accent Pieces
-        ├── Accent Tables
-        ├── Accent Chairs
-        └── Room Dividers
+```text id="x22qj8"
+id
+category_id
+name
+slug
+sku_prefix
+short_description
+description
+brand
+room_type
+assembly_required
+primary_material
+is_active
+is_featured
+timestamps
+soft-deletion metadata
 ```
 
-Treat this as the initial V1 seed taxonomy.
+Recommended Laravel migration:
 
-Do not add additional category branches merely because they seem useful.
-
-Do not create category records for individual brands, materials, colors, styles, dimensions, or prices.
-
----
-
-# 3.3.3 Category depth
-
-The intended taxonomy depth is three levels below the root category.
-
-The database uses `parent_id`; it should not depend on hard-coded columns such as:
-
-```text
-level_1_id
-level_2_id
-level_3_id
-```
-
-Do not create separate tables for each hierarchy level.
-
-The implementation must protect against:
-
-* a category being its own parent;
-* direct cyclic relationships;
-* accidental recursive loops.
-
-The required invariant is a **no-cycle invariant**: when a parent assignment is persisted, model/application validation must reject it if the assigned parent is the category itself or any descendant of the category. Walking the assigned parent's ancestor chain satisfies this and prevents self-parenting (`A → A`), two-node cycles (`A → B → A`), and deeper loops (`A → B → C → A`) alike.
-
-This ancestor check is bounded by taxonomy depth; it is not a complicated recursive graph-validation subsystem. Closure tables, materialized paths, and lock-based traversal validation remain out of scope.
-
-The seeded taxonomy must contain only the approved hierarchy.
-
----
-
-# 3.3.4 Category table
-
-Create the migration using the project's existing Laravel conventions.
-
-Recommended structure:
-
-```php
-Schema::create('categories', function (Blueprint $table) {
+```php id="8mjz3f"
+Schema::create('products', function (Blueprint $table) {
     $table->id();
-    $table->foreignId('parent_id')
-        ->nullable()
+
+    $table->foreignId('category_id')
         ->constrained('categories')
-        ->nullOnDelete();
+        ->restrictOnDelete();
 
     $table->string('name');
     $table->string('slug')->unique();
+    $table->string('sku_prefix')->nullable()->unique();
 
-    $table->enum('space_type', [
-        'home',
-        'office',
-        'hybrid',
-    ])->default('home');
+    $table->text('short_description')->nullable();
+    $table->longText('description')->nullable();
 
-    $table->integer('display_order')->default(0);
+    $table->string('brand')->nullable();
+    $table->string('room_type')->nullable();
+    $table->string('assembly_required')->default('none');
+    $table->string('primary_material')->nullable();
+
     $table->boolean('is_active')->default(true);
+    $table->boolean('is_featured')->default(false);
 
     $table->timestamps();
+    $table->softDeletes();
 
-    $table->index(['parent_id', 'display_order']);
-    $table->index(['is_active', 'display_order']);
-    $table->index('space_type');
+    $table->index(['category_id', 'is_active']);
+    $table->index(['is_active', 'is_featured']);
+    $table->index('room_type');
 });
 ```
 
-Adapt the exact migration syntax to the existing Laravel/database conventions rather than duplicating an already-established index or constraint pattern.
+Adapt exact syntax to existing project conventions.
+
+Do not blindly copy the supplied migration if the existing Laravel version/project conventions require a different constraint method.
 
 ---
 
-# 3.3.5 Category field semantics
+# 3.4.3 Category relationship
+
+A product has one primary catalog category in this phase:
+
+```text id="w6iw5k"
+Category 1 ─── N Products
+```
+
+Use:
+
+```php id="x2n0wu"
+public function category(): BelongsTo
+{
+    return $this->belongsTo(Category::class);
+}
+```
+
+Do not create a `product_categories` many-to-many table yet.
+
+This phase must establish the simplest authoritative relationship consistent with the current catalog design.
+
+A future requirement for products to belong to multiple categories can be introduced as a compatibility-reviewed schema change.
+
+Do not build that complexity speculatively.
+
+---
+
+# 3.4.4 Category deletion behavior
+
+Do not cascade-delete products when a category is deleted.
+
+Products are durable catalog entities and may later participate in:
+
+* orders;
+* order-item snapshots;
+* requests;
+* inventory;
+* historical reporting;
+* recommendations.
+
+Therefore prefer:
+
+```text id="48rxz3"
+Category deleted
+→ product remains
+→ deletion is restricted or handled through an explicit future category-management workflow
+```
+
+Use `restrictOnDelete()` or the project's equivalent restrictive foreign-key behavior.
+
+Do not use:
+
+```php id="7ymxm6"
+->cascadeOnDelete()
+```
+
+for `products.category_id`.
+
+A category removal must not silently destroy product data.
+
+---
+
+# 3.4.5 Product identity
 
 ## `id`
 
@@ -263,799 +218,877 @@ Server-generated primary key.
 
 Never client-controlled.
 
-## `parent_id`
-
-Nullable foreign key to `categories.id`.
-
-`null` means root category.
-
-Normal delete behavior should detach children rather than cascade-delete an entire taxonomy branch.
-
-Use `nullOnDelete()`.
-
-Do not allow the API layer to create arbitrary recursive structures later without validation.
-
 ## `name`
 
-Human-readable category name.
+Customer-facing product name.
 
 Examples:
 
-```text
-Living Room
-Sofas
-Coffee Tables
-Executive Desks
+```text id="84v0w7"
+Nordic Velvet Lounge Chair
+Walnut Executive Desk
+Modern Oak Dining Table
 ```
 
-Store the display label here.
-
-Do not use `name` as the stable API identifier.
+Use the existing project string-length convention.
 
 ## `slug`
 
-Stable URL/navigation identifier.
-
-Must be unique across the category tree.
-
-Generate and validate slugs server-side according to the project's slug convention.
-
-Do not allow two categories to share the same slug.
-
-## `space_type`
-
-Use:
-
-```text
-home
-office
-hybrid
-```
-
-This field describes the primary usage context.
-
-Do not use it as the hierarchy itself.
-
-Do not infer `space_type` automatically from arbitrary category names.
-
-The initial seeded data should assign sensible values according to the taxonomy.
-
-Where a category spans contexts, use `hybrid` rather than duplicating the category merely to support another space.
-
-## `display_order`
-
-Integer used for deterministic sibling ordering.
-
-Lower values appear first unless the application's existing ordering convention specifies otherwise.
-
-Do not use database insertion order as presentation order.
-
-## `is_active`
-
-Controls whether the category is intended to be publicly available in the active catalog.
-
-This is server-controlled.
-
-An inactive category must not automatically mean its historical product associations are deleted.
-
-Do not implement the category activation/deactivation API in this phase.
-
----
-
-# 3.3.6 `space_type` assignment
-
-Use these initial values:
-
-### Home-oriented
+Stable unique catalog URL identifier.
 
 Examples:
 
-```text
-Living Room
-Bedroom
-Dining Room & Kitchen
-Outdoor & Patio
-Entryway & Accent
+```text id="f8h0q5"
+nordic-velvet-lounge-chair
+walnut-executive-desk
+modern-oak-dining-table
 ```
 
-### Office-oriented
+Must be unique.
 
-Examples:
+Do not use product IDs as SEO URLs.
 
-```text
-Home Office & Corporate Workspaces
-```
+Do not make slugs dependent on variant names.
 
-Use the taxonomy's actual context rather than mechanically assigning every category based on its level.
+## `sku_prefix`
 
-Use `hybrid` only where a category genuinely serves both home and office/hybrid contexts.
-
-Do not create multiple copies of a category solely to support different `space_type` values.
-
-## Explicit seed mapping
-
-The seed must not invent or infer `space_type` values. The assignment rule is:
-
-* the root container `furnitures-root` is `hybrid` because it spans every context;
-* each level-1 room uses its documented value above;
-* every level-2 and level-3 category **inherits** the `space_type` of its level-1 room root.
-
-Applying that rule to the canonical taxonomy produces the complete slug-to-`space_type` mapping:
-
-```text
-hybrid (1): furnitures-root
-
-home (61): living-room, seating, sofas, sectionals, armchairs, recliners, loveseats, stools-poufs, tables, coffee-tables, end-side-tables, console-tables, nesting-tables, storage-media, tv-stands-showcases, bookcases, display-cabinets, bedroom, beds, platform-beds, canopy-beds, storage-beds, daybeds, bunk-beds, storage, dressers, nightstands, wardrobes, chest-of-drawers, vanity-seating, vanity-tables, bedroom-benches, dining-room-kitchen, dining-sets-tables, dining-tables, kitchen-islands, dining-seating, dining-chairs, bar-counter-stools, dining-benches, dining-storage, sideboards-buffets, bar-carts, china-cabinets, outdoor-patio, outdoor-seating, patio-sofas, loungers, hammocks, outdoor-dining, patio-tables, outdoor-bar-sets, entryway-accent, entryway-furniture, shoe-cabinets, coat-racks, entryway-benches, accent-pieces, accent-tables, accent-chairs, room-dividers
-
-office (14): home-office-corporate-workspaces, desks, executive-desks, standing-adjustable-desks, corner-l-shaped-desks, writing-desks, office-seating, ergonomic-task-chairs, executive-chairs, visitor-chairs, office-storage, filing-cabinets, credenzas, office-bookcases
-```
-
-Tests must enforce this mapping for every seeded category.
-
----
-
-# 3.3.7 Category recommendation relationship
-
-Create a separate:
-
-```text
-category_recommendations
-```
-
-table.
-
-This is a relational foundation for future category-driven cross-selling.
-
-Required columns:
-
-```text
-id
-category_id
-recommended_category_id
-relation_type
-priority
-created_at
-updated_at
-```
-
-Use:
-
-```php
-Schema::create('category_recommendations', function (Blueprint $table) {
-    $table->id();
-
-    $table->foreignId('category_id')
-        ->constrained('categories')
-        ->cascadeOnDelete();
-
-    $table->foreignId('recommended_category_id')
-        ->constrained('categories')
-        ->cascadeOnDelete();
-
-    $table->string('relation_type');
-    $table->integer('priority')->default(1);
-
-    $table->timestamps();
-
-    $table->unique(
-        ['category_id', 'recommended_category_id'],
-        'cat_rec_unique'
-    );
-
-    $table->index(
-        ['category_id', 'relation_type', 'priority']
-    );
-});
-```
-
-The exact relation type storage should follow the project's established CLOSED-enum conventions when this becomes part of a public API contract.
-
-For this phase, establish the canonical vocabulary needed by the supplied model:
-
-```text
-COMPLEMENTARY
-PAIR_WITH
-COMPLETE_THE_LOOK
-ALTERNATIVE
-```
-
-Do not add recommendation relation types beyond those required by the current design.
-
----
-
-# 3.3.8 Recommendation directionality
-
-Treat the recommendation relationship as directed:
-
-```text
-source category
-        ↓
-recommended category
-```
-
-For example:
-
-```text
-Sofas → Coffee Tables
-```
-
-does not automatically imply:
-
-```text
-Coffee Tables → Sofas
-```
-
-unless a separate row exists.
-
-This makes recommendation priority and context controllable independently in future releases.
-
-Do not automatically mirror every recommendation in the seed data.
-
----
-
-# 3.3.9 Recommendation uniqueness
-
-Prevent duplicate category pair records:
-
-```text
-(category_id, recommended_category_id)
-```
-
-must be unique.
-
-Therefore this pair cannot appear twice:
-
-```text
-Sofas → Coffee Tables
-Sofas → Coffee Tables
-```
-
-Do not include `relation_type` in the uniqueness constraint unless the business decision explicitly requires multiple relationship types for the same pair.
-
-The supplied design uses one relationship row per category pair, so preserve that behavior.
-
----
-
-# 3.3.10 Recommendation priority
-
-Use:
-
-```text
-priority
-```
-
-as an integer.
-
-Higher numbers indicate higher recommendation precedence.
-
-Default:
-
-```text
-1
-```
-
-Do not implement ranking algorithms in this phase.
-
-Do not interpret priority as product sales volume, popularity, stock level, conversion rate, or machine-learning score.
-
-Those are future recommendation-engine inputs.
-
----
-
-# 3.3.11 Seed category recommendations
-
-Seed the explicit high-value category relationships supplied for future recommendation/cross-selling use.
-
-The initial conceptual mappings are:
-
-```text
-Sofas/Sectionals
-→ Coffee Tables
-→ End Tables
-→ TV Stands
-→ Accent Rugs
-
-Beds
-→ Nightstands
-→ Dressers
-→ Wardrobes
-→ Bedroom Benches
-
-Dining Tables
-→ Dining Chairs
-→ Sideboards/Buffets
-→ Bar Carts
-
-Standing/Executive Desks
-→ Ergonomic Task Chairs
-→ Filing Cabinets
-→ Desk Organizers
-
-TV Stands/Showcases
-→ Sofas
-→ Bookcases
-→ Media Cabinets
-
-Vanity Tables
-→ Accent Mirrors
-→ Dressers
-→ Bedroom Stools
-```
-
-Important:
-
-Only create recommendation mappings where a corresponding canonical category exists in the approved taxonomy.
-
-Do not invent categories solely to satisfy the recommendation table.
-
-For example, because some supplied recommendation names such as:
-
-```text
-Accent Rugs
-Accent Mirrors
-Bedroom Stools
-Media Cabinets
-Desk Organizers
-```
-
-are not explicit categories in the provided taxonomy, **do not silently create them**.
-
-Record these as deferred recommendation mappings until their categories are formally introduced.
-
-This keeps the taxonomy authoritative and prevents recommendation data from creating undocumented categories.
-
-## Canonical seed rows
-
-The conceptual mappings above resolve to canonical taxonomy slugs as follows:
-
-* `Sofas/Sectionals` splits into two sources: `sofas` and `sectionals`.
-* `Standing/Executive Desks` splits into two sources: `standing-adjustable-desks` and `executive-desks`.
-* `End Tables` resolves to the canonical `end-side-tables` (End/Side Tables).
-* `TV Stands` (as a target of `sofas`/`sectionals`) resolves to the canonical `tv-stands-showcases` (TV Stands/Showcases).
-* `Bedroom Stools` does **not** resolve to `stools-poufs` (a Living Room seating type); it is deferred below.
-
-The seed contains exactly these rows — one exact source slug and target slug per row:
-
-| source slug | target slug | relation_type | priority |
-|---|---|---|---|
-| sofas | coffee-tables | COMPLETE_THE_LOOK | 5 |
-| sofas | tv-stands-showcases | COMPLETE_THE_LOOK | 4 |
-| sofas | end-side-tables | COMPLETE_THE_LOOK | 3 |
-| sectionals | coffee-tables | COMPLETE_THE_LOOK | 5 |
-| sectionals | tv-stands-showcases | COMPLETE_THE_LOOK | 4 |
-| sectionals | end-side-tables | COMPLETE_THE_LOOK | 3 |
-| beds | nightstands | COMPLETE_THE_LOOK | 5 |
-| beds | dressers | COMPLETE_THE_LOOK | 4 |
-| beds | wardrobes | COMPLETE_THE_LOOK | 3 |
-| beds | bedroom-benches | COMPLETE_THE_LOOK | 2 |
-| dining-tables | dining-chairs | PAIR_WITH | 5 |
-| dining-tables | sideboards-buffets | COMPLEMENTARY | 3 |
-| dining-tables | bar-carts | COMPLEMENTARY | 2 |
-| executive-desks | ergonomic-task-chairs | PAIR_WITH | 5 |
-| executive-desks | filing-cabinets | COMPLEMENTARY | 3 |
-| standing-adjustable-desks | ergonomic-task-chairs | PAIR_WITH | 5 |
-| standing-adjustable-desks | filing-cabinets | COMPLEMENTARY | 3 |
-| tv-stands-showcases | sofas | COMPLEMENTARY | 4 |
-| tv-stands-showcases | bookcases | COMPLEMENTARY | 2 |
-| vanity-tables | dressers | COMPLEMENTARY | 2 |
-
-## Deferred mappings
-
-These supplied targets have no canonical category in the approved taxonomy. They are **not** seeded and **must not** be created as categories. They stay deferred until their categories are formally introduced:
-
-* `Accent Rugs` — requested by `sofas`, `sectionals`
-* `Media Cabinets` — requested by `tv-stands-showcases`
-* `Desk Organizers` — requested by `executive-desks`, `standing-adjustable-desks`
-* `Accent Mirrors` — requested by `vanity-tables`
-* `Bedroom Stools` — requested by `vanity-tables`
-
-Tests must enforce the canonical rows exactly: no omitted rows and no additional or non-canonical rows.
-
----
-
-# 3.3.12 Avoid premature product relationships
-
-Do not create the final product-category association in this phase.
-
-The next catalog schema phase will establish the Product model and determine whether products have:
-
-* one primary category;
-* multiple categories;
-* a many-to-many category relationship;
-* another catalog-specific association.
-
-Phase 3.3 only needs to make categories structurally ready for that future relationship.
-
-Therefore do not create:
-
-```text
-product_category
-```
-
-or equivalent tables yet unless the existing Product schema already exists and requires it.
-
-The authoritative Group C sequence places Product Schema after Categories Schema.
-
----
-
-# 3.3.13 Eloquent `Category` model
-
-Create the category model using Laravel relationship types.
-
-At minimum:
-
-```php
-public function parent(): BelongsTo
-{
-    return $this->belongsTo(Category::class, 'parent_id');
-}
-
-public function children(): HasMany
-{
-    return $this->hasMany(Category::class, 'parent_id')
-        ->orderBy('display_order');
-}
-
-public function recommendedCategories(): BelongsToMany
-{
-    return $this->belongsToMany(
-        Category::class,
-        'category_recommendations',
-        'category_id',
-        'recommended_category_id'
-    )
-    ->withPivot('relation_type', 'priority')
-    ->orderByPivot('priority', 'desc');
-}
-
-public function recommendedByCategories(): BelongsToMany
-{
-    return $this->belongsToMany(
-        Category::class,
-        'category_recommendations',
-        'recommended_category_id',
-        'category_id'
-    )
-    ->withPivot('relation_type', 'priority');
-}
-```
-
-Use the inverse recommendation relationship so future recommendation queries do not require manually rebuilding the join.
-
-Do not add product relationships yet.
-
----
-
-# 3.3.14 Model constraints and mass assignment
-
-Follow the project's mass-assignment rules.
-
-Do not use:
-
-```php
-$request->all()
-```
-
-to create or update categories.
-
-When category write operations are introduced later:
-
-```text
-validated input
-→ explicit allow-list
-→ DTO/command/domain logic
-→ persistence
-```
-
-Server-controlled fields include:
-
-* `id`;
-* timestamps;
-* recommendation records;
-* relationship ownership;
-* any future audit fields.
-
-The established backend convention explicitly prohibits request-wide mass assignment.
-
----
-
-# 3.3.15 Category naming and slug consistency
-
-Seed category names exactly according to the approved taxonomy.
-
-Generate deterministic slugs.
-
-Examples:
-
-```text
-Living Room
-→ living-room
-
-Coffee Tables
-→ coffee-tables
-
-Home Office & Corporate Workspaces
-→ home-office-corporate-workspaces
-```
-
-Do not change a canonical category name merely to produce a shorter slug.
-
-Do not use numeric category IDs as public URLs.
-
-Do not create duplicate categories with different capitalization solely because of slug differences.
-
----
-
-# 3.3.16 Seed ordering
-
-Set deterministic `display_order` values for siblings.
+Optional product-level identifier prefix.
 
 Example:
 
-```text
-Living Room
-  Seating             1
-  Tables              2
-  Storage & Media     3
+```text id="y19qg2"
+SOF-NORDIC
 ```
 
-Likewise, order the Level-1 room categories deterministically.
+This is **not** a sellable SKU.
 
-The exact numeric spacing may use simple sequential values.
+Actual sellable SKU belongs to Phase 3.5 Product Variants.
 
-Do not depend on auto-increment IDs for UI ordering.
+Use this field only as an optional product-level naming/reference aid.
 
-When a category has children, their order must be deterministic in the seed data.
+Do not use it for inventory identity.
 
----
+Do not require it to exist for every product.
 
-# 3.3.17 Seed strategy
-
-Use idempotent deterministic seeders.
-
-The seeding process should be safe for local database reconstruction.
-
-Do not rely on hard-coded numeric IDs.
-
-Resolve parent relationships by stable slug or another deterministic key.
-
-Recommendation seeds should likewise resolve both categories by stable identifiers rather than assumed primary-key values.
-
-Do not seed production-like products, orders, users, or recommendations involving nonexistent products.
+If uniqueness is enabled, uniqueness must apply to non-null values according to the database engine's semantics.
 
 ---
 
-# 3.3.18 Database integrity
+# 3.4.6 Product descriptions
 
-Add and test:
+### `short_description`
 
-* primary key on `categories.id`;
-* foreign key `categories.parent_id → categories.id`;
-* unique category slug;
-* foreign keys from `category_recommendations`;
-* cascading deletion of recommendation rows when a referenced category is removed;
-* nulling of `parent_id` when a category parent is removed;
-* unique recommendation pair;
-* useful hierarchy/recommendation indexes.
+Compact catalog summary.
 
-Test both sides of the recommendation relationship.
+Suitable for:
+
+* listing cards;
+* category pages;
+* search results;
+* short product previews.
+
+### `description`
+
+Full product description.
+
+Suitable for:
+
+* product details;
+* material/usage information;
+* furniture characteristics;
+* customer-facing long-form content.
+
+Do not treat either field as trusted HTML.
+
+Future rich content must have a defined sanitization/rendering contract.
+
+Do not implement a rich-text editor or HTML sanitization pipeline in this phase.
 
 ---
 
-# 3.3.19 Authorization considerations
+# 3.4.7 Brand
 
-This phase does not create category-management endpoints.
+`brand` is nullable.
 
-The future public catalog remains explicitly public.
+Keep it as a simple string in V1.
 
-Future staff/admin category-management operations must use the RBAC foundation from Phase 3.2 and explicit catalog permissions, rather than client-controlled role fields or frontend checks.
+Do not create a brands table in Phase 3.4.
 
-The authorization architecture requires explicit permissions such as `products.view` / `products.manage`, with authorization still evaluated together with resource/action/context rather than role alone.
+Do not assume every furniture business item has a standardized external brand entity.
 
-Do not implement those domain policies or endpoints here.
+A dedicated Brand schema can be introduced later if the business requirements justify it.
 
 ---
 
-# 3.3.20 Tests
+# 3.4.8 Room context
 
-Create focused tests for the schema and model.
+Use:
+
+```text id="q7sblf"
+room_type
+```
+
+as a product-level contextual hint.
+
+Examples:
+
+```text id="p93q2f"
+Living Room
+Bedroom
+Dining Room
+Office
+Outdoor
+Entryway
+Hybrid
+```
+
+However, do not duplicate the category hierarchy unnecessarily.
+
+The category remains the authoritative catalog classification.
+
+`room_type` exists to support future room-context discovery and compatibility.
+
+Do not turn `room_type` into an uncontrolled collection of multiple values in this phase.
+
+Do not create a `rooms` table yet.
+
+Do not make `room_type` the recommendation engine.
+
+Do not make product recommendations depend solely on matching `room_type`.
+
+---
+
+# 3.4.9 Room-style compatibility readiness
+
+The product model must remain extensible for future room-staging and recommendation metadata.
+
+Do not add arbitrary JSON such as:
+
+```json id="fv7wxd"
+{
+  "room_styles": [
+    "modern",
+    "minimalist",
+    "scandinavian"
+  ]
+}
+```
+
+as the authoritative room-style system.
+
+At this phase, do not create the full room-style taxonomy.
+
+Instead:
+
+* retain `room_type` as a simple current product attribute;
+* keep the product entity independent from future staging entities;
+* leave room-style compatibility for a later schema decision.
+
+Future structures may include normalized compatibility records or a controlled attribute system once requirements are sufficiently defined.
+
+Do not prematurely create either a complex style graph or machine-learning recommendation fields.
+
+---
+
+# 3.4.10 Assembly requirements
+
+Use:
+
+```text id="5v4bny"
+assembly_required
+```
+
+with the V1 controlled values:
+
+```text id="jng1w7"
+none
+partial
+full
+```
+
+Do not use unrestricted strings for these known business values.
+
+Prefer a Laravel enum/cast or equivalent centralized constant representation if consistent with the existing project.
+
+Reject unknown values.
+
+Do not add additional assembly states such as:
+
+```text id="0o0wwq"
+SELF_ASSEMBLY
+PROFESSIONAL_ONLY
+OPTIONAL
+```
+
+unless the V1 contract explicitly expands.
+
+---
+
+# 3.4.11 Primary material
+
+Use:
+
+```text id="8os3ac"
+primary_material
+```
+
+as a customer-facing descriptive field.
+
+Examples:
+
+```text id="c1n3h8"
+Solid Oak
+Velvet & Solid Oak
+Solid Teak
+Engineered Wood
+```
+
+This field is a summary, not a complete materials database.
+
+The project conventions already distinguish furniture material/color from CLOSED enums and permit bounded free text for such descriptive attributes.
+
+Do not create:
+
+```text id="g57f89"
+materials
+product_materials
+material_types
+```
+
+in this phase.
+
+A future normalized material structure can be introduced when the requirements justify filtering, composition percentages, supplier data, or material-specific behavior.
+
+---
+
+# 3.4.12 Variations readiness
+
+The product schema must prepare for variants without duplicating variant data.
+
+Do not add:
+
+```text id="5k22w1"
+color
+fabric
+finish
+size
+variant_price
+variant_sku
+variant_stock
+variant_width
+variant_height
+variant_depth
+```
+
+directly to `products`.
+
+Those characteristics belong to `product_variants` in Phase 3.5.
+
+Conceptually:
+
+```text id="5svz9j"
+Product
+├── Variant A
+│   ├── SKU
+│   ├── attributes
+│   ├── dimensions
+│   └── price
+├── Variant B
+│   ├── SKU
+│   ├── attributes
+│   ├── dimensions
+│   └── price
+└── Variant C
+    ├── SKU
+    ├── attributes
+    ├── dimensions
+    └── price
+```
+
+This avoids storing multiple potentially conflicting sources of truth.
+
+---
+
+# 3.4.13 Pricing readiness
+
+Do **not** add a product-level `price` field merely because a product has a price.
+
+The project's API conventions define money as integer minor units:
+
+```json id="y1npf4"
+{
+  "amount": 35000000,
+  "currency": "TZS"
+}
+```
+
+with `1 TZS = 100` minor units.
+
+Financial authority is server-side. Client-supplied totals/prices are not authoritative.
+
+Actual sellable pricing belongs to the Product Variant schema.
+
+Therefore Phase 3.4 must **not** create:
+
+```text id="w5y0fq"
+decimal price
+decimal compare_at_price
+decimal cost_price
+```
+
+on `products`.
+
+Phase 3.5 must decide the exact variant-level financial representation using the already-established money convention.
+
+This prevents inconsistent decimal-vs-minor-unit implementations across the catalog.
+
+---
+
+# 3.4.14 Inventory readiness
+
+Do not add inventory quantities to `products`.
+
+Do not add:
+
+```text id="3q9n3l"
+stock
+quantity
+reserved_quantity
+available_quantity
+warehouse_location
+```
+
+to `products`.
+
+Inventory is variant-specific and is scheduled as Phase 3.7.
+
+The eventual model should conceptually support:
+
+```text id="r4tsf9"
+Product
+   ↓
+Product Variant
+   ↓
+Inventory record(s)
+```
+
+This is necessary because two variants of the same sofa can have different stock.
+
+Client inputs must never become authoritative inventory quantities. The server owns availability, stock, reservation, and consumption.
+
+---
+
+# 3.4.15 Product media readiness
+
+Do not create `product_media` in this phase.
+
+The roadmap assigns product images/media to Phase 3.6.
+
+The Product model should later expose relationships such as:
+
+```text id="xggfqt"
+Product → media
+```
+
+without placing media paths directly in `products`.
+
+Do not add:
+
+```text id="ac7ltu"
+image_url
+video_url
+thumbnail_url
+staged_room_url
+```
+
+to the product table.
+
+This keeps product metadata separate from physical media records.
+
+---
+
+# 3.4.16 3D/AR readiness
+
+Do not add 3D or AR file paths directly to `products`.
+
+Do not create:
+
+```text id="9fwb0d"
+glb_url
+usdz_url
+gltf_url
+3d_model_path
+ar_model_path
+```
+
+inside the base product table.
+
+The future `product_assets` structure should own these files.
+
+Therefore do not add `has_3d_model` as an authoritative boolean in Phase 3.4.
+
+A derived property can later answer:
+
+```text id="yoywip"
+Product has eligible 3D/AR assets
+```
+
+based on related asset records.
+
+Avoid duplicated state such as:
+
+```text product.has_3d_model = false
+product_assets contains GLB
+```
+
+which can become inconsistent.
+
+---
+
+# 3.4.17 Product active/featured state
+
+Use:
+
+```text id="n2i4iu"
+is_active
+is_featured
+```
+
+### `is_active`
+
+Controls whether the product is active in the catalog.
+
+It is server-controlled.
+
+Do not expose a client-controlled field that can make a product active through ordinary public requests.
+
+### `is_featured`
+
+Controls whether the product is intentionally highlighted.
+
+It is a merchandising flag, not an algorithmic ranking.
+
+Do not interpret `is_featured` as:
+
+* best seller;
+* highest margin;
+* most recommended;
+* highest inventory;
+* sponsored product.
+
+Those are separate concerns.
+
+---
+
+# 3.4.18 Soft deletion
+
+Use soft deletes for products:
+
+```php id="ed5z2b"
+$table->softDeletes();
+```
+
+The purpose is preservation of catalog history and protection against destructive deletion of entities that can later participate in business records.
+
+Do not implement hard-delete workflows.
+
+Do not add cascading business-data deletion.
+
+Later phases must account for soft-deleted products when querying:
+
+* public catalog;
+* product variants;
+* inventory;
+* product media;
+* historical order data.
+
+---
+
+# 3.4.19 Product model
+
+Create:
+
+```text id="7o5z9m"
+App\Models\Product
+```
+
+with relationships required at this phase:
+
+```php id="lbj0s3"
+public function category(): BelongsTo
+{
+    return $this->belongsTo(Category::class);
+}
+```
+
+Do not add relationships to models that do not exist yet.
+
+Do not pre-create empty relationships to:
+
+```text ProductVariant
+ProductMedia
+ProductAsset
+ProductStock
+```
+
+unless the corresponding classes/tables already exist as part of an existing implementation.
+
+Those relationships should be introduced in their respective phases.
+
+---
+
+# 3.4.20 Product casts
+
+Use appropriate casts for:
+
+```text id="vs6js8"
+is_active
+is_featured
+```
+
+and `assembly_required` if represented by a Laravel enum.
+
+Do not cast customer-visible strings into arbitrary custom structures without a defined contract.
+
+Do not add a JSON `attributes` field to `products`.
+
+Variant attributes belong to Product Variants.
+
+---
+
+# 3.4.21 Product attributes and extensibility
+
+The product table should contain only attributes that are genuinely product-level.
+
+Good examples:
+
+```text id="r6t2b7"
+name
+brand
+room_type
+assembly_required
+primary_material
+```
+
+Avoid turning `products` into a flexible attribute warehouse containing:
+
+```text id="z3n5i7"
+color
+size
+width
+height
+weight
+fabric
+finish
+stock
+sale_price
+3d_model
+room_style
+warehouse
+```
+
+This is precisely why the later variant, inventory, media, and asset schemas exist.
+
+Do not introduce a generic EAV schema in this phase.
+
+Do not introduce an unbounded JSON metadata field as a substitute for proper relational design.
+
+---
+
+# 3.4.22 Product slug and naming integrity
+
+Validate:
+
+* product name is non-empty;
+* slug is unique;
+* slug is normalized according to project convention;
+* slug conflicts are detected;
+* slug is not generated from variant names;
+* product ID remains the stable internal identifier.
+
+Do not allow multiple active products with the same slug.
+
+Avoid silently overwriting an existing product when generating slugs.
+
+---
+
+# 3.4.23 Product/category integrity
+
+The product's category must reference an existing category.
+
+A product must not reference an inactive/nonexistent category through invalid foreign keys.
+
+The application layer must decide, in a future write API, whether a product may be assigned to an inactive category.
+
+Do not implement that product-management policy now.
+
+Database integrity handles existence; domain authorization/validation handles business rules.
+
+---
+
+# 3.4.24 Future recommendation readiness
+
+The schema must support the future flow:
+
+```text id="gso9eq"
+Product
+   ↓
+Primary Category
+   ↓
+Category Recommendations
+   ↓
+Eligible Product Variants
+   ↓
+Inventory/availability
+   ↓
+Recommendation ranking
+```
+
+Phase 3.4 must not add recommendation-specific fields such as:
+
+```text id="l6c0p6"
+recommendation_score
+recommended_product_ids
+frequently_bought
+cross_sell_score
+ml_embedding
+```
+
+The Category recommendation graph from Phase 3.3 remains independent of the Product table.
+
+Do not duplicate category recommendation mappings into products.
+
+---
+
+# 3.4.25 Future room-staging readiness
+
+The base product should remain compatible with later staging relationships.
+
+Conceptually:
+
+```text id="la33bv"
+Product
+   ├── Product Media
+   │      └── staged room images
+   │
+   └── Product Assets
+          ├── GLB
+          ├── GLTF
+          └── USDZ
+```
+
+Potential future metadata may include:
+
+```text id="a0ag8g"
+room style
+interior theme
+placement suitability
+staging context
+AR availability
+```
+
+but these should belong to dedicated future structures rather than becoming an uncontrolled `products` JSON blob.
+
+Do not create the full staging metadata model in Phase 3.4.
+
+---
+
+# 3.4.26 Product seeding
+
+Create minimal deterministic product factory support only as needed for testing.
+
+Do not seed the production furniture catalog yet unless the project already defines authoritative seed products.
+
+If development seed products are required:
+
+* associate them with real seeded categories;
+* use realistic names;
+* generate deterministic slugs;
+* do not create variants;
+* do not create stock;
+* do not create media;
+* do not create AR assets;
+* do not invent production pricing.
+
+Factories must not accidentally imply that variant/stock/media functionality already exists.
+
+---
+
+# 3.4.27 Database indexes
+
+Add indexes for the access patterns expected from the base catalog:
+
+```text id="yz6skc"
+slug
+category_id
+category_id + is_active
+is_active + is_featured
+room_type
+```
+
+Do not add speculative indexes for future variant/inventory queries to the products table.
+
+Later schema phases should index their own tables according to actual access patterns.
+
+---
+
+# 3.4.28 Database constraints
+
+Enforce:
+
+* primary key on `id`;
+* foreign key from `category_id` to `categories.id`;
+* restrictive category deletion behavior;
+* unique `slug`;
+* appropriate uniqueness for `sku_prefix` if retained as a product-level identifier;
+* non-null required product identity fields;
+* valid default for `assembly_required`.
+
+Do not encode complex recommendation, inventory, or variant business rules in database constraints at this stage.
+
+---
+
+# 3.4.29 Security and mass assignment
+
+When product write APIs are introduced later:
+
+```text id="oz8ndm"
+validated request
+→ explicit product allow-list
+→ DTO/command
+→ domain validation/authorization
+→ persistence
+```
+
+Never use:
+
+```php id="0x6q3d"
+$request->all()
+```
+
+to hydrate a Product model.
+
+Client must never directly control:
+
+* IDs;
+* timestamps;
+* soft-delete timestamps;
+* future inventory fields;
+* future order/business state;
+* server-derived product relationships;
+* authorization fields.
+
+The project's backend conventions explicitly prohibit request-wide mass assignment and require explicit allow-lists.
+
+---
+
+# 3.4.30 API serialization readiness
+
+Do not implement a Product API in this phase.
+
+However, the model must remain compatible with the project's API serialization rules.
+
+A future public Product representation may contain:
+
+```text id="k5j6da"
+id
+name
+slug
+category
+short_description
+description
+brand
+room_type
+assembly_required
+primary_material
+is_featured
+variants
+media
+3d/ar assets
+availability
+```
+
+but those fields must be assembled through explicit representation/resource classes rather than:
+
+```php id="i6ht0w"
+$model->toArray()
+```
+
+The project requires field-level serialization before output and prohibits indiscriminate model serialization, particularly when later product data includes stock, internal cost, storage paths, or other sensitive fields.
+
+In particular, future internal variant `cost_price`, inventory quantities, storage keys, and internal operational metadata must not automatically enter public catalog responses.
+
+---
+
+# 3.4.31 Tests
+
+Create focused tests alongside implementation.
 
 ## Migration tests
 
 Verify:
 
-* fresh migration succeeds;
-* rollback succeeds;
-* categories can exist with `parent_id = null`;
-* child category can reference parent category;
-* parent deletion nulls child `parent_id`;
-* duplicate slug is rejected;
-* recommendation foreign keys are enforced;
-* recommendation pair uniqueness is enforced.
+* products migration succeeds on an empty database;
+* products migration rolls back;
+* valid category can own products;
+* invalid `category_id` is rejected by the foreign key;
+* deleting a referenced category does not cascade-delete products;
+* slug uniqueness is enforced;
+* indexes/constraints are created as intended;
+* soft deletes function correctly.
 
-## Hierarchy tests
-
-Verify:
-
-* root category has no parent;
-* child resolves its parent;
-* parent resolves its children;
-* children are ordered by `display_order`;
-* self-parenting is rejected by application validation;
-* seeded hierarchy has the intended structure.
-
-## Recommendation tests
+## Model tests
 
 Verify:
 
-```text
-Category A → Category B
-```
+* `Product → category`;
+* category association resolves correctly;
+* active/featured casts return booleans;
+* assembly requirement representation is valid;
+* soft-deleted products are excluded by default;
+* `withTrashed()` behavior works where appropriate.
 
-is returned by `recommendedCategories`.
-
-Verify the inverse relationship:
-
-```text
-Category B ← Category A
-```
-
-is returned by `recommendedByCategories`.
-
-Verify:
-
-* pivot `relation_type` is available;
-* pivot `priority` is available;
-* priority ordering is deterministic;
-* duplicate pair records are rejected.
-
-## Seed tests
-
-Verify:
-
-* all approved root categories exist;
-* all approved second-level categories exist;
-* all approved third-level categories exist;
-* each child points to the intended parent;
-* slugs are unique;
-* recommendation mappings only reference categories that actually exist;
-* deferred mappings are not represented by undocumented fake categories.
-
----
-
-# 3.3.21 Category API readiness
-
-The database and model should be ready for a later public category-read API.
-
-The later API may expose:
-
-```text
-category
-parent
-children
-slug
-space_type
-display_order
-is_active
-```
-
-but this phase must not implement those endpoints.
-
-Do not add:
-
-```text
-GET /categories
-GET /categories/{slug}
-POST /categories
-PATCH /categories/{id}
-DELETE /categories/{id}
-```
-
-yet.
-
-The category read API belongs to the later catalog API work.
-
----
-
-# 3.3.22 Recommendation API readiness
-
-This phase must make future recommendation queries straightforward but must not implement a recommendation engine.
-
-The future system should be able to conceptually perform:
-
-```text
-Product
-→ primary/associated Category
-→ recommended Categories
-→ eligible Products
-→ availability/inventory filtering
-→ ranking
-→ recommendation response
-```
-
-That is a future application/query concern.
-
-Do not implement:
-
-* random product selection;
-* "frequently bought together";
-* sales-history analysis;
-* collaborative filtering;
-* machine learning;
-* recommendation scoring;
-* product ranking;
-* inventory-aware recommendation selection;
-* product exclusion rules.
-
-The category relationship table is merely the durable rule/configuration layer.
-
----
-
-# Security and correctness checks
+## Integrity tests
 
 Verify that:
 
-* category IDs are server-controlled;
-* recommendation IDs are server-controlled;
-* no client input can assign arbitrary category ownership;
-* no API layer trusts a client-supplied role for category administration;
-* no mass-assignment path can manipulate server-controlled fields;
-* database relationships cannot be silently bypassed;
-* invalid parent relationships are rejected before persistence;
-* recursive/cyclic relationships are not permitted through the future category write boundary.
+* no product requires a product variant at the base-schema level;
+* no product requires inventory to exist;
+* no product requires media;
+* no product requires 3D/AR assets;
+* product-level price does not become a second financial source of truth;
+* variant-only attributes are not stored as product columns.
 
-Do not expose internal database exceptions through API responses.
+## Seed/factory tests
 
-Follow the established error and logging discipline.
+Where factories exist, verify:
+
+* generated product has a valid category;
+* slugs are unique;
+* factory does not fabricate future-phase relationships.
 
 ---
 
-# Code-quality requirements
+# 3.4.32 Static analysis and quality
 
-Keep the implementation small and cohesive.
+Run the established project checks:
 
-Expected components:
-
-```text
-Category model
-Category migration
-CategoryRecommendation migration
-Category seed data
-Recommendation seed data
-Focused tests
+```text id="qbd7hk"
+format check
+static analysis
+unit tests
+feature tests
 ```
 
-Avoid:
+Fix all findings introduced by this phase.
 
-* recommendation service classes;
-* recommendation controllers;
-* category APIs;
-* product APIs;
-* search infrastructure;
-* recursive tree utility frameworks;
-* graph databases;
-* caching layers;
-* machine-learning infrastructure;
-* generic taxonomy abstractions.
+Do not broaden the changes to unrelated code.
 
-Use meaningful names and existing Laravel conventions.
+Do not suppress analyzer warnings globally.
 
-Keep code comments to the absolute minimum.
+Do not add large abstraction frameworks for a single Product model.
 
-Prefer expressive model relationships, seed data, tests, and clear names over explanatory comment blocks.
-
----
-
-# Documentation / decision record
-
-Update `docs/decisions.md` only for durable decisions that are genuinely architectural, such as:
-
-* adjacency-list hierarchy chosen for V1;
-* recommendation relationships modeled as a directed relational table;
-* recommendation mappings intentionally separated from product associations;
-* unsupported recommendation targets deferred rather than creating undocumented categories.
-
-Do not create a permanent Phase-3.3 markdown document merely to duplicate this phase instruction.
+Keep comments to the absolute minimum.
 
 ---
 
@@ -1063,26 +1096,35 @@ Do not create a permanent Phase-3.3 markdown document merely to duplicate this p
 
 Do not implement:
 
-* Product model;
-* product-category associations;
-* Product Variants;
-* Product Images;
-* Inventory;
-* category CRUD API;
-* category admin UI;
-* category frontend pages;
-* Flutter category screens;
+* Product Variant schema;
+* variant attributes;
+* variant SKU generation;
+* variant pricing;
+* compare-at pricing;
+* internal cost pricing;
+* variant dimensions;
+* variant weight;
+* inventory/stock tables;
+* warehouse schema;
+* product images;
+* product video;
+* staged-room media;
+* 3D assets;
+* AR assets;
+* material normalization;
+* room-style taxonomy;
+* staging metadata schema;
+* product recommendation algorithms;
 * recommendation API;
-* recommendation engine;
-* product recommendation ranking;
-* sales-based recommendations;
-* "Frequently Bought Together" calculation;
-* machine-learning recommendations;
-* full-text category search;
-* breadcrumb API;
-* category caching;
-* URL routing implementation;
-* category authorization policies.
+* product catalog API;
+* Product CRUD endpoints;
+* staff product-management endpoints;
+* Admin product-management endpoints;
+* search/filter API;
+* SEO API;
+* Next.js product pages;
+* Flutter product screens;
+* product availability calculations.
 
 These belong to later phases.
 
@@ -1090,39 +1132,39 @@ These belong to later phases.
 
 # Definition of done
 
-Phase 3.3 is complete only when:
+Phase 3.4 is complete only when:
 
-1. `categories` exists with the approved adjacency-list structure.
-2. Root categories support `parent_id = null`.
-3. Parent/child relationships work correctly.
-4. The approved furniture taxonomy is seeded deterministically.
-5. Category slugs are unique and deterministic.
-6. `space_type`, `display_order`, and `is_active` are persisted.
-7. Category ordering is deterministic.
-8. Self-parenting is prevented.
-9. `category_recommendations` exists as a directed relational mapping.
-10. Recommendation pair uniqueness is enforced.
-11. Recommendation priority is persisted.
-12. The Category model exposes parent/children relationships.
-13. The Category model exposes both recommendation directions.
-14. Recommendation seeds only reference categories that actually exist.
-15. Undocumented recommendation target categories are explicitly deferred rather than invented.
-16. Migrations run successfully from an empty database and roll back successfully.
-17. Model, hierarchy, recommendation, and seed tests pass.
-18. Existing formatting, static analysis, and test suites pass.
-19. No product/recommendation API or business logic has been pulled into this phase.
-20. Code comments remain minimal.
+1. `products` exists as the parent catalog entity.
+2. Each product has a valid primary category.
+3. Category deletion cannot silently destroy products.
+4. Product names and slugs are modeled correctly.
+5. Optional product-level SKU prefix is available without being treated as a sellable SKU.
+6. Product descriptions are separated into short and full descriptions.
+7. Brand is supported as optional product-level metadata.
+8. `room_type` is available for future room-context behavior without replacing category taxonomy.
+9. `assembly_required` uses the agreed controlled values.
+10. `primary_material` supports customer-facing material description without pretending to be a normalized materials database.
+11. `is_active` and `is_featured` exist with server-controlled semantics.
+12. Soft deletion is supported.
+13. Product/category Eloquent relationship exists.
+14. Indexes and foreign-key constraints are appropriate.
+15. Variant-specific price, SKU, dimensions, and attributes are not duplicated onto products.
+16. Inventory quantities are not stored on products.
+17. Media and AR storage paths are not stored on products.
+18. Product structure is ready for later Product Variant, Product Media, Product Asset, and Inventory relationships.
+19. Tests cover migration, category integrity, model relationships, soft deletion, and core constraints.
+20. Formatting, static analysis, and the existing test suite pass.
+21. No product API or later-phase business functionality has been implemented.
+22. Code comments remain minimal.
 
 ---
 
 # STOP condition
 
-Stop after the category schema, recommendation mapping schema, models, deterministic seed data, migrations, and tests are complete.
+Stop after the base Product schema, Product model, migration/factory support, constraints, indexes, and tests are complete.
 
-Do not continue into Phase 3.4 Products Schema.
+Do not continue into Phase 3.5 Product Variants.
 
-Do not implement product-category associations before the Product schema establishes the appropriate relationship model.
-
-Do not implement recommendation APIs or algorithms.
+Do not implement pricing, stock, media, 3D/AR assets, product recommendation logic, or product APIs.
 
 Do not commit, stage, or push changes.

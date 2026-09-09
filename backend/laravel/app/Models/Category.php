@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\SpaceType;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -23,17 +24,59 @@ class Category extends Model
             if ($category->parent_id !== null && $category->parent_id === $category->id) {
                 throw new DomainException('A category cannot reference itself as its own parent.');
             }
-
-            if ($category->parent_id !== null && $category->exists) {
-                $ancestorId = $category->parent_id;
-                while ($ancestorId !== null) {
-                    if ($ancestorId === $category->id) {
-                        throw new DomainException('A category parent assignment cannot create a hierarchy cycle.');
-                    }
-                    $ancestorId = Category::whereKey($ancestorId)->value('parent_id');
-                }
-            }
         });
+    }
+
+    public function changeParent(?int $parentId): void
+    {
+        if ($parentId !== null && $parentId === $this->id) {
+            throw new DomainException('A category cannot reference itself as its own parent.');
+        }
+
+        $this->getConnection()->transaction(function () use ($parentId): void {
+            $category = $this->newQuery()->whereKey($this->id)->lockForUpdate()->firstOrFail();
+
+            if ($parentId !== null) {
+                $this->assertAcyclicUnderLock($category, $parentId);
+            }
+
+            $category->parent_id = $parentId;
+            $category->save();
+        });
+    }
+
+    private function assertAcyclicUnderLock(Category $category, int $parentId): void
+    {
+        $ids = [$category->id];
+
+        do {
+            $current = $parentId;
+            while ($current !== null && ! in_array($current, $ids, true)) {
+                $ids[] = $current;
+                $current = $category->newQuery()->whereKey($current)->value('parent_id');
+            }
+
+            $locked = $this->lockChain($category, $ids);
+
+            $current = $parentId;
+            while ($current !== null && isset($locked[$current])) {
+                if ($current === $category->id) {
+                    throw new DomainException('A category parent assignment cannot create a hierarchy cycle.');
+                }
+                $current = $locked[$current]->parent_id;
+            }
+        } while ($current !== null && $category->newQuery()->whereKey($current)->exists());
+    }
+
+    /** @return Collection<int, Category> */
+    private function lockChain(Category $category, array $ids): Collection
+    {
+        return $category->newQuery()
+            ->whereIn('id', $ids)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
     }
 
     public function parent(): BelongsTo

@@ -68,12 +68,10 @@ class CategoryHierarchyTest extends TestCase
     public function test_two_node_cycle_is_rejected(): void
     {
         $parent = $this->createCategory(['slug' => 'cycle-parent']);
-        $this->createCategory(['slug' => 'cycle-child'], $parent);
-
-        $parent->parent_id = Category::where('slug', 'cycle-child')->value('id');
+        $child = $this->createCategory(['slug' => 'cycle-child'], $parent);
 
         $this->expectException(DomainException::class);
-        $parent->save();
+        $parent->changeParent($child->id);
     }
 
     public function test_deeper_cycle_is_rejected(): void
@@ -82,10 +80,8 @@ class CategoryHierarchyTest extends TestCase
         $b = $this->createCategory(['slug' => 'cycle-b'], $a);
         $c = $this->createCategory(['slug' => 'cycle-c'], $b);
 
-        $a->parent_id = $c->id;
-
         $this->expectException(DomainException::class);
-        $a->save();
+        $a->changeParent($c->id);
     }
 
     public function test_seeded_hierarchy_has_intended_structure(): void

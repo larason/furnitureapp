@@ -54,16 +54,24 @@ class CategorySeedTest extends TestCase
     {
         $this->seed(CategorySeeder::class);
 
+        $livingRoomId = Category::where('slug', 'living-room')->value('id');
+        $this->assertNotNull($livingRoomId);
         $this->assertSame(
-            Category::where('slug', 'living-room')->value('id'),
+            $livingRoomId,
             Category::where('slug', 'seating')->value('parent_id')
         );
+
+        $seatingId = Category::where('slug', 'seating')->value('id');
+        $this->assertNotNull($seatingId);
         $this->assertSame(
-            Category::where('slug', 'seating')->value('id'),
+            $seatingId,
             Category::where('slug', 'sofas')->value('parent_id')
         );
+
+        $officeSeatingId = Category::where('slug', 'office-seating')->value('id');
+        $this->assertNotNull($officeSeatingId);
         $this->assertSame(
-            Category::where('slug', 'office-seating')->value('id'),
+            $officeSeatingId,
             Category::where('slug', 'ergonomic-task-chairs')->value('parent_id')
         );
     }
