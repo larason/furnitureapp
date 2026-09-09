@@ -37,9 +37,7 @@ class ApiExceptionRenderer
         }
 
         if ($e instanceof ApiException) {
-            if ($e->status() >= 500) {
-                $this->log($request, $e, $e->errorCode(), $e->status());
-            }
+            $this->logIfServerError($request, $e, $e->errorCode(), $e->status());
 
             return $this->response->error($e->status(), $e->errorCode(), $e->getMessage(), $request, $e->field(), $e->details(), $e->headers());
         }
@@ -83,9 +81,7 @@ class ApiExceptionRenderer
         if ($e instanceof HttpExceptionInterface) {
             $status = $e->getStatusCode();
 
-            if ($status >= 500) {
-                $this->log($request, $e, $this->httpExceptionCode($status), $status);
-            }
+            $this->logIfServerError($request, $e, $this->httpExceptionCode($status), $status);
 
             return $this->response->error(
                 $status,
@@ -106,6 +102,13 @@ class ApiExceptionRenderer
         try {
             Log::error('api.exception', ApiLogContext::forException($request, $exception, $code, $status));
         } catch (Throwable) {
+        }
+    }
+
+    private function logIfServerError(Request $request, Throwable $exception, ApiErrorCode $code, int $status): void
+    {
+        if ($status >= 500) {
+            $this->log($request, $exception, $code, $status);
         }
     }
 
