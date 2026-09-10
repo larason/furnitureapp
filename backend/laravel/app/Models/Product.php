@@ -55,6 +55,19 @@ class Product extends Model
             ->orderBy('display_order');
     }
 
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function primaryImage(): HasOne
+    {
+        return $this->hasOne(ProductImage::class)
+            ->where('is_primary', true);
+    }
+
     public function defaultVariant(): HasOne
     {
         return $this->hasOne(ProductVariant::class)

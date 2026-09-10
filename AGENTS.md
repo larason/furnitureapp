@@ -1298,6 +1298,116 @@ Important architecture decisions, assumptions, API changes and operational proce
 
 Limit the number of comments as minimum as possible when writing any code. This include uneccessary long notes and information.
 
+### Rule 17 - codebase quality and future maintainability
+
+1. Cognitive-complexity and maintainability requirement
+
+**Mandatory code-quality recommendation for this phase:**
+
+Whenever the agent touches or creates functions in the Product Image implementation, keep each function's **cognitive complexity at or below the recommended threshold of 15**.
+
+If an existing function involved in this phase exceeds the threshold:
+
+1. refactor it as part of the phase;
+2. split nested conditional logic into small cohesive functions;
+3. move domain decisions into focused services/value objects/helpers where justified;
+4. reduce nesting with guard clauses where that improves clarity;
+5. avoid creating long boolean expressions;
+6. keep each extracted function narrowly responsible.
+
+Do not "fix" complexity by suppressing analyzer warnings.
+
+Do not merely increase the configured threshold.
+
+The purpose is maintainability and reduced future change cost.
+
+---
+
+2. Return-statement limit
+
+Functions introduced or refactored in this phase should contain **no more than 3 return statements**.
+
+Treat this as a project quality rule.
+
+When a function has more than three returns:
+
+* simplify the control flow;
+* extract decision logic;
+* use an explicit result/value variable where that improves readability;
+* split the function if it has more than one clear responsibility.
+
+Do not make code harder to read merely to reduce the count.
+
+Do not replace several returns with a deeply nested conditional structure.
+
+The target is simpler control flow, not mechanical metric compliance.
+
+Add/refine static-analysis configuration so this rule is visible during development where the project's tooling supports it.
+
+---
+
+3. Duplicate string literals
+
+Do not repeatedly hard-code the same meaningful string literals.
+
+Use centralized constants/enums/value objects when the same literal has semantic significance.
+
+Examples:
+
+```php
+private const DEFAULT_SORT_ORDER = 0;
+private const DEFAULT_IS_PRIMARY = false;
+```
+
+More importantly, for repeated domain/storage identifiers, use the appropriate centralized constant rather than repeating:
+
+```text
+product_images
+product_id
+product_variant_id
+file_path
+alt_text
+sort_order
+is_primary
+```
+
+through unrelated code when a project-level constant abstraction is genuinely beneficial.
+
+However, **do not create a giant "StringConstants" class for every ordinary string in the application**.
+
+Use constants where duplication represents a real shared concept.
+
+The goal is to prevent the same semantic literal from drifting across:
+
+* models;
+* validators;
+* services;
+* tests;
+* serializers.
+
+Do not solve duplication by replacing clear ordinary strings with meaningless constants everywhere.
+
+
+4. Constant naming
+
+When constants are appropriate, use descriptive names.
+
+Prefer:
+
+```php
+private const PRIMARY_FLAG = 'is_primary';
+private const DEFAULT_SORT_ORDER = 0;
+```
+
+over:
+
+```php
+private const X = 'is_primary';
+private const VALUE_1 = 0;
+```
+
+Do not create constants whose names merely repeat the value without explaining the domain meaning.
+
 ---
 
 # 28. Definition of Done
