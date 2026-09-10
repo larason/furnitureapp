@@ -102,6 +102,11 @@ class ProductVariant extends Model
             ->orderBy('id');
     }
 
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(ProductStock::class);
+    }
+
     protected function casts(): array
     {
         return [

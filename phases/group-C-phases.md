@@ -1,46 +1,51 @@
 # Group C phases instructions
 
-# Phase 3.6 — Product Images Schema
+# Phase 3.7 — Inventory Schema
 
 ## Purpose
 
-Implement the database and Laravel model foundation for product images.
+Implement the database foundation for backend-controlled product inventory.
 
-The schema must support:
+The inventory model must support:
 
-* multiple images per product;
-* deterministic gallery ordering;
-* one primary product image;
-* optional association of an image with a specific product variant;
-* customer-facing alt text;
-* future CDN/object-storage delivery;
-* public catalog serialization;
-* variant-specific imagery such as a particular color/fabric configuration;
-* staged-room image support without coupling images to product pricing, inventory, or orders.
+* stock per Product Variant;
+* more than one warehouse/location;
+* physical quantity;
+* reserved quantity;
+* derived available quantity;
+* deterministic stock lookup;
+* future stock adjustments;
+* future reservations/releases;
+* future concurrency-safe checkout/cart behavior;
+* future inventory API and operational staff workflows.
 
-This phase creates the persistent image relationship only.
+The core inventory relationship is:
 
-Do not implement image upload endpoints, image processing, CDN integration, 3D/AR assets, video, or the public Product API in this phase.
-
-The existing V1 catalog convention defines product images as small embedded child data:
-
-```json
-{
-  "id": 1,
-  "url": "...",
-  "alt_text": "...",
-  "sort_order": 1,
-  "is_primary": true
-}
+```text id="0qtv8b"
+Product
+   ↓
+Product Variant
+   ↓
+Inventory Stock
+   ↓
+Warehouse / Location
 ```
 
-and explicitly rejects a separate:
+Inventory is **not** stored on `products`.
 
-```text
-GET /products/{product}/images
+Inventory is **not** stored on `product_variants`.
+
+The system must distinguish:
+
+```text id="x6f3ap"
+physical quantity
+reserved quantity
+available quantity
 ```
 
-## endpoint.
+and final availability must be determined by Laravel/database logic rather than by frontend state.
+
+---
 
 # Dependencies
 
@@ -48,10 +53,11 @@ Required:
 
 * Phase 2.1–2.12 completed.
 * Phase 3.1 Users Schema completed.
-* Phase 3.2 Roles/permissions completed.
+* Phase 3.2 Roles/permissions model completed.
 * Phase 3.3 Categories Schema completed.
 * Phase 3.4 Products Schema completed.
 * Phase 3.5 Product Variants Schema completed.
+* Phase 3.6 Product Images Schema completed.
 * Existing Laravel migration/model/test conventions operational.
 
 Authoritative inputs:
@@ -64,1030 +70,1031 @@ Authoritative inputs:
 * `docs/decisions.md`
 * `AGENTS.md`
 
-Do not reopen frozen API envelope, naming, money, authentication, or authorization decisions.
+The Group C roadmap explicitly places Inventory Schema at Phase 3.7 and later separates inventory read/mutation/concurrency API work into Group E.
 
 ---
 
-# 3.6.1 Image entity responsibility
+# 3.7.1 Inventory responsibility
 
-Create a dedicated:
+Create a dedicated stock record for each:
 
-```text
-product_images
+```text id="s5q2zd"
+Product Variant + Warehouse/Location
 ```
 
-table.
+Conceptually:
 
-Do not store image URLs directly on `products` or `product_variants`.
+```text id="8o3ytc"
+Variant A
+├── Main Warehouse
+│   └── quantity = 10
+└── Secondary Store
+    └── quantity = 4
 
-The relationship is:
-
-```text
-Product
-   │
-   ├── Image
-   ├── Image
-   ├── Image
-   └── Image
-          │
-          └── optionally associated with Variant
+Variant B
+└── Main Warehouse
+    └── quantity = 7
 ```
 
-The image belongs to the Product.
+This allows future expansion to multiple locations without duplicating Product Variant records.
 
-A nullable `product_variant_id` may identify that the image specifically represents one variant.
+Do not create inventory directly against Product.
 
-This supports both:
-
-```text
-Product-wide image
-```
-
-and:
-
-```text
-Variant-specific image
-```
-
-without duplicating the Product record.
+The sellable unit is the Product Variant.
 
 ---
 
-# 3.6.2 Recommended table structure
+# 3.7.2 Primary inventory table
 
 Create:
 
-```text
-product_images
+```text id="x5c9gz"
+product_stocks
 ```
 
-with:
+with the conceptual fields:
 
-```text
+```text id="q4wqfd"
 id
-product_id
 product_variant_id
-file_path
-alt_text
-sort_order
-is_primary
+warehouse_location
+quantity
+reserved_quantity
 created_at
 updated_at
 ```
 
-Recommended migration:
+Recommended Laravel migration:
 
-```php
-Schema::create('product_images', function (Blueprint $table) {
+```php id="mruqfs"
+Schema::create('product_stocks', function (Blueprint $table) {
     $table->id();
 
-    $table->foreignId('product_id')
-        ->constrained('products')
+    $table->foreignId('product_variant_id')
+        ->constrained('product_variants')
         ->cascadeOnDelete();
 
-    $table->foreignId('product_variant_id')
-        ->nullable()
-        ->constrained('product_variants')
-        ->nullOnDelete();
+    $table->string('warehouse_location');
 
-    $table->string('file_path');
-    $table->string('alt_text', 500)->nullable();
-
-    $table->unsignedInteger('sort_order')->default(0);
-    $table->boolean('is_primary')->default(false);
+    $table->unsignedInteger('quantity')->default(0);
+    $table->unsignedInteger('reserved_quantity')->default(0);
 
     $table->timestamps();
 
-    $table->index(['product_id', 'sort_order']);
-    $table->index(['product_id', 'is_primary']);
-    $table->index(['product_variant_id', 'sort_order']);
+    $table->unique(
+        ['product_variant_id', 'warehouse_location'],
+        'product_stock_variant_location_unique'
+    );
+
+    $table->index([
+        'product_variant_id',
+        'warehouse_location',
+    ]);
 });
 ```
 
-Adapt the exact migration syntax to existing project conventions.
+Adapt the exact migration syntax to the project's existing Laravel/database conventions.
 
-Do not duplicate indexes unnecessarily if the chosen database/index strategy already covers the required access path.
-
----
-
-# 3.6.3 Product relationship
-
-Add:
-
-```php
-public function images(): HasMany
-{
-    return $this->hasMany(ProductImage::class)
-        ->orderBy('sort_order');
-}
-```
-
-The relationship should return images in deterministic presentation order.
-
-Do not depend on insertion order.
-
-Do not use random ordering.
+Do not duplicate an index that is already fully covered by a uniqueness/index definition.
 
 ---
 
-# 3.6.4 Variant relationship
+# 3.7.3 Product Variant relationship
+
+Every stock record belongs to one Product Variant.
 
 Add to `ProductVariant`:
 
-```php
-public function images(): HasMany
+```php id="1t0tse"
+public function stocks(): HasMany
 {
-    return $this->hasMany(ProductImage::class)
-        ->orderBy('sort_order');
+    return $this->hasMany(ProductStock::class);
 }
 ```
 
-This allows the application to retrieve images representing a specific variant.
-
-The same image row belongs to one Product and may optionally point to one Variant belonging to that Product.
-
----
-
-# 3.6.5 Image model
-
 Create:
 
-```text
-App\Models\ProductImage
+```text id="gn5h7c"
+App\Models\ProductStock
 ```
 
 with:
 
-```php
-public function product(): BelongsTo
-{
-    return $this->belongsTo(Product::class);
-}
-
+```php id="p1z7or"
 public function productVariant(): BelongsTo
 {
     return $this->belongsTo(ProductVariant::class);
 }
 ```
 
-Use nullable relationship typing for `productVariant`.
+Do not create a direct:
 
-Do not introduce image-processing behavior into the model.
+```text id="5yq3i3"
+Product → stocks
+```
+
+relationship as the authoritative inventory relationship.
+
+Products reach inventory through their variants.
 
 ---
 
-# 3.6.6 Product/variant consistency
+# 3.7.4 Warehouse/location model
 
-If `product_variant_id` is populated:
+For V1, keep:
 
-```text
-product_images.product_variant_id
+```text id="squ0a0"
+warehouse_location
 ```
 
-must reference a variant belonging to:
+as a stable bounded string rather than introducing a separate warehouse subsystem.
 
-```text
-product_images.product_id
+Example values:
+
+```text id="1xb7k4"
+main
+dar-es-salaam-warehouse
+arusha-store
 ```
 
-In other words:
+The value identifies the physical inventory location.
 
-```text
-Image Product A
-+
-Variant Product B
-```
+Do not allow arbitrary frontend-provided location strings in future public/cart APIs.
 
-must never be a valid logical association.
+Inventory location selection is an operational/backend concern.
 
-A simple pair of foreign keys does not automatically enforce this cross-table relationship at the database level.
+Do not create a `warehouses` table in this phase.
 
-Therefore the application/domain boundary must validate:
+A normalized Warehouse entity can be introduced later when the business requires:
 
-```text
-variant.product_id === image.product_id
-```
+* address;
+* contact information;
+* operating hours;
+* regions;
+* delivery zones;
+* warehouse status;
+* transfer operations.
 
-before persistence.
-
-Add a focused test for this invariant.
-
-Do not use arbitrary variant IDs from client input to prove ownership.
-
-The backend must resolve the actual Product and Variant relationship.
+Until then, the simple location identifier is sufficient.
 
 ---
 
-# 3.6.7 Product deletion behavior
+# 3.7.5 Location naming
 
-When a Product is deleted through an authorized future lifecycle operation:
+Use a deterministic machine-friendly representation for future operational use.
 
-```text
-Product
-→ related Product Images
+Prefer:
+
+```text id="1b1jaw"
+main
+dar-es-salaam
+arusha-store
 ```
 
-may be deleted through the database cascade.
+over arbitrary prose such as:
 
-This removes image records that have no remaining Product parent.
+```text id="nwt0ka"
+The big warehouse in Dar es Salaam
+```
 
-Do not interpret this as permission to delete actual files immediately in this phase.
+Do not treat location strings as customer-facing display labels.
 
-Physical file cleanup requires a separate storage lifecycle decision and is out of scope.
+If a future Warehouse entity is introduced, it can provide a separate human-readable name.
+
+Do not add `warehouse_name` to `product_stocks` now.
 
 ---
 
-# 3.6.8 Variant deletion behavior
-
-If a Product Variant is removed:
-
-```text
-product_variant_id
-→ null
-```
-
-rather than deleting the image row.
+# 3.7.6 Stock quantity
 
 Use:
 
-```php
-->nullOnDelete()
+```text id="97qkt7"
+quantity
 ```
 
-because an image can remain a valid Product-level image even after its variant association disappears.
+as the physical quantity owned at the location.
 
-Do not cascade-delete Product Images when a Variant is removed.
+Requirements:
+
+* integer;
+* non-negative;
+* server-controlled;
+* never accepted as authoritative customer input;
+* never represented as floating point.
+
+Example:
+
+```text id="obsgyy"
+quantity = 14
+```
+
+means the location physically has fourteen units according to the authoritative inventory state.
+
+Do not use negative quantities to represent shortages.
+
+Do not use `null` to represent unknown stock.
 
 ---
 
-# 3.6.9 File path
+# 3.7.7 Reserved quantity
 
 Use:
 
-```text
-file_path
+```text id="nkrq2y"
+reserved_quantity
 ```
 
-to identify the stored image asset.
+to represent units currently reserved and unavailable for another reservation/consumption operation.
 
-This should be a storage reference, not an arbitrary user-submitted public URL.
+Requirements:
 
-Examples of appropriate internal values:
+* integer;
+* non-negative;
+* server-controlled;
+* never accepted as authoritative customer input.
 
-```text
-products/123/gallery/front.jpg
-products/123/gallery/side.webp
-products/123/variants/501/green-front.webp
+Example:
+
+```text id="q4h5qd"
+quantity = 14
+reserved_quantity = 3
+available = 11
 ```
 
-Do not store:
+Do not allow `reserved_quantity > quantity`.
 
-```text
-https://cdn.example.com/...
-```
+This invariant must be enforced by the application/domain layer and tested.
 
-as the database's authoritative internal storage reference unless the project's later storage architecture explicitly chooses that design.
+If a database-level check constraint is supported safely by the project's target MySQL version and migration policy, it may be added as an additional defensive layer.
 
-The eventual API resource should resolve the storage reference into the public URL.
-
-Do not expose internal storage keys if the final storage design considers them sensitive.
+Do not rely on the database check alone.
 
 ---
 
-# 3.6.10 Supported image formats
+# 3.7.8 Available quantity
 
-Do not create a free-form `mime_type` requirement merely to duplicate storage metadata.
+Do **not** create a persisted:
 
-The later upload boundary must enforce an explicit image allow-list.
+```text id="p6t27k"
+available_quantity
+```
 
-At minimum the existing file-security conventions establish safe image handling requirements for JPEG, PNG, and WebP where image uploads are permitted.
+column.
 
-The upload/processing phase must verify actual file content rather than trusting the client-supplied MIME type.
+Calculate:
 
-Do not implement upload validation in Phase 3.6.
+```text id="5u1aom"
+available_quantity = quantity - reserved_quantity
+```
 
----
+when required.
 
-# 3.6.11 Image URL generation
+This avoids stale duplicated state.
 
-Do not persist a `url` column merely for API convenience.
+A Product Variant with:
 
-The future Product API should produce:
+```text id="xaqtpc"
+quantity = 20
+reserved_quantity = 5
+```
 
-```json
+has:
+
+```text id="om6xl3"
+available_quantity = 15
+```
+
+Do not allow a client to submit:
+
+```json id="1w7n3z"
 {
-  "id": 1,
-  "url": "https://cdn.example.com/...",
-  "alt_text": "Forest green lounge chair in a living room",
-  "sort_order": 1,
-  "is_primary": true
+  "available_quantity": 15
 }
 ```
 
-where `url` is derived from:
+as authoritative inventory state.
 
-```text
-storage configuration
-+
-file_path
-+
-public delivery mechanism
-```
-
-This keeps the database independent from the eventual CDN/storage provider.
+The backend owns availability.
 
 ---
 
-# 3.6.12 Alt text
+# 3.7.9 Available quantity invariant
 
-Use:
+The core invariant is:
 
-```text
-alt_text
+```text id="0ybjpd"
+0 <= reserved_quantity <= quantity
+available_quantity = quantity - reserved_quantity
 ```
 
-as optional descriptive accessibility metadata.
+A stock operation must never produce:
 
-It should describe the image's meaningful visual content.
+```text id="u7t84c"
+reserved_quantity > quantity
+```
 
-Examples:
+or:
 
-```text
-Forest green lounge chair with natural oak legs
-Three-seater sofa in charcoal fabric
-Walnut executive desk viewed from the front
+```text id="00mqu8"
+available_quantity < 0
+```
+
+Do not implement reservation mutation in this phase.
+
+Only establish the persistence model and invariant tests.
+
+---
+
+# 3.7.10 Multiple inventory locations
+
+A Product Variant may have multiple stock rows:
+
+```text id="kmm6hc"
+Variant 501 + Main Warehouse
+Variant 501 + Retail Store
+Variant 501 + Secondary Warehouse
+```
+
+But the same Variant/location pair must not appear more than once.
+
+Enforce:
+
+```text id="c8ha8a"
+UNIQUE(product_variant_id, warehouse_location)
+```
+
+This prevents:
+
+```text id="cl7i48"
+Variant 501 + main
+Variant 501 + main
+```
+
+from creating ambiguous stock totals.
+
+---
+
+# 3.7.11 Inventory aggregation
+
+Later inventory services may calculate total inventory for a Variant by aggregating stock rows.
+
+Conceptually:
+
+```text id="bivsvw"
+Variant
+  Main Warehouse      10
+  Retail Store         4
+  Secondary Warehouse  2
+  ----------------------
+  Physical Total      16
+```
+
+Do not create a denormalized `product_variants.total_quantity` field.
+
+Do not create a denormalized `product_variants.available_quantity` field.
+
+Do not create summary fields until real query performance demonstrates a need.
+
+The existing performance guidance explicitly favors measuring before introducing denormalization or speculative optimization.
+
+---
+
+# 3.7.12 Inventory and product status
+
+Inventory quantity is not the same thing as Product/Variant activation.
+
+Keep these concepts separate:
+
+```text id="fu4xqg"
+Product.is_active
+Variant.is_active
+Inventory.quantity
+Inventory.reserved_quantity
+```
+
+Do not automatically set:
+
+```text id="nqb3y0"
+product.is_active = false
+```
+
+when inventory reaches zero.
+
+Do not automatically delete inventory records when stock reaches zero.
+
+Zero stock remains a valid inventory state.
+
+---
+
+# 3.7.13 Availability readiness
+
+The later catalog API must derive:
+
+```text id="6qsqpp"
+availability
+stock_indicator
+```
+
+from authoritative Product, Variant, and Inventory data.
+
+The V1 contract already reserves:
+
+```text id="85x3tc"
+availability:
+    available
+    unavailable
+
+stock_indicator:
+    IN_STOCK
+    LOW_STOCK
+    MADE_TO_ORDER
+```
+
+with `availability` as the single lowercase enum exception and `stock_indicator` remaining uppercase.
+
+Do **not** implement these derived API values in Phase 3.7.
+
+Do not add:
+
+```text id="d1g6ik"
+availability
+stock_indicator
+```
+
+columns to `product_stocks`.
+
+They are derived/domain presentation state.
+
+---
+
+# 3.7.14 Low-stock logic
+
+Do not create:
+
+```text id="3xk5sa"
+low_stock_threshold
+```
+
+in Phase 3.7 unless the existing domain contract explicitly defines such a threshold.
+
+Do not invent:
+
+```text id="ukf0b6"
+5 units = LOW_STOCK
+```
+
+or another arbitrary threshold.
+
+The later Inventory Read Model / Catalog Availability phase must establish how `LOW_STOCK` is calculated if the business requires it.
+
+---
+
+# 3.7.15 Made-to-order separation
+
+A product that is `MADE_TO_ORDER` does not necessarily require physical stock.
+
+Do not force every Product Variant to have an inventory row merely to make the schema work.
+
+Inventory may legitimately have no stock row for a made-to-order configuration.
+
+The availability/purchasability domain later determines whether:
+
+```text id="n6m8r7"
+IN_STOCK
+MADE_TO_ORDER
+```
+
+is applicable.
+
+Do not create a `product_type` field on `product_stocks`.
+
+---
+
+# 3.7.16 Inventory ownership
+
+Inventory is server-owned operational data.
+
+Clients may request quantities in cart/checkout operations, but they never control:
+
+```text id="i8sgxr"
+quantity
+reserved_quantity
+available_quantity
+warehouse_location
+```
+
+The backend validates and mutates authoritative inventory state.
+
+The global API convention explicitly marks inventory values as server-controlled and rejects client authority over stock/reservation fields.
+
+---
+
+# 3.7.17 Reservations
+
+Do not create a separate reservation table in this phase.
+
+The current schema needs only the authoritative aggregate:
+
+```text id="v0dwh6"
+reserved_quantity
+```
+
+The later Cart/Checkout/Inventory phases will define whether reservation records are required for:
+
+* reservation identity;
+* expiration;
+* cart binding;
+* order binding;
+* release;
+* recovery;
+* reconciliation.
+
+Do not prematurely create:
+
+```text id="n8z50f"
+inventory_reservations
+stock_holds
+reservation_tokens
+```
+
+The database model can support those later additions without changing the core stock relationship.
+
+---
+
+# 3.7.18 Stock movements / ledger
+
+Do not create a stock movement ledger in Phase 3.7 unless the existing project already has an established inventory event model.
+
+Do not add:
+
+```text id="58hd69"
+inventory_movements
+stock_adjustments
+inventory_transactions
+```
+
+speculatively.
+
+Future inventory adjustments are expected to be explicit, auditable, and concurrency-safe, but the actual mutation/audit implementation belongs to later inventory operational phases. The project already requires inventory adjustments to be transactional and auditable.
+
+---
+
+# 3.7.19 Inventory adjustment readiness
+
+The schema must support later operations such as:
+
+```text id="2lnvps"
+increase stock
+decrease stock
+reserve stock
+release reservation
+consume stock
+restore stock
+```
+
+without changing the meaning of:
+
+```text id="uuj5n7"
+quantity
+reserved_quantity
+```
+
+Those operations must be implemented by domain/application logic later.
+
+Do not create generic:
+
+```text id="h9n7m5"
+PATCH /inventory/{id}
+```
+
+semantics in this phase.
+
+Later inventory mutations should use explicit controlled operations.
+
+---
+
+# 3.7.20 Concurrency readiness
+
+Inventory is concurrency-sensitive.
+
+The schema must support later atomic/transactional operations.
+
+Do not implement the final concurrency algorithm in Phase 3.7.
+
+However, do not design the model in a way that requires:
+
+```text id="8x2h7w"
+read quantity
+→ calculate available
+→ update later without lock/version check
+```
+
+as the only possible implementation.
+
+The project explicitly prohibits `SELECT then UPDATE` without appropriate concurrency control for inventory.
+
+Later Group E phases will establish:
+
+* transactional boundaries;
+* row locking or equivalent protection;
+* stale-state detection;
+* overselling prevention;
+* `409 CONFLICT` behavior where appropriate.
+
+---
+
+# 3.7.21 Inventory unique identity
+
+The canonical stock identity is:
+
+```text id="z9smj7"
+product_variant_id + warehouse_location
 ```
 
 Do not use:
 
-```text
-image1
-photo123
-sofa-final
-IMG_1024
+```text id="46a5u1"
+product_id + warehouse_location
 ```
 
-as meaningful accessibility descriptions.
+because inventory belongs to variants.
 
-Do not generate alt text from arbitrary filenames.
+Do not use:
 
-Do not store HTML in `alt_text`.
+```text id="fhb0kj"
+sku + warehouse_location
+```
 
-Do not treat alt text as SEO keyword stuffing.
+as the database foreign-key identity because SKU is a business identifier and can be changed only under controlled operations.
+
+Use the Product Variant foreign key.
 
 ---
 
-# 3.6.13 Nullability of alt text
+# 3.7.22 Inventory indexing
 
-`alt_text` may initially be nullable because image ingestion may occur before editorial metadata is complete.
+Add indexes for the primary future query patterns:
 
-Do not substitute:
-
-```text
-""
+```text id="60n0am"
+product_variant_id
+product_variant_id + warehouse_location
 ```
 
-for unknown alt text.
+The unique constraint on:
 
-The project's conventions distinguish `null`, empty strings, false, and absent values and require consistency within the API contract.
-
-The later Product API must define whether unavailable alt text is represented as `null` or omitted.
-
-Do not change that behavior casually once the public V1 representation is frozen.
-
----
-
-# 3.6.14 Sort order
-
-Use:
-
-```text
-sort_order
+```text id="ajg65q"
+(product_variant_id, warehouse_location)
 ```
 
-for deterministic gallery ordering.
+already supports variant/location lookup.
 
-Example:
+Do not create speculative indexes on:
 
-```text
-1 → front image
-2 → side image
-3 → rear image
-4 → detail image
-```
-
-Use non-negative integers.
-
-Do not rely on the database primary key for display order.
-
-Do not use `created_at` as a substitute for gallery order.
-
----
-
-# 3.6.15 Primary image
-
-Use:
-
-```text
-is_primary
-```
-
-to identify the product's primary gallery image.
-
-The logical Product-level invariant is:
-
-```text
-A product has at most one primary image.
-```
-
-The recommended implementation must ensure this invariant at the application/domain layer and test it.
-
-Do not rely solely on:
-
-```text
-is_primary = true
-```
-
-rows being unique because a standard boolean column cannot express "one true row per product" portably.
-
-When a future primary-image mutation is implemented, the operation must update the old primary and new primary atomically.
-
-Do not implement the mutation API in this phase.
-
----
-
-# 3.6.16 Variant-specific primary images
-
-Do not create multiple independent concepts such as:
-
-```text
-is_product_primary
-is_variant_primary
-```
-
-in this phase.
-
-`is_primary` remains the canonical image-presentation flag.
-
-If variant-specific primary behavior is required later, define it explicitly in the Product/Variant API contract rather than silently creating ambiguous semantics.
-
-At this stage:
-
-```text
-Product image collection
-→ one product-level primary image
-```
-
-and:
-
-```text
-Variant image collection
-→ ordered images
-```
-
-are sufficient.
-
----
-
-# 3.6.17 Staged-room images
-
-The furniture platform needs room-staging imagery eventually.
-
-For Phase 3.6, staged-room imagery should still be represented as an image record rather than a completely separate image table.
-
-However, do **not** add a generic:
-
-```text
-type = image
-type = staged_room
-```
-
-column unless the current API/domain contract formally defines an image-type vocabulary.
-
-The current frozen product image representation does not require a `type` field.
-
-Therefore keep Phase 3.6 limited to:
-
-```text
-product_images
-```
-
-with the core image metadata.
-
-Any future distinction between:
-
-```text
-product photo
-staged-room render
-lifestyle image
-detail image
-```
-
-must be introduced as an explicit schema/API decision rather than an ad hoc string.
-
----
-
-# 3.6.18 Product media separation
-
-Do not create:
-
-```text
-product_media
-```
-
-in this phase.
-
-Do not combine:
-
-```text
-images
-videos
-3D assets
-AR assets
-documents
-```
-
-into a single generic table without a defined contract.
-
-The roadmap deliberately separates Product Images from later product asset work.
-
-Keep the current phase focused.
-
----
-
-# 3.6.19 3D/AR separation
-
-Do not add:
-
-```text
-glb_path
-usdz_path
-gltf_path
-model_url
-ar_url
-```
-
-to `product_images`.
-
-3D and AR assets are separate product assets and should be implemented in their own schema phase when scheduled.
-
----
-
-# 3.6.20 Image dimensions and technical metadata
-
-Do not add speculative technical columns such as:
-
-```text
-width_px
-height_px
-filesize
-mime_type
-checksum
-blurhash
-dominant_color
-```
-
-unless there is an explicit current requirement.
-
-Some of these may be valuable later, especially for optimization and duplicate detection, but they should be introduced based on an actual storage/image-processing contract.
-
-Do not turn the first image schema into a general digital-asset-management system.
-
----
-
-# 3.6.21 Product-image ordering query
-
-The canonical Product image relationship should return:
-
-```text
-ORDER BY sort_order ASC
-```
-
-with a deterministic tie-breaker.
-
-Use:
-
-```text
-sort_order ASC
-id ASC
-```
-
-when constructing an explicit query that requires deterministic results even when two images accidentally share the same `sort_order`.
-
-Do not make `sort_order` globally unique.
-
-Multiple images belonging to different products can share the same ordering values.
-
----
-
-# 3.6.22 Variant-image ordering query
-
-Likewise, Variant image queries should use:
-
-```text
-sort_order ASC
-id ASC
-```
-
-rather than insertion order.
-
-This ensures consistent results across MySQL queries, API responses, Next.js rendering, and Flutter rendering.
-
----
-
-# 3.6.23 Image visibility
-
-Do not add a second image-specific publication state such as:
-
-```text
-is_published
-is_visible
-status
-```
-
-in this phase.
-
-For V1, catalog exposure can be determined from:
-
-```text
-Product.is_active
-Variant.is_active
-```
-
-and the later catalog representation rules.
-
-If image-level moderation or publication becomes necessary, it should be introduced through an explicit future contract.
-
-Do not create a hidden image workflow now.
-
----
-
-# 3.6.24 Public serialization
-
-The eventual Product Detail API should expose image objects using the established structure:
-
-```json
-{
-  "id": 1,
-  "url": "https://cdn.example.com/products/chair-front.webp",
-  "alt_text": "Forest green lounge chair with natural oak legs",
-  "sort_order": 1,
-  "is_primary": true
-}
-```
-
-Do not return:
-
-```json
-[
-  "https://cdn.example.com/one.jpg",
-  "https://cdn.example.com/two.jpg"
-]
-```
-
-The API convention requires consistent object-based image representation.
-
-Do not expose:
-
-```text
-file_path
-internal storage key
-filesystem path
-bucket name
-upload token
-private storage metadata
-```
-
-to the public API.
-
-Use explicit resource serialization rather than:
-
-```php
-$model->toArray()
-```
-
-because the project requires field-level serialization before output.
-
----
-
-# 3.6.25 Public catalog and caching
-
-Product images form part of the public catalog representation.
-
-The eventual public Product API may therefore be publicly cacheable where the Product itself is public.
-
-However:
-
-* private/internal storage identifiers must not be exposed;
-* unpublished products/images must not leak through catalog APIs;
-* customer-specific information must never be mixed into product image responses.
-
-The project explicitly defines public catalog responses as safe for CDN/Next.js caching and requires unpublished product/category state to be masked rather than exposed.
-
-Do not configure CDN caching in this phase.
-
----
-
-# 3.6.26 Storage lifecycle
-
-Do not implement physical storage deletion in this phase.
-
-The database record and physical image file are separate resources.
-
-Later storage logic must account for:
-
-```text
-database insert succeeds
-file upload fails
-
-file upload succeeds
-database insert fails
-
-image record deleted
-file cleanup pending
-```
-
-Do not solve these cases with a complex storage job system now.
-
-Record the need for controlled storage lifecycle handling if the project decision log requires it.
-
----
-
-# 3.6.27 Image ownership and authorization
-
-Product images belong to the Product catalog, not to customers.
-
-Future image creation/management must require the appropriate product-management authorization.
-
-The existing RBAC model defines `products.manage` as catalog management and deliberately separates it from inventory management.
-
-Do not implement the authorization middleware or product-management endpoints in Phase 3.6.
-
-Do not allow CUSTOMER clients to create arbitrary product images.
-
----
-
-# 3.6.28 Mass-assignment protection
-
-When image write APIs are introduced later, never use:
-
-```php
-$request->all()
-```
-
-to hydrate ProductImage.
-
-Use:
-
-```text
-validated input
-→ explicit allow-list
-→ DTO/command
-→ authorization
-→ domain validation
-→ persistence
-```
-
-Server-controlled fields include:
-
-```text
-id
-product_id
-storage path
+```text id="f2bfl5"
+quantity
+reserved_quantity
 created_at
 updated_at
 ```
 
-and any future derived/public URL.
-
-The existing backend convention explicitly prohibits request-wide mass assignment.
+unless actual queries require them.
 
 ---
 
-# 3.6.29 Security considerations for future uploads
+# 3.7.23 Delete behavior
 
-The schema must not be designed around trusting the client.
+When a Product Variant is removed through a future controlled product lifecycle operation:
 
-A future upload boundary must:
-
-* validate actual file content;
-* enforce allowed image types;
-* enforce maximum size;
-* sanitize filenames;
-* store files outside executable application paths where appropriate;
-* generate server-controlled storage paths;
-* prevent path traversal;
-* prevent public access to private upload locations;
-* produce safe public delivery URLs.
-
-The existing attachment/file security conventions require client MIME to be untrusted and actual file signatures to be checked.
-
-Do not implement upload processing here.
-
----
-
-# 3.6.30 Recommended image URL architecture
-
-Keep this relationship:
-
-```text
-Database
-    product_images.file_path
-              ↓
-Storage service
-              ↓
-Public URL
-              ↓
-API ProductImage resource
+```text id="j3c9r2"
+Product Variant
+→ related Product Stock records
 ```
 
-Do not make:
+can be removed through cascade because stock has no standalone catalog meaning without its Variant.
 
-```text
-database.file_path
-=
-public URL
+Use:
+
+```php id="l66sp3"
+->cascadeOnDelete()
 ```
 
-the mandatory architecture.
+for:
 
-This leaves room for:
-
-* local storage in development;
-* object storage in production;
-* CDN delivery;
-* signed URLs where a future private asset requires them.
-
-Public product images should eventually use stable public delivery URLs without exposing infrastructure details.
-
----
-
-# 3.6.31 Image model casts
-
-Use appropriate casts for:
-
-```text
-is_primary → boolean
-sort_order → integer
+```text id="2olob4"
+product_stocks.product_variant_id
 ```
 
-Do not cast `file_path` or `alt_text` into custom structures.
+Do not implement destructive product/variant deletion workflows here.
 
-Do not use JSON for ordinary image metadata.
+Historical order records must not rely on current inventory records for their historical quantity/financial identity.
+
+The project requires historical orders to preserve snapshots rather than relying solely on current product state.
 
 ---
 
-# 3.6.32 Product image queries
+# 3.7.24 Inventory model
 
-Provide only model relationship/query behavior needed by this phase.
+Create:
 
-Expected relationship operations:
-
-```text
-Product → images
-Variant → images
-Image → product
-Image → productVariant
+```text id="b7axnz"
+App\Models\ProductStock
 ```
 
-Do not create a repository abstraction unless the existing project architecture already requires repositories.
+with:
 
-Do not create a generic media repository for one image table.
-
----
-
-# 3.6.33 Cognitive-complexity and maintainability requirement
-
-**Mandatory code-quality recommendation for this phase:**
-
-Whenever the agent touches or creates functions in the Product Image implementation, keep each function's **cognitive complexity at or below the recommended threshold of 15**.
-
-If an existing function involved in this phase exceeds the threshold:
-
-1. refactor it as part of the phase;
-2. split nested conditional logic into small cohesive functions;
-3. move domain decisions into focused services/value objects/helpers where justified;
-4. reduce nesting with guard clauses where that improves clarity;
-5. avoid creating long boolean expressions;
-6. keep each extracted function narrowly responsible.
-
-Do not "fix" complexity by suppressing analyzer warnings.
-
-Do not merely increase the configured threshold.
-
-The purpose is maintainability and reduced future change cost.
-
----
-
-# 3.6.34 Return-statement limit
-
-Functions introduced or refactored in this phase should contain **no more than 3 return statements**.
-
-Treat this as a project quality rule.
-
-When a function has more than three returns:
-
-* simplify the control flow;
-* extract decision logic;
-* use an explicit result/value variable where that improves readability;
-* split the function if it has more than one clear responsibility.
-
-Do not make code harder to read merely to reduce the count.
-
-Do not replace several returns with a deeply nested conditional structure.
-
-The target is simpler control flow, not mechanical metric compliance.
-
-Add/refine static-analysis configuration so this rule is visible during development where the project's tooling supports it.
-
----
-
-# 3.6.35 Duplicate string literals
-
-Do not repeatedly hard-code the same meaningful string literals.
-
-Use centralized constants/enums/value objects when the same literal has semantic significance.
-
-Examples:
-
-```php
-private const DEFAULT_SORT_ORDER = 0;
-private const DEFAULT_IS_PRIMARY = false;
+```php id="g2hv58"
+public function productVariant(): BelongsTo
+{
+    return $this->belongsTo(ProductVariant::class);
+}
 ```
 
-More importantly, for repeated domain/storage identifiers, use the appropriate centralized constant rather than repeating:
+Provide a derived accessor/helper for available quantity only if the existing Laravel model conventions make that appropriate:
 
-```text
-product_images
-product_id
+```text id="j6w2xr"
+available_quantity = quantity - reserved_quantity
+```
+
+Do not persist it.
+
+Do not create a large inventory service in this phase.
+
+---
+
+# 3.7.25 Available quantity helper complexity
+
+If an accessor/helper is introduced, it should be trivial.
+
+Do not implement complicated availability rules inside:
+
+```text id="k2q97e"
+getAvailableQuantityAttribute()
+```
+
+The accessor should calculate only:
+
+```text quantity - reserved_quantity
+```
+
+Do not put:
+
+* product activation;
+* variant activation;
+* stock indicator;
+* made-to-order rules;
+* reservations;
+* checkout;
+* permissions;
+
+inside the accessor.
+
+Those are domain/application responsibilities.
+
+---
+
+# 3.7.26 Inventory serialization readiness
+
+Do not implement the Inventory API in this phase.
+
+Future public catalog responses should generally expose derived availability rather than operational inventory internals.
+
+For example, a public product can eventually expose:
+
+```json id="1udf56"
+{
+  "availability": "available",
+  "stock_indicator": "IN_STOCK"
+}
+```
+
+rather than:
+
+```json id="yk7veb"
+{
+  "quantity": 14,
+  "reserved_quantity": 3,
+  "available_quantity": 11
+}
+```
+
+The latter is operational inventory data and belongs only to authorized Staff/Admin representations where required.
+
+The project explicitly distinguishes public product fields from operational `quantity`/`reserved_quantity` and requires field-level serialization before output.
+
+---
+
+# 3.7.27 Staff/Admin authorization readiness
+
+The Phase 3.2 RBAC foundation already defines:
+
+```text id="q1pazx"
+inventory.view
+inventory.manage
+```
+
+as separate operational permissions from catalog management.
+
+Do not implement those policies here.
+
+Future inventory operations must require:
+
+```text id="xy0r9g"
+authenticated actor
++
+inventory permission
++
+authorized stock/resource
++
+valid operation
++
+business/concurrency rules
+```
+
+Role alone must never be treated as sufficient authorization.
+
+The project explicitly separates `inventory.view` / `inventory.manage` from `products.manage`.
+
+---
+
+# 3.7.28 Mass assignment protection
+
+Future inventory write operations must never use:
+
+```php id="6wq9uq"
+$request->all()
+```
+
+to populate ProductStock.
+
+Use:
+
+```text id="m1bd6m"
+validated input
+→ explicit allow-list
+→ command/service
+→ authorization
+→ transaction/concurrency checks
+→ persistence
+```
+
+Client input must never directly control:
+
+```text id="u0ku19"
+quantity
+reserved_quantity
+available_quantity
+product_variant_id ownership
+warehouse_location
+created_at
+updated_at
+```
+
+except where a future privileged inventory operation explicitly accepts the relevant operational input.
+
+The existing global conventions require explicit distinction between client-controlled intent and server-controlled inventory state.
+
+---
+
+# 3.7.29 API input compatibility
+
+Future Inventory API inputs must use strict JSON types and the established naming conventions:
+
+```text id="j29kxm"
+quantity
 product_variant_id
-file_path
-alt_text
-sort_order
-is_primary
+warehouse_location
 ```
 
-through unrelated code when a project-level constant abstraction is genuinely beneficial.
+Do not introduce:
 
-However, **do not create a giant "StringConstants" class for every ordinary string in the application**.
+```text id="o7c5q0"
+productVariantId
+warehouse-location
+stock
+available
+```
 
-Use constants where duplication represents a real shared concept.
+The API convention requires `snake_case`, strict types, and server-controlled inventory fields.
 
-The goal is to prevent the same semantic literal from drifting across:
-
-* models;
-* validators;
-* services;
-* tests;
-* serializers.
-
-Do not solve duplication by replacing clear ordinary strings with meaningless constants everywhere.
+Do not implement API validation now.
 
 ---
 
-# 3.6.36 Constant naming
+# 3.7.30 Error readiness
 
-When constants are appropriate, use descriptive names.
+Later inventory operations should use the existing error vocabulary where applicable:
 
-Prefer:
-
-```php
-private const PRIMARY_FLAG = 'is_primary';
-private const DEFAULT_SORT_ORDER = 0;
+```text id="o0ld7b"
+INSUFFICIENT_STOCK
+CONFLICT
+FORBIDDEN
+RESOURCE_NOT_FOUND
+INVALID_VALUE
 ```
 
-over:
+Do not create Product-specific or warehouse-specific error explosions such as:
 
-```php
-private const X = 'is_primary';
-private const VALUE_1 = 0;
+```text id="j3t1x6"
+SOFA_INSUFFICIENT_STOCK
+MAIN_WAREHOUSE_EMPTY
+VARIANT_501_OUT_OF_STOCK
 ```
 
-Do not create constants whose names merely repeat the value without explaining the domain meaning.
+The project explicitly favors stable generic machine codes such as `INSUFFICIENT_STOCK`.
 
 ---
 
-# 3.6.37 Tests for maintainability rules
+# 3.7.31 Transaction readiness
 
-Where the project's static-analysis tooling supports cognitive-complexity and return-count rules, ensure Phase 3.6 code passes them.
+Do not put transaction handling directly into model accessors.
 
-The implementation must not introduce:
+Later operations such as:
 
-* cognitive complexity above 15 for new/refactored functions;
-* more than 3 return statements in a function;
-* duplicated meaningful literals that the project's analyzer identifies as a maintainability problem.
+```text id="v5j3qv"
+reserve
+release
+consume
+adjust
+restore
+```
 
-If an existing Product/ProductVariant function must be touched to support images and already violates these rules, refactor it rather than building new logic around the complexity.
+must execute in the appropriate transaction boundary.
 
-Keep refactoring scoped to code affected by this phase.
+## The project requires inventory reservation/reduction to be transactional where required and emphasizes failure atomicity.
 
-Do not undertake an unrelated repository-wide cleanup.
+# 3.7.32 Maintainability requirements
+
+Apply the maintainability rules established in Phase 3.6 to this phase.
+
+### Cognitive complexity
+
+Any new or refactored function must have:
+
+```text id="zd5a3p"
+cognitive complexity <= 15
+```
+
+If an affected existing function exceeds 15:
+
+* refactor it;
+* extract cohesive decision logic;
+* reduce nesting;
+* use guard clauses where helpful;
+* keep responsibilities narrow.
+
+Do not suppress complexity warnings.
+
+Do not raise the analyzer threshold.
+
+### Return statements
+
+Functions introduced or refactored in this phase must contain:
+
+```text id="d4jco1"
+no more than 3 return statements
+```
+
+Do not introduce deeply nested logic merely to achieve the numeric limit.
+
+Refactor into focused functions when control flow becomes difficult to understand.
+
+### Duplicated string literals
+
+Do not repeatedly duplicate meaningful literals.
+
+Where a literal represents a shared domain/storage concept, use an appropriate constant or enum.
+
+Examples of concepts that may warrant centralization:
+
+```text id="11pn99"
+default warehouse/location identifier
+canonical relation/property names where actually reused
+```
+
+Do not create a giant generic string-constant class for every ordinary string.
+
+Centralize only meaningful repeated concepts.
 
 ---
 
-# 3.6.38 Tests
+# 3.7.33 Maintainability tests/tooling
 
-Create focused tests alongside implementation.
+Where the existing static-analysis tooling supports these rules:
+
+* fail on cognitive complexity greater than 15 for new/refactored functions;
+* flag more than 3 returns;
+* flag duplicated meaningful literals.
+
+Do not suppress individual findings simply to make CI pass.
+
+If a warning comes from unrelated legacy code, keep the change scoped to the functions affected by this phase unless the existing project policy requires broader cleanup.
+
+---
+
+# 3.7.34 Inventory tests
+
+Create focused tests.
 
 ## Migration tests
 
@@ -1095,253 +1102,166 @@ Verify:
 
 * migration succeeds from an empty database;
 * rollback succeeds;
-* Product is required;
-* optional Variant reference works;
-* deleting Product removes its image records;
-* deleting Variant nulls `product_variant_id`;
-* ordering indexes exist;
-* boolean/integer fields have correct defaults.
+* stock requires a valid Product Variant;
+* deleting a Product Variant removes its stock rows;
+* duplicate Variant/location combinations are rejected;
+* quantity defaults to zero;
+* reserved quantity defaults to zero;
+* quantity fields cannot become negative where supported by the database/type;
+* indexes and uniqueness constraints are present.
 
 ## Relationship tests
 
 Verify:
 
-```text
-Product → images
-Variant → images
-Image → product
-Image → variant
+```text id="m4wxqd"
+ProductVariant → stocks
+ProductStock → productVariant
 ```
 
-Verify images are returned in:
+and confirm a Variant can have multiple locations.
 
-```text
-sort_order ASC
-```
-
-order.
-
-Where equal sort order values are possible, verify deterministic `id ASC` tie-breaking in explicit queries.
-
-## Product/Variant consistency tests
+## Quantity invariant tests
 
 Verify:
 
-```text
-Product A + Variant A → valid
-Product A + Variant B → rejected
+```text id="phz8vo"
+quantity = 10
+reserved_quantity = 0
+available = 10
+
+quantity = 10
+reserved_quantity = 4
+available = 6
 ```
 
-when Variant B belongs to Product B.
+Verify invalid state:
 
-This is an important integrity boundary.
+```text id="1c59xv"
+quantity = 10
+reserved_quantity = 11
+```
 
-## Primary image tests
+is rejected by application validation.
+
+Do not implement reservation mutation here.
+
+## Location uniqueness tests
 
 Verify:
 
-* a product can have a primary image;
-* the application prevents two primary images for the same product;
-* non-primary images remain valid;
-* default value is `false`;
-* public serialization uses the boolean representation.
+```text id="qh3f1u"
+Variant A + main
+Variant A + main
+```
 
-## Alt text tests
+cannot coexist.
 
 Verify:
 
-* alt text can be null;
-* valid descriptive text persists;
-* HTML is not silently introduced as trusted content.
-
-## Storage reference tests
-
-Verify:
-
-* file path is persisted;
-* file path is not treated as the public URL;
-* storage implementation details are not included in the public image representation tests.
-
-## Serialization tests
-
-Verify the intended public representation contains:
-
-```text
-id
-url
-alt_text
-sort_order
-is_primary
+```text id="l5cfy7"
+Variant A + main
+Variant A + retail-store
 ```
 
-and does not contain:
+can coexist.
 
-```text
-file_path
-internal storage keys
-database internals
-private metadata
+## Separation tests
+
+Verify inventory is not stored on:
+
+```text id="c8l5aa"
+products
+product_variants
 ```
 
-The final API resource belongs to a later API phase, so use model/resource tests only if the project already has the necessary resource layer.
+and that `available_quantity` is derived rather than persisted.
+
+## Factory tests
+
+Where a factory exists, verify:
+
+* valid Product Variant relationship;
+* valid location;
+* non-negative quantity;
+* non-negative reserved quantity;
+* reserved does not exceed quantity;
+* no duplicate Variant/location records.
 
 ---
 
-# 3.6.39 Factory support
+# 3.7.35 Factory support
 
-A `ProductImageFactory` may be introduced for testing.
+Create `ProductStockFactory` only if it provides genuine testing value.
 
-It should:
+A factory should:
 
-* create a valid Product;
-* optionally create a valid Variant belonging to that Product;
-* generate a deterministic-looking storage path;
-* generate realistic alt text;
-* assign a sensible sort order;
-* default `is_primary` to false.
+* create or reference a valid Product Variant;
+* create a valid location identifier;
+* generate a valid quantity;
+* generate reserved quantity within the quantity boundary;
+* avoid duplicate Variant/location combinations.
 
-Do not upload actual files from the factory.
+Do not create factories that automatically create:
 
-Do not create real CDN URLs.
+* orders;
+* carts;
+* reservations;
+* payments;
+* warehouse entities;
+* audit events.
 
-Do not create media, video, or AR assets.
-
-Provide an explicit test state for a primary image rather than making every factory record primary.
-
----
-
-# 3.6.40 Seed data
-
-Do not add production image files in this phase.
-
-Do not seed external image URLs.
-
-Development seed data may create image database records only if the existing application has a defined local asset convention.
-
-Never make development seeds depend on external websites remaining available.
+Those belong to later phases.
 
 ---
 
-# 3.6.41 API scope
+# 3.7.36 Seed data
 
-Do not implement:
+Do not create production-like warehouse inventory in this phase unless the project already defines authoritative development seed inventory.
 
-```text
-GET /products/{product}/images
-POST /products/{product}/images
-PATCH /products/{product}/images/{image}
-DELETE /products/{product}/images/{image}
-```
+Development seed data may include a small deterministic stock record if required for local testing.
 
-The established V1 catalog convention explicitly embeds images in Product detail and rejects a dedicated images endpoint.
+Do not make future tests depend on unspecified stock quantities.
 
-The eventual image management mechanism will be part of the appropriate catalog/admin implementation.
+Do not use random stock values in deterministic domain seeds.
 
 ---
 
-# 3.6.42 API representation boundary
+# 3.7.37 Performance
 
-The database uses:
+The expected primary access patterns are:
 
-```text
-file_path
-sort_order
-is_primary
+```text id="3o59iq"
+get stock for Variant
+get stock for Variant + Location
+aggregate stock for Variant
 ```
 
-The public API uses:
+The schema must support these efficiently through the Product Variant foreign key and unique Variant/location constraint.
 
-```text
-url
-alt_text
-sort_order
-is_primary
-```
+Do not prematurely introduce:
 
-Do not make database naming dictate API naming.
+* cached total stock columns;
+* Redis inventory state;
+* denormalized available quantities;
+* materialized inventory views;
+* background stock projections.
 
-The API continues to use:
-
-```text
-snake_case
-```
-
-and the established response envelope when implemented.
+Those can be considered only after actual performance measurement.
 
 ---
 
-# 3.6.43 Performance considerations
+# 3.7.38 Documentation / durable decisions
 
-Create indexes that support:
+Update `docs/decisions.md` only when recording a durable architectural decision such as:
 
-```text
-product → ordered images
-product → primary image
-variant → ordered images
-```
+* inventory belongs to Product Variants rather than Products;
+* stock is stored per Variant/location;
+* available quantity is derived;
+* warehouse/location remains a bounded identifier in V1;
+* inventory mutation/ledger/reservation lifecycle is deferred to later phases.
 
-Do not optimize prematurely with:
-
-* image caches;
-* database denormalization;
-* precomputed primary-image columns on Product;
-* serialized image arrays;
-* custom image read models.
-
-The catalog API phase can optimize query loading once real access patterns are implemented.
-
----
-
-# 3.6.44 Code quality
-
-Expected components:
-
-```text
-ProductImage migration
-ProductImage model
-Product relationship
-ProductVariant relationship
-focused tests
-optional factory
-```
-
-Avoid:
-
-* generic media repositories;
-* upload services;
-* image-processing pipelines;
-* thumbnail generators;
-* CDN integrations;
-* image moderation;
-* 3D/AR services;
-* video handling;
-* recommendation logic.
-
-Keep comments to the absolute minimum.
-
-New/refactored functions must satisfy:
-
-```text
-Cognitive complexity <= 15
-Return statements <= 3 per function
-No unjustified duplicated meaningful string literals
-```
-
-Do not suppress warnings to make the metrics pass.
-
----
-
-# 3.6.45 Documentation / durable decisions
-
-Update `docs/decisions.md` only if a durable architectural decision needs recording, such as:
-
-* product images stored independently from Product;
-* image storage uses internal `file_path`, with public URL derived later;
-* variant association is optional;
-* Product image deletion and Variant deletion have different relationship semantics;
-* public image representation excludes internal storage identifiers.
-
-Do not create a permanent Phase-3.6 markdown file merely to duplicate this instruction.
+Do not create a permanent Phase-3.7 markdown file merely to duplicate this instruction.
 
 ---
 
@@ -1349,75 +1269,80 @@ Do not create a permanent Phase-3.6 markdown file merely to duplicate this instr
 
 Do not implement:
 
-* image upload APIs;
-* image replacement APIs;
-* image deletion APIs;
-* image editing;
-* image resizing;
-* thumbnails;
-* WebP conversion;
-* image optimization pipeline;
-* CDN integration;
-* object-storage integration;
-* signed URLs;
-* image moderation;
-* video;
-* staged-room taxonomy;
-* 3D models;
-* AR assets;
-* Product Asset schema;
-* Inventory;
-* Product search;
-* Product filtering;
-* Product API;
-* Variant API;
-* staff product UI;
-* Admin product UI;
-* Next.js image gallery;
-* Flutter image gallery;
-* recommendation engine.
+* Inventory API;
+* inventory read endpoints;
+* inventory adjustment endpoints;
+* reservation API;
+* release API;
+* consumption API;
+* checkout reservation logic;
+* cart reservation logic;
+* overselling prevention implementation;
+* row-locking strategy;
+* optimistic locking;
+* inventory movement ledger;
+* stock adjustment audit implementation;
+* warehouse entity;
+* warehouse CRUD;
+* warehouse addresses;
+* inter-warehouse transfers;
+* low-stock thresholds;
+* availability calculation;
+* `stock_indicator` calculation;
+* product catalog API;
+* variant API;
+* cart;
+* checkout;
+* orders;
+* payment;
+* recommendation logic;
+* customer inventory access;
+* Next.js inventory UI;
+* Flutter inventory UI.
 
 ---
 
 # Definition of done
 
-Phase 3.6 is complete only when:
+Phase 3.7 is complete only when:
 
-1. `product_images` exists.
-2. Every image belongs to exactly one Product.
-3. An image may optionally reference a Product Variant.
-4. Variant association is validated against the same Product.
-5. Image storage uses an internal `file_path`, not an authoritative public URL.
-6. `alt_text` is available.
-7. `sort_order` provides deterministic image ordering.
-8. `is_primary` identifies the Product's primary image.
-9. The application enforces at most one primary image per Product.
-10. Product deletion removes dependent image records.
-11. Variant deletion nulls the image's Variant reference rather than deleting the image.
-12. Product and Variant image relationships exist in Eloquent.
-13. Images are not stored directly on Product or Product Variant.
-14. Video, 3D, AR, and generalized media are not mixed into this schema.
-15. No separate images API endpoint is created.
-16. Public serialization is prepared for `id`, `url`, `alt_text`, `sort_order`, and `is_primary`.
-17. Internal storage paths are not exposed in public serialization.
-18. Migrations run successfully from an empty database and roll back successfully.
-19. Tests cover relationships, ordering, Product/Variant consistency, primary-image integrity, nullability, and deletion behavior.
-20. Static analysis and formatting pass.
-21. New/refactored functions have cognitive complexity no greater than 15.
-22. New/refactored functions contain no more than 3 return statements.
-23. Meaningful duplicated string literals are replaced with appropriate constants/enums where duplication exists.
-24. No analyzer warnings are suppressed merely to satisfy the maintainability rules.
-25. No later-phase image processing, storage, API, or frontend functionality has been implemented.
-26. Code comments remain minimal.
+1. `product_stocks` exists.
+2. Every stock record belongs to a Product Variant.
+3. A Product Variant can have multiple inventory locations.
+4. The same Variant/location pair cannot have duplicate stock rows.
+5. `quantity` represents physical inventory.
+6. `reserved_quantity` represents reserved inventory.
+7. `available_quantity` is derived as `quantity - reserved_quantity`.
+8. `available_quantity` is not persisted as a second source of truth.
+9. `reserved_quantity` cannot exceed `quantity` through the intended application model.
+10. Inventory is not stored on Product.
+11. Inventory is not stored directly on Product Variant.
+12. Warehouse/location is represented by a deterministic identifier.
+13. Product Variant deletion cannot leave orphan stock records.
+14. Eloquent relationships between Product Variant and Product Stock exist.
+15. Schema supports future multi-location inventory.
+16. Schema supports future reservation and adjustment workflows without redefining the core stock fields.
+17. Schema supports future concurrency-safe inventory mutations.
+18. Public product serialization is not polluted with raw inventory internals.
+19. Inventory remains backend-controlled and server-authoritative.
+20. Migration tests pass from an empty database and rollback successfully.
+21. Relationship, uniqueness, quantity-invariant, and factory tests pass.
+22. Formatting and static analysis pass.
+23. New/refactored functions have cognitive complexity no greater than 15.
+24. New/refactored functions contain no more than 3 return statements.
+25. Meaningful duplicated string literals are centralized where appropriate.
+26. No analyzer warnings are suppressed merely to satisfy the maintainability requirements.
+27. No inventory API or later operational workflow has been implemented.
+28. Code comments remain minimal.
 
 ---
 
 # STOP condition
 
-Stop after the Product Image schema, migration, Eloquent relationships, integrity rules, tests, and necessary maintainability refactoring are complete.
+Stop after the inventory schema, Eloquent model/relationships, migration constraints, tests, and necessary maintainability refactoring are complete.
 
-Do not continue into Phase 3.7 Inventory Schema.
+Do not continue into Phase 3.8 Cart Schema.
 
-Do not implement upload/storage processing, CDN handling, image APIs, video, 3D/AR assets, or frontend galleries.
+Do not implement reservations, stock adjustments, concurrency protection, availability calculation, inventory APIs, warehouse management, or checkout integration.
 
 Do not commit, stage, or push changes.
