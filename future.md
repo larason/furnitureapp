@@ -7,6 +7,8 @@
 * Video campaigns in instagram, meta, Youtube
 * Promotional codes for a discount for returning customers briging a friend or colleague
 
+5. we will use **CLERK auth** for authentication handling while we handle roles, policies/permissions
+
 # tech stack
 Next.js + MUI + Laravel API + MySQL + Flutter + videojs for videos
 Website: Next.js + MUI
