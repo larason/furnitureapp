@@ -1,25 +1,27 @@
-# Phase 3.11 — Order Status History Schema
+# Phase 3.12 — Payment Schema
 
 ## Purpose
 
-Implement the database model for **historical Order status events**.
+Implement the persistence model for **payments associated with Orders**.
 
-`order_status_history` is an append-only event history for the Order lifecycle.
+The payment model must provide a secure, provider-agnostic foundation for:
 
-It must preserve:
+* payment initiation
+* payment attempts
+* provider references
+* asynchronous provider confirmation
+* failed payments
+* retries
+* webhook deduplication
+* reconciliation
+* authoritative payment amount
+* payment/order consistency
 
-* the Order associated with the event
-* the status reached
-* who or what caused the transition
-* when the transition occurred
-* optional customer-visible context
-* optional internal operational context
+This phase is a **schema and persistence-model phase**.
 
-The history will later power customer tracking and staff operational views. The tracking timeline is a filtered presentation of this history, not a separate source of truth. The authoritative contract requires chronological ordering by `occurred_at ASC, id ASC`, opaque event identity, and immutable historical events.
+Do not implement payment-provider SDKs, API calls, webhook signature verification, payment initiation endpoints, payment state transitions, or Order state updates here.
 
-This phase establishes persistence only.
-
-Do not implement the Order state machine, transition endpoints, payment workflow, delivery workflow, notifications, or tracking APIs in this phase.
+The later Group H phases will build those behaviors on top of this schema.
 
 ---
 
@@ -29,15 +31,13 @@ Complete these phases first:
 
 * Phase 3.9 — Orders Schema
 * Phase 3.10 — Order Items Snapshot Model
+* Phase 3.11 — Order Status History Schema
 
-Use the existing:
+Use the existing `orders` table as the commercial source of truth for the Order.
 
-* `orders`
-* `users`
-* Order status definitions
-* existing authorization/audit conventions
+Do not add payment fields directly to `orders` in this phase.
 
-Do not redesign the Order schema in this phase.
+The existing contract deliberately keeps payment details separate from Order persistence.
 
 ---
 
@@ -53,691 +53,1035 @@ Treat these as authoritative:
 * `AGENTS.md`
 * completed Phase 3.9 — Orders Schema
 * completed Phase 3.10 — Order Items Snapshot Model
+* completed Phase 3.11 — Order Status History Schema
 
-The frozen Order lifecycle is:
-
-```text
-PENDING_PAYMENT
-PAID
-ACCEPTED
-PROCESSING
-READY_FOR_PICKUP
-SHIPPED
-DELIVERED
-COMPLETED
-CANCELLED
-```
-
-These are closed V1 values. Not every Order uses every status. Pickup and Delivery follow different branches.
-Do not introduce additional Order statuses in this phase.
+The Version 1 API contract is frozen. Do not introduce provider-specific API shapes, new public statuses, or breaking payment fields in this phase. The endpoint catalogue already establishes `PAY-001` and `WEBHOOK-001` as payment-related surfaces and marks both as concurrency-sensitive.
 
 ---
 
 # 1. Core Design Rule
 
-`order_status_history` is an **append-only historical event table**.
+A `Payment` represents a **server-side payment attempt/record for an Order**.
 
-Every authoritative Order status transition must eventually produce a corresponding history record.
+Payment data is separate from:
 
-The history must never be treated as an editable list.
+* Order financial totals
+* Order status history
+* Delivery
+* Inventory
+* Cart
 
-Do not implement:
+The Payment record does not become an alternative source of truth for the Order subtotal or delivery fee.
 
-* editing a history event
-* deleting an individual history event
-* rewriting a previous status
-* synchronizing old events with the current Order
-* automatically recalculating past events
-* replacing history with a single JSON field on `orders`
+For a payment attempt, the amount must be the exact server-authoritative amount that the customer is expected to pay at that payment boundary.
 
-The existing contract explicitly prohibits customer or staff rewriting historical events. Corrections, when ever needed, require an explicit controlled administrative workflow with auditability.
+The client must never supply or override:
 
-This phase does not implement that correction workflow.
+* payment amount
+* currency
+* Order ownership
+* payment status
+* provider confirmation
+* provider transaction identity
+
+The existing conventions explicitly state that the server owns payment amount and that payment initiation must not trust client financial data.
 
 ---
 
-# 2. Create `order_status_history` Table
+# 2. Multiple Payment Attempts
+
+Do **not** impose:
+
+```text
+UNIQUE(order_id)
+```
+
+on the `payments` table.
+
+An Order may have more than one payment attempt, for example:
+
+```text
+Attempt 1 → FAILED
+Attempt 2 → PROCESSING
+Attempt 2 → SUCCEEDED
+```
+
+This provides a clean foundation for retries without overwriting an earlier failed attempt.
+
+However, the system must later define exactly when an Order is considered successfully paid and which Payment is the authoritative successful payment.
+
+That workflow belongs to Group H.
+
+---
+
+# 3. Create `payments` Table
 
 Create a Laravel migration for:
 
-`order_status_history`
+`payments`
 
-Recommended columns:
+Recommended schema:
 
-| Column          | Type                                       | Rules                                                                       |
-| --------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
-| `id`            | big integer / Laravel standard primary key | Stable event identifier                                                     |
-| `order_id`      | foreign key                                | Required; references `orders.id`; cascade delete                            |
-| `from_status`   | string                                     | Nullable for initial event                                                  |
-| `to_status`     | string                                     | Required; closed Order status                                               |
-| `actor_type`    | string                                     | Required; identifies actor source                                           |
-| `actor_id`      | nullable foreign key                       | Nullable for system-generated events; references `users.id`; null on delete |
-| `customer_note` | nullable text/string                       | Optional customer-visible note                                              |
-| `internal_note` | nullable text/string                       | Optional operational note                                                   |
-| `occurred_at`   | timestamp                                  | Required; event time                                                        |
-| `created_at`    | timestamp                                  | Required                                                                    |
-| `updated_at`    | timestamp                                  | Do not create                                                               |
+| Column                    | Type                                       | Rules                                                   |
+| ------------------------- | ------------------------------------------ | ------------------------------------------------------- |
+| `id`                      | big integer / Laravel standard primary key | Internal primary key                                    |
+| `order_id`                | foreign key                                | Required; references `orders.id`; restrict/no cascade   |
+| `payment_reference`       | string                                     | Required; server-generated unique reference             |
+| `provider`                | string                                     | Required; closed/controlled provider identifier         |
+| `method`                  | string                                     | Required; controlled payment method                     |
+| `status`                  | string                                     | Required; closed payment status                         |
+| `amount`                  | unsigned big integer                       | Required; integer minor units                           |
+| `currency`                | char(3)                                    | Required; V1 TZS                                        |
+| `provider_transaction_id` | nullable string                            | Provider-side transaction identifier                    |
+| `provider_reference`      | nullable string                            | Provider-side reference if distinct from transaction ID |
+| `failure_code`            | nullable string                            | Normalized provider/application failure code            |
+| `failure_message`         | nullable text/string                       | Safe, non-secret diagnostic message                     |
+| `initiated_at`            | timestamp                                  | Required                                                |
+| `confirmed_at`            | nullable timestamp                         | Set only after authoritative success                    |
+| `expires_at`              | nullable timestamp                         | Optional payment-attempt expiry                         |
+| `created_at`              | timestamp                                  | Required                                                |
+| `updated_at`              | timestamp                                  | Required                                                |
 
-Use the project's normal Laravel/MySQL timestamp conventions.
-
-Use a single event creation timestamp rather than maintaining mutable update timestamps.
-
-`order_status_history` is historical data, so an event must not have a normal `updated_at` lifecycle.
-
----
-
-# 3. Event Identity
-
-The database primary key remains internal persistence identity.
-
-The API later exposes the event through an **opaque event ID** such as:
-
-```text
-evt_...
-```
-
-Do not expose the raw auto-increment database ID directly as the public event identifier.
-
-The API contract explicitly requires stable opaque event identity derived from the underlying history record.
-
-Do not add a second randomly generated public-ID system to this migration unless the existing project implementation already requires one.
-
-Keep the mapping deterministic and centralized when the serializer is implemented later.
+Do not add payment-card or bank-account credential fields.
 
 ---
 
-# 4. Order Relationship
+# 4. `order_id` Relationship
 
-`order_status_history.order_id` belongs to `orders.id`.
+`payments.order_id` belongs to `orders.id`.
 
 Implement:
 
 ### Order
 
-`Order hasMany OrderStatusHistory`
+`Order hasMany Payment`
 
-### OrderStatusHistory
+### Payment
 
-`OrderStatusHistory belongsTo Order`
+`Payment belongsTo Order`
 
-An Order Status History row cannot exist without its Order.
+Do not cascade-delete Payments when an Order is deleted.
 
-Deleting an Order may cascade to its history because the history is part of the Order aggregate and Orders themselves are not intended to be hard-deleted during normal operation.
+A payment is a financial record and should not disappear because of ordinary parent deletion behavior.
 
-Do not configure Product, Variant, Payment, or Delivery relationships in this phase.
+Given the existing Order model is a historical record and customer deletion also cannot casually remove historical financial records, prefer restrictive deletion semantics here.
+
+In normal application operation, Orders should not be hard-deleted.
 
 ---
 
-# 5. Status Representation
+# 5. Payment Reference
 
-Use the existing Order status values exactly:
+Create a server-generated immutable:
+
+`payment_reference`
+
+This is the payment record's business-facing reference.
+
+Requirements:
+
+* unique
+* server-generated
+* immutable
+* never client supplied
+* not derived directly from an auto-increment database ID
+* suitable for reconciliation and operational support
+
+Do not expose raw database IDs as payment references.
+
+Do not use the Order reference as the Payment reference because one Order may have multiple payment attempts.
+
+Use a separate namespace/prefix if the project has an established reference convention.
+
+Do not invent a public format that conflicts with the frozen API contract. The exact external representation can be finalized with the Group H API implementation.
+
+---
+
+# 6. Provider Field
+
+Store a controlled provider identifier in:
+
+`provider`
+
+Examples might eventually be represented by a provider enum/value object, but do not hard-code a specific real provider into this schema phase unless the project's provider-selection phase has already made that decision.
+
+The provider field identifies which external payment integration owns the payment attempt.
+
+Do not store:
+
+* provider credentials
+* API keys
+* secret tokens
+* webhook signing secrets
+* private certificates
+* access tokens
+
+Those belong to secure application configuration/secret management, never to the payment row.
+
+---
+
+# 7. Payment Method
+
+Store the payment method separately from `provider`.
+
+Recommended concept:
 
 ```text
-PENDING_PAYMENT
+method
+```
+
+This distinction matters because:
+
+* one provider may support multiple methods
+* a method may later be routed through different providers
+* reporting and reconciliation may need method-level information
+
+Do not invent an unnecessarily large V1 payment-method taxonomy.
+
+Use a controlled enum/value representation when the actual supported V1 methods are finalized.
+
+Until then, keep the field structurally ready without allowing arbitrary client-defined method values into authoritative payment records.
+
+---
+
+# 8. Payment Status
+
+Payment status must be **separate from Order status**.
+
+Do not reuse:
+
+```text
 PAID
-ACCEPTED
 PROCESSING
-READY_FOR_PICKUP
-SHIPPED
-DELIVERED
 COMPLETED
 CANCELLED
 ```
 
-Store status values using a string-compatible representation consistent with the existing Order schema.
+as an implicit synonym for Order lifecycle state.
 
-Do not create a new independent status vocabulary for history.
+The Order and Payment have different state machines.
 
-The `to_status` value must always be one of the existing closed Order statuses.
-
-`from_status` is nullable because the initial event may represent creation of the Order rather than a transition from a previous state.
-
-For example:
+The project already treats:
 
 ```text
-from_status = null
-to_status   = PENDING_PAYMENT
+PAID ≠ SHIPPED
 ```
 
-Later transitions can be represented as:
+and keeps fulfillment/payment boundaries distinct.
+
+Use a dedicated closed Payment status enum/value representation.
+
+Recommended V1 structure:
 
 ```text
-from_status = PENDING_PAYMENT
-to_status   = PAID
+PENDING
+PROCESSING
+SUCCEEDED
+FAILED
+CANCELLED
+EXPIRED
 ```
 
-or:
+Do not add refund-specific statuses such as `REFUNDED` or `PARTIALLY_REFUNDED` unless the frozen Payment contract explicitly requires them.
 
-```text
-from_status = PROCESSING
-to_status   = SHIPPED
-```
+Refunds are not part of this schema phase.
 
-The actual transition validity remains a domain/state-machine responsibility for a later phase.
+Any change to a closed API-visible Payment status set is a formal compatibility decision.
 
 ---
 
-# 6. Do Not Implement the State Machine Here
+# 9. Payment Status Is Server-Controlled
 
-This phase must not decide whether one status may transition to another.
+The following are never client-settable:
 
-Do not implement transition rules such as:
+* `status`
+* `confirmed_at`
+* `provider_transaction_id`
+* `provider_reference`
+* `failure_code`
+* `failure_message`
+
+A customer may request payment initiation, but the backend determines the authoritative status.
+
+The provider callback/webhook is treated as an untrusted external input until:
+
+1. signature/authenticity is verified
+2. payload is validated
+3. event identity is deduplicated
+4. the affected Payment is located
+5. amount/currency/order consistency is verified
+6. the transition is accepted by the payment state machine
+
+The existing conventions explicitly require provider webhooks to be idempotent and durably deduplicated.
+
+---
+
+# 10. Amount and Currency
+
+Store:
+
+* `amount` as unsigned integer minor units
+* `currency` as a 3-character code
+
+For V1:
 
 ```text
-PAID → ACCEPTED
-ACCEPTED → PROCESSING
-PROCESSING → READY_FOR_PICKUP
-PROCESSING → SHIPPED
+currency = TZS
 ```
 
-and do not implement forbidden transition handling here.
+The existing money convention requires integer minor units and TZS for V1.
 
-The existing contract requires every transition to validate:
+Do not use:
 
-* current state
-* requested transition
-* actor authorization
-* business preconditions
-* fulfillment type
+* float
+* double
+* decimal money fields
+* formatted strings such as `"TZS 30,000"`
 
-atomically.
-
-That belongs to the later Order action/state-machine implementation.
-
-This phase only defines where the resulting event is stored.
+Do not permit the customer to choose another currency through payment input.
 
 ---
 
-# 7. `from_status`
+# 11. Payment Amount Authority
 
-`from_status` records the status that immediately preceded the event.
+Payment amount must be derived from the authoritative Order total at the point payment is initiated.
 
-Rules:
+The customer must not submit:
 
-* nullable for the initial Order history event
-* otherwise must represent the authoritative prior Order status
-* server-controlled
-* never accepted from an ordinary client request
-* never updated after the event is created
-
-Do not infer `from_status` during historical reads by looking at the previous row.
-
-Store it explicitly so each event retains its own historical transition context.
-
----
-
-# 8. `to_status`
-
-`to_status` is the status reached by the event.
-
-Rules:
-
-* required
-* one of the closed V1 Order statuses
-* server-generated from an authorized domain action
-* immutable after creation
-
-Do not allow:
-
-```http
-PATCH /orders/{order}
+```json
 {
-  "status": "SHIPPED"
+  "amount": 100,
+  "currency": "USD"
 }
 ```
 
-or any equivalent generic status write.
+to determine what is charged.
 
-The frozen API contract requires explicit action-based transitions and treats status as server authoritative.
+The existing Checkout model creates the authoritative Order financials first. For Delivery, payment is blocked while `delivery_fee_status=PENDING`; once the fee is finalized, the final Order total becomes payable.
 
----
+Therefore a Payment row must preserve the exact amount associated with that payment attempt.
 
-# 9. Actor Model
-
-A history event may be caused by:
-
-* an authenticated Customer
-* Staff
-* Admin
-* the system/backend
-
-Use:
-
-```text
-actor_type
-actor_id
-```
-
-rather than assuming every event has a human User actor.
-
-## `actor_type`
-
-Use a closed internal set:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-SYSTEM
-```
-
-Centralize these values in an appropriate enum/value object/constant location.
-
-Do not scatter raw actor-type string literals through the codebase.
-
-## `actor_id`
-
-When the event is caused by an authenticated User:
-
-* store that User's ID
-* never accept actor identity from client input
-
-When the event is system-generated:
-
-```text
-actor_type = SYSTEM
-actor_id   = null
-```
-
-Deleting a User must not destroy historical status events.
-
-Therefore `actor_id` uses `nullOnDelete`.
-
-The server derives actor identity from the authenticated execution context or trusted system workflow.
-
-The existing audit conventions explicitly require server-derived actors and prohibit client-provided actor identity.
+Do not dynamically calculate historical payment amount from current Product prices.
 
 ---
 
-# 10. Actor Privacy
+# 12. Payment / Order Currency Consistency
 
-Do not make Staff/Admin identity part of the customer tracking representation merely because the history stores an actor.
+For a V1 payment:
 
-Customer tracking later exposes a customer-friendly timeline rather than operational Staff identity.
+```text
+payments.currency = orders.currency
+```
 
-The contract distinguishes:
+and both are expected to be:
 
-* customer timeline information
-* operational actor information
+```text
+TZS
+```
 
-and explicitly states that Staff identity is not shown to customers unless required.
+The application/domain layer must verify this before creating or accepting a payment.
 
-Therefore the persistence model may retain actor information for authorized operational use, while later serializers decide whether it is visible.
+Do not accept a provider callback claiming a different currency than the Order expects.
 
-Do not duplicate Staff names, phone numbers, or profiles into history.
+A currency mismatch must be treated as a payment consistency failure, not silently converted.
 
-`actor_id` is sufficient for identity traceability.
+No FX conversion is introduced by this phase.
 
 ---
 
-# 11. Customer-Visible Notes
+# 13. Provider Transaction Identity
 
-Support an optional `customer_note`.
+Support:
 
-This represents information that may later be intentionally exposed to the customer as part of the Order's tracking experience.
+`provider_transaction_id`
 
-Examples may include an operational message associated with a transition.
+and, where necessary:
+
+`provider_reference`
+
+because providers may expose more than one useful external identifier.
 
 Rules:
 
-* optional
-* server-controlled
-* never implicitly public merely because it exists
-* explicit allow-list required during serialization
+* nullable before provider assignment
+* immutable once authoritative provider identity is established
+* never client-controlled
+* never used as a secret
+* safe to index as needed
+* do not assume provider reference semantics are identical across providers
 
-Do not use `customer_note` as a substitute for the canonical tracking `label`.
+Do not force all providers into a single undocumented external-ID meaning.
 
-The frozen tracking representation is:
+---
+
+# 14. Provider Identifier Uniqueness
+
+Do not create a global unique constraint on:
 
 ```text
-id
-status
-occurred_at
-label
+provider_transaction_id
 ```
 
-The human-readable `label` is a customer-facing presentation value and should be derived from the controlled status/transition semantics rather than stored as arbitrary duplicated text in this schema.
+because different providers may use overlapping identifier namespaces.
+
+Prefer uniqueness scoped by Provider:
+
+```text
+UNIQUE(provider, provider_transaction_id)
+```
+
+when `provider_transaction_id` is present and the project's database strategy supports the desired nullable-unique semantics reliably.
+
+Do not let duplicate provider transaction identities create multiple successful payment records.
+
+The later webhook/payment workflow must also validate Order, amount, currency, provider, and payment state atomically.
 
 ---
 
-# 12. Internal Notes
+# 15. Payment Attempt Reference vs Provider Reference
 
-Support an optional `internal_note`.
+Keep these concepts separate:
 
-This is operational information intended only for authorized Staff/Admin contexts.
+### `payment_reference`
 
-Rules:
+Internal business/payment-record identifier generated by this system.
 
-* never expose to customer tracking
-* never include in public responses
-* never automatically serialize
-* server-controlled
-* subject to the project's reasonable maximum text length
+### `provider_transaction_id`
 
-The existing contract explicitly separates customer-visible notes from internal Staff notes and prohibits internal notes from appearing in customer tracking.
+External provider transaction identifier.
 
-Do not use one generic `note` field if doing so would make privacy boundaries ambiguous.
+### `provider_reference`
+
+Optional additional provider-side reference.
+
+Do not collapse all three into one field.
+
+This separation supports:
+
+* support investigations
+* reconciliation
+* provider-specific integration differences
+* retries
+* provider callback matching
+* internal reporting
 
 ---
 
-# 13. Timestamp Semantics
+# 16. Failure Information
 
-Use `occurred_at` as the authoritative event timestamp.
+Support:
 
-It represents when the status event occurred according to backend-controlled execution.
+* `failure_code`
+* `failure_message`
+
+These are diagnostic fields, not secrets.
+
+## `failure_code`
+
+Prefer normalized, machine-readable provider/application failure codes.
+
+Do not blindly persist arbitrary unbounded provider exception strings.
+
+## `failure_message`
+
+Store only a safe diagnostic message.
+
+Never store:
+
+* card numbers
+* CVV/CVC
+* authentication tokens
+* API keys
+* webhook secrets
+* full provider payloads containing payment credentials
+* raw authorization headers
+
+Before persistence the value is sanitized: secrets (card numbers, CVV/CVC-labeled values, and high-entropy tokens such as API keys/AWS signatures) are redacted to a placeholder, and the result is truncated to a fixed maximum length (500 characters). Raw unbounded provider exception strings are never persisted as-is. A blank value is stored as `null`. The same bounding and redaction rules apply to `payment_webhook_events.failure_reason`.
+
+The project security conventions explicitly prohibit logging or exposing payment secrets.
+
+---
+
+# 17. Raw Provider Payloads
+
+Do **not** add a generic:
+
+```text
+provider_payload JSON
+```
+
+column to `payments`.
+
+Raw provider payloads often contain unnecessary personal or sensitive information and create long-term data-retention and privacy problems.
+
+If a later provider integration genuinely needs raw-event persistence, use a deliberately scoped internal webhook-event model with controlled retention and redaction.
+
+That is a later Group H concern.
+
+---
+
+# 18. `initiated_at`
+
+Store:
+
+`initiated_at`
+
+as the server-side timestamp for when the payment attempt was initiated.
 
 Requirements:
 
 * server-generated
-* never supplied by the normal client request
-* stored with timezone-safe database semantics
-* serialized later as ISO 8601 / RFC 3339 UTC with `Z`
+* not client-controlled
+* timezone-safe
+* later serialized as UTC `Z` when exposed
 
-The tracking contract requires deterministic chronological ordering using:
+Do not use client-submitted timestamps as authoritative payment timing.
 
-```text
-occurred_at ASC, id ASC
-```
-
-and requires UTC `Z` timestamps.
-
-Do not use client timestamps for status history.
-
-Do not create a second mutable `status_changed_at` field.
+The project-wide convention is that payment confirmation time is server-controlled.
 
 ---
 
-# 14. `created_at` vs `occurred_at`
+# 19. `confirmed_at`
 
-Keep `occurred_at` because it is the domain timestamp consumed by tracking.
+Store:
 
-Keep `created_at` because it is useful persistence metadata.
+`confirmed_at`
 
-They are normally expected to be extremely close in this V1 architecture, but they represent different concepts:
+nullable.
 
-* `occurred_at` — when the Order status event occurred
-* `created_at` — when the history record was persisted
+It remains `null` until authoritative payment success has been established.
 
-Do not expose both automatically through the API.
+Rules:
 
-The tracking API later uses `occurred_at` as its timeline timestamp.
+* server-controlled
+* never client-settable
+* immutable once successful confirmation is recorded
+* not a substitute for Order status history
 
----
+Do not create `paid_at` on the Order in this phase.
 
-# 15. No `updated_at`
-
-Do not add `updated_at`.
-
-Status history is append-only.
-
-An event must not enter an ordinary update lifecycle.
-
-If a future controlled correction workflow is ever introduced, it must be explicit and auditable rather than silently relying on generic model updates.
+The eventual payment workflow may update the Order from `PENDING_PAYMENT` to `PAID`, while the Payment retains its own confirmation timestamp.
 
 ---
 
-# 16. Ordering and Indexes
+# 20. `expires_at`
 
-Add indexes needed for the primary history access pattern.
+Support an optional:
 
-At minimum:
+`expires_at`
 
-* foreign key/index on `order_id`
-* composite index on `(order_id, occurred_at, id)`
+for payment attempts that have an externally defined validity period.
 
-The composite index supports the required deterministic timeline query:
+This is useful for:
 
-```text
-WHERE order_id = ?
-ORDER BY occurred_at ASC, id ASC
-```
+* payment sessions
+* checkout/payment handoff windows
+* asynchronous payment requests
+* provider-specific expiry
 
-Do not rely solely on `id` ordering.
+However:
 
-Do not introduce pagination-specific indexes yet; V1 tracking is intentionally lightweight and not paginated unless history grows beyond the current assumption.
+* do not define an arbitrary universal expiration duration in this schema phase
+* do not let the client control it
+* do not implement expiry jobs here
 
----
-
-# 17. Duplicate Events
-
-Do not add a simplistic unique constraint such as:
-
-```text
-(order_id, to_status)
-```
-
-A status may potentially need controlled historical representation more than once in future audited correction scenarios, and the event identity itself distinguishes records.
-
-More importantly, duplicate transition protection is a workflow/idempotency concern, not a schema uniqueness problem.
-
-The existing contract requires idempotency for critical Order actions so retries do not create duplicate business effects or duplicate status events.
-
-That logic belongs to the later transition implementation.
+A later provider integration may use it where appropriate.
 
 ---
 
-# 18. Initial History Event
+# 21. Updated Timestamp
 
-The Order creation workflow will eventually need to establish an initial history event representing:
+Unlike `order_status_history`, `payments` should have:
 
-```text
-from_status = null
-to_status   = PENDING_PAYMENT
-```
+* `created_at`
+* `updated_at`
 
-Do not implement that workflow here.
+because Payment records may legitimately move through a controlled lifecycle before becoming immutable from a business perspective.
 
-Do, however, ensure the schema can represent it naturally.
+Do not confuse this with permission to arbitrarily edit financial history.
 
-Do not use a fake status such as:
-
-```text
-CREATED
-NEW
-INITIAL
-```
-
-because those are not part of the frozen Order status enum.
+Only explicitly supported payment-state transitions and reconciliation operations may alter payment records later.
 
 ---
 
-# 19. Cancellation History
+# 22. Payment State History
 
-Cancellation is represented as an Order status event:
+Do not add a JSON array such as:
 
 ```text
-to_status = CANCELLED
+status_history
 ```
 
-The Order itself remains readable.
+to the Payment row.
 
-Do not create a separate cancellation-history table.
+The current Payment schema stores the current payment state.
 
-Do not add a `cancelled_at` field to `order_status_history` specifically for cancellation.
+Detailed provider-event history and webhook deduplication belong in a separate internal persistence model if required.
 
-Do not implement customer cancellation behavior in this phase.
+Do not turn the payment record into an event-sourcing system.
 
-The existing rules require the cancellation workflow to preserve the Order and use backend time for the 20-minute eligibility window.
+Keep V1 simple and auditable.
 
 ---
 
-# 20. Fulfillment Awareness
+# 23. Webhook Idempotency Foundation
 
-The history table does not need a duplicated `fulfillment_type` column.
+A secure payment implementation needs durable deduplication for repeated provider callbacks.
 
-The Order already owns:
+The project convention explicitly requires:
 
-```text
-fulfillment_type = PICKUP | DELIVERY
-```
+* stable provider event identity
+* durable unique constraint
+* atomic deduplication
+* no duplicate payment/order mutations on repeated delivery
 
-Later tracking logic filters or interprets the history in the context of the Order's fulfillment type.
+Therefore this phase should establish a dedicated internal table:
 
-The contract defines:
+`payment_webhook_events`
 
-### Pickup
-
-```text
-PAID
-→ ACCEPTED
-→ PROCESSING
-→ READY_FOR_PICKUP
-→ COMPLETED
-```
-
-### Delivery
-
-```text
-PAID
-→ ACCEPTED
-→ PROCESSING
-→ SHIPPED
-→ DELIVERED
-→ COMPLETED
-```
-
-Not every status is valid for every fulfillment branch.
-
-Do not duplicate this branch information into every history row.
+rather than attempting to overload `payments` with webhook-delivery state.
 
 ---
 
-# 21. No GPS / Carrier Fields
+# 24. Create `payment_webhook_events` Table
+
+Create:
+
+`payment_webhook_events`
+
+with a minimal provider-agnostic structure:
+
+| Column              | Type                               | Rules                                                        |
+| ------------------- | ---------------------------------- | ------------------------------------------------------------ |
+| `id`                | big integer / standard primary key | Internal identity                                            |
+| `payment_id`        | nullable foreign key               | Reference matched Payment; null before matching if necessary |
+| `provider`          | string                             | Provider namespace                                           |
+| `provider_event_id` | string                             | Required external event identifier                           |
+| `provider_correlation_id` | nullable string             | Optional provider correlation reference for later Payment matching; not a deduplication key, never a secret |
+| `event_type`        | string                             | Provider event classification                                |
+| `processing_status` | string                             | Controlled internal status                                   |
+| `received_at`       | timestamp                          | Server timestamp                                             |
+| `processed_at`      | nullable timestamp                 | Processing completion                                        |
+| `failure_reason`    | nullable string/text               | Safe diagnostic only; redacted and truncated to 500 chars before persistence (blank → `null`)                                         |
+| `created_at`        | timestamp                          | Required                                                     |
+| `updated_at`        | timestamp                          | Required                                                     |
+
+Do not persist the complete raw provider payload here by default.
+
+`provider_correlation_id` preserves a provider-supplied reference (for example a checkout, session, or provider payment reference) that survives while `payment_id` is still `null`. When present it lets a later Group H matching step join the event to `payments.provider_transaction_id` or `payments.provider_reference` instead of losing the event. It is not the webhook deduplication identity (`provider`, `provider_event_id`) and it is not a credential.
+
+Do not store webhook signatures or shared secrets as long-lived row data unless a later provider integration explicitly proves a secure need.
+
+---
+
+# 25. Webhook Event Uniqueness
+
+Use a durable unique constraint on:
+
+```text
+(provider, provider_event_id)
+```
+
+This is the primary deduplication key.
+
+The same external event delivered twice must not create two independently processed events.
+
+This requirement is explicitly called out in the project's webhook idempotency convention.
+
+Do not use:
+
+* request timestamp
+* callback URL
+* payment ID alone
+* random UUID generated after receipt
+
+as the provider-event deduplication identity.
+
+---
+
+# 26. Webhook Event Processing Status
+
+Use a small closed internal set, for example:
+
+```text
+RECEIVED
+PROCESSED
+FAILED
+```
+
+Keep this status internal.
+
+Do not expose webhook-processing status as customer-facing Payment status.
+
+Do not add unnecessary states such as `QUEUED`, `RETRIED`, `SKIPPED`, `IGNORED`, etc. unless the actual implementation requires them.
+
+This is internal infrastructure, not a public business enum.
+
+---
+
+# 27. Webhook Event → Payment Relationship
+
+`payment_webhook_events.payment_id` may be nullable because the initial webhook-processing stage may not yet have safely matched the event to a Payment.
+
+After successful matching:
+
+```text
+payment_webhook_events.payment_id → payments.id
+```
+
+Use `nullOnDelete`.
+
+Deleting a Payment must not cause the webhook-event record to become unreadable or fail historical retention.
+
+Do not cascade-delete webhook records when a Payment is removed.
+
+In normal operation, Payments should not be hard-deleted.
+
+---
+
+# 28. Webhook Event Timestamps
+
+All webhook event timestamps must be server-controlled.
+
+Use:
+
+* `received_at` — when Laravel received the event
+* `processed_at` — when the system successfully completed processing
+
+Do not trust provider timestamps as the system's own event-processing timestamp.
+
+A provider-supplied event timestamp may later be stored in provider-specific integration data if necessary, but do not add it to the generic schema without a demonstrated requirement.
+
+---
+
+# 29. No Signature Data in Persistent Payment Records
 
 Do not add:
 
-* latitude
-* longitude
-* GPS history
-* carrier
-* tracking number
-* tracking URL
-* delivery route
-* vehicle data
-* live location
-* WebSocket metadata
+* `webhook_secret`
+* `api_key`
+* `signature_secret`
+* `access_token`
+* `authorization_header`
 
-V1 tracking is a status timeline, not a logistics platform. `SHIPPED` means the order has left the business; `DELIVERED` represents completed delivery.
+to `payments` or `payment_webhook_events`.
 
----
+Provider secrets belong in application secret/configuration management.
 
-# 22. Audit vs Status History
-
-Do not turn `order_status_history` into the general system audit-log table.
-
-The status history answers:
-
-> What Order status events occurred?
-
-The separate audit mechanism answers broader privileged-operation questions such as:
-
-* actor
-* role
-* action
-* resource
-* previous state
-* resulting state
-* request ID
-
-The project conventions explicitly define a broader audit model for privileged state changes.
-
-A status transition may later create both:
-
-1. an Order Status History event
-2. a broader Audit event
-
-Do not merge those responsibilities in Phase 3.11.
+Signature verification is a later Group H phase.
 
 ---
 
-# 23. Model Design
+# 30. Payment / Order Consistency
 
-Create the corresponding:
+The eventual payment workflow must enforce:
 
-`OrderStatusHistory`
+```text
+payments.order_id = intended Order
+payments.amount = authoritative payable Order total
+payments.currency = Order.currency
+```
 
-Eloquent model.
+before payment initiation.
 
-Implement:
+For successful provider confirmation, the workflow must verify the provider result against the stored Payment and Order.
+
+Never transition an Order to `PAID` merely because:
+
+* the frontend says payment succeeded
+* a browser redirect returned successfully
+* a client supplied transaction status
+* an unverified webhook arrived
+* the provider amount differs from the stored Payment amount
+
+The server/provider verification boundary is authoritative.
+
+---
+
+# 31. Delivery-Fee Gate
+
+The payment model must support the existing Checkout rule:
+
+```text
+DELIVERY + delivery_fee_status=PENDING
+→ Payment must not be finalized/accepted
+```
+
+The existing contract explicitly says that a pending delivery fee blocks payment initiation and that `PENDING_PAYMENT → PAID` requires finalized delivery fees.
+
+Do not put `delivery_fee_status` on `payments`.
+
+Read it from the authoritative Order during the later payment workflow.
+
+---
+
+# 32. No Payment Secrets
+
+The schema must never store:
+
+* full card number
+* CVV/CVC
+* PIN
+* online banking password
+* mobile-money PIN
+* OTP
+* bearer access token
+* provider API credential
+* webhook signing secret
+* private cryptographic key
+
+Where a provider supports tokenized instruments, store only the provider-issued non-sensitive reference later required by the approved integration, and only after the provider-selection/security phase defines it.
+
+Do not invent a generic `card_token` field in this phase.
+
+---
+
+# 33. No Direct Payment API CRUD
+
+Do not create generic CRUD semantics such as:
+
+```text
+POST /payments
+PATCH /payments/{payment}
+DELETE /payments/{payment}
+```
+
+for arbitrary client writes.
+
+The frozen API already defines payment initiation and webhook-specific behavior, not generic unrestricted payment mutation.
+
+The schema should support the eventual controlled actions.
+
+---
+
+# 34. Model Design
+
+Create:
+
+`Payment`
+
+and, for webhook deduplication:
+
+`PaymentWebhookEvent`
+
+Implement relationships:
+
+### Payment
 
 * `belongsTo(Order::class)`
-* `belongsTo(User::class, 'actor_id')` as a nullable actor relationship
+* `hasMany(PaymentWebhookEvent::class)`
+
+### PaymentWebhookEvent
+
+* `belongsTo(Payment::class)` nullable
 
 Use explicit casts for:
 
-* `occurred_at`
-* `created_at`
+* amount
+* timestamps
 
-Use an enum/value representation for controlled `to_status`, `from_status`, and `actor_type` where consistent with the project's existing Laravel conventions.
+Use appropriate enums/value objects for controlled status/provider/method values as the project convention permits.
 
-Do not introduce a generic "history base model."
+Do not place provider SDK code into Eloquent models.
 
-Do not add heavy transition logic to the model.
-
-The model represents persisted history; the later Order transition service/action will own state-change orchestration.
+Do not place webhook processing logic into model observers.
 
 ---
 
-# 24. Append-Only Model Behavior
+# 35. Payment Immutability Rules
 
-Do not provide ordinary application methods such as:
-
-```text
-updateStatusHistory()
-editHistory()
-deleteHistory()
-```
-
-Do not register model observers that rewrite history.
-
-Do not register catalog or Order observers that silently mutate existing history.
-
-If the project uses model-level protections for immutable records, they may be used, but do not build an elaborate generic immutability framework for this single table.
-
-The important invariant is that normal business flows only append.
-
----
-
-# 25. Mass Assignment and Client Authority
-
-All history fields are server-controlled.
-
-Never accept from the customer:
+The following historical/payment facts must not be casually modified after creation:
 
 * `order_id`
-* `from_status`
-* `to_status`
-* `actor_type`
-* `actor_id`
-* `occurred_at`
+* `payment_reference`
+* `provider`
+* `amount`
+* `currency`
+* `initiated_at`
 
-Normal clients may not directly create Order Status History records.
+Controlled workflow fields may change according to the future Payment state machine:
 
-A later Order action will create the history event as part of the trusted state-transition transaction.
+* `status`
+* `provider_transaction_id`
+* `provider_reference`
+* `failure_code`
+* `failure_message`
+* `confirmed_at`
+* `processed/expiry-related fields`
 
-Reject arbitrary history creation through generic CRUD APIs.
+Do not implement those workflows here.
 
----
-
-# 26. Transaction Boundary
-
-This phase does not implement transitions, but the schema must be designed for the later transaction boundary.
-
-A future critical Order transition must atomically:
-
-1. load the current Order state
-2. authorize the actor
-3. validate the transition
-4. update the Order
-5. append the corresponding history event
-
-The project's contract requires state validation and state mutation inside one transaction for concurrency-critical transitions.
-
-Do not implement that transaction in Phase 3.11.
+Never provide generic customer-facing update access to Payment records.
 
 ---
 
-# 27. Maintainability Requirements
+# 36. Deletion Rules
+
+For `payments`:
+
+* Order deletion should be restricted, not cascade into Payments
+* Payment deletion is not a normal business operation
+* historical payment records must remain available for reconciliation
+
+For `payment_webhook_events`:
+
+* Payment deletion must not cascade and destroy event history
+* use nullable `payment_id`
+
+Do not add soft deletes unless the broader data-retention strategy explicitly requires them.
+
+The current design should favor controlled retention rather than generic deletion semantics.
+
+---
+
+# 37. Indexes
+
+Add indexes supporting actual operational access.
+
+For `payments`:
+
+* `order_id`
+* `(order_id, created_at)`
+* `payment_reference` unique
+* `(provider, provider_transaction_id)` where non-null
+
+For `payment_webhook_events`:
+
+* unique `(provider, provider_event_id)`
+* `payment_id`
+* `(provider, processing_status)`
+* `received_at`
+
+Do not add broad indexes on every column.
+
+The most important query paths are:
+
+```text
+Order → payments
+provider transaction → payment
+provider event → webhook event
+Payment → webhook events
+```
+
+---
+
+# 38. Concurrency and Idempotency Preparation
+
+The schema must support future concurrency-safe payment processing.
+
+The existing contract marks:
+
+* `PAY-001`
+* `WEBHOOK-001`
+
+as concurrency-sensitive.
+
+The later implementation must protect against races such as:
+
+```text
+payment initiation × webhook
+duplicate webhook × duplicate webhook
+payment retry × previous attempt
+successful callback × failed callback
+payment confirmation × order cancellation
+```
+
+This phase does not implement those transactions.
+
+However, the schema must provide the durable identifiers and constraints required to implement them safely.
+
+---
+
+# 39. Payment Initiation Idempotency
+
+The frozen API requires Payment initiation to use `Idempotency-Key`.
+
+Do not persist `Idempotency-Key` directly on `payments` unless its lifecycle is explicitly one-to-one with the Payment attempt.
+
+Prefer keeping generic idempotency infrastructure separate from Payment persistence unless the project has already established a shared idempotency-table design.
+
+Do not invent payment-specific idempotency storage in this phase merely because the endpoint will need it later.
+
+The important requirement here is that Payment records support safe deduplication once the idempotency mechanism is implemented.
+
+---
+
+# 40. No Order Status Mutation in This Phase
+
+Do not change Order status from:
+
+```text
+PENDING_PAYMENT
+```
+
+to:
+
+```text
+PAID
+```
+
+from the Payment model.
+
+Payment confirmation and Order state transition must later occur through a controlled application workflow.
+
+The project's architecture explicitly separates payment handling from Order state transitions and requires state changes to be server-authoritative.
+
+---
+
+# 41. Security and Privacy
+
+Payment records are private financial data.
+
+They must **never ever** be:
+
+* publicly cached
+* embedded in public catalog responses
+* exposed through unauthenticated endpoints
+* broadly serialized through `model.toArray()`
+* logged indiscriminately
+
+The API conventions classify payment secrets as internal and require explicit serialization allow-lists.
+
+Customer responses should expose only the minimum approved payment summary later defined by the frozen API, such as:
+
+```text
+payment_status
+amount
+currency
+```
+
+not provider secrets or raw webhook information.
+
+Every Payment operation is authorization-checked on the backend. Authorization is decided from the authenticated principal plus the related Order ownership or an approved staff/administrative role — never from a client-supplied identity such as a body `user_id`, query `user_id`, or a client-declared role. A customer may read or act only on Payments belonging to their own Orders; another customer's Payment is never reachable (masked `RESOURCE_NOT_FOUND`, not existence disclosure). Staff access is operational-only per the approved `orders`/payment permissions and does not grant customer-account administration. Webhook-event records are internal infrastructure: their access is restricted to server-side workflows and approved operational roles, never customer-facing, never exposed through unauthenticated endpoints, and never returned to the client that supplied the webhook payload.
+
+---
+
+# 42. Mass Assignment
+
+Payment fields are server-controlled.
+
+Never allow:
+
+```text
+$request->all() → Payment::create(...)
+```
+
+or equivalent uncontrolled assignment.
+
+Client input must be transformed through:
+
+```text
+validated input
+→ DTO/command
+→ payment application workflow
+→ trusted Payment persistence
+```
+
+The project-wide conventions explicitly prohibit direct request-to-model mass assignment.
+
+---
+
+# 43. Maintainability Requirements
 
 For all new or refactored functions:
 
@@ -745,221 +1089,270 @@ For all new or refactored functions:
 * no function may have more than **3 return statements**
 * meaningful repeated string literals should be centralized using constants or enums where appropriate
 
-Do not create a giant global constant class merely to satisfy the rule.
+Do not create a giant global constant class.
 
-Prefer concepts close to their domain.
+Prefer payment-specific enums/value objects close to the domain concept.
 
-Do not suppress static-analysis warnings or raise analyzer thresholds.
+Do not suppress static-analysis findings or increase thresholds.
 
-Keep migrations, models, factories, and tests small and cohesive.
+Keep the Payment model, migration, factories, and tests focused.
+
+Do not create a generic "transaction framework" or provider abstraction hierarchy before an actual provider integration requires it.
 
 ---
 
-# 28. Tests
+# 44. Tests
 
-Add automated tests for the schema and persistence invariants introduced by this phase.
+Add automated tests for the schema and persistence invariants.
 
-## Migration/schema tests
+## Payment migration/schema tests
 
 Verify:
 
-* `order_status_history` table exists
+* `payments` table exists
 * primary key exists
-* `order_id` is required
-* `from_status` is nullable
-* `to_status` is required
-* `actor_type` is required
-* `actor_id` is nullable
-* `customer_note` is nullable
-* `internal_note` is nullable
-* `occurred_at` is required
-* `created_at` exists
-* `updated_at` does not exist
-* foreign keys exist
-* expected indexes exist
+* `order_id` exists and is required
+* `payment_reference` is unique
+* provider/method/status fields exist
+* amount is integer-compatible
+* currency exists
+* provider transaction/reference fields are nullable
+* failure fields are nullable
+* `initiated_at` exists
+* `confirmed_at` is nullable
+* `expires_at` is nullable
+* timestamps exist
 
 ## Relationship tests
 
 Verify:
 
-* Order → Order Status History
-* Order Status History → Order
-* Order Status History → User actor
+* Order → Payments
+* Payment → Order
 
-## Delete behavior tests
+## Multiple-attempt tests
+
+Verify that one Order can have multiple Payment records.
+
+Example:
+
+```text
+Order A
+ ├── Payment attempt 1 → FAILED
+ └── Payment attempt 2 → PENDING
+```
+
+Do not accidentally enforce one-payment-per-order uniqueness.
+
+## Payment reference tests
 
 Verify:
 
-* deleting an Order cascades to its history
-* deleting an actor User nulls `actor_id`
-* deleting an actor User does not delete the status history event
+* reference is unique
+* reference is not derived directly from raw database ID
+* normal creation does not accept a client-supplied authoritative payment reference
 
-## Initial-event test
+## Money tests
 
-Verify that the schema can persist:
+Verify:
 
-```text
-from_status = null
-to_status = PENDING_PAYMENT
-actor_type = SYSTEM
-actor_id = null
-```
+* amount is integer
+* amount cannot be negative
+* currency is TZS in V1
+* no floating-point money representation exists
 
-No fake initial status should be needed.
+## Payment/order consistency tests
 
-## Transition-event persistence test
+Verify application-level validation can enforce:
 
-Verify that a normal history record can persist:
+* Payment belongs to intended Order
+* Payment currency matches Order currency
+* Payment amount corresponds to the authoritative payable Order amount
 
-```text
-from_status = PROCESSING
-to_status = SHIPPED
-```
+Do not implement the complete payment workflow just to test these foundations.
 
-with a valid actor.
+## Provider identity tests
 
-Do not yet test whether that transition is allowed by the state machine.
+Verify the schema supports distinct providers with potentially overlapping transaction identifiers without false global uniqueness.
 
-That belongs to the later Order workflow phase.
-
-## Immutability tests
-
-Verify that normal application behavior does not expose generic update/delete operations for historical events.
-
-At minimum, verify the project's intended append-only model convention.
-
-Do not build a large authorization test suite for future APIs here.
-
-## Ordering test
-
-Create multiple history events with deterministic `occurred_at` values, including two events with the same timestamp.
-
-Verify that the intended query ordering is:
+Verify duplicate:
 
 ```text
-occurred_at ASC
-id ASC
+provider + provider_transaction_id
 ```
 
-This is required for deterministic customer timeline rendering.
+cannot create conflicting provider transaction identities where that identifier is present.
 
-## Privacy-field tests
+## Webhook event tests
 
-Verify that:
+Verify:
 
-* internal notes can exist without requiring customer notes
-* actor identity is persisted separately from customer-facing presentation
-* no Staff name/profile fields are duplicated into history
+* `payment_webhook_events` exists
+* `(provider, provider_event_id)` is unique
+* duplicate provider events are rejected at the durable constraint level
+* a webhook event may initially have `payment_id = null`
+* matching a Payment is possible later
+* deleting a Payment does not destroy the webhook event
+
+## Privacy/security tests
+
+Verify no fields exist for:
+
+* card PAN
+* CVV/CVC
+* PIN
+* provider secret
+* webhook secret
+* API key
+* access token
+
+Verify sensitive internal provider data is not part of default serialization.
 
 ---
 
-# 29. Factories
+# 45. Factories
 
-Add or extend factories so tests can create:
+Create or extend factories for:
 
-* an Order with a status-history event
-* an initial `PENDING_PAYMENT` event
-* a transition event
-* a system-generated event
-* a user-generated event
-* an event with a customer-visible note
-* an event with an internal note
+### Payment
 
-Factory defaults must use valid closed statuses and valid actor relationships.
+Support fixtures such as:
 
-Do not seed random status histories into production-like seed data unless required by the development environment.
+```text
+PENDING
+PROCESSING
+SUCCEEDED
+FAILED
+CANCELLED
+EXPIRED
+```
+
+Use valid Orders and valid integer TZS amounts.
+
+Support:
+
+* successful payment
+* failed attempt
+* pending attempt
+* multiple payment attempts on one Order
+
+### PaymentWebhookEvent
+
+Support:
+
+* received event
+* processed event
+* failed event
+* event linked to Payment
+* event not yet linked to Payment
+
+Factory defaults must produce internally coherent records.
+
+Do not seed fake successful financial transactions into general production-like seed data unless required by the development environment.
 
 ---
 
-# 30. Documentation Updates
+# 46. Documentation Updates
 
 Update the appropriate authoritative documentation only where needed.
 
-Ensure the Order Status History rules are explicitly represented:
+Document these established payment-domain facts if not already present:
 
-* append-only
-* server-generated
-* immutable in normal operation
-* chronological tracking order
-* status values reuse the closed Order status vocabulary
-* customer timeline is a filtered presentation of history
-* internal actor/note data is not automatically customer-visible
+* Payment is separate from Order
+* Payment is server-controlled
+* Payment amount is integer minor units in TZS
+* Orders may have multiple payment attempts
+* Payment provider identifiers are external references, not secrets
+* webhook event identity is durably deduplicated
+* Payment secrets are never persisted
+* Payment success does not equal fulfillment completion
 
-Do not create a permanent phase-specific markdown file merely to document this implementation.
+Do not create a permanent phase-specific payment-schema markdown file merely for these decisions.
 
-If the existing documentation conflicts with the schema, record the decision rather than silently changing the frozen contract.
+If a conflict is found between existing payment documentation and this design, record the decision explicitly rather than silently changing the frozen contract.
 
 ---
 
-# 31. Security and Data Integrity Review
+# 47. Security and Data Integrity Review
 
 Before completion, verify:
 
-* clients cannot directly control history
-* actor identity is always server-derived
-* raw database IDs are not treated as public event identifiers
-* internal notes are not designated as customer-visible by default
-* historical events are not editable through generic CRUD behavior
-* historical events are not individually deleted
-* deleting a User cannot destroy an Order's status history
-* deleting an Order removes its owned history consistently
-* timestamps are server-controlled
-* no GPS/carrier/logistics fields were introduced
-* status values exactly reuse the closed V1 Order status vocabulary
+* no sensitive payment credentials are stored
+* no provider secrets are stored in the database
+* payment amount is server-authoritative
+* payment currency is server-authoritative
+* payment status is server-authoritative
+* provider transaction identity is treated as external data, not authentication
+* webhook events have durable unique identity
+* duplicate webhook delivery cannot create duplicate event rows
+* Orders cannot be accidentally deleted with financial records through cascade behavior
+* Payment records cannot be arbitrarily modified through mass assignment
+* Payment data remains private
+* raw provider payloads are not stored by default
+* no Order state mutation occurs from the Payment model
+* multiple payment attempts remain possible
 
 ---
 
 # Definition of Done
 
-Phase 3.11 is complete when:
+Phase 3.12 is complete when:
 
-* `order_status_history` migration exists
-* each event belongs to an Order
-* `from_status` and `to_status` model the historical transition
-* the initial `null → PENDING_PAYMENT` event is representable
-* actor source is represented without requiring a User for system events
-* actor identity is server-side and nullable for system events
-* customer and internal notes are explicitly separated
-* `occurred_at` provides the domain event timestamp
-* no `updated_at` exists
-* history is append-only by design
-* Order deletion cascades to history
-* User deletion nulls `actor_id` without deleting history
-* indexes support `order_id + occurred_at + id`
-* Eloquent relationships are implemented
-* factories support valid history fixtures
-* migration, relationships, deletion, immutability, and ordering tests pass
+* `payments` migration exists
+* Payment belongs to Order
+* an Order may have multiple payment attempts
+* each Payment has a unique server-generated `payment_reference`
+* provider, method, and status are represented separately
+* amount is integer minor-unit TZS
+* provider transaction/reference identity is supported
+* payment failure information is supported without secrets
+* initiated/confirmed/expiry timestamps are represented
+* Order deletion does not cascade into financial records
+* Payment model relationships are implemented
+* `payment_webhook_events` exists for durable webhook deduplication
+* `(provider, provider_event_id)` is uniquely constrained
+* webhook events can exist before a Payment is safely matched
+* webhook event deletion behavior preserves historical event data
+* factories support pending, failed, and successful attempts
+* migration, relationships, multiple-attempt, financial, provider-identity, webhook-deduplication, and security tests pass
 * maintainability constraints are satisfied
-* no state-transition workflow has leaked into this phase
+* no provider SDK, webhook signature verification, payment endpoint, or payment state machine has leaked into this phase
 
 # Out of Scope
 
-Do not implement in Phase 3.11:
+Do not implement in Phase 3.12:
 
-* Order state machine
-* transition validation
-* `accept`, `process`, `ready-for-pickup`, `ship`, `deliver`, or `complete` actions
-* customer cancellation workflow
-* delivery-fee finalization
-* payment status workflow
-* payment webhooks
-* inventory mutation
-* delivery records
-* tracking endpoints
-* customer order endpoints
-* Staff order endpoints
-* notification generation
-* email/SMS/push delivery
-* general audit-log implementation
-* history correction workflow
-* GPS/carrier tracking
+* payment provider selection
+* provider SDK integration
+* payment initiation endpoint
+* payment state-transition service
+* provider callback endpoint
+* webhook signature verification
+* webhook payload validation
+* provider API credentials
+* payment retries workflow
+* payment timeout/expiry jobs
+* Order `PAID` transition
+* inventory consumption after successful payment
+* refunds
+* partial refunds
+* chargebacks
+* settlement
+* reconciliation jobs
+* customer payment UI
+* staff payment UI
+* saved payment methods
+* card tokenization
+* 3-D Secure flows
+* mobile-money OTP/PIN handling
+* email/SMS payment notifications
 
 # STOP CONDITION
 
-Stop after the Order Status History persistence model, relationships, append-only design, tests, factories, and migration verification are complete.
+Stop after the Payment and Payment Webhook Event persistence models, relationships, constraints, factories, tests, and migration verification are complete.
 
-Do not implement the Order transition state machine yet.
+Do not implement provider-specific behavior yet.
 
 The next phase is:
 
-**Phase 3.12 — Payment Schema**
+**Phase 3.13 — Delivery Schema**

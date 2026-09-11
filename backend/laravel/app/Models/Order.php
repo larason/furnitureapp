@@ -75,6 +75,11 @@ class Order extends Model
             ->orderBy('id');
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
     public function isPickup(): bool
     {
         return $this->fulfillment_type === FulfillmentType::PICKUP;
