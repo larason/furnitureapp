@@ -18,7 +18,7 @@ class ProductFactory extends Factory
         $category = Category::query()->inRandomOrder()->first()
             ?? Category::create([
                 'name' => 'General',
-                'slug' => 'general-'.Str::random(6),
+                'slug' => 'general-'.strtolower(Str::random(6)),
                 'space_type' => 'hybrid',
             ]);
 

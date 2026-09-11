@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property FulfillmentType $fulfillment_type
  * @property DeliveryFeeStatus $delivery_fee_status
  * @property string $currency
- * @property int $subtotal_amount
+ * @property int|null $subtotal_amount
  * @property int|null $delivery_fee_amount
  * @property int|null $total_amount
  * @property string|null $recipient_name
@@ -51,6 +52,8 @@ class Order extends Model
     {
         $this->assertReferenceImmutable();
         $this->assertInitialStatus();
+        $this->assertFinancialImmutability();
+        $this->assertRequiredAmount();
         $this->assertPickupState();
         $this->assertDeliveryState();
     }
@@ -58,6 +61,11 @@ class Order extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
     }
 
     public function isPickup(): bool
@@ -105,6 +113,31 @@ class Order extends Model
         }
     }
 
+    private function assertFinancialImmutability(): void
+    {
+        if (! $this->exists) {
+            return;
+        }
+
+        $originallyFinalized = $this->getOriginal('delivery_fee_status') === DeliveryFeeStatus::FINALIZED;
+        $originallyPastPending = $this->getOriginal('status') !== OrderStatus::PENDING_PAYMENT;
+        $amountDirty = $this->isDirty('subtotal_amount')
+            || $this->isDirty('delivery_fee_amount')
+            || $this->isDirty('total_amount')
+            || $this->isDirty('currency');
+
+        if (($originallyFinalized || $originallyPastPending) && $amountDirty) {
+            throw new DomainException('Order financial values are immutable once the order is past PENDING_PAYMENT or the delivery fee is finalized.');
+        }
+    }
+
+    private function assertRequiredAmount(): void
+    {
+        if ($this->subtotal_amount === null) {
+            throw new DomainException('Order subtotal is required.');
+        }
+    }
+
     private function assertPickupState(): void
     {
         if (! $this->isPickup()) {
@@ -140,8 +173,8 @@ class Order extends Model
 
     private function assertDeliveryPendingState(): void
     {
-        if ($this->delivery_fee_amount !== null || $this->total_amount !== null) {
-            throw new DomainException('Pending delivery orders must not present a delivery fee or a final total.');
+        if ($this->delivery_fee_amount !== null || $this->total_amount !== $this->subtotal_amount) {
+            throw new DomainException('Pending delivery orders require a null delivery fee and a provisional total equal to subtotal.');
         }
     }
 }

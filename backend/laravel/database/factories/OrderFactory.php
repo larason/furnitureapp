@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class OrderFactory extends Factory
 {
+    private static array $usedReferences = [];
+
     public function definition(): array
     {
         $subtotal = fake()->numberBetween(10000, 50000000);
@@ -60,7 +62,7 @@ class OrderFactory extends Factory
                 'delivery_fee_status' => DeliveryFeeStatus::PENDING,
                 'subtotal_amount' => $subtotal,
                 'delivery_fee_amount' => null,
-                'total_amount' => null,
+                'total_amount' => $subtotal,
                 'delivery_address' => self::deliveryAddress(),
             ];
         });
@@ -85,7 +87,13 @@ class OrderFactory extends Factory
 
     public static function generateReference(): string
     {
-        return Order::REFERENCE_PREFIX.strtoupper(fake()->unique()->bothify('?????'));
+        do {
+            $reference = Order::REFERENCE_PREFIX.strtoupper(fake()->bothify('?????'));
+        } while (isset(self::$usedReferences[$reference]));
+
+        self::$usedReferences[$reference] = true;
+
+        return $reference;
     }
 
     private static function deliveryAddress(): array

@@ -223,6 +223,26 @@ class OrderSchemaTest extends TestCase
         );
     }
 
+    public function test_pickup_order_with_delivery_address_is_rejected(): void
+    {
+        $order = Order::factory()->pickup()->make([
+            'delivery_address' => ['address_line' => '123 Example Street', 'city' => 'Dar es Salaam', 'region' => 'Dar es Salaam', 'postal_code' => null],
+        ]);
+
+        $this->expectException(DomainException::class);
+        $order->save();
+    }
+
+    public function test_pickup_order_with_null_subtotal_is_rejected_by_application(): void
+    {
+        $order = Order::factory()->pickup()->make(['subtotal_amount' => null]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order subtotal is required.');
+
+        $order->save();
+    }
+
     public function test_pickup_order_has_finalized_zero_fee_and_subtotal_total(): void
     {
         $order = Order::factory()->pickup()->create()->fresh();
@@ -235,33 +255,81 @@ class OrderSchemaTest extends TestCase
         $this->assertNull($order->delivery_address);
     }
 
-    public function test_pickup_order_with_delivery_address_is_rejected(): void
+    public function test_financial_values_are_immutable_once_paid(): void
     {
-        $order = Order::factory()->pickup()->make([
-            'delivery_address' => ['address_line' => '123 Example Street', 'city' => 'Dar es Salaam', 'region' => 'Dar es Salaam', 'postal_code' => null],
-        ]);
+        $order = Order::factory()->pickup()->create();
+        $order->status = OrderStatus::PAID;
+        $order->save();
 
         $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order financial values are immutable');
+
+        $order->subtotal_amount += 5000;
+        $order->delivery_fee_amount = 0;
+        $order->total_amount += 5000;
         $order->save();
     }
 
-    public function test_delivery_pending_order_has_null_fee_and_null_total(): void
+    public function test_financial_values_are_immutable_once_fee_finalized(): void
+    {
+        $order = Order::factory()->deliveryFinalized(8000)->create();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order financial values are immutable');
+
+        $order->subtotal_amount += 5000;
+        $order->delivery_fee_amount = 8000;
+        $order->total_amount = $order->subtotal_amount + 8000;
+        $order->save();
+    }
+
+    public function test_delivery_fee_finalization_flow_is_still_allowed_while_pending_payment(): void
+    {
+        $order = Order::factory()->deliveryPending()->create();
+        $subtotal = $order->subtotal_amount;
+        $fee = 8000;
+
+        $order->delivery_fee_status = DeliveryFeeStatus::FINALIZED;
+        $order->delivery_fee_amount = $fee;
+        $order->total_amount = $subtotal + $fee;
+        $order->save();
+
+        $fresh = $order->fresh();
+        $this->assertSame(DeliveryFeeStatus::FINALIZED, $fresh->delivery_fee_status);
+        $this->assertSame($fee, $fresh->delivery_fee_amount);
+        $this->assertSame($subtotal + $fee, $fresh->total_amount);
+    }
+
+    public function test_currency_is_immutable_once_paid(): void
+    {
+        $order = Order::factory()->pickup()->create();
+        $order->status = OrderStatus::PAID;
+        $order->save();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order financial values are immutable');
+
+        $order->currency = 'USD';
+        $order->save();
+    }
+
+    public function test_delivery_pending_order_has_null_fee_and_provisional_total(): void
     {
         $order = Order::factory()->deliveryPending()->create()->fresh();
 
         $this->assertTrue($order->isDelivery());
         $this->assertSame(DeliveryFeeStatus::PENDING, $order->delivery_fee_status);
         $this->assertNull($order->delivery_fee_amount);
-        $this->assertNull($order->total_amount);
+        $this->assertSame($order->subtotal_amount, $order->total_amount);
         $this->assertIsArray($order->delivery_address);
     }
 
-    public function test_delivery_pending_order_with_total_is_rejected(): void
+    public function test_delivery_pending_order_with_total_not_equal_to_subtotal_is_rejected(): void
     {
         $order = Order::factory()->deliveryPending()->make(['total_amount' => 30000]);
 
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('must not present a delivery fee or a final total');
+        $this->expectExceptionMessage('Pending delivery orders require a null delivery fee and a provisional total equal to subtotal.');
         $order->save();
     }
 
