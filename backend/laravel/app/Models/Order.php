@@ -68,6 +68,18 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function statusHistory(): HasMany
+    {
+        return $this->hasMany(OrderStatusHistory::class)
+            ->orderBy('occurred_at')
+            ->orderBy('id');
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
     public function isPickup(): bool
     {
         return $this->fulfillment_type === FulfillmentType::PICKUP;

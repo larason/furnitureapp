@@ -6,10 +6,12 @@
 4. Set up promotional and heavy advertisment campains including
 * Video campaigns in instagram, meta, Youtube
 * Promotional codes for a discount for returning customers briging a friend or colleague
+* banners and popups for "New customer get a discount!"
+* two videos one for broader audience and another for university students
 
 5. we will use **CLERK auth** for authentication handling while we handle roles, policies/permissions
 
 6. use urbanladder advertisment style
 * a person sees a furniture now he/she imagines the possibilities of owning that furniture, a worker come and ask the customer if he/she wants it the customer says yeah this is the one!
 
-7. banners and popups for "New customer get a discount!"
+
