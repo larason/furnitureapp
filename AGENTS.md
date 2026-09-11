@@ -875,9 +875,9 @@ Check for ambiguity, duplication, security gaps and frontend usability problems 
 
 ---
 
-## PHASE GROUP D — AUTHENTICATION AND AUTHORIZATION
+## PHASE GROUP D — AUTHENTICATION AND AUTHORIZATION (USE CLERK)
 
-### Phase 4.1 — Authentication design review
+### Phase 4.1 — Authentication design review (Use clerk)
 ### Phase 4.2 — Customer registration
 ### Phase 4.3 — Login/logout
 ### Phase 4.4 — Password recovery
