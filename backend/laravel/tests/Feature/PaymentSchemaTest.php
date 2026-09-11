@@ -258,6 +258,43 @@ class PaymentSchemaTest extends TestCase
         $this->assertNotNull($succeeded->confirmed_at);
     }
 
+    public function test_non_succeeded_payment_cannot_have_confirmed_at(): void
+    {
+        $payment = Payment::factory()->make([
+            'status' => PaymentStatus::PENDING,
+            'confirmed_at' => now(),
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Payment confirmed_at must be null unless SUCCEEDED.');
+
+        $payment->save();
+    }
+
+    public function test_succeeded_payment_requires_confirmed_at(): void
+    {
+        $payment = Payment::factory()->make([
+            'status' => PaymentStatus::SUCCEEDED,
+            'confirmed_at' => null,
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Payment SUCCEEDED requires confirmed_at.');
+
+        $payment->save();
+    }
+
+    public function test_confirmed_at_is_immutable_once_recorded(): void
+    {
+        $payment = Payment::factory()->succeeded()->create();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Payment confirmed_at is immutable once recorded.');
+
+        $payment->confirmed_at = now()->addMinute();
+        $payment->save();
+    }
+
     public function test_expires_at_is_nullable(): void
     {
         $payment = Payment::factory()->create(['expires_at' => null]);
@@ -436,7 +473,12 @@ class PaymentSchemaTest extends TestCase
     public function test_status_is_closed_payment_status(): void
     {
         foreach (PaymentStatus::cases() as $status) {
-            $payment = Payment::factory()->create(['status' => $status]);
+            $confirmedAt = $status === PaymentStatus::SUCCEEDED ? now() : null;
+
+            $payment = Payment::factory()->create([
+                'status' => $status,
+                'confirmed_at' => $confirmedAt,
+            ]);
 
             $this->assertSame($status, $payment->fresh()->status);
         }

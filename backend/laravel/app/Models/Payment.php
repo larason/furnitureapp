@@ -79,6 +79,7 @@ class Payment extends Model
         $this->assertMoney();
         $this->assertStatus();
         $this->assertTimestamps();
+        $this->assertConfirmedAtState();
     }
 
     public function assertConsistentWithOrder(Order $order): void
@@ -137,23 +138,56 @@ class Payment extends Model
         $this->assertFieldImmutable('amount');
         $this->assertFieldImmutable('currency');
         $this->assertFieldImmutable('initiated_at');
+        $this->assertConfirmedAtImmutable();
         $this->assertProviderIdentityImmutable('provider_transaction_id');
         $this->assertProviderIdentityImmutable('provider_reference');
     }
 
     private function assertFieldImmutable(string $field): void
     {
-        if ($this->getOriginal($field) !== $this->{$field}) {
+        if ($this->isDirty($field)) {
             throw new DomainException("Payment {$field} is immutable.");
         }
     }
 
     private function assertProviderIdentityImmutable(string $field): void
     {
-        $original = $this->getOriginal($field);
+        if (! $this->isDirty($field)) {
+            return;
+        }
+
+        $original = $this->getRawOriginal($field);
 
         if ($original !== null && $original !== $this->{$field}) {
             throw new DomainException("Payment {$field} is immutable once established.");
+        }
+    }
+
+    private function assertConfirmedAtImmutable(): void
+    {
+        $original = $this->getRawOriginal('confirmed_at');
+
+        if ($original === null) {
+            return;
+        }
+
+        if ($this->isDirty('confirmed_at')) {
+            throw new DomainException('Payment confirmed_at is immutable once recorded.');
+        }
+    }
+
+    private function assertConfirmedAtState(): void
+    {
+        if ($this->status === PaymentStatus::SUCCEEDED) {
+            if ($this->confirmed_at === null) {
+                throw new DomainException('Payment SUCCEEDED requires confirmed_at.');
+            }
+
+            return;
+        }
+
+        if ($this->confirmed_at !== null) {
+            throw new DomainException('Payment confirmed_at must be null unless SUCCEEDED.');
         }
     }
 
