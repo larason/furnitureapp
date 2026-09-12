@@ -1,41 +1,48 @@
-# Phase 3.13 — Delivery Schema
+# Phase 3.14 — Furniture Request Schema
 
 ## Purpose
 
-Implement the persistence model for **Order Delivery operations**.
+Implement the persistence model for **Furniture Requests**.
 
-Delivery is a separate operational entity associated with an Order whose:
+A Furniture Request represents a customer's request for furniture that may require customization, modification, quotation, or further business discussion.
 
-```text
-fulfillment_type = DELIVERY
-```
+A request is **not an Order**.
 
-It must store only information genuinely specific to delivery execution.
+A request:
 
-The Order remains authoritative for:
+* does not reserve inventory
+* does not create an Order
+* does not guarantee a price
+* does not create a payment
+* does not guarantee production
+* does not guarantee delivery
+* does not automatically convert into an Order
 
-* customer ownership
-* order reference
-* order financials
-* fulfillment type
-* recipient snapshot
-* delivery address snapshot
-* overall Order status
+The existing contract explicitly keeps Furniture Requests separate from Orders, Payments, Inventory, and pricing commitments.
 
-Delivery must not become a second Order state machine.
-
-The existing V1 contract defines:
+Both of these actors may submit a request:
 
 ```text
-DELIVERY
-PROCESSING → SHIPPED → DELIVERED → COMPLETED
+REGISTERED CUSTOMER
+        │
+        └── Furniture Request
+
+GUEST
+        │
+        └── Furniture Request
 ```
 
-with `SHIPPED` meaning the Order has left the business and `DELIVERED` meaning delivery has been completed. Tracking is derived from `order_status_history`; it is not GPS/carrier tracking.
+For authenticated customers, `user_id` is derived from the authenticated principal.
 
-This phase establishes the Delivery persistence model only.
+For guests:
 
-Do not implement delivery scheduling, dispatch workflows, courier integrations, live tracking, notifications, or Order transition logic here.
+```text
+user_id = null
+```
+
+The client must never submit or override `user_id`.
+
+This phase establishes the database model and validation-ready structure for the later Group J API/workflow phases.
 
 ---
 
@@ -43,14 +50,19 @@ Do not implement delivery scheduling, dispatch workflows, courier integrations, 
 
 Complete these phases first:
 
+* Phase 3.3 — Categories Schema
+* Phase 3.4 — Products Schema
+* Phase 3.5 — Product Variants Schema
+* Phase 3.6 — Product Images Schema
 * Phase 3.9 — Orders Schema
 * Phase 3.10 — Order Items Snapshot Model
 * Phase 3.11 — Order Status History Schema
 * Phase 3.12 — Payment Schema
+* Phase 3.13 — Delivery Schema
 
-Use the existing `orders` table and its established fulfillment/financial fields.
+Do not make Furniture Requests depend on Orders or Payments.
 
-Do not redesign the Order model.
+A request remains an independent domain object.
 
 ---
 
@@ -64,941 +76,1140 @@ Treat these as authoritative:
 * `docs/api/api-resources.md`
 * `docs/api/api-conventions.md`
 * `AGENTS.md`
-* completed Phase 3.9 — Orders Schema
-* completed Phase 3.10 — Order Items Snapshot Model
-* completed Phase 3.11 — Order Status History Schema
-* completed Phase 3.12 — Payment Schema
+* completed phases 3.3–3.13
 
-The V1 API contract is frozen. Do not introduce new public Delivery states, tracking concepts, or API fields that are not already supported by the contract.
+The existing V1 request conventions establish:
+
+* anonymous creation
+* authenticated customer creation
+* server-derived `user_id`
+* optional `product_id`
+* structured request specifications
+* bounded free-text fields
+* closed request statuses
+* private request data
+* operational Staff/Admin handling
+* no automatic Request → Order conversion
+
+Do not silently replace those rules with a different lifecycle.
 
 ---
 
 # 1. Core Design Rule
 
-The `deliveries` table represents the **operational delivery record for a Delivery-type Order**.
+The `furniture_requests` table must be a **self-contained customer-submission record**.
 
-It is not:
+The request should remain understandable even if the associated catalog Product later:
 
-* a second Order table
-* a second payment table
-* a second status-history table
-* a GPS tracking system
-* a courier marketplace
-* a carrier integration registry
+* changes name
+* changes description
+* changes images
+* changes price
+* is deactivated
+* is deleted
 
-The authoritative relationship is:
+A Product reference may be retained, but the submitted request details must not depend on the live Product record.
 
-```text
-Order
-  └── Delivery
-```
-
-where:
-
-```text
-Order.fulfillment_type = DELIVERY
-```
-
-A Pickup Order must not have a Delivery record in normal V1 operation.
+This follows the existing requirement that customer-submitted request data is historical/private and that later changes must not rewrite the original intake.
 
 ---
 
-# 2. One Delivery per Delivery Order
-
-V1 supports one operational Delivery record for each Delivery Order.
-
-Create:
-
-`deliveries`
-
-with a unique `order_id`.
-
-This means:
-
-```text
-DELIVERY Order A → exactly one Delivery record
-PICKUP Order A   → no Delivery record
-```
-
-Do not allow multiple active Delivery records for the same Order in V1.
-
-Do not introduce delivery-attempt history yet.
-
-If future business requirements need multiple delivery attempts, create that as a deliberate future model rather than overloading the V1 Delivery row.
-
----
-
-# 3. Create `deliveries` Table
+# 2. Create `furniture_requests` Table
 
 Create a Laravel migration for:
 
-`deliveries`
+`furniture_requests`
 
 Recommended schema:
 
-| Column                  | Type                                       | Rules                                                     |
-| ----------------------- | ------------------------------------------ | --------------------------------------------------------- |
-| `id`                    | big integer / Laravel standard primary key | Internal primary key                                      |
-| `order_id`              | foreign key                                | Required; references `orders.id`; unique; restrict delete |
-| `recipient_name`        | string                                     | Required delivery snapshot                                |
-| `recipient_phone`       | string                                     | Required delivery snapshot                                |
-| `delivery_address`      | JSON                                       | Required delivery snapshot                                |
-| `delivery_instructions` | nullable text/string                       | Optional                                                  |
-| `schedule_for`          | nullable timestamp                         | Optional server-controlled delivery appointment           |
-| `created_at`            | timestamp                                  | Required                                                  |
-| `updated_at`            | timestamp                                  | Required                                                  |
+| Column              | Type                                       | Rules                                                             |
+| ------------------- | ------------------------------------------ | ----------------------------------------------------------------- |
+| `id`                | big integer / Laravel standard primary key | Internal primary key                                              |
+| `user_id`           | nullable foreign key                       | Authenticated Customer owner; null for Guest; null on User delete |
+| `request_reference` | string                                     | Server-generated unique reference                                 |
+| `product_id`        | nullable foreign key                       | Optional catalog reference; null on Product delete                |
+| `product_details`   | JSON/text-compatible structured field      | Required submitted product description/details                    |
+| `style`             | string/text                                | Required requested furniture style                                |
+| `name`              | string                                     | Required contact snapshot                                         |
+| `email`             | string nullable                            | Contact snapshot; frozen V1 contract requires at least one of `email`/`phone` (§6) |
+| `phone`             | string nullable                            | Contact snapshot; frozen V1 contract requires at least one of `email`/`phone` (§6) |
+| `message`           | text                                       | Required customer message                                         |
+| `quantity`          | unsigned integer nullable                  | Optional requested quantity                                       |
+| `dimensions`        | JSON nullable                              | Optional structured dimensions                                    |
+| `material`          | string nullable                            | Optional free-text preference                                     |
+| `color`             | string nullable                            | Optional free-text preference                                     |
+| `request_status`    | string                                     | Required; default `SUBMITTED`                                     |
+| `created_at`        | timestamp                                  | Required                                                          |
+| `updated_at`        | timestamp                                  | Required                                                          |
 
-Do not add arbitrary extra delivery fields merely because they are common in larger logistics systems.
+The fields `quantity`, `dimensions`, `material`, and `color` preserve the existing approved request capabilities.
 
-The schema must remain appropriate for the project's small-scale V1 architecture.
-
----
-
-# 4. `order_id`
-
-`deliveries.order_id` belongs to `orders.id`.
-
-Implement:
-
-### Order
-
-`Order hasOne Delivery`
-
-### Delivery
-
-`Delivery belongsTo Order`
-
-The `order_id` must be unique.
-
-This expresses the V1 invariant:
-
-> One Delivery Order has at most one Delivery record.
-
-Do not use `cascadeOnDelete`.
-
-Delivery data participates in a historical commercial workflow and should not disappear automatically because of an accidental or administrative Order deletion.
-
-Use restrictive deletion semantics consistent with the project's historical Order and Payment models.
-
-Normal business APIs do not hard-delete Orders.
+The newly explicit `product_details` and `style` fields are included because they are part of the requested request structure.
 
 ---
 
-# 5. Delivery-Type Eligibility
+# 3. Registered Customer vs Guest
 
-A Delivery record is valid only for:
+Use one table for both request origins.
+
+## Authenticated Customer
 
 ```text
-Order.fulfillment_type = DELIVERY
+user_id = authenticated user's ID
 ```
 
-This is a domain invariant.
-
-Do not attempt to enforce it through a redundant `fulfillment_type` column on `deliveries`.
-
-The Delivery model should not contain:
+## Guest
 
 ```text
-fulfillment_type
+user_id = null
 ```
-
-because the authoritative value already belongs to Order.
-
-At creation time, application/domain logic must verify:
-
-```text
-delivery.order.fulfillment_type === DELIVERY
-```
-
-before creating the Delivery record.
-
-Do not allow a Pickup Order to silently acquire a Delivery row.
-
----
-
-# 6. Recipient Snapshot
-
-Store:
-
-* `recipient_name`
-* `recipient_phone`
-
-as Delivery-specific historical/operational snapshots.
-
-The Order already stores its own recipient snapshot.
-
-This duplication is intentional only because Delivery is an operational record and must retain the exact recipient data used for delivery execution without requiring joins to a mutable customer profile.
-
-Do not read current User profile information and overwrite these values automatically after Delivery creation.
-
-Later profile changes must not rewrite the delivery recipient.
-
-This follows the same historical-snapshot principle already established for Orders. The Order itself is a historical record and preserves recipient/address information independently of later profile changes.
-
----
-
-# 7. Delivery Address Snapshot
-
-Store:
-
-`delivery_address`
-
-as structured JSON.
-
-Use the same approved address structure established for Order checkout.
-
-Do not introduce a second incompatible address schema.
-
-The Delivery address must be a snapshot of the address actually associated with the Order delivery.
-
-Do not store:
-
-```text
-saved_address_id
-```
-
-in Delivery.
-
-Saved address-book functionality remains deferred.
-
-The existing V1 contract explicitly treats the Order's delivery address as a per-order snapshot rather than a saved-address reference.
-
----
-
-# 8. Address Immutability
-
-Once the Delivery record has been created, its historical recipient/address snapshot must not be silently synchronized from:
-
-* User profile
-* customer address book
-* future address changes
-* current Order profile data
-
-Do not implement automatic profile-to-delivery synchronization.
-
-Do not implement address replacement in this phase.
-
-Any future operational address-correction workflow must be an explicit controlled operation with appropriate authorization and auditability.
-
----
-
-# 9. Delivery Instructions
-
-Support:
-
-`delivery_instructions`
-
-as optional operational text.
-
-This is intended for practical delivery information, such as:
-
-* access instructions
-* building/entrance guidance
-* reasonable delivery notes
-
-Rules:
-
-* optional
-* bounded in length
-* plain text unless the approved API explicitly requires another representation
-* server validated
-* private
-* never interpreted as executable content
-
-Do not treat arbitrary HTML as trusted.
-
-Do not store secrets or credentials in delivery instructions.
-
-Do not automatically expose internal operational notes to customers.
-
----
-
-# 10. No Generic `notes` Field
-
-Do not create a vague:
-
-```text
-notes
-```
-
-column.
-
-Use explicit semantic fields.
-
-For V1:
-
-```text
-delivery_instructions
-```
-
-is sufficient for customer-supplied or delivery-specific instructions.
-
-If future operations require private Staff notes, define that field and access policy explicitly rather than creating an ambiguous general-purpose notes column now.
-
----
-
-# 11. Scheduled Delivery
-
-Support an optional:
-
-`schedule_for`
-
-field, named:
-
-`schedule_for`
-
-only if the existing project conventions and actual implementation need delivery appointments.
-
-The recommended column name for this phase is:
-
-`schedule_for`
-
-to make the semantics explicit: the intended delivery appointment/time.
-
-However, because the current frozen V1 contract does not establish a customer-facing delivery scheduling workflow, the field must remain:
-
-* nullable
-* server-controlled
-* operational
-* non-authoritative for Order status
-
-If the implementation does not have an approved scheduling requirement yet, omit the column rather than creating speculative functionality.
-
-For the baseline V1 implementation, **do not add `schedule_for` unless the codebase already requires delivery appointment scheduling**.
-
-The Delivery schema must not create an unsupported public feature.
-
----
-
-# 12. No Delivery Status Column
-
-Do **not** create:
-
-```text
-delivery_status
-```
-
-in V1.
-
-The project's frozen Order lifecycle already owns:
-
-```text
-PROCESSING
-SHIPPED
-DELIVERED
-COMPLETED
-```
-
-for Delivery Orders.
-
-The contract explicitly describes Delivery as a fulfillment path while the Order retains the authoritative commercial lifecycle.
-
-Adding a second Delivery status would create unnecessary synchronization problems such as:
-
-```text
-orders.status = DELIVERED
-deliveries.status = SHIPPED
-```
-
-which is exactly the kind of conflicting source of truth this design should prevent.
-
-The later Order transition workflow updates Order status and appends Order Status History.
-
-Delivery remains an operational record associated with that Order.
-
----
-
-# 13. No Delivery Status History
 
 Do not create:
 
-```text
-delivery_status_history
-```
+* `guest_user`
+* `guest_customer`
+* `customer_type`
+* `is_guest`
+* separate guest-request table
 
-in V1.
+A nullable `user_id` is sufficient.
 
-Use:
-
-`order_status_history`
-
-for the authoritative Order lifecycle timeline.
-
-The frozen tracking contract states that the customer timeline is a filtered view of `order_status_history`.
-
-Do not duplicate the same event stream in Delivery.
+The existing contract explicitly defines this ownership model.
 
 ---
 
-# 14. No Tracking Number
+# 4. `user_id` Authority
 
-Do not add:
+`user_id` is completely server-controlled.
 
-```text
-tracking_number
-```
-
-The current V1 design is intentionally not a carrier/logistics platform.
-
-The documented delivery flow specifically excludes carrier `tracking_number`, `tracking_url`, and related external tracking concepts.
-
-Do not anticipate them through unused nullable columns.
-
----
-
-# 15. No Carrier
-
-Do not add:
-
-```text
-carrier
-carrier_name
-carrier_code
-carrier_id
-```
-
-There is no approved V1 carrier domain.
-
-If carrier integration becomes necessary later, introduce an explicit provider/integration model with its own security and operational rules.
-
-Do not create speculative external-integration fields now.
-
----
-
-# 16. No GPS / Live Tracking
-
-Do not add:
-
-* latitude
-* longitude
-* route
-* live location
-* driver coordinates
-* ETA feed
-* geofencing
-* vehicle identity
-* route history
-
-V1 tracking is a customer-readable Order status timeline, not GPS tracking.
-
----
-
-# 17. No Driver Assignment
-
-Do not add:
-
-```text
-driver_id
-assigned_staff_id
-delivery_agent_id
-```
-
-The frozen contract intentionally keeps tracking lightweight and does not expose assigned staff unless a later business need requires it.
-
-Staff identity is not part of the customer timeline.
-
-Do not create a Driver/DeliveryAgent domain merely to populate this table.
-
----
-
-# 18. Delivery Fee Remains on Order
-
-Do not move:
-
-* `delivery_fee_status`
-* `delivery_fee_amount`
-* `total_amount`
-
-from the Order into Delivery.
-
-The Order remains the authoritative commercial record.
-
-The delivery fee is part of Order financials, not operational Delivery metadata.
-
-The frozen model specifically defines delivery-fee finalization as an Order operation before payment.
-
-Therefore:
-
-```text
-Order
- ├── subtotal
- ├── delivery_fee
- └── total
-```
-
-remains the financial source of truth.
-
----
-
-# 19. Delivery Address vs Delivery Entity
-
-The Order already contains:
-
-```text
-recipient_name
-recipient_phone
-delivery_address
-```
-
-as historical checkout snapshots.
-
-Delivery may contain an operational copy of these exact values because it is the actual fulfillment record.
-
-Rules:
-
-* Order snapshot remains authoritative for historical Order representation
-* Delivery snapshot supports delivery operations
-* neither is automatically rewritten from the customer's current profile
-* no saved-address reference replaces either snapshot
-
-Do not introduce a third address source.
-
----
-
-# 20. Delivery Creation Timing
-
-This phase does not implement creation workflow, but the eventual workflow must create Delivery only for a Delivery-type Order.
-
-The expected conceptual boundary is:
-
-```text
-Checkout
-→ Order created
-→ fulfillment_type = DELIVERY
-→ Delivery operational record created
-```
-
-The exact transaction boundary is a later checkout/fulfillment concern.
-
-Do not implement this orchestration in Phase 3.13.
-
-For Pickup Orders, no Delivery row should be created.
-
----
-
-# 21. Delivery and Order State
-
-Do not update Order status from the Delivery model.
-
-Do not create model observers such as:
-
-```text
-Delivery created → Order SHIPPED
-Delivery updated → Order DELIVERED
-```
-
-Those would bypass the controlled Order state machine.
-
-The eventual workflow must explicitly validate:
-
-```text
-actor
-+ permission
-+ current Order state
-+ fulfillment type
-+ business preconditions
-```
-
-inside a transaction.
-
-Delivery persistence must remain subordinate to that workflow.
-
----
-
-# 22. Delivery Timestamps
-
-Use:
-
-* `created_at`
-* `updated_at`
-
-for the Delivery record.
-
-Do not add:
-
-* `shipped_at`
-* `delivered_at`
-* `completed_at`
-
-to Delivery in this phase.
-
-Those dates are represented by the Order Status History's `occurred_at` events.
-
-This avoids maintaining parallel lifecycle timestamps.
-
----
-
-# 23. No Delivery Soft Delete
-
-Do not add soft deletion.
-
-A Delivery is an operational record tied to an Order.
-
-Normal business operation must not delete it.
-
-If future retention/privacy workflows require data deletion or anonymization, they should be explicitly designed and audited rather than introduced through ordinary Delivery CRUD.
-
----
-
-# 24. Model Design
-
-Create:
-
-`Delivery`
-
-Eloquent model.
-
-Implement:
-
-### Delivery
-
-* `belongsTo(Order::class)`
-
-### Order
-
-* `hasOne(Delivery::class)`
-
-Use explicit casts for:
-
-* `delivery_address`
-* timestamps
-
-Keep the model lightweight.
-
-Do not add:
-
-* status-transition methods
-* GPS methods
-* courier SDK logic
-* notification logic
-* payment logic
-* Order state mutation
-* tracking serialization logic
-
-Those belong to later application/API layers.
-
----
-
-# 25. Address JSON Structure
-
-Use the same structured address representation established by Checkout/Order.
-
-Do not use arbitrary nested JSON.
-
-The server must validate an approved allow-list of address fields.
-
-The Delivery schema must not become a general-purpose JSON blob.
-
-Do not permit:
+Never accept:
 
 ```json
 {
-  "anything": "arbitrary",
-  "internal_sql": "...",
-  "secret": "..."
+  "user_id": "someone-else"
 }
 ```
 
-or similarly unconstrained structures.
+from the request body.
 
-The project's global validation conventions require explicit structures and reject arbitrary nested data.
+For an authenticated submission:
+
+```text
+authenticated principal → user_id
+```
+
+For an anonymous submission:
+
+```text
+user_id = null
+```
+
+The request's contact information remains stored independently of `user_id`.
+
+This is important because the same request structure must work for guests and registered customers.
 
 ---
 
-# 26. Security and Privacy
+# 5. Contact Snapshot
 
-Delivery data is private.
+Store:
 
-It can contain:
+* `name`
+* `email`
+* `phone`
 
-* recipient name
-* recipient phone
-* delivery address
-* private delivery instructions
+directly on `furniture_requests`.
+
+These are **request-time contact snapshots**, not dynamic references to the User profile.
+
+Later changes to the customer's:
+
+* name
+* email
+* phone
+
+must not rewrite historical request contact information.
+
+The existing request contract requires the request to remain self-contained and explicitly states that authenticated requests store contact information in addition to the server-derived `user_id`.
+
+---
+
+# 6. Contact Validation Preparation
+
+The schema must support strong validation in Group J.
+
+Recommended rules:
+
+### `name`
+
+* required
+* string
+* trimmed
+* bounded maximum length
+* Unicode-safe
+
+### `email`
+
+* required for the requested V1 structure
+* valid email syntax
+* normalized where appropriate
+* bounded maximum length
+
+### `phone`
+
+* required for the requested V1 structure
+* string, not numeric
+* normalized to the project's chosen phone representation
+* bounded maximum length
+
+Do not store phone numbers as integers.
+
+## Contract compatibility note
+
+The existing frozen request convention previously defined:
+
+```text
+name = required
+phone OR email = required
+```
+
+rather than requiring both contact channels.
+
+This phase should therefore make the schema capable of storing all three fields while **Group J must reconcile the requested “name + email + phone” requirement with the frozen API contract before making both email and phone mandatory at the API boundary**.
+
+Do not silently change the frozen V1 request contract in Phase 3.14.
+
+---
+
+# 7. `request_reference`
+
+Create a server-generated unique reference:
+
+`request_reference`
+
+Requirements:
+
+* unique
+* immutable
+* server-generated
+* never client supplied
+* not directly derived from an exposed database ID
+
+Use the project's established opaque-reference convention.
+
+Do not reuse an Order reference.
+
+A Furniture Request is not an Order and must have its own reference namespace.
+
+---
+
+# 8. Product Reference
+
+`product_id` remains optional.
+
+This preserves the two approved request modes:
+
+### Product-linked request
+
+```text
+product_id = existing MADE_TO_ORDER Product
+```
+
+### Custom/general request
+
+```text
+product_id = null
+```
+
+The existing V1 convention explicitly approves both modes.
+
+Do not make `product_id` mandatory merely because `product_details` is present.
+
+---
+
+# 9. Product Validation
+
+When `product_id` is supplied, Group J must validate:
+
+1. Product exists
+2. Product is active
+3. Product is published where applicable
+4. Product is a `MADE_TO_ORDER` product
+5. Product is requestable
+
+An `IN_STOCK` product must not be treated as a Furniture Request target merely because it has a valid ID.
+
+The existing contract explicitly requires MADE_TO_ORDER validation and rejects request creation for an IN_STOCK product.
+
+Do not attempt to enforce this entire rule through the foreign key.
+
+---
+
+# 10. Product Snapshot
+
+Because the customer submits product details, preserve those submitted details independently from the current Product.
+
+Recommended structure:
+
+```json
+{
+  "product_name": "...",
+  "description": "...",
+  "reference": "..."
+}
+```
+
+The exact keys must be finalized in Group J validation/API design.
+
+The important rule is:
+
+> `product_details` represents what the customer submitted, not a trusted copy of arbitrary Product database data.
+
+Do not automatically fill `product_details` from the current Product model without deliberate snapshot semantics.
+
+Do not allow arbitrary nested JSON.
+
+---
+
+# 11. Product Details Validation
+
+`product_details` must be a **strict structured object** at the API boundary.
+
+Group J must define an explicit allow-list.
+
+Do not accept arbitrary JSON keys such as:
+
+```text
+anything
+metadata
+internal_price
+secret
+admin_note
+```
+
+Unknown keys must be rejected.
+
+This follows the project's global rule that strict create inputs reject unknown fields and arbitrary nested structures.
+
+The database may store the validated structured object as JSON, but Laravel/domain validation remains authoritative for nested structure.
+
+---
+
+# 12. Style
+
+Add:
+
+`style`
+
+as a first-class request field.
+
+The customer's requested style is part of the Furniture Request itself.
+
+Examples may include:
+
+* Modern
+* Minimalist
+* Scandinavian
+* Classic
+* Industrial
+* Traditional
+* Contemporary
+
+Do **not** make Style a V1 closed enum unless the business has explicitly approved a complete taxonomy.
+
+Use bounded free text for V1.
+
+This is consistent with the existing request strategy of keeping customer furniture preferences such as `material` and `color` flexible rather than prematurely converting them into closed enums.
+
+Recommended constraints:
+
+* required
+* trimmed
+* Unicode-safe
+* bounded maximum length
+* plain text
+* not interpreted as HTML/code
+
+---
+
+# 13. Message
+
+Add:
+
+`message`
+
+as the customer's main request explanation.
+
+This is separate from:
+
+* `product_details`
+* `style`
+* `material`
+* `color`
+* `dimensions`
+
+The message can describe:
+
+* desired modifications
+* intended use
+* special requirements
+* context
+* questions
+* additional preferences
+
+Recommended maximum length:
+
+```text
+5000 characters
+```
+
+This follows the existing bounded free-text request convention.
+
+Store the original customer message as submitted after safe normalization.
+
+Do not overwrite it with Staff notes.
+
+---
+
+# 14. Customer Message Immutability
+
+Original customer-submitted fields are historical intake.
+
+Do not allow Staff to rewrite:
+
+* name
+* email
+* phone
+* product details
+* style
+* message
+* quantity
+* dimensions
+* material
+* color
+* product reference
+
+Operational Staff notes must be separate.
+
+The existing Request convention explicitly states that customer-provided fields remain immutable and staff edits belong in separate internal fields.
+
+---
+
+# 15. Quantity
+
+Preserve the existing optional:
+
+`quantity`
+
+field.
+
+Rules:
+
+* nullable
+* integer
+* minimum `1`
+* maximum `100`
+* never zero
+* never negative
+* never fractional
+* server validated
+
+Important:
+
+`quantity` is **request intent**, not inventory or Order quantity.
+
+It does not reserve stock and does not become the final Order quantity automatically.
+
+When omitted:
+
+```text
+quantity = null
+```
+
+Do not silently default it to `1`.
+
+---
+
+# 16. Dimensions
+
+Preserve the existing structured:
+
+`dimensions`
+
+field.
+
+Recommended structure:
+
+```json
+{
+  "length": 120,
+  "width": 60,
+  "height": 75,
+  "unit": "cm"
+}
+```
+
+Rules:
+
+* nullable
+* object when supplied
+* only approved keys
+* `length`, `width`, `height`
+* positive numeric values
+* maximum `10000`
+* `unit` required whenever dimensions are present
+* `unit = "cm"` only
+
+Do not add arbitrary keys such as:
+
+* `depth`
+* `diameter`
+* `radius`
+
+unless explicitly approved in a later contract change.
+
+These existing restrictions are already defined in the request conventions.
+
+---
+
+# 17. Material
+
+Preserve optional:
+
+`material`
+
+as bounded free text.
+
+Use:
+
+* nullable
+* trimmed
+* maximum `500` characters
+* Unicode-safe
+* plain text
+
+Do not make Material a closed enum.
+
+The existing V1 decision intentionally keeps material flexible for a small furniture business.
+
+---
+
+# 18. Color
+
+Preserve optional:
+
+`color`
+
+as bounded free text.
+
+Use:
+
+* nullable
+* trimmed
+* maximum `200` characters
+* Unicode-safe
+* plain text
+
+Do not create a V1 color-management system.
+
+The existing request contract deliberately treats color as free text.
+
+---
+
+# 19. Request Status
+
+Use the frozen V1 request status values:
+
+```text
+SUBMITTED
+IN_REVIEW
+CLOSED
+```
+
+Default:
+
+```text
+SUBMITTED
+```
+
+The existing approved workflow is:
+
+```text
+SUBMITTED → IN_REVIEW → CLOSED
+```
+
+with direct:
+
+```text
+SUBMITTED → CLOSED
+```
+
+also permitted.
+
+`CLOSED` is terminal in V1.
+
+Customer cannot set or directly modify `request_status`.
+
+The approved request lifecycle is already closed and must not be replaced with speculative values such as:
+
+```text
+QUOTED
+APPROVED
+REJECTED
+PRODUCING
+DELIVERING
+```
+
+Those are explicitly not V1 statuses.
+
+---
+
+# 20. Status Ownership
+
+`request_status` is server-controlled.
+
+Do not allow:
+
+```json
+{
+  "request_status": "CLOSED"
+}
+```
+
+as a customer create/update authority.
+
+Later Staff operations will perform explicit controlled status transitions.
+
+Do not implement those transitions in Phase 3.14.
+
+---
+
+# 21. Internal Staff Notes
+
+The Group J workflow already defines the need to keep Staff-only operational notes separate from customer-submitted data.
+
+Do not mix them into:
+
+* `message`
+* `product_details`
+* `style`
+
+A separate internal field may be added only if the existing Group J implementation requires persistence directly on this table.
+
+For this phase, the recommended approach is:
+
+`staff_internal_notes` nullable text
+
+If implemented, it must be:
+
+* Staff/Admin only
+* never serialized to customers
+* distinct from original customer content
+* bounded in length
+* mutable only through authorized Staff/Admin operations
+
+This follows the existing Request privacy and operational conventions.
+
+---
+
+# 22. Attachments
+
+Attachments remain optional.
+
+Do not put the uploaded binary into the `furniture_requests` row.
+
+Use a separate attachment model/table if attachment implementation already follows the approved Request attachment architecture.
+
+The existing V1 design permits:
+
+* zero or one attachment on request creation
+* later attachment upload
+* private storage
+* controlled attachment authorization
+* signed temporary access URLs
+* actual file signature validation
+
+and explicitly defines `REQ-007` for post-creation attachments.
+
+Do not implement attachment storage in Phase 3.14 unless the project already needs the attachment schema dependency here.
+
+---
+
+# 23. Anonymous Retrieval Security
+
+A Guest request with:
+
+```text
+user_id = null
+```
+
+must not become publicly retrievable merely because its database ID or `request_reference` is known.
+
+The existing V1 contract explicitly rejects predictable-ID anonymous retrieval and does not treat email as ownership proof.
 
 Therefore:
 
-* never expose Delivery publicly
-* never include it in public product/catalog responses
-* never CDN-cache it
-* use private/no-store behavior for protected delivery/order responses
-* authorize access before serialization
+* do not create public GET access based on `id`
+* do not treat email as authentication
+* do not automatically attach old guest requests to a newly registered account merely because emails match
+* later anonymous access requires an explicit secure mechanism
 
-The existing contract explicitly classifies delivery address as private and limits visibility to the owning customer and authorized Staff/Admin.
-
-Staff access is operational, not customer ownership.
+That mechanism belongs to Group J/API implementation, not this schema phase.
 
 ---
 
-# 27. Customer Access Boundary
+# 24. Product Deletion
 
-A Customer may see Delivery information only through their own Order context.
+Use nullable `product_id` with `nullOnDelete`.
 
-Do not build a public:
+If the referenced Product is later deleted:
 
 ```text
-GET /deliveries/{delivery}
+product_id = null
 ```
 
-resource merely because a table exists.
+while preserving:
 
-The Delivery entity is an internal domain resource for the Order workflow.
+* product_details
+* style
+* message
+* contact
+* dimensions
+* material
+* color
+* quantity
 
-Customer-facing representation remains controlled by the existing Order/tracking contract.
+The original customer request must remain readable to authorized operational users.
 
-This prevents direct object-reference enumeration from becoming an authorization bypass.
+Do not cascade Product deletion into Furniture Requests.
 
 ---
 
-# 28. Staff Access Boundary
+# 25. User Deletion
 
-Staff may access Delivery information only through explicitly authorized operational Order workflows.
+Use nullable `user_id` with `nullOnDelete`.
 
-Do not assume:
+Deleting a User must not delete the customer's historical Furniture Requests.
+
+The contact snapshot remains preserved.
+
+This also ensures historical requests remain valid even when the associated account lifecycle later changes.
+
+---
+
+# 26. No Order Relationship
+
+Do not add:
 
 ```text
-staff = unrestricted access
+order_id
 ```
 
-Use the established permission model.
+to `furniture_requests`.
 
-Staff should receive only the delivery information necessary for order fulfillment.
+The V1 Request contract explicitly separates Requests from Orders.
 
-Admin has broader operational access but must still follow authorization, auditability, and data-minimization rules.
+A request only becomes an Order through a separately approved business workflow. It must never happen implicitly through ordinary Request update operations.
 
 ---
 
-# 29. Mass Assignment
+# 27. No Payment Relationship
 
-Delivery fields are not generally customer-controlled model fields.
-
-A later checkout/action workflow may accept explicit business input such as delivery instructions, but it must transform:
+Do not add:
 
 ```text
-validated input
-→ DTO/command
-→ domain workflow
-→ trusted Delivery persistence
+payment_id
+payment_status
+quoted_price
+amount
+currency
 ```
 
-Never:
+to Furniture Requests.
+
+A request is not a financial transaction.
+
+No price is guaranteed when the request is submitted.
+
+No payment is created by submitting a request.
+
+---
+
+# 28. No Inventory Relationship
+
+Do not add:
 
 ```text
-$request->all()
-→ Delivery::create()
+inventory_id
+warehouse_location
+reserved_quantity
+stock_quantity
 ```
 
-The project's conventions explicitly prohibit uncontrolled mass assignment.
+to Furniture Requests.
 
-Client input must not control:
+A request does not reserve inventory.
 
-* `order_id`
-* Delivery ownership
-* internal timestamps
-* Order relationships
-* Order status
-* financial fields
+It is customer intent, not inventory commitment.
 
 ---
 
-# 30. Validation Rules
+# 29. No Delivery Relationship
 
-At the domain level:
-
-## Order
-
-Must exist.
-
-## Fulfillment
-
-Order must be:
+Do not add:
 
 ```text
-DELIVERY
+delivery_id
+delivery_fee
+delivery_status
 ```
 
-## Recipient
+to Furniture Requests.
 
-`recipient_name` and `recipient_phone` must satisfy the same approved validation bounds used by the Order checkout snapshot.
-
-## Address
-
-`delivery_address` must satisfy the established structured address schema.
-
-## Instructions
-
-`delivery_instructions` must respect the project's text length and content requirements.
-
-Do not invent alternate Delivery-specific formats for fields that already have an established global definition.
+Delivery belongs to Orders after an actual commercial transaction exists.
 
 ---
 
-# 31. Concurrency
+# 30. Validation Architecture for Group J
 
-Delivery creation/modification may later participate in critical checkout/fulfillment transactions.
+Prepare the schema so Group J can implement the full validation sequence:
 
-Do not implement concurrent delivery workflow in this phase.
+```text id="v8zpuv"
+Transport
+→ Schema/Input
+→ Authentication (optional)
+→ Authorization
+→ Domain
+→ Concurrency
+→ Persistence
+```
 
-However, the schema must prevent duplicate Delivery records for the same Order with:
+The existing project-wide validation model requires backend validation to remain authoritative regardless of Next.js/Flutter validation.
+
+For Furniture Requests:
+
+### Schema validation
+
+Validate:
+
+* required fields
+* types
+* maximum lengths
+* JSON structures
+* email syntax
+* phone format
+* quantity range
+* dimensions structure
+* enum values
+* unknown fields
+
+### Authentication
+
+Optional.
+
+Determine whether the sender is:
 
 ```text
-UNIQUE(order_id)
+authenticated customer
 ```
 
-The later workflow must perform authorization, state validation, and persistence atomically where the operation changes critical Order fulfillment state.
+or:
 
-The project already marks order fulfillment operations as concurrency-sensitive.
+```text
+guest
+```
+
+### Authorization
+
+For creation, anonymous access is explicitly allowed.
+
+For future retrieval/update, authorization must distinguish:
+
+* Customer own request
+* Staff operational access
+* Admin access
+* anonymous scoped access where later approved
+
+### Domain validation
+
+Validate:
+
+* product requestability
+* MADE_TO_ORDER product eligibility
+* product ownership of any referenced variant if variants are ever added
+* contact requirements
+* request-state transition rules
+
+### Persistence
+
+Only validated/trusted data reaches Eloquent persistence.
 
 ---
 
-# 32. Idempotency
+# 31. Unknown Fields
 
-Do not create a Delivery-specific idempotency mechanism in this schema phase.
+Group J create input must reject unknown fields.
 
-The existing Order fulfillment actions use `Idempotency-Key`.
+Do not permit:
 
-Retry semantics belong to the later action/application workflow.
+```text
+price
+total
+payment_status
+order_id
+user_id
+request_status
+approved
+admin_notes
+```
 
-The unique `order_id` constraint provides an additional database integrity guard against accidental duplicate Delivery rows.
+from an ordinary customer submission.
 
-Do not rely on that unique constraint alone as the API idempotency mechanism.
+Strict allow-listing reduces stale-client problems and mass-assignment risk.
 
 ---
 
-# 33. Indexes and Constraints
+# 32. Input Shape for Group J
+
+The request model should support an eventual create structure conceptually similar to:
+
+```json
+{
+  "product_id": "optional",
+  "product_details": {
+    "product_name": "Modern sofa",
+    "description": "Three-seat sofa with deep cushions"
+  },
+  "style": "Modern minimalist",
+  "name": "Customer Name",
+  "email": "customer@example.com",
+  "phone": "+255...",
+  "message": "I would like this made in a darker finish.",
+  "quantity": 1,
+  "dimensions": {
+    "length": 220,
+    "width": 90,
+    "height": 85,
+    "unit": "cm"
+  },
+  "material": "Linen",
+  "color": "Charcoal"
+}
+```
+
+This is a **conceptual storage/input shape**, not permission to change the frozen API contract silently.
+
+Group J must define the final exact API schema and reconcile any new required fields through the contract-change process if necessary.
+
+---
+
+# 33. Request Reference and Public IDs
+
+Use an opaque request identifier/reference.
+
+Do not make a predictable numeric `id` sufficient for customer access.
+
+Customer-facing request retrieval must later perform authorization before serialization.
+
+The project-wide IDOR guidance explicitly requires ownership checks and 404 masking for private resources.
+
+---
+
+# 34. Indexes
+
+Add indexes for actual Request access patterns.
 
 At minimum:
 
-### `deliveries`
+* unique index on `request_reference`
+* index on `user_id`
+* index on `(request_status, created_at)`
+* index on `product_id`
+* index on `created_at`
 
-* primary key on `id`
-* unique index on `order_id`
+Do not index large JSON/text fields automatically.
 
-If recipient/search operations later require additional indexes, add them based on actual query requirements.
-
-Do not index:
-
-* full JSON delivery address
-* delivery instructions
-* recipient phone
-
-merely because those fields exist.
-
-Protected operational queries should use the Order relationship as their normal access path.
+The existing Staff request listing supports filtering/search across request fields, but those query requirements should be implemented with deliberate search/query design rather than indiscriminate indexes.
 
 ---
 
-# 34. Foreign-Key Delete Behavior
+# 35. Sorting
 
-Use restrictive semantics for:
-
-`deliveries.order_id → orders.id`
-
-Do not use cascade deletion.
-
-The Delivery record is part of a historical operational workflow.
-
-Orders are not normally hard-deleted, and Delivery must not be silently removed through a parent delete cascade.
-
-If an exceptional administrative data-retention workflow is introduced later, it must be explicit and audited.
-
----
-
-# 35. Historical Integrity
-
-Delivery must preserve the delivery details associated with the actual Order.
-
-After creation, later changes to:
-
-* User name
-* User phone
-* saved address book
-* customer profile
-
-must not silently rewrite:
+The canonical Request listing order is:
 
 ```text
-recipient_name
-recipient_phone
-delivery_address
+created_at DESC, id ASC
 ```
 
-This is the same historical-integrity principle used for Order snapshots and financial data.
+Use that deterministic ordering in later API implementation.
 
-Do not register model observers for automatic synchronization.
+The schema should support it efficiently through the `created_at` index and primary-key tie-breaker.
 
----
-
-# 36. No Payment Fields
-
-Do not add:
-
-* payment_id
-* payment_status
-* amount_paid
-* payment_reference
-* provider_transaction_id
-
-to Delivery.
-
-Payment is a separate domain.
-
-Delivery may be operationally blocked until the Order is paid according to later workflows, but Payment remains the source of payment information.
+The existing request convention explicitly defines this ordering.
 
 ---
 
-# 37. No Inventory Fields
+# 36. No Hard Duplicate Constraint
 
-Do not add:
+Do not create uniqueness constraints such as:
 
-* reserved_quantity
-* stock_quantity
-* inventory_id
-* warehouse_location
-* allocation
+```text
+email + phone
+email + message
+phone + message
+product_id + email
+```
 
-to Delivery.
+Two legitimate requests may have:
 
-Inventory remains a separate domain.
+* the same contact details
+* similar or identical messages
+* the same product
 
-Fulfillment does not become an inventory table.
+The existing request contract explicitly rejects using repeated contact/message combinations as a hard duplicate detector.
+
+Duplicate/abuse handling belongs to the application/idempotency/rate-limiting layers.
 
 ---
 
-# 38. No Product Fields
+# 37. Request Idempotency
 
-Do not add:
+The existing V1 contract currently treats `POST /requests` as not inherently idempotent and leaves explicit idempotency deferred.
+
+Do not add a Request-specific idempotency column merely to solve that concern.
+
+Group J may later introduce a shared idempotency mechanism if business requirements change.
+
+---
+
+# 38. Privacy
+
+Furniture Requests are private.
+
+Never include request details in:
+
+* public product responses
+* catalog pages
+* SEO content
+* public search
+* unauthenticated listing endpoints
+
+Sensitive fields include:
+
+* name
+* email
+* phone
+* product details
+* style
+* message
+* dimensions
+* material
+* color
+* attachments
+
+The existing contract explicitly classifies request contact, specifications, notes, and attachments as private.
+
+---
+
+# 39. Serialization
+
+Do not expose the model through:
+
+```text
+$model->toArray()
+```
+
+as the API response.
+
+Later Group J API serializers must use explicit allow-lists.
+
+Customer serialization must contain only customer-permitted fields.
+
+Staff/Admin serialization may expose operational fields according to permission.
+
+Internal storage keys, credentials, and Staff-only notes must never be exposed to unauthorized audiences.
+
+---
+
+# 40. Model Design
+
+Create:
+
+`FurnitureRequest`
+
+Eloquent model.
+
+Relationships:
+
+### FurnitureRequest
+
+* `belongsTo(User::class)` nullable
+* `belongsTo(Product::class)` nullable
+
+Do not add Order, Payment, Delivery, or Inventory relationships.
+
+Use explicit casts for:
+
+* `product_details`
+* `dimensions`
+
+and enum/value handling for:
+
+* `request_status`
+
+Do not put request validation or workflow orchestration into the Eloquent model.
+
+---
+
+# 41. Historical Intake Preservation
+
+The following fields represent the customer's original request and should be treated as historical intake:
 
 * product_id
-* variant_id
-* SKU
-* product name
+* product_details
+* style
+* name
+* email
+* phone
+* message
+* quantity
+* dimensions
+* material
+* color
 
-to Delivery.
+Later Staff operational handling must not destroy the original submission.
 
-Delivery belongs to an Order, and Order Items already hold the historical purchased items.
-
-Do not create another snapshot layer inside Delivery.
-
----
-
-# 39. No Delivery Address ID
-
-Do not add:
+If Staff need to add information, use:
 
 ```text
-address_id
-saved_address_id
-customer_address_id
+staff_internal_notes
 ```
 
-The V1 model explicitly treats the Order delivery address as a snapshot and defers an address book.
+or a future dedicated operational history model.
 
-Delivery needs the actual snapshot, not a mutable customer-address reference.
+Do not overwrite the original request to represent Staff decisions.
 
 ---
 
-# 40. Maintainability Requirements
+# 42. Staff/Admin Operational Separation
+
+Staff can later manage requests operationally according to explicit permissions.
+
+Staff are not owners of Requests.
+
+The existing authorization model explicitly distinguishes:
+
+```text
+Staff → operational access
+Customer → ownership access
+Admin → broader administrative access
+```
+
+Staff must not gain general customer-account administration merely because they can view a Furniture Request.
+
+---
+
+# 43. Maintainability Requirements
 
 For all new or refactored functions:
 
@@ -1008,221 +1219,268 @@ For all new or refactored functions:
 
 Do not create a giant global constants class.
 
-Prefer domain-local enums/constants.
+Prefer domain-local enums/value objects for:
+
+* request statuses
+* any approved internal constants
 
 Do not suppress static-analysis findings or raise analyzer thresholds.
 
-Keep the Delivery model, migration, factories, and tests small and cohesive.
+Keep migrations, model methods, factories, and validators small and cohesive.
 
 ---
 
-# 41. Tests
+# 44. Tests
 
-Add automated tests for the schema and Delivery invariants.
+Add automated tests for schema and domain-supporting invariants.
 
 ## Migration/schema tests
 
 Verify:
 
-* `deliveries` table exists
+* `furniture_requests` exists
 * primary key exists
-* `order_id` exists
-* `order_id` is required
-* `order_id` is unique
-* recipient fields exist
-* address JSON exists
-* delivery instructions are nullable
+* `request_reference` is unique
+* `user_id` is nullable
+* `product_id` is nullable
+* `product_details` exists
+* `style` exists
+* contact fields exist
+* `message` exists
+* request status exists
+* quantity is nullable
+* dimensions is nullable
+* material is nullable
+* color is nullable
 * timestamps exist
-* no delivery status field exists
-* no carrier/tracking-number field exists
 
-## Relationship tests
+## Guest tests
 
-Verify:
-
-* Order → Delivery
-* Delivery → Order
-
-## Fulfillment eligibility tests
-
-Verify:
-
-* Delivery can be associated with a `DELIVERY` Order
-* a Pickup Order cannot create a valid Delivery through domain/application validation
-
-Do not enforce this through a duplicated `fulfillment_type` database column.
-
-## One-to-one constraint tests
-
-Verify that the database rejects multiple Delivery rows for the same Order.
-
-## Snapshot tests
-
-Create a Delivery with:
-
-* recipient name
-* recipient phone
-* address
-
-Change the related User profile and verify the Delivery snapshot remains unchanged.
-
-## Address validation tests
-
-Verify that valid approved address structures persist correctly.
-
-Verify invalid/unexpected address structures are rejected by the appropriate validation/domain layer.
-
-## Privacy-field tests
-
-Verify no fields exist for:
-
-* carrier credentials
-* GPS
-* tracking number
-* payment secrets
-* inventory quantities
-* driver credentials
-
-## Relationship deletion tests
-
-Verify that deleting a User does not delete Delivery data indirectly.
-
-Verify the Delivery-to-Order relationship uses restrictive deletion semantics.
-
-## Order separation tests
-
-Verify Delivery does not become a second source of:
-
-* Order status
-* Order total
-* Delivery fee
-* payment status
-
----
-
-# 42. Factories
-
-Create or extend:
-
-`DeliveryFactory`
-
-Support:
-
-* a valid Delivery Order
-* recipient snapshot
-* structured address
-* optional delivery instructions
-
-Factory defaults must create:
+Verify a valid request can exist with:
 
 ```text
-Order.fulfillment_type = DELIVERY
+user_id = null
 ```
 
-Do not make a Delivery factory silently create Pickup Orders.
+and complete contact information.
 
-Do not populate carrier/GPS/tracking data that the V1 design does not support.
+## Authenticated tests
+
+Verify a request can exist with:
+
+```text
+user_id = authenticated customer
+```
+
+while preserving contact snapshot fields independently.
+
+## Ownership tests
+
+Verify:
+
+* authenticated User A is linked to User A's request
+* `user_id` can be null for guest requests
+* there is no automatic User association based on matching email
+
+## Product tests
+
+Verify:
+
+* custom requests can have `product_id = null`
+* Product-linked request can reference a Product
+* deleting Product nulls `product_id`
+* Product deletion does not delete the request
+* product snapshot/details remain preserved
+
+The MADE_TO_ORDER eligibility itself belongs to Group J domain validation.
+
+## Contact tests
+
+Verify:
+
+* name storage
+* email storage
+* phone storage
+* reasonable length bounds
+* phone stored as string
+
+## Style/message tests
+
+Verify:
+
+* style persists
+* style is bounded
+* message persists
+* message length is bounded
+* Unicode text is preserved safely
+
+## Structured JSON tests
+
+Verify:
+
+* valid `product_details` structure persists
+* valid `dimensions` structure persists
+* malformed structures are rejected by the appropriate validation layer
+* unknown dimension keys are rejected
+
+## Status tests
+
+Verify:
+
+* default status is `SUBMITTED`
+* only approved statuses can be stored
+* no arbitrary request status is accepted
+
+## Historical tests
+
+Change the associated Product or User profile after creating a request and verify:
+
+* product_details unchanged
+* style unchanged
+* message unchanged
+* name unchanged
+* email unchanged
+* phone unchanged
+
+## Duplicate tests
+
+Verify multiple requests with the same email/phone/message are allowed.
+
+No hard duplicate uniqueness should exist.
 
 ---
 
-# 43. Documentation Updates
+# 45. Factories
 
-Update the appropriate authoritative documentation if necessary.
+Create:
 
-Record:
+`FurnitureRequestFactory`
 
-* Delivery is a separate operational entity
-* one Delivery per Delivery Order in V1
-* Pickup Orders do not have Delivery records
-* Order remains authoritative for fulfillment status
-* Order Status History remains authoritative for tracking
-* Delivery stores recipient/address operational snapshots
-* V1 has no carrier/GPS/tracking-number model
-* delivery fee remains on Order
+Support fixtures for:
 
-Do not create a permanent phase-specific document solely for these facts.
+* guest request
+* authenticated customer request
+* product-linked request
+* custom request
+* request with dimensions
+* request with material/color
+* request with all optional specifications
+* `SUBMITTED`
+* `IN_REVIEW`
+* `CLOSED`
 
-If a future requirement conflicts with this design, record it as a deliberate architectural decision rather than silently changing the model.
+Factory defaults must produce valid contact data and valid request data.
+
+Do not generate Order, Payment, or Delivery records from the request factory.
 
 ---
 
-# 44. Security and Data Integrity Review
+# 46. Documentation Updates
+
+Update the authoritative documentation where necessary to make the following explicit:
+
+> Furniture Requests may be submitted by either registered customers or guests.
+
+Also preserve:
+
+* server-derived `user_id`
+* contact snapshot
+* optional product reference
+* product requestability validation
+* style
+* product details
+* message
+* private data
+* request status lifecycle
+* request is not Order/payment/inventory
+* no automatic anonymous retrieval
+* original customer input remains preserved
+
+Because the API contract is frozen, do not silently edit the public request contract merely through this schema phase.
+
+Any change that makes both email and phone mandatory at the public API boundary must be deliberately reconciled with the frozen V1 contract.
+
+---
+
+# 47. Security and Data Integrity Review
 
 Before completion, verify:
 
-* Delivery cannot be created for a Pickup Order through normal domain validation
-* `order_id` cannot be client-chosen to bypass ownership
-* Delivery data is private
-* customer access remains through authorized Order context
-* Staff access is permission-based
-* recipient/address snapshots are not silently rewritten
-* no payment secrets are stored
-* no GPS/carrier data was introduced
-* no duplicate Delivery can exist for one Order
-* Order remains the authoritative lifecycle source
-* Order Status History remains the authoritative tracking event source
-* no generic Delivery CRUD path bypasses Order authorization
+* guests can be represented without fake User accounts
+* `user_id` cannot be client-controlled
+* contact information is preserved as a request snapshot
+* email is never used as authentication
+* product references cannot destroy historical requests
+* arbitrary JSON is not accepted as trusted product details
+* style/message are bounded and treated as plain text
+* request status is server-controlled
+* no Order, Payment, Delivery, or Inventory relationship has been introduced
+* duplicate requests are not blocked by weak uniqueness assumptions
+* private request data is not publicly serializable
+* Staff access remains operational rather than customer-account administrative
 
 ---
 
 # Definition of Done
 
-Phase 3.13 is complete when:
+Phase 3.14 is complete when:
 
-* `deliveries` migration exists
-* one Delivery can belong to one Order
-* `order_id` is unique
-* restrictive Order deletion behavior is configured
-* recipient name and phone snapshots are persisted
-* structured delivery address snapshot is persisted
-* delivery instructions are optionally supported
-* Pickup Orders cannot receive a valid Delivery record through the domain layer
-* no duplicate Delivery exists for one Order
-* Delivery has no independent status machine
-* Delivery has no GPS/carrier/tracking-number fields
-* Order remains authoritative for fulfillment state
-* Order Status History remains authoritative for tracking
-* Delivery model relationships are implemented
-* factories support valid Delivery fixtures
-* schema, relationship, eligibility, uniqueness, snapshot, privacy, and deletion tests pass
+* `furniture_requests` migration exists
+* one table supports both guest and authenticated request submission
+* `user_id` is nullable and server-derived
+* request reference is unique and server-generated
+* optional `product_id` is supported
+* submitted `product_details` are preserved independently
+* `style` is stored as bounded free text
+* `name`, `email`, and `phone` contact snapshots are stored
+* `message` is stored as bounded text
+* optional quantity/dimensions/material/color structures are supported
+* request status uses the closed V1 values
+* historical customer submission data is preserved
+* Product deletion cannot destroy the request
+* User deletion cannot destroy the request
+* no duplicate-by-contact uniqueness constraint exists
+* Eloquent relationships are implemented
+* factories support guest and authenticated request fixtures
+* schema/domain-supporting tests pass
 * maintainability requirements are satisfied
-* no scheduling, courier integration, tracking, or Order transition workflow has leaked into this phase
+* the schema is ready for strict Group J validation and authorization
+* no Request → Order, payment, inventory, or delivery workflow has leaked into this phase
 
 # Out of Scope
 
-Do not implement in Phase 3.13:
+Do not implement in Phase 3.14:
 
-* delivery status state machine
-* Order status transitions
-* shipping/dispatch actions
-* delivery completion workflow
-* courier/provider integration
-* carrier API integration
-* driver model
-* driver assignment
-* GPS/live location
-* tracking number
-* tracking URL
-* delivery route management
-* ETA service
-* delivery attempts/history
-* proof of delivery
-* signature capture
-* delivery photos
-* delivery notifications
-* payment logic
-* inventory allocation
-* customer delivery API
-* staff delivery API
-* scheduling UI
-* automated delivery scheduling jobs
+* `POST /requests`
+* Request validation Form Requests
+* DTOs/Commands
+* authentication
+* authorization policies
+* rate limiting
+* CAPTCHA
+* request status transition endpoints
+* Staff request-management API
+* customer request retrieval API
+* anonymous request retrieval
+* attachment upload implementation
+* email/SMS notifications
+* quotation/pricing
+* payment
+* Order creation/conversion
+* inventory reservation
+* production workflow
+* delivery workflow
+* request-to-order conversion
+* full-text search infrastructure
 
 # STOP CONDITION
 
-Stop after the Delivery persistence model, relationships, one-to-one constraint, delivery eligibility rules, tests, factories, and migration verification are complete.
+Stop after the Furniture Request persistence model, relationships, constraints, factories, tests, and migration verification are complete.
 
-Do not implement delivery execution or Order status transitions yet.
+Do not implement Group J API validation or request workflow yet.
+
+**Important contract note:** the schema stores `name`, `email`, and `phone` contact snapshots, and the domain model enforces the **frozen V1 contract** — `name` required plus at least one of `email`/`phone`. It does not require all four of `name + email + phone + message` at the API boundary. If Group J later makes `email` and `phone` both mandatory, that is a deliberate frozen-contract reconciliation (per §6 and §46), not a Phase 3.14 schema change.
 
 The next phase is:
 
-**Phase 3.14 — Furniture Request Schema**
+**Phase 3.15 — Enquiry Schema**

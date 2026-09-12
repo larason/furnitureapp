@@ -74,6 +74,11 @@ class Product extends Model
             ->where('is_default', true);
     }
 
+    public function furnitureRequests(): HasMany
+    {
+        return $this->hasMany(FurnitureRequest::class);
+    }
+
     protected function casts(): array
     {
         return [

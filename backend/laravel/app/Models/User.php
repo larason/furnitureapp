@@ -34,6 +34,11 @@ class User extends Authenticatable
         return $this->hasMany(Order::class, 'customer_id');
     }
 
+    public function furnitureRequests(): HasMany
+    {
+        return $this->hasMany(FurnitureRequest::class);
+    }
+
     protected function casts(): array
     {
         return [
