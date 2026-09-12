@@ -278,6 +278,40 @@ class FurnitureRequestSchemaTest extends TestCase
         $request->save();
     }
 
+    public function test_style_at_limit_with_whitespace_is_trimmed_and_stored(): void
+    {
+        $request = FurnitureRequest::factory()->create(['style' => '  '.str_repeat('a', 200).'  ']);
+
+        $this->assertSame(200, mb_strlen($request->fresh()->style));
+    }
+
+    public function test_style_over_limit_with_whitespace_is_rejected(): void
+    {
+        $request = FurnitureRequest::factory()->make(['style' => '  '.str_repeat('a', 201).'  ']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Request style is too long.');
+
+        $request->save();
+    }
+
+    public function test_message_at_limit_with_whitespace_is_trimmed_and_stored(): void
+    {
+        $request = FurnitureRequest::factory()->create(['message' => '  '.str_repeat('b', 5000).'  ']);
+
+        $this->assertSame(5000, mb_strlen($request->fresh()->message));
+    }
+
+    public function test_message_over_limit_with_whitespace_is_rejected(): void
+    {
+        $request = FurnitureRequest::factory()->make(['message' => '  '.str_repeat('b', 5001).'  ']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Request message is too long.');
+
+        $request->save();
+    }
+
     public function test_valid_product_details_structure_persists(): void
     {
         $details = ['product_name' => 'Modern sofa', 'description' => 'Three-seat with deep cushions'];
