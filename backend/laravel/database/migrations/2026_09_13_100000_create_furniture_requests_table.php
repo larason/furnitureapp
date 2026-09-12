@@ -23,15 +23,15 @@ return new class extends Migration
                 ->constrained('products')
                 ->nullOnDelete();
 
-            $table->json('product_details');
+            $table->json('product_details')->nullable();
 
-            $table->string('style', 200);
+            $table->string('style', 200)->nullable();
 
             $table->string('name', 120);
             $table->string('email', 255)->nullable();
             $table->string('phone', 30)->nullable();
 
-            $table->text('message');
+            $table->text('message')->nullable();
 
             $table->unsignedInteger('quantity')->nullable();
 

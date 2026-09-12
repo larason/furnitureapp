@@ -43,6 +43,15 @@ class FurnitureRequestFactory extends Factory
         ]);
     }
 
+    public function frozenCompliant(): static
+    {
+        return $this->state(fn () => [
+            'product_details' => null,
+            'style' => null,
+            'message' => null,
+        ]);
+    }
+
     public function byUser(User $user): static
     {
         return $this->state(fn () => [

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\AddressField;
 use App\Support\DeliveryFeeStatus;
 use App\Support\FulfillmentType;
 use App\Support\OrderStatus;
@@ -58,6 +59,7 @@ class Order extends Model
         $this->assertRequiredAmount();
         $this->assertPickupState();
         $this->assertDeliveryState();
+        $this->assertDeliverySnapshotLock();
     }
 
     public function customer(): BelongsTo
@@ -185,9 +187,21 @@ class Order extends Model
 
         if ($this->delivery_fee_amount === null
             || $this->delivery_fee_amount < 0
-            || $this->total_amount !== $this->subtotal_amount + $this->delivery_fee_amount) {
-            throw new DomainException('Finalized delivery orders require a non-negative delivery fee and total equal to subtotal plus delivery fee.');
+            || $this->total_amount !== $this->subtotal_amount + $this->delivery_fee_amount
+            || $this->delivery_address === null) {
+            throw new DomainException('Finalized delivery orders require a non-negative delivery fee, total equal to subtotal plus delivery fee, and a delivery address.');
         }
+
+        $this->assertFinalizedDeliveryAddress();
+    }
+
+    private function assertFinalizedDeliveryAddress(): void
+    {
+        if (! is_array($this->delivery_address)) {
+            throw new DomainException('Finalized delivery orders require a structured delivery address.');
+        }
+
+        AddressField::validate($this->delivery_address);
     }
 
     private function assertDeliveryPendingState(): void
@@ -206,5 +220,68 @@ class Order extends Model
         if ($this->isPickup() && $this->delivery()->exists()) {
             throw new DomainException('An order with a delivery record cannot change to PICKUP.');
         }
+    }
+
+    private function assertDeliverySnapshotLock(): void
+    {
+        if (! $this->exists) {
+            return;
+        }
+
+        $snapshotDirty = $this->isDirty('delivery_address')
+            || $this->isDirty('recipient_name')
+            || $this->isDirty('recipient_phone');
+
+        if (! $snapshotDirty) {
+            return;
+        }
+
+        $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->first();
+
+        if ($locked !== null && $locked->delivery()->exists()) {
+            throw new DomainException('Order delivery snapshot is immutable once a delivery record exists.');
+        }
+    }
+
+    public function updateDeliverySnapshot(callable $mutate): void
+    {
+        $this->getConnection()->transaction(function () use ($mutate): void {
+            $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->delivery()->exists()) {
+                throw new DomainException('Order delivery snapshot is immutable once a delivery record exists.');
+            }
+
+            $mutate($locked);
+            $locked->save();
+        });
+    }
+
+    public function createDelivery(?string $deliveryInstructions = null): Delivery
+    {
+        return $this->getConnection()->transaction(function () use ($deliveryInstructions): Delivery {
+            $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->delivery()->exists()) {
+                throw new DomainException('A delivery record already exists for this order.');
+            }
+
+            if (! $locked->isDelivery()) {
+                throw new DomainException('A delivery record is only valid for a DELIVERY order.');
+            }
+
+            $delivery = new Delivery;
+            $delivery->setConnection($this->getConnectionName());
+            $delivery->forceFill([
+                'order_id' => $locked->id,
+                'recipient_name' => $locked->recipient_name,
+                'recipient_phone' => $locked->recipient_phone,
+                'delivery_address' => $locked->delivery_address,
+                'delivery_instructions' => $deliveryInstructions,
+            ]);
+            $delivery->save();
+
+            return $delivery;
+        });
     }
 }

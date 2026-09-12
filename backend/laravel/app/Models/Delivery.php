@@ -89,7 +89,9 @@ class Delivery extends Model
 
     private function assertEligibleOrder(): Order
     {
-        $order = Order::query()->find($this->order_id);
+        $connection = $this->getConnectionName() ?? config('database.default');
+
+        $order = Order::on($connection)->whereKey($this->order_id)->lockForUpdate()->first();
 
         if ($order === null) {
             throw new DomainException('Delivery requires an existing order.');

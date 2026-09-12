@@ -377,6 +377,73 @@ class OrderSchemaTest extends TestCase
         $order->save();
     }
 
+    public function test_finalized_delivery_order_requires_delivery_address(): void
+    {
+        $order = Order::factory()->deliveryFinalized(8000)->make(['delivery_address' => null]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Finalized delivery orders require a non-negative delivery fee, total equal to subtotal plus delivery fee, and a delivery address.');
+
+        $order->save();
+    }
+
+    public function test_finalized_delivery_order_rejects_empty_address(): void
+    {
+        $order = Order::factory()->deliveryFinalized(8000)->make(['delivery_address' => []]);
+
+        $this->expectException(DomainException::class);
+
+        $order->save();
+    }
+
+    public function test_finalized_delivery_order_rejects_incomplete_address(): void
+    {
+        $order = Order::factory()->deliveryFinalized(8000)->make([
+            'delivery_address' => ['address_line' => '1 St'],
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Delivery address city is required.');
+
+        $order->save();
+    }
+
+    public function test_order_delivery_snapshot_is_immutable_once_delivery_exists(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+        Delivery::factory()->forOrder($order)->create();
+
+        $order->recipient_name = 'Changed Name';
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order delivery snapshot is immutable once a delivery record exists.');
+
+        $order->save();
+    }
+
+    public function test_order_delivery_address_is_immutable_once_delivery_exists(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+        Delivery::factory()->forOrder($order)->create();
+
+        $order->delivery_address = ['address_line' => 'New St', 'city' => 'X', 'region' => 'Y', 'postal_code' => null];
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order delivery snapshot is immutable once a delivery record exists.');
+
+        $order->save();
+    }
+
+    public function test_order_delivery_snapshot_remains_mutable_before_delivery_exists(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+
+        $order->recipient_name = 'Changed Name';
+        $order->save();
+
+        $this->assertSame('Changed Name', $order->fresh()->recipient_name);
+    }
+
     public function test_amounts_are_integer_minor_units(): void
     {
         $order = Order::factory()->deliveryFinalized(8000)->create()->fresh();
@@ -499,5 +566,62 @@ class OrderSchemaTest extends TestCase
 
         $this->assertFalse(Schema::hasColumn('orders', 'deleted_at'));
         $this->assertFalse(method_exists($order, 'trashed'));
+    }
+
+    public function test_update_delivery_snapshot_mutates_under_lock(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+
+        $order->updateDeliverySnapshot(function (Order $locked): void {
+            $locked->recipient_name = 'Changed Name';
+        });
+
+        $this->assertSame('Changed Name', $order->fresh()->recipient_name);
+    }
+
+    public function test_update_delivery_snapshot_rejects_when_delivery_exists(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+        Delivery::factory()->forOrder($order)->create();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Order delivery snapshot is immutable once a delivery record exists.');
+
+        $order->updateDeliverySnapshot(function (Order $locked): void {
+            $locked->recipient_name = 'Changed Name';
+        });
+    }
+
+    public function test_create_delivery_copies_order_snapshot(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+
+        $delivery = $order->createDelivery();
+
+        $this->assertSame($order->id, $delivery->order_id);
+        $this->assertSame($order->recipient_name, $delivery->recipient_name);
+        $this->assertSame($order->recipient_phone, $delivery->recipient_phone);
+        $this->assertSame($order->delivery_address, $delivery->delivery_address);
+    }
+
+    public function test_create_delivery_rejects_when_delivery_already_exists(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+        Delivery::factory()->forOrder($order)->create();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('A delivery record already exists for this order.');
+
+        $order->createDelivery();
+    }
+
+    public function test_create_delivery_rejects_pickup_order(): void
+    {
+        $order = Order::factory()->pickup()->create();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('A delivery record is only valid for a DELIVERY order.');
+
+        $order->createDelivery();
     }
 }

@@ -52,6 +52,18 @@ class FurnitureRequestSchemaTest extends TestCase
         $this->assertNotEmpty($request->phone);
     }
 
+    public function test_frozen_compliant_request_can_omit_optional_fields(): void
+    {
+        $request = FurnitureRequest::factory()->frozenCompliant()->create([
+            'name' => 'Asha Mwangi',
+            'email' => 'asha@example.com',
+        ]);
+
+        $this->assertNull($request->fresh()->product_details);
+        $this->assertNull($request->fresh()->style);
+        $this->assertNull($request->fresh()->message);
+    }
+
     public function test_authenticated_request_stores_user_and_contact_snapshot(): void
     {
         $user = User::factory()->create(['name' => 'Original Name', 'email' => 'original@example.com']);
@@ -223,7 +235,14 @@ class FurnitureRequestSchemaTest extends TestCase
         $this->assertSame('Modern Minimalist', $request->fresh()->style);
     }
 
-    public function test_style_is_required_and_bounded(): void
+    public function test_style_is_optional_and_bounded(): void
+    {
+        $request = FurnitureRequest::factory()->create(['style' => null]);
+
+        $this->assertNull($request->fresh()->style);
+    }
+
+    public function test_blank_style_is_rejected(): void
     {
         $request = FurnitureRequest::factory()->make(['style' => '   ']);
 
@@ -242,7 +261,14 @@ class FurnitureRequestSchemaTest extends TestCase
         $this->assertSame('I would like this made in an oak finish.', $request->fresh()->message);
     }
 
-    public function test_message_is_required_and_bounded(): void
+    public function test_message_is_optional_and_bounded(): void
+    {
+        $request = FurnitureRequest::factory()->create(['message' => null]);
+
+        $this->assertNull($request->fresh()->message);
+    }
+
+    public function test_blank_message_is_rejected(): void
     {
         $request = FurnitureRequest::factory()->make(['message' => '   ']);
 

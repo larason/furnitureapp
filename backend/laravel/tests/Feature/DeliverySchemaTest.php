@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\Delivery;
 use App\Models\Order;
-use App\Models\User;
 use App\Support\FulfillmentType;
 use DomainException;
 use Illuminate\Database\QueryException;
@@ -339,21 +338,15 @@ class DeliverySchemaTest extends TestCase
         $delivery->order->delete();
     }
 
-    public function test_deleting_user_does_not_delete_delivery(): void
+    public function test_deleting_user_is_restricted_while_they_own_an_order(): void
     {
         $order = Order::factory()->deliveryFinalized()->create();
         $delivery = Delivery::factory()->forOrder($order)->create();
         $user = $order->customer;
 
-        try {
-            $user->delete();
-        } catch (QueryException $e) {
-            $this->assertTrue(true);
-        }
+        $this->expectException(QueryException::class);
 
-        $this->assertNotNull(Delivery::find($delivery->id));
-        $this->assertNotNull(Order::find($order->id));
-        $this->assertNotNull(User::find($user->id));
+        $user->delete();
     }
 
     public function test_delivery_has_no_independent_status_or_financial_source(): void

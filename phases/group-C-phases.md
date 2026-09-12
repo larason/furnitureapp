@@ -250,14 +250,14 @@ Recommended rules:
 
 ### `email`
 
-* required for the requested V1 structure
+* optional individually; at least one of `email`/`phone` required
 * valid email syntax
 * normalized where appropriate
 * bounded maximum length
 
 ### `phone`
 
-* required for the requested V1 structure
+* optional individually; at least one of `email`/`phone` required
 * string, not numeric
 * normalized to the project's chosen phone representation
 * bounded maximum length
@@ -1479,7 +1479,9 @@ Stop after the Furniture Request persistence model, relationships, constraints, 
 
 Do not implement Group J API validation or request workflow yet.
 
-**Important contract note:** the schema stores `name`, `email`, and `phone` contact snapshots, and the domain model enforces the **frozen V1 contract** — `name` required plus at least one of `email`/`phone`. It does not require all four of `name + email + phone + message` at the API boundary. If Group J later makes `email` and `phone` both mandatory, that is a deliberate frozen-contract reconciliation (per §6 and §46), not a Phase 3.14 schema change.
+**Important contract note (contact + free-text field reconciliation):** the schema stores `name`, `email`, and `phone` contact snapshots, and the domain model enforces the **frozen V1 contract** — `name` required plus at least one of `email`/`phone`. It does not require all four of `name + email + phone + message` at the API boundary. If Group J later makes `email` and `phone` both mandatory, that is a deliberate frozen-contract reconciliation (per §6 and §46), not a Phase 3.14 schema change.
+
+**Important contract note (frozen-REQ-001 field surface):** the frozen `REQ-001` contract (`api-contract.md §26.3`, `api-resources.md §5.1`, `api-examples.md §10.1`) carries `product_id, quantity, name, phone, email, dimensions, material, color, notes` — where `notes` is **Optional** and there is **no** `message`, `style`, or `product_details`. This phase's schema uses a required `message` column (persistence home for the contract's `notes`) and introduces required `style` and `product_details` columns with no frozen counterpart. These are compatibility events (a rename plus optional→required, and two brand-new fields) that must be reconciled deliberately in Group J — mapped to the frozen public names (`message ⇄ notes`; `style`/`product_details` additive-optional or folded into `notes`) or run through the post-freeze contract-change process — before emitting them verbatim against the frozen API. Recorded in `docs/decisions.md` ADR/BACKEND-019.
 
 The next phase is:
 

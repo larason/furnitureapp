@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string $request_reference
  * @property int|null $product_id
  * @property array|null $product_details
- * @property string $style
+ * @property string|null $style
  * @property string $name
  * @property string|null $email
  * @property string|null $phone
@@ -83,8 +83,37 @@ class FurnitureRequest extends Model
     protected static function booted(): void
     {
         static::saving(function (FurnitureRequest $request): void {
+            $request->normalizeFields();
             $request->assertValid();
         });
+    }
+
+    private function normalizeFields(): void
+    {
+        foreach (['style', 'name', 'email', 'phone', 'message', 'material', 'color'] as $field) {
+            if (is_string($this->{$field})) {
+                $this->{$field} = trim($this->{$field});
+            }
+        }
+
+        if (is_array($this->product_details)) {
+            $this->product_details = $this->normalizeNestedStrings($this->product_details);
+        }
+
+        if (is_array($this->dimensions)) {
+            $this->dimensions = $this->normalizeNestedStrings($this->dimensions);
+        }
+    }
+
+    private function normalizeNestedStrings(array $data): array
+    {
+        foreach ($data as $key => $value) {
+            if (is_string($value)) {
+                $data[$key] = trim($value);
+            }
+        }
+
+        return $data;
     }
 
     public function assertValid(): void
@@ -165,8 +194,8 @@ class FurnitureRequest extends Model
     {
         $details = $this->product_details;
 
-        if (! is_array($details)) {
-            throw new DomainException('Request product details are required.');
+        if ($details === null) {
+            return;
         }
 
         RequestField::validateProductDetails($details);
@@ -174,12 +203,20 @@ class FurnitureRequest extends Model
 
     private function assertStyle(): void
     {
+        if ($this->style === null) {
+            return;
+        }
+
         $this->assertRequiredString('style', $this->style, self::MAX_STYLE);
     }
 
     private function assertMessage(): void
     {
-        if (! is_string($this->message) || trim($this->message) === '') {
+        if ($this->message === null) {
+            return;
+        }
+
+        if (trim($this->message) === '') {
             throw new DomainException('Request message is required.');
         }
 
