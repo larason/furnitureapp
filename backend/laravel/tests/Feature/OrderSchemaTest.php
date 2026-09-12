@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Delivery;
 use App\Models\Order;
 use App\Models\User;
 use App\Support\DeliveryFeeStatus;
@@ -231,6 +232,32 @@ class OrderSchemaTest extends TestCase
 
         $this->expectException(DomainException::class);
         $order->save();
+    }
+
+    public function test_delivery_order_with_delivery_cannot_flip_to_pickup(): void
+    {
+        $order = Order::factory()->deliveryPending()->create();
+        Delivery::factory()->forOrder($order)->create();
+
+        $order->fulfillment_type = FulfillmentType::PICKUP;
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('An order with a delivery record cannot change to PICKUP.');
+
+        $order->save();
+    }
+
+    public function test_delivery_order_without_delivery_can_flip_to_pickup(): void
+    {
+        $order = Order::factory()->deliveryPending()->create();
+
+        $order->fulfillment_type = FulfillmentType::PICKUP;
+        $order->delivery_fee_status = DeliveryFeeStatus::FINALIZED;
+        $order->delivery_fee_amount = 0;
+        $order->delivery_address = null;
+        $order->save();
+
+        $this->assertSame(FulfillmentType::PICKUP, $order->fresh()->fulfillment_type);
     }
 
     public function test_pickup_order_with_null_subtotal_is_rejected_by_application(): void

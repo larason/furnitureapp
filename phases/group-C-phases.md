@@ -1,27 +1,41 @@
-# Phase 3.12 — Payment Schema
+# Phase 3.13 — Delivery Schema
 
 ## Purpose
 
-Implement the persistence model for **payments associated with Orders**.
+Implement the persistence model for **Order Delivery operations**.
 
-The payment model must provide a secure, provider-agnostic foundation for:
+Delivery is a separate operational entity associated with an Order whose:
 
-* payment initiation
-* payment attempts
-* provider references
-* asynchronous provider confirmation
-* failed payments
-* retries
-* webhook deduplication
-* reconciliation
-* authoritative payment amount
-* payment/order consistency
+```text
+fulfillment_type = DELIVERY
+```
 
-This phase is a **schema and persistence-model phase**.
+It must store only information genuinely specific to delivery execution.
 
-Do not implement payment-provider SDKs, API calls, webhook signature verification, payment initiation endpoints, payment state transitions, or Order state updates here.
+The Order remains authoritative for:
 
-The later Group H phases will build those behaviors on top of this schema.
+* customer ownership
+* order reference
+* order financials
+* fulfillment type
+* recipient snapshot
+* delivery address snapshot
+* overall Order status
+
+Delivery must not become a second Order state machine.
+
+The existing V1 contract defines:
+
+```text
+DELIVERY
+PROCESSING → SHIPPED → DELIVERED → COMPLETED
+```
+
+with `SHIPPED` meaning the Order has left the business and `DELIVERED` meaning delivery has been completed. Tracking is derived from `order_status_history`; it is not GPS/carrier tracking.
+
+This phase establishes the Delivery persistence model only.
+
+Do not implement delivery scheduling, dispatch workflows, courier integrations, live tracking, notifications, or Order transition logic here.
 
 ---
 
@@ -32,12 +46,11 @@ Complete these phases first:
 * Phase 3.9 — Orders Schema
 * Phase 3.10 — Order Items Snapshot Model
 * Phase 3.11 — Order Status History Schema
+* Phase 3.12 — Payment Schema
 
-Use the existing `orders` table as the commercial source of truth for the Order.
+Use the existing `orders` table and its established fulfillment/financial fields.
 
-Do not add payment fields directly to `orders` in this phase.
-
-The existing contract deliberately keeps payment details separate from Order persistence.
+Do not redesign the Order model.
 
 ---
 
@@ -54,1034 +67,938 @@ Treat these as authoritative:
 * completed Phase 3.9 — Orders Schema
 * completed Phase 3.10 — Order Items Snapshot Model
 * completed Phase 3.11 — Order Status History Schema
+* completed Phase 3.12 — Payment Schema
 
-The Version 1 API contract is frozen. Do not introduce provider-specific API shapes, new public statuses, or breaking payment fields in this phase. The endpoint catalogue already establishes `PAY-001` and `WEBHOOK-001` as payment-related surfaces and marks both as concurrency-sensitive.
+The V1 API contract is frozen. Do not introduce new public Delivery states, tracking concepts, or API fields that are not already supported by the contract.
 
 ---
 
 # 1. Core Design Rule
 
-A `Payment` represents a **server-side payment attempt/record for an Order**.
+The `deliveries` table represents the **operational delivery record for a Delivery-type Order**.
 
-Payment data is separate from:
+It is not:
 
-* Order financial totals
-* Order status history
-* Delivery
-* Inventory
-* Cart
+* a second Order table
+* a second payment table
+* a second status-history table
+* a GPS tracking system
+* a courier marketplace
+* a carrier integration registry
 
-The Payment record does not become an alternative source of truth for the Order subtotal or delivery fee.
+The authoritative relationship is:
 
-For a payment attempt, the amount must be the exact server-authoritative amount that the customer is expected to pay at that payment boundary.
+```text
+Order
+  └── Delivery
+```
 
-The client must never supply or override:
+where:
 
-* payment amount
-* currency
-* Order ownership
-* payment status
-* provider confirmation
-* provider transaction identity
+```text
+Order.fulfillment_type = DELIVERY
+```
 
-The existing conventions explicitly state that the server owns payment amount and that payment initiation must not trust client financial data.
+A Pickup Order must not have a Delivery record in normal V1 operation.
 
 ---
 
-# 2. Multiple Payment Attempts
+# 2. One Delivery per Delivery Order
 
-Do **not** impose:
+V1 supports one operational Delivery record for each Delivery Order.
+
+Create:
+
+`deliveries`
+
+with a unique `order_id`.
+
+This means:
 
 ```text
-UNIQUE(order_id)
+DELIVERY Order A → exactly one Delivery record
+PICKUP Order A   → no Delivery record
 ```
 
-on the `payments` table.
+Do not allow multiple active Delivery records for the same Order in V1.
 
-An Order may have more than one payment attempt, for example:
+Do not introduce delivery-attempt history yet.
 
-```text
-Attempt 1 → FAILED
-Attempt 2 → PROCESSING
-Attempt 2 → SUCCEEDED
-```
-
-This provides a clean foundation for retries without overwriting an earlier failed attempt.
-
-However, the system must later define exactly when an Order is considered successfully paid and which Payment is the authoritative successful payment.
-
-That workflow belongs to Group H.
+If future business requirements need multiple delivery attempts, create that as a deliberate future model rather than overloading the V1 Delivery row.
 
 ---
 
-# 3. Create `payments` Table
+# 3. Create `deliveries` Table
 
 Create a Laravel migration for:
 
-`payments`
+`deliveries`
 
 Recommended schema:
 
-| Column                    | Type                                       | Rules                                                   |
-| ------------------------- | ------------------------------------------ | ------------------------------------------------------- |
-| `id`                      | big integer / Laravel standard primary key | Internal primary key                                    |
-| `order_id`                | foreign key                                | Required; references `orders.id`; restrict/no cascade   |
-| `payment_reference`       | string                                     | Required; server-generated unique reference             |
-| `provider`                | string                                     | Required; closed/controlled provider identifier         |
-| `method`                  | string                                     | Required; controlled payment method                     |
-| `status`                  | string                                     | Required; closed payment status                         |
-| `amount`                  | unsigned big integer                       | Required; integer minor units                           |
-| `currency`                | char(3)                                    | Required; V1 TZS                                        |
-| `provider_transaction_id` | nullable string                            | Provider-side transaction identifier                    |
-| `provider_reference`      | nullable string                            | Provider-side reference if distinct from transaction ID |
-| `failure_code`            | nullable string                            | Normalized provider/application failure code            |
-| `failure_message`         | nullable text/string                       | Safe, non-secret diagnostic message                     |
-| `initiated_at`            | timestamp                                  | Required                                                |
-| `confirmed_at`            | nullable timestamp                         | Set only after authoritative success                    |
-| `expires_at`              | nullable timestamp                         | Optional payment-attempt expiry                         |
-| `created_at`              | timestamp                                  | Required                                                |
-| `updated_at`              | timestamp                                  | Required                                                |
+| Column                  | Type                                       | Rules                                                     |
+| ----------------------- | ------------------------------------------ | --------------------------------------------------------- |
+| `id`                    | big integer / Laravel standard primary key | Internal primary key                                      |
+| `order_id`              | foreign key                                | Required; references `orders.id`; unique; restrict delete |
+| `recipient_name`        | string                                     | Required delivery snapshot                                |
+| `recipient_phone`       | string                                     | Required delivery snapshot                                |
+| `delivery_address`      | JSON                                       | Required delivery snapshot                                |
+| `delivery_instructions` | nullable text/string                       | Optional                                                  |
+| `schedule_for`          | nullable timestamp                         | Optional server-controlled delivery appointment           |
+| `created_at`            | timestamp                                  | Required                                                  |
+| `updated_at`            | timestamp                                  | Required                                                  |
 
-Do not add payment-card or bank-account credential fields.
+Do not add arbitrary extra delivery fields merely because they are common in larger logistics systems.
+
+The schema must remain appropriate for the project's small-scale V1 architecture.
 
 ---
 
-# 4. `order_id` Relationship
+# 4. `order_id`
 
-`payments.order_id` belongs to `orders.id`.
+`deliveries.order_id` belongs to `orders.id`.
 
 Implement:
 
 ### Order
 
-`Order hasMany Payment`
+`Order hasOne Delivery`
 
-### Payment
+### Delivery
 
-`Payment belongsTo Order`
+`Delivery belongsTo Order`
 
-Do not cascade-delete Payments when an Order is deleted.
+The `order_id` must be unique.
 
-A payment is a financial record and should not disappear because of ordinary parent deletion behavior.
+This expresses the V1 invariant:
 
-Given the existing Order model is a historical record and customer deletion also cannot casually remove historical financial records, prefer restrictive deletion semantics here.
+> One Delivery Order has at most one Delivery record.
 
-In normal application operation, Orders should not be hard-deleted.
+Do not use `cascadeOnDelete`.
 
----
+Delivery data participates in a historical commercial workflow and should not disappear automatically because of an accidental or administrative Order deletion.
 
-# 5. Payment Reference
+Use restrictive deletion semantics consistent with the project's historical Order and Payment models.
 
-Create a server-generated immutable:
-
-`payment_reference`
-
-This is the payment record's business-facing reference.
-
-Requirements:
-
-* unique
-* server-generated
-* immutable
-* never client supplied
-* not derived directly from an auto-increment database ID
-* suitable for reconciliation and operational support
-
-Do not expose raw database IDs as payment references.
-
-Do not use the Order reference as the Payment reference because one Order may have multiple payment attempts.
-
-Use a separate namespace/prefix if the project has an established reference convention.
-
-Do not invent a public format that conflicts with the frozen API contract. The exact external representation can be finalized with the Group H API implementation.
+Normal business APIs do not hard-delete Orders.
 
 ---
 
-# 6. Provider Field
+# 5. Delivery-Type Eligibility
 
-Store a controlled provider identifier in:
-
-`provider`
-
-Examples might eventually be represented by a provider enum/value object, but do not hard-code a specific real provider into this schema phase unless the project's provider-selection phase has already made that decision.
-
-The provider field identifies which external payment integration owns the payment attempt.
-
-Do not store:
-
-* provider credentials
-* API keys
-* secret tokens
-* webhook signing secrets
-* private certificates
-* access tokens
-
-Those belong to secure application configuration/secret management, never to the payment row.
-
----
-
-# 7. Payment Method
-
-Store the payment method separately from `provider`.
-
-Recommended concept:
+A Delivery record is valid only for:
 
 ```text
-method
+Order.fulfillment_type = DELIVERY
 ```
 
-This distinction matters because:
+This is a domain invariant.
 
-* one provider may support multiple methods
-* a method may later be routed through different providers
-* reporting and reconciliation may need method-level information
+Do not attempt to enforce it through a redundant `fulfillment_type` column on `deliveries`.
 
-Do not invent an unnecessarily large V1 payment-method taxonomy.
+The Delivery model should not contain:
 
-Use a controlled enum/value representation when the actual supported V1 methods are finalized.
+```text
+fulfillment_type
+```
 
-Until then, keep the field structurally ready without allowing arbitrary client-defined method values into authoritative payment records.
+because the authoritative value already belongs to Order.
+
+At creation time, application/domain logic must verify:
+
+```text
+delivery.order.fulfillment_type === DELIVERY
+```
+
+before creating the Delivery record.
+
+Do not allow a Pickup Order to silently acquire a Delivery row.
 
 ---
 
-# 8. Payment Status
-
-Payment status must be **separate from Order status**.
-
-Do not reuse:
-
-```text
-PAID
-PROCESSING
-COMPLETED
-CANCELLED
-```
-
-as an implicit synonym for Order lifecycle state.
-
-The Order and Payment have different state machines.
-
-The project already treats:
-
-```text
-PAID ≠ SHIPPED
-```
-
-and keeps fulfillment/payment boundaries distinct.
-
-Use a dedicated closed Payment status enum/value representation.
-
-Recommended V1 structure:
-
-```text
-PENDING
-PROCESSING
-SUCCEEDED
-FAILED
-CANCELLED
-EXPIRED
-```
-
-Do not add refund-specific statuses such as `REFUNDED` or `PARTIALLY_REFUNDED` unless the frozen Payment contract explicitly requires them.
-
-Refunds are not part of this schema phase.
-
-Any change to a closed API-visible Payment status set is a formal compatibility decision.
-
----
-
-# 9. Payment Status Is Server-Controlled
-
-The following are never client-settable:
-
-* `status`
-* `confirmed_at`
-* `provider_transaction_id`
-* `provider_reference`
-* `failure_code`
-* `failure_message`
-
-A customer may request payment initiation, but the backend determines the authoritative status.
-
-The provider callback/webhook is treated as an untrusted external input until:
-
-1. signature/authenticity is verified
-2. payload is validated
-3. event identity is deduplicated
-4. the affected Payment is located
-5. amount/currency/order consistency is verified
-6. the transition is accepted by the payment state machine
-
-The existing conventions explicitly require provider webhooks to be idempotent and durably deduplicated.
-
----
-
-# 10. Amount and Currency
+# 6. Recipient Snapshot
 
 Store:
 
-* `amount` as unsigned integer minor units
-* `currency` as a 3-character code
+* `recipient_name`
+* `recipient_phone`
+
+as Delivery-specific historical/operational snapshots.
+
+The Order already stores its own recipient snapshot.
+
+This duplication is intentional only because Delivery is an operational record and must retain the exact recipient data used for delivery execution without requiring joins to a mutable customer profile.
+
+Do not read current User profile information and overwrite these values automatically after Delivery creation.
+
+Later profile changes must not rewrite the delivery recipient.
+
+This follows the same historical-snapshot principle already established for Orders. The Order itself is a historical record and preserves recipient/address information independently of later profile changes.
+
+---
+
+# 7. Delivery Address Snapshot
+
+Store:
+
+`delivery_address`
+
+as structured JSON.
+
+Use the same approved address structure established for Order checkout.
+
+Do not introduce a second incompatible address schema.
+
+The Delivery address must be a snapshot of the address actually associated with the Order delivery.
+
+Do not store:
+
+```text
+saved_address_id
+```
+
+in Delivery.
+
+Saved address-book functionality remains deferred.
+
+The existing V1 contract explicitly treats the Order's delivery address as a per-order snapshot rather than a saved-address reference.
+
+---
+
+# 8. Address Immutability
+
+Once the Delivery record has been created, its historical recipient/address snapshot must not be silently synchronized from:
+
+* User profile
+* customer address book
+* future address changes
+* current Order profile data
+
+Do not implement automatic profile-to-delivery synchronization.
+
+Do not implement address replacement in this phase.
+
+Any future operational address-correction workflow must be an explicit controlled operation with appropriate authorization and auditability.
+
+---
+
+# 9. Delivery Instructions
+
+Support:
+
+`delivery_instructions`
+
+as optional operational text.
+
+This is intended for practical delivery information, such as:
+
+* access instructions
+* building/entrance guidance
+* reasonable delivery notes
+
+Rules:
+
+* optional
+* bounded in length
+* plain text unless the approved API explicitly requires another representation
+* server validated
+* private
+* never interpreted as executable content
+
+Do not treat arbitrary HTML as trusted.
+
+Do not store secrets or credentials in delivery instructions.
+
+Do not automatically expose internal operational notes to customers.
+
+---
+
+# 10. No Generic `notes` Field
+
+Do not create a vague:
+
+```text
+notes
+```
+
+column.
+
+Use explicit semantic fields.
 
 For V1:
 
 ```text
-currency = TZS
+delivery_instructions
 ```
 
-The existing money convention requires integer minor units and TZS for V1.
+is sufficient for customer-supplied or delivery-specific instructions.
 
-Do not use:
-
-* float
-* double
-* decimal money fields
-* formatted strings such as `"TZS 30,000"`
-
-Do not permit the customer to choose another currency through payment input.
+If future operations require private Staff notes, define that field and access policy explicitly rather than creating an ambiguous general-purpose notes column now.
 
 ---
 
-# 11. Payment Amount Authority
-
-Payment amount must be derived from the authoritative Order total at the point payment is initiated.
-
-The customer must not submit:
-
-```json
-{
-  "amount": 100,
-  "currency": "USD"
-}
-```
-
-to determine what is charged.
-
-The existing Checkout model creates the authoritative Order financials first. For Delivery, payment is blocked while `delivery_fee_status=PENDING`; once the fee is finalized, the final Order total becomes payable.
-
-Therefore a Payment row must preserve the exact amount associated with that payment attempt.
-
-Do not dynamically calculate historical payment amount from current Product prices.
-
----
-
-# 12. Payment / Order Currency Consistency
-
-For a V1 payment:
-
-```text
-payments.currency = orders.currency
-```
-
-and both are expected to be:
-
-```text
-TZS
-```
-
-The application/domain layer must verify this before creating or accepting a payment.
-
-Do not accept a provider callback claiming a different currency than the Order expects.
-
-A currency mismatch must be treated as a payment consistency failure, not silently converted.
-
-No FX conversion is introduced by this phase.
-
----
-
-# 13. Provider Transaction Identity
-
-Support:
-
-`provider_transaction_id`
-
-and, where necessary:
-
-`provider_reference`
-
-because providers may expose more than one useful external identifier.
-
-Rules:
-
-* nullable before provider assignment
-* immutable once authoritative provider identity is established
-* never client-controlled
-* never used as a secret
-* safe to index as needed
-* do not assume provider reference semantics are identical across providers
-
-Do not force all providers into a single undocumented external-ID meaning.
-
----
-
-# 14. Provider Identifier Uniqueness
-
-Do not create a global unique constraint on:
-
-```text
-provider_transaction_id
-```
-
-because different providers may use overlapping identifier namespaces.
-
-Prefer uniqueness scoped by Provider:
-
-```text
-UNIQUE(provider, provider_transaction_id)
-```
-
-when `provider_transaction_id` is present and the project's database strategy supports the desired nullable-unique semantics reliably.
-
-Do not let duplicate provider transaction identities create multiple successful payment records.
-
-The later webhook/payment workflow must also validate Order, amount, currency, provider, and payment state atomically.
-
----
-
-# 15. Payment Attempt Reference vs Provider Reference
-
-Keep these concepts separate:
-
-### `payment_reference`
-
-Internal business/payment-record identifier generated by this system.
-
-### `provider_transaction_id`
-
-External provider transaction identifier.
-
-### `provider_reference`
-
-Optional additional provider-side reference.
-
-Do not collapse all three into one field.
-
-This separation supports:
-
-* support investigations
-* reconciliation
-* provider-specific integration differences
-* retries
-* provider callback matching
-* internal reporting
-
----
-
-# 16. Failure Information
-
-Support:
-
-* `failure_code`
-* `failure_message`
-
-These are diagnostic fields, not secrets.
-
-## `failure_code`
-
-Prefer normalized, machine-readable provider/application failure codes.
-
-Do not blindly persist arbitrary unbounded provider exception strings.
-
-## `failure_message`
-
-Store only a safe diagnostic message.
-
-Never store:
-
-* card numbers
-* CVV/CVC
-* authentication tokens
-* API keys
-* webhook secrets
-* full provider payloads containing payment credentials
-* raw authorization headers
-
-Before persistence the value is sanitized: secrets (card numbers, CVV/CVC-labeled values, and high-entropy tokens such as API keys/AWS signatures) are redacted to a placeholder, and the result is truncated to a fixed maximum length (500 characters). Raw unbounded provider exception strings are never persisted as-is. A blank value is stored as `null`. The same bounding and redaction rules apply to `payment_webhook_events.failure_reason`.
-
-The project security conventions explicitly prohibit logging or exposing payment secrets.
-
----
-
-# 17. Raw Provider Payloads
-
-Do **not** add a generic:
-
-```text
-provider_payload JSON
-```
-
-column to `payments`.
-
-Raw provider payloads often contain unnecessary personal or sensitive information and create long-term data-retention and privacy problems.
-
-If a later provider integration genuinely needs raw-event persistence, use a deliberately scoped internal webhook-event model with controlled retention and redaction.
-
-That is a later Group H concern.
-
----
-
-# 18. `initiated_at`
-
-Store:
-
-`initiated_at`
-
-as the server-side timestamp for when the payment attempt was initiated.
-
-Requirements:
-
-* server-generated
-* not client-controlled
-* timezone-safe
-* later serialized as UTC `Z` when exposed
-
-Do not use client-submitted timestamps as authoritative payment timing.
-
-The project-wide convention is that payment confirmation time is server-controlled.
-
----
-
-# 19. `confirmed_at`
-
-Store:
-
-`confirmed_at`
-
-nullable.
-
-It remains `null` until authoritative payment success has been established.
-
-Rules:
-
-* server-controlled
-* never client-settable
-* immutable once successful confirmation is recorded
-* not a substitute for Order status history
-
-Do not create `paid_at` on the Order in this phase.
-
-The eventual payment workflow may update the Order from `PENDING_PAYMENT` to `PAID`, while the Payment retains its own confirmation timestamp.
-
----
-
-# 20. `expires_at`
+# 11. Scheduled Delivery
 
 Support an optional:
 
-`expires_at`
+`schedule_for`
 
-for payment attempts that have an externally defined validity period.
+field, named:
 
-This is useful for:
+`schedule_for`
 
-* payment sessions
-* checkout/payment handoff windows
-* asynchronous payment requests
-* provider-specific expiry
+only if the existing project conventions and actual implementation need delivery appointments.
 
-However:
+The recommended column name for this phase is:
 
-* do not define an arbitrary universal expiration duration in this schema phase
-* do not let the client control it
-* do not implement expiry jobs here
+`schedule_for`
 
-A later provider integration may use it where appropriate.
+to make the semantics explicit: the intended delivery appointment/time.
+
+However, because the current frozen V1 contract does not establish a customer-facing delivery scheduling workflow, the field must remain:
+
+* nullable
+* server-controlled
+* operational
+* non-authoritative for Order status
+
+If the implementation does not have an approved scheduling requirement yet, omit the column rather than creating speculative functionality.
+
+For the baseline V1 implementation, **do not add `schedule_for` unless the codebase already requires delivery appointment scheduling**.
+
+The Delivery schema must not create an unsupported public feature.
 
 ---
 
-# 21. Updated Timestamp
+# 12. No Delivery Status Column
 
-Unlike `order_status_history`, `payments` should have:
+Do **not** create:
+
+```text
+delivery_status
+```
+
+in V1.
+
+The project's frozen Order lifecycle already owns:
+
+```text
+PROCESSING
+SHIPPED
+DELIVERED
+COMPLETED
+```
+
+for Delivery Orders.
+
+The contract explicitly describes Delivery as a fulfillment path while the Order retains the authoritative commercial lifecycle.
+
+Adding a second Delivery status would create unnecessary synchronization problems such as:
+
+```text
+orders.status = DELIVERED
+deliveries.status = SHIPPED
+```
+
+which is exactly the kind of conflicting source of truth this design should prevent.
+
+The later Order transition workflow updates Order status and appends Order Status History.
+
+Delivery remains an operational record associated with that Order.
+
+---
+
+# 13. No Delivery Status History
+
+Do not create:
+
+```text
+delivery_status_history
+```
+
+in V1.
+
+Use:
+
+`order_status_history`
+
+for the authoritative Order lifecycle timeline.
+
+The frozen tracking contract states that the customer timeline is a filtered view of `order_status_history`.
+
+Do not duplicate the same event stream in Delivery.
+
+---
+
+# 14. No Tracking Number
+
+Do not add:
+
+```text
+tracking_number
+```
+
+The current V1 design is intentionally not a carrier/logistics platform.
+
+The documented delivery flow specifically excludes carrier `tracking_number`, `tracking_url`, and related external tracking concepts.
+
+Do not anticipate them through unused nullable columns.
+
+---
+
+# 15. No Carrier
+
+Do not add:
+
+```text
+carrier
+carrier_name
+carrier_code
+carrier_id
+```
+
+There is no approved V1 carrier domain.
+
+If carrier integration becomes necessary later, introduce an explicit provider/integration model with its own security and operational rules.
+
+Do not create speculative external-integration fields now.
+
+---
+
+# 16. No GPS / Live Tracking
+
+Do not add:
+
+* latitude
+* longitude
+* route
+* live location
+* driver coordinates
+* ETA feed
+* geofencing
+* vehicle identity
+* route history
+
+V1 tracking is a customer-readable Order status timeline, not GPS tracking.
+
+---
+
+# 17. No Driver Assignment
+
+Do not add:
+
+```text
+driver_id
+assigned_staff_id
+delivery_agent_id
+```
+
+The frozen contract intentionally keeps tracking lightweight and does not expose assigned staff unless a later business need requires it.
+
+Staff identity is not part of the customer timeline.
+
+Do not create a Driver/DeliveryAgent domain merely to populate this table.
+
+---
+
+# 18. Delivery Fee Remains on Order
+
+Do not move:
+
+* `delivery_fee_status`
+* `delivery_fee_amount`
+* `total_amount`
+
+from the Order into Delivery.
+
+The Order remains the authoritative commercial record.
+
+The delivery fee is part of Order financials, not operational Delivery metadata.
+
+The frozen model specifically defines delivery-fee finalization as an Order operation before payment.
+
+Therefore:
+
+```text
+Order
+ ├── subtotal
+ ├── delivery_fee
+ └── total
+```
+
+remains the financial source of truth.
+
+---
+
+# 19. Delivery Address vs Delivery Entity
+
+The Order already contains:
+
+```text
+recipient_name
+recipient_phone
+delivery_address
+```
+
+as historical checkout snapshots.
+
+Delivery may contain an operational copy of these exact values because it is the actual fulfillment record.
+
+Rules:
+
+* Order snapshot remains authoritative for historical Order representation
+* Delivery snapshot supports delivery operations
+* neither is automatically rewritten from the customer's current profile
+* no saved-address reference replaces either snapshot
+
+Do not introduce a third address source.
+
+---
+
+# 20. Delivery Creation Timing
+
+This phase does not implement creation workflow, but the eventual workflow must create Delivery only for a Delivery-type Order.
+
+The expected conceptual boundary is:
+
+```text
+Checkout
+→ Order created
+→ fulfillment_type = DELIVERY
+→ Delivery operational record created
+```
+
+The exact transaction boundary is a later checkout/fulfillment concern.
+
+Do not implement this orchestration in Phase 3.13.
+
+For Pickup Orders, no Delivery row should be created.
+
+---
+
+# 21. Delivery and Order State
+
+Do not update Order status from the Delivery model.
+
+Do not create model observers such as:
+
+```text
+Delivery created → Order SHIPPED
+Delivery updated → Order DELIVERED
+```
+
+Those would bypass the controlled Order state machine.
+
+The eventual workflow must explicitly validate:
+
+```text
+actor
++ permission
++ current Order state
++ fulfillment type
++ business preconditions
+```
+
+inside a transaction.
+
+Delivery persistence must remain subordinate to that workflow.
+
+---
+
+# 22. Delivery Timestamps
+
+Use:
 
 * `created_at`
 * `updated_at`
 
-because Payment records may legitimately move through a controlled lifecycle before becoming immutable from a business perspective.
-
-Do not confuse this with permission to arbitrarily edit financial history.
-
-Only explicitly supported payment-state transitions and reconciliation operations may alter payment records later.
-
----
-
-# 22. Payment State History
-
-Do not add a JSON array such as:
-
-```text
-status_history
-```
-
-to the Payment row.
-
-The current Payment schema stores the current payment state.
-
-Detailed provider-event history and webhook deduplication belong in a separate internal persistence model if required.
-
-Do not turn the payment record into an event-sourcing system.
-
-Keep V1 simple and auditable.
-
----
-
-# 23. Webhook Idempotency Foundation
-
-A secure payment implementation needs durable deduplication for repeated provider callbacks.
-
-The project convention explicitly requires:
-
-* stable provider event identity
-* durable unique constraint
-* atomic deduplication
-* no duplicate payment/order mutations on repeated delivery
-
-Therefore this phase should establish a dedicated internal table:
-
-`payment_webhook_events`
-
-rather than attempting to overload `payments` with webhook-delivery state.
-
----
-
-# 24. Create `payment_webhook_events` Table
-
-Create:
-
-`payment_webhook_events`
-
-with a minimal provider-agnostic structure:
-
-| Column              | Type                               | Rules                                                        |
-| ------------------- | ---------------------------------- | ------------------------------------------------------------ |
-| `id`                | big integer / standard primary key | Internal identity                                            |
-| `payment_id`        | nullable foreign key               | Reference matched Payment; null before matching if necessary |
-| `provider`          | string                             | Provider namespace                                           |
-| `provider_event_id` | string                             | Required external event identifier                           |
-| `provider_correlation_id` | nullable string             | Optional provider correlation reference for later Payment matching; not a deduplication key, never a secret |
-| `event_type`        | string                             | Provider event classification                                |
-| `processing_status` | string                             | Controlled internal status                                   |
-| `received_at`       | timestamp                          | Server timestamp                                             |
-| `processed_at`      | nullable timestamp                 | Processing completion                                        |
-| `failure_reason`    | nullable string/text               | Safe diagnostic only; redacted and truncated to 500 chars before persistence (blank → `null`)                                         |
-| `created_at`        | timestamp                          | Required                                                     |
-| `updated_at`        | timestamp                          | Required                                                     |
-
-Do not persist the complete raw provider payload here by default.
-
-`provider_correlation_id` preserves a provider-supplied reference (for example a checkout, session, or provider payment reference) that survives while `payment_id` is still `null`. When present it lets a later Group H matching step join the event to `payments.provider_transaction_id` or `payments.provider_reference` instead of losing the event. It is not the webhook deduplication identity (`provider`, `provider_event_id`) and it is not a credential.
-
-Do not store webhook signatures or shared secrets as long-lived row data unless a later provider integration explicitly proves a secure need.
-
----
-
-# 25. Webhook Event Uniqueness
-
-Use a durable unique constraint on:
-
-```text
-(provider, provider_event_id)
-```
-
-This is the primary deduplication key.
-
-The same external event delivered twice must not create two independently processed events.
-
-This requirement is explicitly called out in the project's webhook idempotency convention.
-
-Do not use:
-
-* request timestamp
-* callback URL
-* payment ID alone
-* random UUID generated after receipt
-
-as the provider-event deduplication identity.
-
----
-
-# 26. Webhook Event Processing Status
-
-Use a small closed internal set, for example:
-
-```text
-RECEIVED
-PROCESSED
-FAILED
-```
-
-Keep this status internal.
-
-Do not expose webhook-processing status as customer-facing Payment status.
-
-Do not add unnecessary states such as `QUEUED`, `RETRIED`, `SKIPPED`, `IGNORED`, etc. unless the actual implementation requires them.
-
-This is internal infrastructure, not a public business enum.
-
----
-
-# 27. Webhook Event → Payment Relationship
-
-`payment_webhook_events.payment_id` may be nullable because the initial webhook-processing stage may not yet have safely matched the event to a Payment.
-
-After successful matching:
-
-```text
-payment_webhook_events.payment_id → payments.id
-```
-
-Use `nullOnDelete`.
-
-Deleting a Payment must not cause the webhook-event record to become unreadable or fail historical retention.
-
-Do not cascade-delete webhook records when a Payment is removed.
-
-In normal operation, Payments should not be hard-deleted.
-
----
-
-# 28. Webhook Event Timestamps
-
-All webhook event timestamps must be server-controlled.
-
-Use:
-
-* `received_at` — when Laravel received the event
-* `processed_at` — when the system successfully completed processing
-
-Do not trust provider timestamps as the system's own event-processing timestamp.
-
-A provider-supplied event timestamp may later be stored in provider-specific integration data if necessary, but do not add it to the generic schema without a demonstrated requirement.
-
----
-
-# 29. No Signature Data in Persistent Payment Records
+for the Delivery record.
 
 Do not add:
 
-* `webhook_secret`
-* `api_key`
-* `signature_secret`
-* `access_token`
-* `authorization_header`
+* `shipped_at`
+* `delivered_at`
+* `completed_at`
 
-to `payments` or `payment_webhook_events`.
+to Delivery in this phase.
 
-Provider secrets belong in application secret/configuration management.
+Those dates are represented by the Order Status History's `occurred_at` events.
 
-Signature verification is a later Group H phase.
+This avoids maintaining parallel lifecycle timestamps.
 
 ---
 
-# 30. Payment / Order Consistency
+# 23. No Delivery Soft Delete
 
-The eventual payment workflow must enforce:
+Do not add soft deletion.
 
-```text
-payments.order_id = intended Order
-payments.amount = authoritative payable Order total
-payments.currency = Order.currency
-```
+A Delivery is an operational record tied to an Order.
 
-before payment initiation.
+Normal business operation must not delete it.
 
-For successful provider confirmation, the workflow must verify the provider result against the stored Payment and Order.
-
-Never transition an Order to `PAID` merely because:
-
-* the frontend says payment succeeded
-* a browser redirect returned successfully
-* a client supplied transaction status
-* an unverified webhook arrived
-* the provider amount differs from the stored Payment amount
-
-The server/provider verification boundary is authoritative.
+If future retention/privacy workflows require data deletion or anonymization, they should be explicitly designed and audited rather than introduced through ordinary Delivery CRUD.
 
 ---
 
-# 31. Delivery-Fee Gate
-
-The payment model must support the existing Checkout rule:
-
-```text
-DELIVERY + delivery_fee_status=PENDING
-→ Payment must not be finalized/accepted
-```
-
-The existing contract explicitly says that a pending delivery fee blocks payment initiation and that `PENDING_PAYMENT → PAID` requires finalized delivery fees.
-
-Do not put `delivery_fee_status` on `payments`.
-
-Read it from the authoritative Order during the later payment workflow.
-
----
-
-# 32. No Payment Secrets
-
-The schema must never store:
-
-* full card number
-* CVV/CVC
-* PIN
-* online banking password
-* mobile-money PIN
-* OTP
-* bearer access token
-* provider API credential
-* webhook signing secret
-* private cryptographic key
-
-Where a provider supports tokenized instruments, store only the provider-issued non-sensitive reference later required by the approved integration, and only after the provider-selection/security phase defines it.
-
-Do not invent a generic `card_token` field in this phase.
-
----
-
-# 33. No Direct Payment API CRUD
-
-Do not create generic CRUD semantics such as:
-
-```text
-POST /payments
-PATCH /payments/{payment}
-DELETE /payments/{payment}
-```
-
-for arbitrary client writes.
-
-The frozen API already defines payment initiation and webhook-specific behavior, not generic unrestricted payment mutation.
-
-The schema should support the eventual controlled actions.
-
----
-
-# 34. Model Design
+# 24. Model Design
 
 Create:
 
-`Payment`
+`Delivery`
 
-and, for webhook deduplication:
+Eloquent model.
 
-`PaymentWebhookEvent`
+Implement:
 
-Implement relationships:
-
-### Payment
+### Delivery
 
 * `belongsTo(Order::class)`
-* `hasMany(PaymentWebhookEvent::class)`
 
-### PaymentWebhookEvent
+### Order
 
-* `belongsTo(Payment::class)` nullable
+* `hasOne(Delivery::class)`
 
 Use explicit casts for:
 
-* amount
+* `delivery_address`
 * timestamps
 
-Use appropriate enums/value objects for controlled status/provider/method values as the project convention permits.
+Keep the model lightweight.
 
-Do not place provider SDK code into Eloquent models.
+Do not add:
 
-Do not place webhook processing logic into model observers.
+* status-transition methods
+* GPS methods
+* courier SDK logic
+* notification logic
+* payment logic
+* Order state mutation
+* tracking serialization logic
 
----
-
-# 35. Payment Immutability Rules
-
-The following historical/payment facts must not be casually modified after creation:
-
-* `order_id`
-* `payment_reference`
-* `provider`
-* `amount`
-* `currency`
-* `initiated_at`
-
-Controlled workflow fields may change according to the future Payment state machine:
-
-* `status`
-* `provider_transaction_id`
-* `provider_reference`
-* `failure_code`
-* `failure_message`
-* `confirmed_at`
-* `processed/expiry-related fields`
-
-Do not implement those workflows here.
-
-Never provide generic customer-facing update access to Payment records.
+Those belong to later application/API layers.
 
 ---
 
-# 36. Deletion Rules
+# 25. Address JSON Structure
 
-For `payments`:
+Use the same structured address representation established by Checkout/Order.
 
-* Order deletion should be restricted, not cascade into Payments
-* Payment deletion is not a normal business operation
-* historical payment records must remain available for reconciliation
+Do not use arbitrary nested JSON.
 
-For `payment_webhook_events`:
+The server must validate an approved allow-list of address fields.
 
-* Payment deletion must not cascade and destroy event history
-* use nullable `payment_id`
+The Delivery schema must not become a general-purpose JSON blob.
 
-Do not add soft deletes unless the broader data-retention strategy explicitly requires them.
+Do not permit:
 
-The current design should favor controlled retention rather than generic deletion semantics.
-
----
-
-# 37. Indexes
-
-Add indexes supporting actual operational access.
-
-For `payments`:
-
-* `order_id`
-* `(order_id, created_at)`
-* `payment_reference` unique
-* `(provider, provider_transaction_id)` where non-null
-
-For `payment_webhook_events`:
-
-* unique `(provider, provider_event_id)`
-* `payment_id`
-* `(provider, processing_status)`
-* `received_at`
-
-Do not add broad indexes on every column.
-
-The most important query paths are:
-
-```text
-Order → payments
-provider transaction → payment
-provider event → webhook event
-Payment → webhook events
+```json
+{
+  "anything": "arbitrary",
+  "internal_sql": "...",
+  "secret": "..."
+}
 ```
 
----
+or similarly unconstrained structures.
 
-# 38. Concurrency and Idempotency Preparation
-
-The schema must support future concurrency-safe payment processing.
-
-The existing contract marks:
-
-* `PAY-001`
-* `WEBHOOK-001`
-
-as concurrency-sensitive.
-
-The later implementation must protect against races such as:
-
-```text
-payment initiation × webhook
-duplicate webhook × duplicate webhook
-payment retry × previous attempt
-successful callback × failed callback
-payment confirmation × order cancellation
-```
-
-This phase does not implement those transactions.
-
-However, the schema must provide the durable identifiers and constraints required to implement them safely.
+The project's global validation conventions require explicit structures and reject arbitrary nested data.
 
 ---
 
-# 39. Payment Initiation Idempotency
+# 26. Security and Privacy
 
-The frozen API requires Payment initiation to use `Idempotency-Key`.
+Delivery data is private.
 
-Do not persist `Idempotency-Key` directly on `payments` unless its lifecycle is explicitly one-to-one with the Payment attempt.
+It can contain:
 
-Prefer keeping generic idempotency infrastructure separate from Payment persistence unless the project has already established a shared idempotency-table design.
+* recipient name
+* recipient phone
+* delivery address
+* private delivery instructions
 
-Do not invent payment-specific idempotency storage in this phase merely because the endpoint will need it later.
+Therefore:
 
-The important requirement here is that Payment records support safe deduplication once the idempotency mechanism is implemented.
+* never expose Delivery publicly
+* never include it in public product/catalog responses
+* never CDN-cache it
+* use private/no-store behavior for protected delivery/order responses
+* authorize access before serialization
 
----
+The existing contract explicitly classifies delivery address as private and limits visibility to the owning customer and authorized Staff/Admin.
 
-# 40. No Order Status Mutation in This Phase
-
-Do not change Order status from:
-
-```text
-PENDING_PAYMENT
-```
-
-to:
-
-```text
-PAID
-```
-
-from the Payment model.
-
-Payment confirmation and Order state transition must later occur through a controlled application workflow.
-
-The project's architecture explicitly separates payment handling from Order state transitions and requires state changes to be server-authoritative.
+Staff access is operational, not customer ownership.
 
 ---
 
-# 41. Security and Privacy
+# 27. Customer Access Boundary
 
-Payment records are private financial data.
+A Customer may see Delivery information only through their own Order context.
 
-They must **never ever** be:
-
-* publicly cached
-* embedded in public catalog responses
-* exposed through unauthenticated endpoints
-* broadly serialized through `model.toArray()`
-* logged indiscriminately
-
-The API conventions classify payment secrets as internal and require explicit serialization allow-lists.
-
-Customer responses should expose only the minimum approved payment summary later defined by the frozen API, such as:
+Do not build a public:
 
 ```text
-payment_status
-amount
-currency
+GET /deliveries/{delivery}
 ```
 
-not provider secrets or raw webhook information.
+resource merely because a table exists.
 
-Every Payment operation is authorization-checked on the backend. Authorization is decided from the authenticated principal plus the related Order ownership or an approved staff/administrative role — never from a client-supplied identity such as a body `user_id`, query `user_id`, or a client-declared role. A customer may read or act only on Payments belonging to their own Orders; another customer's Payment is never reachable (masked `RESOURCE_NOT_FOUND`, not existence disclosure). Staff access is operational-only per the approved `orders`/payment permissions and does not grant customer-account administration. Webhook-event records are internal infrastructure: their access is restricted to server-side workflows and approved operational roles, never customer-facing, never exposed through unauthenticated endpoints, and never returned to the client that supplied the webhook payload.
+The Delivery entity is an internal domain resource for the Order workflow.
+
+Customer-facing representation remains controlled by the existing Order/tracking contract.
+
+This prevents direct object-reference enumeration from becoming an authorization bypass.
 
 ---
 
-# 42. Mass Assignment
+# 28. Staff Access Boundary
 
-Payment fields are server-controlled.
+Staff may access Delivery information only through explicitly authorized operational Order workflows.
 
-Never allow:
+Do not assume:
 
 ```text
-$request->all() → Payment::create(...)
+staff = unrestricted access
 ```
 
-or equivalent uncontrolled assignment.
+Use the established permission model.
 
-Client input must be transformed through:
+Staff should receive only the delivery information necessary for order fulfillment.
+
+Admin has broader operational access but must still follow authorization, auditability, and data-minimization rules.
+
+---
+
+# 29. Mass Assignment
+
+Delivery fields are not generally customer-controlled model fields.
+
+A later checkout/action workflow may accept explicit business input such as delivery instructions, but it must transform:
 
 ```text
 validated input
 → DTO/command
-→ payment application workflow
-→ trusted Payment persistence
+→ domain workflow
+→ trusted Delivery persistence
 ```
 
-The project-wide conventions explicitly prohibit direct request-to-model mass assignment.
+Never:
+
+```text
+$request->all()
+→ Delivery::create()
+```
+
+The project's conventions explicitly prohibit uncontrolled mass assignment.
+
+Client input must not control:
+
+* `order_id`
+* Delivery ownership
+* internal timestamps
+* Order relationships
+* Order status
+* financial fields
 
 ---
 
-# 43. Maintainability Requirements
+# 30. Validation Rules
+
+At the domain level:
+
+## Order
+
+Must exist.
+
+## Fulfillment
+
+Order must be:
+
+```text
+DELIVERY
+```
+
+## Recipient
+
+`recipient_name` and `recipient_phone` must satisfy the same approved validation bounds used by the Order checkout snapshot.
+
+## Address
+
+`delivery_address` must satisfy the established structured address schema.
+
+## Instructions
+
+`delivery_instructions` must respect the project's text length and content requirements.
+
+Do not invent alternate Delivery-specific formats for fields that already have an established global definition.
+
+---
+
+# 31. Concurrency
+
+Delivery creation/modification may later participate in critical checkout/fulfillment transactions.
+
+Do not implement concurrent delivery workflow in this phase.
+
+However, the schema must prevent duplicate Delivery records for the same Order with:
+
+```text
+UNIQUE(order_id)
+```
+
+The later workflow must perform authorization, state validation, and persistence atomically where the operation changes critical Order fulfillment state.
+
+The project already marks order fulfillment operations as concurrency-sensitive.
+
+---
+
+# 32. Idempotency
+
+Do not create a Delivery-specific idempotency mechanism in this schema phase.
+
+The existing Order fulfillment actions use `Idempotency-Key`.
+
+Retry semantics belong to the later action/application workflow.
+
+The unique `order_id` constraint provides an additional database integrity guard against accidental duplicate Delivery rows.
+
+Do not rely on that unique constraint alone as the API idempotency mechanism.
+
+---
+
+# 33. Indexes and Constraints
+
+At minimum:
+
+### `deliveries`
+
+* primary key on `id`
+* unique index on `order_id`
+
+If recipient/search operations later require additional indexes, add them based on actual query requirements.
+
+Do not index:
+
+* full JSON delivery address
+* delivery instructions
+* recipient phone
+
+merely because those fields exist.
+
+Protected operational queries should use the Order relationship as their normal access path.
+
+---
+
+# 34. Foreign-Key Delete Behavior
+
+Use restrictive semantics for:
+
+`deliveries.order_id → orders.id`
+
+Do not use cascade deletion.
+
+The Delivery record is part of a historical operational workflow.
+
+Orders are not normally hard-deleted, and Delivery must not be silently removed through a parent delete cascade.
+
+If an exceptional administrative data-retention workflow is introduced later, it must be explicit and audited.
+
+---
+
+# 35. Historical Integrity
+
+Delivery must preserve the delivery details associated with the actual Order.
+
+After creation, later changes to:
+
+* User name
+* User phone
+* saved address book
+* customer profile
+
+must not silently rewrite:
+
+```text
+recipient_name
+recipient_phone
+delivery_address
+```
+
+This is the same historical-integrity principle used for Order snapshots and financial data.
+
+Do not register model observers for automatic synchronization.
+
+---
+
+# 36. No Payment Fields
+
+Do not add:
+
+* payment_id
+* payment_status
+* amount_paid
+* payment_reference
+* provider_transaction_id
+
+to Delivery.
+
+Payment is a separate domain.
+
+Delivery may be operationally blocked until the Order is paid according to later workflows, but Payment remains the source of payment information.
+
+---
+
+# 37. No Inventory Fields
+
+Do not add:
+
+* reserved_quantity
+* stock_quantity
+* inventory_id
+* warehouse_location
+* allocation
+
+to Delivery.
+
+Inventory remains a separate domain.
+
+Fulfillment does not become an inventory table.
+
+---
+
+# 38. No Product Fields
+
+Do not add:
+
+* product_id
+* variant_id
+* SKU
+* product name
+
+to Delivery.
+
+Delivery belongs to an Order, and Order Items already hold the historical purchased items.
+
+Do not create another snapshot layer inside Delivery.
+
+---
+
+# 39. No Delivery Address ID
+
+Do not add:
+
+```text
+address_id
+saved_address_id
+customer_address_id
+```
+
+The V1 model explicitly treats the Order delivery address as a snapshot and defers an address book.
+
+Delivery needs the actual snapshot, not a mutable customer-address reference.
+
+---
+
+# 40. Maintainability Requirements
 
 For all new or refactored functions:
 
@@ -1089,270 +1006,223 @@ For all new or refactored functions:
 * no function may have more than **3 return statements**
 * meaningful repeated string literals should be centralized using constants or enums where appropriate
 
-Do not create a giant global constant class.
+Do not create a giant global constants class.
 
-Prefer payment-specific enums/value objects close to the domain concept.
+Prefer domain-local enums/constants.
 
-Do not suppress static-analysis findings or increase thresholds.
+Do not suppress static-analysis findings or raise analyzer thresholds.
 
-Keep the Payment model, migration, factories, and tests focused.
-
-Do not create a generic "transaction framework" or provider abstraction hierarchy before an actual provider integration requires it.
+Keep the Delivery model, migration, factories, and tests small and cohesive.
 
 ---
 
-# 44. Tests
+# 41. Tests
 
-Add automated tests for the schema and persistence invariants.
+Add automated tests for the schema and Delivery invariants.
 
-## Payment migration/schema tests
+## Migration/schema tests
 
 Verify:
 
-* `payments` table exists
+* `deliveries` table exists
 * primary key exists
-* `order_id` exists and is required
-* `payment_reference` is unique
-* provider/method/status fields exist
-* amount is integer-compatible
-* currency exists
-* provider transaction/reference fields are nullable
-* failure fields are nullable
-* `initiated_at` exists
-* `confirmed_at` is nullable
-* `expires_at` is nullable
+* `order_id` exists
+* `order_id` is required
+* `order_id` is unique
+* recipient fields exist
+* address JSON exists
+* delivery instructions are nullable
 * timestamps exist
+* no delivery status field exists
+* no carrier/tracking-number field exists
 
 ## Relationship tests
 
 Verify:
 
-* Order → Payments
-* Payment → Order
+* Order → Delivery
+* Delivery → Order
 
-## Multiple-attempt tests
-
-Verify that one Order can have multiple Payment records.
-
-Example:
-
-```text
-Order A
- ├── Payment attempt 1 → FAILED
- └── Payment attempt 2 → PENDING
-```
-
-Do not accidentally enforce one-payment-per-order uniqueness.
-
-## Payment reference tests
+## Fulfillment eligibility tests
 
 Verify:
 
-* reference is unique
-* reference is not derived directly from raw database ID
-* normal creation does not accept a client-supplied authoritative payment reference
+* Delivery can be associated with a `DELIVERY` Order
+* a Pickup Order cannot create a valid Delivery through domain/application validation
 
-## Money tests
+Do not enforce this through a duplicated `fulfillment_type` database column.
 
-Verify:
+## One-to-one constraint tests
 
-* amount is integer
-* amount cannot be negative
-* currency is TZS in V1
-* no floating-point money representation exists
+Verify that the database rejects multiple Delivery rows for the same Order.
 
-## Payment/order consistency tests
+## Snapshot tests
 
-Verify application-level validation can enforce:
+Create a Delivery with:
 
-* Payment belongs to intended Order
-* Payment currency matches Order currency
-* Payment amount corresponds to the authoritative payable Order amount
+* recipient name
+* recipient phone
+* address
 
-Do not implement the complete payment workflow just to test these foundations.
+Change the related User profile and verify the Delivery snapshot remains unchanged.
 
-## Provider identity tests
+## Address validation tests
 
-Verify the schema supports distinct providers with potentially overlapping transaction identifiers without false global uniqueness.
+Verify that valid approved address structures persist correctly.
 
-Verify duplicate:
+Verify invalid/unexpected address structures are rejected by the appropriate validation/domain layer.
 
-```text
-provider + provider_transaction_id
-```
-
-cannot create conflicting provider transaction identities where that identifier is present.
-
-## Webhook event tests
-
-Verify:
-
-* `payment_webhook_events` exists
-* `(provider, provider_event_id)` is unique
-* duplicate provider events are rejected at the durable constraint level
-* a webhook event may initially have `payment_id = null`
-* matching a Payment is possible later
-* deleting a Payment does not destroy the webhook event
-
-## Privacy/security tests
+## Privacy-field tests
 
 Verify no fields exist for:
 
-* card PAN
-* CVV/CVC
-* PIN
-* provider secret
-* webhook secret
-* API key
-* access token
+* carrier credentials
+* GPS
+* tracking number
+* payment secrets
+* inventory quantities
+* driver credentials
 
-Verify sensitive internal provider data is not part of default serialization.
+## Relationship deletion tests
+
+Verify that deleting a User does not delete Delivery data indirectly.
+
+Verify the Delivery-to-Order relationship uses restrictive deletion semantics.
+
+## Order separation tests
+
+Verify Delivery does not become a second source of:
+
+* Order status
+* Order total
+* Delivery fee
+* payment status
 
 ---
 
-# 45. Factories
+# 42. Factories
 
-Create or extend factories for:
+Create or extend:
 
-### Payment
+`DeliveryFactory`
 
-Support fixtures such as:
+Support:
+
+* a valid Delivery Order
+* recipient snapshot
+* structured address
+* optional delivery instructions
+
+Factory defaults must create:
 
 ```text
-PENDING
-PROCESSING
-SUCCEEDED
-FAILED
-CANCELLED
-EXPIRED
+Order.fulfillment_type = DELIVERY
 ```
 
-Use valid Orders and valid integer TZS amounts.
+Do not make a Delivery factory silently create Pickup Orders.
 
-Support:
-
-* successful payment
-* failed attempt
-* pending attempt
-* multiple payment attempts on one Order
-
-### PaymentWebhookEvent
-
-Support:
-
-* received event
-* processed event
-* failed event
-* event linked to Payment
-* event not yet linked to Payment
-
-Factory defaults must produce internally coherent records.
-
-Do not seed fake successful financial transactions into general production-like seed data unless required by the development environment.
+Do not populate carrier/GPS/tracking data that the V1 design does not support.
 
 ---
 
-# 46. Documentation Updates
+# 43. Documentation Updates
 
-Update the appropriate authoritative documentation only where needed.
+Update the appropriate authoritative documentation if necessary.
 
-Document these established payment-domain facts if not already present:
+Record:
 
-* Payment is separate from Order
-* Payment is server-controlled
-* Payment amount is integer minor units in TZS
-* Orders may have multiple payment attempts
-* Payment provider identifiers are external references, not secrets
-* webhook event identity is durably deduplicated
-* Payment secrets are never persisted
-* Payment success does not equal fulfillment completion
+* Delivery is a separate operational entity
+* one Delivery per Delivery Order in V1
+* Pickup Orders do not have Delivery records
+* Order remains authoritative for fulfillment status
+* Order Status History remains authoritative for tracking
+* Delivery stores recipient/address operational snapshots
+* V1 has no carrier/GPS/tracking-number model
+* delivery fee remains on Order
 
-Do not create a permanent phase-specific payment-schema markdown file merely for these decisions.
+Do not create a permanent phase-specific document solely for these facts.
 
-If a conflict is found between existing payment documentation and this design, record the decision explicitly rather than silently changing the frozen contract.
+If a future requirement conflicts with this design, record it as a deliberate architectural decision rather than silently changing the model.
 
 ---
 
-# 47. Security and Data Integrity Review
+# 44. Security and Data Integrity Review
 
 Before completion, verify:
 
-* no sensitive payment credentials are stored
-* no provider secrets are stored in the database
-* payment amount is server-authoritative
-* payment currency is server-authoritative
-* payment status is server-authoritative
-* provider transaction identity is treated as external data, not authentication
-* webhook events have durable unique identity
-* duplicate webhook delivery cannot create duplicate event rows
-* Orders cannot be accidentally deleted with financial records through cascade behavior
-* Payment records cannot be arbitrarily modified through mass assignment
-* Payment data remains private
-* raw provider payloads are not stored by default
-* no Order state mutation occurs from the Payment model
-* multiple payment attempts remain possible
+* Delivery cannot be created for a Pickup Order through normal domain validation
+* `order_id` cannot be client-chosen to bypass ownership
+* Delivery data is private
+* customer access remains through authorized Order context
+* Staff access is permission-based
+* recipient/address snapshots are not silently rewritten
+* no payment secrets are stored
+* no GPS/carrier data was introduced
+* no duplicate Delivery can exist for one Order
+* Order remains the authoritative lifecycle source
+* Order Status History remains the authoritative tracking event source
+* no generic Delivery CRUD path bypasses Order authorization
 
 ---
 
 # Definition of Done
 
-Phase 3.12 is complete when:
+Phase 3.13 is complete when:
 
-* `payments` migration exists
-* Payment belongs to Order
-* an Order may have multiple payment attempts
-* each Payment has a unique server-generated `payment_reference`
-* provider, method, and status are represented separately
-* amount is integer minor-unit TZS
-* provider transaction/reference identity is supported
-* payment failure information is supported without secrets
-* initiated/confirmed/expiry timestamps are represented
-* Order deletion does not cascade into financial records
-* Payment model relationships are implemented
-* `payment_webhook_events` exists for durable webhook deduplication
-* `(provider, provider_event_id)` is uniquely constrained
-* webhook events can exist before a Payment is safely matched
-* webhook event deletion behavior preserves historical event data
-* factories support pending, failed, and successful attempts
-* migration, relationships, multiple-attempt, financial, provider-identity, webhook-deduplication, and security tests pass
-* maintainability constraints are satisfied
-* no provider SDK, webhook signature verification, payment endpoint, or payment state machine has leaked into this phase
+* `deliveries` migration exists
+* one Delivery can belong to one Order
+* `order_id` is unique
+* restrictive Order deletion behavior is configured
+* recipient name and phone snapshots are persisted
+* structured delivery address snapshot is persisted
+* delivery instructions are optionally supported
+* Pickup Orders cannot receive a valid Delivery record through the domain layer
+* no duplicate Delivery exists for one Order
+* Delivery has no independent status machine
+* Delivery has no GPS/carrier/tracking-number fields
+* Order remains authoritative for fulfillment state
+* Order Status History remains authoritative for tracking
+* Delivery model relationships are implemented
+* factories support valid Delivery fixtures
+* schema, relationship, eligibility, uniqueness, snapshot, privacy, and deletion tests pass
+* maintainability requirements are satisfied
+* no scheduling, courier integration, tracking, or Order transition workflow has leaked into this phase
 
 # Out of Scope
 
-Do not implement in Phase 3.12:
+Do not implement in Phase 3.13:
 
-* payment provider selection
-* provider SDK integration
-* payment initiation endpoint
-* payment state-transition service
-* provider callback endpoint
-* webhook signature verification
-* webhook payload validation
-* provider API credentials
-* payment retries workflow
-* payment timeout/expiry jobs
-* Order `PAID` transition
-* inventory consumption after successful payment
-* refunds
-* partial refunds
-* chargebacks
-* settlement
-* reconciliation jobs
-* customer payment UI
-* staff payment UI
-* saved payment methods
-* card tokenization
-* 3-D Secure flows
-* mobile-money OTP/PIN handling
-* email/SMS payment notifications
+* delivery status state machine
+* Order status transitions
+* shipping/dispatch actions
+* delivery completion workflow
+* courier/provider integration
+* carrier API integration
+* driver model
+* driver assignment
+* GPS/live location
+* tracking number
+* tracking URL
+* delivery route management
+* ETA service
+* delivery attempts/history
+* proof of delivery
+* signature capture
+* delivery photos
+* delivery notifications
+* payment logic
+* inventory allocation
+* customer delivery API
+* staff delivery API
+* scheduling UI
+* automated delivery scheduling jobs
 
 # STOP CONDITION
 
-Stop after the Payment and Payment Webhook Event persistence models, relationships, constraints, factories, tests, and migration verification are complete.
+Stop after the Delivery persistence model, relationships, one-to-one constraint, delivery eligibility rules, tests, factories, and migration verification are complete.
 
-Do not implement provider-specific behavior yet.
+Do not implement delivery execution or Order status transitions yet.
 
 The next phase is:
 
-**Phase 3.13 — Delivery Schema**
+**Phase 3.14 — Furniture Request Schema**

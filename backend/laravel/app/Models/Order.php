@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
@@ -52,6 +53,7 @@ class Order extends Model
     {
         $this->assertReferenceImmutable();
         $this->assertInitialStatus();
+        $this->assertDeliveryEligibility();
         $this->assertFinancialImmutability();
         $this->assertRequiredAmount();
         $this->assertPickupState();
@@ -78,6 +80,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function delivery(): HasOne
+    {
+        return $this->hasOne(Delivery::class);
     }
 
     public function isPickup(): bool
@@ -187,6 +194,17 @@ class Order extends Model
     {
         if ($this->delivery_fee_amount !== null || $this->total_amount !== $this->subtotal_amount) {
             throw new DomainException('Pending delivery orders require a null delivery fee and a provisional total equal to subtotal.');
+        }
+    }
+
+    private function assertDeliveryEligibility(): void
+    {
+        if (! $this->exists || ! $this->isDirty('fulfillment_type')) {
+            return;
+        }
+
+        if ($this->isPickup() && $this->delivery()->exists()) {
+            throw new DomainException('An order with a delivery record cannot change to PICKUP.');
         }
     }
 }
