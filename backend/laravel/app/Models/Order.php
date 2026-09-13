@@ -9,6 +9,7 @@ use App\Support\OrderStatus;
 use Database\Factories\OrderFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,6 +42,8 @@ class Order extends Model
     public const CURRENCY_TZS = 'TZS';
 
     public const REFERENCE_PREFIX = 'OD-';
+
+    private const DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE = 'Order delivery snapshot is immutable once a delivery record exists.';
 
     /** @use HasFactory<OrderFactory> */
     use HasFactory;
@@ -224,23 +227,53 @@ class Order extends Model
 
     private function assertDeliverySnapshotLock(): void
     {
-        if (! $this->exists) {
-            return;
-        }
-
-        $snapshotDirty = $this->isDirty('delivery_address')
-            || $this->isDirty('recipient_name')
-            || $this->isDirty('recipient_phone');
-
-        if (! $snapshotDirty) {
+        if (! $this->exists || ! $this->deliverySnapshotDirty()) {
             return;
         }
 
         $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->first();
 
         if ($locked !== null && $locked->delivery()->exists()) {
-            throw new DomainException('Order delivery snapshot is immutable once a delivery record exists.');
+            throw new DomainException(self::DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE);
         }
+    }
+
+    private function deliverySnapshotDirty(): bool
+    {
+        return $this->isDirty('delivery_address')
+            || $this->isDirty('recipient_name')
+            || $this->isDirty('recipient_phone');
+    }
+
+    private function fulfillmentTypeDirty(): bool
+    {
+        return $this->isDirty('fulfillment_type');
+    }
+
+    private function requiresLockForUpdate(): bool
+    {
+        return $this->fulfillmentTypeDirty() || $this->deliverySnapshotDirty();
+    }
+
+    protected function performUpdate(Builder $query)
+    {
+        if (! $this->exists || ! $this->requiresLockForUpdate()) {
+            return parent::performUpdate($query);
+        }
+
+        return $this->getConnection()->transaction(function () use ($query) {
+            $locked = $this->newQuery()->whereKey($this->getKey())->lockForUpdate()->first();
+
+            if ($this->fulfillmentTypeDirty()) {
+                $this->assertDeliveryEligibility();
+            }
+
+            if ($this->deliverySnapshotDirty() && $locked !== null && $locked->delivery()->exists()) {
+                throw new DomainException(self::DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE);
+            }
+
+            return parent::performUpdate($query);
+        });
     }
 
     public function updateDeliverySnapshot(callable $mutate): void
@@ -249,7 +282,7 @@ class Order extends Model
             $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->delivery()->exists()) {
-                throw new DomainException('Order delivery snapshot is immutable once a delivery record exists.');
+                throw new DomainException(self::DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE);
             }
 
             $mutate($locked);

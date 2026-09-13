@@ -337,7 +337,12 @@
         "card"
       ],
       "elements": [],
-      "tokenReferences": []
+      "tokenReferences": [
+        "--radius-md",
+        "--space-3",
+        "--space-6",
+        "--surface"
+      ]
     },
     {
       "id": "badges",

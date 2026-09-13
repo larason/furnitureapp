@@ -127,6 +127,7 @@
    * #CACACB hairline. */
   --border: #cacacb;         /* Border Secondary (grey-300) — input borders, dividers */
   --border-soft: #e5e5e5;    /* Hover Gray (grey-200) — inset row separator */
+  --border-width: 1.5px;     /* Outlined button border — §4 secondary variant */
 
   /* ─── Accent ──────────────────────────────────────────────────────
    * Nike's UI accent IS black. §9 ("Quick Color Reference") lists
@@ -179,6 +180,9 @@
   --font-mono:
     ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
 
+  /* Font weights used across components — §7 buttons never weight 400. */
+  --font-weight-medium: 500;
+
   /* Type scale (px) — derived from DESIGN.md §3 hierarchy table.
    * Nike's documented sizes are 12 / 14 / 16 / 24 / 32 / 96; the
    * --text-lg and --text-3xl slots interpolate cleanly into the
@@ -199,6 +203,7 @@
    * (0.90 — the "impossibly tight" display ceiling §3 calls a
    * stadium scoreboard). Both numbers come straight from §3. */
   --leading-body: 1.75;      /* Body — comfortable product-browsing rhythm */
+  --leading-snug: 1.2;       /* Button / input — compact but readable */
   --leading-tight: 0.9;      /* Hero Display — ascenders nearly touch descenders */
 
   /* Display tracking compresses to -0.02em — condensed Futura ND
@@ -301,4 +306,9 @@
   --container-gutter-desktop: 48px;
   --container-gutter-tablet: 24px;
   --container-gutter-phone: 16px;
+
+  /* ─── Content width ──────────────────────────────────────────────
+   * Component-level max-width tokens for content constraining. */
+  --content-width-form: 420px;
+  --content-width-lead: 44ch;
 }

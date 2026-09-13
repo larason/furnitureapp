@@ -27,3 +27,7 @@ Delivery: Pickup or delivery
 Made-to-order: Request/quotation workflow
 
 General enquiries: Separate enquiry system
+
+# Open-design
+
+```pnpm tools-dev run web```

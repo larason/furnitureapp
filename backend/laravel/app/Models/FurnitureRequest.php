@@ -172,6 +172,10 @@ class FurnitureRequest extends Model
 
         if ($this->email !== null) {
             $this->assertRequiredString('email', $this->email, self::MAX_EMAIL);
+
+            if (filter_var($this->email, FILTER_VALIDATE_EMAIL) === false) {
+                throw new DomainException('Request email must be a valid email address.');
+            }
         }
 
         if ($this->phone !== null) {

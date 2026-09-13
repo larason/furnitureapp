@@ -107,7 +107,10 @@ final class RequestField
 
     private static function assertPositiveDimension(string $key, mixed $value): void
     {
-        if (! is_numeric($value) || $value <= 0 || $value > self::MAX_DIMENSION) {
+        if ((! is_int($value) && ! is_float($value))
+            || ! is_finite((float) $value)
+            || $value <= 0
+            || $value > self::MAX_DIMENSION) {
             throw new DomainException("Dimensions {$key} must be a positive number up to ".self::MAX_DIMENSION.'.');
         }
     }

@@ -7,11 +7,10 @@ description: Build ecommerce UI strictly according to the furniture design syste
 
 Before modifying UI:
 
-1. Read /src/theme/tokens.ts
-2. Read /docs/design-system.md
-3. Inspect existing components
-4. Reuse existing primitives before creating new ones
-5. use frontend-design skills for guidance available under frontend directory
+1. Inspect existing components
+2. Reuse existing primitives before creating new ones
+3. use frontend-design skills for guidance available under frontend directory
+4. read frontend/design-system/DESIGN.md and frontend/design-system/tokens.css
 
 ## Design constraints
 

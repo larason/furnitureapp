@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Delivery;
 use App\Models\Order;
 use DomainException;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -48,6 +49,7 @@ class OrderDeliverySnapshotConcurrencyTest extends TestCase
 
         $this->registerConnection($dbFile);
         Artisan::call('migrate:fresh', ['--database' => $this->connection, '--force' => true]);
+        DB::connection($this->connection)->statement('PRAGMA busy_timeout=10000');
 
         $order = $this->createOrderOn();
 
@@ -149,6 +151,7 @@ class OrderDeliverySnapshotConcurrencyTest extends TestCase
     {
         return match (true) {
             $error === null => self::STATUS_OK,
+            $error instanceof DeadlockException => self::STATUS_LOCKED,
             $error instanceof QueryException => self::STATUS_LOCKED,
             $error instanceof DomainException => self::STATUS_REJECTED,
             default => self::STATUS_ERROR,
