@@ -178,10 +178,10 @@ The typography establishes deliberate architectural authority. The display layer
 - Background: White (`#FFFFFF`) — no visible card border in standard product grids
 - Border radius: 0px for furniture product image cards (clean, architectural edge-to-edge imagery), 20px for interactive configurator containers and inquiry dialogs
 - Shadow: none — completely flat elevation model
-- Hover: no lift or float effect on cards; subtle text underline or secondary image transition on hover
+- Hover: none on product cards and images
 - Product cards: isolated furniture piece or room vignette on top (no radius), product name, wood finish/material, and price below with 12px gap
 - Category cards: full-bleed interior photography with text overlay on dark gradient scrim
-- Transition: opacity 200ms ease for image swap on hover (e.g., front angle to room vignette or material detail)
+- Transition: none on product cards and images
 
 ### Inputs & Forms (Search, Checkout, Custom Request Forms)
 

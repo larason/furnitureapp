@@ -285,11 +285,11 @@
 
   /* ─── Motion ──────────────────────────────────────────────────────
    * Transitions are all 200ms ease (§4 — "Transition:
-   * background 200ms ease", "border-color 200ms ease", "opacity
-   * 200ms ease for image swap on hover"). The schema defaults match
-   * already; we keep them verbatim. --motion-fast (150ms) covers
-   * micro-states like hover-tints and focus; --motion-base (200ms)
-   * is the documented hero-state duration. */
+   * background 200ms ease", "border-color 200ms ease"). The schema
+   * defaults match already; we keep them verbatim. --motion-fast
+   * (150ms) covers micro-states like button tints and focus;
+   * --motion-base (200ms) is the documented control-state duration.
+   * Product cards and images have no hover transition (§4). */
   --motion-fast: 150ms;
   --motion-base: 200ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
