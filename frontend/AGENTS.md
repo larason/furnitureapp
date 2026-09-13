@@ -4,7 +4,7 @@
 
 The canonical project design system is:
 
-- `design-system/DESIGN.md` - As inspired by Nike design system, Thus replace all the sports, athletic ideology with a furniture ecommerce brand, audience, content and visual token
+- `design-system/DESIGN.md` - The furniture e-commerce design system spec (monochrome palette, Futura Condensed display type, pill buttons, flat cards)
 - `design-system/tokens.css`
 
 These files are authoritative.

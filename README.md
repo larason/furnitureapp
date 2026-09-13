@@ -28,6 +28,6 @@ Made-to-order: Request/quotation workflow
 
 General enquiries: Separate enquiry system
 
-# Open-design
+# starting Open-design
 
 ```pnpm tools-dev run web```

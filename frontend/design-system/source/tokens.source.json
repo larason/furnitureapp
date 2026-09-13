@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "sourceScope": "open-design-bundled-fixture",
-  "brandId": "nike",
+  "brandId": "furniture",
   "files": [
     "DESIGN.md",
     "tokens.css",
@@ -107,7 +107,7 @@
     },
     {
       "name": "--font-display",
-      "value": "\"Nike Futura ND\", \"Helvetica Now Display Medium\", \"Helvetica Now Display\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+      "value": "\"Futura Condensed\", \"Helvetica Now Display Medium\", \"Helvetica Now Display\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
       "layer": "A1-identity",
       "source": "tokens.css:175"
     },
@@ -223,19 +223,31 @@
       "name": "--space-6",
       "value": "24px",
       "layer": "A2",
-      "source": "tokens.css:221"
+      "source": "tokens.css:226"
+    },
+    {
+      "name": "--space-7",
+      "value": "32px",
+      "layer": "A2",
+      "source": "tokens.css:227"
     },
     {
       "name": "--space-8",
-      "value": "32px",
-      "layer": "A2",
-      "source": "tokens.css:222"
-    },
-    {
-      "name": "--space-12",
       "value": "48px",
       "layer": "A2",
-      "source": "tokens.css:223"
+      "source": "tokens.css:228"
+    },
+    {
+      "name": "--space-9",
+      "value": "64px",
+      "layer": "A2",
+      "source": "tokens.css:229"
+    },
+    {
+      "name": "--space-10",
+      "value": "80px",
+      "layer": "A2",
+      "source": "tokens.css:230"
     },
     {
       "name": "--section-y-desktop",

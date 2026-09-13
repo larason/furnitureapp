@@ -1,9 +1,9 @@
 {
   "schemaVersion": "od-design-system-project/v1",
-  "id": "nike",
-  "name": "Nike",
+  "id": "furniture",
+  "name": "Furniture",
   "category": "E-Commerce & Retail",
-  "description": "Bundled OpenDesign package for Nike, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
+  "description": "Bundled OpenDesign package for the furniture e-commerce platform, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {
     "type": "bundled",
     "origin": "OpenDesign curated bundled fixture"

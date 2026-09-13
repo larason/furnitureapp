@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\RequestStatus;
 use Database\Factories\FurnitureRequestFactory;
 use DomainException;
+use Illuminate\Database\Eloquent\JsonEncodingException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -226,6 +227,23 @@ class FurnitureRequestSchemaTest extends TestCase
 
         $this->assertNull($request->email);
         $this->assertNotEmpty($request->phone);
+    }
+
+    public function test_invalid_email_is_rejected(): void
+    {
+        $request = FurnitureRequest::factory()->make(['email' => 'not-an-email']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Request email must be a valid email address.');
+
+        $request->save();
+    }
+
+    public function test_valid_email_is_accepted(): void
+    {
+        $request = FurnitureRequest::factory()->create(['email' => 'valid@example.com']);
+
+        $this->assertSame('valid@example.com', $request->fresh()->email);
     }
 
     public function test_style_persists(): void
@@ -465,6 +483,40 @@ class FurnitureRequestSchemaTest extends TestCase
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('Dimensions length must be a positive number up to 10000.');
+
+        $request->save();
+    }
+
+    public function test_numeric_string_dimension_is_rejected(): void
+    {
+        $request = FurnitureRequest::factory()->make([
+            'dimensions' => ['length' => '120', 'width' => 90, 'height' => 85, 'unit' => 'cm'],
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Dimensions length must be a positive number up to 10000.');
+
+        $request->save();
+    }
+
+    public function test_inf_dimension_is_rejected(): void
+    {
+        $this->expectException(JsonEncodingException::class);
+
+        $request = FurnitureRequest::factory()->make([
+            'dimensions' => ['length' => INF, 'width' => 90, 'height' => 85, 'unit' => 'cm'],
+        ]);
+
+        $request->save();
+    }
+
+    public function test_nan_dimension_is_rejected(): void
+    {
+        $this->expectException(JsonEncodingException::class);
+
+        $request = FurnitureRequest::factory()->make([
+            'dimensions' => ['length' => NAN, 'width' => 90, 'height' => 85, 'unit' => 'cm'],
+        ]);
 
         $request->save();
     }

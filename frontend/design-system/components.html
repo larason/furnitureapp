@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nike — reference components</title>
+    <title>Furniture Design System — reference components</title>
     <meta
       name="description"
-      content="Reference fixture for design-systems/nike. Monochromatic UI
-        (black / white / grey only), massive uppercase Nike Futura ND display
+      content="Reference fixture for the furniture design system. Monochromatic UI
+        (black / white / grey only), massive uppercase Futura Condensed display
         type at 96px / 0.90 line-height, pill-shaped buttons (30px radius),
-        zero card shadows. Just keep going."
+        zero card shadows."
     />
 
     <style>
@@ -36,7 +36,7 @@
         --danger: #d30005;
 
         --font-display:
-          "Nike Futura ND", "Helvetica Now Display Medium", "Helvetica Now Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+          "Futura Condensed", "Helvetica Now Display Medium", "Helvetica Now Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
         --font-body:
           "Helvetica Now Text Medium", "Helvetica Now Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
         --font-mono:
@@ -62,8 +62,10 @@
         --space-4: 16px;
         --space-5: 20px;
         --space-6: 24px;
-        --space-8: 32px;
-        --space-12: 48px;
+        --space-7: 32px;
+        --space-8: 48px;
+        --space-9: 64px;
+        --space-10: 80px;
 
         --section-y-desktop: 80px;
         --section-y-tablet: 48px;
@@ -98,13 +100,13 @@
         color: var(--fg);
         font-family: var(--font-body);
         font-size: var(--text-base);
-        font-weight: 500;            /* Nike's body weight — Helvetica Now Text Medium */
+        font-weight: 500;
         line-height: var(--leading-body);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
 
-      /* ─── Promo bar — Nike's signature dark band atop every page ─
+      /* ─── Promo bar — dark band atop every page ───────────────
          §4: "Top banner: promotional message bar with dark background
          (#111111) and white text", 8–12px vertical padding, 12px/500
          centered text. */
@@ -137,17 +139,17 @@
       }
 
       /* ─── Typography ─────────────────────────────────────────────
-         Nike's display layer is uppercase Nike Futura ND at 96px with
+         The display layer is uppercase Futura Condensed at 96px with
          0.90 line-height — the "stadium scoreboard" §3 calls for.
          Below the display layer, Helvetica Now (body) handles
-         everything at weight 500 (the brand's documented dominant
-         weight for interactive copy). */
+         everything at weight 500 (the documented dominant weight
+         for interactive copy). */
       h1, h2, h3 {
         margin: 0;
         color: var(--fg);
       }
       /* h1 — Hero Display, uppercase Futura, ascenders nearly touch
-         descenders. Nike Futura ND below 24px is forbidden (§7), so
+         descenders. Futura Condensed below 24px is forbidden (§7), so
          h1 is the ONLY place this size and treatment appear. */
       h1 {
         font-family: var(--font-display);
@@ -159,7 +161,7 @@
       }
       /* h2 — section heading, Helvetica Now Display Medium tier
          (the second slot in --font-display falls onto it when
-         Futura ND is absent). Title-case, NOT uppercase. */
+         Futura is absent). Title-case, NOT uppercase. */
       h2 {
         font-family: var(--font-display);
         font-size: var(--text-2xl);
@@ -186,7 +188,7 @@
       .body-sm    { font-size: var(--text-sm); }
 
       /* `.eyebrow` — small uppercase label above section heads. The
-         only place Nike pushes positive tracking (uppercase needs the
+         only place positive tracking is used (uppercase needs the
          breathing room); display copy below uses negative tracking. */
       .eyebrow {
         font-family: var(--font-body);
@@ -201,11 +203,11 @@
       .stack-3 > * + * { margin-block-start: var(--space-3); }
       .stack-4 > * + * { margin-block-start: var(--space-4); }
       .stack-6 > * + * { margin-block-start: var(--space-6); }
-      .stack-8 > * + * { margin-block-start: var(--space-8); }
+      .stack-8 > * + * { margin-block-start: var(--space-7); }
 
       /* ─── Buttons — pill geometry, monochrome only ───────────────
-         Nike's pill (30px radius) is the SOLE button silhouette across
-         the whole brand (§4). Primary uses --accent (Nike Black) with
+         The pill (30px radius) is the SOLE button silhouette across
+         the brand (§4). Primary uses --accent (Charcoal Black) with
          the hover shifting to grey-500 — the documented behaviour, not
          a darken. Secondary is the 1.5px outlined variant from §4. */
       .btn {
@@ -217,7 +219,7 @@
         border-radius: var(--radius-pill);
         font-family: var(--font-body);
         font-size: var(--text-base);
-        font-weight: var(--font-weight-medium);            /* §7 — never weight 400 on buttons */
+        font-weight: var(--font-weight-medium);
         line-height: var(--leading-snug);
         cursor: pointer;
         text-decoration: none;
@@ -242,7 +244,7 @@
         background: transparent;
         color: var(--fg);
         border: var(--border-width) solid var(--border);
-        padding: calc(var(--space-3) - var(--border-width)) calc(var(--space-6) - var(--border-width));       /* compensates for the 1.5px border */
+        padding: calc(var(--space-3) - var(--border-width)) calc(var(--space-6) - var(--border-width));
       }
       .btn-secondary:hover {
         border-color: var(--muted);
@@ -251,7 +253,7 @@
 
       /* ─── Inputs — fill-led, soft hairline ───────────────────────
          §4 — non-search inputs use grey-100 fill, 8px radius
-         (--radius-sm), border-active darkens to Nike Black on focus,
+         (--radius-sm), border-active darkens to Charcoal Black on focus,
          and the focus ring is the documented blue 2px halo. */
       .field { display: flex; flex-direction: column; gap: var(--space-2); }
       .field label {
@@ -278,14 +280,14 @@
       .field input::placeholder { color: var(--muted); font-weight: var(--font-weight-medium); }
       .field input:hover { border-color: var(--muted); }
       .field input:focus-visible {
-        border-color: var(--fg);     /* Border Active = Nike Black, §2 */
+        border-color: var(--fg);     /* Border Active = Charcoal Black, §2 */
         background: var(--bg);
         box-shadow: var(--focus-ring);
       }
       .field-help { font-size: var(--text-xs); color: var(--muted); }
 
       /* ─── Cards — flat, surface-defined, NO shadow ───────────────
-         §6 — "Nike's elevation philosophy is radically flat. There
+         §6 — "The elevation philosophy is radically flat. There
          are no card shadows, no hover lifts, no floating elements."
          Cards differentiate from --bg by sitting on --surface, with
          a 20px (--radius-md) corner for "interactive containers"
@@ -297,7 +299,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-3);
-        /* No box-shadow, no border, no hover lift — by Nike contract. */
+        /* No box-shadow, no border, no hover lift — by design contract. */
       }
 
       /* ─── Badges — pill-shaped status indicators ─────────────── */
@@ -329,9 +331,8 @@
 
       /* ─── Links — black text, hover underline, kbd ─────────────
          §4 nav: "text color shifts to Grey-500 (#707072)" on hover.
-         No blue inline links here — Nike keeps reading copy
-         monochrome and reserves --focus-ring blue for keyboard focus
-         alone. */
+         No blue inline links here — reading copy stays monochrome
+         and reserves --focus-ring blue for keyboard focus alone. */
       a { color: var(--fg); text-decoration: none; transition: color var(--motion-base) var(--ease-standard); }
       a:hover { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 
@@ -349,11 +350,11 @@
       .hero-grid {
         display: grid;
         grid-template-columns: 1.4fr 1fr;
-        gap: var(--space-12);
+        gap: var(--space-8);
         align-items: end;
       }
       @media (max-width: 1023px) {
-        .hero-grid { grid-template-columns: 1fr; gap: var(--space-8); }
+        .hero-grid { grid-template-columns: 1fr; gap: var(--space-7); }
       }
       .hero-actions {
         display: flex;
@@ -374,7 +375,7 @@
       .features-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: var(--space-2);          /* Nike's "tight 4-12px" product-grid gap */
+        gap: var(--space-2);
       }
       @media (max-width: 1023px) { .features-grid { grid-template-columns: 1fr 1fr; } }
       @media (max-width: 639px)  { .features-grid { grid-template-columns: 1fr; } }
@@ -382,7 +383,7 @@
       .form-row {
         display: grid;
         grid-template-columns: 1.4fr 1fr;
-        gap: var(--space-12);
+        gap: var(--space-8);
         align-items: start;
       }
       @media (max-width: 1023px) { .form-row { grid-template-columns: 1fr; } }
@@ -392,9 +393,8 @@
       .icon { width: 16px; height: 16px; flex-shrink: 0; }
       .row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 
-      /* `.swoosh` — a stylized swoosh divider rule that anchors the
-         hero. Pure CSS, no real Nike marks, just a visual nod to the
-         brand's geometric language. */
+      /* `.swoosh` — a stylized divider rule that anchors the hero.
+         Pure CSS, a visual nod to the brand's geometric language. */
       .swoosh {
         width: 64px;
         height: 4px;
@@ -405,7 +405,7 @@
   </head>
   <body>
     <div class="promo-bar" role="region" aria-label="Promotional banner">
-      Free shipping for members. <a href="#join">Join us.</a>
+      Free shipping on all orders. <a href="#join">Join us.</a>
     </div>
 
     <main class="container">
@@ -414,13 +414,13 @@
           <div class="stack-6">
             <div class="stack-3">
               <span class="swoosh" aria-hidden="true"></span>
-              <p class="eyebrow">Reference fixture · nike</p>
+              <p class="eyebrow">Reference fixture · furniture design system</p>
             </div>
-            <h1>Just keep going.</h1>
+            <h1>Crafted for living.</h1>
             <p class="lead" style="max-width: var(--content-width-lead)">
-              Built for the ones who don't quit. From dawn miles to sold-out
-              stadiums, every stitch earns its place — and every pixel of
-              this page is here to sell sport, nothing else.
+              Every piece tells a story of material and craft. From solid timber
+              joinery to hand-finished upholstery, our furniture is built to
+              endure — and every pixel of this page showcases that quality.
             </p>
             <div class="hero-actions">
               <a href="./tokens.css" class="btn btn-primary">
@@ -450,9 +450,9 @@
       <section data-od-id="features">
         <div class="stack-3">
           <p class="eyebrow">What this fixture exercises</p>
-          <h2 style="max-width: 22ch">Restraint as an athletic discipline.</h2>
+          <h2 style="max-width: 22ch">Restraint as a design discipline.</h2>
         </div>
-        <div class="features-grid" style="margin-block-start: var(--space-8)">
+        <div class="features-grid" style="margin-block-start: var(--space-7)">
           <article class="card">
             <h3>Monochrome on purpose</h3>
             <p class="body-muted body-sm">
@@ -465,7 +465,7 @@
           <article class="card">
             <h3>Display type that punches</h3>
             <p class="body-muted body-sm">
-              Nike Futura ND at 96px / 0.90 line-height, uppercase, tightened
+              Futura Condensed at 96px / 0.90 line-height, uppercase, tightened
               tracking. A typographic shockwave reserved exclusively for the
               hero — never below 24px.
             </p>
@@ -474,9 +474,9 @@
           <article class="card">
             <h3>Pills, no shadows</h3>
             <p class="body-muted body-sm">
-              --radius-pill is bound to 30px (the literal Nike value, not
+              --radius-pill is bound to 30px (the literal value, not
               9999). --elev-raised collapses onto --elev-ring because the
-              brand refuses card shadows outright.
+              design refuses card shadows outright.
             </p>
             <a href="./tokens.css" class="body-sm" style="font-weight: 500">Inspect radius →</a>
           </article>
@@ -489,15 +489,15 @@
             <p class="eyebrow">Become a member</p>
             <h2>Free shipping. First access. No nonsense.</h2>
             <p class="body-muted" style="max-width: 48ch">
-              Members hear about drops first, get free shipping on every order,
-              and unlock the Nike Run Club / Training Club apps. One account,
-              every sport.
+              Members hear about new collections first, get free shipping on
+              every order, and access exclusive members-only pieces. One account,
+              complete access.
             </p>
           </div>
           <form class="form" onsubmit="event.preventDefault();">
             <div class="field">
               <label for="email">Email address</label>
-              <input id="email" type="email" placeholder="you@nike.com" autocomplete="email" required />
+              <input id="email" type="email" placeholder="you@example.com" autocomplete="email" required />
               <p class="field-help">We'll send membership perks. No marketing noise.</p>
             </div>
             <div class="form-actions">

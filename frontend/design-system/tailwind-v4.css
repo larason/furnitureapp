@@ -40,8 +40,10 @@
   --spacing-4: var(--space-4);
   --spacing-5: var(--space-5);
   --spacing-6: var(--space-6);
+  --spacing-7: var(--space-7);
   --spacing-8: var(--space-8);
-  --spacing-12: var(--space-12);
+  --spacing-9: var(--space-9);
+  --spacing-10: var(--space-10);
   --spacing-section-desktop: var(--section-y-desktop);
   --spacing-section-tablet: var(--section-y-tablet);
   --spacing-section-phone: var(--section-y-phone);

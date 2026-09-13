@@ -1,4 +1,4 @@
-# Nike Source Evidence
+# Furniture Design System — Source Evidence
 
 ## Source Scope
 
@@ -7,9 +7,9 @@ It does not claim a fresh crawl of the original upstream brand repository or web
 
 ## Included Fixture Files
 
-- design-systems/nike/DESIGN.md
-- design-systems/nike/tokens.css
-- design-systems/nike/components.html
+- design-system/furniture/DESIGN.md
+- design-system/furniture/tokens.css
+- design-system/furniture/components.html
 
 ## Token Contract
 

@@ -42,35 +42,35 @@ The typography system provides the architectural scaffolding of the brand identi
 
 ### Surface & Background
 
-- **Snow** (`#FAFAFA`): Lightest surface, near-white subtle differentiation (--furniture-cds-color-grey-50)
-- **Light Gray** (`#F5F5F5`): Secondary background, search input fill, furniture image placeholder, loading skeleton (--furniture-cds-color-grey-100)
-- **Hover Gray** (`#E5E5E5`): Hover state background, disabled button fill (--furniture-cds-color-grey-200)
-- **Dark Surface** (`#28282A`): Primary background on dark/inverted showroom sections (--furniture-cds-color-grey-800)
-- **Deep Charcoal** (`#1F1F21`): Inverse primary background, darkest non-black surface (--furniture-cds-color-grey-900)
-- **Dark Hover** (`#39393B`): Hover state on dark backgrounds (--furniture-cds-color-grey-700)
+- **Snow** (`#FAFAFA`): Lightest surface, near-white subtle differentiation (`--surface-warm`)
+- **Light Gray** (`#F5F5F5`): Secondary background, search input fill, furniture image placeholder, loading skeleton (`--surface`)
+- **Hover Gray** (`#E5E5E5`): Hover state background, disabled button fill (`--border-soft`)
+- **Dark Surface** (`#28282A`): Primary background on dark/inverted showroom sections
+- **Deep Charcoal** (`#1F1F21`): Inverse primary background, darkest non-black surface
+- **Dark Hover** (`#39393B`): Hover state on dark backgrounds
 
 ### Neutrals & Text
 
-- **Primary Text** (`#111111`): Main body text, headings, navigation links (--furniture-cds-color-text-primary)
-- **Secondary Text** (`#707072`): Descriptive copy, material specs, dimensions, timestamps, price labels (--furniture-cds-color-text-secondary)
-- **Disabled Text** (`#9E9EA0`): Inactive elements, out-of-stock / unavailable variants (--furniture-cds-color-text-disabled)
-- **Disabled Inverse** (`#4B4B4D`): Disabled text on dark showroom backgrounds (--furniture-cds-color-text-disabled-inverse)
+- **Primary Text** (`#111111`): Main body text, headings, navigation links (`--fg`)
+- **Secondary Text** (`#707072`): Descriptive copy, material specs, dimensions, timestamps, price labels (`--muted`)
+- **Disabled Text** (`#9E9EA0`): Inactive elements, out-of-stock / unavailable variants (`--meta`)
+- **Disabled Inverse** (`#4B4B4D`): Disabled text on dark showroom backgrounds
 - **Border Primary** (`#707072`): Standard border color, matching secondary text
-- **Border Secondary** (`#CACACB`): Subtle borders, form input borders, divider lines (--furniture-cds-color-grey-300)
+- **Border Secondary** (`#CACACB`): Subtle borders, form input borders, divider lines (`--border`)
 - **Border Disabled** (`#CACACB`): Inactive border state
 - **Border Active** (`#111111`): Active/focused border, matching primary text
 
 ### Semantic & Accent
 
-- **Critical / Sale Red** (`#D30005`): Form errors, clearance / sale badges, urgent inventory alerts (--furniture-cds-color-red-600)
+- **Critical / Sale Red** (`#D30005`): Form errors, clearance / sale badges, urgent inventory alerts (`--danger`)
 - **Bright Red** (`#EE0005`): Red-500, slightly lighter red for emphasis
-- **Orange Badge** (`#D33918`): Badge text, "Made to Order" callouts, promotional tags (--furniture-cds-color-text-badge)
-- **Orange Flash** (`#FF5000`): Expressive accent, new collection highlight (--furniture-cds-color-orange-400)
-- **Success Green** (`#007D48`): Confirmation, "In Stock" indicator, positive order status (--furniture-cds-color-green-600)
-- **Success Inverse** (`#1EAA52`): Success on dark backgrounds (--furniture-cds-color-green-500)
-- **Link Blue** (`#1151FF`): Text links, dimension guides, material specification links (--furniture-cds-color-blue-500)
-- **Info Inverse** (`#1190FF`): Links on dark backgrounds (--furniture-cds-color-blue-400)
-- **Warning Yellow** (`#FEDF35`): Warning backgrounds, low-stock / extended lead-time banners (--furniture-cds-color-yellow-200)
+- **Orange Badge** (`#D33918`): Badge text, "Made to Order" callouts, promotional tags
+- **Orange Flash** (`#FF5000`): Expressive accent, new collection highlight
+- **Success Green** (`#007D48`): Confirmation, "In Stock" indicator, positive order status (`--success`)
+- **Success Inverse** (`#1EAA52`): Success on dark backgrounds
+- **Link Blue** (`#1151FF`): Text links, dimension guides, material specification links
+- **Info Inverse** (`#1190FF`): Links on dark backgrounds
+- **Warning Yellow** (`#FEDF35`): Warning backgrounds, low-stock / extended lead-time banners (`--warn`)
 - **Focus Ring** (`rgba(39, 93, 197, 1)`): Keyboard focus indicator ring
 
 ### Extended Color Spectrum
