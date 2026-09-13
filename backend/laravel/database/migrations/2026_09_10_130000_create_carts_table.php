@@ -12,10 +12,13 @@ return new class extends Migration
         Schema::create('carts', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('user_id')
+            $user = $table->foreignId('user_id')
                 ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
+                ->constrained('users');
+
+            if (DB::getDriverName() === 'sqlite') {
+                $user->nullOnDelete();
+            }
 
             $table->char('guest_token_digest', 64)->nullable();
 

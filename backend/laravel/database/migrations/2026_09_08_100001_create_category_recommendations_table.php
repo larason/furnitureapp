@@ -31,7 +31,7 @@ return new class extends Migration
 
             $table->unique(['category_id', 'recommended_category_id'], 'cat_rec_unique');
 
-            $table->index(['category_id', 'relation_type', 'priority']);
+            $table->index(['category_id', 'relation_type', 'priority'], 'cat_rec_type_priority_idx');
         });
     }
 

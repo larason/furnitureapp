@@ -2,16 +2,19 @@
 
 namespace App\Models;
 
+use App\Support\AddressField;
 use App\Support\DeliveryFeeStatus;
 use App\Support\FulfillmentType;
 use App\Support\OrderStatus;
 use Database\Factories\OrderFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
@@ -40,6 +43,8 @@ class Order extends Model
 
     public const REFERENCE_PREFIX = 'OD-';
 
+    private const DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE = 'Order delivery snapshot is immutable once a delivery record exists.';
+
     /** @use HasFactory<OrderFactory> */
     use HasFactory;
 
@@ -52,10 +57,12 @@ class Order extends Model
     {
         $this->assertReferenceImmutable();
         $this->assertInitialStatus();
+        $this->assertDeliveryEligibility();
         $this->assertFinancialImmutability();
         $this->assertRequiredAmount();
         $this->assertPickupState();
         $this->assertDeliveryState();
+        $this->assertDeliverySnapshotLock();
     }
 
     public function customer(): BelongsTo
@@ -78,6 +85,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function delivery(): HasOne
+    {
+        return $this->hasOne(Delivery::class);
     }
 
     public function isPickup(): bool
@@ -178,9 +190,21 @@ class Order extends Model
 
         if ($this->delivery_fee_amount === null
             || $this->delivery_fee_amount < 0
-            || $this->total_amount !== $this->subtotal_amount + $this->delivery_fee_amount) {
-            throw new DomainException('Finalized delivery orders require a non-negative delivery fee and total equal to subtotal plus delivery fee.');
+            || $this->total_amount !== $this->subtotal_amount + $this->delivery_fee_amount
+            || $this->delivery_address === null) {
+            throw new DomainException('Finalized delivery orders require a non-negative delivery fee, total equal to subtotal plus delivery fee, and a delivery address.');
         }
+
+        $this->assertFinalizedDeliveryAddress();
+    }
+
+    private function assertFinalizedDeliveryAddress(): void
+    {
+        if (! is_array($this->delivery_address)) {
+            throw new DomainException('Finalized delivery orders require a structured delivery address.');
+        }
+
+        AddressField::validate($this->delivery_address);
     }
 
     private function assertDeliveryPendingState(): void
@@ -188,5 +212,109 @@ class Order extends Model
         if ($this->delivery_fee_amount !== null || $this->total_amount !== $this->subtotal_amount) {
             throw new DomainException('Pending delivery orders require a null delivery fee and a provisional total equal to subtotal.');
         }
+    }
+
+    private function assertDeliveryEligibility(): void
+    {
+        if (! $this->exists || ! $this->isDirty('fulfillment_type')) {
+            return;
+        }
+
+        if ($this->isPickup() && $this->delivery()->exists()) {
+            throw new DomainException('An order with a delivery record cannot change to PICKUP.');
+        }
+    }
+
+    private function assertDeliverySnapshotLock(): void
+    {
+        if (! $this->exists || ! $this->deliverySnapshotDirty()) {
+            return;
+        }
+
+        $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->first();
+
+        if ($locked !== null && $locked->delivery()->exists()) {
+            throw new DomainException(self::DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE);
+        }
+    }
+
+    private function deliverySnapshotDirty(): bool
+    {
+        return $this->isDirty('delivery_address')
+            || $this->isDirty('recipient_name')
+            || $this->isDirty('recipient_phone');
+    }
+
+    private function fulfillmentTypeDirty(): bool
+    {
+        return $this->isDirty('fulfillment_type');
+    }
+
+    private function requiresLockForUpdate(): bool
+    {
+        return $this->fulfillmentTypeDirty() || $this->deliverySnapshotDirty();
+    }
+
+    protected function performUpdate(Builder $query)
+    {
+        if (! $this->exists || ! $this->requiresLockForUpdate()) {
+            return parent::performUpdate($query);
+        }
+
+        return $this->getConnection()->transaction(function () use ($query) {
+            $locked = $this->newQuery()->whereKey($this->getKey())->lockForUpdate()->first();
+
+            if ($this->fulfillmentTypeDirty()) {
+                $this->assertDeliveryEligibility();
+            }
+
+            if ($this->deliverySnapshotDirty() && $locked !== null && $locked->delivery()->exists()) {
+                throw new DomainException(self::DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE);
+            }
+
+            return parent::performUpdate($query);
+        });
+    }
+
+    public function updateDeliverySnapshot(callable $mutate): void
+    {
+        $this->getConnection()->transaction(function () use ($mutate): void {
+            $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->delivery()->exists()) {
+                throw new DomainException(self::DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE);
+            }
+
+            $mutate($locked);
+            $locked->save();
+        });
+    }
+
+    public function createDelivery(?string $deliveryInstructions = null): Delivery
+    {
+        return $this->getConnection()->transaction(function () use ($deliveryInstructions): Delivery {
+            $locked = $this->newQuery()->whereKey($this->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->delivery()->exists()) {
+                throw new DomainException('A delivery record already exists for this order.');
+            }
+
+            if (! $locked->isDelivery()) {
+                throw new DomainException('A delivery record is only valid for a DELIVERY order.');
+            }
+
+            $delivery = new Delivery;
+            $delivery->setConnection($this->getConnectionName());
+            $delivery->forceFill([
+                'order_id' => $locked->id,
+                'recipient_name' => $locked->recipient_name,
+                'recipient_phone' => $locked->recipient_phone,
+                'delivery_address' => $locked->delivery_address,
+                'delivery_instructions' => $deliveryInstructions,
+            ]);
+            $delivery->save();
+
+            return $delivery;
+        });
     }
 }
