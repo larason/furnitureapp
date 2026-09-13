@@ -212,7 +212,7 @@ The typography establishes deliberate architectural authority. The display layer
 - Category cards: 16:9 or 4:3, full-bleed with category title overlay
 - Image placeholder: Grey-100 (`#F5F5F5`) solid background
 - Lazy loading: native loading="lazy", skeleton placeholder uses `#F5F5F5` background
-- Product hover: secondary image swap (isolated piece → room setting or detail joinery shot)
+- Product hover: **NO PRODUCT IMAGE OR CARD HOVERS EFFECT**
 
 ### Promotional & Announcement Banners
 
@@ -302,7 +302,7 @@ The elevation philosophy is intentionally flat. There are no heavy card drop sha
 - Don't use border radius on furniture product imagery — only UI elements receive rounded corners
 - Don't introduce brand colors beyond the grey scale for UI elements
 - Don't use display typography below 24px — it is exclusively a display face
-- Don't add hover lift or float effects — furniture cards do not animate or translate on hover
+- **Strictly Don't add hover lift or float effects** — furniture cards do not animate or translate on hover
 - Don't use regular weight (400) for buttons or links — always use weight 500
 - Don't place saturated colored backgrounds behind UI elements — color is reserved for product photography
 - Don't use more than two levels of text hierarchy per product card (title + price/material spec)
