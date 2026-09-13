@@ -1,48 +1,45 @@
-# Phase 3.14 — Furniture Request Schema
+# Phase 3.15 — Enquiry Schema
 
 ## Purpose
 
-Implement the persistence model for **Furniture Requests**.
+Implement the persistence model for **General Enquiries**.
 
-A Furniture Request represents a customer's request for furniture that may require customization, modification, quotation, or further business discussion.
+An Enquiry is a private communication from a customer or guest to the business.
 
-A request is **not an Order**.
+Examples include:
 
-A request:
+* questions about furniture
+* material questions
+* product questions
+* bulk or office furniture enquiries
+* questions about an existing Order
+* general business/contact questions
+* questions that do not qualify as a Furniture Request
 
-* does not reserve inventory
-* does not create an Order
-* does not guarantee a price
-* does not create a payment
-* does not guarantee production
-* does not guarantee delivery
-* does not automatically convert into an Order
+An Enquiry is **not**:
 
-The existing contract explicitly keeps Furniture Requests separate from Orders, Payments, Inventory, and pricing commitments.
+* a Furniture Request
+* an Order
+* a Payment
+* an Inventory reservation
+* a quotation
+* a delivery request
 
-Both of these actors may submit a request:
+The existing V1 contract explicitly keeps Enquiries separate from Requests, Orders, Payments, and Inventory.
 
-```text
-REGISTERED CUSTOMER
-        │
-        └── Furniture Request
-
-GUEST
-        │
-        └── Furniture Request
-```
-
-For authenticated customers, `user_id` is derived from the authenticated principal.
-
-For guests:
+Both anonymous and authenticated submissions are supported.
 
 ```text
-user_id = null
+Guest
+  │
+  └── Enquiry (user_id = null)
+
+Authenticated Customer
+  │
+  └── Enquiry (user_id = authenticated principal)
 ```
 
-The client must never submit or override `user_id`.
-
-This phase establishes the database model and validation-ready structure for the later Group J API/workflow phases.
+This phase establishes the persistence model and constraints required before Group J implements Enquiry validation, authorization, API handling, and operational workflows.
 
 ---
 
@@ -52,17 +49,14 @@ Complete these phases first:
 
 * Phase 3.3 — Categories Schema
 * Phase 3.4 — Products Schema
-* Phase 3.5 — Product Variants Schema
-* Phase 3.6 — Product Images Schema
 * Phase 3.9 — Orders Schema
 * Phase 3.10 — Order Items Snapshot Model
-* Phase 3.11 — Order Status History Schema
 * Phase 3.12 — Payment Schema
-* Phase 3.13 — Delivery Schema
+* Phase 3.14 — Furniture Request Schema
 
-Do not make Furniture Requests depend on Orders or Payments.
+Do not make Enquiry dependent on Furniture Requests, Payments, or Deliveries.
 
-A request remains an independent domain object.
+An Enquiry may optionally reference a Product or Order, but it remains its own domain entity.
 
 ---
 
@@ -76,216 +70,194 @@ Treat these as authoritative:
 * `docs/api/api-resources.md`
 * `docs/api/api-conventions.md`
 * `AGENTS.md`
-* completed phases 3.3–3.13
+* completed Phase 3.3 Categories
+* completed Phase 3.4 Products
+* completed Phase 3.9 Orders
+* completed Phase 3.10 Order Items
+* completed Phase 3.12 Payment
+* completed Phase 3.14 Furniture Request
 
-The existing V1 request conventions establish:
-
-* anonymous creation
-* authenticated customer creation
-* server-derived `user_id`
-* optional `product_id`
-* structured request specifications
-* bounded free-text fields
-* closed request statuses
-* private request data
-* operational Staff/Admin handling
-* no automatic Request → Order conversion
-
-Do not silently replace those rules with a different lifecycle.
+The Version 1 API contract is frozen. Do not introduce new public Enquiry states, new relationships, or breaking request shapes in this phase.
 
 ---
 
 # 1. Core Design Rule
 
-The `furniture_requests` table must be a **self-contained customer-submission record**.
+The `enquiries` table is a **self-contained historical communication record**.
 
-The request should remain understandable even if the associated catalog Product later:
+It must preserve the original customer-submitted:
 
-* changes name
-* changes description
-* changes images
-* changes price
-* is deactivated
-* is deleted
+* contact
+* subject
+* message
+* optional Product context
+* optional Order context
 
-A Product reference may be retained, but the submitted request details must not depend on the live Product record.
+independently of subsequent changes to:
 
-This follows the existing requirement that customer-submitted request data is historical/private and that later changes must not rewrite the original intake.
+* User profile
+* Product
+* Order
+
+The original Enquiry must remain meaningful even when referenced entities change.
+
+Do not automatically synchronize historical Enquiry content from current catalog or profile data.
 
 ---
 
-# 2. Create `furniture_requests` Table
+# 2. Create `enquiries` Table
 
 Create a Laravel migration for:
 
-`furniture_requests`
+`enquiries`
 
 Recommended schema:
 
-| Column              | Type                                       | Rules                                                             |
-| ------------------- | ------------------------------------------ | ----------------------------------------------------------------- |
-| `id`                | big integer / Laravel standard primary key | Internal primary key                                              |
-| `user_id`           | nullable foreign key                       | Authenticated Customer owner; null for Guest; null on User delete |
-| `request_reference` | string                                     | Server-generated unique reference                                 |
-| `product_id`        | nullable foreign key                       | Optional catalog reference; null on Product delete                |
-| `product_details`   | JSON/text-compatible structured field      | Required submitted product description/details                    |
-| `style`             | string/text                                | Required requested furniture style                                |
-| `name`              | string                                     | Required contact snapshot                                         |
-| `email`             | string nullable                            | Contact snapshot; frozen V1 contract requires at least one of `email`/`phone` (§6) |
-| `phone`             | string nullable                            | Contact snapshot; frozen V1 contract requires at least one of `email`/`phone` (§6) |
-| `message`           | text                                       | Required customer message                                         |
-| `quantity`          | unsigned integer nullable                  | Optional requested quantity                                       |
-| `dimensions`        | JSON nullable                              | Optional structured dimensions                                    |
-| `material`          | string nullable                            | Optional free-text preference                                     |
-| `color`             | string nullable                            | Optional free-text preference                                     |
-| `request_status`    | string                                     | Required; default `SUBMITTED`                                     |
-| `created_at`        | timestamp                                  | Required                                                          |
-| `updated_at`        | timestamp                                  | Required                                                          |
+| Column                 | Type                                       | Rules                                                  |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `id`                   | big integer / Laravel standard primary key | Internal primary key                                   |
+| `user_id`              | nullable foreign key                       | Authenticated Customer; null for Guest; null on delete |
+| `enquiry_reference`    | string                                     | Server-generated unique reference                      |
+| `product_id`           | nullable foreign key                       | Optional Product context; null on delete               |
+| `order_id`             | nullable foreign key                       | Optional Order context; restrict on delete             |
+| `name`                 | string                                     | Required contact snapshot                              |
+| `email`                | nullable string                            | Contact snapshot                                       |
+| `phone`                | nullable string                            | Contact snapshot                                       |
+| `subject`              | string                                     | Required                                               |
+| `message`              | text                                       | Required                                               |
+| `enquiry_status`       | string                                     | Required; default `OPEN`                               |
+| `staff_internal_notes` | nullable text                              | Staff/Admin operational notes                          |
+| `created_at`           | timestamp                                  | Required                                               |
+| `updated_at`           | timestamp                                  | Required                                               |
 
-The fields `quantity`, `dimensions`, `material`, and `color` preserve the existing approved request capabilities.
-
-The newly explicit `product_details` and `style` fields are included because they are part of the requested request structure.
+Do not add payment, delivery, inventory, or request-status fields.
 
 ---
 
-# 3. Registered Customer vs Guest
+# 3. Guest and Authenticated Submission
 
-Use one table for both request origins.
-
-## Authenticated Customer
-
-```text
-user_id = authenticated user's ID
-```
+One table must support both.
 
 ## Guest
 
-```text
+```text id="j4g9yf"
 user_id = null
 ```
 
-Do not create:
+The guest's contact details are stored directly in the Enquiry.
 
-* `guest_user`
-* `guest_customer`
-* `customer_type`
-* `is_guest`
-* separate guest-request table
+## Authenticated Customer
 
-A nullable `user_id` is sufficient.
+```text id="quy9b0"
+user_id = authenticated user's ID
+```
 
-The existing contract explicitly defines this ownership model.
+The contact snapshot is still stored on the Enquiry.
+
+Do not require a User record for anonymous creation.
+
+The existing contract explicitly allows anonymous Enquiry creation and authenticated creation through the same domain.
 
 ---
 
-# 4. `user_id` Authority
-
-`user_id` is completely server-controlled.
+# 4. `user_id` Is Server-Controlled
 
 Never accept:
 
-```json
+```json id="7s8a4e"
 {
-  "user_id": "someone-else"
+  "user_id": "..."
 }
 ```
 
-from the request body.
+from the client.
 
-For an authenticated submission:
+For authenticated creation:
 
-```text
-authenticated principal → user_id
+```text id="k0cf10"
+authenticated principal
+→ user_id
 ```
 
-For an anonymous submission:
+For anonymous creation:
 
-```text
+```text id="i9fm4v"
 user_id = null
 ```
 
-The request's contact information remains stored independently of `user_id`.
-
-This is important because the same request structure must work for guests and registered customers.
+The existing conventions require this server-derived ownership model.
 
 ---
 
 # 5. Contact Snapshot
 
-Store:
+Persist:
 
 * `name`
 * `email`
 * `phone`
 
-directly on `furniture_requests`.
+directly on the Enquiry.
 
-These are **request-time contact snapshots**, not dynamic references to the User profile.
+This makes the Enquiry self-contained.
 
-Later changes to the customer's:
+A customer's later profile change must not rewrite historical Enquiry contact information.
 
-* name
-* email
-* phone
+Do not dynamically substitute current profile information when reading historical enquiries.
 
-must not rewrite historical request contact information.
-
-The existing request contract requires the request to remain self-contained and explicitly states that authenticated requests store contact information in addition to the server-derived `user_id`.
+For authenticated customers, account identity is represented by `user_id`, while the stored contact remains the original submitted snapshot. The existing contract explicitly describes this pattern.
 
 ---
 
 # 6. Contact Validation Preparation
 
-The schema must support strong validation in Group J.
+Prepare the schema for Group J validation.
 
-Recommended rules:
-
-### `name`
+## `name`
 
 * required
 * string
 * trimmed
-* bounded maximum length
+* bounded
 * Unicode-safe
 
-### `email`
+## `email`
 
-* optional individually; at least one of `email`/`phone` required
-* valid email syntax
-* normalized where appropriate
-* bounded maximum length
+* nullable
+* valid email syntax when supplied
+* normalized appropriately
+* bounded length
 
-### `phone`
+## `phone`
 
-* optional individually; at least one of `email`/`phone` required
-* string, not numeric
-* normalized to the project's chosen phone representation
-* bounded maximum length
+* nullable
+* stored as string
+* normalized appropriately
+* bounded length
 
-Do not store phone numbers as integers.
+The existing frozen Enquiry contract requires:
 
-## Contract compatibility note
-
-The existing frozen request convention previously defined:
-
-```text
-name = required
-phone OR email = required
+```text id="2x5ig9"
+name
++
+at least one of phone or email
 ```
 
-rather than requiring both contact channels.
+for anonymous creation.
 
-This phase should therefore make the schema capable of storing all three fields while **Group J must reconcile the requested “name + email + phone” requirement with the frozen API contract before making both email and phone mandatory at the API boundary**.
+Authenticated requests may derive account contact information according to the existing contract.
 
-Do not silently change the frozen V1 request contract in Phase 3.14.
+Do not change that requirement in Phase 3.15.
 
 ---
 
-# 7. `request_reference`
+# 7. `enquiry_reference`
 
-Create a server-generated unique reference:
+Create:
 
-`request_reference`
+`enquiry_reference`
+
+as a server-generated unique business reference.
 
 Requirements:
 
@@ -293,588 +265,553 @@ Requirements:
 * immutable
 * server-generated
 * never client supplied
-* not directly derived from an exposed database ID
+* not raw database ID
+* independent from Order references
 
-Use the project's established opaque-reference convention.
+Do not reuse:
 
-Do not reuse an Order reference.
-
-A Furniture Request is not an Order and must have its own reference namespace.
-
----
-
-# 8. Product Reference
-
-`product_id` remains optional.
-
-This preserves the two approved request modes:
-
-### Product-linked request
-
-```text
-product_id = existing MADE_TO_ORDER Product
+```text id="z3fksr"
+order_reference
 ```
 
-### Custom/general request
-
-```text
-product_id = null
-```
-
-The existing V1 convention explicitly approves both modes.
-
-Do not make `product_id` mandatory merely because `product_details` is present.
+An Enquiry is not an Order.
 
 ---
 
-# 9. Product Validation
+# 8. Subject
 
-When `product_id` is supplied, Group J must validate:
+`subject` is required for a General Enquiry.
 
-1. Product exists
-2. Product is active
-3. Product is published where applicable
-4. Product is a `MADE_TO_ORDER` product
-5. Product is requestable
-
-An `IN_STOCK` product must not be treated as a Furniture Request target merely because it has a valid ID.
-
-The existing contract explicitly requires MADE_TO_ORDER validation and rejects request creation for an IN_STOCK product.
-
-Do not attempt to enforce this entire rule through the foreign key.
-
----
-
-# 10. Product Snapshot
-
-Because the customer submits product details, preserve those submitted details independently from the current Product.
-
-Recommended structure:
-
-```json
-{
-  "product_name": "...",
-  "description": "...",
-  "reference": "..."
-}
-```
-
-The exact keys must be finalized in Group J validation/API design.
-
-The important rule is:
-
-> `product_details` represents what the customer submitted, not a trusted copy of arbitrary Product database data.
-
-Do not automatically fill `product_details` from the current Product model without deliberate snapshot semantics.
-
-Do not allow arbitrary nested JSON.
-
----
-
-# 11. Product Details Validation
-
-`product_details` must be a **strict structured object** at the API boundary.
-
-Group J must define an explicit allow-list.
-
-Do not accept arbitrary JSON keys such as:
-
-```text
-anything
-metadata
-internal_price
-secret
-admin_note
-```
-
-Unknown keys must be rejected.
-
-This follows the project's global rule that strict create inputs reject unknown fields and arbitrary nested structures.
-
-The database may store the validated structured object as JSON, but Laravel/domain validation remains authoritative for nested structure.
-
----
-
-# 12. Style
-
-Add:
-
-`style`
-
-as a first-class request field.
-
-The customer's requested style is part of the Furniture Request itself.
-
-Examples may include:
-
-* Modern
-* Minimalist
-* Scandinavian
-* Classic
-* Industrial
-* Traditional
-* Contemporary
-
-Do **not** make Style a V1 closed enum unless the business has explicitly approved a complete taxonomy.
-
-Use bounded free text for V1.
-
-This is consistent with the existing request strategy of keeping customer furniture preferences such as `material` and `color` flexible rather than prematurely converting them into closed enums.
+Store it directly on the Enquiry.
 
 Recommended constraints:
 
 * required
+* string
 * trimmed
-* Unicode-safe
 * bounded maximum length
 * plain text
-* not interpreted as HTML/code
+* Unicode-safe
+
+Do not allow arbitrary HTML as trusted input.
+
+The Enquiry contract explicitly identifies `subject` as part of Enquiry contact/content.
 
 ---
 
-# 13. Message
+# 9. Message
 
-Add:
+`message` is the primary communication body.
 
-`message`
+Recommended constraints:
 
-as the customer's main request explanation.
+* required
+* string/text
+* trimmed where appropriate
+* bounded maximum size
+* Unicode-safe
+* treated as plain text
 
-This is separate from:
+Do not interpret customer message content as executable HTML, SQL, templates, or code.
 
-* `product_details`
-* `style`
-* `material`
-* `color`
-* `dimensions`
+Do not overwrite the original message with Staff responses.
 
-The message can describe:
-
-* desired modifications
-* intended use
-* special requirements
-* context
-* questions
-* additional preferences
-
-Recommended maximum length:
-
-```text
-5000 characters
-```
-
-This follows the existing bounded free-text request convention.
-
-Store the original customer message as submitted after safe normalization.
-
-Do not overwrite it with Staff notes.
+The original enquiry must remain preserved. The existing operational rules explicitly require customer-provided fields to remain immutable.
 
 ---
 
-# 14. Customer Message Immutability
+# 10. Product Context
 
-Original customer-submitted fields are historical intake.
+`product_id` is optional.
 
-Do not allow Staff to rewrite:
+An Enquiry may concern a specific catalog Product.
 
-* name
-* email
-* phone
-* product details
-* style
-* message
-* quantity
-* dimensions
-* material
-* color
-* product reference
+When supplied, the later Group J validation layer should verify that the Product exists and is addressable according to the applicable catalog rules.
 
-Operational Staff notes must be separate.
+Do not make Product mandatory.
 
-The existing Request convention explicitly states that customer-provided fields remain immutable and staff edits belong in separate internal fields.
+An enquiry such as:
 
----
+> "What materials do you use for office desks?"
 
-# 15. Quantity
-
-Preserve the existing optional:
-
-`quantity`
-
-field.
-
-Rules:
-
-* nullable
-* integer
-* minimum `1`
-* maximum `100`
-* never zero
-* never negative
-* never fractional
-* server validated
-
-Important:
-
-`quantity` is **request intent**, not inventory or Order quantity.
-
-It does not reserve stock and does not become the final Order quantity automatically.
-
-When omitted:
-
-```text
-quantity = null
-```
-
-Do not silently default it to `1`.
-
----
-
-# 16. Dimensions
-
-Preserve the existing structured:
-
-`dimensions`
-
-field.
-
-Recommended structure:
-
-```json
-{
-  "length": 120,
-  "width": 60,
-  "height": 75,
-  "unit": "cm"
-}
-```
-
-Rules:
-
-* nullable
-* object when supplied
-* only approved keys
-* `length`, `width`, `height`
-* positive numeric values
-* maximum `10000`
-* `unit` required whenever dimensions are present
-* `unit = "cm"` only
-
-Do not add arbitrary keys such as:
-
-* `depth`
-* `diameter`
-* `radius`
-
-unless explicitly approved in a later contract change.
-
-These existing restrictions are already defined in the request conventions.
-
----
-
-# 17. Material
-
-Preserve optional:
-
-`material`
-
-as bounded free text.
+does not require a Product reference.
 
 Use:
 
-* nullable
-* trimmed
-* maximum `500` characters
-* Unicode-safe
-* plain text
+```text id="12b9be"
+product_id = null
+```
 
-Do not make Material a closed enum.
-
-The existing V1 decision intentionally keeps material flexible for a small furniture business.
+for general enquiries.
 
 ---
 
-# 18. Color
+# 11. Product Reference Is Context, Not Ownership
 
-Preserve optional:
+`product_id` does not make the Enquiry a Product child record.
 
-`color`
+It simply records context.
 
-as bounded free text.
+Do not allow Product deletion to delete the Enquiry.
 
 Use:
 
-* nullable
-* trimmed
-* maximum `200` characters
-* Unicode-safe
-* plain text
+```text id="n2f3k6"
+product_id → nullOnDelete
+```
 
-Do not create a V1 color-management system.
-
-The existing request contract deliberately treats color as free text.
+This preserves the customer's communication even if the referenced Product is retired or removed.
 
 ---
 
-# 19. Request Status
+# 12. Historical Product Context
 
-Use the frozen V1 request status values:
+The existence of `product_id` alone is not enough to preserve the complete historical Product representation.
+
+For V1:
+
+* `product_id` provides traceability
+* the original `subject` and `message` remain the authoritative customer communication
+* current Product data may change independently
+
+Do not create a Product snapshot JSON structure unless the frozen Enquiry contract actually requires it.
+
+Avoid duplicating the complete Product model unnecessarily.
+
+---
+
+# 13. Order Context
+
+`order_id` is optional.
+
+An Enquiry may concern a customer's existing Order.
+
+Examples:
+
+* "Can I change my delivery details?"
+* "I have a question about this order."
+* "When can I collect my order?"
+
+When supplied, the later Group J validation layer must ensure the Order exists and that the sender has the appropriate relationship/authorization to use that context where required.
+
+Do not assume that knowing an Order reference grants access to the Order.
+
+---
+
+# 14. Order Reference Security
+
+Do not use:
+
+```text id="11kr93"
+order_id
+```
+
+as a client-authorized ownership mechanism.
+
+The Order association is contextual data.
+
+Authorization must later be evaluated through the authenticated relationship and appropriate operational rules.
+
+The project-wide authorization model requires ownership checks through relationships rather than client-controlled IDs.
+
+---
+
+# 15. `order_id` Delete Behavior
+
+Do not cascade-delete Enquiries when an Order is deleted.
+
+Use restrictive semantics:
+
+```text id="d3jzxk"
+order_id → RESTRICT
+```
+
+This protects the relationship from accidental destruction.
+
+Normal Orders are historical records and should not be hard-deleted in ordinary application operation.
+
+---
+
+# 16. Enquiry Is Not an Order
+
+Do not allow the presence of `order_id` to transform the Enquiry into an Order operation.
+
+An Enquiry remains communication.
+
+Do not add:
+
+* order status
+* payment status
+* delivery status
+* total
+* amount
+* cancellation state
+
+to Enquiry.
+
+The existing contract explicitly states that Enquiries do not create, modify, or guarantee Orders, Payments, or Inventory.
+
+---
+
+# 17. Enquiry Is Not a Furniture Request
+
+Do not merge Enquiry with `furniture_requests`.
+
+Examples:
+
+### Furniture Request
 
 ```text
-SUBMITTED
-IN_REVIEW
+"I want a custom 3-seat sofa made in dark grey."
+```
+
+### Enquiry
+
+```text
+"Do you have sofas available in velvet?"
+```
+
+The domains remain separate.
+
+Do not add:
+
+```text id="z9r7gf"
+request_id
+```
+
+to Enquiry.
+
+The frozen contract explicitly states there is no automatic Request ↔ Enquiry merge.
+
+---
+
+# 18. Request Status
+
+Use the approved V1 Enquiry lifecycle:
+
+```text id="hwoapd"
+OPEN
 CLOSED
 ```
 
 Default:
 
-```text
-SUBMITTED
+```text id="h5j8p8"
+OPEN
 ```
 
-The existing approved workflow is:
+The approved lifecycle is:
 
-```text
-SUBMITTED → IN_REVIEW → CLOSED
+```text id="9cf5ge"
+OPEN → CLOSED
 ```
 
-with direct:
+The existing contract describes this as intentionally minimal; `ASSIGNED`, `IN_PROGRESS`, and similar states are not introduced without explicit justification.
+
+Do not add:
 
 ```text
-SUBMITTED → CLOSED
+NEW
+PENDING
+IN_PROGRESS
+RESOLVED
+ARCHIVED
 ```
 
-also permitted.
-
-`CLOSED` is terminal in V1.
-
-Customer cannot set or directly modify `request_status`.
-
-The approved request lifecycle is already closed and must not be replaced with speculative values such as:
-
-```text
-QUOTED
-APPROVED
-REJECTED
-PRODUCING
-DELIVERING
-```
-
-Those are explicitly not V1 statuses.
+unless separately approved through the frozen-contract process.
 
 ---
 
-# 20. Status Ownership
+# 19. Status Is Server-Controlled
 
-`request_status` is server-controlled.
+Customers must not submit:
 
-Do not allow:
-
-```json
+```json id="v9h9b4"
 {
-  "request_status": "CLOSED"
+  "enquiry_status": "CLOSED"
 }
 ```
 
-as a customer create/update authority.
+as part of ordinary Enquiry creation.
 
-Later Staff operations will perform explicit controlled status transitions.
+Later Staff operations may change status through explicit controlled actions.
 
-Do not implement those transitions in Phase 3.14.
+Do not implement those actions in Phase 3.15.
+
+Do not create a generic:
+
+```text
+PATCH /enquiries/{enquiry}
+{"enquiry_status":"CLOSED"}
+```
+
+workflow in this phase.
 
 ---
 
-# 21. Internal Staff Notes
+# 20. Staff Internal Notes
 
-The Group J workflow already defines the need to keep Staff-only operational notes separate from customer-submitted data.
+Add:
 
-Do not mix them into:
+`staff_internal_notes`
 
-* `message`
-* `product_details`
-* `style`
+as an operational-only field.
 
-A separate internal field may be added only if the existing Group J implementation requires persistence directly on this table.
+Requirements:
 
-For this phase, the recommended approach is:
-
-`staff_internal_notes` nullable text
-
-If implemented, it must be:
-
+* nullable
+* bounded text
 * Staff/Admin only
+* not customer-visible
+* not part of original customer communication
+* not accepted during ordinary customer creation
 * never serialized to customers
-* distinct from original customer content
-* bounded in length
-* mutable only through authorized Staff/Admin operations
 
-This follows the existing Request privacy and operational conventions.
+The existing Enquiry rules explicitly allow Staff to manage `enquiry_status` and `staff_internal_notes` while preserving the customer's original fields.
+
+Do not call the field simply `notes`, because that would make customer/internal semantics ambiguous.
+
+---
+
+# 21. Original Customer Content Must Remain Immutable
+
+The following are customer-submitted historical data:
+
+* name
+* email
+* phone
+* subject
+* message
+* product_id
+* order_id
+
+Do not allow normal Staff handling to overwrite them.
+
+Staff operational notes belong in `staff_internal_notes`.
+
+This preserves the original communication and supports auditability.
 
 ---
 
 # 22. Attachments
 
-Attachments remain optional.
+Attachments are optional and must not be stored directly in the `enquiries` record.
 
-Do not put the uploaded binary into the `furniture_requests` row.
+Use the established separate attachment architecture when Group J implements it.
 
-Use a separate attachment model/table if attachment implementation already follows the approved Request attachment architecture.
+The frozen contract already defines:
 
-The existing V1 design permits:
-
-* zero or one attachment on request creation
-* later attachment upload
+* optional Enquiry attachments
+* separate `POST /enquiries/{enquiry}/attachments`
+* secure scoped upload authorization
 * private storage
-* controlled attachment authorization
-* signed temporary access URLs
-* actual file signature validation
+* temporary signed URLs
+* file-size/type/content-signature validation
 
-and explicitly defines `REQ-007` for post-creation attachments.
+Do not duplicate an `attachment_path` or binary field inside `enquiries`.
 
-Do not implement attachment storage in Phase 3.14 unless the project already needs the attachment schema dependency here.
+Do not implement attachment upload in Phase 3.15 unless the attachment schema itself is explicitly part of the current repository architecture.
 
 ---
 
-# 23. Anonymous Retrieval Security
+# 23. Attachment Security Preparation
 
-A Guest request with:
+Group J must eventually validate attachments using:
 
-```text
-user_id = null
+* file size limit
+* allow-listed content types
+* actual file signature
+* sanitized filenames
+* authorized storage
+* scoped upload token for anonymous upload
+* ownership/operational authorization
+
+The current V1 contract specifically establishes a scoped upload-token mechanism for anonymous attachments and prohibits permanent public storage URLs.
+
+Phase 3.15 only needs to preserve the parent-child relationship required by that future implementation.
+
+---
+
+# 24. Anonymous Enquiry Access
+
+Anonymous users may **submit** an Enquiry.
+
+Do not assume they can later retrieve it merely because they know:
+
+* the numeric database ID
+* the Enquiry reference
+* their email
+* their phone
+
+The existing contract explicitly rejects predictable-ID anonymous retrieval and does not treat email as ownership proof.
+
+Any later anonymous retrieval mechanism must use an explicit secure mechanism.
+
+Do not create such a mechanism in this phase.
+
+---
+
+# 25. Authenticated Customer Access
+
+For authenticated customers:
+
+```text id="qud46s"
+Enquiry.user_id = authenticated principal
 ```
 
-must not become publicly retrievable merely because its database ID or `request_reference` is known.
+The customer may later retrieve only their authorized Enquiries.
 
-The existing V1 contract explicitly rejects predictable-ID anonymous retrieval and does not treat email as ownership proof.
+Customer A must not be able to retrieve Customer B's Enquiry.
 
-Therefore:
+The existing API conventions require 404-style masking where necessary to avoid an existence oracle.
 
-* do not create public GET access based on `id`
-* do not treat email as authentication
-* do not automatically attach old guest requests to a newly registered account merely because emails match
-* later anonymous access requires an explicit secure mechanism
-
-That mechanism belongs to Group J/API implementation, not this schema phase.
+Do not implement those APIs in Phase 3.15.
 
 ---
 
-# 24. Product Deletion
+# 26. Staff Access
 
-Use nullable `product_id` with `nullOnDelete`.
+Staff access is operational, not ownership.
 
-If the referenced Product is later deleted:
+A Staff user may later access Enquiries according to explicit operational permissions.
 
-```text
-product_id = null
-```
-
-while preserving:
-
-* product_details
-* style
-* message
-* contact
-* dimensions
-* material
-* color
-* quantity
-
-The original customer request must remain readable to authorized operational users.
-
-Do not cascade Product deletion into Furniture Requests.
-
----
-
-# 25. User Deletion
-
-Use nullable `user_id` with `nullOnDelete`.
-
-Deleting a User must not delete the customer's historical Furniture Requests.
-
-The contact snapshot remains preserved.
-
-This also ensures historical requests remain valid even when the associated account lifecycle later changes.
-
----
-
-# 26. No Order Relationship
+Do not model Staff as the Enquiry owner.
 
 Do not add:
 
-```text
-order_id
+```text id="an1jmj"
+staff_id
 ```
 
-to `furniture_requests`.
+just to represent operational access.
 
-The V1 Request contract explicitly separates Requests from Orders.
-
-A request only becomes an Order through a separately approved business workflow. It must never happen implicitly through ordinary Request update operations.
+Authorization should be handled through the role/permission model established elsewhere.
 
 ---
 
-# 27. No Payment Relationship
+# 27. Admin Access
+
+Admin may have broader Enquiry access according to explicit authorization rules.
+
+Do not encode:
+
+```text id="j2p29m"
+is_admin
+```
+
+in the Enquiry table.
+
+Use the project's RBAC and authorization model.
+
+Administrative access must still follow data-minimization and auditability requirements.
+
+---
+
+# 28. Privacy
+
+Enquiries are private.
+
+Do not expose Enquiry data through:
+
+* public Product APIs
+* public search
+* catalog pages
+* SEO metadata
+* anonymous listing endpoints
+* public CDN caching
+
+The existing contract classifies Enquiries as private and explicitly prohibits embedding them into the public catalog.
+
+---
+
+# 29. Serialization
+
+Never rely on:
+
+```text id="xvuhj1"
+$model->toArray()
+```
+
+for Enquiry API responses.
+
+Later Group J serializers must use explicit allow-lists.
+
+Customer representation may contain only the customer's permitted Enquiry fields.
+
+Staff/Admin representations may contain operational information such as `staff_internal_notes` when authorized.
+
+Internal attachment/storage details must never be exposed by default.
+
+---
+
+# 30. No Sensitive Credential Fields
 
 Do not add:
 
-```text
-payment_id
-payment_status
-quoted_price
-amount
-currency
-```
+* password
+* authentication token
+* reset token
+* session token
+* API key
+* payment credential
+* provider secret
 
-to Furniture Requests.
+to Enquiry.
 
-A request is not a financial transaction.
-
-No price is guaranteed when the request is submitted.
-
-No payment is created by submitting a request.
+Contact details are communication data, not credentials.
 
 ---
 
-# 28. No Inventory Relationship
+# 31. No Financial Fields
 
 Do not add:
 
-```text
-inventory_id
-warehouse_location
-reserved_quantity
-stock_quantity
-```
+* amount
+* price
+* quoted_price
+* payment_status
+* currency
+* delivery_fee
+* total
 
-to Furniture Requests.
+An Enquiry does not establish a commercial price or payment obligation.
 
-A request does not reserve inventory.
-
-It is customer intent, not inventory commitment.
+The existing contract explicitly excludes payment/amount creation from Enquiry behavior.
 
 ---
 
-# 29. No Delivery Relationship
+# 32. No Delivery Fields
 
 Do not add:
 
-```text
-delivery_id
-delivery_fee
-delivery_status
-```
+* delivery_fee
+* delivery_status
+* tracking_number
+* delivery_id
 
-to Furniture Requests.
-
-Delivery belongs to Orders after an actual commercial transaction exists.
+A customer can mention delivery in the message, but that does not make the Enquiry a Delivery object.
 
 ---
 
-# 30. Validation Architecture for Group J
+# 33. No Inventory Fields
 
-Prepare the schema so Group J can implement the full validation sequence:
+Do not add:
 
-```text id="v8zpuv"
+* stock quantity
+* reserved quantity
+* inventory ID
+* allocation
+* warehouse location
+
+An Enquiry never reserves or modifies inventory.
+
+---
+
+# 34. Validation-Ready Database Design
+
+Prepare the schema so Group J can enforce the validation sequence:
+
+```text id="m9q6o6"
 Transport
 → Schema/Input
 → Authentication (optional)
@@ -884,250 +821,140 @@ Transport
 → Persistence
 ```
 
-The existing project-wide validation model requires backend validation to remain authoritative regardless of Next.js/Flutter validation.
+The database should enforce structural integrity.
 
-For Furniture Requests:
+Group J must enforce business meaning.
 
-### Schema validation
+Examples:
 
-Validate:
+### Database
 
-* required fields
-* types
-* maximum lengths
-* JSON structures
-* email syntax
-* phone format
-* quantity range
-* dimensions structure
-* enum values
-* unknown fields
+* foreign keys
+* nullability
+* uniqueness
+* indexes
 
-### Authentication
+### Group J
 
-Optional.
-
-Determine whether the sender is:
-
-```text
-authenticated customer
-```
-
-or:
-
-```text
-guest
-```
-
-### Authorization
-
-For creation, anonymous access is explicitly allowed.
-
-For future retrieval/update, authorization must distinguish:
-
-* Customer own request
-* Staff operational access
-* Admin access
-* anonymous scoped access where later approved
-
-### Domain validation
-
-Validate:
-
-* product requestability
-* MADE_TO_ORDER product eligibility
-* product ownership of any referenced variant if variants are ever added
+* `name` rules
 * contact requirements
-* request-state transition rules
+* subject/message bounds
+* Product/Order validity
+* ownership
+* request context authorization
+* request status transitions
+* anti-abuse/rate limiting
 
-### Persistence
-
-Only validated/trusted data reaches Eloquent persistence.
+The project's validation conventions explicitly distinguish structural validation from business/domain validation.
 
 ---
 
-# 31. Unknown Fields
+# 35. Unknown Fields
 
-Group J create input must reject unknown fields.
+Group J's create/update inputs must use strict allow-lists.
 
-Do not permit:
+Customer submission must not accept:
 
 ```text
-price
-total
-payment_status
-order_id
 user_id
-request_status
-approved
-admin_notes
+enquiry_status
+staff_internal_notes
+payment_status
+amount
+order_status
 ```
 
-from an ordinary customer submission.
+or arbitrary undocumented fields.
 
-Strict allow-listing reduces stale-client problems and mass-assignment risk.
-
----
-
-# 32. Input Shape for Group J
-
-The request model should support an eventual create structure conceptually similar to:
-
-```json
-{
-  "product_id": "optional",
-  "product_details": {
-    "product_name": "Modern sofa",
-    "description": "Three-seat sofa with deep cushions"
-  },
-  "style": "Modern minimalist",
-  "name": "Customer Name",
-  "email": "customer@example.com",
-  "phone": "+255...",
-  "message": "I would like this made in a darker finish.",
-  "quantity": 1,
-  "dimensions": {
-    "length": 220,
-    "width": 90,
-    "height": 85,
-    "unit": "cm"
-  },
-  "material": "Linen",
-  "color": "Charcoal"
-}
-```
-
-This is a **conceptual storage/input shape**, not permission to change the frozen API contract silently.
-
-Group J must define the final exact API schema and reconcile any new required fields through the contract-change process if necessary.
+Unknown fields must be rejected according to the project's strict input policy.
 
 ---
 
-# 33. Request Reference and Public IDs
+# 36. Duplicate Enquiry Handling
 
-Use an opaque request identifier/reference.
+Do not create hard uniqueness constraints such as:
 
-Do not make a predictable numeric `id` sufficient for customer access.
-
-Customer-facing request retrieval must later perform authorization before serialization.
-
-The project-wide IDOR guidance explicitly requires ownership checks and 404 masking for private resources.
-
----
-
-# 34. Indexes
-
-Add indexes for actual Request access patterns.
-
-At minimum:
-
-* unique index on `request_reference`
-* index on `user_id`
-* index on `(request_status, created_at)`
-* index on `product_id`
-* index on `created_at`
-
-Do not index large JSON/text fields automatically.
-
-The existing Staff request listing supports filtering/search across request fields, but those query requirements should be implemented with deliberate search/query design rather than indiscriminate indexes.
-
----
-
-# 35. Sorting
-
-The canonical Request listing order is:
-
-```text
-created_at DESC, id ASC
-```
-
-Use that deterministic ordering in later API implementation.
-
-The schema should support it efficiently through the `created_at` index and primary-key tie-breaker.
-
-The existing request convention explicitly defines this ordering.
-
----
-
-# 36. No Hard Duplicate Constraint
-
-Do not create uniqueness constraints such as:
-
-```text
-email + phone
+```text id="2idjz7"
 email + message
 phone + message
+email + subject
 product_id + email
 ```
 
-Two legitimate requests may have:
+Two legitimate enquiries may have identical or very similar content.
 
-* the same contact details
-* similar or identical messages
-* the same product
+The existing conventions deliberately avoid simplistic duplicate detection for communication submissions.
 
-The existing request contract explicitly rejects using repeated contact/message combinations as a hard duplicate detector.
-
-Duplicate/abuse handling belongs to the application/idempotency/rate-limiting layers.
+Abuse/rate limiting belongs to the API/application layer.
 
 ---
 
-# 37. Request Idempotency
+# 37. Idempotency
 
-The existing V1 contract currently treats `POST /requests` as not inherently idempotent and leaves explicit idempotency deferred.
+Do not introduce an Enquiry-specific idempotency key column in this phase.
 
-Do not add a Request-specific idempotency column merely to solve that concern.
+The existing V1 contract does not require `POST /enquiries` to be inherently idempotent.
 
-Group J may later introduce a shared idempotency mechanism if business requirements change.
+The project currently treats anonymous Enquiry creation as a public mutation requiring abuse/rate-limit consideration rather than a database uniqueness workaround.
 
 ---
 
-# 38. Privacy
+# 38. Indexes
 
-Furniture Requests are private.
+At minimum add:
 
-Never include request details in:
+* unique index on `enquiry_reference`
+* index on `user_id`
+* index on `product_id`
+* index on `order_id`
+* composite index on `(enquiry_status, created_at)`
+* index on `created_at`
 
-* public product responses
-* catalog pages
-* SEO content
-* public search
-* unauthenticated listing endpoints
+This supports later:
 
-Sensitive fields include:
+```text
+/me/enquiries
+staff Enquiry queue
+Product-context queries
+Order-context queries
+status filtering
+newest-first sorting
+```
+
+The canonical V1 listing sort is:
+
+```text id="g23i21"
+created_at DESC, id ASC
+```
+
+with deterministic ordering.
+
+Do not index large text fields simply because they exist.
+
+---
+
+# 39. Query and Search Preparation
+
+The existing Staff Enquiry contract allows filtering/search over:
 
 * name
 * email
 * phone
-* product details
-* style
+* subject
 * message
-* dimensions
-* material
-* color
-* attachments
+* reference
+* Product
+* Order
+* status
+* date ranges
 
-The existing contract explicitly classifies request contact, specifications, notes, and attachments as private.
+and requires the query to operate only over the authorized dataset.
 
----
+Do not implement a search engine in Phase 3.15.
 
-# 39. Serialization
+Do ensure the schema provides the normal indexed access paths needed for relational filters.
 
-Do not expose the model through:
-
-```text
-$model->toArray()
-```
-
-as the API response.
-
-Later Group J API serializers must use explicit allow-lists.
-
-Customer serialization must contain only customer-permitted fields.
-
-Staff/Admin serialization may expose operational fields according to permission.
-
-Internal storage keys, credentials, and Staff-only notes must never be exposed to unauthorized audiences.
+Full-text search, if eventually needed, should be evaluated separately based on actual scale.
 
 ---
 
@@ -1135,81 +962,101 @@ Internal storage keys, credentials, and Staff-only notes must never be exposed t
 
 Create:
 
-`FurnitureRequest`
+`Enquiry`
 
 Eloquent model.
 
 Relationships:
 
-### FurnitureRequest
-
 * `belongsTo(User::class)` nullable
 * `belongsTo(Product::class)` nullable
+* `belongsTo(Order::class)` nullable
 
-Do not add Order, Payment, Delivery, or Inventory relationships.
+Use explicit casts only where needed.
 
-Use explicit casts for:
+Use a dedicated enum/value representation for:
 
-* `product_details`
-* `dimensions`
+```text id="4cyybh"
+OPEN
+CLOSED
+```
 
-and enum/value handling for:
+Do not place status-transition workflows inside the model.
 
-* `request_status`
-
-Do not put request validation or workflow orchestration into the Eloquent model.
+Keep business orchestration in the application/domain layer.
 
 ---
 
-# 41. Historical Intake Preservation
+# 41. Delete Behavior
 
-The following fields represent the customer's original request and should be treated as historical intake:
+Recommended relationship behavior:
 
-* product_id
-* product_details
-* style
-* name
-* email
-* phone
-* message
-* quantity
-* dimensions
-* material
-* color
+### User
 
-Later Staff operational handling must not destroy the original submission.
+```text id="gbo7yi"
+nullOnDelete
+```
 
-If Staff need to add information, use:
+The Enquiry survives account deletion.
 
-```text
+### Product
+
+```text id="1uel81"
+nullOnDelete
+```
+
+The Enquiry survives Product deletion.
+
+### Order
+
+```text id="j7nizu"
+restrictOnDelete
+```
+
+The Enquiry must not be accidentally detached from a historical Order through casual deletion.
+
+The exact parent deletion semantics must remain consistent with the project's existing historical-record policy.
+
+---
+
+# 42. Historical Integrity
+
+After creation:
+
+* changing the customer's profile must not rewrite Enquiry contact snapshot
+* changing Product data must not rewrite original Enquiry content
+* changing Order data must not rewrite the message/subject
+
+Only deliberate operational fields may later change.
+
+At minimum:
+
+```text id="4am9m7"
+enquiry_status
 staff_internal_notes
 ```
 
-or a future dedicated operational history model.
+belong to operational handling.
 
-Do not overwrite the original request to represent Staff decisions.
-
----
-
-# 42. Staff/Admin Operational Separation
-
-Staff can later manage requests operationally according to explicit permissions.
-
-Staff are not owners of Requests.
-
-The existing authorization model explicitly distinguishes:
-
-```text
-Staff → operational access
-Customer → ownership access
-Admin → broader administrative access
-```
-
-Staff must not gain general customer-account administration merely because they can view a Furniture Request.
+The customer-provided communication remains preserved.
 
 ---
 
-# 43. Maintainability Requirements
+# 43. Staff Internal Notes Security
+
+If `staff_internal_notes` is implemented directly on the table:
+
+* never allow customer creation to populate it
+* never serialize it to Customer responses
+* never expose it through public endpoints
+* only allow authorized Staff/Admin workflows to change it
+* keep it separate from the customer's original `message`
+
+This preserves a clean security boundary between external communication and internal operations.
+
+---
+
+# 44. Maintainability Requirements
 
 For all new or refactored functions:
 
@@ -1217,272 +1064,258 @@ For all new or refactored functions:
 * no function may have more than **3 return statements**
 * meaningful repeated string literals should be centralized using constants or enums where appropriate
 
-Do not create a giant global constants class.
+Do not create a giant global constant class.
 
-Prefer domain-local enums/value objects for:
+Prefer domain-local enums/value objects.
 
-* request statuses
-* any approved internal constants
+Do not suppress static-analysis findings or increase thresholds.
 
-Do not suppress static-analysis findings or raise analyzer thresholds.
-
-Keep migrations, model methods, factories, and validators small and cohesive.
+Keep migrations, models, factories, and tests small and cohesive.
 
 ---
 
-# 44. Tests
+# 45. Tests
 
-Add automated tests for schema and domain-supporting invariants.
+Add automated tests for the persistence and domain-supporting invariants.
 
 ## Migration/schema tests
 
 Verify:
 
-* `furniture_requests` exists
+* `enquiries` table exists
 * primary key exists
-* `request_reference` is unique
+* `enquiry_reference` is unique
 * `user_id` is nullable
 * `product_id` is nullable
-* `product_details` exists
-* `style` exists
-* contact fields exist
+* `order_id` is nullable
+* `name` exists
+* `email` is nullable
+* `phone` is nullable
+* `subject` exists
 * `message` exists
-* request status exists
-* quantity is nullable
-* dimensions is nullable
-* material is nullable
-* color is nullable
+* `enquiry_status` exists
+* `staff_internal_notes` exists if implemented
 * timestamps exist
 
 ## Guest tests
 
-Verify a valid request can exist with:
+Verify an Enquiry can persist with:
 
-```text
+```text id="k40z17"
 user_id = null
 ```
 
-and complete contact information.
+and valid contact information.
 
 ## Authenticated tests
 
-Verify a request can exist with:
+Verify an Enquiry can persist with:
 
-```text
+```text id="u9k2j8"
 user_id = authenticated customer
 ```
 
-while preserving contact snapshot fields independently.
+while retaining the contact snapshot.
 
 ## Ownership tests
 
 Verify:
 
-* authenticated User A is linked to User A's request
-* `user_id` can be null for guest requests
-* there is no automatic User association based on matching email
+* authenticated Enquiry points to the authenticated User
+* anonymous Enquiry has `user_id = null`
+* there is no email-based ownership assignment
 
-## Product tests
-
-Verify:
-
-* custom requests can have `product_id = null`
-* Product-linked request can reference a Product
-* deleting Product nulls `product_id`
-* Product deletion does not delete the request
-* product snapshot/details remain preserved
-
-The MADE_TO_ORDER eligibility itself belongs to Group J domain validation.
-
-## Contact tests
+## Product context tests
 
 Verify:
 
-* name storage
-* email storage
-* phone storage
-* reasonable length bounds
-* phone stored as string
+* Product is optional
+* Product deletion nulls `product_id`
+* Enquiry itself remains
+* Enquiry content remains intact
 
-## Style/message tests
-
-Verify:
-
-* style persists
-* style is bounded
-* message persists
-* message length is bounded
-* Unicode text is preserved safely
-
-## Structured JSON tests
+## Order context tests
 
 Verify:
 
-* valid `product_details` structure persists
-* valid `dimensions` structure persists
-* malformed structures are rejected by the appropriate validation layer
-* unknown dimension keys are rejected
+* Order is optional
+* Enquiry may reference an Order
+* Order deletion does not cascade-delete the Enquiry
+* relationship behavior follows the intended restrictive policy
 
 ## Status tests
 
 Verify:
 
-* default status is `SUBMITTED`
-* only approved statuses can be stored
-* no arbitrary request status is accepted
+* default is `OPEN`
+* only `OPEN` and `CLOSED` are valid
+* no arbitrary status value can be persisted through the intended application/domain path
 
-## Historical tests
+## Content tests
 
-Change the associated Product or User profile after creating a request and verify:
+Verify:
 
-* product_details unchanged
-* style unchanged
-* message unchanged
-* name unchanged
-* email unchanged
-* phone unchanged
+* name persistence
+* email persistence
+* phone persistence
+* subject persistence
+* message persistence
+* reasonable field bounds
+
+## Historical integrity tests
+
+After creating an Enquiry:
+
+* modify User profile
+* modify Product
+* modify Order
+
+and verify the original Enquiry contact/content remains unchanged.
+
+## Privacy tests
+
+Verify Staff-only internal notes are not part of the customer-safe representation.
 
 ## Duplicate tests
 
-Verify multiple requests with the same email/phone/message are allowed.
+Verify two legitimate enquiries with identical contact/message data can coexist.
 
-No hard duplicate uniqueness should exist.
+No artificial duplicate uniqueness rule should reject them.
 
 ---
 
-# 45. Factories
+# 46. Factories
 
 Create:
 
-`FurnitureRequestFactory`
+`EnquiryFactory`
 
 Support fixtures for:
 
-* guest request
-* authenticated customer request
-* product-linked request
-* custom request
-* request with dimensions
-* request with material/color
-* request with all optional specifications
-* `SUBMITTED`
-* `IN_REVIEW`
+* guest enquiry
+* authenticated customer enquiry
+* Product-linked enquiry
+* Order-linked enquiry
+* general enquiry
+* `OPEN`
 * `CLOSED`
+* internal Staff note
 
-Factory defaults must produce valid contact data and valid request data.
+Factory defaults must produce valid contact and message data.
 
-Do not generate Order, Payment, or Delivery records from the request factory.
+Do not automatically create:
 
----
+* Order
+* Payment
+* Furniture Request
+* Delivery
 
-# 46. Documentation Updates
-
-Update the authoritative documentation where necessary to make the following explicit:
-
-> Furniture Requests may be submitted by either registered customers or guests.
-
-Also preserve:
-
-* server-derived `user_id`
-* contact snapshot
-* optional product reference
-* product requestability validation
-* style
-* product details
-* message
-* private data
-* request status lifecycle
-* request is not Order/payment/inventory
-* no automatic anonymous retrieval
-* original customer input remains preserved
-
-Because the API contract is frozen, do not silently edit the public request contract merely through this schema phase.
-
-Any change that makes both email and phone mandatory at the public API boundary must be deliberately reconciled with the frozen V1 contract.
+unless a specific test explicitly needs those relationships.
 
 ---
 
-# 47. Security and Data Integrity Review
+# 47. Documentation Updates
+
+Update the authoritative documentation where necessary to preserve these rules:
+
+* Guests may submit Enquiries
+* authenticated Customers may submit Enquiries
+* `user_id` is server-derived
+* contact information is snapshotted
+* Product and Order context are optional
+* Enquiry is private
+* Enquiry is not Request/Order/Payment/Inventory
+* `OPEN → CLOSED` is the V1 status lifecycle
+* customer content remains preserved
+* Staff notes are separate
+* anonymous retrieval requires an explicit secure mechanism
+* attachments remain optional and privately authorized
+
+Do not create a permanent phase-specific document only for this implementation.
+
+---
+
+# 48. Security and Data Integrity Review
 
 Before completion, verify:
 
-* guests can be represented without fake User accounts
-* `user_id` cannot be client-controlled
-* contact information is preserved as a request snapshot
-* email is never used as authentication
-* product references cannot destroy historical requests
-* arbitrary JSON is not accepted as trusted product details
-* style/message are bounded and treated as plain text
-* request status is server-controlled
-* no Order, Payment, Delivery, or Inventory relationship has been introduced
-* duplicate requests are not blocked by weak uniqueness assumptions
-* private request data is not publicly serializable
-* Staff access remains operational rather than customer-account administrative
+* anonymous creation is representable without fake User accounts
+* authenticated ownership is server-derived
+* client cannot set `user_id`
+* client cannot set `enquiry_status`
+* client cannot set `staff_internal_notes`
+* email is not treated as authentication
+* Product deletion cannot destroy the Enquiry
+* Order relationships do not cascade-delete Enquiries
+* original customer communication is preserved
+* Staff notes are private
+* Enquiries are not publicly cacheable
+* no payment secrets or credentials exist in the schema
+* no financial/order-status fields have been introduced
+* no generic unrestricted Enquiry CRUD path has been created
+* attachment design remains compatible with scoped authorization
 
 ---
 
 # Definition of Done
 
-Phase 3.14 is complete when:
+Phase 3.15 is complete when:
 
-* `furniture_requests` migration exists
-* one table supports both guest and authenticated request submission
+* `enquiries` migration exists
+* both guest and authenticated submissions are representable
 * `user_id` is nullable and server-derived
-* request reference is unique and server-generated
-* optional `product_id` is supported
-* submitted `product_details` are preserved independently
-* `style` is stored as bounded free text
-* `name`, `email`, and `phone` contact snapshots are stored
-* `message` is stored as bounded text
-* optional quantity/dimensions/material/color structures are supported
-* request status uses the closed V1 values
-* historical customer submission data is preserved
-* Product deletion cannot destroy the request
-* User deletion cannot destroy the request
-* no duplicate-by-contact uniqueness constraint exists
+* request/contact identity is stored as a historical snapshot
+* unique server-generated `enquiry_reference` exists
+* required `subject` and `message` are stored
+* optional Product context is supported
+* optional Order context is supported
+* request status uses closed `OPEN` / `CLOSED`
+* default status is `OPEN`
+* Staff internal notes are separate from customer content
+* User deletion preserves the Enquiry
+* Product deletion preserves the Enquiry
+* Order relationship uses restrictive deletion semantics
+* relevant indexes exist
 * Eloquent relationships are implemented
-* factories support guest and authenticated request fixtures
-* schema/domain-supporting tests pass
+* factories support guest/authenticated/product/order-context fixtures
+* schema, relationship, privacy, status, historical-integrity, and deletion tests pass
 * maintainability requirements are satisfied
-* the schema is ready for strict Group J validation and authorization
-* no Request → Order, payment, inventory, or delivery workflow has leaked into this phase
+* the model is ready for strict Group J validation and authorization
 
 # Out of Scope
 
-Do not implement in Phase 3.14:
+Do not implement in Phase 3.15:
 
-* `POST /requests`
-* Request validation Form Requests
+* `POST /enquiries`
+* Enquiry Form Requests
 * DTOs/Commands
 * authentication
-* authorization policies
+* customer authorization policies
+* Staff authorization policies
+* anonymous secure retrieval
+* Enquiry status action endpoints
+* Staff Enquiry-management API
+* attachment uploads
+* upload tokens
+* file scanning
 * rate limiting
 * CAPTCHA
-* request status transition endpoints
-* Staff request-management API
-* customer request retrieval API
-* anonymous request retrieval
-* attachment upload implementation
 * email/SMS notifications
-* quotation/pricing
-* payment
-* Order creation/conversion
-* inventory reservation
-* production workflow
-* delivery workflow
-* request-to-order conversion
-* full-text search infrastructure
+* response/reply messaging system
+* quotation
+* Order creation
+* Payment
+* Delivery
+* Inventory
+* Enquiry → Order conversion
+* Request → Enquiry conversion
 
 # STOP CONDITION
 
-Stop after the Furniture Request persistence model, relationships, constraints, factories, tests, and migration verification are complete.
+Stop after the Enquiry persistence model, relationships, constraints, factories, tests, and migration verification are complete.
 
-Do not implement Group J API validation or request workflow yet.
-
-**Important contract note (contact + free-text field reconciliation):** the schema stores `name`, `email`, and `phone` contact snapshots, and the domain model enforces the **frozen V1 contract** — `name` required plus at least one of `email`/`phone`. It does not require all four of `name + email + phone + message` at the API boundary. If Group J later makes `email` and `phone` both mandatory, that is a deliberate frozen-contract reconciliation (per §6 and §46), not a Phase 3.14 schema change.
-
-**Important contract note (frozen-REQ-001 field surface):** the frozen `REQ-001` contract (`api-contract.md §26.3`, `api-resources.md §5.1`, `api-examples.md §10.1`) carries `product_id, quantity, name, phone, email, dimensions, material, color, notes` — where `notes` is **Optional** and there is **no** `message`, `style`, or `product_details`. This phase's schema uses a required `message` column (persistence home for the contract's `notes`) and introduces required `style` and `product_details` columns with no frozen counterpart. These are compatibility events (a rename plus optional→required, and two brand-new fields) that must be reconciled deliberately in Group J — mapped to the frozen public names (`message ⇄ notes`; `style`/`product_details` additive-optional or folded into `notes`) or run through the post-freeze contract-change process — before emitting them verbatim against the frozen API. Recorded in `docs/decisions.md` ADR/BACKEND-019.
+Do not implement Group J Enquiry API validation or operational workflows yet.
 
 The next phase is:
 
-**Phase 3.15 — Enquiry Schema**
+**Phase 3.16 — Notification Schema**
