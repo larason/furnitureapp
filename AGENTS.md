@@ -877,17 +877,23 @@ Check for ambiguity, duplication, security gaps and frontend usability problems 
 
 ## PHASE GROUP D — AUTHENTICATION AND AUTHORIZATION (USE CLERK)
 
-### Phase 4.1 — Authentication design review (Use clerk)
-### Phase 4.2 — Customer registration
-### Phase 4.3 — Login/logout
-### Phase 4.4 — Password recovery
-### Phase 4.5 — Email verification if required
-### Phase 4.6 — Profile operations
-### Phase 4.7 — API authentication for mobile
-### Phase 4.8 — SPA authentication for website
+### Phase 4.1 — Clerk authentication architecture/design review
+Decide the Clerk↔Laravel identity boundary, local users projection, credential-field changes, synchronization rules, account lifecycle, authentication middleware, and testing strategy.
+
+### Phase 4.2 — Clerk/Laravel identity integration
+Verify Clerk credentials in Laravel and map Clerk identity → local user.
+
+### Phase 4.3 — Customer registration / sign-in flow
+Clerk-managed rather than custom Laravel credentials.
+
+### Phase 4.4 — Logout/session lifecycle
+### Phase 4.5 — Password recovery/security
+### Phase 4.6 — Email/phone verification
+### Phase 4.7 — Local profile synchronization
+### Phase 4.8 — Mobile authentication boundary
 ### Phase 4.9 — Roles
 ### Phase 4.10 — Policies/permissions
-### Phase 4.11 — Rate limiting
+### Phase 4.11 — Rate limiting / abuse controls
 ### Phase 4.12 — Authentication tests
 
 **Exit condition:** Customer, staff and admin access paths are secure and tested.
