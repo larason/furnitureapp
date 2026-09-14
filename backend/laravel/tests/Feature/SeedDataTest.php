@@ -224,6 +224,16 @@ class SeedDataTest extends TestCase
         $this->assertGreaterThanOrEqual(1, Notification::count());
     }
 
+    public function test_demo_seeder_refuses_production_environment(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('DemoSeeder cannot run in production.');
+
+        (new DemoSeeder)->run();
+    }
+
     public function test_demo_seeder_skips_when_demo_orders_exist(): void
     {
         $this->seed(DemoSeeder::class);

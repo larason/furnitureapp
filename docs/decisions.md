@@ -2016,3 +2016,22 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 **Reason:** Gives local development, API work, and frontend integration a one-command realistic dataset while keeping production seeding to idempotent reference data and leaving all workflows to their domain phases.
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`database/factories/{Category,CustomerProfile,StaffProfile}Factory.php` new, `{User,ProductStock,OrderItem}Factory.php`, `database/seeders/{Database,DevelopmentUser,Catalog,CommerceDemo,Demo}Seeder.php`, `config/demo.php`, `.env.example`, `app/Models/{Category,CustomerProfile,StaffProfile}.php`, `tests/Feature/SeedDataTest.php`), `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-022 — Phase 3.19 Migration Test (Group C Exit Gate)
+
+**Decision:** The Group C database rebuilds from migration history alone and meets the exit condition. No migration, factory, seeder, or contract changes were required — the one new file is a verification suite.
+
+- **New suite `tests/Feature/MigrationRebuildTest.php` (35 tests):** all 22 domain tables exist with primary keys; 3.17 corrections present (`products.deleted_at`, `enquiries.category`, guard columns); soft deletes only on `products`; `order_status_history` has no `updated_at`; every migration file has an applied row; all 29 FKs carry the §19 delete action (verified via `Schema::getForeignKeys`, driver-normalized); every domain table carries exactly the expected FK count (no strays, none missing).
+- **MySQL rebuild (MariaDB 11.8.8, scratch DB, FK checks never disabled):** cycle 1 `migrate:fresh` → `db:seed` → `DemoSeeder` (exact counts: 3 users, 3 products, 5 variants, 4 orders, 5 items, 16 history, 1 payment, 1 delivery, 3 carts, 0 orphans); cycle 2 from a dropped database reproduced identical counts; `migrate:reset` (31 downs) + `migrate` (31 ups) clean, including the MariaDB `DROP CONSTRAINT` fallback. Reference reseed stable (3 roles / 17 permissions / 76 categories / 20 recommendations).
+- **Constraint proof on MySQL:** duplicate slug/SKU/reference/digest/webhook/delivery rejections hold; CHECKs hold (self-recommendation rejected live); `CHECK` inventory present in `INFORMATION_SCHEMA`.
+- **Index sanity (EXPLAIN):** product-by-slug `const` via unique; variants-by-product, orders-by-customer, history-by-order all `ref` via their composite indexes; notification inbox `ref` via `(recipient, created_at)`.
+- **Suite results:** sqlite canonical suite **690/690 pass**; supplementary full MySQL run **681/690** with 9 failures classified as test-harness/sqlite assumptions, zero schema defects: 2× raw `PRAGMA index_list` (sqlite-only SQL), 3× pcntl-fork concurrency tests (`MySQL server has gone away` in forked children), 1× direct table-drop while children reference it (FK protection working as designed), 2× raw `DROP CHECK` inside test helpers (MySQL-8-only syntax; the migration `down()` itself is portable), 1× lowercase enum accepted by MySQL's case-insensitive enum collation (app layer owns CLOSED validation via native casts; reads return the canonical member — Group K admin writes must validate before attach).
+- **History integrity (§13):** 31 migration files in chronological dependency order, one responsibility each, no hardcoded paths, no production data, seeds create no schema.
+- **Security (§17):** no secrets in migrations/seeds; demo credentials env-configured and local-only; `db:seed` creates no users; demo data requires explicit `--class=DemoSeeder`.
+- **API compatibility (§16):** untouched — enums, integer-minor-unit money, nullability, and ownership rules unchanged; frozen V1 behavior preserved.
+- **Known risks (§23):** MariaDB requires `DROP CONSTRAINT` where MySQL 8 uses `DROP CHECK` (handled via fallback); carts `user_id` delete action differs per driver (restrict vs set-null, preservation proven both); MySQL enums match case-insensitively (see above); `products.product_type`/`is_published` remain deferred to Group E per `ADR/BACKEND-020` V1.
+- **Group C exit:** contract → domain → migrations → FKs → constraints → indexes → factories → seeds → fresh rebuild → integration tests all agree. **Database schema accurately represents the agreed domain and can be rebuilt from migrations.**
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`tests/Feature/MigrationRebuildTest.php`), `docs/decisions.md`
