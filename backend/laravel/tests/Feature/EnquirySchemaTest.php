@@ -6,11 +6,13 @@ use App\Models\Enquiry;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\EnquiryCategory;
 use App\Support\EnquiryStatus;
 use Database\Factories\EnquiryFactory;
 use DomainException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -30,6 +32,7 @@ class EnquirySchemaTest extends TestCase
             'name',
             'email',
             'phone',
+            'category',
             'subject',
             'message',
             'enquiry_status',
@@ -332,6 +335,49 @@ class EnquirySchemaTest extends TestCase
         $this->expectException(\ValueError::class);
 
         Enquiry::factory()->make(['enquiry_status' => 'IN_PROGRESS']);
+    }
+
+    public function test_category_accepts_closed_vocabulary_values(): void
+    {
+        foreach (EnquiryCategory::cases() as $category) {
+            $enquiry = Enquiry::factory()->create(['category' => $category]);
+
+            $this->assertSame($category, $enquiry->fresh()->category);
+        }
+    }
+
+    public function test_category_is_nullable(): void
+    {
+        $enquiry = Enquiry::factory()->create(['category' => null]);
+
+        $this->assertNull($enquiry->fresh()->category);
+    }
+
+    public function test_arbitrary_category_is_rejected(): void
+    {
+        $this->expectException(\ValueError::class);
+
+        Enquiry::factory()->make(['category' => 'COMPLAINT']);
+    }
+
+    public function test_arbitrary_category_is_rejected_by_database(): void
+    {
+        $enquiry = Enquiry::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        DB::table('enquiries')->where('id', $enquiry->id)->update(['category' => 'COMPLAINT']);
+    }
+
+    public function test_category_is_immutable_after_submission(): void
+    {
+        $enquiry = Enquiry::factory()->create(['category' => EnquiryCategory::DELIVERY]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Enquiry category is immutable once submitted.');
+
+        $enquiry->category = EnquiryCategory::PRODUCT;
+        $enquiry->save();
     }
 
     public function test_customer_content_is_immutable_after_submission(): void

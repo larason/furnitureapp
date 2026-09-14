@@ -6,7 +6,9 @@ use App\Models\Enquiry;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\EnquiryCategory;
 use App\Support\EnquiryStatus;
+use App\Support\ReferenceGenerator;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -26,6 +28,7 @@ class EnquiryFactory extends Factory
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'phone' => '+2557'.fake()->numerify('########'),
+            'category' => fake()->randomElement(EnquiryCategory::cases()),
             'subject' => fake()->sentence(4),
             'message' => fake()->paragraph(),
             'enquiry_status' => EnquiryStatus::OPEN,
@@ -86,7 +89,7 @@ class EnquiryFactory extends Factory
     public static function generateReference(): string
     {
         do {
-            $reference = Enquiry::REFERENCE_PREFIX.strtoupper(fake()->bothify('####??????'));
+            $reference = ReferenceGenerator::generate(Enquiry::REFERENCE_PREFIX, 10);
         } while (isset(self::$usedReferences[$reference]));
 
         self::$usedReferences[$reference] = true;

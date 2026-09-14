@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\EnquiryCategory;
 use App\Support\EnquiryStatus;
+use App\Support\ReferenceGenerator;
 use Database\Factories\EnquiryFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string|null $email
  * @property string|null $phone
+ * @property EnquiryCategory|null $category
  * @property string $subject
  * @property string $message
  * @property EnquiryStatus|null $enquiry_status
@@ -34,6 +37,7 @@ use Illuminate\Support\Carbon;
     'name',
     'email',
     'phone',
+    'category',
     'subject',
     'message',
 ])]
@@ -65,6 +69,7 @@ class Enquiry extends Model
         'name',
         'email',
         'phone',
+        'category',
         'subject',
         'message',
     ];
@@ -86,7 +91,7 @@ class Enquiry extends Model
     private function ensureServerDefaults(): void
     {
         if (! is_string($this->enquiry_reference) || trim($this->enquiry_reference) === '') {
-            $this->enquiry_reference = EnquiryFactory::generateReference();
+            $this->enquiry_reference = ReferenceGenerator::generate(self::REFERENCE_PREFIX, 10);
         }
 
         if ($this->enquiry_status === null) {
@@ -108,6 +113,7 @@ class Enquiry extends Model
     {
         $this->assertReference();
         $this->assertContact();
+        $this->assertCategory();
         $this->assertSubject();
         $this->assertMessage();
         $this->assertStatus();
@@ -133,6 +139,7 @@ class Enquiry extends Model
     protected function casts(): array
     {
         return [
+            'category' => EnquiryCategory::class,
             'enquiry_status' => EnquiryStatus::class,
         ];
     }
@@ -179,6 +186,13 @@ class Enquiry extends Model
 
         if (mb_strlen(trim($value)) > $max) {
             throw new DomainException("Enquiry {$field} is too long.");
+        }
+    }
+
+    private function assertCategory(): void
+    {
+        if ($this->category !== null && ! in_array($this->category, EnquiryCategory::cases(), true)) {
+            throw new DomainException('Enquiry category must be a closed V1 enquiry category.');
         }
     }
 
