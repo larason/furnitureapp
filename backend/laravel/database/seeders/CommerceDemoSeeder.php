@@ -24,6 +24,7 @@ use App\Support\PaymentStatus;
 use App\Support\ReferenceGenerator;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * Disposable demo commerce data for local development (fresh database only).
@@ -91,14 +92,25 @@ class CommerceDemoSeeder extends Seeder
     }
 
     /**
+     * @return array{delivery_fee_amount: int|null, total_amount: int}
+     */
+    private function orderAmounts(string $orderState, int $subtotal): array
+    {
+        return match ($orderState) {
+            'pickup' => ['delivery_fee_amount' => 0, 'total_amount' => $subtotal],
+            'deliveryPending' => ['delivery_fee_amount' => null, 'total_amount' => $subtotal],
+            'deliveryFinalized' => ['delivery_fee_amount' => self::DELIVERY_FEE, 'total_amount' => $subtotal + self::DELIVERY_FEE],
+            default => throw new InvalidArgumentException("Unknown demo order state [{$orderState}]."),
+        };
+    }
+
+    /**
      * @param  list<array{0: ProductVariant, 1: int}>  $lines
      */
     private function createPricedOrder(User $customer, string $orderState, array $lines): Order
     {
         $subtotal = $this->lineSubtotal($lines);
-        $amounts = $orderState === 'deliveryFinalized'
-            ? ['delivery_fee_amount' => self::DELIVERY_FEE, 'total_amount' => $subtotal + self::DELIVERY_FEE]
-            : ['delivery_fee_amount' => $orderState === 'pickup' ? 0 : null, 'total_amount' => $subtotal];
+        $amounts = $this->orderAmounts($orderState, $subtotal);
 
         $order = Order::factory()->for($customer, 'customer')->{$orderState}()->create(array_merge([
             'subtotal_amount' => $subtotal,
@@ -154,7 +166,22 @@ class CommerceDemoSeeder extends Seeder
         ]);
         $order->forceFill(['status' => OrderStatus::COMPLETED])->save();
 
-        $this->seedHistory($order, Carbon::now()->subDays(9), [
+        $base = Carbon::now()->subDays(9);
+
+        Payment::create([
+            'order_id' => $order->id,
+            'payment_reference' => ReferenceGenerator::generate(Payment::REFERENCE_PREFIX, 8),
+            'provider' => 'internal',
+            'method' => 'manual',
+            'status' => PaymentStatus::SUCCEEDED,
+            'amount' => $order->total_amount,
+            'currency' => $order->currency,
+            'provider_transaction_id' => sprintf('TXN-%08d', $order->id),
+            'initiated_at' => $base->copy(),
+            'confirmed_at' => $base->copy()->addHours(3),
+        ]);
+
+        $this->seedHistory($order, $base, [
             [null, OrderStatus::PENDING_PAYMENT, OrderActorType::SYSTEM, null, 0],
             [OrderStatus::PENDING_PAYMENT, OrderStatus::PAID, OrderActorType::SYSTEM, null, 3],
             [OrderStatus::PAID, OrderStatus::ACCEPTED, OrderActorType::STAFF, $staff, 7],

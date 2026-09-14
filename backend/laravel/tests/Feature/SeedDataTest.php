@@ -21,8 +21,10 @@ use App\Models\StaffProfile;
 use App\Models\User;
 use App\Support\FulfillmentType;
 use App\Support\OrderStatus;
+use App\Support\PaymentStatus;
 use App\Support\RoleName;
 use Database\Seeders\CategorySeeder;
+use Database\Seeders\CommerceDemoSeeder;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\DemoSeeder;
 use Database\Seeders\RbacSeeder;
@@ -232,6 +234,35 @@ class SeedDataTest extends TestCase
         $this->expectExceptionMessage('DemoSeeder cannot run in production.');
 
         (new DemoSeeder)->run();
+    }
+
+    public function test_unknown_demo_order_state_throws(): void
+    {
+        $method = new \ReflectionMethod(CommerceDemoSeeder::class, 'orderAmounts');
+        $method->setAccessible(true);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown demo order state [deliverFinalized].');
+
+        $method->invoke(new CommerceDemoSeeder, 'deliverFinalized', 10000);
+    }
+
+    public function test_paid_orders_each_have_a_succeeded_payment(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $paidOrderIds = OrderStatusHistory::where('to_status', OrderStatus::PAID->value)
+            ->distinct()
+            ->pluck('order_id');
+
+        $this->assertGreaterThanOrEqual(2, $paidOrderIds->count());
+
+        foreach ($paidOrderIds as $orderId) {
+            $this->assertTrue(
+                Payment::where('order_id', $orderId)->where('status', PaymentStatus::SUCCEEDED)->exists(),
+                "Order {$orderId} reached PAID and must have a succeeded payment."
+            );
+        }
     }
 
     public function test_demo_seeder_skips_when_demo_orders_exist(): void
