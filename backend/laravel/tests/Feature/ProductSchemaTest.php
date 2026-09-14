@@ -175,7 +175,7 @@ class ProductSchemaTest extends TestCase
         ]);
     }
 
-    public function test_deleting_product_hard_deletes_and_cascades_variants(): void
+    public function test_deleting_product_soft_deletes_and_hides_it(): void
     {
         $category = $this->createCategory(['slug' => 'sofas']);
         $product = Product::factory()->for($category)->create(['slug' => 'nordic-sofa']);
@@ -184,6 +184,19 @@ class ProductSchemaTest extends TestCase
         $product->delete();
 
         $this->assertNull(Product::where('slug', 'nordic-sofa')->first());
+        $this->assertDatabaseHas('products', ['id' => $product->id]);
+        $this->assertNotNull(Product::withTrashed()->find($product->id)->deleted_at);
+        $this->assertNotNull(ProductVariant::find($variant->id));
+    }
+
+    public function test_force_deleting_product_hard_deletes_and_cascades_variants(): void
+    {
+        $category = $this->createCategory(['slug' => 'sofas']);
+        $product = Product::factory()->for($category)->create(['slug' => 'nordic-sofa']);
+        $variant = ProductVariant::factory()->for($product)->create();
+
+        $product->forceDelete();
+
         $this->assertDatabaseMissing('products', ['id' => $product->id]);
         $this->assertDatabaseMissing('product_variants', ['id' => $variant->id]);
     }

@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -17,7 +18,7 @@ return new class extends Migration
         $driver = DB::getDriverName();
 
         if ($driver === 'mysql') {
-            DB::statement('ALTER TABLE order_items DROP CHECK chk_order_item_line_total_consistent');
+            $this->dropCheck('order_items', 'chk_order_item_line_total_consistent');
 
             return;
         }
@@ -25,6 +26,15 @@ return new class extends Migration
         if ($driver === 'sqlite') {
             DB::statement('DROP TRIGGER IF EXISTS trg_order_items_line_total_insert');
             DB::statement('DROP TRIGGER IF EXISTS trg_order_items_line_total_update');
+        }
+    }
+
+    private function dropCheck(string $table, string $name): void
+    {
+        try {
+            DB::statement("ALTER TABLE {$table} DROP CHECK {$name}");
+        } catch (QueryException) {
+            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$name}");
         }
     }
 
