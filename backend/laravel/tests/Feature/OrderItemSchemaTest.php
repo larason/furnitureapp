@@ -199,7 +199,7 @@ class OrderItemSchemaTest extends TestCase
             'variant_id' => null,
         ]);
 
-        $product->delete();
+        $product->forceDelete();
 
         $fresh = $item->fresh();
         $this->assertNotNull($fresh);

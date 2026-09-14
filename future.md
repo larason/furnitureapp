@@ -8,6 +8,7 @@
 * Promotional codes for a discount for returning customers briging a friend or colleague
 * banners and popups for "New customer get a discount!"
 * two videos one for broader audience and another for university students
+* 30s max 2D explainer videos real human and furniture
 
 5. we will use **CLERK auth** for authentication handling while we handle roles, policies/permissions
 

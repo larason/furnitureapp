@@ -24,6 +24,10 @@ class Category extends Model
             if ($category->parent_id !== null && $category->parent_id === $category->id) {
                 throw new DomainException('A category cannot reference itself as its own parent.');
             }
+
+            if (($category->display_order ?? 0) < 0) {
+                throw new DomainException('A category display order must not be negative.');
+            }
         });
     }
 

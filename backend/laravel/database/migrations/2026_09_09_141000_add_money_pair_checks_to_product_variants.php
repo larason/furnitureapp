@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
@@ -81,8 +82,8 @@ return new class extends Migration
         $driver = DB::getDriverName();
 
         if ($driver === 'mysql') {
-            DB::statement('ALTER TABLE product_variants DROP CHECK chk_compare_at_price_null_together');
-            DB::statement('ALTER TABLE product_variants DROP CHECK chk_cost_price_null_together');
+            $this->dropCheck('product_variants', 'chk_compare_at_price_null_together');
+            $this->dropCheck('product_variants', 'chk_cost_price_null_together');
 
             return;
         }
@@ -96,5 +97,14 @@ return new class extends Migration
 
         DB::statement('ALTER TABLE product_variants DROP CONSTRAINT chk_compare_at_price_null_together');
         DB::statement('ALTER TABLE product_variants DROP CONSTRAINT chk_cost_price_null_together');
+    }
+
+    private function dropCheck(string $table, string $name): void
+    {
+        try {
+            DB::statement("ALTER TABLE {$table} DROP CHECK {$name}");
+        } catch (QueryException) {
+            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$name}");
+        }
     }
 };

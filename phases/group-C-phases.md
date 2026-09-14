@@ -1,1516 +1,1372 @@
-# Phase 3.16 — Notification Schema
+# Phase 3.17 — Foreign Keys / Indexes / Constraints Review
 
 ## Purpose
 
-Implement the persistence model for **transactional/system Notifications**.
+Perform a final relational-integrity review of the database schema produced by Phases 3.1–3.16.
 
-Notifications exist to inform users about important events concerning their:
+The goal is to verify that:
 
-* Orders
-* Payments
-* Delivery, when the Order uses Delivery
-* approved system actions associated with their commerce activity
+* foreign keys correctly represent domain relationships;
+* delete and update behavior cannot silently corrupt historical or operational data;
+* nullability matches the agreed domain rules;
+* unique constraints enforce only true invariants;
+* check constraints enforce invariants that are appropriate at database level;
+* indexes support the documented access patterns without unnecessary duplication;
+* money, quantities, timestamps, and identifiers use safe database types;
+* CLOSED V1 enums remain consistent with the API contract;
+* cross-table invariants that cannot be fully enforced by MySQL are explicitly identified for application/domain enforcement;
+* migration order can reliably rebuild the complete schema from an empty database;
+* constraints do not conflict with legitimate business workflows;
+* the schema is ready for Group C exit and later implementation phases.
 
-Notifications are **not** an email-marketing, advertising, promotional, campaign, or customer-segmentation system.
-
-The notification domain must remain focused on operational/customer-service information generated from authoritative business events.
-
-Examples:
-
-```text
-Order received
-Order accepted
-Order being processed
-Order ready for pickup
-Order shipped
-Order delivered
-Order completed
-Order cancelled
-
-Payment successful
-Payment failed
-Payment requires action
-Payment expired
-
-Delivery-related order update
-```
-
-The exact Payment notification types will be defined with the payment contract in Group H. Do not invent public `PAYMENT_*` enum values in Phase 3.16.
+This phase is a **review and hardening phase**. Do not redesign the domain or introduce new business concepts.
 
 ---
 
-# 1. Notification vs Marketing — Explicit Boundary
+## Dependencies
 
-The application must maintain a strict conceptual separation:
+Complete before starting:
 
-### Transactional/System Notification
+* Phase 3.1 — Users schema
+* Phase 3.2 — Roles / permissions model
+* Phase 3.3 — Categories schema
+* Phase 3.4 — Products schema
+* Phase 3.5 — Product Variants schema
+* Phase 3.6 — Product Images schema
+* Phase 3.7 — Inventory schema
+* Phase 3.8 — Cart schema
+* Phase 3.9 — Orders schema
+* Phase 3.10 — Order Items schema
+* Phase 3.11 — Order Status History schema
+* Phase 3.12 — Payment schema
+* Phase 3.13 — Delivery schema
+* Phase 3.14 — Furniture Request schema
+* Phase 3.15 — Enquiry schema
+* Phase 3.16 — Notification schema
 
-Triggered because something happened to the customer's transaction or requested service.
+The API contract is already frozen for V1. Do not change endpoint semantics, public enum values, field nullability, ownership rules, or financial rules merely to simplify the database.
+
+---
+
+## Authoritative Inputs
+
+Use these sources in this priority order:
+
+1. `docs/VISION.md`
+2. `AGENTS.md`
+3. `docs/api/api-contract.md`
+4. `docs/api/api-resources.md`
+5. `docs/api/api-conventions.md`
+6. `docs/domain/business-rules.md`
+7. `docs/decisions.md`
+8. The final implementation decisions from Phases 3.1–3.16.
+
+The project already establishes that V1 enums are CLOSED and machine-stable, and that a compatibility-breaking schema/API change requires explicit review.
+
+---
+
+# 1. Review Strategy
+
+Review the schema in this order:
+
+1. table and column types;
+2. nullability;
+3. primary keys;
+4. foreign keys;
+5. foreign-key delete/update actions;
+6. unique constraints;
+7. check constraints;
+8. indexes;
+9. composite indexes;
+10. cross-table invariants;
+11. migration dependency order;
+12. representative constraint/failure tests;
+13. performance sanity review;
+14. security/data-retention implications.
+
+For every proposed change ask:
+
+> Does this enforce an already-agreed business invariant, or does it introduce a new rule?
+
+Only the first category belongs in Phase 3.17.
+
+---
+
+# 2. Global Database Standards
+
+Apply these consistently.
+
+## 2.1 Primary Keys
+
+Every domain table must have a stable primary key.
+
+Use the project's established ID strategy consistently.
+
+Do not introduce a second competing identifier merely for convenience.
+
+Business-facing references remain separate where already defined:
+
+* `slug` for catalog lookup;
+* `order_reference` for customer-facing orders;
+* `payment_reference` for payment records;
+* `request_reference` for furniture requests;
+* `enquiry_reference` for enquiries.
+
+Do not expose raw sequential database IDs as public business identifiers where the API contract specifies opaque IDs or references.
+
+---
+
+## 2.2 Foreign-Key Column Naming
+
+Use conventional relationship names:
+
+* `user_id`
+* `customer_id`
+* `category_id`
+* `product_id`
+* `product_variant_id`
+* `variant_id`
+* `cart_id`
+* `order_id`
+* `payment_id`
+* `actor_id`
+* `recipient_user_id`
+
+Avoid ambiguous names such as:
+
+* `owner`
+* `user`
+* `parent`
+* `reference_id`
+
+unless the domain explicitly requires a generic reference.
+
+---
+
+## 2.3 Integer / Money Types
+
+Money fields must use integer minor units.
+
+Do not use floating-point types.
+
+Do not use database `float` or `double` for financial amounts.
+
+Use a sufficiently large integer type for:
+
+* variant price;
+* compare-at price;
+* cost;
+* order subtotal;
+* order delivery fee;
+* order total;
+* order-item unit price;
+* order-item line total;
+* payment amount.
+
+The database representation must remain consistent with the API rule that money is integer minor units and always paired with `currency`.
+
+TZS remains the V1 default currency.
+
+Do not introduce currency-conversion logic into the schema review.
+
+---
+
+## 2.4 Quantity Types
+
+Quantities that cannot be negative should use an unsigned integer-compatible type.
 
 Examples:
 
-```text
-ORDER_ACCEPTED
-ORDER_SHIPPED
-ORDER_DELIVERED
-Payment successful (exact type deferred to Group H)
-Payment failed (exact type deferred to Group H)
-```
+* inventory `quantity`;
+* inventory `reserved_quantity`;
+* cart-item `quantity`;
+* order-item `quantity`;
+* furniture-request `quantity` where persisted.
 
-### Marketing/Promotional Communication
+Do not use floating-point types for countable units.
 
-Examples:
+---
 
-```text
-20% OFF THIS WEEK
-NEW SOFAS AVAILABLE
-CHRISTMAS SALE
-SPECIAL CUSTOMER OFFER
-```
+## 2.5 Timestamps
 
-Marketing/promotional communications are **not part of the Notification model created here**.
+Use a consistent database timestamp strategy for:
+
+* `created_at`;
+* `updated_at`;
+* `occurred_at`;
+* `initiated_at`;
+* `confirmed_at`;
+* `expires_at`;
+* `received_at`;
+* `processed_at`.
+
+Nullable lifecycle timestamps remain nullable where the event has not happened.
+
+Do not substitute magic zero dates or empty strings for absent timestamps.
+
+The external API continues to serialize timestamps in the project's UTC ISO-8601 format.
+
+---
+
+## 2.6 Soft Deletes
+
+Keep soft deletes only where previously approved.
+
+Current approved use:
+
+* `products.deleted_at`.
+
+Do not add soft deletes automatically to:
+
+* orders;
+* payments;
+* order status history;
+* deliveries;
+* notifications;
+* carts;
+* inventory;
+* furniture requests;
+* enquiries.
+
+Historical and financial records must remain structurally traceable.
+
+---
+
+# 3. Users and Profiles
+
+## 3.1 `users`
+
+Verify:
+
+* primary key exists;
+* `email` has the intended uniqueness rule;
+* authentication fields are appropriately non-null;
+* `name`, `email`, and `phone` match the shared identity model;
+* `is_active` is explicitly typed as boolean-compatible;
+* credential material is never nullable unless the authentication design explicitly requires it;
+* password hashes are never exposed through serialization.
 
 Do not add:
 
-* campaign
-* promotion
-* coupon
-* marketing_segment
-* promotional_opt_in
-* advertising
-* marketing_campaign_id
+* `role` column;
+* `is_admin`;
+* `is_staff`;
+* `is_customer`;
+* customer restriction fields.
 
-to `notifications`.
+Role assignment belongs to the RBAC model.
 
-Future marketing communication, if ever approved, must be a separate domain with its own consent/preferences, audience selection, delivery, suppression, and compliance rules.
+The existing authorization model is relational and server-controlled rather than client-supplied.
 
-This phase creates no such functionality.
+## 3.2 `customer_profiles`
 
----
+Verify:
 
-# 2. Core Design Rule
+* `user_id` is a foreign key to `users.id`;
+* `user_id` is unique;
+* the relationship is one-to-one;
+* deletion behavior does not accidentally delete the user or historical commerce data.
 
-A Notification is a **downstream communication record derived from authoritative business state**.
+If profile data is currently minimal, do not use this phase to add:
 
-The Notification is never the source of truth.
+* address book;
+* loyalty;
+* preferences;
+* saved delivery addresses.
 
-Authoritative sources include:
+## 3.3 `staff_profiles`
 
-* Order
-* Payment
-* Delivery/Fulfillment
-* other explicitly approved business events
+Apply the same one-to-one integrity review.
 
-The existing contract states that if a Notification says an Order is shipped while the Order says it is still processing, the authoritative Order state wins.
+Staff-profile deletion must not imply deletion of the underlying user identity.
 
-Therefore:
-
-```text
-Business Event
-      ↓
-Notification
-```
-
-not:
-
-```text
-Notification
-      ↓
-Order state
-```
-
-Do not allow clients to manufacture business notifications.
+Do not use profile records as substitutes for RBAC role membership.
 
 ---
 
-# 3. Create `notifications` Table
+# 4. RBAC Tables
 
-Create a Laravel migration for:
+Review the exact role/permission implementation selected in Phase 3.2.
 
-`notifications`
+Verify that:
 
-Recommended schema:
+* role relationships have proper foreign keys;
+* permission relationships have proper foreign keys;
+* unique composite constraints prevent duplicate assignments;
+* pivot-table foreign keys use appropriate cascading behavior;
+* deleting a role/permission cannot orphan pivot rows;
+* customer, staff, and admin roles remain CLOSED at application/domain level;
+* no database rule accidentally grants a new role merely because a row exists.
 
-| Column              | Type                               | Rules                                                                               |
-| ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `id`                | big integer / standard primary key | Internal primary key                                                                |
-| `recipient_user_id` | foreign key                        | Required; references users.id; restrict/null behavior according to retention policy |
-| `type`              | string                             | Required; controlled notification type                                              |
-| `title`             | string                             | Required; server-generated                                                          |
-| `message`           | text                               | Required; server-generated                                                          |
-| `target`            | JSON nullable                      | Optional structured navigation target                                               |
-| `source_type`       | string nullable                    | Optional authoritative source type                                                  |
-| `source_id`         | string nullable                    | Optional source identifier                                                          |
-| `read_at`           | timestamp nullable                 | Read marker                                                                         |
-| `created_at`        | timestamp                          | Required                                                                            |
-| `updated_at`        | timestamp                          | Required                                                                            |
+Do not introduce wildcard admin permissions or a generic `is_admin` shortcut.
 
-Keep the structure intentionally small.
-
-Do not store complete Order, Payment, User, Delivery, or Product objects inside a Notification.
+Authorization remains a combination of identity, role, resource, action, ownership, and business state.
 
 ---
 
-# 4. Recipient Ownership
+# 5. Categories
 
-Use:
+## 5.1 `categories`
 
-`recipient_user_id`
+Verify:
 
-as the notification owner.
+* `parent_id` references `categories.id`;
+* `parent_id` is nullable for root categories;
+* deleting a parent uses `SET NULL` / `nullOnDelete` according to the approved schema;
+* `slug` is unique;
+* `display_order` is non-negative;
+* `is_active` is boolean-compatible;
+* `space_type` accepts only the approved CLOSED values.
 
-It must always be server-derived.
+Do not allow a self-parenting category.
 
-For a Customer:
+At application/domain level also verify:
 
-```text
-authenticated customer
-        ↓
-recipient_user_id
-```
+* category hierarchy does not exceed the agreed three-level taxonomy;
+* seed data follows the approved taxonomy;
+* cyclic parent relationships cannot be introduced.
 
-Never accept:
+Do not invent additional categories simply to satisfy a foreign key or recommendation relationship.
 
-```json
-{
-  "recipient_user_id": "another-user"
-}
-```
+## 5.2 `category_recommendations`
 
-from the client.
+Verify:
 
-The existing contract explicitly requires recipient identity to be server-derived and customer notifications to be scoped to the authenticated recipient.
+* `category_id` references `categories.id`;
+* `recommended_category_id` references `categories.id`;
+* both use correct delete behavior;
+* `(category_id, recommended_category_id)` is unique;
+* self-recommendation is rejected;
+* relation type follows the approved CLOSED vocabulary;
+* priority is appropriately bounded.
 
----
-
-# 5. No Anonymous In-App Notifications
-
-Do not support:
-
-```text
-recipient_user_id = null
-```
-
-for ordinary in-app Notifications.
-
-A Guest may submit Requests and Enquiries, but there is no authenticated recipient account for normal in-app notification ownership.
-
-The existing notification contract explicitly states that anonymous in-app notifications are not supported.
-
-Do not create:
-
-* guest_notification_token
-* email_as_recipient
-* phone_as_recipient
-* anonymous notification inbox
-
-in this phase.
-
-Guest communication delivery belongs to future explicitly approved channels.
+Do not create a separate table for concepts not already approved.
 
 ---
 
-# 6. Staff/Admin Notifications
+# 6. Products
 
-The schema must be capable of supporting operational Staff/Admin notifications without turning notifications into a global unrestricted queue.
+## 6.1 `products`
 
-The existing contract permits operational notification access under explicit permission, while customer notifications remain recipient-scoped.
+Verify:
 
-Do not add:
+* `category_id` references `categories.id`;
+* category deletion is restrictive rather than silently removing products;
+* `slug` is unique;
+* `assembly_required` uses the approved CLOSED values;
+* product lifecycle flags are boolean-compatible;
+* `deleted_at` is indexed appropriately for active/public catalogue queries where useful.
 
-```text
-is_staff_notification
-is_admin_notification
-```
+Do not allow deletion of a category that would orphan a product.
 
-booleans.
-
-The recipient remains a User, while authorization determines the allowed operational scope.
-
-Do not implement Staff/Admin notification workflows in this phase unless already required by the existing API contract.
+Do not cascade-delete products from category deletion.
 
 ---
 
-# 7. Notification Type
+# 7. Product Variants
 
-Store:
+## 7.1 `product_variants`
 
-`type`
+Verify:
 
-as the machine-readable notification type.
+* `product_id` references `products.id`;
+* product deletion cascades variants;
+* `sku` is unique;
+* money uses integer minor units;
+* dimensions and weight use appropriate numeric types;
+* `is_default` and `is_active` are boolean-compatible;
+* `display_order` is non-negative;
+* JSON attributes are nullable or required exactly as previously approved.
 
-The frontend must use `type` for behavior, not parse the English `message`.
+The following rules are domain/application invariants unless the chosen MySQL implementation can enforce them safely:
 
-The existing contract explicitly requires machine-readable types and controlled notification messages.
+* a variant must belong to the stated product;
+* a product may have at most one default variant.
 
-For the currently frozen V1 Order-related registry, supported types include:
-
-```text
-ORDER_RECEIVED
-ORDER_ACCEPTED
-ORDER_PROCESSING
-ORDER_READY_FOR_PICKUP
-ORDER_SHIPPED
-ORDER_DELIVERED
-ORDER_COMPLETED
-ORDER_CANCELLED
-```
-
-It also contains existing operational Request/Enquiry types:
-
-```text
-NEW_MADE_TO_ORDER_REQUEST
-NEW_ENQUIRY
-NEW_ORDER
-```
-
-These existing values must not be removed or casually renamed.
+Do not duplicate product-level price data here or elsewhere unless specifically required by the frozen contract.
 
 ---
 
-# 8. Payment Notification Preparation
+# 8. Product Images
 
-Payment notifications are required by the application's business goal, but exact `PAYMENT_*` public notification types were intentionally deferred to Group H in the frozen contract.
+## 8.1 `product_images`
 
-Therefore:
+Verify:
 
-* do not hard-code unapproved `PAYMENT_*` values into the frozen API contract
-* do not invent customer-facing Payment notification types in this phase
-* make the database/model capable of storing controlled future payment notification types
-* Group H must define the exact Payment notification registry before those values become externally observable
+* `product_id` references `products.id` with cascade delete;
+* `product_variant_id` references `product_variants.id` with `SET NULL`;
+* `sort_order` is unsigned;
+* `is_primary` is boolean-compatible;
+* `file_path` is non-null;
+* `alt_text` nullability matches the approved design.
 
-This avoids creating a database/API mismatch.
+Cross-table domain invariant:
+
+> When `product_variant_id` is present, that variant must belong to the same `product_id`.
+
+This is not safely represented by two independent foreign keys alone.
+
+Enforce it at the application/domain layer unless a carefully designed composite-key constraint is intentionally adopted.
+
+Do not introduce a composite-key redesign merely for this review.
+
+The approved API embeds images in product detail rather than introducing an independent public images workflow.
 
 ---
 
-# 9. Delivery Notification Scope
+# 9. Inventory
 
-Delivery-related notifications are applicable only when relevant to the Order's fulfillment path.
+## 9.1 `product_stocks`
 
-For example:
+Verify:
+
+* `product_variant_id` references `product_variants.id`;
+* deletion of a variant cascades its stock rows;
+* `quantity >= 0`;
+* `reserved_quantity >= 0`;
+* `reserved_quantity <= quantity`;
+* `(product_variant_id, warehouse_location)` is unique;
+* `warehouse_location` is non-empty and appropriately bounded.
+
+`available_quantity` remains derived:
+
+`quantity - reserved_quantity`
+
+Do not persist a duplicate `available_quantity` column.
+
+The invariant `reserved_quantity <= quantity` should be enforced with a database check if the deployed MySQL version supports the required behavior reliably; otherwise also enforce it inside every mutation transaction.
+
+Concurrency-safe inventory mutation is a later application concern; the schema review must not pretend a simple CHECK removes race conditions.
+
+The project already requires concurrency-safe handling for inventory mutations.
+
+---
+
+# 10. Carts
+
+## 10.1 `carts`
+
+Verify the XOR ownership model:
+
+* authenticated cart → `user_id` populated and `guest_token_digest` null;
+* guest cart → `user_id` null and `guest_token_digest` populated;
+* never both;
+* never neither.
+
+Verify:
+
+* `user_id` references `users.id`;
+* guest token digest is fixed-length `CHAR(64)` or the already-approved equivalent;
+* `guest_token_digest` is unique;
+* status is CLOSED `ACTIVE|INACTIVE`;
+* appropriate index exists on `user_id + status`;
+* appropriate index exists on `status + updated_at`.
+
+Do not persist the raw guest bearer token.
+
+The raw client credential and the stored digest remain conceptually separate.
+
+At database/application level verify:
+
+* at most one ACTIVE cart per authenticated customer;
+* historical INACTIVE carts remain possible;
+* guest cart ownership cannot be reassigned to another customer;
+* cart ownership cannot be changed through ordinary client updates.
+
+## 10.2 `cart_items`
+
+Verify:
+
+* `cart_id` cascades on cart deletion;
+* `product_id` is restrictive;
+* `variant_id` is restrictive;
+* quantity is positive and bounded as approved;
+* appropriate cart lookup index exists.
+
+Cross-table domain invariant:
+
+* when `variant_id` is non-null, that variant must belong to `product_id`.
+
+Do not introduce a persisted cart price.
+
+---
+
+# 11. Orders
+
+## 11.1 `orders`
+
+Verify:
+
+* `customer_id` references `users.id`;
+* customer deletion is restrictive;
+* `order_reference` is unique;
+* `status` is CLOSED;
+* `fulfillment_type` is CLOSED;
+* `delivery_fee_status` is CLOSED;
+* `currency` is fixed/validated as approved;
+* money fields use unsigned integer-compatible storage;
+* delivery address is nullable;
+* recipient snapshot fields have correct nullability.
+
+Verify these business combinations:
 
 ### Pickup
 
-Potential notifications:
+* `fulfillment_type = PICKUP`
+* `delivery_fee_status = FINALIZED`
+* `delivery_fee_amount = 0`
+* `total_amount = subtotal_amount`
 
-```text
-ORDER_READY_FOR_PICKUP
-ORDER_COMPLETED
-```
+### Delivery before fee assignment
 
-### Delivery
+* `fulfillment_type = DELIVERY`
+* `delivery_fee_status = PENDING`
+* `delivery_fee_amount = NULL`
+* `total_amount = subtotal_amount`
 
-Potential notifications:
+`total_amount` is provisional while `PENDING` and must not be treated as the payable amount — see `docs/api/api-contract.md §24`; payment stays blocked until `FINALIZED`.
 
-```text
-ORDER_SHIPPED
-ORDER_DELIVERED
-ORDER_COMPLETED
-```
+### Delivery after fee assignment
 
-The notification itself should reference the authoritative Order/event rather than duplicating a second Delivery lifecycle.
+* `fulfillment_type = DELIVERY`
+* `delivery_fee_status = FINALIZED`
+* `delivery_fee_amount >= 0`
+* `total_amount = subtotal_amount + delivery_fee_amount`
 
-The existing contract defines Pickup and Delivery as different fulfillment branches and derives tracking from `order_status_history`.
+These cross-column relationships should be enforced as strongly as practical through database checks, with domain validation providing the authoritative workflow enforcement.
 
-Do not add a second `DELIVERY_STATUS` state machine here.
-
----
-
-# 10. `title`
-
-`title` is server-generated presentation text.
-
-It should be generated from:
-
-* controlled notification type
-* safe authoritative context
-
-Example:
-
-```text
-Your order is ready
-```
-
-Do not allow clients to submit arbitrary notification titles.
-
-Do not treat `title` as machine-readable business state.
-
-Frontend logic must use `type`.
+Do not create a customer-facing address foreign key because the approved order model stores a historical address snapshot.
 
 ---
 
-# 11. `message`
+# 12. Order Items
 
-`message` is server-generated human-readable notification content.
-
-Example:
-
-```text
-Your order OD-12345 is ready for pickup.
-```
-
-It may contain safe business context such as:
-
-* Order reference
-* approved display data
-
-It must not include:
-
-* passwords
-* payment secrets
-* internal notes
-* authentication tokens
-* provider credentials
-* complete private records
-
-The contract explicitly requires only minimal safe context in notification messages.
-
----
-
-# 12. XSS and Message Safety
-
-Notification titles/messages are generated by the server but may contain dynamic data.
-
-Ensure dynamic values are safely encoded/escaped according to the output context.
-
-Do not treat Order references or other dynamic fields as trusted HTML.
-
-Do not allow:
-
-```text
-<script>
-```
-
-or equivalent executable content to reach notification presentation.
-
-Do not permit customer-submitted HTML to become notification markup.
-
----
-
-# 13. Target Structure
-
-Support an optional structured:
-
-`target`
-
-field.
-
-Recommended conceptual shape:
-
-```json
-{
-  "type": "ORDER",
-  "id": "..."
-}
-```
-
-This lets clients deep-link to the relevant business resource.
-
-The existing contract defines target references as server-generated and explicitly says they are **not capability tokens**.
-
-Do not allow the client to submit:
-
-```json
-{
-  "target": {
-    "type": "ORDER",
-    "id": "another-customers-order"
-  }
-}
-```
-
-to create or authorize a notification.
-
----
-
-# 14. Target Is Not Authorization
-
-Even if a Notification contains:
-
-```text
-target.type = ORDER
-target.id = ...
-```
-
-the target must not grant access to that Order.
-
-When a customer follows a notification:
-
-```text
-Notification
-    ↓
-Target Order
-    ↓
-Normal Order authorization
-```
-
-must still occur.
-
-The existing contract explicitly states that target references do not grant access to the referenced resource.
-
----
-
-# 15. Source Traceability
-
-Support optional:
-
-* `source_type`
-* `source_id`
-
-to trace a Notification back to the authoritative source event/entity.
-
-Example:
-
-```text
-source_type = ORDER_STATUS_HISTORY
-source_id   = event identifier
-```
-
-or later:
-
-```text
-source_type = PAYMENT
-source_id   = payment identifier
-```
-
-The source values are internal/server-generated.
-
-Do not accept arbitrary client-supplied source identities.
-
----
-
-# 16. Source vs Target
-
-Keep these concepts distinct:
-
-### Source
-
-> What authoritative business record/event caused this notification?
-
-### Target
-
-> What resource should the client navigate to?
-
-Example:
-
-```text
-source:
-  ORDER_STATUS_HISTORY / evt_xxx
-
-target:
-  ORDER / ord_xxx
-```
-
-Do not assume they must always be the same entity.
-
----
-
-# 17. Notification Deduplication
-
-The same source event must not produce duplicate logical notifications for the same recipient.
-
-The frozen contract explicitly requires notification deduplication/idempotency at the processing boundary.
-
-Do not use:
-
-```text
-title + message
-```
-
-as a duplicate detector.
-
-Do not use timestamps as the only duplicate key.
-
-Use the authoritative event/source identity in the later notification-generation workflow.
-
----
-
-# 18. Durable Uniqueness Strategy
-
-When a Notification corresponds one-to-one with a specific source event for a recipient, the later implementation should be able to enforce a durable uniqueness boundary equivalent to:
-
-```text
-recipient + source_type + source_id + type
-```
-
-However, do not assume every future notification must use exactly that combination.
-
-Some system notifications may be generated without a single persisted source event.
-
-Therefore:
-
-* schema must support source references
-* source-based notification generation must use a durable idempotency strategy
-* do not create a universal uniqueness rule that blocks legitimate system notifications
-
-The exact uniqueness strategy can be finalized when the notification-generation workflow is implemented.
-
----
-
-# 19. Read State
-
-Use a single field:
-
-`read_at`
-
-as the source of truth.
-
-Semantics:
-
-```text
-read_at = null
-→ unread
-
-read_at = timestamp
-→ read
-```
-
-Do not store both:
-
-```text
-is_read
-read_at
-```
-
-because that creates two competing sources of truth.
-
-The existing contract explicitly defines `read_at` as the canonical state and `is_read` as a derived value.
-
----
-
-# 20. Read State Is Not Business State
-
-Do not interpret:
-
-```text
-read_at != null
-```
-
-as:
-
-```text
-Order completed
-Payment succeeded
-Enquiry handled
-Delivery completed
-```
-
-Read state means only:
-
-> The recipient has marked the notification as read.
-
-The business entity remains authoritative.
-
-The contract explicitly prohibits overloading notification read state with domain state.
-
----
-
-# 21. `read_at` Authority
-
-`read_at` is server-controlled.
-
-A customer later may request:
-
-```text
-mark notification as read
-```
-
-but the server determines which notification belongs to that customer.
-
-The client must not directly submit:
-
-```text
-read_at = arbitrary timestamp
-```
-
-as authoritative data.
-
-Later API semantics will use the approved `read: true` operation, with the server setting the timestamp.
-
-Do not implement the endpoint in this phase.
-
----
-
-# 22. Notification Ordering
-
-The primary customer inbox order should be:
-
-```text
-created_at DESC, id ASC
-```
-
-This provides newest-first behavior with deterministic tie-breaking.
-
-Use an index supporting that access pattern.
-
-Do not make notifications dependent on arbitrary client sorting.
-
----
-
-# 23. Indexes
-
-At minimum add:
-
-### Recipient access
-
-```text
-recipient_user_id
-```
-
-### Inbox ordering
-
-```text
-(recipient_user_id, created_at)
-```
-
-### Unread queries
-
-An appropriate index strategy for:
-
-```text
-recipient_user_id
-read_at
-created_at
-```
-
-may be used if the actual database/query plan benefits from it.
-
-### Source lookup
-
-Indexes on:
-
-```text
-(source_type, source_id)
-```
-
-are useful for deduplication/reconciliation.
-
-Do not create an index on every field.
-
----
-
-# 24. Notification Privacy
-
-Notifications are private.
-
-They must never be:
-
-* public catalog data
-* public SEO data
-* CDN-cacheable
-* available through an unauthenticated listing
-* globally queryable by arbitrary `recipient_user_id`
-
-The existing contract requires private/no-store customer notification access.
-
-The server must authorize the recipient before returning notification data.
-
----
-
-# 25. Notification Ownership and IDOR
-
-Customer A must never retrieve Customer B's Notification.
-
-Do not trust:
-
-```text
-recipient_user_id
-```
-
-from:
-
-* query parameters
-* body
-* URL
-* hidden client state
-
-Use authenticated self-context.
-
-The existing contract explicitly requires recipient-scoped access and 404 masking for cross-user access.
-
----
-
-# 26. No Public Notification Creation
-
-Do not implement generic:
-
-```text
-POST /notifications
-```
-
-for customers, Staff, or Admin.
-
-Notifications are system-generated.
-
-The contract explicitly prohibits normal client notification creation.
-
-Do not allow a client to choose:
-
-* recipient
-* type
-* title
-* message
-* target
-* source
-
-for a normal Notification.
-
----
-
-# 27. No Notification Editing
-
-Do not expose generic Notification editing.
-
-Customers must not modify:
-
-* type
-* title
-* message
-* recipient
-* target
-* source
-* created_at
-
-The supported customer mutation is limited to the notification read state later.
-
-The existing contract explicitly restricts the mark-read operation to the `read` value.
-
----
-
-# 28. No Notification Deletion Workflow
-
-Do not introduce customer deletion semantics in Phase 3.16 unless the frozen contract explicitly requires them.
-
-Notification retention/deletion is a separate lifecycle decision.
-
-Do not make `DELETE /notifications/{notification}` a default capability merely because the database exists.
-
-A later retention strategy may include archival or cleanup, but that should be deliberately designed.
-
----
-
-# 29. No Marketing Preferences
-
-Do not add fields such as:
-
-```text
-marketing_opt_in
-promotional_enabled
-newsletter_enabled
-campaign_preferences
-```
-
-to `notifications`.
-
-Notification read state is not marketing consent.
-
-If marketing is introduced later, it requires a separate preference/consent domain.
-
----
-
-# 30. No Email Delivery Fields
-
-Do not add:
-
-```text
-email_sent
-email_sent_at
-email_error
-email_delivery_status
-```
-
-to the logical Notification record.
-
-A Notification represents the logical business communication.
-
-Future channel delivery should be modeled separately.
-
-The existing contract explicitly describes:
-
-```text
-Notification → Delivery attempt(s)
-```
-
-as the appropriate future model for multi-channel delivery.
-
-Group R will handle actual notification delivery.
-
----
-
-# 31. No SMS/Push Delivery Fields
-
-Similarly do not add:
-
-```text
-push_sent
-sms_sent
-device_token
-fcm_token
-```
-
-to the Notification table.
-
-A device token is authentication/delivery infrastructure, not Notification domain state.
-
-Push/email/SMS channel implementation belongs later.
-
----
-
-# 32. IN_APP as the Primary V1 Notification
-
-The existing notification architecture defines **IN_APP as the primary notification mechanism** for the initial design.
-
-Therefore Phase 3.16 should create the logical Notification entity without coupling it to:
-
-* FCM
-* email provider
-* SMS provider
-* webhook delivery
-
-Those integrations belong to Group R.
-
-Do not add a provider SDK dependency to the notification model.
-
----
-
-# 33. Order Notifications
-
-The schema must support the existing Order notification types:
-
-```text
-ORDER_RECEIVED
-ORDER_ACCEPTED
-ORDER_PROCESSING
-ORDER_READY_FOR_PICKUP
-ORDER_SHIPPED
-ORDER_DELIVERED
-ORDER_COMPLETED
-ORDER_CANCELLED
-NEW_ORDER
-```
-
-The customer's Order-related notifications are generated downstream from authoritative Order events.
-
-The existing contract explicitly establishes this event-derived model.
-
-For a delivery Order, delivery-related information is represented through the applicable Order notification types such as `ORDER_SHIPPED` and `ORDER_DELIVERED`.
-
-Do not invent duplicate types such as:
-
-```text
-DELIVERY_SHIPPED
-DELIVERY_DELIVERED
-```
-
-unless the frozen contract is intentionally changed.
-
----
-
-# 34. Request/Enquiry Notification Compatibility
-
-The frozen registry already contains:
-
-```text
-NEW_MADE_TO_ORDER_REQUEST
-NEW_ENQUIRY
-```
-
-and:
-
-```text
-NEW_ORDER
-```
-
-These are operational notification types.
-
-Do not delete them from the model simply because the primary focus of this phase is Order/Payment/Delivery.
-
-They should remain supported by the data model because they are part of the existing V1 contract.
-
----
-
-# 35. Payment Notifications and Group H Boundary
-
-Payment notifications require special treatment because Payment integration is the security-sensitive boundary.
-
-Group H must establish:
-
-* exact Payment notification type names
-* when they are generated
-* which payment events are authoritative
-* what payment information may appear in the message
-* what information remains private
-* duplicate event behavior
-
-Phase 3.16 must not preempt those decisions.
-
-The schema should remain generic enough to support future controlled `PAYMENT_*` types without adding provider-specific notification structures.
-
----
-
-# 36. Delivery Notifications and Fulfillment Boundary
-
-Delivery notifications should derive from authoritative fulfillment events.
-
-For example:
-
-```text
-PROCESSING
-    ↓
-SHIPPED
-    ↓
-DELIVERED
-    ↓
-COMPLETED
-```
-
-The authoritative Order Status History records those transitions.
-
-The Notification is downstream communication.
-
-Do not make the Delivery row itself responsible for creating or owning Notification state.
-
-Do not add notification foreign keys to Delivery.
-
----
-
-# 37. Failure Isolation
-
-Core commerce operations must not fail merely because Notification persistence fails.
-
-For example:
-
-```text
-Order transition → SHIPPED
-```
-
-must remain successfully `SHIPPED` even if notification generation is temporarily unavailable.
-
-The existing contract explicitly requires this failure isolation and permits eventual consistency.
-
-Do not put notification persistence in a transaction boundary in a way that makes business-state success depend on notification success.
-
-The later outbox/background approach can address reliable delivery.
-
----
-
-# 38. Eventual Consistency
-
-Allow:
-
-```text
-Business state changes immediately
-        ↓
-Notification appears shortly afterward
-```
-
-Do not require Notification existence before:
-
-* Order state update
-* payment state update
-* delivery transition
-
-This is particularly important for reliability.
-
-The Notification domain is downstream communication, not business-state authority.
-
----
-
-# 39. Target Data Minimization
-
-Keep target references small.
-
-Preferred:
-
-```json
-{
-  "type": "ORDER",
-  "id": "..."
-}
-```
-
-Do not embed:
-
-```text
-entire Order
-entire Customer profile
-payment history
-delivery address
-Staff profile
-internal notes
-```
-
-inside a Notification.
-
-The existing contract explicitly requires lightweight notifications and minimal target context.
-
----
-
-# 40. Notification Title/Message Data Minimization
-
-A message may include:
-
-```text
-order_reference
-safe display information
-```
-
-but must not expose:
-
-* full delivery address unless explicitly necessary
-* payment provider details
-* provider transaction identifiers
-* internal Staff notes
-* private audit information
-* internal database identifiers
-* secrets
-
-The customer should follow the notification into the normal authorized resource rather than receiving an entire resource inside the notification.
-
----
-
-# 41. Model Design
-
-Create:
-
-`Notification`
-
-Eloquent model.
-
-Recommended relationships:
-
-```text
-Notification belongsTo User as recipient
-```
-
-Do not create generic relationships to every possible source entity.
-
-The `source_type/source_id` pair is intentionally generic and can be resolved by the application layer when needed.
-
-Avoid Laravel polymorphic relations unless the implementation genuinely requires them.
-
-Do not introduce a giant polymorphic abstraction simply because several domains can generate Notifications.
-
----
-
-# 42. Notification ID
-
-The database primary key may remain internal.
-
-If the API later exposes Notification IDs, follow the established opaque-ID policy.
-
-Do not make the numeric auto-increment ID an authorization mechanism.
-
-A customer must still be authorized against `recipient_user_id`.
-
----
-
-# 43. Status Enum Centralization
-
-Use an appropriate enum/value object/constant strategy for notification types.
-
-Do not scatter strings such as:
-
-```text
-ORDER_SHIPPED
-ORDER_DELIVERED
-ORDER_CANCELLED
-```
-
-throughout controllers/services.
-
-At the same time, do not create one enormous global string constant class.
-
-Keep the Notification type registry close to the Notification domain and align it with the frozen API contract.
-
----
-
-# 44. Mass Assignment
-
-Notification fields are server-controlled.
-
-Never:
-
-```text
-$request->all() → Notification::create()
-```
-
-Never accept arbitrary client-provided:
-
-* recipient
-* type
-* title
-* message
-* source
-* target
-
-The global API conventions require:
-
-```text
-validated input
-→ DTO/command
-→ domain workflow
-→ persistence
-```
-
-and explicitly prohibit uncontrolled mass assignment.
-
----
-
-# 45. Read Mutation Security
-
-When the future customer endpoint marks a Notification as read:
-
-1. authenticate user
-2. resolve notification
-3. verify `recipient_user_id = authenticated principal`
-4. update only `read_at`
-5. do not update any business notification fields
-
-Customer A must not be able to mark Customer B's notification as read.
-
-Staff credentials must not mark Customer notifications as read.
-
-The existing contract explicitly defines this ownership behavior.
-
----
-
-# 46. Query Strategy
-
-Customer notification retrieval should always start from the authorized recipient:
-
-```text
-WHERE recipient_user_id = authenticated_user
-```
-
-not:
-
-```text
-GET all notifications
-→ filter in frontend
-```
-
-The API must query only the authorized dataset.
-
-This follows the project's general authorization-aware query requirement.
-
----
-
-# 47. Notification Counts
-
-Do not add a persisted:
-
-```text
-unread_count
-```
-
-column.
-
-Unread count is derived from:
-
-```text
-read_at IS NULL
-```
-
-for the authorized recipient.
-
-A cached count can be introduced later as an optimization if actual performance requires it, but it must not become a second source of truth.
-
----
-
-# 48. No `is_read` Column
-
-Do not create:
-
-```text
-is_read
-```
-
-in the database.
-
-The canonical representation is:
-
-```text
-read_at = null
-```
-
-for unread and a server timestamp for read.
-
-The existing contract explicitly rejects two competing read-state fields.
-
----
-
-# 49. Notification Retention
-
-Do not implement a hard-coded automatic retention/deletion period in Phase 3.16.
-
-The project has not established a V1 notification retention policy.
-
-Do not silently delete old notifications after:
-
-```text
-30 days
-60 days
-90 days
-```
-
-without an explicit decision.
-
-Retention can be addressed during production operations/data-retention planning.
-
----
-
-# 50. Security and Privacy Review
-
-Before completion verify:
-
-* recipient identity is server-derived
-* guest users do not receive in-app notifications
-* customer notifications are recipient-scoped
-* notification reads are private
-* notification data is not public-cacheable
-* notification source/target IDs do not grant resource access
-* notification messages contain only safe minimal context
-* internal notes and secrets are excluded
-* clients cannot create arbitrary notifications
-* clients cannot change Notification type/message/recipient
-* `read_at` is the single read-state source
-* Marketing/Promotional communication is not represented
-* Payment provider secrets are not represented
-* no FCM/email/SMS provider dependency exists in the persistence model
-
----
-
-# 51. Tests
-
-Add automated tests for the schema and notification invariants.
-
-## Migration/schema tests
+## 12.1 `order_items`
 
 Verify:
 
-* `notifications` table exists
-* primary key exists
-* `recipient_user_id` is required
-* `type` is required
-* `title` is required
-* `message` is required
-* `target` is nullable
-* `source_type` is nullable
-* `source_id` is nullable
-* `read_at` is nullable
-* timestamps exist
-
-Verify that the table does **not** contain:
-
-* marketing fields
-* promotional fields
-* email-delivery state
-* SMS-delivery state
-* push-token fields
-* password/token fields
-* payment secrets
-
-## Recipient tests
+* `order_id` cascades on order deletion;
+* `product_id` uses `SET NULL`;
+* `variant_id` uses `SET NULL`;
+* product/variant references are nullable;
+* snapshot `sku`, `name`, and optional `variant_name` remain available even if catalog entities later disappear;
+* `unit_price_amount`, `quantity`, and `line_total_amount` use safe integer types;
+* quantity is positive and appropriately bounded.
 
 Verify:
 
-* notification belongs to a User
-* recipient cannot be null
-* recipient identity is represented separately from message content
+`line_total_amount = unit_price_amount × quantity`
 
-## Read-state tests
+This is a domain/application invariant and may additionally be checked by application tests.
+
+Do not make historical order snapshots dependent on the continued existence of product rows.
+
+---
+
+# 13. Order Status History
+
+## 13.1 `order_status_history`
 
 Verify:
 
-```text
-read_at = null → unread
-read_at != null → read
-```
+* `order_id` cascades with the order;
+* `actor_id` references `users.id` with `SET NULL`;
+* `from_status` is nullable;
+* `to_status` is required;
+* `actor_type` is CLOSED;
+* `occurred_at` is required;
+* `created_at` is required;
+* there is no `updated_at`.
 
-Verify no second persisted `is_read` source exists.
+Verify append-only integrity at the application layer.
 
-## Ordering tests
+Do not provide:
 
-Verify customer notification queries support:
+* generic UPDATE;
+* generic DELETE;
+* mutable event rows.
 
-```text
-created_at DESC, id ASC
-```
+Indexes should support:
 
-deterministic ordering.
+* all history for one order ordered by `occurred_at`;
+* deterministic tie-breaking with `id`.
 
-## Target tests
+The tracking model already requires chronological history and does not introduce a second authoritative status source.
+
+---
+
+# 14. Payments
+
+## 14.1 `payments`
 
 Verify:
 
-* target may be null
-* valid structured target can be persisted
-* arbitrary unvalidated target structure is rejected by the application/domain layer
+* `order_id` references `orders.id`;
+* payment deletion does not cascade from order deletion;
+* `payment_reference` is unique;
+* multiple payment attempts per order remain possible;
+* provider transaction identity is uniquely protected when the provider supplies it;
+* payment amount and currency use safe financial types;
+* lifecycle timestamps have correct nullability;
+* provider secrets and raw payment credentials are absent.
 
-## Source tests
+Where appropriate, use a uniqueness strategy that allows `provider_transaction_id` to remain nullable without creating false duplicate conflicts.
+
+Do not make `order_id` unique.
+
+## 14.2 `payment_webhook_events`
 
 Verify:
 
-* source fields may be null
-* source traceability can be persisted
-* source identity is not treated as user authorization
+* `payment_id` references `payments.id`;
+* deletion of a payment does not erase webhook-event history;
+* `(provider, provider_event_id)` is unique;
+* `processing_status` uses the approved CLOSED internal values;
+* `processed_at` and `failure_reason` have correct nullability.
 
-## Privacy tests
+Webhook-event persistence must support idempotent processing.
 
-Verify customer-safe representation excludes:
+The project explicitly requires durable uniqueness and atomic check/apply behavior for repeated provider events.
 
-* internal data
-* secrets
-* provider credentials
-* unrelated complete domain objects
+Do not store:
 
-## Notification-type tests
-
-Verify currently approved V1 notification types can be represented.
-
-Do not add unapproved Payment notification values merely to satisfy this test.
-
-Create an explicit test ensuring future `PAYMENT_*` registry additions remain a deliberate Group H contract decision.
-
-## Deduplication tests
-
-Verify the notification infrastructure can identify the same source event deterministically.
-
-Do not implement a universal unique constraint that incorrectly rejects unrelated notifications.
+* raw card data;
+* provider authentication secrets;
+* sensitive webhook credentials;
+* unrestricted raw provider payloads unless separately justified and secured later.
 
 ---
 
-# 52. Factories
+# 15. Deliveries
 
-Create:
+## 15.1 `deliveries`
 
-`NotificationFactory`
+Verify:
 
-Support fixtures for:
+* `order_id` references `orders.id`;
+* `order_id` is unique;
+* one delivery record can exist for one delivery order;
+* order deletion behavior is restrictive;
+* recipient/contact/address snapshot fields have correct types and nullability;
+* `delivery_instructions` remains optional.
 
-* Order notification
-* operational notification
-* unread notification
-* read notification
-* target-linked notification
-* source-linked notification
+Domain invariant:
 
-Use existing approved Notification types.
+* a Pickup order must not have a Delivery row;
+* a Delivery order may have exactly one Delivery row once created.
 
-Do not seed promotional messages.
+Do not introduce:
 
-Do not generate marketing-style fake notifications in normal seed data.
+* `delivery_status`;
+* GPS fields;
+* driver fields;
+* carrier fields;
+* tracking numbers;
+* ETA;
+* route geometry.
 
----
-
-# 53. Documentation Updates
-
-Update the authoritative documentation where necessary to make the boundary explicit:
-
-> Notifications in the V1 Notification domain are transactional/system communications related to business activity such as Orders, Payments, and applicable Delivery/fulfillment events. They are not marketing or promotional communications.
-
-Also preserve:
-
-* recipient-scoped ownership
-* server-derived recipient
-* in-app-first architecture
-* private/no-store access
-* `read_at` as canonical read state
-* event-derived communication
-* target references are not authorization
-* failure isolation
-* notification deduplication
-* closed type registry
-
-Do not create a separate marketing-preferences design inside this phase.
+Order lifecycle and order status history remain authoritative.
 
 ---
 
-# 54. Maintainability Requirements
+# 16. Furniture Requests
 
-For all new or refactored functions:
+## 16.1 `furniture_requests`
 
-* cognitive complexity must be **15 or lower**
-* no function may have more than **3 return statements**
-* meaningful repeated string literals should be centralized using constants or enums where appropriate
+Verify:
 
-Do not create a giant global constants class.
+* `user_id` is nullable;
+* `product_id` is nullable;
+* `product_id` uses `SET NULL`;
+* `user_id` uses `SET NULL`;
+* `request_reference` is unique;
+* `request_status` is CLOSED;
+* structured JSON fields are correctly nullable;
+* contact fields match the schema defined for persistence.
 
-Prefer Notification-specific enums/value objects.
+Guest submissions must remain valid without a user record.
 
-Do not suppress static-analysis findings or increase thresholds.
+Authenticated submissions must derive `user_id` from the authenticated server identity rather than accepting arbitrary ownership from the client.
 
-Keep migrations, models, factories, and tests small and cohesive.
+Where product linkage exists, application/domain validation must ensure the product is eligible for the requested workflow.
+
+Do not introduce a hard uniqueness constraint on request content.
 
 ---
 
-# 55. Definition of Done
+# 17. Enquiries
 
-Phase 3.16 is complete when:
+## 17.1 `enquiries`
 
-* `notifications` migration exists
-* notifications are recipient-scoped to authenticated Users
-* `recipient_user_id` is server-derived
-* notifications are private
-* `type`, `title`, and `message` are server-controlled
-* `target` supports safe structured navigation references
-* `source_type/source_id` support business-event traceability
-* `read_at` is the single read-state source
-* notifications support deterministic newest-first retrieval
-* current approved Order notification types are supported
-* the schema is structurally ready for future controlled Payment notification types
-* Delivery-related notifications can be represented through existing Order lifecycle notification types
-* no duplicate Delivery state machine is introduced
-* no marketing/promotional fields are introduced
-* no email/SMS/push provider logic is embedded in the model
-* no notification can become an authorization token
-* Eloquent relationships are implemented
-* factories support valid notification fixtures
-* schema, ownership, read-state, ordering, target, privacy, and deduplication-support tests pass
-* maintainability requirements are satisfied
-* no business-state transition depends on notification persistence
+Verify:
 
-# Out of Scope
+* `user_id` nullable with `SET NULL`;
+* `product_id` nullable with `SET NULL`;
+* `order_id` nullable with restrictive behavior;
+* `enquiry_reference` unique;
+* `enquiry_status` is CLOSED;
+* customer-supplied content remains historically stable;
+* staff internal notes are separately stored.
 
-Do not implement in Phase 3.16:
+Do not impose hard uniqueness on:
 
-* Notification API endpoints
-* customer notification inbox API
-* Staff notification inbox API
-* mark-as-read endpoint
-* FCM integration
-* push notifications
-* email notifications
-* SMS notifications
-* WhatsApp notifications
-* notification delivery attempts
-* notification queues/jobs
-* outbox implementation
-* retry workers
-* notification preferences
-* marketing preferences
-* promotional campaigns
-* newsletters
-* advertising
-* customer segmentation
-* payment notification type definitions
-* payment notification generation
-* Order notification generation
-* Delivery notification generation
-* notification templates system
-* localization system
-* notification analytics
-* notification retention jobs
+* email;
+* phone;
+* subject;
+* product;
+* order;
+* message.
 
-# STOP CONDITION
+Multiple legitimate enquiries may contain the same information.
 
-Stop after the Notification persistence model, relationships, constraints, factories, tests, and migration verification are complete.
+Anonymous retrieval must not be enabled merely because the row is public in database terms.
 
-Do not implement actual notification generation or delivery yet.
+---
 
-**Important:** Keep Payment notification types deferred until Group H defines the exact payment-event and public notification contract. The schema must support them structurally without silently expanding the frozen V1 notification enum.
+# 18. Notifications
 
-The next phase is:
+## 18.1 `notifications`
 
-**Phase 3.17 — Foreign Keys / Indexes / Constraints Review**
+Verify:
+
+* `recipient_user_id` references `users.id`;
+* deletion behavior preserves or intentionally removes notifications according to the approved account-retention policy;
+* `type` uses the approved CLOSED notification vocabulary;
+* `title` and `message` are server-generated;
+* `target` is nullable structured JSON;
+* `source_type` and `source_id` are nullable;
+* `read_at` is nullable;
+* there is no `is_read` duplicate field.
+
+Verify:
+
+* `read_at IS NULL` → unread;
+* `read_at IS NOT NULL` → read.
+
+Do not create a public foreign key from `source_id` because source events may originate from different domains.
+
+Instead, use:
+
+`source_type + source_id`
+
+as the generic traceability pair, with domain/application validation.
+
+The notification system remains recipient-scoped and private; clients do not create notification records directly.
+
+---
+
+# 19. Foreign-Key Delete Policy Matrix
+
+Produce and review one explicit matrix covering every FK.
+
+The expected direction is:
+
+| Relationship                  | Expected behavior                                        |
+| ----------------------------- | -------------------------------------------------------- |
+| Customer/profile → User       | Profile should not delete User                           |
+| Category parent → Category    | `SET NULL`                                               |
+| Product → Category            | `RESTRICT`                                               |
+| Variant → Product             | `CASCADE`                                                |
+| Image → Product               | `CASCADE`                                                |
+| Image → Variant               | `SET NULL`                                               |
+| Stock → Variant               | `CASCADE`                                                |
+| Cart → User                   | preserve/restrict according to approved retention policy |
+| Cart Item → Cart              | `CASCADE`                                                |
+| Cart Item → Product           | `RESTRICT`                                               |
+| Cart Item → Variant           | `RESTRICT`                                               |
+| Order → Customer/User         | `RESTRICT`                                               |
+| Order Item → Order            | `CASCADE`                                                |
+| Order Item → Product          | `SET NULL`                                               |
+| Order Item → Variant          | `SET NULL`                                               |
+| Status History → Order        | `CASCADE`                                                |
+| Status History → Actor/User   | `SET NULL`                                               |
+| Payment → Order               | `RESTRICT`                                               |
+| Webhook Event → Payment       | preserve on payment deletion                             |
+| Delivery → Order              | `RESTRICT`                                               |
+| Furniture Request → User      | `SET NULL`                                               |
+| Furniture Request → Product   | `SET NULL`                                               |
+| Enquiry → User                | `SET NULL`                                               |
+| Enquiry → Product             | `SET NULL`                                               |
+| Enquiry → Order               | `RESTRICT`                                               |
+| Notification → Recipient/User | follow approved account-retention policy                 |
+
+Do not automatically apply `CASCADE` everywhere.
+
+Historical records must survive deletion of mutable catalogue data.
+
+---
+
+# 20. Unique-Constraint Review
+
+Every unique constraint must answer:
+
+> Is duplicate data actually impossible according to the business rules?
+
+Required or expected uniqueness includes:
+
+* user email, according to authentication policy;
+* category slug;
+* product slug;
+* product variant SKU;
+* cart guest token digest;
+* category recommendation pair;
+* one active cart per customer, through a suitable uniqueness strategy;
+* order reference;
+* payment reference;
+* provider + provider transaction identity where applicable;
+* webhook provider + provider event ID;
+* delivery order ID;
+* furniture request reference;
+* enquiry reference;
+* RBAC pivot assignment combinations.
+
+Do not add convenience uniqueness for:
+
+* names;
+* descriptions;
+* phone numbers unless explicitly approved;
+* addresses;
+* enquiry messages;
+* furniture request contents.
+
+---
+
+# 21. Check-Constraint Review
+
+Where safe and supported by the project's MySQL version, use database CHECK constraints for local invariants such as:
+
+* non-negative numeric quantities;
+* non-negative money values;
+* `reserved_quantity <= quantity`;
+* valid boolean domains;
+* self-reference prevention where straightforward;
+* mutually exclusive cart ownership fields;
+* order fee/total combinations where implementation is practical.
+
+Do not attempt to encode full business workflows in CHECK constraints.
+
+Do not use CHECK constraints as a replacement for:
+
+* authorization;
+* order transition logic;
+* payment workflow;
+* inventory concurrency control;
+* role/permission evaluation.
+
+---
+
+# 22. Enum Consistency Review
+
+Inventory every database enum or constrained status field and compare it with the authoritative V1 API registry.
+
+Verify:
+
+* exact spelling;
+* exact case;
+* exact allowed values;
+* no undocumented additions;
+* no removed values;
+* no lowercase/uppercase drift.
+
+The V1 convention is CLOSED for machine-facing enums, with the explicitly documented availability exception.
+
+Do not introduce future statuses simply because a domain might eventually need them.
+
+Examples that must not be silently invented:
+
+* extra order statuses;
+* extra payment statuses outside the approved contract;
+* delivery statuses;
+* notification types;
+* extra staff roles;
+* extra request statuses.
+
+If implementation and contract disagree, **STOP and record the mismatch** rather than silently changing the contract.
+
+---
+
+# 23. Index Review
+
+For every index, document:
+
+* columns;
+* expected query;
+* selectivity/reason;
+* whether it duplicates another index.
+
+At minimum inspect access patterns for:
+
+## Users
+
+* unique email;
+* role/RBAC lookup indexes required by the selected implementation;
+* active-state lookup only where actually queried.
+
+## Categories
+
+* unique slug;
+* parent lookup;
+* active/display-order traversal.
+
+## Products
+
+* unique slug;
+* category filtering;
+* active/deleted catalogue queries;
+* featured/active queries if actually used.
+
+Avoid creating every conceivable combination.
+
+## Variants
+
+* unique SKU;
+* product lookup;
+* product + active ordering if needed.
+
+## Images
+
+* product lookup + ordering;
+* variant lookup + ordering.
+
+A useful composite index may be:
+
+`(product_id, sort_order, id)`
+
+when deterministic image ordering is required.
+
+## Inventory
+
+* unique `(product_variant_id, warehouse_location)`;
+* variant lookup;
+* warehouse-oriented lookup only if an approved operational query requires it.
+
+## Carts
+
+* user + status;
+* status + updated_at;
+* unique guest token digest.
+
+## Cart Items
+
+* cart lookup;
+* cart + product/variant access only where required.
+
+## Orders
+
+Support:
+
+* customer orders by creation time;
+* staff operational order listing by status/creation time;
+* order-reference lookup.
+
+Use composite indexes based on actual query shapes rather than indexing every individual column.
+
+## Order Items
+
+* order lookup.
+
+## Order Status History
+
+* order + occurred_at + deterministic tie-breaker.
+
+## Payments
+
+* order + creation time;
+* payment reference;
+* provider/provider transaction identity.
+
+## Webhook Events
+
+* unique provider + provider event ID;
+* payment lookup where required.
+
+## Deliveries
+
+* unique order ID.
+
+## Furniture Requests
+
+Support:
+
+* authenticated user's requests;
+* request status + creation time;
+* reference lookup;
+* product linkage where operationally queried.
+
+## Enquiries
+
+Support:
+
+* user's enquiries;
+* status + creation time;
+* product lookup;
+* order lookup;
+* reference lookup.
+
+## Notifications
+
+Support:
+
+* recipient + creation time;
+* recipient + unread state where operationally useful.
+
+The standard customer inbox ordering remains:
+
+`created_at DESC, id ASC`
+
+and protected collections must always be queried within the authorized dataset.
+
+---
+
+# 24. Avoid Redundant Indexes
+
+Remove indexes that are fully covered by a stronger composite/unique index unless the DB optimizer and query workload justify retaining both.
+
+Examples to review:
+
+* standalone foreign-key index + equivalent composite index;
+* standalone status index when `(status, created_at)` is already present and all relevant queries use both;
+* duplicate unique + non-unique indexes over the same columns.
+
+Do not remove framework-required indexes blindly.
+
+Confirm actual migration/database behavior before deletion.
+
+---
+
+# 25. Cross-Table Invariant Register
+
+Create a final register with three categories:
+
+### A. Database-enforced
+
+Examples:
+
+* unique SKU;
+* unique slug;
+* FK existence;
+* order-reference uniqueness;
+* webhook-event uniqueness;
+* one delivery per order;
+* non-negative values;
+* cart guest-token digest uniqueness.
+
+### B. Database + application enforced
+
+Examples:
+
+* reserved quantity cannot exceed quantity;
+* cart ownership XOR;
+* one ACTIVE cart per customer;
+* order fulfillment/fee/total consistency;
+* at most one default variant;
+* variant belongs to product;
+* image variant belongs to image product;
+* cart variant belongs to cart product.
+
+### C. Application/domain only
+
+Examples:
+
+* authorized customer owns the cart/order;
+* valid order state transitions;
+* staff/admin capability decisions;
+* payment success causes correct order transition;
+* product type eligibility for furniture requests;
+* notification creation from authoritative business events.
+
+Do not misclassify authorization as a database constraint.
+
+---
+
+# 26. Referential-Integrity Test Matrix
+
+Add migration/integration tests that explicitly prove:
+
+## Foreign Keys
+
+* invalid FK values fail;
+* intended parent deletion succeeds/fails according to policy;
+* cascading children are removed only where approved;
+* historical references are nulled where approved.
+
+## Unique Constraints
+
+* duplicate slug fails;
+* duplicate SKU fails;
+* duplicate order reference fails;
+* duplicate payment reference fails;
+* duplicate webhook provider/event identity fails;
+* duplicate delivery for one order fails.
+
+## Check Constraints
+
+* negative quantities fail;
+* negative money values fail;
+* invalid reservation state fails;
+* invalid ownership combinations fail where DB-supported.
+
+## Historical Integrity
+
+* deleting a product does not destroy historical order snapshots;
+* deleting a variant does not destroy historical order item snapshots;
+* payment history is preserved;
+* order history remains coherent;
+* requests/enquiries survive removal of optional catalogue/user references according to the approved delete rules.
+
+## Cart Integrity
+
+* guest cart cannot become authenticated cart through arbitrary field updates;
+* cart cannot have both owner types;
+* cart cannot have neither owner type;
+* duplicate active customer carts are rejected.
+
+---
+
+# 27. Migration Order Review
+
+Confirm migrations can be executed from a clean database in dependency order.
+
+The dependency graph should generally flow:
+
+`users`
+
+→ `RBAC tables`
+
+→ `categories`
+
+→ `products`
+
+→ `product_variants`
+
+→ `product_images`
+
+→ `product_stocks`
+
+→ `carts`
+
+→ `cart_items`
+
+→ `orders`
+
+→ `order_items`
+
+→ `order_status_history`
+
+→ `payments`
+
+→ `payment_webhook_events`
+
+→ `deliveries`
+
+→ `furniture_requests`
+
+→ `enquiries`
+
+→ `notifications`
+
+Adjust only where the actual FK graph requires a different sequence.
+
+Do not solve a circular dependency by weakening a foreign key.
+
+If a real cycle exists, document and resolve it deliberately.
+
+---
+
+# 28. Migration Safety
+
+Verify that:
+
+* all foreign-key column types exactly match referenced primary-key types;
+* signedness matches;
+* string lengths/collations are compatible where applicable;
+* referenced columns are indexed;
+* migrations run successfully on an empty database;
+* migrations run successfully from the current project state;
+* rollback behavior is understood;
+* destructive changes are not introduced accidentally;
+* production seed data is not required for referential integrity unless explicitly approved.
+
+Never silently drop existing data as part of this phase.
+
+---
+
+# 29. Performance Sanity Review
+
+Do not prematurely optimize.
+
+Check only realistic V1 workloads:
+
+* public product/category browsing;
+* customer order history;
+* staff order queue;
+* notification inbox;
+* inventory lookup;
+* cart retrieval;
+* payment lookup by order/reference;
+* request/enquiry operational queues.
+
+Look for:
+
+* missing FK indexes;
+* missing order-by support;
+* large scans on private collections;
+* duplicate indexes;
+* low-value indexes on columns with extremely poor selectivity;
+* composite indexes whose order does not match actual filtering/sorting.
+
+Do not add indexes solely because a column is frequently present in a migration.
+
+---
+
+# 30. Security and Data-Integrity Review
+
+Verify that database design does not undermine the authorization model.
+
+In particular:
+
+* staff cannot gain customer-account authority through a database shortcut;
+* client-supplied `user_id`, `actor_id`, `recipient_user_id`, or role fields cannot be trusted;
+* historical records cannot be reassigned to another owner;
+* notification recipients are server-derived;
+* order customers are server-derived;
+* request/enquiry users are server-derived when authenticated;
+* payment records cannot be reassigned casually;
+* audit/history data is not casually mutable.
+
+The project requires server-derived ownership and rejects client-supplied authority.
+
+---
+
+# 31. Maintainability Review
+
+Apply these code-quality constraints during migration/model implementation:
+
+* keep each migration cohesive;
+* keep meaningful string literals centralized where they represent domain constants;
+* centralize CLOSED status/type definitions rather than duplicating them across migrations, models, policies, and services;
+* avoid duplicated index/constraint definitions;
+* keep database naming consistent;
+* use small schema helper methods only where they materially improve clarity.
+
+For implementation functions/methods:
+
+* cognitive complexity target: **≤ 15**;
+* maximum **3 return statements** per function;
+* avoid deeply nested conditional migration logic;
+* avoid giant migration files that mix unrelated domains;
+* comments should be minimal and explain only non-obvious constraints.
+
+Do not create abstractions merely to reduce line count.
+
+---
+
+# 32. Schema Consistency Audit
+
+Produce a final table covering every table with:
+
+| Table | PK | FKs | Delete policy | Unique constraints | Checks | Main indexes | Domain-only invariants |
+| ----- | -- | --- | ------------- | ------------------ | ------ | ------------ | ---------------------- |
+
+Every column and relationship must be explainable through one of:
+
+* API contract;
+* domain rule;
+* security rule;
+* persistence integrity requirement.
+
+If a field cannot be justified, flag it for removal or explicit decision.
+
+---
+
+# 33. Required Deliverables
+
+At the end of Phase 3.17, provide:
+
+1. a complete schema integrity review;
+2. a final FK/delete-policy matrix;
+3. a unique/check-constraint matrix;
+4. an index inventory and duplicate-index review;
+5. a cross-table invariant register;
+6. migration dependency/order verification;
+7. referential-integrity migration tests;
+8. any required migration corrections;
+9. an explicit list of unresolved issues, if any.
+
+Do not create a permanent `phase-3.17.md` document unless the project documentation structure specifically requires it.
+
+Update the consolidated project documentation only where the review identifies a durable schema decision or correction.
+
+---
+
+# 34. Definition of Done
+
+Phase 3.17 is complete only when:
+
+* every Phase 3.1–3.16 table has been reviewed;
+* all FKs are explicit;
+* FK delete behavior is deliberate;
+* no orphan-producing relationship remains unintentionally;
+* unique constraints reflect real invariants;
+* no unjustified uniqueness constraints remain;
+* check constraints cover appropriate local invariants;
+* cross-table invariants are explicitly documented;
+* indexes support the real V1 query patterns;
+* redundant indexes have been reviewed;
+* all FK types are compatible;
+* all money fields use safe integer storage;
+* quantities cannot become negative;
+* CLOSED enums are consistent with the contract;
+* migration order works from an empty database;
+* migration tests cover the critical constraints;
+* no customer/order/payment history can be accidentally destroyed through catalogue deletion;
+* authorization/ownership is not incorrectly delegated to the database;
+* no unresolved schema contradiction with the frozen V1 API remains.
+
+---
+
+# 35. Out of Scope
+
+Do not implement:
+
+* order workflow/state-transition services;
+* payment provider integration;
+* payment webhook signature verification;
+* inventory reservation algorithms;
+* concurrency strategy implementation;
+* checkout orchestration;
+* delivery pricing logic;
+* authentication flows;
+* authorization policies;
+* notification dispatch;
+* email/SMS/push delivery;
+* frontend changes;
+* API endpoint implementation;
+* attachment storage;
+* warehouse-management domain;
+* advanced reporting indexes;
+* search-engine infrastructure;
+* new product/category/domain concepts;
+* future V2 statuses or roles.
+
+Those belong to later phases.
+
+---
+
+# 36. STOP Condition
+
+STOP after the schema review, constraint corrections, migration updates, and integrity tests are complete.
+
+Do not begin:
+
+* model/business-service implementation beyond what is necessary to validate the schema;
+* repository/API implementation;
+* controllers;
+* checkout;
+* payments;
+* inventory workflows;
+* frontend integration.
+
+If the review discovers a conflict between an existing schema decision and the frozen V1 API/domain contract, do not silently redesign it. Record the conflict and STOP for an explicit decision before proceeding.
+
+Phase 3.17 must end with the database structure being **internally consistent, referentially safe, migration-rebuildable, and aligned with the frozen V1 domain contract**.

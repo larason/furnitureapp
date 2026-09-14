@@ -158,7 +158,7 @@ class FurnitureRequestSchemaTest extends TestCase
         $product = Product::factory()->create();
         $request = FurnitureRequest::factory()->forProduct($product)->create();
 
-        $product->delete();
+        $product->forceDelete();
 
         $fresh = $request->fresh();
         $this->assertNotNull($fresh);

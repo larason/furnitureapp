@@ -273,7 +273,7 @@ class EnquirySchemaTest extends TestCase
             'message' => 'What wood is this made from?',
         ]);
 
-        $product->delete();
+        $product->forceDelete();
 
         $fresh = $enquiry->fresh();
         $this->assertNotNull($fresh);
