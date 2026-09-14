@@ -15,7 +15,7 @@ Before implementing or modifying UI:
 2. Read tokens.css.
 3. Inspect existing components.
 4. Reuse existing tokens and components.
-5. use frontend-design skills for guidance. available in frontend/.agents/skills/
+5. use frontend-design skills for guidance. Available in frontend/.agents/skills/
 
 Never invent new:
 - colors

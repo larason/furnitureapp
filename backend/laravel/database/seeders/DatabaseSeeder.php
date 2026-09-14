@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -11,19 +10,15 @@ class DatabaseSeeder extends Seeder
     use WithoutModelEvents;
 
     /**
-     * Seed the application's database.
+     * Seed production-safe reference data only (roles, permissions, taxonomy).
+     *
+     * Demo users and commerce data are intentionally excluded: run the
+     * local-only DemoSeeder explicitly (`php artisan db:seed --class=DemoSeeder`).
      */
     public function run(): void
     {
         app(RbacSeeder::class)->run();
 
         $this->call(CategorySeeder::class);
-
-        if (! User::where('email', 'test@example.com')->exists()) {
-            User::factory()->create([
-                'name' => 'Test User',
-                'email' => 'test@example.com',
-            ]);
-        }
     }
 }

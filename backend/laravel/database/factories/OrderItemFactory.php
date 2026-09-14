@@ -17,14 +17,13 @@ class OrderItemFactory extends Factory
     {
         $quantity = fake()->numberBetween(1, 100);
         $unitPrice = fake()->numberBetween(1000, 500000);
-        $product = Product::factory()->create();
 
         return [
             'order_id' => Order::factory(),
-            'product_id' => $product->id,
+            'product_id' => Product::factory(),
             'variant_id' => null,
             'sku' => 'SKU-'.fake()->unique()->bothify('????-####'),
-            'name' => $product->name,
+            'name' => fake()->words(3, true),
             'variant_name' => null,
             'unit_price_amount' => $unitPrice,
             'quantity' => $quantity,

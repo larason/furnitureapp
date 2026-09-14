@@ -30,6 +30,14 @@ class ProductStockFactory extends Factory
         ]);
     }
 
+    public function outOfStock(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'quantity' => 0,
+            'reserved_quantity' => 0,
+        ]);
+    }
+
     public function atLocation(string $location): static
     {
         return $this->state(fn (array $attributes) => [
