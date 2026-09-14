@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\RoleName;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -15,6 +16,7 @@ use Spatie\Permission\Models\Role;
  *
  * Creates one customer, one staff, and one admin account sharing the password
  * from the SEED_DEMO_PASSWORD environment variable (see .env.example).
+ * When unset, a random password is generated and printed once to the console.
  * Repeatable: existing emails are reused and roles/profiles are ensured.
  */
 class DevelopmentUserSeeder extends Seeder
@@ -28,11 +30,9 @@ class DevelopmentUserSeeder extends Seeder
 
     private function seedUser(string $name, string $email, RoleName $role, bool $isStaff): void
     {
-        $password = config('demo.user_password');
-
-        if (! is_string($password) || $password === '') {
-            $password = 'Furniture123!';
-        }
+        $configured = config('demo.user_password');
+        $generated = ! is_string($configured) || $configured === '';
+        $password = $generated ? Str::random(16) : $configured;
 
         $user = User::firstOrCreate(
             ['email' => $email],
@@ -43,6 +43,10 @@ class DevelopmentUserSeeder extends Seeder
                 'email_verified_at' => now(),
             ]
         );
+
+        if ($generated && $user->wasRecentlyCreated) {
+            $this->command->info("Demo user {$email} created with generated password: {$password}");
+        }
 
         Role::firstOrCreate(['name' => $role->value, 'guard_name' => config('auth.defaults.guard')]);
 
