@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int|null $user_id
- * @property string $enquiry_reference
+ * @property string|null $enquiry_reference
  * @property int|null $product_id
  * @property int|null $order_id
  * @property string $name
@@ -22,14 +22,13 @@ use Illuminate\Support\Carbon;
  * @property string|null $phone
  * @property string $subject
  * @property string $message
- * @property EnquiryStatus $enquiry_status
+ * @property EnquiryStatus|null $enquiry_status
  * @property string|null $staff_internal_notes
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
 #[Fillable([
     'user_id',
-    'enquiry_reference',
     'product_id',
     'order_id',
     'name',
@@ -37,8 +36,6 @@ use Illuminate\Support\Carbon;
     'phone',
     'subject',
     'message',
-    'enquiry_status',
-    'staff_internal_notes',
 ])]
 class Enquiry extends Model
 {
@@ -100,8 +97,9 @@ class Enquiry extends Model
     private function normalizeFields(): void
     {
         foreach (['name', 'email', 'phone', 'subject', 'message'] as $field) {
-            if (is_string($this->{$field})) {
-                $this->{$field} = trim($this->{$field});
+            $val = $this->getAttribute($field);
+            if (is_string($val)) {
+                $this->setAttribute($field, trim($val));
             }
         }
     }

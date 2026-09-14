@@ -1,1062 +1,1433 @@
-# Phase 3.15 — Enquiry Schema
+# Phase 3.16 — Notification Schema
 
 ## Purpose
 
-Implement the persistence model for **General Enquiries**.
+Implement the persistence model for **transactional/system Notifications**.
 
-An Enquiry is a private communication from a customer or guest to the business.
+Notifications exist to inform users about important events concerning their:
 
-Examples include:
+* Orders
+* Payments
+* Delivery, when the Order uses Delivery
+* approved system actions associated with their commerce activity
 
-* questions about furniture
-* material questions
-* product questions
-* bulk or office furniture enquiries
-* questions about an existing Order
-* general business/contact questions
-* questions that do not qualify as a Furniture Request
+Notifications are **not** an email-marketing, advertising, promotional, campaign, or customer-segmentation system.
 
-An Enquiry is **not**:
+The notification domain must remain focused on operational/customer-service information generated from authoritative business events.
 
-* a Furniture Request
-* an Order
-* a Payment
-* an Inventory reservation
-* a quotation
-* a delivery request
-
-The existing V1 contract explicitly keeps Enquiries separate from Requests, Orders, Payments, and Inventory.
-
-Both anonymous and authenticated submissions are supported.
+Examples:
 
 ```text
-Guest
-  │
-  └── Enquiry (user_id = null)
+Order received
+Order accepted
+Order being processed
+Order ready for pickup
+Order shipped
+Order delivered
+Order completed
+Order cancelled
 
-Authenticated Customer
-  │
-  └── Enquiry (user_id = authenticated principal)
+Payment successful
+Payment failed
+Payment requires action
+Payment expired
+
+Delivery-related order update
 ```
 
-This phase establishes the persistence model and constraints required before Group J implements Enquiry validation, authorization, API handling, and operational workflows.
+The exact Payment notification types will be defined with the payment contract in Group H. Do not invent public `PAYMENT_*` enum values in Phase 3.16.
 
 ---
 
-# Dependencies
+# 1. Notification vs Marketing — Explicit Boundary
 
-Complete these phases first:
+The application must maintain a strict conceptual separation:
 
-* Phase 3.3 — Categories Schema
-* Phase 3.4 — Products Schema
-* Phase 3.9 — Orders Schema
-* Phase 3.10 — Order Items Snapshot Model
-* Phase 3.12 — Payment Schema
-* Phase 3.14 — Furniture Request Schema
+### Transactional/System Notification
 
-Do not make Enquiry dependent on Furniture Requests, Payments, or Deliveries.
+Triggered because something happened to the customer's transaction or requested service.
 
-An Enquiry may optionally reference a Product or Order, but it remains its own domain entity.
+Examples:
+
+```text
+ORDER_ACCEPTED
+ORDER_SHIPPED
+ORDER_DELIVERED
+Payment successful (exact type deferred to Group H)
+Payment failed (exact type deferred to Group H)
+```
+
+### Marketing/Promotional Communication
+
+Examples:
+
+```text
+20% OFF THIS WEEK
+NEW SOFAS AVAILABLE
+CHRISTMAS SALE
+SPECIAL CUSTOMER OFFER
+```
+
+Marketing/promotional communications are **not part of the Notification model created here**.
+
+Do not add:
+
+* campaign
+* promotion
+* coupon
+* marketing_segment
+* promotional_opt_in
+* advertising
+* marketing_campaign_id
+
+to `notifications`.
+
+Future marketing communication, if ever approved, must be a separate domain with its own consent/preferences, audience selection, delivery, suppression, and compliance rules.
+
+This phase creates no such functionality.
 
 ---
 
-# Authoritative Inputs
+# 2. Core Design Rule
 
-Treat these as authoritative:
+A Notification is a **downstream communication record derived from authoritative business state**.
 
-* `docs/VISION.md`
-* `docs/domain/business-rules.md`
-* `docs/api/api-contract.md`
-* `docs/api/api-resources.md`
-* `docs/api/api-conventions.md`
-* `AGENTS.md`
-* completed Phase 3.3 Categories
-* completed Phase 3.4 Products
-* completed Phase 3.9 Orders
-* completed Phase 3.10 Order Items
-* completed Phase 3.12 Payment
-* completed Phase 3.14 Furniture Request
+The Notification is never the source of truth.
 
-The Version 1 API contract is frozen. Do not introduce new public Enquiry states, new relationships, or breaking request shapes in this phase.
+Authoritative sources include:
 
----
-
-# 1. Core Design Rule
-
-The `enquiries` table is a **self-contained historical communication record**.
-
-It must preserve the original customer-submitted:
-
-* contact
-* subject
-* message
-* optional Product context
-* optional Order context
-
-independently of subsequent changes to:
-
-* User profile
-* Product
 * Order
+* Payment
+* Delivery/Fulfillment
+* other explicitly approved business events
 
-The original Enquiry must remain meaningful even when referenced entities change.
+The existing contract states that if a Notification says an Order is shipped while the Order says it is still processing, the authoritative Order state wins.
 
-Do not automatically synchronize historical Enquiry content from current catalog or profile data.
+Therefore:
+
+```text
+Business Event
+      ↓
+Notification
+```
+
+not:
+
+```text
+Notification
+      ↓
+Order state
+```
+
+Do not allow clients to manufacture business notifications.
 
 ---
 
-# 2. Create `enquiries` Table
+# 3. Create `notifications` Table
 
 Create a Laravel migration for:
 
-`enquiries`
+`notifications`
 
 Recommended schema:
 
-| Column                 | Type                                       | Rules                                                  |
-| ---------------------- | ------------------------------------------ | ------------------------------------------------------ |
-| `id`                   | big integer / Laravel standard primary key | Internal primary key                                   |
-| `user_id`              | nullable foreign key                       | Authenticated Customer; null for Guest; null on delete |
-| `enquiry_reference`    | string                                     | Server-generated unique reference                      |
-| `product_id`           | nullable foreign key                       | Optional Product context; null on delete               |
-| `order_id`             | nullable foreign key                       | Optional Order context; restrict on delete             |
-| `name`                 | string                                     | Required contact snapshot                              |
-| `email`                | nullable string                            | Contact snapshot                                       |
-| `phone`                | nullable string                            | Contact snapshot                                       |
-| `subject`              | string                                     | Required                                               |
-| `message`              | text                                       | Required                                               |
-| `enquiry_status`       | string                                     | Required; default `OPEN`                               |
-| `staff_internal_notes` | nullable text                              | Staff/Admin operational notes                          |
-| `created_at`           | timestamp                                  | Required                                               |
-| `updated_at`           | timestamp                                  | Required                                               |
+| Column              | Type                               | Rules                                                                               |
+| ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `id`                | big integer / standard primary key | Internal primary key                                                                |
+| `recipient_user_id` | foreign key                        | Required; references users.id; restrict/null behavior according to retention policy |
+| `type`              | string                             | Required; controlled notification type                                              |
+| `title`             | string                             | Required; server-generated                                                          |
+| `message`           | text                               | Required; server-generated                                                          |
+| `target`            | JSON nullable                      | Optional structured navigation target                                               |
+| `source_type`       | string nullable                    | Optional authoritative source type                                                  |
+| `source_id`         | string nullable                    | Optional source identifier                                                          |
+| `read_at`           | timestamp nullable                 | Read marker                                                                         |
+| `created_at`        | timestamp                          | Required                                                                            |
+| `updated_at`        | timestamp                          | Required                                                                            |
 
-Do not add payment, delivery, inventory, or request-status fields.
+Keep the structure intentionally small.
 
----
-
-# 3. Guest and Authenticated Submission
-
-One table must support both.
-
-## Guest
-
-```text id="j4g9yf"
-user_id = null
-```
-
-The guest's contact details are stored directly in the Enquiry.
-
-## Authenticated Customer
-
-```text id="quy9b0"
-user_id = authenticated user's ID
-```
-
-The contact snapshot is still stored on the Enquiry.
-
-Do not require a User record for anonymous creation.
-
-The existing contract explicitly allows anonymous Enquiry creation and authenticated creation through the same domain.
+Do not store complete Order, Payment, User, Delivery, or Product objects inside a Notification.
 
 ---
 
-# 4. `user_id` Is Server-Controlled
+# 4. Recipient Ownership
+
+Use:
+
+`recipient_user_id`
+
+as the notification owner.
+
+It must always be server-derived.
+
+For a Customer:
+
+```text
+authenticated customer
+        ↓
+recipient_user_id
+```
 
 Never accept:
 
-```json id="7s8a4e"
+```json
 {
-  "user_id": "..."
+  "recipient_user_id": "another-user"
 }
 ```
 
 from the client.
 
-For authenticated creation:
-
-```text id="k0cf10"
-authenticated principal
-→ user_id
-```
-
-For anonymous creation:
-
-```text id="i9fm4v"
-user_id = null
-```
-
-The existing conventions require this server-derived ownership model.
+The existing contract explicitly requires recipient identity to be server-derived and customer notifications to be scoped to the authenticated recipient.
 
 ---
 
-# 5. Contact Snapshot
+# 5. No Anonymous In-App Notifications
 
-Persist:
-
-* `name`
-* `email`
-* `phone`
-
-directly on the Enquiry.
-
-This makes the Enquiry self-contained.
-
-A customer's later profile change must not rewrite historical Enquiry contact information.
-
-Do not dynamically substitute current profile information when reading historical enquiries.
-
-For authenticated customers, account identity is represented by `user_id`, while the stored contact remains the original submitted snapshot. The existing contract explicitly describes this pattern.
-
----
-
-# 6. Contact Validation Preparation
-
-Prepare the schema for Group J validation.
-
-## `name`
-
-* required
-* string
-* trimmed
-* bounded
-* Unicode-safe
-
-## `email`
-
-* nullable
-* valid email syntax when supplied
-* normalized appropriately
-* bounded length
-
-## `phone`
-
-* nullable
-* stored as string
-* normalized appropriately
-* bounded length
-
-The existing frozen Enquiry contract requires:
-
-```text id="2x5ig9"
-name
-+
-at least one of phone or email
-```
-
-for anonymous creation.
-
-Authenticated requests may derive account contact information according to the existing contract.
-
-Do not change that requirement in Phase 3.15.
-
----
-
-# 7. `enquiry_reference`
-
-Create:
-
-`enquiry_reference`
-
-as a server-generated unique business reference.
-
-Requirements:
-
-* unique
-* immutable
-* server-generated
-* never client supplied
-* not raw database ID
-* independent from Order references
-
-Do not reuse:
-
-```text id="z3fksr"
-order_reference
-```
-
-An Enquiry is not an Order.
-
----
-
-# 8. Subject
-
-`subject` is required for a General Enquiry.
-
-Store it directly on the Enquiry.
-
-Recommended constraints:
-
-* required
-* string
-* trimmed
-* bounded maximum length
-* plain text
-* Unicode-safe
-
-Do not allow arbitrary HTML as trusted input.
-
-The Enquiry contract explicitly identifies `subject` as part of Enquiry contact/content.
-
----
-
-# 9. Message
-
-`message` is the primary communication body.
-
-Recommended constraints:
-
-* required
-* string/text
-* trimmed where appropriate
-* bounded maximum size
-* Unicode-safe
-* treated as plain text
-
-Do not interpret customer message content as executable HTML, SQL, templates, or code.
-
-Do not overwrite the original message with Staff responses.
-
-The original enquiry must remain preserved. The existing operational rules explicitly require customer-provided fields to remain immutable.
-
----
-
-# 10. Product Context
-
-`product_id` is optional.
-
-An Enquiry may concern a specific catalog Product.
-
-When supplied, the later Group J validation layer should verify that the Product exists and is addressable according to the applicable catalog rules.
-
-Do not make Product mandatory.
-
-An enquiry such as:
-
-> "What materials do you use for office desks?"
-
-does not require a Product reference.
-
-Use:
-
-```text id="12b9be"
-product_id = null
-```
-
-for general enquiries.
-
----
-
-# 11. Product Reference Is Context, Not Ownership
-
-`product_id` does not make the Enquiry a Product child record.
-
-It simply records context.
-
-Do not allow Product deletion to delete the Enquiry.
-
-Use:
-
-```text id="n2f3k6"
-product_id → nullOnDelete
-```
-
-This preserves the customer's communication even if the referenced Product is retired or removed.
-
----
-
-# 12. Historical Product Context
-
-The existence of `product_id` alone is not enough to preserve the complete historical Product representation.
-
-For V1:
-
-* `product_id` provides traceability
-* the original `subject` and `message` remain the authoritative customer communication
-* current Product data may change independently
-
-Do not create a Product snapshot JSON structure unless the frozen Enquiry contract actually requires it.
-
-Avoid duplicating the complete Product model unnecessarily.
-
----
-
-# 13. Order Context
-
-`order_id` is optional.
-
-An Enquiry may concern a customer's existing Order.
-
-Examples:
-
-* "Can I change my delivery details?"
-* "I have a question about this order."
-* "When can I collect my order?"
-
-When supplied, the later Group J validation layer must ensure the Order exists and that the sender has the appropriate relationship/authorization to use that context where required.
-
-Do not assume that knowing an Order reference grants access to the Order.
-
----
-
-# 14. Order Reference Security
-
-Do not use:
-
-```text id="11kr93"
-order_id
-```
-
-as a client-authorized ownership mechanism.
-
-The Order association is contextual data.
-
-Authorization must later be evaluated through the authenticated relationship and appropriate operational rules.
-
-The project-wide authorization model requires ownership checks through relationships rather than client-controlled IDs.
-
----
-
-# 15. `order_id` Delete Behavior
-
-Do not cascade-delete Enquiries when an Order is deleted.
-
-Use restrictive semantics:
-
-```text id="d3jzxk"
-order_id → RESTRICT
-```
-
-This protects the relationship from accidental destruction.
-
-Normal Orders are historical records and should not be hard-deleted in ordinary application operation.
-
----
-
-# 16. Enquiry Is Not an Order
-
-Do not allow the presence of `order_id` to transform the Enquiry into an Order operation.
-
-An Enquiry remains communication.
-
-Do not add:
-
-* order status
-* payment status
-* delivery status
-* total
-* amount
-* cancellation state
-
-to Enquiry.
-
-The existing contract explicitly states that Enquiries do not create, modify, or guarantee Orders, Payments, or Inventory.
-
----
-
-# 17. Enquiry Is Not a Furniture Request
-
-Do not merge Enquiry with `furniture_requests`.
-
-Examples:
-
-### Furniture Request
+Do not support:
 
 ```text
-"I want a custom 3-seat sofa made in dark grey."
+recipient_user_id = null
 ```
 
-### Enquiry
+for ordinary in-app Notifications.
 
-```text
-"Do you have sofas available in velvet?"
-```
+A Guest may submit Requests and Enquiries, but there is no authenticated recipient account for normal in-app notification ownership.
 
-The domains remain separate.
+The existing notification contract explicitly states that anonymous in-app notifications are not supported.
 
-Do not add:
+Do not create:
 
-```text id="z9r7gf"
-request_id
-```
+* guest_notification_token
+* email_as_recipient
+* phone_as_recipient
+* anonymous notification inbox
 
-to Enquiry.
+in this phase.
 
-The frozen contract explicitly states there is no automatic Request ↔ Enquiry merge.
+Guest communication delivery belongs to future explicitly approved channels.
 
 ---
 
-# 18. Request Status
+# 6. Staff/Admin Notifications
 
-Use the approved V1 Enquiry lifecycle:
+The schema must be capable of supporting operational Staff/Admin notifications without turning notifications into a global unrestricted queue.
 
-```text id="hwoapd"
-OPEN
-CLOSED
-```
-
-Default:
-
-```text id="h5j8p8"
-OPEN
-```
-
-The approved lifecycle is:
-
-```text id="9cf5ge"
-OPEN → CLOSED
-```
-
-The existing contract describes this as intentionally minimal; `ASSIGNED`, `IN_PROGRESS`, and similar states are not introduced without explicit justification.
+The existing contract permits operational notification access under explicit permission, while customer notifications remain recipient-scoped.
 
 Do not add:
 
 ```text
-NEW
-PENDING
-IN_PROGRESS
-RESOLVED
-ARCHIVED
+is_staff_notification
+is_admin_notification
 ```
 
-unless separately approved through the frozen-contract process.
+booleans.
+
+The recipient remains a User, while authorization determines the allowed operational scope.
+
+Do not implement Staff/Admin notification workflows in this phase unless already required by the existing API contract.
 
 ---
 
-# 19. Status Is Server-Controlled
+# 7. Notification Type
 
-Customers must not submit:
+Store:
 
-```json id="v9h9b4"
+`type`
+
+as the machine-readable notification type.
+
+The frontend must use `type` for behavior, not parse the English `message`.
+
+The existing contract explicitly requires machine-readable types and controlled notification messages.
+
+For the currently frozen V1 Order-related registry, supported types include:
+
+```text
+ORDER_RECEIVED
+ORDER_ACCEPTED
+ORDER_PROCESSING
+ORDER_READY_FOR_PICKUP
+ORDER_SHIPPED
+ORDER_DELIVERED
+ORDER_COMPLETED
+ORDER_CANCELLED
+```
+
+It also contains existing operational Request/Enquiry types:
+
+```text
+NEW_MADE_TO_ORDER_REQUEST
+NEW_ENQUIRY
+NEW_ORDER
+```
+
+These existing values must not be removed or casually renamed.
+
+---
+
+# 8. Payment Notification Preparation
+
+Payment notifications are required by the application's business goal, but exact `PAYMENT_*` public notification types were intentionally deferred to Group H in the frozen contract.
+
+Therefore:
+
+* do not hard-code unapproved `PAYMENT_*` values into the frozen API contract
+* do not invent customer-facing Payment notification types in this phase
+* make the database/model capable of storing controlled future payment notification types
+* Group H must define the exact Payment notification registry before those values become externally observable
+
+This avoids creating a database/API mismatch.
+
+---
+
+# 9. Delivery Notification Scope
+
+Delivery-related notifications are applicable only when relevant to the Order's fulfillment path.
+
+For example:
+
+### Pickup
+
+Potential notifications:
+
+```text
+ORDER_READY_FOR_PICKUP
+ORDER_COMPLETED
+```
+
+### Delivery
+
+Potential notifications:
+
+```text
+ORDER_SHIPPED
+ORDER_DELIVERED
+ORDER_COMPLETED
+```
+
+The notification itself should reference the authoritative Order/event rather than duplicating a second Delivery lifecycle.
+
+The existing contract defines Pickup and Delivery as different fulfillment branches and derives tracking from `order_status_history`.
+
+Do not add a second `DELIVERY_STATUS` state machine here.
+
+---
+
+# 10. `title`
+
+`title` is server-generated presentation text.
+
+It should be generated from:
+
+* controlled notification type
+* safe authoritative context
+
+Example:
+
+```text
+Your order is ready
+```
+
+Do not allow clients to submit arbitrary notification titles.
+
+Do not treat `title` as machine-readable business state.
+
+Frontend logic must use `type`.
+
+---
+
+# 11. `message`
+
+`message` is server-generated human-readable notification content.
+
+Example:
+
+```text
+Your order OD-12345 is ready for pickup.
+```
+
+It may contain safe business context such as:
+
+* Order reference
+* approved display data
+
+It must not include:
+
+* passwords
+* payment secrets
+* internal notes
+* authentication tokens
+* provider credentials
+* complete private records
+
+The contract explicitly requires only minimal safe context in notification messages.
+
+---
+
+# 12. XSS and Message Safety
+
+Notification titles/messages are generated by the server but may contain dynamic data.
+
+Ensure dynamic values are safely encoded/escaped according to the output context.
+
+Do not treat Order references or other dynamic fields as trusted HTML.
+
+Do not allow:
+
+```text
+<script>
+```
+
+or equivalent executable content to reach notification presentation.
+
+Do not permit customer-submitted HTML to become notification markup.
+
+---
+
+# 13. Target Structure
+
+Support an optional structured:
+
+`target`
+
+field.
+
+Recommended conceptual shape:
+
+```json
 {
-  "enquiry_status": "CLOSED"
+  "type": "ORDER",
+  "id": "..."
 }
 ```
 
-as part of ordinary Enquiry creation.
+This lets clients deep-link to the relevant business resource.
 
-Later Staff operations may change status through explicit controlled actions.
+The existing contract defines target references as server-generated and explicitly says they are **not capability tokens**.
 
-Do not implement those actions in Phase 3.15.
+Do not allow the client to submit:
 
-Do not create a generic:
+```json
+{
+  "target": {
+    "type": "ORDER",
+    "id": "another-customers-order"
+  }
+}
+```
+
+to create or authorize a notification.
+
+---
+
+# 14. Target Is Not Authorization
+
+Even if a Notification contains:
 
 ```text
-PATCH /enquiries/{enquiry}
-{"enquiry_status":"CLOSED"}
+target.type = ORDER
+target.id = ...
 ```
 
-workflow in this phase.
+the target must not grant access to that Order.
 
----
-
-# 20. Staff Internal Notes
-
-Add:
-
-`staff_internal_notes`
-
-as an operational-only field.
-
-Requirements:
-
-* nullable
-* bounded text
-* Staff/Admin only
-* not customer-visible
-* not part of original customer communication
-* not accepted during ordinary customer creation
-* never serialized to customers
-
-The existing Enquiry rules explicitly allow Staff to manage `enquiry_status` and `staff_internal_notes` while preserving the customer's original fields.
-
-Do not call the field simply `notes`, because that would make customer/internal semantics ambiguous.
-
----
-
-# 21. Original Customer Content Must Remain Immutable
-
-The following are customer-submitted historical data:
-
-* name
-* email
-* phone
-* subject
-* message
-* product_id
-* order_id
-
-Do not allow normal Staff handling to overwrite them.
-
-Staff operational notes belong in `staff_internal_notes`.
-
-This preserves the original communication and supports auditability.
-
----
-
-# 22. Attachments
-
-Attachments are optional and must not be stored directly in the `enquiries` record.
-
-Use the established separate attachment architecture when Group J implements it.
-
-The frozen contract already defines:
-
-* optional Enquiry attachments
-* separate `POST /enquiries/{enquiry}/attachments`
-* secure scoped upload authorization
-* private storage
-* temporary signed URLs
-* file-size/type/content-signature validation
-
-Do not duplicate an `attachment_path` or binary field inside `enquiries`.
-
-Do not implement attachment upload in Phase 3.15 unless the attachment schema itself is explicitly part of the current repository architecture.
-
----
-
-# 23. Attachment Security Preparation
-
-Group J must eventually validate attachments using:
-
-* file size limit
-* allow-listed content types
-* actual file signature
-* sanitized filenames
-* authorized storage
-* scoped upload token for anonymous upload
-* ownership/operational authorization
-
-The current V1 contract specifically establishes a scoped upload-token mechanism for anonymous attachments and prohibits permanent public storage URLs.
-
-Phase 3.15 only needs to preserve the parent-child relationship required by that future implementation.
-
----
-
-# 24. Anonymous Enquiry Access
-
-Anonymous users may **submit** an Enquiry.
-
-Do not assume they can later retrieve it merely because they know:
-
-* the numeric database ID
-* the Enquiry reference
-* their email
-* their phone
-
-The existing contract explicitly rejects predictable-ID anonymous retrieval and does not treat email as ownership proof.
-
-Any later anonymous retrieval mechanism must use an explicit secure mechanism.
-
-Do not create such a mechanism in this phase.
-
----
-
-# 25. Authenticated Customer Access
-
-For authenticated customers:
-
-```text id="qud46s"
-Enquiry.user_id = authenticated principal
-```
-
-The customer may later retrieve only their authorized Enquiries.
-
-Customer A must not be able to retrieve Customer B's Enquiry.
-
-The existing API conventions require 404-style masking where necessary to avoid an existence oracle.
-
-Do not implement those APIs in Phase 3.15.
-
----
-
-# 26. Staff Access
-
-Staff access is operational, not ownership.
-
-A Staff user may later access Enquiries according to explicit operational permissions.
-
-Do not model Staff as the Enquiry owner.
-
-Do not add:
-
-```text id="an1jmj"
-staff_id
-```
-
-just to represent operational access.
-
-Authorization should be handled through the role/permission model established elsewhere.
-
----
-
-# 27. Admin Access
-
-Admin may have broader Enquiry access according to explicit authorization rules.
-
-Do not encode:
-
-```text id="j2p29m"
-is_admin
-```
-
-in the Enquiry table.
-
-Use the project's RBAC and authorization model.
-
-Administrative access must still follow data-minimization and auditability requirements.
-
----
-
-# 28. Privacy
-
-Enquiries are private.
-
-Do not expose Enquiry data through:
-
-* public Product APIs
-* public search
-* catalog pages
-* SEO metadata
-* anonymous listing endpoints
-* public CDN caching
-
-The existing contract classifies Enquiries as private and explicitly prohibits embedding them into the public catalog.
-
----
-
-# 29. Serialization
-
-Never rely on:
-
-```text id="xvuhj1"
-$model->toArray()
-```
-
-for Enquiry API responses.
-
-Later Group J serializers must use explicit allow-lists.
-
-Customer representation may contain only the customer's permitted Enquiry fields.
-
-Staff/Admin representations may contain operational information such as `staff_internal_notes` when authorized.
-
-Internal attachment/storage details must never be exposed by default.
-
----
-
-# 30. No Sensitive Credential Fields
-
-Do not add:
-
-* password
-* authentication token
-* reset token
-* session token
-* API key
-* payment credential
-* provider secret
-
-to Enquiry.
-
-Contact details are communication data, not credentials.
-
----
-
-# 31. No Financial Fields
-
-Do not add:
-
-* amount
-* price
-* quoted_price
-* payment_status
-* currency
-* delivery_fee
-* total
-
-An Enquiry does not establish a commercial price or payment obligation.
-
-The existing contract explicitly excludes payment/amount creation from Enquiry behavior.
-
----
-
-# 32. No Delivery Fields
-
-Do not add:
-
-* delivery_fee
-* delivery_status
-* tracking_number
-* delivery_id
-
-A customer can mention delivery in the message, but that does not make the Enquiry a Delivery object.
-
----
-
-# 33. No Inventory Fields
-
-Do not add:
-
-* stock quantity
-* reserved quantity
-* inventory ID
-* allocation
-* warehouse location
-
-An Enquiry never reserves or modifies inventory.
-
----
-
-# 34. Validation-Ready Database Design
-
-Prepare the schema so Group J can enforce the validation sequence:
-
-```text id="m9q6o6"
-Transport
-→ Schema/Input
-→ Authentication (optional)
-→ Authorization
-→ Domain
-→ Concurrency
-→ Persistence
-```
-
-The database should enforce structural integrity.
-
-Group J must enforce business meaning.
-
-Examples:
-
-### Database
-
-* foreign keys
-* nullability
-* uniqueness
-* indexes
-
-### Group J
-
-* `name` rules
-* contact requirements
-* subject/message bounds
-* Product/Order validity
-* ownership
-* request context authorization
-* request status transitions
-* anti-abuse/rate limiting
-
-The project's validation conventions explicitly distinguish structural validation from business/domain validation.
-
----
-
-# 35. Unknown Fields
-
-Group J's create/update inputs must use strict allow-lists.
-
-Customer submission must not accept:
+When a customer follows a notification:
 
 ```text
-user_id
-enquiry_status
-staff_internal_notes
-payment_status
-amount
-order_status
+Notification
+    ↓
+Target Order
+    ↓
+Normal Order authorization
 ```
 
-or arbitrary undocumented fields.
+must still occur.
 
-Unknown fields must be rejected according to the project's strict input policy.
-
----
-
-# 36. Duplicate Enquiry Handling
-
-Do not create hard uniqueness constraints such as:
-
-```text id="2idjz7"
-email + message
-phone + message
-email + subject
-product_id + email
-```
-
-Two legitimate enquiries may have identical or very similar content.
-
-The existing conventions deliberately avoid simplistic duplicate detection for communication submissions.
-
-Abuse/rate limiting belongs to the API/application layer.
+The existing contract explicitly states that target references do not grant access to the referenced resource.
 
 ---
 
-# 37. Idempotency
+# 15. Source Traceability
 
-Do not introduce an Enquiry-specific idempotency key column in this phase.
+Support optional:
 
-The existing V1 contract does not require `POST /enquiries` to be inherently idempotent.
+* `source_type`
+* `source_id`
 
-The project currently treats anonymous Enquiry creation as a public mutation requiring abuse/rate-limit consideration rather than a database uniqueness workaround.
+to trace a Notification back to the authoritative source event/entity.
 
----
-
-# 38. Indexes
-
-At minimum add:
-
-* unique index on `enquiry_reference`
-* index on `user_id`
-* index on `product_id`
-* index on `order_id`
-* composite index on `(enquiry_status, created_at)`
-* index on `created_at`
-
-This supports later:
+Example:
 
 ```text
-/me/enquiries
-staff Enquiry queue
-Product-context queries
-Order-context queries
-status filtering
-newest-first sorting
+source_type = ORDER_STATUS_HISTORY
+source_id   = event identifier
 ```
 
-The canonical V1 listing sort is:
+or later:
 
-```text id="g23i21"
+```text
+source_type = PAYMENT
+source_id   = payment identifier
+```
+
+The source values are internal/server-generated.
+
+Do not accept arbitrary client-supplied source identities.
+
+---
+
+# 16. Source vs Target
+
+Keep these concepts distinct:
+
+### Source
+
+> What authoritative business record/event caused this notification?
+
+### Target
+
+> What resource should the client navigate to?
+
+Example:
+
+```text
+source:
+  ORDER_STATUS_HISTORY / evt_xxx
+
+target:
+  ORDER / ord_xxx
+```
+
+Do not assume they must always be the same entity.
+
+---
+
+# 17. Notification Deduplication
+
+The same source event must not produce duplicate logical notifications for the same recipient.
+
+The frozen contract explicitly requires notification deduplication/idempotency at the processing boundary.
+
+Do not use:
+
+```text
+title + message
+```
+
+as a duplicate detector.
+
+Do not use timestamps as the only duplicate key.
+
+Use the authoritative event/source identity in the later notification-generation workflow.
+
+---
+
+# 18. Durable Uniqueness Strategy
+
+When a Notification corresponds one-to-one with a specific source event for a recipient, the later implementation should be able to enforce a durable uniqueness boundary equivalent to:
+
+```text
+recipient + source_type + source_id + type
+```
+
+However, do not assume every future notification must use exactly that combination.
+
+Some system notifications may be generated without a single persisted source event.
+
+Therefore:
+
+* schema must support source references
+* source-based notification generation must use a durable idempotency strategy
+* do not create a universal uniqueness rule that blocks legitimate system notifications
+
+The exact uniqueness strategy can be finalized when the notification-generation workflow is implemented.
+
+---
+
+# 19. Read State
+
+Use a single field:
+
+`read_at`
+
+as the source of truth.
+
+Semantics:
+
+```text
+read_at = null
+→ unread
+
+read_at = timestamp
+→ read
+```
+
+Do not store both:
+
+```text
+is_read
+read_at
+```
+
+because that creates two competing sources of truth.
+
+The existing contract explicitly defines `read_at` as the canonical state and `is_read` as a derived value.
+
+---
+
+# 20. Read State Is Not Business State
+
+Do not interpret:
+
+```text
+read_at != null
+```
+
+as:
+
+```text
+Order completed
+Payment succeeded
+Enquiry handled
+Delivery completed
+```
+
+Read state means only:
+
+> The recipient has marked the notification as read.
+
+The business entity remains authoritative.
+
+The contract explicitly prohibits overloading notification read state with domain state.
+
+---
+
+# 21. `read_at` Authority
+
+`read_at` is server-controlled.
+
+A customer later may request:
+
+```text
+mark notification as read
+```
+
+but the server determines which notification belongs to that customer.
+
+The client must not directly submit:
+
+```text
+read_at = arbitrary timestamp
+```
+
+as authoritative data.
+
+Later API semantics will use the approved `read: true` operation, with the server setting the timestamp.
+
+Do not implement the endpoint in this phase.
+
+---
+
+# 22. Notification Ordering
+
+The primary customer inbox order should be:
+
+```text
 created_at DESC, id ASC
 ```
 
-with deterministic ordering.
+This provides newest-first behavior with deterministic tie-breaking.
 
-Do not index large text fields simply because they exist.
+Use an index supporting that access pattern.
+
+Do not make notifications dependent on arbitrary client sorting.
 
 ---
 
-# 39. Query and Search Preparation
+# 23. Indexes
 
-The existing Staff Enquiry contract allows filtering/search over:
+At minimum add:
 
-* name
-* email
-* phone
-* subject
+### Recipient access
+
+```text
+recipient_user_id
+```
+
+### Inbox ordering
+
+```text
+(recipient_user_id, created_at)
+```
+
+### Unread queries
+
+An appropriate index strategy for:
+
+```text
+recipient_user_id
+read_at
+created_at
+```
+
+may be used if the actual database/query plan benefits from it.
+
+### Source lookup
+
+Indexes on:
+
+```text
+(source_type, source_id)
+```
+
+are useful for deduplication/reconciliation.
+
+Do not create an index on every field.
+
+---
+
+# 24. Notification Privacy
+
+Notifications are private.
+
+They must never be:
+
+* public catalog data
+* public SEO data
+* CDN-cacheable
+* available through an unauthenticated listing
+* globally queryable by arbitrary `recipient_user_id`
+
+The existing contract requires private/no-store customer notification access.
+
+The server must authorize the recipient before returning notification data.
+
+---
+
+# 25. Notification Ownership and IDOR
+
+Customer A must never retrieve Customer B's Notification.
+
+Do not trust:
+
+```text
+recipient_user_id
+```
+
+from:
+
+* query parameters
+* body
+* URL
+* hidden client state
+
+Use authenticated self-context.
+
+The existing contract explicitly requires recipient-scoped access and 404 masking for cross-user access.
+
+---
+
+# 26. No Public Notification Creation
+
+Do not implement generic:
+
+```text
+POST /notifications
+```
+
+for customers, Staff, or Admin.
+
+Notifications are system-generated.
+
+The contract explicitly prohibits normal client notification creation.
+
+Do not allow a client to choose:
+
+* recipient
+* type
+* title
 * message
-* reference
-* Product
-* Order
-* status
-* date ranges
+* target
+* source
 
-and requires the query to operate only over the authorized dataset.
-
-Do not implement a search engine in Phase 3.15.
-
-Do ensure the schema provides the normal indexed access paths needed for relational filters.
-
-Full-text search, if eventually needed, should be evaluated separately based on actual scale.
+for a normal Notification.
 
 ---
 
-# 40. Model Design
+# 27. No Notification Editing
+
+Do not expose generic Notification editing.
+
+Customers must not modify:
+
+* type
+* title
+* message
+* recipient
+* target
+* source
+* created_at
+
+The supported customer mutation is limited to the notification read state later.
+
+The existing contract explicitly restricts the mark-read operation to the `read` value.
+
+---
+
+# 28. No Notification Deletion Workflow
+
+Do not introduce customer deletion semantics in Phase 3.16 unless the frozen contract explicitly requires them.
+
+Notification retention/deletion is a separate lifecycle decision.
+
+Do not make `DELETE /notifications/{notification}` a default capability merely because the database exists.
+
+A later retention strategy may include archival or cleanup, but that should be deliberately designed.
+
+---
+
+# 29. No Marketing Preferences
+
+Do not add fields such as:
+
+```text
+marketing_opt_in
+promotional_enabled
+newsletter_enabled
+campaign_preferences
+```
+
+to `notifications`.
+
+Notification read state is not marketing consent.
+
+If marketing is introduced later, it requires a separate preference/consent domain.
+
+---
+
+# 30. No Email Delivery Fields
+
+Do not add:
+
+```text
+email_sent
+email_sent_at
+email_error
+email_delivery_status
+```
+
+to the logical Notification record.
+
+A Notification represents the logical business communication.
+
+Future channel delivery should be modeled separately.
+
+The existing contract explicitly describes:
+
+```text
+Notification → Delivery attempt(s)
+```
+
+as the appropriate future model for multi-channel delivery.
+
+Group R will handle actual notification delivery.
+
+---
+
+# 31. No SMS/Push Delivery Fields
+
+Similarly do not add:
+
+```text
+push_sent
+sms_sent
+device_token
+fcm_token
+```
+
+to the Notification table.
+
+A device token is authentication/delivery infrastructure, not Notification domain state.
+
+Push/email/SMS channel implementation belongs later.
+
+---
+
+# 32. IN_APP as the Primary V1 Notification
+
+The existing notification architecture defines **IN_APP as the primary notification mechanism** for the initial design.
+
+Therefore Phase 3.16 should create the logical Notification entity without coupling it to:
+
+* FCM
+* email provider
+* SMS provider
+* webhook delivery
+
+Those integrations belong to Group R.
+
+Do not add a provider SDK dependency to the notification model.
+
+---
+
+# 33. Order Notifications
+
+The schema must support the existing Order notification types:
+
+```text
+ORDER_RECEIVED
+ORDER_ACCEPTED
+ORDER_PROCESSING
+ORDER_READY_FOR_PICKUP
+ORDER_SHIPPED
+ORDER_DELIVERED
+ORDER_COMPLETED
+ORDER_CANCELLED
+NEW_ORDER
+```
+
+The customer's Order-related notifications are generated downstream from authoritative Order events.
+
+The existing contract explicitly establishes this event-derived model.
+
+For a delivery Order, delivery-related information is represented through the applicable Order notification types such as `ORDER_SHIPPED` and `ORDER_DELIVERED`.
+
+Do not invent duplicate types such as:
+
+```text
+DELIVERY_SHIPPED
+DELIVERY_DELIVERED
+```
+
+unless the frozen contract is intentionally changed.
+
+---
+
+# 34. Request/Enquiry Notification Compatibility
+
+The frozen registry already contains:
+
+```text
+NEW_MADE_TO_ORDER_REQUEST
+NEW_ENQUIRY
+```
+
+and:
+
+```text
+NEW_ORDER
+```
+
+These are operational notification types.
+
+Do not delete them from the model simply because the primary focus of this phase is Order/Payment/Delivery.
+
+They should remain supported by the data model because they are part of the existing V1 contract.
+
+---
+
+# 35. Payment Notifications and Group H Boundary
+
+Payment notifications require special treatment because Payment integration is the security-sensitive boundary.
+
+Group H must establish:
+
+* exact Payment notification type names
+* when they are generated
+* which payment events are authoritative
+* what payment information may appear in the message
+* what information remains private
+* duplicate event behavior
+
+Phase 3.16 must not preempt those decisions.
+
+The schema should remain generic enough to support future controlled `PAYMENT_*` types without adding provider-specific notification structures.
+
+---
+
+# 36. Delivery Notifications and Fulfillment Boundary
+
+Delivery notifications should derive from authoritative fulfillment events.
+
+For example:
+
+```text
+PROCESSING
+    ↓
+SHIPPED
+    ↓
+DELIVERED
+    ↓
+COMPLETED
+```
+
+The authoritative Order Status History records those transitions.
+
+The Notification is downstream communication.
+
+Do not make the Delivery row itself responsible for creating or owning Notification state.
+
+Do not add notification foreign keys to Delivery.
+
+---
+
+# 37. Failure Isolation
+
+Core commerce operations must not fail merely because Notification persistence fails.
+
+For example:
+
+```text
+Order transition → SHIPPED
+```
+
+must remain successfully `SHIPPED` even if notification generation is temporarily unavailable.
+
+The existing contract explicitly requires this failure isolation and permits eventual consistency.
+
+Do not put notification persistence in a transaction boundary in a way that makes business-state success depend on notification success.
+
+The later outbox/background approach can address reliable delivery.
+
+---
+
+# 38. Eventual Consistency
+
+Allow:
+
+```text
+Business state changes immediately
+        ↓
+Notification appears shortly afterward
+```
+
+Do not require Notification existence before:
+
+* Order state update
+* payment state update
+* delivery transition
+
+This is particularly important for reliability.
+
+The Notification domain is downstream communication, not business-state authority.
+
+---
+
+# 39. Target Data Minimization
+
+Keep target references small.
+
+Preferred:
+
+```json
+{
+  "type": "ORDER",
+  "id": "..."
+}
+```
+
+Do not embed:
+
+```text
+entire Order
+entire Customer profile
+payment history
+delivery address
+Staff profile
+internal notes
+```
+
+inside a Notification.
+
+The existing contract explicitly requires lightweight notifications and minimal target context.
+
+---
+
+# 40. Notification Title/Message Data Minimization
+
+A message may include:
+
+```text
+order_reference
+safe display information
+```
+
+but must not expose:
+
+* full delivery address unless explicitly necessary
+* payment provider details
+* provider transaction identifiers
+* internal Staff notes
+* private audit information
+* internal database identifiers
+* secrets
+
+The customer should follow the notification into the normal authorized resource rather than receiving an entire resource inside the notification.
+
+---
+
+# 41. Model Design
 
 Create:
 
-`Enquiry`
+`Notification`
 
 Eloquent model.
 
-Relationships:
+Recommended relationships:
 
-* `belongsTo(User::class)` nullable
-* `belongsTo(Product::class)` nullable
-* `belongsTo(Order::class)` nullable
-
-Use explicit casts only where needed.
-
-Use a dedicated enum/value representation for:
-
-```text id="4cyybh"
-OPEN
-CLOSED
+```text
+Notification belongsTo User as recipient
 ```
 
-Do not place status-transition workflows inside the model.
+Do not create generic relationships to every possible source entity.
 
-Keep business orchestration in the application/domain layer.
+The `source_type/source_id` pair is intentionally generic and can be resolved by the application layer when needed.
+
+Avoid Laravel polymorphic relations unless the implementation genuinely requires them.
+
+Do not introduce a giant polymorphic abstraction simply because several domains can generate Notifications.
 
 ---
 
-# 41. Delete Behavior
+# 42. Notification ID
 
-Recommended relationship behavior:
+The database primary key may remain internal.
 
-### User
+If the API later exposes Notification IDs, follow the established opaque-ID policy.
 
-```text id="gbo7yi"
-nullOnDelete
-```
+Do not make the numeric auto-increment ID an authorization mechanism.
 
-The Enquiry survives account deletion.
-
-### Product
-
-```text id="1uel81"
-nullOnDelete
-```
-
-The Enquiry survives Product deletion.
-
-### Order
-
-```text id="j7nizu"
-restrictOnDelete
-```
-
-The Enquiry must not be accidentally detached from a historical Order through casual deletion.
-
-The exact parent deletion semantics must remain consistent with the project's existing historical-record policy.
+A customer must still be authorized against `recipient_user_id`.
 
 ---
 
-# 42. Historical Integrity
+# 43. Status Enum Centralization
 
-After creation:
+Use an appropriate enum/value object/constant strategy for notification types.
 
-* changing the customer's profile must not rewrite Enquiry contact snapshot
-* changing Product data must not rewrite original Enquiry content
-* changing Order data must not rewrite the message/subject
+Do not scatter strings such as:
 
-Only deliberate operational fields may later change.
-
-At minimum:
-
-```text id="4am9m7"
-enquiry_status
-staff_internal_notes
+```text
+ORDER_SHIPPED
+ORDER_DELIVERED
+ORDER_CANCELLED
 ```
 
-belong to operational handling.
+throughout controllers/services.
 
-The customer-provided communication remains preserved.
+At the same time, do not create one enormous global string constant class.
 
----
-
-# 43. Staff Internal Notes Security
-
-If `staff_internal_notes` is implemented directly on the table:
-
-* never allow customer creation to populate it
-* never serialize it to Customer responses
-* never expose it through public endpoints
-* only allow authorized Staff/Admin workflows to change it
-* keep it separate from the customer's original `message`
-
-This preserves a clean security boundary between external communication and internal operations.
+Keep the Notification type registry close to the Notification domain and align it with the frozen API contract.
 
 ---
 
-# 44. Maintainability Requirements
+# 44. Mass Assignment
+
+Notification fields are server-controlled.
+
+Never:
+
+```text
+$request->all() → Notification::create()
+```
+
+Never accept arbitrary client-provided:
+
+* recipient
+* type
+* title
+* message
+* source
+* target
+
+The global API conventions require:
+
+```text
+validated input
+→ DTO/command
+→ domain workflow
+→ persistence
+```
+
+and explicitly prohibit uncontrolled mass assignment.
+
+---
+
+# 45. Read Mutation Security
+
+When the future customer endpoint marks a Notification as read:
+
+1. authenticate user
+2. resolve notification
+3. verify `recipient_user_id = authenticated principal`
+4. update only `read_at`
+5. do not update any business notification fields
+
+Customer A must not be able to mark Customer B's notification as read.
+
+Staff credentials must not mark Customer notifications as read.
+
+The existing contract explicitly defines this ownership behavior.
+
+---
+
+# 46. Query Strategy
+
+Customer notification retrieval should always start from the authorized recipient:
+
+```text
+WHERE recipient_user_id = authenticated_user
+```
+
+not:
+
+```text
+GET all notifications
+→ filter in frontend
+```
+
+The API must query only the authorized dataset.
+
+This follows the project's general authorization-aware query requirement.
+
+---
+
+# 47. Notification Counts
+
+Do not add a persisted:
+
+```text
+unread_count
+```
+
+column.
+
+Unread count is derived from:
+
+```text
+read_at IS NULL
+```
+
+for the authorized recipient.
+
+A cached count can be introduced later as an optimization if actual performance requires it, but it must not become a second source of truth.
+
+---
+
+# 48. No `is_read` Column
+
+Do not create:
+
+```text
+is_read
+```
+
+in the database.
+
+The canonical representation is:
+
+```text
+read_at = null
+```
+
+for unread and a server timestamp for read.
+
+The existing contract explicitly rejects two competing read-state fields.
+
+---
+
+# 49. Notification Retention
+
+Do not implement a hard-coded automatic retention/deletion period in Phase 3.16.
+
+The project has not established a V1 notification retention policy.
+
+Do not silently delete old notifications after:
+
+```text
+30 days
+60 days
+90 days
+```
+
+without an explicit decision.
+
+Retention can be addressed during production operations/data-retention planning.
+
+---
+
+# 50. Security and Privacy Review
+
+Before completion verify:
+
+* recipient identity is server-derived
+* guest users do not receive in-app notifications
+* customer notifications are recipient-scoped
+* notification reads are private
+* notification data is not public-cacheable
+* notification source/target IDs do not grant resource access
+* notification messages contain only safe minimal context
+* internal notes and secrets are excluded
+* clients cannot create arbitrary notifications
+* clients cannot change Notification type/message/recipient
+* `read_at` is the single read-state source
+* Marketing/Promotional communication is not represented
+* Payment provider secrets are not represented
+* no FCM/email/SMS provider dependency exists in the persistence model
+
+---
+
+# 51. Tests
+
+Add automated tests for the schema and notification invariants.
+
+## Migration/schema tests
+
+Verify:
+
+* `notifications` table exists
+* primary key exists
+* `recipient_user_id` is required
+* `type` is required
+* `title` is required
+* `message` is required
+* `target` is nullable
+* `source_type` is nullable
+* `source_id` is nullable
+* `read_at` is nullable
+* timestamps exist
+
+Verify that the table does **not** contain:
+
+* marketing fields
+* promotional fields
+* email-delivery state
+* SMS-delivery state
+* push-token fields
+* password/token fields
+* payment secrets
+
+## Recipient tests
+
+Verify:
+
+* notification belongs to a User
+* recipient cannot be null
+* recipient identity is represented separately from message content
+
+## Read-state tests
+
+Verify:
+
+```text
+read_at = null → unread
+read_at != null → read
+```
+
+Verify no second persisted `is_read` source exists.
+
+## Ordering tests
+
+Verify customer notification queries support:
+
+```text
+created_at DESC, id ASC
+```
+
+deterministic ordering.
+
+## Target tests
+
+Verify:
+
+* target may be null
+* valid structured target can be persisted
+* arbitrary unvalidated target structure is rejected by the application/domain layer
+
+## Source tests
+
+Verify:
+
+* source fields may be null
+* source traceability can be persisted
+* source identity is not treated as user authorization
+
+## Privacy tests
+
+Verify customer-safe representation excludes:
+
+* internal data
+* secrets
+* provider credentials
+* unrelated complete domain objects
+
+## Notification-type tests
+
+Verify currently approved V1 notification types can be represented.
+
+Do not add unapproved Payment notification values merely to satisfy this test.
+
+Create an explicit test ensuring future `PAYMENT_*` registry additions remain a deliberate Group H contract decision.
+
+## Deduplication tests
+
+Verify the notification infrastructure can identify the same source event deterministically.
+
+Do not implement a universal unique constraint that incorrectly rejects unrelated notifications.
+
+---
+
+# 52. Factories
+
+Create:
+
+`NotificationFactory`
+
+Support fixtures for:
+
+* Order notification
+* operational notification
+* unread notification
+* read notification
+* target-linked notification
+* source-linked notification
+
+Use existing approved Notification types.
+
+Do not seed promotional messages.
+
+Do not generate marketing-style fake notifications in normal seed data.
+
+---
+
+# 53. Documentation Updates
+
+Update the authoritative documentation where necessary to make the boundary explicit:
+
+> Notifications in the V1 Notification domain are transactional/system communications related to business activity such as Orders, Payments, and applicable Delivery/fulfillment events. They are not marketing or promotional communications.
+
+Also preserve:
+
+* recipient-scoped ownership
+* server-derived recipient
+* in-app-first architecture
+* private/no-store access
+* `read_at` as canonical read state
+* event-derived communication
+* target references are not authorization
+* failure isolation
+* notification deduplication
+* closed type registry
+
+Do not create a separate marketing-preferences design inside this phase.
+
+---
+
+# 54. Maintainability Requirements
 
 For all new or refactored functions:
 
@@ -1064,9 +1435,9 @@ For all new or refactored functions:
 * no function may have more than **3 return statements**
 * meaningful repeated string literals should be centralized using constants or enums where appropriate
 
-Do not create a giant global constant class.
+Do not create a giant global constants class.
 
-Prefer domain-local enums/value objects.
+Prefer Notification-specific enums/value objects.
 
 Do not suppress static-analysis findings or increase thresholds.
 
@@ -1074,248 +1445,72 @@ Keep migrations, models, factories, and tests small and cohesive.
 
 ---
 
-# 45. Tests
+# 55. Definition of Done
 
-Add automated tests for the persistence and domain-supporting invariants.
+Phase 3.16 is complete when:
 
-## Migration/schema tests
-
-Verify:
-
-* `enquiries` table exists
-* primary key exists
-* `enquiry_reference` is unique
-* `user_id` is nullable
-* `product_id` is nullable
-* `order_id` is nullable
-* `name` exists
-* `email` is nullable
-* `phone` is nullable
-* `subject` exists
-* `message` exists
-* `enquiry_status` exists
-* `staff_internal_notes` exists if implemented
-* timestamps exist
-
-## Guest tests
-
-Verify an Enquiry can persist with:
-
-```text id="k40z17"
-user_id = null
-```
-
-and valid contact information.
-
-## Authenticated tests
-
-Verify an Enquiry can persist with:
-
-```text id="u9k2j8"
-user_id = authenticated customer
-```
-
-while retaining the contact snapshot.
-
-## Ownership tests
-
-Verify:
-
-* authenticated Enquiry points to the authenticated User
-* anonymous Enquiry has `user_id = null`
-* there is no email-based ownership assignment
-
-## Product context tests
-
-Verify:
-
-* Product is optional
-* Product deletion nulls `product_id`
-* Enquiry itself remains
-* Enquiry content remains intact
-
-## Order context tests
-
-Verify:
-
-* Order is optional
-* Enquiry may reference an Order
-* Order deletion does not cascade-delete the Enquiry
-* relationship behavior follows the intended restrictive policy
-
-## Status tests
-
-Verify:
-
-* default is `OPEN`
-* only `OPEN` and `CLOSED` are valid
-* no arbitrary status value can be persisted through the intended application/domain path
-
-## Content tests
-
-Verify:
-
-* name persistence
-* email persistence
-* phone persistence
-* subject persistence
-* message persistence
-* reasonable field bounds
-
-## Historical integrity tests
-
-After creating an Enquiry:
-
-* modify User profile
-* modify Product
-* modify Order
-
-and verify the original Enquiry contact/content remains unchanged.
-
-## Privacy tests
-
-Verify Staff-only internal notes are not part of the customer-safe representation.
-
-## Duplicate tests
-
-Verify two legitimate enquiries with identical contact/message data can coexist.
-
-No artificial duplicate uniqueness rule should reject them.
-
----
-
-# 46. Factories
-
-Create:
-
-`EnquiryFactory`
-
-Support fixtures for:
-
-* guest enquiry
-* authenticated customer enquiry
-* Product-linked enquiry
-* Order-linked enquiry
-* general enquiry
-* `OPEN`
-* `CLOSED`
-* internal Staff note
-
-Factory defaults must produce valid contact and message data.
-
-Do not automatically create:
-
-* Order
-* Payment
-* Furniture Request
-* Delivery
-
-unless a specific test explicitly needs those relationships.
-
----
-
-# 47. Documentation Updates
-
-Update the authoritative documentation where necessary to preserve these rules:
-
-* Guests may submit Enquiries
-* authenticated Customers may submit Enquiries
-* `user_id` is server-derived
-* contact information is snapshotted
-* Product and Order context are optional
-* Enquiry is private
-* Enquiry is not Request/Order/Payment/Inventory
-* `OPEN → CLOSED` is the V1 status lifecycle
-* customer content remains preserved
-* Staff notes are separate
-* anonymous retrieval requires an explicit secure mechanism
-* attachments remain optional and privately authorized
-
-Do not create a permanent phase-specific document only for this implementation.
-
----
-
-# 48. Security and Data Integrity Review
-
-Before completion, verify:
-
-* anonymous creation is representable without fake User accounts
-* authenticated ownership is server-derived
-* client cannot set `user_id`
-* client cannot set `enquiry_status`
-* client cannot set `staff_internal_notes`
-* email is not treated as authentication
-* Product deletion cannot destroy the Enquiry
-* Order relationships do not cascade-delete Enquiries
-* original customer communication is preserved
-* Staff notes are private
-* Enquiries are not publicly cacheable
-* no payment secrets or credentials exist in the schema
-* no financial/order-status fields have been introduced
-* no generic unrestricted Enquiry CRUD path has been created
-* attachment design remains compatible with scoped authorization
-
----
-
-# Definition of Done
-
-Phase 3.15 is complete when:
-
-* `enquiries` migration exists
-* both guest and authenticated submissions are representable
-* `user_id` is nullable and server-derived
-* request/contact identity is stored as a historical snapshot
-* unique server-generated `enquiry_reference` exists
-* required `subject` and `message` are stored
-* optional Product context is supported
-* optional Order context is supported
-* request status uses closed `OPEN` / `CLOSED`
-* default status is `OPEN`
-* Staff internal notes are separate from customer content
-* User deletion preserves the Enquiry
-* Product deletion preserves the Enquiry
-* Order relationship uses restrictive deletion semantics
-* relevant indexes exist
+* `notifications` migration exists
+* notifications are recipient-scoped to authenticated Users
+* `recipient_user_id` is server-derived
+* notifications are private
+* `type`, `title`, and `message` are server-controlled
+* `target` supports safe structured navigation references
+* `source_type/source_id` support business-event traceability
+* `read_at` is the single read-state source
+* notifications support deterministic newest-first retrieval
+* current approved Order notification types are supported
+* the schema is structurally ready for future controlled Payment notification types
+* Delivery-related notifications can be represented through existing Order lifecycle notification types
+* no duplicate Delivery state machine is introduced
+* no marketing/promotional fields are introduced
+* no email/SMS/push provider logic is embedded in the model
+* no notification can become an authorization token
 * Eloquent relationships are implemented
-* factories support guest/authenticated/product/order-context fixtures
-* schema, relationship, privacy, status, historical-integrity, and deletion tests pass
+* factories support valid notification fixtures
+* schema, ownership, read-state, ordering, target, privacy, and deduplication-support tests pass
 * maintainability requirements are satisfied
-* the model is ready for strict Group J validation and authorization
+* no business-state transition depends on notification persistence
 
 # Out of Scope
 
-Do not implement in Phase 3.15:
+Do not implement in Phase 3.16:
 
-* `POST /enquiries`
-* Enquiry Form Requests
-* DTOs/Commands
-* authentication
-* customer authorization policies
-* Staff authorization policies
-* anonymous secure retrieval
-* Enquiry status action endpoints
-* Staff Enquiry-management API
-* attachment uploads
-* upload tokens
-* file scanning
-* rate limiting
-* CAPTCHA
-* email/SMS notifications
-* response/reply messaging system
-* quotation
-* Order creation
-* Payment
-* Delivery
-* Inventory
-* Enquiry → Order conversion
-* Request → Enquiry conversion
+* Notification API endpoints
+* customer notification inbox API
+* Staff notification inbox API
+* mark-as-read endpoint
+* FCM integration
+* push notifications
+* email notifications
+* SMS notifications
+* WhatsApp notifications
+* notification delivery attempts
+* notification queues/jobs
+* outbox implementation
+* retry workers
+* notification preferences
+* marketing preferences
+* promotional campaigns
+* newsletters
+* advertising
+* customer segmentation
+* payment notification type definitions
+* payment notification generation
+* Order notification generation
+* Delivery notification generation
+* notification templates system
+* localization system
+* notification analytics
+* notification retention jobs
 
 # STOP CONDITION
 
-Stop after the Enquiry persistence model, relationships, constraints, factories, tests, and migration verification are complete.
+Stop after the Notification persistence model, relationships, constraints, factories, tests, and migration verification are complete.
 
-Do not implement Group J Enquiry API validation or operational workflows yet.
+Do not implement actual notification generation or delivery yet.
+
+**Important:** Keep Payment notification types deferred until Group H defines the exact payment-event and public notification contract. The schema must support them structurally without silently expanding the frozen V1 notification enum.
 
 The next phase is:
 
-**Phase 3.16 — Notification Schema**
+**Phase 3.17 — Foreign Keys / Indexes / Constraints Review**

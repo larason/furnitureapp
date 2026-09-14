@@ -107,6 +107,26 @@ class EnquirySchemaTest extends TestCase
         $this->assertSame(EnquiryStatus::OPEN, $fresh->enquiry_status);
     }
 
+    public function test_server_controlled_fields_are_not_mass_assignable(): void
+    {
+        $enquiry = new Enquiry([
+            'name' => 'Jane Doe',
+            'email' => 'jane@example.com',
+            'subject' => 'Question about chairs',
+            'message' => 'Inquiry message',
+            'enquiry_reference' => 'ENQ-CUSTOM1234',
+            'enquiry_status' => EnquiryStatus::CLOSED,
+            'staff_internal_notes' => 'Unauthorized notes',
+        ]);
+        $enquiry->save();
+
+        $fresh = $enquiry->fresh();
+
+        $this->assertNotSame('ENQ-CUSTOM1234', $fresh->enquiry_reference);
+        $this->assertSame(EnquiryStatus::OPEN, $fresh->enquiry_status);
+        $this->assertNull($fresh->staff_internal_notes);
+    }
+
     public function test_enquiry_reference_differs_from_order_reference_namespace(): void
     {
         $enquiry = Enquiry::factory()->create();
