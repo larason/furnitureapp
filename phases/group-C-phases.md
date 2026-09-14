@@ -1,25 +1,20 @@
-# Phase 3.17 — Foreign Keys / Indexes / Constraints Review
+# Phase 3.18 — Factories and Seed Data
 
 ## Purpose
 
-Perform a final relational-integrity review of the database schema produced by Phases 3.1–3.16.
+Create safe, deterministic, repeatable Laravel factories and seeders for the database/domain model established in Phases 3.1–3.17.
 
-The goal is to verify that:
+The purpose of this phase is to make the database easy to populate for:
 
-* foreign keys correctly represent domain relationships;
-* delete and update behavior cannot silently corrupt historical or operational data;
-* nullability matches the agreed domain rules;
-* unique constraints enforce only true invariants;
-* check constraints enforce invariants that are appropriate at database level;
-* indexes support the documented access patterns without unnecessary duplication;
-* money, quantities, timestamps, and identifiers use safe database types;
-* CLOSED V1 enums remain consistent with the API contract;
-* cross-table invariants that cannot be fully enforced by MySQL are explicitly identified for application/domain enforcement;
-* migration order can reliably rebuild the complete schema from an empty database;
-* constraints do not conflict with legitimate business workflows;
-* the schema is ready for Group C exit and later implementation phases.
+* local development;
+* automated tests;
+* API development;
+* frontend integration;
+* manual verification of relationships and constraints.
 
-This phase is a **review and hardening phase**. Do not redesign the domain or introduce new business concepts.
+Seed data must represent the **real agreed domain**, not invent future functionality.
+
+Laravel migrations remain the authoritative database schema history, while factories/seeders provide repeatable development and test data.
 
 ---
 
@@ -28,1345 +23,852 @@ This phase is a **review and hardening phase**. Do not redesign the domain or in
 Complete before starting:
 
 * Phase 3.1 — Users schema
-* Phase 3.2 — Roles / permissions model
+* Phase 3.2 — Roles/permissions model
 * Phase 3.3 — Categories schema
 * Phase 3.4 — Products schema
-* Phase 3.5 — Product Variants schema
-* Phase 3.6 — Product Images schema
+* Phase 3.5 — Product variants schema
+* Phase 3.6 — Product images schema
 * Phase 3.7 — Inventory schema
 * Phase 3.8 — Cart schema
 * Phase 3.9 — Orders schema
-* Phase 3.10 — Order Items schema
-* Phase 3.11 — Order Status History schema
-* Phase 3.12 — Payment schema
-* Phase 3.13 — Delivery schema
-* Phase 3.14 — Furniture Request schema
-* Phase 3.15 — Enquiry schema
-* Phase 3.16 — Notification schema
+* Phase 3.10 — Order items snapshot model
+* Phase 3.11 — Order status history
+* Phase 3.12 — Payment
+* Phase 3.13 — Delivery
+* Phase 3.14 — Furniture requests
+* Phase 3.15 — Enquiries
+* Phase 3.16 — Notifications
+* Phase 3.17 — FK/index/constraint review
 
-The API contract is already frozen for V1. Do not change endpoint semantics, public enum values, field nullability, ownership rules, or financial rules merely to simplify the database.
+Do not start factories until the final relationships and constraints have been reviewed.
 
 ---
 
 ## Authoritative Inputs
 
-Use these sources in this priority order:
+Use:
 
-1. `docs/VISION.md`
-2. `AGENTS.md`
+1. `AGENTS.md`
+2. `docs/VISION.md`
 3. `docs/api/api-contract.md`
 4. `docs/api/api-resources.md`
 5. `docs/api/api-conventions.md`
 6. `docs/domain/business-rules.md`
 7. `docs/decisions.md`
-8. The final implementation decisions from Phases 3.1–3.16.
+8. Final schema decisions from Phases 3.1–3.17.
 
-The project already establishes that V1 enums are CLOSED and machine-stable, and that a compatibility-breaking schema/API change requires explicit review.
-
----
-
-# 1. Review Strategy
-
-Review the schema in this order:
-
-1. table and column types;
-2. nullability;
-3. primary keys;
-4. foreign keys;
-5. foreign-key delete/update actions;
-6. unique constraints;
-7. check constraints;
-8. indexes;
-9. composite indexes;
-10. cross-table invariants;
-11. migration dependency order;
-12. representative constraint/failure tests;
-13. performance sanity review;
-14. security/data-retention implications.
-
-For every proposed change ask:
-
-> Does this enforce an already-agreed business invariant, or does it introduce a new rule?
-
-Only the first category belongs in Phase 3.17.
+Do not use factories to compensate for an undefined domain rule.
 
 ---
 
-# 2. Global Database Standards
+# 1. General Factory Rules
 
-Apply these consistently.
+Factories must:
 
-## 2.1 Primary Keys
+* generate valid records by default;
+* respect all required FK relationships;
+* respect all unique constraints;
+* respect all CHECK constraints;
+* use realistic but obviously synthetic development data;
+* avoid production secrets;
+* avoid real people's personal information;
+* remain deterministic enough for tests when a seed is fixed;
+* support states where a domain naturally has multiple valid states.
 
-Every domain table must have a stable primary key.
+Do not put business workflows into factories.
 
-Use the project's established ID strategy consistently.
+A factory should construct valid records.
 
-Do not introduce a second competing identifier merely for convenience.
+It must not simulate:
 
-Business-facing references remain separate where already defined:
-
-* `slug` for catalog lookup;
-* `order_reference` for customer-facing orders;
-* `payment_reference` for payment records;
-* `request_reference` for furniture requests;
-* `enquiry_reference` for enquiries.
-
-Do not expose raw sequential database IDs as public business identifiers where the API contract specifies opaque IDs or references.
-
----
-
-## 2.2 Foreign-Key Column Naming
-
-Use conventional relationship names:
-
-* `user_id`
-* `customer_id`
-* `category_id`
-* `product_id`
-* `product_variant_id`
-* `variant_id`
-* `cart_id`
-* `order_id`
-* `payment_id`
-* `actor_id`
-* `recipient_user_id`
-
-Avoid ambiguous names such as:
-
-* `owner`
-* `user`
-* `parent`
-* `reference_id`
-
-unless the domain explicitly requires a generic reference.
+* payment processing;
+* inventory reservation algorithms;
+* order state-transition services;
+* notification dispatch;
+* authentication workflows;
+* external webhooks.
 
 ---
 
-## 2.3 Integer / Money Types
+# 2. Factory Scope
 
-Money fields must use integer minor units.
+Create factories for domain models that will be instantiated during development and tests.
 
-Do not use floating-point types.
+At minimum review/create factories for:
 
-Do not use database `float` or `double` for financial amounts.
+* `User`
+* `CustomerProfile`
+* `StaffProfile`
+* RBAC models required by the selected implementation
+* `Category`
+* category recommendation relations through `Category`
+* `Product`
+* `ProductVariant`
+* `ProductImage`
+* `ProductStock`
+* `Cart`
+* `CartItem`
+* `Order`
+* `OrderItem`
+* `OrderStatusHistory`
+* `Payment`
+* `PaymentWebhookEvent`
+* `Delivery`
+* `FurnitureRequest`
+* `Enquiry`
+* `Notification`
 
-Use a sufficiently large integer type for:
+Do not create factories for tables that do not actually exist.
 
-* variant price;
-* compare-at price;
-* cost;
-* order subtotal;
-* order delivery fee;
-* order total;
-* order-item unit price;
-* order-item line total;
-* payment amount.
-
-The database representation must remain consistent with the API rule that money is integer minor units and always paired with `currency`.
-
-TZS remains the V1 default currency.
-
-Do not introduce currency-conversion logic into the schema review.
-
----
-
-## 2.4 Quantity Types
-
-Quantities that cannot be negative should use an unsigned integer-compatible type.
-
-Examples:
-
-* inventory `quantity`;
-* inventory `reserved_quantity`;
-* cart-item `quantity`;
-* order-item `quantity`;
-* furniture-request `quantity` where persisted.
-
-Do not use floating-point types for countable units.
+Do not create artificial factories for pivot tables unless the selected RBAC implementation requires them.
 
 ---
 
-## 2.5 Timestamps
+# 3. User Factories
 
-Use a consistent database timestamp strategy for:
+Create clearly separated factory states for:
 
-* `created_at`;
-* `updated_at`;
-* `occurred_at`;
-* `initiated_at`;
-* `confirmed_at`;
-* `expires_at`;
-* `received_at`;
-* `processed_at`.
+### Customer
 
-Nullable lifecycle timestamps remain nullable where the event has not happened.
+Valid:
 
-Do not substitute magic zero dates or empty strings for absent timestamps.
+* active;
+* realistic synthetic name;
+* unique synthetic email;
+* synthetic phone;
+* secure generated password hash.
 
-The external API continues to serialize timestamps in the project's UTC ISO-8601 format.
+### Staff
 
----
+Valid staff identity with appropriate role/profile association.
 
-## 2.6 Soft Deletes
+### Admin
 
-Keep soft deletes only where previously approved.
+Valid administrative identity for test/development environments only.
 
-Current approved use:
+Never hard-code a production administrator password.
 
-* `products.deleted_at`.
+For seeded development credentials, document them clearly as **local-only development credentials**, and make the password value configurable through environment/configuration rather than committing a production secret.
 
-Do not add soft deletes automatically to:
-
-* orders;
-* payments;
-* order status history;
-* deliveries;
-* notifications;
-* carts;
-* inventory;
-* furniture requests;
-* enquiries.
-
-Historical and financial records must remain structurally traceable.
+Never store plaintext passwords in production seed data.
 
 ---
 
-# 3. Users and Profiles
+# 4. RBAC Seed Data
 
-## 3.1 `users`
+Create the exact V1 role set:
 
-Verify:
+* `CUSTOMER`
+* `STAFF`
+* `ADMIN`
 
-* primary key exists;
-* `email` has the intended uniqueness rule;
-* authentication fields are appropriately non-null;
-* `name`, `email`, and `phone` match the shared identity model;
-* `is_active` is explicitly typed as boolean-compatible;
-* credential material is never nullable unless the authentication design explicitly requires it;
-* password hashes are never exposed through serialization.
+Do not seed:
 
-Do not add:
+* `MANAGER`;
+* `SUPPORT`;
+* `DELIVERY_AGENT`;
+* future roles.
 
-* `role` column;
-* `is_admin`;
-* `is_staff`;
-* `is_customer`;
-* customer restriction fields.
+Roles are CLOSED and server-controlled.
 
-Role assignment belongs to the RBAC model.
+Seed only the permissions that were explicitly approved in Phase 3.2.
 
-The existing authorization model is relational and server-controlled rather than client-supplied.
+Examples include operational capabilities such as:
 
-## 3.2 `customer_profiles`
+* product management;
+* inventory management;
+* order viewing/processing;
+* request/enquiry management;
+* staff approval/management.
 
-Verify:
+Do not use a wildcard `admin.*` permission as the sole authorization mechanism. The project requires explicit capabilities and separation of duties.
 
-* `user_id` is a foreign key to `users.id`;
-* `user_id` is unique;
-* the relationship is one-to-one;
-* deletion behavior does not accidentally delete the user or historical commerce data.
+Ensure:
 
-If profile data is currently minimal, do not use this phase to add:
+* CUSTOMER receives customer capabilities only;
+* STAFF receives operational capabilities only;
+* ADMIN receives approved administrative capabilities.
 
-* address book;
-* loyalty;
-* preferences;
-* saved delivery addresses.
-
-## 3.3 `staff_profiles`
-
-Apply the same one-to-one integrity review.
-
-Staff-profile deletion must not imply deletion of the underlying user identity.
-
-Do not use profile records as substitutes for RBAC role membership.
+In particular, Staff must not receive customer-account administration capabilities.
 
 ---
 
-# 4. RBAC Tables
+# 5. Category Seed Data
 
-Review the exact role/permission implementation selected in Phase 3.2.
+Seed the approved furniture taxonomy from the project domain documentation.
 
-Verify that:
+Requirements:
 
-* role relationships have proper foreign keys;
-* permission relationships have proper foreign keys;
-* unique composite constraints prevent duplicate assignments;
-* pivot-table foreign keys use appropriate cascading behavior;
-* deleting a role/permission cannot orphan pivot rows;
-* customer, staff, and admin roles remain CLOSED at application/domain level;
-* no database rule accidentally grants a new role merely because a row exists.
+* preserve exact category names/slugs already approved;
+* create the required parent-child hierarchy;
+* use valid `space_type` values;
+* use stable display ordering;
+* mark expected public categories active.
 
-Do not introduce wildcard admin permissions or a generic `is_admin` shortcut.
+The seed must include the approved **Furnitures Root** structure and the existing taxonomy rather than inventing replacement categories.
 
-Authorization remains a combination of identity, role, resource, action, ownership, and business state.
+For recommendations:
 
----
+* only reference categories that actually exist;
+* create only approved category recommendation relationships;
+* do not create placeholder categories solely because a future recommendation may need them.
 
-# 5. Categories
-
-## 5.1 `categories`
-
-Verify:
-
-* `parent_id` references `categories.id`;
-* `parent_id` is nullable for root categories;
-* deleting a parent uses `SET NULL` / `nullOnDelete` according to the approved schema;
-* `slug` is unique;
-* `display_order` is non-negative;
-* `is_active` is boolean-compatible;
-* `space_type` accepts only the approved CLOSED values.
-
-Do not allow a self-parenting category.
-
-At application/domain level also verify:
-
-* category hierarchy does not exceed the agreed three-level taxonomy;
-* seed data follows the approved taxonomy;
-* cyclic parent relationships cannot be introduced.
-
-Do not invent additional categories simply to satisfy a foreign key or recommendation relationship.
-
-## 5.2 `category_recommendations`
-
-Verify:
-
-* `category_id` references `categories.id`;
-* `recommended_category_id` references `categories.id`;
-* both use correct delete behavior;
-* `(category_id, recommended_category_id)` is unique;
-* self-recommendation is rejected;
-* relation type follows the approved CLOSED vocabulary;
-* priority is appropriately bounded.
-
-Do not create a separate table for concepts not already approved.
+Seed hierarchy deterministically so repeated seeding does not create duplicate logical categories.
 
 ---
 
-# 6. Products
+# 6. Product Seed Data
 
-## 6.1 `products`
+Create representative catalogue products covering the approved domain.
 
-Verify:
+Include enough variety to test:
 
-* `category_id` references `categories.id`;
-* category deletion is restrictive rather than silently removing products;
-* `slug` is unique;
-* `assembly_required` uses the approved CLOSED values;
-* product lifecycle flags are boolean-compatible;
-* `deleted_at` is indexed appropriately for active/public catalogue queries where useful.
+* different categories;
+* different room types;
+* different materials;
+* active/inactive products;
+* featured/non-featured products;
+* products with one variant;
+* products with multiple variants;
+* products with images;
+* products with no image where the schema permits it;
+* products suitable for normal in-stock purchasing;
+* products representing the approved made-to-order workflow where the product model supports it.
 
-Do not allow deletion of a category that would orphan a product.
+Do not invent unsupported product types or attributes.
 
-Do not cascade-delete products from category deletion.
+Every public product must satisfy the frozen API requirement that `product.price` is non-null.
 
----
-
-# 7. Product Variants
-
-## 7.1 `product_variants`
-
-Verify:
-
-* `product_id` references `products.id`;
-* product deletion cascades variants;
-* `sku` is unique;
-* money uses integer minor units;
-* dimensions and weight use appropriate numeric types;
-* `is_default` and `is_active` are boolean-compatible;
-* `display_order` is non-negative;
-* JSON attributes are nullable or required exactly as previously approved.
-
-The following rules are domain/application invariants unless the chosen MySQL implementation can enforce them safely:
-
-* a variant must belong to the stated product;
-* a product may have at most one default variant.
-
-Do not duplicate product-level price data here or elsewhere unless specifically required by the frozen contract.
+Because variant pricing is authoritative at the database/domain level, seeded products with variants must have coherent variant pricing and the later API mapping must derive the product representation without creating a second financial source of truth.
 
 ---
 
-# 8. Product Images
+# 7. Product Variant Seed Data
 
-## 8.1 `product_images`
+Create variants with:
 
-Verify:
+* unique SKU;
+* valid product relationship;
+* realistic integer minor-unit prices;
+* valid TZS currency;
+* realistic dimensions/weight where applicable;
+* structured attributes;
+* deterministic display order;
+* appropriate active/default flags.
 
-* `product_id` references `products.id` with cascade delete;
-* `product_variant_id` references `product_variants.id` with `SET NULL`;
-* `sort_order` is unsigned;
-* `is_primary` is boolean-compatible;
-* `file_path` is non-null;
-* `alt_text` nullability matches the approved design.
+Seed examples with:
 
-Cross-table domain invariant:
+* one default variant;
+* multiple variants;
+* one inactive variant where useful.
 
-> When `product_variant_id` is present, that variant must belong to the same `product_id`.
+Never create two default variants for one product.
 
-This is not safely represented by two independent foreign keys alone.
-
-Enforce it at the application/domain layer unless a carefully designed composite-key constraint is intentionally adopted.
-
-Do not introduce a composite-key redesign merely for this review.
-
-The approved API embeds images in product detail rather than introducing an independent public images workflow.
+Do not place stock quantity directly on the variant.
 
 ---
 
-# 9. Inventory
+# 8. Product Image Seed Data
 
-## 9.1 `product_stocks`
+Create representative image rows using **synthetic internal file paths**.
 
-Verify:
+Examples of the pattern are acceptable:
 
-* `product_variant_id` references `product_variants.id`;
-* deletion of a variant cascades its stock rows;
-* `quantity >= 0`;
-* `reserved_quantity >= 0`;
-* `reserved_quantity <= quantity`;
-* `(product_variant_id, warehouse_location)` is unique;
-* `warehouse_location` is non-empty and appropriately bounded.
+```text
+products/dev/sofa-01/main.webp
+products/dev/dining-table-01/main.webp
+```
 
-`available_quantity` remains derived:
+These are storage keys only.
 
-`quantity - reserved_quantity`
+Do not upload real production images in this phase.
 
-Do not persist a duplicate `available_quantity` column.
+Seed:
 
-The invariant `reserved_quantity <= quantity` should be enforced with a database check if the deployed MySQL version supports the required behavior reliably; otherwise also enforce it inside every mutation transaction.
+* one primary image where appropriate;
+* additional ordered images;
+* variant-specific images where useful.
 
-Concurrency-safe inventory mutation is a later application concern; the schema review must not pretend a simple CHECK removes race conditions.
+Ensure variant-specific images reference a variant belonging to the same product.
 
-The project already requires concurrency-safe handling for inventory mutations.
-
----
-
-# 10. Carts
-
-## 10.1 `carts`
-
-Verify the XOR ownership model:
-
-* authenticated cart → `user_id` populated and `guest_token_digest` null;
-* guest cart → `user_id` null and `guest_token_digest` populated;
-* never both;
-* never neither.
-
-Verify:
-
-* `user_id` references `users.id`;
-* guest token digest is fixed-length `CHAR(64)` or the already-approved equivalent;
-* `guest_token_digest` is unique;
-* status is CLOSED `ACTIVE|INACTIVE`;
-* appropriate index exists on `user_id + status`;
-* appropriate index exists on `status + updated_at`.
-
-Do not persist the raw guest bearer token.
-
-The raw client credential and the stored digest remain conceptually separate.
-
-At database/application level verify:
-
-* at most one ACTIVE cart per authenticated customer;
-* historical INACTIVE carts remain possible;
-* guest cart ownership cannot be reassigned to another customer;
-* cart ownership cannot be changed through ordinary client updates.
-
-## 10.2 `cart_items`
-
-Verify:
-
-* `cart_id` cascades on cart deletion;
-* `product_id` is restrictive;
-* `variant_id` is restrictive;
-* quantity is positive and bounded as approved;
-* appropriate cart lookup index exists.
-
-Cross-table domain invariant:
-
-* when `variant_id` is non-null, that variant must belong to `product_id`.
-
-Do not introduce a persisted cart price.
+Do not generate fake external CDN URLs unless the existing local application explicitly requires URLs for a test.
 
 ---
 
-# 11. Orders
+# 9. Inventory Seed Data
 
-## 11.1 `orders`
+Create stock records for selected variants.
 
-Verify:
+Include:
 
-* `customer_id` references `users.id`;
-* customer deletion is restrictive;
-* `order_reference` is unique;
-* `status` is CLOSED;
-* `fulfillment_type` is CLOSED;
-* `delivery_fee_status` is CLOSED;
-* `currency` is fixed/validated as approved;
-* money fields use unsigned integer-compatible storage;
-* delivery address is nullable;
-* recipient snapshot fields have correct nullability.
+* at least one stock-positive variant;
+* at least one zero-stock variant;
+* multiple warehouse locations only where useful for testing multi-location behavior;
+* realistic reserved quantities where necessary.
 
-Verify these business combinations:
+Maintain:
+
+`0 <= reserved_quantity <= quantity`
+
+Never seed impossible inventory.
+
+Do not create inventory reservations or movement history because those are later workflow concerns.
+
+---
+
+# 10. Cart Seed Data
+
+Seed representative:
+
+* active customer cart;
+* inactive historical customer cart;
+* guest cart;
+* cart with multiple items.
+
+For guest carts:
+
+* generate a raw guest token using secure randomness;
+* store only its approved digest;
+* never persist the raw token;
+* never log either token or digest.
+
+For tests requiring the raw token, generate it within the test itself rather than placing a bearer credential in static seed files.
+
+Ensure cart ownership XOR remains valid.
+
+Do not seed a cart that belongs simultaneously to a user and guest token.
+
+Do not create more than one ACTIVE cart for the same customer.
+
+---
+
+# 11. Order Seed Data
+
+Seed representative historical orders covering the approved lifecycle.
+
+At minimum include examples of:
 
 ### Pickup
 
-* `fulfillment_type = PICKUP`
-* `delivery_fee_status = FINALIZED`
-* `delivery_fee_amount = 0`
-* `total_amount = subtotal_amount`
+```text
+PAID
+→ ACCEPTED
+→ PROCESSING
+→ READY_FOR_PICKUP
+→ COMPLETED
+```
 
-### Delivery before fee assignment
+### Delivery
 
-* `fulfillment_type = DELIVERY`
-* `delivery_fee_status = PENDING`
-* `delivery_fee_amount = NULL`
-* `total_amount = subtotal_amount`
+```text
+PAID
+→ ACCEPTED
+→ PROCESSING
+→ SHIPPED
+→ DELIVERED
+→ COMPLETED
+```
 
-`total_amount` is provisional while `PENDING` and must not be treated as the payable amount — see `docs/api/api-contract.md §24`; payment stays blocked until `FINALIZED`.
+Also include suitable examples of:
 
-### Delivery after fee assignment
+* `PENDING_PAYMENT`;
+* `CANCELLED`.
 
-* `fulfillment_type = DELIVERY`
-* `delivery_fee_status = FINALIZED`
-* `delivery_fee_amount >= 0`
-* `total_amount = subtotal_amount + delivery_fee_amount`
+The order lifecycle defined by the project must be preserved; seed data must not introduce undocumented statuses.
 
-These cross-column relationships should be enforced as strongly as practical through database checks, with domain validation providing the authoritative workflow enforcement.
+Orders must use:
 
-Do not create a customer-facing address foreign key because the approved order model stores a historical address snapshot.
+* valid `OD-*****` references;
+* coherent subtotal;
+* valid delivery fee state;
+* valid total;
+* historical recipient snapshot;
+* historical delivery address where applicable.
 
----
+Do not calculate order totals from arbitrary frontend-like values.
 
-# 12. Order Items
-
-## 12.1 `order_items`
-
-Verify:
-
-* `order_id` cascades on order deletion;
-* `product_id` uses `SET NULL`;
-* `variant_id` uses `SET NULL`;
-* product/variant references are nullable;
-* snapshot `sku`, `name`, and optional `variant_name` remain available even if catalog entities later disappear;
-* `unit_price_amount`, `quantity`, and `line_total_amount` use safe integer types;
-* quantity is positive and appropriately bounded.
-
-Verify:
-
-`line_total_amount = unit_price_amount × quantity`
-
-This is a domain/application invariant and may additionally be checked by application tests.
-
-Do not make historical order snapshots dependent on the continued existence of product rows.
+Seed values should be mathematically coherent.
 
 ---
 
-# 13. Order Status History
+# 12. Order Item Seed Data
 
-## 13.1 `order_status_history`
+Order items must represent historical snapshots.
 
-Verify:
+Store:
 
-* `order_id` cascades with the order;
-* `actor_id` references `users.id` with `SET NULL`;
-* `from_status` is nullable;
-* `to_status` is required;
-* `actor_type` is CLOSED;
-* `occurred_at` is required;
-* `created_at` is required;
-* there is no `updated_at`.
+* SKU snapshot;
+* product name snapshot;
+* variant name snapshot where applicable;
+* unit price snapshot;
+* quantity;
+* line total.
 
-Verify append-only integrity at the application layer.
+Do not depend on current product values to reconstruct historical seeded orders.
 
-Do not provide:
+Include at least one order whose item has enough snapshot data to remain meaningful if the referenced product is later removed.
 
-* generic UPDATE;
-* generic DELETE;
-* mutable event rows.
-
-Indexes should support:
-
-* all history for one order ordered by `occurred_at`;
-* deterministic tie-breaking with `id`.
-
-The tracking model already requires chronological history and does not introduce a second authoritative status source.
+This reflects the requirement that historical orders preserve purchased information and price snapshots.
 
 ---
 
-# 14. Payments
+# 13. Order Status History Seed Data
 
-## 14.1 `payments`
+Create chronological events matching seeded order status.
 
-Verify:
+Every seeded status timeline must obey:
 
-* `order_id` references `orders.id`;
-* payment deletion does not cascade from order deletion;
-* `payment_reference` is unique;
-* multiple payment attempts per order remain possible;
-* provider transaction identity is uniquely protected when the provider supplies it;
-* payment amount and currency use safe financial types;
-* lifecycle timestamps have correct nullability;
-* provider secrets and raw payment credentials are absent.
+* valid transition sequence;
+* correct `from_status`;
+* correct `to_status`;
+* appropriate `actor_type`;
+* actor association where applicable;
+* valid `occurred_at`.
 
-Where appropriate, use a uniqueness strategy that allows `provider_transaction_id` to remain nullable without creating false duplicate conflicts.
+For the first event:
 
-Do not make `order_id` unique.
+`from_status = null`
 
-## 14.2 `payment_webhook_events`
+where the approved history model requires the initial state event.
 
-Verify:
+Do not seed contradictory timelines.
 
-* `payment_id` references `payments.id`;
-* deletion of a payment does not erase webhook-event history;
+For example, do not create:
+
+```text
+PAID
+→ COMPLETED
+→ PROCESSING
+```
+
+Use deterministic timestamps separated enough to make ordering unambiguous.
+
+---
+
+# 14. Payment Seed Data
+
+Seed payment attempts that represent database states only.
+
+Examples:
+
+* pending;
+* processing;
+* succeeded;
+* failed;
+* cancelled;
+* expired,
+
+but only for statuses actually approved by the frozen implementation/contract at this point.
+
+Use:
+
+* unique payment references;
+* coherent amount/currency;
+* synthetic provider names/identifiers;
+* nullable provider transaction fields where appropriate.
+
+Do not store real provider credentials.
+
+Do not make seeded payment data look like verified production transactions.
+
+Do not invoke external payment systems.
+
+---
+
+# 15. Payment Webhook Seed Data
+
+Create synthetic webhook event records only when useful for testing persistence/idempotency.
+
+Ensure:
+
 * `(provider, provider_event_id)` is unique;
-* `processing_status` uses the approved CLOSED internal values;
-* `processed_at` and `failure_reason` have correct nullability.
+* payment relation is valid when present;
+* processing status is internally coherent;
+* timestamps are logical.
 
-Webhook-event persistence must support idempotent processing.
+Use fake provider event IDs such as:
 
-The project explicitly requires durable uniqueness and atomic check/apply behavior for repeated provider events.
+```text
+dev_evt_000001
+```
 
-Do not store:
-
-* raw card data;
-* provider authentication secrets;
-* sensitive webhook credentials;
-* unrestricted raw provider payloads unless separately justified and secured later.
+Do not use real gateway webhook payloads or secrets.
 
 ---
 
-# 15. Deliveries
+# 16. Delivery Seed Data
 
-## 15.1 `deliveries`
+Create delivery rows only for delivery orders.
 
-Verify:
+Ensure:
 
-* `order_id` references `orders.id`;
-* `order_id` is unique;
-* one delivery record can exist for one delivery order;
-* order deletion behavior is restrictive;
-* recipient/contact/address snapshot fields have correct types and nullability;
-* `delivery_instructions` remains optional.
+* one delivery per delivery order;
+* no delivery row for pickup orders;
+* recipient/address snapshot matches the order scenario;
+* synthetic delivery instructions are realistic but harmless.
 
-Domain invariant:
-
-* a Pickup order must not have a Delivery row;
-* a Delivery order may have exactly one Delivery row once created.
-
-Do not introduce:
-
-* `delivery_status`;
-* GPS fields;
-* driver fields;
-* carrier fields;
-* tracking numbers;
-* ETA;
-* route geometry.
-
-Order lifecycle and order status history remain authoritative.
+Do not seed a delivery status, driver, carrier, GPS coordinate, tracking number, or ETA because those are outside the approved domain.
 
 ---
 
-# 16. Furniture Requests
+# 17. Furniture Request Seed Data
 
-## 16.1 `furniture_requests`
+Seed:
 
-Verify:
+* at least one guest request;
+* at least one authenticated customer request;
+* request with optional product linkage;
+* request without product linkage;
+* different valid request statuses.
 
-* `user_id` is nullable;
-* `product_id` is nullable;
-* `product_id` uses `SET NULL`;
-* `user_id` uses `SET NULL`;
-* `request_reference` is unique;
-* `request_status` is CLOSED;
-* structured JSON fields are correctly nullable;
-* contact fields match the schema defined for persistence.
+Use realistic synthetic:
 
-Guest submissions must remain valid without a user record.
-
-Authenticated submissions must derive `user_id` from the authenticated server identity rather than accepting arbitrary ownership from the client.
-
-Where product linkage exists, application/domain validation must ensure the product is eligible for the requested workflow.
-
-Do not introduce a hard uniqueness constraint on request content.
-
----
-
-# 17. Enquiries
-
-## 17.1 `enquiries`
-
-Verify:
-
-* `user_id` nullable with `SET NULL`;
-* `product_id` nullable with `SET NULL`;
-* `order_id` nullable with restrictive behavior;
-* `enquiry_reference` unique;
-* `enquiry_status` is CLOSED;
-* customer-supplied content remains historically stable;
-* staff internal notes are separately stored.
-
-Do not impose hard uniqueness on:
-
+* name;
 * email;
 * phone;
-* subject;
-* product;
-* order;
-* message.
+* style;
+* message;
+* dimensions;
+* material;
+* color.
 
-Multiple legitimate enquiries may contain the same information.
+Keep all structured JSON within the approved shape.
 
-Anonymous retrieval must not be enabled merely because the row is public in database terms.
+Do not seed actual customer information.
 
----
-
-# 18. Notifications
-
-## 18.1 `notifications`
-
-Verify:
-
-* `recipient_user_id` references `users.id`;
-* deletion behavior preserves or intentionally removes notifications according to the approved account-retention policy;
-* `type` uses the approved CLOSED notification vocabulary;
-* `title` and `message` are server-generated;
-* `target` is nullable structured JSON;
-* `source_type` and `source_id` are nullable;
-* `read_at` is nullable;
-* there is no `is_read` duplicate field.
-
-Verify:
-
-* `read_at IS NULL` → unread;
-* `read_at IS NOT NULL` → read.
-
-Do not create a public foreign key from `source_id` because source events may originate from different domains.
-
-Instead, use:
-
-`source_type + source_id`
-
-as the generic traceability pair, with domain/application validation.
-
-The notification system remains recipient-scoped and private; clients do not create notification records directly.
+Do not attach files in this phase.
 
 ---
 
-# 19. Foreign-Key Delete Policy Matrix
+# 18. Enquiry Seed Data
 
-Produce and review one explicit matrix covering every FK.
+Seed representative:
 
-The expected direction is:
+* guest enquiry;
+* authenticated enquiry;
+* product-context enquiry;
+* order-context enquiry where valid;
+* open enquiry;
+* closed enquiry.
 
-| Relationship                  | Expected behavior                                        |
-| ----------------------------- | -------------------------------------------------------- |
-| Customer/profile → User       | Profile should not delete User                           |
-| Category parent → Category    | `SET NULL`                                               |
-| Product → Category            | `RESTRICT`                                               |
-| Variant → Product             | `CASCADE`                                                |
-| Image → Product               | `CASCADE`                                                |
-| Image → Variant               | `SET NULL`                                               |
-| Stock → Variant               | `CASCADE`                                                |
-| Cart → User                   | preserve/restrict according to approved retention policy |
-| Cart Item → Cart              | `CASCADE`                                                |
-| Cart Item → Product           | `RESTRICT`                                               |
-| Cart Item → Variant           | `RESTRICT`                                               |
-| Order → Customer/User         | `RESTRICT`                                               |
-| Order Item → Order            | `CASCADE`                                                |
-| Order Item → Product          | `SET NULL`                                               |
-| Order Item → Variant          | `SET NULL`                                               |
-| Status History → Order        | `CASCADE`                                                |
-| Status History → Actor/User   | `SET NULL`                                               |
-| Payment → Order               | `RESTRICT`                                               |
-| Webhook Event → Payment       | preserve on payment deletion                             |
-| Delivery → Order              | `RESTRICT`                                               |
-| Furniture Request → User      | `SET NULL`                                               |
-| Furniture Request → Product   | `SET NULL`                                               |
-| Enquiry → User                | `SET NULL`                                               |
-| Enquiry → Product             | `SET NULL`                                               |
-| Enquiry → Order               | `RESTRICT`                                               |
-| Notification → Recipient/User | follow approved account-retention policy                 |
+Respect the approved nullable contact rules.
 
-Do not automatically apply `CASCADE` everywhere.
+Do not create duplicate uniqueness assumptions.
 
-Historical records must survive deletion of mutable catalogue data.
+Do not expose seeded private enquiries as public catalogue data.
 
 ---
 
-# 20. Unique-Constraint Review
+# 19. Notification Seed Data
 
-Every unique constraint must answer:
+Seed only server-valid notifications using the approved CLOSED notification types:
 
-> Is duplicate data actually impossible according to the business rules?
+* `ORDER_RECEIVED`
+* `ORDER_ACCEPTED`
+* `ORDER_PROCESSING`
+* `ORDER_READY_FOR_PICKUP`
+* `ORDER_SHIPPED`
+* `ORDER_DELIVERED`
+* `ORDER_COMPLETED`
+* `ORDER_CANCELLED`
+* `NEW_ORDER`
+* `NEW_MADE_TO_ORDER_REQUEST`
+* `NEW_ENQUIRY`
 
-Required or expected uniqueness includes:
+Do not invent `PAYMENT_*` notification types in this phase because those are deferred to Group H.
 
-* user email, according to authentication policy;
-* category slug;
-* product slug;
-* product variant SKU;
-* cart guest token digest;
-* category recommendation pair;
-* one active cart per customer, through a suitable uniqueness strategy;
-* order reference;
-* payment reference;
-* provider + provider transaction identity where applicable;
-* webhook provider + provider event ID;
-* delivery order ID;
-* furniture request reference;
-* enquiry reference;
-* RBAC pivot assignment combinations.
+Seed examples of:
 
-Do not add convenience uniqueness for:
+* unread notifications;
+* read notifications;
+* order target references.
 
-* names;
-* descriptions;
-* phone numbers unless explicitly approved;
-* addresses;
-* enquiry messages;
-* furniture request contents.
+Ensure notification recipients are valid users.
+
+Do not seed anonymous notification recipients.
 
 ---
 
-# 21. Check-Constraint Review
+# 20. Seeder Architecture
 
-Where safe and supported by the project's MySQL version, use database CHECK constraints for local invariants such as:
+Prefer:
 
-* non-negative numeric quantities;
-* non-negative money values;
-* `reserved_quantity <= quantity`;
-* valid boolean domains;
-* self-reference prevention where straightforward;
-* mutually exclusive cart ownership fields;
-* order fee/total combinations where implementation is practical.
+```text
+DatabaseSeeder
+    ↓
+small domain-specific seeders
+```
 
-Do not attempt to encode full business workflows in CHECK constraints.
+when the number of records makes separation useful.
 
-Do not use CHECK constraints as a replacement for:
+For example:
 
-* authorization;
-* order transition logic;
-* payment workflow;
-* inventory concurrency control;
-* role/permission evaluation.
+```text
+RolePermissionSeeder
+CategorySeeder
+CatalogSeeder
+InventorySeeder
+DevelopmentUserSeeder
+CommerceDemoSeeder
+```
 
----
+Do not create dozens of tiny seeders with no meaningful ownership.
 
-# 22. Enum Consistency Review
+Keep the dependency order explicit.
 
-Inventory every database enum or constrained status field and compare it with the authoritative V1 API registry.
+For example:
 
-Verify:
-
-* exact spelling;
-* exact case;
-* exact allowed values;
-* no undocumented additions;
-* no removed values;
-* no lowercase/uppercase drift.
-
-The V1 convention is CLOSED for machine-facing enums, with the explicitly documented availability exception.
-
-Do not introduce future statuses simply because a domain might eventually need them.
-
-Examples that must not be silently invented:
-
-* extra order statuses;
-* extra payment statuses outside the approved contract;
-* delivery statuses;
-* notification types;
-* extra staff roles;
-* extra request statuses.
-
-If implementation and contract disagree, **STOP and record the mismatch** rather than silently changing the contract.
+```text
+roles/permissions
+→ users
+→ categories
+→ products
+→ variants
+→ images
+→ inventory
+→ carts
+→ orders
+→ order items/history
+→ payments/webhooks
+→ deliveries
+→ requests
+→ enquiries
+→ notifications
+```
 
 ---
 
-# 23. Index Review
+# 21. Idempotent Seed Strategy
 
-For every index, document:
+Static reference/domain seed data must be safe to run repeatedly.
 
-* columns;
-* expected query;
-* selectivity/reason;
-* whether it duplicates another index.
+Use stable identifiers such as approved slugs/references for lookup/upsert behavior where appropriate.
 
-At minimum inspect access patterns for:
+Do not blindly call:
 
-## Users
+```php
+Model::create(...)
+```
 
-* unique email;
-* role/RBAC lookup indexes required by the selected implementation;
-* active-state lookup only where actually queried.
+for fixed reference data if repeated `db:seed` would generate duplicates.
 
-## Categories
+Factories used for random test data may intentionally create new records.
 
-* unique slug;
-* parent lookup;
-* active/display-order traversal.
+Clearly separate:
 
-## Products
-
-* unique slug;
-* category filtering;
-* active/deleted catalogue queries;
-* featured/active queries if actually used.
-
-Avoid creating every conceivable combination.
-
-## Variants
-
-* unique SKU;
-* product lookup;
-* product + active ordering if needed.
-
-## Images
-
-* product lookup + ordering;
-* variant lookup + ordering.
-
-A useful composite index may be:
-
-`(product_id, sort_order, id)`
-
-when deterministic image ordering is required.
-
-## Inventory
-
-* unique `(product_variant_id, warehouse_location)`;
-* variant lookup;
-* warehouse-oriented lookup only if an approved operational query requires it.
-
-## Carts
-
-* user + status;
-* status + updated_at;
-* unique guest token digest.
-
-## Cart Items
-
-* cart lookup;
-* cart + product/variant access only where required.
-
-## Orders
-
-Support:
-
-* customer orders by creation time;
-* staff operational order listing by status/creation time;
-* order-reference lookup.
-
-Use composite indexes based on actual query shapes rather than indexing every individual column.
-
-## Order Items
-
-* order lookup.
-
-## Order Status History
-
-* order + occurred_at + deterministic tie-breaker.
-
-## Payments
-
-* order + creation time;
-* payment reference;
-* provider/provider transaction identity.
-
-## Webhook Events
-
-* unique provider + provider event ID;
-* payment lookup where required.
-
-## Deliveries
-
-* unique order ID.
-
-## Furniture Requests
-
-Support:
-
-* authenticated user's requests;
-* request status + creation time;
-* reference lookup;
-* product linkage where operationally queried.
-
-## Enquiries
-
-Support:
-
-* user's enquiries;
-* status + creation time;
-* product lookup;
-* order lookup;
-* reference lookup.
-
-## Notifications
-
-Support:
-
-* recipient + creation time;
-* recipient + unread state where operationally useful.
-
-The standard customer inbox ordering remains:
-
-`created_at DESC, id ASC`
-
-and protected collections must always be queried within the authorized dataset.
+* repeatable reference seeders;
+* disposable demo/test data.
 
 ---
 
-# 24. Avoid Redundant Indexes
+# 22. Production Safety
 
-Remove indexes that are fully covered by a stronger composite/unique index unless the DB optimizer and query workload justify retaining both.
+Do not make `db:seed` automatically insert demo/test users or fake commerce data into production.
 
-Examples to review:
+Development/demo seeders must be explicitly invoked.
 
-* standalone foreign-key index + equivalent composite index;
-* standalone status index when `(status, created_at)` is already present and all relevant queries use both;
-* duplicate unique + non-unique indexes over the same columns.
+Do not put:
 
-Do not remove framework-required indexes blindly.
+* payment credentials;
+* API secrets;
+* real customer passwords;
+* real customer addresses;
+* real phone numbers;
+* real provider transaction data
 
-Confirm actual migration/database behavior before deletion.
+into committed seed files.
+
+Use environment configuration for any unavoidable development-only secret.
 
 ---
 
-# 25. Cross-Table Invariant Register
+# 23. Factory States
 
-Create a final register with three categories:
-
-### A. Database-enforced
+Where multiple valid states are important, use named factory states rather than scattered overrides.
 
 Examples:
 
-* unique SKU;
-* unique slug;
-* FK existence;
-* order-reference uniqueness;
-* webhook-event uniqueness;
-* one delivery per order;
-* non-negative values;
-* cart guest-token digest uniqueness.
+```text
+active()
+inactive()
+featured()
+default()
+outOfStock()
+guest()
+customer()
+staff()
+admin()
+pickup()
+delivery()
+read()
+unread()
+```
 
-### B. Database + application enforced
+Only create states that represent real domain distinctions.
 
-Examples:
-
-* reserved quantity cannot exceed quantity;
-* cart ownership XOR;
-* one ACTIVE cart per customer;
-* order fulfillment/fee/total consistency;
-* at most one default variant;
-* variant belongs to product;
-* image variant belongs to image product;
-* cart variant belongs to cart product.
-
-### C. Application/domain only
-
-Examples:
-
-* authorized customer owns the cart/order;
-* valid order state transitions;
-* staff/admin capability decisions;
-* payment success causes correct order transition;
-* product type eligibility for furniture requests;
-* notification creation from authoritative business events.
-
-Do not misclassify authorization as a database constraint.
+Do not create a state for every individual field combination.
 
 ---
 
-# 26. Referential-Integrity Test Matrix
+# 24. Factory Maintainability
 
-Add migration/integration tests that explicitly prove:
+Respect project code-quality rules:
 
-## Foreign Keys
+* small cohesive factory definitions;
+* explicit naming;
+* no giant callbacks;
+* no duplicate business rules;
+* no scattered magic strings;
+* centralize reusable CLOSED values where appropriate;
+* cognitive complexity ≤15;
+* maximum 3 returns per function;
+* minimal comments.
 
-* invalid FK values fail;
-* intended parent deletion succeeds/fails according to policy;
-* cascading children are removed only where approved;
-* historical references are nulled where approved.
-
-## Unique Constraints
-
-* duplicate slug fails;
-* duplicate SKU fails;
-* duplicate order reference fails;
-* duplicate payment reference fails;
-* duplicate webhook provider/event identity fails;
-* duplicate delivery for one order fails.
-
-## Check Constraints
-
-* negative quantities fail;
-* negative money values fail;
-* invalid reservation state fails;
-* invalid ownership combinations fail where DB-supported.
-
-## Historical Integrity
-
-* deleting a product does not destroy historical order snapshots;
-* deleting a variant does not destroy historical order item snapshots;
-* payment history is preserved;
-* order history remains coherent;
-* requests/enquiries survive removal of optional catalogue/user references according to the approved delete rules.
-
-## Cart Integrity
-
-* guest cart cannot become authenticated cart through arbitrary field updates;
-* cart cannot have both owner types;
-* cart cannot have neither owner type;
-* duplicate active customer carts are rejected.
+Factories must remain test-data builders, not hidden application services.
 
 ---
 
-# 27. Migration Order Review
+# 25. Tests for Phase 3.18
 
-Confirm migrations can be executed from a clean database in dependency order.
+Add tests proving:
 
-The dependency graph should generally flow:
+* default factories create valid rows;
+* required relationships are created correctly;
+* unique constraints are respected;
+* category hierarchy is valid;
+* product/variant/image relationships are valid;
+* inventory invariants hold;
+* guest cart ownership is valid;
+* customer cart ownership is valid;
+* order totals are coherent;
+* status-history timelines are coherent;
+* delivery rows correspond only to delivery orders;
+* notification recipients are valid;
+* repeated reference seeding does not create duplicates.
 
-`users`
-
-→ `RBAC tables`
-
-→ `categories`
-
-→ `products`
-
-→ `product_variants`
-
-→ `product_images`
-
-→ `product_stocks`
-
-→ `carts`
-
-→ `cart_items`
-
-→ `orders`
-
-→ `order_items`
-
-→ `order_status_history`
-
-→ `payments`
-
-→ `payment_webhook_events`
-
-→ `deliveries`
-
-→ `furniture_requests`
-
-→ `enquiries`
-
-→ `notifications`
-
-Adjust only where the actual FK graph requires a different sequence.
-
-Do not solve a circular dependency by weakening a foreign key.
-
-If a real cycle exists, document and resolve it deliberately.
+At minimum run the factory/seed suite against a fresh test database.
 
 ---
 
-# 28. Migration Safety
+# 26. Files Changed
 
-Verify that:
+At the end of the phase explicitly report:
 
-* all foreign-key column types exactly match referenced primary-key types;
-* signedness matches;
-* string lengths/collations are compatible where applicable;
-* referenced columns are indexed;
-* migrations run successfully on an empty database;
-* migrations run successfully from the current project state;
-* rollback behavior is understood;
-* destructive changes are not introduced accidentally;
-* production seed data is not required for referential integrity unless explicitly approved.
+* factory files added/changed;
+* seeder files added/changed;
+* model changes, if any;
+* test files added/changed;
+* documentation changes.
 
-Never silently drop existing data as part of this phase.
+Do not change API contract documentation merely because test data was added.
 
 ---
 
-# 29. Performance Sanity Review
+# 27. Schema/API Changes
 
-Do not prematurely optimize.
+Expected result:
 
-Check only realistic V1 workloads:
+**No schema or API contract changes.**
 
-* public product/category browsing;
-* customer order history;
-* staff order queue;
-* notification inbox;
-* inventory lookup;
-* cart retrieval;
-* payment lookup by order/reference;
-* request/enquiry operational queues.
+If seed data exposes a contradiction in the schema or contract, do not hide it in the factory.
 
-Look for:
-
-* missing FK indexes;
-* missing order-by support;
-* large scans on private collections;
-* duplicate indexes;
-* low-value indexes on columns with extremely poor selectivity;
-* composite indexes whose order does not match actual filtering/sorting.
-
-Do not add indexes solely because a column is frequently present in a migration.
+Record the contradiction and STOP.
 
 ---
 
-# 30. Security and Data-Integrity Review
+# 28. Commands / Checks
 
-Verify that database design does not undermine the authorization model.
+Run the project's agreed formatting, static analysis, and test commands.
 
-In particular:
+Also verify a clean database workflow using the repository's Laravel setup.
 
-* staff cannot gain customer-account authority through a database shortcut;
-* client-supplied `user_id`, `actor_id`, `recipient_user_id`, or role fields cannot be trusted;
-* historical records cannot be reassigned to another owner;
-* notification recipients are server-derived;
-* order customers are server-derived;
-* request/enquiry users are server-derived when authenticated;
-* payment records cannot be reassigned casually;
-* audit/history data is not casually mutable.
+At minimum verify:
 
-The project requires server-derived ownership and rejects client-supplied authority.
+```bash
+php artisan migrate:fresh
+php artisan db:seed
+```
 
----
+and then repeat the seed where the configured reference seeders are expected to be idempotent.
 
-# 31. Maintainability Review
+Run the relevant test suite afterward.
 
-Apply these code-quality constraints during migration/model implementation:
-
-* keep each migration cohesive;
-* keep meaningful string literals centralized where they represent domain constants;
-* centralize CLOSED status/type definitions rather than duplicating them across migrations, models, policies, and services;
-* avoid duplicated index/constraint definitions;
-* keep database naming consistent;
-* use small schema helper methods only where they materially improve clarity.
-
-For implementation functions/methods:
-
-* cognitive complexity target: **≤ 15**;
-* maximum **3 return statements** per function;
-* avoid deeply nested conditional migration logic;
-* avoid giant migration files that mix unrelated domains;
-* comments should be minimal and explain only non-obvious constraints.
-
-Do not create abstractions merely to reduce line count.
+Use the exact project tooling already established in Group B rather than introducing a new test framework.
 
 ---
 
-# 32. Schema Consistency Audit
+# 29. Expected Result
 
-Produce a final table covering every table with:
+A fresh development database can be populated with realistic, internally consistent domain data using supported Laravel seed/factory commands.
 
-| Table | PK | FKs | Delete policy | Unique constraints | Checks | Main indexes | Domain-only invariants |
-| ----- | -- | --- | ------------- | ------------------ | ------ | ------------ | ---------------------- |
+Repeated execution must not silently corrupt reference data.
 
-Every column and relationship must be explainable through one of:
-
-* API contract;
-* domain rule;
-* security rule;
-* persistence integrity requirement.
-
-If a field cannot be justified, flag it for removal or explicit decision.
+Factories can then be reused by Phase Group D onward.
 
 ---
 
-# 33. Required Deliverables
+# 30. Known Risks
 
-At the end of Phase 3.17, provide:
+Review specifically for:
 
-1. a complete schema integrity review;
-2. a final FK/delete-policy matrix;
-3. a unique/check-constraint matrix;
-4. an index inventory and duplicate-index review;
-5. a cross-table invariant register;
-6. migration dependency/order verification;
-7. referential-integrity migration tests;
-8. any required migration corrections;
-9. an explicit list of unresolved issues, if any.
-
-Do not create a permanent `phase-3.17.md` document unless the project documentation structure specifically requires it.
-
-Update the consolidated project documentation only where the review identifies a durable schema decision or correction.
+* duplicate seed records;
+* fake credentials accidentally resembling production credentials;
+* invalid cross-table relationships;
+* contradictory order timelines;
+* invalid inventory states;
+* seed-only assumptions that are not actually supported by the domain;
+* excessive seed volume slowing tests;
+* external integrations accidentally triggered during seeding.
 
 ---
 
-# 34. Definition of Done
+# 31. Definition of Done
 
-Phase 3.17 is complete only when:
+Phase 3.18 is complete when:
 
-* every Phase 3.1–3.16 table has been reviewed;
-* all FKs are explicit;
-* FK delete behavior is deliberate;
-* no orphan-producing relationship remains unintentionally;
-* unique constraints reflect real invariants;
-* no unjustified uniqueness constraints remain;
-* check constraints cover appropriate local invariants;
-* cross-table invariants are explicitly documented;
-* indexes support the real V1 query patterns;
-* redundant indexes have been reviewed;
-* all FK types are compatible;
-* all money fields use safe integer storage;
-* quantities cannot become negative;
-* CLOSED enums are consistent with the contract;
-* migration order works from an empty database;
-* migration tests cover the critical constraints;
-* no customer/order/payment history can be accidentally destroyed through catalogue deletion;
-* authorization/ownership is not incorrectly delegated to the database;
-* no unresolved schema contradiction with the frozen V1 API remains.
+* factories exist for all required testable domain models;
+* reference seed data is repeatable;
+* seed data respects every reviewed constraint;
+* role/permission seed data matches the approved V1 model;
+* category taxonomy is correct;
+* catalog data exercises product/variant/image relationships;
+* inventory data is valid;
+* cart data covers guest and customer paths;
+* orders cover representative lifecycle states;
+* order history is coherent;
+* payment and webhook records are safe synthetic data;
+* delivery data is valid;
+* furniture requests and enquiries cover guest/authenticated cases;
+* notifications use only approved notification types;
+* no production secrets or real customer data are seeded;
+* factory/seed tests pass;
+* formatting/static analysis pass;
+* clean database population succeeds.
 
 ---
 
-# 35. Out of Scope
+# 32. Out of Scope
 
 Do not implement:
 
-* order workflow/state-transition services;
-* payment provider integration;
-* payment webhook signature verification;
-* inventory reservation algorithms;
-* concurrency strategy implementation;
-* checkout orchestration;
-* delivery pricing logic;
-* authentication flows;
-* authorization policies;
-* notification dispatch;
-* email/SMS/push delivery;
-* frontend changes;
-* API endpoint implementation;
-* attachment storage;
-* warehouse-management domain;
-* advanced reporting indexes;
-* search-engine infrastructure;
-* new product/category/domain concepts;
-* future V2 statuses or roles.
-
-Those belong to later phases.
+* authentication workflows;
+* API endpoints;
+* payment providers;
+* webhook handlers;
+* notification delivery;
+* order workflow services;
+* inventory reservation;
+* frontend integration;
+* production catalog import;
+* production user migration;
+* production payment data import.
 
 ---
 
-# 36. STOP Condition
+# 33. STOP Condition
 
-STOP after the schema review, constraint corrections, migration updates, and integrity tests are complete.
+STOP after factories, seeders, and their tests are complete and verified.
 
-Do not begin:
+Do not proceed to Group D.
 
-* model/business-service implementation beyond what is necessary to validate the schema;
-* repository/API implementation;
-* controllers;
-* checkout;
-* payments;
-* inventory workflows;
-* frontend integration.
-
-If the review discovers a conflict between an existing schema decision and the frozen V1 API/domain contract, do not silently redesign it. Record the conflict and STOP for an explicit decision before proceeding.
-
-Phase 3.17 must end with the database structure being **internally consistent, referentially safe, migration-rebuildable, and aligned with the frozen V1 domain contract**.
+Phase 3.19 must perform the final migration rebuild verification before Group C can be declared complete.
