@@ -3,6 +3,7 @@
 use App\Exceptions\Api\ApiExceptionRenderer;
 use App\Http\Middleware\AdministrativeAccess;
 use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\AuthenticateClerk;
 use App\Http\Middleware\OperationalAccess;
 use App\Http\Middleware\ValidateJsonBody;
 use Illuminate\Foundation\Application;
@@ -34,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
+            'clerk.auth' => AuthenticateClerk::class,
             'operational' => OperationalAccess::class,
             'admin' => AdministrativeAccess::class,
         ]);

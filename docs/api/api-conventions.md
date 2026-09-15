@@ -257,9 +257,9 @@ Payment provider-specific fields/SDK/webhook payload validation → Group H. Lar
 
 Payment provider-specific error codes/SDK/webhook failures (Group H), Laravel handlers/middleware/classes, rate-limit enforcement, OpenAPI/endpoint-specific schemas, Next.js/Flutter handlers — not implemented here (Explicitly Out of Scope §93).
 
-## 18. Authentication Conventions (Consolidated — Phase 1.17)
+## 18. Authentication Conventions (Clerk Boundary — Phase 4.1)
 
-> **Authority:** Single authentication conventions for `v1`. Consolidates `phase-1.17.md`. No separate `authentication.md` per §2. Reusable rules here; normative contract in `api-contract.md §17`; business meaning in `docs/domain/business-rules.md §17`; decisions in `decisions.md ADR/AUTH-*`.
+> **Authority:** Single authentication conventions for `v1`. Clerk owns authentication credentials and sessions; Laravel verifies Clerk session tokens and owns local authorization. Reusable rules here; normative contract in `api-contract.md §17`; full architecture and endpoint retirement matrix in `clerk-authentication-architecture.md`.
 
 ### 18.1 Actors, Roles & Hierarchy
 
@@ -274,18 +274,18 @@ Payment provider-specific error codes/SDK/webhook failures (Group H), Laravel ha
 - **Checkout boundary:** `Browse → no auth | Cart interaction → per cart policy | Checkout → auth REQUIRED`.
 - **Customer flexibility:** `Customer: maximum customer-facing commerce, minimum admin` — rich shopping without operational privileges.
 
-### 18.3 Cross-Client Identity & Session/Token Principles
+### 18.3 Cross-Client Identity and Clerk Session-Token Principles
 
-- One shared customer identity across `Next.js` and `Flutter` against same Laravel backend; registering on web allows login on app with same credentials (no duplicate accounts).
-- `Next.js` → **first-party browser session** (secure httpOnly cookie, not long-lived JS token); `Flutter` → **API credential/token**; `Admin` → administrative session. Same identity system, role gates after auth.
-- **Logout:** explicit, invalidates server-side session/credential; deleting frontend token alone insufficient if server state revocable.
+- One shared Clerk identity across `Next.js`, Flutter, and Admin resolves to one local Laravel user; no per-client duplicate local accounts.
+- Authenticated Laravel API calls carry `Authorization: Bearer <Clerk session token>` — this is the single Laravel transport for browser and mobile alike. Next.js obtains the Clerk session token via the Clerk SDK (server-side where SSR applies) and forwards it as a Bearer header; the browser never authenticates to Laravel with a cookie. Laravel creates and accepts no session cookie.
+- **Logout:** client invokes the Clerk logout/session lifecycle. Laravel rejects expired, revoked, or otherwise invalid Clerk tokens and never attempts to revoke a parallel Laravel token.
 - **Multi-device:** multiple legitimate customer sessions (web/phone/tablet) **permitted**; logout on one does not invalidate others. Revocation of individual sessions, staff/admin stronger controls (shorter idle, visibility, forced logout, MFA/audit later) — deferred but not prohibited.
 - **Expiration:** conceptually `active → expired → revoked`; durations chosen later based on convenience vs privilege.
 
-### 18.4 Credential Handling & Data Minimization
+### 18.4 Clerk Credential Handling and Data Minimization
 
-- Registration collects only **minimum**: `name`, `email`, `phone`, `password`; not `address book`/`delivery address` (separate flows).
-- Passwords **never** plaintext, only **secure one-way hash**; never return `password`, `password_hash`, `reset_token`, `session_token`, `refresh_secret`, private keys in API responses. Role is not permission — backend evaluates `role+resource+action+ownership+state` (Phase 1.18); exposing `database permissions`/`internal policy` in profile is prohibited.
+- Credential collection and password/factor handling occur only in Clerk. Laravel does not accept registration, login, password, recovery, verification, or Clerk identity fields as application API input — now, during the Phase 4.1 transition, not only after Phase 4.2 route removal. Retired credential inputs are rejected (`422` field-level where a live endpoint receives them); calls to retired Laravel `AUTH-*`/`USER-003` paths return `410 GONE` or masked `404` with a Clerk migration hint per `api-contract.md §29.8`.
+- Never receive, log, or store raw passwords in the Laravel path; never return `password`, `password_hash`, `reset_token`, `session_token`, refresh secrets, private keys, Clerk secrets, or raw Clerk tokens. Role is not permission — Laravel evaluates `role+resource+action+ownership+state`; exposing database permissions/internal policy in profile is prohibited.
 
 ### 18.5 Verification, Recovery & Enumeration Protection
 
@@ -371,19 +371,19 @@ Laravel Policies/Gates/middleware, Spatie, role/permission tables/migrations, au
 ### 20.2 Naming, Methods, and Query Reuse
 
 - **Naming:** lowercase, plural resources, kebab-case for actions (`ready-for-pickup`), shallow nesting (`/products/{product}/variants`), nouns + controlled `POST /orders/{order}/cancel` (not `PATCH {status}`) per Phase 1.9. No `pageSize`/`sortBy` aliases — only `page`/`per_page`, `search`, `category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction` per Phase 1.11. **Category filtering:** canonical `GET /products?category={category}`; `GET /categories/{category}/products` is **REJECTED** duplicate. **Images:** `GET /products/{product}/images` **REJECTED** (embedded in product detail). **Availability:** embedded `availability` + `stock_indicator` in `Product`, not separate endpoint.
-- **Methods:** `GET` read (`CAT-*`, `USER-001`, `ORD-001`), `POST` create/action (`AUTH-001`, `CART-002`, `CHK-001`, `ORD-007`), `PATCH` partial update (`USER-002`, `CART-003`, `CAT-008`), `DELETE` actual removal (`CART-004`) per Phase 1.10 — `DELETE` not for cancellation.
+- **Methods:** `GET` read (`CAT-*`, `USER-001`, `ORD-001`), `POST` create/action (`CART-002`, `CHK-001`, `ORD-007`), `PATCH` partial update (`USER-002`, `CART-003`, `CAT-008`), `DELETE` actual removal (`CART-004`) per Phase 1.10 — `DELETE` not for cancellation. Laravel `AUTH-001..008` are retired in favor of Clerk-managed flows.
 - **Pagination:** `CAT-001`, `CAT-003`, `ORD-001`, `ORD-005`, `REQ-004`, `ENQ-004`, `NOT-001`, `ADM-001`, `INV-001` use `page`/`per_page` (1–100) + `meta.pagination` per Phase 1.12; single-resource endpoints not paginated.
 - **Response / Input / Validation / Errors:** reuse `data`/`meta` + `errors` (`§15`) envelopes, `snake_case`, money `{amount,currency}`, type strictness, `AUTHENTICATION_REQUIRED` canonical 401 (alias `CHECKOUT_REQUIRES_AUTHENTICATION`), CLOSED enums, field `delivery_address.city` + `items.0.quantity`, `meta.request_id` — no raw arrays or custom wrappers.
 
 ### 20.3 Auth / Authz, Security, Idempotency, Concurrency per Endpoint
 
-- **Auth:** `CAT-001..006` public (no auth) remain SSR/SEO-friendly; `REQ-001`/`ENQ-001` + `AUTH-001/002/004/005` public with rate-limit safety; `CHK-001`/`ORD-001` require `AUTHENTICATION_REQUIRED` canonical 401; `ORD-005` staff `orders.view_operational`; `ADM-003` admin `staff.approve` (audited). No `STAFF → block_customer`.
+- **Auth:** `CAT-001..006` public (no auth) remain SSR/SEO-friendly; `REQ-001`/`ENQ-001` are public with Laravel rate-limit safety; Clerk owns public sign-up/sign-in/recovery. `CHK-001`/`ORD-001` require `AUTHENTICATION_REQUIRED` canonical 401 after Clerk-token verification; `ORD-005` staff `orders.view_operational`; `ADM-003` admin `staff.approve` (audited). No `STAFF → block_customer`.
 - **Authz:** every protected endpoint declares `owns resource?` / `operational access?` / `administrative access?` per `api-contract.md §18`; e.g., `ORD-002` ownership vs `ORD-010` operational `orders.ship` + `PROCESSING`.
 - **Security classification:** each endpoint tagged `PUBLIC` / `CUSTOMER` (`AUTHENTICATED_OWNER`) / `STAFF` (`OPERATIONAL`) / `ADMIN` (`ADMINISTRATIVE`) / `SYSTEM/WEBHOOK` for `WEBHOOK-001`; data `PUBLIC` vs `PRIVATE` vs `INTERNAL` helps prevent overexposure (`payment secrets` never).
 - **Idempotency:** `SAFE`: `CAT-*` `GET`, `CART-001` `GET`; `IDEMPOTENT`: `USER-002` `PATCH`, `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001`, `PAY-001`, `ORD-004` cancel, `ORD-007..011` + `ORD-013` `complete` + `ORD-014` `delivery-fee` state actions, `CART-005` merge, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` (+ `REQ-007`/`ENQ-007` attachments), `CART-002`.
 - **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` complete + `ORD-014` delivery-fee, `PAY-001`/`WEBHOOK-001`, `ADM-003` flagged concurrency-sensitive (atomic authz+state+perform).
-- **Anonymous mutation safety:** only `AUTH-001` register, `REQ-001`, `ENQ-001`, `AUTH-004/005` recovery approved as anonymous mutations; all reviewed for abuse/spam/rate-limit/file risk.
-- **Count & MVP:** `70` endpoints (`CAT 12` + `AUTH 7` + `USER 3` + `CART 5` inc. `CART-005` merge + `CHK 1` + `ORD 14` + `REQ 7` + `ENQ 7` inc. `ENQ-007` + `NOT 2` + `INV 3` + `ADM 6` + `PAY/WEBHOOK 3`) is smallest coherent surface — no `GET /my-orders` duplicate, no `wishlist`/`reviews`/`coupons` unless approved; each endpoint justified for attack surface. Guest-cart `X-Guest-Cart-Id` handling is backend authority, not client ownership proof.
+- **Anonymous mutation safety:** only `REQ-001`/`ENQ-001` (full anonymous submit) plus scoped `Anonymous*` `REQ-007`/`ENQ-007` (server-issued single-use `X-Upload-Token` + atomic parent ownership, per `§26.8`/`§27.8` and security scheme `§32.5`) approved as anonymous-capable Laravel mutations; `AUTH-001` register and `AUTH-004/005` recovery are **RETIRED** (Clerk owns sign-up/recovery outside the Laravel API); all reviewed for abuse/spam/rate-limit/file risk (scoped attachment uploads rate-limited per `§32.11`).
+- **Count & MVP:** `76` IDs ever (`73` substantive + `3` Group H placeholders): catalog 14 + `AUTH 8` **RETIRED** (`AUTH-001..008`, not callable; use Clerk) + `USER 3` (`USER-001/002` active; `USER-003` retired) + `CART 5` inc. `CART-005` merge + `CHK 1` + `ORD 14` + `REQ 7` + `ENQ 7` inc. `ENQ-007` + `NOT 2` + `INV 3` + `ADM 9` + `PAY/WEBHOOK 3` placeholders — active callable surface excludes all retired IDs; smallest coherent surface — no `GET /my-orders` duplicate, no `wishlist`/`reviews`/`coupons` unless approved; each endpoint justified for attack surface. Guest-cart `X-Guest-Cart-Id` handling is backend authority, not client ownership proof.
 
 ## 21. Catalog API Conventions (Phase 1.20)
 
@@ -457,10 +457,11 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 
 **Two mutually exclusive transport paths — the server uses exactly one per client interaction:**
 
-1. **Browser (Next.js web) — Cookie-only path:**
-   - On first `CART-002` response, the server sets `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict; Path=/api`.
+1. **Browser (Next.js web) — Cookie-only path (credentialed cross-origin):**
+   - On first `CART-002` response, the server sets `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=None; Path=/`. `SameSite=None; Secure` is required because the web origin differs from the API origin; `Strict` would prevent the cookie from being sent cross-origin and the cart would be lost.
    - The server does **not** include `X-Guest-Cart-Id` in any response header for browser clients. A browser-readable response header would defeat the `HttpOnly` protection and expose the token to any JavaScript running on the page, including third-party scripts.
-   - The browser automatically sends the cookie on subsequent cart requests; the server reads `guest_cart_id` from the `Cookie` header.
+   - Browser `fetch` calls to cart endpoints **MUST** use `credentials: 'include'`; cross-origin Fetch omits cookies by default, so without it the cookie is not sent and guest-cart reads/merges lose the cart. The server reads `guest_cart_id` from the `Cookie` header.
+    - The server answers credentialed cart requests with the exact allow-listed origin in `Access-Control-Allow-Origin` (never `*`) plus `Access-Control-Allow-Credentials: true`, and `Vary: Origin`. CORS/preflight alone is not a forgery control: `guest_cart_id` is a cookie Laravel reads for browser cart mutations, `SameSite=None` sends it cross-site, simple cross-origin requests skip preflight, and CORS never blocks the request from being sent. Every cookie-based guest-cart mutation (`CART-002/003/004` browser path) MUST pass a request-forgery check — validate `Origin` against the allow-list (reject missing/mismatched `Origin` on cookie mutations) and enforce Fetch Metadata (`Sec-Fetch-Site` must be `same-origin`/`same-site` or allow-listed `cross-site` where present). Token unguessability/scope limits impact but is not forgery protection. See `§32.12`.
    - Next.js server-side code must never forward the raw cookie value into client-accessible state.
 
 2. **Non-browser (Flutter mobile) — Header-as-bearer-secret path:**
@@ -470,7 +471,7 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
    - The `CART-005` merge endpoint accepts the guest token via this request header.
 
 **Rotation and expiry:**
-- The guest token is a one-time credential for the lifetime of the guest session. It is permanently retired (invalidated server-side) upon successful merge (`AUTH-002` login or `CART-005`). It cannot be reused after retirement.
+- The guest token is a one-time credential for the lifetime of the guest session. It is permanently retired (invalidated server-side) upon successful explicit merge via Clerk-authenticated `CART-005` (`POST /me/cart/merge`, guest token via `guest_cart_id` cookie or `X-Guest-Cart-Id` header merged onto the Clerk-resolved local user cart). `AUTH-001..008` are **RETIRED** and not callable — `AUTH-002` login is not a merge trigger. It cannot be reused after retirement.
 - The server must not accept a retired guest token.
 - Tokens not merged after a configurable idle period (implementation-defined) may be expired by the server.
 
@@ -876,8 +877,8 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 ### 29.3 Credential Separation — Profile vs Authentication
 
 - **Profile (`PATCH /me`):** `ordinary personal data` — `name`, `phone` (allow-list). Do not treat `email` (identity), `password` (credential), `role`/`permissions`/`account_state`/`verification` as ordinary profile fields simply because they are stored on same `User` row.
-- **Authentication (`AUTH-*`):** `credentials/session/security` — `password` change (canonical `POST /api/v1/auth/change-password` `AUTH-008`), password reset (`POST /auth/password/*`), email verification, email security-change workflow. `POST /api/v1/me/password` (`USER-003` legacy) is **RETIRED** and **not duplicated** as authoritative — canonical is `POST /api/v1/auth/change-password` per `api-contract.md §29.8` (`USER-004`). Canonical profile route is `PATCH /api/v1/me` (not `/me/profile`).
-- **Credential handling:** `password` never serialized; password change requires `authenticated user + ownership of own credential + current credential verification` where model requires it; `Staff cannot normally change Customer passwords`; `Admin access to Customer credentials must not expose current password` — use dedicated recovery/security workflow where needed.
+- **Authentication (Clerk):** Clerk owns credentials, session/security lifecycle, password change/recovery, and email verification/change. Laravel `AUTH-001..008` were retired in Phase 4.1 (route removal in Phase 4.2). `POST /api/v1/me/password` (`USER-003` legacy) remains **RETIRED**; canonical profile route is `PATCH /api/v1/me` (not `/me/profile`).
+- **Credential handling:** Laravel never serializes or accepts password/security secrets. Staff cannot normally change customer credentials, and Admin access must not expose current credentials; use the dedicated Clerk security workflow where authorized.
 
 ### 29.4 Profile Field Allow-List & Partial Semantics
 
@@ -894,7 +895,7 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 ### 29.6 Cross-Platform Authoritative Identity
 
-- **Shared identity:** Same `User` (`id`, `role`, `email_verified`, `profile`) across `Next.js` (browser session httpOnly cookie) and `Flutter` (API credential) via same Laravel backend; `website phone change → Flutter sees same`.
+- **Shared identity:** Same local `User` (`id`, `role`, `email_verified`, `profile`) across `Next.js` and `Flutter` via the same Clerk identity and Laravel projection; `website phone change → Flutter sees same`. The browser httpOnly cookie belongs to the Clerk/Next.js session only and never authenticates Laravel; every Laravel call uses `Authorization: Bearer <Clerk session token>`.
 - **Backend authoritative:** Local `Next.js`/`Flutter` cached profile/role state is advisory only; `role`, `account_state`, `verification`, `authorization` must be refreshed from backend — do not assume cached role valid indefinitely after `Staff role changes` / `account disabled` / `permission change`.
 - **Synchronization:** Server is source of truth; `Next.js`/`Flutter` may cache for UX but must revalidate via `GET /me` where operational decisions matter.
 
@@ -960,10 +961,10 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
   - `$ref: '#/components/schemas/Money', nullable: true` → `anyOf: [{ $ref }, {type: 'null'}]` + `readOnly` sibling (e.g., `CheckoutResponseData.delivery_fee`, `OrderSummary.delivery_fee`, `DeliveryAddressInput/DeliveryAddressSnapshot` delivery_address)
 - Tooling verification: `grep nullable` → 0, `'null'` string occurrences 26, `anyOf` 5. Schema-aware linters now validate `null` values.
 
-### 32.2 Authentication Credential Schemas (New)
+### 32.2 Authentication Credential Schemas (Historical — Retired by Phase 4.1)
 
-- `ChangePasswordRequest: {current_password writeOnly required, password writeOnly 8-128, password_confirmation writeOnly} additionalProperties:false` — `POST /auth/change-password` `AUTH-008` now has strict requestBody, `401` for unauthenticated, `422` for validation, `429` for brute-force.
-- `ForgotPasswordRequest: {email format:email required}` and `ResetPasswordRequest: {email, token, password, password_confirmation} additionalProperties:false` — `AUTH-004/005` now have strict schemas, generic `MessageResponse` response `Request received.` to prevent enumeration, `429 + Retry-After` for rate limiting.
+- `ChangePasswordRequest: {current_password writeOnly required, password writeOnly 8-128, password_confirmation writeOnly} additionalProperties:false` — `POST /auth/change-password` `AUTH-008` had strict requestBody, `401` for unauthenticated, `422` for validation, `429` for brute-force. **RETIRED** by Phase 4.1: Clerk owns password change; schema retained for traceability, not for new implementation.
+- `ForgotPasswordRequest: {email format:email required}` and `ResetPasswordRequest: {email, token, password, password_confirmation} additionalProperties:false` — `AUTH-004/005` had strict schemas, generic `MessageResponse` response `Request received.` to prevent enumeration, `429 + Retry-After` for rate limiting. **RETIRED** by Phase 4.1: Clerk owns recovery; schemas retained for traceability, not for new implementation.
 
 ### 32.3 Catalog Management Allow-Lists (Mass-Assignment Fix)
 
@@ -1000,12 +1001,11 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
 
 ### 32.11 Rate Limiting (Abuse Protection)
 
-- All security-sensitive ops `429 + Retry-After` (standard header). Identified thresholds: `POST /auth/register 5/h/IP`, `POST /auth/login 10/min/IP`, `POST /auth/password/* 3/min/IP`, `POST /requests|enquiries 3/min/IP anonymous 10/min/user`, `POST /checkout 5/min/user`, `POST /me/cart/items 30/min/user`, `POST /me/orders/{order}/cancel 5/min/user`, `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` `10/h` per `X-Upload-Token ID + parent resource (request/enquiry ID) + IP` for anonymous (scoped token, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `POST /inventory/{product}/adjust 20/min/staff`, `POST /admin/staff/* 30/min/admin`, `GET /products 100/min/IP`. Anonymous submissions require validation + scoped token + not enumerating parents.
+- All security-sensitive ops `429 + Retry-After` (standard header). Identified thresholds: `POST /requests|enquiries 3/min/IP anonymous 10/min/user`, `POST /checkout 5/min/user`, `POST /me/cart/items 30/min/user`, `POST /me/orders/{order}/cancel 5/min/user`, `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` `10/h` per `X-Upload-Token ID + parent resource (request/enquiry ID) + IP` for anonymous (scoped token, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `POST /inventory/{product}/adjust 20/min/staff`, `POST /admin/staff/* 30/min/admin`, `GET /products 100/min/IP`. Historical Laravel auth thresholds (`POST /auth/register 5/h/IP`, `POST /auth/login 10/min/IP`, `POST /auth/password/* 3/min/IP`) are **RETIRED** by Phase 4.1 — Clerk owns sign-up/sign-in/recovery throttling. Anonymous parent submissions (`REQ-001`/`ENQ-001`) require validation + rate-limit + not enumerating parents (no upload token); the scoped `X-Upload-Token` requirement applies only to anonymous attachment uploads (`REQ-007`/`ENQ-007`).
 
 ### 32.12 CSRF, CORS, Transport, Cache
 
-- **Transport:** `https://api.example.com/api/v1` only deployed, `Secure` cookies `HttpOnly SameSite=Strict Path=/api`, `HSTS` `max-age=31536000 includeSubDomains`, `TLS 1.2+`, `HTTP→HTTPS` redirect.
-- **CSRF:** Cookie-auth mutations require `X-CSRF-Token` double-submit validated server-side despite `SameSite=Strict`; bearer-only Flutter exempt.
-- **CORS:** `Access-Control-Allow-Origin` allow-list `https://www.example.com, https://admin.example.com` (never `*` with credentials), `Allow-Methods GET,POST,PATCH,DELETE`, `Allow-Headers Content-Type, Authorization, Idempotency-Key, X-Guest-Cart-Id, X-Upload-Token, X-CSRF-Token`, `Vary: Origin`, `Max-Age`.
-- **Cache:** `Cache-Control: private, no-store` for `Cart, Checkout, Orders, Tracking, Notifications, Profile, Request/Enquiry private` (`PRIVATE`, `Vary: Authorization, Cookie`); `Cache-Control: public, max-age=300, s-maxage=600` + `CDN-Cache-Control` for `CAT-001..006` `PUBLIC`.
-
+- **Transport:** `https://api.example.com/api/v1` only deployed, `HSTS` `max-age=31536000 includeSubDomains`, `TLS 1.2+`, `HTTP→HTTPS` redirect. Any `Secure HttpOnly SameSite=Strict` session cookies in the browser are Clerk/Next.js-owned and never authenticate Laravel; Laravel issues and accepts no session cookie — it is bearer-only and stateless (except reading the `guest_cart_id` guest-cart identifier cookie per `§22.6`).
+- **CSRF:** Applies to Clerk/Next.js cookie flows and to Laravel cookie-based guest-cart mutations (see `§22.6`). Laravel Bearer (`Authorization`) mutations require no `X-CSRF-Token`, but every `guest_cart_id` cookie mutation (`CART-002/003/004` browser path) MUST pass the `Origin`/Fetch Metadata forgery check — Laravel does read a cookie for this path, so it is not bearer-only. Do not send Laravel session cookies and do not implement a parallel Laravel session CSRF flow.
+- **CORS:** `Access-Control-Allow-Origin` allow-list `https://www.example.com, https://admin.example.com` (exact origin echoed, never `*`), `Access-Control-Allow-Credentials: true`, `Allow-Methods GET,POST,PATCH,DELETE`, `Allow-Headers Content-Type, Authorization, Idempotency-Key, X-Guest-Cart-Id, X-Upload-Token`, `Vary: Origin`, `Max-Age`. Authenticated calls use the `Authorization` Bearer header; browser guest-cart calls additionally require `credentials: 'include'` so the `guest_cart_id` cookie is sent (see `§22.6`).
+- **Cache:** `Cache-Control: private, no-store` for `Cart, Checkout, Orders, Tracking, Notifications, Profile, Request/Enquiry private` (`PRIVATE`, `Vary: Authorization` plus `Cookie` only for the guest-cart `guest_cart_id` cookie); `Cache-Control: public, max-age=300, s-maxage=600` + `CDN-Cache-Control` for `CAT-001..006` `PUBLIC`.

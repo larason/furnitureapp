@@ -4,6 +4,16 @@
 
 ---
 
+### ADR/AUTH-001 — Clerk Token Verification and Local User Provisioning
+
+**Decision:** Laravel verifies Clerk session tokens with `clerkinc/backend-php` using configured Clerk verification keys, authorized parties, and audiences. The verified token `sub` is the only external identity key. First authenticated requests retrieve the Clerk Backend User by that ID, then transactionally provision one local user with a nullable unique `users.clerk_user_id`, a CUSTOMER role, and a customer profile. Existing mappings are reused; email is never used for automatic linking.
+
+**Security:** Clerk metadata and client-supplied identity/role fields are not trusted. Laravel credentials and sessions are not created. Clerk gateway failures leave local state unchanged and map to the existing external-service error vocabulary.
+
+**Status:** Accepted and implemented in Phase 4.2
+
+---
+
 ### ADR/API-013 — Response Envelope: `data` + `meta.pagination` (no `result`/`payload` drift)
 
 **Decision:** All `v1` successful responses use `data` as primary member. Single resource → `data: object`; collection → `data: []` + `meta.pagination: {current_page, per_page, total, last_page, has_next, has_previous}`. Empty collection → `data:[]` (not `null`); missing resource → `errors`.
@@ -464,6 +474,20 @@
 
 ---
 
+### ADR/AUTH-009 — Clerk Authentication With Laravel Local Authorization Projection
+
+**Decision:** Clerk is the sole external authority for credentials, sign-up/sign-in, sessions, password recovery, verification, and verified external identity. Laravel remains the authoritative local application identity projection: its `users.id` continues to own all domain foreign keys, roles, permissions, account business state, ownership, policies, and commerce authorization. Laravel receives `Authorization: Bearer <Clerk session token>`, cryptographically verifies the Clerk token, resolves the local user through a unique server-controlled `users.clerk_user_id` mapping derived only from verified `sub`, and attaches that local user to the request. Laravel must not exchange a Clerk token for Sanctum, a Laravel session, or another customer credential.
+
+`clerk_user_id` is introduced only through a new Group D migration: nullable for controlled rollout, unique, indexed, immutable after secure linking, never serialised, and never writable by ordinary clients. Email is a synchronized contact/security snapshot, never an identity-linking key. JIT provisioning creates only `CUSTOMER` local users and is concurrency-safe; staff/admin authority remains exclusively local. Clerk webhooks are signed, idempotent reconciliation only, never a prerequisite for first authenticated request. Clerk deletion retains local historical records and blocks future activity according to the later account-retention policy.
+
+Laravel `AUTH-001..008` credential/session endpoints are retired as a documented V1 post-freeze authentication change and are replaced during Phase 4.2 by Clerk client flows. `/me` remains Laravel-owned for local `name`/`phone` profile updates and local authorization context; email/verification snapshots are Clerk-owned and not writable through `/me`.
+
+**Reason:** Preserves backend authority and local historical ownership while eliminating duplicate password/session systems, prevents email-based account takeover and Clerk-metadata privilege escalation, and keeps Laravel authorization independent of authentication-provider claims.
+
+**Status:** Accepted | **Supersedes authentication-provider portions of:** `ADR/AUTH-002`, `ADR/AUTH-007`, `ADR/AUTH-008` | **Affected:** `docs/clerk-authentication-architecture.md`, `api-contract.md §17`, `api-conventions.md §18`, `api-resources.md §8.1`, `openapi.yaml bearerAuth`; Phase 4.2 implementation and Phase 4.12 tests.
+
+---
+
 ### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
 
 **Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.
@@ -737,10 +761,10 @@
 ### ADR/API-CART-007 — Guest Cart Token: Client-Type-Split Transport
 
 **Decision:** The guest cart token is a bearer credential **scoped strictly to its bound guest cart** (cryptographically secure, high-entropy `UUIDv4` CSPRNG ≥122 bits, not `UUIDv1`/sequential/counter, unpredictable, not guessable) — it authorizes read/write to that guest cart only (anonymous cart request has no authenticated principal, so validating this token necessarily authorizes access to its bound cart); it **never authorizes account operations** and **never authorizes merge by itself** (merge requires authenticated principal + valid guest token + server-side ownership check). Its transport is split by client type to prevent JavaScript exposure in browsers:
-- **Browser (Next.js):** Token issued exclusively as `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict`. The `X-Guest-Cart-Id` response header is **never** emitted for browser requests, as it would be readable by page JavaScript (including third-party scripts) and defeat the `HttpOnly` protection.
+- **Browser (Next.js):** Token issued exclusively as `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=None`. The `X-Guest-Cart-Id` response header is **never** emitted for browser requests, as it would be readable by page JavaScript (including third-party scripts) and defeat the `HttpOnly` protection. `SameSite=None; Secure` (not `Strict`) is required because the web origin differs from the API origin; browser calls use `credentials: 'include'` with strict-origin CORS plus `Access-Control-Allow-Credentials: true` (see `api-conventions.md §22.6`).
 - **Non-browser (Flutter):** Token issued exclusively in the `X-Guest-Cart-Id` response header (no `Set-Cookie`). Flutter must store it in secure device storage and send it as a request header — never in a JSON body field (request log exposure risk).
 
-The two paths are mutually exclusive per request. The token is permanently retired server-side upon merge (`AUTH-002` login or `CART-005`) and may not be recycled or reused after retirement.
+The two paths are mutually exclusive per request. The token is permanently retired server-side upon merge via Clerk-authenticated `CART-005` and may not be recycled or reused after retirement.
 
 **Reason:** `phases/phase-1.21.md §10, §11`, `api-conventions.md §22.6` — A browser-readable response header carrying the same token as an `HttpOnly` cookie allows any JS running on the page to steal the credential and impersonate the guest cart from a different client. Splitting by client type eliminates this exposure without sacrificing Flutter usability.
 

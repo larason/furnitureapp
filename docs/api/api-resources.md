@@ -767,13 +767,13 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | `id` | string opaque `user_...` | Recipient only (own) | no | Stable opaque, server-generated; never client-supplied or mutable |
 | `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | Recipient only (own) read-only | no | Server-controlled; `UPPER_SNAKE_CASE`; `PATCH /me {role:ADMIN}` rejected |
 | `name` | string | Own | no | Trimmed non-empty, length validated; mutable via `PATCH /me` allow-list |
-| `email` | string | Own | no | Lowercased/trimmed unique; read via Profile, **change via dedicated security workflow** (`POST /auth/*`), not ordinary `PATCH` |
+| `email` | string | Own | no | Clerk-authoritative verified identity/contact snapshot; read via Profile, changed only through Clerk security workflow, not ordinary `PATCH` |
 | `phone` | string \| null | Own | yes | Normalized; nullable if business permits clearing; mutable via `PATCH /me` allow-list; `phone_verified` (if later) server-controlled |
-| `email_verified` | boolean | Own | no | Server-controlled read-only alias for `email_verified_at`; client `{"email_verified":true}` rejected; derived from `email_verified_at: ISO8601 Z \| null` authoritative attribute |
+| `email_verified` | boolean | Own | no | Clerk-authoritative status synchronized into a server-controlled local snapshot; client `{"email_verified":true}` rejected |
 | `created_at` | ISO8601 `Z` | Own | no | Server-generated |
 | `updated_at` | ISO8601 `Z` | Own | no | Server-generated |
 
-**Not serialized (even to Admin via normal `/me`):** `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, `permissions`/`authorization flags`, `internal staff notes`/`internal account flags`, `payment credentials`.
+**Not serialized (even to Admin via normal `/me`):** `clerk_user_id`, `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, `permissions`/`authorization flags`, `internal staff notes`/`internal account flags`, `payment credentials`.
 
 **Lightweight:** `GET /me` contains **only account data** — not `orders[]`, `cart`, `requests[]`, `enquiries[]`, `notifications[]`, `addresses[]`/`saved_addresses[]` (deferred), `notification preferences`. Those via `GET /me/orders`, `GET /me/cart`, `GET /me/requests`, `GET /me/enquiries`, `GET /me/notifications`. Historical `Order`/`Request`/`Enquiry` snapshot (`delivery_address`, `contact`) is preserved separately — profile change never rewrites those.
 
@@ -797,12 +797,12 @@ Self-service `PATCH /me` is **own only** for all roles; Staff cannot edit Custom
 
 | Classification | Fields | `GET /me` | `PATCH /me` (`USER-002`) | Dedicated workflow |
 |---|---|---|---|---|
-| **Server-controlled identity** | `id`, `created_at`, `updated_at` | Read | **No** (rejected `INVALID_VALUE`) | — |
+| **Server-controlled identity** | `id`, `clerk_user_id`, `created_at`, `updated_at` | Read (`id` only) | **No** (rejected `INVALID_VALUE`) | `clerk_user_id` derives only from verified Clerk `sub` |
 | **Server-controlled authorization** | `role`, `permissions`, `account_state`/`staff_approval_state`/`suspension`/`disablement` | Read (`role`/`account_state` where relevant) | **No** — `PATCH {role: ADMIN}` must fail | Admin `users.manage_authorized` / `staff.manage` (Phase 1.29) |
-| **Server-controlled verification** | `email_verified` / `email_verified_at` | Read | **No** — `{"email_verified":true}` rejected | `AUTH-006/007` secure verification |
+| **Server-controlled verification** | `email_verified` / `email_verified_at` | Read | **No** — `{"email_verified":true}` rejected | Clerk verification and signed reconciliation |
 | **Mutable profile (allow-list)** | `name`, `phone` | Read | **Yes** — partial `PATCH`; omission leaves unchanged; `null` only if contract explicitly permits per field | — |
-| **Security-sensitive contact** | `email` | Read | **Prefer dedicated security operation** — treat as identity/auth, not ordinary profile (`api-contract.md §29.7`): authenticated request → security confirmation → new email verification → changed | `POST /auth/change-email` or equivalent (deferred specifics) |
-| **Credentials (never serialized)** | `password`/`password_hash`/tokens/secrets | **Never** | **Never** via `PATCH /me` — separate `POST /auth/change-password` (`AUTH-*` canonical) with `current_password` verification | `POST /auth/change-password` |
+| **Security-sensitive contact** | `email` | Read | **No** — Clerk-owned identity/contact snapshot, not an ordinary Laravel profile field | Clerk security workflow |
+| **Credentials (never serialized)** | `password`/`password_hash`/tokens/secrets | **Never** | **Never** via `PATCH /me` or a Laravel auth route | Clerk security workflow |
 | **Sensitive never via Profile** | `payment credentials`, `provider secrets` | Never | Never | `Group H` / `Group R` |
 
 Mass-assignment must be prevented — only allow-listed fields may be updated; unknown fields rejected per `api-contract.md §15.15` strict `unknown-field → 422` rule.
@@ -1030,7 +1030,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | **Category** | **Read** | Read | Read | **Manage** | `CAT-003`, `CAT-004`, `CAT-011`, `CAT-012` | `GET /categories` (CAT-003), `GET /categories/{category}` (CAT-004) public; `POST/PATCH` (CAT-011/012) Staff, Admin `products.manage` where approved (Staff only if approved) |
 | **Product** | **Read** | Read | Read | **Manage** | `CAT-001`, `CAT-002`, `CAT-005`, `CAT-006`, `CAT-007..010` | `GET /products` (CAT-001) with `?category/product_type/availability/min_price/sort/page` + `GET /products/{product}` (CAT-002) public; `GET variants` (CAT-005/006) public; `POST/PATCH` + images/variants (CAT-007..010) Staff, Admin `products.manage` where approved (Staff only if approved) |
 | **Inventory** | No | No | **Manage** | **Manage** | `INV-001`, `INV-002`, `INV-003` | `GET` collection/item `inventory.view` (INV-001/002) vs `POST /inventory/{product}/adjust` explicit action `inventory.manage` (INV-003) — not `PATCH {quantity}` |
-| **Cart** | Guest holder via `X-Guest-Cart-Id` (backend-issued, not public enumeration) | **Own** (merged guest) | No | No | `CART-001..005` | `GET` own/guest cart (CART-001), `POST` add item (CART-002), `PATCH` quantity (CART-003), `DELETE` item (CART-004) — each supports `GUEST` via `X-Guest-Cart-Id`/`guest_cart_id` cookie (backend authority); `POST /me/cart/merge` (CART-005) merges guest onto authenticated; `AUTH-002` login also merges automatically; `AUTHENTICATED_OWNER` own + guest handoff |
+| **Cart** | Guest holder via `X-Guest-Cart-Id` (backend-issued, not public enumeration) | **Own** (merged guest) | No | No | `CART-001..005` | `GET` own/guest cart (CART-001), `POST` add item (CART-002), `PATCH` quantity (CART-003), `DELETE` item (CART-004) — each supports `GUEST` via `X-Guest-Cart-Id`/`guest_cart_id` cookie (backend authority); `POST /me/cart/merge` (CART-005) merges guest onto authenticated Clerk-resolved local User; `AUTHENTICATED_OWNER` own + guest handoff |
 | **Checkout** | No | **Own (transaction)** | No (operational follows on Order) | No (admin fee via Order) | `CHK-001` | `POST /checkout` (CHK-001) — `CUSTOMER` only, `AUTHENTICATED_OWNER` own active Cart, `PRIVATE`/`no-store`, `IDEMPOTENCY_REQUIRED` (`Idempotency-Key`), `CRITICAL` concurrency. Body `fulfillment_type` + conditional `delivery_address`; **never** `delivery_fee`/`total`/`price`/`status`/`cart_id`. Creates Order `PENDING_PAYMENT` (Model B fee-after-order: subtotal authoritative, delivery_fee pending Staff/Admin assignment before payment). Guest checkout forbidden. |
 | **Order** | No | **Own** | **Operational** | **Admin** | `CHK-001` creates → `ORD-001..013` | `POST /checkout` (CHK-001) creates Order → `GET /me/orders` (ORD-001), `GET /me/orders/{order}` (ORD-002), `GET /me/orders/{order}/tracking` (ORD-003), `POST /me/orders/{order}/cancel` (ORD-004) for Customer own; `GET /orders` (ORD-005), `GET /orders/{order}` (ORD-006), state actions `accept/process/ready-for-pickup/ship/deliver/complete` (ORD-007..011 + ORD-013) for Staff Operational (`ORD-013` `complete` covers `DELIVERED→COMPLETED`/`READY_FOR_PICKUP→COMPLETED`); `GET /orders/{order}/tracking` (ORD-012) operational. Delivery_fee finalized on Order (Staff/Admin) before `PAY-001` per Model B. |
 | **Payment** | No | **Limited own** (`PAY-001` Customer-only initiate) | Operational (limited, `PAY-002` view only) | Admin (limited, `PAY-002` view only; `PAY-001` is **Customer-only**, Admin does not initiate — see `api-contract.md §19.1`) | `PAY-001` Customer-only `POST /payments` initiate, `PAY-002` `GET /payments/{payment}` status (Customer/Staff/Admin limited), `WEBHOOK-001` system `POST /webhooks/payment/{provider}` — **Owner: Group H** (generic placeholders only) |
@@ -1074,4 +1074,3 @@ Additional notes:
 ### 15.3 Authorization and IDOR
 
 - All private holder-scoped `GET /me/requests/{request}`, `GET /me/enquiries/{enquiry}`, `PATCH /me/notifications/{notification}`, `CART-003/004`, `ORD-002/003/004` now document `401` + `404` masked (not `403`) for horizontal `Customer A→B`. Staff/Admin `ORD-005..014`, `INV-001/adjust`, `REQ-004/005`, `ENQ-004/005`, `ADM-001..009` document `401` + `403` + `404` + `409` where state. Canonical routes only; alias `/staff/*` removed per `decisions.md ADR/API-SEC-005`.
-

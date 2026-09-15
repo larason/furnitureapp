@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"clerk": {
+			"url": "https://mcp.clerk.com/mcp",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}
