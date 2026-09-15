@@ -10,7 +10,7 @@ use Tests\TestCase;
  * Phase 2.6 routing-foundation smoke tests.
  *
  * These verify the transport/middleware topology only, not domain behavior:
- * stub controllers return 501; protected routes reject unauthenticated
+ * stub controllers return 501; retired auth routes return 410; protected routes reject unauthenticated
  * callers with 401 via the `auth` middleware boundary; and the
  * Operational/Administrative guards deny-by-default, so an authenticated
  * (but not-yet-roleable) principal receives 403 on every protected boundary.
@@ -65,10 +65,10 @@ class ApiRoutingSmokeTest extends TestCase
 
     public function test_public_anonymous_submission_routes_do_not_require_authentication(): void
     {
-        $this->postJson('/api/v1/auth/register')->assertStatus(501);
-        $this->postJson('/api/v1/auth/login')->assertStatus(501);
-        $this->postJson('/api/v1/auth/password/forgot')->assertStatus(501);
-        $this->postJson('/api/v1/auth/password/reset')->assertStatus(501);
+        $this->postJson('/api/v1/auth/register')->assertStatus(410);
+        $this->postJson('/api/v1/auth/login')->assertStatus(410);
+        $this->postJson('/api/v1/auth/password/forgot')->assertStatus(410);
+        $this->postJson('/api/v1/auth/password/reset')->assertStatus(410);
         $this->postJson(self::API_REQUESTS)->assertStatus(501);
         $this->postJson(self::API_ENQUIRIES)->assertStatus(501);
     }

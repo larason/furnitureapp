@@ -50,9 +50,11 @@ final class LocalUserProvisioner
                     'name' => $snapshot->name,
                     'email' => $snapshot->email,
                     'phone' => $snapshot->phone,
-                    'email_verified_at' => $snapshot->emailVerified ? now() : null,
                 ]);
-                $user->forceFill(['clerk_user_id' => $identity->clerkUserId])->save();
+                $user->forceFill([
+                    'clerk_user_id' => $identity->clerkUserId,
+                    'email_verified_at' => $snapshot->emailVerified ? now() : null,
+                ])->save();
                 $user->assignRole(RoleName::CUSTOMER->value);
                 CustomerProfile::create(['user_id' => $user->id]);
 

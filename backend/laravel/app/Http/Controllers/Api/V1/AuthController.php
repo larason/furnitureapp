@@ -2,47 +2,58 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Exceptions\Api\ApiException;
+use App\Support\ApiErrorCode;
 use Illuminate\Http\JsonResponse;
 
 class AuthController extends V1Controller
 {
     public function register(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function login(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function logout(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function changePassword(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function passwordForgot(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function passwordReset(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function verifyEmail(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
     }
 
     public function resendEmailVerification(): JsonResponse
     {
-        return $this->notImplemented();
+        throw $this->retired();
+    }
+
+    private function retired(): ApiException
+    {
+        return new ApiException(
+            ApiErrorCode::RESOURCE_NOT_FOUND,
+            'This authentication endpoint is retired. Use the Clerk authentication flow.',
+            410,
+        );
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Authentication\Clerk;
 
 use Clerk\Backend\ClerkBackend;
+use Clerk\Backend\Models\Components\VerificationStatus;
 use RuntimeException;
 use Throwable;
 
@@ -71,7 +72,7 @@ final class OfficialClerkUserGateway implements ClerkUserGateway
     {
         foreach ($user->emailAddresses as $emailAddress) {
             if ($emailAddress->emailAddress === $email) {
-                return $emailAddress->verification?->status === 'verified';
+                return $emailAddress->verification?->status === VerificationStatus::Verified;
             }
         }
 

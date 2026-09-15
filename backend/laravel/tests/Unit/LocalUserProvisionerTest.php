@@ -31,6 +31,7 @@ class LocalUserProvisionerTest extends TestCase
         $this->assertDatabaseCount('customer_profiles', 1);
         $this->assertTrue($first->hasRole(RoleName::CUSTOMER->value));
         $this->assertNull($first->getRawOriginal('password'));
+        $this->assertNotNull($first->email_verified_at);
     }
 
     public function test_it_does_not_link_an_unmapped_user_by_email(): void
