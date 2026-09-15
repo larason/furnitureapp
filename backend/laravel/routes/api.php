@@ -67,7 +67,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     // AUTHENTICATED — auth workflows that required an authenticated principal
     // ---------------------------------------------------------------------
-    Route::middleware('auth')->group(function (): void {
+    Route::middleware('clerk.auth')->group(function (): void {
         Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
         Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
         Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
@@ -78,7 +78,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ME — authenticated self (AUTHENTICATED_OWNER). Resource ownership is
     // object-level and decided later; no client user_id is ever accepted.
     // ---------------------------------------------------------------------
-    Route::middleware('auth')->prefix('me')->name('me.')->group(function (): void {
+    Route::middleware('clerk.auth')->prefix('me')->name('me.')->group(function (): void {
         Route::get('/', [MeController::class, 'show'])->name('show');
         Route::patch('/', [MeController::class, 'update'])->name('update');
 
@@ -105,7 +105,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     // CHECKOUT — authenticated customer only
     // ---------------------------------------------------------------------
-    Route::middleware('auth')->post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
+    Route::middleware('clerk.auth')->post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
 
     // ---------------------------------------------------------------------
     // CATALOG WRITES — ADMINISTRATIVE (Admin; Staff only where approved)
@@ -199,7 +199,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     // PAYMENTS — Group H placeholders (authenticated customer)
     // --------------------------------------------------------------------
-    Route::middleware('auth')->group(function (): void {
+    Route::middleware('clerk.auth')->group(function (): void {
         Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
         Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
     });

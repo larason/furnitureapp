@@ -251,6 +251,15 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    RetiredEndpoint:
+      description: '410 - Endpoint retired; use the Clerk authentication flow described in the response error.'
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
     Money:
       type: object
@@ -2049,191 +2058,124 @@ paths:
       tags:
       - Authentication
       summary: Register (retired; use Clerk sign-up)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns sign-up; Laravel will remove this credential endpoint in Phase 4.2.
+      description: Retired. Use Clerk sign-up. Laravel returns `410 GONE` and does not accept credential-registration input.
       deprecated: true
       security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthRegisterRequest'
       responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    $ref: '#/components/schemas/User'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '409':
-          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/login:
     post:
       operationId: AUTH-002
       tags:
       - Authentication
       summary: Login (retired; use Clerk sign-in)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk issues the session token; Laravel will remove this credential endpoint in Phase 4.2.
+      description: Retired. Use Clerk sign-in. Laravel returns `410 GONE` and does not accept credential-login input.
       deprecated: true
       security: []
-      parameters:
-      - $ref: '#/components/parameters/GuestCartId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthLoginRequest'
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthLoginResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/logout:
     post:
       operationId: AUTH-003
       tags:
       - Authentication
       summary: Logout (retired; use Clerk sign-out)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns session logout and revocation; Laravel will remove this endpoint in Phase 4.2.
+      description: Retired. Use Clerk sign-out. Laravel returns `410 GONE` or a masked `404`.
       deprecated: true
       security:
       - bearerAuth: []
       responses:
-        '204':
-          description: No content
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/password/forgot:
     post:
       operationId: AUTH-004
       tags:
       - Authentication
       summary: Forgot password (retired; use Clerk recovery)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns recovery; Laravel will remove this credential endpoint in Phase 4.2.
+      description: Retired. Use Clerk recovery. Laravel returns `410 GONE` and does not accept recovery input.
       deprecated: true
       security: []
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ForgotPasswordRequest'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/password/reset:
     post:
       operationId: AUTH-005
       tags:
       - Authentication
       summary: Reset password (retired; use Clerk recovery)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns password reset; Laravel will remove this credential endpoint in Phase 4.2.
+      description: Retired. Use Clerk recovery. Laravel returns `410 GONE` and does not accept reset-password input.
       deprecated: true
       security: []
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ResetPasswordRequest'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/change-password:
     post:
       operationId: AUTH-008
       tags:
       - Authentication
       summary: Change password (retired; use Clerk security)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns password changes; Laravel will remove this credential endpoint in Phase 4.2.
+      description: Retired. Use the Clerk security workflow. Laravel returns `410 GONE` and does not accept password-change input.
       deprecated: true
       security:
       - bearerAuth: []
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChangePasswordRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /email/verify:
     post:
       operationId: AUTH-007
       tags:
       - Authentication
       summary: Verify email (retired; use Clerk verification)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns email verification; Laravel will remove this endpoint in Phase 4.2.
+      description: Retired. Use Clerk email verification. Laravel returns `410 GONE` or a masked `404`.
       deprecated: true
       security:
       - bearerAuth: []
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /email/verify/resend:
     post:
       operationId: AUTH-006
       tags:
       - Authentication
       summary: Resend verify (retired; use Clerk verification)
-      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns verification delivery; Laravel will remove this endpoint in Phase 4.2.
+      description: Retired. Use Clerk verification. Laravel returns `410 GONE` or a masked `404`.
       deprecated: true
       security:
       - bearerAuth: []
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
+        '410':
+          $ref: '#/components/responses/RetiredEndpoint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /me:
     get:
       operationId: USER-001

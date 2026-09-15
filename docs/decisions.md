@@ -4,6 +4,16 @@
 
 ---
 
+### ADR/AUTH-001 — Clerk Token Verification and Local User Provisioning
+
+**Decision:** Laravel verifies Clerk session tokens with `clerkinc/backend-php` using configured Clerk verification keys, authorized parties, and audiences. The verified token `sub` is the only external identity key. First authenticated requests retrieve the Clerk Backend User by that ID, then transactionally provision one local user with a nullable unique `users.clerk_user_id`, a CUSTOMER role, and a customer profile. Existing mappings are reused; email is never used for automatic linking.
+
+**Security:** Clerk metadata and client-supplied identity/role fields are not trusted. Laravel credentials and sessions are not created. Clerk gateway failures leave local state unchanged and map to the existing external-service error vocabulary.
+
+**Status:** Accepted and implemented in Phase 4.2
+
+---
+
 ### ADR/API-013 — Response Envelope: `data` + `meta.pagination` (no `result`/`payload` drift)
 
 **Decision:** All `v1` successful responses use `data` as primary member. Single resource → `data: object`; collection → `data: []` + `meta.pagination: {current_page, per_page, total, last_page, has_next, has_previous}`. Empty collection → `data:[]` (not `null`); missing resource → `errors`.

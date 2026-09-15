@@ -19,6 +19,11 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable;
 
+    public function getClerkUserId(): ?string
+    {
+        return $this->clerk_user_id;
+    }
+
     public function customerProfile(): HasOne
     {
         return $this->hasOne(CustomerProfile::class);
