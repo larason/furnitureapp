@@ -793,9 +793,11 @@ CLOSED enum policy extends to error codes/categories (`§85`); `available|unavai
 
 See `api-conventions.md §17` for reusable error-convention summary, `api-resources.md §11` for resource-specific error mappings, `docs/domain/business-rules.md §14` for business-error ↔ rule mapping, and `decisions.md ADR/API-ERR-001..006`.
 
-## 17. Authentication Contract — Actors, Sessions, Recovery, Security (Phase 1.17)
+## 17. Authentication Contract — Clerk Authentication, Local Authorization, Security (Phase 4.1)
 
-> **Authority note:** This section plus `api-conventions.md §18` and `api-resources.md §12` is the normative authentication contract for `v1`. `docs/domain/business-rules.md §17` governs business meaning; `decisions.md ADR/AUTH-*` records choices. No Laravel/Sanctum code, migrations, middleware, or frontend screens are implemented in this phase — architecture only. Roles are **CLOSED** (`CUSTOMER`, `STAFF`, `ADMIN`); adding `MANAGER`/`DELIVERY_AGENT` etc. requires compatibility review. Payment auth interactions remain compatible with Group H.
+> **Authority note:** This section plus `api-conventions.md §18`, `api-resources.md §12`, and `clerk-authentication-architecture.md` is the normative authentication contract for `v1`. Clerk owns credentials, sign-up/sign-in, session lifecycle, password/security recovery, and verified external identity. Laravel owns the local application principal, RBAC, account business state, ownership, and business authorization. The Phase 4.1 post-freeze review retires Laravel credential endpoints `AUTH-001..008`; the routes are replaced only during Phase 4.2. Roles are **CLOSED** (`CUSTOMER`, `STAFF`, `ADMIN`); adding `MANAGER`/`DELIVERY_AGENT` etc. requires compatibility review.
+>
+> **Phase 4.1 status (current vs target):** **Current:** retirement is contractually recorded; Laravel `AUTH-*` routes remain as stubs pending Phase 4.2 removal. Clients **MUST** use Clerk flows and **MUST NOT** call Laravel `AUTH-*` for new integrations. **Target (Phase 4.2):** Laravel `AUTH-*` routes removed; only Clerk flows plus Clerk-token-authenticated Laravel APIs (`USER-001/002`, commerce) are callable. Where `§17.2–17.6`/`§17.8–17.9` historical Laravel credential details conflict with this note, this note and `§19.1`/`§19.2` govern.
 
 ### 17.1 Actors & Role Hierarchy — Customer Owns Account, Staff Operate, Admin Approves
 
@@ -820,57 +822,58 @@ Customer → owns own account
 Staff/Admin → may have authorized admin access to specific operational data only
 ```
 
-### 17.2 Customer Registration — Public Self-Registration Only
+### 17.2 Customer Registration — Clerk-Managed Public Self-Registration Only (Historical Laravel Text Superseded)
 
-- Customers: **public self-registration without staff approval** (`Visitor → Register → Customer account → Authenticate → Customer experience`). Staff must not gate every customer registration unless later business explicitly requires it. Minimal required data: `name`, `email`, `phone`, `password` (mandatory/optional deferred to detailed registration contract); do not require `address book`/`delivery address` at registration.
-- Staff: **not** via public registration — approved/invited administrative creation (`Staff candidate → Admin review → Approved → Staff account activated` or `Admin creates/invites → Staff activates`). Self-registration as `STAFF` via public form is prohibited.
-- Admin: **administrative creation / bootstrap** — no public `POST {role: ADMIN}` self-promotion (see §17.5). Initial admin via controlled deployment/setup.
-- All role assignment is **server-controlled**; clients cannot submit `role` to promote themselves (body `role: ADMIN` rejected).
+- Customers: **Clerk-managed public self-registration without staff approval** (`Visitor → Clerk sign-up → verified Clerk identity → first Laravel call provisions local CUSTOMER → Customer experience`). Staff must not gate every customer registration unless later business explicitly requires it. Identity data is collected by Clerk (per selected Clerk application config); Laravel **never accepts a `password`** — `password` as Laravel registration input is historical and removed. Do not require `address book`/`delivery address` at registration.
+- Staff: **not** via public registration — a Staff user needs a valid Clerk identity **plus** approved local `STAFF` role/permissions (`Staff candidate → Admin review → Approved → Staff account activated` or `Admin creates/invites → Staff activates` with Clerk identity linked). Self-registration as `STAFF` via public sign-up is prohibited: public Clerk sign-up provisions `CUSTOMER` only.
+- Admin: **administrative creation / bootstrap** — a real Clerk identity plus explicit local `ADMIN` assignment; no public `POST {role: ADMIN}` self-promotion (see §17.5). Initial admin via controlled deployment/setup.
+- All role assignment is **server-controlled in Laravel**; clients cannot submit `role` to promote themselves (body `role: ADMIN` rejected; Clerk metadata is not role authority).
 
-### 17.3 Customer Login — Shared Identity Across Website & Flutter
+### 17.3 Customer Sign-In — Shared Clerk Identity Across Website & Flutter (Historical Laravel Text Superseded)
 
-Both `Next.js Website` and `Flutter App` authenticate against **same central Laravel authentication** and share one customer identity/account:
+`Next.js Website` and `Flutter App` authenticate against the **same Clerk application** and share one Clerk identity, which Laravel resolves to one local user/account. Clients **never send credentials to Laravel**:
 
 ```
 Next.js ──┐
-          ├──→ Laravel Authentication
+          ├──→ Clerk Authentication ── Clerk session token ──→ Laravel (verify + resolve local user)
 Flutter ──┘
 ```
 
-- Customer registered on website can log in on Flutter with same credentials and see own orders/profile/requests; no duplicated accounts per client. Shared identity is normative; feature availability per client may differ later, but account is single.
-- Login does not distinguish `email exists` vs `not exists` in error responses (see §17.14) to prevent enumeration.
+- A customer who signs up on the website signs in on Flutter with the same Clerk identity and sees the same orders/profile/requests; no duplicated local accounts per client. Shared identity is normative; feature availability per client may differ later, but the account is single.
+- Sign-in does not distinguish `email exists` vs `not exists` in client-facing responses (see §17.14) to prevent enumeration; Laravel never receives the credential.
 
-### 17.4 Staff Authentication — Same System, STAFF Role, Authz After Auth
+### 17.4 Staff Authentication — Clerk Identity Plus Local STAFF Role, Authz After Auth
 
-Staff authenticate through same central system and receive `role: STAFF`. Authentication answers `Is this person really this staff account?`; authorization (Phase 1.18) answers `What may they do?` — concepts not collapsed. Staff approval is **Admin-controlled** (see §17.6). Staff account lifecycle concepts (`PENDING`/`ACTIVE`/`SUSPENDED`/`DISABLED`) are deferred to authorization/account phase — not a new public role enum.
+Staff authenticate through Clerk and receive the local `role: STAFF` only via the local mapping plus Admin-approved assignment. Authentication answers `Is this person really this staff account?`; authorization (Phase 1.18) answers `What may they do?` — concepts not collapsed. A valid Clerk session alone never confers Staff authority. Staff approval is **Admin-controlled** (see §17.6). Staff account lifecycle concepts (`PENDING`/`ACTIVE`/`SUSPENDED`/`DISABLED`) are deferred to authorization/account phase — not a new public role enum.
 
 ### 17.5 Admin Authentication — ADMIN Role, Server-Controlled, No Self-Promotion
 
-Admins authenticate as `role: ADMIN` via trusted administrative processes only. Client-submitted `{"role":"ADMIN"}` is rejected; role tampering yields `403 FORBIDDEN` (or `422` for invalid role value) per CLOSED enum. Bootstrap remains deployment-controlled; implementation deferred.
+Admins authenticate via a real Clerk identity and receive local `role: ADMIN` only through trusted administrative assignment. Client-submitted `{"role":"ADMIN"}` is rejected; role tampering yields `403 FORBIDDEN` (or `422` for invalid role value) per CLOSED enum. Bootstrap remains deployment-controlled; implementation deferred.
 
 ### 17.6 Staff Approval — Admin Approves, No Self-Approval
 
 Invariant: **only authorized Admin approves staff**; staff cannot approve themselves, customers cannot approve staff. Onboarding is either `candidate → Admin review → Approved → Active` or `Admin invite → staff activates` — exact workflow deferred to authorization phase. This is non-negotiable (ownership of approval).
 
-### 17.7 Session / Token Principles — Browser vs Flutter, Cross-Platform, Revocation
+### 17.7 Clerk Session / Token Principles — Cross-Platform, Revocation
 
-- `Next.js Website` → **first-party authenticated browser session** (secure, httpOnly cookies, no long-lived secrets exposed to JS unnecessarily) — suitable for SSR. `Flutter App` → **authenticated API credential/token** against same Laravel identity. `Admin` → administrative session/client, same backend identity, role-gated.
-- **Cross-platform identity** is mandatory (`Visitor → Register (web) → Login (Flutter) → same account`). No per-client account duplication.
-- **Logout:** every authenticated client has explicit logout that invalidates the applicable server-side session/credential; deleting frontend token alone is insufficient if server state is revocable.
-- **Multi-device baseline:** multiple legitimate customer sessions (web/phone/tablet/browser) are **permitted**; logout on one device does **not** invalidate all others. Revocation of individual sessions is a later security control.
+- Clerk is the sole credential/session authority. Next.js, Flutter, and Admin obtain Clerk authentication through their appropriate Clerk client integration, then call Laravel with `Authorization: Bearer <Clerk session token>`. Laravel cryptographically verifies the token and resolves the local user; it does not issue a Laravel/Sanctum/session token in exchange.
+- The bearer token is a Clerk session token, not a Laravel API credential. Laravel validates signature, algorithm, `exp`, `nbf`, `iss`, `sub`, `azp`, configured audience where applicable, and Clerk-required semantics before treating the request as authenticated. A decoded but unverified JWT is not identity.
+- **Cross-platform identity** is mandatory (`Visitor → Clerk sign-up (web) → Clerk sign-in (Flutter) → same Clerk identity → same local account`). No per-client account duplication.
+- **Logout:** every authenticated client uses the Clerk sign-out/session lifecycle to end the Clerk session. Laravel holds no parallel customer session to invalidate; it rejects expired, revoked, or otherwise invalid Clerk tokens.
+- **Multi-device baseline:** multiple legitimate customer sessions (web/phone/tablet/browser) are **permitted**; signing out on one device does **not** invalidate all others. Revocation of individual sessions follows Clerk session semantics.
 - **Staff/Admin sessions:** may have multiple approved sessions but support stronger controls (shorter idle timeout, revocation, visibility) — evaluated later.
-- **Expiration/revocation:** conceptually `active → expired → revoked`; durations chosen later based on customer convenience vs privilege. Revocation events: logout, password change, admin security action, compromised credential — mechanism deferred.
+- **Expiration/revocation:** conceptually `active → expired → revoked` under Clerk session policy. Revocation events: Clerk sign-out, session expiry/revocation, credential/security change in Clerk, admin security action — Laravel enforcement is token rejection, not a second session store.
 
-### 17.8 Password Recovery — Secure, Time-Limited, Email-Deferred
+### 17.8 Password Recovery — Clerk-Managed (Historical Laravel Text Superseded)
 
-- Recovery uses **secure, time-limited, single-use token** (`Request reset → Secure mechanism → Time-limited token → Set new password → Invalidate token`). Do not send passwords, do not store raw reset secrets, do not return reset token in API response.
-- **Email delivery is Group R deferred:** contract supports secure recovery, but if V1 launches before email, recovery may be operationally unavailable — explicitly documented, not weakened with insecure `send reset password in response`. Actual email sending deferred.
-- Enumeration protection: recovery response is generic `"Request received."` rather than `"This email does not exist."`; existence not revealed.
+- Recovery is **Clerk-managed**: the client uses the Clerk recovery flow. Laravel exposes no recovery endpoint and never receives, stores, or returns passwords or reset secrets. Do not send credentials to Laravel; do not store raw passwords or reset secrets anywhere in the Laravel path.
+- **Email delivery is Group R deferred** for Laravel-originated mail; Clerk recovery delivery follows the selected Clerk application configuration — never weakened with insecure `send reset password in Laravel response`.
+- Enumeration protection: recovery UX is generic `"Request received."` rather than `"This email does not exist."`; existence not revealed.
 
-### 17.9 Verification — Email Verified Attribute, Not Client-Authoritative
+### 17.9 Verification — Clerk-Managed, Local Snapshot Read-Only (Historical Laravel Text Superseded)
 
-- `verified email → account attribute/state`; `verification process → secure time-limited mechanism`. Do not accept client-submitted `{"email_verified":true}` as authoritative.
-- Whether verification is required **before checkout or full account use** is deferred; if required, it is enforced server-side, not arbitrary frontend decision. Email sending (and thus full verification) deferred to Group R. **Phone/SMS OTP verification** is **not** an authentication requirement by default; phone remains important for orders/delivery but verification deferred unless business requires.
+- `verified email → Clerk-owned account attribute/state`; Laravel keeps a synchronized read-only snapshot (`email_verified_at`). Do not accept client-submitted `{"email_verified":true}` as authoritative.
+- Whether verification is required **before checkout or full account use** is deferred; if required, it is enforced server-side, not arbitrary frontend decision. Verification delivery follows the selected Clerk application; Laravel-originated email sending remains Group R deferred. **Phone/SMS OTP verification** is **not** an authentication requirement by default; phone remains important for orders/delivery but verification deferred unless business requires.
 
 ### 17.10 Role Identity & Exposure — Canonical Roles, Not Permissions
 
@@ -881,7 +884,7 @@ Invariant: **only authorized Admin approves staff**; staff cannot approve themse
 
 - **Public (anonymous):** `products`, `categories`, `search`, `product details`, `prices`, `availability`, `public content`, plus `Made-to-order Request` and `General Enquiry` (with `User=none` + contact, or associated with User when authenticated) — no authentication required, and authentication must **not** gate SSR catalog pages (`/products`, `/products/{slug}`, `/categories/{slug}`) for SEO.
 - **Protected:** `cart interaction` per finalized cart policy, `checkout` (authentication **REQUIRED**), `own orders/details/tracking`, `own requests/enquiries` history, `own notifications`, `profile eligible fields`. Backend enforces checkout boundary — anonymous checkout **MUST** be rejected with canonical `AUTHENTICATION_REQUIRED` 401 (`CHECKOUT_REQUIRES_AUTHENTICATION` is a legacy alias with identical 401 status and semantics — prefer `AUTHENTICATION_REQUIRED`; both remain CLOSED in registry `§15.15` for compatibility, one code path for clients).
-- Admin/customer site share same backend identity: `Next.js customer site → Laravel auth ← Admin Next.js ← Flutter`; role/authorization gates after identity.
+- Admin/customer site share the same Clerk identity plus local Laravel projection: `Next.js customer site → Clerk ──→ Laravel ←── Clerk ←─ Admin Next.js ←── Clerk ←─ Flutter`; local role/authorization gates after identity resolution.
 
 ### 17.12 Authentication Requirements & Boundaries — What Each Actor May Not Do
 
@@ -893,7 +896,7 @@ Admin **must not** casually `modify historical purchase facts`, `payment confirm
 
 Account deletion is **not** hard-delete; historical `orders/payments/requests/enquiries/notifications` must remain meaningful — evaluated as privacy/lifecycle operation later.
 
-Anonymous→Authenticated transition is supported (`anonymous visitor → register/login → authenticated commerce`) without losing public browsing context; **anonymous cart MUST move onto the authenticated customer account on login/register — backend merges guest cart onto user cart preserving ownership (per `docs/domain/business-rules.md §3 #4`, backend is authority). Only conflict handling for duplicate carts/items (e.g., same product in both carts, quantity merge strategy, max limits) is deferred to implementation**; session merge beyond cart ownership is also deferred.
+Anonymous→Authenticated transition is supported (`anonymous visitor → Clerk sign-up/sign-in → authenticated commerce`) without losing public browsing context; **anonymous cart MUST move onto the Clerk-resolved local customer account — backend merges guest cart onto the local user cart via `CART-005` preserving ownership (per `docs/domain/business-rules.md §3 #4`, backend is authority). Only conflict handling for duplicate carts/items (e.g., same product in both carts, quantity merge strategy, max limits) is deferred to implementation**; session merge beyond cart ownership is also deferred.
 
 ### 17.13 Error & Response Integration — Uses Common Contracts
 
@@ -901,11 +904,11 @@ All authentication failures use **common error envelope** (`api-contract.md §15
 
 ### 17.14 Security Requirements — Credentials, Enumeration, Rate Limit, Threats
 
-- **Password storage:** never plaintext, only **secure one-way hash** appropriate to Laravel version; never return `password`, `password_hash`, `reset_token`, `session_token`, `refresh_secret`, private keys in API responses. Password change is **authenticated secure workflow** (not `PATCH /me {password}`), and is security-sensitive.
-- **Enumeration protection:** login and password-recovery responses avoid distinguishing `email exists` vs `not exists` unless explicitly justified; recovery is generic `"Request received."`.
-- **Brute-force/ abuse:** rate limiting, failed-attempt protection, abuse detection on auth endpoints is **identified as later backend requirement**, not implemented here.
-- **Data minimization:** registration stores only genuine need (`name`, `email`, `phone`, `password`); not `full address`, `identity document`, unnecessary demographic.
-- **Event logging / audit:** later implementation considers logging `login success/failure`, `logout`, `password change/reset`, `staff approval`, `role change`, `session revocation` without logging passwords/tokens; staff approval remains auditable (`who/when/what`).
+- **Password handling:** clients **never send raw passwords to Laravel** and Laravel **never receives, logs, or stores passwords** — credential hashing/storage is Clerk's responsibility. Never return `password`, `password_hash`, `reset_token`, `session_token`, `refresh_secret`, private keys, Clerk secrets, or raw Clerk tokens in API responses. Credential change is a **Clerk-managed secure workflow** (not `PATCH /me {password}` and not a Laravel `AUTH-*` route), and is security-sensitive.
+- **Enumeration protection:** sign-in and recovery UX avoids distinguishing `email exists` vs `not exists` unless explicitly justified; recovery is generic `"Request received."`.
+- **Brute-force/ abuse:** rate limiting, failed-attempt protection, abuse detection on Laravel APIs is **identified as later backend requirement**, not implemented here; credential-entry throttling is Clerk's responsibility.
+- **Data minimization:** Laravel stores only genuine application need (local identity mapping, `name`, `email` snapshot, `phone`); not `password`, not `full address`, not `identity document`, not unnecessary demographic.
+- **Event logging / audit:** later implementation considers logging `sign-in success/failure`, `sign-out`, `Clerk credential/security change`, `staff approval`, `role change`, `token rejection` without logging passwords/tokens/secrets; staff approval remains auditable (`who/when/what`).
 - **Threat model to address later (identified, not solved):** `credential theft`, `credential stuffing`, `brute-force login`, `session theft`, `token leakage`, `account enumeration`, `privilege escalation`, `role tampering`, `session fixation`, `password-reset abuse`, `cross-account access`, `staff/admin impersonation`.
 - **Priorities:** Customer → simple registration/login + ownership + cross-platform access, low friction but not at security cost; Staff → anti-sharing/role escalation; Admin → MFA, session visibility, forced logout, shorter lifetimes, audit logging (evaluated later).
 
@@ -1139,7 +1142,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 
 ## 19. Version 1 Endpoint Inventory — Concrete Catalogue (Phase 1.19 — Current `PROPOSED`, Target `APPROVED` after Phase 1.21 Review)
 
-> **Authority note:** This section is the **authoritative Version 1 endpoint inventory** — stable IDs, versioned paths, actors, auth/authz, purpose, and contract references. It answers *What exists? Who uses it? What does it do?* Implementation (routes/controllers/middleware/FormRequests) remains deferred. All paths use `/api/v1` per Phase 1.8; roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; reuse global conventions (query Phase 1.11, pagination Phase 1.12, response Phase 1.13, input Phase 1.14, validation Phase 1.15, errors Phase 1.16, auth Phase 1.17, authz Phase 1.18). Payment/webhook endpoints are placeholders owned by Group H (see §19.12). **Current status (accepted):** `APPROVED` for `ORD-001..014` (Phase 1.23), `REQ-001..007` (Phase 1.25), `ENQ-001..007` (Phase 1.26), `NOT-001/002` (Phase 1.27) per their canonical `§24`/`§26`/`§27`/`§28` contracts; `PROPOSED` for remaining V1 endpoints (`CAT-*`, `AUTH-*`, `USER-*`, `CART-*`, `CHK-001`, `INV-*`, `ADM-*`, etc.) and `PROPOSED*` for `PAY-001/002`/`WEBHOOK-001` Group H placeholders; **Target status:** `APPROVED` for remaining `PROPOSED` after review. Master table `Status` column reflects **current** `APPROVED`/`PROPOSED`/`PROPOSED*` as marked per row (see §19.15).
+> **Authority note:** This section is the **authoritative Version 1 endpoint inventory** — stable IDs, versioned paths, actors, auth/authz, purpose, and contract references. It answers *What exists? Who uses it? What does it do?* Implementation (routes/controllers/middleware/FormRequests) remains deferred. All paths use `/api/v1` per Phase 1.8; roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; reuse global conventions (query Phase 1.11, pagination Phase 1.12, response Phase 1.13, input Phase 1.14, validation Phase 1.15, errors Phase 1.16, auth Phase 1.17/Phase 4.1 `§17`, authz Phase 1.18). Payment/webhook endpoints are placeholders owned by Group H (see §19.12). **Current status (accepted):** `APPROVED` for `ORD-001..014` (Phase 1.23), `REQ-001..007` (Phase 1.25), `ENQ-001..007` (Phase 1.26), `NOT-001/002` (Phase 1.27) per their canonical `§24`/`§26`/`§27`/`§28` contracts; `RETIRED` for `AUTH-001..008` (Phase 4.1 Clerk change); `PROPOSED` for remaining V1 endpoints (`CAT-*`, `USER-*`, `CART-*`, `CHK-001`, `INV-*`, `ADM-*`, etc.) and `PROPOSED*` for `PAY-001/002`/`WEBHOOK-001` Group H placeholders; **Target status:** `APPROVED` for remaining `PROPOSED` after review. Master table `Status` column reflects **current** `APPROVED`/`PROPOSED`/`PROPOSED*`/`RETIRED` as marked per row (see §19.15).
 
 ### 19.1 Master Endpoint Table (Stable IDs, Do Not Recycle)
 
@@ -1151,14 +1154,14 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `CAT-004` | GET | `/api/v1/categories/{category}` | Catalog | Anonymous, Customer, Staff, Admin | No | **PUBLIC** read | Category detail | PROPOSED |
 | `CAT-005` | GET | `/api/v1/products/{product}/variants` | Catalog | Anonymous, Customer, Staff, Admin | No | **PUBLIC** read (variant summary/public fields) | List product variants (independent retrieval when detail summary insufficient) | PROPOSED |
 | `CAT-006` | GET | `/api/v1/products/{product}/variants/{variant}` | Catalog | Anonymous, Customer, Staff, Admin | No | **PUBLIC** read | Variant detail | PROPOSED |
-| `AUTH-001` | POST | `/api/v1/auth/register` | Identity | Anonymous | No | **PUBLIC** (rate-limited) | Register `CUSTOMER` account | PROPOSED |
-| `AUTH-002` | POST | `/api/v1/auth/login` | Identity | Anonymous, Customer, Staff, Admin | No | **PUBLIC** (rate-limited) | Login (shared identity) | PROPOSED |
-| `AUTH-003` | POST | `/api/v1/auth/logout` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED` self | Logout (invalidate server session/credential) | PROPOSED |
-| `AUTH-004` | POST | `/api/v1/auth/password/forgot` | Identity | Anonymous, Customer | No | **PUBLIC** (rate-limited, enumeration-safe) | Request password reset (generic response) | PROPOSED |
-| `AUTH-005` | POST | `/api/v1/auth/password/reset` | Identity | Anonymous | No | **PUBLIC** (single-use token) | Reset password with time-limited token | PROPOSED |
-| `AUTH-006` | POST | `/api/v1/email/verify/resend` | Identity | Customer | Yes | `AUTHENTICATED_OWNER` own | Resend verification (Group R deferred delivery) | PROPOSED |
-| `AUTH-007` | POST | `/api/v1/email/verify` | Identity | Customer | Yes* | `AUTHENTICATED_OWNER` own | Verify email via secure token (`*` token may be unauth query) | PROPOSED |
-| `AUTH-008` | POST | `/api/v1/auth/change-password` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (secure workflow, `current_password` required) | Change own password (canonical; replaces `USER-003` alias, see Migration `§29.8`) | PROPOSED |
+| `AUTH-001` | POST | `/api/v1/auth/register` | Identity | — (retired; use Clerk sign-up) | No (retired) | **RETIRED** — Clerk owns sign-up | **RETIRED** — do not call; use Clerk sign-up then call Laravel with Clerk token | **RETIRED** (Phase 4.1) |
+| `AUTH-002` | POST | `/api/v1/auth/login` | Identity | — (retired; use Clerk sign-in) | No (retired) | **RETIRED** — Clerk owns sign-in/session issuance | **RETIRED** — do not call; use Clerk sign-in then call Laravel with Clerk token | **RETIRED** (Phase 4.1) |
+| `AUTH-003` | POST | `/api/v1/auth/logout` | Identity | — (retired; use Clerk sign-out) | — (retired) | **RETIRED** — Clerk owns session logout/revocation | **RETIRED** — do not call; use Clerk sign-out | **RETIRED** (Phase 4.1) |
+| `AUTH-004` | POST | `/api/v1/auth/password/forgot` | Identity | — (retired; use Clerk recovery) | No (retired) | **RETIRED** — Clerk owns recovery | **RETIRED** — do not call; use Clerk recovery | **RETIRED** (Phase 4.1) |
+| `AUTH-005` | POST | `/api/v1/auth/password/reset` | Identity | — (retired; use Clerk recovery) | No (retired) | **RETIRED** — Clerk owns reset | **RETIRED** — do not call; use Clerk reset flow | **RETIRED** (Phase 4.1) |
+| `AUTH-006` | POST | `/api/v1/email/verify/resend` | Identity | — (retired; use Clerk verification) | — (retired) | **RETIRED** — Clerk owns verification delivery | **RETIRED** — do not call; use Clerk verification | **RETIRED** (Phase 4.1) |
+| `AUTH-007` | POST | `/api/v1/email/verify` | Identity | — (retired; use Clerk verification) | — (retired) | **RETIRED** — Clerk owns verification decision | **RETIRED** — do not call; Laravel consumes synchronized verified status only | **RETIRED** (Phase 4.1) |
+| `AUTH-008` | POST | `/api/v1/auth/change-password` | Identity | — (retired; use Clerk security) | — (retired) | **RETIRED** — Clerk owns password change | **RETIRED** — do not call; use Clerk security flow | **RETIRED** (Phase 4.1) |
 | `USER-001` | GET | `/api/v1/me` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own | Get own profile (`User`) | PROPOSED |
 | `USER-002` | PATCH | `/api/v1/me` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (`name`/`phone` only) | Update own profile (allow-list) | PROPOSED |
 | `USER-003` | POST | `/api/v1/me/password` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (secure workflow) | **RETIRED** alias — use `AUTH-008` `POST /api/v1/auth/change-password` (see `§29.3`/`§29.8` Migration) | **RETIRED** |
@@ -1166,7 +1169,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `CART-002` | POST | `/api/v1/me/cart/items` | Cart | Customer + Anonymous (guest) | Yes for Customer, guest via `X-Guest-Cart-Id` | `AUTHENTICATED_OWNER` own cart or `GUEST` | Add item (`product_id`,`variant_id`,`quantity`) — guest cart supported | PROPOSED |
 | `CART-003` | PATCH | `/api/v1/me/cart/items/{item}` | Cart | Customer + Anonymous (guest) | Yes for Customer, guest via `X-Guest-Cart-Id` | `AUTHENTICATED_OWNER` own cart or `GUEST` | Update item quantity (guest supported) | PROPOSED |
 | `CART-004` | DELETE | `/api/v1/me/cart/items/{item}` | Cart | Customer + Anonymous (guest) | Yes for Customer, guest via `X-Guest-Cart-Id` | `AUTHENTICATED_OWNER` own cart or `GUEST` | Remove cart item (guest supported) | PROPOSED |
-| `CART-005` | POST | `/api/v1/me/cart/merge` | Cart | Customer | Yes | `AUTHENTICATED_OWNER` own cart (merges guest) | **Merge guest cart onto authenticated cart** — backend merges `X-Guest-Cart-Id` guest cart into user cart on demand (also performed automatically on `AUTH-002` login) | PROPOSED |
+| `CART-005` | POST | `/api/v1/me/cart/merge` | Cart | Customer | Yes (Clerk token) | `AUTHENTICATED_OWNER` own cart (merges guest) | **Merge guest cart onto authenticated cart** — backend merges `X-Guest-Cart-Id` guest cart into the Clerk-authenticated local user cart on demand via `CART-005` | PROPOSED |
 | `CHK-001` | POST | `/api/v1/checkout` | Checkout | Customer | Yes | `AUTHENTICATED` customer, own cart, state/cart valid | Checkout → order creation (fulfillment+address) | PROPOSED |
 | `ORD-001` | GET | `/api/v1/me/orders` | Order | Customer | Yes | `AUTHENTICATED_OWNER` own orders (authorized dataset pagination) | List own orders | **APPROVED** (Phase 1.23) |
 | `ORD-002` | GET | `/api/v1/me/orders/{order}` | Order | Customer | Yes | `AUTHENTICATED_OWNER` owns order (404 masked) | Get own order detail | **APPROVED** (Phase 1.23) |
@@ -1222,7 +1225,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `PAY-002` | GET | `/api/v1/payments/{payment}` | Payment | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own / `OPERATIONAL` / `ADMIN` limited | Get payment status (generic) | PROPOSED* |
 | `WEBHOOK-001` | POST | `/api/v1/webhooks/payment/{provider}` | Payment | System/Webhook | Signature | `SYSTEM` service auth (Group H) | Payment provider callback (Group H) | PROPOSED* |
 
-> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002` are **already `APPROVED`** as marked per row (`§24`/`§26`/`§27`/`§28`); all other endpoints remain **current `PROPOSED`**, target `APPROVED` for remaining after review (see authority note and §19.15).
+> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). Current statuses per `§19.15`: `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002` are **already `APPROVED`** as marked per row (`§24`/`§26`/`§27`/`§28`); `AUTH-001..008` are **already `RETIRED`** (retired in Phase 4.1; route removal in Phase 4.2); all other non-payment, non-retired endpoints remain **current `PROPOSED`**, target `APPROVED` for remaining after review (see authority note and §19.15).
 
 ### 19.2 Endpoint Detail Template & Per-Endpoint Contract Summary
 
@@ -1240,13 +1243,13 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 - `CAT-003/004` Category collection/detail — *Response:* `Category` collection/detail; `GET /categories/{category}/products` is **REJECTED**; use `GET /products?category=` canonical.
 - `CAT-005/006` Variants — *Purpose:* independent variant retrieval when product summary insufficient; not required if clients always use embedded variants. *Response:* `Variant` collection/detail.
 
-**Authentication (Rate-Limited, No Role Tampering):**
-- `AUTH-001` `POST /auth/register` — *Request:* `name`, `email`, `phone`, `password` (minimal, not `role`/`address book`); `role: ADMIN/STAFF` rejected (422/403). *Response:* `User` `data` (no `password_hash`/tokens). *Errors:* `MISSING_REQUIRED_FIELD`, `INVALID_VALUE`, `CONFLICT` (duplicate email), `RATE_LIMITED`. *Auth:* No. `STAFF` not via this endpoint (must be `ADM-003`).
-- `AUTH-002` `POST /auth/login` — *Request:* `email`, `password`; *Response:* `data` with safe profile + session/credential per `§17.7` (httpOnly cookie for Web, token for Flutter, never long-lived JS secret). **Guest-cart merge (automatic on login):** on successful login, backend merges guest cart (identified by `X-Guest-Cart-Id` header or `guest_cart_id` cookie) onto the authenticated user cart — backend-authoritative, idempotent, preserves items; if guest cart is empty, no-op; if same product+variant exists in both, quantity is merged (strategy deferred to implementation); if guest cart conflicts exceed stock, backend resolves per `inventory rules §12`. Guest cart token is not a client ownership proof — it is an opaque backend-issued identifier. *Errors:* `INVALID_CREDENTIALS` 401 generic (no `email exists` distinction), `RATE_LIMITED`.
-- `AUTH-003` `POST /auth/logout` — *Auth:* Yes, *Authz:* self; must be `POST` (not `GET`), invalidates server state. *Errors:* `AUTHENTICATION_REQUIRED` 401 if not authed.
+**Authentication (Retired — Clerk owns credentials/sessions; do not call Laravel):**
+- `AUTH-001..008` are **RETIRED** by the Phase 4.1 Clerk contract change (`§17`, `clerk-authentication-architecture.md`). Clients must use Clerk sign-up/sign-in/sign-out/recovery/verification/password-change flows, then call Laravel with `Authorization: Bearer <Clerk session token>`. The Laravel password/login payloads below are historical reference only and are not implemented for new clients; Phase 4.2 removes the Laravel routes.
+- Historical reference (retired): `AUTH-001` accepted `name`/`email`/`phone`/`password`; `AUTH-002` accepted `email`/`password` and returned a Laravel session/credential; `AUTH-003` invalidated Laravel server state. These semantics no longer apply — Clerk issues and revokes the session, and Laravel never issues a parallel credential.
+- **Guest-cart merge (post-Clerk):** after Clerk authentication, the backend merges the guest cart (identified by `X-Guest-Cart-Id` header or `guest_cart_id` cookie) onto the Clerk-resolved local user cart via `CART-005` — backend-authoritative, idempotent, preserves items; if guest cart is empty, no-op; if same product+variant exists in both, quantity is merged (strategy deferred to implementation); if guest cart conflicts exceed stock, backend resolves per `inventory rules §12`. Guest cart token is not a client ownership proof — it is an opaque backend-issued identifier.
 
 **Customer (Owner-Based, Server-Calculated Totals) — Guest-Cart Handoff (Backend Authority):**
-- `CART-001..004` — *Auth:* `AUTHENTICATED_OWNER` own cart **or `GUEST` via `X-Guest-Cart-Id` / `guest_cart_id` cookie** (backend-issued opaque guest token, `HttpOnly`, `Secure` where applicable; returned on first anonymous `CART-002` `201` via `Set-Cookie`/`X-Guest-Cart-Id` header); `user_id`/`cart.owner` tampering rejected; `product_id+variant_id+quantity` only (no `price`/`totals`/`inventory`); backend revalidates product/variant. **Backend guest-cart handoff:** anonymous cart identified server-side by guest token; on `AUTH-002` `POST /auth/login` (and explicitly via `CART-005` `POST /me/cart/merge`) backend **merges** guest cart items onto authenticated user cart (preserving ownership, backend authority per `business-rules.md §3 #4`; only duplicate-item conflict handling — same product in both carts, quantity merge strategy, max limits — is deferred). No client-supplied `guest_cart_id` ownership proof beyond token; guest token is opaque, not guessable. *Idempotency:* `CART-002` non-idempotent by default (consider later), `CART-003` idempotent `PATCH`, `CART-004` idempotent `DELETE`, `CART-005` `IDEMPOTENCY_REQUIRED` (merge is sensitive, replays prior merge result).
+- `CART-001..004` — *Auth:* `AUTHENTICATED_OWNER` own cart **or `GUEST` via `X-Guest-Cart-Id` / `guest_cart_id` cookie** (backend-issued opaque guest token, `HttpOnly`, `Secure` where applicable; returned on first anonymous `CART-002` `201` via `Set-Cookie`/`X-Guest-Cart-Id` header); `user_id`/`cart.owner` tampering rejected; `product_id+variant_id+quantity` only (no `price`/`totals`/`inventory`); backend revalidates product/variant. **Backend guest-cart handoff:** anonymous cart identified server-side by guest token; after Clerk authentication, explicitly via `CART-005` `POST /me/cart/merge`, backend **merges** guest cart items onto the Clerk-resolved local user cart (preserving ownership, backend authority per `business-rules.md §3 #4`; only duplicate-item conflict handling — same product in both carts, quantity merge strategy, max limits — is deferred). No client-supplied `guest_cart_id` ownership proof beyond token; guest token is opaque, not guessable. *Idempotency:* `CART-002` non-idempotent by default (consider later), `CART-003` idempotent `PATCH`, `CART-004` idempotent `DELETE`, `CART-005` `IDEMPOTENCY_REQUIRED` (merge is sensitive, replays prior merge result).
 - `CHK-001` `POST /checkout` — *Auth:* `AUTHENTICATION_REQUIRED` canonical 401 for anonymous (`CHECKOUT_REQUIRES_AUTHENTICATION` is alias), *Authz:* own cart valid; `Request:` `fulfillment_type` + conditional `delivery_address` (when `DELIVERY`), no `totals`/`order_reference`/`user_id`; `Response:` `Order` + `Payment` placeholder `data` with server-calculated `subtotal/delivery_fee/total` and `order_reference`. *Errors:* `AUTHENTICATION_REQUIRED`, `CART_INVALID`, `PRODUCT_NOT_PURCHASABLE` (`MADE_TO_ORDER`), `INSUFFICIENT_STOCK`, `INVALID_FULFILLMENT`. *Idempotency:* `IDEMPOTENCY_REQUIRED` (duplicate same `Idempotency-Key` replays original `201`, no new order). *Concurrency:* inventory + order-creation critical.
 
 **Order (Ownership vs Operational, State-Aware):**
@@ -1271,14 +1274,14 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 
 - IDs `CAT-xxx`, `AUTH-xxx`, `CART-xxx`, `CHK-xxx`, `ORD-xxx`, `PAY-xxx`, `REQ-xxx`, `ENQ-xxx`, `NOT-xxx`, `USER-xxx`, `INV-xxx`, `ADM-xxx`, `WEBHOOK-xxx` are stable; removed IDs remain retired, never recycled.
 - Lifecycle for Phase 1.19: all V1 endpoints `PROPOSED` → `APPROVED` after Phase 1.21 review; future `DEPRECATED`/`RETIRED` per versioning. Removed `ID` remains retired.
-- Dependencies: `AUTH-001 Register → AUTH-002 Login → CART-001… → CHK-001 → PAY-* → ORD-* Tracking`; `REQ-001 → REQ-007`; `ADM staff approval → ORD operational`. All workflows connected.
+- Dependencies: `Clerk sign-up/sign-in → verified Clerk token → local User resolution → CART-001… → CHK-001 → PAY-* → ORD-* Tracking`; `REQ-001 → REQ-007`; `ADM staff approval → ORD operational`. Laravel `AUTH-001..008` were retired in Phase 4.1 (route removal in Phase 4.2) and are not part of the post-Clerk workflow.
 
 ### 19.4 Public / Customer / Staff / Admin Summary (Actor-Oriented)
 
 | Actor | Allowed Endpoint IDs (Summary) |
 |---|---|
-| **Anonymous** | `CAT-001..006` (catalog public), `AUTH-001`/`002`/`004`/`005` (register/login/recovery), `REQ-001`, `ENQ-001` (anonymous submit), `AUTH-003` requires auth so not anonymous |
-| **Customer** | Catalog reads, `USER-001..003` own profile/password, `CART-001..004` own cart, `CHK-001` checkout, `ORD-001..004` own orders/tracking/cancel, `REQ-002/003`/`ENQ-002/003` own, `NOT-001/002` own (customer notifications, holder-scoped via `/me`), auth/security |
+| **Anonymous** | `CAT-001..006` (catalog public), `REQ-001`, `ENQ-001` (anonymous submit), and Clerk-managed sign-up/sign-in/recovery outside the Laravel API |
+| **Customer** | Catalog reads, `USER-001..002` own profile, `CART-001..005` own/guest handoff cart, `CHK-001` checkout, `ORD-001..004` own orders/tracking/cancel, `REQ-002/003`/`ENQ-002/003` own, `NOT-001/002` own (customer notifications, holder-scoped via `/me`); Clerk owns credentials/session/security |
 | **Staff** | Operational `ORD-005/006/007..011` + `ORD-013` + `ORD-012` tracking, `REQ-004..006`, `ENQ-004..006`, `INV-001/002` view (and `INV-003` if `inventory.manage` approved), `CAT-007..012` if `products.manage` approved, `NOT-001/002` `OPERATIONAL` own, recipient-scoped (operational notifications) |
 | **Admin** | `ADM-001..006` staff/users manage, plus all operational + catalog/inventory management, `NOT-001/002` `ADMIN` limited own, recipient-scoped (administrative notifications as needed), `PAY-002` admin limited (view status only; `PAY-001` initiate is **Customer-only**, not Admin — see §19.1 master permission table), `WEBHOOK-001` system (Group H) |
 
@@ -1306,7 +1309,7 @@ Availability is **embedded** in `Product` (`availability: available|unavailable`
 
 ### 19.9 Authentication/Authorization per Endpoint
 
-- **Public:** `CAT-001..006` remain public (no auth) — `api-conventions.md §18.2`; anonymous `REQ-001`/`ENQ-001` + `AUTH-001/002/004/005` public with rate-limit enumeration safety.
+- **Public:** `CAT-001..006` remain public (no auth) — `api-conventions.md §18.2`; anonymous `REQ-001`/`ENQ-001` public with Laravel rate-limit safety; sign-up/sign-in/recovery are Clerk-managed and outside the Laravel API (`AUTH-001/002/004/005` retired).
 - **Checkout/auth:** `CHK-001` requires `AUTHENTICATION_REQUIRED` canonical 401 for anonymous (`CHECKOUT_REQUIRES_AUTHENTICATION` alias) — backend enforces, not frontend.
 - **Ownership vs operational vs admin:** per `api-contract.md §18` and `api-resources.md §13`; every protected endpoint states `owns resource?` / `operational access?` / `administrative access?`; e.g., `ORD-002` ownership, `ORD-010` operational `orders.ship` + `PROCESSING`, `ADM-003` administrative.
 - **Anonymous retrieval not implied:** `REQ-001` anonymous creation does **not** imply `GET /requests/{request}` public retrieval (secure mechanism deferred, otherwise rejected).
@@ -1316,14 +1319,14 @@ Availability is **embedded** in `Product` (`availability: available|unavailable`
 - **Security review:** `Anonymous → private data?` No (catalog only public). `Customer A → Customer B` (IDOR) blocked via object-level `owns` + 404 masking. `Customer→Staff/Admin` privilege escalation blocked (role tampering, `user_id` swapping). `Staff → block customer / change password / impersonate / transfer ownership` blocked. `PATCH {status}` rejected (controlled actions). `Staff over-permission` limited to per-permission (`products.manage` ≠ `inventory.manage`). `Admin overexposure` minimized (field-level). `Public inventory` safe (no `reserved_quantity`), `payment secrets` never, `attachments` private to parent.
 - **Idempotency:** `SAFE`: `CAT-*` `GET`; `IDEMPOTENT`: `USER-002` `PATCH` (designed), `CART-003/004`, `NOT-002`; `IDEMPOTENCY_REQUIRED`: `CHK-001` checkout, `PAY-001` payment initiation, `ORD-004` cancel, `ORD-007..011` + `ORD-013` `complete` state actions, `INV-003` adjust; `NON_IDEMPOTENT` by default: `REQ-001`/`ENQ-001` submit, `CART-002` add (consider later).
 - **Concurrency:** `CHK-001`, `INV-003`, `ORD-007..011` + `ORD-013` `complete` (status transitions), `PAY-001`/`WEBHOOK-001`, `ADM-004..006` staff approval/suspend/reactivate — flagged as concurrency-sensitive (atomic validation + state + authz, per `§30.13`/`§30.16` audit).
-- **Rate-limit candidates:** `AUTH-001` register, `AUTH-002` login, `AUTH-004/005` recovery, `REQ-001`/`ENQ-001` anonymous submit, `CHK-001` checkout, `PAY-001` payment — to be implemented later.
+- **Rate-limit candidates:** Clerk owns sign-up/sign-in/recovery throttling; Laravel rate-limits `REQ-001`/`ENQ-001` anonymous submit, `CHK-001` checkout, and `PAY-001` payment — to be implemented later.
 
 ### 19.11 Workflow Coverage & Completeness Gate
 
 | Workflow | Required Endpoint IDs | Complete? |
 |---|---|---|
 | Anonymous browse | `CAT-001..004` | Yes |
-| Customer registration/login | `AUTH-001..003` + `USER-001` | Yes |
+| Customer registration/login | Clerk sign-up/sign-in + verified token → `USER-001` | Yes, pending Phase 4.2 integration |
 | Customer shopping `→ cart → checkout` | `CART-001..004` → `CHK-001` → `PAY-001/002` | Yes (PAY generic placeholder) |
 | Pickup order | `CHK-001` → `ORD-007` `ORD-008` → `ORD-009` → `ORD-013` `complete` → `ORD-003/012` tracking | Yes |
 | Delivery order | `CHK-001` → `ORD-007` `ORD-008` → `ORD-010` → `ORD-011` → `ORD-013` `complete` | Yes |
@@ -1343,28 +1346,28 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ### 19.13 Endpoint Count, MVP & Surface Discipline
 
-- **Smallest coherent surface:** V1 list **current `PROPOSED` (target `APPROVED` after Phase 1.21)** is `75` total (`72` substantive + `3` Group H placeholders) — `72` substantive: catalog 14 [`CAT-001..006` public 6 + `CAT-007..014` management 8 (`CAT-013/014` operational product reads)] + auth 8 [`AUTH-001..008`] + user 2 [`USER-001..002`] (`USER-003` retired) + cart 5 [`CART-001..005` inc. `CART-005` merge] + checkout 1 [`CHK-001`] + orders 14 [`ORD-001..014`] + requests 7 [`REQ-001..007`] + enquiries 7 [`ENQ-001..007` inc. `ENQ-007` scoped attachments] + notifications 2 [`NOT-001/002`] + inventory 3 [`INV-001..003`] + admin 9 [`ADM-001..009`]; plus `3` placeholders [`PAY-001/002`, `WEBHOOK-001`] (`PROPOSED*`, Group H) — master table Status reflects current `PROPOSED`/`PROPOSED*`. No `GET /my-orders` duplicate of `GET /me/orders`, no `/categories/{category}/products` duplicate, no `/products/{product}/images` separate, no `/products/{product}/availability` separate — canonical choices per §19.5-19.7. Guest-cart identifier is `X-Guest-Cart-Id` / `guest_cart_id` cookie (opaque, backend-issued) handled in `CART-001..004` anonymous support and merged via `AUTH-002`/`CART-005`.
+- **Smallest coherent surface:** V1 ID inventory is `76` total (`73` substantive + `3` Group H placeholders) with mixed current statuses per `§19.15` — `73` substantive: catalog 14 [`CAT-001..006` public 6 + `CAT-007..014` management 8 (`CAT-013/014` operational product reads)] + auth 8 [`AUTH-001..008` **RETIRED** in Phase 4.1; not callable] + user 3 [`USER-001/002` active + `USER-003` retired] + cart 5 [`CART-001..005` inc. `CART-005` merge] + checkout 1 [`CHK-001`] + orders 14 [`ORD-001..014` **APPROVED**] + requests 7 [`REQ-001..007` **APPROVED**] + enquiries 7 [`ENQ-001..007` **APPROVED**] + notifications 2 [`NOT-001/002` **APPROVED**] + inventory 3 [`INV-001..003`] + admin 9 [`ADM-001..009`]; plus `3` placeholders [`PAY-001/002`, `WEBHOOK-001`] (`PROPOSED*`, Group H) — target `APPROVED` for remaining `PROPOSED` after Phase 1.21 review; retired IDs stay retired. No `GET /my-orders` duplicate of `GET /me/orders`, no `/categories/{category}/products` duplicate, no `/products/{product}/images` separate, no `/products/{product}/availability` separate — canonical choices per §19.5-19.7. Guest-cart identifier is `X-Guest-Cart-Id` / `guest_cart_id` cookie (opaque, backend-issued) handled in `CART-001..004` anonymous support and merged via Clerk-authenticated `CART-005`.
 - **MVP discipline:** Excludes `wishlist`, `reviews`, `coupons`, `saved addresses`, `loyalty`, `live driver tracking` unless explicitly approved.
 - **Surface security:** each endpoint justified; attack/testing/documentation/authorization cost considered.
 
 ### 19.14 Naming, Method, Query, Pagination, Response, Input, Validation, Error, Auth, Authz Reviews — Consolidated
 
 - **Naming (§97):** lowercase, plural resources, kebab-case where required (`ready-for-pickup` path `ready-for-pickup`), shallow nesting (`/products/{product}/variants` not deep), nouns + controlled actions (`/orders/{order}/cancel` via `POST`, not `PATCH {status}`), `/api/v1` prefix — checked.
-- **Methods (§98):** `GET` read (`CAT-*`, `USER-001`, `ORD-001`), `POST` create/action (`AUTH-001`, `CART-002`, `CHK-001`, `ORD-007`), `PATCH` partial update (`USER-002`, `CART-003`, `CAT-008`), `DELETE` actual removal (`CART-004`) — not for cancellation.
+- **Methods (§98):** `GET` read (`CAT-*`, `USER-001`, `ORD-001`), `POST` create/action (`CART-002`, `CHK-001`, `ORD-007`), `PATCH` partial update (`USER-002`, `CART-003`, `CAT-008`), `DELETE` actual removal (`CART-004`) — not for cancellation. Laravel `AUTH-001..008` are retired and excluded from the active method inventory.
 - **Query (§99):** `page`, `per_page`, `search`, `category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction` only; no `pageSize`/`sortBy`.
 - **Pagination (§100):** paginated where collections, not single resources, per contract `meta.pagination`.
 - **Response (§101):** `data`/`meta` + `errors` per Phase 1.13; no raw arrays.
 - **Input (§102):** no `totals`/`IDs`/`roles`/`statuses`/`inventory`/`payment confirmation` as customer input.
 - **Validation (§103):** business/domain authoritative, not controller/frontend.
 - **Errors (§104):** per Phase 1.16 `code`/`field`/`details` + `meta.request_id`, `401` vs `403` vs `404` masking respected.
-- **Auth (§105):** `CAT-*` public, `REQ-001`/`ENQ-001` anonymous allowed, `CHK-001`/`ORD-001` authenticated, `ORD-005` staff, `ADM-003` admin.
+- **Auth (§105):** `CAT-*` public, `REQ-001`/`ENQ-001` anonymous allowed, Clerk sign-up/sign-in outside Laravel (replacing retired `AUTH-001..008`), `CHK-001`/`ORD-001` authenticated via Clerk token, `ORD-005` staff, `ADM-003` admin.
 - **Authz (§106):** `Who/Which resource/Which action/Which ownership/Which state` clear for every protected endpoint (ownership `me/orders`, operational `orders.ship`+`PROCESSING`, administrative `staff.approve`).
 - **Security (§107-111):** IDOR, privilege escalation, role tampering, leakage, over-permission, inventory exposure, payment-secret exposure, attachment leakage, anonymous endpoint abuse/rate-limit all reviewed and safe.
 
 ### 19.15 Status & Lifecycle (Current vs Target)
 
-**Current (Phase 1.19):** all V1 non-payment endpoints are `PROPOSED`; `PAY-001/002`/`WEBHOOK-001` are `PROPOSED*` (Group H placeholder).  
-**Target after Phase 1.21 review:** all V1 endpoints become `APPROVED`. Status table above reflects **current** `PROPOSED`/`PROPOSED*`; any removed ID remains retired, never recycled. Future `DEPRECATED`/`RETIRED` per versioning.
+**Current:** `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002` are `APPROVED`; `AUTH-001..008` are `RETIRED` (retired in Phase 4.1; route removal in Phase 4.2; IDs remain retired, never recycled); all other non-payment, non-retired endpoints are `PROPOSED`; `PAY-001/002`/`WEBHOOK-001` are `PROPOSED*` (Group H placeholder).
+**Target after Phase 1.21 review:** all remaining V1 `PROPOSED` endpoints become `APPROVED`; retired IDs stay retired. Status table above reflects this **current** `APPROVED`/`PROPOSED`/`PROPOSED*`/`RETIRED` definition; any removed ID remains retired, never recycled. Future `DEPRECATED`/`RETIRED` per versioning.
 
 ## 20. Links to Conventions & Resources
 
@@ -1724,7 +1727,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | `CART-004` | DELETE | `/api/v1/me/cart/items/{item}` | Required (or Guest Token) | `AUTHENTICATED_OWNER` / `GUEST` | No | Remove item from cart | Non-cacheable |
 | `CART-005` | POST | `/api/v1/me/cart/merge` | Required | `AUTHENTICATED_OWNER` | No | Explicitly merge guest cart into user cart | Non-cacheable |
 
-*Guest-Cart Token Transport (per `api-conventions.md §22.6`):* The server uses one of two mutually exclusive paths depending on client type. **Browser (Next.js):** token issued as `HttpOnly; Secure; SameSite=Strict` cookie (`guest_cart_id`) only — no `X-Guest-Cart-Id` response header is emitted. **Non-browser (Flutter):** token issued in the `X-Guest-Cart-Id` response header only (no `Set-Cookie`) and treated as a bearer secret stored in secure device storage. The token is permanently retired server-side upon merge (`AUTH-002` login or `CART-005`). Retired tokens are rejected and never recycled.
+*Guest-Cart Token Transport (per `api-conventions.md §22.6`):* The server uses one of two mutually exclusive paths depending on client type. **Browser (Next.js):** token issued as `HttpOnly; Secure; SameSite=None` cookie (`guest_cart_id`) only — no `X-Guest-Cart-Id` response header is emitted; browser calls use `credentials: 'include'` with strict-origin CORS plus `Access-Control-Allow-Credentials: true`. **Non-browser (Flutter):** token issued in the `X-Guest-Cart-Id` response header only (no `Set-Cookie`) and treated as a bearer secret stored in secure device storage. The token is permanently retired server-side upon merge via Clerk-authenticated `CART-005`. Retired tokens are rejected and never recycled.
 
 ---
 
@@ -1857,7 +1860,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
   - Client-supplied financial and inventory fields (`price`, `subtotal`, `total`, `discount`, `stock`) are strictly rejected with `INVALID_VALUE` (422). Silently ignoring them is inconsistent with the global unknown-field rejection rule and would hide client payload errors.
 - **Item Aggregation & Duplicate Handling:** If the caller adds an item whose `(product_id, variant_id)` already exists in the cart, the server merges the items by incrementing the existing line's quantity: `new_quantity = existing_quantity + added_quantity` (clamped to max `100`).
 - **Inventory Check Semantics:** The backend performs an informational availability check on add/update using these mutually exclusive predicates: if the product fails the purchasability flags (`is_active: false` or `is_published: false`), returns `PRODUCT_UNAVAILABLE` (422); if the product is purchasable but `available_quantity < requested_quantity`, returns `INSUFFICIENT_STOCK` (422). Successful addition **does not place an inventory hold or lock** (ADR/API-CART-002).
-- **Response:** Returns the full updated Cart Object (`201 Created` on new line, `200 OK` on quantity merge). For guest callers: browser clients receive a `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=Strict` header only; Flutter clients receive an `X-Guest-Cart-Id: <token>` response header only. The server never issues both simultaneously (see `api-conventions.md §22.6`).
+- **Response:** Returns the full updated Cart Object (`201 Created` on new line, `200 OK` on quantity merge). For guest callers: browser clients receive a `Set-Cookie: guest_cart_id=<token>; HttpOnly; Secure; SameSite=None` header only; Flutter clients receive an `X-Guest-Cart-Id: <token>` response header only. The server never issues both simultaneously (see `api-conventions.md §22.6`).
 
 ---
 
@@ -4083,9 +4086,9 @@ Four distinct concepts even if later stored on one `User` row:
 
 | Concept | Question answered | Mutated via | Server-controlled? |
 |---|---|---|---|
-| **Identity** | Who is this authenticated actor? (`id`, `role`) | `AUTH-001` register + Admin role management | Yes |
+| **Identity** | Who is this authenticated actor? (`id`, `role`) | Clerk sign-up/sign-in + verified token → local User resolution (`AUTH-001` retired) + Admin role management | Yes |
 | **Profile** | What customer-facing information is associated? (`name`, `phone`) | `USER-002 PATCH /me` allow-list | Partial (`name`/`phone` mutable) |
-| **Credentials** | How does actor authenticate? (`password`) | `AUTH-008` `POST /api/v1/auth/change-password` secure workflow, not `PATCH /me` | Yes — never serialized |
+| **Credentials** | How does actor authenticate? (Clerk-managed) | Clerk security workflow, not `PATCH /me` (`AUTH-008` retired) | Yes — never serialized |
 | **Authorization** | What may actor do? (`role`, `permissions`, `account_state`) | Admin-only (`Phase 1.29`) | Yes |
 
 Do not combine everything into one mutable `User` object.
@@ -4110,9 +4113,9 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 |---|---|---|---|---|---|---|---|---|
 | `USER-001` | `GET` | `/api/v1/me` | Customer, Staff, Admin | **Required** | `AUTHENTICATED_OWNER` **self** — authenticated principal | Get own safe profile representation | — | — |
 | `USER-002` | `PATCH` | `/api/v1/me` | Customer, Staff, Admin | **Required** | `AUTHENTICATED_OWNER` **self** — owns own account, `name`/`phone` allow-list only | Update permitted profile fields (partial, allow-list) | Designed idempotent (`PATCH` same values → same result) | Low (last write wins, deterministic) |
-| `AUTH-008` | `POST` | `/api/v1/auth/change-password` | Customer, Staff, Admin | **Required** | `AUTHENTICATED_OWNER` self + `current credential verification` | Change own password (credential operation, not `PATCH /me`) | **Non-idempotent** — `current_password` rotates; replay with old `current_password` must fail `INVALID_CREDENTIALS` (see `§29.8` Retry) | Low |
+| `AUTH-008` | `POST` | `/api/v1/auth/change-password` | — (retired; use Clerk security) | — (retired) | **RETIRED** — Clerk owns password change | **RETIRED** — do not call; use Clerk security flow | — | — |
 
-> **Canonical password route:** `POST /api/v1/auth/change-password` is the **single** canonical password-change endpoint (see `§29.8` `USER-004`). `POST /api/v1/me/password` (`USER-003` legacy alias) is **RETIRED** — do not implement as a second authoritative endpoint; `§19.1` `USER-003` is retained only as a retired alias for traceability, not as a duplicate operational path.
+> **Canonical credential route (Phase 4.1):** Credential operations are Clerk-managed. `POST /api/v1/auth/change-password` (`AUTH-008`) and `POST /api/v1/me/password` (`USER-003` legacy alias) are both **RETIRED** — do not implement either as a Laravel endpoint; `§19.1` retains both IDs only for traceability, not as operational paths.
 
 - **No customer collection:** `GET /api/v1/users` is **not** available to Customers. Customer self-service does not require a public User collection.
 - **No customer lookup:** `GET /api/v1/users/{id}` is **not** customer-accessible. If Admin later needs User lookup, that belongs to Phase 1.29 `ADM-008/009` (this phase defines resource concepts only).
@@ -4200,19 +4203,17 @@ Use stable Phase 1.16 codes (`INVALID_VALUE`, `INVALID_FORMAT`, `MISSING_REQUIRE
 ### 29.7 Email & Credential Boundaries
 
 - **Email identity:** Email is both `contact information` and `authentication/account identity` — security-sensitive. `PATCH /me` may update ordinary profile data; **`email` change uses a dedicated security-sensitive operation** (see `§29.6` above). Do not silently make `email` equivalent to `name`.
-- **Email verification:** `email_verified` exposed as **read-only state**; `email_verified:true` from client not authoritative. Verification process is a secure time-limited mechanism (`AUTH-*` Group R deferred delivery). `phone_verified` (if later) similarly server-controlled.
-- **Password change:** **Not ordinary profile mutation.** Credential operations belong to **Authentication**, not `PATCH /me`. Canonical endpoint is **single** **`POST /api/v1/auth/change-password`** with `{"current_password":"...","new_password":"..."}` (never plaintext stored beyond secure hashing, `SEC-PWD-001`). Require `authenticated user + ownership of own credential + current credential verification` where model requires it. `Staff/Admin cannot normally change Customer passwords`; Admin access to Customer credentials must not expose current password — use dedicated recovery/security workflow where needed. `POST /api/v1/me/password` is **RETIRED** legacy alias for `USER-003`; do not implement as duplicate authoritative endpoint — reference Auth contract (`§17.8`) and canonical `AUTH-008`.
-- **Password reset / Email verification flows** (`AUTH-004/005`, `AUTH-006/007`) remain under Authentication contract (`§17.8`/`§17.9`) — do not redefine here; User/Profile merely references them.
+- **Email verification:** `email_verified` exposed as **read-only state**; `email_verified:true` from client not authoritative. Verification is Clerk-managed with a synchronized local snapshot. `phone_verified` (if later) similarly server-controlled.
+- **Password change:** **Not ordinary profile mutation and not a Laravel endpoint.** Credential operations belong to **Clerk Authentication**, not `PATCH /me` and not a Laravel `AUTH-*` route (`AUTH-008` retired). Clients use the Clerk security workflow; Laravel never accepts `current_password`/`new_password`.
+- **Password reset / Email verification flows** (`AUTH-004/005`, `AUTH-006/007`) are retired Laravel routes and remain under the Clerk Authentication contract (`§17`) — do not redefine here; User/Profile merely references Clerk.
 - **Saved addresses:** Explicitly **deferred** per `business-rules.md §11` — no `addresses[]` / `saved_addresses[]` / `default_address` in `GET /me` or `PATCH /me`. Order/Checkout captures transaction-specific delivery information separately (`delivery_address` snapshot).
 - **Notification settings / Preferences:** Do not embed large notification-preferences object in `/me`; Notification API is separate (Group R).
 
 ### 29.8 Credential Endpoint Placement (Normative)
 
-**Decision (USER-004):** `Credential operations are separate from Profile updates` — `Password change` and `security-sensitive email change` belong to **Authentication**, not `USER-002`. Canonical is **single** **`POST /api/v1/auth/change-password` (`AUTH-008`)** (not `POST /me/password` duplicate) because it is a credential/security operation, not ordinary profile editing. Do not create two endpoints doing the same thing — `USER-003` `POST /api/v1/me/password` is **RETIRED** legacy alias retained in `§19.1` only for traceability (stable ID preserved, status `RETIRED`); authoritative implementation is `AUTH-008`.
+**Decision (USER-004, superseded in part by Phase 4.1):** `Credential operations are separate from Profile updates` — `Password change` and `security-sensitive email change` belong to **Clerk Authentication**, not `USER-002` and not a Laravel credential route. Both `USER-003` `POST /api/v1/me/password` and `AUTH-008` `POST /api/v1/auth/change-password` are **RETIRED** Laravel paths retained in `§19.1` only for traceability (stable IDs preserved, status `RETIRED`); authoritative behavior is the Clerk security workflow.
 
-**Migration (Breaking-change handling per versioning strategy):** Repointing `USER-003` to a new path would be a breaking change (renaming within `v1` per `§15.17`/`§9`). Instead `USER-003` remains mapped to the retired `POST /api/v1/me/password` path with status `RETIRED`, and `AUTH-008` is introduced as the new canonical `POST /api/v1/auth/change-password`. No v1 client may assume dual authoritative support — implementations must expose only `AUTH-008`; `USER-003` is retained solely for audit/traceability and must return `410 GONE` or `404` with `code: RESOURCE_NOT_FOUND` and migration hint if called, not a second success path. This preserves stable IDs (`USER-003` never recycled) while making the breaking change explicit.
-
-**Idempotency & Retry for `AUTH-008` (Non-idempotent):** `AUTH-008` requires `current_password` verification; after a successful change the previous `current_password` is no longer valid. Therefore `AUTH-008` is **non-idempotent** — replaying the same request (same `current_password` + `new_password`) after success must fail with `401 INVALID_CREDENTIALS` (or `INVALID_AUTHENTICATION`) and not be treated as a successful retry. This aligns with `phases/phase-1.28.md §126` ("Password changes are not ordinary idempotent profile updates"). Client retry guidance: on network timeout/unknown commit, do **not** automatically replay identical payload; instead reconcile by attempting re-authentication with the **new** password (success = change committed) or with the **old** password (success = change not committed), then decide whether to retry with corrected `current_password`. `Idempotency-Key` must **not** be used to mask credential rotation semantics.
+**Migration (Phase 4.1 Clerk change):** No v1 client may call a Laravel password/credential endpoint. If a retired Laravel `AUTH-*`/`USER-003` path is called, it must return `410 GONE` or `404` with `code: RESOURCE_NOT_FOUND` and a Clerk migration hint, not a second success path. This preserves stable IDs (`USER-003`, `AUTH-001..008` never recycled) while making the retirement explicit. **Current state:** contract marks the retirement; routes remain as stubs until Phase 4.2. **Phase 4.2 target:** Laravel credential routes removed; only Clerk flows are callable.
 
 ### 29.9 Privacy, Caching & Cross-Platform Consistency
 
@@ -5146,14 +5147,14 @@ For every inconsistency in `§31.26`, authoritative documentation was updated: `
 | `CAT-012` | `PATCH` | `/api/v1/categories/{category}` | Staff, Admin | Update category |
 | `CAT-013` | `GET` | `/api/v1/admin/products` | Staff, Admin | List products for operations |
 | `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Staff, Admin | Retrieve product operationally |
-| `AUTH-001` | `POST` | `/api/v1/auth/register` | Anonymous | Register `CUSTOMER` |
-| `AUTH-002` | `POST` | `/api/v1/auth/login` | Anonymous, Customer, Staff, Admin | Login (merges guest cart) |
-| `AUTH-003` | `POST` | `/api/v1/auth/logout` | Customer, Staff, Admin | Logout |
-| `AUTH-004` | `POST` | `/api/v1/auth/password/forgot` | Anonymous, Customer | Request password reset |
-| `AUTH-005` | `POST` | `/api/v1/auth/password/reset` | Anonymous | Reset password |
-| `AUTH-006` | `POST` | `/api/v1/email/verify/resend` | Customer | Resend verification |
-| `AUTH-007` | `POST` | `/api/v1/email/verify` | Customer | Verify email |
-| `AUTH-008` | `POST` | `/api/v1/auth/change-password` | Customer, Staff, Admin | Change own password |
+| `AUTH-001` | `POST` | `/api/v1/auth/register` | — (retired) | **RETIRED** — use Clerk sign-up |
+| `AUTH-002` | `POST` | `/api/v1/auth/login` | — (retired) | **RETIRED** — use Clerk sign-in |
+| `AUTH-003` | `POST` | `/api/v1/auth/logout` | — (retired) | **RETIRED** — use Clerk sign-out |
+| `AUTH-004` | `POST` | `/api/v1/auth/password/forgot` | — (retired) | **RETIRED** — use Clerk recovery |
+| `AUTH-005` | `POST` | `/api/v1/auth/password/reset` | — (retired) | **RETIRED** — use Clerk recovery |
+| `AUTH-006` | `POST` | `/api/v1/email/verify/resend` | — (retired) | **RETIRED** — use Clerk verification |
+| `AUTH-007` | `POST` | `/api/v1/email/verify` | — (retired) | **RETIRED** — use Clerk verification |
+| `AUTH-008` | `POST` | `/api/v1/auth/change-password` | — (retired) | **RETIRED** — use Clerk security |
 | `USER-001` | `GET` | `/api/v1/me` | Customer, Staff, Admin | Get own profile |
 | `USER-002` | `PATCH` | `/api/v1/me` | Customer, Staff, Admin | Update own profile |
 | `CART-001` | `GET` | `/api/v1/me/cart` | Customer, Guest | Get own/guest cart |
@@ -5486,4 +5487,3 @@ Change Request → Impact Analysis → Breaking/Non-Breaking Classification →
 Contract Review → Architecture Decision Record (docs/decisions.md) →
 OpenAPI Update → Example Update → Verification → Release Decision
 ```
-

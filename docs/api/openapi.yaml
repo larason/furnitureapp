@@ -51,7 +51,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Shared identity Bearer token
+      description: Clerk session JWT. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued API token.
     uploadToken:
       type: apiKey
       in: header
@@ -2048,7 +2048,9 @@ paths:
       operationId: AUTH-001
       tags:
       - Authentication
-      summary: Register
+      summary: Register (retired; use Clerk sign-up)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns sign-up; Laravel will remove this credential endpoint in Phase 4.2.
+      deprecated: true
       security: []
       requestBody:
         required: true
@@ -2079,7 +2081,9 @@ paths:
       operationId: AUTH-002
       tags:
       - Authentication
-      summary: Login
+      summary: Login (retired; use Clerk sign-in)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk issues the session token; Laravel will remove this credential endpoint in Phase 4.2.
+      deprecated: true
       security: []
       parameters:
       - $ref: '#/components/parameters/GuestCartId'
@@ -2105,7 +2109,9 @@ paths:
       operationId: AUTH-003
       tags:
       - Authentication
-      summary: Logout
+      summary: Logout (retired; use Clerk sign-out)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns session logout and revocation; Laravel will remove this endpoint in Phase 4.2.
+      deprecated: true
       security:
       - bearerAuth: []
       responses:
@@ -2118,7 +2124,9 @@ paths:
       operationId: AUTH-004
       tags:
       - Authentication
-      summary: Forgot password
+      summary: Forgot password (retired; use Clerk recovery)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns recovery; Laravel will remove this credential endpoint in Phase 4.2.
+      deprecated: true
       security: []
       responses:
         '200':
@@ -2142,7 +2150,9 @@ paths:
       operationId: AUTH-005
       tags:
       - Authentication
-      summary: Reset password
+      summary: Reset password (retired; use Clerk recovery)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns password reset; Laravel will remove this credential endpoint in Phase 4.2.
+      deprecated: true
       security: []
       responses:
         '200':
@@ -2166,7 +2176,9 @@ paths:
       operationId: AUTH-008
       tags:
       - Authentication
-      summary: Change password
+      summary: Change password (retired; use Clerk security)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns password changes; Laravel will remove this credential endpoint in Phase 4.2.
+      deprecated: true
       security:
       - bearerAuth: []
       responses:
@@ -2193,7 +2205,9 @@ paths:
       operationId: AUTH-007
       tags:
       - Authentication
-      summary: Verify email
+      summary: Verify email (retired; use Clerk verification)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns email verification; Laravel will remove this endpoint in Phase 4.2.
+      deprecated: true
       security:
       - bearerAuth: []
       responses:
@@ -2208,7 +2222,9 @@ paths:
       operationId: AUTH-006
       tags:
       - Authentication
-      summary: Resend verify
+      summary: Resend verify (retired; use Clerk verification)
+      description: Retired in the Phase 4.1 Clerk authentication contract change. Clerk owns verification delivery; Laravel will remove this endpoint in Phase 4.2.
+      deprecated: true
       security:
       - bearerAuth: []
       responses:

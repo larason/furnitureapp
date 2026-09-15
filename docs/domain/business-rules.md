@@ -46,7 +46,7 @@ The computer system is always the final authority on what is allowed, what costs
 | 2 | **Checkout requires a customer account.** A visitor cannot buy without logging in. | IDENT-002 |
 | 3 | A customer sees only their own profile, orders, requests, and payment information — never another customer's. | IDENT-006 |
 | 4 | A visitor can create a cart without an account, and the cart moves onto their account when they log in. Checkout still requires being logged in. | IDENT-008 |
-| 5 | Customers, staff, and admins all use the same account system; a person's role decides what they may do. | IDENT-007 |
+| 5 | Customers, staff, and admins share Clerk-authenticated external identity with one local Laravel account projection; Laravel roles decide what they may do. Clerk authenticates the person, while Laravel decides application authorization. | IDENT-007 |
 
 ## 4. Cart and Shopping
 
@@ -356,7 +356,7 @@ Authority for wire semantics: `api-contract.md §29` / `api-conventions.md §29`
 Endpoint review confirms already-approved business rules have endpoint support; no new business behavior is introduced in this phase (see `api-contract.md §19` for inventory):
 
 - `Anonymous browse` (`products/categories/search/product details/prices/availability`) → `CAT-001..004` — §1
-- `Customer registration/login → cart → checkout (PICKUP/DELIVERY) → payment placeholder → order → tracking` → `AUTH-001/002` (login merges `X-Guest-Cart-Id` guest cart) → `CART-001..005` (`CART-005` merge) → `CHK-001` → `PAY-001/002` → `ORD-001..004` → `ORD-003/012` — §§3,4,6,7,8,17 (guest-cart handoff is backend authority per §3 #4: anonymous `X-Guest-Cart-Id`/`guest_cart_id` cookie, opaque, `HttpOnly`, merged on `AUTH-002`/`CART-005`)
+- `Clerk registration/sign-in → verified Clerk token → local Laravel User → cart → checkout (PICKUP/DELIVERY) → payment placeholder → order → tracking` → `CART-001..005` (`CART-005` merge) → `CHK-001` → `PAY-001/002` → `ORD-001..004` → `ORD-003/012` — §§3,4,6,7,8,17 (guest-cart handoff is backend authority per §3 #4: anonymous `X-Guest-Cart-Id`/`guest_cart_id` cookie, opaque, `HttpOnly`, merged through Clerk-authenticated `CART-005`)
 - `Pickup` (`PAID→ACCEPTED→PROCESSING→READY_FOR_PICKUP→COMPLETED`) and `Delivery` (`PAID→ACCEPTED→PROCESSING→SHIPPED→DELIVERED→COMPLETED`) → `ORD-007..011` + `ORD-013` with explicit `orders.accept/process/ready_for_pickup/ship/deliver/complete` + state (`ORD-013` `complete` closes `DELIVERED→COMPLETED` and `READY_FOR_PICKUP→COMPLETED` per `api-contract.md §19.1`) — §7, §18.10; state history records each transition (`order_status_history` per §6)
 - `Cancellation (20-min window, eligible state, own order)` → `ORD-004` — §8
 - `Made-to-order request (+ optional attachment, anonymous allowed, own history)` → `REQ-001..007` (`REQ-007` `POST /requests/{request}/attachments`) — §9, §11
@@ -422,4 +422,3 @@ Additional invariants from `§31`: `total = subtotal + delivery_fee` (minor unit
 | 5 | **Idempotency keys are not authentication** — `Idempotency-Key` `uuid` scoped to `(identity+endpoint+key)` 24h; cross-identity reuse treated as new; same key + different body → `409 DUPLICATE_OPERATION`; never log with PII. | IDEMP-001 |
 | 6 | **Transport and browser boundaries enforced** — `HTTPS` `HSTS` `TLS 1.2+` in deployed envs; `Secure HttpOnly SameSite=Strict` cookies; `CSRF` `X-CSRF-Token` double-submit for cookie-auth mutations; `CORS` allow-list not `*` with credentials; `CORS ≠ auth`. | SEC-TRANS-001 |
 | 7 | **Caching respects privacy** — `Cart, Checkout, Orders, Tracking, Notifications, Profile, private Request/Enquiry` `Cache-Control: private, no-store` `Vary: Authorization, Cookie`; public catalog `public, max-age=300` CDN-cacheable with no private fields. | CACHE-001 |
-
