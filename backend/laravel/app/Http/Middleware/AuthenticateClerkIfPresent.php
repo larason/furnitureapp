@@ -17,7 +17,7 @@ final class AuthenticateClerkIfPresent
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->bearerToken() !== null || $request->cookies->has('__session')) {
+        if ($request->bearerToken() !== null) {
             $user = $this->provisioner->resolve($this->verifier->verify($request));
             auth()->setUser($user);
         }

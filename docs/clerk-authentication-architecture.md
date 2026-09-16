@@ -1,6 +1,6 @@
-# Clerk Authentication Architecture — Phase 4.1
+# Clerk Authentication Architecture
 
-> **Status:** Accepted design for Phase 4.2 implementation. This is the Clerk-related post-freeze authentication-contract change; it does not implement authentication, provisioning, webhooks, or client integration.
+> **Status:** Accepted (Phase 4.1) and **implemented** (Phase 4.2–4.4). This document now reflects the built authentication boundary — Clerk owns credentials/sessions/security; Laravel owns the local application identity projection, RBAC, and authorization. It no longer describes a not-yet-implemented design.
 
 ## Decision and Scope
 
@@ -129,3 +129,13 @@ The old Laravel `AUTH-*` routes and OpenAPI schemas remain present until Phase 4
 ## Phase 4.2 Entry Criteria
 
 Phase 4.2 may begin only after the project owner provides/authorizes the selected Clerk application's non-secret configuration values and verified official PHP/Laravel integration path. The implementation must confirm the direct dependency version before adding any package, use a new Group D migration, update Laravel route/middleware configuration, replace the placeholder Laravel auth endpoints as documented, and add the Phase 4.12 tests before declaring the authentication boundary complete.
+
+## Phase 4.4 Security Boundary (implemented)
+
+Clerk is the sole password-recovery/change, compromised-password, MFA, and session-lifecycle authority. Laravel reintroduces no credential path:
+
+- **Password recovery / change:** `AUTH-004/005/008` remain RETIRED (retired in Phase 4.1; route removal targeted in Phase 4.2; per current state described in `api-contract.md §17.1` these paths return `410 GONE`). Laravel never receives or stores passwords, reset tokens, or recovery OTPs, and never runs password hashing or mutates `users.password`. The legacy `password_reset_tokens` table is dropped (Phase 4.4 migration).
+- **Pending security-task sessions:** Clerk session tokens carry an `sts` claim. A `pending` session (outstanding required task such as `reset-password`, `setup-mfa`, `choose-organization`) is treated as signed-out by Clerk and is rejected by Laravel with `SESSION_EXPIRED` (401) before any local user is provisioned or resolved — no protected business API accepts it. No local `force_password_reset`/`mfa_enabled` flags are added; Clerk remains the security-state authority.
+- **Session revocation:** `ClerkSessionGateway::revoke($sessionId)` (wrapping the Clerk Backend `sessions/revoke`) revokes a single session only; other active sessions stay valid. `RevokeClerkSession` is forward-looking infrastructure with no production caller while the Laravel logout endpoint remains retired; a future approved logout/security-action service will call it. Revoke-all remains a future explicit security operation. Ordinary logout and security-incident revocation stay separate.
+- **Account-state separation:** password recovery never reactivates a suspended local account and never alters local RBAC. No Staff capability for customer credential/MFA administration exists; any future Admin security operation is a dedicated audited workflow (deferred).
+- **Enumeration / logging:** recovery stays generic ("Request received."); no account-lookup endpoint exists; raw `Authorization` values, session JWTs, and Clerk secrets are never logged or serialized. Laravel accepts the Clerk session token **only** via `Authorization: Bearer`; cookies are never treated as Laravel credentials (bearer-only, no cookie-CSRF model).

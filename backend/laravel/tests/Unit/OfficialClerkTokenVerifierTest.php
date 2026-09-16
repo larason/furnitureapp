@@ -72,6 +72,96 @@ class OfficialClerkTokenVerifierTest extends TestCase
         }
     }
 
+    public function test_pending_session_security_task_is_denied(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key']);
+        config(['clerk.jwt_key' => 'test-jwt-key']);
+
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+            'sts' => 'pending',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        try {
+            $verifier->verify($this->requestWithBearerToken());
+            $this->fail('Expected a pending security-task session to be denied.');
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('SESSION_EXPIRED', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+        }
+    }
+
+    public function test_active_session_without_pending_task_is_accepted(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key']);
+        config(['clerk.jwt_key' => 'test-jwt-key']);
+
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+            'sts' => 'active',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        $identity = $verifier->verify($this->requestWithBearerToken());
+
+        $this->assertSame('user_123', $identity->clerkUserId);
+        $this->assertSame('sess_123', $identity->sessionId);
+    }
+
+    public function test_missing_session_status_is_accepted_for_compatible_clerk_tokens(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key']);
+        config(['clerk.jwt_key' => 'test-jwt-key']);
+
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        $identity = $verifier->verify($this->requestWithBearerToken());
+
+        $this->assertSame('user_123', $identity->clerkUserId);
+    }
+
+    public function test_unknown_or_malformed_session_status_is_rejected(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key']);
+        config(['clerk.jwt_key' => 'test-jwt-key']);
+
+        foreach (['unknown', 42, new \stdClass] as $status) {
+            $payload = (object) [
+                'sub' => 'user_123',
+                'sid' => 'sess_123',
+                'iss' => 'https://clerk.example.test',
+                'sts' => $status,
+            ];
+            $verifier = new OfficialClerkTokenVerifier(
+                static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+            );
+
+            try {
+                $verifier->verify($this->requestWithBearerToken());
+                $this->fail('Expected an unknown or malformed session status to be rejected.');
+            } catch (ClerkAuthenticationFailure $exception) {
+                $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+                $this->assertSame(401, $exception->status());
+            }
+        }
+    }
+
     private function requestWithBearerToken(): Request
     {
         return Request::create('/api/v1/me', 'GET', [], [], [], [

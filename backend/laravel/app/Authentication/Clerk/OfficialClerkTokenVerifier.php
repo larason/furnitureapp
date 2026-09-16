@@ -26,7 +26,7 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
 
     public function verify(Request $request): AuthenticatedClerkIdentity
     {
-        if ($request->bearerToken() === null && ! $request->cookies->has('__session')) {
+        if ($request->bearerToken() === null) {
             throw ClerkAuthenticationFailure::missing();
         }
 
@@ -68,6 +68,21 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         $configuredIssuer = config('clerk.issuer');
 
         if ($configuredIssuer !== null && $configuredIssuer !== '' && $issuer !== $configuredIssuer) {
+            throw ClerkAuthenticationFailure::invalid();
+        }
+
+        $hasSessionStatus = property_exists($payload, 'sts');
+        $sessionStatus = $payload->sts ?? null;
+
+        if ($hasSessionStatus && ! is_string($sessionStatus)) {
+            throw ClerkAuthenticationFailure::invalid();
+        }
+
+        if ($sessionStatus === 'pending') {
+            throw ClerkAuthenticationFailure::pending();
+        }
+
+        if ($hasSessionStatus && $sessionStatus !== 'active') {
             throw ClerkAuthenticationFailure::invalid();
         }
 

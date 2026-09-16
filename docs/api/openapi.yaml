@@ -51,7 +51,8 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Clerk session JWT. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued API token.
+      description: Clerk session JWT sent via `Authorization: Bearer`. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued API token and cookies are never accepted as credentials (bearer-only).
+        A session pending security tasks (`sts=pending`, e.g. required `reset-password`/`setup-mfa`) is rejected with SESSION_EXPIRED before any protected access.
     uploadToken:
       type: apiKey
       in: header
@@ -731,39 +732,6 @@ components:
           - 'null'
       additionalProperties: false
       description: Allow-list name/phone only
-    AuthRegisterRequest:
-      type: object
-      required:
-      - name
-      - email
-      - phone
-      - password
-      properties:
-        name:
-          type: string
-        email:
-          type: string
-          format: email
-        phone:
-          type: string
-        password:
-          type: string
-          format: password
-          writeOnly: true
-      additionalProperties: false
-    AuthLoginRequest:
-      type: object
-      required:
-      - email
-      - password
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-      additionalProperties: false
     CartItem:
       type: object
       required:
@@ -2086,15 +2054,12 @@ paths:
       tags:
       - Authentication
       summary: Logout (retired; use Clerk sign-out)
-      description: Retired. Use Clerk sign-out. Laravel returns `410 GONE` or a masked `404`.
+      description: 'Retired. Use Clerk sign-out. Laravel returns `410 GONE` regardless of authentication state.'
       deprecated: true
-      security:
-      - bearerAuth: []
+      security: []
       responses:
         '410':
           $ref: '#/components/responses/RetiredEndpoint'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /auth/password/forgot:
@@ -2131,15 +2096,12 @@ paths:
       tags:
       - Authentication
       summary: Change password (retired; use Clerk security)
-      description: Retired. Use the Clerk security workflow. Laravel returns `410 GONE` and does not accept password-change input.
+      description: Retired. Use the Clerk security workflow. Laravel returns `410 GONE` regardless of authentication state.
       deprecated: true
-      security:
-      - bearerAuth: []
+      security: []
       responses:
         '410':
           $ref: '#/components/responses/RetiredEndpoint'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /email/verify:
@@ -2148,15 +2110,12 @@ paths:
       tags:
       - Authentication
       summary: Verify email (retired; use Clerk verification)
-      description: Retired. Use Clerk email verification. Laravel returns `410 GONE` or a masked `404`.
+      description: 'Retired. Use Clerk email verification. Laravel returns `410 GONE` regardless of authentication state.'
       deprecated: true
-      security:
-      - bearerAuth: []
+      security: []
       responses:
         '410':
           $ref: '#/components/responses/RetiredEndpoint'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /email/verify/resend:
@@ -2165,15 +2124,12 @@ paths:
       tags:
       - Authentication
       summary: Resend verify (retired; use Clerk verification)
-      description: Retired. Use Clerk verification. Laravel returns `410 GONE` or a masked `404`.
+      description: 'Retired. Use Clerk verification. Laravel returns `410 GONE` regardless of authentication state.'
       deprecated: true
-      security:
-      - bearerAuth: []
+      security: []
       responses:
         '410':
           $ref: '#/components/responses/RetiredEndpoint'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /me:
