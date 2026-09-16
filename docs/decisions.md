@@ -502,6 +502,16 @@ Session revocation is exposed narrowly through a new `ClerkSessionGateway` inter
 
 ---
 
+### ADR/AUTH-011 — Email-Verified Signup Baseline (Phase 4.5)
+
+**Decision:** V1 customer registration credentials are `email` + `password` only; **phone is not a signup requirement** (it is application profile/contact data, never authentication identity). Clerk is the sole email-verification authority: email verification at signup is required (`email verification code` baseline; link alternative with same-device protection if the owner configures it). Laravel generates no verification token/code, sends no verification email, and never receives the verification code. `LocalUserProvisioner` now refuses to provision a local user whose Clerk primary email is not `Verified` — it throws `INVALID_AUTHENTICATION` (401) before any local row is created, so an unverified/incomplete Clerk signup cannot reach protected commerce. The local `users.email`/`email_verified_at` snapshot is read-only and derived only from trusted Clerk state (never from request JSON, never via `email != null`). Email stays non-authoritative for local identity linking; verification grants `CUSTOMER` only and never changes role or reactivates a suspended account. Public catalog and anonymous request/enquiry remain verification-free. No schema change was required (`users.phone` was already nullable; `customer_profiles` carries no phone).
+
+**Reason:** Enforces "unverified email → fully registered CUSTOMER with unrestricted commerce" is forbidden, keeps phone out of signup while leaving it available as profile/contact data, and avoids any second Laravel verification path.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`app/Authentication/LocalUserProvisioner.php`, `tests/Unit/LocalUserProvisionerTest.php`), `docs/api/api-contract.md §17.2/§17.9`, `docs/api/api-conventions.md §18.5`, `AGENTS.md §17`
+
+---
+
 ### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
 
 **Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.

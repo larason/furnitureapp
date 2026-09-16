@@ -44,12 +44,49 @@ class LocalUserProvisionerTest extends TestCase
         $this->expectException(ApiException::class);
         $provisioner->resolve($identity);
     }
+
+    public function test_it_does_not_provision_an_unverified_email(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $provisioner = new LocalUserProvisioner(new FakeClerkUserGateway(verified: false));
+        $identity = new AuthenticatedClerkIdentity('user_unverified_1', 'sess_1', 'https://clerk.test');
+
+        try {
+            $provisioner->resolve($identity);
+            $this->fail('Expected unverified email to be rejected.');
+        } catch (ApiException $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+        }
+
+        $this->assertDatabaseMissing('users', ['clerk_user_id' => 'user_unverified_1']);
+    }
+
+    public function test_it_provisions_a_verified_email_without_phone(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $provisioner = new LocalUserProvisioner(new FakeClerkUserGateway(phone: null));
+        $identity = new AuthenticatedClerkIdentity('user_nophone_1', 'sess_2', 'https://clerk.test');
+
+        $user = $provisioner->resolve($identity);
+
+        $this->assertSame('user_nophone_1', $user->clerk_user_id);
+        $this->assertTrue($user->hasRole(RoleName::CUSTOMER->value));
+        $this->assertNull($user->phone);
+        $this->assertNotNull($user->email_verified_at);
+        $this->assertNull($user->getRawOriginal('password'));
+    }
 }
 
 final class FakeClerkUserGateway implements ClerkUserGateway
 {
+    public function __construct(
+        private readonly bool $verified = true,
+        private readonly ?string $phone = null,
+    ) {}
+
     public function getById(string $clerkUserId): ClerkUserSnapshot
     {
-        return new ClerkUserSnapshot($clerkUserId, 'same@example.com', 'Test Customer', null, true);
+        return new ClerkUserSnapshot($clerkUserId, 'same@example.com', 'Test Customer', $this->phone, $this->verified);
     }
 }

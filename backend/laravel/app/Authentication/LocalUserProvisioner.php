@@ -26,6 +26,14 @@ final class LocalUserProvisioner
 
         $snapshot = $this->fetchSnapshot($identity->clerkUserId);
 
+        if (! $snapshot->emailVerified) {
+            throw new ApiException(
+                ApiErrorCode::INVALID_AUTHENTICATION,
+                'The customer email must be verified before registration completes.',
+                401,
+            );
+        }
+
         try {
             return DB::transaction(function () use ($identity, $snapshot): User {
                 $mapped = User::where('clerk_user_id', $identity->clerkUserId)->lockForUpdate()->first();
@@ -53,7 +61,7 @@ final class LocalUserProvisioner
                 ]);
                 $user->forceFill([
                     'clerk_user_id' => $identity->clerkUserId,
-                    'email_verified_at' => $snapshot->emailVerified ? now() : null,
+                    'email_verified_at' => now(),
                 ])->save();
                 $user->assignRole(RoleName::CUSTOMER->value);
                 CustomerProfile::create(['user_id' => $user->id]);

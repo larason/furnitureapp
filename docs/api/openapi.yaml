@@ -732,39 +732,6 @@ components:
           - 'null'
       additionalProperties: false
       description: Allow-list name/phone only
-    AuthRegisterRequest:
-      type: object
-      required:
-      - name
-      - email
-      - phone
-      - password
-      properties:
-        name:
-          type: string
-        email:
-          type: string
-          format: email
-        phone:
-          type: string
-        password:
-          type: string
-          format: password
-          writeOnly: true
-      additionalProperties: false
-    AuthLoginRequest:
-      type: object
-      required:
-      - email
-      - password
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-      additionalProperties: false
     CartItem:
       type: object
       required:
