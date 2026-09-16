@@ -6,7 +6,7 @@ use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\ClerkTokenVerifier;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequest;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequestOptions;
-use Illuminate\Auth\AuthenticationException;
+use Clerk\Backend\Helpers\Jwks\ErrorReason;
 use Illuminate\Http\Request;
 use RuntimeException;
 
@@ -28,31 +28,31 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         } catch (\Throwable $exception) {
             report($exception);
 
-            throw new AuthenticationException('The Clerk credential is invalid.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         if (! $state->isAuthenticated()) {
-            throw new AuthenticationException('The Clerk credential is invalid.');
+            throw $this->failureFor($state->getErrorReason());
         }
 
         $payload = $state->getPayload();
         $clerkUserId = is_string($payload->sub ?? null) ? $payload->sub : null;
 
         if ($clerkUserId === null || $clerkUserId === '') {
-            throw new AuthenticationException('The Clerk credential has no subject.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         $issuer = is_string($payload->iss ?? null) ? $payload->iss : null;
         $sessionId = is_string($payload->sid ?? null) ? $payload->sid : null;
 
         if ($sessionId === null || $sessionId === '') {
-            throw new AuthenticationException('The Clerk credential is not a user session.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         $configuredIssuer = config('clerk.issuer');
 
         if ($configuredIssuer !== null && $configuredIssuer !== '' && $issuer !== $configuredIssuer) {
-            throw new AuthenticationException('The Clerk credential issuer is invalid.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         return new AuthenticatedClerkIdentity(
@@ -60,6 +60,20 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
             $sessionId,
             $issuer,
         );
+    }
+
+    private function failureFor(?ErrorReason $reason): ClerkAuthenticationFailure
+    {
+        return match ($reason?->getId()) {
+            'session-token-missing' => ClerkAuthenticationFailure::missing(),
+            'token-expired' => ClerkAuthenticationFailure::expired(),
+            'jwk-failed-to-load',
+            'jwk-remote-invalid',
+            'jwk-failed-to-resolve' => ClerkAuthenticationFailure::external(),
+            'jwk-local-invalid',
+            'secret-key-missing' => ClerkAuthenticationFailure::internal(),
+            default => ClerkAuthenticationFailure::invalid(),
+        };
     }
 
     private function nullableList(mixed $value): ?array

@@ -296,6 +296,7 @@ Payment provider-specific error codes/SDK/webhook failures (Group H), Laravel ha
 ### 18.6 Authentication Error Conventions
 
 - All auth failures use common error envelope `api-contract.md §15` — never `auth_success`/`login_result`/`token_response` separate envelope. Codes: `AUTHENTICATION_REQUIRED` (401, not 403 for unauthenticated), `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `INVALID_AUTHENTICATION`, `FORBIDDEN` (canonical; aliases `NOT_AUTHENTICATED`/`RESOURCE_NOT_OWNED` per §15.15). Authenticated endpoints use common response conventions (`data`/`meta`); auth payload may be specialized but consistent.
+- Clerk owns customer registration, sign-in, password recovery, verification, session renewal, and logout controls. Laravel accepts only a verified Clerk `session_token` bearer credential, resolves `sub` to `users.clerk_user_id`, and provisions the local user on first authenticated use. Missing credentials return `AUTHENTICATION_REQUIRED`; expired credentials return `SESSION_EXPIRED`; all other verification failures return `INVALID_AUTHENTICATION`. The retired Laravel credential endpoints remain unavailable.
 - **Threat boundary:** responses must not allow `credential theft`/`stuffing`/`brute-force`/`session theft`/`token leakage`/`account enumeration`/`privilege escalation`/`role tampering`/`session fixation`/`password-reset abuse`/`cross-account access`/`staff impersonation` to succeed; brute-force rate limiting, failed-attempt protection, abuse detection are identified as later backend requirements.
 
 ### 18.7 Security Principles & Versioning

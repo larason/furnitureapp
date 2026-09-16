@@ -1,111 +1,151 @@
-# Phase 4.2 — Customer Registration with Clerk / Local User Provisioning
+# Phase 4.3 — Customer Registration / Sign-In Flow with Clerk
 
 ## Purpose
 
-Implement the backend portion of customer registration after the Phase 4.1 Clerk architecture decision.
+Complete the **customer authentication entry flow** using Clerk as the credential/session authority and Laravel as the application identity and authorization authority.
 
-Clerk is responsible for creating and authenticating the customer's external identity.
-
-Laravel is responsible for creating the corresponding **local application User** and assigning the new user the application role:
+Phase 4.2 established:
 
 ```text
-CUSTOMER
+verified Clerk identity
+        ↓
+users.clerk_user_id
+        ↓
+local Laravel User
+        ↓
+CUSTOMER role for new public users
 ```
 
-The registration architecture is:
+Phase 4.3 now establishes how a customer:
 
 ```text
-Customer
-    ↓
-Clerk sign-up
-    ↓
-Clerk creates User
-    ↓
-Clerk session established
-    ↓
-Laravel receives verified Clerk identity
-    ↓
-resolve users.clerk_user_id
-    ↓
-local user exists?
- ┌───────────┴───────────┐
- YES                     NO
-  │                       │
-reuse user        securely provision user
-                          │
-                          ├── copy approved identity snapshot
-                          ├── assign CUSTOMER
-                          └── create required customer profile
-                                  │
-                                  ▼
-                         local application User
+signs up / signs in with Clerk
+        ↓
+obtains an authenticated Clerk session
+        ↓
+presents that session to Laravel
+        ↓
+Laravel authenticates the request
+        ↓
+resolves/provisions the local User
+        ↓
+protected API receives authenticated Laravel principal
 ```
 
-The fundamental rule is:
+Do not recreate Laravel username/password authentication.
 
-> A successful Clerk identity does not become an application user through email matching. It becomes an application user through the verified Clerk User ID.
+Do not build the final Next.js or Flutter authentication UI yet.
 
 ---
 
-# 1. Phase Scope
+# 1. Roadmap Context
 
-Implement:
+The original `AGENTS.md` roadmap contains:
 
-* Clerk PHP backend dependency where required;
-* Laravel Clerk configuration;
-* `users.clerk_user_id` mapping;
-* schema adaptations approved in Phase 4.1;
-* verified Clerk identity representation;
-* Clerk Backend User gateway;
-* local customer provisioner;
-* default CUSTOMER role assignment;
-* idempotent provisioning;
-* concurrency-safe provisioning;
-* minimum required identity snapshot;
-* tests for the provisioning boundary.
+```text
+4.1 Authentication design review
+4.2 Customer registration
+4.3 Login/logout
+4.4 Password recovery
+4.5 Email verification if required
+4.6 Profile operations
+4.7 API authentication for mobile
+4.8 SPA authentication for website
+4.9 Roles
+4.10 Policies/permissions
+4.11 Rate limiting
+4.12 Authentication tests
+```
 
-Do not build frontend sign-up UI yet.
+Because Clerk adoption changed the implementation structure:
 
-Do not implement the complete login/logout lifecycle yet.
+```text
+4.1 → Clerk architecture/design review
+4.2 → Clerk identity → local CUSTOMER provisioning
+4.3 → customer sign-up/sign-in/session-entry flow
+```
 
-Do not implement password recovery yet.
+This adaptation must preserve the Group D exit condition:
 
-Do not implement full `/me` profile operations yet.
+> Customer, staff and admin access paths are secure and tested.
 
-Do not implement Flutter or Next.js Clerk integration yet.
+Do not pull later frontend work forward.
 
 ---
 
 # 2. Dependencies
 
-Required:
+Required before starting:
 
-* Group C complete;
 * Phase 4.1 complete;
-* Clerk architecture ADR accepted;
+* Phase 4.2 complete;
 * Clerk selected as authentication authority;
-* local Laravel User retained as application principal;
-* Clerk User ID chosen as external identity mapping;
-* Laravel RBAC retained as authorization authority;
-* Clerk metadata explicitly non-authoritative for application roles;
-* Phase 4.1 AUTH endpoint migration/retirement matrix complete;
-* Phase 4.1 data ownership matrix complete.
+* official Clerk PHP/backend integration installed as required;
+* `users.clerk_user_id` mapping implemented;
+* CUSTOMER JIT provisioning implemented;
+* email-based auto-linking prohibited;
+* local RBAC remains authoritative;
+* Clerk metadata cannot assign application role;
+* Laravel can map a verified Clerk identity to a local User;
+* existing test suite passes.
 
-Before changing code, read the Phase 4.1 documentation changes.
-
-Do not reinterpret decisions already settled there.
+If Phase 4.2 is incomplete, STOP and finish it first.
 
 ---
 
-# 3. Active Project Directory
+# 3. Authoritative Inputs
 
-Work only in the active backend unless a documentation update requires repository-root files:
+Review:
+
+1. `AGENTS.md`
+2. Phase 4.1 Clerk ADR
+3. Phase 4.2 implementation
+4. `docs/api/api-contract.md`
+5. `docs/api/api-resources.md`
+6. `docs/api/api-conventions.md`
+7. `docs/api/openapi.yaml`
+8. `docs/domain/business-rules.md`
+9. `docs/decisions.md`
+10. current Clerk documentation/MCP skills.
+
+Do not rely on remembered Clerk APIs where the current official documentation or installed Clerk skill can verify them.
+
+---
+
+# 4. Core Responsibility Boundary
+
+Preserve:
 
 ```text
-furniture-ecommerce/
-└── backend/
-    └── laravel/
+Clerk
+├── sign-up
+├── sign-in
+├── passwords / passwordless factors
+├── verification challenges
+├── sessions
+├── session renewal
+├── session revocation
+└── authentication security
+
+Laravel
+├── maps Clerk identity → local User
+├── CUSTOMER / STAFF / ADMIN
+├── account business state
+├── ownership
+├── authorization
+├── commerce
+└── API error contract
 ```
+
+Never blur these responsibilities.
+
+Laravel must not validate a customer's password.
+
+Laravel must not issue a replacement customer credential after Clerk sign-in.
+
+---
+
+# 5. Do Not Build Frontend Authentication UI Yet
 
 Do not modify:
 
@@ -114,641 +154,602 @@ frontend/web/
 frontend/app/
 ```
 
+Phase 15.1 owns the website registration/login UI.
+
+Phase 16.5 owns Flutter authentication storage/session concerns.
+
+Phase 4.3 should make the backend authentication contract ready for both clients.
+
+Do not add:
+
+```text
+<SignIn />
+<SignUp />
+<ClerkProvider />
+UserButton
+Flutter Clerk widgets
+```
+
 during this phase.
 
-Do not run:
+---
+
+# 6. Do Not Run Clerk Frontend Initialization Yet
+
+Do not execute:
 
 ```bash
 clerk init
 ```
 
-at the repository root.
+against the repository root merely because authentication is being implemented.
 
-The frontend Clerk initialization belongs to later phases.
+When Phase 4.8 or the website foundation phase reaches `frontend/web`, initialize Clerk there according to the project-owner supplied setup guide.
 
----
-
-# 4. Review Current Clerk Documentation First
-
-If Clerk MCP/Skills are installed, use them before implementation.
-
-Verify:
-
-* current official PHP Backend SDK API;
-* current session-token verification guidance;
-* current Backend User retrieval API;
-* current Clerk User representation;
-* Clerk application configuration needed by the integration.
-
-Do not guess method/class names from JavaScript documentation.
-
-Do not translate JavaScript SDK calls literally into PHP.
-
-Use the current PHP SDK/API contract.
+Do not convert the monorepo root into a frontend Clerk project.
 
 ---
 
-# 5. Install the Official Clerk PHP Backend SDK
+# 7. Inspect Clerk Application Configuration
 
-From:
+Using Clerk MCP/CLI/dashboard documentation where available, inspect the **configured authentication strategies** for the selected Clerk application.
 
-```text
-backend/laravel/
-```
+Determine:
 
-install the official backend dependency:
+* sign-up identifiers;
+* sign-in identifiers;
+* whether password is enabled;
+* whether email verification is required;
+* whether email code/link authentication is enabled;
+* whether phone is enabled;
+* whether social providers are enabled;
+* whether passkeys are enabled;
+* whether MFA/device trust is configured;
+* user-enumeration protection mode;
+* session settings.
 
-```bash
-composer require clerkinc/backend-php
-```
+Do not enable additional strategies merely because Clerk supports them.
 
-Do not install JavaScript Clerk libraries in Laravel.
-
-Do not install:
-
-```text
-@clerk/backend
-@clerk/nextjs
-@clerk/clerk-react
-```
-
-inside the Laravel project.
-
-The PHP integration must remain native to the backend.
-
-After dependency installation:
-
-* inspect the resulting Composer changes;
-* ensure the existing supported PHP version satisfies Clerk's requirements;
-* do not upgrade unrelated dependencies unnecessarily;
-* run Composer security checks according to existing project conventions.
+Implement the application according to the explicitly configured/approved Clerk strategy.
 
 ---
 
-# 6. Clerk Configuration
+# 8. Authentication Strategy Must Not Be Invented
 
-Create a small Laravel configuration boundary, for example:
-
-```text
-config/clerk.php
-```
-
-Centralize Clerk configuration there.
-
-Configuration may include only values required by the selected implementation, such as:
+Do not arbitrarily decide between:
 
 ```text
-secret key environment reference
-publishable key environment reference
-JWT/public verification key
-issuer
-authorized parties
-audience if adopted
-Backend API URL if needed
+email + password
+email OTP
+email link
+phone OTP
+OAuth
+passkey
 ```
 
-Use existing project environment conventions.
+Phase 4.3 must follow:
 
-Do not access `env()` throughout application services.
+```text
+Phase 4.1 decision
++
+actual Clerk application configuration
+```
 
-Application classes should read configuration through Laravel configuration.
+If those disagree, document the conflict.
+
+Do not silently change production authentication requirements.
 
 ---
 
-# 7. Secret Handling
+# 9. Registration Flow
 
-Never:
-
-* print `.env`;
-* log `.env`;
-* print Clerk secret keys;
-* commit Clerk secret keys;
-* return them through API responses;
-* put them in tests;
-* place them in documentation.
-
-Adding placeholder names to `.env.example` is allowed if consistent with project conventions.
-
-For example:
+The application registration flow is conceptually:
 
 ```text
-CLERK_SECRET_KEY=
-CLERK_PUBLISHABLE_KEY=
-CLERK_JWT_KEY=
+Customer
+   ↓
+Clerk sign-up
+   ↓
+Clerk validates configured credentials/factors
+   ↓
+required Clerk verification
+   ↓
+Clerk User created
+   ↓
+Clerk session becomes active
+   ↓
+first protected Laravel request
+   ↓
+Laravel verifies session token
+   ↓
+Phase 4.2 LocalUserProvisioner
+   ↓
+local CUSTOMER user exists
 ```
 
-only when those variables are actually required by the chosen architecture.
+Do not create a Laravel password-registration controller.
 
-Never populate example files with real credentials.
-
-If local secrets are unavailable, implementation and tests must still work through dependency injection/fakes.
+Do not duplicate Clerk registration validation.
 
 ---
 
-# 8. Database Migration — Clerk User Mapping
+# 10. Sign-In Flow
 
-Create a **new Group D migration**.
-
-Do not edit the original Group C users migration.
-
-Add the approved external identity mapping:
+Existing customer:
 
 ```text
-users.clerk_user_id
+Customer
+   ↓
+Clerk sign-in
+   ↓
+Clerk authenticates credential/factor
+   ↓
+active Clerk session
+   ↓
+client gets usable session token
+   ↓
+Laravel API request
+   ↓
+verify Clerk session
+   ↓
+extract trusted `sub`
+   ↓
+find users.clerk_user_id
+   ↓
+bind local User
 ```
 
-Requirements:
-
-* nullable initially where existing local development/test users require compatibility;
-* unique;
-* indexed through the unique constraint;
-* sufficiently sized for Clerk identifiers;
-* server-controlled;
-* treated as immutable identity once linked.
-
-Do not expose it as a writable API field.
-
-Do not expose it in ordinary customer serialization.
-
----
-
-# 9. Existing Password / Remember-Token Schema
-
-Follow the exact Phase 4.1 migration decision.
-
-Because Clerk owns customer credentials, do not create fake Laravel passwords merely to satisfy the old schema.
-
-If Phase 4.1 decided that the Laravel password column must become nullable or be removed, implement that through a **new migration** now if necessary for JIT provisioning.
-
-Likewise handle `remember_token` according to the approved design.
-
-Never:
-
-```php
-password => Str::random(...)
-```
-
-just to satisfy a non-null database constraint.
-
-Never retrieve a Clerk password.
-
-Never copy a Clerk password into Laravel.
-
-Never generate an unused parallel Laravel credential.
-
-The end result must not accidentally preserve a usable second authentication system.
-
----
-
-# 10. Local User Model
-
-Update the local User model for Clerk mapping.
-
-The User model must continue to represent the **application user**, not a Clerk SDK object.
-
-Add the minimum required Clerk mapping behavior.
-
-Do not turn the model into a Clerk API client.
-
-Do not scatter Clerk API calls throughout the User model.
-
-The relationship remains:
+If a valid Clerk identity has no local user yet:
 
 ```text
-Clerk User
-    ↓ clerk_user_id
-Laravel User
-    ↓ users.id
-Domain
-```
-
----
-
-# 11. `clerk_user_id` Is Internal
-
-Treat:
-
-```text
-clerk_user_id
-```
-
-as INTERNAL application data.
-
-Do not include it automatically in:
-
-```text
-GET /me
-orders
-notifications
-requests
-enquiries
-admin resource responses
-```
-
-unless an explicitly authorized administrative use is later approved.
-
-The client normally needs the application user identity, not the external-provider identifier.
-
----
-
-# 12. Verified Clerk Identity Value Object
-
-Create a small internal representation of a successfully authenticated Clerk request.
-
-Example concept:
-
-```text
-AuthenticatedClerkIdentity
-```
-
-It should contain only what the authentication/provisioning boundary actually needs.
-
-Typical fields:
-
-```text
-clerk_user_id
-session_id
-issuer
-```
-
-and only additional verified claims that have a concrete purpose.
-
-Do not dump the entire JWT payload into application services.
-
-Do not make authorization depend on arbitrary claims.
-
----
-
-# 13. Token Verification Prerequisite
-
-Provisioning may only run after the request's Clerk credential has been cryptographically verified.
-
-Never provision based on:
-
-```text
-request.body.clerk_user_id
-request.body.email
-request.header.X-User-Id
-decoded-but-unverified JWT
-Clerk public metadata role
-```
-
-The trusted identity source is the verified Clerk session token.
-
-Clerk session tokens are JWTs and their `sub` identifies the Clerk user.
-
-The verifier must validate the requirements established in Phase 4.1, including applicable:
-
-```text
-signature
-algorithm
-exp
-nbf
-iss
-azp / authorized party
-audience, if configured
-```
-
-Do not merely Base64-decode JWT claims.
-
----
-
-# 14. Authentication Verification Implementation Boundary
-
-Implement or prepare the smallest reusable verification boundary required for Phase 4.2.
-
-Prefer an interface such as:
-
-```text
-ClerkTokenVerifier
-```
-
-returning:
-
-```text
-AuthenticatedClerkIdentity
-```
-
-Do not combine:
-
-```text
-JWT verification
-Clerk Backend API calls
-user provisioning
-role assignment
-authorization
-```
-
-inside one giant middleware method.
-
-Keep responsibilities separate.
-
----
-
-# 15. Use Supported Cryptographic Verification
-
-Use Clerk-supported verification mechanisms or standards-compliant JWT/JWKS libraries used by the official integration.
-
-Do not hand-write cryptography.
-
-Do not manually implement:
-
-* RSA signature primitives;
-* ASN.1 parsing;
-* JWK conversion;
-* token signing.
-
-If the current PHP SDK exposes the required request/session verification facility, use it.
-
-If it does not provide the necessary Laravel-oriented verifier, build a narrow adapter using Clerk's documented JWT/JWKS process and maintained libraries.
-
-Document the selected mechanism in `docs/decisions.md`.
-
----
-
-# 16. Networkless Authentication Preference
-
-For already-known local users, ordinary authenticated Laravel requests should not require a Clerk Backend API request merely to prove authentication.
-
-Use cryptographic token verification.
-
-The ordinary path should become:
-
-```text
-session token
+verified identity
     ↓
-verify locally/JWKS
+Phase 4.2 JIT provisioning
     ↓
-sub
-    ↓
-users.clerk_user_id
-    ↓
-Laravel User
+CUSTOMER local user
 ```
 
-Clerk Backend API calls should be necessary only when additional server-authoritative Clerk User information is actually required.
-
-First-time local provisioning is one such case.
+Do not create a separate Laravel login session.
 
 ---
 
-# 17. Clerk Backend User Gateway
+# 11. Clerk Sign-Up/Sign-In States
 
-Create a small integration boundary, for example:
-
-```text
-ClerkUserGateway
-```
-
-Responsibilities:
+Do not assume every Clerk authentication attempt jumps directly from:
 
 ```text
-get Clerk user by verified Clerk User ID
-return minimum normalized identity information
-map Clerk SDK/network failures into internal integration errors
+STARTED → COMPLETE
 ```
 
-It must not:
+Account for Clerk's configured flow states conceptually, including where relevant:
 
-* assign Laravel roles;
-* create Laravel users;
-* authorize application actions;
-* access Orders/Carts/etc.
+```text
+needs identifier
+needs verification
+missing requirements
+needs first factor
+needs second factor
+device/client trust
+complete
+abandoned / failed
+```
+
+The future clients must use Clerk APIs/components to complete required tasks.
+
+Laravel must see a request as authenticated only **after a valid authenticated Clerk session exists**.
+
+Do not provision a user from an incomplete Clerk sign-up attempt.
 
 ---
 
-# 18. Retrieve User by Clerk User ID
+# 12. Verification Belongs to Clerk
 
-On first-time provisioning, retrieve the Clerk Backend User using the verified:
+If the Clerk configuration requires email or phone verification during signup:
 
 ```text
-sub
+Clerk owns verification challenge
 ```
 
-Do not retrieve by email.
+Laravel must not:
+
+* generate its own verification code;
+* create its own verification token;
+* send competing verification email;
+* accept `email_verified=true` from the client.
+
+Phase 4.5 will decide any application-level policy around verified identity.
+
+This phase only respects Clerk's authentication completion state.
+
+---
+
+# 13. User Enumeration Protection
+
+Preserve the project's requirement to avoid unnecessary account enumeration.
+
+Existing conventions explicitly require login/recovery behavior not to expose account existence unnecessarily.
+
+Where Clerk provides strict user-enumeration protection or privacy-preserving sign-in-or-up behavior, preserve that configuration.
+
+Do not add Laravel endpoints such as:
+
+```http
+POST /auth/email-exists
+GET /users/check-email
+```
+
+Do not expose:
+
+```text
+"This email is registered"
+"This email is not registered"
+```
+
+merely to drive frontend UX.
+
+Clerk supports sign-in-or-up flows that can avoid revealing account existence before verification; use Clerk's supported flow rather than recreating an enumeration oracle.
+
+---
+
+# 14. Authentication Request Boundary
+
+Create or finalize the Laravel authenticated-request boundary.
 
 Conceptually:
 
 ```text
-verified sub
+Request
     ↓
-Clerk Backend API getUser(sub)
+extract Clerk credential
     ↓
-Clerk backend User
+ClerkTokenVerifier
+    ↓
+AuthenticatedClerkIdentity
+    ↓
+Local User Resolver
+    ↓
+JIT provision if permitted
+    ↓
+Laravel authenticated principal
+    ↓
+next middleware/controller
 ```
 
-The Clerk Backend User may provide information such as:
-
-* primary email;
-* primary phone;
-* full name;
-* verified identifier information.
-
-Use only fields that Phase 4.1 designated for the local projection.
+This should become the standard boundary for protected API endpoints.
 
 ---
 
-# 19. Never Search by Email to Link Accounts
+# 15. Accept Session Tokens Only for Human Authentication
 
-This is mandatory.
+The customer authentication middleware must accept the Clerk **session-token** credential type intended for signed-in users.
 
-Do not implement:
-
-```php
-User::where('email', $clerkEmail)->first()
-```
-
-followed by automatic linking.
-
-The flow must not be:
+Do not accidentally accept:
 
 ```text
-same email
-= same account
+M2M token
+API key
+OAuth machine token
 ```
 
-Instead:
+as equivalent customer authentication unless a separate endpoint explicitly requires that credential type in the future.
 
-```text
-same clerk_user_id
-= same external identity
-```
-
-Email is not ownership proof.
+Human-user and machine authentication must remain distinguishable.
 
 ---
 
-# 20. Existing Local Email Collision
+# 16. Bearer Token Transport
 
-A legitimate provisioning case may discover:
+For Laravel API requests coming from a different origin/client, use:
 
-```text
-Clerk User A
-email = customer@example.com
+```http
+Authorization: Bearer <Clerk session token>
 ```
 
-while Laravel already contains:
+Clerk currently documents this as the standard cross-origin request pattern.
 
-```text
-Local User
-clerk_user_id = NULL
-email = customer@example.com
+Do not invent custom authentication headers such as:
+
+```http
+X-Clerk-User
+X-Authenticated-User
+X-Session-ID
 ```
 
-Do **not** silently attach them.
+for authentication.
 
-Do **not** overwrite the existing local user.
-
-Do **not** create an identity takeover vulnerability.
-
-This is an account-linking/migration conflict.
-
-Handle according to the conflict behavior approved in Phase 4.1.
-
-If no behavior was approved, fail safely and record the conflict rather than linking by email.
-
-Existing seeded/development identities may be reset or recreated explicitly in non-production environments instead of weakening production identity rules.
+The bearer token is the credential.
 
 ---
 
-# 21. Customer Provisioner Service
+# 17. Never Trust the Clerk User ID Header
 
-Create a dedicated application service, for example:
+Reject any architecture in which a client can authenticate using:
 
-```text
-LocalUserProvisioner
+```http
+X-Clerk-User-Id: user_123
 ```
 
-or another name consistent with project conventions.
+or body:
 
-Input:
-
-```text
-verified Clerk identity
-+
-normalized authoritative Clerk profile snapshot
+```json
+{
+  "clerk_user_id": "user_123"
+}
 ```
 
-Output:
-
-```text
-local Laravel User
-```
-
-Responsibilities:
-
-* find local user by `clerk_user_id`;
-* return existing user when found;
-* otherwise provision new customer safely;
-* assign CUSTOMER;
-* create required customer profile if Phase 4.1/Group C requires one;
-* persist initial approved identity snapshots;
-* enforce idempotency;
-* protect against concurrency.
-
-It must not own token parsing.
+The Clerk User ID must come from the successfully verified session token.
 
 ---
 
-# 22. Provisioning Algorithm
+# 18. Token Authentication
 
-Implement conceptually:
+Use the Phase 4.2 verification abstraction.
+
+Laravel must verify the session credential, including the currently required Clerk properties such as:
 
 ```text
-1. Receive verified Clerk User ID.
-2. Lookup users.clerk_user_id.
-3. If found:
-      return that local User.
-4. If absent:
-      retrieve authoritative Clerk Backend User.
-5. Normalize only approved fields.
-6. Begin database transaction.
-7. Re-check clerk_user_id inside transaction.
-8. If another request created it:
-      return existing User.
-9. Validate no unsafe local identity conflict.
-10. Create local User.
-11. Assign CUSTOMER role.
-12. Create customer profile if required.
-13. Commit.
-14. Return local User.
+signature
+expiration
+not-before
+issuer
+authorized party
+session/user claims
+audience if configured
 ```
 
-Do not skip the re-check.
+Use current Clerk backend guidance.
 
-The unique index is the final race-condition safety boundary.
+Do not manually decode and trust JWT claims.
 
 ---
 
-# 23. Concurrent First Requests
+# 19. Authorized Parties
 
-Assume that after signup the frontend may immediately issue several API requests simultaneously.
+Configure explicit authorized parties/origins where appropriate.
 
-Example:
+Current Clerk backend guidance recommends explicit `authorizedParties` validation to reduce cross-site request abuse.
 
-```text
-GET /me
-GET /notifications
-GET /me/cart
-```
+The configuration should eventually include approved application origins such as the real website origin.
 
-All three could attempt first-time provisioning.
-
-The system must still create exactly:
+Do not permanently use:
 
 ```text
-1 local User
+*
 ```
 
-not three.
+for authorized parties.
 
-Use:
+Use environment-specific configuration:
 
-* unique `clerk_user_id`;
-* transaction;
-* transactional re-check or safe upsert strategy;
-* duplicate-key reconciliation where appropriate.
+```text
+LOCAL
+STAGING
+PRODUCTION
+```
 
-Do not rely on an in-process static array or application memory for deduplication.
+Do not hard-code production domains inside middleware.
 
 ---
 
-# 24. Provisioning Must Be Idempotent
+# 20. Session Token Version
 
-For:
+Current Clerk documentation uses the current session-token claim format and notes that older token claim versions have been deprecated.
 
-```text
-Clerk user_ABC
-```
+Do not build the application around deprecated claim shapes.
 
-calling the provisioner repeatedly must always resolve to the same local user.
+Only depend on claims needed by the integration.
 
-Test:
+Prefer:
 
 ```text
-provision(user_ABC)
-provision(user_ABC)
-provision(user_ABC)
+sub
+sid
+iss
+azp
+exp
+nbf
 ```
+
+when needed.
+
+Do not copy every Clerk claim into application state.
+
+---
+
+# 21. Authenticate vs Decode
+
+Maintain this distinction:
+
+```text
+decode token
+≠
+authenticate request
+```
+
+A token is not trusted simply because its payload parses.
+
+Authentication requires cryptographic and semantic verification.
+
+All downstream identity resolution must receive only a **verified identity object**.
+
+---
+
+# 22. Local User Resolution
+
+After successful Clerk authentication:
+
+```text
+clerk_user_id = token.sub
+```
+
+resolve:
+
+```text
+User::where('clerk_user_id', ...)
+```
+
+Do not resolve by:
+
+```text
+email
+name
+phone
+public metadata
+```
+
+Use the immutable external identity mapping.
+
+---
+
+# 23. JIT Provisioning
+
+If a successfully authenticated Clerk customer does not yet have a local user:
+
+invoke the Phase 4.2 provisioner.
+
+Do not duplicate provisioning code inside middleware.
 
 Expected:
 
 ```text
-same users.id
-one database user
-one CUSTOMER assignment
-one customer profile
+middleware
+    ↓
+UserResolver
+    ↓
+LocalUserProvisioner when missing
 ```
 
-No duplicated RBAC assignments.
+not:
 
-No duplicated profiles.
+```text
+middleware
+    ├── fetch Clerk user
+    ├── create DB user
+    ├── assign role
+    ├── create profile
+    └── ...
+```
+
+Keep the middleware small.
 
 ---
 
-# 25. Default Role Assignment
+# 24. Authenticated Laravel Principal
 
-Public Clerk signup creates an application:
+After successful resolution, bind the local User into Laravel's request authentication context.
+
+Downstream code should use ordinary application-level identity mechanisms.
+
+For example:
+
+```text
+$request->user()
+```
+
+or the equivalent chosen Laravel auth integration.
+
+Domain services must not need to inspect Clerk JWTs.
+
+---
+
+# 25. One Authentication Guard Strategy
+
+Define one clear guard/provider strategy for Clerk-backed application users.
+
+Do not create:
+
+```text
+clerk_customer_guard
+clerk_staff_guard
+clerk_admin_guard
+```
+
+solely because roles differ.
+
+Authentication determines identity.
+
+RBAC determines application capability.
+
+Prefer:
+
+```text
+one Clerk-backed authenticated User
++
+Laravel roles/policies
+```
+
+unless Phase 4.1 approved otherwise.
+
+---
+
+# 26. Authentication ≠ Authorization
+
+A valid Clerk session means:
+
+```text
+identity authenticated
+```
+
+It does not mean:
+
+```text
+checkout allowed
+staff access allowed
+admin access allowed
+account active
+order owned
+```
+
+After authentication, later authorization still evaluates:
+
+```text
+local user
++ role
++ permission
++ ownership
++ resource
++ action
++ business state
++ operational context
+```
+
+The project explicitly requires backend authorization rather than frontend role checks.
+
+---
+
+# 27. Local Account State
+
+If Phase 4.1 established Laravel application account state such as:
+
+```text
+ACTIVE
+SUSPENDED
+PENDING
+```
+
+do not interpret a valid Clerk session as bypassing it.
+
+Conceptually:
+
+```text
+Clerk session valid
+        ↓
+identity authenticated
+        ↓
+Laravel account state check
+        ↓
+application access
+```
+
+Keep credential validity and application eligibility separate.
+
+Do not invent new account states in this phase.
+
+---
+
+# 28. Public Signup Role
+
+A new identity arriving through public Clerk registration must result in:
 
 ```text
 CUSTOMER
@@ -756,393 +757,860 @@ CUSTOMER
 
 only.
 
-Never derive role from:
+Never assign:
 
 ```text
-Clerk unsafeMetadata
-Clerk publicMetadata
-request body
-query string
-custom header
-email domain
-phone number
-client route
+STAFF
+ADMIN
 ```
 
-Never allow:
+from:
 
-```text
-role=STAFF
-role=ADMIN
-```
+* signup URL;
+* request body;
+* Clerk metadata;
+* email domain;
+* social provider;
+* custom query parameter.
 
-during ordinary customer provisioning.
+This must already be enforced by Phase 4.2 and remain covered here.
 
 ---
 
-# 26. Preserve Existing RBAC Model
+# 29. Sign-In Must Never Modify Role
 
-Use the RBAC implementation chosen in Phase 3.2.
+Signing in is identity resolution.
 
-Do not add:
-
-```text
-users.role
-users.is_admin
-users.is_staff
-```
-
-to simplify provisioning.
-
-Assign the existing CUSTOMER role through the project's established RBAC layer.
-
-Do not introduce a second role system.
-
----
-
-# 27. Role Assignment Must Be Atomic
-
-New-user creation and CUSTOMER assignment should succeed or fail together.
-
-Do not leave:
-
-```text
-User created
-+
-no role
-```
-
-because role assignment failed afterward.
-
-Use a transaction where the selected RBAC implementation permits it.
-
-If profile creation is mandatory, include it in the same atomic provisioning boundary.
-
----
-
-# 28. Existing User Role Must Never Be Downgraded
-
-When:
-
-```text
-users.clerk_user_id = user_ABC
-```
-
-already exists, provisioning must not blindly execute:
+Do not run:
 
 ```text
 assignRole(CUSTOMER)
 ```
 
-on every request.
+on every successful sign-in.
 
-A mapped STAFF or ADMIN identity must stay STAFF/ADMIN according to Laravel RBAC.
+An existing STAFF or ADMIN identity must retain its existing local role.
 
-Provisioning assigns CUSTOMER only at **new public customer creation**.
-
-Existing-user authentication does not change roles.
+Authentication must not mutate authorization state.
 
 ---
 
-# 29. Customer Profile Creation
+# 30. Registration Data Collection
 
-Follow the Group C and Phase 4.1 profile decision.
-
-If every newly registered customer requires:
-
-```text
-customer_profiles
-```
-
-then create it as part of the provisioning transaction.
-
-Do not create StaffProfile.
-
-Do not create AdminProfile.
-
-Do not put authentication credentials in CustomerProfile.
-
----
-
-# 30. Local Identity Snapshot
-
-Persist only the fields approved by the Phase 4.1 ownership matrix.
-
-Typical initial projection may include:
+The original project contract expected minimum registration information including:
 
 ```text
 name
 email
 phone
+password
 ```
 
-but use the actual approved ownership decision.
+Clerk adoption changes credential ownership.
 
-Classification should remain clear:
+Review the post-freeze Phase 4.1 decision and actual Clerk configuration.
+
+The resulting architecture should distinguish:
 
 ```text
-clerk_user_id       → external identity mapping
-email               → Clerk-owned local snapshot
-name                → according to Phase 4.1
-phone               → according to Phase 4.1
-role                → Laravel RBAC
+authentication-required fields
 ```
 
-Do not copy the entire Clerk User JSON into Laravel.
-
----
-
-# 31. Primary Email Selection
-
-If local email is required:
-
-* use Clerk's primary email;
-* do not arbitrarily choose the first array entry;
-* use the Backend User's primary email identifier/accessor;
-* apply the verification rule approved in Phase 4.1.
-
-Do not trust an email sent separately by the client.
-
----
-
-# 32. Missing Primary Email
-
-The current application contract expects an email-based customer identity.
-
-If Clerk provisioning returns no usable primary email:
-
-* do not invent one;
-* do not use `clerk_user_id@example.invalid`;
-* do not bypass database/domain requirements;
-* do not silently create an incomplete user unless Phase 4.1 explicitly permits it.
-
-Follow the approved profile-completion/registration failure semantics.
-
-If Phase 4.1 failed to define this case, record the contract mismatch and stop that provisioning path safely.
-
----
-
-# 33. Name Handling
-
-If name is locally required, derive it only according to the Phase 4.1 field ownership decision.
-
-Possible Clerk sources may include:
+from:
 
 ```text
-full name
-first name + last name
+application profile-required fields
 ```
 
-Do not fabricate realistic personal names.
-
-Do not use email local-part as a hidden fallback unless explicitly approved.
-
-If Clerk signup must collect name before successful application registration, configure that requirement in the future frontend Clerk sign-up phase rather than weakening Laravel validation.
-
----
-
-# 34. Phone Handling
-
-If phone is optional in the finalized local projection:
+For example:
 
 ```text
-phone = NULL
+email/password → Clerk authentication
+name/phone → Clerk signup requirements or later application profile completion
 ```
 
-is acceptable.
-
-If the project's updated registration contract requires phone:
-
-* use Clerk's authoritative primary phone if available;
-* do not accept an unrelated client `phone` as authenticated identity data unless the updated contract explicitly permits it.
-
-Do not invent phone numbers.
+Do not make Laravel accept plaintext passwords merely to preserve the old request shape.
 
 ---
 
-# 35. Email Verification State
+# 31. Missing Application Profile Fields
 
-Do not independently recreate Clerk email verification.
+A Clerk sign-up can potentially complete while a local application field remains incomplete depending on Clerk configuration.
 
-If a local verification snapshot exists:
+Do not silently fabricate missing data.
 
-* derive it from Clerk's authoritative verification state;
-* never trust `email_verified` from the request;
-* do not create a Laravel verification token.
+If local User creation requires data not guaranteed by Clerk:
 
-Full verification policy belongs to Phase 4.5.
-
-Phase 4.2 only needs enough state to correctly provision the application User according to the Phase 4.1 decision.
-
----
-
-# 36. Do Not Create Laravel Passwords
-
-A newly provisioned Clerk customer must not receive:
+use the Phase 4.1/4.2 approved strategy:
 
 ```text
-Laravel password
-password reset token
-remember token
-Sanctum password credential
+Clerk required field
 ```
 
-as part of provisioning.
-
-Do not hash a dummy password.
-
-Do not store Clerk credentials.
-
-Clerk owns authentication credentials.
-
----
-
-# 37. No Laravel Session Creation
-
-Successful local provisioning must not issue:
-
-* Laravel session cookie;
-* Sanctum personal access token;
-* Passport token;
-* custom JWT;
-* refresh token.
-
-The existing Clerk session remains the authentication session.
-
-Provisioning creates an application-domain identity, not a second login.
-
----
-
-# 38. JIT Provisioning Integration Point
-
-Use the integration point established in Phase 4.1.
-
-Preferred model:
+or:
 
 ```text
-verified authenticated request
-    ↓
-resolve local user by clerk_user_id
-    ↓
-JIT provision if absent
-    ↓
-attach local User to Laravel auth/request context
+post-auth profile-completion state
 ```
 
-Do not invent a public password registration endpoint.
+Do not invent a third solution.
 
-If the Phase 4.1 contract matrix retired the old Laravel `AUTH-001` registration endpoint, do not recreate it.
-
-If Phase 4.1 retained a bootstrap/provisioning operation, implement exactly that documented shape.
+Full profile mutation belongs to Phase 4.6.
 
 ---
 
-# 39. Avoid an Explicit `/users/sync` API Unless Approved
+# 32. No Laravel Registration Endpoint Unless Contract Retained It
 
-Do not casually introduce endpoints such as:
+Review the Phase 4.1 endpoint migration matrix.
+
+If the original endpoint:
 
 ```text
-POST /api/v1/users/sync
-POST /api/v1/auth/clerk
-POST /api/v1/auth/provision
+POST /api/v1/auth/register
 ```
 
-unless Phase 4.1 explicitly added one through the post-freeze process.
+was formally retired because Clerk now owns registration:
 
-JIT provisioning can normally remain an internal authentication-boundary concern.
+do not implement it.
 
-Avoid increasing the public API surface without need.
+If Phase 4.1 retained a specific application-bootstrap endpoint, implement only that approved purpose.
+
+Do not send credentials through Laravel unnecessarily.
 
 ---
 
-# 40. Registration Response Semantics
+# 33. No Laravel Login Endpoint Unless Contract Retained It
 
-Clerk handles the actual credential registration response.
+Likewise, do not recreate:
 
-Laravel should not pretend to have created the Clerk account.
+```http
+POST /api/v1/auth/login
+```
 
-If an application endpoint participates after signup, its response concerns the local application User only.
+that receives:
+
+```json
+{
+  "email": "...",
+  "password": "..."
+}
+```
+
+if Clerk owns login.
+
+The future client signs in with Clerk.
+
+Laravel authenticates subsequent session-token requests.
+
+That is the new architecture.
+
+---
+
+# 34. Session Establishment
+
+On successful Clerk sign-in:
+
+```text
+Clerk creates / activates session
+```
+
+Laravel does not need to issue:
+
+```text
+session cookie
+Sanctum token
+Passport token
+custom access token
+custom refresh token
+```
+
+The active Clerk session remains the customer credential source.
+
+---
+
+# 35. Multi-Device Sessions
+
+Preserve the existing project requirement that multiple legitimate sessions may exist across:
+
+```text
+web
+phone
+tablet
+```
+
+unless the actual Clerk application is deliberately configured otherwise.
+
+Logging in on Flutter must not create a second local User.
+
+Logging in on Next.js must not create a second local User.
+
+Both resolve through:
+
+```text
+Clerk sub
+→ same users.clerk_user_id
+→ same users.id
+```
+
+---
+
+# 36. Website / Mobile Identity Invariant
+
+Mandatory testable invariant:
+
+```text
+Clerk user_A
+```
+
+from any supported client maps to:
+
+```text
+Laravel user ID 42
+```
+
+every time.
+
+Do not let client type participate in identity generation.
+
+Never create:
+
+```text
+user_A_web
+user_A_mobile
+```
+
+application identities.
+
+---
+
+# 37. Logout Semantics
+
+Because `AGENTS.md` defines Phase 4.3 as Login/Logout, document and implement the backend-side logout semantics appropriate to Clerk.
+
+The primary logout/session termination belongs to Clerk.
+
+Do not implement:
+
+```text
+DELETE local user
+```
+
+on logout.
+
+Do not clear application history.
+
+Do not destroy all sessions unless the user explicitly chose global sign-out.
+
+Expected ordinary logout concept:
+
+```text
+client
+   ↓
+terminate current Clerk session
+   ↓
+discard local client session state
+   ↓
+future Laravel requests without valid session
+→ 401
+```
+
+---
+
+# 38. Current Session vs All Sessions
+
+Do not conflate:
+
+```text
+sign out current session
+```
+
+with:
+
+```text
+revoke all sessions
+```
+
+The default customer logout should affect the intended current session only unless Clerk/client behavior explicitly selects global sign-out.
+
+Global account/session revocation belongs to dedicated security/admin workflows.
+
+---
+
+# 39. Laravel Logout Endpoint
+
+Review the Phase 4.1 AUTH endpoint matrix.
+
+If the old Laravel logout endpoint has been retired:
+
+do not keep an endpoint that simply returns success while the Clerk session remains valid.
+
+That would create false logout semantics.
+
+If a Laravel logout endpoint remains for orchestration, it must actually coordinate the Clerk session revocation according to the approved architecture.
+
+Never claim logout succeeded while the credential remains usable.
+
+---
+
+# 40. Token After Logout
+
+Tests should establish expected behavior:
+
+```text
+valid session
+→ authenticated request works
+
+session revoked / signed out
+→ future validly checked request no longer authenticates
+```
+
+Be aware that exact revocation timing depends on Clerk session-token semantics and token lifetime.
+
+Document the actual behavior observed/specified by Clerk rather than inventing instantaneous guarantees.
+
+---
+
+# 41. Expired Session
+
+An expired Clerk session token must map to the existing application auth error semantics.
+
+Prefer the already-approved error vocabulary such as:
+
+```text
+SESSION_EXPIRED
+INVALID_AUTHENTICATION
+AUTHENTICATION_REQUIRED
+```
+
+based on the existing contract.
+
+Do not expose raw Clerk error codes as the application's API contract.
+
+---
+
+# 42. Missing Authentication
+
+Protected endpoint with no Clerk credential:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
 
 Do not return:
 
 ```text
-Clerk secret data
-Clerk raw Backend User object
+403
+```
+
+for a caller who is not authenticated.
+
+Preserve the project error semantics.
+
+---
+
+# 43. Invalid Authentication
+
+Malformed, forged, wrong-issuer, wrong-authorized-party, or otherwise invalid credentials must fail safely.
+
+Do not downgrade an invalid token to:
+
+```text
+anonymous user
+```
+
+on a protected endpoint.
+
+For endpoints that optionally support authentication, define explicit behavior:
+
+* no credential → anonymous;
+* valid credential → authenticated;
+* invalid credential → authentication failure.
+
+Never silently ignore a supplied invalid credential.
+
+---
+
+# 44. Optional Authentication Middleware
+
+Some routes support both anonymous and authenticated callers:
+
+```text
+POST /requests
+POST /enquiries
+```
+
+Provide a clean optional-authentication mechanism if required.
+
+Behavior:
+
+```text
+no token
+→ continue anonymous
+
+valid token
+→ resolve local User
+
+invalid supplied token
+→ reject
+```
+
+Do not create separate duplicate request/enquiry controllers for anonymous and authenticated modes.
+
+---
+
+# 45. Public Catalog Must Bypass Authentication
+
+Do not require Clerk middleware for:
+
+```text
+GET products
+GET product detail
+GET categories
+search
+```
+
+The project explicitly requires public catalog pages to remain no-auth and cacheable.
+
+Do not perform JIT user provisioning merely because a browser has a Clerk cookie while requesting public catalog data.
+
+Public catalog requests should remain customer-state-free where practical.
+
+---
+
+# 46. Session Token Must Not Enter Cache Keys/Public Caches
+
+Authenticated responses must remain private.
+
+Never allow:
+
+```text
+Authorization
 session token
-password state
-provider internals
+local user ID
 ```
 
-Use the project's approved application representation.
+to leak into shared CDN caches.
+
+Existing private-resource cache rules remain authoritative.
 
 ---
 
-# 41. Error Mapping
+# 47. CORS
 
-Translate integration failures into project-level errors.
+Configure/prepare CORS so future approved web/mobile clients can send:
 
-Do not expose Clerk SDK exceptions directly.
+```http
+Authorization: Bearer ...
+```
 
-Important classes include:
+to Laravel.
+
+Do not use permissive:
 
 ```text
-invalid/expired authentication
-Clerk identity unavailable
-local identity conflict
-local persistence failure
-role assignment failure
-temporary Clerk Backend API failure
+Access-Control-Allow-Origin: *
 ```
 
-Use existing API error vocabulary where applicable.
+together with credential assumptions.
 
-Do not invent new externally visible error codes casually because the V1 registry is CLOSED.
+Use environment-specific allow-lists.
 
-If a genuinely new client-visible error is unavoidable, follow the formal post-freeze process.
+Do not broaden existing CORS beyond actual application clients.
 
 ---
 
-# 42. Clerk Backend API Failure
+# 48. CSRF Boundary
 
-First-time provisioning may require:
+Bearer-token API authentication and browser-cookie authentication have different CSRF characteristics.
+
+Document that Laravel API customer authentication is Clerk-token based.
+
+Do not globally disable CSRF protections for unrelated cookie-authenticated routes.
+
+Authorized-party validation remains an important defense at the Clerk token boundary.
+
+---
+
+# 49. Session Tokens Must Never Be Logged
+
+Audit middleware/logging for:
 
 ```text
-GET Clerk User by sub
+Authorization
+Bearer token
+__session
+JWT
 ```
 
-If Clerk's Backend API is temporarily unavailable:
+Ensure they are never written to:
 
-* do not fabricate local identity data;
-* do not provision from request body values;
-* do not fall back to email matching;
-* leave the database unchanged;
-* return the approved temporary failure.
+* application logs;
+* error context;
+* request dumps;
+* telemetry;
+* test snapshots.
 
-Existing mapped users should preferably remain authenticatable without this Backend API round trip when local token verification succeeds.
+Logging authentication failure category is acceptable.
+
+Logging the credential is not.
 
 ---
 
-# 43. Do Not Depend on Webhooks
+# 50. Error Mapping Boundary
 
-Do not require `user.created` webhook delivery before provisioning.
-
-Registration must work even when:
+Create or finalize a centralized mapper such as:
 
 ```text
-Clerk user.created webhook
+Clerk authentication failure
+        ↓
+project auth error
 ```
 
-has not yet arrived.
+Possible inputs:
 
-Clerk documents `user.created`, `user.updated`, and `user.deleted` webhooks for synchronizing external databases, but webhook delivery is asynchronous.
+```text
+missing
+expired
+malformed
+invalid signature
+wrong issuer
+wrong authorized party
+revoked/invalid session
+provider temporarily unavailable
+```
 
-Webhooks become reconciliation support later.
+Outputs must use existing project error vocabulary.
 
-Do not implement webhook handlers in Phase 4.2.
+Do not scatter Clerk exception handling across controllers.
 
 ---
 
-# 44. Existing Mapping Is Authoritative
+# 51. Do Not Leak Clerk Internals
+
+API responses must not reveal:
+
+```text
+Clerk SDK exception class
+JWKS URL
+public-key parsing details
+Clerk Backend API response
+raw JWT claim
+session ID
+Clerk user ID
+```
+
+unless a specific value is part of an explicitly approved representation.
+
+Customer-facing errors remain provider-independent.
+
+---
+
+# 52. Login Enumeration
+
+If the actual future frontend uses a custom sign-in flow, it must follow the configured Clerk user-enumeration protection.
+
+Clerk currently supports a privacy-preserving sign-in-or-up pattern where verification happens before revealing whether an account must be created.
+
+Do not implement custom account-existence checks in Laravel.
+
+Prefer Clerk's prebuilt authentication components in the future website phase unless a custom UI is genuinely required.
+
+---
+
+# 53. Prefer Clerk Components Later
+
+Record for Phase 15.1:
+
+For the website's eventual registration/login UI, prefer official Clerk components or documented flows unless the design requires a custom authentication UI.
+
+This reduces custom authentication logic.
+
+But do not implement those components now.
+
+---
+
+# 54. Password Handling
+
+If password authentication is enabled in the Clerk instance:
+
+```text
+password
+```
+
+must travel only through Clerk's supported authentication flow.
+
+Laravel must never receive it as part of:
+
+```text
+/api/v1 auth request
+application log
+local users record
+```
+
+Do not build password validation inside Laravel.
+
+---
+
+# 55. Passwordless Handling
+
+If the Clerk application uses:
+
+```text
+email OTP
+email link
+phone OTP
+passkey
+```
+
+Laravel does not need special credential-validation code for each strategy.
+
+Once Clerk establishes a valid session:
+
+```text
+Laravel sees the same verified session-token boundary.
+```
+
+This provider independence is intentional.
+
+---
+
+# 56. OAuth / Social Sign-In
+
+If existing Clerk configuration enables social sign-in:
+
+do not implement provider-specific Laravel identity mappings.
+
+Example:
+
+```text
+Google → Clerk user_ABC
+Email/password → Clerk user_ABC
+```
+
+Laravel still sees:
+
+```text
+user_ABC
+```
+
+Do not create:
+
+```text
+google_user_id
+facebook_user_id
+```
+
+on Laravel users unless a future requirement specifically needs them.
+
+Clerk owns identity-provider linking.
+
+---
+
+# 57. Session Tasks / Incomplete Authentication
+
+Clerk may require additional session tasks before the session is fully usable depending on configuration.
+
+Do not assume:
+
+```text
+session exists
+=
+all security requirements complete
+```
+
+Use current Clerk semantics for determining whether the request is fully authenticated/eligible.
+
+Do not bypass mandatory verification/MFA/session tasks in Laravel.
+
+---
+
+# 58. MFA
+
+Do not implement custom MFA.
+
+If MFA is enabled in Clerk:
+
+Clerk owns the MFA challenge.
+
+Laravel receives the resulting authenticated session once completed.
+
+Detailed MFA policy remains outside this phase unless Phase 4.1 explicitly made it a V1 requirement.
+
+---
+
+# 59. Device Trust
+
+Do not recreate Clerk Device Trust/client-trust functionality.
+
+If enabled, respect Clerk's sign-in/session state.
+
+Do not bypass a `needs_client_trust` or equivalent incomplete sign-in condition by creating a local Laravel session.
+
+---
+
+# 60. Authentication Middleware Placement
+
+Follow existing project structure, likely under:
+
+```text
+backend/laravel/app/Http/Middleware/
+```
+
+with supporting services under the already-selected Phase 4.1 structure.
+
+Example conceptual split:
+
+```text
+AuthenticateWithClerk
+    ↓
+ClerkTokenVerifier
+    ↓
+LocalUserResolver
+    ↓
+Laravel auth context
+```
+
+Keep middleware orchestration small.
+
+---
+
+# 61. Middleware Alias
+
+Register a clear middleware alias where appropriate, for example conceptually:
+
+```text
+auth.clerk
+```
+
+or the naming already approved in Phase 4.1.
+
+Do not scatter direct token verification across route definitions.
+
+Protected endpoint groups should use one standardized authentication boundary.
+
+---
+
+# 62. Route Classification Review
+
+Review the existing V1 route inventory and classify:
+
+### PUBLIC
+
+No authentication:
+
+```text
+catalog/category/product/search
+```
+
+### OPTIONAL AUTH
+
+```text
+request creation
+enquiry creation
+guest/cart-sensitive flows where contract allows
+```
+
+### REQUIRED AUTH
+
+```text
+/me
+checkout
+own orders
+order cancellation
+notifications
+own requests/enquiries
+profile
+```
+
+Do not change endpoint business accessibility while applying middleware.
+
+---
+
+# 63. Do Not Implement Authorization Policies Yet
+
+Phase 4.10 owns full policies/permissions.
+
+Phase 4.3 may establish:
+
+```text
+authenticated local User
+```
+
+but should not implement every domain authorization policy.
+
+Tiny existing checks required to preserve current endpoint safety are acceptable.
+
+Do not leak Phase 4.10 into this phase.
+
+---
+
+# 64. Current-User Smoke Endpoint
+
+If an existing:
+
+```http
+GET /api/v1/me
+```
+
+implementation already exists sufficiently to validate the authenticated principal, use it as the authentication smoke boundary.
+
+Do not invent:
+
+```http
+GET /api/v1/auth/whoami
+```
+
+just for testing unless Phase 4.1 explicitly approved such an endpoint.
+
+`/me` is already the canonical application self-context.
+
+---
+
+# 65. `/me` Identity
+
+For a protected `/me` request:
+
+```text
+Clerk token.sub
+    ↓
+users.clerk_user_id
+    ↓
+Laravel User
+    ↓
+GET /me
+```
+
+Never allow:
+
+```http
+GET /me?user_id=123
+```
+
+to substitute identity.
+
+Never accept:
+
+```json
+{"user_id": "..."}
+```
+
+for current-user selection.
+
+---
+
+# 66. Existing Local User Without Clerk Mapping
+
+If a protected request has a valid Clerk identity but collides with an old local account having the same email and no Clerk mapping:
+
+use the Phase 4.2 safe conflict behavior.
+
+Do not add sign-in-time email auto-linking.
+
+Do not weaken this security invariant for UX convenience.
+
+---
+
+# 67. Existing Clerk Mapping with Changed Email
 
 If:
 
@@ -1150,760 +1618,598 @@ If:
 users.clerk_user_id = user_ABC
 ```
 
-exists, that mapping is authoritative.
+but Clerk email has changed:
 
-Do not compare the request email and switch to another local user.
-
-Do not rebind:
+the identity is still:
 
 ```text
 user_ABC
 ```
 
-to another local user because an email changed.
+Do not create a second Laravel account.
 
-Identity binding changes require a dedicated secure administrative/account-linking process.
+Email synchronization follows the approved Phase 4.1/4.6 policy.
 
----
-
-# 45. Clerk User Deletion
-
-Do not implement deletion synchronization in Phase 4.2.
-
-A Clerk user deletion must not currently cause automatic hard deletion of:
-
-* User;
-* Orders;
-* Requests;
-* Enquiries;
-* historical commerce.
-
-Account-retention policy remains assigned to Phase 4.6/later management phases.
+Sign-in should not rebind identity based on email differences.
 
 ---
 
-# 46. Guest Cart Preservation
+# 68. Clerk Backend API Availability
 
-Do not modify guest-cart behavior during registration.
+For already mapped users, normal sign-in request resolution should ideally not require Clerk Backend API calls beyond cryptographic authentication.
 
-Registration may eventually lead to:
-
-```text
-guest cart
-+
-new authenticated customer
-→ CART-005 merge
-```
-
-but the merge belongs to the Cart/auth integration stage.
-
-Phase 4.2 only ensures the authenticated customer has a valid local User.
-
-Do not silently attach guest carts by browser state or email.
-
----
-
-# 47. Furniture Requests / Enquiries
-
-Do not automatically attach previous anonymous records to the newly registered customer.
-
-Specifically, never perform:
-
-```text
-UPDATE enquiries
-SET user_id = new_user
-WHERE email = new_user.email
-```
-
-or equivalent for furniture requests.
-
-Historical anonymous records remain anonymous unless a future secure claim mechanism is explicitly designed.
-
----
-
-# 48. Authentication Context Binding
-
-Once a local user has been resolved/provisioned, bind that local user into Laravel's authenticated request context using the architecture established in Phase 4.1.
-
-Downstream code should be able to reason about:
-
-```text
-authenticated Laravel User
-```
-
-without repeatedly interacting with Clerk.
-
-Domain services should not need to know:
-
-```text
-JWT
-Clerk SDK
-JWKS
-session token
-```
-
-This isolates external identity-provider concerns at the boundary.
-
----
-
-# 49. Keep Clerk Out of Domain Services
-
-The following services should eventually receive the local User/application identity:
-
-```text
-Checkout
-OrderService
-CartService
-RequestService
-EnquiryService
-NotificationService
-```
-
-They should not receive:
-
-```text
-Clerk User object
-Clerk JWT
-Clerk session ID
-```
-
-unless a narrowly defined authentication/security operation genuinely requires it.
-
-Clerk belongs at the authentication/integration boundary.
-
----
-
-# 50. Service Boundaries
-
-A clean implementation may resemble:
-
-```text
-app/
-├── Authentication/
-│   ├── Clerk/
-│   │   ├── ClerkTokenVerifier.php
-│   │   ├── ClerkUserGateway.php
-│   │   └── ...
-│   ├── AuthenticatedClerkIdentity.php
-│   └── LocalUserProvisioner.php
-```
-
-or the equivalent structure that fits the existing project layout.
-
-Do not force this exact directory structure if Phase 4.1 selected another consistent structure.
-
-Use the architecture already approved.
-
----
-
-# 51. No Giant Authentication Service
-
-Avoid:
-
-```text
-ClerkService
-```
-
-containing everything:
+Expected hot path:
 
 ```text
 verify token
-fetch user
-create local user
-assign role
-sync profile
-authorize
-logout
-password reset
+→ local user lookup
+→ continue
 ```
 
-Prefer small responsibilities.
-
-Example:
+not:
 
 ```text
-ClerkTokenVerifier
-ClerkUserGateway
-LocalUserProvisioner
+verify token
+→ call Clerk Users API
+→ local user lookup
+→ every request
 ```
 
-Each should be independently testable.
+This reduces latency and external dependency.
 
 ---
 
-# 52. Dependency Injection
+# 69. User Data Freshness
 
-Bind external interfaces through the Laravel service container.
+Do not synchronously refresh full Clerk profile data on every authenticated request.
 
-Production:
+Only synchronize identity data according to the field-ownership strategy established earlier.
 
-```text
-ClerkUserGateway
-→ real Clerk implementation
-```
-
-Tests:
+Profile synchronization belongs mainly to:
 
 ```text
-ClerkUserGateway
-→ fake implementation
+webhook reconciliation
+explicit profile/security flow
+bounded JIT reconciliation
 ```
 
-Likewise for token verification when applicable.
-
-Feature/unit tests must not make real Clerk network requests.
+not every API hit.
 
 ---
 
-# 53. Testing — Migration
+# 70. Tests — Missing Credential
 
-Add tests proving:
+Protected endpoint:
 
-* `clerk_user_id` column exists through migrations;
-* multiple NULL values remain possible if nullable;
-* duplicate non-null Clerk User ID is rejected;
-* existing Group C users remain migratable;
-* fresh migration remains successful.
+```text
+no Authorization token
+```
 
-Do not modify old Group C migrations to make these tests pass.
+Expected:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+Verify no local user provisioning occurs.
 
 ---
 
-# 54. Testing — Successful New Customer Provisioning
+# 71. Tests — Valid Existing Customer
 
 Given:
 
 ```text
-verified Clerk identity user_A
-```
-
-and a valid Clerk Backend User snapshot:
-
-```text
-email
-approved name
-approved phone
-```
-
-when provisioning occurs:
-
-verify:
-
-* exactly one local User exists;
-* `clerk_user_id = user_A`;
-* local approved snapshots are correct;
-* CUSTOMER role exists;
-* Staff role absent;
-* Admin role absent;
-* customer profile exists if required;
-* no Laravel password credential was generated.
-
----
-
-# 55. Testing — Existing User
-
-Provision the same Clerk identity twice.
-
-Verify:
-
-```text
-user1.id === user2.id
+valid Clerk session
+sub = user_A
 ```
 
 and:
 
 ```text
-User::count()
+users.clerk_user_id = user_A
 ```
 
-does not increase on the second provisioning attempt.
+verify:
 
-Verify role/profile rows are not duplicated.
+* request authenticates;
+* correct local User is bound;
+* CUSTOMER role remains;
+* protected endpoint works.
 
 ---
 
-# 56. Testing — No Email Auto-Link
+# 72. Tests — First Authenticated Request
 
-Prepare:
-
-```text
-Local User:
-email = same@example.com
-clerk_user_id = NULL
-```
-
-Then provision:
+Given:
 
 ```text
-Clerk user_NEW
-email = same@example.com
+valid Clerk session
+sub = user_NEW
 ```
+
+and no local mapping:
+
+verify:
+
+* Phase 4.2 provisioner invoked;
+* one local CUSTOMER created;
+* same request proceeds under that User;
+* no second auth credential created.
+
+---
+
+# 73. Tests — Invalid Signature
+
+Provide token failing cryptographic verification.
 
 Verify:
 
-* existing local user is not silently claimed;
-* `clerk_user_id` is not attached to it automatically;
-* safe conflict behavior occurs;
-* no privileged identity takeover is possible.
-
-This is a mandatory security regression test.
+* 401;
+* no local lookup/provisioning;
+* no raw provider error exposed.
 
 ---
 
-# 57. Testing — Ignore Clerk Role Metadata
+# 74. Tests — Expired Token
 
-Provide a fake Clerk User containing metadata such as:
+Provide expired token.
+
+Verify expected existing project error:
+
+```text
+SESSION_EXPIRED
+```
+
+or exact approved equivalent.
+
+Do not provision.
+
+---
+
+# 75. Tests — Wrong Issuer
+
+Token cryptographically valid but issued by an unapproved issuer:
+
+reject.
+
+Do not provision.
+
+---
+
+# 76. Tests — Unauthorized Party
+
+Token has unapproved `azp` / authorized party:
+
+reject.
+
+This must not become an authenticated Laravel User.
+
+---
+
+# 77. Tests — Client-Supplied Identity Tampering
+
+Send:
 
 ```json
 {
-  "public_metadata": {
-    "role": "ADMIN"
-  },
-  "unsafe_metadata": {
-    "role": "ADMIN"
-  }
+  "user_id": "admin-id",
+  "clerk_user_id": "user_admin",
+  "role": "ADMIN"
 }
 ```
 
-Provision the customer.
+alongside a valid CUSTOMER session.
 
-Verify application role is still:
+Verify authenticated identity remains the token-bound local Customer.
 
-```text
-CUSTOMER
-```
-
-Do not trust Clerk metadata for local RBAC.
+No identity substitution.
 
 ---
 
-# 58. Testing — Client Role Tampering
+# 78. Tests — Same Identity Across Client Types
 
-If any Laravel endpoint participates in provisioning, send fields such as:
+Simulate two valid session tokens belonging to the same:
 
-```json
-{
-  "role": "ADMIN",
-  "permissions": ["*"],
-  "user_id": "another-user",
-  "clerk_user_id": "user_other"
-}
+```text
+sub = user_A
 ```
 
-They must not influence the authenticated/provisioned user.
+representing different sessions/devices.
 
-Reject unknown/server-controlled fields according to the current API contract where applicable.
+Both must resolve to the same:
+
+```text
+users.id
+```
+
+Multi-session does not mean multi-account.
 
 ---
 
-# 59. Testing — Missing Required Identity Data
+# 79. Tests — Existing Admin/Staff
 
-Test required Clerk projection fields.
+Valid session for an existing mapped Staff/Admin:
 
-Examples depending on the approved ownership matrix:
+authentication should resolve that existing user.
 
-```text
-no primary email
-no required name
-no required phone
-```
+Do not assign CUSTOMER.
 
-Verify no fabricated values are stored.
+Do not mutate role.
 
-Verify provisioning either:
-
-* follows the approved incomplete-profile flow; or
-* fails safely.
-
-Database must remain consistent.
+This test verifies auth and provisioning stay separate.
 
 ---
 
-# 60. Testing — Transaction Rollback
+# 80. Tests — Optional Authentication
 
-Force:
+For an optional-auth route:
 
-```text
-role assignment failure
-```
+### No token
 
-or another controlled provisioning failure.
+continue anonymous.
+
+### Valid token
+
+attach authenticated User.
+
+### Invalid token supplied
+
+reject authentication rather than silently treating caller as anonymous.
+
+---
+
+# 81. Tests — Public Route
+
+Call public catalog endpoint without token.
 
 Verify:
 
-```text
-no half-created customer
-no orphan customer_profile
-no role-less new user
-```
+* succeeds according to catalog semantics;
+* Clerk verifier not required;
+* no local User created.
 
-The operation must be atomic.
+This prevents accidental global auth middleware.
 
 ---
 
-# 61. Testing — Concurrency
+# 82. Tests — Logout / Revocation
 
-Add a focused test for two provisioning attempts using the same:
-
-```text
-clerk_user_id
-```
-
-Verify final state contains:
+Using fake verifier/session abstraction:
 
 ```text
-1 user
-1 customer identity mapping
-1 profile
-1 CUSTOMER assignment
+before logout
+→ session accepted
+
+after simulated Clerk revocation/termination
+→ authentication rejected
 ```
 
-Use database uniqueness as the final invariant.
-
-If the existing canonical SQLite test harness cannot model the exact concurrency mechanism safely, test the deterministic collision/retry path and document the limitation rather than introducing the known MySQL-only harness failures.
+Do not require real Clerk network access in ordinary PHPUnit tests.
 
 ---
 
-# 62. Testing — Existing Staff/Admin Mapping
+# 83. Tests — Authentication Provider Failure
 
-Prepare an existing mapped Staff or Admin user.
-
-Resolve/provision their Clerk identity through the same mapping boundary.
-
-Verify provisioning does **not** overwrite their role with CUSTOMER.
-
-This protects against accidental privilege downgrades and role mutation on ordinary requests.
-
----
-
-# 63. Testing — Clerk Failure
-
-Fake the Clerk gateway throwing a temporary integration failure during new-user provisioning.
+Simulate verifier infrastructure failure where appropriate.
 
 Verify:
 
-* no local user is created;
-* no role assigned;
-* no profile created;
-* no unverified client data used as fallback;
-* safe project-level error returned/mapped.
+* request fails safely;
+* user is not treated as anonymous;
+* no user is provisioned from unverified data;
+* secrets/provider internals not exposed.
 
 ---
 
-# 64. Test Isolation
+# 84. Tests Must Be Offline
 
-Do not call real Clerk services from ordinary PHPUnit tests.
+Normal PHPUnit suite must not call Clerk.
 
-Use:
+Use test doubles:
 
 ```text
-fake ClerkTokenVerifier
-fake ClerkUserGateway
+FakeClerkTokenVerifier
+FakeClerkUserGateway
 ```
 
-or equivalent test doubles.
+or existing Phase 4.2 equivalents.
 
-External integration tests may be added later under Phase 4.12.
-
-The normal suite must remain:
-
-* fast;
-* deterministic;
-* offline-capable.
+Real Clerk tests are deferred to Phase 4.12 or dedicated integration environment.
 
 ---
 
-# 65. Existing Group C Factories
+# 85. Do Not Add Test Authentication Headers
 
-Update UserFactory only as necessary to support the new schema.
-
-Do not force every generic test user to have a real Clerk identity.
-
-Useful states may include:
+Never create a production middleware bypass such as:
 
 ```text
-withClerkIdentity()
-customer()
-staff()
-admin()
+X-Test-User
+X-Debug-Auth
+X-Role
 ```
 
-according to existing factory conventions.
+Tests should replace dependencies through the Laravel container.
 
-Use clearly synthetic Clerk IDs, for example:
-
-```text
-user_test_...
-```
-
-Never use real Clerk user identifiers in committed tests.
+No runtime backdoor.
 
 ---
 
-# 66. Do Not Reintroduce Faker in Production Paths
+# 86. Rate Limiting
 
-Production Clerk/local-user provisioning must not rely on Faker.
+Do not fully implement Phase 4.11 yet.
 
-Also preserve the previously recorded deferred reference-generator cleanup:
+But preserve/record that:
+
+* Clerk owns credential-level abuse controls for Clerk authentication;
+* Laravel still owns application endpoint throttling.
+
+Do not introduce redundant password-login throttles in Laravel if Laravel no longer receives passwords.
+
+---
+
+# 87. Logging
+
+May log:
+
+```text
+authentication success/failure category
+request_id
+local user ID where appropriate
+```
+
+Do not log:
+
+```text
+session token
+Authorization header
+password
+Clerk secret key
+full JWT
+full Clerk User payload
+```
+
+Avoid logging external identifiers unless operationally needed.
+
+---
+
+# 88. Metrics / Diagnostics
+
+If existing logging/metrics infrastructure supports it, distinguish high-level categories:
+
+```text
+auth.missing
+auth.invalid
+auth.expired
+auth.user_resolution_failed
+auth.provisioning_failed
+```
+
+Do not add a new observability platform.
+
+Detailed monitoring remains a later production phase.
+
+---
+
+# 89. Documentation Updates
+
+Update consolidated documentation to reflect the implemented flow.
+
+Likely:
+
+```text
+docs/api/api-conventions.md
+docs/domain/business-rules.md
+docs/decisions.md
+```
+
+and the approved Clerk-related sections of:
+
+```text
+docs/api/api-contract.md
+docs/api/openapi.yaml
+```
+
+where necessary.
+
+Do not recreate obsolete custom Laravel login/password descriptions.
+
+---
+
+# 90. Auth Endpoint Inventory
+
+Confirm each original `AUTH-*` endpoint remains correctly marked:
+
+```text
+retained
+retired
+Clerk-owned
+application-owned
+```
+
+Do not recycle retired endpoint IDs.
+
+Do not silently leave OpenAPI routes describing Laravel password login when the implementation no longer exposes them.
+
+---
+
+# 91. OpenAPI Security Scheme
+
+Ensure the protected API security scheme accurately describes:
+
+```text
+Bearer token
+=
+Clerk-issued authenticated session token
+```
+
+rather than a Laravel-issued access token.
+
+Do not expose internal token validation details unnecessarily.
+
+---
+
+# 92. Registration/Login UI Remains Future Work
+
+Explicitly note that successful backend completion does **not** mean the website now has registration/login screens.
+
+AGENTS.md assigns:
+
+```text
+Phase 15.1 — Registration/login UI
+```
+
+to website customer commerce.
+
+Phase 4.3 provides the secure authentication contract those screens will later consume.
+
+---
+
+# 93. Flutter Remains Future Work
+
+Do not implement secure mobile token storage now.
+
+AGENTS.md assigns Flutter authentication/session storage to:
+
+```text
+Phase 16.5
+```
+
+Phase 4.7 will establish the API-authentication specifics required for mobile before then.
+
+---
+
+# 94. Code Quality
+
+Maintain:
+
+* cognitive complexity ≤15;
+* maximum 3 returns per function where practical under project rules;
+* small middleware;
+* small services;
+* dependency injection;
+* centralized error mapping;
+* centralized Clerk configuration;
+* minimal comments;
+* no duplicate authentication logic.
+
+Avoid:
+
+```text
+500-line Clerk middleware
+```
+
+or controllers parsing tokens themselves.
+
+---
+
+# 95. Expected Production Classes
+
+Use existing Phase 4.1/4.2 names where already implemented.
+
+Possible responsibilities include:
+
+```text
+AuthenticateWithClerk
+ClerkTokenVerifier
+AuthenticatedClerkIdentity
+LocalUserResolver
+LocalUserProvisioner
+ClerkAuthenticationExceptionMapper
+```
+
+Do not create duplicates if equivalent abstractions already exist.
+
+Refactor rather than parallel-implement.
+
+---
+
+# 96. No Unnecessary Schema Changes
+
+Expected schema change:
+
+```text
+NONE
+```
+
+unless Phase 4.2 left a clearly documented auth prerequisite.
+
+Do not change User/RBAC schemas merely to simplify middleware.
+
+Do not add:
+
+```text
+last_login_token
+session_token
+refresh_token
+auth_provider_password
+```
+
+to `users`.
+
+---
+
+# 97. Session IDs
+
+Do not persist Clerk session IDs in the users table merely for login.
+
+One user may have multiple sessions.
+
+If future security/session-management requirements need a session table, design it in the appropriate security phase.
+
+Do not prematurely duplicate Clerk's session store.
+
+---
+
+# 98. No Authentication Cache by Token
+
+Do not create an unbounded mapping cache keyed by bearer token.
+
+If identity caching is introduced later:
+
+* tokens must not appear in logs/cache keys visible externally;
+* expiration must be respected;
+* revocation semantics must be considered.
+
+For V1 scale, simple verified request + indexed `clerk_user_id` lookup is preferred.
+
+---
+
+# 99. ReferenceGenerator Deferred Work
+
+Do not mix the Group C ReferenceGenerator cleanup into this phase.
+
+Outstanding:
 
 ```text
 OrderFactory
 PaymentFactory
 FurnitureRequestFactory
+production order/payment/request services
 ```
 
-That work remains independent and must not become mixed into this authentication phase unless those files are otherwise touched for a legitimate reason.
+remain owned by their appropriate Group D/E/H/J work.
+
+Authentication changes should stay focused.
 
 ---
 
-# 67. Security Logging
+# 100. Carry Forward Remaining Risks
 
-Safe logging may include:
-
-```text
-request_id
-provisioning outcome
-internal local user ID after successful creation
-failure category
-```
-
-Avoid logging:
+Do not address unrelated Group C risks here:
 
 ```text
-session token
-Authorization header
-CLERK_SECRET_KEY
-JWT payload wholesale
-full Clerk Backend User payload
-password data
+products.product_type / is_published → Group E 5.7
+MySQL enum case behavior → Group K
+MySQL CI helper failures → Group U if needed
+cart user FK delete action → Phase 4.6 / Group K retention policy
 ```
 
-Be especially careful not to log token values through exception context.
+Keep them recorded.
 
 ---
 
-# 68. User Enumeration
-
-Provisioning errors must not create an external oracle that reveals another user's account unnecessarily.
-
-For example, an email collision should not expose:
-
-```text
-the other user's ID
-role
-orders
-profile
-Clerk ID
-```
-
-Return only the minimum safe error prescribed by the contract.
-
-Keep detailed diagnostics in protected server logs.
-
----
-
-# 69. Authorization Is Not Part of Provisioning
-
-Provisioning proves:
-
-```text
-this Clerk identity maps to this local User
-```
-
-and assigns CUSTOMER when creating a new public account.
-
-It does not automatically authorize:
-
-```text
-orders
-admin APIs
-staff operations
-inventory
-payments
-```
-
-Those remain governed by Laravel policies and later Group D phases.
-
----
-
-# 70. Public Catalog Must Remain Anonymous
-
-Do not add Clerk authentication/provisioning middleware to:
-
-```text
-public category endpoints
-public product endpoints
-search
-public product detail
-```
-
-Public browsing must remain possible without Clerk.
-
-Only routes explicitly requiring application authentication should invoke the authenticated-user resolution path.
-
----
-
-# 71. Anonymous Request / Enquiry Must Remain Possible
-
-Do not accidentally make:
-
-```text
-POST /requests
-POST /enquiries
-```
-
-authentication-required.
-
-They support:
-
-```text
-anonymous
-OR
-authenticated
-```
-
-If a valid Clerk identity is present later, Laravel may derive local ownership.
-
-If no identity is present, they remain anonymous.
-
-Invalid supplied authentication credentials must not be treated as a valid authenticated user.
-
----
-
-# 72. Documentation
-
-Update the relevant consolidated documentation only.
-
-Likely files:
-
-```text
-docs/decisions.md
-docs/api/api-conventions.md
-docs/domain/business-rules.md
-```
-
-and any Phase 4.1-auth contract documents that require implementation status updates.
-
-Document:
-
-* local JIT provisioning algorithm;
-* `clerk_user_id`;
-* no email auto-linking;
-* CUSTOMER-only public provisioning;
-* transaction/idempotency behavior;
-* Clerk Backend User fetch only for first provisioning/needed synchronization;
-* no Laravel credential creation.
-
-Do not create unnecessary permanent phase markdown files.
-
----
-
-# 73. OpenAPI
-
-Only update OpenAPI if Phase 4.1 retained or introduced an explicit Laravel-facing registration/bootstrap operation.
-
-If JIT provisioning is internal middleware behavior, there may be **no new public endpoint** to document.
-
-Do not invent an API endpoint solely so Phase 4.2 appears visible in OpenAPI.
-
-Authentication behavior can be documented through the existing security scheme and relevant protected endpoint descriptions.
-
----
-
-# 74. No Frontend Changes
-
-Do not modify:
-
-```text
-frontend/web
-frontend/app
-frontend/design-system
-```
-
-during this phase.
-
-Do not add:
-
-```text
-SignInButton
-SignUpButton
-UserButton
-ClerkProvider
-```
-
-yet.
-
-Those belong to the later client phases.
-
----
-
-# 75. No Clerk CLI Initialization
-
-Do not run:
-
-```bash
-clerk init
-```
-
-against:
-
-```text
-furniture-ecommerce/
-backend/laravel/
-```
-
-unless current official Clerk tooling explicitly supports and is intentionally being used for this backend, and Phase 4.1 approved it.
-
-The supplied CLI initialization process is primarily relevant when the actual frontend framework exists.
-
-For Laravel, use the backend PHP integration deliberately.
-
----
-
-# 76. Quality Requirements
-
-Maintain existing project code-quality constraints:
-
-* cognitive complexity ≤15;
-* maximum 3 return statements per function where applicable;
-* small cohesive services;
-* centralized constants;
-* explicit naming;
-* no duplicated role strings;
-* no scattered Clerk configuration access;
-* no giant middleware;
-* no magic strings;
-* minimal comments.
-
-Prefer:
-
-```text
-one class → one responsibility
-```
-
-over clever abstraction.
-
----
-
-# 77. Static Analysis
-
-Ensure all new PHP code passes the existing PHPStan/Larastan level.
-
-Do not suppress new static-analysis failures broadly.
-
-Avoid:
-
-```php
-@phpstan-ignore-next-line
-```
-
-unless there is a documented unavoidable SDK typing defect.
-
-If Clerk SDK types require an adapter, isolate that adapter instead of weakening analysis across the project.
-
----
-
-# 78. Commands / Verification
+# 101. Commands / Verification
 
 From:
 
@@ -1911,167 +2217,140 @@ From:
 backend/laravel/
 ```
 
-run the project's normal checks.
+run the established project checks.
 
 At minimum:
 
 ```bash
-composer install
-php artisan migrate:fresh --seed
 php artisan test
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
-```
-
-or the equivalent scripts already defined by the repository.
-
-Also run:
-
-```bash
 composer audit
 ```
 
-if consistent with current project tooling.
+If migrations/configuration changed:
 
-Do not replace existing CI commands with a new workflow.
-
----
-
-# 79. Verify Fresh Rebuild
-
-Because this phase changes the users schema, repeat the Group C rebuild invariant:
-
-```text
-empty database
-    ↓
-all migrations
-    ↓
-seed data
-    ↓
-tests
+```bash
+php artisan migrate:fresh --seed
 ```
 
-must succeed.
+must still succeed.
 
-Ensure existing Group C seeders/factories still work after Clerk mapping is added.
+Use repository-defined Composer scripts where they already wrap these commands.
 
 ---
 
-# 80. Schema/API Change Report
+# 102. Files Changed Report
 
 At completion report:
 
-## Schema
+### Files changed
+
+Exact paths.
+
+### Schema changes
 
 Expected:
 
 ```text
-users.clerk_user_id
+none
 ```
 
-plus only the credential-column changes explicitly approved in Phase 4.1.
+unless explicitly justified.
 
-## API
+### API changes
 
-Expected:
+List any auth-contract/OpenAPI corrections.
 
-* no unrelated V1 changes;
-* registration semantics follow Phase 4.1 Clerk migration decision;
-* no new arbitrary endpoint.
+### Tests added
 
-## Authorization
+List authentication scenarios.
 
-Expected:
+### Commands run
+
+List exact commands and outcomes.
+
+### Known risks
+
+List remaining Clerk/session integration risks.
+
+### Deferred
+
+Explicitly state what belongs to:
 
 ```text
-public signup → CUSTOMER only
+4.4
+4.5
+4.6
+4.7
+4.8
+4.9+
 ```
 
 ---
 
-# 81. Files Changed Report
+# 103. Definition of Done
 
-Explicitly list:
+Phase 4.3 is complete when:
 
-* Composer files;
-* config files;
-* new migration;
-* User model;
-* authentication integration classes;
-* provisioning service;
-* provider/container bindings;
-* factories adjusted;
-* tests;
-* documentation.
-
-Do not commit, stage, or push.
-
-Leave version-control operations to the project owner.
-
----
-
-# 82. Definition of Done
-
-Phase 4.2 is complete when:
-
-* official Clerk PHP backend integration is installed/configured as needed;
-* Clerk secrets remain server-only;
-* `users.clerk_user_id` exists with uniqueness protection;
-* schema no longer requires creating a fake Laravel password for Clerk customers;
-* verified Clerk `sub` is the only automatic external-account mapping key;
-* email auto-linking is prohibited and tested;
-* local customer provisioning exists;
-* provisioning is idempotent;
-* concurrent provisioning cannot create duplicate users;
-* new public customers receive CUSTOMER only;
-* Clerk metadata cannot elevate role;
-* existing Staff/Admin mappings are not overwritten;
-* customer profile creation is atomic where required;
-* approved identity snapshot is stored correctly;
-* no second Laravel authentication token/session is created;
-* Clerk Backend API failure cannot result in fabricated identity;
-* normal tests do not call external Clerk services;
-* migration rebuild passes;
-* PHPUnit passes;
+* the Clerk sign-up/sign-in responsibility is unambiguous;
+* Laravel does not accept customer passwords;
+* Laravel does not issue a parallel customer auth credential;
+* protected requests accept and verify Clerk session credentials;
+* verified Clerk `sub` resolves to the correct local User;
+* Phase 4.2 provisioning is reused for first authenticated requests;
+* public signup can still create CUSTOMER only;
+* sign-in does not mutate roles;
+* one Clerk identity maps to one local User across sessions/devices;
+* missing credentials return `401 AUTHENTICATION_REQUIRED`;
+* expired/invalid credentials map to project-level auth errors;
+* unauthorized issuers/authorized parties are rejected;
+* optional-auth routes distinguish no-token from invalid-token;
+* public catalog remains unauthenticated;
+* Clerk provider errors do not leak;
+* tokens/secrets are not logged;
+* logout/session termination semantics are consistent with Clerk;
+* ordinary tests require no real Clerk network access;
+* backend PHPUnit tests pass;
 * Pint passes;
 * PHPStan passes;
-* Composer/security checks pass as applicable;
-* documentation reflects the implementation;
-* no frontend work has leaked into this phase.
+* Composer/security checks pass;
+* documentation/OpenAPI no longer describes obsolete Laravel-owned login behavior;
+* no frontend authentication UI was implemented prematurely.
 
 ---
 
-# 83. Out of Scope
+# 104. Out of Scope
 
 Do not implement:
 
-* Next.js Clerk initialization;
-* Flutter Clerk initialization;
-* actual frontend registration screen;
-* Clerk UI components;
-* login/logout UI;
 * password recovery;
-* account email-change UI;
-* full email-verification flow;
+* detailed email verification policy;
 * profile editing;
-* guest-cart merge;
-* Clerk webhooks;
-* staff approval;
-* admin bootstrap UI;
-* Laravel authorization policies;
-* rate limiting;
-* MFA;
-* Organizations;
+* account deletion;
+* full RBAC policies;
+* role-management UI;
+* rate-limiting implementation;
+* Next.js Clerk UI;
+* Flutter Clerk UI;
+* Flutter secure storage;
+* cart merge;
+* admin UI;
+* MFA configuration;
+* Clerk Organizations;
+* Clerk webhook reconciliation;
 * payment authentication.
 
 ---
 
-# 84. STOP Condition
+# 105. STOP Condition
 
-STOP when Clerk customer identities can be securely and deterministically projected into the Laravel application as local CUSTOMER users and all Phase 4.2 tests/checks pass.
+STOP once a Clerk-authenticated customer session can be securely translated into the correct authenticated Laravel User for protected API requests, registration/sign-in semantics are documented, logout semantics are correct, and all Phase 4.3 checks pass.
 
-Do not continue automatically into login/logout.
+Do not continue automatically.
 
-The next project-owner request should begin:
+The next roadmap phase is:
 
-**Phase 4.3 — Clerk Login / Logout and Laravel Authenticated Request Resolution**
+**Phase 4.4 — Password Recovery with Clerk**
+
+unless the project-owner-approved Clerk roadmap explicitly renames that phase while preserving the same dependency order.
