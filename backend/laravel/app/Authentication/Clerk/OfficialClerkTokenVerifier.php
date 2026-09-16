@@ -6,19 +6,35 @@ use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\ClerkTokenVerifier;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequest;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequestOptions;
-use Illuminate\Auth\AuthenticationException;
+use Clerk\Backend\Helpers\Jwks\ErrorReason;
+use Closure;
 use Illuminate\Http\Request;
 use RuntimeException;
 
 final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
 {
+    /** @var Closure(Request, AuthenticateRequestOptions): mixed */
+    private readonly Closure $authenticateRequest;
+
+    public function __construct(?Closure $authenticateRequest = null)
+    {
+        $this->authenticateRequest = $authenticateRequest ?? static fn (
+            Request $request,
+            AuthenticateRequestOptions $options,
+        ): mixed => AuthenticateRequest::authenticateRequest($request, $options);
+    }
+
     public function verify(Request $request): AuthenticatedClerkIdentity
     {
+        if ($request->bearerToken() === null && ! $request->cookies->has('__session')) {
+            throw ClerkAuthenticationFailure::missing();
+        }
+
         $audiences = $this->nullableList(config('clerk.audiences'));
         $authorizedParties = $this->nullableList(config('clerk.authorized_parties'));
 
         try {
-            $state = AuthenticateRequest::authenticateRequest($request, new AuthenticateRequestOptions(
+            $state = ($this->authenticateRequest)($request, new AuthenticateRequestOptions(
                 secretKey: config('clerk.secret_key'),
                 jwtKey: config('clerk.jwt_key'),
                 audiences: $audiences,
@@ -28,31 +44,31 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         } catch (\Throwable $exception) {
             report($exception);
 
-            throw new AuthenticationException('The Clerk credential is invalid.');
+            throw ClerkAuthenticationFailure::external();
         }
 
         if (! $state->isAuthenticated()) {
-            throw new AuthenticationException('The Clerk credential is invalid.');
+            throw $this->failureFor($state->getErrorReason());
         }
 
         $payload = $state->getPayload();
         $clerkUserId = is_string($payload->sub ?? null) ? $payload->sub : null;
 
         if ($clerkUserId === null || $clerkUserId === '') {
-            throw new AuthenticationException('The Clerk credential has no subject.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         $issuer = is_string($payload->iss ?? null) ? $payload->iss : null;
         $sessionId = is_string($payload->sid ?? null) ? $payload->sid : null;
 
         if ($sessionId === null || $sessionId === '') {
-            throw new AuthenticationException('The Clerk credential is not a user session.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         $configuredIssuer = config('clerk.issuer');
 
         if ($configuredIssuer !== null && $configuredIssuer !== '' && $issuer !== $configuredIssuer) {
-            throw new AuthenticationException('The Clerk credential issuer is invalid.');
+            throw ClerkAuthenticationFailure::invalid();
         }
 
         return new AuthenticatedClerkIdentity(
@@ -60,6 +76,21 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
             $sessionId,
             $issuer,
         );
+    }
+
+    private function failureFor(?ErrorReason $reason): ClerkAuthenticationFailure
+    {
+        return match ($reason?->getId()) {
+            'session-token-missing' => ClerkAuthenticationFailure::missing(),
+            'token-expired' => ClerkAuthenticationFailure::expired(),
+            'jwk-failed-to-load',
+            'jwk-remote-invalid',
+            'jwk-failed-to-resolve' => ClerkAuthenticationFailure::external(),
+            'jwk-local-invalid',
+            'secret-key-missing' => ClerkAuthenticationFailure::internal(),
+            null => ClerkAuthenticationFailure::missing(),
+            default => ClerkAuthenticationFailure::invalid(),
+        };
     }
 
     private function nullableList(mixed $value): ?array

@@ -61,8 +61,8 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::post('/auth/password/forgot', [AuthController::class, 'passwordForgot'])->name('auth.password.forgot');
     Route::post('/auth/password/reset', [AuthController::class, 'passwordReset'])->name('auth.password.reset');
 
-    Route::post('/requests', [RequestController::class, 'store'])->name('requests.store');
-    Route::post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
+    Route::middleware('clerk.optional')->post('/requests', [RequestController::class, 'store'])->name('requests.store');
+    Route::middleware('clerk.optional')->post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
 
     // ---------------------------------------------------------------------
     // AUTHENTICATED — auth workflows that required an authenticated principal

@@ -2,8 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Authentication\AuthenticatedClerkIdentity;
+use App\Authentication\Clerk\ClerkAuthenticationFailure;
+use App\Authentication\ClerkTokenVerifier;
+use App\Http\Middleware\AuthenticateClerkIfPresent;
 use App\Models\User;
+use App\Support\ApiErrorCode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Tests\TestCase;
 
 /**
@@ -71,6 +77,61 @@ class ApiRoutingSmokeTest extends TestCase
         $this->postJson('/api/v1/auth/password/reset')->assertStatus(410);
         $this->postJson(self::API_REQUESTS)->assertStatus(501);
         $this->postJson(self::API_ENQUIRIES)->assertStatus(501);
+    }
+
+    public function test_optional_authentication_accepts_anonymous_and_authenticated_requests(): void
+    {
+        $user = User::factory()->customer()->create(['clerk_user_id' => 'user_123']);
+        $verifier = $this->mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->once()
+            ->andReturn(new AuthenticatedClerkIdentity('user_123', 'sess_123', 'https://clerk.example.test'));
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
+
+        $this->postJson(self::API_REQUESTS)->assertStatus(501);
+        $this->postJson(self::API_REQUESTS, [], ['Authorization' => 'Bearer session-token'])->assertStatus(501);
+        $this->assertTrue($user->exists);
+    }
+
+    public function test_optional_authentication_rejects_a_stale_cookie(): void
+    {
+        $verifier = $this->mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->once()->andThrow(
+            new ClerkAuthenticationFailure(
+                ApiErrorCode::INVALID_AUTHENTICATION,
+                'The authentication credential is invalid.',
+                401,
+            ),
+        );
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
+
+        $middleware = app(AuthenticateClerkIfPresent::class);
+        $request = Request::create(self::API_REQUESTS, 'POST');
+        $request->cookies->set('__session', 'stale-token');
+
+        $this->expectException(ClerkAuthenticationFailure::class);
+
+        try {
+            $middleware->handle($request, fn (Request $request) => response()->json(['ok' => true]));
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+
+            throw $exception;
+        }
+    }
+
+    public function test_me_returns_the_authenticated_user_envelope(): void
+    {
+        $user = User::factory()->customer()->create(['name' => 'Jane Customer', 'email' => 'jane@example.com']);
+        $this->app->instance(ClerkTokenVerifier::class, $this->mockVerifier());
+        $user->forceFill(['clerk_user_id' => 'user_123'])->save();
+
+        $response = $this->getJson('/api/v1/me', ['Authorization' => 'Bearer session-token']);
+
+        $response->assertOk()->assertJsonPath('data.id', (string) $user->id)
+            ->assertJsonPath('data.role', 'CUSTOMER')
+            ->assertJsonPath('data.name', 'Jane Customer')
+            ->assertJsonPath('data.email', 'jane@example.com');
     }
 
     public function test_customer_self_service_routes_require_authentication(): void
@@ -142,5 +203,13 @@ class ApiRoutingSmokeTest extends TestCase
     public function test_health_and_infrastructure_marker_are_not_domain_routes(): void
     {
         $this->getJson('/health')->assertOk()->assertExactJson(['status' => 'ok']);
+    }
+
+    private function mockVerifier(): ClerkTokenVerifier
+    {
+        $verifier = $this->mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity('user_123', 'sess_123', 'https://clerk.example.test'));
+
+        return $verifier;
     }
 }
