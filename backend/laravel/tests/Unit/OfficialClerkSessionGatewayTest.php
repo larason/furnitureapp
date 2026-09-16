@@ -29,8 +29,6 @@ class OfficialClerkSessionGatewayTest extends TestCase
         $gateway = new OfficialClerkSessionGateway($backend);
 
         $gateway->revoke('sess_123');
-
-        $this->assertTrue(true);
     }
 
     public function test_active_session_response_is_treated_as_revocation_failure(): void

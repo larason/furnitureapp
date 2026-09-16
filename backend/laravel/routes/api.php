@@ -56,13 +56,13 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
     Route::get('/categories/{category}', [CategoryController::class, 'show'])->name('categories.show');
 
+    // RETIRED — Clerk owns credential, session, recovery, and verification
+    // flows. These always return `410 GONE` regardless of authentication
+    // state; never behind auth middleware.
     Route::post('/auth/register', [AuthController::class, 'register'])->name('auth.register');
     Route::post('/auth/login', [AuthController::class, 'login'])->name('auth.login');
     Route::post('/auth/password/forgot', [AuthController::class, 'passwordForgot'])->name('auth.password.forgot');
     Route::post('/auth/password/reset', [AuthController::class, 'passwordReset'])->name('auth.password.reset');
-
-    // RETIRED — Clerk owns session/security/verification. These always return
-    // `410 GONE` regardless of authentication state; never behind auth middleware.
     Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
     Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
     Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
