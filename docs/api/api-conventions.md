@@ -304,9 +304,10 @@ Payment provider-specific error codes/SDK/webhook failures (Group H), Laravel ha
   | No `Authorization: Bearer` credential | 401 | `AUTHENTICATION_REQUIRED` |
   | Verified session token expired | 401 | `SESSION_EXPIRED` |
   | Verified session carries pending security-task status (`sts=pending`) | 401 | `SESSION_EXPIRED` |
+  | Verified session omits optional `sts` claim | accepted after normal verification | no additional error |
   | JWK transport/JWKS fetch failures (`jwk-failed-to-load`, `jwk-remote-invalid`, `jwk-failed-to-resolve`, or an unexpected throwable such as a transport error) | 503 | `EXTERNAL_SERVICE_ERROR` |
   | Local JWK / Clerk secret-key configuration failures (`jwk-local-invalid`, `secret-key-missing`) | 500 | `INTERNAL_SERVER_ERROR` |
-  | Missing `sub`/`sid`, wrong issuer, missing/unknown session status, and all other credential/verification failures | 401 | `INVALID_AUTHENTICATION` |
+  | Missing `sub`/`sid`, wrong issuer, malformed/unknown session status, and all other credential/verification failures | 401 | `INVALID_AUTHENTICATION` |
 - **Session revocation semantics:** revocation targets a specific session only (`ClerkSessionGateway::revoke($sessionId)`), matching Clerk's `Session.status=revoked`. Revoking session X does **not** revoke other active sessions; revoke-all remains a future explicit security operation. A disposition deployed in Phase 4.4 — no Laravel session table is used for customer sessions.
 - **Threat boundary:** responses must not allow `credential theft`/`stuffing`/`brute-force`/`session theft`/`token leakage`/`account enumeration`/`privilege escalation`/`role tampering`/`session fixation`/`password-reset abuse`/`cross-account access`/`staff impersonation` to succeed; brute-force rate limiting, failed-attempt protection, abuse detection are identified as later backend requirements.
 

@@ -71,13 +71,18 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
             throw ClerkAuthenticationFailure::invalid();
         }
 
-        $sessionStatus = is_string($payload->sts ?? null) ? $payload->sts : null;
+        $hasSessionStatus = property_exists($payload, 'sts');
+        $sessionStatus = $payload->sts ?? null;
+
+        if ($hasSessionStatus && ! is_string($sessionStatus)) {
+            throw ClerkAuthenticationFailure::invalid();
+        }
 
         if ($sessionStatus === 'pending') {
             throw ClerkAuthenticationFailure::pending();
         }
 
-        if ($sessionStatus !== 'active') {
+        if ($hasSessionStatus && $sessionStatus !== 'active') {
             throw ClerkAuthenticationFailure::invalid();
         }
 

@@ -117,17 +117,31 @@ class OfficialClerkTokenVerifierTest extends TestCase
         $this->assertSame('sess_123', $identity->sessionId);
     }
 
-    public function test_missing_or_unknown_session_status_is_rejected(): void
+    public function test_missing_session_status_is_accepted_for_compatible_clerk_tokens(): void
     {
         config(['clerk.secret_key' => 'test-secret-key']);
         config(['clerk.jwt_key' => 'test-jwt-key']);
 
-        foreach ([
-            null,
-            'unknown',
-            42,
-            new \stdClass,
-        ] as $status) {
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        $identity = $verifier->verify($this->requestWithBearerToken());
+
+        $this->assertSame('user_123', $identity->clerkUserId);
+    }
+
+    public function test_unknown_or_malformed_session_status_is_rejected(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key']);
+        config(['clerk.jwt_key' => 'test-jwt-key']);
+
+        foreach (['unknown', 42, new \stdClass] as $status) {
             $payload = (object) [
                 'sub' => 'user_123',
                 'sid' => 'sess_123',
@@ -140,7 +154,7 @@ class OfficialClerkTokenVerifierTest extends TestCase
 
             try {
                 $verifier->verify($this->requestWithBearerToken());
-                $this->fail('Expected a non-active session status to be rejected.');
+                $this->fail('Expected an unknown or malformed session status to be rejected.');
             } catch (ClerkAuthenticationFailure $exception) {
                 $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
                 $this->assertSame(401, $exception->status());
