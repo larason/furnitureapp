@@ -5,14 +5,25 @@ namespace App\Authentication\Clerk;
 use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\ClerkTokenVerifier;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequest;
-use Clerk\Backend\Helpers\Jwks\AuthenticateRequestException;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequestOptions;
 use Clerk\Backend\Helpers\Jwks\ErrorReason;
+use Closure;
 use Illuminate\Http\Request;
 use RuntimeException;
 
 final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
 {
+    /** @var Closure(Request, AuthenticateRequestOptions): mixed */
+    private readonly Closure $authenticateRequest;
+
+    public function __construct(?Closure $authenticateRequest = null)
+    {
+        $this->authenticateRequest = $authenticateRequest ?? static fn (
+            Request $request,
+            AuthenticateRequestOptions $options,
+        ): mixed => AuthenticateRequest::authenticateRequest($request, $options);
+    }
+
     public function verify(Request $request): AuthenticatedClerkIdentity
     {
         if ($request->bearerToken() === null && ! $request->cookies->has('__session')) {
@@ -23,17 +34,13 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         $authorizedParties = $this->nullableList(config('clerk.authorized_parties'));
 
         try {
-            $state = AuthenticateRequest::authenticateRequest($request, new AuthenticateRequestOptions(
+            $state = ($this->authenticateRequest)($request, new AuthenticateRequestOptions(
                 secretKey: config('clerk.secret_key'),
                 jwtKey: config('clerk.jwt_key'),
                 audiences: $audiences,
                 authorizedParties: $authorizedParties,
                 acceptsToken: ['session_token'],
             ));
-        } catch (AuthenticateRequestException $exception) {
-            report($exception);
-
-            throw $this->failureFor($exception->getReason());
         } catch (\Throwable $exception) {
             report($exception);
 
