@@ -5,6 +5,7 @@ namespace App\Authentication\Clerk;
 use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\ClerkTokenVerifier;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequest;
+use Clerk\Backend\Helpers\Jwks\AuthenticateRequestException;
 use Clerk\Backend\Helpers\Jwks\AuthenticateRequestOptions;
 use Clerk\Backend\Helpers\Jwks\ErrorReason;
 use Illuminate\Http\Request;
@@ -14,6 +15,10 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
 {
     public function verify(Request $request): AuthenticatedClerkIdentity
     {
+        if ($request->bearerToken() === null && ! $request->cookies->has('__session')) {
+            throw ClerkAuthenticationFailure::missing();
+        }
+
         $audiences = $this->nullableList(config('clerk.audiences'));
         $authorizedParties = $this->nullableList(config('clerk.authorized_parties'));
 
@@ -25,10 +30,14 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
                 authorizedParties: $authorizedParties,
                 acceptsToken: ['session_token'],
             ));
+        } catch (AuthenticateRequestException $exception) {
+            report($exception);
+
+            throw $this->failureFor($exception->getReason());
         } catch (\Throwable $exception) {
             report($exception);
 
-            throw ClerkAuthenticationFailure::invalid();
+            throw ClerkAuthenticationFailure::external();
         }
 
         if (! $state->isAuthenticated()) {
@@ -72,6 +81,7 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
             'jwk-failed-to-resolve' => ClerkAuthenticationFailure::external(),
             'jwk-local-invalid',
             'secret-key-missing' => ClerkAuthenticationFailure::internal(),
+            null => ClerkAuthenticationFailure::missing(),
             default => ClerkAuthenticationFailure::invalid(),
         };
     }
