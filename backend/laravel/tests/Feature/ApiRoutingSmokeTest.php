@@ -92,7 +92,7 @@ class ApiRoutingSmokeTest extends TestCase
         $this->assertTrue($user->exists);
     }
 
-    public function test_optional_authentication_rejects_a_stale_cookie(): void
+    public function test_optional_authentication_is_bearer_only_and_ignores_cookies(): void
     {
         $verifier = $this->mock(ClerkTokenVerifier::class);
         $verifier->shouldReceive('verify')->once()->andThrow(
@@ -104,14 +104,25 @@ class ApiRoutingSmokeTest extends TestCase
         );
         $this->app->instance(ClerkTokenVerifier::class, $verifier);
 
+        // A __session cookie is not a Laravel credential: the request is
+        // treated as anonymous and the verifier is never called.
         $middleware = app(AuthenticateClerkIfPresent::class);
         $request = Request::create(self::API_REQUESTS, 'POST');
         $request->cookies->set('__session', 'stale-token');
 
+        $response = $middleware->handle($request, fn (Request $request) => response()->json(['ok' => true]));
+
+        $this->assertSame(200, $response->getStatusCode());
+
+        // A stale bearer token is rejected.
         $this->expectException(ClerkAuthenticationFailure::class);
 
         try {
-            $middleware->handle($request, fn (Request $request) => response()->json(['ok' => true]));
+            $middleware->handle(
+                Request::create(self::API_REQUESTS, 'POST', [], [], [],
+                    ['HTTP_AUTHORIZATION' => 'Bearer stale-token']),
+                fn (Request $request) => response()->json(['ok' => true]),
+            );
         } catch (ClerkAuthenticationFailure $exception) {
             $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
             $this->assertSame(401, $exception->status());

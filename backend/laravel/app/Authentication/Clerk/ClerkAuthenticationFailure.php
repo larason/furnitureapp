@@ -17,6 +17,11 @@ final class ClerkAuthenticationFailure extends ApiException
         return new self(ApiErrorCode::SESSION_EXPIRED, 'The authentication session has expired.', 401);
     }
 
+    public static function pending(): self
+    {
+        return new self(ApiErrorCode::SESSION_EXPIRED, 'The authentication session must complete required security tasks.', 401);
+    }
+
     public static function invalid(): self
     {
         return new self(ApiErrorCode::INVALID_AUTHENTICATION, 'The authentication credential is invalid.', 401);

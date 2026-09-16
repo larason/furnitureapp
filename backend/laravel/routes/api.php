@@ -61,18 +61,15 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::post('/auth/password/forgot', [AuthController::class, 'passwordForgot'])->name('auth.password.forgot');
     Route::post('/auth/password/reset', [AuthController::class, 'passwordReset'])->name('auth.password.reset');
 
+    // RETIRED — Clerk owns session/security/verification. These always return
+    // `410 GONE` regardless of authentication state; never behind auth middleware.
+    Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
+    Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
+    Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
+    Route::post('/email/verify/resend', [AuthController::class, 'resendEmailVerification'])->name('auth.email.resend');
+
     Route::middleware('clerk.optional')->post('/requests', [RequestController::class, 'store'])->name('requests.store');
     Route::middleware('clerk.optional')->post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
-
-    // ---------------------------------------------------------------------
-    // AUTHENTICATED — auth workflows that required an authenticated principal
-    // ---------------------------------------------------------------------
-    Route::middleware('clerk.auth')->group(function (): void {
-        Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
-        Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
-        Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
-        Route::post('/email/verify/resend', [AuthController::class, 'resendEmailVerification'])->name('auth.email.resend');
-    });
 
     // ---------------------------------------------------------------------
     // ME — authenticated self (AUTHENTICATED_OWNER). Resource ownership is

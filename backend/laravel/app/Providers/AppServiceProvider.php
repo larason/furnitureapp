@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Authentication\Clerk\ClerkSessionGateway;
 use App\Authentication\Clerk\ClerkUserGateway;
+use App\Authentication\Clerk\OfficialClerkSessionGateway;
 use App\Authentication\Clerk\OfficialClerkTokenVerifier;
 use App\Authentication\Clerk\OfficialClerkUserGateway;
 use App\Authentication\ClerkTokenVerifier;
@@ -21,6 +23,7 @@ class AppServiceProvider extends ServiceProvider
             ->build());
         $this->app->bind(ClerkTokenVerifier::class, OfficialClerkTokenVerifier::class);
         $this->app->bind(ClerkUserGateway::class, OfficialClerkUserGateway::class);
+        $this->app->bind(ClerkSessionGateway::class, OfficialClerkSessionGateway::class);
     }
 
     /**

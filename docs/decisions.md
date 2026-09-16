@@ -488,6 +488,20 @@ Laravel `AUTH-001..008` credential/session endpoints are retired as a documented
 
 ---
 
+### ADR/AUTH-010 — Clerk-Owned Password Recovery, Pending Security Sessions, and Session Revocation (Phase 4.4)
+
+**Decision:** Clerk is the sole authority for password recovery, password change, compromised-password detection, and session lifecycle. Laravel introduces no custom password-reset system: it neither receives passwords/recovery tokens/OTPs nor generates reset tokens or emits reset emails. The legacy `password_reset_tokens` table is retired via a new drop migration; all retired Laravel credential/security endpoints return `410 GONE` uniformly and independent of authentication state — `AUTH-004` forgot, `AUTH-005` reset, `AUTH-008` change-password (and `AUTH-003` logout, `AUTH-006/007` email verify) each map to HTTP `410` with contract code `RESOURCE_NOT_FOUND`. `users.password` stays nullable and null for Clerk-provisioned customers.
+
+A Clerk session whose status claim `sts` is `pending` (outstanding security task such as `reset-password`, `setup-mfa`, or `choose-organization`) is **not** fully authenticated: `OfficialClerkTokenVerifier` rejects it with `SESSION_EXPIRED` (401) before any local user is provisioned or resolved, so protected business APIs (`/me`, cart, checkout, orders, requests, enquiries) never accept a pending security-task session. No local `password_reset_required`/`mfa_enabled`/`force_password_reset` flags are introduced; Clerk remains the security-state authority.
+
+Session revocation is exposed narrowly through a new `ClerkSessionGateway` interface (`OfficialClerkSessionGateway` wrapping `clerkinc/backend-php` `sessions->revoke()`), which maps to Clerk `Session.status=revoked`. Revoking session X revokes only X; other active sessions remain valid (multi-session). Revoke-all is a future explicit security operation and is not implemented. Password recovery never alters local RBAC or application account state (a reset does not reactivate a suspended local account, and roles remain unchanged).
+
+**Reason:** Keeps Laravel from reintroducing a competing recovery/credential path, matches Clerk's own server-side treatment of pending sessions as signed-out, preserves enumeration protection, and documents single-session revocation semantics while avoiding a generic `ClerkService` god-object.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`app/Authentication/Clerk/{ClerkSessionGateway,OfficialClerkSessionGateway}.php` new, `OfficialClerkTokenVerifier.php`, `ClerkAuthenticationFailure.php`, `app/Providers/AppServiceProvider.php`, `database/migrations/2026_09_16_100000_drop_password_reset_tokens_table.php`, `tests/Unit/{OfficialClerkTokenVerifierTest,OfficialClerkSessionGatewayTest}.php`, `tests/Feature/ClerkSecurityBoundaryTest.php`), `docs/domain/business-rules.md §17`, `docs/api/api-conventions.md §18.4-18.7`, `docs/api/api-contract.md`, `docs/api/openapi.yaml`
+
+---
+
 ### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
 
 **Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.
