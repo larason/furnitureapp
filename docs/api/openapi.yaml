@@ -51,7 +51,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Clerk session JWT sent via `Authorization: Bearer`. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued API token and cookies are never accepted as credentials (bearer-only).
+      description: Clerk session JWT sent via `Authorization: Bearer` by web and Flutter clients. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued or mobile-specific API token, and cookies are never accepted as credentials (bearer-only).
         A session pending security tasks (`sts=pending`, e.g. required `reset-password`/`setup-mfa`) is rejected with SESSION_EXPIRED before any protected access.
     uploadToken:
       type: apiKey
@@ -690,7 +690,9 @@ components:
           type: string
           readOnly: true
         name:
-          type: string
+          type:
+          - string
+          - 'null'
         email:
           type: string
           format: email
@@ -1708,29 +1710,6 @@ components:
           - 'null'
           readOnly: true
           description: Structured details, nullable
-    AuthLoginResponse:
-      type: object
-      required:
-      - data
-      properties:
-        data:
-          type: object
-          required:
-          - user
-          - token
-          - token_type
-          properties:
-            user:
-              $ref: '#/components/schemas/User'
-            token:
-              type: string
-              description: Bearer token for Flutter/mobile; Next.js uses httpOnly cookie
-              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-            token_type:
-              type: string
-              enum:
-              - Bearer
-              example: Bearer
     MessageResponse:
       type: object
       required:

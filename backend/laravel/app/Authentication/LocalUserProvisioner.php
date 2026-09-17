@@ -46,14 +46,6 @@ final class LocalUserProvisioner
                     throw $this->conflict();
                 }
 
-                if ($snapshot->name === null) {
-                    throw new ApiException(
-                        ApiErrorCode::CONFLICT,
-                        'The authenticated identity cannot be provisioned.',
-                        409,
-                    );
-                }
-
                 $user = User::create([
                     'name' => $snapshot->name,
                     'email' => $snapshot->email,

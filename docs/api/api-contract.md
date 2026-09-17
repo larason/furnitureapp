@@ -824,7 +824,7 @@ Staff/Admin → may have authorized admin access to specific operational data on
 
 ### 17.2 Customer Registration — Clerk-Managed Public Self-Registration Only (Historical Laravel Text Superseded)
 
-- Customers: **Clerk-managed public self-registration without staff approval** (`Visitor → Clerk sign-up → verified Clerk identity → first Laravel call provisions local CUSTOMER → Customer experience`). Staff must not gate every customer registration unless later business explicitly requires it. Identity data is collected by Clerk (per selected Clerk application config); the **V1 registration credentials are `email` + `password` only — phone is NOT a signup requirement** (Phase 4.5). Laravel **never accepts a `password`** — `password` as Laravel registration input is historical and removed. Do not require `name`, `address book`, or `delivery address` at registration. Email verification at signup is **required** (see §17.9).
+- Customers: **Clerk-managed public self-registration without staff approval** (`Visitor → Clerk sign-up → verified Clerk identity → first Laravel call provisions local CUSTOMER → Customer experience`). Staff must not gate every customer registration unless later business explicitly requires it. Identity data is collected by Clerk (per selected Clerk application config); the **V1 registration credentials are `email` + `password` only — phone is NOT a signup requirement** (Phase 4.5). Laravel **never accepts a `password`** — `password` as Laravel registration input is historical and removed. Do not require `name`, address book, or delivery address at registration; local `name` remains nullable until supplied through profile operations. Email verification at signup is **required** (see §17.9).
 - Staff: **not** via public registration — a Staff user needs a valid Clerk identity **plus** approved local `STAFF` role/permissions (`Staff candidate → Admin review → Approved → Staff account activated` or `Admin creates/invites → Staff activates` with Clerk identity linked). Self-registration as `STAFF` via public sign-up is prohibited: public Clerk sign-up provisions `CUSTOMER` only.
 - Admin: **administrative creation / bootstrap** — a real Clerk identity plus explicit local `ADMIN` assignment; no public `POST {role: ADMIN}` self-promotion (see §17.5). Initial admin via controlled deployment/setup.
 - All role assignment is **server-controlled in Laravel**; clients cannot submit `role` to promote themselves (body `role: ADMIN` rejected; Clerk metadata is not role authority).
@@ -1169,7 +1169,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `AUTH-007` | POST | `/api/v1/email/verify` | Identity | — (retired; use Clerk verification) | — (retired) | **RETIRED** — Clerk owns verification decision | **RETIRED** — do not call; Laravel consumes synchronized verified status only | **RETIRED** (Phase 4.1) |
 | `AUTH-008` | POST | `/api/v1/auth/change-password` | Identity | — (retired; use Clerk security) | — (retired) | **RETIRED** — Clerk owns password change | **RETIRED** — do not call; use Clerk security flow | **RETIRED** (Phase 4.1) |
 | `USER-001` | GET | `/api/v1/me` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own | Get own profile (`User`) | PROPOSED |
-| `USER-002` | PATCH | `/api/v1/me` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (`name`/`phone` only) | Update own profile (allow-list) | PROPOSED |
+| `USER-002` | PATCH | `/api/v1/me` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (`name`/`phone` only) | Update own profile (allow-list) | APPROVED |
 | `USER-003` | POST | `/api/v1/me/password` | Identity | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (secure workflow) | **RETIRED** alias — use `AUTH-008` `POST /api/v1/auth/change-password` (see `§29.3`/`§29.8` Migration) | **RETIRED** |
 | `CART-001` | GET | `/api/v1/me/cart` | Cart | Customer + Anonymous (guest) | Yes for Customer, guest via `X-Guest-Cart-Id` / `guest_cart_id` cookie | `AUTHENTICATED_OWNER` own cart or `GUEST` holder via guest token (backend authority) | Get own/guest cart (guest cart identified server-side) | PROPOSED |
 | `CART-002` | POST | `/api/v1/me/cart/items` | Cart | Customer + Anonymous (guest) | Yes for Customer, guest via `X-Guest-Cart-Id` | `AUTHENTICATED_OWNER` own cart or `GUEST` | Add item (`product_id`,`variant_id`,`quantity`) — guest cart supported | PROPOSED |
@@ -1691,7 +1691,8 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 - **Machine Identifier:** `id` is a stable, opaque string identifier used in machine operations (cart, checkout, orders, relations).
 - **Dual Resolution for Products and Categories:** Detail endpoints for Product (`CAT-002`) and Category (`CAT-004`) resolve transparently whether given a `slug` or an `id`. Product Variants (`CAT-005`, `CAT-006`) resolve strictly by Variant `id` (`var_...`) under parent `{product}` (which itself resolves by product slug or id).
 - **SSR & OpenGraph Readiness:** Product Detail response contains all necessary fields (`name`, `description`, `price`, primary image selected from `images[]` where `is_primary: true` [or `primary_image.url` on `CAT-001` summary], `availability`) for Next.js to generate OpenGraph tags, Twitter cards, canonical tags, and Schema.org `Product` JSON-LD structured data.
-- **Flutter Compatibility:** Flutter mobile client consumes the exact same JSON contract and models without requiring mobile-specific endpoints.
+- **Flutter Compatibility:** Flutter mobile client consumes the exact same JSON contract and models without requiring mobile-specific endpoints. It authenticates through the same Clerk application and sends the current Clerk session token as `Authorization: Bearer <Clerk session_token>`; Laravel does not issue a mobile token or accept a mobile-specific auth endpoint (Phase 4.7, `api-conventions.md §29.7`).
+- **Next.js Compatibility:** The future website consumes the same JSON contract without website-specific auth endpoints. It authenticates through the same Clerk application, obtains a current session token through the App Router Clerk integration, and sends `Authorization: Bearer <Clerk session_token>` to Laravel. Public catalog rendering remains unauthenticated; private data uses server-side, non-shared requests where practical. No frontend auth implementation is included in Phase 4.8 (`api-conventions.md §29.8`).
 
 ---
 
@@ -4133,7 +4134,7 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 |---|---|---|---|---|
 | `id` | string opaque `user_...` | Recipient only (own) | no | Stable opaque identifier, server-generated, not guessable enumeration; never client-supplied |
 | `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | Recipient only (own) | no | Server-controlled; read-only via Profile; `UPPER_SNAKE_CASE` |
-| `name` | string | Own | no | Trimmed, non-empty, length validated (see `§29.6`) |
+| `name` | string \| null | Own | yes until supplied | Nullable for email/password-only signup; non-empty when supplied; mutable via `PATCH /me` allow-list (see `§29.6`) |
 | `email` | string | Own | no | Lowercased/trimmed, unique; read via Profile, **change via dedicated security workflow**, not ordinary `PATCH` (see `§29.7`) |
 | `phone` | string \| null | Own | yes | Normalized, optional; validated `phone` format; `null` where not supplied if business permits (documented in `§29.6`) |
 | `email_verified` | boolean | Own | no | `true`/`false` — server-controlled; alternative `email_verified_at: ISO8601 Z \| null` acceptable but contract must pick one (this doc uses `email_verified` boolean alias for profile convenience, backed by `email_verified_at` authoritative attribute; do not accept client `{"email_verified":true}`) |
@@ -4185,7 +4186,7 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 
 | Field | Rule |
 |---|---|
-| `name` | string, trimmed non-empty, `length` max (e.g., `2..120`), no script execution, Unicode safe; empty `""` after trim → `422 MISSING_REQUIRED_FIELD`/`INVALID_VALUE` |
+| `name` | optional nullable profile field; when supplied, string trimmed non-empty, max 120, no script execution, Unicode safe; empty `""` after trim → `422 MISSING_REQUIRED_FIELD`/`INVALID_VALUE`; `null` is not accepted for clearing |
 | `phone` | optional string, `null` only if allowed; when supplied: normalized, format validated (`E.164-ish`), max 30; `phone_verified: true` must never be derived from `phone` change alone — verification `false` until verified separately |
 | `email` | **Security-sensitive** — treat as identity (`§29.7`); `PATCH /me` **should not** be the ordinary email-change path; if email change is supported, use dedicated security workflow: `authenticated request → security confirmation (current credential verification) → new email verification (time-limited token) → account email changed` — not simple unauthenticated `PATCH {email: new}`; never accept `{"email_verified":true}` from client |
 
@@ -4203,7 +4204,7 @@ Use stable Phase 1.16 codes (`INVALID_VALUE`, `INVALID_FORMAT`, `MISSING_REQUIRE
 
 **Nullability (documented choice for V1):**
 
-- `name`: `null` **not** valid — required string.
+- `name`: response `null` **valid** until the customer supplies a profile name; `PATCH /me {"name":null}` is invalid because profile updates accept only a non-empty string. Signup does not require a name, so local `users.name` is nullable.
 - `phone`: `null` **valid** if business permits clearing (optional contact data); document actual choice; do not assume every optional field can be cleared — `phone: null` only if contract explicitly permits. This phase documents `phone` as `string | null` (nullable) to preserve current User resource (`api-resources.md §13.1` `phone` nullable notion); making `phone` non-nullable would be a breaking compatibility event once published.
 
 ### 29.7 Email & Credential Boundaries
@@ -4794,7 +4795,7 @@ Phase 1.29 is complete only when: `STAFF/ADMIN capabilities separated`, `closed 
 | **Validation** | `Transport→Schema→Auth→Authz→Domain→Concurrency→External→Persistence`; unknown fields rejected `422` | `§14` |
 | **Request ID** | `meta.request_id` on every error (and optional `meta` on success) per-request correlation, not `user_id`/`order_id` | `§15.12` |
 | **Idempotency** | `Idempotency-Key` header on `CHK-001`, `ORD-004`, `ORD-007..011,013,014`, `INV-003`, `ADM-004..006`, `PAY-001` | `§30.18` |
-| **Authentication** | `Next.js` httpOnly cookie session + `Flutter` Bearer token, shared Laravel identity (same `AUTH-002` login) | `§17.7` |
+| **Authentication** | `Next.js` and Flutter use the same Clerk identity and send `Authorization: Bearer <Clerk session_token>` to Laravel; no Laravel/mobile token or cookie authentication | `§17.7`, Phase 4.7 |
 
 No domain-specific convention drift remains. `GET /api/v1/me/orders` vs `GET /api/v1/customer/orders` duplicate was rejected — canonical is `GET /api/v1/me/orders` (self-context).
 

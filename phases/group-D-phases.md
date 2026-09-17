@@ -1,45 +1,114 @@
-# Phase 4.5 — Email Verification with Clerk
+# Phase 4.8 — Website Authentication Contract / Next.js Clerk Integration Boundary
 
 ## Purpose
 
-Implement and document the customer email-verification policy using **Clerk as the email identity and verification authority**.
+Define and validate the authentication contract that the future Next.js website will use with Clerk and the Laravel backend.
 
-The customer registration baseline is now:
+This is **not a frontend implementation phase**.
 
-```text
-email
-password
-```
+The purpose is to ensure that when website development begins in the later frontend groups, the frontend agent already has a stable, secure authentication boundary to implement.
 
-Phone is **not required during signup**.
-
-Phone, if collected later, belongs to the application profile/contact domain and must not be treated as an authentication requirement.
-
-The target signup flow is:
+The future architecture is:
 
 ```text
-Customer
+Next.js website
     ↓
-email + password
+Clerk browser session
     ↓
-Clerk creates sign-up attempt
+Clerk session token
     ↓
-Clerk sends email verification challenge
+Authorization: Bearer <token>
     ↓
-customer verifies email
+Laravel API
     ↓
-Clerk completes signup
+existing Clerk authentication middleware
     ↓
-authenticated Clerk session
+local Laravel User
     ↓
-Laravel resolves/provisions local CUSTOMER
+Laravel RBAC / policies / domain
 ```
 
-Laravel must not create its own email-verification token or duplicate Clerk's verification process.
+Phase 4.8 defines this contract.
+
+It must **not build the website implementation yet**.
 
 ---
 
-# 1. Dependencies
+# 1. Critical Phase Boundary
+
+Do not modify:
+
+```text
+frontend/web/
+frontend/app/
+frontend/design-system/
+```
+
+during Phase 4.8.
+
+Do not:
+
+```text
+install @clerk/nextjs
+run clerk init
+create ClerkProvider
+create proxy.ts
+create middleware.ts
+create /sign-in
+create /sign-up
+create authentication layouts
+create React hooks
+create frontend API clients
+create website auth state
+```
+
+Those belong to the later frontend phases.
+
+This separation is intentional.
+
+It ensures the eventual authentication pages are built with the same:
+
+```text
+design tokens
+MUI theme
+layout system
+responsive rules
+navigation shell
+form primitives
+spacing
+typography
+error patterns
+loading states
+accessibility patterns
+```
+
+as the rest of the website.
+
+---
+
+# 2. Why Frontend Work Is Deferred
+
+The website frontend is developed later in Groups L–O.
+
+Flutter implementation is developed later in Groups P–Q.
+
+Authentication UI must therefore be created alongside those applications, not before them.
+
+Building Clerk pages now risks:
+
+* inconsistent layouts;
+* duplicated UI primitives;
+* design-token divergence;
+* separate form conventions;
+* inconsistent responsive behavior;
+* premature routing decisions;
+* unnecessary refactoring later.
+
+Phase 4.8 must establish only the **integration contract**.
+
+---
+
+# 3. Dependencies
 
 Required:
 
@@ -47,1413 +116,1693 @@ Required:
 * Phase 4.2 complete;
 * Phase 4.3 complete;
 * Phase 4.4 complete;
-* Clerk owns authentication;
-* email + password selected as customer signup method;
-* phone removed from signup requirements;
-* Clerk identity maps to local `users.clerk_user_id`;
-* JIT CUSTOMER provisioning works;
-* Laravel does not accept customer passwords;
-* Laravel does not own password recovery;
-* pending/incomplete Clerk authentication states are already treated safely.
+* Phase 4.5 complete;
+* Phase 4.6 complete;
+* Phase 4.7 mobile boundary complete;
+* Laravel accepts verified Clerk session tokens;
+* Clerk identity resolves to `users.clerk_user_id`;
+* `/me` works;
+* Clerk owns passwords, email verification, sessions, and recovery;
+* Laravel owns RBAC and application authorization.
 
-Do not proceed if Laravel still has a competing email verification workflow.
-
----
-
-# 2. Scope
-
-This phase covers:
-
-* required email-at-signup configuration;
-* Clerk email verification strategy;
-* verified-email semantics;
-* local email snapshot rules;
-* local `email_verified` representation where required;
-* incomplete signup handling;
-* unverified-session access rules;
-* verification resend behavior at the application boundary;
-* email-change implications;
-* tests around verified/unverified identity;
-* removal of obsolete Laravel verification logic;
-* documentation/OpenAPI updates.
-
-Do not build final web/mobile verification UI yet.
+Do not compensate for incomplete backend authentication by designing frontend workarounds.
 
 ---
 
-# 3. Signup Requirements
+# 4. Authoritative Inputs
 
-The canonical V1 customer signup identity requirements are now:
+Review:
 
-```text
-required:
-- email
-- password
+1. `AGENTS.md`
+2. Phase 4.1 Clerk architecture decision
+3. Phase 4.2 local provisioning
+4. Phase 4.3 authenticated request resolution
+5. Phase 4.4 recovery/security
+6. Phase 4.5 email verification
+7. Phase 4.6 profile operations
+8. Phase 4.7 mobile API authentication boundary
+9. `docs/api/api-contract.md`
+10. `docs/api/api-resources.md`
+11. `docs/api/api-conventions.md`
+12. `docs/api/openapi.yaml`
+13. `docs/domain/business-rules.md`
+14. `docs/decisions.md`
 
-not required:
-- phone
-```
+Use current Clerk documentation/MCP/skills where provider behavior needs verification.
 
-Remove outdated requirements stating:
-
-```text
-name + email + phone + password
-```
-
-where those statements refer specifically to authentication registration.
-
-Do not remove name/phone from unrelated domain models where they are legitimately required for:
-
-* delivery;
-* enquiries;
-* furniture requests;
-* customer contact;
-* profile data.
-
-This change applies only to **authentication signup requirements**.
+Do not implement frontend code.
 
 ---
 
-# 4. Clerk Configuration
+# 5. Core Contract
 
-Review the selected Clerk application.
+The future website must authenticate customers using Clerk.
 
-The expected configuration is:
+Laravel must authenticate API requests using the Clerk session token.
 
-```text
-Sign-up with email      ENABLED
-Require email address   ENABLED
-Verify at sign-up       ENABLED
-Sign-in with email      ENABLED
-Sign-up with password   ENABLED
-Phone signup            NOT REQUIRED
-```
-
-Do not enable phone authentication merely because Clerk supports it.
-
-Do not require SMS OTP.
-
----
-
-# 5. Verification Strategy
-
-Use Clerk as the only email-verification authority.
-
-Preferred V1 baseline:
+Canonical boundary:
 
 ```text
-email verification code
-```
-
-unless the project owner has deliberately configured email-link verification instead.
-
-Clerk currently uses email verification code by default for email/password signup when verification-at-signup is enabled.
-
-Do not implement both code and link flows unless there is a real requirement.
-
----
-
-# 6. Why Verification Is Required
-
-Require the signup email to be verified before the registration is considered complete.
-
-This gives the application:
-
-```text
-Clerk identity
-+
-verified primary email
-+
-password credential
-```
-
-before the customer is treated as a fully registered application user.
-
-Do not allow:
-
-```text
-unverified email
-→ fully registered CUSTOMER
-→ unrestricted authenticated commerce access
-```
-
-unless a future explicit policy changes this.
-
----
-
-# 7. Canonical Signup Sequence
-
-The intended sequence is:
-
-```text
-1. Customer supplies email.
-2. Customer supplies password.
-3. Clerk validates signup input.
-4. Clerk creates sign-up attempt.
-5. Clerk sends email verification challenge.
-6. Customer submits verification code.
-7. Clerk verifies email.
-8. Clerk completes signup.
-9. Clerk creates/activates authenticated session.
-10. Laravel verifies Clerk session.
-11. Laravel Phase 4.2 provisioning resolves/creates CUSTOMER.
-```
-
-Do not provision the final local CUSTOMER before the Clerk signup is complete unless Phase 4.2 explicitly stores provisional identities.
-
-The preferred V1 behavior is to provision only after successful verified Clerk authentication.
-
----
-
-# 8. Do Not Build Laravel Verification Tokens
-
-Do not use:
-
-```text
-MustVerifyEmail
-EmailVerificationRequest
-verification.notice
-verification.verify
-verification.send
-signed verification URL
-Laravel email verification notifications
-```
-
-for Clerk customers.
-
-Do not create:
-
-```text
-verification_token
-verification_code
-email_verified_token
-```
-
-in the Laravel database.
-
-Clerk owns these concerns.
-
----
-
-# 9. Remove Legacy Verification Infrastructure
-
-Search the backend for obsolete Laravel-specific verification behavior.
-
-Examples:
-
-```text
-MustVerifyEmail
-sendEmailVerificationNotification
-EmailVerificationRequest
-verification.verify
-verification.send
-```
-
-If these are leftovers from pre-Clerk design and are unused:
-
-* remove or retire them;
-* remove routes no longer supported;
-* remove obsolete OpenAPI descriptions;
-* do not leave a second email-verification path exposed.
-
-Do not modify historical migrations unnecessarily.
-
----
-
-# 10. Email Is Authentication Identity
-
-The signup email belongs primarily to Clerk authentication.
-
-Laravel may retain a local snapshot for application/domain purposes.
-
-Canonical authority:
-
-
-```text
-Clerk primary email
-    ↓
-verified identity source
-    ↓
-Laravel email snapshot
-```
-
-Do not allow ordinary clients to change the authentication email by:
-
-```http
-PATCH /api/v1/me
-```
-
-unless the later dedicated security workflow explicitly permits it.
-
----
-
-# 11. Local Email Snapshot
-
-If `users.email` remains in Laravel, treat it as:
-
-```text
-Clerk-owned identity snapshot
-```
-
-not a separate authentication credential.
-
-At initial provisioning:
-
-```text
-Clerk primary verified email
-→ users.email
-```
-
-Do not source the email from request JSON.
-
-Do not accept:
-
-```json
-{
-  "email": "another@example.com"
-}
-```
-
-as authoritative while provisioning.
-
----
-
-# 12. Email Verification State
-
-If the API exposes:
-
-```text
-email_verified
-```
-
-then it must reflect Clerk verification state.
-
-Do not let the client set:
-
-```json
-{
-  "email_verified": true
-}
-```
-
-Do not calculate it from:
-
-```text
-users.email != null
-```
-
-A populated email is not the same as a verified email.
-
----
-
-# 13. Local Verification Representation
-
-Review Phase 4.1 and existing schema.
-
-If the application requires a local snapshot such as:
-
-```text
-email_verified_at
-```
-
-or:
-
-```text
-email_verified
-```
-
-decide whether that snapshot is still necessary.
-
-Preferred approach:
-
-* keep only if required by the frozen API/domain representation;
-* derive/synchronize it from Clerk;
-* never use it as independent proof if Clerk identity state is available.
-
-Do not introduce duplicate verification state without need.
-
----
-
-# 14. Clerk Remains Authoritative
-
-If local state says:
-
-```text
-verified
-```
-
-but Clerk says:
-
-```text
-unverified
-```
-
-Clerk is authoritative for authentication email verification.
-
-Do not let stale Laravel state override Clerk security state.
-
----
-
-# 15. JIT Provisioning Rule
-
-Phase 4.2 provisioning should receive only a Clerk identity that satisfies the approved signup-completion policy.
-
-Preferred:
-
-```text
-Clerk signup complete
-+
-email verified
-+
-authenticated session valid
+Clerk authenticated website session
         ↓
-LocalUserProvisioner
+current Clerk session token
+        ↓
+Authorization: Bearer <token>
+        ↓
+Laravel Clerk verifier
+        ↓
+token.sub
+        ↓
+users.clerk_user_id
+        ↓
+local User
 ```
 
-Do not provision from an incomplete `SignUp` attempt.
+This is the same fundamental API authentication boundary defined for mobile.
 
 ---
 
-# 16. Verification Before Full Application Access
+# 6. No Second Website Authentication System
 
-The application should distinguish:
-
-```text
-email not verified / signup incomplete
-```
-
-from:
+The future website must not introduce:
 
 ```text
-fully registered customer
+Laravel Sanctum SPA auth
+Laravel password login
+NextAuth/Auth.js
+custom JWT
+custom refresh token
+custom session database
+parallel customer cookie auth
 ```
 
-Unverified/incomplete signup must not grant access to protected business operations such as:
+Clerk remains the sole customer authentication/session provider.
 
-```text
-checkout
-own orders
-notifications
-account-sensitive APIs
-```
-
-The exact flow should be controlled by Clerk authentication state rather than a custom Laravel verification challenge.
+Laravel remains the application backend.
 
 ---
 
-# 17. Public Catalog Remains Available
+# 7. Future Next.js Responsibility
 
-Email verification is not required to:
+When the frontend phase eventually reaches website authentication, Next.js will be responsible for:
 
 ```text
-browse products
-view categories
-search
-view product detail
+Clerk frontend integration
+signup UI
+signin UI
+email verification UI
+password recovery UI
+Clerk session state
+obtaining current Clerk session token
+passing token to Laravel
+frontend routing/navigation
 ```
 
-Public catalog remains anonymous.
-
-Do not add verification middleware to public catalog endpoints.
+These are **future implementation responsibilities**, not Phase 4.8 tasks.
 
 ---
 
-# 18. Anonymous Request / Enquiry Remains Available
+# 8. Future Laravel Responsibility
 
-Existing anonymous behavior remains:
+Laravel already owns:
 
 ```text
-POST /requests
-POST /enquiries
+verify Clerk token
+resolve local User
+JIT provision CUSTOMER
+check account state
+apply role/permissions
+apply ownership
+apply policies
+execute commerce logic
 ```
 
-may operate without a registered account.
-
-A user does not need to create or verify a Clerk account merely to submit an anonymous request/enquiry where the API already permits that behavior.
-
-Do not change these domain rules in Phase 4.5.
+Do not move any of these responsibilities to Next.js later.
 
 ---
 
-# 19. Verification Code Handling
+# 9. Authentication vs Authorization
 
-If email-code verification is used:
-
-Clerk owns:
+Document this clearly:
 
 ```text
-code generation
-code delivery
-code expiration
-code validation
-resend rules
-attempt tracking
+Clerk:
+Who is this user?
+
+Laravel:
+What may this user do?
 ```
 
-Laravel must never receive or persist the code.
+The frontend may hide or show UI based on Laravel-provided role/application state.
 
-Do not proxy Clerk verification codes through Laravel.
+The frontend must never become the authorization authority.
 
 ---
 
-# 20. Resend Behavior
+# 10. Website Signup Contract
 
-Clerk's prebuilt authentication flows currently enforce a resend cooldown separate from code expiration.
-
-Do not create an independent Laravel resend timer.
-
-The future frontend should rely on Clerk's actual state/error response for when resend is permitted.
-
-Do not hard-code the frontend countdown into backend domain logic.
-
----
-
-# 21. Verification Code Lifetime
-
-Do not duplicate Clerk's code expiration rules in Laravel.
-
-The application should not assume a verification code remains valid for a custom duration.
-
-Clerk currently documents a 10-minute validity period for email verification codes in its prebuilt flows, but that remains provider-owned behavior rather than a Laravel domain constant.
-
----
-
-# 22. Email Link Alternative
-
-If the project later chooses email-link verification:
-
-review Clerk's current same-device/browser protection.
-
-Clerk supports requiring the email verification link to be opened on the same device/browser that initiated authentication, reducing link-forwarding/phishing risks.
-
-Do not disable this protection without a concrete UX/security reason.
-
-For V1, prefer verification code unless the owner explicitly changes the strategy.
-
----
-
-# 23. Sign-In Method
-
-Customer sign-in baseline is:
-
-```text
-email
-+
-password
-```
-
-Do not require an email OTP on every normal login merely because email verification was required at signup.
-
-Keep separate:
-
-```text
-verify email ownership during signup
-```
-
-and:
-
-```text
-authenticate later using email + password
-```
-
-unless Clerk security policy requires additional factor/device trust.
-
----
-
-# 24. Device Trust
-
-Current Clerk email/password guidance may enable Device Trust by default depending on instance configuration.
-
-Inspect actual configuration.
-
-If Device Trust is enabled, future sign-in flows must correctly handle additional verification when required.
-
-Do not bypass Clerk's second-factor/device-trust state in Laravel.
-
-Do not implement custom device trust.
-
----
-
-# 25. MFA Is Separate
-
-Email verification is not the same as MFA.
-
-Do not claim:
-
-```text
-email verified
-=
-MFA enabled
-```
-
-MFA policy remains separate.
-
-Do not require phone merely to satisfy MFA in this phase.
-
-If MFA is later introduced, authenticator apps, backup codes, or other supported methods can be evaluated separately.
-
----
-
-# 26. Phone Is Not Signup Identity
-
-Explicitly remove phone from:
-
-```text
-required registration credentials
-required Clerk signup identifiers
-required verification factors
-```
-
-Phone may later appear in:
-
-```text
-customer profile
-delivery contact
-order recipient
-enquiry/request contact
-```
-
-but it is not authentication identity for V1.
-
----
-
-# 27. Update Registration Documentation
-
-Search for statements equivalent to:
-
-```text
-registration collects name, email, phone, password
-```
-
-When they refer to customer authentication signup, update them to:
-
-```text
-registration requires email + password
-```
-
-If name is later required for application profile completeness, document it separately from Clerk authentication.
-
-Do not merge profile requirements into credential requirements.
-
----
-
-# 28. Name Is Not an Authentication Credential
-
-Unless Clerk configuration explicitly requires name during signup, do not require name as part of authentication.
-
-Name can be collected:
-
-```text
-during profile completion
-or
-during commerce/contact flow
-```
-
-according to later requirements.
-
-Do not fabricate name from email.
-
----
-
-# 29. Registration Input Ownership
-
-The future frontend signup form should eventually submit:
+Future website customer signup:
 
 ```text
 email
 password
 ```
 
-to Clerk.
-
-Not:
+Required:
 
 ```text
-role
-permissions
-user_id
-clerk_user_id
-email_verified
+email verification through Clerk
 ```
 
-Those remain server/provider controlled.
-
----
-
-# 30. Do Not Route Password Through Laravel
-
-The new email/password registration choice reinforces:
-
-```text
-client
-→ Clerk
-```
-
-for password handling.
-
-Never:
-
-```text
-client
-→ Laravel
-→ Clerk
-```
-
-unless Clerk's supported architecture explicitly requires backend orchestration, which is not the selected client flow.
-
-Laravel should not inspect customer passwords.
-
----
-
-# 31. Email Collision Safety
-
-If Clerk successfully authenticates:
-
-```text
-user_NEW
-email = existing@example.com
-```
-
-but Laravel contains an unmapped local record with the same email:
-
-do not automatically link.
-
-Preserve Phase 4.2:
-
-```text
-identity mapping by Clerk user ID
-not email
-```
-
-Email verification does not make email safe as a local account-linking key.
-
----
-
-# 32. Email Change Security
-
-Changing the primary authentication email later is a security-sensitive operation.
-
-Do not implement it through ordinary profile mutation.
-
-Future flow should conceptually be:
-
-```text
-authenticated customer
-    ↓
-reverification
-    ↓
-Clerk email-change flow
-    ↓
-new email verified
-    ↓
-primary email changed in Clerk
-    ↓
-Laravel snapshot reconciled
-```
-
-Implementation belongs to Phase 4.6 or later dedicated account-security work.
-
----
-
-# 33. Old Email After Change
-
-Do not assume `users.email` always remains permanently equal to signup email.
-
-Clerk may allow verified email changes later.
-
-The stable identity remains:
-
-```text
-clerk_user_id
-```
-
-not email.
-
-This is another reason never to use email as foreign identity.
-
----
-
-# 34. Multiple Email Addresses
-
-Clerk User objects may support multiple email addresses.
-
-Laravel should use only the **primary email** for the local application snapshot unless a future feature explicitly requires additional addresses.
-
-Do not create a local email-address collection in this phase.
-
----
-
-# 35. Primary Email Selection
-
-Always use Clerk's declared primary email relationship.
-
-Do not use:
-
-```text
-emailAddresses[0]
-```
-
-unless the API explicitly guarantees that is primary.
-
-Use the official primary email identifier/accessor.
-
----
-
-# 36. Verification State Synchronization
-
-Define how local verification snapshot is refreshed.
-
-Use the strategy approved in Phase 4.1, for example:
-
-```text
-initial provisioning
-+
-bounded JIT reconciliation
-+
-future Clerk webhook reconciliation
-```
-
-Do not call Clerk Backend API on every application request solely to re-check email verification.
-
----
-
-# 37. Webhooks Still Deferred
-
-Do not implement:
-
-```text
-user.created
-user.updated
-email verification webhook
-```
-
-during this phase unless Phase 4.1 explicitly assigned it here.
-
-Webhooks may later reconcile local email snapshots.
-
-They must remain asynchronous support, not the prerequisite for successful authentication.
-
----
-
-# 38. Verification and Session State
-
-A verified email should result in Clerk allowing signup/session completion according to instance configuration.
-
-Laravel should trust the fully authenticated Clerk session boundary.
-
-Do not create a second middleware such as:
-
-```text
-auth.clerk
-verified.email.local
-```
-
-unless the local business requirement genuinely requires a separate verification state.
-
-Avoid duplicating Clerk policy.
-
----
-
-# 39. Error Mapping
-
-Clerk verification errors shown in Clerk-owned signup UI do not need to be transformed into Laravel's error envelope.
-
-Examples:
-
-```text
-incorrect verification code
-expired verification challenge
-too many attempts
-```
-
-are part of Clerk's authentication flow.
-
-Laravel error mapping applies when accessing Laravel APIs.
-
-Do not proxy all authentication-step errors through Laravel.
-
----
-
-# 40. Protected API with Incomplete Signup
-
-If a caller somehow supplies a Clerk credential that is not eligible for full application authentication because signup/verification is incomplete:
-
-reject it according to Phase 4.3 authentication semantics.
-
-Do not JIT provision a customer using partially verified identity information.
-
----
-
-# 41. Email Verification Does Not Grant Role
-
-Completing email verification must never result in:
-
-```text
-STAFF
-ADMIN
-```
-
-role assignment.
-
-Public registration remains:
-
-```text
-verified Clerk account
-→ CUSTOMER
-```
-
-only.
-
----
-
-# 42. Email Verification Does Not Change Account State
-
-A customer verifying their email must not automatically change arbitrary local business-account state.
-
-Example:
-
-```text
-Laravel account suspended
-+
-email newly verified
-≠
-account reactivated
-```
-
-Authentication security state and application business state remain separate.
-
----
-
-# 43. No Admin Verification Override by Default
-
-Do not build:
-
-```text
-Admin marks customer email verified
-```
-
-in Laravel.
-
-Clerk is the verification authority.
-
-If extraordinary administrative verification is ever needed, it requires explicit security-policy review.
-
-Do not implement it in V1 by default.
-
----
-
-# 44. No Staff Verification Override
-
-STAFF must have zero authority to:
-
-```text
-mark email verified
-change login email
-bypass verification
-```
-
-Do not expose any such operation.
-
----
-
-# 45. Test — New Signup Verification Required
-
-Using fakes/fixtures representing Clerk signup state:
-
-verify:
-
-```text
-email + password entered
-email unverified
-```
-
-does not result in a fully authenticated Laravel customer.
-
-No protected API access.
-
----
-
-# 46. Test — Verified Signup
-
-Simulate:
-
-```text
-verified email
-completed Clerk signup
-valid authenticated session
-```
-
-Then verify:
-
-* local CUSTOMER can be provisioned/resolved;
-* `users.email` reflects approved Clerk primary email snapshot;
-* local role = CUSTOMER;
-* no phone required;
-* no Laravel password stored.
-
----
-
-# 47. Test — Signup Without Phone
-
-Mandatory regression test:
-
-Given valid:
-
-```text
-email
-password
-```
-
-and no phone:
-
-signup/provisioning must remain valid according to the new policy.
-
-Do not reject registration because:
-
-```text
-phone = null
-```
-
----
-
-# 48. Test — No Client Verification Override
-
-Send:
-
-```json
-{
-  "email_verified": true
-}
-```
-
-to any relevant Laravel profile/bootstrap endpoint.
-
-Verify it cannot mark email verified.
-
-Unknown/server-controlled fields should be rejected according to project validation conventions.
-
----
-
-# 49. Test — Unverified Email Cannot Bypass Clerk
-
-Simulate an unverified/incomplete Clerk signup and an attempted protected Laravel request.
-
-Verify no local authorization bypass occurs.
-
-Do not create CUSTOMER based solely on:
-
-```text
-valid-looking email
-```
-
----
-
-# 50. Test — Different Email, Same Clerk Identity
-
-Where synchronization behavior can be tested:
-
-```text
-same clerk_user_id
-new verified primary email
-```
-
-must still map to the same:
-
-```text
-users.id
-```
-
-Do not create another account.
-
----
-
-# 51. Test — Same Email, Different Clerk Identity
-
-Given:
-
-```text
-user_A → same@example.com
-user_B → same@example.com
-```
-
-or an equivalent legacy collision scenario:
-
-do not automatically merge Laravel identities.
-
-Preserve identity mapping rules from Phase 4.2.
-
----
-
-# 52. Test — No Phone Requirement
-
-Search validation/tests for signup expectations that require:
+Not required:
 
 ```text
 phone
 ```
 
-Remove or update only those tied to authentication registration.
+Do not change this contract during frontend implementation unless a formal product decision changes it.
 
-Do not weaken phone validation for:
+---
+
+# 11. Website Sign-In Contract
+
+Future customer sign-in:
 
 ```text
+email
+password
+```
+
+through Clerk.
+
+Laravel must never receive the password.
+
+There must be no future request such as:
+
+```http
+POST /api/v1/login
+```
+
+containing customer credentials unless the frozen contract explicitly retained such an endpoint, which the Clerk migration should have retired.
+
+---
+
+# 12. Email Verification Contract
+
+Clerk owns:
+
+```text
+verification code/link generation
 delivery
-request contact
-enquiry contact
-recipient contact
-```
-
-where phone remains domain-relevant.
-
----
-
-# 53. Test — No Laravel Verification Email
-
-Verify no application path invokes:
-
-```text
-sendEmailVerificationNotification()
-```
-
-for Clerk customers.
-
-No duplicate email should be sent by Laravel.
-
----
-
-# 54. Test — Public Catalog
-
-Unauthenticated/unverified visitors must still access public catalog APIs.
-
-Email verification must not leak into public routes.
-
----
-
-# 55. Test — Anonymous Request / Enquiry
-
-Ensure anonymous request/enquiry creation still works according to existing contract.
-
-Do not require Clerk verification for those anonymous paths.
-
----
-
-# 56. Test — Role Tampering
-
-During signup/provisioning, attempting:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-must not change CUSTOMER assignment.
-
-Email verification proves email ownership only.
-
-It proves nothing about application privilege.
-
----
-
-# 57. Test — Verification Snapshot
-
-If Laravel maintains local `email_verified` state:
-
-test that it can only be populated from trusted Clerk state.
-
-Do not allow fixture/request body mutation to bypass the trusted integration boundary.
-
----
-
-# 58. Offline Testing
-
-Normal PHPUnit tests must remain offline.
-
-Do not send real:
-
-```text
-verification email
-OTP
-Clerk request
-```
-
-during tests.
-
-Use fakes for:
-
-```text
-Clerk user
+expiration
+resend
 verification state
-session state
-Backend API gateway
 ```
 
-Real Clerk integration testing belongs to Phase 4.12/staging.
+Future frontend must complete the Clerk verification flow.
+
+Laravel must not implement a competing verification mechanism.
 
 ---
 
-# 59. Database Review
+# 13. Password Recovery Contract
 
-Expected schema changes:
+Clerk owns:
+
+```text
+forgot password
+reset password
+credential security
+recovery verification
+```
+
+Future Next.js pages/components must use Clerk.
+
+Laravel must not accept password-reset credentials.
+
+---
+
+# 14. Future Session Transport
+
+The future website must obtain the current Clerk session token using Clerk's supported Next.js integration.
+
+It must then call Laravel with:
+
+```http
+Authorization: Bearer <Clerk session token>
+```
+
+Do not introduce another token exchange.
+
+---
+
+# 15. Future Server-Side Requests
+
+Preferred website architecture for authenticated server-rendered content:
+
+```text
+Browser
+    ↓
+Next.js
+    ↓
+Clerk server auth context
+    ↓
+current Clerk token
+    ↓
+Laravel
+```
+
+This is an implementation guideline for the future frontend phase.
+
+Do not implement it in Phase 4.8.
+
+---
+
+# 16. Future Client-Side Requests
+
+If a future interactive Client Component needs to call Laravel directly:
+
+```text
+Client Component
+    ↓
+Clerk-supported current token retrieval
+    ↓
+Authorization: Bearer <token>
+    ↓
+Laravel
+```
+
+Do not persist the token manually.
+
+Do not create a second frontend token store.
+
+---
+
+# 17. Public Website Contract
+
+Public pages must remain usable without authentication.
+
+Examples include:
+
+```text
+homepage
+product listing
+product detail
+categories
+search
+public furniture browsing
+```
+
+The future authentication integration must not globally protect the website.
+
+This preserves:
+
+```text
+SEO
+SSR
+public caching
+anonymous browsing
+```
+
+---
+
+# 18. Protected Website Contract
+
+Future customer areas may require authentication:
+
+```text
+account
+profile
+orders
+notifications
+checkout
+customer request history
+customer enquiry history
+```
+
+Frontend routing may enforce sign-in for UX.
+
+Laravel must still enforce backend authentication and authorization.
+
+---
+
+# 19. Checkout Boundary
+
+Preserve:
+
+```text
+Browse → anonymous allowed
+Cart → according to cart policy
+Checkout → authentication required
+```
+
+Future frontend behavior:
+
+```text
+anonymous customer
+    ↓
+attempts checkout
+    ↓
+Clerk sign-in/signup
+    ↓
+return to checkout
+```
+
+Laravel still independently enforces authentication.
+
+---
+
+# 20. `/me` Contract
+
+The future website should use:
+
+```http
+GET /api/v1/me
+```
+
+to obtain the application user.
+
+This is the source of:
+
+```text
+Laravel user ID
+application profile
+name
+phone
+email snapshot
+role
+application account state
+```
+
+according to the finalized API representation.
+
+Do not use the Clerk User object as the full application User.
+
+---
+
+# 21. Role Contract
+
+Future website authorization-related UI must use Laravel-derived role/application state.
+
+Do not use:
+
+```text
+Clerk publicMetadata.role
+Clerk unsafeMetadata.role
+```
+
+as the application RBAC source.
+
+Laravel remains authoritative.
+
+---
+
+# 22. Profile Contract
+
+Future profile UI must use:
+
+```http
+GET /api/v1/me
+PATCH /api/v1/me
+```
+
+for Laravel-owned fields.
+
+Current ownership:
+
+```text
+name → Laravel
+phone → Laravel, optional
+email → Clerk
+email verification → Clerk
+password → Clerk
+role → Laravel, server controlled
+```
+
+Frontend implementation must preserve this separation.
+
+---
+
+# 23. Future Email Change
+
+The future UI must not implement:
+
+```text
+PATCH /me {email}
+```
+
+Email changes require Clerk security/reverification.
+
+After successful Clerk email change, Laravel's email snapshot may be reconciled.
+
+Implementation remains for the appropriate frontend/account phase.
+
+---
+
+# 24. Future Phone Editing
+
+Phone is ordinary Laravel profile/contact data.
+
+It is:
+
+```text
+optional
+not an authentication identifier
+not required at signup
+```
+
+Future profile UI may edit it through `/me`.
+
+---
+
+# 25. Token Storage Rule
+
+Future frontend implementation must not manually persist Clerk session tokens in:
+
+```text
+localStorage
+sessionStorage
+IndexedDB
+application Redux store
+custom cookies
+```
+
+solely for Laravel API access.
+
+Clerk owns browser session handling.
+
+Retrieve a current token when required.
+
+---
+
+# 26. Server Token Isolation
+
+Future Next.js server-side code must never place the Clerk session token in:
+
+```text
+rendered HTML
+serialized page props
+client component props
+logs
+public cache
+```
+
+Use the token only for authenticated server-to-Laravel requests.
+
+---
+
+# 27. Caching Contract
+
+Public Laravel data:
+
+```text
+products
+categories
+public catalog
+```
+
+may use normal website/public caching strategy.
+
+Private Laravel data:
+
+```text
+/me
+orders
+notifications
+checkout state
+```
+
+must not use shared/public caching.
+
+The frontend phases must preserve the backend private cache contract.
+
+---
+
+# 28. Error Handling Contract
+
+Future website implementation must use Laravel's standard error envelope:
+
+```text
+HTTP status
+code
+field
+details
+meta.request_id
+```
+
+Do not parse English error strings for application logic.
+
+---
+
+# 29. 401 Contract
+
+```text
+401
+```
+
+means the Laravel API does not accept the current authentication state.
+
+Future frontend should:
+
+* check current Clerk session;
+* obtain current token if appropriate;
+* retry only where safe;
+* route to sign-in if the session is no longer usable.
+
+Do not implement infinite retry loops.
+
+---
+
+# 30. 403 Contract
+
+```text
+403
+```
+
+means:
+
+```text
+authenticated
+but not authorized
+```
+
+Future frontend must not automatically sign out on 403.
+
+---
+
+# 31. 404 Contract
+
+Private:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+may intentionally mask ownership.
+
+Future frontend must not treat it as an authentication failure.
+
+---
+
+# 32. Mutation Retry Contract
+
+Future frontend must not automatically replay unsafe mutations merely because authentication changed.
+
+Especially:
+
+```text
+checkout
+payment
+order actions
+inventory-sensitive operations
+```
+
+Retry only where the backend endpoint's idempotency contract makes it safe.
+
+---
+
+# 33. Logout Contract
+
+Future website logout:
+
+```text
+Clerk sign out current session
+    ↓
+clear private frontend application state
+    ↓
+future Laravel protected calls unauthenticated
+```
+
+Do not:
+
+```text
+delete Laravel User
+delete Orders
+delete CustomerProfile
+```
+
+during logout.
+
+---
+
+# 34. Multi-Device Contract
+
+A customer may be signed in simultaneously on:
+
+```text
+browser
+Flutter app
+another browser
+```
+
+All valid sessions for:
+
+```text
+same Clerk user
+```
+
+must resolve to:
+
+```text
+same Laravel User
+```
+
+Do not create client-specific local accounts.
+
+---
+
+# 35. Pending Clerk Session Contract
+
+If Clerk authentication is incomplete because of a required security task:
+
+```text
+password reset
+MFA setup
+verification requirement
+```
+
+the future frontend must not treat the user as fully authenticated for protected application access.
+
+Use Clerk's current supported session state semantics.
+
+---
+
+# 36. CORS Contract
+
+If future browser code calls Laravel directly:
+
+Laravel CORS must allow only approved website origins.
+
+Do not use permissive:
+
+```text
+*
+```
+
+for production authenticated browser API access.
+
+If Next.js server-side code calls Laravel, browser CORS does not apply to that request path.
+
+---
+
+# 37. CSRF Contract
+
+Do not introduce Laravel customer cookie authentication merely for website convenience.
+
+Customer API authentication remains:
+
+```text
+Bearer Clerk session token
+```
+
+This keeps the Laravel customer API boundary consistent across web and mobile.
+
+---
+
+# 38. Authorized Party Validation
+
+Laravel's Clerk verifier should already validate approved token origins/authorized parties according to Phase 4.1–4.3.
+
+Phase 4.8 must verify that the configuration model can later include:
+
+```text
+development website origin
+staging website origin
+production website origin
+```
+
+without frontend implementation today.
+
+---
+
+# 39. Environment Contract
+
+Future Next.js implementation will require client-safe and server-only Clerk configuration.
+
+Document expected categories:
+
+```text
+Clerk publishable configuration → browser-safe
+Clerk secret configuration → server-only
+Laravel API URL → environment-specific
+```
+
+Do not add actual frontend env files in Phase 4.8.
+
+Do not store secrets in documentation.
+
+---
+
+# 40. Do Not Run Clerk CLI
+
+Phase 4.8 must not run:
+
+```bash
+clerk init
+clerk auth login
+clerk doctor
+```
+
+for the frontend.
+
+Those commands belong when:
+
+```text
+frontend/web/
+```
+
+becomes an active implementation target.
+
+---
+
+# 41. Do Not Install Packages
+
+Do not install:
+
+```text
+@clerk/nextjs
+@clerk/ui
+```
+
+during this phase.
+
+The frontend package versions should be chosen when the Next.js project itself is active.
+
+This avoids premature dependency/version coupling.
+
+---
+
+# 42. Do Not Create Frontend Routes
+
+Do not create:
+
+```text
+/sign-in
+/sign-up
+/account
+/profile
+```
+
+in Phase 4.8.
+
+Those pages must be designed in the context of the final frontend architecture.
+
+---
+
+# 43. Do Not Create Frontend Providers
+
+Do not create:
+
+```text
+ClerkProvider
+AuthProvider
+ApplicationUserProvider
+```
+
+during this phase.
+
+Their placement depends on the future app shell/layout architecture.
+
+---
+
+# 44. Do Not Create Frontend Middleware
+
+Do not create:
+
+```text
+proxy.ts
+middleware.ts
+```
+
+during Phase 4.8.
+
+Their eventual configuration depends on:
+
+* installed Next.js version;
+* actual routes;
+* public/protected route structure;
+* application shell.
+
+Document requirements only.
+
+---
+
+# 45. Do Not Create Sign-In Components
+
+Do not build:
+
+```text
+<SignIn />
+<SignUp />
+<SignInButton />
+<SignUpButton />
+<UserButton />
+```
+
+yet.
+
+These are frontend implementation details.
+
+---
+
+# 46. Do Not Style Authentication Yet
+
+Do not define:
+
+```text
+Clerk appearance config
+auth page spacing
+auth page typography
+button styles
+form card styles
+```
+
+during Group D.
+
+Authentication UI must later use the same website design system.
+
+---
+
+# 47. Design-System Handoff
+
+The future web authentication phase must inherit:
+
+```text
+MUI theme
+Nike-inspired tokens
+shared form primitives
+shared buttons
+shared cards/surfaces
+shared error components
+shared responsive layout
+```
+
+from the website foundation.
+
+Do not create parallel authentication design tokens.
+
+---
+
+# 48. Future Web Implementation Sequence
+
+When the frontend reaches the appropriate group, follow roughly:
+
+```text
+website foundation
+        ↓
+MUI theme
+        ↓
+design tokens
+        ↓
+reusable primitives
+        ↓
+navigation/layout shell
+        ↓
+Clerk integration
+        ↓
+signup/signin pages
+        ↓
+customer commerce pages
+```
+
+Do not reverse this order.
+
+---
+
+# 49. Future Sign-In Page
+
+When eventually implemented, the sign-in page should use the same:
+
+```text
+container widths
+form components
+buttons
+typography
+responsive behavior
+error messaging
+```
+
+as other website forms.
+
+Do not implement it now.
+
+---
+
+# 50. Future Sign-Up Page
+
+Likewise, future signup UI will collect:
+
+```text
+email
+password
+```
+
+and complete Clerk email verification.
+
+Phone remains outside signup.
+
+Do not implement it now.
+
+---
+
+# 51. Future Recovery Page
+
+Password recovery must use Clerk.
+
+The visual implementation should follow the same frontend design system.
+
+Do not implement it now.
+
+---
+
+# 52. Future Verification Page
+
+Email verification must use Clerk.
+
+Do not implement a custom Laravel verification form.
+
+Do not implement its UI now.
+
+---
+
+# 53. Future Account Security UI
+
+Password/security management remains Clerk-owned.
+
+The website account UI may later expose Clerk account/security actions.
+
+Do not build them during Group D.
+
+---
+
+# 54. Backend Review
+
+Phase 4.8 should verify that Laravel already supports everything the future website requires:
+
+```text
+Bearer authentication
+local User resolution
+JIT provisioning
+/me
+401 behavior
+403 behavior
+private resource authorization
+email/password Clerk model
+email verification state
+```
+
+If a backend gap exists, fix it in the appropriate backend abstraction.
+
+Do not create a web-specific backend pathway.
+
+---
+
+# 55. No Website-Specific Laravel Authentication
+
+Do not create:
+
+```text
+AuthenticateNextJs
+WebClerkController
+WebsiteTokenExchange
+WebLoginController
+```
+
+The Laravel authentication boundary must remain client-neutral.
+
+---
+
+# 56. Same Boundary as Mobile
+
+Phase 4.7 established:
+
+```text
+Flutter
+→ Clerk session token
+→ Laravel
+```
+
+Phase 4.8 establishes:
+
+```text
+Next.js
+→ Clerk session token
+→ Laravel
+```
+
+Laravel should not care which client sent the valid token.
+
+---
+
+# 57. Client-Neutral Backend
+
+Mandatory invariant:
+
+```text
+same Clerk user
+from Flutter
+or Next.js
+        ↓
+same users.clerk_user_id
+        ↓
+same Laravel User
+```
+
+No `client_type` should participate in identity resolution.
+
+---
+
+# 58. OpenAPI Review
+
+Review protected routes.
+
+Ensure the OpenAPI security scheme describes:
+
+```text
+Bearer authentication
+using a Clerk-issued authenticated session token
+```
+
+Do not add frontend-specific auth endpoints.
+
+---
+
+# 59. No New Website Auth API
+
+Do not introduce:
+
+```text
+/api/v1/web/login
+/api/v1/web/signup
+/api/v1/web/token
+/api/v1/web/refresh
+```
+
+The website authenticates with Clerk directly.
+
+---
+
+# 60. Contract Documentation
+
+Document the expected future website flow in existing consolidated documentation.
+
+A concise sequence is enough:
+
+```text
+1. User signs in/up through Clerk.
+2. Clerk establishes browser session.
+3. Next.js obtains current Clerk session token.
+4. Next.js sends token to Laravel as Bearer.
+5. Laravel authenticates token.
+6. Laravel resolves local User.
+7. Laravel handles authorization/business logic.
+```
+
+Do not create excessive new documents.
+
+---
+
+# 61. Documentation Updates
+
+Likely update only:
+
+```text
+docs/api/api-conventions.md
+docs/decisions.md
+AGENTS.md
+```
+
+and possibly:
+
+```text
+docs/api/api-contract.md
+docs/api/openapi.yaml
+```
+
+where auth semantics need clarification.
+
+Keep consolidated docs authoritative.
+
+---
+
+# 62. `AGENTS.md` Handoff
+
+Clarify that:
+
+```text
+Group D
+→ establishes web authentication contract
+
+frontend Groups L–O
+→ implement website authentication
+
+Groups P–Q
+→ implement Flutter authentication
+```
+
+This prevents future agents from prematurely modifying frontend applications.
+
+---
+
+# 63. Future Frontend Agent Instructions
+
+Record the future website implementation requirements concisely:
+
+```text
+Use @clerk/nextjs.
+Use current App Router integration.
+Use ClerkProvider.
+Use current Clerk middleware/proxy convention.
+Use await auth() server-side.
+Use getToken() for Laravel calls.
+Do not introduce another auth provider.
+Do not use Clerk metadata for Laravel role.
+```
+
+These are implementation constraints for the later phase.
+
+Do not execute them today.
+
+---
+
+# 64. Next.js Version Deferred
+
+Do not decide:
+
+```text
+proxy.ts
+vs
+middleware.ts
+```
+
+until the actual Next.js version in `frontend/web` is being implemented.
+
+At that time:
+
+```text
+inspect installed Next.js version
+follow current Clerk guidance
+```
+
+Do not create files based on assumptions now.
+
+---
+
+# 65. Clerk SDK Version Deferred
+
+Do not lock:
+
+```text
+@clerk/nextjs version
+```
+
+during Group D.
+
+Install the then-current compatible release when the frontend implementation phase begins.
+
+This avoids stale dependency decisions.
+
+---
+
+# 66. Authentication UI Choice Deferred
+
+Do not decide prematurely between:
+
+```text
+Clerk prebuilt components
+custom Clerk flow
+```
+
+until:
+
+* website design primitives exist;
+* form conventions exist;
+* page layouts exist;
+* UX requirements are known.
+
+Default recommendation for later remains:
+
+```text
+prefer standard Clerk components unless custom UI is necessary
+```
+
+but do not implement now.
+
+---
+
+# 67. MUI Integration Deferred
+
+Do not solve Clerk/MUI styling in Group D.
+
+When the website design system exists, auth pages can be integrated correctly.
+
+This is one of the main reasons frontend work is deferred.
+
+---
+
+# 68. No Authentication State Management Decision Yet
+
+Do not add:
+
+```text
+Redux
+Zustand
+React Context
+```
+
+for auth.
+
+The future app should use Clerk for authentication state and only introduce application-user state if necessary.
+
+The final decision belongs to the website architecture phase.
+
+---
+
+# 69. No BFF Decision Yet
+
+Do not build or commit the website to a large Backend-for-Frontend layer.
+
+Document both supported future patterns:
+
+```text
+Next.js server → Laravel
+```
+
+and where necessary:
+
+```text
+browser → Laravel with current Clerk token
+```
+
+Choose the simplest per feature when frontend implementation begins.
+
+---
+
+# 70. Backend Tests — Valid Web Token
+
+Existing Clerk authentication tests should establish:
+
+```text
+valid Clerk session token
+→ authenticated Laravel User
+```
+
+This is client-independent.
+
+If not sufficiently covered, add backend tests.
+
+Do not need actual Next.js code.
+
+---
+
+# 71. Backend Tests — Missing Token
+
+Protected endpoint:
+
+```text
+no token
+```
+
+must return:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+This guarantees the future website has a stable contract.
+
+---
+
+# 72. Backend Tests — Invalid Token
+
+Invalid Clerk credential:
+
+```text
+401
+```
+
+without local provisioning.
+
+No provider internals exposed.
+
+---
+
+# 73. Backend Tests — Valid CUSTOMER
+
+Valid token for mapped CUSTOMER:
+
+```text
+GET /me
+```
+
+returns correct application profile.
+
+---
+
+# 74. Backend Tests — First Website Session
+
+Simulate a valid Clerk user with no local Laravel user.
+
+First protected request:
+
+```text
+→ Phase 4.2 provisioning
+→ CUSTOMER
+→ request succeeds
+```
+
+This represents both future website and mobile behavior.
+
+---
+
+# 75. Backend Tests — Role Authority
+
+Simulate:
+
+```text
+Clerk metadata role = ADMIN
+Laravel role = CUSTOMER
+```
+
+Verify Laravel remains CUSTOMER.
+
+This protects future frontend implementation from accidental Clerk role dependence.
+
+---
+
+# 76. Backend Tests — Same User Across Clients
+
+Conceptually simulate two valid Clerk sessions with the same:
+
+```text
+sub
+```
+
+Verify both resolve to the same local Laravel User.
+
+No actual Next.js or Flutter code is required.
+
+---
+
+# 77. Backend Tests — Public Catalog
+
+Ensure public catalog endpoints remain accessible without a token.
+
+Authentication work must not globally protect API routes.
+
+---
+
+# 78. Backend Tests — `/me` Privacy
+
+Verify:
+
+```text
+GET /me
+```
+
+uses private/no-store response semantics.
+
+Future web caching can rely on this contract.
+
+---
+
+# 79. Backend Tests — 403
+
+Authenticated customer attempting unauthorized operation must receive:
+
+```text
+403
+```
+
+or masking behavior according to the specific resource policy.
+
+Do not convert authorization failures into login failures.
+
+---
+
+# 80. No Frontend Test Files
+
+Do not create:
+
+```text
+React component tests
+Playwright auth tests
+Next.js tests
+```
+
+during this phase.
+
+No frontend implementation exists yet.
+
+Those tests belong with the future frontend features.
+
+---
+
+# 81. Clerk Live Testing
+
+Do not require a real Next.js client or Clerk browser session in ordinary Group D tests.
+
+Backend authentication should use fakes/test tokens/verifier abstractions.
+
+Full browser authentication will be tested when frontend implementation exists.
+
+---
+
+# 82. No Playwright / Cypress
+
+Do not install:
+
+```text
+Playwright
+Cypress
+```
+
+for Phase 4.8.
+
+Frontend E2E testing belongs to later frontend/QA phases.
+
+---
+
+# 83. No Frontend Package Changes
+
+Expected changes under:
+
+```text
+frontend/
+```
+
+should be:
 
 ```text
 NONE
 ```
 
-if the existing `users.email` and verification representation already support Clerk.
+during Phase 4.8.
 
-If `phone` currently has a NOT NULL constraint directly on `users` because registration originally required it:
-
-review whether that prevents the new email/password-only signup.
-
-If so, create a **new migration** making phone nullable where consistent with the domain model.
-
-Do not edit the original Group C migration.
+If the agent believes frontend modification is necessary, stop and document why rather than proceeding.
 
 ---
 
-# 60. Phone Column Decision
+# 84. Expected Backend Code Changes
 
-Phone should be nullable for customer identity/profile if signup does not require it.
-
-However, this does not mean every domain phone field becomes nullable.
-
-Distinguish:
+Expected:
 
 ```text
-users/profile phone
+none
+or minimal
 ```
 
-from:
+because Phase 4.3 should already provide the client-neutral Clerk bearer-token authentication boundary.
+
+Phase 4.8 primarily verifies and documents readiness for the future website.
+
+---
+
+# 85. Expected Schema Changes
+
+Expected:
 
 ```text
-order recipient_phone
-delivery phone
-request/enquiry contact requirements
+NONE
 ```
 
-Do not globally relax phone constraints.
-
----
-
-# 61. Customer Profile
-
-If `customer_profiles.phone` exists and is currently required only because of the old signup assumption:
-
-review it.
-
-Preferred:
+Do not add:
 
 ```text
-phone nullable
+web_session
+website_token
+nextjs_user_id
+browser_session
 ```
 
-until the customer provides it later.
-
-Do not generate fake phone numbers.
+to the database.
 
 ---
 
-# 62. Profile Completion
+# 86. No User-Agent Authentication
 
-Do not force collection of phone immediately after signup just to preserve the old design.
-
-Phase 4.6 will define profile operations.
-
-If commerce later requires phone:
-
-collect it at the appropriate profile/checkout/contact boundary.
-
-Do not make it a credential requirement.
-
----
-
-# 63. Checkout Contact
-
-If checkout requires recipient phone:
-
-that is a checkout/delivery requirement.
-
-It must not be confused with:
+Do not identify or authorize website users using:
 
 ```text
-account signup requires phone
+User-Agent
+browser cookie created by Laravel
+client_type
 ```
 
-A user may sign up successfully with email/password and provide recipient contact during checkout later.
+Only the verified Clerk credential establishes identity.
 
 ---
 
-# 64. Request / Enquiry Contact
+# 87. No Website-Specific Role
 
-Existing furniture request/enquiry rules remain unchanged unless separately revised.
-
-Anonymous contact requirements may still use:
+Do not add roles such as:
 
 ```text
-name
-+
-email and/or phone
+WEB_CUSTOMER
+MOBILE_CUSTOMER
 ```
 
-according to their frozen domain rules.
-
-Do not use the new signup rule to modify those endpoints.
-
----
-
-# 65. Update `AGENTS.md`
-
-Update authentication-related roadmap notes/conventions to reflect:
+The role remains:
 
 ```text
-Customer auth registration:
-- required email
-- required password
-- Clerk verifies email
-- phone not required
+CUSTOMER
 ```
 
-Do not alter unrelated roadmap phases.
+independent of client.
 
 ---
 
-# 66. Update `api-conventions.md`
+# 88. No Duplicate Profiles
 
-Replace obsolete auth registration rules that still require phone.
-
-A suitable conceptual rule is:
+Do not create:
 
 ```text
-Registration credentials/identity:
-email + password
-
-Verification:
-Clerk email verification at signup
-
-Phone:
-optional application profile/contact data,
-not an authentication requirement
+web_profile
+mobile_profile
 ```
 
-Keep other domain phone rules intact.
+The same Laravel profile is shared across clients.
 
 ---
 
-# 67. Update `api-contract.md`
+# 89. Shared Profile Invariant
 
-Where the frozen/auth-migrated contract describes Clerk registration semantics, reflect the new requirement.
-
-If old AUTH registration endpoints were retired in Phase 4.1:
-
-do not reintroduce them just to describe these fields.
-
-Document the Clerk-owned registration behavior in the auth contract/architecture section.
-
----
-
-# 68. OpenAPI
-
-If no Laravel signup endpoint exists, do not create a signup request schema merely for Clerk.
-
-Remove obsolete active schemas requiring:
+Future:
 
 ```text
-phone
+customer changes phone on website
 ```
 
-from retired Laravel signup flows as appropriate.
-
-Protected Laravel endpoints continue using Clerk bearer authentication.
-
----
-
-# 69. Documentation Ownership Matrix
-
-Update field ownership:
-
-| Field              | Authority                        | Required at signup?             |
-| ------------------ | -------------------------------- | ------------------------------- |
-| Clerk User ID      | Clerk                            | generated                       |
-| email              | Clerk                            | yes                             |
-| email verification | Clerk                            | yes                             |
-| password           | Clerk                            | yes                             |
-| phone              | application profile/contact      | no                              |
-| name               | application profile/profile flow | no unless separately configured |
-| role               | Laravel                          | server assigned                 |
-| permissions        | Laravel                          | no                              |
-
-Do not make this matrix client-controlled.
-
----
-
-# 70. Security Review
-
-Before completion verify:
+then Flutter should later see the same value through:
 
 ```text
-email required
-password required
-phone not required
-email verified through Clerk
-Laravel does not issue verification codes
-Laravel does not send duplicate verification mail
-unverified signup cannot access protected commerce
-public browsing remains available
-role unaffected by email verification
-email never used as local identity binding key
+GET /me
+```
+
+because Laravel is the profile authority.
+
+This must remain true.
+
+---
+
+# 90. Security Checklist
+
+Verify architecture guarantees:
+
+```text
+Clerk authenticates website customers
+Laravel verifies Clerk session tokens
+Laravel owns authorization
+password never reaches Laravel
+email verification stays Clerk-owned
+phone remains optional
+no second auth system
+no website-specific backend login
+no frontend token persistence requirement
+same user across web/mobile
+public catalog remains public
 ```
 
 ---
 
-# 71. Code Quality
+# 91. Avoid Overengineering
 
-Maintain existing project requirements:
+Do not create:
 
-* small cohesive services;
-* dependency injection;
-* no giant auth service;
-* minimal comments;
-* centralized constants;
+```text
+WebsiteAuthenticationService
+FrontendAuthGateway
+NextJsSessionBridge
+TokenExchangeService
+WebIdentityAdapter
+BrowserAuthRepository
+```
+
+in Laravel.
+
+They are unnecessary.
+
+The backend already receives a standard Bearer token.
+
+---
+
+# 92. Maintain Client Neutrality
+
+Laravel should conceptually see:
+
+```text
+authenticated Clerk request
+```
+
+not:
+
+```text
+Next.js request
+Flutter request
+```
+
+This dramatically simplifies maintenance.
+
+---
+
+# 93. Quality Requirements
+
+Any backend/documentation changes must maintain:
+
 * cognitive complexity ≤15;
-* maximum 3 return statements where practical;
-* PHPStan level 5;
-* no duplicate Clerk integrations.
-
-Do not add a special verification service if existing Clerk identity/session abstractions already expose trusted verification state cleanly.
+* maximum 3 returns where practical;
+* strict validation;
+* centralized configuration;
+* provider-independent domain logic;
+* minimal comments;
+* no duplicated authentication logic.
 
 ---
 
-# 72. Commands / Checks
+# 94. Commands / Verification
 
-From:
+If only documentation changes occur:
 
-```text
-backend/laravel/
-```
+run any documentation/schema validation used by the repository.
 
-run:
+Also run relevant backend tests:
 
 ```bash
+cd backend/laravel
+
 php artisan test
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 composer audit
 ```
 
-If schema changed because phone became nullable:
+Use project-defined equivalent scripts where applicable.
 
-```bash
-php artisan migrate:fresh --seed
-```
-
-must also pass.
-
-Run any project-defined equivalents.
+Do not run frontend install/build commands because the frontend is not being implemented.
 
 ---
 
-# 73. Files Changed Report
+# 95. Files Changed Report
 
 At completion report:
 
@@ -1461,106 +1810,189 @@ At completion report:
 
 Exact paths.
 
-## Authentication policy changes
+## Frontend changes
 
-Explicitly state:
-
-```text
-signup = email + password
-email verification = required through Clerk
-phone = not required
-```
-
-## Schema changes
-
-Especially whether:
+Must state:
 
 ```text
-users.phone
-customer_profiles.phone
+NONE
 ```
 
-needed nullable adjustments.
+## Backend changes
 
-## API changes
+Expected:
 
-List only auth-related contract changes.
+```text
+none or minimal
+```
+
+Explain any exception.
+
+## Contract decisions
+
+Confirm:
+
+```text
+future Next.js
+→ Clerk
+→ session token
+→ Laravel bearer auth
+```
 
 ## Tests
 
-List all added/updated tests.
+List backend tests added/run.
 
-## Commands
+## Deferred frontend work
 
-Exact commands + results.
-
-## Deferred
-
-Phase 4.6+ concerns.
+Clearly identify later website phases.
 
 ---
 
-# 74. Definition of Done
+# 96. Frontend Handoff Checklist
 
-Phase 4.5 is complete when:
+Leave a concise handoff for the future website agent:
 
-* customer signup requires email + password only;
-* phone is not required for customer signup;
-* Clerk is the sole email-verification authority;
-* verification at signup is enabled/required;
-* the configured verification strategy is documented;
-* Laravel generates no email verification token/code;
-* Laravel sends no duplicate verification email;
-* incomplete/unverified Clerk signup cannot become unrestricted authenticated application access;
-* verified Clerk customer can be provisioned/resolved correctly;
-* local email snapshot comes from trusted Clerk data;
-* local verification state, if present, derives from Clerk;
-* email remains non-authoritative for local identity linking;
-* CUSTOMER remains the only public-registration role;
-* public catalog stays public;
-* anonymous request/enquiry behavior stays unchanged;
-* phone-related schema no longer blocks valid email/password-only registration;
-* offline tests pass;
-* PHPUnit passes;
-* Pint passes;
-* PHPStan passes;
-* Composer audit passes;
-* documentation accurately reflects the new registration policy.
+```text
+[ ] initialize Clerk only inside frontend/web
+[ ] install current compatible @clerk/nextjs
+[ ] follow actual installed Next.js version
+[ ] place ClerkProvider according to current Clerk guidance
+[ ] configure Clerk middleware/proxy
+[ ] keep catalog public
+[ ] protect account/checkout/customer routes
+[ ] use await auth() server-side
+[ ] use getToken() for Laravel calls
+[ ] send Authorization Bearer
+[ ] use Laravel /me for role/profile
+[ ] do not use Clerk metadata as RBAC
+[ ] signup = email + password
+[ ] phone not required
+[ ] email verification through Clerk
+[ ] use shared website design system/components
+```
+
+Do not execute this checklist in Phase 4.8.
 
 ---
 
-# 75. Out of Scope
+# 97. Relationship to Group L–O
+
+Group D:
+
+```text
+defines authentication architecture
+```
+
+Groups L onward:
+
+```text
+build website foundation
+design system
+layouts
+components
+pages
+```
+
+Then the relevant website authentication/customer-commerce phase:
+
+```text
+implements Clerk UI and routing
+```
+
+This order is mandatory.
+
+---
+
+# 98. Relationship to Groups P–Q
+
+Likewise:
+
+```text
+Phase 4.7
+→ defines Flutter authentication contract
+
+Groups P–Q
+→ implement Flutter authentication and customer UI
+```
+
+Do not allow Group D to become an early frontend implementation group.
+
+---
+
+# 99. Definition of Done
+
+Phase 4.8 is complete when:
+
+* future Next.js authentication architecture is explicitly defined;
+* the website will use Clerk as its sole authentication provider;
+* Laravel will receive Clerk session tokens through `Authorization: Bearer`;
+* the existing client-neutral Laravel authentication boundary is sufficient;
+* `/me` is confirmed as the future source of application profile/role;
+* public and protected route expectations are documented;
+* signup remains email + password;
+* email verification remains Clerk-owned;
+* phone remains optional;
+* no website-specific Laravel login/token endpoints exist;
+* no NextAuth/Auth.js or Sanctum SPA auth is planned;
+* web and mobile identities resolve to the same local User;
+* caching/security/error behavior is documented for the future frontend;
+* backend regression tests pass;
+* no frontend code is created;
+* no frontend packages are installed;
+* no Clerk frontend CLI initialization is performed;
+* no frontend routing/layout/design decisions are prematurely implemented;
+* future frontend agents have a clear implementation handoff.
+
+---
+
+# 100. Out of Scope
 
 Do not implement:
 
-* final Next.js verification UI;
-* Flutter verification UI;
-* phone authentication;
-* SMS OTP;
-* phone-required signup;
-* profile editing;
-* email-change UI;
-* account deletion;
-* Clerk webhooks;
-* MFA setup;
-* admin email-verification override;
-* Staff credential management;
-* checkout contact implementation.
+* `frontend/web` Clerk setup;
+* `@clerk/nextjs`;
+* `ClerkProvider`;
+* `proxy.ts`;
+* `middleware.ts`;
+* sign-in page;
+* sign-up page;
+* verification page;
+* password recovery page;
+* website auth layout;
+* account navigation;
+* frontend API client;
+* React auth state;
+* MUI authentication components;
+* website styling;
+* Flutter implementation;
+* E2E browser tests;
+* social login;
+* phone login;
+* MFA UI;
+* Clerk Organizations;
+* BFF architecture.
 
 ---
 
-# 76. STOP Condition
+# 101. STOP Condition
 
-STOP when Clerk email verification is the sole verification mechanism, customer signup works conceptually and structurally with only:
+STOP once the future website authentication contract is fully documented, the Laravel backend is confirmed ready to accept Clerk-authenticated website requests through the same client-neutral Bearer-token boundary used by mobile, and all relevant backend checks pass.
+
+There must be:
 
 ```text
-email + password
+NO frontend implementation
+NO frontend package installation
+NO Clerk frontend initialization
 ```
 
-phone is no longer required by authentication or local provisioning, and all Phase 4.5 validation/tests/documentation are complete.
+during Phase 4.8.
 
 Do not continue automatically.
 
-The next roadmap phase is:
+The next backend roadmap phase is:
 
-**Phase 4.6 — Profile Operations / Account Profile Synchronization**
+**Phase 4.9 — Roles / Laravel RBAC Integration**
+
+Actual website Clerk implementation must wait until the corresponding frontend phase in Groups L–O is reached.

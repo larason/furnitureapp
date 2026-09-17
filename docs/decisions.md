@@ -456,7 +456,7 @@
 
 ### ADR/AUTH-007 — Shared Cross-Platform Identity & Session/Token Principles
 
-**Decision:** One shared customer identity across `Next.js` (first-party browser session, httpOnly cookie, not long-lived JS secret) and `Flutter` (API credential/token) against same Laravel backend; same credentials see same orders/profile. `Admin` shares same system. Logout invalidates server-side session/credential (deleting frontend token alone insufficient). Multiple customer sessions (web/phone/tablet) **permitted** (logout on one not all); revocation, shorter admin timeout, MFA, visibility, forced logout, audit logging evaluated later. Passwords only as secure one-way hash, never in responses; change via authenticated secure workflow (not `PATCH /me {password}`); `role` is server-controlled.
+**Decision:** One shared customer identity across `Next.js`, Flutter, and Admin uses the same Clerk application and maps to one Laravel `users.id`. Every Laravel API client, including the future Flutter app, sends the current Clerk session token as `Authorization: Bearer <Clerk session_token>`; Laravel accepts no browser/session cookie or client-defined mobile token as authentication. Logout is performed through the Clerk client session lifecycle; deleting a local token is not a substitute for Clerk sign-out. Multiple customer sessions (web/phone/tablet) are permitted; revoking one does not revoke all. Passwords remain Clerk-owned and are never sent to Laravel; `role` remains server-controlled.
 
 **Reason:** `phase-1.17.md §29-36`, `§37`, `§56`, `api-contract.md §17.7/§17.10/§17.14`, `api-conventions.md §18.3-18.4`.
 
@@ -504,11 +504,47 @@ Session revocation is exposed narrowly through a new `ClerkSessionGateway` inter
 
 ### ADR/AUTH-011 — Email-Verified Signup Baseline (Phase 4.5)
 
-**Decision:** V1 customer registration credentials are `email` + `password` only; **phone is not a signup requirement** (it is application profile/contact data, never authentication identity). Clerk is the sole email-verification authority: email verification at signup is required (`email verification code` baseline; link alternative with same-device protection if the owner configures it). Laravel generates no verification token/code, sends no verification email, and never receives the verification code. `LocalUserProvisioner` now refuses to provision a local user whose Clerk primary email is not `Verified` — it throws `INVALID_AUTHENTICATION` (401) before any local row is created, so an unverified/incomplete Clerk signup cannot reach protected commerce. The local `users.email`/`email_verified_at` snapshot is read-only and derived only from trusted Clerk state (never from request JSON, never via `email != null`). Email stays non-authoritative for local identity linking; verification grants `CUSTOMER` only and never changes role or reactivates a suspended account. Public catalog and anonymous request/enquiry remain verification-free. No schema change was required (`users.phone` was already nullable; `customer_profiles` carries no phone).
+**Decision:** V1 customer registration credentials are `email` + `password` only; **phone is not a signup requirement** (it is application profile/contact data, never authentication identity). Clerk is the sole email-verification authority: email verification at signup is required (`email verification code` baseline; link alternative with same-device protection if the owner configures it). Laravel generates no verification token/code, sends no verification email, and never receives the verification code. `LocalUserProvisioner` now refuses to provision a local user whose Clerk primary email is not `Verified` — it throws `INVALID_AUTHENTICATION` (401) before any local row is created, so an unverified/incomplete Clerk signup cannot reach protected commerce. The local `users.email`/`email_verified_at` snapshot is read-only and derived only from trusted Clerk state (never from request JSON, never via `email != null`). Email stays non-authoritative for local identity linking; verification grants `CUSTOMER` only and never changes role or reactivates a suspended account. Public catalog and anonymous request/enquiry remain verification-free. `users.phone` was already nullable; `users.name` is now nullable through the Phase 4.6 migration because signup does not require a name; `customer_profiles` carries no phone.
 
 **Reason:** Enforces "unverified email → fully registered CUSTOMER with unrestricted commerce" is forbidden, keeps phone out of signup while leaving it available as profile/contact data, and avoids any second Laravel verification path.
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`app/Authentication/LocalUserProvisioner.php`, `tests/Unit/LocalUserProvisionerTest.php`), `docs/api/api-contract.md §17.2/§17.9`, `docs/api/api-conventions.md §18.5`, `AGENTS.md §17`
+
+---
+
+### ADR/AUTH-012 — Laravel Profile Ownership and Account Retention (Phase 4.6)
+
+**Decision:** `GET /api/v1/me` and `PATCH /api/v1/me` use the authenticated Clerk-derived local `User`; clients cannot select identity through query/body fields. Laravel owns mutable `name` and optional `phone`; Clerk owns email, verification, credentials, and sessions. Profile updates use a strict `name`/`phone` allow-list, partial semantics, server-side validation, and never call Clerk. Profile responses are explicitly `private, no-store` and exclude `clerk_user_id`, credentials, tokens, permissions, and security metadata. Local `users.name` is nullable because signup requires only email/password; a supplied profile name must be non-empty and cannot be cleared. `users.phone` remains nullable and can be explicitly cleared.
+
+Local users with commerce history are retained when a Clerk identity is deleted or an account is closed; no ordinary profile operation hard-deletes users, rewrites historical Order/Request/Enquiry snapshots, or reactivates account state. `carts.user_id` is canonicalized to `ON DELETE RESTRICT` on all supported database drivers through a new migration, so an authenticated cart cannot silently become a guest cart or lose ownership.
+
+**Reason:** Keeps field authority explicit, prevents profile IDOR/mass assignment, preserves historical commerce and cart ownership, and avoids making normal profile operations dependent on Clerk network availability.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`app/Http/Controllers/Api/V1/MeController.php`, `app/Http/Requests/UpdateMeRequest.php`, `app/Services/UpdateCustomerProfile.php`, `database/migrations/2026_09_17_100000_restrict_cart_user_deletion.php`, `database/migrations/2026_09_17_110000_make_user_name_nullable.php`, `tests/Feature/ProfileOperationsTest.php`, `tests/Unit/LocalUserProvisionerTest.php`), `docs/api/api-contract.md §29.6/§29.9`, `docs/api/api-conventions.md §29.1-29.6`, `docs/api/api-resources.md §8/§13`, `docs/domain/business-rules.md`, `AGENTS.md`
+
+---
+
+### ADR/AUTH-013 — Flutter Uses the Shared Clerk Bearer Boundary (Phase 4.7)
+
+**Decision:** Flutter uses the same Clerk application and identity system as Next.js. The future mobile implementation exposes a small `AuthRepository`/`ClerkAuthAdapter` that obtains the current Clerk session token and an `AuthTokenProvider` for the network layer. Only the network layer attaches `Authorization: Bearer <Clerk session_token>` to authenticated Laravel requests. Flutter sends no password to Laravel, creates no mobile-specific user/token, implements no verifier or refresh token, and stores no bearer token or password in insecure storage. Public API calls remain usable without a token; protected calls use the existing Laravel verifier, `users.clerk_user_id` mapping, provisioning, and authorization path. Clerk owns session restoration, renewal, and sign-out. Laravel `401` means authentication failure and `403` means authenticated-but-unauthorized; refresh/retry is centralized and bounded, and unsafe mutations are not blindly replayed.
+
+No Flutter project or UI is scaffolded in this phase because the mobile application belongs to Phase Group P/Q. The package decision is deferred until Flutter implementation begins: prefer a maintained Clerk-compatible package, otherwise a narrow documented integration; isolate package-specific types behind the adapter. Only client-safe Clerk configuration may ship in the app; Clerk secret keys remain server-only. Production mobile API traffic requires HTTPS and normal certificate validation.
+
+**Reason:** Reuses the proven Laravel authentication boundary, prevents a second identity/token system, limits community-package coupling, and gives future Flutter networking/auth phases an explicit secure contract without prematurely building the application.
+
+**Status:** Accepted | **Affected:** `AGENTS.md §17`, `docs/api/api-conventions.md §29.7`, `docs/api/api-contract.md §31.1`, `docs/api/api-resources.md §13.3`, `docs/api/openapi.yaml bearerAuth`, `docs/clerk-authentication-architecture.md`
+
+---
+
+### ADR/AUTH-014 — Next.js Website Uses the Shared Clerk Bearer Boundary (Phase 4.8)
+
+**Decision:** The future Next.js website uses the same Clerk application and client-neutral Laravel authentication boundary as Flutter. Clerk owns browser sign-up/sign-in, email verification, password recovery, session renewal, and logout. The future App Router implementation uses the current `@clerk/nextjs` integration, places `ClerkProvider` inside `<body>`, follows the installed Next.js version's `proxy.ts`/`middleware.ts` convention, uses asynchronous `await auth()` server-side, obtains a current Clerk session token through `getToken()`, and sends it to Laravel as `Authorization: Bearer <Clerk session_token>`. Laravel continues to verify the token, map `sub` to `users.clerk_user_id`, provision/resolve the local User, and enforce authorization.
+
+The website keeps public catalog/SEO and anonymous request/enquiry pages public. Frontend route protection is an entry/UX layer only; Laravel remains authoritative for `/me`, roles, permissions, ownership, account state, and commerce operations. No NextAuth/Auth.js, Sanctum, custom JWT, refresh-token service, parallel customer cookie auth, website-specific Laravel endpoint, or frontend BFF is introduced by default. Tokens are request-scoped and never placed in rendered HTML, client props, logs, localStorage, or shared caches. Phase 4.8 does not install packages, run Clerk CLI initialization, create frontend routes/providers/middleware/UI, or modify `frontend/web/`; those belong to later website foundation/auth phases.
+
+**Reason:** Establishes one secure, client-neutral contract before frontend implementation, prevents token and authorization duplication, preserves public SEO behavior, and avoids coupling the project to an unverified Next.js version or premature UI structure.
+
+**Status:** Accepted/documented | **Affected:** `AGENTS.md`, `docs/api/api-contract.md §21.9`, `docs/api/api-conventions.md §29.8`, `docs/api/api-resources.md §13.3`, `docs/clerk-authentication-architecture.md`, `docs/api/openapi.yaml`; frontend implementation deferred to Groups L–O.
 
 ---
 

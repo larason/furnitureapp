@@ -295,6 +295,8 @@ Business failures must correspond to real rules above — do not invent behavior
 
 - Staff approval and role changes remain **auditable** (`who approved? when? what changed?`); security events (`login success/failure`, `logout`, `password change/reset`, `staff approval`, `role change`, `session revocation`) are identified for later logging without logging passwords/tokens. `password_reset_tokens` table retired in Phase 4.4; `users.password` remains nullable/reserved for migration compatibility and is never populated for Clerk customers.
 
+**Profile and account-retention policy (Phase 4.6):** `GET /api/v1/me` and `PATCH /api/v1/me` always use the authenticated Clerk-derived local User. Laravel owns mutable profile fields `name` and optional `phone`; Laravel remains authoritative for local identity mapping, role, permissions, account state, and commerce relationships. Clerk owns email, verification, credentials, and sessions. Profile responses are private/no-store and profile updates cannot modify email, verification, identity mapping, role, permissions, account state, or historical Order/Request/Enquiry snapshots. Local Users with commerce history are retained when a Clerk identity is deleted or an account is closed; no ordinary profile operation hard-deletes them. `carts.user_id` uses `ON DELETE RESTRICT` on all supported drivers, so an authenticated cart cannot silently become a guest cart.
+
 ## 18. Authorization & Permissions Business Rules (Phase 1.18)
 
 > Least privilege, deny by default, server-side enforcement. Roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`.

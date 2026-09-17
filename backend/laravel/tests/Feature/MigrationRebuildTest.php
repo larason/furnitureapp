@@ -149,10 +149,6 @@ class MigrationRebuildTest extends TestCase
         $this->assertSame($referenceTable, $match['foreign_table']);
         $this->assertSame([$referenceColumn], $match['foreign_columns']);
 
-        if ($table === 'carts' && DB::getDriverName() !== 'mysql') {
-            $this->markTestSkipped('carts.user_id delete action is approved as restrict and verified on MySQL only.');
-        }
-
         $this->assertSame($onDelete, $this->normalizeAction($match['on_delete']));
     }
 

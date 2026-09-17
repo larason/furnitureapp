@@ -527,6 +527,7 @@ Frontend route protection is a UX/security layer, not the final authority.
 
 - **Customer authentication/authorization **must preserve account ownership** — a customer owns own account; `STAFF`/`ADMIN` do not own customer accounts and must not browse as customer, restrict legitimate browsing/ordering, or access customer credentials (`docs/api/api-contract.md §17.1`, `docs/domain/business-rules.md §17`).
 - **Customer signup baseline (Phase 4.5):** registration credentials are `email` + `password` only; **phone is not a signup requirement** (it is application profile/contact data). Clerk is the sole email-verification authority (`email verification code` baseline); `LocalUserProvisioner` must refuse to provision an unverified Clerk email (`INVALID_AUTHENTICATION` 401). Email verification provisions `CUSTOMER` only, never alters role/account-state, and never leaves the public catalog or anonymous request/enquiry unprotected.
+- **Flutter authentication boundary (Phase 4.7):** Flutter authenticates only through Clerk, obtains the current Clerk session token through a thin adapter, and sends `Authorization: Bearer <Clerk session_token>` to Laravel. Flutter must not send passwords to Laravel, create mobile-specific users/tokens, persist passwords or bearer tokens in insecure storage, or implement a second verifier. Laravel reuses the existing Clerk middleware and local `users.clerk_user_id` mapping; public API calls remain usable without a token.
 - **Never allow a client to self-assign `STAFF` or `ADMIN`** — roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN` and server-controlled; `{"role":"ADMIN"}` from client is rejected.
 - **Authentication and authorization are enforced server-side** — shared identity across Website/Flutter/Admin against same Laravel backend; checkout and private resources (`own orders`, etc.) require authenticated `CUSTOMER`, anonymous browsing/requests/enquiries remain public, and anonymous checkout is rejected.
 - **Frontend authentication state is never an authority** for backend permissions — SSR catalog pages remain public without login, and browser/Flutter session handling does not bypass 404 masking (`RESOURCE_NOT_FOUND`) for private ownership.
@@ -884,14 +885,15 @@ Decide the Clerk↔Laravel identity boundary, local users projection, credential
 ### Phase 4.2 — Clerk/Laravel identity integration
 Verify Clerk credentials in Laravel and map Clerk identity → local user.
 
-### Phase 4.3 — Customer registration / sign-in flow
+### Phase 4.3 — Customer registration / sign-in flow including Logout/session lifecycle
 Clerk-managed rather than custom Laravel credentials.
 
-### Phase 4.4 — Logout/session lifecycle
-### Phase 4.5 — Password recovery/security
-### Phase 4.6 — Email/phone verification
-### Phase 4.7 — Local profile synchronization
-### Phase 4.8 — Mobile authentication boundary
+### Phase 4.4 — Password recovery/security
+### Phase 4.5 — Email/phone verification
+### Phase 4.6 — Local profile synchronization
+### Phase 4.7 — Mobile authentication boundary
+### Phase 4.8 - SPA / Website Authentication with Clerk
+Contract documented in Group D; actual Next.js Clerk setup belongs to the later website frontend phases.
 ### Phase 4.9 — Roles
 ### Phase 4.10 — Policies/permissions
 ### Phase 4.11 — Rate limiting / abuse controls
@@ -1472,4 +1474,3 @@ Do not begin with MySQL table creation before the API/domain contract is suffici
 Do not begin Flutter application features before the backend contract needed by those features exists.
 
 When the project owner asks for the next phase, use this document as the governing scope and continue from the exact next micro-phase.
-

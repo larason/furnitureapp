@@ -895,9 +895,9 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 ### 29.4 Profile Field Allow-List & Partial Semantics
 
-- **Allow-list:** `customer_profile.mutable: name, phone` (plus `email` only where explicitly permitted via **dedicated security workflow**, not ordinary allow-list). `server-controlled: id, role, permissions, timestamps, verification state, account state`. Unknown fields rejected (`422 INVALID_VALUE` with `field`) per strict `unknown-field → error` rule (`§15` + `api-resources.md §8.4`).
-- **Partial PATCH:** Only fields included in request are changed; omitted field remains unchanged; do not interpret omission as `set to null` unless field explicitly permits clearing. `phone: null` allowed only if contract permits clearing; `name: null` never valid.
-- **Nullability documented:** `phone = null` valid if business permits; `email` nullable forbidden (required). Contract must state choice; see `api-resources.md §8.1`.
+- **Allow-list:** `customer_profile.mutable: name, phone` (plus `email` only where explicitly permitted via **dedicated security workflow**, not ordinary allow-list). `name` is nullable until supplied and cannot be cleared with `null`; `phone` is nullable and may be explicitly cleared. `server-controlled: id, role, permissions, timestamps, verification state, account state`. Unknown fields rejected (`422 INVALID_VALUE` with `field`) per strict `unknown-field → error` rule (`§15` + `api-resources.md §8.4`).
+- **Partial PATCH:** Only fields included in request are changed; omitted field remains unchanged; do not interpret omission as `set to null` unless field explicitly permits clearing. `phone: null` explicitly clears optional contact data; `name: null` is rejected because a supplied profile name must be a non-empty string. The response may contain `name: null` for an uncompleted profile.
+- **Nullability documented:** the response `name` is nullable for a newly provisioned email/password customer; `PATCH /me` accepts only a non-empty string and cannot clear it. `phone = null` explicitly clears optional contact data; `email` remains required and non-null. Contract is defined in `api-resources.md §8.1`.
 - **Mass-assignment protection:** Laravel must not `$request->all() → model fill`; `validated input → DTO/command → domain` per `AGENTS.md §3`.
 
 ### 29.5 Private Caching — `/me` Is Never Publicly Cached
@@ -911,6 +911,23 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 - **Shared identity:** Same local `User` (`id`, `role`, `email_verified`, `profile`) across `Next.js` and `Flutter` via the same Clerk identity and Laravel projection; `website phone change → Flutter sees same`. The browser httpOnly cookie belongs to the Clerk/Next.js session only and never authenticates Laravel; every Laravel call uses `Authorization: Bearer <Clerk session token>`.
 - **Backend authoritative:** Local `Next.js`/`Flutter` cached profile/role state is advisory only; `role`, `account_state`, `verification`, `authorization` must be refreshed from backend — do not assume cached role valid indefinitely after `Staff role changes` / `account disabled` / `permission change`.
 - **Synchronization:** Server is source of truth; `Next.js`/`Flutter` may cache for UX but must revalidate via `GET /me` where operational decisions matter.
+
+### 29.7 Flutter Clerk Boundary (Phase 4.7)
+
+- Flutter uses the same Clerk application and customer identity as Next.js. The selected Flutter/community/native Clerk implementation must be isolated behind one `AuthRepository`/`ClerkAuthAdapter`; application repositories depend on an `AuthTokenProvider`, not Clerk package classes.
+- The adapter obtains the current usable Clerk session token. The API/network layer centrally attaches `Authorization: Bearer <Clerk session_token>` to authenticated Laravel calls. It never sends customer passwords, fabricates JWT claims, creates a Laravel/mobile token, or stores credentials in SharedPreferences, plain files, plain SQLite, or logs.
+- Public catalog calls do not require a token. Protected calls use the same Laravel Clerk verifier, local-user provisioning, and authorization path as web calls. Laravel returns `401 AUTHENTICATION_REQUIRED` for absent/unusable credentials and `403 FORBIDDEN` for authenticated-but-unauthorized operations; clients must not conflate those cases.
+- Clerk owns session restoration, renewal, and sign-out. On Laravel `401`, the mobile client may request one SDK-supported current token and retry only where the request's existing idempotency rules permit; it must not create an unbounded retry loop or blindly replay unsafe mutations. Logout clears local application state after Clerk sign-out and never deletes the Laravel User or history.
+- Flutter has no browser CORS requirement, but production Laravel traffic still requires HTTPS and normal platform certificate validation. Client configuration may include only publishable/client-safe Clerk values; `CLERK_SECRET_KEY` remains server-only.
+
+### 29.8 Next.js Website Clerk Boundary (Phase 4.8)
+
+- The future Next.js website uses Clerk as its sole customer authentication provider and the App Router integration from `@clerk/nextjs`. The eventual implementation must follow the installed Next.js version's current Clerk convention (`proxy.ts` for Next.js 16+, `middleware.ts` for Next.js 15 and below), place `ClerkProvider` inside `<body>`, and use `await auth()` server-side.
+- Authenticated Laravel calls obtain a current Clerk session token with `getToken()` and send `Authorization: Bearer <Clerk session_token>`. Laravel does not issue or accept a Next.js, Sanctum, custom JWT, refresh token, or parallel customer cookie credential. The token is request-scoped and must not enter rendered HTML, client props, logs, localStorage, or shared caches.
+- Clerk owns website signup/sign-in, email verification, password recovery, session renewal, and logout. Signup remains `email` + `password`; email verification remains Clerk-owned; phone is not required. Laravel `/api/v1/me` remains the source of application profile, role, and account state.
+- Clerk middleware is public by default. Public catalog, SEO, contact, and anonymous request/enquiry pages remain accessible without authentication. Customer pages such as account, profile, orders, notifications, and checkout may use frontend route protection for UX, but Laravel independently enforces authentication, ownership, roles, permissions, and business state.
+- Server-side Next.js calls to Laravel are preferred for private initial data and must use uncached/private request handling. Browser-direct calls, if later needed for interactivity, use only the approved CORS origins and the current Clerk token; they do not introduce cookie authentication or a frontend BFF by default.
+- Laravel `401` (`AUTHENTICATION_REQUIRED`, `SESSION_EXPIRED`, or `INVALID_AUTHENTICATION`) is distinct from `403 FORBIDDEN` and private-resource `404 RESOURCE_NOT_FOUND`. Token refresh/retry is centralized and bounded; safe reads may retry once, while unsafe mutations retry only under the endpoint's idempotency contract.
 
 ## 30. Staff/Admin Operational Conventions (Phase 1.29)
 
