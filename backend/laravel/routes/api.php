@@ -32,9 +32,10 @@ $productPath = '/{product}';
 | - Single version boundary: /api/v1 (apiPrefix 'api' + 'v1' prefix here).
 | - The removed /staff/... aliases are NOT registered.
 | - Route groups only separate PUBLIC / AUTHENTICATED / OPERATIONAL /
-|   ADMINISTRATIVE topology. Authorization itself is decided later by the
-|   auth + role/policy layers (AGENTS.md §17-18, Group D); never by path.
-| - `auth` (framework) rejects unauthenticated callers today. `operational`|   and `admin` are Group D attachment points (placeholder middleware).
+|   ADMINISTRATIVE topology. `clerk.auth` authenticates the Clerk bearer
+|   credential; `operational` and `admin` apply coarse local RBAC role gates.
+|   Detailed permission, ownership, and state policy remains in Phase 4.10;
+|   authorization is never inferred from the path.
 | - Rate limiting attaches later per route/group (approved thresholds live in
 |   api-conventions; do not invent thresholds). CSRF applies to cookie-auth
 |   mutations later (SpA phase); upload/webhook tokens are Group H/J scoped.
@@ -108,7 +109,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // CATALOG WRITES — ADMINISTRATIVE (Admin; Staff only where approved)
     // Same path family as public reads; authorization is per-operation.
     // ---------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->group(function () use ($products, $productPath): void {
+    Route::middleware(['clerk.auth', 'admin'])->group(function () use ($products, $productPath): void {
         Route::post($products, [ProductController::class, 'store'])->name('products.store');
         Route::patch($products.$productPath, [ProductController::class, 'update'])->name('products.update');
         Route::post($products.'/{product}/images', [ProductController::class, 'storeImage'])->name('products.images.store');
@@ -121,7 +122,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     // OPERATIONAL — /orders staff handling (all actions are controlled POST)
     // ---------------------------------------------------------------------
-    Route::middleware(['auth', 'operational'])->prefix('orders')->name('orders.')->group(function (): void {
+    Route::middleware(['clerk.auth', 'operational'])->prefix('orders')->name('orders.')->group(function (): void {
         Route::get('/', [OrderController::class, 'index'])->name('index');
         Route::get('/{order}', [OrderController::class, 'show'])->name('show');
         Route::get('/{order}/tracking', [OrderController::class, 'tracking'])->name('tracking');
@@ -137,7 +138,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     // INVENTORY — operational
     // ---------------------------------------------------------------------
-    Route::middleware(['auth', 'operational'])->group(function (): void {
+    Route::middleware(['clerk.auth', 'operational'])->group(function (): void {
         Route::get('/inventory', [InventoryController::class, 'index'])->name('inventory.index');
         Route::get('/inventory/{inventory}', [InventoryController::class, 'show'])->name('inventory.show');
         Route::post('/inventory/{product}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
@@ -146,7 +147,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     // REQUESTS — operational handling (public submission is registered above)
     // --------------------------------------------------------------------
-    Route::middleware(['auth', 'operational'])->prefix('requests')->name('requests.')->group(function (): void {
+    Route::middleware(['clerk.auth', 'operational'])->prefix('requests')->name('requests.')->group(function (): void {
         Route::get('/', [RequestController::class, 'index'])->name('index');
         Route::get('/{request}', [RequestController::class, 'show'])->name('show');
         Route::patch('/{request}', [RequestController::class, 'update'])->name('update');
@@ -155,7 +156,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     // ENQUIRIES — operational handling (public submission registered above)
     // --------------------------------------------------------------------
-    Route::middleware(['auth', 'operational'])->prefix('enquiries')->name('enquiries.')->group(function (): void {
+    Route::middleware(['clerk.auth', 'operational'])->prefix('enquiries')->name('enquiries.')->group(function (): void {
         Route::get('/', [EnquiryController::class, 'index'])->name('index');
         Route::get('/{enquiry}', [EnquiryController::class, 'show'])->name('show');
         Route::post('/{enquiry}/close', [EnquiryController::class, 'close'])->name('close');
@@ -173,13 +174,13 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     // ADMIN — Admin-only staff lifecycle, user visibility, audit logs
     // --------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {
+    Route::middleware(['clerk.auth', 'admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {
         Route::get($products, [ProductController::class, 'adminIndex'])->name('products.index');
         Route::get($products.$productPath, [ProductController::class, 'adminShow'])->name('products.show');
         Route::get('/staff', [AdminController::class, 'staffIndex'])->name('staff.index');
         Route::post('/staff', [AdminController::class, 'staffStore'])->name('staff.store');
         Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->name('staff.show');
-        Route::post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
+        Route::middleware('permission:staff.approve')->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
         Route::post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
         Route::post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
         Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->name('audit-logs.index');
@@ -188,7 +189,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     // USERS — Admin-only authorized visibility
     // --------------------------------------------------------------------
-    Route::middleware(['auth', 'admin'])->group(function (): void {
+    Route::middleware(['clerk.auth', 'admin'])->group(function (): void {
         Route::get('/users', [AdminController::class, 'userIndex'])->name('users.index');
         Route::get('/users/{user}', [AdminController::class, 'userShow'])->name('users.show');
     });

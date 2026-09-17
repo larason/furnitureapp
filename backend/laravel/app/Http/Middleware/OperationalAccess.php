@@ -2,34 +2,41 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\RoleName;
+use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Route-level guard for Staff/operational authorization (deny by default).
+ * Route-level guard for Staff/operational role access.
  *
  * The frozen contract classifies `/orders`, `/inventory`, and the
  * operational handling of `/requests` and `/enquiries` as OPERATIONAL
- * (Staff/Admin). The role/permission model does not exist yet (Group D:
- * Phases 4.9-4.10) and the `users` schema has no role attribute, so NO
- * principal is authorized today.
+ * (Staff/Admin). Phase 4.9 establishes the canonical Laravel RBAC role
+ * boundary; Phase 4.10 adds resource/action/state policy checks.
  *
- * Every request is denied to honour AGENTS.md §18 deny-by-default: no
- * operational operation may become reachable merely because a request is
- * authenticated. When Group D lands the role/permission layer, replace this
- * blanket denial with the approved `staff.*` permission check - never open
- * the route without explicit authorization.
+ * Staff and Admin roles with an ACTIVE application account state are admitted
+ * to the operational boundary. Individual permissions and business-state
+ * checks remain enforced by Phase 4.10.
  *
- * The preceding `auth` middleware guarantees the request is authenticated
+ * The preceding `clerk.auth` middleware guarantees the request is authenticated
  * before this middleware runs, so failures surface as 403 (authenticated
  * identity, insufficient authority), never as 401. Phase 2.7 maps this to
  * the frozen `FORBIDDEN` error contract.
  */
-class OperationalAccess
+final class OperationalAccess
 {
-    public function handle(): Response
+    private const ACTIVE_ACCOUNT_STATE = 'ACTIVE';
+
+    public function handle(Request $request, Closure $next): Response
     {
-        throw new AuthorizationException('The requested operational operation is not available.');
+        $user = $request->user();
+
+        if (! $user?->hasAnyRole([RoleName::STAFF->value, RoleName::ADMIN->value]) || $user->account_state !== self::ACTIVE_ACCOUNT_STATE) {
+            throw new AuthorizationException('The requested operational operation is not available.');
+        }
+
+        return $next($request);
     }
 }

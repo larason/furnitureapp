@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Authentication\AuthenticatedClerkIdentity;
+use App\Authentication\ClerkTokenVerifier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -50,9 +52,18 @@ class ApiErrorHandlingTest extends TestCase
 
     public function test_unauthorized_returns_forbidden_envelope(): void
     {
-        $user = User::factory()->create();
+        User::factory()->create(['clerk_user_id' => 'user_unauthorized']);
 
-        $response = $this->actingAs($user)->getJson('/api/v1/orders');
+        $verifier = $this->mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->once()->andReturn(new AuthenticatedClerkIdentity(
+            'user_unauthorized',
+            'sess_unauthorized',
+            'https://clerk.example.test',
+        ));
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
+
+        $response = $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->getJson('/api/v1/orders');
 
         $response->assertStatus(403);
         $this->assertErrorEnvelope($response, 'FORBIDDEN');

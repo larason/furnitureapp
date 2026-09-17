@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Authentication\AuthenticatedClerkIdentity;
+use App\Authentication\ClerkTokenVerifier;
 use App\Authorization\Authorization;
 use App\Models\User;
 use App\Support\PermissionCatalog;
@@ -11,6 +13,7 @@ use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class RbacTest extends TestCase
@@ -110,6 +113,32 @@ class RbacTest extends TestCase
         $this->assertFalse($user->checkPermissionTo(PermissionName::USERS_MANAGE_AUTHORIZED->value));
     }
 
+    public function test_admin_without_staff_approval_permission_is_denied(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $admin = User::factory()->admin()->create(['clerk_user_id' => 'admin_no_approval']);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_target']);
+        Role::findByName(RoleName::ADMIN->value)->revokePermissionTo(PermissionName::STAFF_APPROVE->value);
+        $this->configureClerk($admin);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson("/api/v1/admin/staff/{$staff->id}/approve")
+            ->assertForbidden();
+    }
+
+    public function test_admin_with_staff_approval_permission_reaches_approval_action(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $admin = User::factory()->admin()->create(['clerk_user_id' => 'admin_with_approval']);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_target']);
+        $admin->givePermissionTo(PermissionName::STAFF_APPROVE->value);
+        $this->configureClerk($admin);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson("/api/v1/admin/staff/{$staff->id}/approve")
+            ->assertStatus(501);
+    }
+
     public function test_admin_has_explicit_administrative_capabilities(): void
     {
         $this->seed(RbacSeeder::class);
@@ -189,5 +218,16 @@ class RbacTest extends TestCase
         $user->save();
 
         return $user;
+    }
+
+    private function configureClerk(User $user): void
+    {
+        $verifier = $this->mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
+            $user->clerk_user_id,
+            'sess_test',
+            'https://clerk.example.test',
+        ));
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
     }
 }

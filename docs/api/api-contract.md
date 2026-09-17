@@ -1140,7 +1140,7 @@ Customer permissions remain ownership-based (see §18.5); Staff/Admin permission
 ### 18.17 Versioning & Deferred Implementation
 
 Authorization is **Version 1 API contract** — role/action changes follow `api-versioning-strategy.md`. CLOSED roles remain `CUSTOMER`/`STAFF`/`ADMIN`.
-**Deferred (not implemented):** Laravel Policies/Gates/middleware, Spatie, role/permission tables/migrations, authorization controllers, admin/customer UI, Flutter authz, token middleware, impersonation, MFA, payment authorization.
+**Deferred (not implemented):** detailed Laravel Policies/Gates for resource ownership and business state, admin/customer UI, Flutter authz UI, impersonation, MFA, and payment authorization. Phase 4.9 now provides the Laravel Spatie role/permission foundation and coarse role gates; Phase 4.10 owns detailed policy enforcement.
 
 ### 18.18 Cross-References
 

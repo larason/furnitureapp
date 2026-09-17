@@ -6,6 +6,7 @@ use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\AuthenticateClerk;
 use App\Http\Middleware\AuthenticateClerkIfPresent;
 use App\Http\Middleware\OperationalAccess;
+use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\ValidateJsonBody;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -44,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'clerk.optional' => AuthenticateClerkIfPresent::class,
             'operational' => OperationalAccess::class,
             'admin' => AdministrativeAccess::class,
+            'permission' => RequirePermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

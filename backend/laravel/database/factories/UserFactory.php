@@ -56,6 +56,7 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'phone' => $attributes['phone'] ?? '+2557'.fake()->numerify('########'),
+            'account_state' => 'ACTIVE',
         ])->afterCreating(function (User $user): void {
             $this->assignRole($user, RoleName::STAFF);
             StaffProfile::firstOrCreate(['user_id' => $user->id]);
@@ -66,6 +67,7 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'phone' => $attributes['phone'] ?? '+2557'.fake()->numerify('########'),
+            'account_state' => 'ACTIVE',
         ])->afterCreating(function (User $user): void {
             $this->assignRole($user, RoleName::ADMIN);
             StaffProfile::firstOrCreate(['user_id' => $user->id]);

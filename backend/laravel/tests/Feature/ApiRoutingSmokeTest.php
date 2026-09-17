@@ -17,9 +17,9 @@ use Tests\TestCase;
  *
  * These verify the transport/middleware topology only, not domain behavior:
  * stub controllers return 501; retired auth routes return 410; protected routes reject unauthenticated
- * callers with 401 via the `auth` middleware boundary; and the
- * Operational/Administrative guards deny-by-default, so an authenticated
- * (but not-yet-roleable) principal receives 403 on every protected boundary.
+ * callers with 401 via the `clerk.auth` middleware boundary; and the
+ * Operational/Administrative guards enforce the canonical Laravel roles, so
+ * an authenticated principal without the required role receives 403.
  */
 class ApiRoutingSmokeTest extends TestCase
 {
@@ -35,28 +35,60 @@ class ApiRoutingSmokeTest extends TestCase
 
     public function test_administrative_routes_deny_authenticated_non_admin_users(): void
     {
-        $user = User::factory()->create();
+        $this->configureClerkUser($user = User::factory()->create(['clerk_user_id' => 'user_customer']));
+        $headers = ['Authorization' => 'Bearer session-token'];
 
-        $this->actingAs($user)->getJson(self::API_ADMIN)->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/admin/audit-logs')->assertForbidden();
-        $this->actingAs($user)->postJson(self::API_ADMIN)->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/users')->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/admin/products')->assertForbidden();
-        $this->actingAs($user)->postJson(self::API_PRODUCTS)->assertForbidden();
-        $this->actingAs($user)->patchJson('/api/v1/categories/demo-category')->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::API_ADMIN)->assertForbidden();
+        $this->withHeaders($headers)->getJson('/api/v1/admin/audit-logs')->assertForbidden();
+        $this->withHeaders($headers)->postJson(self::API_ADMIN)->assertForbidden();
+        $this->withHeaders($headers)->getJson('/api/v1/users')->assertForbidden();
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products')->assertForbidden();
+        $this->withHeaders($headers)->postJson(self::API_PRODUCTS)->assertForbidden();
+        $this->withHeaders($headers)->patchJson('/api/v1/categories/demo-category')->assertForbidden();
     }
 
     public function test_operational_routes_deny_authenticated_non_staff_users(): void
     {
-        $user = User::factory()->create();
+        $this->configureClerkUser($user = User::factory()->create(['clerk_user_id' => 'user_customer']));
+        $headers = ['Authorization' => 'Bearer session-token'];
 
-        $this->actingAs($user)->getJson('/api/v1/orders')->assertForbidden();
-        $this->actingAs($user)->postJson('/api/v1/orders/OD-1/accept')->assertForbidden();
-        $this->actingAs($user)->postJson('/api/v1/orders/OD-1/ship')->assertForbidden();
-        $this->actingAs($user)->getJson('/api/v1/inventory')->assertForbidden();
-        $this->actingAs($user)->postJson('/api/v1/inventory/prod-1/adjust')->assertForbidden();
-        $this->actingAs($user)->getJson(self::API_REQUESTS)->assertForbidden();
-        $this->actingAs($user)->getJson(self::API_ENQUIRIES)->assertForbidden();
+        $this->withHeaders($headers)->getJson('/api/v1/orders')->assertForbidden();
+        $this->withHeaders($headers)->postJson('/api/v1/orders/OD-1/accept')->assertForbidden();
+        $this->withHeaders($headers)->postJson('/api/v1/orders/OD-1/ship')->assertForbidden();
+        $this->withHeaders($headers)->getJson('/api/v1/inventory')->assertForbidden();
+        $this->withHeaders($headers)->postJson('/api/v1/inventory/prod-1/adjust')->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::API_REQUESTS)->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::API_ENQUIRIES)->assertForbidden();
+    }
+
+    public function test_operational_routes_deny_pending_and_suspended_staff(): void
+    {
+        foreach (['PENDING', 'SUSPENDED'] as $state) {
+            $staff = User::factory()->staff()->create([
+                'clerk_user_id' => "staff_{$state}",
+                'account_state' => $state,
+            ]);
+            $this->configureClerkUser($staff);
+
+            $this->withHeaders(['Authorization' => 'Bearer session-token'])
+                ->getJson('/api/v1/orders')
+                ->assertForbidden();
+        }
+    }
+
+    public function test_administrative_routes_deny_pending_and_suspended_admin(): void
+    {
+        foreach (['PENDING', 'SUSPENDED'] as $state) {
+            $admin = User::factory()->admin()->create([
+                'clerk_user_id' => "admin_{$state}",
+                'account_state' => $state,
+            ]);
+            $this->configureClerkUser($admin);
+
+            $this->withHeaders(['Authorization' => 'Bearer session-token'])
+                ->getJson('/api/v1/admin/staff')
+                ->assertForbidden();
+        }
     }
 
     public function test_public_catalog_routes_do_not_require_authentication(): void
@@ -216,11 +248,16 @@ class ApiRoutingSmokeTest extends TestCase
         $this->getJson('/health')->assertOk()->assertExactJson(['status' => 'ok']);
     }
 
-    private function mockVerifier(): ClerkTokenVerifier
+    private function mockVerifier(string $clerkUserId = 'user_123'): ClerkTokenVerifier
     {
         $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity('user_123', 'sess_123', 'https://clerk.example.test'));
+        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity($clerkUserId, 'sess_123', 'https://clerk.example.test'));
 
         return $verifier;
+    }
+
+    private function configureClerkUser(User $user): void
+    {
+        $this->app->instance(ClerkTokenVerifier::class, $this->mockVerifier($user->clerk_user_id));
     }
 }
