@@ -1,1634 +1,1624 @@
-# Phase 4.7 — API Authentication for Mobile / Flutter Clerk Boundary
+# Phase 4.8 — Website Authentication Contract / Next.js Clerk Integration Boundary
 
 ## Purpose
 
-Define and implement the **mobile authentication boundary** between the future Flutter application, Clerk, and the existing Laravel API.
+Define and validate the authentication contract that the future Next.js website will use with Clerk and the Laravel backend.
 
-Keep this phase simple.
+This is **not a frontend implementation phase**.
 
-The required architecture is:
+The purpose is to ensure that when website development begins in the later frontend groups, the frontend agent already has a stable, secure authentication boundary to implement.
+
+The future architecture is:
 
 ```text
-Flutter
-   ↓
-Clerk authentication
-   ↓
+Next.js website
+    ↓
+Clerk browser session
+    ↓
 Clerk session token
-   ↓
+    ↓
 Authorization: Bearer <token>
-   ↓
+    ↓
 Laravel API
-   ↓
+    ↓
 existing Clerk authentication middleware
-   ↓
-users.clerk_user_id
-   ↓
+    ↓
 local Laravel User
-   ↓
+    ↓
 Laravel RBAC / policies / domain
 ```
 
-Do not create another mobile authentication system.
+Phase 4.8 defines this contract.
 
-Do not create Laravel-issued mobile tokens.
-
-Do not duplicate authentication logic already implemented in Phases 4.2–4.6.
+It must **not build the website implementation yet**.
 
 ---
 
-# 1. Dependencies
+# 1. Critical Phase Boundary
+
+Do not modify:
+
+```text
+frontend/web/
+frontend/app/
+frontend/design-system/
+```
+
+during Phase 4.8.
+
+Do not:
+
+```text
+install @clerk/nextjs
+run clerk init
+create ClerkProvider
+create proxy.ts
+create middleware.ts
+create /sign-in
+create /sign-up
+create authentication layouts
+create React hooks
+create frontend API clients
+create website auth state
+```
+
+Those belong to the later frontend phases.
+
+This separation is intentional.
+
+It ensures the eventual authentication pages are built with the same:
+
+```text
+design tokens
+MUI theme
+layout system
+responsive rules
+navigation shell
+form primitives
+spacing
+typography
+error patterns
+loading states
+accessibility patterns
+```
+
+as the rest of the website.
+
+---
+
+# 2. Why Frontend Work Is Deferred
+
+The website frontend is developed later in Groups L–O.
+
+Flutter implementation is developed later in Groups P–Q.
+
+Authentication UI must therefore be created alongside those applications, not before them.
+
+Building Clerk pages now risks:
+
+* inconsistent layouts;
+* duplicated UI primitives;
+* design-token divergence;
+* separate form conventions;
+* inconsistent responsive behavior;
+* premature routing decisions;
+* unnecessary refactoring later.
+
+Phase 4.8 must establish only the **integration contract**.
+
+---
+
+# 3. Dependencies
 
 Required:
 
 * Phase 4.1 complete;
-* Phase 4.2 local-user provisioning complete;
-* Phase 4.3 Clerk session authentication complete;
-* Phase 4.4 recovery/security complete;
-* Phase 4.5 email verification complete;
-* Phase 4.6 profile operations complete;
-* Laravel already accepts valid Clerk session tokens;
-* authenticated Clerk `sub` resolves to local `users.clerk_user_id`;
-* Laravel RBAC remains authoritative.
+* Phase 4.2 complete;
+* Phase 4.3 complete;
+* Phase 4.4 complete;
+* Phase 4.5 complete;
+* Phase 4.6 complete;
+* Phase 4.7 mobile boundary complete;
+* Laravel accepts verified Clerk session tokens;
+* Clerk identity resolves to `users.clerk_user_id`;
+* `/me` works;
+* Clerk owns passwords, email verification, sessions, and recovery;
+* Laravel owns RBAC and application authorization.
 
-If Laravel authentication middleware is not already working, fix the earlier phase instead of creating mobile-specific authentication.
-
----
-
-# 2. Scope
-
-This phase should establish:
-
-* how Flutter authenticates through Clerk;
-* how Flutter obtains a valid Clerk session token;
-* how that token is sent to Laravel;
-* how the mobile networking layer attaches authentication;
-* how 401/session expiration is handled;
-* how logout works;
-* minimal secure token/session persistence rules;
-* mobile authentication interfaces for future Flutter implementation;
-* tests for the mobile/API boundary;
-* documentation.
-
-Keep the implementation small.
+Do not compensate for incomplete backend authentication by designing frontend workarounds.
 
 ---
 
-# 3. Important Current Clerk Constraint
+# 4. Authoritative Inputs
 
-Current Clerk documentation provides official SDK quickstarts for:
+Review:
 
-```text
-Android
-iOS
-Expo
-web frameworks
-```
+1. `AGENTS.md`
+2. Phase 4.1 Clerk architecture decision
+3. Phase 4.2 local provisioning
+4. Phase 4.3 authenticated request resolution
+5. Phase 4.4 recovery/security
+6. Phase 4.5 email verification
+7. Phase 4.6 profile operations
+8. Phase 4.7 mobile API authentication boundary
+9. `docs/api/api-contract.md`
+10. `docs/api/api-resources.md`
+11. `docs/api/api-conventions.md`
+12. `docs/api/openapi.yaml`
+13. `docs/domain/business-rules.md`
+14. `docs/decisions.md`
 
-but does not currently list Flutter as an official quickstart target.
+Use current Clerk documentation/MCP/skills where provider behavior needs verification.
 
-Therefore:
-
-> Do not tightly couple the entire Flutter application to an unofficial Clerk package.
-
-If the project uses a community-maintained Flutter Clerk package, isolate it behind one small authentication adapter.
-
-Do not spread package-specific Clerk classes throughout the app.
-
----
-
-# 4. Standard Architecture
-
-Use a conventional mobile architecture:
-
-```text
-UI
- ↓
-AuthRepository
- ↓
-ClerkAuthAdapter
- ↓
-Clerk session
-```
-
-and:
-
-```text
-API Repository
- ↓
-ApiClient
- ↓
-Auth token provider
- ↓
-Authorization: Bearer <Clerk session token>
- ↓
-Laravel
-```
-
-That is enough.
-
-Do not introduce:
-
-* authentication microservices;
-* custom OAuth server;
-* Firebase Auth;
-* Laravel Sanctum;
-* custom JWT issuance;
-* token-exchange server;
-* multiple auth providers.
+Do not implement frontend code.
 
 ---
 
-# 5. One Identity System
+# 5. Core Contract
 
-The same Clerk account must work across:
+The future website must authenticate customers using Clerk.
 
-```text
-Next.js
-Flutter
-```
+Laravel must authenticate API requests using the Clerk session token.
 
-and map to exactly one:
+Canonical boundary:
 
 ```text
-Laravel users.id
+Clerk authenticated website session
+        ↓
+current Clerk session token
+        ↓
+Authorization: Bearer <token>
+        ↓
+Laravel Clerk verifier
+        ↓
+token.sub
+        ↓
+users.clerk_user_id
+        ↓
+local User
 ```
 
-Invariant:
-
-```text
-Clerk user_ABC
-    ↓
-users.clerk_user_id = user_ABC
-```
-
-regardless of client.
-
-Do not create mobile-specific users.
+This is the same fundamental API authentication boundary defined for mobile.
 
 ---
 
-# 6. Flutter Authentication Abstraction
+# 6. No Second Website Authentication System
 
-The Flutter app should eventually expose a very small application-facing interface.
-
-Conceptually:
+The future website must not introduce:
 
 ```text
-AuthRepository
+Laravel Sanctum SPA auth
+Laravel password login
+NextAuth/Auth.js
+custom JWT
+custom refresh token
+custom session database
+parallel customer cookie auth
 ```
 
-Responsibilities:
+Clerk remains the sole customer authentication/session provider.
 
-```text
-signIn(...)
-signUp(...)
-signOut()
-getSessionToken()
-isSignedIn
-currentUser
-```
-
-Only include operations the app actually needs.
-
-Do not design a massive generic authentication framework.
+Laravel remains the application backend.
 
 ---
 
-# 7. Clerk Adapter
+# 7. Future Next.js Responsibility
 
-Create or plan one implementation:
-
-```text
-ClerkAuthRepository
-```
-
-or:
+When the frontend phase eventually reaches website authentication, Next.js will be responsible for:
 
 ```text
-ClerkAuthAdapter
+Clerk frontend integration
+signup UI
+signin UI
+email verification UI
+password recovery UI
+Clerk session state
+obtaining current Clerk session token
+passing token to Laravel
+frontend routing/navigation
 ```
 
-depending on existing Flutter conventions.
-
-This adapter is the only place that should know about the selected Clerk Flutter/community/native integration.
-
-Other application code should depend on:
-
-```text
-AuthRepository
-```
-
-not Clerk package classes.
+These are **future implementation responsibilities**, not Phase 4.8 tasks.
 
 ---
 
-# 8. Do Not Implement Flutter UI Yet
+# 8. Future Laravel Responsibility
 
-This phase is primarily about the API/authentication boundary.
-
-Do not build:
-
-* sign-in screen;
-* sign-up screen;
-* forgot-password UI;
-* verification UI;
-* profile UI.
-
-Those belong to the later Flutter application phases.
-
-If `frontend/app/` is not initialized yet, document the interface/design rather than scaffolding unrelated UI work.
-
----
-
-# 9. Mobile Sign-Up Policy
-
-The existing authentication policy is:
+Laravel already owns:
 
 ```text
-required:
-- email
-- password
-
-email verification:
-- Clerk
-
-phone:
-- not required
+verify Clerk token
+resolve local User
+JIT provision CUSTOMER
+check account state
+apply role/permissions
+apply ownership
+apply policies
+execute commerce logic
 ```
 
-Do not introduce mobile-specific signup requirements.
-
-Flutter must use the same Clerk account configuration as web.
+Do not move any of these responsibilities to Next.js later.
 
 ---
 
-# 10. Sign-In Policy
+# 9. Authentication vs Authorization
 
-Customer sign-in remains:
+Document this clearly:
+
+```text
+Clerk:
+Who is this user?
+
+Laravel:
+What may this user do?
+```
+
+The frontend may hide or show UI based on Laravel-provided role/application state.
+
+The frontend must never become the authorization authority.
+
+---
+
+# 10. Website Signup Contract
+
+Future website customer signup:
 
 ```text
 email
-+
+password
+```
+
+Required:
+
+```text
+email verification through Clerk
+```
+
+Not required:
+
+```text
+phone
+```
+
+Do not change this contract during frontend implementation unless a formal product decision changes it.
+
+---
+
+# 11. Website Sign-In Contract
+
+Future customer sign-in:
+
+```text
+email
 password
 ```
 
 through Clerk.
 
-Flutter must never send the customer password to Laravel.
+Laravel must never receive the password.
 
-Flow:
-
-```text
-Flutter
-   ↓
-Clerk
-   ↓
-authenticated session
-   ↓
-session token
-   ↓
-Laravel
-```
-
----
-
-# 11. Laravel Must Never Receive Passwords
-
-Do not create:
+There must be no future request such as:
 
 ```http
-POST /api/v1/mobile/login
+POST /api/v1/login
 ```
 
-with:
-
-```json
-{
-  "email": "...",
-  "password": "..."
-}
-```
-
-Do not proxy passwords through Laravel.
-
-Do not create a special mobile login controller.
+containing customer credentials unless the frozen contract explicitly retained such an endpoint, which the Clerk migration should have retired.
 
 ---
 
-# 12. Session Token
+# 12. Email Verification Contract
 
-After successful Clerk authentication, obtain the **current Clerk session token** using the selected Clerk SDK/integration.
+Clerk owns:
 
-Use that token to authenticate Laravel requests.
+```text
+verification code/link generation
+delivery
+expiration
+resend
+verification state
+```
 
-The mobile app must not fabricate or decode its own authentication claims.
+Future frontend must complete the Clerk verification flow.
+
+Laravel must not implement a competing verification mechanism.
 
 ---
 
-# 13. API Header
+# 13. Password Recovery Contract
 
-Use the standard header:
+Clerk owns:
+
+```text
+forgot password
+reset password
+credential security
+recovery verification
+```
+
+Future Next.js pages/components must use Clerk.
+
+Laravel must not accept password-reset credentials.
+
+---
+
+# 14. Future Session Transport
+
+The future website must obtain the current Clerk session token using Clerk's supported Next.js integration.
+
+It must then call Laravel with:
 
 ```http
 Authorization: Bearer <Clerk session token>
 ```
 
-No custom authentication header.
+Do not introduce another token exchange.
+
+---
+
+# 15. Future Server-Side Requests
+
+Preferred website architecture for authenticated server-rendered content:
+
+```text
+Browser
+    ↓
+Next.js
+    ↓
+Clerk server auth context
+    ↓
+current Clerk token
+    ↓
+Laravel
+```
+
+This is an implementation guideline for the future frontend phase.
+
+Do not implement it in Phase 4.8.
+
+---
+
+# 16. Future Client-Side Requests
+
+If a future interactive Client Component needs to call Laravel directly:
+
+```text
+Client Component
+    ↓
+Clerk-supported current token retrieval
+    ↓
+Authorization: Bearer <token>
+    ↓
+Laravel
+```
+
+Do not persist the token manually.
+
+Do not create a second frontend token store.
+
+---
+
+# 17. Public Website Contract
+
+Public pages must remain usable without authentication.
+
+Examples include:
+
+```text
+homepage
+product listing
+product detail
+categories
+search
+public furniture browsing
+```
+
+The future authentication integration must not globally protect the website.
+
+This preserves:
+
+```text
+SEO
+SSR
+public caching
+anonymous browsing
+```
+
+---
+
+# 18. Protected Website Contract
+
+Future customer areas may require authentication:
+
+```text
+account
+profile
+orders
+notifications
+checkout
+customer request history
+customer enquiry history
+```
+
+Frontend routing may enforce sign-in for UX.
+
+Laravel must still enforce backend authentication and authorization.
+
+---
+
+# 19. Checkout Boundary
+
+Preserve:
+
+```text
+Browse → anonymous allowed
+Cart → according to cart policy
+Checkout → authentication required
+```
+
+Future frontend behavior:
+
+```text
+anonymous customer
+    ↓
+attempts checkout
+    ↓
+Clerk sign-in/signup
+    ↓
+return to checkout
+```
+
+Laravel still independently enforces authentication.
+
+---
+
+# 20. `/me` Contract
+
+The future website should use:
+
+```http
+GET /api/v1/me
+```
+
+to obtain the application user.
+
+This is the source of:
+
+```text
+Laravel user ID
+application profile
+name
+phone
+email snapshot
+role
+application account state
+```
+
+according to the finalized API representation.
+
+Do not use the Clerk User object as the full application User.
+
+---
+
+# 21. Role Contract
+
+Future website authorization-related UI must use Laravel-derived role/application state.
 
 Do not use:
 
 ```text
-X-User-Id
-X-Clerk-Id
-X-Mobile-Token
+Clerk publicMetadata.role
+Clerk unsafeMetadata.role
 ```
 
-for authentication.
-
----
-
-# 14. Token Provider
-
-The networking layer should depend on a small abstraction such as:
-
-```text
-AuthTokenProvider
-```
-
-Conceptually:
-
-```text
-Future<String?> getToken();
-```
-
-The implementation obtains the current Clerk session token.
-
-This keeps the API client independent from Clerk SDK details.
-
----
-
-# 15. API Client
-
-The Flutter API client should attach the token automatically for authenticated requests.
-
-Conceptually:
-
-```text
-request
-   ↓
-get current token
-   ↓
-if present:
-Authorization: Bearer ...
-   ↓
-Laravel
-```
-
-Do not manually add the token separately in every repository method.
-
----
-
-# 16. Public API Calls
-
-Public routes must remain usable without authentication.
-
-Examples:
-
-```text
-products
-categories
-search
-product detail
-```
-
-The API client should not require a token for public calls.
-
-It is acceptable if a valid token is sometimes attached globally, but do not make public API functionality depend on having one.
-
-Prefer predictable route/client behavior.
-
----
-
-# 17. Protected API Calls
-
-Protected calls include examples such as:
-
-```text
-/me
-checkout
-own orders
-notifications
-own requests
-own enquiries
-```
-
-These require a valid Clerk session token.
-
-Laravel remains responsible for returning:
-
-```text
-401 AUTHENTICATION_REQUIRED
-```
-
-when authentication is absent or unusable.
-
----
-
-# 18. No Client-Side Authorization Authority
-
-Flutter may use role/profile state for navigation UX.
-
-It must not decide final authorization.
-
-For example:
-
-```text
-if (user.role == ADMIN)
-```
-
-may influence what UI is shown.
-
-It must never replace Laravel policy checks.
+as the application RBAC source.
 
 Laravel remains authoritative.
 
 ---
 
-# 19. Token Lifetime
+# 22. Profile Contract
 
-Clerk session tokens are short-lived.
-
-Do not assume the token obtained at login remains valid indefinitely.
-
-Do not cache one bearer token permanently.
-
-Retrieve a current valid token through the Clerk session abstraction when required.
-
----
-
-# 20. Do Not Build Custom Refresh Tokens
-
-Do not create:
-
-```text
-mobile_refresh_token
-Laravel refresh token
-custom JWT refresh endpoint
-```
-
-Clerk owns session renewal.
-
-The mobile adapter should ask Clerk for the current usable session token.
-
----
-
-# 21. Secure Storage
-
-Avoid unnecessary manual token storage.
-
-Preferred model:
-
-```text
-Clerk SDK/integration owns session persistence
-```
-
-and Flutter requests the current token when needed.
-
-Only use secure device storage if required by the selected Clerk integration.
-
-If manual secure storage is required, use the platform's protected credential storage through a maintained Flutter package.
-
-Never store auth credentials in:
-
-```text
-SharedPreferences
-plain SQLite
-plain file
-logs
-Hive without encryption
-```
-
----
-
-# 22. Do Not Store Passwords
-
-Never persist:
-
-```text
-email + password
-```
-
-for automatic login.
-
-Session persistence belongs to Clerk.
-
-Do not build "remember me" by storing the password.
-
----
-
-# 23. App Restart
-
-Expected behavior:
-
-```text
-app launches
-    ↓
-initialize Clerk auth adapter
-    ↓
-restore existing Clerk session if valid
-    ↓
-signed in
-```
-
-or:
-
-```text
-no valid Clerk session
-    ↓
-signed out
-```
-
-Do not contact Laravel solely to determine whether Clerk has a session.
-
----
-
-# 24. Current Application User
-
-After Clerk session restoration:
-
-```text
-GET /api/v1/me
-```
-
-should be used to obtain current Laravel application profile/role state when needed.
-
-This keeps:
-
-```text
-role
-account state
-profile
-```
-
-authoritative from Laravel.
-
-Do not rely on stale locally cached role information for sensitive decisions.
-
----
-
-# 25. Recommended App Startup Sequence
-
-Keep it straightforward:
-
-```text
-initialize application
-    ↓
-initialize Clerk
-    ↓
-check Clerk session
-    ↓
-if authenticated:
-    GET /me
-    ↓
-load application
-```
-
-Do not create a complicated authentication state machine unless the actual SDK requires it.
-
----
-
-# 26. Authentication States
-
-At application level, a small state model is enough:
-
-```text
-loading
-authenticated
-unauthenticated
-error
-```
-
-If Clerk exposes required pending verification/security tasks, surface them through the adapter when necessary.
-
-Do not copy every Clerk internal state into the app.
-
----
-
-# 27. Email Verification
-
-Email verification is already owned by Clerk.
-
-Flutter should complete Clerk's verification flow when signing up.
-
-Laravel should only receive a usable session after the approved Clerk authentication flow is complete.
-
-Do not create mobile-specific Laravel verification endpoints.
-
----
-
-# 28. Password Recovery
-
-Password recovery is already owned by Clerk.
-
-Flutter eventually invokes Clerk's recovery flow.
-
-Do not create:
-
-```text
-/api/v1/mobile/forgot-password
-```
-
-or:
-
-```text
-/api/v1/mobile/reset-password
-```
-
----
-
-# 29. Logout
-
-Standard mobile logout:
-
-```text
-Flutter
-    ↓
-Clerk signOut / terminate current session
-    ↓
-clear application auth/profile state
-    ↓
-return to unauthenticated state
-```
-
-Do not delete the Laravel User.
-
-Do not delete customer orders/history.
-
----
-
-# 30. Local Application Cache on Logout
-
-On logout, clear private in-memory/local cached application state where appropriate:
-
-```text
-current profile
-private orders cache
-notifications cache
-authenticated cart state
-```
-
-Do not delete unrelated public catalog cache unnecessarily.
-
-Do not rely on cache clearing as the actual logout mechanism.
-
-Clerk session termination is the security operation.
-
----
-
-# 31. 401 Handling
-
-The API client should have one centralized 401 strategy.
-
-When Laravel returns:
-
-```text
-401
-```
-
-do not immediately assume every failure requires destructive logout.
-
-First ask the Clerk authentication layer for the current session/token according to its supported semantics.
-
-If the Clerk session is no longer valid:
-
-```text
-transition to unauthenticated
-```
-
-Keep this logic centralized.
-
----
-
-# 32. Avoid Infinite Retry Loops
-
-Never implement:
-
-```text
-401
-→ retry
-→ 401
-→ retry
-→ 401
-→ ...
-```
-
-At most perform the SDK-supported token/session refresh/retrieval flow and retry according to a bounded strategy.
-
-If authentication remains invalid, sign the application state out.
-
----
-
-# 33. Request Retry
-
-Do not blindly replay unsafe mutation requests after authentication refresh.
-
-For example:
-
-```text
-checkout
-payment initiation
-order actions
-```
-
-may require idempotency rules.
-
-The networking layer must not turn an authentication retry into duplicate business operations.
-
-Respect existing Laravel idempotency semantics.
-
----
-
-# 34. Simple Standard Rule for Retries
-
-For V1:
-
-```text
-GET / safe request
-→ may retry once after obtaining current auth token
-
-mutation
-→ retry only where existing API idempotency behavior makes it safe
-```
-
-Do not invent a generic automatic retry engine for every HTTP request.
-
----
-
-# 35. Networking Package
-
-Use the networking library already chosen for Flutter.
-
-Do not introduce multiple HTTP clients solely for authentication.
-
-A typical architecture is enough:
-
-```text
-Dio or existing HTTP client
-+
-one auth interceptor
-```
-
-Do not overabstract this.
-
----
-
-# 36. Authentication Interceptor
-
-If using Dio or equivalent, one interceptor is appropriate.
-
-Responsibilities:
-
-```text
-obtain current token
-attach Authorization
-handle auth failure in bounded manner
-```
-
-It should not:
-
-* perform navigation directly;
-* contain user provisioning logic;
-* inspect Laravel roles;
-* store passwords;
-* implement checkout retries.
-
-Keep it small.
-
----
-
-# 37. Repository Layer
-
-Feature repositories should not know Clerk exists.
-
-Example:
-
-```text
-OrderRepository
-→ ApiClient
-```
-
-not:
-
-```text
-OrderRepository
-→ Clerk SDK
-→ token
-→ HTTP
-```
-
-Only the API/network layer needs token access.
-
----
-
-# 38. Laravel Needs No Mobile-Specific Middleware
-
-Reuse the existing:
-
-```text
-Clerk authentication middleware
-```
-
-already implemented in Group D.
-
-Do not create:
-
-```text
-AuthenticateFlutterUser
-```
-
-unless mobile genuinely uses a different credential type.
-
-It should not.
-
----
-
-# 39. Same Backend Authentication Path
-
-Both future clients should reach:
-
-```text
-Authorization: Bearer Clerk session token
-        ↓
-same Laravel verifier
-        ↓
-same LocalUserResolver
-```
-
-Do not maintain one verifier for web and another for Flutter.
-
----
-
-# 40. CORS Is Not a Flutter Concern
-
-Native Flutter mobile HTTP calls are not subject to browser CORS in the same manner as web clients.
-
-Do not add permissive Laravel CORS rules just to make Flutter work.
-
-CORS configuration belongs to browser clients.
-
----
-
-# 41. TLS
-
-All production mobile API traffic must use:
-
-```text
-HTTPS
-```
-
-Do not permit plain HTTP in production.
-
-Local development exceptions can use normal development configuration.
-
-Do not disable TLS certificate validation in production code.
-
----
-
-# 42. API Base URL
-
-Use environment-specific configuration:
-
-```text
-development
-staging
-production
-```
-
-Do not hard-code the production Laravel API URL throughout repositories.
-
-This belongs in the Flutter environment/network configuration phase.
-
----
-
-# 43. Clerk Publishable Configuration
-
-Flutter may contain only Clerk configuration intended for client use.
-
-Never embed:
-
-```text
-CLERK_SECRET_KEY
-```
-
-in Flutter.
-
-Secret/backend keys belong only to trusted server environments.
-
----
-
-# 44. Do Not Hide Security in Obfuscation
-
-Flutter compilation/obfuscation does not make server secrets safe.
-
-Never put Clerk secret keys or Laravel secrets into app source code.
-
-Anything shipped with the mobile app must be considered obtainable by the user.
-
----
-
-# 45. Local User Provisioning
-
-The first authenticated Flutter API call may trigger existing Phase 4.2 JIT provisioning.
-
-Do not implement provisioning in Flutter.
-
-Conceptually:
-
-```text
-Flutter authenticated Clerk user
-    ↓
-GET /me
-    ↓
-Laravel
-    ↓
-user missing?
-    ↓
-existing LocalUserProvisioner
-```
-
----
-
-# 46. Email Is Not Mapping Key
-
-Flutter must not send:
-
-```text
-email
-```
-
-to identify the Laravel User.
-
-Laravel continues mapping:
-
-```text
-verified token.sub
-→ clerk_user_id
-```
-
-Do not duplicate identity rules on mobile.
-
----
-
-# 47. Profile Data
-
-Flutter obtains application profile information through:
+Future profile UI must use:
 
 ```http
 GET /api/v1/me
-```
-
-Do not use the Clerk User object as the complete application profile.
-
-Clerk knows authentication identity.
-
-Laravel knows application profile/RBAC.
-
----
-
-# 48. Name and Phone
-
-Recall:
-
-```text
-name → Laravel profile
-phone → optional Laravel profile
-```
-
-Do not depend on Clerk for these fields in Flutter.
-
-Profile editing will eventually call:
-
-```http
 PATCH /api/v1/me
 ```
 
----
+for Laravel-owned fields.
 
-# 49. Session State and Laravel Account State
-
-A valid Clerk session does not guarantee Laravel business access.
-
-Example:
+Current ownership:
 
 ```text
-Clerk authenticated
-+
-Laravel account restricted
+name → Laravel
+phone → Laravel, optional
+email → Clerk
+email verification → Clerk
+password → Clerk
+role → Laravel, server controlled
 ```
 
-may still result in application denial.
-
-Flutter should display backend error/state rather than treating Clerk login as the only permission decision.
+Frontend implementation must preserve this separation.
 
 ---
 
-# 50. Role Caching
+# 23. Future Email Change
 
-Flutter may cache:
+The future UI must not implement:
 
 ```text
-role
-profile
+PATCH /me {email}
 ```
 
-for UI convenience.
+Email changes require Clerk security/reverification.
 
-But on fresh app start/authentication, refresh from:
+After successful Clerk email change, Laravel's email snapshot may be reconciled.
+
+Implementation remains for the appropriate frontend/account phase.
+
+---
+
+# 24. Future Phone Editing
+
+Phone is ordinary Laravel profile/contact data.
+
+It is:
 
 ```text
-GET /me
+optional
+not an authentication identifier
+not required at signup
 ```
 
-Do not persist an ADMIN role forever and trust it after server-side changes.
+Future profile UI may edit it through `/me`.
 
 ---
 
-# 51. Guest Cart
+# 25. Token Storage Rule
 
-Do not implement guest-cart merge in this phase.
-
-Future flow remains:
+Future frontend implementation must not manually persist Clerk session tokens in:
 
 ```text
-guest cart
-+
-authenticated local customer
-↓
-existing CART-005 merge operation
+localStorage
+sessionStorage
+IndexedDB
+application Redux store
+custom cookies
 ```
 
-Do not implicitly merge carts just because Clerk login succeeds.
+solely for Laravel API access.
+
+Clerk owns browser session handling.
+
+Retrieve a current token when required.
 
 ---
 
-# 52. Deep Links
+# 26. Server Token Isolation
 
-Do not build complex auth deep-link handling unless the chosen Clerk sign-up/recovery strategy requires it.
-
-Current authentication choice is:
+Future Next.js server-side code must never place the Clerk session token in:
 
 ```text
-email + password
-email verification
+rendered HTML
+serialized page props
+client component props
+logs
+public cache
 ```
 
-If verification uses email code, no additional verification deep-link architecture is necessary.
-
-Keep V1 simple.
+Use the token only for authenticated server-to-Laravel requests.
 
 ---
 
-# 53. Social Login
+# 27. Caching Contract
 
-Do not add Google/Apple/etc. during Phase 4.7 unless already approved.
-
-Mobile authentication should match the existing V1 Clerk configuration.
-
-Do not broaden auth scope.
-
----
-
-# 54. Biometrics
-
-Do not add Face ID/fingerprint login in this phase.
-
-Device biometrics may later protect locally stored credentials/session access, but Clerk remains authentication authority.
-
-This is not required for the standard V1 flow.
-
----
-
-# 55. Certificate Pinning
-
-Do not add certificate pinning by default.
-
-HTTPS with normal platform certificate validation is the standard secure approach.
-
-Certificate pinning adds operational complexity and rotation risk and is not justified for this project at present.
-
----
-
-# 56. Custom Device IDs
-
-Do not invent:
+Public Laravel data:
 
 ```text
-device_id
-installation_id
-trusted_device_id
+products
+categories
+public catalog
 ```
 
-for authentication unless Clerk or another actual requirement needs them.
+may use normal website/public caching strategy.
 
-Avoid device fingerprinting.
-
----
-
-# 57. Background Token Refresh
-
-Do not create a background timer that refreshes tokens continuously.
-
-Use the Clerk SDK/session abstraction as intended.
-
-Get a current token when API access requires it.
-
-Keep lifecycle management simple.
-
----
-
-# 58. App Resume
-
-When the app resumes after being suspended:
-
-* allow Clerk integration to restore/evaluate session;
-* fetch a current token when an authenticated API call occurs;
-* handle 401 centrally.
-
-Do not build complex manual expiry timers unless required by the SDK.
-
----
-
-# 59. Offline Mode
-
-Do not interpret locally cached profile data as proof of current authentication.
-
-If offline:
+Private Laravel data:
 
 ```text
-cached content may be displayed
+/me
+orders
+notifications
+checkout state
 ```
 
-where product requirements allow.
+must not use shared/public caching.
 
-But authenticated mutations requiring Laravel cannot be performed until connectivity/authentication is available.
-
-Do not invent offline authentication authority.
+The frontend phases must preserve the backend private cache contract.
 
 ---
 
-# 60. Error Mapping
+# 28. Error Handling Contract
 
-Keep two layers:
-
-```text
-Clerk authentication errors
-```
-
-for authentication UI, and:
-
-```text
-Laravel API errors
-```
-
-for application operations.
-
-Do not combine all provider errors into domain errors.
-
----
-
-# 61. UI-Friendly Auth Errors
-
-The future Flutter UI may map Clerk errors to friendly messages.
-
-Do not expose:
-
-```text
-stack traces
-SDK class names
-JWT validation details
-```
-
-to customers.
-
-Keep provider-specific handling inside the authentication feature.
-
----
-
-# 62. Laravel Error Handling
-
-Laravel continues returning the project-standard error envelope.
-
-Flutter API code should inspect:
+Future website implementation must use Laravel's standard error envelope:
 
 ```text
 HTTP status
 code
 field
 details
+meta.request_id
 ```
 
-not parse human-readable messages.
-
-This remains unchanged.
+Do not parse English error strings for application logic.
 
 ---
 
-# 63. 401 vs 403
-
-Mobile handling should preserve:
+# 29. 401 Contract
 
 ```text
 401
-→ authentication problem
-
-403
-→ authenticated but not authorized
 ```
 
-Do not automatically sign out on every 403.
+means the Laravel API does not accept the current authentication state.
 
-A forbidden order/admin action is not necessarily a broken Clerk session.
+Future frontend should:
+
+* check current Clerk session;
+* obtain current token if appropriate;
+* retry only where safe;
+* route to sign-in if the session is no longer usable.
+
+Do not implement infinite retry loops.
 
 ---
 
-# 64. 404 Ownership Masking
+# 30. 403 Contract
 
-Do not reinterpret:
+```text
+403
+```
+
+means:
+
+```text
+authenticated
+but not authorized
+```
+
+Future frontend must not automatically sign out on 403.
+
+---
+
+# 31. 404 Contract
+
+Private:
 
 ```text
 404 RESOURCE_NOT_FOUND
 ```
 
-on private resources as an authentication failure.
+may intentionally mask ownership.
 
-The backend intentionally uses ownership masking.
-
-Do not trigger logout.
+Future frontend must not treat it as an authentication failure.
 
 ---
 
-# 65. Testing Strategy
+# 32. Mutation Retry Contract
 
-Do not require real Clerk authentication in ordinary Flutter tests.
+Future frontend must not automatically replay unsafe mutations merely because authentication changed.
 
-Use fake implementations of:
+Especially:
 
 ```text
-AuthRepository
-AuthTokenProvider
+checkout
+payment
+order actions
+inventory-sensitive operations
 ```
 
-This keeps tests deterministic.
+Retry only where the backend endpoint's idempotency contract makes it safe.
 
 ---
 
-# 66. Unit Tests — Signed Out
+# 33. Logout Contract
 
-Given:
+Future website logout:
 
 ```text
-AuthTokenProvider → null
+Clerk sign out current session
+    ↓
+clear private frontend application state
+    ↓
+future Laravel protected calls unauthenticated
 ```
 
-protected API client call should behave according to application design without fabricating authentication.
-
-Do not attach an Authorization header.
-
----
-
-# 67. Unit Tests — Signed In
-
-Given:
+Do not:
 
 ```text
-AuthTokenProvider → test token
+delete Laravel User
+delete Orders
+delete CustomerProfile
 ```
 
-verify request contains:
-
-```http
-Authorization: Bearer test-token
-```
-
-Do not test Clerk cryptography in Flutter.
-
-Laravel owns token verification.
+during logout.
 
 ---
 
-# 68. Unit Tests — Public Request
+# 34. Multi-Device Contract
 
-Public API requests must work with no token.
+A customer may be signed in simultaneously on:
 
-Do not force login for catalog calls.
+```text
+browser
+Flutter app
+another browser
+```
+
+All valid sessions for:
+
+```text
+same Clerk user
+```
+
+must resolve to:
+
+```text
+same Laravel User
+```
+
+Do not create client-specific local accounts.
 
 ---
 
-# 69. Unit Tests — 401
+# 35. Pending Clerk Session Contract
 
-Simulate Laravel:
+If Clerk authentication is incomplete because of a required security task:
+
+```text
+password reset
+MFA setup
+verification requirement
+```
+
+the future frontend must not treat the user as fully authenticated for protected application access.
+
+Use Clerk's current supported session state semantics.
+
+---
+
+# 36. CORS Contract
+
+If future browser code calls Laravel directly:
+
+Laravel CORS must allow only approved website origins.
+
+Do not use permissive:
+
+```text
+*
+```
+
+for production authenticated browser API access.
+
+If Next.js server-side code calls Laravel, browser CORS does not apply to that request path.
+
+---
+
+# 37. CSRF Contract
+
+Do not introduce Laravel customer cookie authentication merely for website convenience.
+
+Customer API authentication remains:
+
+```text
+Bearer Clerk session token
+```
+
+This keeps the Laravel customer API boundary consistent across web and mobile.
+
+---
+
+# 38. Authorized Party Validation
+
+Laravel's Clerk verifier should already validate approved token origins/authorized parties according to Phase 4.1–4.3.
+
+Phase 4.8 must verify that the configuration model can later include:
+
+```text
+development website origin
+staging website origin
+production website origin
+```
+
+without frontend implementation today.
+
+---
+
+# 39. Environment Contract
+
+Future Next.js implementation will require client-safe and server-only Clerk configuration.
+
+Document expected categories:
+
+```text
+Clerk publishable configuration → browser-safe
+Clerk secret configuration → server-only
+Laravel API URL → environment-specific
+```
+
+Do not add actual frontend env files in Phase 4.8.
+
+Do not store secrets in documentation.
+
+---
+
+# 40. Do Not Run Clerk CLI
+
+Phase 4.8 must not run:
+
+```bash
+clerk init
+clerk auth login
+clerk doctor
+```
+
+for the frontend.
+
+Those commands belong when:
+
+```text
+frontend/web/
+```
+
+becomes an active implementation target.
+
+---
+
+# 41. Do Not Install Packages
+
+Do not install:
+
+```text
+@clerk/nextjs
+@clerk/ui
+```
+
+during this phase.
+
+The frontend package versions should be chosen when the Next.js project itself is active.
+
+This avoids premature dependency/version coupling.
+
+---
+
+# 42. Do Not Create Frontend Routes
+
+Do not create:
+
+```text
+/sign-in
+/sign-up
+/account
+/profile
+```
+
+in Phase 4.8.
+
+Those pages must be designed in the context of the final frontend architecture.
+
+---
+
+# 43. Do Not Create Frontend Providers
+
+Do not create:
+
+```text
+ClerkProvider
+AuthProvider
+ApplicationUserProvider
+```
+
+during this phase.
+
+Their placement depends on the future app shell/layout architecture.
+
+---
+
+# 44. Do Not Create Frontend Middleware
+
+Do not create:
+
+```text
+proxy.ts
+middleware.ts
+```
+
+during Phase 4.8.
+
+Their eventual configuration depends on:
+
+* installed Next.js version;
+* actual routes;
+* public/protected route structure;
+* application shell.
+
+Document requirements only.
+
+---
+
+# 45. Do Not Create Sign-In Components
+
+Do not build:
+
+```text
+<SignIn />
+<SignUp />
+<SignInButton />
+<SignUpButton />
+<UserButton />
+```
+
+yet.
+
+These are frontend implementation details.
+
+---
+
+# 46. Do Not Style Authentication Yet
+
+Do not define:
+
+```text
+Clerk appearance config
+auth page spacing
+auth page typography
+button styles
+form card styles
+```
+
+during Group D.
+
+Authentication UI must later use the same website design system.
+
+---
+
+# 47. Design-System Handoff
+
+The future web authentication phase must inherit:
+
+```text
+MUI theme
+Nike-inspired tokens
+shared form primitives
+shared buttons
+shared cards/surfaces
+shared error components
+shared responsive layout
+```
+
+from the website foundation.
+
+Do not create parallel authentication design tokens.
+
+---
+
+# 48. Future Web Implementation Sequence
+
+When the frontend reaches the appropriate group, follow roughly:
+
+```text
+website foundation
+        ↓
+MUI theme
+        ↓
+design tokens
+        ↓
+reusable primitives
+        ↓
+navigation/layout shell
+        ↓
+Clerk integration
+        ↓
+signup/signin pages
+        ↓
+customer commerce pages
+```
+
+Do not reverse this order.
+
+---
+
+# 49. Future Sign-In Page
+
+When eventually implemented, the sign-in page should use the same:
+
+```text
+container widths
+form components
+buttons
+typography
+responsive behavior
+error messaging
+```
+
+as other website forms.
+
+Do not implement it now.
+
+---
+
+# 50. Future Sign-Up Page
+
+Likewise, future signup UI will collect:
+
+```text
+email
+password
+```
+
+and complete Clerk email verification.
+
+Phone remains outside signup.
+
+Do not implement it now.
+
+---
+
+# 51. Future Recovery Page
+
+Password recovery must use Clerk.
+
+The visual implementation should follow the same frontend design system.
+
+Do not implement it now.
+
+---
+
+# 52. Future Verification Page
+
+Email verification must use Clerk.
+
+Do not implement a custom Laravel verification form.
+
+Do not implement its UI now.
+
+---
+
+# 53. Future Account Security UI
+
+Password/security management remains Clerk-owned.
+
+The website account UI may later expose Clerk account/security actions.
+
+Do not build them during Group D.
+
+---
+
+# 54. Backend Review
+
+Phase 4.8 should verify that Laravel already supports everything the future website requires:
+
+```text
+Bearer authentication
+local User resolution
+JIT provisioning
+/me
+401 behavior
+403 behavior
+private resource authorization
+email/password Clerk model
+email verification state
+```
+
+If a backend gap exists, fix it in the appropriate backend abstraction.
+
+Do not create a web-specific backend pathway.
+
+---
+
+# 55. No Website-Specific Laravel Authentication
+
+Do not create:
+
+```text
+AuthenticateNextJs
+WebClerkController
+WebsiteTokenExchange
+WebLoginController
+```
+
+The Laravel authentication boundary must remain client-neutral.
+
+---
+
+# 56. Same Boundary as Mobile
+
+Phase 4.7 established:
+
+```text
+Flutter
+→ Clerk session token
+→ Laravel
+```
+
+Phase 4.8 establishes:
+
+```text
+Next.js
+→ Clerk session token
+→ Laravel
+```
+
+Laravel should not care which client sent the valid token.
+
+---
+
+# 57. Client-Neutral Backend
+
+Mandatory invariant:
+
+```text
+same Clerk user
+from Flutter
+or Next.js
+        ↓
+same users.clerk_user_id
+        ↓
+same Laravel User
+```
+
+No `client_type` should participate in identity resolution.
+
+---
+
+# 58. OpenAPI Review
+
+Review protected routes.
+
+Ensure the OpenAPI security scheme describes:
+
+```text
+Bearer authentication
+using a Clerk-issued authenticated session token
+```
+
+Do not add frontend-specific auth endpoints.
+
+---
+
+# 59. No New Website Auth API
+
+Do not introduce:
+
+```text
+/api/v1/web/login
+/api/v1/web/signup
+/api/v1/web/token
+/api/v1/web/refresh
+```
+
+The website authenticates with Clerk directly.
+
+---
+
+# 60. Contract Documentation
+
+Document the expected future website flow in existing consolidated documentation.
+
+A concise sequence is enough:
+
+```text
+1. User signs in/up through Clerk.
+2. Clerk establishes browser session.
+3. Next.js obtains current Clerk session token.
+4. Next.js sends token to Laravel as Bearer.
+5. Laravel authenticates token.
+6. Laravel resolves local User.
+7. Laravel handles authorization/business logic.
+```
+
+Do not create excessive new documents.
+
+---
+
+# 61. Documentation Updates
+
+Likely update only:
+
+```text
+docs/api/api-conventions.md
+docs/decisions.md
+AGENTS.md
+```
+
+and possibly:
+
+```text
+docs/api/api-contract.md
+docs/api/openapi.yaml
+```
+
+where auth semantics need clarification.
+
+Keep consolidated docs authoritative.
+
+---
+
+# 62. `AGENTS.md` Handoff
+
+Clarify that:
+
+```text
+Group D
+→ establishes web authentication contract
+
+frontend Groups L–O
+→ implement website authentication
+
+Groups P–Q
+→ implement Flutter authentication
+```
+
+This prevents future agents from prematurely modifying frontend applications.
+
+---
+
+# 63. Future Frontend Agent Instructions
+
+Record the future website implementation requirements concisely:
+
+```text
+Use @clerk/nextjs.
+Use current App Router integration.
+Use ClerkProvider.
+Use current Clerk middleware/proxy convention.
+Use await auth() server-side.
+Use getToken() for Laravel calls.
+Do not introduce another auth provider.
+Do not use Clerk metadata for Laravel role.
+```
+
+These are implementation constraints for the later phase.
+
+Do not execute them today.
+
+---
+
+# 64. Next.js Version Deferred
+
+Do not decide:
+
+```text
+proxy.ts
+vs
+middleware.ts
+```
+
+until the actual Next.js version in `frontend/web` is being implemented.
+
+At that time:
+
+```text
+inspect installed Next.js version
+follow current Clerk guidance
+```
+
+Do not create files based on assumptions now.
+
+---
+
+# 65. Clerk SDK Version Deferred
+
+Do not lock:
+
+```text
+@clerk/nextjs version
+```
+
+during Group D.
+
+Install the then-current compatible release when the frontend implementation phase begins.
+
+This avoids stale dependency decisions.
+
+---
+
+# 66. Authentication UI Choice Deferred
+
+Do not decide prematurely between:
+
+```text
+Clerk prebuilt components
+custom Clerk flow
+```
+
+until:
+
+* website design primitives exist;
+* form conventions exist;
+* page layouts exist;
+* UX requirements are known.
+
+Default recommendation for later remains:
+
+```text
+prefer standard Clerk components unless custom UI is necessary
+```
+
+but do not implement now.
+
+---
+
+# 67. MUI Integration Deferred
+
+Do not solve Clerk/MUI styling in Group D.
+
+When the website design system exists, auth pages can be integrated correctly.
+
+This is one of the main reasons frontend work is deferred.
+
+---
+
+# 68. No Authentication State Management Decision Yet
+
+Do not add:
+
+```text
+Redux
+Zustand
+React Context
+```
+
+for auth.
+
+The future app should use Clerk for authentication state and only introduce application-user state if necessary.
+
+The final decision belongs to the website architecture phase.
+
+---
+
+# 69. No BFF Decision Yet
+
+Do not build or commit the website to a large Backend-for-Frontend layer.
+
+Document both supported future patterns:
+
+```text
+Next.js server → Laravel
+```
+
+and where necessary:
+
+```text
+browser → Laravel with current Clerk token
+```
+
+Choose the simplest per feature when frontend implementation begins.
+
+---
+
+# 70. Backend Tests — Valid Web Token
+
+Existing Clerk authentication tests should establish:
+
+```text
+valid Clerk session token
+→ authenticated Laravel User
+```
+
+This is client-independent.
+
+If not sufficiently covered, add backend tests.
+
+Do not need actual Next.js code.
+
+---
+
+# 71. Backend Tests — Missing Token
+
+Protected endpoint:
+
+```text
+no token
+```
+
+must return:
 
 ```text
 401 AUTHENTICATION_REQUIRED
 ```
 
-Verify centralized auth handler is invoked.
-
-Do not create infinite retries.
+This guarantees the future website has a stable contract.
 
 ---
 
-# 70. Unit Tests — 403
+# 72. Backend Tests — Invalid Token
+
+Invalid Clerk credential:
+
+```text
+401
+```
+
+without local provisioning.
+
+No provider internals exposed.
+
+---
+
+# 73. Backend Tests — Valid CUSTOMER
+
+Valid token for mapped CUSTOMER:
+
+```text
+GET /me
+```
+
+returns correct application profile.
+
+---
+
+# 74. Backend Tests — First Website Session
+
+Simulate a valid Clerk user with no local Laravel user.
+
+First protected request:
+
+```text
+→ Phase 4.2 provisioning
+→ CUSTOMER
+→ request succeeds
+```
+
+This represents both future website and mobile behavior.
+
+---
+
+# 75. Backend Tests — Role Authority
 
 Simulate:
 
 ```text
-403 FORBIDDEN
+Clerk metadata role = ADMIN
+Laravel role = CUSTOMER
 ```
 
-Verify app does not automatically sign out.
+Verify Laravel remains CUSTOMER.
+
+This protects future frontend implementation from accidental Clerk role dependence.
 
 ---
 
-# 71. Unit Tests — Logout
+# 76. Backend Tests — Same User Across Clients
 
-Verify logout:
+Conceptually simulate two valid Clerk sessions with the same:
 
 ```text
-calls Clerk auth adapter
-clears authenticated app state
-does not delete public cache unnecessarily
+sub
 ```
 
-Do not test Laravel user deletion.
+Verify both resolve to the same local Laravel User.
+
+No actual Next.js or Flutter code is required.
 
 ---
 
-# 72. Unit Tests — Same User
+# 77. Backend Tests — Public Catalog
 
-Simulate multiple Clerk sessions belonging to the same Clerk User ID.
+Ensure public catalog endpoints remain accessible without a token.
 
-Laravel integration tests should already verify they resolve to the same local User.
-
-Do not replicate all backend identity tests in Flutter.
+Authentication work must not globally protect API routes.
 
 ---
 
-# 73. Integration Smoke Test
+# 78. Backend Tests — `/me` Privacy
 
-When an actual Clerk-compatible mobile integration is available in the development environment, perform one manual/staging smoke path:
+Verify:
 
 ```text
-sign up with email/password
-verify email
-sign in
 GET /me
-sign out
 ```
 
-Do not make this live-provider flow part of normal CI.
+uses private/no-store response semantics.
+
+Future web caching can rely on this contract.
 
 ---
 
-# 74. No Real Credentials in Tests
+# 79. Backend Tests — 403
 
-Never commit:
+Authenticated customer attempting unauthorized operation must receive:
 
 ```text
-real customer email
-real password
-real Clerk session token
-real Clerk secret
+403
 ```
 
-Use fakes/test environments.
+or masking behavior according to the specific resource policy.
+
+Do not convert authorization failures into login failures.
 
 ---
 
-# 75. Flutter Package Decision
+# 80. No Frontend Test Files
 
-Before adding a Flutter Clerk package:
-
-* verify current maintenance;
-* verify compatibility with the current Flutter/Dart versions;
-* verify support for required email/password + verification + session token flow;
-* review open issues/security posture;
-* avoid abandoned packages.
-
-Because Clerk does not currently list Flutter as an official quickstart, isolate whichever implementation is selected.
-
-Do not allow package APIs to leak beyond the authentication adapter.
-
----
-
-# 76. Avoid Native Platform Bridge Unless Necessary
-
-Do not immediately build:
+Do not create:
 
 ```text
-Flutter ↔ MethodChannel ↔ Clerk Android SDK
-Flutter ↔ MethodChannel ↔ Clerk iOS SDK
+React component tests
+Playwright auth tests
+Next.js tests
 ```
 
-That creates substantial maintenance burden.
+during this phase.
 
-Only use native platform bridging if no adequately maintained Flutter-compatible Clerk implementation exists and mobile implementation cannot proceed otherwise.
+No frontend implementation exists yet.
 
-Record such a decision explicitly before adding that complexity.
+Those tests belong with the future frontend features.
 
 ---
 
-# 77. Preferred Simplicity Order
+# 81. Clerk Live Testing
 
-Choose in this order:
+Do not require a real Next.js client or Clerk browser session in ordinary Group D tests.
+
+Backend authentication should use fakes/test tokens/verifier abstractions.
+
+Full browser authentication will be tested when frontend implementation exists.
+
+---
+
+# 82. No Playwright / Cypress
+
+Do not install:
 
 ```text
-1. maintained Clerk-compatible Flutter package
-2. simple documented REST/provider integration if Clerk officially supports it securely
-3. native Android/iOS bridge only if necessary
+Playwright
+Cypress
 ```
 
-Do not start from option 3.
+for Phase 4.8.
+
+Frontend E2E testing belongs to later frontend/QA phases.
 
 ---
 
-# 78. No Custom Clerk REST Reimplementation Without Need
+# 83. No Frontend Package Changes
 
-Do not manually recreate all Clerk client/session behavior using raw HTTP if a maintained client implementation already handles it.
-
-Authentication libraries exist to avoid mistakes around:
-
-* session lifecycle;
-* verification;
-* token refresh;
-* device state.
-
-Use maintained integration where possible.
-
----
-
-# 79. Folder Structure
-
-When Flutter app implementation begins, a simple structure is enough:
+Expected changes under:
 
 ```text
-lib/
-├── core/
-│   └── network/
-│       └── api_client.dart
-└── features/
-    └── auth/
-        ├── data/
-        │   └── clerk_auth_repository.dart
-        └── domain/
-            └── auth_repository.dart
+frontend/
 ```
 
-Adjust to the project's actual feature structure.
-
-Do not create ten authentication layers.
-
----
-
-# 80. Avoid Overengineering
-
-Do not create separate classes for:
+should be:
 
 ```text
-LoginUseCase
-LogoutUseCase
-GetTokenUseCase
-RefreshTokenUseCase
-AuthenticationCoordinator
-SessionOrchestrator
-TokenLifecycleManager
+NONE
 ```
 
-unless the application actually benefits from them.
+during Phase 4.8.
 
-For this app, a small repository + token provider + API interceptor is sufficient.
-
----
-
-# 81. Dependency Injection
-
-Use the project's existing dependency injection approach if one exists.
-
-Do not introduce a heavyweight DI framework solely for authentication.
-
-Manual/provider-based injection is acceptable if already consistent with Flutter architecture.
+If the agent believes frontend modification is necessary, stop and document why rather than proceeding.
 
 ---
 
-# 82. State Management
+# 84. Expected Backend Code Changes
 
-Use the app's chosen state-management package.
-
-Do not introduce another state-management framework only for authentication.
-
-Authentication state can expose:
+Expected:
 
 ```text
-loading
-signedIn
-signedOut
-error
+none
+or minimal
 ```
 
-through the existing application state pattern.
+because Phase 4.3 should already provide the client-neutral Clerk bearer-token authentication boundary.
+
+Phase 4.8 primarily verifies and documents readiness for the future website.
 
 ---
 
-# 83. Logging
-
-Mobile logs must never contain:
-
-```text
-session token
-password
-Authorization header
-Clerk secret
-```
-
-Diagnostic logs may contain:
-
-```text
-auth state transition
-API status code
-request correlation ID
-```
-
-without secret data.
-
----
-
-# 84. Crash Reports
-
-Ensure crash-reporting breadcrumbs do not record Authorization headers.
-
-If network logging is later enabled, redact:
-
-```text
-Authorization
-Cookie
-password
-verification code
-```
-
----
-
-# 85. Documentation
-
-Update the relevant documentation with the mobile boundary.
-
-Record:
-
-```text
-Flutter authenticates with Clerk.
-Flutter obtains Clerk session token.
-Flutter sends token as Bearer to Laravel.
-Laravel uses existing Clerk authentication middleware.
-No mobile-specific Laravel tokens.
-```
-
-Do not create excessive documentation.
-
-Use existing consolidated auth architecture/decision docs.
-
----
-
-# 86. `AGENTS.md`
-
-Update only if necessary to clarify:
-
-```text
-Flutter authentication:
-Clerk session token → Laravel bearer auth
-```
-
-Do not rewrite unrelated frontend roadmap items.
-
----
-
-# 87. OpenAPI
-
-No new endpoint is expected.
-
-Existing protected endpoints already use bearer authentication.
-
-Do not introduce:
-
-```text
-/mobile/login
-/mobile/token
-/mobile/refresh
-```
-
-to OpenAPI.
-
----
-
-# 88. Schema Changes
+# 85. Expected Schema Changes
 
 Expected:
 
@@ -1639,165 +1629,194 @@ NONE
 Do not add:
 
 ```text
-mobile_token
-device_token
-refresh_token
-last_mobile_login
+web_session
+website_token
+nextjs_user_id
+browser_session
 ```
 
-to users.
-
-Push-notification device tokens, if needed later, belong to notification phases, not authentication.
+to the database.
 
 ---
 
-# 89. Laravel Changes
+# 86. No User-Agent Authentication
 
-Expected:
+Do not identify or authorize website users using:
 
 ```text
-minimal or none
+User-Agent
+browser cookie created by Laravel
+client_type
 ```
 
-Laravel should already support Clerk bearer tokens from Phase 4.3.
-
-Only make backend changes if a genuine compatibility gap is discovered.
-
-Do not duplicate mobile authentication middleware.
+Only the verified Clerk credential establishes identity.
 
 ---
 
-# 90. Flutter Changes
+# 87. No Website-Specific Role
 
-If `frontend/app` is not yet actively implemented:
-
-this phase may remain primarily architecture/documentation plus any shared contract tests.
-
-Do not prematurely scaffold the whole Flutter application solely to satisfy the phase.
-
-Respect dependency order.
-
----
-
-# 91. Existing Flutter Roadmap
-
-AGENTS.md later includes:
+Do not add roles such as:
 
 ```text
-Phase 16.1 Flutter project setup
-Phase 16.3 environment configuration
-Phase 16.4 networking layer
-Phase 16.5 authentication storage/session
+WEB_CUSTOMER
+MOBILE_CUSTOMER
 ```
 
-Do not steal all of that implementation into Group D.
-
-Phase 4.7 defines the **contract and secure approach** those phases must follow.
-
----
-
-# 92. Handoff to Flutter Phases
-
-Record these future requirements:
-
-### Phase 16.3
-
-configure Clerk client-safe values and Laravel base URL.
-
-### Phase 16.4
-
-create API client/interceptor.
-
-### Phase 16.5
-
-implement Clerk session persistence/auth repository.
-
-Do not implement unrelated Flutter application features now.
-
----
-
-# 93. Security Checklist
-
-Verify the architecture guarantees:
+The role remains:
 
 ```text
+CUSTOMER
+```
+
+independent of client.
+
+---
+
+# 88. No Duplicate Profiles
+
+Do not create:
+
+```text
+web_profile
+mobile_profile
+```
+
+The same Laravel profile is shared across clients.
+
+---
+
+# 89. Shared Profile Invariant
+
+Future:
+
+```text
+customer changes phone on website
+```
+
+then Flutter should later see the same value through:
+
+```text
+GET /me
+```
+
+because Laravel is the profile authority.
+
+This must remain true.
+
+---
+
+# 90. Security Checklist
+
+Verify architecture guarantees:
+
+```text
+Clerk authenticates website customers
+Laravel verifies Clerk session tokens
+Laravel owns authorization
 password never reaches Laravel
-Clerk secret never enters Flutter
-session token sent only over HTTPS
-Authorization bearer used
-no custom mobile JWT
-no custom refresh token
-no token in SharedPreferences
-Laravel remains authz authority
-Clerk sub remains the Laravel identity mapping key
-phone remains optional profile field
-same Clerk identity → same Laravel User
+email verification stays Clerk-owned
+phone remains optional
+no second auth system
+no website-specific backend login
+no frontend token persistence requirement
+same user across web/mobile
+public catalog remains public
 ```
 
 ---
 
-# 94. Code Quality
+# 91. Avoid Overengineering
 
-Follow project rules:
-
-* small cohesive classes;
-* no unnecessary abstraction;
-* minimal comments;
-* explicit naming;
-* one auth adapter;
-* one token provider;
-* one network auth interceptor;
-* use existing state management/DI;
-* no copy-pasted auth logic.
-
-Do not engineer for hypothetical future identity providers.
-
----
-
-# 95. Expected Tests
-
-At minimum document/implement tests for:
+Do not create:
 
 ```text
-token attached to authenticated request
-no token for signed-out state
-public API works without authentication
-401 handled centrally
-403 does not force logout
-logout clears authenticated state
-no password/token logged
+WebsiteAuthenticationService
+FrontendAuthGateway
+NextJsSessionBridge
+TokenExchangeService
+WebIdentityAdapter
+BrowserAuthRepository
 ```
 
-Do not reproduce the full backend Clerk verification suite in Flutter.
+in Laravel.
+
+They are unnecessary.
+
+The backend already receives a standard Bearer token.
 
 ---
 
-# 96. Commands / Checks
+# 92. Maintain Client Neutrality
 
-If no Flutter project code changes occur:
+Laravel should conceptually see:
 
-run existing backend checks to ensure documentation/config changes did not regress anything.
+```text
+authenticated Clerk request
+```
 
-If Flutter code exists and is changed, run the project's standard Flutter checks, such as:
+not:
+
+```text
+Next.js request
+Flutter request
+```
+
+This dramatically simplifies maintenance.
+
+---
+
+# 93. Quality Requirements
+
+Any backend/documentation changes must maintain:
+
+* cognitive complexity ≤15;
+* maximum 3 returns where practical;
+* strict validation;
+* centralized configuration;
+* provider-independent domain logic;
+* minimal comments;
+* no duplicated authentication logic.
+
+---
+
+# 94. Commands / Verification
+
+If only documentation changes occur:
+
+run any documentation/schema validation used by the repository.
+
+Also run relevant backend tests:
 
 ```bash
-flutter analyze
-flutter test
+cd backend/laravel
+
+php artisan test
+vendor/bin/pint --test
+vendor/bin/phpstan analyse
+composer audit
 ```
 
-Use existing project commands where defined.
+Use project-defined equivalent scripts where applicable.
 
-Do not add CI infrastructure in this phase.
+Do not run frontend install/build commands because the frontend is not being implemented.
 
 ---
 
-# 97. Files Changed Report
+# 95. Files Changed Report
 
 At completion report:
 
 ## Files changed
 
 Exact paths.
+
+## Frontend changes
+
+Must state:
+
+```text
+NONE
+```
 
 ## Backend changes
 
@@ -1807,102 +1826,173 @@ Expected:
 none or minimal
 ```
 
-## Flutter boundary
+Explain any exception.
 
-Document selected:
+## Contract decisions
+
+Confirm:
 
 ```text
-AuthRepository
-AuthTokenProvider
-API auth interceptor
+future Next.js
+→ Clerk
+→ session token
+→ Laravel bearer auth
 ```
-
-## Clerk integration
-
-State the selected Flutter-compatible integration/package if one was actually chosen.
 
 ## Tests
 
-List added tests.
+List backend tests added/run.
 
-## Commands
+## Deferred frontend work
 
-List commands and results.
-
-## Known risks
-
-Especially any reliance on a community-maintained Flutter Clerk integration.
+Clearly identify later website phases.
 
 ---
 
-# 98. Definition of Done
+# 96. Frontend Handoff Checklist
 
-Phase 4.7 is complete when:
+Leave a concise handoff for the future website agent:
 
-* mobile authentication architecture is documented;
-* Flutter uses Clerk as the only authentication provider;
-* email/password remains the signup/sign-in policy;
+```text
+[ ] initialize Clerk only inside frontend/web
+[ ] install current compatible @clerk/nextjs
+[ ] follow actual installed Next.js version
+[ ] place ClerkProvider according to current Clerk guidance
+[ ] configure Clerk middleware/proxy
+[ ] keep catalog public
+[ ] protect account/checkout/customer routes
+[ ] use await auth() server-side
+[ ] use getToken() for Laravel calls
+[ ] send Authorization Bearer
+[ ] use Laravel /me for role/profile
+[ ] do not use Clerk metadata as RBAC
+[ ] signup = email + password
+[ ] phone not required
+[ ] email verification through Clerk
+[ ] use shared website design system/components
+```
+
+Do not execute this checklist in Phase 4.8.
+
+---
+
+# 97. Relationship to Group L–O
+
+Group D:
+
+```text
+defines authentication architecture
+```
+
+Groups L onward:
+
+```text
+build website foundation
+design system
+layouts
+components
+pages
+```
+
+Then the relevant website authentication/customer-commerce phase:
+
+```text
+implements Clerk UI and routing
+```
+
+This order is mandatory.
+
+---
+
+# 98. Relationship to Groups P–Q
+
+Likewise:
+
+```text
+Phase 4.7
+→ defines Flutter authentication contract
+
+Groups P–Q
+→ implement Flutter authentication and customer UI
+```
+
+Do not allow Group D to become an early frontend implementation group.
+
+---
+
+# 99. Definition of Done
+
+Phase 4.8 is complete when:
+
+* future Next.js authentication architecture is explicitly defined;
+* the website will use Clerk as its sole authentication provider;
+* Laravel will receive Clerk session tokens through `Authorization: Bearer`;
+* the existing client-neutral Laravel authentication boundary is sufficient;
+* `/me` is confirmed as the future source of application profile/role;
+* public and protected route expectations are documented;
+* signup remains email + password;
 * email verification remains Clerk-owned;
-* Flutter never sends passwords to Laravel;
-* Flutter can obtain a current Clerk session token through a thin auth adapter;
-* Laravel calls use `Authorization: Bearer <token>`;
-* Laravel uses the existing Clerk verifier;
-* no mobile-specific Laravel authentication endpoint exists;
-* no custom mobile JWT exists;
-* no custom refresh-token infrastructure exists;
-* tokens are not stored insecurely;
-* API authentication is centralized in the network layer;
-* 401 and 403 have distinct handling;
-* no infinite token-refresh/retry loop exists;
-* public API access remains unauthenticated;
-* one Clerk identity maps to the same Laravel User across web/mobile;
-* Clerk-specific Flutter implementation is isolated behind an interface;
-* no unnecessary native platform bridge was introduced;
-* no unnecessary schema change was made;
-* tests/checks pass;
-* future Flutter phases have a clear implementation contract.
+* phone remains optional;
+* no website-specific Laravel login/token endpoints exist;
+* no NextAuth/Auth.js or Sanctum SPA auth is planned;
+* web and mobile identities resolve to the same local User;
+* caching/security/error behavior is documented for the future frontend;
+* backend regression tests pass;
+* no frontend code is created;
+* no frontend packages are installed;
+* no Clerk frontend CLI initialization is performed;
+* no frontend routing/layout/design decisions are prematurely implemented;
+* future frontend agents have a clear implementation handoff.
 
 ---
 
-# 99. Out of Scope
+# 100. Out of Scope
 
 Do not implement:
 
-* complete Flutter application setup;
-* final login/signup screens;
-* profile screens;
-* forgot-password screens;
-* order screens;
-* cart UI;
+* `frontend/web` Clerk setup;
+* `@clerk/nextjs`;
+* `ClerkProvider`;
+* `proxy.ts`;
+* `middleware.ts`;
+* sign-in page;
+* sign-up page;
+* verification page;
+* password recovery page;
+* website auth layout;
+* account navigation;
+* frontend API client;
+* React auth state;
+* MUI authentication components;
+* website styling;
+* Flutter implementation;
+* E2E browser tests;
 * social login;
-* phone authentication;
-* biometrics;
-* certificate pinning;
-* custom OAuth server;
-* custom JWT service;
-* Laravel mobile login endpoint;
-* push-notification device registration;
-* native Clerk Android/iOS bridges unless separately approved.
+* phone login;
+* MFA UI;
+* Clerk Organizations;
+* BFF architecture.
 
 ---
 
-# 100. STOP Condition
+# 101. STOP Condition
 
-STOP when the mobile authentication boundary is reduced to the standard secure flow:
+STOP once the future website authentication contract is fully documented, the Laravel backend is confirmed ready to accept Clerk-authenticated website requests through the same client-neutral Bearer-token boundary used by mobile, and all relevant backend checks pass.
+
+There must be:
 
 ```text
-Flutter
-→ Clerk
-→ current Clerk session token
-→ Authorization Bearer
-→ existing Laravel authentication
-→ local User
+NO frontend implementation
+NO frontend package installation
+NO Clerk frontend initialization
 ```
 
-with a small isolated Flutter authentication adapter and no parallel auth system.
+during Phase 4.8.
 
 Do not continue automatically.
 
-The next roadmap phase is:
+The next backend roadmap phase is:
 
-**Phase 4.8 — SPA / Website Authentication with Clerk**
+**Phase 4.9 — Roles / Laravel RBAC Integration**
+
+Actual website Clerk implementation must wait until the corresponding frontend phase in Groups L–O is reached.

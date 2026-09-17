@@ -1,6 +1,6 @@
 # Clerk Authentication Architecture
 
-> **Status:** Accepted (Phase 4.1), **implemented** through Phase 4.6, and **documented/accepted** for Phase 4.7. This document reflects the built authentication boundary and the documented Flutter handoff — Clerk owns credentials/sessions/security; Laravel owns the local application identity projection, RBAC, and authorization. No Flutter UI or app implementation is included here.
+> **Status:** Accepted (Phase 4.1), **implemented** through Phase 4.6, and **documented/accepted** for Phases 4.7–4.8. This document reflects the built authentication boundary and the documented Flutter/Next.js handoffs — Clerk owns credentials/sessions/security; Laravel owns the local application identity projection, RBAC, and authorization. No frontend UI or application implementation is included here.
 
 ## Decision and Scope
 
@@ -147,3 +147,7 @@ Clerk is the sole password-recovery/change, compromised-password, MFA, and sessi
 Flutter is a future client of the same Clerk/Laravel boundary, not a second authentication system. A small `AuthRepository`/`ClerkAuthAdapter` obtains the current Clerk session token and exposes it through an `AuthTokenProvider` to the API client. The network layer sends `Authorization: Bearer <Clerk session_token>` for protected calls; public calls remain token-optional. Feature repositories do not import Clerk package classes. Clerk owns session persistence, renewal, and sign-out; Laravel continues to verify the token, map `sub` to `users.clerk_user_id`, provision/resolve the local User, and authorize the operation.
 
 Flutter must never send passwords to Laravel, fabricate claims, create mobile-specific users/tokens, implement a second verifier/refresh token, or persist passwords/bearer tokens in insecure storage. A centralized client handles `401 AUTHENTICATION_REQUIRED` and `403 FORBIDDEN` distinctly with bounded SDK-supported token retrieval/retry; unsafe mutations are not blindly replayed. No Flutter project or UI is included until Phase Group P/Q. The package choice remains deferred; any selected community integration is isolated behind the adapter, and only publishable/client-safe Clerk configuration ships in the app.
+
+## Phase 4.8 Next.js Boundary (documented)
+
+Next.js website authentication remains a future frontend implementation concern. When the website phase begins, use the current `@clerk/nextjs` App Router integration, `ClerkProvider` inside `<body>`, the installed Next.js version's Clerk middleware/proxy convention, asynchronous `await auth()` for server-side auth context, and `getToken()` for Laravel calls. Send the current token as `Authorization: Bearer <Clerk session_token>`; do not create NextAuth/Auth.js, Sanctum, custom JWT, refresh-token, or parallel cookie authentication. Keep catalog pages public, protect customer pages only where required, use Laravel `/api/v1/me` for application profile/role state, and leave Laravel authorization authoritative. No frontend package, route, provider, middleware, or UI implementation is included in Phase 4.8.

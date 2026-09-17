@@ -536,6 +536,18 @@ No Flutter project or UI is scaffolded in this phase because the mobile applicat
 
 ---
 
+### ADR/AUTH-014 — Next.js Website Uses the Shared Clerk Bearer Boundary (Phase 4.8)
+
+**Decision:** The future Next.js website uses the same Clerk application and client-neutral Laravel authentication boundary as Flutter. Clerk owns browser sign-up/sign-in, email verification, password recovery, session renewal, and logout. The future App Router implementation uses the current `@clerk/nextjs` integration, places `ClerkProvider` inside `<body>`, follows the installed Next.js version's `proxy.ts`/`middleware.ts` convention, uses asynchronous `await auth()` server-side, obtains a current Clerk session token through `getToken()`, and sends it to Laravel as `Authorization: Bearer <Clerk session_token>`. Laravel continues to verify the token, map `sub` to `users.clerk_user_id`, provision/resolve the local User, and enforce authorization.
+
+The website keeps public catalog/SEO and anonymous request/enquiry pages public. Frontend route protection is an entry/UX layer only; Laravel remains authoritative for `/me`, roles, permissions, ownership, account state, and commerce operations. No NextAuth/Auth.js, Sanctum, custom JWT, refresh-token service, parallel customer cookie auth, website-specific Laravel endpoint, or frontend BFF is introduced by default. Tokens are request-scoped and never placed in rendered HTML, client props, logs, localStorage, or shared caches. Phase 4.8 does not install packages, run Clerk CLI initialization, create frontend routes/providers/middleware/UI, or modify `frontend/web/`; those belong to later website foundation/auth phases.
+
+**Reason:** Establishes one secure, client-neutral contract before frontend implementation, prevents token and authorization duplication, preserves public SEO behavior, and avoids coupling the project to an unverified Next.js version or premature UI structure.
+
+**Status:** Accepted/documented | **Affected:** `AGENTS.md`, `docs/api/api-contract.md §21.9`, `docs/api/api-conventions.md §29.8`, `docs/api/api-resources.md §13.3`, `docs/clerk-authentication-architecture.md`, `docs/api/openapi.yaml`; frontend implementation deferred to Groups L–O.
+
+---
+
 ### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
 
 **Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.

@@ -885,18 +885,19 @@ Decide the Clerk↔Laravel identity boundary, local users projection, credential
 ### Phase 4.2 — Clerk/Laravel identity integration
 Verify Clerk credentials in Laravel and map Clerk identity → local user.
 
-### Phase 4.3 — Customer registration / sign-in flow
+### Phase 4.3 — Customer registration / sign-in flow including Logout/session lifecycle
 Clerk-managed rather than custom Laravel credentials.
 
-### Phase 4.4 — Logout/session lifecycle
 ### Phase 4.4 — Password recovery/security
 ### Phase 4.5 — Email/phone verification
 ### Phase 4.6 — Local profile synchronization
 ### Phase 4.7 — Mobile authentication boundary
-### Phase 4.8 — Roles
-### Phase 4.9 — Policies/permissions
-### Phase 4.10 — Rate limiting / abuse controls
-### Phase 4.11 — Authentication tests
+### Phase 4.8 - SPA / Website Authentication with Clerk
+Contract documented in Group D; actual Next.js Clerk setup belongs to the later website frontend phases.
+### Phase 4.9 — Roles
+### Phase 4.10 — Policies/permissions
+### Phase 4.11 — Rate limiting / abuse controls
+### Phase 4.12 — Authentication tests
 
 **Exit condition:** Customer, staff and admin access paths are secure and tested.
 
