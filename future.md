@@ -28,3 +28,19 @@
 * `carts.user_id` FK is RESTRICT on MySQL but SET NULL on sqlite (preservation holds on both, proven) — unify delete action when the user-account retention policy is decided (Group D profile ops / Group K customer management).
 * 9 suite failures occur only on MySQL-backed runs (raw `PRAGMA`, pcntl-fork connection loss, raw `DROP CHECK` in test helpers) — sqlite remains canonical CI; port those harness assumptions only if MySQL-backed CI is introduced (Group U).
 
+10. A good furniture store
+Easy Navigation: A great website is simple to use. Categories are clear, and menus are easy to follow. This is the foundation for cool furniture stores online.
+
+High-Quality Images and Details: Shoppers cannot touch or feel the furniture online. That is why sharp images, multiple views, and detailed descriptions are a must. They help buyers make confident decisions.
+
+Smooth Checkout Process: No one likes a complicated checkout. The best websites keep it fast, simple, and secure, with different payment options to fit customer needs.
+
+Mobile-First friendly Design: Most people shop on their phones. A website that looks and works well on any device provides a simple experience for users.
+
+Customer Reviews and Trust Signals: Real reviews, ratings, and clear return policies build trust. They make buyers feel safe when spending on big items and buying from online modern furniture stores.
+
+Personalization and Inspiration: The best platforms do not just sell furniture. They guide customers with room ideas, style suggestions, and product recommendations, making shopping easier and more fun.
+
+Best support for assistive technologies.
+
+In short, a great furniture eCommerce website blends design, function, and trust. By investing in professional eCommerce web design services, brands can overcome the challenges of traditional retail and create an online shopping experience that is smooth, intuitive, and enjoyable.
