@@ -937,7 +937,7 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 | Concern | Concept | Notes |
 |---|---|---|
 | `Next.js` | Clerk client session, then `Authorization: Bearer <Clerk session_token>` to Laravel | Laravel bearer-only; no browser/session cookie authenticates Laravel; no auth on public catalog routes |
-| `Flutter` | API credential/token | Same identity as web; cross-platform no duplicate accounts |
+| `Flutter` | Clerk client session token sent as `Authorization: Bearer <Clerk session_token>` | Same identity as web; Laravel uses the existing verifier and no mobile-specific token |
 | `Admin` | administrative session | Same backend system, stronger controls (shorter idle, revocation, visibility, MFA/audit later) |
 | Lifecycle | `active → expired → revoked` (conceptual) | Multi-device permitted for Customer; logout on one does not kill others; revocation via logout/password change/admin action |
 | Threats identified | `credential theft`, `stuffing`, `brute-force`, `session theft`, `token leakage`, `enumeration`, `privilege escalation`, `role tampering`, `session fixation`, `password-reset abuse`, `cross-account`, `staff impersonation` | Mitigations deferred to implementation but boundaries fixed here |

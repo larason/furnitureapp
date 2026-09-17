@@ -456,7 +456,7 @@
 
 ### ADR/AUTH-007 — Shared Cross-Platform Identity & Session/Token Principles
 
-**Decision:** One shared customer identity across `Next.js` (first-party browser session, httpOnly cookie, not long-lived JS secret) and `Flutter` (API credential/token) against same Laravel backend; same credentials see same orders/profile. `Admin` shares same system. Logout invalidates server-side session/credential (deleting frontend token alone insufficient). Multiple customer sessions (web/phone/tablet) **permitted** (logout on one not all); revocation, shorter admin timeout, MFA, visibility, forced logout, audit logging evaluated later. Passwords only as secure one-way hash, never in responses; change via authenticated secure workflow (not `PATCH /me {password}`); `role` is server-controlled.
+**Decision:** One shared customer identity across `Next.js`, Flutter, and Admin uses the same Clerk application and maps to one Laravel `users.id`. Every Laravel API client, including the future Flutter app, sends the current Clerk session token as `Authorization: Bearer <Clerk session_token>`; Laravel accepts no browser/session cookie or client-defined mobile token as authentication. Logout is performed through the Clerk client session lifecycle; deleting a local token is not a substitute for Clerk sign-out. Multiple customer sessions (web/phone/tablet) are permitted; revoking one does not revoke all. Passwords remain Clerk-owned and are never sent to Laravel; `role` remains server-controlled.
 
 **Reason:** `phase-1.17.md §29-36`, `§37`, `§56`, `api-contract.md §17.7/§17.10/§17.14`, `api-conventions.md §18.3-18.4`.
 
@@ -521,6 +521,18 @@ Local users with commerce history are retained when a Clerk identity is deleted 
 **Reason:** Keeps field authority explicit, prevents profile IDOR/mass assignment, preserves historical commerce and cart ownership, and avoids making normal profile operations dependent on Clerk network availability.
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`app/Http/Controllers/Api/V1/MeController.php`, `app/Http/Requests/UpdateMeRequest.php`, `app/Services/UpdateCustomerProfile.php`, `database/migrations/2026_09_17_100000_restrict_cart_user_deletion.php`, `database/migrations/2026_09_17_110000_make_user_name_nullable.php`, `tests/Feature/ProfileOperationsTest.php`, `tests/Unit/LocalUserProvisionerTest.php`), `docs/api/api-contract.md §29.6/§29.9`, `docs/api/api-conventions.md §29.1-29.6`, `docs/api/api-resources.md §8/§13`, `docs/domain/business-rules.md`, `AGENTS.md`
+
+---
+
+### ADR/AUTH-013 — Flutter Uses the Shared Clerk Bearer Boundary (Phase 4.7)
+
+**Decision:** Flutter uses the same Clerk application and identity system as Next.js. The future mobile implementation exposes a small `AuthRepository`/`ClerkAuthAdapter` that obtains the current Clerk session token and an `AuthTokenProvider` for the network layer. Only the network layer attaches `Authorization: Bearer <Clerk session_token>` to authenticated Laravel requests. Flutter sends no password to Laravel, creates no mobile-specific user/token, implements no verifier or refresh token, and stores no bearer token or password in insecure storage. Public API calls remain usable without a token; protected calls use the existing Laravel verifier, `users.clerk_user_id` mapping, provisioning, and authorization path. Clerk owns session restoration, renewal, and sign-out. Laravel `401` means authentication failure and `403` means authenticated-but-unauthorized; refresh/retry is centralized and bounded, and unsafe mutations are not blindly replayed.
+
+No Flutter project or UI is scaffolded in this phase because the mobile application belongs to Phase Group P/Q. The package decision is deferred until Flutter implementation begins: prefer a maintained Clerk-compatible package, otherwise a narrow documented integration; isolate package-specific types behind the adapter. Only client-safe Clerk configuration may ship in the app; Clerk secret keys remain server-only. Production mobile API traffic requires HTTPS and normal certificate validation.
+
+**Reason:** Reuses the proven Laravel authentication boundary, prevents a second identity/token system, limits community-package coupling, and gives future Flutter networking/auth phases an explicit secure contract without prematurely building the application.
+
+**Status:** Accepted | **Affected:** `AGENTS.md §17`, `docs/api/api-conventions.md §29.7`, `docs/api/api-contract.md §31.1`, `docs/api/api-resources.md §13.3`, `docs/api/openapi.yaml bearerAuth`, `docs/clerk-authentication-architecture.md`
 
 ---
 

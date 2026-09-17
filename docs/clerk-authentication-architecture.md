@@ -1,6 +1,6 @@
 # Clerk Authentication Architecture
 
-> **Status:** Accepted (Phase 4.1) and **implemented** (Phase 4.2–4.4). This document now reflects the built authentication boundary — Clerk owns credentials/sessions/security; Laravel owns the local application identity projection, RBAC, and authorization. It no longer describes a not-yet-implemented design.
+> **Status:** Accepted (Phase 4.1), **implemented** through Phase 4.6, and **documented/accepted** for Phase 4.7. This document reflects the built authentication boundary and the documented Flutter handoff — Clerk owns credentials/sessions/security; Laravel owns the local application identity projection, RBAC, and authorization. No Flutter UI or app implementation is included here.
 
 ## Decision and Scope
 
@@ -27,6 +27,8 @@ Laravel authorization middleware / policy
         v
 Commerce controller and domain service
 ```
+
+For Flutter, the client-specific Clerk integration remains behind a small `AuthRepository`/`ClerkAuthAdapter` and exposes only the current session state and token provider to the network layer. Feature repositories do not import Clerk classes. Authenticated requests attach `Authorization: Bearer <Clerk session_token>`; public requests do not require a token. Laravel uses the same verifier, local-user provisioner, and authorization path as web clients.
 
 Laravel must not exchange a Clerk token for a Laravel Sanctum token, Laravel session, or other independent customer credential. Authentication answers who the caller is; policies and domain validation separately decide whether that local user may perform the requested action.
 
@@ -76,7 +78,7 @@ The selected Clerk application's enabled factors and profile fields were not ava
 
 JIT provisioning is the primary path and must not depend on webhook arrival. Clerk webhooks are a secondary, signed, idempotent reconciliation channel. Future webhook processing must verify Clerk's webhook signature before parsing or acting, use an event identifier/idempotency record, update only Clerk-owned local snapshots, and audit result metadata without retaining credentials, raw token contents, or secrets.
 
-Expected reconciliation events include user-created/updated/deleted and session/security changes only where the selected Clerk application and official integration documentation support them. A Clerk user deletion must not hard-delete local users or historical orders, payments, audit records, requests, or enquiries. It must result in a retained local historical projection with login and new customer activity blocked. The exact local account-state/retention mechanism and cart disposition are assigned to Phase 4.6 and Group K; no record is auto-claimed or reassigned by matching email.
+Expected reconciliation events include user-created/updated/deleted and session/security changes only where the selected Clerk application and official integration documentation support them. A Clerk user deletion must not hard-delete local users or historical orders, payments, audit records, requests, or enquiries. It must result in a retained local historical projection with login and new customer activity blocked. The Phase 4.6 profile/retention implementation defines the local policy; no record is auto-claimed or reassigned by matching email.
 
 Authenticated request/enquiry creation continues to derive local `user_id` from the resolved Laravel principal. Anonymous submissions continue with `user_id = null`; an authenticated Clerk identity never auto-claims older anonymous submissions merely because their email matches.
 
@@ -139,3 +141,9 @@ Clerk is the sole password-recovery/change, compromised-password, MFA, and sessi
 - **Session revocation:** `ClerkSessionGateway::revoke($sessionId)` (wrapping the Clerk Backend `sessions/revoke`) revokes a single session only; other active sessions stay valid. `RevokeClerkSession` is forward-looking infrastructure with no production caller while the Laravel logout endpoint remains retired; a future approved logout/security-action service will call it. Revoke-all remains a future explicit security operation. Ordinary logout and security-incident revocation stay separate.
 - **Account-state separation:** password recovery never reactivates a suspended local account and never alters local RBAC. No Staff capability for customer credential/MFA administration exists; any future Admin security operation is a dedicated audited workflow (deferred).
 - **Enumeration / logging:** recovery stays generic ("Request received."); no account-lookup endpoint exists; raw `Authorization` values, session JWTs, and Clerk secrets are never logged or serialized. Laravel accepts the Clerk session token **only** via `Authorization: Bearer`; cookies are never treated as Laravel credentials (bearer-only, no cookie-CSRF model).
+
+## Phase 4.7 Flutter Boundary (documented)
+
+Flutter is a future client of the same Clerk/Laravel boundary, not a second authentication system. A small `AuthRepository`/`ClerkAuthAdapter` obtains the current Clerk session token and exposes it through an `AuthTokenProvider` to the API client. The network layer sends `Authorization: Bearer <Clerk session_token>` for protected calls; public calls remain token-optional. Feature repositories do not import Clerk package classes. Clerk owns session persistence, renewal, and sign-out; Laravel continues to verify the token, map `sub` to `users.clerk_user_id`, provision/resolve the local User, and authorize the operation.
+
+Flutter must never send passwords to Laravel, fabricate claims, create mobile-specific users/tokens, implement a second verifier/refresh token, or persist passwords/bearer tokens in insecure storage. A centralized client handles `401 AUTHENTICATION_REQUIRED` and `403 FORBIDDEN` distinctly with bounded SDK-supported token retrieval/retry; unsafe mutations are not blindly replayed. No Flutter project or UI is included until Phase Group P/Q. The package choice remains deferred; any selected community integration is isolated behind the adapter, and only publishable/client-safe Clerk configuration ships in the app.

@@ -912,6 +912,14 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 - **Backend authoritative:** Local `Next.js`/`Flutter` cached profile/role state is advisory only; `role`, `account_state`, `verification`, `authorization` must be refreshed from backend — do not assume cached role valid indefinitely after `Staff role changes` / `account disabled` / `permission change`.
 - **Synchronization:** Server is source of truth; `Next.js`/`Flutter` may cache for UX but must revalidate via `GET /me` where operational decisions matter.
 
+### 29.7 Flutter Clerk Boundary (Phase 4.7)
+
+- Flutter uses the same Clerk application and customer identity as Next.js. The selected Flutter/community/native Clerk implementation must be isolated behind one `AuthRepository`/`ClerkAuthAdapter`; application repositories depend on an `AuthTokenProvider`, not Clerk package classes.
+- The adapter obtains the current usable Clerk session token. The API/network layer centrally attaches `Authorization: Bearer <Clerk session_token>` to authenticated Laravel calls. It never sends customer passwords, fabricates JWT claims, creates a Laravel/mobile token, or stores credentials in SharedPreferences, plain files, plain SQLite, or logs.
+- Public catalog calls do not require a token. Protected calls use the same Laravel Clerk verifier, local-user provisioning, and authorization path as web calls. Laravel returns `401 AUTHENTICATION_REQUIRED` for absent/unusable credentials and `403 FORBIDDEN` for authenticated-but-unauthorized operations; clients must not conflate those cases.
+- Clerk owns session restoration, renewal, and sign-out. On Laravel `401`, the mobile client may request one SDK-supported current token and retry only where the request's existing idempotency rules permit; it must not create an unbounded retry loop or blindly replay unsafe mutations. Logout clears local application state after Clerk sign-out and never deletes the Laravel User or history.
+- Flutter has no browser CORS requirement, but production Laravel traffic still requires HTTPS and normal platform certificate validation. Client configuration may include only publishable/client-safe Clerk values; `CLERK_SECRET_KEY` remains server-only.
+
 ## 30. Staff/Admin Operational Conventions (Phase 1.29)
 
 > **Authority:** Reusable conventions governing Staff/Admin operational API — privileged controlled actions, customer-account protection, inventory/catalog separation, delivery-fee authority, audit, concurrency, idempotency, field-level before serialization. Consolidates `phases/Phase-1.29.md`.

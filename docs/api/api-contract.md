@@ -1691,7 +1691,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 - **Machine Identifier:** `id` is a stable, opaque string identifier used in machine operations (cart, checkout, orders, relations).
 - **Dual Resolution for Products and Categories:** Detail endpoints for Product (`CAT-002`) and Category (`CAT-004`) resolve transparently whether given a `slug` or an `id`. Product Variants (`CAT-005`, `CAT-006`) resolve strictly by Variant `id` (`var_...`) under parent `{product}` (which itself resolves by product slug or id).
 - **SSR & OpenGraph Readiness:** Product Detail response contains all necessary fields (`name`, `description`, `price`, primary image selected from `images[]` where `is_primary: true` [or `primary_image.url` on `CAT-001` summary], `availability`) for Next.js to generate OpenGraph tags, Twitter cards, canonical tags, and Schema.org `Product` JSON-LD structured data.
-- **Flutter Compatibility:** Flutter mobile client consumes the exact same JSON contract and models without requiring mobile-specific endpoints.
+- **Flutter Compatibility:** Flutter mobile client consumes the exact same JSON contract and models without requiring mobile-specific endpoints. It authenticates through the same Clerk application and sends the current Clerk session token as `Authorization: Bearer <Clerk session_token>`; Laravel does not issue a mobile token or accept a mobile-specific auth endpoint (Phase 4.7, `api-conventions.md §29.7`).
 
 ---
 
@@ -4794,7 +4794,7 @@ Phase 1.29 is complete only when: `STAFF/ADMIN capabilities separated`, `closed 
 | **Validation** | `Transport→Schema→Auth→Authz→Domain→Concurrency→External→Persistence`; unknown fields rejected `422` | `§14` |
 | **Request ID** | `meta.request_id` on every error (and optional `meta` on success) per-request correlation, not `user_id`/`order_id` | `§15.12` |
 | **Idempotency** | `Idempotency-Key` header on `CHK-001`, `ORD-004`, `ORD-007..011,013,014`, `INV-003`, `ADM-004..006`, `PAY-001` | `§30.18` |
-| **Authentication** | `Next.js` httpOnly cookie session + `Flutter` Bearer token, shared Laravel identity (same `AUTH-002` login) | `§17.7` |
+| **Authentication** | `Next.js` and Flutter use the same Clerk identity and send `Authorization: Bearer <Clerk session_token>` to Laravel; no Laravel/mobile token or cookie authentication | `§17.7`, Phase 4.7 |
 
 No domain-specific convention drift remains. `GET /api/v1/me/orders` vs `GET /api/v1/customer/orders` duplicate was rejected — canonical is `GET /api/v1/me/orders` (self-context).
 
