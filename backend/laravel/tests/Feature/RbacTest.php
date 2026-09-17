@@ -71,8 +71,8 @@ class RbacTest extends TestCase
         sort($expected);
 
         $this->assertSame($expected, $names);
-        $this->assertCount(17, $names);
-        $this->assertCount(17, array_unique($names));
+        $this->assertCount(19, $names);
+        $this->assertCount(19, array_unique($names));
     }
 
     public function test_wildcard_permission_is_not_enabled(): void
@@ -139,6 +139,76 @@ class RbacTest extends TestCase
             ->assertStatus(501);
     }
 
+    public function test_staff_without_order_completion_permission_is_denied(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_no_complete']);
+        Role::findByName(RoleName::STAFF->value)->revokePermissionTo(PermissionName::ORDERS_COMPLETE->value);
+        $this->configureClerk($staff);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson('/api/v1/orders/OD-1/complete')
+            ->assertForbidden();
+    }
+
+    public function test_staff_without_delivery_fee_permission_is_denied(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_no_fee']);
+        Role::findByName(RoleName::STAFF->value)->revokePermissionTo(PermissionName::ORDERS_SET_DELIVERY_FEE->value);
+        $this->configureClerk($staff);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson('/api/v1/orders/OD-1/delivery-fee', [])
+            ->assertForbidden();
+    }
+
+    public function test_staff_with_delivery_fee_permission_reaches_delivery_fee_action(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_fee']);
+        $this->configureClerk($staff);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson('/api/v1/orders/OD-1/delivery-fee', [])
+            ->assertStatus(501);
+    }
+
+    public function test_staff_with_direct_staff_approval_permission_is_denied(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_approval']);
+        $staff->givePermissionTo(PermissionName::STAFF_APPROVE->value);
+        $this->configureClerk($staff);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson('/api/v1/admin/staff/'.$staff->id.'/approve')
+            ->assertForbidden();
+    }
+
+    public function test_active_staff_with_catalog_permission_reaches_catalog_write(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_catalog']);
+        $this->configureClerk($staff);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson('/api/v1/products', [])
+            ->assertStatus(501);
+    }
+
+    public function test_active_staff_without_catalog_permission_is_denied(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_no_catalog']);
+        Role::findByName(RoleName::STAFF->value)->revokePermissionTo(PermissionName::PRODUCTS_MANAGE->value);
+        $this->configureClerk($staff);
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->postJson('/api/v1/products', [])
+            ->assertForbidden();
+    }
+
     public function test_admin_has_explicit_administrative_capabilities(): void
     {
         $this->seed(RbacSeeder::class);
@@ -199,7 +269,7 @@ class RbacTest extends TestCase
         $expectedMappings = count(PermissionCatalog::forRole(RoleName::STAFF)) + count(PermissionCatalog::forRole(RoleName::ADMIN));
 
         $this->assertCount(3, DB::table('roles')->get());
-        $this->assertCount(17, DB::table('permissions')->get());
+        $this->assertCount(19, DB::table('permissions')->get());
         $this->assertCount($expectedMappings, DB::table('role_has_permissions')->get());
     }
 

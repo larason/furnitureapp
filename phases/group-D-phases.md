@@ -1,8 +1,10 @@
-# Phase 4.9 — Laravel RBAC Integration for CUSTOMER / STAFF / ADMIN
+# Phase 4.10 — Laravel Policies / Permissions / Ownership Authorization
 
 ## Purpose
 
-Implement the Laravel role-based access-control foundation for the frozen V1 roles:
+Implement the Laravel authorization layer for authenticated application users.
+
+Phase 4.9 established:
 
 ```text
 CUSTOMER
@@ -10,1419 +12,1239 @@ STAFF
 ADMIN
 ```
 
-This phase establishes:
+Phase 4.10 now answers:
 
-* canonical roles;
-* role assignment;
-* role resolution;
-* role invariants;
-* Staff approval boundary;
-* Admin authority;
-* Customer protection;
-* Clerk/Laravel separation;
-* RBAC tests.
+> May this authenticated actor perform this specific action on this specific resource in its current state?
 
-This phase does **not** implement every resource/action policy.
-
-Detailed authorization belongs to:
-
-**Phase 4.10 — Policies / Permissions**
-
----
-
-# 1. Core Architecture
-
-The authorization stack must remain:
+The authorization model must combine:
 
 ```text
-Clerk
-    ↓
-authenticated identity
-    ↓
-Laravel User
-    ↓
-Laravel RBAC
-    ↓
-CUSTOMER / STAFF / ADMIN
-    ↓
-Laravel policies / permissions
-    ↓
-domain operation
-```
-
-Clerk authenticates.
-
-Laravel authorizes.
-
-Do not merge these concerns.
-
----
-
-# 2. Closed V1 Roles
-
-The complete V1 role set is:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
-
-This enum/set is CLOSED.
-
-Do not add:
-
-```text
-SUPER_ADMIN
-MANAGER
-WAREHOUSE
-DELIVERY_AGENT
-SELLER
-MODERATOR
-```
-
-during this phase.
-
-Any new role requires an explicit V1 compatibility/domain decision.
-
----
-
-# 3. Role Meaning
-
-## CUSTOMER
-
-Represents a normal ecommerce customer.
-
-Typical capabilities later include:
-
-```text
-browse catalog
-manage own cart
-checkout
-view own orders
-cancel eligible own orders
-manage own profile
-submit own requests/enquiries
-```
-
-CUSTOMER does not have operational or administrative authority.
-
----
-
-## STAFF
-
-Represents an approved operational employee.
-
-STAFF exists to perform explicit ecommerce operations.
-
-Examples may later include:
-
-```text
-process orders
-manage operational inventory
-update allowed order states
-manage delivery operations
-handle allowed catalogue operations
-```
-
-STAFF is **not** customer-account administration.
-
----
-
-## ADMIN
-
-Represents the highest V1 administrative role.
-
-ADMIN controls privileged administrative operations such as:
-
-```text
-approve Staff
-manage Staff lifecycle
-assign approved Staff permissions
-perform explicitly authorized administrative operations
-```
-
-ADMIN is not a bypass for poorly designed authorization.
-
-Policies still govern resource/action access.
-
----
-
-# 4. Role Source of Truth
-
-Role authority must remain entirely in Laravel.
-
-Canonical source:
-
-```text
-Laravel RBAC
-```
-
-Never derive role from:
-
-```text
-Clerk publicMetadata
-Clerk privateMetadata
-Clerk unsafeMetadata
-Clerk Organizations
-email domain
-request body
-query parameter
-header
-frontend state
-```
-
-Clerk metadata may exist but is not application RBAC authority.
-
----
-
-# 5. Do Not Store Role in Clerk
-
-Do not synchronize:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
-
-into Clerk as the authoritative role model.
-
-Do not implement:
-
-```text
-Clerk role → Laravel role
-```
-
-Laravel remains authoritative.
-
-This prevents authentication-provider configuration from becoming business authorization.
-
----
-
-# 6. Existing RBAC Technology
-
-Use the RBAC mechanism already selected during Group C.
-
-If the project already uses:
-
-```text
-spatie/laravel-permission
-```
-
-continue using it.
-
-Do not create a second custom RBAC system.
-
-Do not add:
-
-```text
-users.role
-users.is_admin
-users.is_staff
-```
-
-for convenience.
-
----
-
-# 7. One Role Model
-
-There must be one canonical role system.
-
-Avoid:
-
-```text
-Spatie role
+authenticated User
 +
-users.role
-+
-Clerk metadata.role
-+
-custom enum field
-```
-
-as competing authorities.
-
-Use one Laravel RBAC source.
-
----
-
-# 8. Canonical Role Constants / Enum
-
-Centralize role names.
-
-Use the project's preferred PHP enum/constants approach.
-
-Conceptually:
-
-```php
-CUSTOMER
-STAFF
-ADMIN
-```
-
-Do not scatter raw strings:
-
-```php
-'customer'
-'CUSTOMER'
-'staff'
-'admin'
-```
-
-through controllers and services.
-
-Role names are meaningful domain constants.
-
----
-
-# 9. Exact Case
-
-Use canonical values exactly:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
-
-Do not introduce case variants.
-
-Do not allow:
-
-```text
-customer
-Customer
-admin
-Admin
-```
-
-as independent roles.
-
-Normalize through the application definition, not by accepting arbitrary client input.
-
----
-
-# 10. Public Registration Role
-
-Public customer registration must create:
-
-```text
-CUSTOMER
-```
-
-only.
-
-Flow:
-
-```text
-Clerk signup
-    ↓
-verified Clerk identity
-    ↓
-local user provisioning
-    ↓
-CUSTOMER
-```
-
-No public flow may assign:
-
-```text
-STAFF
-ADMIN
-```
-
----
-
-# 11. Phase 4.2 Integration
-
-Reuse Phase 4.2 provisioning.
-
-For a newly provisioned public user:
-
-```text
-assign CUSTOMER
-```
-
-must happen atomically with user creation.
-
-Do not duplicate role provisioning in Phase 4.9.
-
-Refactor only if needed to centralize the role invariant.
-
----
-
-# 12. Existing User Login
-
-Authentication must not mutate role.
-
-For an existing user:
-
-```text
-sign in
-→ resolve local User
-→ keep existing role
-```
-
-Never execute:
-
-```text
-assign CUSTOMER
-```
-
-on every login.
-
-This protects existing STAFF and ADMIN accounts.
-
----
-
-# 13. CUSTOMER Is Not a Fallback Role for Everything
-
-Do not implement:
-
-```text
-if no role:
-    assign CUSTOMER
-```
-
-globally.
-
-CUSTOMER assignment is valid only for approved public customer provisioning.
-
-A malformed Staff/Admin account with no role should fail safely and be corrected explicitly.
-
----
-
-# 14. STAFF Creation Boundary
-
-STAFF must not be created through public customer registration.
-
-A Staff account must come through an explicit administrative onboarding/approval flow.
-
-Conceptually:
-
-```text
-ADMIN-authorized operation
-    ↓
-approved Staff identity
-    ↓
-local User
-    ↓
-STAFF role
-```
-
-Exact Staff lifecycle implementation belongs to the appropriate later admin/user-management phase if not already contracted.
-
----
-
-# 15. ADMIN Creation Boundary
-
-ADMIN must never be created through:
-
-```text
-public signup
-customer profile update
-Clerk metadata
-Staff action
-```
-
-Admin bootstrap must follow the existing secured bootstrap/deployment process.
-
-Do not add a public:
-
-```text
-register-admin
-```
-
-endpoint.
-
----
-
-# 16. Staff Approval Is Admin-Only
-
-Mandatory invariant:
-
-```text
-ADMIN
-+ staff.approve
-→ may approve STAFF
-```
-
-STAFF cannot:
-
-```text
-approve themselves
-approve another Staff
-promote CUSTOMER to STAFF
-promote themselves to ADMIN
-```
-
-Customer cannot approve Staff.
-
----
-
-# 17. Self-Approval Forbidden
-
-Even an account awaiting Staff activation must never be able to authorize its own approval.
-
-Do not derive approval from:
-
-```text
-authenticated user == target
-```
-
-Approval requires a separate authorized ADMIN actor.
-
----
-
-# 18. No Role Self-Service
-
-Customers and Staff cannot change their own role.
-
-Reject any flow equivalent to:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-through:
-
-```text
-PATCH /me
-signup
-login
-profile update
-Clerk metadata
-```
-
-Role is server-controlled.
-
----
-
-# 19. CUSTOMER Ownership Model
-
-Customer authorization is primarily based on ownership.
-
-Future policy decisions should follow:
-
-```text
-CUSTOMER
-+
-owns resource
-+
-action allowed
-+
-resource state allows action
-```
-
-Example:
-
-```text
-CUSTOMER
-+
-owns Order
-+
-Order still cancellable
-→ cancellation may be allowed
-```
-
-Role alone is insufficient.
-
----
-
-# 20. STAFF Operational Boundary
-
-STAFF is operational.
-
-STAFF may later receive explicit permissions to work with:
-
-```text
-orders
-inventory
-catalogue
-delivery operations
-requests/enquiries where appropriate
-```
-
-But STAFF must have **zero ordinary customer-account administration**.
-
----
-
-# 21. STAFF Cannot Control Customers
-
-STAFF must not:
-
-```text
-change customer role
-change customer permissions
-disable customer account
-suspend customer account
-change customer password
-change customer email
-remove customer MFA/security
-impersonate customer
-delete customer
-transfer customer ownership
-view customer credentials
-```
-
-This is a hard V1 boundary.
-
-Do not grant these actions via wildcard permission.
-
----
-
-# 22. Customer Account Ownership
-
-Customer accounts belong to customers.
-
-STAFF operational authority over an Order does not imply authority over the Customer account that owns that Order.
-
-Keep:
-
-```text
-order operational access
-```
-
-separate from:
-
-```text
-customer account control
-```
-
----
-
-# 23. ADMIN Authority
-
-ADMIN is the highest V1 role.
-
-ADMIN may later receive explicit permissions for:
-
-```text
-staff.approve
-staff.manage
-administrative catalogue operations
-administrative operational actions
-```
-
-according to the frozen authorization model.
-
-Do not rely on:
-
-```text
-role == ADMIN
-→ allow everything
-```
-
-as the final policy implementation.
-
-Phase 4.10 must still define explicit authorization rules.
-
----
-
-# 24. Avoid Wildcard Authorization
-
-Do not implement a broad:
-
-```text
-admin.*
-```
-
-or:
-
-```text
-*
-```
-
-permission model that bypasses resource policies.
-
-ADMIN can be powerful while still using explicit permissions.
-
-This keeps security auditable and predictable.
-
----
-
-# 25. Role ≠ Permission
-
-Maintain this distinction:
-
-```text
-Role
-→ coarse actor classification
-
-Permission
-→ allowed action category
-
-Policy
-→ whether actor can perform action on this resource now
-```
-
-For example:
-
-```text
-STAFF
-+
-orders.update_status
-+
-valid transition
-→ may proceed
-```
-
-Not:
-
-```text
-STAFF
-→ may update anything
-```
-
----
-
-# 26. Phase 4.9 vs 4.10
-
-Phase 4.9 owns:
-
-```text
-roles
-role assignment
-role invariants
-role lifecycle boundaries
-role resolution
-basic permission foundation
-```
-
-Phase 4.10 owns:
-
-```text
-resource policies
-ownership checks
-action-specific permissions
-state-aware authorization
-404 masking decisions
-```
-
-Do not pull the entire policy matrix into Phase 4.9.
-
----
-
-# 27. Permission Foundation
-
-If using Spatie permissions, establish only the permission infrastructure needed for the existing design.
-
-Do not invent every future permission now.
-
-Use already-documented permissions where available.
-
-Keep permission definitions explicit.
-
----
-
-# 28. No Permission Explosion
-
-Avoid overly granular permission names like:
-
-```text
-orders.view.processing
-orders.view.shipped
-orders.view.cancelled
-orders.edit.customer_name
-```
-
-unless a real requirement exists.
-
-Use meaningful action-level permissions.
-
-Business state remains a policy/domain check.
-
----
-
-# 29. Permission Naming
-
-Use consistent canonical names.
-
-Conceptual examples:
-
-```text
-orders.view_operational
-orders.accept
-orders.ship
-inventory.adjust
-catalog.manage
-staff.approve
-staff.manage
-```
-
-Use actual names already frozen in project docs where defined.
-
-Do not invent conflicting aliases.
-
----
-
-# 30. Role-Permission Assignment
-
-Centralize V1 role-to-permission mapping.
-
-Do not scatter:
-
-```php
-givePermissionTo(...)
-```
-
-across controllers/services.
-
-Use seed/bootstrap configuration or another single authoritative setup mechanism.
-
----
-
-# 31. CUSTOMER Permissions
-
-CUSTOMER usually should not need many generic permission rows if ownership policies express their rights cleanly.
-
-Do not overpopulate Customer permission tables simply to mirror every customer action.
-
-Use the simplest model consistent with the project's existing RBAC implementation.
-
----
-
-# 32. STAFF Permissions
-
-Assign only approved operational permissions.
-
-No customer-account management permissions.
-
-Explicitly verify that Staff does not accidentally inherit:
-
-```text
-user.manage
-customer.suspend
-customer.role.change
-credential.manage
-```
-
-or equivalents.
-
----
-
-# 33. ADMIN Permissions
-
-ADMIN receives approved administrative permissions.
-
-Do not use ADMIN role as justification for bypassing input validation or domain rules.
-
-Admin actions still follow:
-
-```text
-authentication
-→ authorization
-→ domain validation
-→ transaction
-```
-
----
-
-# 34. Default Deny
-
-Authorization philosophy remains:
-
-```text
-not explicitly allowed
-→ denied
-```
-
-Do not infer permissions from:
-
-```text
-role hierarchy
-higher numeric level
-name contains admin
-```
-
----
-
-# 35. No Numeric Role Hierarchy
-
-Avoid:
-
-```text
-CUSTOMER = 1
-STAFF = 2
-ADMIN = 3
-
-if role >= STAFF
-```
-
-This creates accidental privilege inheritance.
-
-Use explicit roles/permissions.
-
----
-
-# 36. Role Checks
-
-Where a role check is genuinely required, use the established RBAC API.
-
-Do not write:
-
-```php
-if ($user->role === 'ADMIN')
-```
-
-if the application uses Spatie role relationships.
-
-Use the canonical abstraction.
-
----
-
-# 37. Do Not Trust Frontend Role
-
-Any future frontend-provided value such as:
-
-```json
-{
-  "role": "CUSTOMER"
-}
-```
-
-is irrelevant to server authorization.
-
-Server derives the role from the authenticated local User.
-
----
-
-# 38. Clerk Token Does Not Carry Laravel Authority
-
-Do not depend on a role embedded in the Clerk session token for application RBAC.
-
-Canonical request path:
-
-```text
-verified token.sub
-    ↓
-local User
-    ↓
-Laravel roles/permissions
-```
-
-Not:
-
-```text
-verified token.role
-→ authorization
-```
-
----
-
-# 39. User Mapping
-
-Every authenticated actor must first resolve:
-
-```text
-Clerk user ID
-→ local users.clerk_user_id
-→ Laravel User
-```
-
-Role resolution happens after local User resolution.
-
-Do not map role directly from external identity.
-
----
-
-# 40. One User, One Primary Role
-
-For V1, use one primary application role per user unless Group C explicitly established multi-role users.
-
-Preferred invariant:
-
-```text
-one User
-→ one of CUSTOMER / STAFF / ADMIN
-```
-
-Do not assign:
-
-```text
-CUSTOMER + STAFF
-```
-
-simultaneously merely because Staff may also purchase furniture.
-
----
-
-# 41. Staff May Purchase Without CUSTOMER Role
-
-If Staff can make purchases, do not assign CUSTOMER as an additional role just to allow commerce.
-
-Instead, later policies can explicitly allow Staff to perform customer-commerce actions on their own account where required.
-
-Keep actor classification clear.
-
----
-
-# 42. Admin May Purchase Without CUSTOMER Role
-
-Likewise, an Admin who may buy furniture does not require the CUSTOMER role.
-
-Policies should permit appropriate self-commerce actions if the business rules allow them.
-
-Do not create role stacking unnecessarily.
-
----
-
-# 43. Role Transition Model
-
-Role changes are privileged state changes.
-
-Allowed conceptual transitions must be explicit.
-
-Potential examples:
-
-```text
-CUSTOMER → STAFF
-```
-
-only through approved Admin-controlled onboarding if business rules allow it.
-
-```text
-STAFF → ADMIN
-```
-
-only through explicit privileged process if ever supported.
-
-Do not allow arbitrary:
-
-```text
-role = X
-```
-
-generic updates.
-
----
-
-# 44. No Generic Role PATCH
-
-Do not implement:
-
-```http
-PATCH /users/{id}
-```
-
-with:
-
-```json
-{
-  "role": "STAFF"
-}
-```
-
-as a generic administrative write.
-
-Use explicit administrative actions if role transitions are exposed later.
-
----
-
-# 45. Account State Separate From Role
-
-Keep:
-
-```text
 role
++
+permission
++
+ownership / operational scope
++
+resource state
++
+action
+=
+authorization decision
 ```
 
-separate from:
+Role alone is never enough.
 
-```text
-account state
-approval state
-is_active
-```
-
-A STAFF role does not necessarily imply an account is approved/active.
-
-Do not encode approval status inside role names such as:
-
-```text
-PENDING_STAFF
-ACTIVE_STAFF
-```
-
-unless explicitly defined by existing domain design.
+This is a backend-only phase.
 
 ---
 
-# 46. Staff Approval State
+# 1. Dependencies
 
-If Staff lifecycle currently includes:
+Required:
 
-```text
-PENDING
-ACTIVE
-SUSPENDED
-```
+* Phase 4.1–4.8 complete;
+* Phase 4.9 RBAC complete;
+* Clerk authentication resolves to local Laravel User;
+* CUSTOMER / STAFF / ADMIN roles work;
+* canonical permissions infrastructure exists;
+* public CUSTOMER provisioning works;
+* `/me` works;
+* role cannot be client-controlled;
+* Staff cannot control customer accounts;
+* Admin/Staff boundaries are documented.
 
-or equivalent, continue using the approved account/staff-profile state model.
-
-Do not replace it with multiple roles.
-
----
-
-# 47. Suspended Staff
-
-A Staff user may still have:
-
-```text
-role = STAFF
-```
-
-while account/staff state denies operational access.
-
-This reinforces:
-
-```text
-role alone
-≠
-authorization
-```
-
-Phase 4.10 will evaluate these states in policies.
+Do not start if role resolution is still ambiguous.
 
 ---
 
-# 48. Disabled Customer
+# 2. Scope
 
-If customer application account state can be disabled later:
-
-```text
-role = CUSTOMER
-```
-
-remains role.
-
-Account state separately determines availability.
-
-Do not mutate role just to represent suspension.
-
----
-
-# 49. Seeder Responsibility
-
-Ensure canonical roles exist through deterministic seed/bootstrap logic.
-
-Fresh database:
+Implement authorization for existing V1 backend operations using standard Laravel:
 
 ```text
-migrate:fresh --seed
+Policies
+Gates where appropriate
+RBAC permissions
+ownership checks
+resource-state checks
+404 masking where required
 ```
 
-must create:
+Focus on authorization.
+
+Do not redesign domain workflows.
+
+Do not build frontend guards.
+
+Do not implement new APIs merely to demonstrate policies.
+
+---
+
+# 3. Core Authorization Pipeline
+
+Preserve:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+Transport
+→ Schema validation
+→ Authentication
+→ Authorization
+→ Domain validation
+→ Concurrency / Transaction
+→ Persistence
 ```
 
-exactly once.
-
-No duplicate case variants.
-
----
-
-# 50. Idempotent Role Seeding
-
-Running role seed logic repeatedly must not create duplicate roles or permissions.
-
-Use deterministic `firstOrCreate`/sync semantics appropriate to the RBAC package.
-
----
-
-# 51. Production Seed Safety
-
-Do not seed real production admin credentials.
-
-Role/permission definitions may be production-safe seed data.
-
-Actual Admin identity/bootstrap must remain separate.
-
----
-
-# 52. Admin Bootstrap
-
-Preserve the approved Admin bootstrap mechanism.
+Authorization must happen before protected business mutation.
 
 Do not:
 
 ```text
-create default admin@example.com
-password = admin123
+load private resource
+→ mutate
+→ then check permission
 ```
 
-in seeders.
-
-No hard-coded production admin credentials.
-
 ---
 
-# 53. Role Seeder Naming
+# 4. Default Deny
 
-Use a clear seeder or setup location consistent with existing database seed structure.
-
-Avoid multiple files independently defining the same role names.
-
----
-
-# 54. Factory States
-
-Factories may expose deterministic states:
+Use:
 
 ```text
-customer()
-staff()
-admin()
+not explicitly authorized
+→ deny
 ```
 
-for tests.
-
-They should use the canonical RBAC system.
-
-Do not fake roles with arbitrary attributes.
-
----
-
-# 55. Factory Defaults
-
-If UserFactory needs a default role, be careful.
-
-Generic factory creation should not accidentally hide role-assignment bugs.
-
-Prefer explicit role states in tests where authorization matters.
-
----
-
-# 56. Tests — Public Provisioning
-
-Provision a new public Clerk customer.
-
-Verify:
+Do not infer access because:
 
 ```text
-role = CUSTOMER
+user is authenticated
+user is STAFF
+user is ADMIN
+resource exists
+frontend displayed the action
 ```
 
-and:
+Every protected action needs a defined authorization path.
+
+---
+
+# 5. Standard Laravel Authorization
+
+Prefer:
 
 ```text
-not STAFF
-not ADMIN
+Laravel Policies
 ```
 
----
+for resource/action authorization.
 
-# 57. Tests — Client Role Tampering
+Use Gates for non-resource/global operations where appropriate.
 
-Attempt registration/provisioning with:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-Verify CUSTOMER remains assigned.
-
----
-
-# 58. Tests — Clerk Metadata Tampering
-
-Fake Clerk metadata:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-Verify Laravel role remains whatever is stored locally.
-
-Mandatory security regression test.
-
----
-
-# 59. Tests — Existing Staff Login
-
-Existing:
+Examples:
 
 ```text
-role = STAFF
+OrderPolicy
+ProductPolicy
+InventoryPolicy
+FurnitureRequestPolicy
+EnquiryPolicy
+StaffPolicy
 ```
 
-signs in.
+Use actual project domain names.
 
-Verify role remains STAFF.
-
-No downgrade to CUSTOMER.
+Do not create a custom authorization engine.
 
 ---
 
-# 60. Tests — Existing Admin Login
+# 6. Policy Responsibilities
 
-Existing:
+Policies should answer:
 
 ```text
-role = ADMIN
+may actor perform action?
 ```
 
-signs in.
+Policies may consider:
 
-Verify role remains ADMIN.
+* role;
+* permission;
+* ownership;
+* account state;
+* resource relationship;
+* coarse resource state where authorization depends on it.
 
-No role mutation during authentication.
+Policies should not perform:
 
----
-
-# 61. Tests — Missing Role
-
-Create malformed local User with no role.
-
-Verify protected role-sensitive operation fails safely.
-
-Do not auto-promote/auto-default on login.
-
----
-
-# 62. Tests — Duplicate Role Assignment
-
-Ensure provisioning or seed reruns do not produce duplicate role relationships.
+* inventory mutation;
+* order state transition;
+* pricing calculation;
+* payment processing;
+* notifications;
+* large domain workflows.
 
 ---
 
-# 63. Tests — Customer Cannot Self-Promote
+# 7. Authorization vs Domain Validation
 
-Authenticated CUSTOMER attempts any exposed role mutation path.
+Keep this distinction strict.
 
-Expected:
+Example:
 
 ```text
-forbidden
+CUSTOMER owns order
+→ authorization allows attempting cancel
 ```
 
-or no route exists.
+Then:
+
+```text
+order cancellation window expired
+→ domain rejects cancellation
+```
+
+Do not place the entire cancellation algorithm inside `OrderPolicy`.
+
+Likewise:
+
+```text
+STAFF has orders.accept
+→ policy may allow access
+```
+
+but:
+
+```text
+order current status invalid for ACCEPTED transition
+→ domain validation rejects
+```
 
 ---
 
-# 64. Tests — Staff Cannot Self-Promote
+# 8. CUSTOMER Authorization Model
 
-Authenticated STAFF attempts:
-
-```text
-STAFF → ADMIN
-```
-
-Expected:
+CUSTOMER access should usually require:
 
 ```text
-FORBIDDEN
+authenticated CUSTOMER
++
+owns resource
 ```
 
-or no route exists.
+Examples:
+
+```text
+own profile
+own cart
+own orders
+own request history
+own enquiry history
+own notifications
+```
+
+CUSTOMER must not see or modify another customer's private resources.
 
 ---
 
-# 65. Tests — Staff Cannot Approve Staff
+# 9. Customer Ownership Source
 
-STAFF attempts Staff approval.
+Ownership must come from server data.
 
-Expected:
+Example:
+
+```text
+$order->user_id === $user->id
+```
+
+not:
+
+```text
+request.user_id
+request.customer_id
+query.user_id
+```
+
+Never trust ownership identifiers submitted by clients.
+
+---
+
+# 10. Own Profile
+
+For:
+
+```text
+GET /me
+PATCH /me
+```
+
+identity already derives from authentication.
+
+Do not require a separately supplied customer ID.
+
+This is the safest ownership model.
+
+---
+
+# 11. Own Cart
+
+Authenticated cart operations must use the cart belonging to the authenticated local User.
+
+Do not authorize:
+
+```text
+cart.user_id supplied by client
+```
+
+For guest carts, use the existing guest-token ownership rules separately.
+
+Do not mix guest-cart bearer authority with authenticated User authority.
+
+---
+
+# 12. Own Orders
+
+CUSTOMER may only access orders where:
+
+```text
+orders.user_id == authenticated user.id
+```
+
+or the exact existing ownership relation.
+
+Do not allow CUSTOMER to query arbitrary order IDs and receive differential authorization information.
+
+---
+
+# 13. Order Detail Masking
+
+For a private order belonging to another customer:
+
+prefer:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+rather than:
 
 ```text
 403 FORBIDDEN
 ```
 
-when such action exists.
+where the existing contract requires ownership masking.
+
+This prevents order enumeration.
 
 ---
 
-# 66. Tests — Customer Cannot Approve Staff
+# 14. Order Cancellation Authorization
 
-CUSTOMER attempts Staff approval.
-
-Expected:
+Policy should answer:
 
 ```text
-403 FORBIDDEN
+Is this Customer allowed to attempt cancellation of this Order?
 ```
 
-or route inaccessible according to contract.
-
----
-
-# 67. Tests — Admin Approval Boundary
-
-ADMIN with approved permission may reach the Staff approval authorization boundary.
-
-Detailed approval domain behavior may remain for the appropriate Staff management phase.
-
-Phase 4.9 only proves role/permission gating.
-
----
-
-# 68. Tests — Staff Customer Account Protection
-
-Add regression coverage proving STAFF cannot perform customer-account actions such as:
+Typical authorization criteria:
 
 ```text
-change role
-disable customer
-change credentials
-delete account
+authenticated
+CUSTOMER or otherwise explicitly allowed actor
+owns Order
 ```
 
-where routes/actions already exist.
+Then domain logic handles:
 
-If those routes do not yet exist, record the invariant for Phase 4.10/Group K rather than inventing them.
+```text
+20-minute window
+current order status
+other cancellation rules
+```
+
+Do not duplicate cancellation timing logic inside policy unless needed only as authorization state.
 
 ---
 
-# 69. Tests — Customer Ownership Is Not Role Alone
+# 15. Order History
 
-Do not write tests implying:
+CUSTOMER may list only own orders.
+
+Prefer authorization-aware queries:
+
+```text
+where user_id = authenticated user.id
+```
+
+rather than:
+
+```text
+load all
+→ filter afterward
+```
+
+Never fetch another customer's rows into a customer-visible response path.
+
+---
+
+# 16. Furniture Requests
+
+For authenticated request history:
 
 ```text
 CUSTOMER
-→ access all customer resources
+→ own authenticated requests only
 ```
 
-Customer resources remain ownership-scoped.
+Anonymous furniture requests remain anonymous.
 
-Detailed policy tests belong to 4.10.
-
----
-
-# 70. Tests — Role Is Laravel-Owned
-
-Given:
+Do not automatically authorize access to an old anonymous request because:
 
 ```text
-Clerk identity user_A
+request.email == user.email
 ```
 
-with local Laravel role CUSTOMER:
-
-verify application role resolution returns CUSTOMER independent of Clerk profile data.
+Email is not ownership proof.
 
 ---
 
-# 71. Tests — Same User Across Clients
+# 17. Enquiries
 
-The same Clerk user authenticated from future web/mobile contexts must resolve to the same role.
+Same rule:
 
-Do not create client-specific RBAC.
+```text
+authenticated enquiry history
+→ own linked enquiries only
+```
+
+Do not attach or expose anonymous enquiries by matching email.
 
 ---
 
-# 72. No Frontend Work
+# 18. Notifications
+
+CUSTOMER must see only notifications owned by that local User.
+
+Never authorize by:
+
+```text
+notification email
+Clerk user ID in request
+frontend user ID
+```
+
+Use local ownership.
+
+---
+
+# 19. STAFF Authorization Model
+
+STAFF authorization should require:
+
+```text
+role = STAFF
++
+specific permission
++
+resource/action context
++
+valid operational scope
+```
+
+Do not implement:
+
+```text
+if STAFF → allow all operational APIs
+```
+
+---
+
+# 20. STAFF Operational Access
+
+STAFF may later handle explicitly authorized operations such as:
+
+```text
+orders
+inventory
+catalog
+delivery
+requests/enquiries
+```
+
+only when corresponding permissions exist.
+
+Example:
+
+```text
+STAFF
++
+orders.accept
+→ may attempt order acceptance
+```
+
+Domain rules still validate the transition.
+
+---
+
+# 21. STAFF Customer Protection
+
+STAFF must never gain ordinary authority over:
+
+```text
+customer role
+customer permissions
+customer password/security
+customer email identity
+customer suspension
+customer deletion
+customer impersonation
+```
+
+Even if Staff can view customer contact information required to fulfill an order.
+
+Operational access is not account ownership.
+
+---
+
+# 22. STAFF Order Visibility
+
+STAFF may view operational order information if explicitly permitted.
+
+Do not treat that as permission to:
+
+```text
+edit customer profile
+view authentication data
+change ownership
+```
+
+Serialize only information needed for the operational workflow.
+
+---
+
+# 23. STAFF Inventory Access
+
+Inventory changes require explicit permission such as the approved equivalent of:
+
+```text
+inventory.manage
+```
+
+Authorization permits the operation.
+
+Domain/service layer still validates:
+
+```text
+product/variant
+quantity
+location
+stock invariant
+transaction correctness
+```
+
+---
+
+# 24. STAFF Catalog Access
+
+If Staff has approved catalog permissions:
+
+policy may allow those specific actions.
+
+Do not automatically give Staff every catalog operation.
+
+Use documented permission names only.
+
+---
+
+# 25. STAFF Cannot Approve STAFF
+
+Staff approval remains:
+
+```text
+ADMIN-only
+```
+
+No Staff policy should authorize:
+
+```text
+staff.approve
+```
+
+unless the V1 model is formally changed.
+
+---
+
+# 26. ADMIN Authorization Model
+
+ADMIN is the highest role but must still use explicit authorization.
+
+Preferred:
+
+```text
+ADMIN
++
+required permission
++
+resource/action conditions
+```
+
+Do not use one universal:
+
+```php
+before() {
+    return $user->hasRole('ADMIN');
+}
+```
+
+to bypass every policy automatically.
+
+That would defeat explicit authorization and domain controls.
+
+---
+
+# 27. Policy `before()` Use
+
+If using Laravel Policy `before()`:
+
+use cautiously.
+
+Do not create a blanket ADMIN override unless explicitly intended and documented.
+
+For this V1, prefer explicit permissions so privileged actions remain auditable and predictable.
+
+---
+
+# 28. Admin Staff Management
+
+Admin-only actions may include:
+
+```text
+approve Staff
+suspend Staff
+reactivate Staff
+manage Staff permissions
+```
+
+according to the existing contract.
+
+Do not extend these into unrestricted Customer account control.
+
+Customer-management APIs remain separately controlled.
+
+---
+
+# 29. Role + Permission Pattern
+
+A typical policy pattern should conceptually be:
+
+```text
+if actor lacks permission
+→ deny
+
+if actor/resource relationship invalid
+→ deny
+
+otherwise
+→ allow attempt
+```
+
+Keep policy methods small.
+
+---
+
+# 30. Avoid Repeated Role Checks
+
+Where permissions already encode the approved action, do not unnecessarily duplicate:
+
+```text
+role == STAFF
+&& permission == orders.accept
+```
+
+unless the role restriction itself is part of the invariant.
+
+Use the cleanest existing RBAC mechanism.
+
+---
+
+# 31. Permission Is Not Domain State
+
+Do not create permissions like:
+
+```text
+orders.accept.pending
+orders.accept.processing
+```
+
+to encode order states.
+
+Use:
+
+```text
+orders.accept
+```
+
+then let the domain validate whether the current state can transition.
+
+---
+
+# 32. Authorization-Aware Queries
+
+Where possible, scope queries before loading private resources.
+
+Examples:
+
+```text
+customer order:
+Order::where('user_id', $user->id)
+```
+
+Operational Staff queries may use approved operational scope.
+
+Avoid:
+
+```text
+Order::find($id)
+→ afterward discover ownership mismatch
+```
+
+where query scoping provides stronger privacy.
+
+---
+
+# 33. Route Model Binding
+
+Review Laravel route model binding for private resources.
+
+Default model binding can reveal resource existence depending on error behavior.
+
+For ownership-sensitive Customer routes:
+
+use authorization-aware resolution or consistent masking.
+
+Do not allow:
+
+```text
+existing other-user resource → 403
+nonexistent resource → 404
+```
+
+when the contract requires existence masking.
+
+---
+
+# 34. 404 Masking
+
+Apply 404 masking where private resource existence must not be disclosed.
+
+Typical candidates:
+
+```text
+customer order detail
+customer request detail
+customer enquiry detail
+other private customer-owned resources
+```
+
+Do not blindly use 404 for every authorization failure.
+
+---
+
+# 35. 403 Use
+
+Use:
+
+```text
+403 FORBIDDEN
+```
+
+when:
+
+* resource visibility itself is not sensitive;
+* authenticated actor lacks permission;
+* role/action denial is safe to reveal.
+
+Examples may include:
+
+```text
+STAFF tries admin staff approval
+CUSTOMER accesses clearly administrative endpoint
+```
+
+Use the existing contract.
+
+---
+
+# 36. 401 Use
+
+Unauthenticated caller:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+Never use 403 for missing authentication.
+
+---
+
+# 37. Private Resource Enumeration
+
+Tests must verify attackers cannot enumerate:
+
+```text
+orders
+private requests
+enquiries
+notifications
+```
+
+through status-code differences or detailed error messages.
+
+---
+
+# 38. No Authorization Through Validation Errors
+
+Do not reveal resource details before authorization by returning:
+
+```text
+ORDER_NOT_CANCELLABLE
+```
+
+for another user's order.
+
+Ownership/authz should be resolved first.
+
+For private resources:
+
+```text
+other user's order
+→ 404
+```
+
+before domain-specific cancellation details are exposed.
+
+---
+
+# 39. Authorization Order Example
+
+Customer cancel:
+
+```text
+validate route/input
+→ authenticate
+→ resolve Order safely
+→ ownership authorization
+→ cancellation domain rules
+→ transaction
+```
+
+Do not evaluate cancellation timing before confirming ownership if doing so could leak state.
+
+---
+
+# 40. No Controllers With Inline Authorization Everywhere
+
+Avoid:
+
+```php
+if (!$user->hasRole(...)) ...
+if ($order->user_id !== ...) ...
+```
+
+repeated across controllers.
+
+Centralize resource authorization in Policies.
+
+Controllers should call standard Laravel authorization APIs.
+
+---
+
+# 41. Standard Controller Pattern
+
+Prefer something equivalent to:
+
+```text
+validate
+authenticate
+authorize
+call service
+return resource
+```
+
+not:
+
+```text
+controller
+→ 60 lines of role/ownership/domain logic
+```
+
+---
+
+# 42. Service Authorization Boundary
+
+Do not assume controller authorization is always enough for sensitive reusable services.
+
+If a service can be invoked from multiple entry points, ensure authorization expectations are explicit.
+
+However, do not duplicate every policy check inside every domain service.
+
+Use clear layer contracts.
+
+---
+
+# 43. Background Jobs
+
+Jobs operating as system/internal workflows should not fake CUSTOMER/STAFF roles.
+
+If jobs perform privileged system actions later:
+
+define explicit trusted system execution paths.
+
+Do not use:
+
+```text
+User::firstWhere(role = ADMIN)
+```
+
+as a fake actor.
+
+Out of scope unless existing jobs require it.
+
+---
+
+# 44. API Ownership Fields
+
+Clients must not control:
+
+```text
+user_id
+customer_id
+owner_id
+created_by
+actor_id
+```
+
+where ownership should derive from authenticated context.
+
+Reject or ignore according to the frozen API contract.
+
+Prefer rejection for strict write schemas.
+
+---
+
+# 45. CUSTOMER Create Ownership
+
+When a Customer creates an authenticated resource:
+
+```text
+ownership
+=
+authenticated local User
+```
+
+Do not accept owner identifiers from body.
+
+---
+
+# 46. STAFF Action Actor
+
+For Staff operational actions, actor identity comes from:
+
+```text
+authenticated local User
+```
+
+Audit/history records should use server-derived actor.
+
+Never accept:
+
+```text
+performed_by
+staff_id
+```
+
+from request as authority.
+
+---
+
+# 47. ADMIN Action Actor
+
+Same for Admin:
+
+```text
+actor = authenticated Admin local User
+```
+
+Do not let clients nominate another Admin as actor.
+
+---
+
+# 48. Policies and Soft Deletes
+
+If resources use soft deletes:
+
+define whether deleted resources may be viewed/restored and by whom.
+
+Do not accidentally expose soft-deleted customer resources through default queries.
+
+Only implement restore authorization where such endpoint already exists.
+
+---
+
+# 49. Product Public Read
+
+Public product/category reads remain:
+
+```text
+no authentication required
+```
+
+Do not introduce Policy requirements that block public catalog.
+
+Publication/visibility rules belong to catalog domain/query logic.
+
+---
+
+# 50. Product Write
+
+Administrative/Staff product writes should require explicit catalog permission.
+
+Detailed product validation remains domain/service layer responsibility.
+
+---
+
+# 51. Inventory
+
+Inventory reads/writes that are operational must use appropriate permission.
+
+Public stock availability representation remains public catalog behavior.
+
+Do not expose raw internal inventory just because public product availability exists.
+
+---
+
+# 52. Checkout
+
+Checkout requires:
+
+```text
+authenticated application User
+```
+
+and appropriate customer-commerce eligibility.
+
+Do not authorize checkout based on role string alone.
+
+Later checkout service still validates:
+
+```text
+cart ownership
+cart validity
+inventory
+fulfillment
+pricing
+```
+
+---
+
+# 53. STAFF / ADMIN Purchasing
+
+If Staff/Admin may purchase products for themselves, permit this through explicit self-commerce policy where required.
+
+Do not assign them CUSTOMER role merely for checkout.
+
+Keep one-role V1 invariant.
+
+---
+
+# 54. Notifications
+
+Notification read/update actions must be ownership-scoped.
+
+A Staff role does not automatically permit reading Customer notifications.
+
+Operational Staff notifications, if later supported, follow their own ownership/scope.
+
+---
+
+# 55. Requests and Enquiries Operational Access
+
+If STAFF may review incoming furniture requests/enquiries:
+
+require explicit operational permissions.
+
+Do not imply that Staff can edit the Customer profile associated with them.
+
+---
+
+# 56. Anonymous Records
+
+Anonymous request/enquiry records have:
+
+```text
+user = null
+```
+
+Do not create a fake ownership policy based on matching email/phone.
+
+Operational Staff/Admin access may be permission-based.
+
+Customer cannot automatically claim them.
+
+---
+
+# 57. Payment Authorization
+
+Payment provider-specific implementation belongs to Group H.
+
+Phase 4.10 should only preserve authorization boundary concepts where payment endpoints already exist.
+
+Do not design payment-provider permissions now.
+
+---
+
+# 58. Delivery Authorization
+
+Where delivery resources exist:
+
+CUSTOMER may view only delivery information tied to their own Order.
+
+STAFF may perform approved delivery operations where permission exists.
+
+Do not make delivery ownership a separate client-controlled identity.
+
+---
+
+# 59. Order State Transitions
+
+Policies authorize the actor/action.
+
+Domain transition service validates:
+
+```text
+current state
+requested transition
+business preconditions
+```
+
+Do not place the entire transition graph into Policy classes.
+
+---
+
+# 60. Generic Status PATCH Prohibited
+
+Do not authorize:
+
+```http
+PATCH /orders/{id}
+{
+  "status": "SHIPPED"
+}
+```
+
+as a generic mutation.
+
+Existing explicit action endpoints remain the preferred model.
+
+Policies should correspond to explicit actions.
+
+---
+
+# 61. Explicit Actions
+
+Examples:
+
+```text
+accept order
+ship order
+cancel order
+set delivery fee
+approve staff
+adjust inventory
+```
+
+Each should have a clear authorization method.
+
+Avoid generic:
+
+```text
+update()
+```
+
+policy methods for unrelated business-state transitions where explicit methods improve safety.
+
+---
+
+# 62. Policy Method Naming
+
+Use meaningful actions:
+
+```text
+view
+viewAny
+updateProfile
+cancel
+accept
+ship
+adjustInventory
+approve
+suspend
+```
+
+according to existing project conventions.
+
+Do not create vague:
+
+```text
+manageEverything()
+```
+
+methods.
+
+---
+
+# 63. Permission Constants
+
+Centralize meaningful permission names.
+
+Avoid repeated string literals in:
+
+```text
+policies
+seeders
+tests
+controllers
+```
+
+Use existing enums/constants/support classes.
+
+---
+
+# 64. Permission Seeding
+
+If Phase 4.10 introduces approved permissions not yet seeded:
+
+update canonical permission seed data.
+
+Keep seeding idempotent.
+
+Do not invent speculative future permissions.
+
+---
+
+# 65. Policy Registration
+
+Use Laravel's standard policy discovery/registration.
+
+Do not create a custom global policy registry unless the framework/version requires explicit registration.
+
+Follow current Laravel conventions.
+
+---
+
+# 66. No Frontend Work
 
 Do not modify:
 
@@ -1432,484 +1254,891 @@ frontend/app/
 frontend/design-system/
 ```
 
-during Phase 4.9.
+during Phase 4.10.
 
 No:
 
 ```text
 route guards
+permission hooks
+AdminOnly components
 role-based menus
-admin navigation
-customer navigation
-frontend permission hooks
+button hiding
 ```
 
-These belong to frontend phases.
+Frontend authorization cues belong to later UI phases.
 
 ---
 
-# 73. Frontend Role Display Deferred
+# 67. Frontend Is Advisory
 
-Future frontend may consume Laravel `/me` role for UX.
-
-Do not implement:
+Record for future frontend implementation:
 
 ```text
-useRole()
-RoleGuard
-<AdminOnly>
+UI guards improve UX
+Laravel policies provide security
 ```
 
-now.
-
-Group D remains backend-focused.
+Hiding a button is never authorization.
 
 ---
 
-# 74. No Clerk Frontend Metadata Work
+# 68. Policy Performance
 
-Do not add role metadata to Clerk merely to make future frontend route guards easier.
+Avoid unnecessary N+1 queries.
 
-Future frontend must use Laravel application state where role matters.
+Use already-loaded relationships where safe.
+
+Do not load large relationship graphs merely to authorize a simple ownership check.
 
 ---
 
-# 75. API V1 Role Representation
+# 69. No External Clerk Calls
 
-Review the frozen API representation of role.
+Authorization should not call Clerk.
 
-Ensure only canonical values are emitted:
+At this point:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+authenticated local User
 ```
 
-No lowercase variants.
+already exists.
 
-No internal permission model leaks.
+Policies use Laravel state only.
+
+Do not fetch Clerk metadata during authorization.
 
 ---
 
-# 76. `/me` Role
+# 70. No Email-Based Authorization
 
-If `/me` includes:
+Never authorize based on:
 
 ```text
-role
+user.email == resource.email
 ```
 
-it must come from Laravel RBAC.
+for ownership.
 
-Do not calculate it from Clerk.
+Use persisted local relationships.
+
+Email can change and is not ownership proof.
 
 ---
 
-# 77. `/me` Is Read-Only for Role
+# 71. No Phone-Based Authorization
 
-`PATCH /me` must not allow role changes.
+Likewise never authorize using phone-number equality.
 
-Ensure current profile request validation continues to reject:
+Phone is contact data only.
+
+---
+
+# 72. No Client-Type Authorization
+
+Do not grant different permissions because request came from:
 
 ```text
-role
-permissions
-account_state
+web
+mobile
 ```
 
----
-
-# 78. Admin/Staff User APIs
-
-Do not create broad customer-management endpoints during Phase 4.9.
-
-Any administrative account-management APIs belong to the appropriate Group K phase and Phase 4.10 policy groundwork.
+Same user + same operation should follow the same backend authorization rules.
 
 ---
 
-# 79. Authorization Pipeline
+# 73. Staff Operational Scope
 
-Maintain:
+If the project later introduces location/cafe/branch-specific operational scope, that belongs to an explicit domain model.
 
-```text
-Transport
-→ Schema
-→ Authentication
-→ Authorization
-→ Domain
-→ Transaction
-```
+Do not infer Staff scope from frontend route or request parameters.
 
-Role resolution happens inside authorization context after identity authentication.
-
-Do not perform domain mutation before authorization.
+For current V1, use only already-defined operational scope.
 
 ---
 
-# 80. No Role-Based SQL Exposure
+# 74. Admin Is Not Domain Override
 
-Do not trust query parameters like:
-
-```text
-?role=ADMIN
-```
-
-to establish authorization.
-
-Filters may later filter user lists where authorized, but never grant role.
-
----
-
-# 81. Role Change Audit
-
-Any future privileged role transition should be auditable.
-
-Record requirement:
-
-```text
-actor
-target
-old role
-new role
-timestamp
-request_id
-```
-
-Do not build full audit infrastructure in this phase unless existing mechanisms already support it.
-
----
-
-# 82. Role Assignment Transactions
-
-When role assignment occurs alongside user creation/provisioning:
-
-perform both atomically.
-
-Avoid:
-
-```text
-User created
-role assignment failed
-```
-
-leaving a usable roleless customer account.
-
----
-
-# 83. Admin Bootstrap Transactions
-
-If Admin bootstrap tooling touches local role assignment, ensure identity + role state is internally consistent.
-
-Do not create partial privileged users.
-
----
-
-# 84. Cache Considerations
-
-Do not cache roles indefinitely outside Laravel.
-
-Within backend requests, use the normal RBAC mechanisms.
-
-Do not introduce custom Redis role caches unless existing Spatie configuration already uses supported permission caching.
-
----
-
-# 85. Permission Cache
-
-If using Spatie permission caching:
-
-use its supported cache management.
-
-Do not hand-roll cache invalidation.
-
-Role/permission changes must invalidate relevant cached authorization state using package-standard mechanisms.
-
----
-
-# 86. No Role in Session Token
-
-Do not require Clerk custom session templates merely to embed:
-
-```text
-role
-```
-
-into the Clerk JWT.
-
-This duplicates Laravel state and risks stale authorization.
-
-Keep session token focused on identity.
-
----
-
-# 87. No Permission Claims in Clerk JWT
-
-Likewise do not embed full Laravel permissions into Clerk session claims.
-
-Authorization stays server-side.
-
----
-
-# 88. Permission Synchronization
-
-There is no:
-
-```text
-Clerk ↔ Laravel permissions sync
-```
-
-in V1.
-
-Laravel is authoritative.
-
-Do not build such integration.
-
----
-
-# 89. Security Boundary
-
-The following must never grant privilege:
-
-```text
-email
-verified email
-phone
-Clerk metadata
-client type
-frontend route
-JWT custom user metadata
-signup path
-```
-
-Only local Laravel RBAC plus policies determine application authority.
-
----
-
-# 90. Customer Email Domain
-
-Do not infer Staff/Admin role from email domain.
+ADMIN authorization does not allow invalid business operations.
 
 Example:
 
 ```text
-@company.example
+ADMIN authorized to ship order
 ```
 
-must not automatically imply STAFF.
+does not mean:
 
-Staff/Admin assignment requires explicit secured process.
+```text
+CANCELLED → SHIPPED
+```
+
+becomes valid.
+
+Domain invariants remain mandatory.
 
 ---
 
-# 91. Role Escalation Threat Review
+# 75. Validation Cannot Be Bypassed
 
-Review against:
+All roles, including ADMIN, must still satisfy:
 
 ```text
-mass assignment
-Clerk metadata tampering
-self-promotion
-Staff-to-Admin escalation
-customer-to-Staff escalation
-role defaulting
-seed misconfiguration
-duplicate role systems
-wildcard permissions
-frontend authority
+schema validation
+domain validation
+transactions
+financial invariants
 ```
 
-Add regression tests around the real risks present in current code.
+Authorization is not input-validation bypass.
 
 ---
 
-# 92. Error Semantics
+# 76. Security Tests — Cross-Customer Order View
 
-Unauthenticated:
+Customer A requests Customer B's Order.
 
-```text
-401 AUTHENTICATION_REQUIRED
-```
-
-Authenticated but role/permission denied:
-
-```text
-403 FORBIDDEN
-```
-
-unless specific private-resource masking requires:
+Expected:
 
 ```text
 404
 ```
 
-Phase 4.10 will handle detailed resource masking.
+where masking applies.
+
+No order data leaked.
 
 ---
 
-# 93. Do Not Leak Role Existence Through Errors
+# 77. Security Tests — Cross-Customer Order Cancel
 
-Do not return:
+Customer A attempts cancellation of Customer B's Order.
+
+Expected:
 
 ```text
-You need ADMIN role
-You are only STAFF
+404
 ```
 
-in sensitive API errors unless explicitly part of approved error messaging.
+before cancellation-state details are revealed.
 
-Generic:
+---
+
+# 78. Security Tests — Own Order
+
+Customer accesses own Order.
+
+Authorization succeeds.
+
+Then normal domain rules apply.
+
+---
+
+# 79. Security Tests — Staff Operational Order
+
+STAFF with required permission:
+
+may reach approved operational action.
+
+STAFF without permission:
 
 ```text
+403
+```
+
+---
+
+# 80. Security Tests — Staff Customer Account
+
+STAFF attempts customer-account control.
+
+Expected:
+
+```text
+403
+```
+
+or no route exists.
+
+Mandatory regression coverage.
+
+---
+
+# 81. Security Tests — Admin Staff Approval
+
+ADMIN with required permission may reach Staff approval action.
+
+Non-Admin actors denied.
+
+---
+
+# 82. Security Tests — Clerk Metadata Cannot Authorize
+
+Fake Clerk metadata indicating ADMIN while local User is CUSTOMER.
+
+Policy must treat actor as CUSTOMER.
+
+---
+
+# 83. Security Tests — Body Ownership Tampering
+
+Send:
+
+```json
+{
+  "user_id": "another-user"
+}
+```
+
+where ownership is server-derived.
+
+Ensure request cannot take ownership or access another user's data.
+
+---
+
+# 84. Security Tests — Query Ownership Tampering
+
+Attempt:
+
+```text
+?user_id=other
+```
+
+on self-owned resources.
+
+Ensure authorization remains bound to authenticated User.
+
+---
+
+# 85. Security Tests — Anonymous Protected Route
+
+No auth:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+---
+
+# 86. Security Tests — Authenticated Forbidden Action
+
+Valid auth but missing permission:
+
+```text
+403 FORBIDDEN
+```
+
+where masking is not required.
+
+---
+
+# 87. Security Tests — Enumeration
+
+Probe sequential private resource identifiers as Customer.
+
+Responses must not reveal which belong to other users.
+
+Test status/code/message consistency.
+
+---
+
+# 88. Security Tests — Public Catalog
+
+Anonymous public catalog remains accessible.
+
+No authorization regression.
+
+---
+
+# 89. Security Tests — STAFF Role Does Not Imply All Permissions
+
+STAFF without a specific operational permission must be denied.
+
+This confirms:
+
+```text
+role != blanket authority
+```
+
+---
+
+# 90. Security Tests — ADMIN Domain Rule
+
+ADMIN authorized for action but invalid resource state.
+
+Expected:
+
+```text
+authorization passes
+domain rejects
+```
+
+This proves policy/domain separation.
+
+---
+
+# 91. Security Tests — Own Request / Enquiry
+
+Customer may access own authenticated records.
+
+Cannot access another customer's.
+
+Anonymous historical record is not claimable merely by matching email.
+
+---
+
+# 92. Security Tests — Notifications
+
+Customer sees only own notifications.
+
+Staff/Admin do not automatically inherit customer notifications.
+
+---
+
+# 93. Test Organization
+
+Prefer policy-focused unit tests plus API feature tests.
+
+For example:
+
+```text
+tests/Unit/Policies/
+tests/Feature/Authorization/
+```
+
+or existing project conventions.
+
+Do not create a new testing structure if one already exists.
+
+---
+
+# 94. Policy Unit Tests
+
+Policy tests should be small and deterministic.
+
+Cover:
+
+```text
+allowed role/permission/ownership
+denied role
+missing permission
+wrong owner
+```
+
+Do not test complete domain workflows in every policy unit test.
+
+---
+
+# 95. Feature Tests
+
+Feature/API tests verify integration:
+
+```text
+route
+→ auth
+→ policy
+→ error mapping
+```
+
+These are essential for:
+
+```text
+401
+403
+404 masking
+```
+
+---
+
+# 96. Offline Tests
+
+No real Clerk calls.
+
+Use existing fake authentication/verifier setup.
+
+Authorization tests begin with an already-authenticated local User.
+
+---
+
+# 97. No Test Backdoors
+
+Do not add production headers like:
+
+```text
+X-Test-Role
+X-Test-Permission
+```
+
+Use factories/container/test authentication utilities.
+
+---
+
+# 98. Factory States
+
+Reuse:
+
+```text
+customer()
+staff()
+admin()
+```
+
+and permission helpers as needed.
+
+Keep fixtures explicit.
+
+---
+
+# 99. Policy Complexity
+
+Keep each policy method small.
+
+If authorization becomes complicated:
+
+extract narrowly named helper methods.
+
+Maintain cognitive complexity target ≤15.
+
+Do not build a generic authorization DSL.
+
+---
+
+# 100. Return Count
+
+Follow project guidance of maximum 3 returns per function where practical.
+
+Keep policies readable rather than overly clever.
+
+---
+
+# 101. Avoid Large `switch(role)`
+
+Do not build every policy as:
+
+```text
+switch role:
+ CUSTOMER ...
+ STAFF ...
+ ADMIN ...
+```
+
+when permissions/ownership provide cleaner composition.
+
+Use standard Laravel authorization patterns.
+
+---
+
+# 102. No Global `isAdmin()` Shortcut Everywhere
+
+An `isAdmin()` helper may exist for legitimate use, but do not turn it into a universal authorization bypass.
+
+Prefer permissions/policies.
+
+---
+
+# 103. API Contract Review
+
+Review:
+
+```text
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/openapi.yaml
+```
+
+for protected operations.
+
+Ensure documented authentication/authorization requirements match implemented policies.
+
+Do not change endpoint behavior casually.
+
+---
+
+# 104. Error Contract
+
+Use existing CLOSED error codes.
+
+Authorization failures should map to approved:
+
+```text
+AUTHENTICATION_REQUIRED
 FORBIDDEN
+RESOURCE_NOT_FOUND
 ```
 
-is generally safer.
+or resource-specific not-found code where already defined.
+
+Do not create:
+
+```text
+NOT_OWNER
+INSUFFICIENT_ROLE
+NEEDS_ADMIN
+```
+
+unless formally approved.
 
 ---
 
-# 94. Logging
+# 105. Error Messages
 
-Safe logging may include:
+Do not reveal:
 
 ```text
-local user ID
-role-change event category
-actor/target IDs for privileged operations
-request_id
+resource exists but belongs to user X
+required role is ADMIN
+missing internal permission name
 ```
+
+unless explicitly safe and contracted.
+
+Keep client messages generic enough to avoid security leakage.
+
+---
+
+# 106. Logging
+
+Authorization-denial logs may include:
+
+```text
+request_id
+local actor ID
+action
+resource type
+outcome
+```
+
+where useful.
 
 Do not log:
 
 ```text
-Clerk token
+token
 password
-permission dumps unnecessarily
+private resource payload
 ```
+
+Avoid excessive logging of ordinary 403/404 probes unless monitoring requires it.
 
 ---
 
-# 95. Documentation
+# 107. Auditing
 
-Update relevant consolidated documentation only.
+Authorization denial is not the same as permanent audit.
 
-Likely:
+Privileged successful actions may later require audit records.
+
+Do not implement the entire audit subsystem here unless already present.
+
+Carry forward:
+
+```text
+role changes
+staff approval
+inventory adjustments
+order state changes
+```
+
+as audit-sensitive actions.
+
+---
+
+# 108. Documentation
+
+Update consolidated docs only where necessary:
 
 ```text
 docs/api/api-conventions.md
 docs/domain/business-rules.md
 docs/decisions.md
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/openapi.yaml
 AGENTS.md
 ```
 
-and:
+Do not create excessive phase-specific policy documents.
+
+---
+
+# 109. Authorization Matrix
+
+Maintain a concise implementation matrix.
+
+Example structure:
+
+| Resource      | Action           | CUSTOMER | STAFF                        | ADMIN      | Ownership / condition |
+| ------------- | ---------------- | -------- | ---------------------------- | ---------- | --------------------- |
+| Profile       | view/update self | Yes      | Self                         | Self       | current actor only    |
+| Order         | view             | Own      | permission                   | permission | customer ownership    |
+| Order         | cancel           | Own      | No unless explicitly defined | explicit   | domain checks later   |
+| Order         | accept           | No       | permission                   | permission | operational           |
+| Order         | ship             | No       | permission                   | permission | operational           |
+| Inventory     | adjust           | No       | permission                   | permission | operational           |
+| Staff account | approve          | No       | No                           | permission | Admin only            |
+
+Use actual frozen operations and permissions.
+
+Do not use this example to invent unsupported operations.
+
+---
+
+# 110. Authorization Matrix Is Authoritative Aid
+
+The matrix helps implementation review.
+
+Actual enforcement must remain in:
 
 ```text
-docs/api/api-contract.md
-docs/api/openapi.yaml
+Laravel Policies / Gates
 ```
 
-only if role representation/security requirements require correction.
-
-Do not create excessive phase-specific docs.
+Do not perform authorization by reading configuration tables dynamically unless already designed.
 
 ---
 
-# 96. Role Matrix Documentation
+# 111. Policy Naming Consistency
 
-Maintain a concise role matrix:
+Match policy action names to explicit API operations where practical.
 
-| Capability category      | CUSTOMER           | STAFF                 | ADMIN                                    |
-| ------------------------ | ------------------ | --------------------- | ---------------------------------------- |
-| Public browsing          | Yes                | Yes                   | Yes                                      |
-| Own customer commerce    | Yes                | As explicitly allowed | As explicitly allowed                    |
-| Operational commerce     | No                 | Explicit permissions  | Explicit permissions                     |
-| Customer account control | Own profile only   | No                    | Only explicitly authorized admin actions |
-| Staff approval           | No                 | No                    | Yes                                      |
-| Role self-change         | No                 | No                    | No                                       |
-| Credential authority     | Clerk self-service | Clerk self-service    | Clerk/admin security policy              |
-
-Do not treat this matrix as a substitute for Phase 4.10 policies.
-
----
-
-# 97. Explicit Customer Protection Rule
-
-Document prominently:
-
-> STAFF operational access does not grant customer-account authority.
-
-This must remain true even if Staff can view customer/order contact details necessary to process an order.
-
-Operational visibility is not account control.
-
----
-
-# 98. Permission Assignment Documentation
-
-Document which permissions are assigned to:
+Avoid ambiguity between:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+update
+manage
+modify
+operate
 ```
 
-only where already known.
-
-Do not invent broad speculative permissions for future domains.
+Use action-oriented names.
 
 ---
 
-# 99. API Contract Stability
+# 112. Route Middleware
 
-Roles are a CLOSED V1 set.
-
-Changing:
+Use the configured Clerk bearer middleware:
 
 ```text
-CUSTOMER / STAFF / ADMIN
+clerk.auth
 ```
 
-or adding another role is a contract/domain change.
+for identity and standard authorization middleware. It resolves the verified
+Clerk bearer credential before role, permission, ownership, and state checks.
 
-Do not silently extend the enum.
+Do not encode complex policy logic directly in route middleware strings if policies are cleaner.
 
 ---
 
-# 100. OpenAPI
+# 113. Permission Middleware
 
-Where role appears in API schemas:
+Package-provided permission middleware may be used for coarse route gates where suitable.
 
-ensure enum is exactly:
+Still use policies for:
 
-```yaml
-CUSTOMER
-STAFF
-ADMIN
+```text
+ownership
+resource-specific authorization
+state-aware conditions
 ```
 
-Do not expose internal permission tables unless contract requires them.
-
-Do not add role mutation endpoints.
+Do not rely only on route permission middleware for private resources.
 
 ---
 
-# 101. Seeder Verification
+# 114. Query Scope vs Policy
 
-Run fresh database setup and verify canonical role data.
+Use query scoping to avoid loading inaccessible rows.
 
-At minimum:
+Use Policies to authorize actions.
 
-```bash
-php artisan migrate:fresh --seed
-```
+These complement each other.
 
-when role/permission seeders change.
+Do not treat one as complete replacement for the other.
 
 ---
 
-# 102. Tests
+# 115. Admin Listing Endpoints
+
+Where Admin/Staff list operational resources:
+
+scope data to the permitted operational dataset.
+
+Do not reuse Customer ownership scopes.
+
+Exact operational listing filters follow resource contracts.
+
+---
+
+# 116. Customer Listing Endpoints
+
+Always constrain to authenticated Customer's own resources.
+
+Do not accept arbitrary owner filters.
+
+---
+
+# 117. Resource Serialization
+
+Authorization must happen before serialization.
+
+Do not serialize private fields and then remove them after access denial.
+
+---
+
+# 118. Field-Level Authorization
+
+Where Staff may view only operational fields, use explicit Resources/serializers.
+
+Do not return full Customer/User models merely because Staff can process an Order.
+
+Detailed field-level restrictions should follow existing resource contract.
+
+---
+
+# 119. Sensitive Customer Fields
+
+Operational Staff visibility must not include:
+
+```text
+Clerk ID
+security attributes
+password fields
+internal account state beyond need
+permission internals
+```
+
+unless explicitly required.
+
+---
+
+# 120. Authorization and Transactions
+
+Authorization generally happens before opening expensive mutation transactions.
+
+Domain state must still be revalidated within transaction where race-sensitive.
+
+Do not hold database locks while performing unnecessary authorization checks.
+
+---
+
+# 121. TOCTOU Awareness
+
+For authorization based on mutable resource state:
+
+re-check relevant domain state during transaction where required.
+
+Do not assume policy evaluation permanently freezes resource state.
+
+Keep policy coarse and domain transaction authoritative.
+
+---
+
+# 122. Account State
+
+If local account state exists:
+
+authorization layer must respect it according to prior phases.
+
+Valid Clerk authentication does not override:
+
+```text
+suspended
+inactive
+pending
+```
+
+application state.
+
+Do not encode these as roles.
+
+---
+
+# 123. Staff State
+
+STAFF with suspended/inactive operational state must not perform Staff operations even if role and permission rows remain.
+
+Integrate the approved staff-state check in the authorization boundary.
+
+---
+
+# 124. Admin State
+
+Likewise, disabled Admin must not retain operational privileges merely because role remains ADMIN.
+
+---
+
+# 125. No Frontend Assumptions
+
+Do not assume future UI will prevent invalid requests.
+
+Backend must be secure against direct API calls.
+
+---
+
+# 126. No Security by URL
+
+Do not assume:
+
+```text
+/admin/*
+```
+
+or:
+
+```text
+/staff/*
+```
+
+path itself grants authority.
+
+Every protected endpoint still authenticates and authorizes the actor.
+
+---
+
+# 127. No Security by HTTP Method Alone
+
+`POST` or `DELETE` does not imply privilege.
+
+Policy must authorize the specific operation.
+
+---
+
+# 128. No Implicit Admin Through Seeder
+
+Ensure test/production seeds do not accidentally assign Admin broadly.
+
+Permissions and roles must be deterministic.
+
+---
+
+# 129. Schema Changes
+
+Expected:
+
+```text
+NONE
+```
+
+unless a missing RBAC permission table/setup from earlier phases is genuinely discovered.
+
+Do not add authorization-specific resource owner columns if ownership already exists.
+
+---
+
+# 130. Frontend Changes
+
+Expected:
+
+```text
+NONE
+```
+
+Do not modify Groups L–Q frontend code.
+
+---
+
+# 131. Commands
 
 Run:
 
@@ -1920,155 +2149,49 @@ vendor/bin/phpstan analyse
 composer audit
 ```
 
-Use project-defined equivalents where available.
+If permission seed definitions changed:
 
----
-
-# 103. RBAC-Specific Test Suite
-
-Ensure coverage for:
-
-```text
-CUSTOMER provisioning
-STAFF persistence
-ADMIN persistence
-self-promotion rejection
-metadata role rejection
-Staff approval boundary
-Staff/customer-account separation
-missing-role failure
-canonical role casing
-idempotent role seeding
+```bash
+php artisan migrate:fresh --seed
 ```
 
-Do not rely solely on package tests.
+must also pass.
+
+Use existing repository scripts where available.
 
 ---
 
-# 104. Schema Changes
-
-Expected:
-
-```text
-NONE
-```
-
-if Group C already installed the RBAC schema.
-
-Do not add role columns.
-
-If a required Spatie migration/schema is genuinely absent, inspect Group C first before adding anything.
-
----
-
-# 105. Backend-Only Phase
-
-Expected frontend changes:
-
-```text
-NONE
-```
-
-Do not install frontend packages.
-
-Do not add route guards.
-
-Do not alter website/app layouts.
-
----
-
-# 106. Code Quality
-
-Follow existing project standards:
-
-* cognitive complexity ≤15;
-* maximum 3 returns where practical;
-* constants/enums for canonical roles;
-* small role/permission bootstrap code;
-* no giant authorization service;
-* no magic strings;
-* no duplicate role stores;
-* minimal comments;
-* strict dependency direction.
-
----
-
-# 107. Avoid `RoleService` Overengineering
-
-Do not create a generic:
-
-```text
-RoleService
-```
-
-with dozens of methods if package-standard RBAC APIs are sufficient.
-
-Use small domain/application helpers only where real business invariants need centralization.
-
----
-
-# 108. No Generic Authorization Engine
-
-Do not build a custom rule engine.
-
-Laravel Gates/Policies + the chosen RBAC package are sufficient.
-
-Phase 4.10 will use standard Laravel authorization patterns.
-
----
-
-# 109. Expected Implementation Areas
-
-Likely changes may include:
-
-```text
-app/Models/User.php
-app/Authorization/
-app/Support/
-database/seeders/
-database/factories/
-tests/Feature/Auth/
-tests/Unit/
-docs/
-```
-
-Reuse existing locations.
-
-Do not restructure the backend merely for RBAC.
-
----
-
-# 110. Files Changed Report
+# 132. Files Changed Report
 
 At completion report:
 
-## Roles
+## Policies added/updated
 
-Confirm:
+List exact policy classes.
 
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
+## Gates
 
-only.
+List any global/non-resource gates.
 
 ## Permissions
 
-List canonical assignments actually implemented.
+List only new/changed canonical permissions.
 
-## Provisioning
+## Ownership rules
 
-Confirm public signup creates CUSTOMER only.
+Summarize Customer-owned resources.
 
-## Staff protection
+## Masking
 
-Confirm Staff cannot manage customer accounts.
+List resources using 404 ownership masking.
+
+## Staff boundary
+
+Confirm operational access does not grant customer-account control.
 
 ## Admin boundary
 
-Confirm Staff approval requires ADMIN.
+Confirm Admin still uses explicit authorization.
 
 ## Schema
 
@@ -2078,8 +2201,6 @@ Expected:
 none
 ```
 
-unless justified.
-
 ## Frontend
 
 Must state:
@@ -2088,82 +2209,92 @@ Must state:
 NONE
 ```
 
-## Tests / Commands
+## Tests
 
-List exact commands and outcomes.
+List policy/feature tests and results.
 
 ---
 
-# 111. Definition of Done
+# 133. Definition of Done
 
-Phase 4.9 is complete when:
+Phase 4.10 is complete when:
 
-* V1 roles are exactly CUSTOMER / STAFF / ADMIN;
-* Laravel is the sole role authority;
-* Clerk metadata cannot grant roles;
-* no duplicate role field/system exists;
-* public registration assigns CUSTOMER only;
-* existing Staff/Admin are not downgraded on login;
-* STAFF cannot self-promote;
-* CUSTOMER cannot self-promote;
-* Staff approval is ADMIN-only;
-* STAFF has no ordinary customer-account control;
-* role and account state remain separate concepts;
-* role and permission concepts remain separate;
-* role does not bypass ownership/domain checks;
-* role definitions/seeding are deterministic;
-* role casing is canonical;
-* role/permission cache behavior uses package-standard mechanisms;
-* `/me` role comes from Laravel;
-* `/me` cannot mutate role;
-* no frontend role guards/UI were implemented;
-* no schema duplication was introduced;
-* RBAC tests pass;
+* authenticated Laravel User is the authorization actor;
+* CUSTOMER / STAFF / ADMIN roles are integrated with policies;
+* role alone never grants resource access;
+* explicit permissions are used for operational/admin actions;
+* Customer private resources are ownership-scoped;
+* private cross-customer resource access is masked where required;
+* Staff operational access is explicit;
+* Staff cannot control Customer accounts;
+* Staff approval remains Admin-only;
+* Admin does not universally bypass domain/policy rules;
+* Clerk metadata has zero authorization authority;
+* email/phone are never ownership proof;
+* ownership always comes from server relationships;
+* client-supplied owner/actor IDs cannot grant access;
+* policies stay separate from domain transition logic;
+* unauthenticated requests produce 401;
+* forbidden authorized users produce 403 where appropriate;
+* private ownership failures produce 404 where required;
+* public catalog remains public;
+* authorization-aware query scoping is used where appropriate;
+* no frontend authorization implementation is added;
+* no duplicate authorization framework is created;
+* policy tests pass;
+* API authorization tests pass;
 * full backend tests pass;
 * Pint passes;
 * PHPStan passes;
 * Composer audit passes;
-* documentation reflects the V1 role model.
+* documentation/OpenAPI match the implemented authorization model.
 
 ---
 
-# 112. Out of Scope
+# 134. Out of Scope
 
 Do not implement:
 
-* complete Laravel policy matrix;
-* order ownership policies;
-* inventory policies;
-* catalogue policies;
-* request/enquiry policies;
-* detailed 404 masking logic;
-* frontend route guards;
-* admin navigation;
-* customer navigation;
-* Staff UI;
-* Admin UI;
-* customer management APIs;
+* frontend guards;
+* role-based navigation;
+* Staff/Admin UI;
 * new roles;
-* Clerk Organizations;
-* role metadata synchronization to Clerk;
-* full audit subsystem.
+* Clerk authorization metadata;
+* generic policy engine;
+* full audit subsystem;
+* new business workflows;
+* payment-provider authorization;
+* new customer-management APIs;
+* speculative operational scopes;
+* wildcard Super Admin behavior.
 
 ---
 
-# 113. STOP Condition
+# 135. STOP Condition
 
-STOP once Laravel has one secure, deterministic V1 RBAC foundation built around:
+STOP when the backend consistently answers:
 
 ```text
-CUSTOMER
-STAFF
-ADMIN
+Who is the actor?
+→ authenticated local Laravel User
+
+What kind of actor?
+→ CUSTOMER / STAFF / ADMIN
+
+Does the actor have the required capability?
+→ Laravel permission
+
+Does this actor own / have operational authority over this resource?
+→ Policy
+
+Is the business operation valid in the resource's current state?
+→ Domain layer
 ```
 
-with public CUSTOMER provisioning, explicit Staff/Admin boundaries, zero Clerk role authority, zero frontend implementation, and all relevant backend tests passing.
+with secure 401 / 403 / 404 behavior and all authorization tests passing.
 
 Do not continue automatically.
 
 The next backend roadmap phase is:
 
-**Phase 4.10 — Laravel Policies / Permissions / Ownership Authorization**
+**Phase 4.11 — Authentication / Authorization Rate Limiting**

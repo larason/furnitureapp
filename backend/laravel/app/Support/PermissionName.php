@@ -21,6 +21,8 @@ enum PermissionName: string
     case ORDERS_READY_FOR_PICKUP = 'orders.ready_for_pickup';
     case ORDERS_SHIP = 'orders.ship';
     case ORDERS_DELIVER = 'orders.deliver';
+    case ORDERS_COMPLETE = 'orders.complete';
+    case ORDERS_SET_DELIVERY_FEE = 'orders.set_delivery_fee';
 
     case REQUESTS_VIEW = 'requests.view';
     case REQUESTS_MANAGE = 'requests.manage';

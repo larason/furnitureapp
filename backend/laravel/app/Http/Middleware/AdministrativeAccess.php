@@ -12,13 +12,12 @@ use Symfony\Component\HttpFoundation\Response;
  * Route-level guard for Administrative role access.
  *
  * The frozen contract classifies `/admin/*`, `/users`, catalog writes
- * (`/products`, `/categories`) and audit access as ADMINISTRATIVE (Admin
- * only). Phase 4.9 establishes the canonical Laravel RBAC role boundary;
+ * (`/products`, `/categories`) and audit access as ADMINISTRATIVE. Phase 4.9
+ * establishes the canonical Laravel RBAC role boundary;
  * Phase 4.10 adds resource/action/state policy checks.
  *
- * Only the Admin role with an ACTIVE application account state is admitted to
- * this boundary. Individual permissions and business-state checks remain
- * enforced by Phase 4.10.
+ * Only the active Admin role is admitted to this boundary. Individual
+ * permissions and business-state checks remain enforced by Phase 4.10.
  *
  * The preceding `clerk.auth` middleware guarantees the request is authenticated
  * before this middleware runs, so failures surface as 403 (authenticated
