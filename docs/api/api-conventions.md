@@ -895,9 +895,9 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 ### 29.4 Profile Field Allow-List & Partial Semantics
 
-- **Allow-list:** `customer_profile.mutable: name, phone` (plus `email` only where explicitly permitted via **dedicated security workflow**, not ordinary allow-list). `server-controlled: id, role, permissions, timestamps, verification state, account state`. Unknown fields rejected (`422 INVALID_VALUE` with `field`) per strict `unknown-field → error` rule (`§15` + `api-resources.md §8.4`).
-- **Partial PATCH:** Only fields included in request are changed; omitted field remains unchanged; do not interpret omission as `set to null` unless field explicitly permits clearing. `phone: null` allowed only if contract permits clearing; `name: null` never valid.
-- **Nullability documented:** `phone = null` valid if business permits; `email` nullable forbidden (required). Contract must state choice; see `api-resources.md §8.1`.
+- **Allow-list:** `customer_profile.mutable: name, phone` (plus `email` only where explicitly permitted via **dedicated security workflow**, not ordinary allow-list). `name` is nullable until supplied and cannot be cleared with `null`; `phone` is nullable and may be explicitly cleared. `server-controlled: id, role, permissions, timestamps, verification state, account state`. Unknown fields rejected (`422 INVALID_VALUE` with `field`) per strict `unknown-field → error` rule (`§15` + `api-resources.md §8.4`).
+- **Partial PATCH:** Only fields included in request are changed; omitted field remains unchanged; do not interpret omission as `set to null` unless field explicitly permits clearing. `phone: null` explicitly clears optional contact data; `name: null` is rejected because a supplied profile name must be a non-empty string. The response may contain `name: null` for an uncompleted profile.
+- **Nullability documented:** the response `name` is nullable for a newly provisioned email/password customer; `PATCH /me` accepts only a non-empty string and cannot clear it. `phone = null` explicitly clears optional contact data; `email` remains required and non-null. Contract is defined in `api-resources.md §8.1`.
 - **Mass-assignment protection:** Laravel must not `$request->all() → model fill`; `validated input → DTO/command → domain` per `AGENTS.md §3`.
 
 ### 29.5 Private Caching — `/me` Is Never Publicly Cached

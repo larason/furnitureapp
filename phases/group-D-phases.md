@@ -1,41 +1,41 @@
-# Phase 4.5 — Email Verification with Clerk
+# Phase 4.6 — Profile Operations / Account Profile Synchronization
 
 ## Purpose
 
-Implement and document the customer email-verification policy using **Clerk as the email identity and verification authority**.
+Implement the authenticated customer profile boundary after Clerk authentication has been established.
 
-The customer registration baseline is now:
-
-```text
-email
-password
-```
-
-Phone is **not required during signup**.
-
-Phone, if collected later, belongs to the application profile/contact domain and must not be treated as an authentication requirement.
-
-The target signup flow is:
+This phase defines and implements:
 
 ```text
-Customer
-    ↓
-email + password
-    ↓
-Clerk creates sign-up attempt
-    ↓
-Clerk sends email verification challenge
-    ↓
-customer verifies email
-    ↓
-Clerk completes signup
-    ↓
-authenticated Clerk session
-    ↓
-Laravel resolves/provisions local CUSTOMER
+Clerk
+    ├── authentication identity
+    ├── primary email
+    ├── email verification
+    ├── password
+    └── sessions/security
+
+Laravel
+    ├── application User
+    ├── CUSTOMER / STAFF / ADMIN role
+    ├── application account state
+    ├── name/profile data
+    ├── optional phone/contact data
+    ├── ownership
+    └── commerce relationships
 ```
 
-Laravel must not create its own email-verification token or duplicate Clerk's verification process.
+The canonical application profile endpoints remain:
+
+```http
+GET   /api/v1/me
+PATCH /api/v1/me
+```
+
+Customers must never select their own identity using a request parameter or body field.
+
+`/me` always means:
+
+> the local Laravel User mapped to the currently authenticated Clerk identity.
 
 ---
 
@@ -47,968 +47,531 @@ Required:
 * Phase 4.2 complete;
 * Phase 4.3 complete;
 * Phase 4.4 complete;
-* Clerk owns authentication;
-* email + password selected as customer signup method;
-* phone removed from signup requirements;
-* Clerk identity maps to local `users.clerk_user_id`;
-* JIT CUSTOMER provisioning works;
-* Laravel does not accept customer passwords;
-* Laravel does not own password recovery;
-* pending/incomplete Clerk authentication states are already treated safely.
+* Phase 4.5 complete;
+* Clerk authentication works;
+* verified Clerk identity maps to `users.clerk_user_id`;
+* public signup creates CUSTOMER only;
+* signup requires email + password;
+* phone is not required at signup;
+* Clerk owns email verification;
+* Laravel protected requests resolve an authenticated local User;
+* no Laravel password credential exists for Clerk customers.
 
-Do not proceed if Laravel still has a competing email verification workflow.
+Do not implement profile operations until the authenticated current-user boundary works reliably.
 
 ---
 
 # 2. Scope
 
-This phase covers:
+Implement:
 
-* required email-at-signup configuration;
-* Clerk email verification strategy;
-* verified-email semantics;
-* local email snapshot rules;
-* local `email_verified` representation where required;
-* incomplete signup handling;
-* unverified-session access rules;
-* verification resend behavior at the application boundary;
-* email-change implications;
-* tests around verified/unverified identity;
-* removal of obsolete Laravel verification logic;
-* documentation/OpenAPI updates.
+* `GET /api/v1/me`;
+* `PATCH /api/v1/me`;
+* profile field ownership;
+* name editing;
+* optional phone editing;
+* local Clerk email snapshot behavior;
+* email-verification snapshot behavior where required;
+* profile validation;
+* profile caching rules;
+* synchronization responsibilities;
+* application account-retention policy;
+* resolution of the deferred `carts.user_id` FK delete-policy inconsistency;
+* profile tests;
+* synchronization tests;
+* documentation updates.
 
-Do not build final web/mobile verification UI yet.
+Do not build final Next.js or Flutter profile UI.
 
----
-
-# 3. Signup Requirements
-
-The canonical V1 customer signup identity requirements are now:
-
-```text
-required:
-- email
-- password
-
-not required:
-- phone
-```
-
-Remove outdated requirements stating:
-
-```text
-name + email + phone + password
-```
-
-where those statements refer specifically to authentication registration.
-
-Do not remove name/phone from unrelated domain models where they are legitimately required for:
-
-* delivery;
-* enquiries;
-* furniture requests;
-* customer contact;
-* profile data.
-
-This change applies only to **authentication signup requirements**.
+Do not implement arbitrary admin customer management.
 
 ---
 
-# 4. Clerk Configuration
+# 3. Authoritative Inputs
 
-Review the selected Clerk application.
+Before implementation review:
 
-The expected configuration is:
+1. `AGENTS.md`
+2. Phase 4.1 Clerk ADR
+3. Phase 4.2 local provisioning implementation
+4. Phase 4.3 authentication implementation
+5. Phase 4.4 security decisions
+6. Phase 4.5 email-verification decisions
+7. `docs/api/api-contract.md`
+8. `docs/api/api-resources.md`
+9. `docs/api/api-conventions.md`
+10. `docs/api/openapi.yaml`
+11. `docs/domain/business-rules.md`
+12. `docs/decisions.md`
+13. Group C User/profile migrations and models
+14. current Clerk documentation.
 
-```text
-Sign-up with email      ENABLED
-Require email address   ENABLED
-Verify at sign-up       ENABLED
-Sign-in with email      ENABLED
-Sign-up with password   ENABLED
-Phone signup            NOT REQUIRED
-```
+If Clerk MCP/Skills are installed, use them to verify current behavior.
 
-Do not enable phone authentication merely because Clerk supports it.
-
-Do not require SMS OTP.
-
----
-
-# 5. Verification Strategy
-
-Use Clerk as the only email-verification authority.
-
-Preferred V1 baseline:
-
-```text
-email verification code
-```
-
-unless the project owner has deliberately configured email-link verification instead.
-
-Clerk currently uses email verification code by default for email/password signup when verification-at-signup is enabled.
-
-Do not implement both code and link flows unless there is a real requirement.
+Do not invent provider methods from memory.
 
 ---
 
-# 6. Why Verification Is Required
+# 4. Profile Authority Matrix
 
-Require the signup email to be verified before the registration is considered complete.
+Establish this as the default ownership model:
 
-This gives the application:
+| Field                      | Authority             | Ordinary `/me` writable? |
+| -------------------------- | --------------------- | ------------------------ |
+| `users.id`                 | Laravel               | no                       |
+| `clerk_user_id`            | Clerk/Laravel mapping | no                       |
+| primary email              | Clerk                 | no                       |
+| email verification         | Clerk                 | no                       |
+| password                   | Clerk                 | no                       |
+| sessions                   | Clerk                 | no                       |
+| name                       | Laravel profile       | yes                      |
+| phone                      | Laravel profile       | yes, optional            |
+| role                       | Laravel RBAC          | no                       |
+| permissions                | Laravel               | no                       |
+| application account state  | Laravel               | no                       |
+| created/updated timestamps | Laravel               | no                       |
 
-```text
-Clerk identity
-+
-verified primary email
-+
-password credential
-```
-
-before the customer is treated as a fully registered application user.
-
-Do not allow:
-
-```text
-unverified email
-→ fully registered CUSTOMER
-→ unrestricted authenticated commerce access
-```
-
-unless a future explicit policy changes this.
+Do not create two authoritative writers for the same field.
 
 ---
 
-# 7. Canonical Signup Sequence
+# 5. Canonical Profile Model
 
-The intended sequence is:
+The customer application profile should conceptually contain:
 
 ```text
-1. Customer supplies email.
-2. Customer supplies password.
-3. Clerk validates signup input.
-4. Clerk creates sign-up attempt.
-5. Clerk sends email verification challenge.
-6. Customer submits verification code.
-7. Clerk verifies email.
-8. Clerk completes signup.
-9. Clerk creates/activates authenticated session.
-10. Laravel verifies Clerk session.
-11. Laravel Phase 4.2 provisioning resolves/creates CUSTOMER.
+id
+email
+email_verified
+name
+phone
+role
+account state where approved
+timestamps where approved
 ```
 
-Do not provision the final local CUSTOMER before the Clerk signup is complete unless Phase 4.2 explicitly stores provisional identities.
+Use the actual frozen V1 representation.
 
-The preferred V1 behavior is to provision only after successful verified Clerk authentication.
+Do not casually add fields merely because Clerk exposes them.
+
+Do not return the entire Clerk User object.
 
 ---
 
-# 8. Do Not Build Laravel Verification Tokens
+# 6. Email Is Read-Only Application Identity Data
 
-Do not use:
+The authenticated customer may see their current application email through:
 
-```text
-MustVerifyEmail
-EmailVerificationRequest
-verification.notice
-verification.verify
-verification.send
-signed verification URL
-Laravel email verification notifications
+```http
+GET /api/v1/me
 ```
 
-for Clerk customers.
-
-Do not create:
-
-```text
-verification_token
-verification_code
-email_verified_token
-```
-
-in the Laravel database.
-
-Clerk owns these concerns.
-
----
-
-# 9. Remove Legacy Verification Infrastructure
-
-Search the backend for obsolete Laravel-specific verification behavior.
-
-Examples:
-
-```text
-MustVerifyEmail
-sendEmailVerificationNotification
-EmailVerificationRequest
-verification.verify
-verification.send
-```
-
-If these are leftovers from pre-Clerk design and are unused:
-
-* remove or retire them;
-* remove routes no longer supported;
-* remove obsolete OpenAPI descriptions;
-* do not leave a second email-verification path exposed.
-
-Do not modify historical migrations unnecessarily.
-
----
-
-# 10. Email Is Authentication Identity
-
-The signup email belongs primarily to Clerk authentication.
-
-Laravel may retain a local snapshot for application/domain purposes.
-
-Canonical authority:
-
-
-```text
-Clerk primary email
-    ↓
-verified identity source
-    ↓
-Laravel email snapshot
-```
-
-Do not allow ordinary clients to change the authentication email by:
+but ordinary:
 
 ```http
 PATCH /api/v1/me
 ```
 
-unless the later dedicated security workflow explicitly permits it.
-
----
-
-# 11. Local Email Snapshot
-
-If `users.email` remains in Laravel, treat it as:
-
-```text
-Clerk-owned identity snapshot
-```
-
-not a separate authentication credential.
-
-At initial provisioning:
-
-```text
-Clerk primary verified email
-→ users.email
-```
-
-Do not source the email from request JSON.
-
-Do not accept:
+must not accept:
 
 ```json
 {
-  "email": "another@example.com"
+  "email": "new@example.com"
 }
 ```
 
-as authoritative while provisioning.
+as a direct profile mutation.
+
+Authentication email changes require a dedicated Clerk security workflow.
+
+Do not turn email into an ordinary Laravel profile field.
 
 ---
 
-# 12. Email Verification State
+# 7. Email Change Future Boundary
 
-If the API exposes:
-
-```text
-email_verified
-```
-
-then it must reflect Clerk verification state.
-
-Do not let the client set:
-
-```json
-{
-  "email_verified": true
-}
-```
-
-Do not calculate it from:
+The eventual email-change sequence should remain:
 
 ```text
-users.email != null
+authenticated customer
+        ↓
+Clerk reverification/security flow
+        ↓
+new email added
+        ↓
+new email verified
+        ↓
+new primary Clerk email
+        ↓
+Laravel email snapshot reconciled
 ```
 
-A populated email is not the same as a verified email.
+Do not implement a parallel Laravel verification process.
+
+If email change is outside the current UI scope, document it and defer the client experience.
 
 ---
 
-# 13. Local Verification Representation
+# 8. Email Snapshot
 
-Review Phase 4.1 and existing schema.
-
-If the application requires a local snapshot such as:
+If Laravel retains:
 
 ```text
-email_verified_at
+users.email
+```
+
+classify it as:
+
+```text
+Clerk-owned local snapshot
+```
+
+It is useful for:
+
+* application display;
+* internal communication context;
+* snapshots where appropriate;
+* avoiding repeated Clerk Backend API calls.
+
+It is **not** the identity-linking key.
+
+Identity remains:
+
+```text
+users.clerk_user_id
+```
+
+---
+
+# 9. Email Synchronization
+
+Do not call Clerk's Backend User API on every:
+
+```http
+GET /me
+```
+
+just to obtain email.
+
+Use the local synchronized snapshot unless the established synchronization policy requires refresh.
+
+A suitable synchronization model is:
+
+```text
+initial JIT provisioning
+        +
+bounded explicit reconciliation
+        +
+future user.updated webhook
+```
+
+Do not make normal profile reads dependent on Clerk network availability.
+
+---
+
+# 10. Clerk Webhook Consistency
+
+Remember:
+
+```text
+Clerk user.updated webhook
+```
+
+is asynchronous and eventually consistent.
+
+Therefore:
+
+* webhooks may repair/update local Clerk-owned snapshots;
+* webhooks must not be required for synchronous authenticated request correctness;
+* profile/domain operations must continue working if webhook delivery is delayed.
+
+Do not wait for a webhook before completing a Laravel-owned name/phone update.
+
+---
+
+# 11. Name Ownership
+
+The application profile owns:
+
+```text
+name
+```
+
+unless the Phase 4.1 ownership matrix explicitly selected Clerk instead.
+
+For the current V1 model, treat name as application profile data.
+
+The customer may update it through:
+
+```http
+PATCH /api/v1/me
+```
+
+Name does not need to have been collected during Clerk signup.
+
+---
+
+# 12. Name Validation
+
+Apply clear validation.
+
+At minimum:
+
+* string;
+* trimmed;
+* non-empty when supplied;
+* reasonable maximum length;
+* reject control characters where existing validation conventions do so;
+* no HTML interpretation.
+
+Do not silently store whitespace-only names.
+
+Do not invent a name from the email address.
+
+---
+
+# 13. Name Requirement and Existing Contract
+
+Inspect the current V1 User/Profile schema.
+
+If the frozen representation currently requires:
+
+```text
+name = non-null
+```
+
+while email/password-only signup allows a customer to exist before providing a name, resolve this explicitly.
+
+Options must follow the project's post-freeze change process.
+
+Do not:
+
+```text
+fake name = email prefix
 ```
 
 or:
 
 ```text
-email_verified
+name = "Customer"
 ```
 
-decide whether that snapshot is still necessary.
+merely to satisfy a schema.
 
-Preferred approach:
+Preferred architectural direction:
 
-* keep only if required by the frozen API/domain representation;
-* derive/synchronize it from Clerk;
-* never use it as independent proof if Clerk identity state is available.
+```text
+signup authentication
+→ email + password
 
-Do not introduce duplicate verification state without need.
+application profile
+→ name supplied later
+```
+
+If this requires making name nullable until profile completion, document and implement that intentionally.
 
 ---
 
-# 14. Clerk Remains Authoritative
+# 14. Phone Ownership
 
-If local state says:
+Phone is application profile/contact data.
 
-```text
-verified
+It is **not**:
+
+* a signup requirement;
+* authentication identity;
+* a Clerk login requirement;
+* an email-verification substitute;
+* ownership proof.
+
+The customer may optionally set/update it through:
+
+```http
+PATCH /api/v1/me
 ```
-
-but Clerk says:
-
-```text
-unverified
-```
-
-Clerk is authoritative for authentication email verification.
-
-Do not let stale Laravel state override Clerk security state.
 
 ---
 
-# 15. JIT Provisioning Rule
+# 15. Phone Nullability
 
-Phase 4.2 provisioning should receive only a Clerk identity that satisfies the approved signup-completion policy.
-
-Preferred:
+Phone must support:
 
 ```text
-Clerk signup complete
-+
-email verified
-+
-authenticated session valid
+null
+```
+
+for customers who have never provided one.
+
+Do not require:
+
+```text
+phone
+```
+
+just because earlier Group A assumptions expected it during signup.
+
+If the current schema prevents null phone values, create a **new migration**.
+
+Do not edit an already-applied Group C migration.
+
+---
+
+# 16. Phone Validation
+
+When supplied, validate according to the project's chosen phone format.
+
+At minimum:
+
+* string;
+* bounded length;
+* normalize consistently where policy exists;
+* reject obvious malformed values;
+* do not trust it as verified authentication data.
+
+Do not silently assign:
+
+```text
+phone_verified = true
+```
+
+because the user entered a phone number.
+
+---
+
+# 17. Do Not Sync Application Phone to Clerk by Default
+
+Because phone is not an authentication identifier in V1:
+
+```text
+PATCH /me { phone: ... }
+```
+
+should update the Laravel application profile.
+
+Do not automatically create/update a Clerk phone identifier unless a later authentication requirement explicitly needs it.
+
+Avoid creating two writers.
+
+---
+
+# 18. `/me` GET
+
+Implement or finalize:
+
+```http
+GET /api/v1/me
+```
+
+Requirements:
+
+* authentication required;
+* user resolved from Clerk authentication context;
+* no user ID argument;
+* return only the current local user's approved profile representation;
+* private/no-store caching;
+* no orders/cart/notifications embedded;
+* no Clerk secrets;
+* no `clerk_user_id` unless explicitly approved;
+* no permission internals beyond approved public role representation.
+
+Keep it lightweight.
+
+---
+
+# 19. `/me` PATCH
+
+Implement:
+
+```http
+PATCH /api/v1/me
+```
+
+as a strict partial update.
+
+Approved ordinary mutable fields:
+
+```text
+name
+phone
+```
+
+unless current contract has an even smaller approved set.
+
+Do not accept arbitrary user fields.
+
+---
+
+# 20. Strict Allow-List
+
+For example:
+
+```text
+allowed:
+- name
+- phone
+
+forbidden/server-controlled:
+- id
+- clerk_user_id
+- email
+- email_verified
+- password
+- role
+- permissions
+- account_state
+- is_active
+- timestamps
+```
+
+Unknown fields must follow the project's strict validation convention.
+
+Do not silently ignore privilege-related fields.
+
+---
+
+# 21. Use Validated Data Only
+
+Follow the project rule:
+
+```text
+FormRequest::validated()
         ↓
-LocalUserProvisioner
+DTO / command
+        ↓
+profile service
 ```
-
-Do not provision from an incomplete `SignUp` attempt.
-
----
-
-# 16. Verification Before Full Application Access
-
-The application should distinguish:
-
-```text
-email not verified / signup incomplete
-```
-
-from:
-
-```text
-fully registered customer
-```
-
-Unverified/incomplete signup must not grant access to protected business operations such as:
-
-```text
-checkout
-own orders
-notifications
-account-sensitive APIs
-```
-
-The exact flow should be controlled by Clerk authentication state rather than a custom Laravel verification challenge.
-
----
-
-# 17. Public Catalog Remains Available
-
-Email verification is not required to:
-
-```text
-browse products
-view categories
-search
-view product detail
-```
-
-Public catalog remains anonymous.
-
-Do not add verification middleware to public catalog endpoints.
-
----
-
-# 18. Anonymous Request / Enquiry Remains Available
-
-Existing anonymous behavior remains:
-
-```text
-POST /requests
-POST /enquiries
-```
-
-may operate without a registered account.
-
-A user does not need to create or verify a Clerk account merely to submit an anonymous request/enquiry where the API already permits that behavior.
-
-Do not change these domain rules in Phase 4.5.
-
----
-
-# 19. Verification Code Handling
-
-If email-code verification is used:
-
-Clerk owns:
-
-```text
-code generation
-code delivery
-code expiration
-code validation
-resend rules
-attempt tracking
-```
-
-Laravel must never receive or persist the code.
-
-Do not proxy Clerk verification codes through Laravel.
-
----
-
-# 20. Resend Behavior
-
-Clerk's prebuilt authentication flows currently enforce a resend cooldown separate from code expiration.
-
-Do not create an independent Laravel resend timer.
-
-The future frontend should rely on Clerk's actual state/error response for when resend is permitted.
-
-Do not hard-code the frontend countdown into backend domain logic.
-
----
-
-# 21. Verification Code Lifetime
-
-Do not duplicate Clerk's code expiration rules in Laravel.
-
-The application should not assume a verification code remains valid for a custom duration.
-
-Clerk currently documents a 10-minute validity period for email verification codes in its prebuilt flows, but that remains provider-owned behavior rather than a Laravel domain constant.
-
----
-
-# 22. Email Link Alternative
-
-If the project later chooses email-link verification:
-
-review Clerk's current same-device/browser protection.
-
-Clerk supports requiring the email verification link to be opened on the same device/browser that initiated authentication, reducing link-forwarding/phishing risks.
-
-Do not disable this protection without a concrete UX/security reason.
-
-For V1, prefer verification code unless the owner explicitly changes the strategy.
-
----
-
-# 23. Sign-In Method
-
-Customer sign-in baseline is:
-
-```text
-email
-+
-password
-```
-
-Do not require an email OTP on every normal login merely because email verification was required at signup.
-
-Keep separate:
-
-```text
-verify email ownership during signup
-```
-
-and:
-
-```text
-authenticate later using email + password
-```
-
-unless Clerk security policy requires additional factor/device trust.
-
----
-
-# 24. Device Trust
-
-Current Clerk email/password guidance may enable Device Trust by default depending on instance configuration.
-
-Inspect actual configuration.
-
-If Device Trust is enabled, future sign-in flows must correctly handle additional verification when required.
-
-Do not bypass Clerk's second-factor/device-trust state in Laravel.
-
-Do not implement custom device trust.
-
----
-
-# 25. MFA Is Separate
-
-Email verification is not the same as MFA.
-
-Do not claim:
-
-```text
-email verified
-=
-MFA enabled
-```
-
-MFA policy remains separate.
-
-Do not require phone merely to satisfy MFA in this phase.
-
-If MFA is later introduced, authenticator apps, backup codes, or other supported methods can be evaluated separately.
-
----
-
-# 26. Phone Is Not Signup Identity
-
-Explicitly remove phone from:
-
-```text
-required registration credentials
-required Clerk signup identifiers
-required verification factors
-```
-
-Phone may later appear in:
-
-```text
-customer profile
-delivery contact
-order recipient
-enquiry/request contact
-```
-
-but it is not authentication identity for V1.
-
----
-
-# 27. Update Registration Documentation
-
-Search for statements equivalent to:
-
-```text
-registration collects name, email, phone, password
-```
-
-When they refer to customer authentication signup, update them to:
-
-```text
-registration requires email + password
-```
-
-If name is later required for application profile completeness, document it separately from Clerk authentication.
-
-Do not merge profile requirements into credential requirements.
-
----
-
-# 28. Name Is Not an Authentication Credential
-
-Unless Clerk configuration explicitly requires name during signup, do not require name as part of authentication.
-
-Name can be collected:
-
-```text
-during profile completion
-or
-during commerce/contact flow
-```
-
-according to later requirements.
-
-Do not fabricate name from email.
-
----
-
-# 29. Registration Input Ownership
-
-The future frontend signup form should eventually submit:
-
-```text
-email
-password
-```
-
-to Clerk.
-
-Not:
-
-```text
-role
-permissions
-user_id
-clerk_user_id
-email_verified
-```
-
-Those remain server/provider controlled.
-
----
-
-# 30. Do Not Route Password Through Laravel
-
-The new email/password registration choice reinforces:
-
-```text
-client
-→ Clerk
-```
-
-for password handling.
-
-Never:
-
-```text
-client
-→ Laravel
-→ Clerk
-```
-
-unless Clerk's supported architecture explicitly requires backend orchestration, which is not the selected client flow.
-
-Laravel should not inspect customer passwords.
-
----
-
-# 31. Email Collision Safety
-
-If Clerk successfully authenticates:
-
-```text
-user_NEW
-email = existing@example.com
-```
-
-but Laravel contains an unmapped local record with the same email:
-
-do not automatically link.
-
-Preserve Phase 4.2:
-
-```text
-identity mapping by Clerk user ID
-not email
-```
-
-Email verification does not make email safe as a local account-linking key.
-
----
-
-# 32. Email Change Security
-
-Changing the primary authentication email later is a security-sensitive operation.
-
-Do not implement it through ordinary profile mutation.
-
-Future flow should conceptually be:
-
-```text
-authenticated customer
-    ↓
-reverification
-    ↓
-Clerk email-change flow
-    ↓
-new email verified
-    ↓
-primary email changed in Clerk
-    ↓
-Laravel snapshot reconciled
-```
-
-Implementation belongs to Phase 4.6 or later dedicated account-security work.
-
----
-
-# 33. Old Email After Change
-
-Do not assume `users.email` always remains permanently equal to signup email.
-
-Clerk may allow verified email changes later.
-
-The stable identity remains:
-
-```text
-clerk_user_id
-```
-
-not email.
-
-This is another reason never to use email as foreign identity.
-
----
-
-# 34. Multiple Email Addresses
-
-Clerk User objects may support multiple email addresses.
-
-Laravel should use only the **primary email** for the local application snapshot unless a future feature explicitly requires additional addresses.
-
-Do not create a local email-address collection in this phase.
-
----
-
-# 35. Primary Email Selection
-
-Always use Clerk's declared primary email relationship.
 
 Do not use:
 
-```text
-emailAddresses[0]
+```php
+$request->all()
 ```
 
-unless the API explicitly guarantees that is primary.
-
-Use the official primary email identifier/accessor.
+Do not mass assign the entire request into User/Profile.
 
 ---
 
-# 36. Verification State Synchronization
+# 22. Partial PATCH Semantics
 
-Define how local verification snapshot is refreshed.
-
-Use the strategy approved in Phase 4.1, for example:
-
-```text
-initial provisioning
-+
-bounded JIT reconciliation
-+
-future Clerk webhook reconciliation
-```
-
-Do not call Clerk Backend API on every application request solely to re-check email verification.
-
----
-
-# 37. Webhooks Still Deferred
-
-Do not implement:
-
-```text
-user.created
-user.updated
-email verification webhook
-```
-
-during this phase unless Phase 4.1 explicitly assigned it here.
-
-Webhooks may later reconcile local email snapshots.
-
-They must remain asynchronous support, not the prerequisite for successful authentication.
-
----
-
-# 38. Verification and Session State
-
-A verified email should result in Clerk allowing signup/session completion according to instance configuration.
-
-Laravel should trust the fully authenticated Clerk session boundary.
-
-Do not create a second middleware such as:
-
-```text
-auth.clerk
-verified.email.local
-```
-
-unless the local business requirement genuinely requires a separate verification state.
-
-Avoid duplicating Clerk policy.
-
----
-
-# 39. Error Mapping
-
-Clerk verification errors shown in Clerk-owned signup UI do not need to be transformed into Laravel's error envelope.
-
-Examples:
-
-```text
-incorrect verification code
-expired verification challenge
-too many attempts
-```
-
-are part of Clerk's authentication flow.
-
-Laravel error mapping applies when accessing Laravel APIs.
-
-Do not proxy all authentication-step errors through Laravel.
-
----
-
-# 40. Protected API with Incomplete Signup
-
-If a caller somehow supplies a Clerk credential that is not eligible for full application authentication because signup/verification is incomplete:
-
-reject it according to Phase 4.3 authentication semantics.
-
-Do not JIT provision a customer using partially verified identity information.
-
----
-
-# 41. Email Verification Does Not Grant Role
-
-Completing email verification must never result in:
-
-```text
-STAFF
-ADMIN
-```
-
-role assignment.
-
-Public registration remains:
-
-```text
-verified Clerk account
-→ CUSTOMER
-```
-
-only.
-
----
-
-# 42. Email Verification Does Not Change Account State
-
-A customer verifying their email must not automatically change arbitrary local business-account state.
+A PATCH request changes only supplied fields.
 
 Example:
 
-```text
-Laravel account suspended
-+
-email newly verified
-≠
-account reactivated
+```json
+{
+  "name": "Asha M."
+}
 ```
 
-Authentication security state and application business state remain separate.
+must leave phone untouched.
 
----
-
-# 43. No Admin Verification Override by Default
-
-Do not build:
+Omitted:
 
 ```text
-Admin marks customer email verified
+phone
 ```
 
-in Laravel.
-
-Clerk is the verification authority.
-
-If extraordinary administrative verification is ever needed, it requires explicit security-policy review.
-
-Do not implement it in V1 by default.
-
----
-
-# 44. No Staff Verification Override
-
-STAFF must have zero authority to:
-
-```text
-mark email verified
-change login email
-bypass verification
-```
-
-Do not expose any such operation.
-
----
-
-# 45. Test — New Signup Verification Required
-
-Using fakes/fixtures representing Clerk signup state:
-
-verify:
-
-```text
-email + password entered
-email unverified
-```
-
-does not result in a fully authenticated Laravel customer.
-
-No protected API access.
-
----
-
-# 46. Test — Verified Signup
-
-Simulate:
-
-```text
-verified email
-completed Clerk signup
-valid authenticated session
-```
-
-Then verify:
-
-* local CUSTOMER can be provisioned/resolved;
-* `users.email` reflects approved Clerk primary email snapshot;
-* local role = CUSTOMER;
-* no phone required;
-* no Laravel password stored.
-
----
-
-# 47. Test — Signup Without Phone
-
-Mandatory regression test:
-
-Given valid:
-
-```text
-email
-password
-```
-
-and no phone:
-
-signup/provisioning must remain valid according to the new policy.
-
-Do not reject registration because:
+does not mean:
 
 ```text
 phone = null
@@ -1016,130 +579,172 @@ phone = null
 
 ---
 
-# 48. Test — No Client Verification Override
+# 23. Explicit Phone Clearing
 
-Send:
+If customers are allowed to remove their stored optional phone:
 
 ```json
 {
-  "email_verified": true
+  "phone": null
 }
 ```
 
-to any relevant Laravel profile/bootstrap endpoint.
+may explicitly clear it.
 
-Verify it cannot mark email verified.
+Do not treat omission as clearing.
 
-Unknown/server-controlled fields should be rejected according to project validation conventions.
+Name should not be clearable to null if the final profile contract requires a name once set/completed.
 
----
-
-# 49. Test — Unverified Email Cannot Bypass Clerk
-
-Simulate an unverified/incomplete Clerk signup and an attempted protected Laravel request.
-
-Verify no local authorization bypass occurs.
-
-Do not create CUSTOMER based solely on:
-
-```text
-valid-looking email
-```
+Follow the final schema decision.
 
 ---
 
-# 50. Test — Different Email, Same Clerk Identity
+# 24. Profile Update Service
 
-Where synchronization behavior can be tested:
+Keep controller logic small.
 
-```text
-same clerk_user_id
-new verified primary email
-```
-
-must still map to the same:
+Prefer an application service such as:
 
 ```text
-users.id
+UpdateCustomerProfile
 ```
 
-Do not create another account.
+or the existing project naming convention.
+
+Responsibilities:
+
+* receive authenticated local User;
+* receive validated mutable profile fields;
+* apply only approved fields;
+* persist atomically;
+* return refreshed profile representation.
+
+It must not interact with passwords or sessions.
 
 ---
 
-# 51. Test — Same Email, Different Clerk Identity
+# 25. Do Not Make User Model a Service Layer
 
-Given:
+Avoid:
 
-```text
-user_A → same@example.com
-user_B → same@example.com
+```php
+$user->updateEverythingFromRequest(...)
 ```
 
-or an equivalent legacy collision scenario:
+containing:
 
-do not automatically merge Laravel identities.
+* validation;
+* Clerk API calls;
+* role decisions;
+* email security changes;
+* profile mutation.
 
-Preserve identity mapping rules from Phase 4.2.
+Keep model responsibilities focused.
 
 ---
 
-# 52. Test — No Phone Requirement
+# 26. Profile Response Source
 
-Search validation/tests for signup expectations that require:
+After successful update, serialize from authoritative Laravel state.
+
+Do not return the request body as if it were persisted.
+
+Do not require another Clerk API call after changing Laravel-owned name/phone.
+
+---
+
+# 27. Clerk Profile Fields
+
+Clerk may itself contain fields such as:
 
 ```text
+first name
+last name
+image/avatar
 phone
 ```
 
-Remove or update only those tied to authentication registration.
+Do not automatically make them authoritative merely because they exist in Clerk's User object.
 
-Do not weaken phone validation for:
+Phase 4.1 selected a split authority model.
+
+Sync only fields explicitly owned by Clerk.
+
+---
+
+# 28. Avoid Full Clerk User Mirroring
+
+Do not add columns for every Clerk property.
+
+Avoid storing:
 
 ```text
-delivery
-request contact
-enquiry contact
-recipient contact
+Clerk public metadata
+unsafe metadata
+external accounts
+full email array
+full phone array
+profile image metadata
+session data
 ```
 
-where phone remains domain-relevant.
+unless a concrete application requirement exists.
+
+Store only what the Laravel domain needs.
 
 ---
 
-# 53. Test — No Laravel Verification Email
+# 29. Profile Image
 
-Verify no application path invokes:
+Do not introduce avatar/profile-image support merely because Clerk supports profile images.
+
+Unless V1 requirements already include customer avatar:
 
 ```text
-sendEmailVerificationNotification()
+profile image
 ```
 
-for Clerk customers.
+is out of scope.
 
-No duplicate email should be sent by Laravel.
-
----
-
-# 54. Test — Public Catalog
-
-Unauthenticated/unverified visitors must still access public catalog APIs.
-
-Email verification must not leak into public routes.
+Do not expand the profile contract unnecessarily.
 
 ---
 
-# 55. Test — Anonymous Request / Enquiry
+# 30. Role Representation
 
-Ensure anonymous request/enquiry creation still works according to existing contract.
+If `/me` returns:
 
-Do not require Clerk verification for those anonymous paths.
+```text
+role
+```
+
+its value comes from Laravel RBAC.
+
+Do not return Clerk metadata as role.
+
+Canonical values remain:
+
+```text
+CUSTOMER
+STAFF
+ADMIN
+```
 
 ---
 
-# 56. Test — Role Tampering
+# 31. Permissions Exposure
 
-During signup/provisioning, attempting:
+Do not expose the entire permission table to customers unless already explicitly required.
+
+Frontend authorization cues can use approved role/capability information, but backend remains authoritative.
+
+Do not leak internal policy structure unnecessarily.
+
+---
+
+# 32. Profile Update Cannot Change Role
+
+Mandatory security invariant:
 
 ```json
 {
@@ -1147,284 +752,1796 @@ During signup/provisioning, attempting:
 }
 ```
 
-must not change CUSTOMER assignment.
+must never elevate the user.
 
-Email verification proves email ownership only.
+Likewise:
 
-It proves nothing about application privilege.
-
----
-
-# 57. Test — Verification Snapshot
-
-If Laravel maintains local `email_verified` state:
-
-test that it can only be populated from trusted Clerk state.
-
-Do not allow fixture/request body mutation to bypass the trusted integration boundary.
-
----
-
-# 58. Offline Testing
-
-Normal PHPUnit tests must remain offline.
-
-Do not send real:
-
-```text
-verification email
-OTP
-Clerk request
+```json
+{
+  "permissions": ["*"]
+}
 ```
 
-during tests.
+must not modify RBAC.
 
-Use fakes for:
-
-```text
-Clerk user
-verification state
-session state
-Backend API gateway
-```
-
-Real Clerk integration testing belongs to Phase 4.12/staging.
+Reject according to strict input rules.
 
 ---
 
-# 59. Database Review
+# 33. Account State Cannot Be Profile-Edited
 
-Expected schema changes:
+Customers must not submit:
 
-```text
-NONE
+```json
+{
+  "is_active": true,
+  "account_state": "ACTIVE"
+}
 ```
 
-if the existing `users.email` and verification representation already support Clerk.
+to reactivate themselves.
 
-If `phone` currently has a NOT NULL constraint directly on `users` because registration originally required it:
-
-review whether that prevents the new email/password-only signup.
-
-If so, create a **new migration** making phone nullable where consistent with the domain model.
-
-Do not edit the original Group C migration.
+Account state is server-controlled.
 
 ---
 
-# 60. Phone Column Decision
+# 34. Verification State Cannot Be Profile-Edited
 
-Phone should be nullable for customer identity/profile if signup does not require it.
+Reject:
 
-However, this does not mean every domain phone field becomes nullable.
+```json
+{
+  "email_verified": true
+}
+```
+
+Verification remains Clerk-controlled.
+
+---
+
+# 35. External Identity Cannot Be Profile-Edited
+
+Reject:
+
+```json
+{
+  "clerk_user_id": "user_other"
+}
+```
+
+A customer must never rebind their local account through ordinary profile mutation.
+
+---
+
+# 36. Profile Authorization
+
+`/me` uses the authenticated principal.
+
+Do not query:
+
+```text
+User::find($request->user_id)
+```
+
+for self-service.
+
+Canonical flow:
+
+```text
+Clerk token
+    ↓
+authenticated local User
+    ↓
+/me
+```
+
+This avoids IDOR by design.
+
+---
+
+# 37. Profile Caching
+
+`GET /me` must remain:
+
+```http
+Cache-Control: private, no-store
+```
+
+or the exact stronger existing project header policy.
+
+Never allow:
+
+```text
+/me
+```
+
+into CDN/shared caches.
+
+`PATCH /me` is non-cacheable.
+
+---
+
+# 38. Public Catalog Separation
+
+Do not attach profile queries to public catalog endpoints merely because a user might be signed in.
+
+Public catalog remains customer-state-free.
+
+Avoid:
+
+```text
+GET /products
+→ automatically load authenticated User profile
+```
+
+unless a future personalization requirement explicitly needs it.
+
+---
+
+# 39. Application Contact vs Order Contact
+
+Do not assume:
+
+```text
+profile phone
+=
+every order recipient phone
+```
+
+At checkout, recipient/contact information remains an order snapshot.
+
+Customers may use a different delivery recipient.
+
+Profile phone is convenience/application contact data only.
+
+---
+
+# 40. Application Name vs Order Recipient
+
+Likewise:
+
+```text
+profile name
+```
+
+must not overwrite historical:
+
+```text
+order recipient_name
+```
+
+Historical order snapshots remain immutable.
+
+---
+
+# 41. Request / Enquiry Contact Snapshots
+
+Changing:
+
+```text
+/me phone
+/me name
+```
+
+must not rewrite historical furniture requests or enquiries.
+
+Those records preserve their submitted contact snapshots.
+
+Do not cascade profile edits into historical communications.
+
+---
+
+# 42. Profile Synchronization Direction
+
+Define explicit directions:
+
+```text
+Clerk → Laravel:
+- clerk_user_id
+- primary email snapshot
+- email verification snapshot if locally retained
+
+Laravel only:
+- name
+- phone
+- role
+- permissions
+- account state
+```
+
+Avoid bidirectional automatic sync.
+
+---
+
+# 43. `user.updated` Future Reconciliation
+
+For Clerk-owned identity fields, a future:
+
+```text
+user.updated
+```
+
+webhook may reconcile:
+
+```text
+primary email
+email verification
+```
+
+only.
+
+It must not overwrite:
+
+```text
+name
+phone
+role
+account state
+```
+
+if those are Laravel-owned.
+
+Keep synchronization field-specific.
+
+---
+
+# 44. Webhook Implementation Scope
+
+If Clerk webhook infrastructure has not yet been implemented:
+
+do not force its complete implementation into Phase 4.6 unless the roadmap/Phase 4.1 explicitly assigned it here.
+
+Document the synchronization contract now.
+
+Implementation may be deferred to the appropriate integration/security stage.
+
+Profile correctness must not require immediate webhook delivery.
+
+---
+
+# 45. Bounded Synchronous Reconciliation
+
+If there is a legitimate point where Clerk-owned email data must be refreshed synchronously, isolate it in an explicit reconciliation service.
+
+Do not scatter:
+
+```text
+ClerkUserGateway::getUser()
+```
+
+across controllers.
+
+A possible service:
+
+```text
+ReconcileClerkIdentitySnapshot
+```
+
+Responsibilities:
+
+* fetch trusted Clerk User;
+* compare only Clerk-owned fields;
+* update local snapshot;
+* never modify Laravel-owned profile/RBAC fields.
+
+---
+
+# 46. Do Not Reconcile on Every Request
+
+Avoid:
+
+```text
+every GET /me
+→ Clerk Backend API
+```
+
+This adds:
+
+* latency;
+* rate-limit dependency;
+* external outage dependency;
+* unnecessary complexity.
+
+Use local application data for routine reads.
+
+---
+
+# 47. Synchronization Conflict Rule
+
+For Clerk-owned fields:
+
+```text
+Clerk wins
+```
+
+For Laravel-owned fields:
+
+```text
+Laravel wins
+```
+
+Do not use generic:
+
+```text
+last write wins
+```
+
+across systems.
+
+Authority is field-specific.
+
+---
+
+# 48. Customer Account Retention Policy
+
+This phase must finally resolve the deferred user-retention issue identified after Group C.
+
+The application contains historical records linked to users:
+
+```text
+orders
+order history
+payments indirectly
+requests
+enquiries
+notifications
+carts
+```
+
+Therefore the V1 policy should be:
+
+> Do not hard-delete the local Laravel User merely because the Clerk identity is deleted or the customer requests account closure when historical commerce records require retention.
+
+Preserve referential and financial history.
+
+---
+
+# 49. Authentication Account vs Historical Application Record
 
 Distinguish:
 
 ```text
-users/profile phone
+Clerk account
 ```
 
 from:
 
 ```text
-order recipient_phone
-delivery phone
-request/enquiry contact requirements
+Laravel historical customer record
 ```
 
-Do not globally relax phone constraints.
-
----
-
-# 61. Customer Profile
-
-If `customer_profiles.phone` exists and is currently required only because of the old signup assumption:
-
-review it.
-
-Preferred:
+Deletion of authentication identity means:
 
 ```text
-phone nullable
+customer can no longer authenticate through that Clerk identity
 ```
 
-until the customer provides it later.
-
-Do not generate fake phone numbers.
-
----
-
-# 62. Profile Completion
-
-Do not force collection of phone immediately after signup just to preserve the old design.
-
-Phase 4.6 will define profile operations.
-
-If commerce later requires phone:
-
-collect it at the appropriate profile/checkout/contact boundary.
-
-Do not make it a credential requirement.
-
----
-
-# 63. Checkout Contact
-
-If checkout requires recipient phone:
-
-that is a checkout/delivery requirement.
-
-It must not be confused with:
+It does not mean:
 
 ```text
-account signup requires phone
+erase historical orders/payments automatically
 ```
 
-A user may sign up successfully with email/password and provide recipient contact during checkout later.
+unless a separately approved privacy/legal policy permits and coordinates such deletion.
 
 ---
 
-# 64. Request / Enquiry Contact
+# 50. Clerk User Deletion
 
-Existing furniture request/enquiry rules remain unchanged unless separately revised.
+Clerk supports deleting a User, and Clerk may emit:
 
-Anonymous contact requirements may still use:
+```text
+user.deleted
+```
+
+for synchronization.
+
+Do not map this event directly to:
+
+```sql
+DELETE FROM users
+```
+
+in Laravel.
+
+Target concept:
+
+```text
+Clerk identity deleted
+        ↓
+local user retained
+        ↓
+external identity detached/deactivated according to policy
+        ↓
+historical commerce preserved
+```
+
+The exact privacy/anonymization strategy should be documented.
+
+---
+
+# 51. Account Closure Policy
+
+For V1, define account closure as a security/business operation, not an ordinary profile PATCH.
+
+Do not support:
+
+```json
+PATCH /me
+{
+  "deleted": true
+}
+```
+
+Account deletion/closure requires a dedicated workflow if exposed.
+
+If no account deletion endpoint exists in the frozen contract:
+
+document the retention policy now and defer the user-facing closure workflow.
+
+Do not invent an endpoint casually.
+
+---
+
+# 52. Account Deletion and Clerk Ordering
+
+If future self-service account deletion is introduced, never use a fragile flow such as:
+
+```text
+delete Clerk user first
+→ Laravel cleanup fails
+→ impossible to authenticate/retry
+```
+
+Design a coordinated operation.
+
+Possible architecture:
+
+```text
+authenticated + reverified customer
+        ↓
+mark application account closure pending
+        ↓
+apply permitted local cleanup/anonymization
+        ↓
+preserve required historical records
+        ↓
+delete/revoke Clerk identity
+        ↓
+finalize local closed state
+```
+
+Exact implementation is outside this phase unless already contracted.
+
+---
+
+# 53. Resolve `carts.user_id` FK Mismatch
+
+The previously recorded Group C issue is:
+
+```text
+MySQL:
+carts.user_id → RESTRICT
+
+SQLite:
+carts.user_id → SET NULL
+```
+
+Phase 4.6 must now decide the canonical policy.
+
+Because local users with historical commerce are retained rather than normally hard-deleted, the preferred V1 policy is:
+
+```text
+users are retained
+→ cart FK does not need to preserve carts by nulling owner during normal account closure
+```
+
+Canonicalize the FK behavior consistently.
+
+---
+
+# 54. Recommended Cart FK Policy
+
+For V1, prefer:
+
+```text
+carts.user_id
+ON DELETE RESTRICT
+```
+
+on all supported databases.
+
+Rationale:
+
+* authenticated carts belong to a real application User;
+* application users with historical state are not routinely hard-deleted;
+* silently orphaning an authenticated cart into `user_id = null` conflicts with the cart ownership XOR model unless a valid guest credential also exists;
+* a customer cart must not become an unauthenticated guest cart simply because a User row disappears.
+
+Therefore:
+
+```text
+SET NULL
+```
+
+is unsafe unless the cart is deliberately transformed into a valid guest cart.
+
+Do not perform that transformation implicitly.
+
+---
+
+# 55. FK Correction Migration
+
+If SQLite currently creates:
+
+```text
+ON DELETE SET NULL
+```
+
+while MySQL uses:
+
+```text
+RESTRICT
+```
+
+create a **new migration** to unify behavior under the current migration/test strategy.
+
+Do not edit already-applied Group C migrations.
+
+Test both intended schema semantics.
+
+SQLite test limitations do not permit retaining a weaker alternative here. The migration must establish `ON DELETE RESTRICT` on every supported driver, and fresh-schema verification must assert that exact action on every supported driver.
+
+Do not silently ignore or document away a cross-driver schema mismatch.
+
+---
+
+# 56. User Hard Delete Service
+
+Do not expose generic:
+
+```php
+$user->delete();
+```
+
+through ordinary profile operations.
+
+Any future hard deletion must verify:
+
+* historical relationships;
+* retention requirements;
+* carts;
+* orders;
+* requests/enquiries;
+* notifications;
+* Clerk state;
+* audit/security requirements.
+
+For V1, normal customer closure should not hard-delete the local row.
+
+---
+
+# 57. Account Anonymization
+
+Do not implement broad anonymization without explicit policy.
+
+If future privacy requirements demand anonymization:
+
+separate:
+
+```text
+data required for legal/transaction records
+```
+
+from:
+
+```text
+optional personal profile data
+```
+
+and design a dedicated workflow.
+
+Do not alter historical order snapshots casually.
+
+---
+
+# 58. Profile Completion State
+
+Because signup requires only:
+
+```text
+email
+password
+```
+
+determine whether the application needs an explicit:
+
+```text
+profile complete
+```
+
+state.
+
+Do not add one automatically.
+
+If no business operation requires name/phone before use, avoid unnecessary state.
+
+If checkout later requires recipient name/phone, collect those as checkout fields.
+
+Keep signup simple.
+
+---
+
+# 59. Do Not Block Browsing on Profile Completion
+
+A customer should not need:
 
 ```text
 name
-+
-email and/or phone
-```
-
-according to their frozen domain rules.
-
-Do not use the new signup rule to modify those endpoints.
-
----
-
-# 65. Update `AGENTS.md`
-
-Update authentication-related roadmap notes/conventions to reflect:
-
-```text
-Customer auth registration:
-- required email
-- required password
-- Clerk verifies email
-- phone not required
-```
-
-Do not alter unrelated roadmap phases.
-
----
-
-# 66. Update `api-conventions.md`
-
-Replace obsolete auth registration rules that still require phone.
-
-A suitable conceptual rule is:
-
-```text
-Registration credentials/identity:
-email + password
-
-Verification:
-Clerk email verification at signup
-
-Phone:
-optional application profile/contact data,
-not an authentication requirement
-```
-
-Keep other domain phone rules intact.
-
----
-
-# 67. Update `api-contract.md`
-
-Where the frozen/auth-migrated contract describes Clerk registration semantics, reflect the new requirement.
-
-If old AUTH registration endpoints were retired in Phase 4.1:
-
-do not reintroduce them just to describe these fields.
-
-Document the Clerk-owned registration behavior in the auth contract/architecture section.
-
----
-
-# 68. OpenAPI
-
-If no Laravel signup endpoint exists, do not create a signup request schema merely for Clerk.
-
-Remove obsolete active schemas requiring:
-
-```text
 phone
 ```
 
-from retired Laravel signup flows as appropriate.
+merely to browse the public catalog.
 
-Protected Laravel endpoints continue using Clerk bearer authentication.
-
----
-
-# 69. Documentation Ownership Matrix
-
-Update field ownership:
-
-| Field              | Authority                        | Required at signup?             |
-| ------------------ | -------------------------------- | ------------------------------- |
-| Clerk User ID      | Clerk                            | generated                       |
-| email              | Clerk                            | yes                             |
-| email verification | Clerk                            | yes                             |
-| password           | Clerk                            | yes                             |
-| phone              | application profile/contact      | no                              |
-| name               | application profile/profile flow | no unless separately configured |
-| role               | Laravel                          | server assigned                 |
-| permissions        | Laravel                          | no                              |
-
-Do not make this matrix client-controlled.
+Do not add profile-completion gates to public browsing.
 
 ---
 
-# 70. Security Review
+# 60. Do Not Block Authentication Because Phone Is Missing
 
-Before completion verify:
+Mandatory invariant:
 
 ```text
-email required
-password required
-phone not required
-email verified through Clerk
-Laravel does not issue verification codes
-Laravel does not send duplicate verification mail
-unverified signup cannot access protected commerce
-public browsing remains available
-role unaffected by email verification
-email never used as local identity binding key
+phone = null
+```
+
+must not cause:
+
+```text
+login failure
+session rejection
+/me authentication failure
+```
+
+Phone is optional profile data.
+
+---
+
+# 61. Checkout Profile Independence
+
+Do not make checkout necessarily depend on:
+
+```text
+users.phone
+```
+
+The checkout phase should validate required recipient/delivery contact independently.
+
+A customer may:
+
+```text
+profile phone = null
+```
+
+and still provide:
+
+```text
+recipient_phone
+```
+
+during checkout where required.
+
+---
+
+# 62. Profile Update Error Semantics
+
+Use the existing API error envelope.
+
+Examples:
+
+```text
+invalid name
+→ 422 INVALID_VALUE
+
+invalid phone
+→ 422 INVALID_FORMAT / INVALID_VALUE
+
+role supplied
+→ 422 INVALID_VALUE or approved server-field rejection
+
+unauthenticated
+→ 401 AUTHENTICATION_REQUIRED
+```
+
+Use exact existing codes.
+
+Do not create profile-specific error-code explosion.
+
+---
+
+# 63. Profile IDOR Protection
+
+`/me` inherently avoids resource-ID selection.
+
+Do not add:
+
+```http
+PATCH /users/{id}
+```
+
+as an alias for customer self-service.
+
+Administrative user management remains separate.
+
+---
+
+# 64. STAFF Profile
+
+The `/me` concept may also represent the currently authenticated Staff/Admin's own profile according to existing contract.
+
+Do not allow:
+
+```text
+Staff /me
+```
+
+to turn into customer-account management.
+
+Each authenticated actor owns only their own `/me` context.
+
+---
+
+# 65. Staff Cannot Edit Customer Profile
+
+Do not create ordinary STAFF capability to:
+
+* change customer name;
+* change customer phone;
+* change customer email;
+* change customer account state;
+* change customer security fields.
+
+Any future admin customer-management functionality belongs to Group K and requires explicit policy.
+
+---
+
+# 66. Admin Profile vs Customer Management
+
+Keep:
+
+```text
+Admin PATCH /me
+```
+
+separate from:
+
+```text
+Admin manages another user
+```
+
+Do not overload `/me`.
+
+`/me` always means current actor.
+
+---
+
+# 67. Profile Serialization
+
+Use a dedicated Resource/Transformer if the project already follows that pattern.
+
+Do not serialize Eloquent User wholesale.
+
+Explicitly select allowed fields.
+
+Never expose:
+
+```text
+clerk_user_id
+password
+remember_token
+internal permission pivots
+Clerk secrets
+provider metadata
+```
+
+through accidental model serialization.
+
+---
+
+# 68. Email Verification Representation
+
+If `/me` includes:
+
+```text
+email_verified
+```
+
+serialize the trusted local snapshot or the approved trusted state.
+
+Do not infer:
+
+```text
+email_verified = email != null
+```
+
+Do not let profile PATCH mutate it.
+
+---
+
+# 69. Local Timestamps
+
+If API includes:
+
+```text
+created_at
+updated_at
+```
+
+follow existing ISO8601 conventions.
+
+Profile update should change local `updated_at` only for local persisted changes.
+
+Do not pretend Clerk email changes occurred at Laravel update time unless actually reconciled.
+
+---
+
+# 70. Tests — GET `/me`
+
+Given authenticated CUSTOMER:
+
+verify:
+
+* 200;
+* correct local User;
+* approved fields only;
+* no `clerk_user_id`;
+* no password/security secrets;
+* private cache headers.
+
+---
+
+# 71. Tests — Missing Authentication
+
+```http
+GET /api/v1/me
+```
+
+without authentication:
+
+```text
+401 AUTHENTICATION_REQUIRED
 ```
 
 ---
 
-# 71. Code Quality
+# 72. Tests — Update Name
 
-Maintain existing project requirements:
+Authenticated customer:
 
-* small cohesive services;
-* dependency injection;
-* no giant auth service;
-* minimal comments;
-* centralized constants;
-* cognitive complexity ≤15;
-* maximum 3 return statements where practical;
-* PHPStan level 5;
-* no duplicate Clerk integrations.
+```json
+{
+  "name": "David M."
+}
+```
 
-Do not add a special verification service if existing Clerk identity/session abstractions already expose trusted verification state cleanly.
+Verify:
+
+* name updated;
+* phone unchanged;
+* email unchanged;
+* role unchanged;
+* Clerk identity unchanged.
 
 ---
 
-# 72. Commands / Checks
+# 73. Tests — Update Phone
+
+Authenticated customer:
+
+```json
+{
+  "phone": "<valid test phone>"
+}
+```
+
+Verify:
+
+* local profile phone updated;
+* Clerk authentication identity not modified;
+* role/email unchanged.
+
+Use synthetic test numbers.
+
+---
+
+# 74. Tests — Clear Phone
+
+If clearing is approved:
+
+```json
+{
+  "phone": null
+}
+```
+
+Verify:
+
+```text
+phone = null
+```
+
+and authentication continues normally.
+
+---
+
+# 75. Tests — No Phone Profile
+
+Customer with:
+
+```text
+phone = null
+```
+
+must:
+
+* authenticate;
+* GET `/me`;
+* use ordinary authenticated APIs not requiring recipient phone.
+
+This is a required regression test from Phase 4.5.
+
+---
+
+# 76. Tests — Partial PATCH
+
+Initial:
+
+```text
+name = A
+phone = P
+```
+
+PATCH:
+
+```json
+{
+  "name": "B"
+}
+```
+
+Expected:
+
+```text
+name = B
+phone = P
+```
+
+---
+
+# 77. Tests — Role Tampering
+
+Submit:
+
+```json
+{
+  "role": "ADMIN"
+}
+```
+
+Verify no role change.
+
+Use the exact approved validation response.
+
+---
+
+# 78. Tests — Permission Tampering
+
+Submit:
+
+```json
+{
+  "permissions": ["*"]
+}
+```
+
+Verify no authorization change.
+
+---
+
+# 79. Tests — Clerk Identity Tampering
+
+Submit:
+
+```json
+{
+  "clerk_user_id": "user_other"
+}
+```
+
+Verify mapping remains unchanged.
+
+---
+
+# 80. Tests — Email Mutation Rejected
+
+Submit:
+
+```json
+{
+  "email": "attacker@example.test"
+}
+```
+
+through ordinary `/me`.
+
+Verify:
+
+* local email not changed;
+* Clerk email not changed;
+* request rejected according to contract.
+
+---
+
+# 81. Tests — Verification Mutation Rejected
+
+Submit:
+
+```json
+{
+  "email_verified": true
+}
+```
+
+Verify no change.
+
+---
+
+# 82. Tests — Account State Mutation Rejected
+
+Submit:
+
+```json
+{
+  "account_state": "ACTIVE"
+}
+```
+
+Verify customer cannot modify server-controlled state.
+
+---
+
+# 83. Tests — User ID Selection Rejected
+
+Attempt:
+
+```http
+GET /api/v1/me?user_id=<other-user>
+```
+
+or applicable mutation body.
+
+Ensure it cannot select another user.
+
+---
+
+# 84. Tests — Historical Order Snapshot
+
+Update profile:
+
+```text
+name
+phone
+```
+
+Verify historical:
+
+```text
+order recipient_name
+order recipient_phone
+```
+
+remain unchanged.
+
+---
+
+# 85. Tests — Request/Enquiry Snapshot
+
+Update profile contact information.
+
+Verify existing request/enquiry snapshots remain unchanged.
+
+---
+
+# 86. Tests — Email Reconciliation
+
+Using a fake Clerk integration:
+
+initial:
+
+```text
+clerk_user_id = user_A
+email = old@example.test
+```
+
+trusted Clerk reconciliation:
+
+```text
+primary email = new@example.test
+```
+
+Verify:
+
+* same local `users.id`;
+* email snapshot updated;
+* role/name/phone untouched.
+
+---
+
+# 87. Tests — Clerk Sync Cannot Overwrite Laravel Profile
+
+Fake a Clerk `user.updated` representation containing:
+
+```text
+first_name
+phone
+metadata.role
+```
+
+alongside email.
+
+Verify reconciliation updates only approved Clerk-owned fields.
+
+It must not modify:
+
+```text
+local name
+local phone
+local role
+permissions
+account state
+```
+
+---
+
+# 88. Tests — FK Retention Policy
+
+Verify customer/User deletion cannot silently orphan an authenticated cart.
+
+If canonical FK is:
+
+```text
+RESTRICT
+```
+
+test that deletion with dependent cart is rejected.
+
+Do not transform it into a guest cart.
+
+---
+
+# 89. Tests — Historical User Retention
+
+Create:
+
+```text
+User
+→ Order
+```
+
+Attempt ordinary hard deletion.
+
+Verify historical relationship prevents unsafe deletion or application layer denies operation according to the new retention policy.
+
+---
+
+# 90. Tests — Clerk Account Deleted
+
+Using fakes, simulate:
+
+```text
+Clerk identity deleted
+```
+
+Verify the chosen local retention behavior:
+
+* historical User record retained;
+* Orders preserved;
+* no authorization elevation;
+* identity cannot be silently rebound by email.
+
+Do not require a real Clerk deletion.
+
+---
+
+# 91. Offline Tests
+
+Normal test suite must not call Clerk.
+
+Use:
+
+```text
+FakeClerkUserGateway
+FakeIdentityReconciler
+```
+
+or existing equivalents.
+
+Keep tests deterministic.
+
+---
+
+# 92. Profile Factory Updates
+
+Update factories only as necessary.
+
+Support valid cases such as:
+
+```text
+customer with name + phone
+customer with name + no phone
+customer with minimal Clerk identity
+staff
+admin
+```
+
+Do not require fake phone for every customer.
+
+---
+
+# 93. Name Nullability Migration
+
+Inspect the schema.
+
+If `users.name` or the relevant profile name field is NOT NULL solely because old signup required a name, and the new model allows email/password signup without it:
+
+resolve it intentionally.
+
+Possible approach:
+
+```text
+name nullable until profile provided
+```
+
+through a new migration.
+
+Do not insert fabricated names.
+
+If the frozen API requires non-null name, follow the post-freeze contract process before changing representation.
+
+---
+
+# 94. Phone Nullability Migration
+
+Likewise, if any customer-profile phone column is non-null solely due to the old signup policy:
+
+make it nullable through a new migration.
+
+Do not alter unrelated recipient/contact columns.
+
+---
+
+# 95. Data Migration
+
+If schema changes require existing data transformation:
+
+* preserve valid existing names/phones;
+* do not overwrite data;
+* do not create fake placeholders;
+* ensure migration rollback is safe where practical.
+
+---
+
+# 96. No Saved Address Book
+
+Do not introduce saved customer addresses during profile work.
+
+Saved address book remains deferred.
+
+Delivery address is handled in checkout/order flows.
+
+Do not expand Phase 4.6 into address management.
+
+---
+
+# 97. No Marketing Preferences
+
+Do not add:
+
+```text
+marketing_email
+sms_opt_in
+promotional_preferences
+```
+
+to profile.
+
+Notification preferences belong to Group R.
+
+Marketing remains a separate future concern.
+
+---
+
+# 98. No Avatar
+
+Do not add profile image/avatar unless explicitly required later.
+
+Keep V1 profile minimal.
+
+---
+
+# 99. No Date of Birth / Gender
+
+Do not collect unnecessary customer personal data.
+
+Data minimization remains a project security principle.
+
+---
+
+# 100. Profile Service Performance
+
+`GET /me` should be cheap.
+
+Do not eager load:
+
+```text
+orders
+notifications
+cart
+requests
+enquiries
+payments
+```
+
+as part of profile retrieval.
+
+Those have their own endpoints.
+
+---
+
+# 101. Database Query
+
+Current-user lookup should already occur at authentication resolution.
+
+Avoid duplicate queries where possible.
+
+If middleware attaches the local User, `/me` should reuse it.
+
+Do not re-query Clerk identity unnecessarily.
+
+---
+
+# 102. Race Conditions
+
+Concurrent profile PATCH operations must not allow forbidden fields or inconsistent mass assignment.
+
+For simple name/phone updates, normal database atomic update semantics are sufficient unless existing versioning rules specify otherwise.
+
+Do not add complex optimistic locking without a demonstrated requirement.
+
+---
+
+# 103. Email Sync Race
+
+If a Clerk email reconciliation and Laravel name update happen concurrently:
+
+they should update distinct owned fields.
+
+Avoid generic whole-row replacement such as:
+
+```php
+$user->fill($externalUser)->save();
+```
+
+which could overwrite application fields.
+
+Use field-specific updates.
+
+---
+
+# 104. Error and Transaction Boundaries
+
+Follow:
+
+```text
+Transport
+→ Schema
+→ Authentication
+→ Authorization
+→ Domain
+→ Persistence
+```
+
+Profile updates do not require external Clerk calls for Laravel-owned name/phone changes.
+
+Do not put unnecessary external operations inside the DB transaction.
+
+---
+
+# 105. Logging
+
+May log:
+
+```text
+request_id
+local user id
+profile update success/failure
+fields changed by category
+```
+
+Do not log:
+
+```text
+Authorization token
+Clerk secret
+full Clerk payload
+password
+full sensitive personal profile values unnecessarily
+```
+
+Prefer:
+
+```text
+fields_changed = [name, phone]
+```
+
+rather than logging the actual new phone.
+
+---
+
+# 106. Audit
+
+Ordinary customer profile name/phone edits do not require a heavyweight permanent audit log unless existing project rules say otherwise.
+
+Security-sensitive changes such as:
+
+```text
+email
+role
+account state
+```
+
+remain dedicated operations and may require audit later.
+
+Do not create the complete audit subsystem here.
+
+---
+
+# 107. Caching
+
+Test headers for:
+
+```http
+GET /me
+```
+
+according to existing private-cache convention.
+
+At minimum no shared caching.
+
+Profile responses must never be served across users.
+
+---
+
+# 108. Documentation Updates
+
+Update relevant consolidated docs:
+
+```text
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/api/openapi.yaml
+docs/domain/business-rules.md
+docs/decisions.md
+AGENTS.md
+```
+
+only where necessary.
+
+Document:
+
+* email/password signup;
+* phone optional;
+* profile mutable fields;
+* Clerk vs Laravel ownership;
+* email snapshot synchronization;
+* retention policy;
+* cart FK policy;
+* account deletion boundaries.
+
+Do not create unnecessary permanent phase documents.
+
+---
+
+# 109. Update Field Ownership Documentation
+
+Record clearly:
+
+```text
+Clerk authoritative:
+- external identity
+- email
+- verification
+- password
+- sessions
+
+Laravel authoritative:
+- name
+- phone
+- role
+- permissions
+- account state
+- commerce ownership
+```
+
+This should become the reference for future frontend work.
+
+---
+
+# 110. OpenAPI `/me`
+
+Ensure OpenAPI describes:
+
+```http
+GET /api/v1/me
+PATCH /api/v1/me
+```
+
+with correct Clerk bearer security requirement.
+
+`PATCH /me` request schema should contain only ordinary mutable profile fields.
+
+Do not leave obsolete:
+
+```text
+password
+email
+role
+email_verified
+```
+
+as writable fields.
+
+---
+
+# 111. Profile Request Schema
+
+A suitable conceptual schema is:
+
+```text
+UpdateProfileRequest:
+  additionalProperties: false
+
+  name:
+    optional
+
+  phone:
+    optional / nullable
+```
+
+Use exact existing project field names and validation constraints.
+
+Do not invent aliases such as:
+
+```text
+displayName
+phoneNumber
+```
+
+if API uses snake_case.
+
+---
+
+# 112. Contract Compatibility
+
+If nullable name/phone requires changing the frozen V1 response schema:
+
+follow the documented post-freeze change process.
+
+Do not silently change:
+
+```text
+string → nullable string
+```
+
+without recording it.
+
+Clerk adoption and the email/password-only signup decision provide the rationale, but the compatibility process still applies.
+
+---
+
+# 113. Cart FK Documentation
+
+Record the final chosen rule in:
+
+```text
+docs/decisions.md
+docs/domain/business-rules.md
+```
+
+or the appropriate existing location.
+
+Example:
+
+```text
+Authenticated cart ownership does not degrade to guest ownership when a User is deleted.
+
+V1 local Users with commerce history are retained.
+
+carts.user_id uses restrictive deletion semantics.
+```
+
+---
+
+# 114. Group K Handoff
+
+Group K customer management must inherit the retention policy.
+
+Admin must not later implement:
+
+```text
+DELETE customer
+```
+
+that violates:
+
+* historical orders;
+* cart ownership;
+* payment history;
+* request/enquiry retention.
+
+Carry the decision forward explicitly.
+
+---
+
+# 115. Clerk Deletion Handoff
+
+If Clerk `user.deleted` webhook support is implemented later, its handler must obey this Phase 4.6 decision.
+
+It may:
+
+```text
+mark external identity unavailable
+update local account lifecycle
+perform approved anonymization
+```
+
+but must not blindly delete Laravel history.
+
+---
+
+# 116. Security Tests
+
+At minimum add regression coverage for:
+
+```text
+role tampering
+email tampering
+verification tampering
+clerk_user_id tampering
+account-state tampering
+cross-user profile access
+mass assignment
+private cache headers
+```
+
+Profile editing is a security-sensitive boundary.
+
+---
+
+# 117. Static Analysis / Formatting
+
+All changes must pass:
+
+```text
+PHPStan/Larastan level 5
+Laravel Pint
+PHPUnit
+```
+
+Do not suppress type issues broadly.
+
+---
+
+# 118. Fresh Migration
+
+If any migration changes:
+
+```text
+name nullable
+phone nullable
+cart FK delete policy
+```
+
+rerun:
+
+```bash
+php artisan migrate:fresh --seed
+```
+
+The entire schema must remain rebuildable from zero.
+
+---
+
+# 119. Database Engine Review
+
+Because the cart FK inconsistency was specifically MySQL vs SQLite:
+
+verify the new migration/schema intent against both where practical.
+
+SQLite remains canonical CI unless Group U later introduces MySQL CI.
+
+Do not introduce MySQL-only test assumptions into the canonical suite.
+
+---
+
+# 120. Existing MySQL Harness Failures
+
+Do not attempt to solve the previously recorded nine MySQL-only harness failures here:
+
+```text
+raw PRAGMA
+pcntl-fork connection loss
+raw DROP CHECK
+```
+
+They remain Group U concerns if MySQL-backed CI is introduced.
+
+Only verify the intended FK schema as far as the current harness safely permits.
+
+---
+
+# 121. ReferenceGenerator Work
+
+Do not mix the deferred reference-generator cleanup into profile work.
+
+Keep Phase 4.6 focused.
+
+---
+
+# 122. Code Quality
+
+Maintain:
+
+* cognitive complexity ≤15;
+* maximum 3 return statements where practical;
+* strict DTO/request boundaries;
+* small services;
+* explicit naming;
+* minimal comments;
+* no giant User service;
+* no magic strings;
+* centralized profile serialization;
+* centralized identity reconciliation.
+
+Do not duplicate Clerk integration logic.
+
+---
+
+# 123. Expected Files
+
+Depending on existing structure, likely changes include some subset of:
+
+```text
+app/Http/Controllers/...
+app/Http/Requests/...
+app/Http/Resources/...
+app/Services/...
+app/Models/User.php
+app/Models/CustomerProfile.php
+database/migrations/...
+database/factories/...
+routes/api.php
+tests/Feature/...
+tests/Unit/...
+docs/...
+```
+
+Reuse existing abstractions rather than introducing duplicates.
+
+---
+
+# 124. Commands / Verification
 
 From:
 
@@ -1432,7 +2549,7 @@ From:
 backend/laravel/
 ```
 
-run:
+run at minimum:
 
 ```bash
 php artisan test
@@ -1441,7 +2558,7 @@ vendor/bin/phpstan analyse
 composer audit
 ```
 
-If schema changed because phone became nullable:
+If schema changed:
 
 ```bash
 php artisan migrate:fresh --seed
@@ -1449,118 +2566,115 @@ php artisan migrate:fresh --seed
 
 must also pass.
 
-Run any project-defined equivalents.
+Use existing repository scripts where defined.
 
 ---
 
-# 73. Files Changed Report
+# 125. Files Changed Report
 
-At completion report:
+At completion provide:
 
 ## Files changed
 
 Exact paths.
 
-## Authentication policy changes
-
-Explicitly state:
-
-```text
-signup = email + password
-email verification = required through Clerk
-phone = not required
-```
-
 ## Schema changes
 
-Especially whether:
+Identify:
 
-```text
-users.phone
-customer_profiles.phone
-```
-
-needed nullable adjustments.
+* name nullability if changed;
+* phone nullability if changed;
+* cart FK correction if changed.
 
 ## API changes
 
-List only auth-related contract changes.
+Identify `/me` implementation/contract changes.
+
+## Clerk synchronization
+
+Explain what is synchronized and in which direction.
 
 ## Tests
 
-List all added/updated tests.
+List added/updated tests.
 
 ## Commands
 
-Exact commands + results.
+Exact commands and results.
+
+## Known risks
+
+Remaining profile/account lifecycle concerns.
 
 ## Deferred
 
-Phase 4.6+ concerns.
+Explicitly identify later Group D/Group K/frontend work.
 
 ---
 
-# 74. Definition of Done
+# 126. Definition of Done
 
-Phase 4.5 is complete when:
+Phase 4.6 is complete when:
 
-* customer signup requires email + password only;
-* phone is not required for customer signup;
-* Clerk is the sole email-verification authority;
-* verification at signup is enabled/required;
-* the configured verification strategy is documented;
-* Laravel generates no email verification token/code;
-* Laravel sends no duplicate verification email;
-* incomplete/unverified Clerk signup cannot become unrestricted authenticated application access;
-* verified Clerk customer can be provisioned/resolved correctly;
-* local email snapshot comes from trusted Clerk data;
-* local verification state, if present, derives from Clerk;
-* email remains non-authoritative for local identity linking;
-* CUSTOMER remains the only public-registration role;
-* public catalog stays public;
-* anonymous request/enquiry behavior stays unchanged;
-* phone-related schema no longer blocks valid email/password-only registration;
+* `GET /api/v1/me` works for authenticated users;
+* `PATCH /api/v1/me` supports only approved application profile fields;
+* name is Laravel-owned;
+* phone is Laravel-owned and optional;
+* phone is not required for signup/authentication;
+* email is Clerk-owned and read-only through ordinary profile operations;
+* email verification is Clerk-owned;
+* `clerk_user_id` cannot be modified by clients;
+* role/permissions/account state cannot be modified through `/me`;
+* partial PATCH semantics are correct;
+* unknown/server-controlled fields are rejected;
+* profile responses are private/no-store;
+* Clerk data is not fetched on every `/me`;
+* synchronization ownership is field-specific;
+* delayed webhook delivery cannot break profile correctness;
+* historical Orders/Requests/Enquiries are not rewritten by profile edits;
+* local customer retention policy is documented;
+* Clerk deletion does not imply automatic Laravel hard deletion;
+* authenticated cart ownership is not converted into guest ownership;
+* the `carts.user_id` delete-policy mismatch has an explicit canonical resolution;
+* any required new migration preserves fresh rebuild;
 * offline tests pass;
 * PHPUnit passes;
 * Pint passes;
 * PHPStan passes;
 * Composer audit passes;
-* documentation accurately reflects the new registration policy.
+* documentation/OpenAPI match implementation.
 
 ---
 
-# 75. Out of Scope
+# 127. Out of Scope
 
 Do not implement:
 
-* final Next.js verification UI;
-* Flutter verification UI;
+* website profile UI;
+* Flutter profile UI;
+* password change;
+* password recovery;
 * phone authentication;
-* SMS OTP;
-* phone-required signup;
-* profile editing;
-* email-change UI;
-* account deletion;
-* Clerk webhooks;
-* MFA setup;
-* admin email-verification override;
-* Staff credential management;
-* checkout contact implementation.
+* SMS verification;
+* saved addresses;
+* avatars;
+* marketing preferences;
+* notification preferences;
+* full Clerk webhook subsystem unless specifically assigned;
+* full self-service account deletion UI;
+* broad data anonymization;
+* Admin customer-management APIs;
+* Staff customer editing;
+* full audit-log infrastructure.
 
 ---
 
-# 76. STOP Condition
+# 128. STOP Condition
 
-STOP when Clerk email verification is the sole verification mechanism, customer signup works conceptually and structurally with only:
-
-```text
-email + password
-```
-
-phone is no longer required by authentication or local provisioning, and all Phase 4.5 validation/tests/documentation are complete.
+STOP when the application's `/me` profile boundary, Clerk/Laravel field ownership, optional phone behavior, synchronization rules, account-retention policy, and cart-user FK deletion policy are implemented/documented and all Phase 4.6 checks pass.
 
 Do not continue automatically.
 
 The next roadmap phase is:
 
-**Phase 4.6 — Profile Operations / Account Profile Synchronization**
+**Phase 4.7 — API Authentication for Mobile / Flutter Clerk Boundary**

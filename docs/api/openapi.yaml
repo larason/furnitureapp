@@ -690,7 +690,9 @@ components:
           type: string
           readOnly: true
         name:
-          type: string
+          type:
+          - string
+          - 'null'
         email:
           type: string
           format: email

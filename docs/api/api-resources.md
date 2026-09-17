@@ -766,7 +766,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 |---|---|---|---|---|
 | `id` | string opaque `user_...` | Recipient only (own) | no | Stable opaque, server-generated; never client-supplied or mutable |
 | `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | Recipient only (own) read-only | no | Server-controlled; `UPPER_SNAKE_CASE`; `PATCH /me {role:ADMIN}` rejected |
-| `name` | string | Own | no | Trimmed non-empty, length validated; mutable via `PATCH /me` allow-list |
+| `name` | string \| null | Own | yes until supplied | Nullable for email/password-only signup; non-empty when supplied; mutable via `PATCH /me` allow-list |
 | `email` | string | Own | no | Clerk-authoritative verified identity/contact snapshot; read via Profile, changed only through Clerk security workflow, not ordinary `PATCH` |
 | `phone` | string \| null | Own | yes | Normalized; nullable if business permits clearing; mutable via `PATCH /me` allow-list; `phone_verified` (if later) server-controlled |
 | `email_verified` | boolean | Own | no | Clerk-authoritative status synchronized into a server-controlled local snapshot; client `{"email_verified":true}` rejected |
@@ -918,25 +918,25 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 | Field | Type | Exposure | Auth | Notes |
 |---|---|---|---|---|
 | `id` | string (opaque) | CUSTOMER `own` / Admin `authorized` | authenticated | Opaque identifier, not DB leak |
-| `name` | string | own / authorized admin | authenticated for own; Staff not browse-as-customer | Trimmed, non-empty; **mutable via `PATCH /me` allow-list** (`§8`) |
+| `name` | string \| null | own / authorized admin | authenticated for own; Staff not browse-as-customer | Nullable until the customer supplies a profile name; non-empty when supplied; **mutable via `PATCH /me` allow-list** (`§8`) |
 | `email` | string | own / authorized admin | authenticated | Lowercased/trimmed, unique; not client-set `email_verified`; **change via security workflow, not ordinary `PATCH`** (`§8`/`§29.7`) |
 | `phone` | string \| null | own / authorized admin | authenticated | Normalized; important for orders/delivery but not auth verification by default; **nullable, mutable via `PATCH /me`** (`§8`) |
 | `role` | enum `CUSTOMER`/`STAFF`/`ADMIN` CLOSED | own (own role) / authorized admin | authenticated | Server-controlled; client self-promotion rejected; **read-only via Profile** (`§8`) |
 | `email_verified` | boolean | own | authenticated | Server-controlled read-only alias for `email_verified_at` (`email_verified_at: ISO8601 Z \| null` authoritative backing attribute, not wire field); client `{"email_verified":true}` rejected |
 | `created_at` / `updated_at` | ISO8601 `Z` | own | authenticated | Audit; **server-controlled** |
 
-**Rules:** Customer is primary actor with full ownership of own account; `STAFF`/`ADMIN` do not own customer accounts (see `api-contract.md §17.1` / `§29`). Profile `PATCH` (`USER-002`) is **allow-listed (`name`, `phone`)** — not `role`, `email_verified_at`, `password`, `account_state` (dedicated workflows). `email` change is **security-sensitive** — not ordinary `PATCH` (`§29.7`). No `password`/`password_hash` ever serialized. For full V1 resource representation, field matrix, and security boundary see `§8`.
+**Rules:** Customer is primary actor with full ownership of own account; `STAFF`/`ADMIN` do not own customer accounts (see `api-contract.md §17.1` / `§29`). Profile `PATCH` (`USER-002`) is **allow-listed (`name`, `phone`)** — not `role`, `email_verified_at`, `password`, `account_state` (dedicated workflows). `name` is nullable until supplied and must be non-empty when supplied; `phone` may be cleared with `null`. `email` change is **security-sensitive** — not ordinary `PATCH` (`§29.7`). No `password`/`password_hash` ever serialized. For full V1 resource representation, field matrix, and security boundary see `§8`.
 
 ### 13.2 Authentication (Conceptual Resource, Not Serialized Secrets)
 
-- **Concepts:** `registration` (public self-registration → `CUSTOMER`), `login` (shared identity across Website/Flutter/Admin, same Laravel backend), `logout` (invalidates server session/credential), `password reset` (secure single-use time-limited token; email delivery Group R deferred; generic “Request received.” to prevent enumeration), `email verification` (secure token → `email_verified_at`; phone/SMS OTP not required).
+- **Concepts:** `registration` (Clerk public self-registration with `email` + `password`, required email verification, then `CUSTOMER` provisioning), `login` (shared identity across Website/Flutter/Admin, same Laravel backend), `logout` (Clerk session lifecycle), `password reset` (Clerk-managed; Laravel receives no password/reset token), `email verification` (Clerk-managed → local `email_verified_at` snapshot; phone/SMS OTP not required).
 - **Representation principles (when endpoints later defined):** Success uses `data` envelope per `api-contract.md §2/§17.13`; not `auth_success`/`login_result`. Error uses `errors` per §15: `AUTHENTICATION_REQUIRED` vs `FORBIDDEN` distinct, `INVALID_CREDENTIALS`/`SESSION_EXPIRED`. No `password`/`hash`/`reset_token`/`session_token` in any resource payload.
 
 ### 13.3 Session / Credential (Conceptual, Not Directly Exposed)
 
 | Concern | Concept | Notes |
 |---|---|---|
-| `Next.js` | first-party browser session (secure httpOnly cookie) | Not long-lived JS secret; suitable for SSR; no auth on public catalog routes |
+| `Next.js` | Clerk client session, then `Authorization: Bearer <Clerk session_token>` to Laravel | Laravel bearer-only; no browser/session cookie authenticates Laravel; no auth on public catalog routes |
 | `Flutter` | API credential/token | Same identity as web; cross-platform no duplicate accounts |
 | `Admin` | administrative session | Same backend system, stronger controls (shorter idle, revocation, visibility, MFA/audit later) |
 | Lifecycle | `active → expired → revoked` (conceptual) | Multi-device permitted for Customer; logout on one does not kill others; revocation via logout/password change/admin action |

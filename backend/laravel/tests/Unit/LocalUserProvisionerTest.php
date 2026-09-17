@@ -76,6 +76,18 @@ class LocalUserProvisionerTest extends TestCase
         $this->assertNotNull($user->email_verified_at);
         $this->assertNull($user->getRawOriginal('password'));
     }
+
+    public function test_it_provisions_a_verified_email_without_name(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $provisioner = new LocalUserProvisioner(new FakeClerkUserGateway(name: null));
+        $identity = new AuthenticatedClerkIdentity('user_noname_1', 'sess_3', 'https://clerk.test');
+
+        $user = $provisioner->resolve($identity);
+
+        $this->assertNull($user->name);
+        $this->assertTrue($user->hasRole(RoleName::CUSTOMER->value));
+    }
 }
 
 final class FakeClerkUserGateway implements ClerkUserGateway
@@ -83,10 +95,11 @@ final class FakeClerkUserGateway implements ClerkUserGateway
     public function __construct(
         private readonly bool $verified = true,
         private readonly ?string $phone = null,
+        private readonly ?string $name = 'Test Customer',
     ) {}
 
     public function getById(string $clerkUserId): ClerkUserSnapshot
     {
-        return new ClerkUserSnapshot($clerkUserId, 'same@example.com', 'Test Customer', $this->phone, $this->verified);
+        return new ClerkUserSnapshot($clerkUserId, 'same@example.com', $this->name, $this->phone, $this->verified);
     }
 }
