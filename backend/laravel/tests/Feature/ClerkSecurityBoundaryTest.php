@@ -156,16 +156,25 @@ class ClerkSecurityBoundaryTest extends TestCase
 
     public function test_staff_has_no_customer_credential_administration_route(): void
     {
-        $staff = User::factory()->staff()->create();
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_123']);
 
-        // Administrative routes are behind the framework `auth` + `admin` guards
-        // (not `clerk.auth`). An authenticated staff principal is denied by the
-        // deny-by-default AdministrativeAccess boundary.
-        $this->actingAs($staff)->postJson('/api/v1/admin/staff', [])
+        $verifier = $this->mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
+            'staff_123',
+            'sess_123',
+            'https://clerk.example.test',
+        ));
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
+
+        $headers = ['Authorization' => 'Bearer session-token'];
+
+        $this->withHeaders($headers)->postJson('/api/v1/admin/staff', [])
             ->assertForbidden();
 
-        $this->actingAs($staff)->patchJson('/api/v1/categories/demo', [])
+        $this->withHeaders($headers)->patchJson('/api/v1/categories/demo', [])
             ->assertForbidden();
+
+        $this->assertSame('STAFF', $staff->fresh()->getRoleNames()->first());
     }
 
     public function test_clerk_auth_route_without_bearer_returns_authentication_required(): void

@@ -27,4 +27,3 @@
 * MySQL enums match case-insensitively (e.g. lowercase `relation_type` persists at DB level; app enum casts remain authoritative) — Group K admin category/product writes must validate CLOSED values before attach; do not rely on DB rejection alone.
 * `carts.user_id` FK is RESTRICT on MySQL but SET NULL on sqlite (preservation holds on both, proven) — unify delete action when the user-account retention policy is decided (Group D profile ops / Group K customer management).
 * 9 suite failures occur only on MySQL-backed runs (raw `PRAGMA`, pcntl-fork connection loss, raw `DROP CHECK` in test helpers) — sqlite remains canonical CI; port those harness assumptions only if MySQL-backed CI is introduced (Group U).
-

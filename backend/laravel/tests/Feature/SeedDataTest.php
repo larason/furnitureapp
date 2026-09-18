@@ -27,6 +27,7 @@ use Database\Seeders\CategorySeeder;
 use Database\Seeders\CommerceDemoSeeder;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\DemoSeeder;
+use Database\Seeders\DevelopmentUserSeeder;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -48,6 +49,23 @@ class SeedDataTest extends TestCase
         $this->assertNotNull(CustomerProfile::where('user_id', $customer->id)->first());
         $this->assertNotNull(StaffProfile::where('user_id', $staff->id)->first());
         $this->assertNotNull(StaffProfile::where('user_id', $admin->id)->first());
+    }
+
+    public function test_development_seeder_backfills_only_null_staff_states(): void
+    {
+        $customer = User::factory()->customer()->create([
+            'email' => 'customer@example.com',
+            'account_state' => null,
+        ]);
+        $staff = User::factory()->staff()->create([
+            'email' => 'staff@example.com',
+            'account_state' => 'SUSPENDED',
+        ]);
+
+        $this->seed(DevelopmentUserSeeder::class);
+
+        $this->assertNull($customer->fresh()->account_state);
+        $this->assertSame('SUSPENDED', $staff->fresh()->account_state);
     }
 
     public function test_profile_factories_create_valid_rows(): void

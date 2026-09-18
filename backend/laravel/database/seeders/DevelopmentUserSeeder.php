@@ -41,11 +41,16 @@ class DevelopmentUserSeeder extends Seeder
                 'phone' => '+255700000001',
                 'password' => Hash::make($password),
                 'email_verified_at' => now(),
+                'account_state' => $isStaff ? 'ACTIVE' : null,
             ]
         );
 
         if ($generated && $user->wasRecentlyCreated) {
             $this->command->info("Demo user {$email} created with generated password: {$password}");
+        }
+
+        if ($isStaff && $user->account_state === null) {
+            $user->forceFill(['account_state' => 'ACTIVE'])->save();
         }
 
         Role::firstOrCreate(['name' => $role->value, 'guard_name' => config('auth.defaults.guard')]);

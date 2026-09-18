@@ -39,6 +39,22 @@ The system must make the real business workflow simple:
 
 The platform must be designed so that the business can grow later without forcing version 1 to implement enterprise features that are not currently needed.
 
+**Note -** Always note that A good furniture store msut have:
+
+1. **Easy Navigation**: A great website is simple to use. Categories are clear, and menus are easy to follow. This is the foundation for cool furniture stores online.
+
+2. **High-Quality Images and Details**: Shoppers cannot touch or feel the furniture online. That is why sharp images, multiple views, and detailed descriptions are a must. They help buyers make confident decisions.
+
+3. **Smooth Checkout Process**: No one likes a complicated checkout. The best websites keep it fast, simple, and secure, with different payment options to fit customer needs.
+
+4. **Mobile-First friendly Design**: Most people shop on their phones. A website that looks and works well on any device provides a simple experience for users.
+
+5. **Personalization and Inspiration**: The best platforms do not just sell furniture. They guide customers with room ideas, style suggestions, and product recommendations, making shopping easier and more fun.
+
+6. **Best support for assistive technologies**. No one is left behind hence every human either disabled or not he/she CAN use the website as easy as possible.
+
+In short, a great furniture eCommerce website blends design, function, and trust. By investing in professional eCommerce web design services, brands can overcome the challenges of traditional retail and create an online shopping experience that is smooth, intuitive, and enjoyable.
+
 ---
 
 ## 3. Core Architectural Principle
@@ -1315,45 +1331,11 @@ Limit the number of comments as minimum as possible when writing any code. This 
 
 Whenever the agent touches or creates functions in the Product Image implementation, keep each function's **cognitive complexity at or below the recommended threshold of 15**.
 
-If an existing function involved in this phase exceeds the threshold:
-
-1. refactor it as part of the phase;
-2. split nested conditional logic into small cohesive functions;
-3. move domain decisions into focused services/value objects/helpers where justified;
-4. reduce nesting with guard clauses where that improves clarity;
-5. avoid creating long boolean expressions;
-6. keep each extracted function narrowly responsible.
-
-Do not "fix" complexity by suppressing analyzer warnings.
-
-Do not merely increase the configured threshold.
-
-The purpose is maintainability and reduced future change cost.
-
----
-
 2. Return-statement limit
 
 Functions introduced or refactored in this phase should contain **no more than 3 return statements**.
 
 Treat this as a project quality rule.
-
-When a function has more than three returns:
-
-* simplify the control flow;
-* extract decision logic;
-* use an explicit result/value variable where that improves readability;
-* split the function if it has more than one clear responsibility.
-
-Do not make code harder to read merely to reduce the count.
-
-Do not replace several returns with a deeply nested conditional structure.
-
-The target is simpler control flow, not mechanical metric compliance.
-
-Add/refine static-analysis configuration so this rule is visible during development where the project's tooling supports it.
-
----
 
 3. Duplicate string literals
 
@@ -1456,21 +1438,3 @@ logging
 error handling
 test coverage for critical behavior
 ```
-
----
-
-# 29. Starting Rule
-
-The project starts at:
-
-**PHASE 1.1 — Define API scope** inside phases/
-
-**DO NOT COMMIT**. After finishing the changes DO NOT COMMIT, STAGE OR PUSH. leave this work to the project owner.
-
-Do not begin with UI implementation.
-
-Do not begin with MySQL table creation before the API/domain contract is sufficiently defined.
-
-Do not begin Flutter application features before the backend contract needed by those features exists.
-
-When the project owner asks for the next phase, use this document as the governing scope and continue from the exact next micro-phase.

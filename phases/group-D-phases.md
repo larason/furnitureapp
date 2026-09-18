@@ -1,40 +1,1250 @@
-# Phase 4.8 — Website Authentication Contract / Next.js Clerk Integration Boundary
+# Phase 4.10 — Laravel Policies / Permissions / Ownership Authorization
 
 ## Purpose
 
-Define and validate the authentication contract that the future Next.js website will use with Clerk and the Laravel backend.
+Implement the Laravel authorization layer for authenticated application users.
 
-This is **not a frontend implementation phase**.
-
-The purpose is to ensure that when website development begins in the later frontend groups, the frontend agent already has a stable, secure authentication boundary to implement.
-
-The future architecture is:
+Phase 4.9 established:
 
 ```text
-Next.js website
-    ↓
-Clerk browser session
-    ↓
-Clerk session token
-    ↓
-Authorization: Bearer <token>
-    ↓
-Laravel API
-    ↓
-existing Clerk authentication middleware
-    ↓
-local Laravel User
-    ↓
-Laravel RBAC / policies / domain
+CUSTOMER
+STAFF
+ADMIN
 ```
 
-Phase 4.8 defines this contract.
+Phase 4.10 now answers:
 
-It must **not build the website implementation yet**.
+> May this authenticated actor perform this specific action on this specific resource in its current state?
+
+The authorization model must combine:
+
+```text
+authenticated User
++
+role
++
+permission
++
+ownership / operational scope
++
+resource state
++
+action
+=
+authorization decision
+```
+
+Role alone is never enough.
+
+This is a backend-only phase.
 
 ---
 
-# 1. Critical Phase Boundary
+# 1. Dependencies
+
+Required:
+
+* Phase 4.1–4.8 complete;
+* Phase 4.9 RBAC complete;
+* Clerk authentication resolves to local Laravel User;
+* CUSTOMER / STAFF / ADMIN roles work;
+* canonical permissions infrastructure exists;
+* public CUSTOMER provisioning works;
+* `/me` works;
+* role cannot be client-controlled;
+* Staff cannot control customer accounts;
+* Admin/Staff boundaries are documented.
+
+Do not start if role resolution is still ambiguous.
+
+---
+
+# 2. Scope
+
+Implement authorization for existing V1 backend operations using standard Laravel:
+
+```text
+Policies
+Gates where appropriate
+RBAC permissions
+ownership checks
+resource-state checks
+404 masking where required
+```
+
+Focus on authorization.
+
+Do not redesign domain workflows.
+
+Do not build frontend guards.
+
+Do not implement new APIs merely to demonstrate policies.
+
+---
+
+# 3. Core Authorization Pipeline
+
+Preserve:
+
+```text
+Transport
+→ Schema validation
+→ Authentication
+→ Authorization
+→ Domain validation
+→ Concurrency / Transaction
+→ Persistence
+```
+
+Authorization must happen before protected business mutation.
+
+Do not:
+
+```text
+load private resource
+→ mutate
+→ then check permission
+```
+
+---
+
+# 4. Default Deny
+
+Use:
+
+```text
+not explicitly authorized
+→ deny
+```
+
+Do not infer access because:
+
+```text
+user is authenticated
+user is STAFF
+user is ADMIN
+resource exists
+frontend displayed the action
+```
+
+Every protected action needs a defined authorization path.
+
+---
+
+# 5. Standard Laravel Authorization
+
+Prefer:
+
+```text
+Laravel Policies
+```
+
+for resource/action authorization.
+
+Use Gates for non-resource/global operations where appropriate.
+
+Examples:
+
+```text
+OrderPolicy
+ProductPolicy
+InventoryPolicy
+FurnitureRequestPolicy
+EnquiryPolicy
+StaffPolicy
+```
+
+Use actual project domain names.
+
+Do not create a custom authorization engine.
+
+---
+
+# 6. Policy Responsibilities
+
+Policies should answer:
+
+```text
+may actor perform action?
+```
+
+Policies may consider:
+
+* role;
+* permission;
+* ownership;
+* account state;
+* resource relationship;
+* coarse resource state where authorization depends on it.
+
+Policies should not perform:
+
+* inventory mutation;
+* order state transition;
+* pricing calculation;
+* payment processing;
+* notifications;
+* large domain workflows.
+
+---
+
+# 7. Authorization vs Domain Validation
+
+Keep this distinction strict.
+
+Example:
+
+```text
+CUSTOMER owns order
+→ authorization allows attempting cancel
+```
+
+Then:
+
+```text
+order cancellation window expired
+→ domain rejects cancellation
+```
+
+Do not place the entire cancellation algorithm inside `OrderPolicy`.
+
+Likewise:
+
+```text
+STAFF has orders.accept
+→ policy may allow access
+```
+
+but:
+
+```text
+order current status invalid for ACCEPTED transition
+→ domain validation rejects
+```
+
+---
+
+# 8. CUSTOMER Authorization Model
+
+CUSTOMER access should usually require:
+
+```text
+authenticated CUSTOMER
++
+owns resource
+```
+
+Examples:
+
+```text
+own profile
+own cart
+own orders
+own request history
+own enquiry history
+own notifications
+```
+
+CUSTOMER must not see or modify another customer's private resources.
+
+---
+
+# 9. Customer Ownership Source
+
+Ownership must come from server data.
+
+Example:
+
+```text
+$order->user_id === $user->id
+```
+
+not:
+
+```text
+request.user_id
+request.customer_id
+query.user_id
+```
+
+Never trust ownership identifiers submitted by clients.
+
+---
+
+# 10. Own Profile
+
+For:
+
+```text
+GET /me
+PATCH /me
+```
+
+identity already derives from authentication.
+
+Do not require a separately supplied customer ID.
+
+This is the safest ownership model.
+
+---
+
+# 11. Own Cart
+
+Authenticated cart operations must use the cart belonging to the authenticated local User.
+
+Do not authorize:
+
+```text
+cart.user_id supplied by client
+```
+
+For guest carts, use the existing guest-token ownership rules separately.
+
+Do not mix guest-cart bearer authority with authenticated User authority.
+
+---
+
+# 12. Own Orders
+
+CUSTOMER may only access orders where:
+
+```text
+orders.user_id == authenticated user.id
+```
+
+or the exact existing ownership relation.
+
+Do not allow CUSTOMER to query arbitrary order IDs and receive differential authorization information.
+
+---
+
+# 13. Order Detail Masking
+
+For a private order belonging to another customer:
+
+prefer:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+rather than:
+
+```text
+403 FORBIDDEN
+```
+
+where the existing contract requires ownership masking.
+
+This prevents order enumeration.
+
+---
+
+# 14. Order Cancellation Authorization
+
+Policy should answer:
+
+```text
+Is this Customer allowed to attempt cancellation of this Order?
+```
+
+Typical authorization criteria:
+
+```text
+authenticated
+CUSTOMER or otherwise explicitly allowed actor
+owns Order
+```
+
+Then domain logic handles:
+
+```text
+20-minute window
+current order status
+other cancellation rules
+```
+
+Do not duplicate cancellation timing logic inside policy unless needed only as authorization state.
+
+---
+
+# 15. Order History
+
+CUSTOMER may list only own orders.
+
+Prefer authorization-aware queries:
+
+```text
+where user_id = authenticated user.id
+```
+
+rather than:
+
+```text
+load all
+→ filter afterward
+```
+
+Never fetch another customer's rows into a customer-visible response path.
+
+---
+
+# 16. Furniture Requests
+
+For authenticated request history:
+
+```text
+CUSTOMER
+→ own authenticated requests only
+```
+
+Anonymous furniture requests remain anonymous.
+
+Do not automatically authorize access to an old anonymous request because:
+
+```text
+request.email == user.email
+```
+
+Email is not ownership proof.
+
+---
+
+# 17. Enquiries
+
+Same rule:
+
+```text
+authenticated enquiry history
+→ own linked enquiries only
+```
+
+Do not attach or expose anonymous enquiries by matching email.
+
+---
+
+# 18. Notifications
+
+CUSTOMER must see only notifications owned by that local User.
+
+Never authorize by:
+
+```text
+notification email
+Clerk user ID in request
+frontend user ID
+```
+
+Use local ownership.
+
+---
+
+# 19. STAFF Authorization Model
+
+STAFF authorization should require:
+
+```text
+role = STAFF
++
+specific permission
++
+resource/action context
++
+valid operational scope
+```
+
+Do not implement:
+
+```text
+if STAFF → allow all operational APIs
+```
+
+---
+
+# 20. STAFF Operational Access
+
+STAFF may later handle explicitly authorized operations such as:
+
+```text
+orders
+inventory
+catalog
+delivery
+requests/enquiries
+```
+
+only when corresponding permissions exist.
+
+Example:
+
+```text
+STAFF
++
+orders.accept
+→ may attempt order acceptance
+```
+
+Domain rules still validate the transition.
+
+---
+
+# 21. STAFF Customer Protection
+
+STAFF must never gain ordinary authority over:
+
+```text
+customer role
+customer permissions
+customer password/security
+customer email identity
+customer suspension
+customer deletion
+customer impersonation
+```
+
+Even if Staff can view customer contact information required to fulfill an order.
+
+Operational access is not account ownership.
+
+---
+
+# 22. STAFF Order Visibility
+
+STAFF may view operational order information if explicitly permitted.
+
+Do not treat that as permission to:
+
+```text
+edit customer profile
+view authentication data
+change ownership
+```
+
+Serialize only information needed for the operational workflow.
+
+---
+
+# 23. STAFF Inventory Access
+
+Inventory changes require explicit permission such as the approved equivalent of:
+
+```text
+inventory.manage
+```
+
+Authorization permits the operation.
+
+Domain/service layer still validates:
+
+```text
+product/variant
+quantity
+location
+stock invariant
+transaction correctness
+```
+
+---
+
+# 24. STAFF Catalog Access
+
+If Staff has approved catalog permissions:
+
+policy may allow those specific actions.
+
+Do not automatically give Staff every catalog operation.
+
+Use documented permission names only.
+
+---
+
+# 25. STAFF Cannot Approve STAFF
+
+Staff approval remains:
+
+```text
+ADMIN-only
+```
+
+No Staff policy should authorize:
+
+```text
+staff.approve
+```
+
+unless the V1 model is formally changed.
+
+---
+
+# 26. ADMIN Authorization Model
+
+ADMIN is the highest role but must still use explicit authorization.
+
+Preferred:
+
+```text
+ADMIN
++
+required permission
++
+resource/action conditions
+```
+
+Do not use one universal:
+
+```php
+before() {
+    return $user->hasRole('ADMIN');
+}
+```
+
+to bypass every policy automatically.
+
+That would defeat explicit authorization and domain controls.
+
+---
+
+# 27. Policy `before()` Use
+
+If using Laravel Policy `before()`:
+
+use cautiously.
+
+Do not create a blanket ADMIN override unless explicitly intended and documented.
+
+For this V1, prefer explicit permissions so privileged actions remain auditable and predictable.
+
+---
+
+# 28. Admin Staff Management
+
+Admin-only actions may include:
+
+```text
+approve Staff
+suspend Staff
+reactivate Staff
+manage Staff permissions
+```
+
+according to the existing contract.
+
+Do not extend these into unrestricted Customer account control.
+
+Customer-management APIs remain separately controlled.
+
+---
+
+# 29. Role + Permission Pattern
+
+A typical policy pattern should conceptually be:
+
+```text
+if actor lacks permission
+→ deny
+
+if actor/resource relationship invalid
+→ deny
+
+otherwise
+→ allow attempt
+```
+
+Keep policy methods small.
+
+---
+
+# 30. Avoid Repeated Role Checks
+
+Where permissions already encode the approved action, do not unnecessarily duplicate:
+
+```text
+role == STAFF
+&& permission == orders.accept
+```
+
+unless the role restriction itself is part of the invariant.
+
+Use the cleanest existing RBAC mechanism.
+
+---
+
+# 31. Permission Is Not Domain State
+
+Do not create permissions like:
+
+```text
+orders.accept.pending
+orders.accept.processing
+```
+
+to encode order states.
+
+Use:
+
+```text
+orders.accept
+```
+
+then let the domain validate whether the current state can transition.
+
+---
+
+# 32. Authorization-Aware Queries
+
+Where possible, scope queries before loading private resources.
+
+Examples:
+
+```text
+customer order:
+Order::where('user_id', $user->id)
+```
+
+Operational Staff queries may use approved operational scope.
+
+Avoid:
+
+```text
+Order::find($id)
+→ afterward discover ownership mismatch
+```
+
+where query scoping provides stronger privacy.
+
+---
+
+# 33. Route Model Binding
+
+Review Laravel route model binding for private resources.
+
+Default model binding can reveal resource existence depending on error behavior.
+
+For ownership-sensitive Customer routes:
+
+use authorization-aware resolution or consistent masking.
+
+Do not allow:
+
+```text
+existing other-user resource → 403
+nonexistent resource → 404
+```
+
+when the contract requires existence masking.
+
+---
+
+# 34. 404 Masking
+
+Apply 404 masking where private resource existence must not be disclosed.
+
+Typical candidates:
+
+```text
+customer order detail
+customer request detail
+customer enquiry detail
+other private customer-owned resources
+```
+
+Do not blindly use 404 for every authorization failure.
+
+---
+
+# 35. 403 Use
+
+Use:
+
+```text
+403 FORBIDDEN
+```
+
+when:
+
+* resource visibility itself is not sensitive;
+* authenticated actor lacks permission;
+* role/action denial is safe to reveal.
+
+Examples may include:
+
+```text
+STAFF tries admin staff approval
+CUSTOMER accesses clearly administrative endpoint
+```
+
+Use the existing contract.
+
+---
+
+# 36. 401 Use
+
+Unauthenticated caller:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+Never use 403 for missing authentication.
+
+---
+
+# 37. Private Resource Enumeration
+
+Tests must verify attackers cannot enumerate:
+
+```text
+orders
+private requests
+enquiries
+notifications
+```
+
+through status-code differences or detailed error messages.
+
+---
+
+# 38. No Authorization Through Validation Errors
+
+Do not reveal resource details before authorization by returning:
+
+```text
+ORDER_NOT_CANCELLABLE
+```
+
+for another user's order.
+
+Ownership/authz should be resolved first.
+
+For private resources:
+
+```text
+other user's order
+→ 404
+```
+
+before domain-specific cancellation details are exposed.
+
+---
+
+# 39. Authorization Order Example
+
+Customer cancel:
+
+```text
+validate route/input
+→ authenticate
+→ resolve Order safely
+→ ownership authorization
+→ cancellation domain rules
+→ transaction
+```
+
+Do not evaluate cancellation timing before confirming ownership if doing so could leak state.
+
+---
+
+# 40. No Controllers With Inline Authorization Everywhere
+
+Avoid:
+
+```php
+if (!$user->hasRole(...)) ...
+if ($order->user_id !== ...) ...
+```
+
+repeated across controllers.
+
+Centralize resource authorization in Policies.
+
+Controllers should call standard Laravel authorization APIs.
+
+---
+
+# 41. Standard Controller Pattern
+
+Prefer something equivalent to:
+
+```text
+validate
+authenticate
+authorize
+call service
+return resource
+```
+
+not:
+
+```text
+controller
+→ 60 lines of role/ownership/domain logic
+```
+
+---
+
+# 42. Service Authorization Boundary
+
+Do not assume controller authorization is always enough for sensitive reusable services.
+
+If a service can be invoked from multiple entry points, ensure authorization expectations are explicit.
+
+However, do not duplicate every policy check inside every domain service.
+
+Use clear layer contracts.
+
+---
+
+# 43. Background Jobs
+
+Jobs operating as system/internal workflows should not fake CUSTOMER/STAFF roles.
+
+If jobs perform privileged system actions later:
+
+define explicit trusted system execution paths.
+
+Do not use:
+
+```text
+User::firstWhere(role = ADMIN)
+```
+
+as a fake actor.
+
+Out of scope unless existing jobs require it.
+
+---
+
+# 44. API Ownership Fields
+
+Clients must not control:
+
+```text
+user_id
+customer_id
+owner_id
+created_by
+actor_id
+```
+
+where ownership should derive from authenticated context.
+
+Reject or ignore according to the frozen API contract.
+
+Prefer rejection for strict write schemas.
+
+---
+
+# 45. CUSTOMER Create Ownership
+
+When a Customer creates an authenticated resource:
+
+```text
+ownership
+=
+authenticated local User
+```
+
+Do not accept owner identifiers from body.
+
+---
+
+# 46. STAFF Action Actor
+
+For Staff operational actions, actor identity comes from:
+
+```text
+authenticated local User
+```
+
+Audit/history records should use server-derived actor.
+
+Never accept:
+
+```text
+performed_by
+staff_id
+```
+
+from request as authority.
+
+---
+
+# 47. ADMIN Action Actor
+
+Same for Admin:
+
+```text
+actor = authenticated Admin local User
+```
+
+Do not let clients nominate another Admin as actor.
+
+---
+
+# 48. Policies and Soft Deletes
+
+If resources use soft deletes:
+
+define whether deleted resources may be viewed/restored and by whom.
+
+Do not accidentally expose soft-deleted customer resources through default queries.
+
+Only implement restore authorization where such endpoint already exists.
+
+---
+
+# 49. Product Public Read
+
+Public product/category reads remain:
+
+```text
+no authentication required
+```
+
+Do not introduce Policy requirements that block public catalog.
+
+Publication/visibility rules belong to catalog domain/query logic.
+
+---
+
+# 50. Product Write
+
+Administrative/Staff product writes should require explicit catalog permission.
+
+Detailed product validation remains domain/service layer responsibility.
+
+---
+
+# 51. Inventory
+
+Inventory reads/writes that are operational must use appropriate permission.
+
+Public stock availability representation remains public catalog behavior.
+
+Do not expose raw internal inventory just because public product availability exists.
+
+---
+
+# 52. Checkout
+
+Checkout requires:
+
+```text
+authenticated application User
+```
+
+and appropriate customer-commerce eligibility.
+
+Do not authorize checkout based on role string alone.
+
+Later checkout service still validates:
+
+```text
+cart ownership
+cart validity
+inventory
+fulfillment
+pricing
+```
+
+---
+
+# 53. STAFF / ADMIN Purchasing
+
+If Staff/Admin may purchase products for themselves, permit this through explicit self-commerce policy where required.
+
+Do not assign them CUSTOMER role merely for checkout.
+
+Keep one-role V1 invariant.
+
+---
+
+# 54. Notifications
+
+Notification read/update actions must be ownership-scoped.
+
+A Staff role does not automatically permit reading Customer notifications.
+
+Operational Staff notifications, if later supported, follow their own ownership/scope.
+
+---
+
+# 55. Requests and Enquiries Operational Access
+
+If STAFF may review incoming furniture requests/enquiries:
+
+require explicit operational permissions.
+
+Do not imply that Staff can edit the Customer profile associated with them.
+
+---
+
+# 56. Anonymous Records
+
+Anonymous request/enquiry records have:
+
+```text
+user = null
+```
+
+Do not create a fake ownership policy based on matching email/phone.
+
+Operational Staff/Admin access may be permission-based.
+
+Customer cannot automatically claim them.
+
+---
+
+# 57. Payment Authorization
+
+Payment provider-specific implementation belongs to Group H.
+
+Phase 4.10 should only preserve authorization boundary concepts where payment endpoints already exist.
+
+Do not design payment-provider permissions now.
+
+---
+
+# 58. Delivery Authorization
+
+Where delivery resources exist:
+
+CUSTOMER may view only delivery information tied to their own Order.
+
+STAFF may perform approved delivery operations where permission exists.
+
+Do not make delivery ownership a separate client-controlled identity.
+
+---
+
+# 59. Order State Transitions
+
+Policies authorize the actor/action.
+
+Domain transition service validates:
+
+```text
+current state
+requested transition
+business preconditions
+```
+
+Do not place the entire transition graph into Policy classes.
+
+---
+
+# 60. Generic Status PATCH Prohibited
+
+Do not authorize:
+
+```http
+PATCH /orders/{id}
+{
+  "status": "SHIPPED"
+}
+```
+
+as a generic mutation.
+
+Existing explicit action endpoints remain the preferred model.
+
+Policies should correspond to explicit actions.
+
+---
+
+# 61. Explicit Actions
+
+Examples:
+
+```text
+accept order
+ship order
+cancel order
+set delivery fee
+approve staff
+adjust inventory
+```
+
+Each should have a clear authorization method.
+
+Avoid generic:
+
+```text
+update()
+```
+
+policy methods for unrelated business-state transitions where explicit methods improve safety.
+
+---
+
+# 62. Policy Method Naming
+
+Use meaningful actions:
+
+```text
+view
+viewAny
+updateProfile
+cancel
+accept
+ship
+adjustInventory
+approve
+suspend
+```
+
+according to existing project conventions.
+
+Do not create vague:
+
+```text
+manageEverything()
+```
+
+methods.
+
+---
+
+# 63. Permission Constants
+
+Centralize meaningful permission names.
+
+Avoid repeated string literals in:
+
+```text
+policies
+seeders
+tests
+controllers
+```
+
+Use existing enums/constants/support classes.
+
+---
+
+# 64. Permission Seeding
+
+If Phase 4.10 introduces approved permissions not yet seeded:
+
+update canonical permission seed data.
+
+Keep seeding idempotent.
+
+Do not invent speculative future permissions.
+
+---
+
+# 65. Policy Registration
+
+Use Laravel's standard policy discovery/registration.
+
+Do not create a custom global policy registry unless the framework/version requires explicit registration.
+
+Follow current Laravel conventions.
+
+---
+
+# 66. No Frontend Work
 
 Do not modify:
 
@@ -44,1581 +1254,879 @@ frontend/app/
 frontend/design-system/
 ```
 
-during Phase 4.8.
+during Phase 4.10.
 
-Do not:
-
-```text
-install @clerk/nextjs
-run clerk init
-create ClerkProvider
-create proxy.ts
-create middleware.ts
-create /sign-in
-create /sign-up
-create authentication layouts
-create React hooks
-create frontend API clients
-create website auth state
-```
-
-Those belong to the later frontend phases.
-
-This separation is intentional.
-
-It ensures the eventual authentication pages are built with the same:
+No:
 
 ```text
-design tokens
-MUI theme
-layout system
-responsive rules
-navigation shell
-form primitives
-spacing
-typography
-error patterns
-loading states
-accessibility patterns
+route guards
+permission hooks
+AdminOnly components
+role-based menus
+button hiding
 ```
 
-as the rest of the website.
+Frontend authorization cues belong to later UI phases.
 
 ---
 
-# 2. Why Frontend Work Is Deferred
+# 67. Frontend Is Advisory
 
-The website frontend is developed later in Groups L–O.
+Record for future frontend implementation:
 
-Flutter implementation is developed later in Groups P–Q.
+```text
+UI guards improve UX
+Laravel policies provide security
+```
 
-Authentication UI must therefore be created alongside those applications, not before them.
-
-Building Clerk pages now risks:
-
-* inconsistent layouts;
-* duplicated UI primitives;
-* design-token divergence;
-* separate form conventions;
-* inconsistent responsive behavior;
-* premature routing decisions;
-* unnecessary refactoring later.
-
-Phase 4.8 must establish only the **integration contract**.
+Hiding a button is never authorization.
 
 ---
 
-# 3. Dependencies
+# 68. Policy Performance
 
-Required:
+Avoid unnecessary N+1 queries.
 
-* Phase 4.1 complete;
-* Phase 4.2 complete;
-* Phase 4.3 complete;
-* Phase 4.4 complete;
-* Phase 4.5 complete;
-* Phase 4.6 complete;
-* Phase 4.7 mobile boundary complete;
-* Laravel accepts verified Clerk session tokens;
-* Clerk identity resolves to `users.clerk_user_id`;
-* `/me` works;
-* Clerk owns passwords, email verification, sessions, and recovery;
-* Laravel owns RBAC and application authorization.
+Use already-loaded relationships where safe.
 
-Do not compensate for incomplete backend authentication by designing frontend workarounds.
+Do not load large relationship graphs merely to authorize a simple ownership check.
 
 ---
 
-# 4. Authoritative Inputs
+# 69. No External Clerk Calls
 
-Review:
+Authorization should not call Clerk.
 
-1. `AGENTS.md`
-2. Phase 4.1 Clerk architecture decision
-3. Phase 4.2 local provisioning
-4. Phase 4.3 authenticated request resolution
-5. Phase 4.4 recovery/security
-6. Phase 4.5 email verification
-7. Phase 4.6 profile operations
-8. Phase 4.7 mobile API authentication boundary
-9. `docs/api/api-contract.md`
-10. `docs/api/api-resources.md`
-11. `docs/api/api-conventions.md`
-12. `docs/api/openapi.yaml`
-13. `docs/domain/business-rules.md`
-14. `docs/decisions.md`
+At this point:
 
-Use current Clerk documentation/MCP/skills where provider behavior needs verification.
+```text
+authenticated local User
+```
 
-Do not implement frontend code.
+already exists.
+
+Policies use Laravel state only.
+
+Do not fetch Clerk metadata during authorization.
 
 ---
 
-# 5. Core Contract
+# 70. No Email-Based Authorization
 
-The future website must authenticate customers using Clerk.
-
-Laravel must authenticate API requests using the Clerk session token.
-
-Canonical boundary:
+Never authorize based on:
 
 ```text
-Clerk authenticated website session
-        ↓
-current Clerk session token
-        ↓
-Authorization: Bearer <token>
-        ↓
-Laravel Clerk verifier
-        ↓
-token.sub
-        ↓
-users.clerk_user_id
-        ↓
-local User
+user.email == resource.email
 ```
 
-This is the same fundamental API authentication boundary defined for mobile.
+for ownership.
+
+Use persisted local relationships.
+
+Email can change and is not ownership proof.
 
 ---
 
-# 6. No Second Website Authentication System
+# 71. No Phone-Based Authorization
 
-The future website must not introduce:
+Likewise never authorize using phone-number equality.
 
-```text
-Laravel Sanctum SPA auth
-Laravel password login
-NextAuth/Auth.js
-custom JWT
-custom refresh token
-custom session database
-parallel customer cookie auth
-```
-
-Clerk remains the sole customer authentication/session provider.
-
-Laravel remains the application backend.
+Phone is contact data only.
 
 ---
 
-# 7. Future Next.js Responsibility
+# 72. No Client-Type Authorization
 
-When the frontend phase eventually reaches website authentication, Next.js will be responsible for:
+Do not grant different permissions because request came from:
 
 ```text
-Clerk frontend integration
-signup UI
-signin UI
-email verification UI
-password recovery UI
-Clerk session state
-obtaining current Clerk session token
-passing token to Laravel
-frontend routing/navigation
+web
+mobile
 ```
 
-These are **future implementation responsibilities**, not Phase 4.8 tasks.
+Same user + same operation should follow the same backend authorization rules.
 
 ---
 
-# 8. Future Laravel Responsibility
+# 73. Staff Operational Scope
 
-Laravel already owns:
+If the project later introduces location/cafe/branch-specific operational scope, that belongs to an explicit domain model.
 
-```text
-verify Clerk token
-resolve local User
-JIT provision CUSTOMER
-check account state
-apply role/permissions
-apply ownership
-apply policies
-execute commerce logic
-```
+Do not infer Staff scope from frontend route or request parameters.
 
-Do not move any of these responsibilities to Next.js later.
+For current V1, use only already-defined operational scope.
 
 ---
 
-# 9. Authentication vs Authorization
+# 74. Admin Is Not Domain Override
 
-Document this clearly:
+ADMIN authorization does not allow invalid business operations.
+
+Example:
 
 ```text
-Clerk:
-Who is this user?
-
-Laravel:
-What may this user do?
+ADMIN authorized to ship order
 ```
 
-The frontend may hide or show UI based on Laravel-provided role/application state.
+does not mean:
 
-The frontend must never become the authorization authority.
+```text
+CANCELLED → SHIPPED
+```
+
+becomes valid.
+
+Domain invariants remain mandatory.
 
 ---
 
-# 10. Website Signup Contract
+# 75. Validation Cannot Be Bypassed
 
-Future website customer signup:
-
-```text
-email
-password
-```
-
-Required:
+All roles, including ADMIN, must still satisfy:
 
 ```text
-email verification through Clerk
+schema validation
+domain validation
+transactions
+financial invariants
 ```
 
-Not required:
-
-```text
-phone
-```
-
-Do not change this contract during frontend implementation unless a formal product decision changes it.
+Authorization is not input-validation bypass.
 
 ---
 
-# 11. Website Sign-In Contract
+# 76. Security Tests — Cross-Customer Order View
 
-Future customer sign-in:
+Customer A requests Customer B's Order.
+
+Expected:
 
 ```text
-email
-password
+404
 ```
 
-through Clerk.
+where masking applies.
 
-Laravel must never receive the password.
-
-There must be no future request such as:
-
-```http
-POST /api/v1/login
-```
-
-containing customer credentials unless the frozen contract explicitly retained such an endpoint, which the Clerk migration should have retired.
+No order data leaked.
 
 ---
 
-# 12. Email Verification Contract
+# 77. Security Tests — Cross-Customer Order Cancel
 
-Clerk owns:
+Customer A attempts cancellation of Customer B's Order.
+
+Expected:
 
 ```text
-verification code/link generation
-delivery
-expiration
-resend
-verification state
+404
 ```
 
-Future frontend must complete the Clerk verification flow.
-
-Laravel must not implement a competing verification mechanism.
+before cancellation-state details are revealed.
 
 ---
 
-# 13. Password Recovery Contract
+# 78. Security Tests — Own Order
 
-Clerk owns:
+Customer accesses own Order.
 
-```text
-forgot password
-reset password
-credential security
-recovery verification
-```
+Authorization succeeds.
 
-Future Next.js pages/components must use Clerk.
-
-Laravel must not accept password-reset credentials.
+Then normal domain rules apply.
 
 ---
 
-# 14. Future Session Transport
+# 79. Security Tests — Staff Operational Order
 
-The future website must obtain the current Clerk session token using Clerk's supported Next.js integration.
+STAFF with required permission:
 
-It must then call Laravel with:
+may reach approved operational action.
 
-```http
-Authorization: Bearer <Clerk session token>
-```
-
-Do not introduce another token exchange.
-
----
-
-# 15. Future Server-Side Requests
-
-Preferred website architecture for authenticated server-rendered content:
-
-```text
-Browser
-    ↓
-Next.js
-    ↓
-Clerk server auth context
-    ↓
-current Clerk token
-    ↓
-Laravel
-```
-
-This is an implementation guideline for the future frontend phase.
-
-Do not implement it in Phase 4.8.
-
----
-
-# 16. Future Client-Side Requests
-
-If a future interactive Client Component needs to call Laravel directly:
-
-```text
-Client Component
-    ↓
-Clerk-supported current token retrieval
-    ↓
-Authorization: Bearer <token>
-    ↓
-Laravel
-```
-
-Do not persist the token manually.
-
-Do not create a second frontend token store.
-
----
-
-# 17. Public Website Contract
-
-Public pages must remain usable without authentication.
-
-Examples include:
-
-```text
-homepage
-product listing
-product detail
-categories
-search
-public furniture browsing
-```
-
-The future authentication integration must not globally protect the website.
-
-This preserves:
-
-```text
-SEO
-SSR
-public caching
-anonymous browsing
-```
-
----
-
-# 18. Protected Website Contract
-
-Future customer areas may require authentication:
-
-```text
-account
-profile
-orders
-notifications
-checkout
-customer request history
-customer enquiry history
-```
-
-Frontend routing may enforce sign-in for UX.
-
-Laravel must still enforce backend authentication and authorization.
-
----
-
-# 19. Checkout Boundary
-
-Preserve:
-
-```text
-Browse → anonymous allowed
-Cart → according to cart policy
-Checkout → authentication required
-```
-
-Future frontend behavior:
-
-```text
-anonymous customer
-    ↓
-attempts checkout
-    ↓
-Clerk sign-in/signup
-    ↓
-return to checkout
-```
-
-Laravel still independently enforces authentication.
-
----
-
-# 20. `/me` Contract
-
-The future website should use:
-
-```http
-GET /api/v1/me
-```
-
-to obtain the application user.
-
-This is the source of:
-
-```text
-Laravel user ID
-application profile
-name
-phone
-email snapshot
-role
-application account state
-```
-
-according to the finalized API representation.
-
-Do not use the Clerk User object as the full application User.
-
----
-
-# 21. Role Contract
-
-Future website authorization-related UI must use Laravel-derived role/application state.
-
-Do not use:
-
-```text
-Clerk publicMetadata.role
-Clerk unsafeMetadata.role
-```
-
-as the application RBAC source.
-
-Laravel remains authoritative.
-
----
-
-# 22. Profile Contract
-
-Future profile UI must use:
-
-```http
-GET /api/v1/me
-PATCH /api/v1/me
-```
-
-for Laravel-owned fields.
-
-Current ownership:
-
-```text
-name → Laravel
-phone → Laravel, optional
-email → Clerk
-email verification → Clerk
-password → Clerk
-role → Laravel, server controlled
-```
-
-Frontend implementation must preserve this separation.
-
----
-
-# 23. Future Email Change
-
-The future UI must not implement:
-
-```text
-PATCH /me {email}
-```
-
-Email changes require Clerk security/reverification.
-
-After successful Clerk email change, Laravel's email snapshot may be reconciled.
-
-Implementation remains for the appropriate frontend/account phase.
-
----
-
-# 24. Future Phone Editing
-
-Phone is ordinary Laravel profile/contact data.
-
-It is:
-
-```text
-optional
-not an authentication identifier
-not required at signup
-```
-
-Future profile UI may edit it through `/me`.
-
----
-
-# 25. Token Storage Rule
-
-Future frontend implementation must not manually persist Clerk session tokens in:
-
-```text
-localStorage
-sessionStorage
-IndexedDB
-application Redux store
-custom cookies
-```
-
-solely for Laravel API access.
-
-Clerk owns browser session handling.
-
-Retrieve a current token when required.
-
----
-
-# 26. Server Token Isolation
-
-Future Next.js server-side code must never place the Clerk session token in:
-
-```text
-rendered HTML
-serialized page props
-client component props
-logs
-public cache
-```
-
-Use the token only for authenticated server-to-Laravel requests.
-
----
-
-# 27. Caching Contract
-
-Public Laravel data:
-
-```text
-products
-categories
-public catalog
-```
-
-may use normal website/public caching strategy.
-
-Private Laravel data:
-
-```text
-/me
-orders
-notifications
-checkout state
-```
-
-must not use shared/public caching.
-
-The frontend phases must preserve the backend private cache contract.
-
----
-
-# 28. Error Handling Contract
-
-Future website implementation must use Laravel's standard error envelope:
-
-```text
-HTTP status
-code
-field
-details
-meta.request_id
-```
-
-Do not parse English error strings for application logic.
-
----
-
-# 29. 401 Contract
-
-```text
-401
-```
-
-means the Laravel API does not accept the current authentication state.
-
-Future frontend should:
-
-* check current Clerk session;
-* obtain current token if appropriate;
-* retry only where safe;
-* route to sign-in if the session is no longer usable.
-
-Do not implement infinite retry loops.
-
----
-
-# 30. 403 Contract
+STAFF without permission:
 
 ```text
 403
 ```
 
-means:
+---
+
+# 80. Security Tests — Staff Customer Account
+
+STAFF attempts customer-account control.
+
+Expected:
 
 ```text
-authenticated
-but not authorized
+403
 ```
 
-Future frontend must not automatically sign out on 403.
+or no route exists.
+
+Mandatory regression coverage.
 
 ---
 
-# 31. 404 Contract
+# 81. Security Tests — Admin Staff Approval
 
-Private:
+ADMIN with required permission may reach Staff approval action.
 
-```text
-404 RESOURCE_NOT_FOUND
-```
-
-may intentionally mask ownership.
-
-Future frontend must not treat it as an authentication failure.
+Non-Admin actors denied.
 
 ---
 
-# 32. Mutation Retry Contract
+# 82. Security Tests — Clerk Metadata Cannot Authorize
 
-Future frontend must not automatically replay unsafe mutations merely because authentication changed.
+Fake Clerk metadata indicating ADMIN while local User is CUSTOMER.
 
-Especially:
-
-```text
-checkout
-payment
-order actions
-inventory-sensitive operations
-```
-
-Retry only where the backend endpoint's idempotency contract makes it safe.
+Policy must treat actor as CUSTOMER.
 
 ---
 
-# 33. Logout Contract
+# 83. Security Tests — Body Ownership Tampering
 
-Future website logout:
+Send:
 
-```text
-Clerk sign out current session
-    ↓
-clear private frontend application state
-    ↓
-future Laravel protected calls unauthenticated
+```json
+{
+  "user_id": "another-user"
+}
 ```
 
-Do not:
+where ownership is server-derived.
 
-```text
-delete Laravel User
-delete Orders
-delete CustomerProfile
-```
-
-during logout.
+Ensure request cannot take ownership or access another user's data.
 
 ---
 
-# 34. Multi-Device Contract
+# 84. Security Tests — Query Ownership Tampering
 
-A customer may be signed in simultaneously on:
-
-```text
-browser
-Flutter app
-another browser
-```
-
-All valid sessions for:
+Attempt:
 
 ```text
-same Clerk user
+?user_id=other
 ```
 
-must resolve to:
+on self-owned resources.
 
-```text
-same Laravel User
-```
-
-Do not create client-specific local accounts.
+Ensure authorization remains bound to authenticated User.
 
 ---
 
-# 35. Pending Clerk Session Contract
+# 85. Security Tests — Anonymous Protected Route
 
-If Clerk authentication is incomplete because of a required security task:
-
-```text
-password reset
-MFA setup
-verification requirement
-```
-
-the future frontend must not treat the user as fully authenticated for protected application access.
-
-Use Clerk's current supported session state semantics.
-
----
-
-# 36. CORS Contract
-
-If future browser code calls Laravel directly:
-
-Laravel CORS must allow only approved website origins.
-
-Do not use permissive:
-
-```text
-*
-```
-
-for production authenticated browser API access.
-
-If Next.js server-side code calls Laravel, browser CORS does not apply to that request path.
-
----
-
-# 37. CSRF Contract
-
-Do not introduce Laravel customer cookie authentication merely for website convenience.
-
-Customer API authentication remains:
-
-```text
-Bearer Clerk session token
-```
-
-This keeps the Laravel customer API boundary consistent across web and mobile.
-
----
-
-# 38. Authorized Party Validation
-
-Laravel's Clerk verifier should already validate approved token origins/authorized parties according to Phase 4.1–4.3.
-
-Phase 4.8 must verify that the configuration model can later include:
-
-```text
-development website origin
-staging website origin
-production website origin
-```
-
-without frontend implementation today.
-
----
-
-# 39. Environment Contract
-
-Future Next.js implementation will require client-safe and server-only Clerk configuration.
-
-Document expected categories:
-
-```text
-Clerk publishable configuration → browser-safe
-Clerk secret configuration → server-only
-Laravel API URL → environment-specific
-```
-
-Do not add actual frontend env files in Phase 4.8.
-
-Do not store secrets in documentation.
-
----
-
-# 40. Do Not Run Clerk CLI
-
-Phase 4.8 must not run:
-
-```bash
-clerk init
-clerk auth login
-clerk doctor
-```
-
-for the frontend.
-
-Those commands belong when:
-
-```text
-frontend/web/
-```
-
-becomes an active implementation target.
-
----
-
-# 41. Do Not Install Packages
-
-Do not install:
-
-```text
-@clerk/nextjs
-@clerk/ui
-```
-
-during this phase.
-
-The frontend package versions should be chosen when the Next.js project itself is active.
-
-This avoids premature dependency/version coupling.
-
----
-
-# 42. Do Not Create Frontend Routes
-
-Do not create:
-
-```text
-/sign-in
-/sign-up
-/account
-/profile
-```
-
-in Phase 4.8.
-
-Those pages must be designed in the context of the final frontend architecture.
-
----
-
-# 43. Do Not Create Frontend Providers
-
-Do not create:
-
-```text
-ClerkProvider
-AuthProvider
-ApplicationUserProvider
-```
-
-during this phase.
-
-Their placement depends on the future app shell/layout architecture.
-
----
-
-# 44. Do Not Create Frontend Middleware
-
-Do not create:
-
-```text
-proxy.ts
-middleware.ts
-```
-
-during Phase 4.8.
-
-Their eventual configuration depends on:
-
-* installed Next.js version;
-* actual routes;
-* public/protected route structure;
-* application shell.
-
-Document requirements only.
-
----
-
-# 45. Do Not Create Sign-In Components
-
-Do not build:
-
-```text
-<SignIn />
-<SignUp />
-<SignInButton />
-<SignUpButton />
-<UserButton />
-```
-
-yet.
-
-These are frontend implementation details.
-
----
-
-# 46. Do Not Style Authentication Yet
-
-Do not define:
-
-```text
-Clerk appearance config
-auth page spacing
-auth page typography
-button styles
-form card styles
-```
-
-during Group D.
-
-Authentication UI must later use the same website design system.
-
----
-
-# 47. Design-System Handoff
-
-The future web authentication phase must inherit:
-
-```text
-MUI theme
-Nike-inspired tokens
-shared form primitives
-shared buttons
-shared cards/surfaces
-shared error components
-shared responsive layout
-```
-
-from the website foundation.
-
-Do not create parallel authentication design tokens.
-
----
-
-# 48. Future Web Implementation Sequence
-
-When the frontend reaches the appropriate group, follow roughly:
-
-```text
-website foundation
-        ↓
-MUI theme
-        ↓
-design tokens
-        ↓
-reusable primitives
-        ↓
-navigation/layout shell
-        ↓
-Clerk integration
-        ↓
-signup/signin pages
-        ↓
-customer commerce pages
-```
-
-Do not reverse this order.
-
----
-
-# 49. Future Sign-In Page
-
-When eventually implemented, the sign-in page should use the same:
-
-```text
-container widths
-form components
-buttons
-typography
-responsive behavior
-error messaging
-```
-
-as other website forms.
-
-Do not implement it now.
-
----
-
-# 50. Future Sign-Up Page
-
-Likewise, future signup UI will collect:
-
-```text
-email
-password
-```
-
-and complete Clerk email verification.
-
-Phone remains outside signup.
-
-Do not implement it now.
-
----
-
-# 51. Future Recovery Page
-
-Password recovery must use Clerk.
-
-The visual implementation should follow the same frontend design system.
-
-Do not implement it now.
-
----
-
-# 52. Future Verification Page
-
-Email verification must use Clerk.
-
-Do not implement a custom Laravel verification form.
-
-Do not implement its UI now.
-
----
-
-# 53. Future Account Security UI
-
-Password/security management remains Clerk-owned.
-
-The website account UI may later expose Clerk account/security actions.
-
-Do not build them during Group D.
-
----
-
-# 54. Backend Review
-
-Phase 4.8 should verify that Laravel already supports everything the future website requires:
-
-```text
-Bearer authentication
-local User resolution
-JIT provisioning
-/me
-401 behavior
-403 behavior
-private resource authorization
-email/password Clerk model
-email verification state
-```
-
-If a backend gap exists, fix it in the appropriate backend abstraction.
-
-Do not create a web-specific backend pathway.
-
----
-
-# 55. No Website-Specific Laravel Authentication
-
-Do not create:
-
-```text
-AuthenticateNextJs
-WebClerkController
-WebsiteTokenExchange
-WebLoginController
-```
-
-The Laravel authentication boundary must remain client-neutral.
-
----
-
-# 56. Same Boundary as Mobile
-
-Phase 4.7 established:
-
-```text
-Flutter
-→ Clerk session token
-→ Laravel
-```
-
-Phase 4.8 establishes:
-
-```text
-Next.js
-→ Clerk session token
-→ Laravel
-```
-
-Laravel should not care which client sent the valid token.
-
----
-
-# 57. Client-Neutral Backend
-
-Mandatory invariant:
-
-```text
-same Clerk user
-from Flutter
-or Next.js
-        ↓
-same users.clerk_user_id
-        ↓
-same Laravel User
-```
-
-No `client_type` should participate in identity resolution.
-
----
-
-# 58. OpenAPI Review
-
-Review protected routes.
-
-Ensure the OpenAPI security scheme describes:
-
-```text
-Bearer authentication
-using a Clerk-issued authenticated session token
-```
-
-Do not add frontend-specific auth endpoints.
-
----
-
-# 59. No New Website Auth API
-
-Do not introduce:
-
-```text
-/api/v1/web/login
-/api/v1/web/signup
-/api/v1/web/token
-/api/v1/web/refresh
-```
-
-The website authenticates with Clerk directly.
-
----
-
-# 60. Contract Documentation
-
-Document the expected future website flow in existing consolidated documentation.
-
-A concise sequence is enough:
-
-```text
-1. User signs in/up through Clerk.
-2. Clerk establishes browser session.
-3. Next.js obtains current Clerk session token.
-4. Next.js sends token to Laravel as Bearer.
-5. Laravel authenticates token.
-6. Laravel resolves local User.
-7. Laravel handles authorization/business logic.
-```
-
-Do not create excessive new documents.
-
----
-
-# 61. Documentation Updates
-
-Likely update only:
-
-```text
-docs/api/api-conventions.md
-docs/decisions.md
-AGENTS.md
-```
-
-and possibly:
-
-```text
-docs/api/api-contract.md
-docs/api/openapi.yaml
-```
-
-where auth semantics need clarification.
-
-Keep consolidated docs authoritative.
-
----
-
-# 62. `AGENTS.md` Handoff
-
-Clarify that:
-
-```text
-Group D
-→ establishes web authentication contract
-
-frontend Groups L–O
-→ implement website authentication
-
-Groups P–Q
-→ implement Flutter authentication
-```
-
-This prevents future agents from prematurely modifying frontend applications.
-
----
-
-# 63. Future Frontend Agent Instructions
-
-Record the future website implementation requirements concisely:
-
-```text
-Use @clerk/nextjs.
-Use current App Router integration.
-Use ClerkProvider.
-Use current Clerk middleware/proxy convention.
-Use await auth() server-side.
-Use getToken() for Laravel calls.
-Do not introduce another auth provider.
-Do not use Clerk metadata for Laravel role.
-```
-
-These are implementation constraints for the later phase.
-
-Do not execute them today.
-
----
-
-# 64. Next.js Version Deferred
-
-Do not decide:
-
-```text
-proxy.ts
-vs
-middleware.ts
-```
-
-until the actual Next.js version in `frontend/web` is being implemented.
-
-At that time:
-
-```text
-inspect installed Next.js version
-follow current Clerk guidance
-```
-
-Do not create files based on assumptions now.
-
----
-
-# 65. Clerk SDK Version Deferred
-
-Do not lock:
-
-```text
-@clerk/nextjs version
-```
-
-during Group D.
-
-Install the then-current compatible release when the frontend implementation phase begins.
-
-This avoids stale dependency decisions.
-
----
-
-# 66. Authentication UI Choice Deferred
-
-Do not decide prematurely between:
-
-```text
-Clerk prebuilt components
-custom Clerk flow
-```
-
-until:
-
-* website design primitives exist;
-* form conventions exist;
-* page layouts exist;
-* UX requirements are known.
-
-Default recommendation for later remains:
-
-```text
-prefer standard Clerk components unless custom UI is necessary
-```
-
-but do not implement now.
-
----
-
-# 67. MUI Integration Deferred
-
-Do not solve Clerk/MUI styling in Group D.
-
-When the website design system exists, auth pages can be integrated correctly.
-
-This is one of the main reasons frontend work is deferred.
-
----
-
-# 68. No Authentication State Management Decision Yet
-
-Do not add:
-
-```text
-Redux
-Zustand
-React Context
-```
-
-for auth.
-
-The future app should use Clerk for authentication state and only introduce application-user state if necessary.
-
-The final decision belongs to the website architecture phase.
-
----
-
-# 69. No BFF Decision Yet
-
-Do not build or commit the website to a large Backend-for-Frontend layer.
-
-Document both supported future patterns:
-
-```text
-Next.js server → Laravel
-```
-
-and where necessary:
-
-```text
-browser → Laravel with current Clerk token
-```
-
-Choose the simplest per feature when frontend implementation begins.
-
----
-
-# 70. Backend Tests — Valid Web Token
-
-Existing Clerk authentication tests should establish:
-
-```text
-valid Clerk session token
-→ authenticated Laravel User
-```
-
-This is client-independent.
-
-If not sufficiently covered, add backend tests.
-
-Do not need actual Next.js code.
-
----
-
-# 71. Backend Tests — Missing Token
-
-Protected endpoint:
-
-```text
-no token
-```
-
-must return:
+No auth:
 
 ```text
 401 AUTHENTICATION_REQUIRED
 ```
 
-This guarantees the future website has a stable contract.
+---
+
+# 86. Security Tests — Authenticated Forbidden Action
+
+Valid auth but missing permission:
+
+```text
+403 FORBIDDEN
+```
+
+where masking is not required.
 
 ---
 
-# 72. Backend Tests — Invalid Token
+# 87. Security Tests — Enumeration
 
-Invalid Clerk credential:
+Probe sequential private resource identifiers as Customer.
+
+Responses must not reveal which belong to other users.
+
+Test status/code/message consistency.
+
+---
+
+# 88. Security Tests — Public Catalog
+
+Anonymous public catalog remains accessible.
+
+No authorization regression.
+
+---
+
+# 89. Security Tests — STAFF Role Does Not Imply All Permissions
+
+STAFF without a specific operational permission must be denied.
+
+This confirms:
+
+```text
+role != blanket authority
+```
+
+---
+
+# 90. Security Tests — ADMIN Domain Rule
+
+ADMIN authorized for action but invalid resource state.
+
+Expected:
+
+```text
+authorization passes
+domain rejects
+```
+
+This proves policy/domain separation.
+
+---
+
+# 91. Security Tests — Own Request / Enquiry
+
+Customer may access own authenticated records.
+
+Cannot access another customer's.
+
+Anonymous historical record is not claimable merely by matching email.
+
+---
+
+# 92. Security Tests — Notifications
+
+Customer sees only own notifications.
+
+Staff/Admin do not automatically inherit customer notifications.
+
+---
+
+# 93. Test Organization
+
+Prefer policy-focused unit tests plus API feature tests.
+
+For example:
+
+```text
+tests/Unit/Policies/
+tests/Feature/Authorization/
+```
+
+or existing project conventions.
+
+Do not create a new testing structure if one already exists.
+
+---
+
+# 94. Policy Unit Tests
+
+Policy tests should be small and deterministic.
+
+Cover:
+
+```text
+allowed role/permission/ownership
+denied role
+missing permission
+wrong owner
+```
+
+Do not test complete domain workflows in every policy unit test.
+
+---
+
+# 95. Feature Tests
+
+Feature/API tests verify integration:
+
+```text
+route
+→ auth
+→ policy
+→ error mapping
+```
+
+These are essential for:
 
 ```text
 401
-```
-
-without local provisioning.
-
-No provider internals exposed.
-
----
-
-# 73. Backend Tests — Valid CUSTOMER
-
-Valid token for mapped CUSTOMER:
-
-```text
-GET /me
-```
-
-returns correct application profile.
-
----
-
-# 74. Backend Tests — First Website Session
-
-Simulate a valid Clerk user with no local Laravel user.
-
-First protected request:
-
-```text
-→ Phase 4.2 provisioning
-→ CUSTOMER
-→ request succeeds
-```
-
-This represents both future website and mobile behavior.
-
----
-
-# 75. Backend Tests — Role Authority
-
-Simulate:
-
-```text
-Clerk metadata role = ADMIN
-Laravel role = CUSTOMER
-```
-
-Verify Laravel remains CUSTOMER.
-
-This protects future frontend implementation from accidental Clerk role dependence.
-
----
-
-# 76. Backend Tests — Same User Across Clients
-
-Conceptually simulate two valid Clerk sessions with the same:
-
-```text
-sub
-```
-
-Verify both resolve to the same local Laravel User.
-
-No actual Next.js or Flutter code is required.
-
----
-
-# 77. Backend Tests — Public Catalog
-
-Ensure public catalog endpoints remain accessible without a token.
-
-Authentication work must not globally protect API routes.
-
----
-
-# 78. Backend Tests — `/me` Privacy
-
-Verify:
-
-```text
-GET /me
-```
-
-uses private/no-store response semantics.
-
-Future web caching can rely on this contract.
-
----
-
-# 79. Backend Tests — 403
-
-Authenticated customer attempting unauthorized operation must receive:
-
-```text
 403
+404 masking
 ```
-
-or masking behavior according to the specific resource policy.
-
-Do not convert authorization failures into login failures.
 
 ---
 
-# 80. No Frontend Test Files
+# 96. Offline Tests
+
+No real Clerk calls.
+
+Use existing fake authentication/verifier setup.
+
+Authorization tests begin with an already-authenticated local User.
+
+---
+
+# 97. No Test Backdoors
+
+Do not add production headers like:
+
+```text
+X-Test-Role
+X-Test-Permission
+```
+
+Use factories/container/test authentication utilities.
+
+---
+
+# 98. Factory States
+
+Reuse:
+
+```text
+customer()
+staff()
+admin()
+```
+
+and permission helpers as needed.
+
+Keep fixtures explicit.
+
+---
+
+# 99. Policy Complexity
+
+Keep each policy method small.
+
+If authorization becomes complicated:
+
+extract narrowly named helper methods.
+
+Maintain cognitive complexity target ≤15.
+
+Do not build a generic authorization DSL.
+
+---
+
+# 100. Return Count
+
+Follow project guidance of maximum 3 returns per function where practical.
+
+Keep policies readable rather than overly clever.
+
+---
+
+# 101. Avoid Large `switch(role)`
+
+Do not build every policy as:
+
+```text
+switch role:
+ CUSTOMER ...
+ STAFF ...
+ ADMIN ...
+```
+
+when permissions/ownership provide cleaner composition.
+
+Use standard Laravel authorization patterns.
+
+---
+
+# 102. No Global `isAdmin()` Shortcut Everywhere
+
+An `isAdmin()` helper may exist for legitimate use, but do not turn it into a universal authorization bypass.
+
+Prefer permissions/policies.
+
+---
+
+# 103. API Contract Review
+
+Review:
+
+```text
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/openapi.yaml
+```
+
+for protected operations.
+
+Ensure documented authentication/authorization requirements match implemented policies.
+
+Do not change endpoint behavior casually.
+
+---
+
+# 104. Error Contract
+
+Use existing CLOSED error codes.
+
+Authorization failures should map to approved:
+
+```text
+AUTHENTICATION_REQUIRED
+FORBIDDEN
+RESOURCE_NOT_FOUND
+```
+
+or resource-specific not-found code where already defined.
 
 Do not create:
 
 ```text
-React component tests
-Playwright auth tests
-Next.js tests
+NOT_OWNER
+INSUFFICIENT_ROLE
+NEEDS_ADMIN
 ```
 
-during this phase.
-
-No frontend implementation exists yet.
-
-Those tests belong with the future frontend features.
+unless formally approved.
 
 ---
 
-# 81. Clerk Live Testing
+# 105. Error Messages
 
-Do not require a real Next.js client or Clerk browser session in ordinary Group D tests.
-
-Backend authentication should use fakes/test tokens/verifier abstractions.
-
-Full browser authentication will be tested when frontend implementation exists.
-
----
-
-# 82. No Playwright / Cypress
-
-Do not install:
+Do not reveal:
 
 ```text
-Playwright
-Cypress
+resource exists but belongs to user X
+required role is ADMIN
+missing internal permission name
 ```
 
-for Phase 4.8.
+unless explicitly safe and contracted.
 
-Frontend E2E testing belongs to later frontend/QA phases.
+Keep client messages generic enough to avoid security leakage.
 
 ---
 
-# 83. No Frontend Package Changes
+# 106. Logging
 
-Expected changes under:
+Authorization-denial logs may include:
 
 ```text
-frontend/
+request_id
+local actor ID
+action
+resource type
+outcome
 ```
 
-should be:
+where useful.
+
+Do not log:
+
+```text
+token
+password
+private resource payload
+```
+
+Avoid excessive logging of ordinary 403/404 probes unless monitoring requires it.
+
+---
+
+# 107. Auditing
+
+Authorization denial is not the same as permanent audit.
+
+Privileged successful actions may later require audit records.
+
+Do not implement the entire audit subsystem here unless already present.
+
+Carry forward:
+
+```text
+role changes
+staff approval
+inventory adjustments
+order state changes
+```
+
+as audit-sensitive actions.
+
+---
+
+# 108. Documentation
+
+Update consolidated docs only where necessary:
+
+```text
+docs/api/api-conventions.md
+docs/domain/business-rules.md
+docs/decisions.md
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/openapi.yaml
+AGENTS.md
+```
+
+Do not create excessive phase-specific policy documents.
+
+---
+
+# 109. Authorization Matrix
+
+Maintain a concise implementation matrix.
+
+Example structure:
+
+| Resource      | Action           | CUSTOMER | STAFF                        | ADMIN      | Ownership / condition |
+| ------------- | ---------------- | -------- | ---------------------------- | ---------- | --------------------- |
+| Profile       | view/update self | Yes      | Self                         | Self       | current actor only    |
+| Order         | view             | Own      | permission                   | permission | customer ownership    |
+| Order         | cancel           | Own      | No unless explicitly defined | explicit   | domain checks later   |
+| Order         | accept           | No       | permission                   | permission | operational           |
+| Order         | ship             | No       | permission                   | permission | operational           |
+| Inventory     | adjust           | No       | permission                   | permission | operational           |
+| Staff account | approve          | No       | No                           | permission | Admin only            |
+
+Use actual frozen operations and permissions.
+
+Do not use this example to invent unsupported operations.
+
+---
+
+# 110. Authorization Matrix Is Authoritative Aid
+
+The matrix helps implementation review.
+
+Actual enforcement must remain in:
+
+```text
+Laravel Policies / Gates
+```
+
+Do not perform authorization by reading configuration tables dynamically unless already designed.
+
+---
+
+# 111. Policy Naming Consistency
+
+Match policy action names to explicit API operations where practical.
+
+Avoid ambiguity between:
+
+```text
+update
+manage
+modify
+operate
+```
+
+Use action-oriented names.
+
+---
+
+# 112. Route Middleware
+
+Use the configured Clerk bearer middleware:
+
+```text
+clerk.auth
+```
+
+for identity and standard authorization middleware. It resolves the verified
+Clerk bearer credential before role, permission, ownership, and state checks.
+
+Do not encode complex policy logic directly in route middleware strings if policies are cleaner.
+
+---
+
+# 113. Permission Middleware
+
+Package-provided permission middleware may be used for coarse route gates where suitable.
+
+Still use policies for:
+
+```text
+ownership
+resource-specific authorization
+state-aware conditions
+```
+
+Do not rely only on route permission middleware for private resources.
+
+---
+
+# 114. Query Scope vs Policy
+
+Use query scoping to avoid loading inaccessible rows.
+
+Use Policies to authorize actions.
+
+These complement each other.
+
+Do not treat one as complete replacement for the other.
+
+---
+
+# 115. Admin Listing Endpoints
+
+Where Admin/Staff list operational resources:
+
+scope data to the permitted operational dataset.
+
+Do not reuse Customer ownership scopes.
+
+Exact operational listing filters follow resource contracts.
+
+---
+
+# 116. Customer Listing Endpoints
+
+Always constrain to authenticated Customer's own resources.
+
+Do not accept arbitrary owner filters.
+
+---
+
+# 117. Resource Serialization
+
+Authorization must happen before serialization.
+
+Do not serialize private fields and then remove them after access denial.
+
+---
+
+# 118. Field-Level Authorization
+
+Where Staff may view only operational fields, use explicit Resources/serializers.
+
+Do not return full Customer/User models merely because Staff can process an Order.
+
+Detailed field-level restrictions should follow existing resource contract.
+
+---
+
+# 119. Sensitive Customer Fields
+
+Operational Staff visibility must not include:
+
+```text
+Clerk ID
+security attributes
+password fields
+internal account state beyond need
+permission internals
+```
+
+unless explicitly required.
+
+---
+
+# 120. Authorization and Transactions
+
+Authorization generally happens before opening expensive mutation transactions.
+
+Domain state must still be revalidated within transaction where race-sensitive.
+
+Do not hold database locks while performing unnecessary authorization checks.
+
+---
+
+# 121. TOCTOU Awareness
+
+For authorization based on mutable resource state:
+
+re-check relevant domain state during transaction where required.
+
+Do not assume policy evaluation permanently freezes resource state.
+
+Keep policy coarse and domain transaction authoritative.
+
+---
+
+# 122. Account State
+
+If local account state exists:
+
+authorization layer must respect it according to prior phases.
+
+Valid Clerk authentication does not override:
+
+```text
+suspended
+inactive
+pending
+```
+
+application state.
+
+Do not encode these as roles.
+
+---
+
+# 123. Staff State
+
+STAFF with suspended/inactive operational state must not perform Staff operations even if role and permission rows remain.
+
+Integrate the approved staff-state check in the authorization boundary.
+
+---
+
+# 124. Admin State
+
+Likewise, disabled Admin must not retain operational privileges merely because role remains ADMIN.
+
+---
+
+# 125. No Frontend Assumptions
+
+Do not assume future UI will prevent invalid requests.
+
+Backend must be secure against direct API calls.
+
+---
+
+# 126. No Security by URL
+
+Do not assume:
+
+```text
+/admin/*
+```
+
+or:
+
+```text
+/staff/*
+```
+
+path itself grants authority.
+
+Every protected endpoint still authenticates and authorizes the actor.
+
+---
+
+# 127. No Security by HTTP Method Alone
+
+`POST` or `DELETE` does not imply privilege.
+
+Policy must authorize the specific operation.
+
+---
+
+# 128. No Implicit Admin Through Seeder
+
+Ensure test/production seeds do not accidentally assign Admin broadly.
+
+Permissions and roles must be deterministic.
+
+---
+
+# 129. Schema Changes
+
+Expected:
 
 ```text
 NONE
 ```
 
-during Phase 4.8.
+unless a missing RBAC permission table/setup from earlier phases is genuinely discovered.
 
-If the agent believes frontend modification is necessary, stop and document why rather than proceeding.
-
----
-
-# 84. Expected Backend Code Changes
-
-Expected:
-
-```text
-none
-or minimal
-```
-
-because Phase 4.3 should already provide the client-neutral Clerk bearer-token authentication boundary.
-
-Phase 4.8 primarily verifies and documents readiness for the future website.
+Do not add authorization-specific resource owner columns if ownership already exists.
 
 ---
 
-# 85. Expected Schema Changes
+# 130. Frontend Changes
 
 Expected:
 
@@ -1626,191 +2134,74 @@ Expected:
 NONE
 ```
 
-Do not add:
-
-```text
-web_session
-website_token
-nextjs_user_id
-browser_session
-```
-
-to the database.
+Do not modify Groups L–Q frontend code.
 
 ---
 
-# 86. No User-Agent Authentication
+# 131. Commands
 
-Do not identify or authorize website users using:
-
-```text
-User-Agent
-browser cookie created by Laravel
-client_type
-```
-
-Only the verified Clerk credential establishes identity.
-
----
-
-# 87. No Website-Specific Role
-
-Do not add roles such as:
-
-```text
-WEB_CUSTOMER
-MOBILE_CUSTOMER
-```
-
-The role remains:
-
-```text
-CUSTOMER
-```
-
-independent of client.
-
----
-
-# 88. No Duplicate Profiles
-
-Do not create:
-
-```text
-web_profile
-mobile_profile
-```
-
-The same Laravel profile is shared across clients.
-
----
-
-# 89. Shared Profile Invariant
-
-Future:
-
-```text
-customer changes phone on website
-```
-
-then Flutter should later see the same value through:
-
-```text
-GET /me
-```
-
-because Laravel is the profile authority.
-
-This must remain true.
-
----
-
-# 90. Security Checklist
-
-Verify architecture guarantees:
-
-```text
-Clerk authenticates website customers
-Laravel verifies Clerk session tokens
-Laravel owns authorization
-password never reaches Laravel
-email verification stays Clerk-owned
-phone remains optional
-no second auth system
-no website-specific backend login
-no frontend token persistence requirement
-same user across web/mobile
-public catalog remains public
-```
-
----
-
-# 91. Avoid Overengineering
-
-Do not create:
-
-```text
-WebsiteAuthenticationService
-FrontendAuthGateway
-NextJsSessionBridge
-TokenExchangeService
-WebIdentityAdapter
-BrowserAuthRepository
-```
-
-in Laravel.
-
-They are unnecessary.
-
-The backend already receives a standard Bearer token.
-
----
-
-# 92. Maintain Client Neutrality
-
-Laravel should conceptually see:
-
-```text
-authenticated Clerk request
-```
-
-not:
-
-```text
-Next.js request
-Flutter request
-```
-
-This dramatically simplifies maintenance.
-
----
-
-# 93. Quality Requirements
-
-Any backend/documentation changes must maintain:
-
-* cognitive complexity ≤15;
-* maximum 3 returns where practical;
-* strict validation;
-* centralized configuration;
-* provider-independent domain logic;
-* minimal comments;
-* no duplicated authentication logic.
-
----
-
-# 94. Commands / Verification
-
-If only documentation changes occur:
-
-run any documentation/schema validation used by the repository.
-
-Also run relevant backend tests:
+Run:
 
 ```bash
-cd backend/laravel
-
 php artisan test
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 composer audit
 ```
 
-Use project-defined equivalent scripts where applicable.
+If permission seed definitions changed:
 
-Do not run frontend install/build commands because the frontend is not being implemented.
+```bash
+php artisan migrate:fresh --seed
+```
+
+must also pass.
+
+Use existing repository scripts where available.
 
 ---
 
-# 95. Files Changed Report
+# 132. Files Changed Report
 
 At completion report:
 
-## Files changed
+## Policies added/updated
 
-Exact paths.
+List exact policy classes.
 
-## Frontend changes
+## Gates
+
+List any global/non-resource gates.
+
+## Permissions
+
+List only new/changed canonical permissions.
+
+## Ownership rules
+
+Summarize Customer-owned resources.
+
+## Masking
+
+List resources using 404 ownership masking.
+
+## Staff boundary
+
+Confirm operational access does not grant customer-account control.
+
+## Admin boundary
+
+Confirm Admin still uses explicit authorization.
+
+## Schema
+
+Expected:
+
+```text
+none
+```
+
+## Frontend
 
 Must state:
 
@@ -1818,181 +2209,92 @@ Must state:
 NONE
 ```
 
-## Backend changes
-
-Expected:
-
-```text
-none or minimal
-```
-
-Explain any exception.
-
-## Contract decisions
-
-Confirm:
-
-```text
-future Next.js
-→ Clerk
-→ session token
-→ Laravel bearer auth
-```
-
 ## Tests
 
-List backend tests added/run.
-
-## Deferred frontend work
-
-Clearly identify later website phases.
+List policy/feature tests and results.
 
 ---
 
-# 96. Frontend Handoff Checklist
+# 133. Definition of Done
 
-Leave a concise handoff for the future website agent:
+Phase 4.10 is complete when:
 
-```text
-[ ] initialize Clerk only inside frontend/web
-[ ] install current compatible @clerk/nextjs
-[ ] follow actual installed Next.js version
-[ ] place ClerkProvider according to current Clerk guidance
-[ ] configure Clerk middleware/proxy
-[ ] keep catalog public
-[ ] protect account/checkout/customer routes
-[ ] use await auth() server-side
-[ ] use getToken() for Laravel calls
-[ ] send Authorization Bearer
-[ ] use Laravel /me for role/profile
-[ ] do not use Clerk metadata as RBAC
-[ ] signup = email + password
-[ ] phone not required
-[ ] email verification through Clerk
-[ ] use shared website design system/components
-```
-
-Do not execute this checklist in Phase 4.8.
-
----
-
-# 97. Relationship to Group L–O
-
-Group D:
-
-```text
-defines authentication architecture
-```
-
-Groups L onward:
-
-```text
-build website foundation
-design system
-layouts
-components
-pages
-```
-
-Then the relevant website authentication/customer-commerce phase:
-
-```text
-implements Clerk UI and routing
-```
-
-This order is mandatory.
+* authenticated Laravel User is the authorization actor;
+* CUSTOMER / STAFF / ADMIN roles are integrated with policies;
+* role alone never grants resource access;
+* explicit permissions are used for operational/admin actions;
+* Customer private resources are ownership-scoped;
+* private cross-customer resource access is masked where required;
+* Staff operational access is explicit;
+* Staff cannot control Customer accounts;
+* Staff approval remains Admin-only;
+* Admin does not universally bypass domain/policy rules;
+* Clerk metadata has zero authorization authority;
+* email/phone are never ownership proof;
+* ownership always comes from server relationships;
+* client-supplied owner/actor IDs cannot grant access;
+* policies stay separate from domain transition logic;
+* unauthenticated requests produce 401;
+* forbidden authorized users produce 403 where appropriate;
+* private ownership failures produce 404 where required;
+* public catalog remains public;
+* authorization-aware query scoping is used where appropriate;
+* no frontend authorization implementation is added;
+* no duplicate authorization framework is created;
+* policy tests pass;
+* API authorization tests pass;
+* full backend tests pass;
+* Pint passes;
+* PHPStan passes;
+* Composer audit passes;
+* documentation/OpenAPI match the implemented authorization model.
 
 ---
 
-# 98. Relationship to Groups P–Q
-
-Likewise:
-
-```text
-Phase 4.7
-→ defines Flutter authentication contract
-
-Groups P–Q
-→ implement Flutter authentication and customer UI
-```
-
-Do not allow Group D to become an early frontend implementation group.
-
----
-
-# 99. Definition of Done
-
-Phase 4.8 is complete when:
-
-* future Next.js authentication architecture is explicitly defined;
-* the website will use Clerk as its sole authentication provider;
-* Laravel will receive Clerk session tokens through `Authorization: Bearer`;
-* the existing client-neutral Laravel authentication boundary is sufficient;
-* `/me` is confirmed as the future source of application profile/role;
-* public and protected route expectations are documented;
-* signup remains email + password;
-* email verification remains Clerk-owned;
-* phone remains optional;
-* no website-specific Laravel login/token endpoints exist;
-* no NextAuth/Auth.js or Sanctum SPA auth is planned;
-* web and mobile identities resolve to the same local User;
-* caching/security/error behavior is documented for the future frontend;
-* backend regression tests pass;
-* no frontend code is created;
-* no frontend packages are installed;
-* no Clerk frontend CLI initialization is performed;
-* no frontend routing/layout/design decisions are prematurely implemented;
-* future frontend agents have a clear implementation handoff.
-
----
-
-# 100. Out of Scope
+# 134. Out of Scope
 
 Do not implement:
 
-* `frontend/web` Clerk setup;
-* `@clerk/nextjs`;
-* `ClerkProvider`;
-* `proxy.ts`;
-* `middleware.ts`;
-* sign-in page;
-* sign-up page;
-* verification page;
-* password recovery page;
-* website auth layout;
-* account navigation;
-* frontend API client;
-* React auth state;
-* MUI authentication components;
-* website styling;
-* Flutter implementation;
-* E2E browser tests;
-* social login;
-* phone login;
-* MFA UI;
-* Clerk Organizations;
-* BFF architecture.
+* frontend guards;
+* role-based navigation;
+* Staff/Admin UI;
+* new roles;
+* Clerk authorization metadata;
+* generic policy engine;
+* full audit subsystem;
+* new business workflows;
+* payment-provider authorization;
+* new customer-management APIs;
+* speculative operational scopes;
+* wildcard Super Admin behavior.
 
 ---
 
-# 101. STOP Condition
+# 135. STOP Condition
 
-STOP once the future website authentication contract is fully documented, the Laravel backend is confirmed ready to accept Clerk-authenticated website requests through the same client-neutral Bearer-token boundary used by mobile, and all relevant backend checks pass.
-
-There must be:
+STOP when the backend consistently answers:
 
 ```text
-NO frontend implementation
-NO frontend package installation
-NO Clerk frontend initialization
+Who is the actor?
+→ authenticated local Laravel User
+
+What kind of actor?
+→ CUSTOMER / STAFF / ADMIN
+
+Does the actor have the required capability?
+→ Laravel permission
+
+Does this actor own / have operational authority over this resource?
+→ Policy
+
+Is the business operation valid in the resource's current state?
+→ Domain layer
 ```
 
-during Phase 4.8.
+with secure 401 / 403 / 404 behavior and all authorization tests passing.
 
 Do not continue automatically.
 
 The next backend roadmap phase is:
 
-**Phase 4.9 — Roles / Laravel RBAC Integration**
-
-Actual website Clerk implementation must wait until the corresponding frontend phase in Groups L–O is reached.
+**Phase 4.11 — Authentication / Authorization Rate Limiting**
