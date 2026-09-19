@@ -42,7 +42,6 @@ class AppServiceProvider extends ServiceProvider
             : Limit::perMinute(10)->by($this->userKey($request)));
         RateLimiter::for('checkout', fn (Request $request) => Limit::perMinute(5)->by($this->userKey($request)));
         RateLimiter::for('operational-write', fn (Request $request) => Limit::perMinute(120)->by($this->userKey($request)));
-        RateLimiter::for('sensitive-action', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('cart-add', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('order-cancel', fn (Request $request) => Limit::perMinute(5)->by($this->userKey($request)));
         RateLimiter::for('inventory-adjust', fn (Request $request) => Limit::perMinute(20)->by($this->userKey($request)));
