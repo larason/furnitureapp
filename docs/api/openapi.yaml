@@ -647,7 +647,6 @@ components:
       - name
       - price
       - availability
-      - stock_indicator
       properties:
         product_id:
           type: string
@@ -664,8 +663,6 @@ components:
           $ref: '#/components/schemas/Money'
         availability:
           $ref: '#/components/schemas/Availability'
-        stock_indicator:
-          $ref: '#/components/schemas/StockIndicator'
         created_at:
           type: string
           format: date-time
@@ -1920,7 +1917,6 @@ components:
       - name
       - price
       - availability
-      - stock_indicator
       properties:
         id:
           type: string
@@ -1936,8 +1932,6 @@ components:
           $ref: '#/components/schemas/Money'
         availability:
           $ref: '#/components/schemas/Availability'
-        stock_indicator:
-          $ref: '#/components/schemas/StockIndicator'
     OrderItem:
       type: object
       required:
@@ -2303,14 +2297,13 @@ paths:
                 type: object
                 required:
                 - data
-                - meta
                 properties:
                   data:
                     type: array
                     items:
                       $ref: '#/components/schemas/Variant'
-                  meta:
-                    $ref: '#/components/schemas/CollectionMeta'
+                additionalProperties: false
+                description: Unpaginated active variants for the parent product, ordered by display_order ASC then id ASC.
     post:
       operationId: CAT-010
       tags:

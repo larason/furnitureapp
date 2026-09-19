@@ -95,8 +95,8 @@ class ApiRoutingSmokeTest extends TestCase
     {
         $this->getJson(self::API_PRODUCTS)->assertOk();
         $this->getJson(self::API_PRODUCTS.'/demo-sofa')->assertNotFound();
-        $this->getJson(self::API_PRODUCTS.'/demo-sofa/variants')->assertStatus(501);
-        $this->getJson(self::API_PRODUCTS.'/demo-sofa/variants/var-1')->assertStatus(501);
+        $this->getJson(self::API_PRODUCTS.'/demo-sofa/variants')->assertNotFound();
+        $this->getJson(self::API_PRODUCTS.'/demo-sofa/variants/var-1')->assertNotFound();
         $this->getJson('/api/v1/categories')->assertOk();
         $this->getJson('/api/v1/categories/demo-category')->assertNotFound();
     }

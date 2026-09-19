@@ -7,12 +7,23 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductStock;
 use App\Models\ProductVariant;
+use App\Support\VariantIdentifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ProductReadApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_variant_identifier_round_trips_maximum_supported_integer_key(): void
+    {
+        $variant = new ProductVariant;
+        $variant->setAttribute('id', PHP_INT_MAX);
+
+        $encoded = VariantIdentifier::encode($variant);
+
+        $this->assertSame(PHP_INT_MAX, VariantIdentifier::decode($encoded));
+    }
 
     public function test_public_collection_returns_allow_listed_paginated_products(): void
     {
@@ -111,6 +122,50 @@ class ProductReadApiTest extends TestCase
             ->assertJsonCount(0, 'data.images')
             ->assertJsonCount(0, 'data.variants')
             ->assertJsonMissing(['name' => 'Other size']);
+    }
+
+    public function test_public_variant_collection_is_scoped_ordered_and_allow_listed(): void
+    {
+        $category = Category::factory()->create();
+        $product = Product::factory()->create(['category_id' => $category->id, 'slug' => 'variant-table']);
+        $first = ProductVariant::factory()->create(['product_id' => $product->id, 'display_order' => 2, 'variant_name' => 'Large', 'price_amount' => 200]);
+        $second = ProductVariant::factory()->create(['product_id' => $product->id, 'display_order' => 1, 'variant_name' => 'Small', 'price_amount' => 100]);
+        ProductVariant::factory()->inactive()->create(['product_id' => $product->id, 'variant_name' => 'Hidden']);
+        ProductStock::factory()->forVariant($first)->create(['quantity' => 2, 'reserved_quantity' => 1]);
+
+        $response = $this->getJson('/api/v1/products/'.$product->slug.'/variants')->assertOk();
+
+        $response->assertJsonPath('data.0.id', VariantIdentifier::encode($second))
+            ->assertJsonPath('data.1.id', VariantIdentifier::encode($first))
+            ->assertJsonPath('data.0.product_id', 'prod_'.base_convert((string) $product->id, 10, 36))
+            ->assertJsonPath('data.0.price.amount', 100)
+            ->assertJsonPath('data.0.availability', 'unavailable')
+            ->assertJsonPath('data.1.availability', 'available')
+            ->assertJsonMissingPath('data.0.stock_indicator')
+            ->assertJsonMissingPath('data.0.cost_price_amount')
+            ->assertJsonMissingPath('data.0.is_active')
+            ->assertJsonMissingPath('data.0.display_order')
+            ->assertJsonStructure(['data' => [['id', 'product_id', 'sku', 'name', 'price', 'availability', 'created_at', 'updated_at']]]);
+    }
+
+    public function test_variant_detail_requires_public_parent_and_strict_parent_ownership(): void
+    {
+        $category = Category::factory()->create();
+        $product = Product::factory()->create(['category_id' => $category->id, 'slug' => 'parent-table']);
+        $other = Product::factory()->create(['category_id' => $category->id, 'slug' => 'other-table']);
+        $variant = ProductVariant::factory()->create(['product_id' => $product->id, 'variant_name' => 'Walnut']);
+        $inactive = ProductVariant::factory()->inactive()->create(['product_id' => $product->id]);
+
+        $this->getJson('/api/v1/products/'.$product->slug.'/variants/'.VariantIdentifier::encode($variant))
+            ->assertOk()
+            ->assertJsonPath('data.id', VariantIdentifier::encode($variant))
+            ->assertJsonMissingPath('data.stock_indicator');
+        $this->getJson('/api/v1/products/'.$other->slug.'/variants/'.VariantIdentifier::encode($variant))
+            ->assertNotFound()
+            ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+        $this->getJson('/api/v1/products/'.$product->slug.'/variants/'.VariantIdentifier::encode($inactive))->assertNotFound();
+        $product->update(['is_active' => false]);
+        $this->getJson('/api/v1/products/'.$product->slug.'/variants')->assertNotFound();
     }
 
     public function test_inactive_and_deleted_products_are_masked(): void
