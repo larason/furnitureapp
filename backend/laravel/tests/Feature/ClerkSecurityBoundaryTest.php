@@ -80,6 +80,68 @@ class ClerkSecurityBoundaryTest extends TestCase
         $this->assertFalse($fresh->hasRole('ADMIN'));
     }
 
+    public function test_staff_role_survives_the_clerk_authentication_boundary(): void
+    {
+        $user = User::factory()->staff()->create(['clerk_user_id' => 'user_staff_1']);
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->andReturn(new AuthenticatedClerkIdentity('user_staff_1', 'sess_staff_1', 'https://clerk.example.test'));
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->getJson('/api/v1/me')
+            ->assertOk()
+            ->assertJsonPath('data.id', (string) $user->id)
+            ->assertJsonPath('data.role', 'STAFF');
+
+        $fresh = $user->fresh();
+        $this->assertTrue($fresh->hasRole('STAFF'));
+        $this->assertFalse($fresh->hasRole('CUSTOMER'));
+        $this->assertFalse($fresh->hasRole('ADMIN'));
+        $this->assertSame(1, User::where('clerk_user_id', 'user_staff_1')->count());
+    }
+
+    public function test_admin_role_survives_the_clerk_authentication_boundary(): void
+    {
+        $user = User::factory()->admin()->create(['clerk_user_id' => 'user_admin_1']);
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->andReturn(new AuthenticatedClerkIdentity('user_admin_1', 'sess_admin_1', 'https://clerk.example.test'));
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->getJson('/api/v1/me')
+            ->assertOk()
+            ->assertJsonPath('data.id', (string) $user->id)
+            ->assertJsonPath('data.role', 'ADMIN');
+
+        $fresh = $user->fresh();
+        $this->assertTrue($fresh->hasRole('ADMIN'));
+        $this->assertFalse($fresh->hasRole('CUSTOMER'));
+        $this->assertFalse($fresh->hasRole('STAFF'));
+        $this->assertSame(1, User::where('clerk_user_id', 'user_admin_1')->count());
+    }
+
+    public function test_clerk_role_metadata_cannot_promote_a_customer(): void
+    {
+        $user = User::factory()->customer()->create(['clerk_user_id' => 'user_metadata_1']);
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->andReturn(new AuthenticatedClerkIdentity('user_metadata_1', 'sess_metadata_1', 'https://clerk.example.test'));
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->getJson('/api/v1/me')
+            ->assertOk()
+            ->assertJsonPath('data.role', 'CUSTOMER');
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->getJson('/api/v1/admin/staff')
+            ->assertForbidden();
+
+        $fresh = $user->fresh();
+        $this->assertTrue($fresh->hasRole('CUSTOMER'));
+        $this->assertFalse($fresh->hasRole('STAFF'));
+        $this->assertFalse($fresh->hasRole('ADMIN'));
+    }
+
     public function test_suspended_local_account_is_not_reactivated_by_valid_session(): void
     {
         $user = User::factory()->customer()->create([
@@ -93,7 +155,8 @@ class ClerkSecurityBoundaryTest extends TestCase
 
         $response = $this->withHeaders(['Authorization' => 'Bearer session-token'])->getJson('/api/v1/me');
 
-        $response->assertOk();
+        $response->assertForbidden()
+            ->assertJsonPath('errors.0.code', 'FORBIDDEN');
         $this->assertSame('SUSPENDED', $user->fresh()->account_state);
     }
 

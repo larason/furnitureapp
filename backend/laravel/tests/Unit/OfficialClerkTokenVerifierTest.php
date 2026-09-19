@@ -162,6 +162,61 @@ class OfficialClerkTokenVerifierTest extends TestCase
         }
     }
 
+    public function test_missing_subject_is_rejected_without_creating_an_identity(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key', 'clerk.jwt_key' => 'test-jwt-key']);
+        $payload = (object) ['sid' => 'sess_123', 'iss' => 'https://clerk.example.test', 'sts' => 'active'];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        $this->expectException(ClerkAuthenticationFailure::class);
+        try {
+            $verifier->verify($this->requestWithBearerToken());
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+            throw $exception;
+        }
+    }
+
+    public function test_wrong_configured_issuer_is_rejected(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key', 'clerk.jwt_key' => 'test-jwt-key', 'clerk.issuer' => 'https://trusted.example.test']);
+        $payload = (object) [
+            'sub' => 'user_123', 'sid' => 'sess_123', 'iss' => 'https://attacker.example.test', 'sts' => 'active',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        try {
+            $verifier->verify($this->requestWithBearerToken());
+            $this->fail('Expected issuer mismatch to be rejected.');
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+        }
+    }
+
+    public function test_invalid_signature_state_is_rejected_before_identity_resolution(): void
+    {
+        config(['clerk.secret_key' => 'test-secret-key', 'clerk.jwt_key' => 'test-jwt-key']);
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedOut(
+                new ErrorReason('token-invalid-signature', 'signature mismatch'),
+            ),
+        );
+
+        try {
+            $verifier->verify($this->requestWithBearerToken());
+            $this->fail('Expected invalid signature to be rejected.');
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+        }
+    }
+
     private function requestWithBearerToken(): Request
     {
         return Request::create('/api/v1/me', 'GET', [], [], [], [

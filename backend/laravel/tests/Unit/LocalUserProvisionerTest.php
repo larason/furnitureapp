@@ -34,6 +34,19 @@ class LocalUserProvisionerTest extends TestCase
         $this->assertNotNull($first->email_verified_at);
     }
 
+    public function test_database_identity_constraint_rejects_duplicate_clerk_mapping(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $provisioner = new LocalUserProvisioner(new FakeClerkUserGateway);
+        $identity = new AuthenticatedClerkIdentity('user_unique_123', 'sess_test_123', 'https://clerk.test');
+
+        $first = $provisioner->resolve($identity);
+        $this->assertSame($first->id, $provisioner->resolve($identity)->id);
+        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('customer_profiles', 1);
+        $this->assertDatabaseHas('users', ['clerk_user_id' => 'user_unique_123']);
+    }
+
     public function test_it_does_not_link_an_unmapped_user_by_email(): void
     {
         $this->seed(RbacSeeder::class);

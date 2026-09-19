@@ -114,6 +114,15 @@ class ProfileOperationsTest extends TestCase
             ->assertJsonPath('errors.0.code', 'AUTHENTICATION_REQUIRED');
     }
 
+    public function test_inactive_customer_cannot_access_authenticated_routes(): void
+    {
+        $this->customer(['account_state' => 'SUSPENDED']);
+
+        $this->bearer()->getJson('/api/v1/me')
+            ->assertForbidden()
+            ->assertJsonPath('errors.0.code', 'FORBIDDEN');
+    }
+
     public function test_cart_user_foreign_key_is_restrictive(): void
     {
         $foreignKey = collect(Schema::getForeignKeys('carts'))

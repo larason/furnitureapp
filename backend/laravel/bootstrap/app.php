@@ -49,6 +49,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => RequirePermission::class,
             'staff-or-admin' => StaffOrAdminAccess::class,
         ]);
+
+        $middleware->priority([
+            AssignRequestId::class,
+            AuthenticateClerk::class,
+            AuthenticateClerkIfPresent::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

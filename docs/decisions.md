@@ -4,6 +4,16 @@
 
 ---
 
+### ADR/AUTH-002 — Application API Rate Limiting
+
+**Decision:** Clerk owns credential-flow abuse protection. Laravel uses named built-in limiters for application API traffic: generous IP-keyed public reads, local-user-keyed authenticated reads/writes, checkout, order cancellation, anonymous submissions, and operational/admin actions. Limits are temporary, configurable where meaningful, and never bypassed by role.
+
+**Security:** Authenticated limiter keys use the local `users.id`; anonymous submission keys use the trusted request IP. Raw bearer tokens, Clerk identifiers, email addresses, and passwords are never used in limiter keys or logs. Rate limiting supplements authentication, authorization, validation, transactions, and idempotency; it does not replace them.
+
+**Status:** Accepted and implemented in Phase 4.11
+
+---
+
 ### ADR/AUTH-001 — Clerk Token Verification and Local User Provisioning
 
 **Decision:** Laravel verifies Clerk session tokens with `clerkinc/backend-php` using configured Clerk verification keys, authorized parties, and audiences. The verified token `sub` is the only external identity key. First authenticated requests retrieve the Clerk Backend User by that ID, then transactionally provision one local user with a nullable unique `users.clerk_user_id`, a CUSTOMER role, and a customer profile. Existing mappings are reused; email is never used for automatic linking.
