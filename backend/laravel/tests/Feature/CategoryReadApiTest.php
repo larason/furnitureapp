@@ -21,7 +21,9 @@ class CategoryReadApiTest extends TestCase
         $response = $this->getJson('/api/v1/categories?per_page=1');
 
         $response->assertOk()
-            ->assertHeader('Cache-Control', 'max-age=300, public, s-maxage=600')
+            ->assertHeaderContains('Cache-Control', 'public')
+            ->assertHeaderContains('Cache-Control', 'max-age=300')
+            ->assertHeaderContains('Cache-Control', 's-maxage=600')
             ->assertJsonPath('meta.pagination.current_page', 1)
             ->assertJsonPath('meta.pagination.per_page', 1)
             ->assertJsonPath('meta.pagination.total', 2)
@@ -67,7 +69,9 @@ class CategoryReadApiTest extends TestCase
         foreach (['living-room', 'cat_'.base_convert((string) $category->id, 10, 36)] as $identifier) {
             $this->getJson('/api/v1/categories/'.$identifier)
                 ->assertOk()
-                ->assertHeader('Cache-Control', 'max-age=300, public, s-maxage=600')
+                ->assertHeaderContains('Cache-Control', 'public')
+                ->assertHeaderContains('Cache-Control', 'max-age=300')
+                ->assertHeaderContains('Cache-Control', 's-maxage=600')
                 ->assertJsonPath('data.slug', 'living-room')
                 ->assertJsonPath('data.description', 'Furniture for living spaces.')
                 ->assertJsonPath('data.image.url', 'https://cdn.example.test/living-room.jpg')

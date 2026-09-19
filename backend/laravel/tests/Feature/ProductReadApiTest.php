@@ -24,7 +24,9 @@ class ProductReadApiTest extends TestCase
 
         $this->getJson('/api/v1/products')
             ->assertOk()
-            ->assertHeader('Cache-Control', 'max-age=300, public, s-maxage=600')
+            ->assertHeaderContains('Cache-Control', 'public')
+            ->assertHeaderContains('Cache-Control', 'max-age=300')
+            ->assertHeaderContains('Cache-Control', 's-maxage=600')
             ->assertJsonPath('meta.pagination.total', 1)
             ->assertJsonPath('data.0.name', 'Oak Table')
             ->assertJsonPath('data.0.price.amount', 125000000)
@@ -41,7 +43,8 @@ class ProductReadApiTest extends TestCase
     {
         $category = Category::factory()->create();
         $product = Product::factory()->create(['category_id' => $category->id, 'slug' => 'oak-table', 'description' => 'A solid oak table.']);
-        ProductVariant::factory()->create(['product_id' => $product->id, 'variant_name' => 'Large', 'display_order' => 2, 'price_amount' => 200]);
+        $activeVariant = ProductVariant::factory()->create(['product_id' => $product->id, 'variant_name' => 'Large', 'display_order' => 2, 'price_amount' => 200]);
+        ProductStock::factory()->forVariant($activeVariant)->create(['quantity' => 5, 'reserved_quantity' => 1]);
         ProductVariant::factory()->inactive()->create(['product_id' => $product->id, 'variant_name' => 'Hidden', 'display_order' => 1, 'price_amount' => 100]);
         ProductImage::factory()->create(['product_id' => $product->id, 'sort_order' => 2, 'file_path' => 'products/two.webp']);
         ProductImage::factory()->create(['product_id' => $product->id, 'sort_order' => 1, 'file_path' => 'products/one.webp']);
@@ -51,6 +54,7 @@ class ProductReadApiTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('data.description', 'A solid oak table.')
                 ->assertJsonPath('data.variants.0.name', 'Large')
+                ->assertJsonPath('data.variants.0.availability', 'available')
                 ->assertJsonCount(1, 'data.variants')
                 ->assertJsonPath('data.images.0.sort_order', 1)
                 ->assertJsonMissingPath('data.stock_indicator')

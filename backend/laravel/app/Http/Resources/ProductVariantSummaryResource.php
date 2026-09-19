@@ -9,7 +9,7 @@ final class ProductVariantSummaryResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $available = $this->stocks->sum('available_quantity') > 0;
+        $available = $this->stocks->sum(fn ($stock) => $stock->quantity - $stock->reserved_quantity) > 0;
 
         return [
             'id' => $this->id,
