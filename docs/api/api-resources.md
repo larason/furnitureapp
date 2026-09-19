@@ -51,6 +51,9 @@
 
 **Conceptual paths:** `GET /api/v1/categories` (`CAT-003`), `GET /api/v1/categories/{category}` (`CAT-004`).
 
+`CAT-003` lists active storefront categories directly beneath the structural
+`Furnitures Root`; the root and deeper descendants are not included.
+
 ### 2.1 Category Detail Representation (`CAT-004`)
 
 | Field | Type | Exposure | Nullable | Notes |
