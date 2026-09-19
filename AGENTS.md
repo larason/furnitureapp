@@ -424,6 +424,23 @@ Never store raw passwords.
 
 Never expose database credentials to frontend applications.
 
+Never infer that a database is disposable from `APP_ENV` alone. Both environment
+and database-name checks are required before destructive migration commands. The
+repository-wide guard for `migrate:fresh` is:
+
+```bash
+test "${APP_ENV:-}" != "production"
+test "${DB_DATABASE:-}" = ":memory:" -o \
+     "${DB_DATABASE:-}" = "furnitureapp_test_disposable"
+php artisan migrate:fresh --seed --force
+```
+
+Never run `migrate:fresh` against the configured development, staging, or
+production application database. For destructive MySQL verification, create the
+disposable database named `furnitureapp_test_disposable`, point the command
+explicitly at it, verify the environment is non-production, run with `--force`,
+and destroy the disposable database afterward.
+
 ---
 
 ## 12. Inventory Rules

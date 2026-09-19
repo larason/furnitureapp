@@ -180,8 +180,10 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // Token binding/verification is implemented in the attachment phase
     // (Group J / 10.6); routes remain stub-only until then.
     // --------------------------------------------------------------------
-    Route::post('/requests/{request}/attachments', [RequestController::class, 'storeAttachment'])->name('requests.attachments.store');
-    Route::post('/enquiries/{enquiry}/attachments', [EnquiryController::class, 'storeAttachment'])->name('enquiries.attachments.store');
+    Route::middleware('clerk.auth')->group(function (): void {
+        Route::post('/requests/{request}/attachments', [RequestController::class, 'storeAttachment'])->name('requests.attachments.store');
+        Route::post('/enquiries/{enquiry}/attachments', [EnquiryController::class, 'storeAttachment'])->name('enquiries.attachments.store');
+    });
 
     // --------------------------------------------------------------------
     // ADMIN — Admin-only staff lifecycle, user visibility, audit logs

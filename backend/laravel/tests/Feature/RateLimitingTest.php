@@ -70,13 +70,62 @@ class RateLimitingTest extends TestCase
         $throttled = false;
 
         foreach (range(1, 5) as $attempt) {
-            if ($this->getJson('/api/v1/me', ['Authorization' => 'Bearer first-session'])->status() === 429) {
+            if ($this->withHeaders(['Authorization' => 'Bearer first-session'])->getJson('/api/v1/me')->status() === 429) {
                 $throttled = true;
                 break;
             }
         }
 
         $this->assertTrue($throttled);
-        $this->getJson('/api/v1/me', ['Authorization' => 'Bearer second-session'])->assertOk();
+        $this->withHeaders(['Authorization' => 'Bearer second-session'])->getJson('/api/v1/me')->assertOk();
+    }
+
+    public function test_authenticated_write_is_limited_with_retry_after_without_changing_account_state(): void
+    {
+        config(['rate_limits.authenticated_write_per_minute' => 1]);
+        $user = User::factory()->customer()->create(['clerk_user_id' => 'user_write_1']);
+        Cache::flush();
+
+        $verifier = \Mockery::mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity('user_write_1', null, null));
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
+
+        $headers = ['Authorization' => 'Bearer write-session'];
+        $this->withHeaders($headers)->patchJson('/api/v1/me', ['name' => 'First update'])->assertOk();
+        $response = $this->withHeaders($headers)->patchJson('/api/v1/me', ['name' => 'Second update']);
+
+        $response->assertStatus(429)
+            ->assertJsonPath('errors.0.code', 'RATE_LIMITED')
+            ->assertJsonStructure(['errors', 'meta' => ['request_id']]);
+        $this->assertGreaterThanOrEqual(1, (int) $response->headers->get('Retry-After'));
+        $fresh = $user->fresh();
+        $this->assertSame('CUSTOMER', $fresh->getRoleNames()->first());
+        $this->assertNull($fresh->account_state);
+        $this->assertSame('First update', $fresh->name);
+    }
+
+    public function test_authenticated_write_quota_isolated_between_users_on_shared_ip(): void
+    {
+        config(['rate_limits.authenticated_write_per_minute' => 1]);
+        $first = User::factory()->customer()->create(['clerk_user_id' => 'user_write_a']);
+        $second = User::factory()->customer()->create(['clerk_user_id' => 'user_write_b']);
+        Cache::flush();
+
+        $verifier = \Mockery::mock(ClerkTokenVerifier::class);
+        $verifier->shouldReceive('verify')->andReturnUsing(static function (Request $request): AuthenticatedClerkIdentity {
+            return new AuthenticatedClerkIdentity(
+                $request->bearerToken() === 'first-write' ? 'user_write_a' : 'user_write_b',
+                null,
+                null,
+            );
+        });
+        $this->app->instance(ClerkTokenVerifier::class, $verifier);
+
+        $this->withHeaders(['Authorization' => 'Bearer first-write'])->patchJson('/api/v1/me', ['name' => 'A'])->assertOk();
+        $this->withHeaders(['Authorization' => 'Bearer first-write'])->patchJson('/api/v1/me', ['name' => 'A2'])->assertStatus(429);
+        $this->withHeaders(['Authorization' => 'Bearer second-write'])->patchJson('/api/v1/me', ['name' => 'B'])->assertOk();
+
+        $this->assertSame('CUSTOMER', $first->fresh()->getRoleNames()->first());
+        $this->assertSame('CUSTOMER', $second->fresh()->getRoleNames()->first());
     }
 }

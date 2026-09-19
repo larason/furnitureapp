@@ -111,6 +111,12 @@ class ApiRoutingSmokeTest extends TestCase
         $this->postJson(self::API_ENQUIRIES)->assertStatus(501);
     }
 
+    public function test_attachment_stubs_require_authentication_until_upload_scope_is_implemented(): void
+    {
+        $this->postJson('/api/v1/requests/REQ-1/attachments')->assertUnauthorized();
+        $this->postJson('/api/v1/enquiries/ENQ-1/attachments')->assertUnauthorized();
+    }
+
     public function test_optional_authentication_accepts_anonymous_and_authenticated_requests(): void
     {
         $user = User::factory()->customer()->create(['clerk_user_id' => 'user_123']);

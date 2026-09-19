@@ -63,7 +63,7 @@ final class LocalUserProvisioner
         } catch (ApiException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
-            $mapped = User::where('clerk_user_id', $identity->clerkUserId)->first();
+            $mapped = $this->resolveConcurrentMapping($identity->clerkUserId);
 
             if ($mapped !== null) {
                 return $mapped;
@@ -99,5 +99,20 @@ final class LocalUserProvisioner
             'The authenticated identity cannot be provisioned.',
             409,
         );
+    }
+
+    private function resolveConcurrentMapping(string $clerkUserId): ?User
+    {
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $mapped = User::where('clerk_user_id', $clerkUserId)->first();
+
+            if ($mapped !== null) {
+                return $mapped;
+            }
+
+            usleep(10_000);
+        }
+
+        return null;
     }
 }
