@@ -1570,6 +1570,9 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 #### Category Collection (`CAT-003`)
 - **Path:** `GET /api/v1/categories`
 - **Purpose:** Public category navigation, menu generation, category landing page.
+- **Collection scope:** Active storefront categories directly beneath the structural
+  `Furnitures Root` category. The structural root, inactive categories, and
+  deeper descendants are not returned by this summary collection.
 - **Response Format (Category Summary Collection):**
 
 ```json
