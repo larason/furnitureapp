@@ -17,16 +17,23 @@ final class ProductCatalogQuery
             ->where('products.is_active', true)
             ->whereHas('category', fn (Builder $category) => $category->where('is_active', true))
             ->with([
-                'category:id,name,slug',
+                'category:id,name,slug,description',
                 'primaryImage:id,product_id,file_path,alt_text',
-            ])
-            ->selectSub($this->minimumPriceSubquery(), 'summary_price_amount')
-            ->selectSub($this->minimumPriceSubquery('price_currency'), 'summary_price_currency')
-            ->selectSub($this->availableStockScalar(), 'summary_has_available_stock');
+            ]);
+
+        $this->addSummaryAggregates($query);
 
         $this->applyFilters($query, $filters);
 
         return $this->applySort($query, $filters);
+    }
+
+    public function addSummaryAggregates(Builder $query): Builder
+    {
+        return $query
+            ->selectSub($this->minimumPriceSubquery(), 'summary_price_amount')
+            ->selectSub($this->minimumPriceSubquery('price_currency'), 'summary_price_currency')
+            ->selectSub($this->availableStockScalar(), 'summary_has_available_stock');
     }
 
     private function minimumPriceSubquery(string $column = 'price_amount'): Builder

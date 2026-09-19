@@ -93,8 +93,8 @@ class ApiRoutingSmokeTest extends TestCase
 
     public function test_public_catalog_routes_do_not_require_authentication(): void
     {
-        $this->getJson(self::API_PRODUCTS)->assertStatus(501);
-        $this->getJson(self::API_PRODUCTS.'/demo-sofa')->assertStatus(501);
+        $this->getJson(self::API_PRODUCTS)->assertOk();
+        $this->getJson(self::API_PRODUCTS.'/demo-sofa')->assertNotFound();
         $this->getJson(self::API_PRODUCTS.'/demo-sofa/variants')->assertStatus(501);
         $this->getJson(self::API_PRODUCTS.'/demo-sofa/variants/var-1')->assertStatus(501);
         $this->getJson('/api/v1/categories')->assertOk();
@@ -246,7 +246,7 @@ class ApiRoutingSmokeTest extends TestCase
         $this->get('/v1/products')->assertNotFound();
         $this->get('/api/products')->assertNotFound();
         $this->get('/api/v2/products')->assertNotFound();
-        $this->getJson(self::API_PRODUCTS)->assertStatus(501);
+        $this->getJson(self::API_PRODUCTS)->assertOk();
     }
 
     public function test_health_and_infrastructure_marker_are_not_domain_routes(): void

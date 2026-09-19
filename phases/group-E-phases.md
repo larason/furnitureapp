@@ -1,64 +1,33 @@
-# Phase 5.2 — Product Read API
+# Phase 5.3 — Product Detail API
 
 ## Purpose
 
-Implement the public Product Read API using the catalog/domain model already established in Group C.
-
-This phase covers the read behavior for:
-
-```text
-CAT-001
-GET /api/v1/products
-```
-
-and:
+Implement the complete public Product Detail read path for:
 
 ```text
 CAT-002
 GET /api/v1/products/{product}
 ```
 
-The implementation must **not redesign the Product domain**.
+using the domain model already established in Group C and the Product Read foundation from Phase 5.2.
 
-The API must derive its public representation from the existing Group C relationships:
+This phase exists to turn the normalized backend catalog model into the rich public representation needed by:
 
 ```text
-Product
-    ↓
-Category
-
-Product
-    ↓
-ProductVariant
-        ↓
-pricing
-        ↓
-variant attributes
-        ↓
-dimensions
-
-Product
-    ↓
-ProductImage
-
-ProductVariant
-    ↓
-ProductStock
-
-Product
-    ↓
-materials / room tags / style tags / assets
+product landing pages
+Next.js SSR/SEO
+Flutter product details
+variant selection
+gallery display
+cart preparation
+made-to-order request preparation
 ```
 
-where those relations exist in the current repository.
-
-Do not duplicate variant, inventory, media, or classification data onto `products`.
+without changing the underlying Product architecture.
 
 ---
 
-# 1. Critical Constraint — Preserve Group C
-
-The Group C catalog schema is authoritative.
+# 1. Critical Rule — Preserve Group C
 
 Do not redesign:
 
@@ -67,31 +36,41 @@ products
 product_variants
 product_images
 product_stocks
+categories
 product_materials
 product_room_tags
 product_style_tags
 product_assets
-categories
 ```
 
-Do not replace them with:
+The API must assemble Product Detail from these relationships.
 
-```text
-single giant products table
-JSON inventory
-JSON image arrays
-price column copied to products
-SKU copied to products
-material strings copied to products
-```
-
-Phase 5.2 is a **read/API implementation phase**, not a schema redesign.
+Do not denormalize convenience data back onto `products`.
 
 ---
 
-# 2. Read Current Authoritative Files First
+# 2. Phase Dependency
 
-Before modifying code, read the latest repository versions of:
+Phase 5.3 assumes Phase 5.2 established the reusable Product Read foundation, including where applicable:
+
+```text
+public product resolution
+public visibility scope
+price derivation
+availability derivation
+primary image resolution
+public resource mapping
+```
+
+Reuse that implementation.
+
+Do not create a second independent Product Detail pricing or visibility system.
+
+---
+
+# 3. Read Current Authoritative Docs First
+
+Before modifying code, read:
 
 ```text
 AGENTS.md
@@ -105,287 +84,201 @@ docs/decisions.md
 phases/group-C-phases.md
 ```
 
-Then inspect the actual implementations of:
+Then inspect current Phase 5.1/5.2 implementation.
 
-```text
-app/Models/Product.php
-app/Models/ProductVariant.php
-app/Models/ProductImage.php
-app/Models/ProductStock.php
-app/Models/Category.php
-```
-
-and all associated:
-
-```text
-migrations
-factories
-seeders
-tests
-```
-
-Do not infer schema fields from old planning text.
-
-Use the actual Group C implementation.
+The latest repository state is authoritative.
 
 ---
 
-# 3. Known Group C Variance
+# 4. Endpoint
 
-The current repository explicitly records:
+Implement exactly:
+
+```http
+GET /api/v1/products/{product}
+```
+
+Do not add:
+
+```text
+/products/{product}/detail
+/product/{product}
+/catalog/products/{product}
+/products/{product}/images
+```
+
+CAT-002 is the canonical Product Detail endpoint.
+
+---
+
+# 5. Public Access
+
+CAT-002 is:
+
+```text
+PUBLIC_READ
+```
+
+No authentication required.
+
+Do not require:
+
+```text
+Clerk
+CUSTOMER
+STAFF
+ADMIN
+```
+
+for Product Detail.
+
+---
+
+# 6. No Authentication Side Effects
+
+Serving Product Detail must not invoke:
+
+```text
+AuthenticateClerk
+LocalUserProvisioner
+Clerk backend API
+```
+
+Public catalog availability must remain independent of login.
+
+---
+
+# 7. `{product}` Dual Resolution
+
+`{product}` accepts either:
+
+```text
+canonical slug
+or
+stable public machine ID
+```
+
+Examples:
+
+```text
+modern-3-seater-fabric-sofa
+prod_...
+```
+
+Reuse the resolver established in Phase 5.2.
+
+---
+
+# 8. Slug Is Canonical for SEO
+
+Slug remains the preferred human-facing URL identity.
+
+Use exact lookup.
+
+Do not use:
+
+```text
+LIKE
+contains
+fuzzy matching
+case-normalized guessing
+```
+
+for detail resolution.
+
+---
+
+# 9. Machine ID
+
+Machine ID must resolve to the same Product representation.
+
+Do not create different serialization depending on whether the caller used ID or slug.
+
+---
+
+# 10. Public Visibility
+
+Product Detail must use the same public visibility rules as CAT-001.
+
+At the current stage this includes every authoritative visibility condition already implemented.
+
+Examples:
+
+```text
+soft deleted → hidden
+inactive → hidden
+```
+
+Once Phase 5.7 introduces publication state:
+
+```text
+is_published = false
+→ hidden
+```
+
+must join the same scope.
+
+---
+
+# 11. Public Masking
+
+For:
+
+```text
+unknown Product
+inactive Product
+soft-deleted Product
+future unpublished Product
+```
+
+return the same public not-found behavior.
+
+Normally:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+according to the current error registry.
+
+Do not reveal internal state.
+
+---
+
+# 12. Phase 5.7 Dependency Remains
+
+Do not add:
 
 ```text
 products.product_type
 products.is_published
 ```
 
-as absent from the Group C schema.
+during Phase 5.3.
 
-They are deliberately deferred to:
-
-```text
-Phase 5.7
-```
-
-Do **not** add them during Phase 5.2.
-
-Do **not** edit Group C migrations.
-
-Do **not** fabricate them using defaults.
+Those remain assigned to Phase 5.7 unless the latest roadmap explicitly supersedes that decision.
 
 ---
 
-# 4. Consequence of the Phase 5.7 Deferral
+# 13. Do Not Fabricate Missing Fields
 
-The frozen public contract ultimately requires:
+Until Phase 5.7 establishes an authoritative Product Type:
 
-```text
-product_type
-is_published visibility
-```
-
-but Phase 5.2 must preserve roadmap sequencing.
-
-Therefore:
-
-```text
-Phase 5.2
-→ implement Product Read infrastructure and every contract behavior supported by the existing Group C model.
-
-Phase 5.7
-→ add product_type / is_published and complete the publication/product-type-dependent public visibility semantics.
-```
-
-Do not mark unsupported behavior as implemented.
-
-Document this dependency clearly.
-
----
-
-# 5. Do Not Return Fake Product Type
-
-Until Phase 5.7 introduces the authoritative field, do not return:
+do not fake:
 
 ```json
-{
-  "product_type": "IN_STOCK"
-}
+"product_type": "IN_STOCK"
 ```
 
-for every product merely to satisfy a response schema.
+for every Product.
 
-That would create false business state.
-
-Likewise do not infer:
-
-```text
-MADE_TO_ORDER
-```
-
-from inventory quantity or category.
-
-Product type is a first-class business attribute, not an inference.
+Do not infer Product Type from inventory.
 
 ---
 
-# 6. Do Not Fake Publication State
+# 14. Product Detail Representation
 
-Do not treat:
-
-```text
-is_active
-```
-
-as identical to:
-
-```text
-is_published
-```
-
-They represent different concerns in the frozen contract.
-
-Until Phase 5.7 completes publication state:
-
-do not claim the full `is_active && is_published` visibility rule is implemented.
-
----
-
-# 7. Public API
-
-Both endpoints are public:
-
-```text
-GET /api/v1/products
-GET /api/v1/products/{product}
-```
-
-They require:
-
-```text
-NO authentication
-NO Clerk token
-NO role
-```
-
-Do not attach authentication middleware.
-
----
-
-# 8. Public Read Only
-
-Phase 5.2 does not implement:
-
-```text
-POST /products
-PATCH /products/{product}
-DELETE /products/{product}
-```
-
-Those belong to administrative catalog phases.
-
----
-
-# 9. CAT-001 — Product Collection
-
-Implement:
-
-```http
-GET /api/v1/products
-```
-
-as the canonical public product collection endpoint.
-
-This endpoint eventually owns:
-
-```text
-search
-category filtering
-product-type filtering
-availability filtering
-price filtering
-sorting
-pagination
-```
-
-according to the frozen contract.
-
-However, only implement a filter in Phase 5.2 if its authoritative source already exists.
-
----
-
-# 10. Do Not Create Duplicate Product Endpoints
-
-Do not add:
-
-```text
-GET /products/by-category/*
-GET /categories/{category}/products
-GET /available-products
-GET /search/products
-GET /featured-products
-```
-
-The canonical collection remains:
-
-```text
-GET /api/v1/products
-```
-
-with query parameters.
-
----
-
-# 11. CAT-002 — Product Detail
-
-Implement:
-
-```http
-GET /api/v1/products/{product}
-```
-
-using:
-
-```text
-slug
-or
-stable public ID
-```
-
-according to the frozen dual-resolution contract.
-
----
-
-# 12. Slug
-
-Product slug is the SEO/public routing identifier.
-
-Use exact indexed lookup.
-
-Do not:
-
-```text
-LIKE '%slug%'
-LOWER arbitrary column
-fuzzy match
-```
-
-for resource identification.
-
----
-
-# 13. Machine ID
-
-The detail endpoint must also resolve the existing stable Product API ID.
-
-Do not create another public identifier.
-
----
-
-# 14. Product Summary Contract
-
-The final CAT-001 public Product Summary is:
-
-```text
-id
-name
-slug
-product_type
-price
-category
-primary_image
-availability
-stock_indicator
-```
-
-But Phase 5.2 must only serialize fields whose authoritative source exists.
-
-Do not invent missing `product_type`.
-
----
-
-# 15. Product Detail Contract
-
-The final CAT-002 representation extends summary with:
+The final CAT-002 representation is based on Product Summary plus:
 
 ```text
 description
@@ -395,61 +288,103 @@ created_at
 updated_at
 ```
 
-Implement these through existing Group C relations.
+The final output also contains the currently implemented contracted summary fields:
+
+```text
+id
+name
+slug
+price
+category
+availability
+```
+
+`product_type` and `stock_indicator` are explicitly deferred to Phase 5.7,
+which will establish their authoritative sources and final availability
+semantics. They must not be included in the Phase 5.3 response until that
+phase is complete.
 
 ---
 
-# 16. Explicit Resources
+# 15. Explicit Product Detail Resource
 
-Use explicit Laravel Resources.
-
-Likely:
+Use a dedicated serializer such as:
 
 ```text
-ProductSummaryResource
 ProductDetailResource
-VariantSummaryResource
-ProductImageResource
-CategorySummaryResource
 ```
 
-or the equivalent existing convention.
+or the current project equivalent.
 
-Do not return Eloquent models directly.
+Do not reuse a generic model dump.
 
 ---
 
-# 17. Never Use Mass Serialization
+# 16. No Mass Serialization
 
-Do not use:
-
-```php
-return $product->toArray();
-```
-
-or unrestricted:
+Never use:
 
 ```php
-return response()->json($product);
+$product->toArray()
 ```
 
-Public catalog serialization must be allow-listed.
+as the Product Detail contract.
+
+The Product model contains internal fields that must remain private.
 
 ---
 
-# 18. Product Price Is Derived
+# 17. Public Field Allow-List
 
-Group C deliberately does not store Product price on:
+CAT-002 should expose only fields approved by the current API contract.
+
+Do not add fields because they happen to exist in MySQL.
+
+---
+
+# 18. Internal Product Fields
+
+Never expose:
 
 ```text
-products
+is_active
+is_published
+deleted_at
+sku_prefix
+internal timestamps not contracted
+internal notes
+storage paths
 ```
 
-Pricing belongs to:
+through CAT-002.
+
+---
+
+# 19. Description
+
+Product Detail includes:
 
 ```text
-product_variants
+description
 ```
+
+from the existing Product model.
+
+Do not transform stored plain catalog text into HTML.
+
+Return according to the existing serialization convention.
+
+---
+
+# 20. Price Comes From Variants
+
+Product Detail price must reuse the same Product-level pricing derivation established for CAT-001.
+
+Do not duplicate the pricing algorithm in `ProductDetailResource`.
+
+---
+
+# 21. No Product Price Column
 
 Do not add:
 
@@ -457,62 +392,13 @@ Do not add:
 products.price
 ```
 
-during Phase 5.2.
+ProductVariant remains the pricing boundary.
 
 ---
 
-# 19. Public Product Price
+# 22. Money Shape
 
-Implement the existing contract's public Product price using the approved variant-derived rule.
-
-Before coding:
-
-inspect the latest docs for the exact rule.
-
-Possible existing rules may involve:
-
-```text
-default variant
-lowest active variant price
-starting-at price
-```
-
-Use only the documented rule.
-
-Do not invent one.
-
----
-
-# 20. If Price Semantics Are Ambiguous
-
-If the latest documentation does not state how multiple variant prices become one Product Summary price:
-
-do not silently choose.
-
-Resolve the ambiguity minimally in:
-
-```text
-docs/api/api-contract.md
-docs/decisions.md
-```
-
-before implementation.
-
-Recommended principle:
-
-```text
-one deterministic server-derived public price
-```
-
-but use the approved project rule.
-
----
-
-# 21. Money
-
-All price amounts remain integer minor units.
-
-API shape:
+Return:
 
 ```json
 {
@@ -521,94 +407,271 @@ API shape:
 }
 ```
 
-Do not use:
+Use integer minor units.
 
-```text
-float
-decimal money
-formatted "TZS 1,250,000"
-```
-
-as API authority.
+Never return financial amounts as floats.
 
 ---
 
-# 22. Cost Price Must Never Leak
+# 23. Price Consistency
 
-`cost_price_amount` and related internal variant cost fields are:
+For the same Product state:
 
 ```text
-INTERNAL / OPERATIONAL
+CAT-001 price
+=
+CAT-002 price
 ```
 
-Never expose them in CAT-001 or CAT-002.
+The collection and detail APIs must never derive different prices.
+
+Add a regression test.
 
 ---
 
-# 23. Compare-at Price
+# 24. Internal Cost Protection
 
-Do not expose `compare_at_price` unless the current public API contract explicitly includes it.
+Never expose:
 
-Existing database capability does not automatically make a field public.
+```text
+cost_price_amount
+cost_price_currency
+```
+
+from ProductVariant.
+
+This applies even to authenticated Staff/Admin callers using the public CAT-002 route.
+
+Operational product reads have separate endpoints later.
 
 ---
 
-# 24. Variant Model
+# 25. Compare-at Price
 
-Preserve:
+Do not expose compare-at pricing unless currently part of the frozen public Product Detail schema.
 
-```text
-Product
-1 → many ProductVariants
-```
-
-Variant remains the canonical:
-
-```text
-SKU
-price
-dimensions
-weight
-variant attributes
-```
-
-boundary.
-
-Do not move these values to Product.
+Database capability alone does not make it API-contract data.
 
 ---
 
-# 25. Active Variants
+# 26. Category
 
-CAT-002 embedded variants must include only publicly eligible active variants according to current rules.
+Product Detail embeds Category according to the approved CAT-002 representation.
 
-Do not expose inactive variants publicly.
+Do not recursively embed:
+
+```text
+category.children
+category.products
+category.recommendations
+```
 
 ---
 
-# 26. Variant Ordering
+# 27. Category Contract Ambiguity Review
 
-Use existing:
+Before implementation, compare:
 
 ```text
-display_order ASC
+api-contract.md CAT-002 example
+api-contract.md summary/detail table
+api-resources.md
+openapi.yaml
 ```
 
-and deterministic:
+There may be a discrepancy over whether Product Detail's embedded Category contains:
 
 ```text
+id
+name
+slug
+```
+
+only,
+
+or additionally:
+
+```text
+description
+```
+
+Do not silently choose a new representation.
+
+Resolve using the most authoritative current schema.
+
+If the docs remain contradictory:
+
+record a minimal clarification in existing API/decision documentation.
+
+Do not create a third shape.
+
+---
+
+# 28. Category Visibility
+
+A public Product must not expose an internal/inactive Category unexpectedly.
+
+Use the public Category rules established by Phase 5.1.
+
+---
+
+# 29. Product Images
+
+CAT-002 embeds the full Product gallery.
+
+Images come exclusively from:
+
+```text
+product_images
+```
+
+Do not add image fields to `products`.
+
+---
+
+# 30. Image Resource
+
+Each image contains exactly the approved public fields:
+
+```text
+id
+url
+alt_text
+sort_order
+is_primary
+```
+
+---
+
+# 31. Never Expose `file_path`
+
+Group C stores:
+
+```text
+product_images.file_path
+```
+
+as an internal storage reference.
+
+It must never appear in public JSON.
+
+---
+
+# 32. Public URL Derivation
+
+Convert `file_path` to:
+
+```text
+url
+```
+
+through the existing storage/media abstraction.
+
+Do not hard-code:
+
+```text
+localhost
+production domain
+S3 bucket hostname
+CDN hostname
+```
+
+inside Product resources.
+
+---
+
+# 33. Gallery Ordering
+
+Gallery ordering must remain deterministic:
+
+```text
+sort_order ASC
 id ASC
 ```
 
-tie-breaking where needed.
-
-Do not return variants in arbitrary database order.
+Reuse the Group C relationship if it already enforces this.
 
 ---
 
-# 27. Embedded Variant Summary
+# 34. Primary Image Integrity
 
-Use the frozen embedded structure:
+At most one image may have:
+
+```text
+is_primary = true
+```
+
+per Product.
+
+Group C already owns this invariant.
+
+Do not reproduce primary-image validation inside the read controller.
+
+---
+
+# 35. Primary Image Consistency
+
+If CAT-001 exposes `primary_image`, the image selected there must match the image marked:
+
+```text
+is_primary = true
+```
+
+inside CAT-002 gallery.
+
+Add regression coverage.
+
+---
+
+# 36. Product Without Images
+
+A Product may legitimately have no gallery images.
+
+Return:
+
+```json
+"images": []
+```
+
+unless the frozen contract explicitly defines another representation.
+
+Do not invent placeholder image records.
+
+---
+
+# 37. Image Alt Text
+
+Return the stored:
+
+```text
+alt_text
+```
+
+according to the Group C image model.
+
+Do not auto-generate repetitive alt text in Laravel during reads.
+
+Frontend/display accessibility logic can use the provided catalog metadata later.
+
+---
+
+# 38. Variant Embedding
+
+CAT-002 embeds active Product Variants.
+
+Use the existing:
+
+```text
+Product::variants()
+```
+
+relationship and Group C ordering.
+
+---
+
+# 39. Embedded Variant Fields
+
+Each embedded variant summary uses the frozen structure:
 
 ```text
 id
@@ -619,57 +682,122 @@ availability
 stock_indicator
 ```
 
+where those public signals are currently authoritative.
+
+---
+
+# 40. Do Not Include `product_id`
+
+The Product parent is already implicit.
+
 Do not include:
 
 ```text
 product_id
-created_at
-updated_at
-cost_price
-raw stock quantities
 ```
 
-inside embedded CAT-002 variants.
+inside CAT-002 embedded variants.
 
 ---
 
-# 28. Variant Name
+# 41. Do Not Include Variant Timestamps
 
-Map the existing Group C:
+Embedded variant summaries omit:
+
+```text
+created_at
+updated_at
+```
+
+Standalone CAT-005/CAT-006 variants handle their own detail representation later.
+
+---
+
+# 42. Variant Name Mapping
+
+Group C stores:
 
 ```text
 variant_name
 ```
 
-to the contracted API:
+The API contract uses:
 
 ```text
 name
 ```
 
-if that mapping is already defined.
+Map at the resource boundary.
 
-Do not rename the database column simply to match API representation.
+Do not rename the database schema for presentation reasons.
 
 ---
 
-# 29. Variant Attributes
+# 43. Variant Price
 
-Do not automatically dump:
+Variant price comes directly from:
 
 ```text
-attributes JSON
+price_amount
+price_currency
 ```
 
-into public product payloads unless the frozen contract exposes it.
+using integer minor units.
 
-The presence of flexible JSON in Group C does not make it public by default.
+No floating point conversion.
 
 ---
 
-# 30. Dimensions
+# 44. Active Variants Only
 
-Do not automatically expose:
+Public Product Detail must not include:
+
+```text
+is_active = false
+```
+
+variants.
+
+---
+
+# 45. Variant Ordering
+
+Variants must be stable:
+
+```text
+display_order ASC
+id ASC
+```
+
+or exactly the deterministic ordering already enforced by the current relationship.
+
+---
+
+# 46. Cross-Product Variant Leakage
+
+No Product Detail may contain a Variant belonging to another Product.
+
+Add explicit regression coverage.
+
+---
+
+# 47. Variant Attributes
+
+Do not automatically serialize the full:
+
+```text
+attributes
+```
+
+JSON object merely because ProductVariant stores it.
+
+Only expose fields currently approved by CAT-002.
+
+---
+
+# 48. Dimensions
+
+Do not automatically add:
 
 ```text
 width_cm
@@ -678,80 +806,576 @@ depth_cm
 weight_kg
 ```
 
-unless current CAT-001/CAT-002 contract requires them.
+to CAT-002 unless the current Product Detail schema explicitly includes them.
 
-They remain part of the Group C model for later product specification use.
-
-Avoid expanding the public API casually.
+Keep API expansion intentional.
 
 ---
 
-# 31. Product Images
+# 49. Standalone Variant Endpoints
 
-Preserve Group C:
+Do not implement:
 
 ```text
-product_images
+CAT-005
+CAT-006
 ```
 
-as the authoritative media source.
+during Phase 5.3 unless the latest Group E roadmap explicitly assigns them here.
+
+This phase embeds variant summaries only.
+
+---
+
+# 50. Availability
+
+Product Detail exposes the same public:
+
+```text
+availability
+stock_indicator
+```
+
+as Product Summary.
+
+Reuse the shared catalog availability resolver from Phase 5.2.
+
+---
+
+# 51. No Separate Availability Endpoint
 
 Do not add:
 
 ```text
-image_url
-images JSON
+GET /products/{product}/availability
 ```
 
-columns to Product.
+Availability is embedded in Product Detail.
 
 ---
 
-# 32. Internal Image Path
-
-Group C stores:
-
-```text
-file_path
-```
-
-as an internal storage reference.
+# 52. Public Stock Security
 
 Never expose:
 
 ```text
-file_path
+physical_quantity
+quantity
+reserved_quantity
+available_quantity
+warehouse_location
 ```
 
-to public clients.
+through CAT-002.
 
 ---
 
-# 33. Public Image URL
+# 53. Availability Is Informational
 
-Derive:
-
-```text
-url
-```
-
-through the existing storage/media configuration.
-
-The API should remain independent of whether production uses:
+The API may say:
 
 ```text
-local storage
-S3-compatible object storage
-CDN
+available
 ```
 
-Do not hard-code hostnames.
+but this does not reserve stock or guarantee checkout.
+
+Do not introduce inventory locks into Product Detail.
 
 ---
 
-# 34. Product Image Structure
+# 54. Read Must Be Side-Effect Free
 
-Use the frozen image representation:
+GET Product Detail must not modify:
+
+```text
+inventory
+reserved inventory
+Product timestamps
+Variant timestamps
+Image timestamps
+view counters
+```
+
+---
+
+# 55. MADE_TO_ORDER
+
+Once Phase 5.7 provides Product Type:
+
+```text
+MADE_TO_ORDER
+```
+
+products remain publicly discoverable.
+
+Their primary customer action is later:
+
+```text
+Request Furniture
+```
+
+rather than Add to Cart.
+
+Do not implement request creation here.
+
+---
+
+# 56. Product Type Does Not Come From Stock
+
+Never infer:
+
+```text
+zero stock = MADE_TO_ORDER
+```
+
+These are different domain concepts.
+
+---
+
+# 57. Materials
+
+Do not automatically embed normalized Product materials in CAT-002 unless current API contract explicitly includes them.
+
+Preserve the Group C relation for later specification/filter work.
+
+---
+
+# 58. Room Tags
+
+Do not expose room tags unless currently contracted.
+
+Do not duplicate Category data using room tags.
+
+---
+
+# 59. Style Tags
+
+Same rule:
+
+preserve them in the domain but do not expand CAT-002 without an approved contract.
+
+---
+
+# 60. 3D/AR Assets
+
+Do not expose:
+
+```text
+product_assets
+```
+
+during Phase 5.3 unless the current frozen Product Detail schema explicitly includes them.
+
+Do not build AR presentation yet.
+
+---
+
+# 61. Recommendations
+
+Do not add:
+
+```text
+related_products
+recommended_products
+frequently_bought_together
+```
+
+to Product Detail.
+
+Recommendation behavior belongs to a later phase.
+
+---
+
+# 62. No Reviews
+
+Do not implement reviews/ratings in Product Detail.
+
+They are not part of current V1 scope unless explicitly approved later.
+
+---
+
+# 63. No Wishlist
+
+Do not add:
+
+```text
+is_favourite
+is_wishlisted
+```
+
+to Product Detail.
+
+The public endpoint must not depend on authenticated user context.
+
+---
+
+# 64. No Customer-Specific Serialization
+
+The same CAT-002 response shape should serve:
+
+```text
+anonymous
+Customer
+Staff
+Admin
+```
+
+when using the public route.
+
+Do not expose additional internal fields merely because an Authorization header happens to be present.
+
+---
+
+# 65. SSR / SEO Readiness
+
+CAT-002 must provide enough current contracted public data for future Next.js rendering of:
+
+```text
+page title
+description
+canonical product page
+OpenGraph preview
+Schema.org Product data
+```
+
+Do not implement frontend SEO tags here.
+
+---
+
+# 66. No SEO Metadata Duplication
+
+Do not add:
+
+```text
+meta_title
+meta_description
+canonical_url
+og_title
+```
+
+to Product unless explicitly approved.
+
+The frontend can derive presentation metadata from the Product Detail payload.
+
+---
+
+# 67. Resource Resolution Efficiency
+
+Resolve the Product once.
+
+Avoid patterns such as:
+
+```text
+query Product
+query Product again in Resource
+query Product again for image
+```
+
+Use appropriate eager loading.
+
+---
+
+# 68. Eager Loading
+
+CAT-002 should load only relationships required by its representation.
+
+Likely:
+
+```text
+category
+images
+active variants
+stock information required for coarse availability
+```
+
+according to current implementation.
+
+Do not load unrelated commerce data.
+
+---
+
+# 69. Avoid N+1
+
+Do not execute stock queries separately for every embedded variant when an eager-loaded relation/aggregate can provide the required information.
+
+---
+
+# 70. Keep Query Bounded
+
+A Product Detail request retrieves:
+
+```text
+one Product
+its bounded image gallery
+its variants
+necessary availability data
+```
+
+Do not recursively retrieve entire categories/catalog.
+
+---
+
+# 71. Controller
+
+Keep the controller small.
+
+Conceptually:
+
+```text
+identifier
+→ public Product resolver/query
+→ eager load approved detail relations
+→ ProductDetailResource
+```
+
+Do not calculate pricing/gallery/availability manually inside the controller.
+
+---
+
+# 72. Reuse Phase 5.2 Components
+
+Reuse existing:
+
+```text
+ProductPublicScope
+ProductResolver
+CatalogPriceResolver
+CatalogAvailabilityResolver
+ProductImageUrlResolver
+```
+
+or their actual equivalents.
+
+Do not create parallel "detail" versions of the same business logic.
+
+---
+
+# 73. Do Not Overabstract
+
+Do not introduce:
+
+```text
+ProductDetailOrchestratorFactory
+CatalogGraphEngine
+ProductPresentationRepositoryInterface
+```
+
+unless existing project architecture genuinely requires it.
+
+Use simple Laravel patterns.
+
+---
+
+# 74. Cacheability
+
+CAT-002 is:
+
+```text
+PUBLIC
+CACHEABLE
+```
+
+Use the same approved public cache semantics as CAT-001/CAT-003/CAT-004.
+
+---
+
+# 75. No User-Specific Cache Variation
+
+Because CAT-002 is public:
+
+do not vary its response by:
+
+```text
+user
+role
+session
+Clerk identity
+```
+
+This keeps it safe for shared caching/CDN use later.
+
+---
+
+# 76. Rate Limiting
+
+Use the existing moderate:
+
+```text
+public-read
+```
+
+limiter.
+
+Do not create an aggressive Product Detail-specific limiter.
+
+---
+
+# 77. Error Envelope
+
+All errors must use the canonical API error structure.
+
+No ad hoc:
+
+```json
+{"message":"Product not found"}
+```
+
+unless that is nested inside the canonical envelope as currently defined.
+
+---
+
+# 78. 404 Consistency
+
+These should be indistinguishable publicly:
+
+```text
+unknown slug
+unknown ID
+inactive Product
+soft-deleted Product
+future unpublished Product
+```
+
+where appropriate.
+
+---
+
+# 79. No Variant-Specific Query Parameter
+
+Do not add:
+
+```text
+GET /products/{product}?variant=...
+```
+
+as a new detail contract unless already approved.
+
+CAT-002 returns Product Detail plus variant choices.
+
+The frontend can select among returned variants later.
+
+---
+
+# 80. No Dynamic Includes
+
+Do not add:
+
+```text
+?include=images,variants,category
+?fields=...
+```
+
+V1 deliberately avoids dynamic graph/field selection.
+
+---
+
+# 81. No Separate Image Endpoint
+
+Continue to reject:
+
+```text
+GET /products/{product}/images
+```
+
+Gallery is embedded in CAT-002.
+
+---
+
+# 82. Test — Anonymous Product Detail
+
+Without authentication:
+
+```text
+GET /api/v1/products/{product}
+→ 200
+```
+
+for a publicly visible Product.
+
+---
+
+# 83. Test — Slug Resolution
+
+Create a Product with known slug.
+
+Request by slug.
+
+Verify correct Product.
+
+---
+
+# 84. Test — ID Resolution
+
+Request same Product by public ID.
+
+Verify identical resource semantics.
+
+---
+
+# 85. Test — Slug/ID Consistency
+
+The same Product fetched using either identifier must serialize equivalent Product data.
+
+---
+
+# 86. Test — Unknown Identifier
+
+Unknown slug and unknown ID:
+
+```text
+404
+```
+
+with canonical error.
+
+---
+
+# 87. Test — Inactive Product
+
+Existing inactive Product:
+
+```text
+404
+```
+
+No internal state leakage.
+
+---
+
+# 88. Test — Soft Deleted Product
+
+Soft-delete a Product.
+
+Both slug and ID requests must return public not-found.
+
+---
+
+# 89. Test — Description
+
+Verify Product Detail includes the correct description.
+
+CAT-001 should remain lightweight.
+
+---
+
+# 90. Test — Price Consistency
+
+Verify:
+
+```text
+CAT-001 Product price
+=
+CAT-002 Product price
+```
+
+for the same Product.
+
+---
+
+# 91. Test — Gallery Shape
+
+Verify each image exposes only:
 
 ```text
 id
@@ -761,1652 +1385,321 @@ sort_order
 is_primary
 ```
 
-for CAT-002.
-
-Do not expose internal storage metadata.
-
 ---
 
-# 35. Image Ordering
+# 92. Test — Gallery Ordering
 
-Gallery order:
+Create images with non-sequential insertion order.
+
+Verify API returns:
 
 ```text
 sort_order ASC
 id ASC
 ```
 
-or the exact existing deterministic Group C relationship order.
-
-Do not sort client-side.
-
 ---
 
-# 36. Primary Image
+# 93. Test — File Path Leakage
 
-CAT-001 returns:
+Assert response JSON does not contain:
 
 ```text
-primary_image
+file_path
 ```
 
-derived from the existing Product Image model.
+or internal storage identifiers.
 
-Use:
+---
+
+# 94. Test — Primary Image Consistency
+
+Verify:
 
 ```text
-is_primary
+CAT-001 primary_image
 ```
 
-according to the Group C invariant.
+matches CAT-002 gallery primary image.
 
-Do not store a second:
+---
+
+# 95. Test — No Images
+
+A Product without images must return the approved empty/null structures without server error.
+
+---
+
+# 96. Test — Variant Shape
+
+Verify embedded variants contain approved fields only.
+
+Do not merely test array count.
+
+---
+
+# 97. Test — Variant Order
+
+Verify `display_order`.
+
+---
+
+# 98. Test — Inactive Variant Exclusion
+
+Seed:
 
 ```text
-products.primary_image_url
+active variant
+inactive variant
 ```
 
-field.
+Only the active variant appears.
 
 ---
 
-# 37. Missing Primary Image
+# 99. Test — Cross-Product Isolation
 
-Follow the frozen nullability contract.
-
-Do not invent placeholder asset URLs in Laravel.
-
-If the contract allows:
-
-```json
-"primary_image": null
-```
-
-use it.
-
-Frontend placeholders belong to later UI phases.
+Product A Detail must never include Product B's variants or images.
 
 ---
 
-# 38. Category Representation
+# 100. Test — Variant Cost Hidden
 
-Product summary embeds a small Category summary:
+Seed internal cost price.
 
-```text
-id
-slug
-name
-```
-
-according to the catalog conventions.
-
-Do not embed the full Category tree.
+Assert it does not appear.
 
 ---
 
-# 39. Category Must Be Publicly Valid
+# 101. Test — Raw Inventory Hidden
 
-If Product belongs to a Category that is not publicly eligible:
+Seed stock rows.
 
-apply the current catalog visibility rule.
-
-Do not expose an internal/inactive category through a public Product response.
-
----
-
-# 40. No Recursive Graph
-
-Do not serialize:
-
-```text
-product
-→ category
-→ products
-→ category
-```
-
-Use bounded summaries.
-
----
-
-# 41. Product Materials
-
-Preserve existing normalized material relationships.
-
-Do not convert them into:
-
-```text
-products.material
-```
-
-columns.
-
-Do not expose them in CAT-001/CAT-002 unless currently contracted.
-
----
-
-# 42. Room Tags
-
-Preserve:
-
-```text
-product_room_tags
-```
-
-or the current equivalent.
-
-Do not treat room tags as Category.
-
-Do not duplicate them into Product JSON unless contract requires them.
-
----
-
-# 43. Style Tags
-
-Preserve:
-
-```text
-product_style_tags
-```
-
-as distinct classification metadata.
-
-Do not redesign them as categories.
-
----
-
-# 44. Product Assets
-
-Preserve:
-
-```text
-product_assets
-```
-
-for 3D/AR or related assets.
-
-Do not expose these publicly in Phase 5.2 unless the frozen Product Detail contract already requires them.
-
----
-
-# 45. Inventory
-
-Group C inventory remains:
-
-```text
-ProductVariant
-→ ProductStock
-```
-
-with stock authority in stock records.
-
-Do not add stock columns to Product or ProductVariant.
-
----
-
-# 46. Public Inventory Security
-
-Never expose:
+Assert response contains no:
 
 ```text
 quantity
-physical_quantity
 reserved_quantity
 available_quantity
 warehouse_location
-internal stock notes
-```
-
-through CAT-001/CAT-002.
-
-Public catalog only exposes coarse availability signals.
-
----
-
-# 47. Availability
-
-The public contract ultimately exposes:
-
-```text
-availability:
-available | unavailable
-```
-
-and:
-
-```text
-stock_indicator:
-IN_STOCK | LOW_STOCK | MADE_TO_ORDER
-```
-
-Do not expose raw inventory numbers.
-
----
-
-# 48. Availability Must Be Derived
-
-Derive public availability from authoritative:
-
-```text
-variant active state
-inventory
-product state
-product type
-```
-
-according to the frozen business rules.
-
-Do not persist:
-
-```text
-products.availability
-products.stock_indicator
-```
-
-as duplicate state.
-
----
-
-# 49. Phase 5.7 Dependency
-
-Because:
-
-```text
-product_type
-is_published
-```
-
-are not yet in the schema, Phase 5.2 must not fake final public availability semantics that depend on them.
-
-Implement the reusable availability/query structure where possible.
-
-Complete final semantics in Phase 5.7.
-
----
-
-# 50. Product Visibility During Phase 5.2
-
-Until Phase 5.7:
-
-use only the visibility rules that have an authoritative source.
-
-At minimum:
-
-```text
-soft-deleted products
-→ never public
-
-is_active = false
-→ never public
-```
-
-if those fields exist in the current schema.
-
-Do not pretend publication state exists.
-
----
-
-# 51. Soft Deletes
-
-Products are soft-deleted.
-
-Public queries must exclude:
-
-```text
-deleted_at != null
-```
-
-through normal Eloquent behavior.
-
-Do not use:
-
-```text
-withTrashed()
-```
-
-for public catalog reads.
-
----
-
-# 52. Inactive Product Detail
-
-An inactive Product requested by slug or ID should be masked:
-
-```text
-404 RESOURCE_NOT_FOUND
-```
-
-according to current public-read semantics.
-
-Do not disclose:
-
-```text
-PRODUCT_INACTIVE
-```
-
-to anonymous callers.
-
----
-
-# 53. Future Draft Product Masking
-
-After Phase 5.7:
-
-```text
-is_published = false
-```
-
-must use the same public 404 masking.
-
-Phase 5.2 should structure the query so this condition can be added cleanly.
-
----
-
-# 54. Search Pipeline
-
-CAT-001's frozen pipeline is:
-
-```text
-search
-→ filter
-→ sort
-→ tie-breaker
-→ paginate
-```
-
-Do not change the execution semantics.
-
----
-
-# 55. Search
-
-Public search eventually covers:
-
-```text
-product name
-description
-SKU
-variant attributes
-```
-
-according to the frozen contract.
-
-Implement only using safe Eloquent/query-builder conditions.
-
----
-
-# 56. Search Input
-
-Rules:
-
-```text
-optional
-trimmed
-max 100 characters
-case-insensitive
-empty → ignored
-```
-
-according to current API docs.
-
-Do not pass raw search strings into SQL fragments.
-
----
-
-# 57. Avoid Expensive Search Architecture
-
-Do not introduce:
-
-```text
-Elasticsearch
-Algolia
-Meilisearch
-OpenSearch
-```
-
-for V1 Phase 5.2.
-
-Use MySQL/Eloquent capabilities appropriate for the small business scope.
-
-Search infrastructure can evolve later if actual scale requires it.
-
----
-
-# 58. SKU Search
-
-SKU lives on:
-
-```text
-product_variants
-```
-
-Search via the existing relationship.
-
-Do not duplicate SKU to Product.
-
-Use:
-
-```text
-whereHas variants
-```
-
-or the most efficient equivalent.
-
----
-
-# 59. Variant Attribute Search
-
-If the frozen contract requires searching variant attributes:
-
-implement only within the capabilities of the current JSON schema/database.
-
-Do not build an EAV search subsystem.
-
-Keep query bounded.
-
----
-
-# 60. Category Filter
-
-CAT-001 canonical category filter:
-
-```text
-?category={slug|id}
-```
-
-Reuse Phase 5.1 Category resolution semantics.
-
-Do not add nested product routes.
-
----
-
-# 61. Category Filter and Hierarchy
-
-Use the currently frozen semantics for whether filtering a parent category includes descendants.
-
-If the docs do not yet define that behavior:
-
-do not silently invent recursive filtering.
-
-Document the gap for the appropriate catalog-filter phase.
-
----
-
-# 62. Product Type Filter
-
-The frozen query accepts:
-
-```text
-?product_type=IN_STOCK
-?product_type=MADE_TO_ORDER
-```
-
-This filter cannot be truthfully completed until Phase 5.7 adds the authoritative field.
-
-Do not emulate it using stock.
-
-For Phase 5.2 either:
-
-```text
-leave implementation explicitly deferred
-```
-
-or use the project-approved staged mechanism if newer docs have superseded Phase 5.7.
-
----
-
-# 63. Availability Filter
-
-Frozen:
-
-```text
-?availability=available
-?availability=unavailable
-```
-
-Implement only to the extent current authoritative fields support the final semantics.
-
-Do not derive `MADE_TO_ORDER` from zero inventory.
-
----
-
-# 64. Stock Indicator Is Not a Filter
-
-Do not support:
-
-```text
-?stock_indicator=LOW_STOCK
-```
-
-The V1 contract explicitly does not expose it as a query filter.
-
----
-
-# 65. Price Filter
-
-Supported query parameters:
-
-```text
-min_price
-max_price
-```
-
-represent integer minor units.
-
-The filter must operate on the same derived Product price semantics used in the response.
-
-Do not filter against a nonexistent Product price column.
-
----
-
-# 66. Minimum Price Validation
-
-`min_price`:
-
-```text
-integer / numeric integer string
->= 0
-```
-
-according to the frozen input convention.
-
-No floats.
-
----
-
-# 67. Maximum Price Validation
-
-`max_price`:
-
-```text
-integer / numeric integer string
->= 0
-```
-
-and:
-
-```text
-max_price >= min_price
-```
-
-when both supplied.
-
----
-
-# 68. Invalid Price Range
-
-If:
-
-```text
-min_price > max_price
-```
-
-return:
-
-```text
-422 INVALID_VALUE
-```
-
-using the existing error envelope.
-
----
-
-# 69. Sorting
-
-Allowed:
-
-```text
-created_at
-price
-name
-```
-
-only.
-
-Do not pass arbitrary:
-
-```text
-?sort=<db-column>
-```
-
-into `orderBy`.
-
----
-
-# 70. Sort Direction
-
-Allowed:
-
-```text
-asc
-desc
-```
-
-according to the contract.
-
-Reject unknown values.
-
----
-
-# 71. Deterministic Tie-Breaker
-
-Every non-unique sort must append:
-
-```text
-id ASC
-```
-
-to keep pagination stable.
-
----
-
-# 72. Default Sort
-
-Use the current catalog default:
-
-```text
-created_at DESC
-id ASC
-```
-
-unless latest authoritative docs changed it.
-
----
-
-# 73. Pagination
-
-CAT-001 uses:
-
-```text
-page
-per_page
-```
-
-with standard V1 pagination.
-
-Current convention:
-
-```text
-page >= 1
-per_page 1..100
-default 20
 ```
 
 ---
 
-# 74. Pagination Envelope
+# 102. Test — Availability Consistency
 
-Return:
+Where authoritative in the current phase:
 
-```json
-{
-  "data": [],
-  "meta": {
-    "pagination": {
-      "current_page": 1,
-      "per_page": 20,
-      "total": 0,
-      "last_page": 1,
-      "has_next": false,
-      "has_previous": false
-    }
-  }
-}
+```text
+CAT-001 availability
+=
+CAT-002 availability
 ```
 
-Do not return Laravel paginator internals.
+for the same Product state.
 
 ---
 
-# 75. Beyond Last Page
+# 103. Test — Category Shape
 
-Return:
+Assert the exact approved embedded category fields.
 
-```text
-data = []
-```
-
-with valid pagination metadata.
-
-Do not return 404.
+This test should protect whichever representation is resolved from the current docs.
 
 ---
 
-# 76. Query Validation
+# 104. Test — Category Internal Fields Hidden
 
-Use an explicit FormRequest or existing query-validation abstraction.
+Ensure Product Detail does not accidentally expose:
 
-Do not validate ad hoc inside the controller.
+```text
+parent_id
+space_type
+display_order
+is_active
+```
+
+inside category data.
 
 ---
 
-# 77. Unknown Query Parameters
+# 105. Test — Public Resource Does Not Change by Role
 
-Follow current API conventions.
-
-If V1 requires rejecting unsupported parameters:
-
-reject them consistently.
-
-Do not silently support:
+If convenient using existing test helpers, request CAT-002 as:
 
 ```text
-pageSize
-sortBy
-minPrice
-maxPrice
+anonymous
+Customer
+Staff
+Admin
 ```
 
-aliases.
+and verify the public representation does not expose privileged data.
+
+Do not require auth just to run the test.
 
 ---
 
-# 78. Query Builder Responsibility
+# 106. Test — Side Effects
 
-Create a focused product-read query abstraction only if useful.
-
-For example:
+Snapshot relevant:
 
 ```text
-ProductCatalogQuery
-```
-
-may own:
-
-```text
-public visibility
-search
-filters
-sorting
-pagination
-```
-
-Do not build a generic query framework.
-
----
-
-# 79. Avoid Giant Controller
-
-Controller should remain thin.
-
-Conceptually:
-
-```text
-validated query
-→ ProductCatalogQuery
-→ Resource
-```
-
-and:
-
-```text
-identifier
-→ public Product resolution
-→ ProductDetailResource
-```
-
----
-
-# 80. Avoid Repository Overengineering
-
-Do not automatically add:
-
-```text
-ProductRepositoryInterface
-EloquentProductRepository
-ProductQueryBus
-ProductSpecificationEngine
-CatalogReadFacade
-```
-
-unless an existing architecture requires them.
-
-Standard Laravel service/query classes are sufficient.
-
----
-
-# 81. Query Efficiency
-
-CAT-001 must avoid N+1 for:
-
-```text
-category
-primary image
-derived price
-availability
-```
-
-Use appropriate:
-
-```text
-joins
-subqueries
-with()
-withMin()
-withExists()
-aggregates
-```
-
-depending on actual schema and performance.
-
-Do not load every variant/image/stock row for every summary Product if a bounded aggregate will do.
-
----
-
-# 82. Detail Eager Loading
-
-CAT-002 may eagerly load:
-
-```text
-category
-images
-active variants
-required stock summaries
-```
-
-because detail representation needs them.
-
-Do not load:
-
-```text
-orders
-carts
-payments
-enquiries
-```
-
-for a public Product detail.
-
----
-
-# 83. Do Not Calculate Availability in PHP Loops
-
-Avoid:
-
-```text
-fetch all products
-for each product:
-    query variants
-    query stock
-```
-
-Use relationship eager loading or database aggregates.
-
----
-
-# 84. Public Product Summary Must Stay Lightweight
-
-CAT-001 must not include:
-
-```text
-full description
-all images
-all variants
-inventory rows
-materials graph
-assets
-recommendations
-```
-
-unless frozen contract says otherwise.
-
----
-
-# 85. Product Detail Can Be Richer
-
-CAT-002 includes:
-
-```text
-description
-images
-variants
+stock
+reserved stock
 timestamps
 ```
 
-but still not internal operational data.
+before GET.
+
+Verify no mutation afterward.
 
 ---
 
-# 86. No Separate Images Endpoint
+# 107. Test — Query Efficiency
 
-Do not implement:
+If existing repository conventions support query-count tests:
+
+protect against obvious N+1 behavior for:
 
 ```text
-GET /products/{product}/images
+images
+variants
+variant availability
+category
 ```
 
-Images are embedded in CAT-002.
-
-This endpoint is explicitly rejected in V1.
+Do not add a complex benchmarking framework.
 
 ---
 
-# 87. Variant Read Endpoints
+# 108. Existing Group C Tests
 
-Do not implement:
+All existing tests for:
 
 ```text
-CAT-005
-CAT-006
+Product
+ProductVariant
+ProductImage
+ProductStock
+Category
+schema integrity
 ```
 
-unless they are explicitly assigned to Phase 5.2 by the current roadmap.
-
-This instruction treats Phase 5.2 as Product collection/detail only.
-
-Embedded variants in CAT-002 are still required where supported.
+must remain green.
 
 ---
 
-# 88. No Cart Logic
+# 109. Existing Phase 5.2 Tests
 
-Do not implement:
-
-```text
-Add to Cart
-is_purchasable mutation
-cart ownership
-```
-
-inside Product Read.
-
-The API can expose informational availability.
-
-Cart validation belongs to its domain phase.
-
----
-
-# 89. No Checkout Guarantees
-
-Public availability is informational.
-
-Never imply:
-
-```text
-availability = available
-```
-
-guarantees checkout success.
-
-Checkout later revalidates inventory transactionally.
-
----
-
-# 90. No Inventory Reservation
-
-Reading a Product must never:
-
-```text
-reserve stock
-lock rows
-increase reserved_quantity
-```
-
-Catalog reads are side-effect free.
-
----
-
-# 91. No View Counter
-
-Do not mutate:
-
-```text
-view_count
-popularity
-last_viewed_at
-```
-
-during GET requests unless explicitly approved elsewhere.
-
-Keep reads side-effect free.
-
----
-
-# 92. Cacheability
-
-CAT-001 and CAT-002 are:
-
-```text
-PUBLIC
-CACHEABLE
-```
-
-according to the catalog contract.
-
-Use current public cache headers.
-
----
-
-# 93. No Premature Redis Cache
-
-Do not add application-level response caching simply because the endpoints are cacheable.
-
-HTTP/CDN caching can be added later.
-
-Only use an existing caching mechanism if already established.
-
----
-
-# 94. Rate Limiting
-
-Use the moderate:
-
-```text
-public-read
-```
-
-limiter from Phase 4.11.
-
-Do not create a restrictive product-specific limiter.
-
-Normal storefront browsing must not trigger 429 easily.
-
----
-
-# 95. Error — Unknown Product
-
-Unknown Product slug/ID:
-
-```text
-404 RESOURCE_NOT_FOUND
-```
-
-or the exact current product-not-found code if frozen.
-
-Follow current contract.
-
----
-
-# 96. Error — Inactive Product
-
-Existing inactive Product:
-
-```text
-404
-```
-
-using the same public masking semantics.
-
-Do not reveal internal existence/state.
-
----
-
-# 97. Error — Soft Deleted Product
-
-Soft-deleted Product:
-
-```text
-404
-```
-
-for public reads.
-
----
-
-# 98. Future Unpublished Product
-
-After Phase 5.7:
-
-```text
-is_published = false
-```
-
-must also resolve publicly as:
-
-```text
-404
-```
-
-not as a special draft-state response.
-
----
-
-# 99. Internal Fields Must Never Leak
-
-Public CAT-001/CAT-002 must exclude:
-
-```text
-is_active
-is_published
-deleted_at
-sku_prefix
-cost_price
-reserved_quantity
-physical_quantity
-available_quantity
-warehouse_location
-internal storage paths
-internal notes
-```
-
-unless a field is explicitly part of the public contract.
-
----
-
-# 100. Public Product ID
-
-Use the existing API identifier convention.
-
-Do not expose raw DB IDs if the API abstraction already uses prefixed opaque IDs such as:
-
-```text
-prod_...
-```
-
----
-
-# 101. Timestamps
-
-CAT-002:
-
-```text
-created_at
-updated_at
-```
-
-must use ISO 8601 UTC formatting.
-
-CAT-001 should not include timestamps unless contracted.
-
----
-
-# 102. OpenAPI
-
-Update `docs/api/openapi.yaml` only to reflect actual implementation.
-
-Do not falsely mark:
-
-```text
-product_type filtering
-is_published visibility
-```
-
-as runtime-complete if Phase 5.7 has not yet implemented their schema authority.
-
-If necessary, document Phase 5.7 dependency explicitly.
-
----
-
-# 103. Docs Must Not Lie
-
-Do not report:
-
-```text
-CAT-001 fully implemented
-```
-
-if required Product Type/publication behavior remains intentionally deferred.
-
-Use accurate wording such as:
-
-```text
-CAT-001 Product Read core implemented;
-product_type / publication-dependent completion remains Phase 5.7.
-```
-
----
-
-# 104. Test — Public Collection
-
-Anonymous:
-
-```text
-GET /api/v1/products
-```
-
-must succeed.
-
-No Clerk dependency.
-
----
-
-# 105. Test — Collection Envelope
-
-Assert:
-
-```text
-data
-meta.pagination
-```
-
-and no raw paginator fields.
-
----
-
-# 106. Test — Public Summary Fields
-
-For fields currently authoritative, verify public serialization contains only approved summary fields.
-
-After Phase 5.7, add/activate assertions for:
-
-```text
-product_type
-```
-
-according to the final contract.
-
----
-
-# 107. Test — Internal Field Exclusion
-
-Explicitly assert CAT-001 does not expose:
-
-```text
-is_active
-is_published
-cost price
-inventory quantities
-file_path
-deleted_at
-```
-
----
-
-# 108. Test — Product Detail by Slug
-
-Verify:
-
-```text
-GET /products/{slug}
-```
-
-returns correct Product.
-
----
-
-# 109. Test — Product Detail by ID
-
-Verify the same Product resolves through its machine ID.
-
----
-
-# 110. Test — Unknown Product
-
-Expected public not-found behavior.
-
----
-
-# 111. Test — Inactive Product
-
-Existing inactive Product must not be publicly retrievable.
-
----
-
-# 112. Test — Soft Deleted Product
-
-Archived Product must not appear in:
+Phase 5.3 must not regress:
 
 ```text
 CAT-001
-CAT-002
+search/filter/sort
+pagination
+public visibility
+summary resources
 ```
 
 ---
 
-# 113. Test — Category Summary
+# 110. Contract Consistency Review
 
-Product response embeds the expected Category summary.
-
-No recursive category graph.
-
----
-
-# 114. Test — Price Source
-
-Create a Product with known variants.
-
-Verify Product public price is derived according to the approved rule.
-
-Do not set a Product-level price in the test.
-
----
-
-# 115. Test — Price Is Integer Minor Units
-
-Assert:
+Before completion compare runtime CAT-002 against:
 
 ```text
-amount
-currency
+api-contract.md
+api-resources.md
+openapi.yaml
+api-conventions.md
 ```
 
-and integer amount.
-
-No floats.
+Do not let implementation become a fifth independent specification.
 
 ---
 
-# 116. Test — Cost Price Hidden
+# 111. OpenAPI
 
-Give Variant an internal cost price.
+Update OpenAPI only where necessary to match the implemented approved CAT-002 contract.
 
-Ensure it never appears publicly.
-
----
-
-# 117. Test — Primary Image
-
-Create:
-
-```text
-multiple ProductImages
-one primary
-```
-
-Verify CAT-001 uses the correct public primary image.
+Do not document deferred fields as implemented if they are still waiting for Phase 5.7.
 
 ---
 
-# 118. Test — No Primary Image
+# 112. Phase 5.7 Handoff
 
-Verify the approved nullable image representation.
-
-Do not require fake placeholder media.
-
----
-
-# 119. Test — Gallery Ordering
-
-CAT-002 images must be deterministic by:
-
-```text
-sort_order
-id
-```
-
-according to current model rules.
-
----
-
-# 120. Test — Internal File Path Hidden
-
-Ensure:
-
-```text
-file_path
-```
-
-is never serialized.
-
----
-
-# 121. Test — Variant Ordering
-
-Embedded variants in CAT-002 follow deterministic display order.
-
----
-
-# 122. Test — Inactive Variant Hidden
-
-Inactive variants must not appear in public embedded variant summaries.
-
----
-
-# 123. Test — Variant Product Ownership
-
-Only variants belonging to the Product appear.
-
-No cross-product variant leakage.
-
----
-
-# 124. Test — Raw Inventory Hidden
-
-Seed inventory quantities.
-
-Verify CAT-001/CAT-002 expose only the allowed derived availability information when applicable.
-
-Never raw stock.
-
----
-
-# 125. Test — Search
-
-Cover:
-
-```text
-name
-description
-SKU
-```
-
-and variant attribute search only if implemented by current contract.
-
-Use controlled fixtures.
-
----
-
-# 126. Test — Search Safety
-
-Use strings containing SQL wildcard/control characters.
-
-Verify query remains safely parameterized.
-
-Do not test SQL injection by executing destructive strings.
-
----
-
-# 127. Test — Category Filter
-
-Verify:
-
-```text
-?category=<slug>
-```
-
-and:
-
-```text
-?category=<id>
-```
-
-where both are currently contracted.
-
----
-
-# 128. Test — Invalid Category Filter
-
-Unknown category must follow the frozen collection-filter semantics.
-
-Use current documented error behavior.
-
-Do not invent silent empty-list behavior if contract says validation error.
-
----
-
-# 129. Test — Price Range
-
-Verify:
-
-```text
-min_price
-max_price
-```
-
-against derived Product price.
-
----
-
-# 130. Test — Invalid Price Range
-
-```text
-min_price > max_price
-```
-
-must return:
-
-```text
-422 INVALID_VALUE
-```
-
----
-
-# 131. Test — Sort Allow-List
-
-Cover:
-
-```text
-created_at
-price
-name
-```
-
----
-
-# 132. Test — Sort Injection Rejection
-
-Unknown sort:
-
-```text
-?sort=cost_price
-```
-
-must be rejected.
-
-Do not expose internal columns through sorting.
-
----
-
-# 133. Test — Deterministic Pagination
-
-Seed several products with equal primary sort values.
-
-Verify:
-
-```text
-id ASC
-```
-
-tie-breaking avoids duplicate/drifting pages.
-
----
-
-# 134. Test — Pagination
-
-Cover:
-
-```text
-default page
-custom per_page
-multiple pages
-beyond-last page
-```
-
----
-
-# 135. Test — Public Cache Headers
-
-Assert the current approved public/cacheable semantics.
-
-Do not hard-code arbitrary TTL if not frozen.
-
----
-
-# 136. Test — No Auth
-
-Explicitly verify Product endpoints work without:
-
-```text
-Authorization
-Clerk
-local User
-```
-
----
-
-# 137. Test — No Side Effects
-
-Product reads must not change:
-
-```text
-inventory
-reserved stock
-Product timestamps
-Variant timestamps
-```
-
----
-
-# 138. Query Count
-
-Add focused query-count coverage if existing project test conventions support it.
-
-Prevent obvious N+1 regressions.
-
-Do not introduce a performance framework solely for this.
-
----
-
-# 139. Existing Group C Tests Must Stay Green
-
-Do not regress:
-
-```text
-ProductSchemaTest
-ProductVariantSchemaTest
-ProductImageSchemaTest
-ProductStockSchemaTest
-SchemaIntegrityTest
-```
-
-or current equivalents.
-
----
-
-# 140. Phase 5.7 Compatibility Test Handoff
-
-Document tests that Phase 5.7 must add/enable for:
+Document that Phase 5.7 must complete CAT-002 behavior for:
 
 ```text
 product_type
 is_published
-draft masking
-MADE_TO_ORDER stock indicator
-product_type query filter
-final availability derivation
+unpublished Product masking
+MADE_TO_ORDER indicator
+final Product availability semantics
 ```
 
-Do not lose these requirements.
+where those cannot yet be authoritative.
 
 ---
 
-# 141. No Schema Migration for Known 5.7 Fields
+# 113. No Schema Changes Expected
 
-Phase 5.2 must not create:
+Expected:
 
 ```text
-products.product_type
-products.is_published
+Schema changes:
+NONE
 ```
 
-because the current roadmap assigns them to Phase 5.7.
-
-This is a hard sequencing rule.
+Phase 5.3 should consume the normalized Group C model.
 
 ---
 
-# 142. No Other Product Columns
+# 114. Stop on Unexpected Schema Need
 
-Do not add:
+If the agent believes Product Detail requires adding a new Product/Variant/Image column not already planned:
+
+do not silently add it.
+
+First determine whether:
 
 ```text
-price
-stock
-image_url
-material
-color
-dimensions
-availability
-stock_indicator
+the API contract truly requires it
+or
+the value already exists in another normalized Group C relation
 ```
 
-to `products`.
-
-Group C intentionally normalized these concerns elsewhere.
+Prefer existing relations.
 
 ---
 
-# 143. No Frontend Changes
+# 115. Migration Safety
+
+If a genuine unrelated schema defect is discovered and a migration becomes unavoidable:
+
+* create a new migration;
+* do not edit historical Group C migrations;
+* use only a non-production disposable isolated database for destructive migration verification;
+* verify database name explicitly;
+* use `--force` only with the documented safeguards.
+
+---
+
+# 116. No New Dependencies
+
+Expected:
+
+```text
+Composer dependencies:
+NONE
+```
+
+Laravel/Eloquent/API Resources/storage abstractions are sufficient.
+
+---
+
+# 117. No Frontend Work
 
 Do not modify:
 
@@ -2416,153 +1709,92 @@ frontend/app/
 frontend/design-system/
 ```
 
-Phase 5.2 is API/backend only.
+No Product Detail page UI belongs here.
 
 ---
 
-# 144. No Product UI
+# 118. No Cart Implementation
+
+CAT-002 prepares data the future frontend/cart can use.
 
 Do not implement:
 
 ```text
-product grid
-product cards
-product detail page
-search bar
-filter sidebar
-sorting UI
+add to cart
+quantity selection persistence
+cart validation
 ```
 
-Frontend groups handle these later.
+here.
 
 ---
 
-# 145. Migration Safety
+# 119. No Request Implementation
 
-If an unrelated genuine defect requires a schema correction:
+For future MADE_TO_ORDER Products, CAT-002 supports request initiation context.
 
-use a new migration only.
+Do not implement Furniture Request submission here.
 
-Any destructive test command must use the documented:
+---
+
+# 120. No Admin Product Detail
+
+Do not implement:
 
 ```text
-non-production
-+
-disposable isolated DB
-+
-explicit --force
-+
-DB-name guard
+CAT-014
+GET /api/v1/admin/products/{product}
 ```
 
-policy.
+during this phase.
 
-Never run `migrate:fresh` against the normal application database.
+Operational Product Detail has different exposure rules.
 
 ---
 
-# 146. No Migration Expected
+# 121. No Variant Detail API
 
-Expected Phase 5.2 schema changes:
-
-```text
-NONE
-```
-
-because this phase reads the Group C model.
-
-If the agent believes a schema change is necessary beyond the known Phase 5.7 fields:
-
-STOP and document why before silently changing the model.
+Do not implement CAT-005/CAT-006 unless separately requested.
 
 ---
 
-# 147. Dependencies
-
-Expected new Composer dependencies:
-
-```text
-NONE
-```
-
-Laravel/Eloquent/API Resources are sufficient.
-
----
-
-# 148. Code Quality
+# 122. Code Quality
 
 Maintain:
 
 ```text
 cognitive complexity <= 15
-max 3 returns where practical
-small focused classes
-explicit serializers
-allow-listed sorting/filtering
-no duplicated derived logic
+<= 3 returns where practical
+small resource/query classes
+minimal comments
+no duplicated domain strings
 ```
 
-Do not build an enterprise catalog framework.
+Avoid giant Product Detail methods.
 
 ---
 
-# 149. Centralize Derived Catalog Logic
+# 123. Expected Implementation Areas
 
-If price/availability/primary-image derivation is needed in multiple resources:
-
-centralize it in a focused domain/read helper.
-
-Avoid:
-
-```text
-controller computes price
-resource recomputes price
-cart later computes different price
-```
-
-However, do not make the read helper authoritative for checkout financial locking.
-
-Checkout still re-resolves authoritative prices transactionally.
-
----
-
-# 150. Likely Implementation Areas
-
-Depending on current repository structure:
+Depending on existing Phase 5.2 code:
 
 ```text
 app/Http/Controllers/
-app/Http/Requests/
 app/Http/Resources/
 app/Services/ or app/Queries/
-app/Models/Product.php
 routes/api.php
 tests/Feature/
-docs/
+docs/api/
+docs/decisions.md
 ```
 
-Modify only what is necessary.
+Modify only what this phase needs.
 
 ---
 
-# 151. Route Verification
+# 124. Verification Commands
 
-Verify:
-
-```text
-GET /api/v1/products
-GET /api/v1/products/{product}
-```
-
-exist exactly once.
-
-Do not create duplicate route aliases.
-
----
-
-# 152. Required Verification
-
-Run focused Product Read tests.
+Run focused Product Detail tests first.
 
 Then run:
 
@@ -2574,17 +1806,38 @@ composer audit
 git diff --check
 ```
 
-Use repository-standard equivalents if defined.
+Use canonical repository scripts if different.
 
-No destructive migration should be necessary for Phase 5.2.
+No `migrate:fresh` should normally be required.
 
 ---
 
-# 153. Completion Report
+# 125. Route Review
+
+Verify:
+
+```text
+GET /api/v1/products/{product}
+```
+
+exists exactly once and remains public.
+
+Confirm there is no:
+
+```text
+/products/{product}/images
+/products/{product}/detail
+```
+
+duplicate.
+
+---
+
+# 126. Completion Report
 
 Return:
 
-## Phase 5.2 status
+## Phase 5.3 status
 
 ```text
 PASS
@@ -2596,56 +1849,63 @@ or:
 BLOCKED
 ```
 
-## CAT-001
-
-State which collection behavior is implemented.
-
 ## CAT-002
 
-State which detail behavior is implemented.
+Confirm the endpoint and public access.
 
-## Group C preservation
+## Identifier resolution
+
+Report:
+
+```text
+slug
+ID
+```
+
+behavior.
+
+## Product representation
+
+List final exposed fields.
+
+## Price
+
+State the reused Product price derivation.
+
+## Category
+
+State exact embedded category representation.
+
+## Gallery
+
+State ordering and public URL behavior.
+
+## Variants
+
+State active filtering, order, and embedded fields.
+
+## Availability
+
+State current implemented semantics and any Phase 5.7 dependency.
+
+## Internal data protection
 
 Confirm:
 
 ```text
-no product schema redesign
-no price duplication
-no inventory duplication
-no media duplication
+file_path hidden
+cost price hidden
+raw inventory hidden
+internal Product state hidden
 ```
 
-## Product price
-
-State exact derivation rule.
-
-## Availability
-
-State exactly which current signals are implemented and which remain dependent on Phase 5.7.
-
-## Search/filter/sort
-
-List implemented query parameters.
-
-## Schema changes
+## Schema
 
 Expected:
 
 ```text
 NONE
 ```
-
-## Phase 5.7 dependency
-
-Explicitly state:
-
-```text
-product_type
-is_published
-final publication/product-type visibility
-```
-
-remain deferred.
 
 ## Frontend
 
@@ -2657,90 +1917,106 @@ NONE
 
 ## Tests
 
-Exact focused/full results.
+Report exact focused and full-suite counts.
 
-## Quality checks
+## Quality
 
-Exact Pint/PHPStan/audit/diff results.
+Report:
+
+```text
+Pint
+PHPStan
+Composer audit
+git diff --check
+```
 
 ---
 
-# 154. Definition of Done
+# 127. Definition of Done
 
-Phase 5.2 is complete when:
+Phase 5.3 is complete when:
 
-* CAT-001 public Product collection exists;
-* CAT-002 public Product detail exists;
-* both require no authentication;
-* Product reads use the existing Group C schema;
-* Product model is not redesigned;
-* Product price is derived from ProductVariant according to the approved rule;
-* no Product-level duplicate price column is introduced;
-* public image URLs derive from ProductImage storage references;
-* internal `file_path` never leaks;
-* primary image is derived from Group C media state;
-* CAT-002 gallery is deterministically ordered;
-* embedded variants come from ProductVariant;
-* inactive variants are excluded;
-* raw inventory quantities never appear publicly;
-* category is embedded only as a bounded summary;
-* search/filter/sort use strict allow-lists;
-* pagination follows V1 conventions;
-* sorting is deterministic;
-* slug/ID detail resolution works;
-* inactive and deleted products are publicly masked;
-* no separate image endpoint is added;
-* no duplicate category-products route is added;
-* no cart/checkout behavior is pulled forward;
-* no frontend work is added;
+* CAT-002 is publicly callable;
+* slug resolution works;
+* machine-ID resolution works;
+* both identifiers return the same Product semantics;
+* unknown Product is masked correctly;
+* inactive Product is masked;
+* soft-deleted Product is masked;
+* Product Detail uses explicit serialization;
+* description is exposed correctly;
+* Product price reuses the authoritative variant-derived rule;
+* Category embedding matches the authoritative current contract;
+* Product gallery comes from `product_images`;
+* image URLs are derived from storage configuration;
+* `file_path` never leaks;
+* gallery ordering is deterministic;
+* primary-image state remains consistent with CAT-001;
+* no-image Products behave safely;
+* only active Product Variants are embedded;
+* embedded variants are deterministically ordered;
+* variant price uses integer minor units;
+* cross-Product variants/images cannot leak;
+* variant cost fields remain private;
+* raw inventory remains private;
+* availability matches CAT-001 where currently authoritative;
+* GET is side-effect free;
+* public serialization does not vary by authenticated role;
+* no recursive graph is introduced;
+* no separate Product Images endpoint is added;
+* no standalone Variant API is pulled forward;
+* no admin Product API is pulled forward;
+* no Group C schema redesign occurs;
+* no duplicate Product price/image/inventory columns are introduced;
+* Phase 5.7 dependencies remain explicitly documented;
 * existing Group C tests remain green;
-* Product Read tests pass;
+* Phase 5.2 tests remain green;
+* Product Detail tests pass;
 * full backend suite passes;
 * Pint passes;
 * PHPStan passes;
 * Composer audit has no blocker;
-* the known `product_type` / `is_published` dependency remains assigned to Phase 5.7 rather than silently implemented here.
+* no frontend files are modified.
 
 ---
 
-# 155. Out of Scope
+# 128. Out of Scope
 
 Do not implement:
 
 ```text
-product_type schema field
-is_published schema field
-final MADE_TO_ORDER availability semantics
-product admin CRUD
-variant standalone read endpoints unless roadmap says otherwise
-inventory operational API
-cart
+Product admin CRUD
+CAT-005/CAT-006 standalone Variant API
+CAT-014 operational Product Detail
+cart mutations
 checkout
-recommendation engine
+Furniture Request submission
 reviews
+ratings
 wishlist
-product comparison
-frontend product cards
-frontend product detail page
-advanced search engine
+recommendation engine
+product comparisons
+AR viewer
+frontend Product Detail page
+product_type schema migration
+is_published schema migration
 ```
+
+unless the latest authoritative roadmap explicitly moves one into Phase 5.3.
 
 ---
 
-# 156. STOP Condition
+# 129. STOP Condition
 
-STOP when CAT-001 and CAT-002 have a clean, tested Product Read implementation built **directly on the Group C domain model**, without duplicating ProductVariant, ProductImage, ProductStock, taxonomy, or metadata concerns onto the Product table.
-
-Where behavior depends on the intentionally deferred:
+STOP when:
 
 ```text
-product_type
-is_published
+GET /api/v1/products/{product}
 ```
 
-document the Phase 5.7 dependency rather than fabricating values or altering the roadmap.
+provides a complete, tested, public Product Detail representation assembled from the existing Group C Product, Variant, Image, Category and Inventory relationships without duplicating their state onto `products`.
 
-Do not continue automatically.
+Do not continue automatically to Phase 5.4.
 
 DO NOT COMMIT, STAGE OR PUSH.
 

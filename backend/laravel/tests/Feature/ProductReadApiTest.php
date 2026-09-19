@@ -57,12 +57,60 @@ class ProductReadApiTest extends TestCase
                 ->assertJsonPath('data.variants.0.availability', 'available')
                 ->assertJsonCount(1, 'data.variants')
                 ->assertJsonPath('data.images.0.sort_order', 1)
+                ->assertJsonPath('data.category.id', 'cat_'.base_convert((string) $category->id, 10, 36))
                 ->assertJsonMissingPath('data.stock_indicator')
                 ->assertJsonMissingPath('data.variants.0.stock_indicator')
                 ->assertJsonMissingPath('data.variants.0.product_id')
                 ->assertJsonMissingPath('data.images.0.file_path')
                 ->assertJsonMissingPath('data.cost_price_amount');
         }
+    }
+
+    public function test_detail_matches_collection_summary_and_has_no_image_or_variant_leaks(): void
+    {
+        $category = Category::factory()->create(['description' => 'Dining furniture']);
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'slug' => 'no-image-table',
+            'description' => 'A compact dining table.',
+        ]);
+        $variant = ProductVariant::factory()->create([
+            'product_id' => $product->id,
+            'price_amount' => 875000,
+            'price_currency' => 'TZS',
+            'cost_price_amount' => 300000,
+            'cost_price_currency' => 'TZS',
+        ]);
+        ProductStock::factory()->forVariant($variant)->create(['quantity' => 2, 'reserved_quantity' => 2]);
+
+        $collection = $this->getJson('/api/v1/products')->assertOk();
+        $detail = $this->getJson('/api/v1/products/'.$product->slug)->assertOk();
+
+        $detail->assertJsonPath('data.name', $collection->json('data.0.name'))
+            ->assertJsonPath('data.price.amount', $collection->json('data.0.price.amount'))
+            ->assertJsonPath('data.availability', 'unavailable')
+            ->assertJsonPath('data.category.description', 'Dining furniture')
+            ->assertJsonCount(0, 'data.images')
+            ->assertJsonPath('data.variants.0.availability', 'unavailable')
+            ->assertJsonMissingPath('data.variants.0.cost_price_amount')
+            ->assertJsonMissingPath('data.variants.0.quantity')
+            ->assertJsonMissingPath('data.variants.0.reserved_quantity');
+    }
+
+    public function test_detail_does_not_include_related_data_from_another_product(): void
+    {
+        $category = Category::factory()->create();
+        $product = Product::factory()->create(['category_id' => $category->id, 'slug' => 'first-table']);
+        $other = Product::factory()->create(['category_id' => $category->id, 'slug' => 'second-table']);
+        $variant = ProductVariant::factory()->create(['product_id' => $other->id, 'variant_name' => 'Other size']);
+        ProductStock::factory()->forVariant($variant)->create(['quantity' => 10, 'reserved_quantity' => 0]);
+        ProductImage::factory()->create(['product_id' => $other->id, 'file_path' => 'products/other.webp']);
+
+        $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertOk()
+            ->assertJsonCount(0, 'data.images')
+            ->assertJsonCount(0, 'data.variants')
+            ->assertJsonMissing(['name' => 'Other size']);
     }
 
     public function test_inactive_and_deleted_products_are_masked(): void

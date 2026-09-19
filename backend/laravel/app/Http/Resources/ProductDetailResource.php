@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CategoryIdentifier;
 use Illuminate\Http\Request;
 
 final class ProductDetailResource extends ProductSummaryResource
@@ -12,6 +13,12 @@ final class ProductDetailResource extends ProductSummaryResource
 
         return array_merge($summary, [
             'description' => $this->description,
+            'category' => [
+                'id' => CategoryIdentifier::encode($this->category),
+                'slug' => $this->category->slug,
+                'name' => $this->category->name,
+                'description' => $this->category->description,
+            ],
             'images' => ProductImageResource::collection($this->images)->resolve(),
             'variants' => ProductVariantSummaryResource::collection($this->variants)->resolve(),
             'created_at' => $this->created_at?->toISOString(),

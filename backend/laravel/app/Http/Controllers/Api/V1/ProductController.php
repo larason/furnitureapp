@@ -36,17 +36,19 @@ class ProductController extends V1Controller
         ])->withHeaders($this->publicCacheHeaders());
     }
 
-    public function show(string $product): JsonResponse
+    public function show(string $product, ProductCatalogQuery $catalog): JsonResponse
     {
         $query = Product::query()
+            ->select('products.*')
             ->where('is_active', true)
             ->whereHas('category', fn ($category) => $category->where('is_active', true))
             ->with([
-                'category:id,name,slug',
+                'category:id,name,slug,description',
                 'primaryImage:id,product_id,file_path,alt_text,sort_order,is_primary',
                 'images:id,product_id,file_path,alt_text,sort_order,is_primary',
                 'variants' => fn ($variant) => $variant->where('is_active', true)->orderBy('display_order')->orderBy('id')->with('stocks:id,product_variant_id,quantity,reserved_quantity'),
             ]);
+        $catalog->addSummaryAggregates($query);
         $decodedId = ProductIdentifier::decode($product);
         $resolved = $decodedId === null
             ? $query->where('slug', $product)->first()
