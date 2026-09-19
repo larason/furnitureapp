@@ -49,13 +49,15 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     // PUBLIC — unauthenticated by contract (SSR/SEO catalog + anonymous flows)
     // ---------------------------------------------------------------------
-    Route::get($products, [ProductController::class, 'index'])->name('products.index');
-    Route::get($products.$productPath, [ProductController::class, 'show'])->name('products.show');
-    Route::get($products.'/{product}/variants', [ProductController::class, 'indexVariants'])->name('products.variants.index');
-    Route::get($products.'/{product}/variants/{variant}', [ProductController::class, 'showVariant'])->name('products.variants.show');
+    Route::middleware('throttle:public-read')->group(function () use ($products, $productPath): void {
+        Route::get($products, [ProductController::class, 'index'])->name('products.index');
+        Route::get($products.$productPath, [ProductController::class, 'show'])->name('products.show');
+        Route::get($products.'/{product}/variants', [ProductController::class, 'indexVariants'])->name('products.variants.index');
+        Route::get($products.'/{product}/variants/{variant}', [ProductController::class, 'showVariant'])->name('products.variants.show');
 
-    Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
-    Route::get('/categories/{category}', [CategoryController::class, 'show'])->name('categories.show');
+        Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
+        Route::get('/categories/{category}', [CategoryController::class, 'show'])->name('categories.show');
+    });
 
     // RETIRED — Clerk owns credential, session, recovery, and verification
     // flows. These always return `410 GONE` regardless of authentication
@@ -69,41 +71,42 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
     Route::post('/email/verify/resend', [AuthController::class, 'resendEmailVerification'])->name('auth.email.resend');
 
-    Route::middleware('clerk.optional')->post('/requests', [RequestController::class, 'store'])->name('requests.store');
-    Route::middleware('clerk.optional')->post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
+    Route::middleware(['clerk.optional', 'throttle:anonymous-submit'])->post('/requests', [RequestController::class, 'store'])->name('requests.store');
+    Route::middleware(['clerk.optional', 'throttle:anonymous-submit'])->post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
 
     // ---------------------------------------------------------------------
     // ME — authenticated self (AUTHENTICATED_OWNER). Resource ownership is
     // object-level and decided later; no client user_id is ever accepted.
     // ---------------------------------------------------------------------
     Route::middleware('clerk.auth')->prefix('me')->name('me.')->group(function (): void {
-        Route::get('/', [MeController::class, 'show'])->name('show');
-        Route::patch('/', [MeController::class, 'update'])->name('update');
+        Route::middleware('throttle:authenticated-read')->group(function (): void {
+            Route::get('/', [MeController::class, 'show'])->name('show');
+            Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
+            Route::get('/orders', [CustomerOrderController::class, 'index'])->name('orders.index');
+            Route::get('/orders/{order}', [CustomerOrderController::class, 'show'])->name('orders.show');
+            Route::get('/orders/{order}/tracking', [CustomerOrderController::class, 'tracking'])->name('orders.tracking');
+            Route::get('/requests', [RequestController::class, 'meIndex'])->name('requests.index');
+            Route::get('/requests/{request}', [RequestController::class, 'meShow'])->name('requests.show');
+            Route::get('/enquiries', [EnquiryController::class, 'meIndex'])->name('enquiries.index');
+            Route::get('/enquiries/{enquiry}', [EnquiryController::class, 'meShow'])->name('enquiries.show');
+            Route::get('/notifications', [NotificationController::class, 'meIndex'])->name('notifications.index');
+        });
 
-        Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
-        Route::post('/cart/items', [CartController::class, 'addItem'])->name('cart.items.store');
-        Route::patch('/cart/items/{item}', [CartController::class, 'updateItem'])->name('cart.items.update');
-        Route::delete('/cart/items/{item}', [CartController::class, 'removeItem'])->name('cart.items.destroy');
-        Route::post('/cart/merge', [CartController::class, 'merge'])->name('cart.merge');
+        Route::patch('/', [MeController::class, 'update'])->middleware('throttle:authenticated-write')->name('update');
 
-        Route::get('/orders', [CustomerOrderController::class, 'index'])->name('orders.index');
-        Route::get('/orders/{order}', [CustomerOrderController::class, 'show'])->name('orders.show');
-        Route::post('/orders/{order}/cancel', [CustomerOrderController::class, 'cancel'])->name('orders.cancel');
-        Route::get('/orders/{order}/tracking', [CustomerOrderController::class, 'tracking'])->name('orders.tracking');
+        Route::post('/cart/items', [CartController::class, 'addItem'])->middleware('throttle:cart-add')->name('cart.items.store');
+        Route::patch('/cart/items/{item}', [CartController::class, 'updateItem'])->middleware('throttle:authenticated-write')->name('cart.items.update');
+        Route::delete('/cart/items/{item}', [CartController::class, 'removeItem'])->middleware('throttle:authenticated-write')->name('cart.items.destroy');
+        Route::post('/cart/merge', [CartController::class, 'merge'])->middleware('throttle:authenticated-write')->name('cart.merge');
 
-        Route::get('/requests', [RequestController::class, 'meIndex'])->name('requests.index');
-        Route::get('/requests/{request}', [RequestController::class, 'meShow'])->name('requests.show');
-        Route::get('/enquiries', [EnquiryController::class, 'meIndex'])->name('enquiries.index');
-        Route::get('/enquiries/{enquiry}', [EnquiryController::class, 'meShow'])->name('enquiries.show');
-
-        Route::get('/notifications', [NotificationController::class, 'meIndex'])->name('notifications.index');
-        Route::patch('/notifications/{notification}', [NotificationController::class, 'meUpdate'])->name('notifications.update');
+        Route::post('/orders/{order}/cancel', [CustomerOrderController::class, 'cancel'])->middleware('throttle:order-cancel')->name('orders.cancel');
+        Route::patch('/notifications/{notification}', [NotificationController::class, 'meUpdate'])->middleware('throttle:authenticated-write')->name('notifications.update');
     });
 
     // ---------------------------------------------------------------------
     // CHECKOUT — authenticated customer only
     // ---------------------------------------------------------------------
-    Route::middleware('clerk.auth')->post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
+    Route::middleware(['clerk.auth', 'throttle:checkout'])->post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
 
     // ---------------------------------------------------------------------
     // CATALOG WRITES — STAFF/ADMIN (Staff only where products.manage allows)
@@ -111,12 +114,12 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'staff-or-admin'])->group(function () use ($products, $productPath): void {
         Route::middleware('permission:products.manage')->group(function () use ($products, $productPath): void {
-            Route::post($products, [ProductController::class, 'store'])->name('products.store');
-            Route::patch($products.$productPath, [ProductController::class, 'update'])->name('products.update');
-            Route::post($products.'/{product}/images', [ProductController::class, 'storeImage'])->name('products.images.store');
-            Route::post($products.'/{product}/variants', [ProductController::class, 'storeVariant'])->name('products.variants.store');
-            Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
-            Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
+            Route::post($products, [ProductController::class, 'store'])->middleware('throttle:operational-write')->name('products.store');
+            Route::patch($products.$productPath, [ProductController::class, 'update'])->middleware('throttle:operational-write')->name('products.update');
+            Route::post($products.'/{product}/images', [ProductController::class, 'storeImage'])->middleware('throttle:operational-write')->name('products.images.store');
+            Route::post($products.'/{product}/variants', [ProductController::class, 'storeVariant'])->middleware('throttle:operational-write')->name('products.variants.store');
+            Route::post('/categories', [CategoryController::class, 'store'])->middleware('throttle:operational-write')->name('categories.store');
+            Route::patch('/categories/{category}', [CategoryController::class, 'update'])->middleware('throttle:operational-write')->name('categories.update');
         });
     });
 
@@ -125,17 +128,17 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'operational'])->prefix('orders')->name('orders.')->group(function (): void {
         Route::middleware('permission:orders.view_operational')->group(function (): void {
-            Route::get('/', [OrderController::class, 'index'])->name('index');
-            Route::get('/{order}', [OrderController::class, 'show'])->name('show');
-            Route::get('/{order}/tracking', [OrderController::class, 'tracking'])->name('tracking');
+            Route::get('/', [OrderController::class, 'index'])->middleware('throttle:authenticated-read')->name('index');
+            Route::get('/{order}', [OrderController::class, 'show'])->middleware('throttle:authenticated-read')->name('show');
+            Route::get('/{order}/tracking', [OrderController::class, 'tracking'])->middleware('throttle:authenticated-read')->name('tracking');
         });
-        Route::middleware('permission:orders.accept')->post('/{order}/accept', [OrderController::class, 'accept'])->name('accept');
-        Route::middleware('permission:orders.process')->post('/{order}/process', [OrderController::class, 'process'])->name('process');
-        Route::middleware('permission:orders.ready_for_pickup')->post('/{order}/ready-for-pickup', [OrderController::class, 'readyForPickup'])->name('ready-for-pickup');
-        Route::middleware('permission:orders.ship')->post('/{order}/ship', [OrderController::class, 'ship'])->name('ship');
-        Route::middleware('permission:orders.deliver')->post('/{order}/deliver', [OrderController::class, 'deliver'])->name('deliver');
-        Route::middleware('permission:orders.complete')->post('/{order}/complete', [OrderController::class, 'complete'])->name('complete');
-        Route::middleware('permission:orders.set_delivery_fee')->post('/{order}/delivery-fee', [OrderController::class, 'deliveryFee'])->name('delivery-fee');
+        Route::middleware(['permission:orders.accept', 'throttle:operational-write'])->post('/{order}/accept', [OrderController::class, 'accept'])->name('accept');
+        Route::middleware(['permission:orders.process', 'throttle:operational-write'])->post('/{order}/process', [OrderController::class, 'process'])->name('process');
+        Route::middleware(['permission:orders.ready_for_pickup', 'throttle:operational-write'])->post('/{order}/ready-for-pickup', [OrderController::class, 'readyForPickup'])->name('ready-for-pickup');
+        Route::middleware(['permission:orders.ship', 'throttle:operational-write'])->post('/{order}/ship', [OrderController::class, 'ship'])->name('ship');
+        Route::middleware(['permission:orders.deliver', 'throttle:operational-write'])->post('/{order}/deliver', [OrderController::class, 'deliver'])->name('deliver');
+        Route::middleware(['permission:orders.complete', 'throttle:operational-write'])->post('/{order}/complete', [OrderController::class, 'complete'])->name('complete');
+        Route::middleware(['permission:orders.set_delivery_fee', 'throttle:operational-write'])->post('/{order}/delivery-fee', [OrderController::class, 'deliveryFee'])->name('delivery-fee');
     });
 
     // ---------------------------------------------------------------------
@@ -143,10 +146,10 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'operational'])->group(function (): void {
         Route::middleware('permission:inventory.view')->group(function (): void {
-            Route::get('/inventory', [InventoryController::class, 'index'])->name('inventory.index');
-            Route::get('/inventory/{inventory}', [InventoryController::class, 'show'])->name('inventory.show');
+            Route::get('/inventory', [InventoryController::class, 'index'])->middleware('throttle:authenticated-read')->name('inventory.index');
+            Route::get('/inventory/{inventory}', [InventoryController::class, 'show'])->middleware('throttle:authenticated-read')->name('inventory.show');
         });
-        Route::middleware('permission:inventory.manage')->post('/inventory/{product}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
+        Route::middleware(['permission:inventory.manage', 'throttle:inventory-adjust'])->post('/inventory/{product}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
     });
 
     // --------------------------------------------------------------------
@@ -154,10 +157,10 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'operational'])->prefix('requests')->name('requests.')->group(function (): void {
         Route::middleware('permission:requests.view')->group(function (): void {
-            Route::get('/', [RequestController::class, 'index'])->name('index');
-            Route::get('/{request}', [RequestController::class, 'show'])->name('show');
+            Route::get('/', [RequestController::class, 'index'])->middleware('throttle:authenticated-read')->name('index');
+            Route::get('/{request}', [RequestController::class, 'show'])->middleware('throttle:authenticated-read')->name('show');
         });
-        Route::middleware('permission:requests.manage')->patch('/{request}', [RequestController::class, 'update'])->name('update');
+        Route::middleware(['permission:requests.manage', 'throttle:operational-write'])->patch('/{request}', [RequestController::class, 'update'])->name('update');
     });
 
     // --------------------------------------------------------------------
@@ -165,10 +168,10 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'operational'])->prefix('enquiries')->name('enquiries.')->group(function (): void {
         Route::middleware('permission:enquiries.view')->group(function (): void {
-            Route::get('/', [EnquiryController::class, 'index'])->name('index');
-            Route::get('/{enquiry}', [EnquiryController::class, 'show'])->name('show');
+            Route::get('/', [EnquiryController::class, 'index'])->middleware('throttle:authenticated-read')->name('index');
+            Route::get('/{enquiry}', [EnquiryController::class, 'show'])->middleware('throttle:authenticated-read')->name('show');
         });
-        Route::middleware('permission:enquiries.manage')->post('/{enquiry}/close', [EnquiryController::class, 'close'])->name('close');
+        Route::middleware(['permission:enquiries.manage', 'throttle:operational-write'])->post('/{enquiry}/close', [EnquiryController::class, 'close'])->name('close');
     });
 
     // --------------------------------------------------------------------
@@ -190,12 +193,12 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
         });
         Route::middleware('permission:staff.manage')->group(function (): void {
             Route::get('/staff', [AdminController::class, 'staffIndex'])->name('staff.index');
-            Route::post('/staff', [AdminController::class, 'staffStore'])->name('staff.store');
+            Route::post('/staff', [AdminController::class, 'staffStore'])->middleware('throttle:admin-staff')->name('staff.store');
             Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->name('staff.show');
         });
-        Route::middleware('permission:staff.approve')->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
-        Route::middleware('permission:staff.manage')->post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
-        Route::middleware('permission:staff.manage')->post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
+        Route::middleware(['permission:staff.approve', 'throttle:admin-staff'])->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
+        Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
+        Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
         Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->name('audit-logs.index');
     });
 

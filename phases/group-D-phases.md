@@ -1,1250 +1,1745 @@
-# Phase 4.10 — Laravel Policies / Permissions / Ownership Authorization
+# Phase 4.11 — Authentication / Authorization Rate Limiting
 
 ## Purpose
 
-Implement the Laravel authorization layer for authenticated application users.
+Implement practical, moderate Laravel API rate limiting that protects the application from abuse without unnecessarily blocking legitimate customers, Staff, or Admin users.
 
-Phase 4.9 established:
-
-```text
-CUSTOMER
-STAFF
-ADMIN
-```
-
-Phase 4.10 now answers:
-
-> May this authenticated actor perform this specific action on this specific resource in its current state?
-
-The authorization model must combine:
+The design principle is:
 
 ```text
-authenticated User
+security against abuse
 +
-role
+reasonable burst tolerance
 +
-permission
-+
-ownership / operational scope
-+
-resource state
-+
-action
-=
-authorization decision
+minimal impact on normal usage
 ```
 
-Role alone is never enough.
+Do not treat rate limiting as the primary authentication or authorization mechanism.
 
-This is a backend-only phase.
+The security stack remains:
+
+```text
+Clerk
+→ credential/session security
+
+Laravel authentication
+→ identify local User
+
+Laravel authorization
+→ permissions / ownership
+
+Laravel rate limiting
+→ abuse control
+```
 
 ---
 
-# 1. Dependencies
+# 1. Read Current Project Docs First
+
+Before changing code, read the latest repository versions of:
+
+```text
+AGENTS.md
+docs/api/api-contract.md
+docs/api/api-conventions.md
+docs/api/api-resources.md
+docs/domain/business-rules.md
+docs/decisions.md
+docs/api/openapi.yaml
+```
+
+These files have been updated.
+
+Treat their current values and decisions as authoritative.
+
+If they already define:
+
+```text
+rate limits
+rate-limit groups
+Retry-After behavior
+endpoint-specific exceptions
+```
+
+use those values.
+
+Do not overwrite documented decisions with the fallback recommendations in this phase.
+
+---
+
+# 2. Dependencies
 
 Required:
 
-* Phase 4.1–4.8 complete;
-* Phase 4.9 RBAC complete;
-* Clerk authentication resolves to local Laravel User;
-* CUSTOMER / STAFF / ADMIN roles work;
-* canonical permissions infrastructure exists;
-* public CUSTOMER provisioning works;
-* `/me` works;
-* role cannot be client-controlled;
-* Staff cannot control customer accounts;
-* Admin/Staff boundaries are documented.
+* Phase 4.1–4.8 authentication architecture complete;
+* Phase 4.9 Laravel RBAC complete;
+* Phase 4.10 authorization policies complete;
+* Clerk authenticates users;
+* Laravel resolves authenticated local Users;
+* CUSTOMER / STAFF / ADMIN are working;
+* authorization failures already distinguish 401 / 403 / masked 404;
+* existing Laravel API routing/rate-limit foundation exists.
 
-Do not start if role resolution is still ambiguous.
+Do not use rate limiting to compensate for incomplete authorization.
 
 ---
 
-# 2. Scope
+# 3. Core Authority Split
 
-Implement authorization for existing V1 backend operations using standard Laravel:
+Rate-limiting responsibility must be separated.
+
+## Clerk owns
+
+Credential/security flow protection for:
 
 ```text
-Policies
-Gates where appropriate
-RBAC permissions
-ownership checks
-resource-state checks
-404 masking where required
+sign-up
+sign-in
+password recovery
+email verification
+session/security operations
+MFA if later enabled
 ```
 
-Focus on authorization.
+Laravel no longer owns these credential flows.
 
-Do not redesign domain workflows.
-
-Do not build frontend guards.
-
-Do not implement new APIs merely to demonstrate policies.
+Do not recreate separate Laravel login throttling for endpoints that no longer exist.
 
 ---
 
-# 3. Core Authorization Pipeline
+## Laravel owns
 
-Preserve:
-
-```text
-Transport
-→ Schema validation
-→ Authentication
-→ Authorization
-→ Domain validation
-→ Concurrency / Transaction
-→ Persistence
-```
-
-Authorization must happen before protected business mutation.
-
-Do not:
+Application API abuse protection for:
 
 ```text
-load private resource
-→ mutate
-→ then check permission
+protected API traffic
+anonymous submissions
+checkout
+cart mutations
+profile mutations
+order actions
+Staff/Admin operational mutations
+other abuse-prone Laravel endpoints
 ```
+
+Do not duplicate Clerk credential-security logic.
 
 ---
 
-# 4. Default Deny
+# 4. Main Principle — Do Not Over-Throttle
 
-Use:
+Normal application behavior must not easily trigger rate limits.
 
-```text
-not explicitly authorized
-→ deny
-```
-
-Do not infer access because:
+A normal customer should be able to:
 
 ```text
-user is authenticated
-user is STAFF
-user is ADMIN
-resource exists
-frontend displayed the action
+browse
+open product pages
+use search
+manage cart
+open account
+refresh orders
+checkout
 ```
 
-Every protected action needs a defined authorization path.
+without encountering 429 responses.
+
+Likewise Staff should be able to process normal operational workloads without constantly hitting limits.
+
+Rate limits exist to stop:
+
+```text
+automation abuse
+request floods
+brute-force-like behavior against Laravel APIs
+scraping at abusive rates
+spam submissions
+accidental runaway clients
+```
+
+not to punish ordinary usage.
 
 ---
 
-# 5. Standard Laravel Authorization
+# 5. Avoid One Global Tiny Limit
 
-Prefer:
+Do not apply something like:
 
 ```text
-Laravel Policies
+60 requests / minute
 ```
 
-for resource/action authorization.
+to the entire API indiscriminately.
 
-Use Gates for non-resource/global operations where appropriate.
+Modern web/mobile clients can legitimately generate many requests through:
+
+```text
+page hydration
+parallel data loading
+cart refresh
+notifications
+order polling
+multiple tabs
+mobile resume
+```
+
+Use endpoint categories.
+
+---
+
+# 6. Recommended Limiter Categories
+
+Use a small number of clear rate-limit groups.
+
+Prefer roughly:
+
+```text
+public-read
+authenticated-read
+authenticated-write
+anonymous-submit
+sensitive-action
+operational-write
+```
+
+Do not create dozens of unique limiters.
+
+Keep the model understandable.
+
+---
+
+# 7. Use Existing Laravel RateLimiter
+
+Use Laravel's standard:
+
+```text
+RateLimiter
+Limit
+throttle middleware
+```
+
+Do not install another throttling package unless the existing Laravel mechanism is genuinely insufficient.
+
+Do not build a custom Redis algorithm.
+
+---
+
+# 8. Preserve Existing `Retry-After`
+
+The project already requires rate-limited responses to use:
+
+```http
+429 Too Many Requests
+Retry-After: <seconds>
+```
+
+Ensure every Laravel limiter follows this contract.
+
+Do not return only:
+
+```json
+{
+  "retry_after_seconds": 30
+}
+```
+
+instead of the standard header.
+
+The standard header is authoritative.
+
+---
+
+# 9. Standard Error Envelope
+
+A Laravel rate-limited response must use the project's standard API error envelope.
+
+Expected code:
+
+```text
+RATE_LIMITED
+```
+
+if that is the current documented canonical code.
+
+Do not expose Laravel's default HTML throttle page.
+
+Do not invent another error shape.
+
+---
+
+# 10. Do Not Reveal Internal Algorithm
+
+429 responses should not expose:
+
+```text
+Redis keys
+user IDs used in limiter keys
+hashing strategy
+internal bucket names
+server topology
+exact anti-abuse heuristics
+```
+
+Expose only information the client needs:
+
+```text
+HTTP 429
+RATE_LIMITED
+Retry-After
+request_id
+```
+
+according to the API contract.
+
+---
+
+# 11. Authenticated Limit Key
+
+For authenticated traffic, prefer:
+
+```text
+local Laravel User ID
+```
+
+as the primary limiter identity.
+
+Conceptually:
+
+```text
+user:{users.id}
+```
+
+not:
+
+```text
+Clerk email
+phone
+raw Clerk user ID
+bearer token
+```
+
+Do not place the raw Clerk session token in rate-limit keys.
+
+---
+
+# 12. Why User-Based Limits Matter
+
+Authenticated users should generally not be throttled primarily by IP.
+
+Several legitimate users may share:
+
+```text
+university Wi-Fi
+office Wi-Fi
+mobile carrier NAT
+family router
+corporate proxy
+```
+
+An IP-only limiter could block many innocent users because one client is noisy.
+
+Therefore:
+
+```text
+authenticated
+→ user-keyed limits
+```
+
+should be the normal approach.
+
+---
+
+# 13. Anonymous Limit Key
+
+For anonymous Laravel requests, use:
+
+```text
+trusted client IP
+```
+
+where no stronger application identity exists.
 
 Examples:
 
 ```text
-OrderPolicy
-ProductPolicy
-InventoryPolicy
-FurnitureRequestPolicy
-EnquiryPolicy
-StaffPolicy
+anonymous enquiries
+anonymous furniture requests
+public search abuse
 ```
 
-Use actual project domain names.
+Do not trust arbitrary:
 
-Do not create a custom authorization engine.
+```http
+X-Forwarded-For
+```
+
+unless Laravel's trusted-proxy configuration is correct.
 
 ---
 
-# 6. Policy Responsibilities
+# 14. Trusted Proxy Configuration
 
-Policies should answer:
+Before relying on:
 
 ```text
-may actor perform action?
+$request->ip()
 ```
 
-Policies may consider:
+confirm trusted proxy configuration is appropriate for deployment.
 
-* role;
-* permission;
-* ownership;
-* account state;
-* resource relationship;
-* coarse resource state where authorization depends on it.
+If the app later sits behind:
 
-Policies should not perform:
+```text
+Cloudflare
+load balancer
+reverse proxy
+```
 
-* inventory mutation;
-* order state transition;
-* pricing calculation;
-* payment processing;
-* notifications;
-* large domain workflows.
+Laravel must derive the real client IP safely.
+
+Do not trust client-supplied forwarded headers from arbitrary sources.
 
 ---
 
-# 7. Authorization vs Domain Validation
+# 15. Guest Cart Identity
 
-Keep this distinction strict.
+Do not automatically rate-limit every guest-cart request solely by IP if a valid guest cart bearer token provides a better stable application key.
 
-Example:
-
-```text
-CUSTOMER owns order
-→ authorization allows attempting cancel
-```
-
-Then:
+Where appropriate, limiter identity may combine:
 
 ```text
-order cancellation window expired
-→ domain rejects cancellation
+guest cart credential digest
++
+IP fallback
 ```
 
-Do not place the entire cancellation algorithm inside `OrderPolicy`.
+without storing/logging the raw guest token.
+
+Keep implementation simple.
+
+Do not redesign guest-cart authentication in this phase.
+
+---
+
+# 16. Public Catalog
+
+Public catalog reads should receive generous limits.
+
+Examples:
+
+```text
+GET /products
+GET /products/{slug}
+GET /categories
+GET /categories/{slug}
+search
+```
+
+These routes are expected to support:
+
+```text
+browsing
+SSR
+SEO
+mobile usage
+```
+
+Do not aggressively throttle ordinary browsing.
+
+---
+
+# 17. Public Read Fallback
+
+If current docs do not define a value, use a **generous** starting point rather than a strict one.
+
+For example, a reasonable initial development baseline could be approximately:
+
+```text
+300 requests / minute / IP
+```
+
+for ordinary public API reads.
+
+This is a fallback recommendation only.
+
+If current repository docs define another value, use the documented value.
+
+---
+
+# 18. Search
+
+Search can be more abuse-prone than static product reads.
+
+Use a moderate search limit if needed.
+
+Do not make it so low that normal:
+
+```text
+typing
+filters
+pagination
+sorting
+```
+
+trigger 429 responses.
+
+Future frontend should also debounce search appropriately, but backend protection must stand independently.
+
+---
+
+# 19. Authenticated Reads
+
+Authenticated read endpoints may include:
+
+```text
+GET /me
+GET own orders
+GET notifications
+GET own requests
+GET own enquiries
+```
+
+Use generous user-based limits.
+
+A normal app may make several parallel requests on startup.
+
+Do not rate-limit `/me` to a tiny number.
+
+---
+
+# 20. Authenticated Read Fallback
+
+If docs are silent, a reasonable fallback starting point is approximately:
+
+```text
+180 requests / minute / authenticated user
+```
+
+for routine authenticated reads.
+
+This is not a contractual number.
+
+Prefer documented project values when available.
+
+---
+
+# 21. Authenticated Writes
+
+General customer mutations include:
+
+```text
+PATCH /me
+cart add/update/remove
+notification state updates
+```
+
+Use more moderate limits than reads.
+
+These operations should tolerate normal clicking/retries but block automated floods.
+
+---
+
+# 22. Authenticated Write Fallback
+
+If no project-specific value exists, a practical initial baseline is roughly:
+
+```text
+60 writes / minute / user
+```
+
+for ordinary authenticated mutations.
+
+Do not apply this to every sensitive endpoint automatically.
+
+Specific high-impact actions may have their own limiter.
+
+---
+
+# 23. Checkout
+
+Checkout is high impact because it can affect:
+
+```text
+inventory
+orders
+payments later
+```
+
+It already relies on:
+
+```text
+authentication
+validation
+transactions
+idempotency
+```
+
+Rate limiting is an additional abuse layer.
+
+Do not make checkout excessively restrictive.
+
+---
+
+# 24. Checkout Fallback
+
+Where docs provide no explicit threshold, use a moderate user-based limit such as approximately:
+
+```text
+10 checkout attempts / minute / user
+```
+
+while preserving idempotency.
+
+The exact project-defined limit wins if present.
+
+A legitimate customer retrying after validation failure should not immediately become locked out.
+
+---
+
+# 25. Idempotency Still Required
+
+Rate limiting does not replace:
+
+```text
+Idempotency-Key
+database uniqueness
+transactions
+```
+
+for checkout/payment-sensitive operations.
+
+Even below the rate limit, duplicate requests must remain safe.
+
+---
+
+# 26. Anonymous Furniture Requests
+
+Anonymous furniture-request submission can be spammed.
+
+Apply a moderate anonymous limiter.
+
+Do not throttle browsing merely because request submission is abuse-prone.
+
+---
+
+# 27. Anonymous Enquiries
 
 Likewise:
 
 ```text
-STAFF has orders.accept
-→ policy may allow access
+POST /enquiries
 ```
 
-but:
+should have spam protection.
 
-```text
-order current status invalid for ACCEPTED transition
-→ domain validation rejects
-```
+A normal customer should still be able to submit a few legitimate enquiries without friction.
 
 ---
 
-# 8. CUSTOMER Authorization Model
+# 28. Anonymous Submission Fallback
 
-CUSTOMER access should usually require:
+If current docs have no explicit value, a reasonable starting range is:
 
 ```text
-authenticated CUSTOMER
-+
-owns resource
+5–10 submissions / 10 minutes / IP
 ```
+
+depending on endpoint.
+
+Prefer the less restrictive end unless actual abuse justifies stronger limits.
+
+Do not use aggressive lockouts lasting hours.
+
+---
+
+# 29. CUSTOMER Order Actions
 
 Examples:
 
 ```text
-own profile
-own cart
-own orders
-own request history
-own enquiry history
-own notifications
+cancel order
 ```
 
-CUSTOMER must not see or modify another customer's private resources.
+should use moderate user-based throttling.
+
+The domain rules already determine whether the action is allowed.
+
+Do not rely on rate limiting to enforce:
+
+```text
+20-minute cancellation window
+order ownership
+order status
+```
 
 ---
 
-# 9. Customer Ownership Source
+# 30. STAFF Operational Actions
 
-Ownership must come from server data.
-
-Example:
+Staff may perform legitimate bursts such as:
 
 ```text
-$order->user_id === $user->id
+accept several orders
+update preparation/shipping states
+adjust inventory
 ```
 
-not:
+Do not impose customer-like tiny limits on operational workflows.
 
-```text
-request.user_id
-request.customer_id
-query.user_id
-```
-
-Never trust ownership identifiers submitted by clients.
+Use user-based operational limits with sufficient burst capacity.
 
 ---
 
-# 10. Own Profile
+# 31. Operational Write Fallback
 
-For:
+If docs are silent, start generously, for example approximately:
 
 ```text
-GET /me
-PATCH /me
+120 operational writes / minute / Staff/Admin user
 ```
 
-identity already derives from authentication.
+where operational workflows justify it.
 
-Do not require a separately supplied customer ID.
+This is a fallback, not a fixed project contract.
 
-This is the safest ownership model.
+Tune based on actual usage.
 
 ---
 
-# 11. Own Cart
+# 32. ADMIN Actions
 
-Authenticated cart operations must use the cart belonging to the authenticated local User.
+Admin security-sensitive actions may be less frequent.
 
-Do not authorize:
+Examples:
 
 ```text
-cart.user_id supplied by client
+approve Staff
+change Staff state
+manage permissions
 ```
 
-For guest carts, use the existing guest-token ownership rules separately.
+They can have a smaller dedicated limiter if needed.
 
-Do not mix guest-cart bearer authority with authenticated User authority.
+But authorization and audit remain the primary protections.
+
+Do not rate-limit Admin so aggressively that legitimate recovery/admin operations become unusable.
 
 ---
 
-# 12. Own Orders
+# 33. Sensitive Action Fallback
 
-CUSTOMER may only access orders where:
+If no documented value exists:
 
 ```text
-orders.user_id == authenticated user.id
+20–30 actions / minute / authenticated user
 ```
 
-or the exact existing ownership relation.
+is generally ample for human administrative actions.
 
-Do not allow CUSTOMER to query arbitrary order IDs and receive differential authorization information.
+Do not introduce long punitive lockouts.
 
 ---
 
-# 13. Order Detail Masking
+# 34. Clerk Login / Signup
 
-For a private order belonging to another customer:
-
-prefer:
+Do not create Laravel rate limiters for:
 
 ```text
-404 RESOURCE_NOT_FOUND
+Clerk sign-in
+Clerk sign-up
+Clerk password reset
+Clerk email verification
 ```
 
-rather than:
+when those operations go directly through Clerk.
 
-```text
-403 FORBIDDEN
-```
-
-where the existing contract requires ownership masking.
-
-This prevents order enumeration.
+Clerk owns credential abuse protection.
 
 ---
 
-# 14. Order Cancellation Authorization
+# 35. No Duplicate Password Brute-Force Limiter
 
-Policy should answer:
+Laravel does not receive customer passwords.
 
-```text
-Is this Customer allowed to attempt cancellation of this Order?
-```
-
-Typical authorization criteria:
+Therefore do not build:
 
 ```text
-authenticated
-CUSTOMER or otherwise explicitly allowed actor
-owns Order
+login:{email}:{ip}
+failed_password_counter
+credential_lockout table
 ```
 
-Then domain logic handles:
+for customer authentication.
 
-```text
-20-minute window
-current order status
-other cancellation rules
-```
-
-Do not duplicate cancellation timing logic inside policy unless needed only as authorization state.
+That would duplicate Clerk.
 
 ---
 
-# 15. Order History
+# 36. Future Frontend Authentication
 
-CUSTOMER may list only own orders.
+Future Next.js and Flutter applications should handle Clerk's own authentication throttling/error responses according to Clerk APIs.
 
-Prefer authorization-aware queries:
-
-```text
-where user_id = authenticated user.id
-```
-
-rather than:
-
-```text
-load all
-→ filter afterward
-```
-
-Never fetch another customer's rows into a customer-visible response path.
+Do not proxy those errors through Laravel merely to normalize them.
 
 ---
 
-# 16. Furniture Requests
+# 37. Authorization Failures and Rate Limiting
 
-For authenticated request history:
+Rate limiting should happen at a layer appropriate to the route.
+
+For authenticated private routes:
+
+```text
+authenticate
+→ derive User
+→ user-based limiter
+→ authorization
+→ domain
+```
+
+This allows fair per-user limits.
+
+Do not authorize expensive business operations before basic abuse controls if the limiter can safely run earlier.
+
+---
+
+# 38. Never Use Authorization Result as Limiter Key
+
+Do not create different keys such as:
+
+```text
+allowed:user
+forbidden:user
+```
+
+That adds unnecessary complexity.
+
+Use stable actor/endpoint categories.
+
+---
+
+# 39. Failed Authorization Floods
+
+Repeated authenticated requests producing:
+
+```text
+403
+404 masked ownership failure
+```
+
+can still consume resources.
+
+They should count toward the applicable route/user limiter.
+
+Do not provide unlimited probing simply because authorization fails.
+
+---
+
+# 40. 401 Floods
+
+Requests with:
+
+```text
+missing
+malformed
+invalid
+```
+
+authentication can also be abused.
+
+A moderate IP-level fallback limiter may be appropriate around protected API traffic before/around expensive authentication verification.
+
+Do not set it low enough to block legitimate users behind NAT.
+
+---
+
+# 41. Token Verification DoS Protection
+
+Clerk token verification should be efficient and mostly local/JWKS cached.
+
+Do not solve expensive authentication by imposing tiny request limits.
+
+Maintain:
+
+```text
+local JWT verification
+cached JWKS
+```
+
+according to previous phases.
+
+Rate limiting is supplemental.
+
+---
+
+# 42. No Per-Token Limiter
+
+Do not key by:
+
+```text
+Authorization header
+raw JWT
+session token
+```
+
+Tokens rotate.
+
+This would:
+
+* fragment counters;
+* leak sensitive material;
+* make abuse controls ineffective.
+
+Use local user identity after authentication.
+
+---
+
+# 43. Role-Based Limits
+
+Avoid dramatically different limits based solely on:
 
 ```text
 CUSTOMER
-→ own authenticated requests only
+STAFF
+ADMIN
 ```
 
-Anonymous furniture requests remain anonymous.
+except where workloads genuinely differ.
 
-Do not automatically authorize access to an old anonymous request because:
+Rate limiting should generally reflect endpoint behavior, not privilege hierarchy.
 
-```text
-request.email == user.email
-```
-
-Email is not ownership proof.
+A Staff operational endpoint can have a higher operational-write capacity because its expected workload is different.
 
 ---
 
-# 17. Enquiries
+# 44. Do Not Give ADMIN Unlimited Requests
 
-Same rule:
+ADMIN must not automatically bypass all rate limits.
 
-```text
-authenticated enquiry history
-→ own linked enquiries only
-```
+Compromised Admin credentials should not gain unlimited request capacity.
 
-Do not attach or expose anonymous enquiries by matching email.
+Use sensible generous limits.
 
 ---
 
-# 18. Notifications
+# 45. No Permanent Blocking
 
-CUSTOMER must see only notifications owned by that local User.
-
-Never authorize by:
-
-```text
-notification email
-Clerk user ID in request
-frontend user ID
-```
-
-Use local ownership.
-
----
-
-# 19. STAFF Authorization Model
-
-STAFF authorization should require:
-
-```text
-role = STAFF
-+
-specific permission
-+
-resource/action context
-+
-valid operational scope
-```
+A Laravel rate limiter should normally create temporary throttling.
 
 Do not implement:
 
 ```text
-if STAFF → allow all operational APIs
+automatic account suspension
+permanent ban
+blacklist forever
+```
+
+from ordinary rate-limit violations.
+
+Those require explicit security/abuse policy.
+
+---
+
+# 46. No Escalating Lockout System
+
+Avoid complex:
+
+```text
+first violation → 1 minute
+second → 30 minutes
+third → 24 hours
+```
+
+unless actual threat data later proves it necessary.
+
+For V1, fixed-window/sliding Laravel rate limiting is sufficient.
+
+---
+
+# 47. No CAPTCHA in Backend Phase
+
+Do not add CAPTCHA automatically.
+
+If anonymous spam later becomes a real problem, CAPTCHA can be evaluated at the frontend/edge layer.
+
+Do not overcomplicate V1 preemptively.
+
+---
+
+# 48. Use Burst-Friendly Limits
+
+Legitimate applications often generate short bursts.
+
+Prefer:
+
+```text
+reasonable minute-scale budgets
+```
+
+over tiny second-by-second limits.
+
+Avoid limits that punish:
+
+```text
+page load
+mobile reconnect
+multiple parallel queries
 ```
 
 ---
 
-# 20. STAFF Operational Access
+# 49. Avoid Global Account Lockout
 
-STAFF may later handle explicitly authorized operations such as:
+Do not block an authenticated User from the entire application because they exceeded one endpoint's limit.
 
-```text
-orders
-inventory
-catalog
-delivery
-requests/enquiries
-```
-
-only when corresponding permissions exist.
+Prefer endpoint/category-specific limits.
 
 Example:
 
 ```text
-STAFF
-+
-orders.accept
-→ may attempt order acceptance
+enquiry submission limited
 ```
 
-Domain rules still validate the transition.
-
----
-
-# 21. STAFF Customer Protection
-
-STAFF must never gain ordinary authority over:
+should not prevent:
 
 ```text
-customer role
-customer permissions
-customer password/security
-customer email identity
-customer suspension
-customer deletion
-customer impersonation
-```
-
-Even if Staff can view customer contact information required to fulfill an order.
-
-Operational access is not account ownership.
-
----
-
-# 22. STAFF Order Visibility
-
-STAFF may view operational order information if explicitly permitted.
-
-Do not treat that as permission to:
-
-```text
-edit customer profile
-view authentication data
-change ownership
-```
-
-Serialize only information needed for the operational workflow.
-
----
-
-# 23. STAFF Inventory Access
-
-Inventory changes require explicit permission such as the approved equivalent of:
-
-```text
-inventory.manage
-```
-
-Authorization permits the operation.
-
-Domain/service layer still validates:
-
-```text
-product/variant
-quantity
-location
-stock invariant
-transaction correctness
+view products
+view own orders
+logout
 ```
 
 ---
 
-# 24. STAFF Catalog Access
+# 50. Always Permit Logout
 
-If Staff has approved catalog permissions:
+Do not make a user unable to sign out because an application API limiter was exceeded.
 
-policy may allow those specific actions.
+Clerk logout itself is outside Laravel application throttling.
 
-Do not automatically give Staff every catalog operation.
-
-Use documented permission names only.
+Security actions needed to terminate a session should remain accessible.
 
 ---
 
-# 25. STAFF Cannot Approve STAFF
+# 51. Recovery and Security Actions
 
-Staff approval remains:
+Clerk owns recovery/security throttling.
 
-```text
-ADMIN-only
-```
-
-No Staff policy should authorize:
-
-```text
-staff.approve
-```
-
-unless the V1 model is formally changed.
+Do not wrap them in restrictive Laravel counters.
 
 ---
 
-# 26. ADMIN Authorization Model
+# 52. Health Endpoint
 
-ADMIN is the highest role but must still use explicit authorization.
-
-Preferred:
+Do not apply normal customer API throttling to:
 
 ```text
-ADMIN
-+
-required permission
-+
-resource/action conditions
+health/status
 ```
 
-Do not use one universal:
+in a way that breaks monitoring.
 
-```php
-before() {
-    return $user->hasRole('ADMIN');
-}
-```
+Use infrastructure-level protection if required.
 
-to bypass every policy automatically.
-
-That would defeat explicit authorization and domain controls.
+The health endpoint should remain lightweight.
 
 ---
 
-# 27. Policy `before()` Use
+# 53. Webhooks
 
-If using Laravel Policy `before()`:
+Future webhook endpoints should have:
 
-use cautiously.
+```text
+signature verification
+idempotency
+```
 
-Do not create a blanket ADMIN override unless explicitly intended and documented.
+as primary controls.
 
-For this V1, prefer explicit permissions so privileged actions remain auditable and predictable.
+Do not use ordinary IP rate limiting that might reject legitimate provider retries.
+
+Provider-specific webhook treatment belongs to the relevant integration phase.
 
 ---
 
-# 28. Admin Staff Management
+# 54. Payment Webhooks
 
-Admin-only actions may include:
+Payment webhooks belong to Group H.
 
-```text
-approve Staff
-suspend Staff
-reactivate Staff
-manage Staff permissions
-```
-
-according to the existing contract.
-
-Do not extend these into unrestricted Customer account control.
-
-Customer-management APIs remain separately controlled.
+Do not preemptively apply generic customer rate limits to them.
 
 ---
 
-# 29. Role + Permission Pattern
+# 55. Public Static Assets
 
-A typical policy pattern should conceptually be:
+Laravel rate limiting does not belong on frontend static assets.
 
-```text
-if actor lacks permission
-→ deny
-
-if actor/resource relationship invalid
-→ deny
-
-otherwise
-→ allow attempt
-```
-
-Keep policy methods small.
+Do not involve application limiter logic in CDN/static delivery.
 
 ---
 
-# 30. Avoid Repeated Role Checks
+# 56. Edge / CDN Protection
 
-Where permissions already encode the approved action, do not unnecessarily duplicate:
+Future infrastructure may add:
 
 ```text
-role == STAFF
-&& permission == orders.accept
+Cloudflare rate limiting
+WAF
+DDoS protection
 ```
 
-unless the role restriction itself is part of the invariant.
+in production.
 
-Use the cleanest existing RBAC mechanism.
+Do not duplicate an elaborate WAF inside Laravel.
+
+Laravel limiters protect application-level workloads.
+
+Edge protection belongs to production/security phases.
 
 ---
 
-# 31. Permission Is Not Domain State
+# 57. Layered Security
 
-Do not create permissions like:
-
-```text
-orders.accept.pending
-orders.accept.processing
-```
-
-to encode order states.
-
-Use:
+Future production architecture may be:
 
 ```text
-orders.accept
+CDN / WAF
+    ↓
+Laravel rate limiting
+    ↓
+authentication
+    ↓
+authorization
+    ↓
+domain
 ```
 
-then let the domain validate whether the current state can transition.
+Each layer has a different purpose.
+
+Do not make Laravel solve volumetric DDoS.
 
 ---
 
-# 32. Authorization-Aware Queries
+# 58. Limiter Naming
 
-Where possible, scope queries before loading private resources.
-
-Examples:
+Use clear names such as:
 
 ```text
-customer order:
-Order::where('user_id', $user->id)
+public-read
+authenticated-read
+authenticated-write
+anonymous-submit
+checkout
+operational-write
+sensitive-action
 ```
 
-Operational Staff queries may use approved operational scope.
+or the names already documented.
 
-Avoid:
+Avoid names like:
 
 ```text
-Order::find($id)
-→ afterward discover ownership mismatch
+limiter1
+strict
+super-strict
 ```
-
-where query scoping provides stronger privacy.
 
 ---
 
-# 33. Route Model Binding
+# 59. Centralize Rate Definitions
 
-Review Laravel route model binding for private resources.
+Keep limiter definitions in one standard Laravel location.
 
-Default model binding can reveal resource existence depending on error behavior.
-
-For ownership-sensitive Customer routes:
-
-use authorization-aware resolution or consistent masking.
-
-Do not allow:
+Do not scatter numeric constants through:
 
 ```text
-existing other-user resource → 403
-nonexistent resource → 404
+controllers
+routes
+services
+policies
 ```
 
-when the contract requires existence masking.
+Centralization makes later tuning safe.
 
 ---
 
-# 34. 404 Masking
+# 60. Configuration
 
-Apply 404 masking where private resource existence must not be disclosed.
+Where practical, keep meaningful rate values configurable per environment.
 
-Typical candidates:
+Do not require code changes to tune production limits.
 
-```text
-customer order detail
-customer request detail
-customer enquiry detail
-other private customer-owned resources
-```
+Use normal Laravel configuration/environment patterns.
 
-Do not blindly use 404 for every authorization failure.
+Do not expose internal limits to clients beyond standard headers.
 
 ---
 
-# 35. 403 Use
+# 61. Safe Defaults
 
-Use:
-
-```text
-403 FORBIDDEN
-```
-
-when:
-
-* resource visibility itself is not sensitive;
-* authenticated actor lacks permission;
-* role/action denial is safe to reveal.
-
-Examples may include:
+Production should never accidentally have:
 
 ```text
-STAFF tries admin staff approval
-CUSTOMER accesses clearly administrative endpoint
+0 requests allowed
 ```
 
-Use the existing contract.
+because an environment variable is missing.
+
+Validate configuration and provide sensible application defaults.
 
 ---
 
-# 36. 401 Use
+# 62. Environment Differences
 
-Unauthenticated caller:
+Local/test environments may use different limits only when needed for deterministic testing.
 
-```text
-401 AUTHENTICATION_REQUIRED
-```
+Do not disable rate limiting completely in production.
 
-Never use 403 for missing authentication.
+Do not make production significantly more restrictive without justification.
 
 ---
 
-# 37. Private Resource Enumeration
+# 63. Testing Environment
 
-Tests must verify attackers cannot enumerate:
+Tests may use:
 
 ```text
-orders
-private requests
-enquiries
-notifications
+clear limiter state
+controlled test keys
+small test-only limits
 ```
 
-through status-code differences or detailed error messages.
+where necessary.
+
+Do not alter production limiter values merely to make tests faster.
 
 ---
 
-# 38. No Authorization Through Validation Errors
+# 64. Distributed Deployment
 
-Do not reveal resource details before authorization by returning:
+Use a cache backend that works correctly across multiple Laravel instances in production.
 
-```text
-ORDER_NOT_CANCELLABLE
-```
+Do not depend on per-process memory if the application may scale horizontally.
 
-for another user's order.
+Use existing Laravel cache infrastructure.
 
-Ownership/authz should be resolved first.
+Redis may be appropriate if already part of production architecture.
 
-For private resources:
-
-```text
-other user's order
-→ 404
-```
-
-before domain-specific cancellation details are exposed.
+Do not add Redis solely because of this phase unless the project has already selected it.
 
 ---
 
-# 39. Authorization Order Example
+# 65. Database Rate Limiting
 
-Customer cancel:
+Do not create custom database tables recording every API request.
 
-```text
-validate route/input
-→ authenticate
-→ resolve Order safely
-→ ownership authorization
-→ cancellation domain rules
-→ transaction
-```
+Laravel's standard limiter/cache infrastructure is sufficient.
 
-Do not evaluate cancellation timing before confirming ownership if doing so could leak state.
+Avoid unnecessary write amplification.
 
 ---
 
-# 40. No Controllers With Inline Authorization Everywhere
+# 66. Limiter Failure Behavior
 
-Avoid:
+Do not silently disable all security if rate-limit storage temporarily fails without considering the project's existing cache behavior.
 
-```php
-if (!$user->hasRole(...)) ...
-if ($order->user_id !== ...) ...
-```
+Follow Laravel's normal infrastructure behavior and existing production strategy.
 
-repeated across controllers.
-
-Centralize resource authorization in Policies.
-
-Controllers should call standard Laravel authorization APIs.
+Do not engineer a complex distributed fallback in this phase.
 
 ---
 
-# 41. Standard Controller Pattern
+# 67. Retry Behavior
 
-Prefer something equivalent to:
+Clients should respect:
+
+```http
+Retry-After
+```
+
+when receiving 429.
+
+Do not encourage hammering the endpoint immediately.
+
+Future frontend should display a reasonable temporary message where relevant.
+
+No frontend implementation in this phase.
+
+---
+
+# 68. Avoid Revealing Exact User Quotas in UI Contract
+
+The frontend generally needs:
 
 ```text
-validate
-authenticate
-authorize
-call service
-return resource
+temporarily rate limited
+retry after N seconds
+```
+
+not an internal explanation of the rate algorithm.
+
+Do not make UI logic depend on hard-coded server thresholds.
+
+---
+
+# 69. Rate Limit vs Validation
+
+Invalid requests may count against the limiter.
+
+Do not allow unlimited malformed submissions.
+
+Rate limiting is transport/abuse control.
+
+Validation remains separate.
+
+---
+
+# 70. Rate Limit vs Authentication
+
+A 429 means:
+
+```text
+too many requests
 ```
 
 not:
 
 ```text
-controller
-→ 60 lines of role/ownership/domain logic
+authentication invalid
 ```
 
----
-
-# 42. Service Authorization Boundary
-
-Do not assume controller authorization is always enough for sensitive reusable services.
-
-If a service can be invoked from multiple entry points, ensure authorization expectations are explicit.
-
-However, do not duplicate every policy check inside every domain service.
-
-Use clear layer contracts.
+Do not sign users out because Laravel returned 429.
 
 ---
 
-# 43. Background Jobs
+# 71. Rate Limit vs Authorization
 
-Jobs operating as system/internal workflows should not fake CUSTOMER/STAFF roles.
-
-If jobs perform privileged system actions later:
-
-define explicit trusted system execution paths.
-
-Do not use:
+A 429 means neither:
 
 ```text
-User::firstWhere(role = ADMIN)
+FORBIDDEN
 ```
 
-as a fake actor.
-
-Out of scope unless existing jobs require it.
-
----
-
-# 44. API Ownership Fields
-
-Clients must not control:
+nor:
 
 ```text
-user_id
-customer_id
-owner_id
-created_by
-actor_id
+RESOURCE_NOT_FOUND
 ```
 
-where ownership should derive from authenticated context.
-
-Reject or ignore according to the frozen API contract.
-
-Prefer rejection for strict write schemas.
+Keep these semantics separate.
 
 ---
 
-# 45. CUSTOMER Create Ownership
+# 72. Error Ordering
 
-When a Customer creates an authenticated resource:
+For a route where throttling occurs after authentication:
 
 ```text
-ownership
-=
-authenticated local User
+invalid/missing auth
+→ normal authentication error
 ```
 
-Do not accept owner identifiers from body.
+unless an outer abuse limiter already stops an extreme flood.
+
+Do not accidentally turn every invalid token into 429 and hide useful normal authentication behavior.
 
 ---
 
-# 46. STAFF Action Actor
+# 73. Public Enumeration
 
-For Staff operational actions, actor identity comes from:
+Rate limiting can slow resource enumeration, but it does not replace:
 
 ```text
-authenticated local User
+404 ownership masking
+non-sequential public identifiers where applicable
+authorization-aware queries
 ```
 
-Audit/history records should use server-derived actor.
+Keep Phase 4.10 protections intact.
 
-Never accept:
+---
+
+# 74. Anonymous Spam
+
+Rate limiting helps with anonymous:
 
 ```text
-performed_by
-staff_id
+enquiries
+furniture requests
 ```
 
-from request as authority.
+but validation and future anti-spam measures remain separate.
+
+Do not reject legitimate repeat customers too aggressively.
 
 ---
 
-# 47. ADMIN Action Actor
+# 75. File Upload Endpoints
 
-Same for Admin:
+If anonymous/request attachments exist later, uploads may require tighter throughput controls because they consume more resources.
+
+Do not implement full upload-specific security here unless those endpoints already exist.
+
+Group T includes broader upload/security review.
+
+---
+
+# 76. Expensive Queries
+
+If a particular search/filter operation is materially expensive, it may receive a specialized limit.
+
+Do not preemptively rate-limit every query parameter differently.
+
+Optimize query/index performance first.
+
+---
+
+# 77. Customer Multiple Tabs
+
+Design limits so one customer using:
 
 ```text
-actor = authenticated Admin local User
+two browser tabs
+mobile app
 ```
 
-Do not let clients nominate another Admin as actor.
+simultaneously does not instantly hit their user budget.
+
+Remember the same Clerk identity maps to the same Laravel User.
+
+Use sufficiently generous user limits.
 
 ---
 
-# 48. Policies and Soft Deletes
+# 78. Multi-Device Sessions
 
-If resources use soft deletes:
-
-define whether deleted resources may be viewed/restored and by whom.
-
-Do not accidentally expose soft-deleted customer resources through default queries.
-
-Only implement restore authorization where such endpoint already exists.
-
----
-
-# 49. Product Public Read
-
-Public product/category reads remain:
+Because multiple sessions are valid:
 
 ```text
-no authentication required
+website
+phone
+tablet
 ```
 
-Do not introduce Policy requirements that block public catalog.
+may share the same authenticated user limiter.
 
-Publication/visibility rules belong to catalog domain/query logic.
+That is acceptable if the user limit is generous.
 
----
-
-# 50. Product Write
-
-Administrative/Staff product writes should require explicit catalog permission.
-
-Detailed product validation remains domain/service layer responsibility.
+Do not create complicated per-device counters.
 
 ---
 
-# 51. Inventory
+# 79. STAFF Shared Workstation / NAT
 
-Inventory reads/writes that are operational must use appropriate permission.
+Staff authenticated limits must key by local User, not office IP, wherever possible.
 
-Public stock availability representation remains public catalog behavior.
-
-Do not expose raw internal inventory just because public product availability exists.
+Do not let one busy Staff member throttle the whole office.
 
 ---
 
-# 52. Checkout
+# 80. Anonymous Shared NAT
 
-Checkout requires:
+Anonymous IP-based limits necessarily affect shared NAT users.
+
+Therefore anonymous limits must be conservative and moderate.
+
+This is another reason not to use very small anonymous budgets.
+
+---
+
+# 81. No Email Limiter Keys
+
+Do not key application API rate limits by:
 
 ```text
-authenticated application User
+email
 ```
 
-and appropriate customer-commerce eligibility.
+Email can change and may expose personal information in cache keys/logging.
 
-Do not authorize checkout based on role string alone.
+Use internal User ID.
 
-Later checkout service still validates:
+---
+
+# 82. No Phone Limiter Keys
+
+Do not use phone as a limiter identity.
+
+Phone is optional profile/contact data.
+
+---
+
+# 83. Hashing Anonymous Keys
+
+If the cache backend/logging would expose raw identifying data unnecessarily, use an appropriate normalized/hashed limiter key.
+
+Do not overengineer cryptographic identities where Laravel's standard behavior already avoids exposure.
+
+---
+
+# 84. Logging Rate Limit Events
+
+Log only useful signals.
+
+Potential fields:
 
 ```text
-cart ownership
-cart validity
-inventory
-fulfillment
-pricing
+request_id
+limiter category
+route/action
+authenticated local user ID when applicable
+hashed/normalized anonymous key if appropriate
 ```
 
----
-
-# 53. STAFF / ADMIN Purchasing
-
-If Staff/Admin may purchase products for themselves, permit this through explicit self-commerce policy where required.
-
-Do not assign them CUSTOMER role merely for checkout.
-
-Keep one-role V1 invariant.
-
----
-
-# 54. Notifications
-
-Notification read/update actions must be ownership-scoped.
-
-A Staff role does not automatically permit reading Customer notifications.
-
-Operational Staff notifications, if later supported, follow their own ownership/scope.
-
----
-
-# 55. Requests and Enquiries Operational Access
-
-If STAFF may review incoming furniture requests/enquiries:
-
-require explicit operational permissions.
-
-Do not imply that Staff can edit the Customer profile associated with them.
-
----
-
-# 56. Anonymous Records
-
-Anonymous request/enquiry records have:
+Do not log:
 
 ```text
-user = null
+Authorization token
+password
+Clerk secret
+full request payload
+raw guest cart token
 ```
 
-Do not create a fake ownership policy based on matching email/phone.
+---
 
-Operational Staff/Admin access may be permission-based.
+# 85. Avoid Log Flooding
 
-Customer cannot automatically claim them.
+Do not generate massive error logs for every repeated 429 under an attack.
+
+Use existing logging/monitoring conventions.
+
+Rate-limit/aggregate logs where infrastructure supports it later.
 
 ---
 
-# 57. Payment Authorization
+# 86. Metrics
 
-Payment provider-specific implementation belongs to Group H.
-
-Phase 4.10 should only preserve authorization boundary concepts where payment endpoints already exist.
-
-Do not design payment-provider permissions now.
-
----
-
-# 58. Delivery Authorization
-
-Where delivery resources exist:
-
-CUSTOMER may view only delivery information tied to their own Order.
-
-STAFF may perform approved delivery operations where permission exists.
-
-Do not make delivery ownership a separate client-controlled identity.
-
----
-
-# 59. Order State Transitions
-
-Policies authorize the actor/action.
-
-Domain transition service validates:
+If existing metrics infrastructure exists, useful counters include:
 
 ```text
-current state
-requested transition
-business preconditions
+rate_limit.hit
+rate_limit.allowed
+limiter category
+route
 ```
 
-Do not place the entire transition graph into Policy classes.
+Do not add a new observability stack just for this phase.
 
 ---
 
-# 60. Generic Status PATCH Prohibited
+# 87. Tune From Evidence
 
-Do not authorize:
+Initial limits are operational defaults.
 
-```http
-PATCH /orders/{id}
-{
-  "status": "SHIPPED"
-}
+Future tuning should use:
+
+```text
+real traffic
+429 frequency
+normal request patterns
+abuse patterns
 ```
 
-as a generic mutation.
+not guesses alone.
 
-Existing explicit action endpoints remain the preferred model.
-
-Policies should correspond to explicit actions.
+Document that limits can be adjusted without breaking the V1 response contract.
 
 ---
 
-# 61. Explicit Actions
+# 88. Raising Limits
+
+Increasing a rate threshold later is normally operational tuning.
+
+It should not require a new API version.
+
+---
+
+# 89. Lowering Limits
+
+Significantly lowering limits can affect clients operationally.
+
+Treat major reductions carefully and document them.
+
+Do not silently change a usable API into an aggressively throttled one.
+
+---
+
+# 90. OpenAPI
+
+Document:
+
+```text
+429 RATE_LIMITED
+Retry-After
+```
+
+where applicable according to existing project conventions.
+
+Do not duplicate exact thresholds in every endpoint schema unless the current contract requires it.
+
+Thresholds are generally operational configuration rather than core response schema.
+
+---
+
+# 91. API Conventions
+
+Ensure `api-conventions.md` clearly states:
+
+```text
+429
+RATE_LIMITED
+Retry-After
+```
+
+and the moderate/non-punitive rate-limit philosophy where appropriate.
+
+Use current repository wording/structure.
+
+---
+
+# 92. Decisions Documentation
+
+Record important decisions such as:
+
+```text
+Clerk owns credential throttling.
+Laravel owns application API throttling.
+Authenticated limits are user-based.
+Anonymous limits are IP-based where necessary.
+Limits are temporary, not account bans.
+```
+
+Do not create a separate permanent phase document unless project conventions require it.
+
+---
+
+# 93. `AGENTS.md`
+
+Update only if the latest AGENTS instructions need the implementation decision recorded.
+
+Do not rewrite unrelated phases.
+
+---
+
+# 94. Middleware Placement
+
+Apply named Laravel limiters through route middleware.
+
+Do not manually call rate-limiter checks throughout controller methods.
+
+Keep routing declarative.
+
+---
+
+# 95. Example Route Grouping
+
+Conceptually:
+
+```text
+public catalog
+→ public-read
+
+anonymous POST request/enquiry
+→ anonymous-submit
+
+protected customer reads
+→ auth
+→ authenticated-read
+
+ordinary mutations
+→ auth
+→ authenticated-write
+
+checkout
+→ auth
+→ checkout
+
+staff/admin operational writes
+→ auth
+→ operational-write
+```
+
+Adapt to actual current routes.
+
+---
+
+# 96. Authentication Before User-Keyed Limit
+
+A limiter that uses:
+
+```text
+$user->id
+```
+
+must run after authentication has established the local User.
+
+Do not attempt to read authenticated User before the Clerk middleware.
+
+---
+
+# 97. Outer Anonymous Abuse Guard
+
+If needed, an additional generous IP-based API guard may sit outside authentication to protect infrastructure from extreme request floods.
+
+If implemented:
+
+* keep it very generous;
+* do not make it the primary normal limit;
+* do not block legitimate shared NAT users easily.
+
+Do not add it without clear need.
+
+---
+
+# 98. Authorization Still Runs
+
+Passing a rate limit does not imply authorization.
+
+Pipeline remains:
+
+```text
+rate allowance
+≠
+permission
+```
+
+Policies still execute.
+
+---
+
+# 99. CUSTOMER Limits
+
+Do not rate CUSTOMER differently merely because their role is lower privilege.
+
+Use endpoint behavior.
 
 Examples:
 
 ```text
-accept order
-ship order
-cancel order
-set delivery fee
-approve staff
-adjust inventory
+customer reads
+customer writes
+checkout
 ```
-
-Each should have a clear authorization method.
-
-Avoid generic:
-
-```text
-update()
-```
-
-policy methods for unrelated business-state transitions where explicit methods improve safety.
 
 ---
 
-# 62. Policy Method Naming
+# 100. STAFF Limits
 
-Use meaningful actions:
+Operational Staff endpoints may have larger burst allowances.
 
-```text
-view
-viewAny
-updateProfile
-cancel
-accept
-ship
-adjustInventory
-approve
-suspend
-```
-
-according to existing project conventions.
-
-Do not create vague:
-
-```text
-manageEverything()
-```
-
-methods.
+Do not make Staff unlimited.
 
 ---
 
-# 63. Permission Constants
+# 101. ADMIN Limits
 
-Centralize meaningful permission names.
+Admin endpoints may use the same operational limiter or a sensitive-action limiter depending on action.
 
-Avoid repeated string literals in:
-
-```text
-policies
-seeders
-tests
-controllers
-```
-
-Use existing enums/constants/support classes.
+Do not create extremely restrictive Admin rates without evidence.
 
 ---
 
-# 64. Permission Seeding
-
-If Phase 4.10 introduces approved permissions not yet seeded:
-
-update canonical permission seed data.
-
-Keep seeding idempotent.
-
-Do not invent speculative future permissions.
-
----
-
-# 65. Policy Registration
-
-Use Laravel's standard policy discovery/registration.
-
-Do not create a custom global policy registry unless the framework/version requires explicit registration.
-
-Follow current Laravel conventions.
-
----
-
-# 66. No Frontend Work
+# 102. No Frontend Changes
 
 Do not modify:
 
@@ -1254,891 +1749,391 @@ frontend/app/
 frontend/design-system/
 ```
 
-during Phase 4.10.
+during Phase 4.11.
 
-No:
+No 429 UI.
 
-```text
-route guards
-permission hooks
-AdminOnly components
-role-based menus
-button hiding
-```
+No retry components.
 
-Frontend authorization cues belong to later UI phases.
+No frontend throttling libraries.
+
+Frontend handling comes later.
 
 ---
 
-# 67. Frontend Is Advisory
+# 103. Client-Side Debounce Is Not Security
 
-Record for future frontend implementation:
+Future search UI may debounce requests.
 
-```text
-UI guards improve UX
-Laravel policies provide security
-```
+That improves UX/performance.
 
-Hiding a button is never authorization.
+It does not replace Laravel throttling.
 
----
-
-# 68. Policy Performance
-
-Avoid unnecessary N+1 queries.
-
-Use already-loaded relationships where safe.
-
-Do not load large relationship graphs merely to authorize a simple ownership check.
+Do not defer backend security to frontend behavior.
 
 ---
 
-# 69. No External Clerk Calls
-
-Authorization should not call Clerk.
-
-At this point:
-
-```text
-authenticated local User
-```
-
-already exists.
-
-Policies use Laravel state only.
-
-Do not fetch Clerk metadata during authorization.
-
----
-
-# 70. No Email-Based Authorization
-
-Never authorize based on:
-
-```text
-user.email == resource.email
-```
-
-for ownership.
-
-Use persisted local relationships.
-
-Email can change and is not ownership proof.
-
----
-
-# 71. No Phone-Based Authorization
-
-Likewise never authorize using phone-number equality.
-
-Phone is contact data only.
-
----
-
-# 72. No Client-Type Authorization
-
-Do not grant different permissions because request came from:
-
-```text
-web
-mobile
-```
-
-Same user + same operation should follow the same backend authorization rules.
-
----
-
-# 73. Staff Operational Scope
-
-If the project later introduces location/cafe/branch-specific operational scope, that belongs to an explicit domain model.
-
-Do not infer Staff scope from frontend route or request parameters.
-
-For current V1, use only already-defined operational scope.
-
----
-
-# 74. Admin Is Not Domain Override
-
-ADMIN authorization does not allow invalid business operations.
-
-Example:
-
-```text
-ADMIN authorized to ship order
-```
-
-does not mean:
-
-```text
-CANCELLED → SHIPPED
-```
-
-becomes valid.
-
-Domain invariants remain mandatory.
-
----
-
-# 75. Validation Cannot Be Bypassed
-
-All roles, including ADMIN, must still satisfy:
-
-```text
-schema validation
-domain validation
-transactions
-financial invariants
-```
-
-Authorization is not input-validation bypass.
-
----
-
-# 76. Security Tests — Cross-Customer Order View
-
-Customer A requests Customer B's Order.
+# 104. Schema Changes
 
 Expected:
 
 ```text
-404
+NONE
 ```
 
-where masking applies.
+Do not add:
 
-No order data leaked.
+```text
+rate_limit_events
+failed_attempts
+ip_bans
+user_lockouts
+```
+
+tables for standard V1 API throttling.
 
 ---
 
-# 77. Security Tests — Cross-Customer Order Cancel
-
-Customer A attempts cancellation of Customer B's Order.
+# 105. New Dependencies
 
 Expected:
 
 ```text
-404
+NONE
 ```
 
-before cancellation-state details are revealed.
+Use Laravel's built-in rate limiter.
+
+Do not add a third-party package without necessity.
 
 ---
 
-# 78. Security Tests — Own Order
+# 106. Tests — Normal Usage Below Limit
 
-Customer accesses own Order.
+Verify normal request patterns remain successful.
 
-Authorization succeeds.
-
-Then normal domain rules apply.
-
----
-
-# 79. Security Tests — Staff Operational Order
-
-STAFF with required permission:
-
-may reach approved operational action.
-
-STAFF without permission:
-
-```text
-403
-```
-
----
-
-# 80. Security Tests — Staff Customer Account
-
-STAFF attempts customer-account control.
-
-Expected:
-
-```text
-403
-```
-
-or no route exists.
-
-Mandatory regression coverage.
-
----
-
-# 81. Security Tests — Admin Staff Approval
-
-ADMIN with required permission may reach Staff approval action.
-
-Non-Admin actors denied.
-
----
-
-# 82. Security Tests — Clerk Metadata Cannot Authorize
-
-Fake Clerk metadata indicating ADMIN while local User is CUSTOMER.
-
-Policy must treat actor as CUSTOMER.
-
----
-
-# 83. Security Tests — Body Ownership Tampering
-
-Send:
-
-```json
-{
-  "user_id": "another-user"
-}
-```
-
-where ownership is server-derived.
-
-Ensure request cannot take ownership or access another user's data.
-
----
-
-# 84. Security Tests — Query Ownership Tampering
-
-Attempt:
-
-```text
-?user_id=other
-```
-
-on self-owned resources.
-
-Ensure authorization remains bound to authenticated User.
-
----
-
-# 85. Security Tests — Anonymous Protected Route
-
-No auth:
-
-```text
-401 AUTHENTICATION_REQUIRED
-```
-
----
-
-# 86. Security Tests — Authenticated Forbidden Action
-
-Valid auth but missing permission:
-
-```text
-403 FORBIDDEN
-```
-
-where masking is not required.
-
----
-
-# 87. Security Tests — Enumeration
-
-Probe sequential private resource identifiers as Customer.
-
-Responses must not reveal which belong to other users.
-
-Test status/code/message consistency.
-
----
-
-# 88. Security Tests — Public Catalog
-
-Anonymous public catalog remains accessible.
-
-No authorization regression.
-
----
-
-# 89. Security Tests — STAFF Role Does Not Imply All Permissions
-
-STAFF without a specific operational permission must be denied.
-
-This confirms:
-
-```text
-role != blanket authority
-```
-
----
-
-# 90. Security Tests — ADMIN Domain Rule
-
-ADMIN authorized for action but invalid resource state.
-
-Expected:
-
-```text
-authorization passes
-domain rejects
-```
-
-This proves policy/domain separation.
-
----
-
-# 91. Security Tests — Own Request / Enquiry
-
-Customer may access own authenticated records.
-
-Cannot access another customer's.
-
-Anonymous historical record is not claimable merely by matching email.
-
----
-
-# 92. Security Tests — Notifications
-
-Customer sees only own notifications.
-
-Staff/Admin do not automatically inherit customer notifications.
-
----
-
-# 93. Test Organization
-
-Prefer policy-focused unit tests plus API feature tests.
+Do not only test the 429 path.
 
 For example:
 
 ```text
-tests/Unit/Policies/
-tests/Feature/Authorization/
+several consecutive reads
+→ 200
 ```
 
-or existing project conventions.
-
-Do not create a new testing structure if one already exists.
+This protects against accidentally tiny limits.
 
 ---
 
-# 94. Policy Unit Tests
+# 107. Tests — Limit Exceeded
 
-Policy tests should be small and deterministic.
+Exceed a test limiter.
 
-Cover:
+Verify:
 
 ```text
-allowed role/permission/ownership
-denied role
-missing permission
-wrong owner
+HTTP 429
+canonical RATE_LIMITED error
+Retry-After present
 ```
 
-Do not test complete domain workflows in every policy unit test.
+Do not assert implementation-internal cache details.
 
 ---
 
-# 95. Feature Tests
+# 108. Tests — Retry-After
 
-Feature/API tests verify integration:
+Mandatory regression test:
+
+```http
+Retry-After
+```
+
+must be present and valid on 429 responses.
+
+This was already established as an API convention.
+
+---
+
+# 109. Tests — Authenticated Users Separated
+
+Customer A exhausting their user-keyed limit must not exhaust Customer B's limit.
+
+Mandatory fairness test.
+
+---
+
+# 110. Tests — Shared IP Authenticated Users
+
+Two authenticated users with the same test IP must have independent user-based quotas where that limiter is intended to be user-keyed.
+
+This prevents NAT-related collateral blocking.
+
+---
+
+# 111. Tests — Anonymous IP
+
+Anonymous submissions from the same IP should share the appropriate anonymous limiter.
+
+Different IPs should not share the same counter.
+
+---
+
+# 112. Tests — Role Does Not Bypass
+
+ADMIN exceeding a configured endpoint limit should still receive 429.
+
+No universal role bypass.
+
+---
+
+# 113. Tests — Authorization Still Works
+
+Below the rate limit:
 
 ```text
-route
-→ auth
-→ policy
-→ error mapping
+unauthorized user
+→ 403/404
 ```
 
-These are essential for:
+according to Phase 4.10.
+
+Do not let rate-limit middleware break authorization semantics.
+
+---
+
+# 114. Tests — Authentication Still Works
+
+Below the limiter:
 
 ```text
-401
-403
-404 masking
+missing token
+→ 401
+invalid token
+→ authentication error
 ```
 
----
-
-# 96. Offline Tests
-
-No real Clerk calls.
-
-Use existing fake authentication/verifier setup.
-
-Authorization tests begin with an already-authenticated local User.
+according to existing auth contract.
 
 ---
 
-# 97. No Test Backdoors
+# 115. Tests — Public Catalog
 
-Do not add production headers like:
+Normal public catalog browsing must remain comfortably under the configured limit.
+
+Use repeated requests in tests if practical to verify it is not accidentally using a strict write limiter.
+
+---
+
+# 116. Tests — Anonymous Submission
+
+Verify spam-like repeated anonymous submissions eventually receive 429.
+
+Verify the first legitimate requests succeed.
+
+---
+
+# 117. Tests — Checkout
+
+Verify normal checkout attempt succeeds below the limiter.
+
+Excessive repeated attempts eventually receive 429.
+
+Do not test domain idempotency as a substitute for rate limiting.
+
+---
+
+# 118. Tests — Operational Staff
+
+Verify normal burst of Staff operational actions remains accepted below the configured operational limit.
+
+Do not set a test threshold that implies production must be tiny.
+
+---
+
+# 119. Tests — Limiter State Isolation
+
+Clear Laravel rate limiter state between tests.
+
+Avoid flaky test ordering.
+
+---
+
+# 120. Tests — No Token Leakage
+
+Ensure rate-limit cache/log keys do not include raw bearer tokens.
+
+If the implementation makes key construction inspectable, add a focused unit test.
+
+---
+
+# 121. Tests — No Email Key
+
+Likewise ensure authenticated application limiter is keyed by internal user identity, not email.
+
+---
+
+# 122. Test Configuration
+
+Tests may define smaller thresholds to exercise 429 efficiently.
+
+Production/default values remain independently configured.
+
+Do not issue hundreds of requests just to test one limiter if configuration can safely be overridden in test environment.
+
+---
+
+# 123. Cache Driver Tests
+
+Do not over-test Laravel's RateLimiter internals.
+
+Test project configuration and behavior.
+
+Laravel itself owns its limiter algorithm.
+
+---
+
+# 124. Quality Requirements
+
+Maintain:
+
+* cognitive complexity ≤15;
+* max 3 returns where practical;
+* centralized limiter definitions;
+* no duplicated numbers;
+* named constants/configuration where meaningful;
+* no giant rate-limiter service;
+* minimal comments.
+
+---
+
+# 125. Avoid Overengineering
+
+Do not introduce:
 
 ```text
-X-Test-Role
-X-Test-Permission
+adaptive machine-learning throttling
+behavior scoring
+device fingerprinting
+per-user risk scores
+automatic blacklists
+CAPTCHA orchestration
+distributed custom token buckets
 ```
 
-Use factories/container/test authentication utilities.
+for V1.
+
+Standard Laravel throttling is enough.
 
 ---
 
-# 98. Factory States
+# 126. Security Review
 
-Reuse:
+Before completing the phase verify:
 
 ```text
-customer()
-staff()
-admin()
+Clerk still owns credential abuse protection
+Laravel application APIs have appropriate abuse controls
+authenticated limits use User identity
+anonymous limits use trusted IP where needed
+normal usage does not hit limits easily
+Retry-After always works
+429 uses standard error contract
+no role has unlimited bypass
+no permanent bans exist
 ```
 
-and permission helpers as needed.
+---
 
-Keep fixtures explicit.
+# 127. Existing API Rate Limiter
+
+Inspect the existing Group B API limiter implementation.
+
+Phase 2.6 already established API routing/rate-limit foundation and documented `Retry-After`.
+
+Do not replace functioning infrastructure unnecessarily.
+
+Extend/refine it.
 
 ---
 
-# 99. Policy Complexity
+# 128. Avoid Duplicate Limiter Layers
 
-Keep each policy method small.
+If an existing general API limiter is already active:
 
-If authorization becomes complicated:
+review it before adding endpoint-specific limiters.
 
-extract narrowly named helper methods.
-
-Maintain cognitive complexity target ≤15.
-
-Do not build a generic authorization DSL.
-
----
-
-# 100. Return Count
-
-Follow project guidance of maximum 3 returns per function where practical.
-
-Keep policies readable rather than overly clever.
-
----
-
-# 101. Avoid Large `switch(role)`
-
-Do not build every policy as:
+Do not accidentally stack:
 
 ```text
-switch role:
- CUSTOMER ...
- STAFF ...
- ADMIN ...
+global 60/min
++
+route 60/min
++
+group 60/min
 ```
 
-when permissions/ownership provide cleaner composition.
+and effectively make the API much stricter than intended.
 
-Use standard Laravel authorization patterns.
-
----
-
-# 102. No Global `isAdmin()` Shortcut Everywhere
-
-An `isAdmin()` helper may exist for legitimate use, but do not turn it into a universal authorization bypass.
-
-Prefer permissions/policies.
+This is a critical review item.
 
 ---
 
-# 103. API Contract Review
+# 129. Effective Limit Calculation
 
-Review:
+For every protected route, inspect the complete middleware stack.
+
+Document which limiter actually applies.
+
+Avoid accidental hidden compounding.
+
+---
+
+# 130. Route Inventory
+
+Review all `/api/v1` routes and classify each into one limiter category.
+
+Produce an internal implementation matrix similar to:
+
+| Endpoint category           | Identity key | Limiter             |
+| --------------------------- | ------------ | ------------------- |
+| Public catalog read         | IP           | public-read         |
+| Authenticated customer read | User ID      | authenticated-read  |
+| Customer mutation           | User ID      | authenticated-write |
+| Checkout                    | User ID      | checkout            |
+| Anonymous request/enquiry   | IP           | anonymous-submit    |
+| Staff/Admin operation       | User ID      | operational-write   |
+
+Use actual current routes.
+
+---
+
+# 131. Do Not Publish Sensitive Threshold Matrix Unnecessarily
+
+The implementation/docs may record values for maintainers.
+
+Do not expose every internal threshold in API responses.
+
+---
+
+# 132. Monitoring Handoff
+
+Carry to Group T:
 
 ```text
-docs/api/api-contract.md
-docs/api/api-resources.md
-docs/api/openapi.yaml
+review real 429 metrics
+adjust limits if legitimate users hit them
+review edge/WAF protection
+review suspicious abuse patterns
 ```
 
-for protected operations.
+Phase 4.11 establishes safe initial application limits.
 
-Ensure documented authentication/authorization requirements match implemented policies.
-
-Do not change endpoint behavior casually.
+Production tuning happens from real evidence.
 
 ---
 
-# 104. Error Contract
-
-Use existing CLOSED error codes.
-
-Authorization failures should map to approved:
-
-```text
-AUTHENTICATION_REQUIRED
-FORBIDDEN
-RESOURCE_NOT_FOUND
-```
-
-or resource-specific not-found code where already defined.
-
-Do not create:
-
-```text
-NOT_OWNER
-INSUFFICIENT_ROLE
-NEEDS_ADMIN
-```
-
-unless formally approved.
-
----
-
-# 105. Error Messages
-
-Do not reveal:
-
-```text
-resource exists but belongs to user X
-required role is ADMIN
-missing internal permission name
-```
-
-unless explicitly safe and contracted.
-
-Keep client messages generic enough to avoid security leakage.
-
----
-
-# 106. Logging
-
-Authorization-denial logs may include:
-
-```text
-request_id
-local actor ID
-action
-resource type
-outcome
-```
-
-where useful.
-
-Do not log:
-
-```text
-token
-password
-private resource payload
-```
-
-Avoid excessive logging of ordinary 403/404 probes unless monitoring requires it.
-
----
-
-# 107. Auditing
-
-Authorization denial is not the same as permanent audit.
-
-Privileged successful actions may later require audit records.
-
-Do not implement the entire audit subsystem here unless already present.
-
-Carry forward:
-
-```text
-role changes
-staff approval
-inventory adjustments
-order state changes
-```
-
-as audit-sensitive actions.
-
----
-
-# 108. Documentation
-
-Update consolidated docs only where necessary:
-
-```text
-docs/api/api-conventions.md
-docs/domain/business-rules.md
-docs/decisions.md
-docs/api/api-contract.md
-docs/api/api-resources.md
-docs/api/openapi.yaml
-AGENTS.md
-```
-
-Do not create excessive phase-specific policy documents.
-
----
-
-# 109. Authorization Matrix
-
-Maintain a concise implementation matrix.
-
-Example structure:
-
-| Resource      | Action           | CUSTOMER | STAFF                        | ADMIN      | Ownership / condition |
-| ------------- | ---------------- | -------- | ---------------------------- | ---------- | --------------------- |
-| Profile       | view/update self | Yes      | Self                         | Self       | current actor only    |
-| Order         | view             | Own      | permission                   | permission | customer ownership    |
-| Order         | cancel           | Own      | No unless explicitly defined | explicit   | domain checks later   |
-| Order         | accept           | No       | permission                   | permission | operational           |
-| Order         | ship             | No       | permission                   | permission | operational           |
-| Inventory     | adjust           | No       | permission                   | permission | operational           |
-| Staff account | approve          | No       | No                           | permission | Admin only            |
-
-Use actual frozen operations and permissions.
-
-Do not use this example to invent unsupported operations.
-
----
-
-# 110. Authorization Matrix Is Authoritative Aid
-
-The matrix helps implementation review.
-
-Actual enforcement must remain in:
-
-```text
-Laravel Policies / Gates
-```
-
-Do not perform authorization by reading configuration tables dynamically unless already designed.
-
----
-
-# 111. Policy Naming Consistency
-
-Match policy action names to explicit API operations where practical.
-
-Avoid ambiguity between:
-
-```text
-update
-manage
-modify
-operate
-```
-
-Use action-oriented names.
-
----
-
-# 112. Route Middleware
-
-Use the configured Clerk bearer middleware:
-
-```text
-clerk.auth
-```
-
-for identity and standard authorization middleware. It resolves the verified
-Clerk bearer credential before role, permission, ownership, and state checks.
-
-Do not encode complex policy logic directly in route middleware strings if policies are cleaner.
-
----
-
-# 113. Permission Middleware
-
-Package-provided permission middleware may be used for coarse route gates where suitable.
-
-Still use policies for:
-
-```text
-ownership
-resource-specific authorization
-state-aware conditions
-```
-
-Do not rely only on route permission middleware for private resources.
-
----
-
-# 114. Query Scope vs Policy
-
-Use query scoping to avoid loading inaccessible rows.
-
-Use Policies to authorize actions.
-
-These complement each other.
-
-Do not treat one as complete replacement for the other.
-
----
-
-# 115. Admin Listing Endpoints
-
-Where Admin/Staff list operational resources:
-
-scope data to the permitted operational dataset.
-
-Do not reuse Customer ownership scopes.
-
-Exact operational listing filters follow resource contracts.
-
----
-
-# 116. Customer Listing Endpoints
-
-Always constrain to authenticated Customer's own resources.
-
-Do not accept arbitrary owner filters.
-
----
-
-# 117. Resource Serialization
-
-Authorization must happen before serialization.
-
-Do not serialize private fields and then remove them after access denial.
-
----
-
-# 118. Field-Level Authorization
-
-Where Staff may view only operational fields, use explicit Resources/serializers.
-
-Do not return full Customer/User models merely because Staff can process an Order.
-
-Detailed field-level restrictions should follow existing resource contract.
-
----
-
-# 119. Sensitive Customer Fields
-
-Operational Staff visibility must not include:
-
-```text
-Clerk ID
-security attributes
-password fields
-internal account state beyond need
-permission internals
-```
-
-unless explicitly required.
-
----
-
-# 120. Authorization and Transactions
-
-Authorization generally happens before opening expensive mutation transactions.
-
-Domain state must still be revalidated within transaction where race-sensitive.
-
-Do not hold database locks while performing unnecessary authorization checks.
-
----
-
-# 121. TOCTOU Awareness
-
-For authorization based on mutable resource state:
-
-re-check relevant domain state during transaction where required.
-
-Do not assume policy evaluation permanently freezes resource state.
-
-Keep policy coarse and domain transaction authoritative.
-
----
-
-# 122. Account State
-
-If local account state exists:
-
-authorization layer must respect it according to prior phases.
-
-Valid Clerk authentication does not override:
-
-```text
-suspended
-inactive
-pending
-```
-
-application state.
-
-Do not encode these as roles.
-
----
-
-# 123. Staff State
-
-STAFF with suspended/inactive operational state must not perform Staff operations even if role and permission rows remain.
-
-Integrate the approved staff-state check in the authorization boundary.
-
----
-
-# 124. Admin State
-
-Likewise, disabled Admin must not retain operational privileges merely because role remains ADMIN.
-
----
-
-# 125. No Frontend Assumptions
-
-Do not assume future UI will prevent invalid requests.
-
-Backend must be secure against direct API calls.
-
----
-
-# 126. No Security by URL
-
-Do not assume:
-
-```text
-/admin/*
-```
-
-or:
-
-```text
-/staff/*
-```
-
-path itself grants authority.
-
-Every protected endpoint still authenticates and authorizes the actor.
-
----
-
-# 127. No Security by HTTP Method Alone
-
-`POST` or `DELETE` does not imply privilege.
-
-Policy must authorize the specific operation.
-
----
-
-# 128. No Implicit Admin Through Seeder
-
-Ensure test/production seeds do not accidentally assign Admin broadly.
-
-Permissions and roles must be deterministic.
-
----
-
-# 129. Schema Changes
-
-Expected:
-
-```text
-NONE
-```
-
-unless a missing RBAC permission table/setup from earlier phases is genuinely discovered.
-
-Do not add authorization-specific resource owner columns if ownership already exists.
-
----
-
-# 130. Frontend Changes
-
-Expected:
-
-```text
-NONE
-```
-
-Do not modify Groups L–Q frontend code.
-
----
-
-# 131. Commands
+# 133. Commands
 
 Run:
 
@@ -2149,56 +2144,49 @@ vendor/bin/phpstan analyse
 composer audit
 ```
 
-If permission seed definitions changed:
+If route/cache configuration requires it, run relevant Laravel configuration/route inspection commands.
 
-```bash
-php artisan migrate:fresh --seed
-```
-
-must also pass.
-
-Use existing repository scripts where available.
+No schema migration should be necessary.
 
 ---
 
-# 132. Files Changed Report
+# 134. Files Changed Report
 
 At completion report:
 
-## Policies added/updated
+## Docs reviewed
 
-List exact policy classes.
+List exact latest authoritative files read.
 
-## Gates
+## Limiters
 
-List any global/non-resource gates.
+List:
 
-## Permissions
+```text
+name
+endpoint category
+identity key
+configured threshold
+```
 
-List only new/changed canonical permissions.
+## Existing limiter changes
 
-## Ownership rules
+Explain whether the Group B global API limiter was retained, relaxed, replaced, or scoped.
 
-Summarize Customer-owned resources.
+## Retry-After
 
-## Masking
+Confirm 429 behavior.
 
-List resources using 404 ownership masking.
+## Tests
 
-## Staff boundary
-
-Confirm operational access does not grant customer-account control.
-
-## Admin boundary
-
-Confirm Admin still uses explicit authorization.
+List all added/updated tests.
 
 ## Schema
 
-Expected:
+Must normally state:
 
 ```text
-none
+NONE
 ```
 
 ## Frontend
@@ -2209,92 +2197,106 @@ Must state:
 NONE
 ```
 
-## Tests
+## Dependencies
 
-List policy/feature tests and results.
+Expected:
+
+```text
+NONE
+```
+
+unless justified.
 
 ---
 
-# 133. Definition of Done
+# 135. Definition of Done
 
-Phase 4.10 is complete when:
+Phase 4.11 is complete when:
 
-* authenticated Laravel User is the authorization actor;
-* CUSTOMER / STAFF / ADMIN roles are integrated with policies;
-* role alone never grants resource access;
-* explicit permissions are used for operational/admin actions;
-* Customer private resources are ownership-scoped;
-* private cross-customer resource access is masked where required;
-* Staff operational access is explicit;
-* Staff cannot control Customer accounts;
-* Staff approval remains Admin-only;
-* Admin does not universally bypass domain/policy rules;
-* Clerk metadata has zero authorization authority;
-* email/phone are never ownership proof;
-* ownership always comes from server relationships;
-* client-supplied owner/actor IDs cannot grant access;
-* policies stay separate from domain transition logic;
-* unauthenticated requests produce 401;
-* forbidden authorized users produce 403 where appropriate;
-* private ownership failures produce 404 where required;
-* public catalog remains public;
-* authorization-aware query scoping is used where appropriate;
-* no frontend authorization implementation is added;
-* no duplicate authorization framework is created;
-* policy tests pass;
-* API authorization tests pass;
+* current `AGENTS.md` and API/decision docs were reviewed first;
+* any existing documented thresholds were preserved;
+* Clerk remains responsible for credential-flow throttling;
+* Laravel rate limits only application API abuse;
+* limiter groups are small and understandable;
+* authenticated traffic is primarily user-keyed;
+* anonymous abuse-prone traffic is appropriately IP-keyed;
+* shared-NAT authenticated users do not share normal user quotas;
+* public catalog limits are generous;
+* authenticated reads are generous;
+* writes have moderate limits;
+* checkout has reasonable anti-abuse protection;
+* anonymous requests/enquiries have spam protection;
+* Staff/Admin operational workflows tolerate normal bursts;
+* no role receives unlimited bypass;
+* no permanent bans or aggressive escalating lockouts were introduced;
+* existing global and route limiters do not accidentally compound into overly strict behavior;
+* all 429 responses include `Retry-After`;
+* 429 responses follow the canonical error envelope;
+* 401/403/404 semantics remain intact;
+* rate limiting does not replace idempotency, authorization, or validation;
+* no frontend changes were made;
+* no schema changes were needed;
+* no unnecessary dependency was introduced;
+* normal-use tests pass;
+* rate-limit tests pass;
 * full backend tests pass;
 * Pint passes;
 * PHPStan passes;
-* Composer audit passes;
-* documentation/OpenAPI match the implemented authorization model.
+* Composer audit passes.
 
 ---
 
-# 134. Out of Scope
+# 136. Out of Scope
 
 Do not implement:
 
-* frontend guards;
-* role-based navigation;
-* Staff/Admin UI;
-* new roles;
-* Clerk authorization metadata;
-* generic policy engine;
-* full audit subsystem;
-* new business workflows;
-* payment-provider authorization;
-* new customer-management APIs;
-* speculative operational scopes;
-* wildcard Super Admin behavior.
+* CAPTCHA;
+* permanent IP bans;
+* user bans;
+* account lockouts;
+* ML/risk scoring;
+* device fingerprinting;
+* WAF rules;
+* Cloudflare configuration;
+* frontend 429 UI;
+* frontend search debounce;
+* custom JWT login throttling;
+* Clerk credential throttling;
+* webhook throttling strategy;
+* payment-provider throttling;
+* full production monitoring.
 
 ---
 
-# 135. STOP Condition
+# 137. STOP Condition
 
-STOP when the backend consistently answers:
+STOP when Laravel has **moderate, endpoint-appropriate abuse protection** without creating friction for normal CUSTOMER / STAFF / ADMIN usage.
+
+The desired result is:
 
 ```text
-Who is the actor?
-→ authenticated local Laravel User
+normal user
+→ does not notice rate limiting
 
-What kind of actor?
-→ CUSTOMER / STAFF / ADMIN
+buggy or abusive client
+→ temporarily receives 429 + Retry-After
 
-Does the actor have the required capability?
-→ Laravel permission
+credential attacker
+→ handled primarily by Clerk
 
-Does this actor own / have operational authority over this resource?
-→ Policy
+high-volume network attack
+→ handled later by edge/WAF infrastructure
 
-Is the business operation valid in the resource's current state?
-→ Domain layer
+authorized business operation
+→ still governed by Laravel policies/domain rules
 ```
-
-with secure 401 / 403 / 404 behavior and all authorization tests passing.
 
 Do not continue automatically.
 
 The next backend roadmap phase is:
 
-**Phase 4.11 — Authentication / Authorization Rate Limiting**
+**Phase 4.12 — Authentication / Authorization Test Completion and Group D Exit Review**
+
+DO NOT COMMIT, STAGE OR PUSH.
+
+The project owner handles Git operations.
