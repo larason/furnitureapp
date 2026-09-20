@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductStock;
 use App\Models\ProductVariant;
+use App\Support\ProductIdentifier;
 use App\Support\VariantIdentifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -290,5 +291,162 @@ class ProductReadApiTest extends TestCase
         $this->getJson('/api/v1/products?product_type=IN_STOCK')
             ->assertUnprocessable()
             ->assertJsonStructure(['errors', 'meta' => ['request_id']]);
+    }
+
+    public function test_default_pagination_uses_twenty_items_and_filtered_totals(): void
+    {
+        $category = Category::factory()->create();
+        Product::factory()->count(21)->create(['category_id' => $category->id]);
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonCount(20, 'data')
+            ->assertJsonPath('meta.pagination.current_page', 1)
+            ->assertJsonPath('meta.pagination.per_page', 20)
+            ->assertJsonPath('meta.pagination.total', 21)
+            ->assertJsonPath('meta.pagination.last_page', 2)
+            ->assertJsonPath('meta.pagination.has_next', true)
+            ->assertJsonPath('meta.pagination.has_previous', false);
+    }
+
+    public function test_custom_pages_and_empty_beyond_last_page_preserve_pagination_contract(): void
+    {
+        $category = Category::factory()->create();
+        Product::factory()->count(5)->create(['category_id' => $category->id]);
+
+        $this->getJson('/api/v1/products?per_page=2&page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.pagination.current_page', 2)
+            ->assertJsonPath('meta.pagination.per_page', 2)
+            ->assertJsonPath('meta.pagination.total', 5)
+            ->assertJsonPath('meta.pagination.last_page', 3)
+            ->assertJsonPath('meta.pagination.has_next', true)
+            ->assertJsonPath('meta.pagination.has_previous', true);
+
+        $this->getJson('/api/v1/products?per_page=2&page=9')
+            ->assertOk()
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.pagination.current_page', 3)
+            ->assertJsonPath('meta.pagination.last_page', 3)
+            ->assertJsonPath('meta.pagination.has_next', false)
+            ->assertJsonPath('meta.pagination.has_previous', true);
+    }
+
+    public function test_empty_catalog_has_one_empty_page(): void
+    {
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.pagination.current_page', 1)
+            ->assertJsonPath('meta.pagination.per_page', 20)
+            ->assertJsonPath('meta.pagination.total', 0)
+            ->assertJsonPath('meta.pagination.last_page', 1)
+            ->assertJsonPath('meta.pagination.has_next', false)
+            ->assertJsonPath('meta.pagination.has_previous', false);
+    }
+
+    public function test_pagination_and_sort_validation_is_strict(): void
+    {
+        foreach (['page=0', 'page=-1', 'page=1.5', 'page=abc', 'per_page=0', 'per_page=101', 'per_page=-1', 'per_page=abc'] as $query) {
+            $this->getJson('/api/v1/products?'.$query)->assertUnprocessable();
+        }
+
+        foreach (['sku', 'id', 'cost_price', 'inventory', 'deleted_at', 'random'] as $sort) {
+            $this->getJson('/api/v1/products?sort='.$sort)->assertUnprocessable();
+        }
+
+        foreach (['ascending', 'descending', '1', '-1', 'random'] as $direction) {
+            $this->getJson('/api/v1/products?sort_direction='.$direction)->assertUnprocessable();
+        }
+    }
+
+    public function test_sorting_uses_defaults_explicit_directions_and_id_tie_breaking(): void
+    {
+        $category = Category::factory()->create();
+        $first = Product::factory()->create(['category_id' => $category->id, 'name' => 'Same Name', 'slug' => 'same-name-first', 'created_at' => '2026-01-01 00:00:00']);
+        $second = Product::factory()->create(['category_id' => $category->id, 'name' => 'Same Name', 'slug' => 'same-name-second', 'created_at' => '2026-01-01 00:00:00']);
+        $newest = Product::factory()->create(['category_id' => $category->id, 'name' => 'Newest', 'created_at' => '2026-02-01 00:00:00']);
+        $oldest = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oldest', 'created_at' => '2025-01-01 00:00:00']);
+
+        $this->getJson('/api/v1/products')
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($newest))
+            ->assertJsonPath('data.1.id', ProductIdentifier::encode($first));
+
+        $this->getJson('/api/v1/products?sort=created_at&sort_direction=asc')
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($oldest));
+
+        $this->getJson('/api/v1/products?sort=name')
+            ->assertJsonPath('data.0.name', 'Newest')
+            ->assertJsonPath('data.1.name', 'Oldest')
+            ->assertJsonPath('data.2.id', ProductIdentifier::encode($first))
+            ->assertJsonPath('data.3.id', ProductIdentifier::encode($second));
+
+        $this->getJson('/api/v1/products?sort=name&sort_direction=desc')
+            ->assertJsonPath('data.0.name', 'Same Name')
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($first))
+            ->assertJsonPath('data.1.id', ProductIdentifier::encode($second));
+    }
+
+    public function test_price_sorting_uses_the_same_derived_active_variant_price_as_the_response(): void
+    {
+        $category = Category::factory()->create();
+        $expensive = Product::factory()->create(['category_id' => $category->id, 'slug' => 'expensive-price']);
+        $cheap = Product::factory()->create(['category_id' => $category->id, 'slug' => 'cheap-price']);
+        ProductVariant::factory()->create(['product_id' => $expensive->id, 'price_amount' => 300]);
+        ProductVariant::factory()->create(['product_id' => $expensive->id, 'price_amount' => 200]);
+        ProductVariant::factory()->create(['product_id' => $cheap->id, 'price_amount' => 100]);
+
+        $this->getJson('/api/v1/products?sort=price&sort_direction=desc')
+            ->assertJsonPath('data.0.slug', 'expensive-price')
+            ->assertJsonPath('data.0.price.amount', 200)
+            ->assertJsonPath('data.1.slug', 'cheap-price')
+            ->assertJsonPath('data.1.price.amount', 100);
+    }
+
+    public function test_search_and_filters_are_applied_before_pagination_and_sorting(): void
+    {
+        $category = Category::factory()->create(['slug' => 'phase-56-dining']);
+        $matching = Product::factory()->count(3)->create(['category_id' => $category->id]);
+        foreach ($matching as $product) {
+            $product->update(['name' => 'Oak Dining '.$product->id]);
+            ProductVariant::factory()->create(['product_id' => $product->id, 'price_amount' => 100 + $product->id]);
+        }
+        foreach (range(1, 4) as $index) {
+            Product::factory()->create(['category_id' => $category->id, 'name' => 'Pine Dining', 'slug' => 'pine-dining-'.$index]);
+        }
+
+        $this->getJson('/api/v1/products?search=oak&category=phase-56-dining&sort=name&per_page=2&page=2')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.pagination.total', 3)
+            ->assertJsonPath('meta.pagination.last_page', 2)
+            ->assertJsonPath('meta.pagination.has_previous', true)
+            ->assertJsonPath('meta.pagination.has_next', false);
+    }
+
+    public function test_duplicate_variant_matches_count_once_across_pages(): void
+    {
+        $category = Category::factory()->create();
+        $products = collect(range(1, 3))->map(fn (int $index) => Product::factory()->create([
+            'category_id' => $category->id,
+            'name' => 'Oak Collection',
+            'slug' => 'oak-collection-'.$index,
+        ]));
+        foreach ($products as $product) {
+            ProductVariant::factory()->create(['product_id' => $product->id, 'sku' => 'OAK-'.$product->id.'-A']);
+            ProductVariant::factory()->create(['product_id' => $product->id, 'sku' => 'OAK-'.$product->id.'-B']);
+        }
+
+        $firstPage = $this->getJson('/api/v1/products?search=OAK&per_page=2&page=1')->assertOk();
+        $secondPage = $this->getJson('/api/v1/products?search=OAK&per_page=2&page=2')->assertOk();
+
+        $this->assertSame(3, $firstPage->json('meta.pagination.total'));
+        $this->assertCount(2, $firstPage->json('data'));
+        $this->assertCount(1, $secondPage->json('data'));
+        $this->assertEmpty(array_intersect(
+            array_column($firstPage->json('data'), 'id'),
+            array_column($secondPage->json('data'), 'id'),
+        ));
     }
 }

@@ -23,7 +23,7 @@ class ProductController extends V1Controller
         $perPage = (int) ($validated['per_page'] ?? 20);
         $paginator = $catalog->build($validated)->paginate($perPage, ['*'], 'page', $page);
         $lastPage = max(1, $paginator->lastPage());
-        $currentPage = $paginator->currentPage();
+        $currentPage = min($paginator->currentPage(), $lastPage);
 
         return response()->json([
             'data' => ProductSummaryResource::collection($paginator->getCollection())->resolve(),

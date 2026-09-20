@@ -1,2208 +1,2007 @@
-# Phase 5.5 — Product Search / Filter API
+# Phase 5.6 — Pagination / Sorting
 
 ## Purpose
 
-Implement the complete search/filter/sort behavior for:
+Complete and harden the pagination and sorting behavior for the public catalog:
 
 ```text
 CAT-001
 GET /api/v1/products
 ```
 
-using:
+using the conventional V1 e-commerce model already frozen in the API contract:
 
 ```text
-Laravel Query Builder / Eloquent
+page-based pagination
 +
-native MySQL/MariaDB FULLTEXT
+configurable page size
 +
-existing Group C relationships
+total result count
++
+allow-listed sorting
++
+deterministic secondary ordering
 ```
 
-Do not introduce:
+This phase must integrate with the existing Phase 5.5 pipeline:
 
 ```text
-Algolia
-Meilisearch
-Typesense
-Elasticsearch
-OpenSearch
-Laravel Scout
-external search services
+search
+→ filter
+→ sort
+→ deterministic tie-breaker
+→ paginate
 ```
 
-for V1.
-
-The public API contract remains unchanged.
+Do not introduce cursor pagination, infinite-scroll-specific API contracts, or a second collection endpoint.
 
 ---
 
-# 1. Critical Architecture Decision
+# 1. Preserve Existing V1 Contract
 
-Use:
-
-```text
-MySQL/MariaDB FULLTEXT
-```
-
-for Product text search over:
+The authoritative request parameters remain:
 
 ```text
-products.name
-products.description
+page
+per_page
+sort
+sort_direction
 ```
 
-Use ordinary Laravel relational querying for:
-
-```text
-variant SKU
-controlled variant attributes
-category
-price
-availability
-product_type
-sorting
-pagination
-```
-
-Do not create a second search index service.
-
----
-
-# 2. Preserve Existing Group C Model
-
-Do not denormalize searchable data into Product merely for convenience.
-
-Continue to use:
-
-```text
-Product
-→ ProductVariant
-→ ProductStock
-→ Category
-```
-
-according to the existing relationships.
-
-Specifically do not add:
-
-```text
-products.sku
-products.variant_attributes
-products.stock
-products.price
-products.search_blob
-```
-
-just to make search easier.
-
----
-
-# 3. Read Current Authoritative Docs First
-
-Before implementation, read:
-
-```text
-AGENTS.md
-docs/VISION.md
-docs/api/api-contract.md
-docs/api/api-resources.md
-docs/api/api-conventions.md
-docs/api/openapi.yaml
-docs/domain/business-rules.md
-docs/decisions.md
-phases/group-C-phases.md
-```
-
-Also inspect:
-
-```text
-Phase 5.2 Product Read API
-Phase 5.3 Product Detail API
-Phase 5.4 Variant API
-```
-
-and current implementations of:
-
-```text
-Product
-ProductVariant
-ProductStock
-Category
-ProductCatalogQuery
-```
-
-or their actual equivalents.
-
----
-
-# 4. Endpoint
-
-Do not add a new search endpoint.
-
-Search remains:
-
-```http
-GET /api/v1/products?search=...
-```
-
-Do not create:
-
-```text
-/search
-/search/products
-/products/search
-```
-
-CAT-001 is the sole public product discovery pipeline.
-
----
-
-# 5. Public Access
-
-Search/filter remains:
-
-```text
-PUBLIC_READ
-```
-
-No authentication.
-
-No Clerk.
-
-No role.
-
-No user-specific results.
-
----
-
-# 6. Frozen Query Parameters
-
-Support only the approved query parameters:
+combined with the already-supported:
 
 ```text
 search
 category
-product_type
 availability
 min_price
 max_price
-sort
-sort_direction
-page
-per_page
 ```
+
+Do not rename them.
 
 Do not introduce aliases such as:
 
 ```text
-q
-query
 pageSize
+page_number
+limit
+offset
+order
+orderBy
 sortBy
-minPrice
-maxPrice
+direction
 ```
 
 ---
 
-# 7. Query Pipeline
+# 2. Standard Pagination Strategy
 
-The implementation order must remain:
+Use conventional offset/page pagination through Laravel's normal paginator.
+
+Preferred implementation:
 
 ```text
-1. search
-2. filters
-3. sort
-4. id ASC tie-breaker
-5. pagination
+Laravel paginate()
 ```
 
-Do not change this order casually.
+or the project's existing equivalent.
+
+Do not manually implement:
+
+```text
+OFFSET calculations
+total-count arithmetic
+last-page arithmetic
+```
+
+unless there is a concrete framework limitation.
 
 ---
 
-# 8. Search Input
-
-`search` is:
-
-```text
-optional
-string
-trimmed
-max 100 chars
-case-insensitive
-```
-
-An empty trimmed string should behave as:
-
-```text
-search omitted
-```
-
-Do not execute FULLTEXT for an empty search.
-
----
-
-# 9. Primary Search Fields
-
-Native FULLTEXT applies to:
-
-```text
-products.name
-products.description
-```
-
-Create a composite FULLTEXT index if one does not already exist.
-
-Example conceptually:
-
-```php
-$table->fullText([
-    'name',
-    'description',
-]);
-```
-
-Use the actual current migration style.
-
----
-
-# 10. New Migration Is Acceptable Here
-
-Unlike Phases 5.2–5.4, Phase 5.5 may legitimately require a schema migration for:
-
-```text
-FULLTEXT(name, description)
-```
-
-This is an indexing change, not a domain-model redesign.
-
-Do not edit historical Product migrations.
-
-Create a new migration.
-
----
-
-# 11. MySQL / MariaDB Compatibility
-
-The production search implementation must work with the repository's supported MySQL/MariaDB environment.
-
-Do not write search SQL specific to a database version without checking compatibility.
-
-Prefer Laravel:
-
-```php
-whereFullText(...)
-```
-
-where it produces correct behavior for the supported driver.
-
----
-
-# 12. Do Not Use Raw MATCH SQL Unless Necessary
-
-Prefer:
-
-```text
-whereFullText
-```
-
-or a small controlled query abstraction.
-
-Only use raw SQL if Laravel cannot express a required FULLTEXT behavior.
-
-If raw SQL is used:
-
-```text
-bind all values
-never interpolate user input
-```
-
----
-
-# 13. Search Semantics
-
-Product text matching should search:
-
-```text
-name
-description
-```
-
-through FULLTEXT.
-
-This is the primary linguistic search path.
-
----
-
-# 14. Variant SKU Search
-
-SKU lives on:
-
-```text
-product_variants.sku
-```
-
-Do not include SKU in the Product FULLTEXT index.
-
-Use relationship-aware matching.
-
-Preferred semantics:
-
-```text
-exact SKU match
-OR
-prefix SKU match
-```
-
-Examples:
-
-```text
-SOFA-RED-3S
-SOFA-RED
-SOFA
-```
-
-Do not use:
-
-```text
-LIKE '%term%'
-```
-
-as the primary SKU strategy.
-
----
-
-# 15. SKU Index
-
-Reuse the existing global unique SKU index.
-
-Do not add duplicate SKU indexing unless query analysis proves it necessary.
-
----
-
-# 16. Variant Attribute Search
-
-The frozen CAT-001 contract references Variant attributes as searchable.
-
-Do not blindly search every arbitrary JSON value.
-
-Keep V1 bounded.
-
----
-
-# 17. Controlled Attribute Keys
-
-Inspect the actual Variant data currently used.
-
-Only search supported customer-meaningful keys, for example:
-
-```text
-color
-fabric
-finish
-size
-configuration
-leg_finish
-```
-
-Use the real keys present in the project.
-
-Do not invent new attribute vocabulary.
-
----
-
-# 18. No Generic JSON Search Engine
-
-Do not build:
-
-```text
-recursive JSON flattening
-dynamic path search
-EAV conversion
-search DSL
-```
-
-for V1.
-
-Use a narrow explicit allow-list.
-
----
-
-# 19. Search Combination Semantics
-
-A Product should match `search` if any approved search source matches:
-
-```text
-Product name/description FULLTEXT
-OR
-Variant SKU
-OR
-supported Variant attribute value
-```
-
-Keep this grouped correctly in SQL.
-
-Do not accidentally turn later filters into OR conditions.
-
----
-
-# 20. Search + Filter Composition
-
-Example:
-
-```text
-search = "oak"
-category = dining-room
-min_price = ...
-```
-
-must mean:
-
-```text
-matches "oak"
-AND
-belongs to category
-AND
-within price range
-```
-
-not:
-
-```text
-search OR category OR price
-```
-
----
-
-# 21. Use One Query Pipeline
-
-Do not:
-
-```text
-run text search
-collect IDs in PHP
-then run filters in memory
-```
-
-Build one database query where practical.
-
-This keeps:
-
-```text
-filtering
-sorting
-pagination
-```
-
-correct and scalable.
-
----
-
-# 22. Avoid Load-All Search
-
-Do not:
-
-```text
-Product::all()
-```
-
-then search/filter in PHP.
-
-Search and filters belong in SQL.
-
----
-
-# 23. Category Filter
-
-Use:
-
-```text
-?category={slug|id}
-```
-
-according to the frozen CAT-001 contract.
-
-Reuse Phase 5.1 category resolution.
+# 3. Do Not Introduce Cursor Pagination
 
 Do not add:
 
 ```text
-/categories/{category}/products
-```
-
----
-
-# 24. Category Filter Validation
-
-Unknown/invalid Category must follow the current frozen API behavior.
-
-Do not silently reinterpret invalid identifiers.
-
----
-
-# 25. Category Hierarchy
-
-Do not invent descendant-category inclusion semantics in Phase 5.5.
-
-Use the current authoritative category-filter behavior.
-
-If still unresolved:
-
-document the ambiguity rather than silently implementing recursion.
-
----
-
-# 26. Product Type Filter
-
-Approved values:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-only.
-
-Do not accept arbitrary values.
-
----
-
-# 27. Phase 5.7 Dependency
-
-If Product Type is still not physically present until Phase 5.7:
-
-do not fake this filter.
-
-Keep the filter path clearly deferred/inactive until Phase 5.7 supplies authoritative data.
-
-Do not infer:
-
-```text
-inventory > 0 = IN_STOCK
-```
-
----
-
-# 28. Availability Filter
-
-Supported public values:
-
-```text
-available
-unavailable
-```
-
-only.
-
-Do not accept:
-
-```text
-IN_STOCK
-LOW_STOCK
-MADE_TO_ORDER
-```
-
-as `availability` filters.
-
----
-
-# 29. Stock Indicator Is Not Filterable
-
-Do not add:
-
-```text
-?stock_indicator=
-```
-
-The frozen contract explicitly keeps it display-only.
-
----
-
-# 30. Availability Derivation
-
-Reuse the same public availability resolver used by:
-
-```text
-CAT-001 summaries
-CAT-002
-CAT-005
-CAT-006
-```
-
-Do not implement separate search-only inventory logic.
-
----
-
-# 31. Price Filter
-
-Use:
-
-```text
-min_price
-max_price
-```
-
-as integer minor units.
-
-No floats.
-
----
-
-# 32. Price Source
-
-Product-level public price must use the same derived pricing rule established in Phase 5.2.
-
-Do not filter using a different price calculation than the one serialized.
-
----
-
-# 33. Price Filter Consistency
-
-If a Product serializes:
-
-```text
-price = X
-```
-
-then:
-
-```text
-min_price <= X <= max_price
-```
-
-must govern inclusion.
-
-Do not filter against cost price or arbitrary Variant price if that differs from the public Product price rule.
-
----
-
-# 34. `min_price`
-
-Validation:
-
-```text
-integer or integer numeric string
->= 0
-```
-
----
-
-# 35. `max_price`
-
-Validation:
-
-```text
-integer or integer numeric string
->= 0
-```
-
----
-
-# 36. Invalid Price Range
-
-If:
-
-```text
-min_price > max_price
-```
-
-return:
-
-```text
-422 INVALID_VALUE
-```
-
----
-
-# 37. Sorting
-
-Only allow:
-
-```text
-created_at
-price
-name
-```
-
-Do not pass arbitrary user input into `orderBy`.
-
----
-
-# 38. Sort Direction
-
-Only:
-
-```text
-asc
-desc
-```
-
-Use the current contract defaults:
-
-```text
-name → asc
-price → asc
-created_at → desc
-```
-
-when sort direction is omitted.
-
----
-
-# 39. Default Sorting
-
-When `sort` is omitted:
-
-```text
-created_at DESC
-id ASC
-```
-
-remains the catalog default.
-
----
-
-# 40. Search Relevance
-
-Do not silently replace the frozen sort contract with relevance ranking.
-
-MySQL FULLTEXT may calculate relevance internally, but:
-
-```text
-?sort=
-```
-
-must still obey the V1 allow-list.
-
----
-
-# 41. No `sort=relevance` Yet
-
-Do not add:
-
-```text
-?sort=relevance
-```
-
-unless an explicit API-contract decision is approved.
-
-This phase should not expand the frozen enum.
-
----
-
-# 42. Search Without Explicit Sort
-
-Use the existing default catalog sort unless the docs explicitly approve relevance-first search behavior.
-
-Do not hide a contract change inside SQL.
-
----
-
-# 43. Deterministic Tie-Breaker
-
-Always append:
-
-```text
-id ASC
-```
-
-when the primary sort is non-unique.
-
-This applies to:
-
-```text
-created_at
-name
-price
-```
-
----
-
-# 44. Pagination
-
-Use:
-
-```text
-page
-per_page
-```
-
-with current V1 rules.
-
-Current:
-
-```text
-page >= 1
-per_page 1..100
-default 20
-```
-
----
-
-# 45. Pagination After Search / Filter / Sort
-
-Do not paginate first.
-
-Correct order:
-
-```text
-search
-→ filters
-→ sort
-→ tie-breaker
-→ paginate
-```
-
----
-
-# 46. Stable Pagination
-
-Search/filter results must not drift unnecessarily between pages when DB state is unchanged.
-
-Use deterministic ordering.
-
----
-
-# 47. Duplicate Product Prevention
-
-Joining/searching Variant rows may duplicate Product rows.
-
-Prevent duplicate Product summaries.
-
-Do not allow:
-
-```text
-same Product appears multiple times
-because multiple Variants match
-```
-
-Use appropriate:
-
-```text
-EXISTS
-whereHas
-subqueries
-distinct where justified
-```
-
----
-
-# 48. Prefer `EXISTS` / Relationship Filters
-
-For Variant SKU/attributes, prefer:
-
-```text
-whereHas
-EXISTS
-```
-
-semantics over broad joins where this avoids duplicate Product rows.
-
----
-
-# 49. Search Safety
-
-All search values are untrusted.
-
-Never concatenate search strings into SQL.
-
-Use bound query parameters.
-
----
-
-# 50. Wildcards
-
-If prefix SKU matching uses `LIKE`:
-
-escape user wildcard characters appropriately if required by current query helper.
-
-Do not allow user input to alter pattern semantics unintentionally.
-
----
-
-# 51. Search Term Normalization
-
-Keep normalization minimal:
-
-```text
-trim
-case behavior handled by DB/collation
-```
-
-Do not implement:
-
-```text
-stemming service
-synonym engine
-phonetic search
-typo correction
+cursor
+after
+before
+next_cursor
+previous_cursor
 ```
 
 in V1.
 
----
-
-# 52. Stop Words / FULLTEXT Behavior
-
-Native MySQL FULLTEXT has engine-specific behavior around:
+Cursor pagination may be useful for high-volume feeds, but CAT-001 already requires:
 
 ```text
-stop words
-minimum token lengths
-natural-language ranking
-```
-
-Do not attempt to recreate or override all of it in application code.
-
-Document this as a V1 characteristic.
-
----
-
-# 53. No Custom Search Parser
-
-Do not expose MySQL Boolean-mode syntax directly to clients.
-
-Treat `search` as plain user text.
-
-Do not allow customers to submit:
-
-```text
-+oak -chair >table
-```
-
-as a public search DSL unless explicitly approved.
-
----
-
-# 54. Natural-Language FULLTEXT
-
-Prefer standard natural-language FULLTEXT behavior for V1 unless the current DB/query implementation clearly requires another mode.
-
-Keep semantics intuitive.
-
----
-
-# 55. No External Search Dependency
-
-Do not add:
-
-```text
-scout
-meilisearch
-algolia
-typesense
-elastic
-```
-
-packages/configuration.
-
----
-
-# 56. No Queue Synchronization
-
-Because MySQL is the search source:
-
-do not create:
-
-```text
-search indexing jobs
-index sync events
-reindex commands
-search replicas
-```
-
----
-
-# 57. Source of Truth
-
-Search sees current committed DB state.
-
-There is no eventually consistent external index.
-
----
-
-# 58. Public Visibility First
-
-Search results must still obey public Product visibility.
-
-Search must never surface:
-
-```text
-inactive
-soft-deleted
-future unpublished
-```
-
-Products.
-
----
-
-# 59. Search Cannot Bypass Visibility
-
-A direct FULLTEXT match on a hidden Product must still remain hidden.
-
-Public scope and search scope must compose.
-
----
-
-# 60. Phase 5.7 Publication Dependency
-
-When Phase 5.7 adds:
-
-```text
-is_published
-```
-
-public search must automatically restrict to published Products through the shared public scope.
-
-Do not create a second search-specific publication condition.
-
----
-
-# 61. Internal Fields Must Not Affect Public Search Improperly
-
-Do not search:
-
-```text
-cost_price
-internal stock notes
-warehouse location
-admin notes
-deleted records
-```
-
----
-
-# 62. SKU Search Is Acceptable Publicly
-
-SKU is already part of the public Variant representation.
-
-Searching SKU is consistent with the public contract.
-
----
-
-# 63. Variant Attributes Privacy
-
-Only search Variant attribute keys intended for customer-facing catalog use.
-
-Do not accidentally make internal attributes searchable if the JSON field later contains operational metadata.
-
----
-
-# 64. Query Abstraction
-
-Use or extend one focused abstraction such as:
-
-```text
-ProductCatalogQuery
-```
-
-Prefer methods conceptually like:
-
-```text
-applySearch()
-applyCategoryFilter()
-applyProductTypeFilter()
-applyAvailabilityFilter()
-applyPriceRange()
-applySort()
-paginate()
-```
-
-Do not put all logic in the controller.
-
----
-
-# 65. Avoid Generic Filter Framework
-
-Do not add an external query-builder/filter package merely for Phase 5.5.
-
-Normal Laravel querying is sufficient.
-
----
-
-# 66. Controller
-
-Controller should remain thin:
-
-```text
-validated query
-→ ProductCatalogQuery
-→ ProductSummaryResource collection
-```
-
-Do not write FULLTEXT SQL directly in controller methods.
-
----
-
-# 67. FormRequest
-
-Use a dedicated query request or existing CAT-001 request validator.
-
-Validate:
-
-```text
-search
-category
-product_type
-availability
-min_price
-max_price
-sort
-sort_direction
-page
+current_page
 per_page
+total
+last_page
+has_next
+has_previous
 ```
 
-before query execution.
+which naturally fits page-based pagination.
 
 ---
 
-# 68. Unknown Query Parameters
+# 4. Why Page Pagination Fits This Store
 
-Follow the repository's current unknown-field/query policy.
+Preserve page pagination because catalog browsing benefits from:
 
-If unknown query parameters are rejected, keep that behavior.
+```text
+page URLs
+total product counts
+jump-to-page behavior
+SEO-compatible query URLs
+back-button restoration
+desktop catalog navigation
+mobile pagination/infinite-scroll adaptation
+```
 
-Do not silently accept unsupported filters.
+The frontend may later visually implement:
+
+```text
+numbered pagination
+Load More
+infinite scrolling
+```
+
+while still consuming the same page-based backend API.
+
+Do not change the backend contract merely because the frontend interaction differs.
 
 ---
 
-# 69. Invalid Search Type
+# 5. Pagination Parameters
+
+`page`:
+
+```text
+optional
+integer
+1-based
+minimum = 1
+default = 1
+```
+
+`per_page`:
+
+```text
+optional
+integer
+minimum = 1
+maximum = 100
+default = 20
+```
+
+Use the exact frozen values.
+
+---
+
+# 6. Strict Validation
+
+Reject invalid input.
 
 Examples:
 
 ```text
-search[]=oak
-search object
+?page=0
+?page=-1
+?page=1.5
+?page=abc
+
+?per_page=0
+?per_page=-20
+?per_page=101
+?per_page=abc
 ```
 
-must fail validation.
+must return the canonical validation error.
 
-Do not cast arbitrary structures to strings.
+Do not silently clamp malformed values unless current API conventions explicitly require it.
 
 ---
 
-# 70. Search Length
+# 7. Avoid Large Page Sizes
 
-Reject search strings beyond:
+Maximum:
 
 ```text
 100
 ```
 
-characters according to the frozen contract.
+is a hard API limit.
 
----
-
-# 71. Empty Search
-
-Input:
+Do not allow:
 
 ```text
-search=
+per_page=500
+per_page=1000
 ```
 
-or whitespace-only:
+for convenience.
+
+This protects:
 
 ```text
-search=   
-```
-
-must behave as no search filter.
-
-Do not issue invalid FULLTEXT SQL.
-
----
-
-# 72. Search + SKU
-
-A term that exactly matches a Variant SKU must return its parent Product.
-
----
-
-# 73. Search + Variant Attributes
-
-A supported Variant attribute match must return the parent Product exactly once.
-
----
-
-# 74. Search + Multiple Matching Variants
-
-If three Variants under one Product match:
-
-```text
-same Product appears once
+DB load
+serialization cost
+network payload
+mobile clients
+shared caching
 ```
 
 ---
 
-# 75. Search + Category
+# 8. Pagination Must Run Last
 
-Test:
+The pipeline is mandatory:
+
+```text
+1. public visibility
+2. search
+3. filters
+4. sort
+5. id tie-breaker
+6. paginate
+```
+
+Never:
+
+```text
+paginate
+→ search/filter in PHP
+```
+
+---
+
+# 9. Filtering Before Count
+
+Pagination totals must describe the **filtered result set**, not the entire Product table.
+
+Example:
 
 ```text
 search=oak
 category=dining-room
 ```
 
-Only Products satisfying both criteria appear.
-
----
-
-# 76. Search + Price
-
-Test combined search with:
+If 17 Products match:
 
 ```text
-min_price
-max_price
+total = 17
 ```
 
-against the public derived Product price.
+not total catalog size.
 
 ---
 
-# 77. Search + Availability
+# 10. No In-Memory Pagination
 
-Test combined search and availability when final availability is authoritative.
+Do not:
 
----
+```php
+Product::all()
+```
 
-# 78. Search + Product Type
+and then call collection pagination helpers.
 
-Test combined Product Type only after Phase 5.7 provides authoritative Product Type.
-
-Until then:
-
-document as deferred.
+Filtering/sorting/pagination belong in SQL.
 
 ---
 
-# 79. MySQL FULLTEXT Index Migration
+# 11. Standard Response Envelope
 
-If FULLTEXT index is newly added:
+CAT-001 must return:
 
-use a new migration with a clear name, such as conceptually:
+```json
+{
+  "data": [],
+  "meta": {
+    "pagination": {
+      "current_page": 1,
+      "per_page": 20,
+      "total": 0,
+      "last_page": 1,
+      "has_next": false,
+      "has_previous": false
+    }
+  }
+}
+```
+
+No Laravel-specific paginator internals should leak.
+
+---
+
+# 12. Exact Metadata Fields
+
+Only expose the approved metadata:
 
 ```text
-add_fulltext_index_to_products_name_description
+current_page
+per_page
+total
+last_page
+has_next
+has_previous
 ```
 
-Follow repository naming conventions.
-
----
-
-# 80. Migration `down()`
-
-The migration must safely remove the FULLTEXT index.
-
-Account for supported MySQL/MariaDB syntax through Laravel schema APIs where possible.
-
----
-
-# 81. SQLite Limitation — Mandatory
-
-SQLite canonical tests must **not** be treated as proof of MySQL FULLTEXT behavior.
-
-This must be explicitly documented.
-
----
-
-# 82. SQLite Canonical Suite
-
-Keep the canonical fast suite running on SQLite where currently configured.
-
-Do not migrate the entire test suite to MySQL just because Phase 5.5 uses FULLTEXT.
-
----
-
-# 83. SQLite Search Fallback
-
-For SQLite test/runtime compatibility, implement the smallest deterministic fallback needed for semantic API tests.
-
-The fallback may use:
+Do not casually add:
 
 ```text
-LIKE
+from
+to
+first_page_url
+last_page_url
+next_page_url
+prev_page_url
+path
+links[]
 ```
 
-for:
-
-```text
-Product name
-Product description
-```
-
-only in the SQLite path.
-
-The SQLite fallback must explicitly escape user-supplied `LIKE` metacharacters
-`%`, `_`, and the escape character itself, and must emit an explicit single-
-character `ESCAPE '\\'` clause. Tests must prove that literal `%`, `_`, and
-backslash searches do not behave as wildcards.
+unless the V1 contract is deliberately changed.
 
 ---
 
-# 84. SQLite Fallback Is Not Production Search
+# 13. No Pagination Links Yet
 
-Document clearly:
+Pagination URLs are intentionally deferred.
+
+Do not return:
 
 ```text
-SQLite fallback exists for test compatibility.
-Production MySQL/MariaDB uses FULLTEXT.
+links.next
+links.previous
 ```
 
-Do not claim equivalent ranking/performance semantics.
+in Phase 5.6.
+
+Clients can construct query requests using the metadata.
 
 ---
 
-# 85. Driver Detection
+# 14. Empty Catalog
 
-If query implementation branches by driver:
+For zero results:
 
-keep the branch localized.
+```text
+data = []
+total = 0
+current_page = 1
+last_page = 1
+has_next = false
+has_previous = false
+```
+
+Use the exact current convention.
+
+---
+
+# 15. Page Beyond Last Page
+
+Example:
+
+```text
+total = 41
+per_page = 20
+last_page = 3
+```
+
+Requesting:
+
+```text
+?page=50
+```
+
+must return:
+
+```text
+200
+data = []
+```
+
+with valid pagination metadata.
+
+Do not return 404.
+
+---
+
+# 16. `has_next`
+
+Derive semantically from:
+
+```text
+current_page < last_page
+```
+
+through Laravel paginator metadata where possible.
+
+Do not maintain a duplicate manual state.
+
+---
+
+# 17. `has_previous`
+
+Equivalent semantic rule:
+
+```text
+current_page > 1
+```
+
+subject to existing empty-result convention.
+
+Prefer paginator authority.
+
+---
+
+# 18. Sorting Allow-List
+
+Public Product sorting supports only:
+
+```text
+created_at
+price
+name
+```
+
+Do not allow arbitrary database columns.
+
+---
+
+# 19. Sort Mapping
+
+Map public sort values explicitly to trusted query expressions.
 
 Conceptually:
 
 ```text
-mysql/mariadb
-→ whereFullText
+created_at
+→ products.created_at
 
-sqlite
-→ deterministic LIKE fallback
+name
+→ products.name
+
+price
+→ authoritative derived public Product price expression
 ```
 
-Do not scatter:
+Never:
 
-```text
-DB::getDriverName()
+```php
+orderBy($request->sort)
 ```
 
-checks throughout the application.
+without an allow-list.
 
 ---
 
-# 86. Do Not Use `APP_ENV` to Choose Search Engine
+# 20. Default Sorting
 
-Search behavior should depend on database capability/driver, not:
+When `sort` is absent:
 
 ```text
-APP_ENV=testing
+created_at DESC
+id ASC
 ```
 
-Avoid test-only production bypasses.
+This is the default catalog display ordering.
+
+Preserve it.
 
 ---
 
-# 87. Unsupported SQLite Test Cases
+# 21. Name Sorting
 
-Tests that specifically depend on MySQL FULLTEXT internals must not run as fake SQLite equivalents.
-
-Examples:
+When:
 
 ```text
-FULLTEXT index existence
-MATCH semantics
-MySQL relevance behavior
-stop-word behavior
-minimum token behavior
-execution plan/index usage
+sort=name
 ```
 
-These are MySQL-specific.
-
----
-
-# 88. MySQL-Specific Test Classification
-
-Place MySQL-only integration tests in a clearly identifiable location/tag/group according to repository conventions.
-
-Examples conceptually:
+default direction:
 
 ```text
-MySqlProductSearchIntegrationTest
+ASC
 ```
 
-or:
+unless `sort_direction` explicitly overrides it.
+
+---
+
+# 22. Price Sorting
+
+When:
 
 ```text
-@group mysql
+sort=price
 ```
 
-Use actual project style.
-
----
-
-# 89. MySQL Integration Test Scope
-
-At minimum verify:
+default direction:
 
 ```text
-FULLTEXT index exists
-name match works
-description match works
-non-match excluded
-combined public visibility still enforced
+ASC
 ```
 
-Do not over-test MySQL's own search engine implementation.
+unless overridden.
+
+Use the authoritative Product public price expression established in Phase 5.2.
 
 ---
 
-# 90. Do Not Re-Test MySQL Itself
+# 23. Created Date Sorting
 
-Do not build exhaustive tests for:
+When:
 
 ```text
-natural-language ranking algorithm
-stop-word dictionary
-stemming
-tokenizer
+sort=created_at
 ```
 
-Test our integration and assumptions only.
-
----
-
-# 91. MySQL Test Database Safety
-
-Any MySQL integration test must use a:
+default direction:
 
 ```text
-uniquely named disposable database
+DESC
 ```
 
-Never use the configured application development/staging/production DB.
+unless overridden.
 
 ---
 
-# 92. Destructive Migration Safety
+# 24. Sort Direction
 
-Before:
+Accepted values:
 
 ```text
-migrate:fresh --seed --force
+asc
+desc
 ```
 
-require:
+Case-insensitive input may normalize to lowercase if the current request contract allows that.
+
+Do not accept:
 
 ```text
-APP_ENV != production
-explicit disposable database name
-database-name guard
-```
-
-according to the project's updated safety policy.
-
----
-
-# 93. SQLite Migration Compatibility
-
-If Laravel/SQLite cannot create the FULLTEXT index through the same migration:
-
-do not break canonical SQLite migrations unnecessarily.
-
-Use a driver-aware migration strategy if required.
-
----
-
-# 94. Migration Must Not Lie
-
-If SQLite skips the FULLTEXT index:
-
-document that explicitly.
-
-Do not create a normal SQLite B-tree index and call it FULLTEXT equivalent.
-
----
-
-# 95. Fulltext Migration Strategy
-
-Acceptable pattern:
-
-```text
-MySQL/MariaDB:
-create FULLTEXT(name, description)
-
-SQLite:
-skip FULLTEXT-specific index
-```
-
-provided the canonical SQLite fallback query remains tested.
-
----
-
-# 96. Migration Rollback
-
-Driver-aware rollback must not fail when the FULLTEXT index was never created on SQLite.
-
----
-
-# 97. MySQL Index Naming
-
-Give the FULLTEXT index a deterministic explicit name if project migration conventions favor that.
-
-This makes rollback and verification safer.
-
----
-
-# 98. Query Performance
-
-Search should avoid:
-
-```text
-full table PHP filtering
-N+1 variant queries
-unbounded JSON scans
-```
-
----
-
-# 99. SKU Search Performance
-
-Use the existing indexed SKU column.
-
-Do not wrap SKU in functions that destroy index usefulness unless required.
-
----
-
-# 100. Attribute Search Performance
-
-Keep JSON attribute matching limited.
-
-If it becomes a performance bottleneck later:
-
-that is a future schema/search evolution decision.
-
-Do not prematurely denormalize now.
-
----
-
-# 101. Price Sorting Performance
-
-Price sort must use the same derived Product price mechanism already selected.
-
-Do not retrieve every Variant into PHP to sort.
-
----
-
-# 102. Search Result Representation
-
-CAT-001 continues returning:
-
-```text
-ProductSummaryResource
-```
-
-Search must not produce a different Product shape.
-
----
-
-# 103. Search Does Not Expose Relevance Score
-
-Do not add:
-
-```text
-relevance
-score
-match_score
-```
-
-to Product JSON unless explicitly added to the V1 contract.
-
----
-
-# 104. Cacheability
-
-Search/filter GETs remain public/cacheable where current conventions permit.
-
-Cache keys must naturally vary by full query string at proxy/CDN level later.
-
-Do not add application cache complexity here.
-
----
-
-# 105. Public Rate Limit
-
-Use existing:
-
-```text
-public-read
-```
-
-rate limiting.
-
-Do not create a harsh search-specific limiter unless evidence later requires it.
-
----
-
-# 106. Test — No Search
-
-`GET /products` without `search` must preserve Phase 5.2 behavior.
-
----
-
-# 107. Test — Name Search
-
-Seed Products with controlled names.
-
-Verify only matching visible Products return.
-
-SQLite semantic fallback test is acceptable here.
-
----
-
-# 108. Test — Description Search
-
-Same for description.
-
----
-
-# 109. Test — SKU Search
-
-Product whose Variant SKU matches should return.
-
----
-
-# 110. Test — SKU Prefix Search
-
-If prefix semantics are approved:
-
-verify expected parent Product appears.
-
----
-
-# 111. Test — Variant Attribute Search
-
-For each supported key class, add focused coverage.
-
-Do not test arbitrary unknown JSON keys as searchable.
-
----
-
-# 112. Test — Duplicate Suppression
-
-Multiple matching Variants under one Product:
-
-```text
-one Product result
-```
-
----
-
-# 113. Test — Empty Search
-
-Whitespace-only search behaves identically to no search.
-
----
-
-# 114. Test — Max Search Length
-
-Over-100-character input returns canonical validation error.
-
----
-
-# 115. Test — Search Does Not Leak Hidden Product
-
-Inactive/deleted Product matching search must remain absent.
-
-After Phase 5.7:
-
-unpublished matching Product must also remain absent.
-
----
-
-# 116. Test — Category Filter
-
-Verify slug and ID filtering according to existing CAT-001 contract.
-
----
-
-# 117. Test — Product Type Validation
-
-Unknown values:
-
-```text
-STANDARD
-CUSTOM
-in_stock
-```
-
-should fail according to CLOSED enum rules.
-
-Only run behavior-dependent success cases once Phase 5.7 is implemented.
-
----
-
-# 118. Test — Availability Validation
-
-Accept:
-
-```text
-available
-unavailable
-```
-
-Reject:
-
-```text
-IN_STOCK
-LOW_STOCK
-AVAILABLE
-```
-
-according to current casing contract.
-
----
-
-# 119. Test — Min Price
-
-Verify lower-bound inclusion/exclusion.
-
----
-
-# 120. Test — Max Price
-
-Verify upper-bound inclusion/exclusion.
-
----
-
-# 121. Test — Combined Price Range
-
-Verify:
-
-```text
-min <= price <= max
-```
-
----
-
-# 122. Test — Invalid Price Range
-
-Return:
-
-```text
-422 INVALID_VALUE
-```
-
-for:
-
-```text
-min_price > max_price
-```
-
----
-
-# 123. Test — Invalid Price Format
-
-Examples:
-
-```text
-1.5
-abc
--5
-```
-
-must follow current validation/error contract.
-
----
-
-# 124. Test — Sort Name
-
-Verify:
-
-```text
-name ASC
-name DESC
-```
-
-with deterministic ID tie-breaking.
-
----
-
-# 125. Test — Sort Created At
-
-Verify both directions.
-
----
-
-# 126. Test — Sort Price
-
-Verify against derived public Product price.
-
----
-
-# 127. Test — Invalid Sort
-
-Reject:
-
-```text
-cost_price
-sku
-stock
+ascending
+descending
+1
+-1
 random
 ```
 
 ---
 
-# 128. Test — Sort Direction
+# 25. Direction Without Sort
 
-Reject unsupported directions.
+Inspect the current contract/request implementation.
 
----
-
-# 129. Test — Pagination After Search
-
-Search results must paginate correctly.
-
----
-
-# 130. Test — Combined Pipeline
-
-Add at least one realistic combined test:
+Preferred behavior if already established:
 
 ```text
+sort_direction without sort
+→ applies to the default created_at sort
+```
+
+only if that matches current API docs.
+
+Otherwise reject or ignore consistently according to the existing contract.
+
+Do not invent ambiguous behavior in Phase 5.6.
+
+---
+
+# 26. Deterministic Secondary Ordering
+
+Every Product collection ordering must end with:
+
+```text
+id ASC
+```
+
+unless `id` is already the unique primary sort.
+
+Examples:
+
+```sql
+ORDER BY created_at DESC, id ASC
+```
+
+```sql
+ORDER BY name ASC, id ASC
+```
+
+```sql
+ORDER BY derived_price ASC, id ASC
+```
+
+This is mandatory.
+
+---
+
+# 27. Why Tie-Breaking Matters
+
+Many Products may share:
+
+```text
+same name
+same price
+same created_at
+```
+
+Without a unique tie-breaker:
+
+```text
+Product can drift between pages
+duplicate across pages
+disappear between pages
+```
+
+when SQL chooses an undefined equal-value order.
+
+Always use `id ASC`.
+
+---
+
+# 28. Tie-Breaker Direction
+
+The frozen contract explicitly uses:
+
+```text
+id ASC
+```
+
+regardless of primary sort direction.
+
+Therefore:
+
+```text
+created_at DESC, id ASC
+price DESC, id ASC
+name DESC, id ASC
+```
+
+are valid.
+
+Do not automatically make ID direction match the primary sort.
+
+---
+
+# 29. Derived Price Sorting
+
+Product does not own its own price column.
+
+Do not add:
+
+```text
+products.price
+```
+
+for sorting convenience.
+
+Sort using the exact same authoritative derived Product price that CAT-001 serializes.
+
+---
+
+# 30. Price Consistency Invariant
+
+For a Product:
+
+```text
+serialized Product price
+=
+value used for price filtering
+=
+value used for price sorting
+```
+
+This is mandatory.
+
+Do not maintain three separate pricing calculations.
+
+---
+
+# 31. Price Sorting Must Stay in SQL
+
+Do not:
+
+```text
+load page candidates
+serialize their price
+sort them in PHP
+```
+
+That produces incorrect pagination.
+
+Sorting must happen before pagination in the DB query.
+
+---
+
+# 32. Null Price Semantics
+
+Review current Product price derivation.
+
+If a public Product can legitimately lack a usable active Variant/derived price:
+
+use the already-approved visibility/price semantics.
+
+Do not invent arbitrary:
+
+```text
+NULL FIRST
+NULL LAST
+price = 0
+```
+
+rules.
+
+Ideally public Product eligibility already prevents an invalid public pricing state.
+
+---
+
+# 33. Search + Sorting
+
+Search results still use the frozen sort contract.
+
+Example:
+
+```text
+?search=oak&sort=price&sort_direction=asc
+```
+
+means:
+
+```text
+match search
+→ apply filters
+→ price ASC
+→ id ASC
+→ paginate
+```
+
+---
+
+# 34. Search Without Sort
+
+Do not silently introduce relevance ordering during Phase 5.6.
+
+Existing default remains:
+
+```text
+created_at DESC
+id ASC
+```
+
+unless an explicit future API decision adds relevance sorting.
+
+---
+
+# 35. Phase 5.5 Search Integration
+
+Do not rewrite Phase 5.5 search logic.
+
+Reuse its existing Product catalog query.
+
+Preserve:
+
+```text
+native MySQL FULLTEXT
+variant SKU search
+approved variant attribute search
+active Variant restriction
+```
+
+---
+
+# 36. Active Variant Search Regression
+
+Do not regress the corrected rule:
+
+```text
+whereHas('variants')
+```
+
+must only consider:
+
+```text
+is_active = true
+```
+
+Variants for SKU/attribute matching.
+
+Inactive Variants must never make a Product appear in public search.
+
+---
+
+# 37. Sorting Must Not Reactivate Hidden Results
+
+Sorting/pagination only operate on Products already satisfying:
+
+```text
+public visibility
 search
-+
-category
-+
-price range
-+
-sort
-+
-pagination
+filters
 ```
 
-This should prove pipeline order and composition.
+Never expand the query set.
 
 ---
 
-# 131. Test — Query Safety
+# 38. Filters + Sorting
 
-Use search terms containing characters such as:
+Examples that must work correctly:
 
 ```text
-'
-%
-_
-"
-\
+?category=living-room&sort=name
 ```
 
-Verify no SQL errors/injection behavior.
-
-Do not use destructive SQL payloads.
-
----
-
-# 132. Test — Public Shape
-
-Search results must retain exactly the normal Product Summary representation.
-
-No search-only fields.
-
----
-
-# 133. Test — MySQL FULLTEXT Integration
-
-On MySQL/MariaDB only:
-
-verify actual FULLTEXT matching on:
-
 ```text
-name
-description
+?availability=available&sort=price&sort_direction=desc
 ```
 
-using the real production search path.
-
----
-
-# 134. MySQL Test Must Not Run on SQLite
-
-If the MySQL test runs under SQLite:
-
 ```text
-skip with explicit reason
+?min_price=50000000&max_price=150000000&sort=price
 ```
 
-according to project test conventions.
-
-Do not silently pass a different query and call it the same test.
+Sorting never changes filter semantics.
 
 ---
 
-# 135. Completion Report Must Distinguish Test Classes
+# 39. Product Type Dependency
 
-Report separately:
+If `product_type` remains scheduled for Phase 5.7:
+
+do not change that here.
+
+Phase 5.6 simply preserves the query composition point.
+
+---
+
+# 40. Publication Dependency
+
+Likewise:
 
 ```text
-SQLite semantic/API tests
-MySQL FULLTEXT integration tests
-```
-
-Do not combine them in a way that suggests SQLite verified FULLTEXT.
-
----
-
-# 136. Example Completion Wording
-
-Use wording like:
-
-```text
-SQLite canonical suite:
-PASS — validates API semantics, filtering, sorting, pagination, SKU/relationship search, and deterministic fallback behavior.
-
-MySQL FULLTEXT integration:
-PASS — validates actual FULLTEXT index + name/description search behavior.
-```
-
-If MySQL integration cannot run:
-
-```text
-NOT RUN / BLOCKED
-```
-
-with exact reason.
-
-Do not falsely mark it PASS.
-
----
-
-# 137. CI Strategy
-
-Do not require the entire existing CI suite to switch to MySQL.
-
-If CI currently has only SQLite:
-
-keep canonical CI green.
-
-The targeted MySQL FULLTEXT test may remain:
-
-```text
-supplementary
-```
-
-until the project later provisions MySQL CI in Group U.
-
----
-
-# 138. Group U Handoff
-
-Document that when MySQL CI is introduced later:
-
-the MySQL FULLTEXT integration test should be added to that job.
-
-Do not lose this requirement.
-
----
-
-# 139. Known SQLite Unsupported Coverage
-
-Explicitly list:
-
-```text
-FULLTEXT index creation semantics
-actual MySQL MATCH behavior
-relevance behavior
-FULLTEXT execution/index plan
-MySQL tokenization/stop-word behavior
-```
-
-as not provable by SQLite.
-
----
-
-# 140. Do Not Block Semantic Search Tests
-
-SQLite can still validly test:
-
-```text
-input validation
-filter composition
-sorting
-pagination
-visibility
-SKU matching
-controlled attribute matching
-response shape
-duplicate suppression
-```
-
-Use it for these.
-
----
-
-# 141. Search Result Correctness Over Ranking Sophistication
-
-For V1 prioritize:
-
-```text
-correct inclusion/exclusion
-stable filters
-fast indexed search
-```
-
-over advanced ranking.
-
----
-
-# 142. No Typo Tolerance
-
-Do not implement:
-
-```text
-soffa → sofa
-tabl → table
-```
-
-automatically.
-
-This is a later external-search-engine capability if ever needed.
-
----
-
-# 143. No Synonyms
-
-Do not create synonym dictionaries such as:
-
-```text
-couch = sofa
-settee = sofa
-```
-
-in V1.
-
----
-
-# 144. No Search Analytics
-
-Do not store:
-
-```text
-search terms
-zero-result searches
-customer query history
-```
-
-during this phase.
-
-Analytics belongs later if approved.
-
----
-
-# 145. No Search History
-
-Do not create user-specific recent searches.
-
-CAT-001 remains stateless/public.
-
----
-
-# 146. No Autocomplete Endpoint
-
-Do not implement:
-
-```text
-/search/suggestions
-/autocomplete
-```
-
-in Phase 5.5.
-
----
-
-# 147. No Facet Counts
-
-Do not add counts like:
-
-```text
-Sofas (14)
-Wood (8)
-Available (6)
-```
-
-unless later approved.
-
-Filtering itself is enough for V1.
-
----
-
-# 148. No Material / Style Filters Yet
-
-Do not expand CAT-001 to:
-
-```text
-material
-style
-color
-room
-```
-
-unless they are explicitly part of the frozen contract.
-
-This phase implements the existing query set.
-
----
-
-# 149. No Search Engine Abstraction for Hypothetical Future
-
-Do not add:
-
-```text
-SearchEngineInterface
-AlgoliaSearchEngine
-MysqlSearchEngine
-```
-
-merely because the app may migrate later.
-
-A focused Product search/query service is sufficient.
-
----
-
-# 150. Future Migration Path
-
-A future external engine can replace the internals while retaining:
-
-```text
-GET /api/v1/products?search=...
-```
-
-No need to pre-build infrastructure now.
-
----
-
-# 151. Schema Changes
-
-Expected schema change:
-
-```text
-FULLTEXT index on products(name, description)
-```
-
-Only.
-
-Do not bundle unrelated fields.
-
----
-
-# 152. Do Not Add Phase 5.7 Fields Here
-
-Do not add:
-
-```text
-product_type
 is_published
 ```
 
-in Phase 5.5 if they remain scheduled for Phase 5.7.
+remains Phase 5.7 if still deferred.
+
+Pagination must reuse shared public scope so publication can later be added once without pagination changes.
 
 ---
 
-# 153. No Frontend Changes
+# 41. Stable Public Scope
+
+Preferred architecture:
+
+```text
+Product public scope/query
+→ search
+→ filters
+→ sort
+→ paginate
+```
+
+Do not duplicate visibility conditions in paginator code.
+
+---
+
+# 42. Public Only
+
+CAT-001 remains:
+
+```text
+PUBLIC_READ
+```
+
+Pagination does not require authentication.
+
+---
+
+# 43. No User-Specific Sort
+
+Do not add:
+
+```text
+recommended
+for_you
+recently_viewed
+personalized
+```
+
+sort modes.
+
+Those would make a public cacheable endpoint user-dependent.
+
+---
+
+# 44. No Popularity Sort
+
+Do not introduce:
+
+```text
+best_selling
+most_popular
+trending
+rating
+```
+
+without explicit business/data contracts.
+
+V1 supports only:
+
+```text
+created_at
+price
+name
+```
+
+---
+
+# 45. No Random Sort
+
+Do not implement:
+
+```text
+?sort=random
+```
+
+Random ordering:
+
+```text
+breaks deterministic pagination
+hurts caching
+is expensive
+causes duplicates
+```
+
+---
+
+# 46. No Client-Supplied SQL
+
+Never map arbitrary request strings directly into:
+
+```text
+column name
+raw ORDER BY
+direction
+```
+
+Use explicit mappings.
+
+---
+
+# 47. Index Use
+
+Review existing indexes for:
+
+```text
+created_at
+name
+```
+
+and Product query behavior.
+
+Do not automatically add indexes unless query analysis shows a real need.
+
+---
+
+# 48. Price Sorting Index Limitation
+
+Derived price may not be directly indexable because it comes from Variants.
+
+Do not denormalize Product price merely to get an index in V1.
+
+Use the current efficient aggregate/subquery implementation.
+
+Measure before redesigning.
+
+---
+
+# 49. Pagination Count Query
+
+Laravel pagination generally performs:
+
+```text
+COUNT query
++
+page SELECT
+```
+
+This is expected.
+
+Do not prematurely replace `paginate()` with `simplePaginate()` because V1 requires:
+
+```text
+total
+last_page
+```
+
+---
+
+# 50. Do Not Use `simplePaginate()`
+
+`simplePaginate()` omits the total count.
+
+It therefore cannot satisfy the frozen response contract.
+
+Use normal pagination.
+
+---
+
+# 51. Do Not Use Cursor Pagination
+
+Similarly, `cursorPaginate()` does not match the V1 metadata contract.
+
+Do not use it.
+
+---
+
+# 52. Performance Expectations
+
+For the expected V1 catalog scale:
+
+```text
+normal Laravel paginate()
++
+indexed filters
++
+bounded Product summary
+```
+
+is appropriate.
+
+Do not optimize for millions of Products prematurely.
+
+---
+
+# 53. Offset Pagination Limitation
+
+Document, but do not overengineer around, the known property of page/offset pagination:
+
+if Product data changes between requests, page membership may shift.
+
+This is acceptable for a live retail catalog.
+
+Do not implement:
+
+```text
+snapshot tokens
+catalog versions
+transactional multi-page browsing
+```
+
+---
+
+# 54. Concurrent Catalog Changes
+
+If a Product is added/removed between:
+
+```text
+page 1
+page 2
+```
+
+the result set may shift.
+
+That is normal V1 behavior.
+
+The deterministic tie-breaker addresses ambiguous SQL ordering, not live-data mutation.
+
+---
+
+# 55. Query String Compatibility
+
+Filters and sort parameters must remain usable together with page values.
+
+Example:
+
+```text
+/products
+?search=oak
+&category=dining-room
+&sort=price
+&sort_direction=asc
+&page=2
+&per_page=20
+```
+
+must work as one canonical request.
+
+---
+
+# 56. Frontend URL Stability
+
+The API should support straightforward website URLs such as:
+
+```text
+/products?page=3&sort=price&sort_direction=asc
+```
+
+without special server state.
+
+Do not introduce session-based pagination.
+
+---
+
+# 57. Cache Keys
+
+Public cache identity naturally depends on the complete query string:
+
+```text
+search
+filters
+sort
+page
+per_page
+```
+
+Do not manually cache all combinations in Phase 5.6.
+
+---
+
+# 58. Response Resource
+
+Continue using:
+
+```text
+ProductSummaryResource
+```
+
+from Phase 5.2.
+
+Pagination must not change Product representation.
+
+---
+
+# 59. No Paginator Internals
+
+Do not expose Laravel keys such as:
+
+```text
+first_page_url
+last_page_url
+next_page_url
+prev_page_url
+path
+links
+from
+to
+```
+
+unless explicitly approved.
+
+Transform paginator metadata into the frozen API representation.
+
+---
+
+# 60. Avoid Double Pagination
+
+Do not call `paginate()` inside a helper and again in the controller.
+
+The query should be paginated exactly once.
+
+---
+
+# 61. Avoid Double Sorting
+
+Sorting should have one authoritative application point.
+
+Do not:
+
+```text
+apply default sort in model scope
+then apply user sort in controller
+```
+
+without clearing/reconciling previous order clauses.
+
+---
+
+# 62. Explicit Sort Application
+
+Ensure custom sort replaces the default primary sort rather than stacking unexpectedly.
+
+Expected:
+
+```text
+sort=price
+→ price <direction>, id ASC
+```
+
+not:
+
+```text
+created_at DESC,
+price ASC,
+id ASC
+```
+
+unless that ordering is explicitly intended.
+
+---
+
+# 63. Query Builder Structure
+
+Prefer extending the focused catalog query from Phase 5.5.
+
+Conceptually:
+
+```text
+applySearch()
+applyFilters()
+applySort()
+paginate()
+```
+
+Do not introduce another:
+
+```text
+ProductPaginationService
+```
+
+if the existing query object already owns collection composition.
+
+---
+
+# 64. Pagination Serialization Helper
+
+A small reusable pagination metadata mapper is acceptable if the project already has several paginated endpoints.
+
+For example conceptually:
+
+```text
+PaginationMeta
+```
+
+or:
+
+```text
+PaginationResource
+```
+
+But do not build an elaborate pagination framework.
+
+---
+
+# 65. Reuse Global Pagination Conventions
+
+If the backend already has pagination response helpers from earlier phases:
+
+reuse them.
+
+CAT-001 should not create a different metadata shape from:
+
+```text
+CAT-003
+ORD-001
+NOT-001
+```
+
+later.
+
+---
+
+# 66. Validation Layer
+
+Keep pagination/sort validation in the existing CAT-001 FormRequest.
+
+Do not validate:
+
+```text
+page
+per_page
+sort
+sort_direction
+```
+
+inside the controller.
+
+---
+
+# 67. Strict Types
+
+Do not broadly coerce malformed values.
+
+Follow current query validation conventions.
+
+Examples:
+
+```text
+page=1
+```
+
+valid.
+
+```text
+page=1.0
+```
+
+should follow current integer validation policy.
+
+---
+
+# 68. Unknown Sort Field
+
+Examples:
+
+```text
+?sort=sku
+?sort=id
+?sort=cost
+?sort=inventory
+?sort=deleted_at
+```
+
+must return:
+
+```text
+422 INVALID_VALUE
+```
+
+if not in the approved allow-list.
+
+---
+
+# 69. Internal Field Protection
+
+Sorting must not become a side-channel that exposes internal fields.
+
+Do not allow sorting by:
+
+```text
+cost_price
+reserved_quantity
+is_active
+is_published
+warehouse quantity
+```
+
+---
+
+# 70. Case Handling
+
+Follow the frozen request semantics.
+
+If `sort_direction` is case-insensitive:
+
+normalize:
+
+```text
+ASC → asc
+DESC → desc
+```
+
+Do not necessarily make `sort` field names case-insensitive unless docs say so.
+
+---
+
+# 71. Invalid `per_page` Is Not Silently Capped
+
+Do not turn:
+
+```text
+per_page=1000
+```
+
+into:
+
+```text
+100
+```
+
+unless the existing global convention says to clamp.
+
+Preferred frozen behavior is validation error.
+
+---
+
+# 72. Test — Default Pagination
+
+Seed more than 20 visible Products.
+
+Request:
+
+```text
+GET /products
+```
+
+Assert:
+
+```text
+current_page = 1
+per_page = 20
+correct total
+correct last_page
+correct has_next
+has_previous = false
+```
+
+---
+
+# 73. Test — Custom `per_page`
+
+Example:
+
+```text
+?per_page=10
+```
+
+Verify metadata and 10-or-fewer Product results.
+
+---
+
+# 74. Test — Page 2
+
+Verify:
+
+```text
+?page=2
+```
+
+returns the expected second window.
+
+---
+
+# 75. Test — Last Page
+
+Verify:
+
+```text
+has_next = false
+has_previous = true
+```
+
+for a multi-page collection's last page.
+
+---
+
+# 76. Test — Beyond Last Page
+
+Verify:
+
+```text
+200
+data = []
+```
+
+and correct metadata.
+
+---
+
+# 77. Test — Zero Results
+
+Use a filter/search producing no Products.
+
+Assert the exact zero-result convention.
+
+---
+
+# 78. Test — Invalid Page
+
+Cover:
+
+```text
+0
+-1
+non-integer
+```
+
+---
+
+# 79. Test — Invalid Per Page
+
+Cover:
+
+```text
+0
+101
+negative
+non-integer
+```
+
+---
+
+# 80. Test — Default Sort
+
+Create Products with deliberately different timestamps.
+
+Verify:
+
+```text
+created_at DESC
+id ASC
+```
+
+---
+
+# 81. Test — Created Date Ascending
+
+Request:
+
+```text
+?sort=created_at&sort_direction=asc
+```
+
+Verify order.
+
+---
+
+# 82. Test — Name Ascending
+
+Request:
+
+```text
+?sort=name
+```
+
+Verify default:
+
+```text
+ASC
+```
+
+---
+
+# 83. Test — Name Descending
+
+Request:
+
+```text
+?sort=name&sort_direction=desc
+```
+
+Verify exact reverse primary ordering plus stable ID tie-break.
+
+---
+
+# 84. Test — Price Ascending
+
+Seed Products with known derived Variant prices.
+
+Verify public price order.
+
+---
+
+# 85. Test — Price Descending
+
+Verify:
+
+```text
+?sort=price&sort_direction=desc
+```
+
+---
+
+# 86. Test — Price Source Consistency
+
+For every test Product:
+
+```text
+sort value
+=
+ProductSummaryResource price
+```
+
+Do not assert against an unrelated Variant price.
+
+---
+
+# 87. Test — Tie on Name
+
+Create multiple visible Products with the same name.
+
+Verify final ordering by:
+
+```text
+id ASC
+```
+
+---
+
+# 88. Test — Tie on Price
+
+Create multiple Products with the same derived price.
+
+Verify:
+
+```text
+id ASC
+```
+
+---
+
+# 89. Test — Tie on Created At
+
+Create Products with identical timestamps.
+
+Verify:
+
+```text
+id ASC
+```
+
+---
+
+# 90. Test — No Duplicate Between Pages
+
+Use tied primary sort values spanning multiple pages.
+
+Verify no Product ID appears on both pages.
+
+---
+
+# 91. Test — No Missing Product
+
+Across a stable DB state, concatenate all pages.
+
+Verify all expected Product IDs appear exactly once.
+
+---
+
+# 92. Test — Search + Pagination
+
+Use Phase 5.5 search.
+
+Verify totals/pages include only matching results.
+
+---
+
+# 93. Test — Search + Sort
+
+Example:
+
+```text
+?search=oak&sort=price
+```
+
+Verify search runs before sort.
+
+---
+
+# 94. Test — Filter + Pagination
+
+Example:
+
+```text
+?category=living-room&per_page=5
+```
+
+Ensure total reflects only filtered Products.
+
+---
+
+# 95. Test — Combined Query
+
+Add at least one realistic full-pipeline regression:
+
+```text
+search
+category
+price filter
+availability where authoritative
+sort
+sort_direction
+page
+per_page
+```
+
+Verify the final result set and metadata.
+
+---
+
+# 96. Test — Active Variant Search Restriction
+
+Preserve the Phase 5.5 regression:
+
+An active Product with:
+
+```text
+inactive Variant matching search
+```
+
+must not appear unless another active Variant or Product text matches.
+
+Pagination/sorting changes must not weaken this behavior.
+
+---
+
+# 97. Test — Duplicate Variant Search Match
+
+If multiple active Variants match one Product:
+
+the Product appears only once and counts once toward:
+
+```text
+total
+```
+
+This is especially important for paginator totals.
+
+---
+
+# 98. COUNT Correctness
+
+Relationship search must not cause:
+
+```text
+total
+```
+
+to count duplicate Product rows.
+
+Verify this explicitly.
+
+---
+
+# 99. MySQL vs SQLite
+
+Phase 5.6 sorting/pagination semantics should work on both where possible.
+
+However, Phase 5.5 remains subject to the existing MySQL FULLTEXT verification gate.
+
+Do not claim MySQL FULLTEXT is verified merely because Phase 5.6 tests pass on SQLite.
+
+---
+
+# 100. SQLite Coverage
+
+SQLite may validly prove:
+
+```text
+pagination
+metadata
+sort allow-list
+sort direction
+tie-breaking
+price sorting semantics
+filter composition
+duplicate suppression
+active-Variant search semantics
+```
+
+using the existing deterministic search fallback.
+
+---
+
+# 101. MySQL FULLTEXT Blocker Remains Separate
+
+Until the disposable MySQL/MariaDB Phase 5.5 integration check succeeds:
+
+```text
+Phase 5.5 remains BLOCKED
+```
+
+Phase 5.6 implementation may still be independently correct.
+
+Do not rewrite this status.
+
+---
+
+# 102. PHPStan Baseline
+
+The previously reported project PHPStan baseline issue also remains a Phase 5.5/quality blocker until resolved.
+
+Phase 5.6 must:
+
+```text
+not introduce additional PHPStan errors
+```
+
+and should report the existing baseline separately if still present.
+
+---
+
+# 103. Phase 5.6 Status Classification
+
+If Phase 5.6's own implementation/tests pass but global PHPStan is still failing from a known pre-existing baseline:
+
+report:
+
+```text
+Phase 5.6 implementation: PASS
+Global static-analysis gate: BLOCKED by existing PHPStan baseline
+```
+
+or use the repository's established status convention.
+
+Do not hide pre-existing failures.
+
+---
+
+# 104. No MySQL-Specific Pagination Rewrite
+
+Do not branch pagination behavior by DB driver.
+
+Only the Phase 5.5 FULLTEXT search mechanism needs the MySQL/SQLite distinction.
+
+Pagination/sorting semantics should remain shared.
+
+---
+
+# 105. Query Performance
+
+Use database pagination.
+
+Do not load full filtered result sets into memory just to compute:
+
+```text
+total
+pages
+sorting
+```
+
+---
+
+# 106. Query Plan Review
+
+Where a disposable MySQL environment becomes available, optionally inspect the combined query plan for:
+
+```text
+default sort
+name sort
+FULLTEXT + pagination
+```
+
+but do not make this a mandatory Phase 5.6 blocker unless performance is clearly poor.
+
+---
+
+# 107. No Premature Keyset Optimization
+
+Do not replace offset pagination because deep-page offset becomes slower at massive scale.
+
+The expected V1 catalog does not justify that complexity.
+
+---
+
+# 108. No Maximum Page Cap
+
+Do not introduce arbitrary:
+
+```text
+page <= 100
+```
+
+unless approved.
+
+Very high pages may return empty data naturally.
+
+---
+
+# 109. No Stateful Pagination Tokens
+
+Do not store pagination state server-side.
+
+Every request is self-contained.
+
+---
+
+# 110. No Sorting Preferences Storage
+
+Do not persist a customer's preferred sort order.
+
+Frontend-local preference may be considered later.
+
+---
+
+# 111. Public Cache Safety
+
+Pagination and sorting remain public/user-neutral.
+
+Same URL/query should produce the same representation for:
+
+```text
+anonymous
+Customer
+Staff
+Admin
+```
+
+subject only to catalog changes.
+
+---
+
+# 112. No Privileged Product Fields
+
+Sorting as Admin through public CAT-001 must not cause:
+
+```text
+is_active
+is_published
+inventory quantity
+cost
+```
+
+to appear.
+
+---
+
+# 113. OpenAPI
+
+Verify OpenAPI accurately documents:
+
+```text
+page
+per_page
+sort
+sort_direction
+```
+
+including:
+
+```text
+defaults
+bounds
+allowed sort fields
+allowed directions
+pagination metadata
+```
+
+Do not add new query fields.
+
+---
+
+# 114. Documentation
+
+Update consolidated API docs only if runtime behavior differs from current documentation.
+
+Do not create a second pagination specification.
+
+---
+
+# 115. Standard Customer-Facing Sort Mapping
+
+Frontend later may label the existing sort combinations as:
+
+```text
+Newest
+Name: A–Z
+Name: Z–A
+Price: Low to High
+Price: High to Low
+```
+
+Backend remains:
+
+```text
+sort=created_at&sort_direction=desc
+
+sort=name&sort_direction=asc
+
+sort=name&sort_direction=desc
+
+sort=price&sort_direction=asc
+
+sort=price&sort_direction=desc
+```
+
+Do not encode display labels into the API.
+
+---
+
+# 116. Do Not Add "Recommended"
+
+Many established stores have:
+
+```text
+Recommended
+Featured
+Best Selling
+```
+
+but those require ranking/merchandising data.
+
+Do not imitate them without a business model.
+
+The existing three sorts are enough for V1.
+
+---
+
+# 117. No Frontend Work
 
 Do not modify:
 
@@ -2212,11 +2011,39 @@ frontend/app/
 frontend/design-system/
 ```
 
-No search UI belongs here.
+No pagination component or sorting dropdown belongs here.
 
 ---
 
-# 154. No New Dependencies
+# 118. No Schema Change Expected
+
+Expected:
+
+```text
+Schema changes:
+NONE
+```
+
+Pagination/sorting should operate on existing Phase 5.2–5.5 query structures.
+
+---
+
+# 119. Do Not Add Denormalized Sort Columns
+
+Do not add:
+
+```text
+sort_price
+catalog_rank
+popularity
+search_rank
+```
+
+to Product.
+
+---
+
+# 120. No New Dependencies
 
 Expected:
 
@@ -2225,46 +2052,47 @@ Composer dependencies:
 NONE
 ```
 
+Laravel pagination/query builder is sufficient.
+
 ---
 
-# 155. Code Quality
+# 121. Code Quality
 
 Maintain:
 
 ```text
 cognitive complexity <= 15
 <= 3 returns where practical
-small focused query methods
-no raw interpolated SQL
-no duplicated filter logic
+explicit sort maps
+small query methods
+no raw untrusted ORDER BY
 minimal comments
 ```
 
 ---
 
-# 156. Likely Implementation Areas
+# 122. Likely Implementation Areas
 
-Depending on current structure:
+Likely changes should be limited to:
 
 ```text
-app/Http/Requests/
-app/Queries/
-app/Services/
-app/Models/
-database/migrations/
-tests/Feature/
-tests/Integration/
-docs/api/
-docs/decisions.md
+CAT-001 FormRequest
+ProductCatalogQuery
+pagination metadata/resource helper
+Product collection controller/resource
+tests
+docs where required
 ```
 
-Modify only what Phase 5.5 needs.
+Do not broaden the phase.
 
 ---
 
-# 157. Verification — SQLite Canonical
+# 123. Verification
 
-Run:
+Run focused Phase 5.6 tests first.
+
+Then:
 
 ```bash
 php artisan test
@@ -2274,40 +2102,29 @@ composer audit
 git diff --check
 ```
 
-Do not claim this verifies MySQL FULLTEXT.
+Report known pre-existing PHPStan failures separately from new failures.
 
 ---
 
-# 158. Verification — MySQL FULLTEXT
+# 124. No Destructive Migration Expected
 
-Where a disposable MySQL/MariaDB test environment is available:
-
-run the targeted search integration test against it.
-
-Use the project's destructive migration safety rules.
-
----
-
-# 159. MySQL Safety
-
-Before any destructive test rebuild:
-
-verify:
+Do not run:
 
 ```text
-APP_ENV != production
-DB_DATABASE is disposable
+migrate:fresh
 ```
 
-Never infer safety from `APP_ENV` alone.
+merely for pagination/sorting.
+
+If another phase's integration setup requires it, use the existing disposable-database safety rules.
 
 ---
 
-# 160. Completion Report
+# 125. Completion Report
 
 Return:
 
-## Phase 5.5 status
+## Phase 5.6 status
 
 ```text
 PASS
@@ -2319,43 +2136,18 @@ or:
 BLOCKED
 ```
 
-## Search engine
+with exact reason.
 
-State:
+## Pagination
 
-```text
-MySQL/MariaDB native FULLTEXT
-Laravel Query Builder/Eloquent
-```
-
-## FULLTEXT fields
-
-State:
+Report:
 
 ```text
-products.name
-products.description
-```
-
-## Relationship search
-
-State:
-
-```text
-Variant SKU
-approved Variant attribute keys
-```
-
-## Filters
-
-Report behavior for:
-
-```text
-category
-product_type
-availability
-min_price
-max_price
+page default
+per_page default/max
+metadata structure
+beyond-last behavior
+empty-result behavior
 ```
 
 ## Sorting
@@ -2366,36 +2158,52 @@ Report:
 created_at
 price
 name
+default directions
 id ASC tie-breaker
 ```
 
-## SQLite testing
+## Price sorting
 
-Explicitly report:
+State the authoritative derived-price expression reused.
 
-```text
-SQLite validates application semantics only.
-It does not validate MySQL FULLTEXT behavior.
-```
+## Search integration
 
-## MySQL FULLTEXT test
-
-Report:
+Confirm:
 
 ```text
-PASS
-NOT RUN
-BLOCKED
+search → filter → sort → paginate
 ```
 
-with exact reason.
+and active-Variant relationship search remains enforced.
 
-## Schema changes
+## Duplicate protection
+
+State how relationship search avoids duplicate Product rows and inflated totals.
+
+## SQLite
+
+State which pagination/sorting semantics were verified under SQLite.
+
+## MySQL
+
+Do not conflate Phase 5.6 with the outstanding Phase 5.5 FULLTEXT integration check.
+
+## PHPStan
+
+Report whether:
+
+```text
+new Phase 5.6 errors = 0
+```
+
+and separately identify any existing project baseline blocker.
+
+## Schema
 
 Expected:
 
 ```text
-FULLTEXT index only
+NONE
 ```
 
 ## Dependencies
@@ -2416,9 +2224,9 @@ NONE
 
 ## Tests
 
-Exact counts.
+Report exact focused/full counts.
 
-## Static checks
+## Quality
 
 Report:
 
@@ -2431,99 +2239,95 @@ git diff --check
 
 ---
 
-# 161. Definition of Done
+# 126. Definition of Done
 
-Phase 5.5 is complete when:
+Phase 5.6 is complete when:
 
-* CAT-001 `search` is implemented;
-* Product name/description use native MySQL/MariaDB FULLTEXT;
-* Variant SKU search works through existing relationships;
-* supported Variant attribute search works without generic JSON complexity;
-* search values are parameterized safely;
-* Product results are not duplicated by matching multiple Variants;
-* public visibility cannot be bypassed by search;
-* category filtering works;
-* price range filtering works;
-* availability filtering works where authoritative;
-* Product Type filtering remains correctly dependent on Phase 5.7 if not yet available;
-* only approved sort fields are accepted;
-* deterministic ID tie-breaking remains;
-* pagination occurs after search/filter/sort;
-* CAT-001 Product Summary shape is unchanged;
-* no external search service is added;
-* no Scout dependency is added;
-* no search synchronization queue is added;
-* no Product denormalization is introduced;
-* a FULLTEXT index exists on Product name/description for MySQL/MariaDB;
-* SQLite fallback exists only where needed for semantic test compatibility;
-* SQLite tests do not falsely claim FULLTEXT coverage;
-* targeted MySQL FULLTEXT integration coverage exists where infrastructure permits;
-* unsupported SQLite-specific FULLTEXT cases are explicitly documented;
-* no frontend code is changed;
-* no Phase 5.7 schema fields are pulled forward;
-* full canonical backend suite passes;
+* CAT-001 uses standard 1-based page pagination;
+* default page is 1;
+* default per-page is 20;
+* maximum per-page is 100;
+* invalid pagination inputs are rejected;
+* pagination runs after search/filter/sort;
+* metadata is exactly under `meta.pagination`;
+* `current_page` is correct;
+* `per_page` is correct;
+* `total` counts distinct matching Products;
+* `last_page` is correct;
+* `has_next` is correct;
+* `has_previous` is correct;
+* zero-result behavior matches the V1 contract;
+* beyond-last-page requests return empty data rather than 404;
+* no Laravel paginator internals leak;
+* no pagination URLs are added;
+* sorting is allow-listed;
+* allowed fields remain `created_at`, `price`, and `name`;
+* sort directions remain `asc`/`desc`;
+* default catalog order remains `created_at DESC, id ASC`;
+* name and price default to ascending when explicitly selected;
+* every non-unique primary sort appends `id ASC`;
+* price sorting uses the same Product price used for filtering/serialization;
+* pagination does not duplicate Products across stable pages;
+* relationship search does not inflate paginator totals;
+* inactive Variant matches do not influence public search;
+* search/filter/sort/page composition works;
+* no cursor pagination is introduced;
+* no random/popularity/recommended sorting is invented;
+* no Product schema changes are introduced;
+* no new dependency is added;
+* no frontend code is modified;
+* focused pagination/sort tests pass;
+* existing CAT-001 search/filter tests remain green;
+* Phase 5.2–5.5 catalog regressions remain green;
+* no new PHPStan errors are introduced;
 * Pint passes;
-* PHPStan passes;
 * Composer audit has no blocker.
 
 ---
 
-# 162. Out of Scope
+# 127. Out of Scope
 
 Do not implement:
 
 ```text
-Algolia
-Meilisearch
-Typesense
-Elasticsearch
-OpenSearch
-Laravel Scout
-typo tolerance
-synonyms
-faceted counts
-autocomplete
-search history
-search analytics
-relevance sort API
-material/style/color filters not already contracted
-frontend search UI
+cursor pagination
+keyset pagination
+Load More API
+infinite-scroll-specific API
+pagination links
+random sorting
+relevance sorting
+best-selling sorting
+popularity sorting
+recommended sorting
+ratings sorting
+frontend pagination
+frontend sort selector
+analytics
+catalog snapshots
 ```
 
 ---
 
-# 163. STOP Condition
+# 128. STOP Condition
 
-STOP when:
-
-```text
-GET /api/v1/products
-```
-
-supports the complete approved V1 search/filter/sort/pagination pipeline using:
+STOP when CAT-001 behaves like a conventional production e-commerce collection API:
 
 ```text
-native MySQL/MariaDB FULLTEXT
-+
-normal Laravel query construction
-+
-existing normalized Product/Variant relationships
+public query
+→ search
+→ filters
+→ approved sort
+→ deterministic id tie-break
+→ page-based pagination
+→ ProductSummary collection
+→ meta.pagination
 ```
 
-and the test suite clearly distinguishes:
+with stable results for unchanged catalog state, correct distinct totals, and no schema/API expansion.
 
-```text
-SQLite semantic coverage
-```
-
-from:
-
-```text
-actual MySQL FULLTEXT integration coverage
-```
-
-Do not continue automatically to Phase 5.6.
+Do not continue automatically to Phase 5.7.
 
 DO NOT COMMIT, STAGE OR PUSH.
 
-The project owner handles Git operations.
+The project owner handles all Git operations.

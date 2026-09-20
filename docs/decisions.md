@@ -2146,3 +2146,19 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 **Reason:** The catalog query is shared across database drivers and pagination executes a separate count query. Driver-specific JSON functions and escaping rules therefore need explicit handling and regression coverage rather than relying on SQL portability assumptions.
 
 **Status:** Accepted | **Affected:** `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Requests/ProductIndexRequest.php`, `backend/laravel/tests/Feature/ProductReadApiTest.php`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-024 — Phase 5.6 Catalog Pagination and Sorting
+
+**Decision:** CAT-001 uses Laravel's `LengthAwarePaginator` through the existing Product catalog query. The shared pipeline remains `search → filters → allow-listed sort → id ASC tie-breaker → paginate`, with `page` defaulting to `1`, `per_page` defaulting to `20`, and a hard maximum of `100`. The response exposes only the frozen `meta.pagination` fields. Requests beyond the last page return an empty `data` array while reporting the last valid page as `current_page`; empty result sets report `last_page = 1` and both navigation flags as false.
+
+- Allowed primary sorts remain `created_at`, `price`, and `name`.
+- Default sort remains `created_at DESC, id ASC`; explicit `name` and `price` sorts default to ascending unless overridden.
+- Price sorting reuses the active-variant minimum-price subquery used by summary serialization and price filtering.
+- Relationship search continues to use `EXISTS`-style `whereHas`, requiring active variants, so matching multiple variants neither duplicates products nor inflates paginator totals.
+- No cursor pagination, pagination links, schema changes, dependencies, frontend changes, or new sort modes were introduced.
+
+**Reason:** The existing CAT-001 query and controller already used SQL pagination and the frozen response envelope. Phase 5.6 hardens edge behavior and regression coverage without creating a second pagination abstraction or changing the public contract.
+
+**Status:** Accepted | **Affected:** `backend/laravel/app/Http/Controllers/Api/V1/ProductController.php`, `backend/laravel/tests/Feature/ProductReadApiTest.php`, `docs/decisions.md`
