@@ -2129,3 +2129,20 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 - **Group C exit:** contract → domain → migrations → FKs → constraints → indexes → factories → seeds → fresh rebuild → integration tests all agree. **Database schema accurately represents the agreed domain and can be rebuilt from migrations.**
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`tests/Feature/MigrationRebuildTest.php`), `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-023 — Phase 5.5 Search Regression Mitigations
+
+**Decision:** Keep product search driver-aware. MySQL/MariaDB uses native FULLTEXT for `products.name` and `products.description`; SQLite remains a semantic-test fallback and must not be treated as FULLTEXT coverage. Variant attribute searches use `json_extract()` on SQLite and `JSON_UNQUOTE(JSON_EXTRACT())` on MySQL/MariaDB. LIKE escape clauses must use a single-character escape marker (`'\\'`), and search validation permits an explicitly empty or null search value so whitespace-only input behaves as an unfiltered request after trimming.
+
+- **Regression fixed:** SQLite does not provide MySQL's `JSON_UNQUOTE()` function. Using the MySQL expression in the SQLite fallback caused CAT-001 requests to return HTTP 500.
+- **Regression fixed:** SQLite requires the `LIKE ... ESCAPE` expression to contain exactly one character. Over-escaped SQL produced a database error during pagination/count queries.
+- **Regression fixed:** URL-encoded whitespace search input was rejected before the query could normalize it. Empty/null search values are now accepted and normalized to no search predicate.
+- **Regression fixed:** Relationship search now requires `product_variants.is_active = true`; inactive variants cannot make an active product discoverable by SKU or attribute.
+- **Regression fixed:** SQLite product name/description fallback uses bound raw predicates with an explicit single-character `ESCAPE '\\'` clause so literal `%`, `_`, and backslash characters remain literal search input.
+- **Required coverage:** Keep SQLite tests focused on application semantics, add a separate MySQL/MariaDB integration test for FULLTEXT behavior where infrastructure permits, and run the full backend suite after query-builder changes.
+
+**Reason:** The catalog query is shared across database drivers and pagination executes a separate count query. Driver-specific JSON functions and escaping rules therefore need explicit handling and regression coverage rather than relying on SQL portability assumptions.
+
+**Status:** Accepted | **Affected:** `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Requests/ProductIndexRequest.php`, `backend/laravel/tests/Feature/ProductReadApiTest.php`, `docs/decisions.md`

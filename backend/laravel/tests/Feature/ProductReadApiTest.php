@@ -205,4 +205,90 @@ class ProductReadApiTest extends TestCase
             ->assertJsonPath('data.0.slug', 'cheap')
             ->assertJsonPath('data.0.price.amount', 100);
     }
+
+    public function test_search_matches_name_description_sku_prefix_and_controlled_variant_attributes(): void
+    {
+        $category = Category::factory()->create();
+        $nameProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Dining Table', 'slug' => 'oak-dining-table']);
+        $descriptionProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Dining Set', 'slug' => 'dining-set', 'description' => 'Solid walnut finish']);
+        $skuProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Living Room Set', 'slug' => 'living-room-set']);
+        $attributeProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Accent Chair', 'slug' => 'accent-chair']);
+
+        ProductVariant::factory()->create(['product_id' => $nameProduct->id]);
+        ProductVariant::factory()->create(['product_id' => $descriptionProduct->id]);
+        ProductVariant::factory()->create(['product_id' => $skuProduct->id, 'sku' => 'SOFA-RED-3S']);
+        ProductVariant::factory()->create([
+            'product_id' => $attributeProduct->id,
+            'attributes' => ['color' => 'Forest Green', 'material' => 'Velvet'],
+        ]);
+
+        $this->getJson('/api/v1/products?search=oak')->assertOk()->assertJsonPath('meta.pagination.total', 1);
+        $this->getJson('/api/v1/products?search=walnut')->assertOk()->assertJsonPath('meta.pagination.total', 1);
+        $this->getJson('/api/v1/products?search=SOFA-RED')->assertOk()->assertJsonPath('data.0.slug', 'living-room-set');
+        $this->getJson('/api/v1/products?search=green')->assertOk()->assertJsonPath('data.0.slug', 'accent-chair');
+    }
+
+    public function test_search_ignores_matching_inactive_variants(): void
+    {
+        $category = Category::factory()->create();
+        $inactiveOnly = Product::factory()->create(['category_id' => $category->id, 'name' => 'Plain Chair', 'slug' => 'plain-chair']);
+        ProductVariant::factory()->inactive()->create(['product_id' => $inactiveOnly->id, 'sku' => 'HIDDEN-OAK']);
+
+        $this->getJson('/api/v1/products?search=HIDDEN-OAK')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 0);
+    }
+
+    public function test_sqlite_product_search_escapes_like_metacharacters(): void
+    {
+        $category = Category::factory()->create();
+        Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak 100% Table', 'slug' => 'oak-percent-table']);
+        Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak 100X Table', 'slug' => 'oak-100x-table']);
+
+        $this->getJson('/api/v1/products?search='.urlencode('100%'))
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.slug', 'oak-percent-table');
+    }
+
+    public function test_search_composes_with_category_and_price_filters_and_suppresses_duplicate_variants(): void
+    {
+        $category = Category::factory()->create(['slug' => 'dining-room']);
+        $otherCategory = Category::factory()->create(['slug' => 'living-room']);
+        $matching = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Dining Table', 'slug' => 'matching-table']);
+        ProductVariant::factory()->create(['product_id' => $matching->id, 'price_amount' => 100, 'sku' => 'OAK-ONE']);
+        ProductVariant::factory()->create(['product_id' => $matching->id, 'price_amount' => 200, 'sku' => 'OAK-TWO']);
+        $wrongCategory = Product::factory()->create(['category_id' => $otherCategory->id, 'name' => 'Oak Lounge Table', 'slug' => 'wrong-category']);
+        ProductVariant::factory()->create(['product_id' => $wrongCategory->id, 'price_amount' => 100]);
+        $wrongPrice = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Sideboard', 'slug' => 'wrong-price']);
+        ProductVariant::factory()->create(['product_id' => $wrongPrice->id, 'price_amount' => 500]);
+
+        $this->getJson('/api/v1/products?search=oak&category=dining-room&min_price=100&max_price=200')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.slug', 'matching-table');
+    }
+
+    public function test_empty_search_matches_unfiltered_collection_and_hidden_products_do_not_match(): void
+    {
+        $category = Category::factory()->create();
+        $visible = Product::factory()->create(['category_id' => $category->id, 'name' => 'Visible Oak', 'slug' => 'visible-oak']);
+        ProductVariant::factory()->create(['product_id' => $visible->id]);
+        $hidden = Product::factory()->inactive()->create(['category_id' => $category->id, 'name' => 'Hidden Oak', 'slug' => 'hidden-oak']);
+        ProductVariant::factory()->create(['product_id' => $hidden->id]);
+
+        $withoutSearch = $this->getJson('/api/v1/products')->assertOk();
+        $withWhitespace = $this->getJson('/api/v1/products?search='.urlencode('  '))->assertOk();
+        $withSearch = $this->getJson('/api/v1/products?search=oak')->assertOk();
+
+        $this->assertSame($withoutSearch->json('meta.pagination.total'), $withWhitespace->json('meta.pagination.total'));
+        $withSearch->assertJsonPath('meta.pagination.total', 1)->assertJsonPath('data.0.slug', 'visible-oak');
+    }
+
+    public function test_product_type_filter_is_explicitly_deferred_until_authoritative_product_type_exists(): void
+    {
+        $this->getJson('/api/v1/products?product_type=IN_STOCK')
+            ->assertUnprocessable()
+            ->assertJsonStructure(['errors', 'meta' => ['request_id']]);
+    }
 }

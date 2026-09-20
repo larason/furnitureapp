@@ -7,6 +7,7 @@ use App\Models\ProductStock;
 use App\Models\ProductVariant;
 use App\Support\CategoryIdentifier;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 final class ProductCatalogQuery
 {
@@ -62,11 +63,7 @@ final class ProductCatalogQuery
     {
         $search = trim((string) ($filters['search'] ?? ''));
         if ($search !== '') {
-            $query->where(function (Builder $searchQuery) use ($search): void {
-                $searchQuery->where('products.name', 'like', "%{$search}%")
-                    ->orWhere('products.description', 'like', "%{$search}%")
-                    ->orWhereHas('variants', fn (Builder $variant) => $variant->where('sku', 'like', "%{$search}%"));
-            });
+            $this->applySearch($query, $search);
         }
 
         if (isset($filters['category'])) {
@@ -95,6 +92,40 @@ final class ProductCatalogQuery
                 );
             }
         }
+    }
+
+    private function applySearch(Builder $query, string $search): void
+    {
+        $query->where(function (Builder $searchQuery) use ($search): void {
+            if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+                $searchQuery->whereFullText(['products.name', 'products.description'], $search);
+            } else {
+                $pattern = '%'.$this->escapeLike($search).'%';
+                $searchQuery->whereRaw("products.name LIKE ? ESCAPE '\\'", [$pattern])
+                    ->orWhereRaw("products.description LIKE ? ESCAPE '\\'", [$pattern]);
+            }
+
+            $searchQuery->orWhereHas('variants', function (Builder $variant) use ($search): void {
+                $variant->where('is_active', true)->where(function (Builder $variantSearch) use ($search): void {
+                    $prefix = $this->escapeLike($search).'%';
+                    $variantSearch->where('sku', 'like', $prefix, 'and', '\\');
+                    foreach (['color', 'fabric', 'finish', 'size', 'configuration', 'leg_finish'] as $key) {
+                        $path = '$.'.$key;
+                        $pattern = '%'.$this->escapeLike($search).'%';
+                        if (DB::connection()->getDriverName() === 'sqlite') {
+                            $variantSearch->orWhereRaw("LOWER(json_extract(attributes, ?)) LIKE LOWER(?) ESCAPE '\\'", [$path, $pattern]);
+                        } else {
+                            $variantSearch->orWhereRaw("LOWER(JSON_UNQUOTE(JSON_EXTRACT(attributes, ?))) LIKE LOWER(?) ESCAPE '\\'", [$path, $pattern]);
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return addcslashes($value, '\\%_');
     }
 
     private function applySort(Builder $query, array $filters): Builder
