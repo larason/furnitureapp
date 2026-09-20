@@ -6,10 +6,12 @@ use App\Exceptions\Api\ApiException;
 use App\Http\Requests\ProductIndexRequest;
 use App\Http\Resources\ProductDetailResource;
 use App\Http\Resources\ProductSummaryResource;
+use App\Http\Resources\ProductVariantResource;
 use App\Models\Product;
 use App\Queries\ProductCatalogQuery;
 use App\Support\ApiErrorCode;
 use App\Support\ProductIdentifier;
+use App\Support\VariantIdentifier;
 use Illuminate\Http\JsonResponse;
 
 class ProductController extends V1Controller
@@ -36,17 +38,19 @@ class ProductController extends V1Controller
         ])->withHeaders($this->publicCacheHeaders());
     }
 
-    public function show(string $product): JsonResponse
+    public function show(string $product, ProductCatalogQuery $catalog): JsonResponse
     {
         $query = Product::query()
+            ->select('products.*')
             ->where('is_active', true)
             ->whereHas('category', fn ($category) => $category->where('is_active', true))
             ->with([
-                'category:id,name,slug',
+                'category:id,name,slug,description',
                 'primaryImage:id,product_id,file_path,alt_text,sort_order,is_primary',
                 'images:id,product_id,file_path,alt_text,sort_order,is_primary',
                 'variants' => fn ($variant) => $variant->where('is_active', true)->orderBy('display_order')->orderBy('id')->with('stocks:id,product_variant_id,quantity,reserved_quantity'),
             ]);
+        $catalog->addSummaryAggregates($query);
         $decodedId = ProductIdentifier::decode($product);
         $resolved = $decodedId === null
             ? $query->where('slug', $product)->first()
@@ -84,9 +88,20 @@ class ProductController extends V1Controller
         return $this->notImplemented();
     }
 
-    public function indexVariants(): JsonResponse
+    public function indexVariants(string $product): JsonResponse
     {
-        return $this->notImplemented();
+        $resolvedProduct = $this->resolvePublicProduct($product);
+        $variants = $resolvedProduct->variants()
+            ->where('is_active', true)
+            ->with('stocks:id,product_variant_id,quantity,reserved_quantity')
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get();
+        $variants->each(fn ($variant) => $variant->setRelation('product', $resolvedProduct));
+
+        return response()->json([
+            'data' => ProductVariantResource::collection($variants)->resolve(),
+        ])->withHeaders($this->publicCacheHeaders());
     }
 
     public function storeVariant(): JsonResponse
@@ -94,9 +109,23 @@ class ProductController extends V1Controller
         return $this->notImplemented();
     }
 
-    public function showVariant(): JsonResponse
+    public function showVariant(string $product, string $variant): JsonResponse
     {
-        return $this->notImplemented();
+        $resolvedProduct = $this->resolvePublicProduct($product);
+        $variantId = VariantIdentifier::decode($variant);
+        $resolvedVariant = $variantId === null ? null : $resolvedProduct->variants()
+            ->where('is_active', true)
+            ->whereKey($variantId)
+            ->with('stocks:id,product_variant_id,quantity,reserved_quantity')
+            ->first();
+
+        if ($resolvedVariant === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested variant was not found.', 404);
+        }
+
+        $resolvedVariant->setRelation('product', $resolvedProduct);
+
+        return (new ProductVariantResource($resolvedVariant))->response()->withHeaders($this->publicCacheHeaders());
     }
 
     private function publicCacheHeaders(): array
@@ -105,5 +134,22 @@ class ProductController extends V1Controller
             'Cache-Control' => 'public, max-age=300, s-maxage=600',
             'CDN-Cache-Control' => 'public, max-age=600',
         ];
+    }
+
+    private function resolvePublicProduct(string $identifier): Product
+    {
+        $query = Product::query()
+            ->where('is_active', true)
+            ->whereHas('category', fn ($category) => $category->where('is_active', true));
+        $decodedId = ProductIdentifier::decode($identifier);
+        $product = $decodedId === null
+            ? $query->where('slug', $identifier)->first()
+            : $query->whereKey($decodedId)->first();
+
+        if ($product === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested product was not found.', 404);
+        }
+
+        return $product;
     }
 }

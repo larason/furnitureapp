@@ -21,7 +21,7 @@
 | `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units; `125000000` = 1,250,000.00 TZS; required for all products |
 | `category` | `{id,slug,name,description:string\|null}` | PUBLIC | no | Embedded Category summary (`description` is nullable) |
 | `images` | `[{id,url,alt_text,sort_order,is_primary}]` | PUBLIC | no | Full gallery array, deterministically sorted by `sort_order ASC, id ASC` |
-| `variants` | `[{id,sku,name,price,availability,stock_indicator}]` | PUBLIC | no | Array of active variants belonging to this product |
+| `variants` | `[{id,sku,name,price,availability}]` | PUBLIC | no | Array of active variants belonging to this product; `stock_indicator` is deferred to Phase 5.7 |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Coarse public signal (filter `?availability=available`). Lowercase exception. |
 | `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | **Display bucket only**, not filterable via query parameter |
 | `created_at` | ISO8601 UTC | PUBLIC | no | `2026-08-30T15:30:00Z` |
@@ -39,7 +39,6 @@
 | `category` | `{id,slug,name}` | PUBLIC | no | Lightweight category summary |
 | `primary_image` | `{id,url,alt_text}` | PUBLIC | yes | Primary thumbnail image object (`is_primary: true`) |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
-| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display badge bucket |
 
 **Not exposed publicly on any Product representation:** `reserved_quantity`, `physical_quantity`, supplier internals, warehouse location, staff notes, internal cost prices, margin data.
 
@@ -92,7 +91,6 @@
 | `name` | string | PUBLIC | no | Option / variant display name (e.g. "Charcoal Grey", "3-Seater Walnut") |
 | `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` override |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
-| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display badge bucket |
 | `created_at` | ISO8601 UTC | PUBLIC | no | Variant creation timestamp |
 | `updated_at` | ISO8601 UTC | PUBLIC | no | Variant update timestamp |
 
@@ -105,7 +103,6 @@
 | `name` | string | PUBLIC | no | Option / variant display name |
 | `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
-| `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display badge bucket |
 
 *Note:* `product_id` and timestamps (`created_at`, `updated_at`) are omitted from the embedded summary in `CAT-002` to avoid redundancy with the parent Product container and maintain a lightweight payload. Standalone retrieval via `CAT-005` and `CAT-006` provides full timestamps and explicit `product_id`.
 

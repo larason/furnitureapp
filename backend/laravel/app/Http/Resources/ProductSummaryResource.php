@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CategoryIdentifier;
 use App\Support\ProductIdentifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -22,7 +23,7 @@ class ProductSummaryResource extends JsonResource
                 'currency' => $this->summary_price_currency,
             ],
             'category' => [
-                'id' => $this->category->id,
+                'id' => CategoryIdentifier::encode($this->category),
                 'slug' => $this->category->slug,
                 'name' => $this->category->name,
             ],

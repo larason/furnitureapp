@@ -1247,7 +1247,7 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 - `CAT-001` `GET /api/v1/products` — *Query:* `search`, `category` (`?category={id}` canonical; no separate `/categories/{category}/products` per §19.5), `product_type` CLOSED, `availability=available|unavailable`, `min_price/max_price` minor units string, `sort` allow-list + `sort_direction` + `id ASC` tie-breaker, `page`/`per_page` (1–100) per pagination `meta.pagination`. *Response:* `Product` collection `data[]` + `meta.pagination` (public-safe, no `reserved_quantity`). *Errors:* `INVALID_VALUE` (filter/sort/page), `RATE_LIMITED`. *Idempotency:* `SAFE` (read). *State:* none (public). Availability is **embedded** (`availability` + `stock_indicator`) in `Product`, not separate `/availability` endpoint (preferred embedding per §19.6).
 - `CAT-002` `GET /api/v1/products/{product}` — *Response:* single `Product` + `images[]` + `variants` summary + `availability`/`stock_indicator`. *Errors:* `RESOURCE_NOT_FOUND`/`PRODUCT_NOT_FOUND` 404, `RATE_LIMITED`. *Public*.
 - `CAT-003/004` Category collection/detail — *Response:* `Category` collection/detail; `GET /categories/{category}/products` is **REJECTED**; use `GET /products?category=` canonical.
-- `CAT-005/006` Variants — *Purpose:* independent variant retrieval when product summary insufficient; not required if clients always use embedded variants. *Response:* `Variant` collection/detail.
+- `CAT-005/006` Variants — *Purpose:* independent variant retrieval when product summary insufficient; not required if clients always use embedded variants. *Response:* CAT-005 returns an unpaginated `{"data":[...]}` Variant collection; CAT-006 returns a `{"data":{...}}` Variant detail.
 
 **Authentication (Retired — Clerk owns credentials/sessions; do not call Laravel):**
 - `AUTH-001..008` are **RETIRED** by the Phase 4.1 Clerk contract change (`§17`, `clerk-authentication-architecture.md`). Clients must use Clerk sign-up/sign-in/sign-out/recovery/verification/password-change flows, then call Laravel with `Authorization: Bearer <Clerk session token>`. The Laravel password/login payloads below are historical reference only and are not implemented for new clients; Phase 4.2 removes the Laravel routes.
@@ -1398,7 +1398,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | `CAT-002` | GET | `/api/v1/products/{product}` | No | Public read | No | Product detail (public-safe representation) | Public / Cacheable |
 | `CAT-003` | GET | `/api/v1/categories` | No | Public read | Yes (`meta.pagination`) | List public categories | Public / Cacheable |
 | `CAT-004` | GET | `/api/v1/categories/{category}` | No | Public read | No | Category detail | Public / Cacheable |
-| `CAT-005` | GET | `/api/v1/products/{product}/variants` | No | Public read | Optional | List variants belonging to product | Public / Cacheable |
+| `CAT-005` | GET | `/api/v1/products/{product}/variants` | No | Public read | No | List variants belonging to product in deterministic order; returns `{data: [...]}` without `meta.pagination` | Public / Cacheable |
 | `CAT-006` | GET | `/api/v1/products/{product}/variants/{variant}` | No | Public read | No | Single variant detail | Public / Cacheable |
 | `CAT-007` | POST | `/api/v1/products` | Yes | `products.manage` (Admin/Staff) | No | Create product | Non-cacheable |
 | `CAT-008` | PATCH | `/api/v1/products/{product}` | Yes | `products.manage` (Admin/Staff) | No | Update product | Non-cacheable |
@@ -1632,7 +1632,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ### 21.5 Product Variants Contracts (`CAT-005`, `CAT-006`)
 
-- **Collection (`CAT-005`):** `GET /api/v1/products/{product}/variants` — lists public variants belonging strictly to the specified parent product (returns array of standalone variant items).
+- **Collection (`CAT-005`):** `GET /api/v1/products/{product}/variants` — lists public variants belonging strictly to the specified parent product. The response is unpaginated and uses the standard `{ "data": [...] }` envelope; items are ordered by `display_order ASC, id ASC`.
 - **Detail (`CAT-006`):** `GET /api/v1/products/{product}/variants/{variant}` — retrieves a single variant. Validates that `{variant}` belongs to `{product}`; mismatch returns `RESOURCE_NOT_FOUND` (404).
 - **Standalone Variant Object Structure (`CAT-006` / `CAT-005`):**
 
@@ -1647,15 +1647,14 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
     "currency": "TZS"
   },
   "availability": "available",
-  "stock_indicator": "IN_STOCK",
   "created_at": "2026-08-30T10:00:00Z",
   "updated_at": "2026-08-31T12:00:00Z"
 }
 ```
 
 - **Embedded Variant Summary Structure (Embedded in `CAT-002` Product Detail):**
-  Embedded variants in `CAT-002` omit `product_id` (implicit in parent product) and timestamps (`created_at`, `updated_at`) to keep the payload clean:
-  `[{ "id": "var_...", "sku": "SOFA-MOD-3S-GRY", "name": "Charcoal Grey", "price": { "amount": 125000000, "currency": "TZS" }, "availability": "available", "stock_indicator": "IN_STOCK" }]`
+  Embedded variants in `CAT-002` omit `product_id` (implicit in parent product) and timestamps (`created_at`, `updated_at`) to keep the payload clean. `stock_indicator` is deferred to Phase 5.7:
+  `[{ "id": "var_...", "sku": "SOFA-MOD-3S-GRY", "name": "Charcoal Grey", "price": { "amount": 125000000, "currency": "TZS" }, "availability": "available" }]`
 
 ---
 
@@ -1683,7 +1682,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 |---|---|---|
 | **Product** | `id`, `name`, `slug`, `product_type`, `price`, `category` (summary), `primary_image`, `availability`, `stock_indicator` | Summary fields + `description`, `images[]` (full ordered gallery), `variants[]` (embedded summary list), `created_at`, `updated_at` |
 | **Category** | `id`, `name`, `slug`, `image` | `id`, `name`, `slug`, `description`, `image`, `created_at` |
-| **Variant** | `id`, `sku`, `name`, `price`, `availability`, `stock_indicator` (embedded in `CAT-002`) | `id`, `product_id`, `sku`, `name`, `price`, `availability`, `stock_indicator`, `created_at`, `updated_at` (`CAT-005`, `CAT-006`) |
+| **Variant** | `id`, `sku`, `name`, `price`, `availability` (embedded in `CAT-002`) | `id`, `product_id`, `sku`, `name`, `price`, `availability`, `created_at`, `updated_at` (`CAT-005`, `CAT-006`); `stock_indicator` deferred to Phase 5.7 |
 
 
 ---
