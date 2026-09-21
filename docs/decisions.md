@@ -2129,3 +2129,55 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 - **Group C exit:** contract → domain → migrations → FKs → constraints → indexes → factories → seeds → fresh rebuild → integration tests all agree. **Database schema accurately represents the agreed domain and can be rebuilt from migrations.**
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`tests/Feature/MigrationRebuildTest.php`), `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-023 — Phase 5.5 Search Regression Mitigations
+
+**Decision:** Keep product search driver-aware. MySQL/MariaDB uses native FULLTEXT for `products.name` and `products.description`; SQLite remains a semantic-test fallback and must not be treated as FULLTEXT coverage. Variant attribute searches use `json_extract()` on SQLite and `JSON_UNQUOTE(JSON_EXTRACT())` on MySQL/MariaDB. LIKE escape clauses must use a single-character escape marker (`'\\'`), and search validation permits an explicitly empty or null search value so whitespace-only input behaves as an unfiltered request after trimming.
+
+- **Regression fixed:** SQLite does not provide MySQL's `JSON_UNQUOTE()` function. Using the MySQL expression in the SQLite fallback caused CAT-001 requests to return HTTP 500.
+- **Regression fixed:** SQLite requires the `LIKE ... ESCAPE` expression to contain exactly one character. Over-escaped SQL produced a database error during pagination/count queries.
+- **Regression fixed:** URL-encoded whitespace search input was rejected before the query could normalize it. Empty/null search values are now accepted and normalized to no search predicate.
+- **Regression fixed:** Relationship search now requires `product_variants.is_active = true`; inactive variants cannot make an active product discoverable by SKU or attribute.
+- **Regression fixed:** SQLite product name/description fallback uses bound raw predicates with an explicit single-character `ESCAPE '\\'` clause so literal `%`, `_`, and backslash characters remain literal search input.
+- **Required coverage:** Keep SQLite tests focused on application semantics, add a separate MySQL/MariaDB integration test for FULLTEXT behavior where infrastructure permits, and run the full backend suite after query-builder changes.
+
+**Reason:** The catalog query is shared across database drivers and pagination executes a separate count query. Driver-specific JSON functions and escaping rules therefore need explicit handling and regression coverage rather than relying on SQL portability assumptions.
+
+**Status:** Accepted | **Affected:** `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Requests/ProductIndexRequest.php`, `backend/laravel/tests/Feature/ProductReadApiTest.php`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-024 — Phase 5.6 Catalog Pagination and Sorting
+
+**Decision:** CAT-001 uses Laravel's `LengthAwarePaginator` through the existing Product catalog query. The shared pipeline remains `search → filters → allow-listed sort → id ASC tie-breaker → paginate`, with `page` defaulting to `1`, `per_page` defaulting to `20`, and a hard maximum of `100`. The response exposes only the frozen `meta.pagination` fields. Requests beyond the last page return an empty `data` array while reporting the last valid page as `current_page`; empty result sets report `last_page = 1` and both navigation flags as false.
+
+- Allowed primary sorts remain `created_at`, `price`, and `name`.
+- Default sort remains `created_at DESC, id ASC`; explicit `name` and `price` sorts default to ascending unless overridden.
+- Price sorting reuses the active-variant minimum-price subquery used by summary serialization and price filtering.
+- Relationship search continues to use `EXISTS`-style `whereHas`, requiring active variants, so matching multiple variants neither duplicates products nor inflates paginator totals.
+- No cursor pagination, pagination links, schema changes, dependencies, frontend changes, or new sort modes were introduced.
+
+**Reason:** The existing CAT-001 query and controller already used SQL pagination and the frozen response envelope. Phase 5.6 hardens edge behavior and regression coverage without creating a second pagination abstraction or changing the public contract.
+
+**Status:** Accepted | **Affected:** `backend/laravel/app/Http/Controllers/Api/V1/ProductController.php`, `backend/laravel/tests/Feature/ProductReadApiTest.php`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-025 — FULLTEXT Index Migration Operational Safety
+
+**Decision:** The MySQL/MariaDB FULLTEXT migration is a schema-changing operation and must not be treated as zero-downtime. Laravel's `Schema::table()` declaration produces `ALTER TABLE ... ADD FULLTEXT INDEX`; index creation may hold metadata/table locks and block reads or writes while the index is built, especially on a populated `products` table.
+
+Before applying this migration to a populated environment:
+
+- rehearse the migration against a production-sized staging copy using the same MySQL/MariaDB version and storage configuration;
+- take or verify a restorable database backup;
+- schedule a maintenance or low-traffic window and announce possible catalog read/write interruption;
+- monitor migration duration, metadata locks, database load, and application errors;
+- verify the index exists and run the CAT-001 search smoke checks before reopening normal traffic;
+- stop and use a database-specific online-DDL procedure only if the measured lock impact is unacceptable.
+
+The migration remains unchanged and intentionally does not embed `ALGORITHM=INPLACE`, `LOCK=NONE`, or vendor-specific SQL because those options differ between MySQL and MariaDB and are not guaranteed for every table/storage/version combination. A future zero-downtime requirement needs a separate, tested deployment procedure rather than an unverified migration option.
+
+**Status:** Accepted | **Affected:** `backend/laravel/database/migrations/2026_09_20_120000_add_fulltext_index_to_products_table.php`, `docs/decisions.md`
