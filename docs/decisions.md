@@ -2162,3 +2162,22 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 **Reason:** The existing CAT-001 query and controller already used SQL pagination and the frozen response envelope. Phase 5.6 hardens edge behavior and regression coverage without creating a second pagination abstraction or changing the public contract.
 
 **Status:** Accepted | **Affected:** `backend/laravel/app/Http/Controllers/Api/V1/ProductController.php`, `backend/laravel/tests/Feature/ProductReadApiTest.php`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-025 — FULLTEXT Index Migration Operational Safety
+
+**Decision:** The MySQL/MariaDB FULLTEXT migration is a schema-changing operation and must not be treated as zero-downtime. Laravel's `Schema::table()` declaration produces `ALTER TABLE ... ADD FULLTEXT INDEX`; index creation may hold metadata/table locks and block reads or writes while the index is built, especially on a populated `products` table.
+
+Before applying this migration to a populated environment:
+
+- rehearse the migration against a production-sized staging copy using the same MySQL/MariaDB version and storage configuration;
+- take or verify a restorable database backup;
+- schedule a maintenance or low-traffic window and announce possible catalog read/write interruption;
+- monitor migration duration, metadata locks, database load, and application errors;
+- verify the index exists and run the CAT-001 search smoke checks before reopening normal traffic;
+- stop and use a database-specific online-DDL procedure only if the measured lock impact is unacceptable.
+
+The migration remains unchanged and intentionally does not embed `ALGORITHM=INPLACE`, `LOCK=NONE`, or vendor-specific SQL because those options differ between MySQL and MariaDB and are not guaranteed for every table/storage/version combination. A future zero-downtime requirement needs a separate, tested deployment procedure rather than an unverified migration option.
+
+**Status:** Accepted | **Affected:** `backend/laravel/database/migrations/2026_09_20_120000_add_fulltext_index_to_products_table.php`, `docs/decisions.md`

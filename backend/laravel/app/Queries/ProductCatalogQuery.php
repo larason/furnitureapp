@@ -108,7 +108,7 @@ final class ProductCatalogQuery
             $searchQuery->orWhereHas('variants', function (Builder $variant) use ($search): void {
                 $variant->where('is_active', true)->where(function (Builder $variantSearch) use ($search): void {
                     $prefix = $this->escapeLike($search).'%';
-                    $variantSearch->where('sku', 'like', $prefix, 'and', '\\');
+                    $variantSearch->whereRaw("sku LIKE ? ESCAPE '\\'", [$prefix]);
                     foreach (['color', 'fabric', 'finish', 'size', 'configuration', 'leg_finish'] as $key) {
                         $path = '$.'.$key;
                         $pattern = '%'.$this->escapeLike($search).'%';

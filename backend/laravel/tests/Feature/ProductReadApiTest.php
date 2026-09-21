@@ -252,6 +252,28 @@ class ProductReadApiTest extends TestCase
             ->assertJsonPath('data.0.slug', 'oak-percent-table');
     }
 
+    public function test_sqlite_sku_search_escapes_like_metacharacters(): void
+    {
+        $category = Category::factory()->create();
+        $percentProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Percent SKU Product', 'slug' => 'percent-sku-product']);
+        $underscoreProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Underscore SKU Product', 'slug' => 'underscore-sku-product']);
+        $wildcardProduct = Product::factory()->create(['category_id' => $category->id, 'name' => 'Wildcard SKU Product', 'slug' => 'wildcard-sku-product']);
+
+        ProductVariant::factory()->create(['product_id' => $percentProduct->id, 'sku' => 'CODE%RED']);
+        ProductVariant::factory()->create(['product_id' => $underscoreProduct->id, 'sku' => 'CODE_RED']);
+        ProductVariant::factory()->create(['product_id' => $wildcardProduct->id, 'sku' => 'CODERED']);
+
+        $this->getJson('/api/v1/products?search='.urlencode('CODE%'))
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.slug', 'percent-sku-product');
+
+        $this->getJson('/api/v1/products?search='.urlencode('CODE_'))
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.slug', 'underscore-sku-product');
+    }
+
     public function test_search_composes_with_category_and_price_filters_and_suppresses_duplicate_variants(): void
     {
         $category = Category::factory()->create(['slug' => 'dining-room']);
