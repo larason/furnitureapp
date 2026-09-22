@@ -3,12 +3,13 @@
 namespace App\Services;
 
 use App\Exceptions\Api\ApiException;
+use App\Exceptions\IdempotencyClaimConflict;
 use App\Models\IdempotencyKey;
 use App\Models\User;
 use App\Support\ApiErrorCode;
+use App\Support\ConcurrentTransaction;
 use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Shared durable idempotency store scoped by authenticated identity + action
@@ -26,8 +27,8 @@ final class IdempotencyService
         $fingerprint = hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR));
 
         try {
-            return DB::transaction(fn (): IdempotentOutcome => $this->run($actor, $action, $keyHash, $fingerprint, $operation));
-        } catch (UniqueConstraintViolationException) {
+            return ConcurrentTransaction::run(fn (): IdempotentOutcome => $this->run($actor, $action, $keyHash, $fingerprint, $operation));
+        } catch (IdempotencyClaimConflict) {
             return $this->existingOutcome($actor, $action, $keyHash, $fingerprint);
         }
     }
@@ -48,13 +49,7 @@ final class IdempotencyService
             return $this->outcomeFrom($existing, $fingerprint);
         }
 
-        $record = IdempotencyKey::create([
-            'actor_id' => $actor->getKey(),
-            'action' => $action,
-            'key_hash' => $keyHash,
-            'request_fingerprint' => $fingerprint,
-            'expires_at' => now()->addHours((int) config('idempotency.retention_hours')),
-        ]);
+        $record = $this->claim($actor, $action, $keyHash, $fingerprint);
 
         $body = $operation();
 
@@ -64,6 +59,21 @@ final class IdempotencyService
         ])->save();
 
         return new IdempotentOutcome($body, false);
+    }
+
+    private function claim(User $actor, string $action, string $keyHash, string $fingerprint): IdempotencyKey
+    {
+        try {
+            return IdempotencyKey::create([
+                'actor_id' => $actor->getKey(),
+                'action' => $action,
+                'key_hash' => $keyHash,
+                'request_fingerprint' => $fingerprint,
+                'expires_at' => now()->addHours((int) config('idempotency.retention_hours')),
+            ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            throw new IdempotencyClaimConflict('The idempotency key is already claimed.', 0, $exception);
+        }
     }
 
     private function existingOutcome(User $actor, string $action, string $keyHash, string $fingerprint): IdempotentOutcome
