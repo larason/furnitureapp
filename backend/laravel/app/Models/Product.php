@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Support\AssemblyRequired;
+use App\Support\ProductType;
 use Database\Factories\ProductFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -82,11 +84,21 @@ class Product extends Model
         return $this->hasMany(FurnitureRequest::class);
     }
 
+    public function scopePublic(Builder $query): Builder
+    {
+        return $query->where('products.is_active', true)
+            ->where('products.is_published', true)
+            ->whereNull('products.deleted_at')
+            ->whereHas('category', fn (Builder $category) => $category->where('is_active', true));
+    }
+
     protected function casts(): array
     {
         return [
             'assembly_required' => AssemblyRequired::class,
             'is_active' => 'boolean',
+            'is_published' => 'boolean',
+            'product_type' => ProductType::class,
             'is_featured' => 'boolean',
         ];
     }

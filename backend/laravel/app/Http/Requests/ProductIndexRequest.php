@@ -49,9 +49,6 @@ final class ProductIndexRequest extends FormRequest
                 $validator->errors()->add('max_price', 'The max_price must be greater than or equal to min_price.');
             }
 
-            if ($this->filled('product_type')) {
-                $validator->errors()->add('product_type', 'The product_type filter is not available until product type data is authoritative.');
-            }
         });
     }
 }

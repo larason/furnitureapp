@@ -51,8 +51,8 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Clerk session JWT sent via `Authorization: Bearer` by web and Flutter clients. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued or mobile-specific API token, and cookies are never accepted as credentials (bearer-only).
-        A session pending security tasks (`sts=pending`, e.g. required `reset-password`/`setup-mfa`) is rejected with SESSION_EXPIRED before any protected access.
+      description: >-
+        Clerk session JWT sent via `Authorization: Bearer` by web and Flutter clients. Laravel cryptographically verifies it and resolves a local application User; it is not a Laravel-issued or mobile-specific API token, and cookies are never accepted as credentials (bearer-only). A session pending security tasks (`sts=pending`, e.g. required `reset-password`/`setup-mfa`) is rejected with SESSION_EXPIRED before any protected access.
     uploadToken:
       type: apiKey
       in: header
@@ -647,6 +647,7 @@ components:
       - name
       - price
       - availability
+      - stock_indicator
       properties:
         product_id:
           type: string
@@ -663,6 +664,8 @@ components:
           $ref: '#/components/schemas/Money'
         availability:
           $ref: '#/components/schemas/Availability'
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
         created_at:
           type: string
           format: date-time
@@ -1917,6 +1920,7 @@ components:
       - name
       - price
       - availability
+      - stock_indicator
       properties:
         id:
           type: string
@@ -1932,6 +1936,8 @@ components:
           $ref: '#/components/schemas/Money'
         availability:
           $ref: '#/components/schemas/Availability'
+        stock_indicator:
+          $ref: '#/components/schemas/StockIndicator'
     OrderItem:
       type: object
       required:
@@ -2162,6 +2168,14 @@ paths:
       summary: List products
       security: []
       parameters:
+      - $ref: '#/components/parameters/ProductSearch'
+      - $ref: '#/components/parameters/ProductCategory'
+      - $ref: '#/components/parameters/ProductTypeFilter'
+      - $ref: '#/components/parameters/ProductAvailability'
+      - $ref: '#/components/parameters/ProductMinPrice'
+      - $ref: '#/components/parameters/ProductMaxPrice'
+      - $ref: '#/components/parameters/ProductSort'
+      - $ref: '#/components/parameters/ProductSortDirection'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'
       responses:

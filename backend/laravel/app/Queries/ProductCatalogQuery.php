@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\ProductVariant;
 use App\Support\CategoryIdentifier;
+use App\Support\ProductType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -15,8 +16,7 @@ final class ProductCatalogQuery
     {
         $query = Product::query()
             ->select('products.*')
-            ->where('products.is_active', true)
-            ->whereHas('category', fn (Builder $category) => $category->where('is_active', true))
+            ->public()
             ->with([
                 'category:id,name,slug,description',
                 'primaryImage:id,product_id,file_path,alt_text',
@@ -34,7 +34,8 @@ final class ProductCatalogQuery
         return $query
             ->selectSub($this->minimumPriceSubquery(), 'summary_price_amount')
             ->selectSub($this->minimumPriceSubquery('price_currency'), 'summary_price_currency')
-            ->selectSub($this->availableStockScalar(), 'summary_has_available_stock');
+            ->selectSub($this->availableStockScalar(), 'summary_has_available_stock')
+            ->selectSub($this->availableQuantityScalar(), 'summary_available_quantity');
     }
 
     private function minimumPriceSubquery(string $column = 'price_amount'): Builder
@@ -59,6 +60,15 @@ final class ProductCatalogQuery
             ->limit(1);
     }
 
+    private function availableQuantityScalar(): Builder
+    {
+        return ProductStock::query()
+            ->selectRaw('COALESCE(SUM(product_stocks.quantity - product_stocks.reserved_quantity), 0)')
+            ->join('product_variants', 'product_variants.id', '=', 'product_stocks.product_variant_id')
+            ->whereColumn('product_variants.product_id', 'products.id')
+            ->where('product_variants.is_active', true);
+    }
+
     private function applyFilters(Builder $query, array $filters): void
     {
         $search = trim((string) ($filters['search'] ?? ''));
@@ -74,13 +84,22 @@ final class ProductCatalogQuery
             });
         }
 
+        if (isset($filters['product_type'])) {
+            $query->where('products.product_type', $filters['product_type']);
+        }
+
         if (isset($filters['availability'])) {
-            $available = $filters['availability'] === 'available';
-            if ($available) {
-                $query->whereHas('variants', fn (Builder $variant) => $variant->where('is_active', true)->whereHas('stocks', fn (Builder $stock) => $stock->whereRaw('(quantity - reserved_quantity) > 0')));
-            } else {
-                $query->whereDoesntHave('variants', fn (Builder $variant) => $variant->where('is_active', true)->whereHas('stocks', fn (Builder $stock) => $stock->whereRaw('(quantity - reserved_quantity) > 0')));
-            }
+            $positiveStock = fn (Builder $variant) => $variant->where('is_active', true)
+                ->whereHas('stocks', fn (Builder $stock) => $stock->whereRaw('(quantity - reserved_quantity) > 0'));
+            $query->when(
+                $filters['availability'] === 'available',
+                fn (Builder $available) => $available->where(function (Builder $availability): void {
+                    $availability->where('products.product_type', ProductType::MADE_TO_ORDER->value)
+                        ->orWhereHas('variants', fn (Builder $variant) => $variant->where('is_active', true)->whereHas('stocks', fn (Builder $stock) => $stock->whereRaw('(quantity - reserved_quantity) > 0')));
+                }),
+                fn (Builder $unavailable) => $unavailable->where('products.product_type', ProductType::IN_STOCK->value)
+                    ->whereDoesntHave('variants', $positiveStock),
+            );
         }
 
         foreach (['min_price' => '>=', 'max_price' => '<='] as $field => $operator) {

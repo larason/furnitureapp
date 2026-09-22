@@ -2181,3 +2181,13 @@ Before applying this migration to a populated environment:
 The migration remains unchanged and intentionally does not embed `ALGORITHM=INPLACE`, `LOCK=NONE`, or vendor-specific SQL because those options differ between MySQL and MariaDB and are not guaranteed for every table/storage/version combination. A future zero-downtime requirement needs a separate, tested deployment procedure rather than an unverified migration option.
 
 **Status:** Accepted | **Affected:** `backend/laravel/database/migrations/2026_09_20_120000_add_fulltext_index_to_products_table.php`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-026 — Catalog Product Availability Authority
+
+**Decision:** Product publication is independent from operational activity. Public catalog visibility requires an active, published, non-deleted Product and an active Category. The new Product columns are backfilled so existing active products remain visible; new factory products are published by default for compatibility with existing public-read tests, while draft state is explicit.
+
+`IN_STOCK` availability is derived from the sum of `quantity - reserved_quantity` across active variants and all stock locations. Zero or negative quantity is unavailable; positive quantity is available, with `LOW_STOCK` at five or fewer units. `MADE_TO_ORDER` products are always available and use the `MADE_TO_ORDER` indicator regardless of stock rows. The API exposes `product_type`, `availability`, and `stock_indicator`, but never raw inventory fields.
+
+**Status:** Accepted | **Affected:** Product catalog model, query, resources, migration, factory, seeder, and catalog tests

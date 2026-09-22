@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CatalogAvailability;
 use App\Support\CategoryIdentifier;
 use App\Support\ProductIdentifier;
 use Illuminate\Http\Request;
@@ -12,12 +13,13 @@ class ProductSummaryResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $available = (bool) $this->summary_has_available_stock;
+        $availability = CatalogAvailability::product($this->resource);
 
         return [
             'id' => ProductIdentifier::encode($this->resource),
             'name' => $this->name,
             'slug' => $this->slug,
+            'product_type' => $this->product_type->value,
             'price' => $this->summary_price_amount === null ? null : [
                 'amount' => (int) $this->summary_price_amount,
                 'currency' => $this->summary_price_currency,
@@ -32,7 +34,8 @@ class ProductSummaryResource extends JsonResource
                 'url' => Storage::disk(config('filesystems.default'))->url($this->primaryImage->file_path),
                 'alt_text' => $this->primaryImage->alt_text,
             ]),
-            'availability' => $available ? 'available' : 'unavailable',
+            'availability' => $availability['availability'],
+            'stock_indicator' => $availability['stock_indicator'],
         ];
     }
 }

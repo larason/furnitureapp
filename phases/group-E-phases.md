@@ -1,2007 +1,2154 @@
-# Phase 5.6 — Pagination / Sorting
+# Phase 5.7 — Product Availability Rules
 
 ## Purpose
 
-Complete and harden the pagination and sorting behavior for the public catalog:
+Complete the V1 catalog availability model by implementing the deferred Product authority for:
 
 ```text
-CAT-001
-GET /api/v1/products
+product_type
+is_published
 ```
 
-using the conventional V1 e-commerce model already frozen in the API contract:
+and establishing one consistent derivation for:
 
 ```text
-page-based pagination
-+
-configurable page size
-+
-total result count
-+
-allow-listed sorting
-+
-deterministic secondary ordering
-```
-
-This phase must integrate with the existing Phase 5.5 pipeline:
-
-```text
-search
-→ filter
-→ sort
-→ deterministic tie-breaker
-→ paginate
-```
-
-Do not introduce cursor pagination, infinite-scroll-specific API contracts, or a second collection endpoint.
-
----
-
-# 1. Preserve Existing V1 Contract
-
-The authoritative request parameters remain:
-
-```text
-page
-per_page
-sort
-sort_direction
-```
-
-combined with the already-supported:
-
-```text
-search
-category
 availability
-min_price
-max_price
+stock_indicator
+public visibility
 ```
 
-Do not rename them.
-
-Do not introduce aliases such as:
+across:
 
 ```text
-pageSize
-page_number
-limit
-offset
-order
-orderBy
-sortBy
-direction
+CAT-001 Product Collection
+CAT-002 Product Detail
+CAT-005 Variant Collection
+CAT-006 Variant Detail
 ```
+
+This phase completes catalog presentation rules.
+
+It does **not** implement cart admission, checkout reservation, inventory adjustment, or made-to-order request processing.
 
 ---
 
-# 2. Standard Pagination Strategy
+# 1. Preserve the Existing Domain Model
 
-Use conventional offset/page pagination through Laravel's normal paginator.
+Do not redesign Group C.
 
-Preferred implementation:
-
-```text
-Laravel paginate()
-```
-
-or the project's existing equivalent.
-
-Do not manually implement:
+The authoritative model remains:
 
 ```text
-OFFSET calculations
-total-count arithmetic
-last-page arithmetic
+Product
+    ↓
+ProductVariant
+        ↓
+ProductStock
 ```
 
-unless there is a concrete framework limitation.
+where:
+
+```text
+Product
+→ catalog identity / visibility / product type
+
+ProductVariant
+→ sellable/pricing configuration
+
+ProductStock
+→ physical inventory by location
+```
+
+Do not add stock quantities to Product.
+
+Do not add stock quantities to ProductVariant.
 
 ---
 
-# 3. Do Not Introduce Cursor Pagination
+# 2. Read Authoritative Repository State First
+
+Before modifying code, inspect:
+
+```text
+AGENTS.md
+docs/VISION.md
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/api/openapi.yaml
+docs/domain/business-rules.md
+docs/decisions.md
+phases/group-C-phases.md
+```
+
+Also inspect current implementations from:
+
+```text
+Phase 5.2
+Phase 5.3
+Phase 5.4
+Phase 5.5
+Phase 5.6
+```
+
+especially the existing:
+
+```text
+Product public scope
+ProductCatalogQuery
+price resolver
+availability placeholder/resolver
+Variant resources
+Product resources
+```
+
+Do not create parallel logic.
+
+---
+
+# 3. Known Deferred Schema Gap
+
+Group C deliberately left these Product fields absent:
+
+```text
+product_type
+is_published
+```
+
+The repository explicitly assigns their correction to Phase 5.7.
+
+This phase must now add them.
+
+---
+
+# 4. Product Type
+
+Introduce authoritative Product field:
+
+```text
+product_type
+```
+
+Closed values:
+
+```text
+IN_STOCK
+MADE_TO_ORDER
+```
+
+No third value.
 
 Do not add:
 
 ```text
-cursor
-after
-before
-next_cursor
-previous_cursor
+PREORDER
+CUSTOM
+BACKORDER
+DIGITAL
+SERVICE
 ```
 
 in V1.
 
-Cursor pagination may be useful for high-volume feeds, but CAT-001 already requires:
-
-```text
-current_page
-per_page
-total
-last_page
-has_next
-has_previous
-```
-
-which naturally fits page-based pagination.
-
 ---
 
-# 4. Why Page Pagination Fits This Store
+# 5. Product Type Support Type
 
-Preserve page pagination because catalog browsing benefits from:
+Use an existing project enum/value-object pattern.
 
-```text
-page URLs
-total product counts
-jump-to-page behavior
-SEO-compatible query URLs
-back-button restoration
-desktop catalog navigation
-mobile pagination/infinite-scroll adaptation
-```
-
-The frontend may later visually implement:
+Preferred:
 
 ```text
-numbered pagination
-Load More
-infinite scrolling
+App\Support\ProductType
 ```
 
-while still consuming the same page-based backend API.
+or the current convention.
 
-Do not change the backend contract merely because the frontend interaction differs.
-
----
-
-# 5. Pagination Parameters
-
-`page`:
-
-```text
-optional
-integer
-1-based
-minimum = 1
-default = 1
-```
-
-`per_page`:
-
-```text
-optional
-integer
-minimum = 1
-maximum = 100
-default = 20
-```
-
-Use the exact frozen values.
-
----
-
-# 6. Strict Validation
-
-Reject invalid input.
-
-Examples:
-
-```text
-?page=0
-?page=-1
-?page=1.5
-?page=abc
-
-?per_page=0
-?per_page=-20
-?per_page=101
-?per_page=abc
-```
-
-must return the canonical validation error.
-
-Do not silently clamp malformed values unless current API conventions explicitly require it.
-
----
-
-# 7. Avoid Large Page Sizes
-
-Maximum:
-
-```text
-100
-```
-
-is a hard API limit.
-
-Do not allow:
-
-```text
-per_page=500
-per_page=1000
-```
-
-for convenience.
-
-This protects:
-
-```text
-DB load
-serialization cost
-network payload
-mobile clients
-shared caching
-```
-
----
-
-# 8. Pagination Must Run Last
-
-The pipeline is mandatory:
-
-```text
-1. public visibility
-2. search
-3. filters
-4. sort
-5. id tie-breaker
-6. paginate
-```
-
-Never:
-
-```text
-paginate
-→ search/filter in PHP
-```
-
----
-
-# 9. Filtering Before Count
-
-Pagination totals must describe the **filtered result set**, not the entire Product table.
-
-Example:
-
-```text
-search=oak
-category=dining-room
-```
-
-If 17 Products match:
-
-```text
-total = 17
-```
-
-not total catalog size.
-
----
-
-# 10. No In-Memory Pagination
-
-Do not:
+Do not scatter:
 
 ```php
-Product::all()
+'IN_STOCK'
+'MADE_TO_ORDER'
 ```
 
-and then call collection pagination helpers.
-
-Filtering/sorting/pagination belong in SQL.
+through controllers/resources/query classes.
 
 ---
 
-# 11. Standard Response Envelope
+# 6. Product Type Database Representation
 
-CAT-001 must return:
+Follow the project's established CLOSED-enum storage strategy.
 
-```json
-{
-  "data": [],
-  "meta": {
-    "pagination": {
-      "current_page": 1,
-      "per_page": 20,
-      "total": 0,
-      "last_page": 1,
-      "has_next": false,
-      "has_previous": false
-    }
-  }
-}
-```
+Do not redesign enum handling globally.
 
-No Laravel-specific paginator internals should leak.
+Remember the known MySQL/MariaDB case-insensitive enum behavior from Group C:
+
+application validation remains authoritative for canonical uppercase values.
 
 ---
 
-# 12. Exact Metadata Fields
+# 7. Product Type Migration
 
-Only expose the approved metadata:
+Create a new migration.
 
-```text
-current_page
-per_page
-total
-last_page
-has_next
-has_previous
-```
+Do not modify historical Group C migrations.
 
-Do not casually add:
+The migration must make existing rows valid.
+
+Preferred compatibility behavior:
 
 ```text
-from
-to
-first_page_url
-last_page_url
-next_page_url
-prev_page_url
-path
-links[]
+existing Product rows
+→ IN_STOCK
 ```
 
-unless the V1 contract is deliberately changed.
+because legacy Products existed before Product Type could be represented and previously participated in the ordinary inventory-backed catalog.
+
+Record this explicitly as a migration compatibility decision.
 
 ---
 
-# 13. No Pagination Links Yet
+# 8. Do Not Infer Legacy MADE_TO_ORDER
 
-Pagination URLs are intentionally deferred.
-
-Do not return:
+Do not attempt to identify legacy made-to-order Products from:
 
 ```text
-links.next
-links.previous
-```
-
-in Phase 5.6.
-
-Clients can construct query requests using the metadata.
-
----
-
-# 14. Empty Catalog
-
-For zero results:
-
-```text
-data = []
-total = 0
-current_page = 1
-last_page = 1
-has_next = false
-has_previous = false
-```
-
-Use the exact current convention.
-
----
-
-# 15. Page Beyond Last Page
-
-Example:
-
-```text
-total = 41
-per_page = 20
-last_page = 3
-```
-
-Requesting:
-
-```text
-?page=50
-```
-
-must return:
-
-```text
-200
-data = []
-```
-
-with valid pagination metadata.
-
-Do not return 404.
-
----
-
-# 16. `has_next`
-
-Derive semantically from:
-
-```text
-current_page < last_page
-```
-
-through Laravel paginator metadata where possible.
-
-Do not maintain a duplicate manual state.
-
----
-
-# 17. `has_previous`
-
-Equivalent semantic rule:
-
-```text
-current_page > 1
-```
-
-subject to existing empty-result convention.
-
-Prefer paginator authority.
-
----
-
-# 18. Sorting Allow-List
-
-Public Product sorting supports only:
-
-```text
-created_at
-price
+zero stock
+category
 name
+description
+SKU
 ```
 
-Do not allow arbitrary database columns.
+That would fabricate business meaning.
+
+Legacy rows become:
+
+```text
+IN_STOCK
+```
+
+unless an explicit repository data migration says otherwise.
 
 ---
 
-# 19. Sort Mapping
+# 9. Publication State
 
-Map public sort values explicitly to trusted query expressions.
-
-Conceptually:
+Introduce:
 
 ```text
-created_at
-→ products.created_at
-
-name
-→ products.name
-
-price
-→ authoritative derived public Product price expression
+is_published
 ```
 
-Never:
+as a Product-level boolean.
 
-```php
-orderBy($request->sort)
-```
-
-without an allow-list.
-
----
-
-# 20. Default Sorting
-
-When `sort` is absent:
+This is distinct from:
 
 ```text
-created_at DESC
-id ASC
-```
-
-This is the default catalog display ordering.
-
-Preserve it.
-
----
-
-# 21. Name Sorting
-
-When:
-
-```text
-sort=name
-```
-
-default direction:
-
-```text
-ASC
-```
-
-unless `sort_direction` explicitly overrides it.
-
----
-
-# 22. Price Sorting
-
-When:
-
-```text
-sort=price
-```
-
-default direction:
-
-```text
-ASC
-```
-
-unless overridden.
-
-Use the authoritative Product public price expression established in Phase 5.2.
-
----
-
-# 23. Created Date Sorting
-
-When:
-
-```text
-sort=created_at
-```
-
-default direction:
-
-```text
-DESC
-```
-
-unless overridden.
-
----
-
-# 24. Sort Direction
-
-Accepted values:
-
-```text
-asc
-desc
-```
-
-Case-insensitive input may normalize to lowercase if the current request contract allows that.
-
-Do not accept:
-
-```text
-ascending
-descending
-1
--1
-random
+is_active
 ```
 
 ---
 
-# 25. Direction Without Sort
+# 10. `is_active` vs `is_published`
 
-Inspect the current contract/request implementation.
-
-Preferred behavior if already established:
+Keep the meanings separate:
 
 ```text
-sort_direction without sort
-→ applies to the default created_at sort
+is_active
+→ Product is operationally active / not disabled
+
+is_published
+→ Product is intentionally visible in the public catalog
 ```
 
-only if that matches current API docs.
-
-Otherwise reject or ignore consistently according to the existing contract.
-
-Do not invent ambiguous behavior in Phase 5.6.
+A Product must satisfy both to be publicly discoverable.
 
 ---
 
-# 26. Deterministic Secondary Ordering
+# 11. Public Visibility Rule
 
-Every Product collection ordering must end with:
+Canonical public Product predicate:
 
 ```text
-id ASC
+deleted_at IS NULL
+AND is_active = true
+AND is_published = true
 ```
 
-unless `id` is already the unique primary sort.
+plus whatever existing public Category/pricing requirements already apply.
 
-Examples:
-
-```sql
-ORDER BY created_at DESC, id ASC
-```
-
-```sql
-ORDER BY name ASC, id ASC
-```
-
-```sql
-ORDER BY derived_price ASC, id ASC
-```
-
-This is mandatory.
+Centralize this predicate.
 
 ---
 
-# 27. Why Tie-Breaking Matters
+# 12. Do Not Duplicate Visibility Logic
 
-Many Products may share:
-
-```text
-same name
-same price
-same created_at
-```
-
-Without a unique tie-breaker:
+Do not independently write:
 
 ```text
-Product can drift between pages
-duplicate across pages
-disappear between pages
+CAT-001 visibility
+CAT-002 visibility
+CAT-005 visibility
+CAT-006 visibility
+search visibility
 ```
 
-when SQL chooses an undefined equal-value order.
+in separate implementations.
 
-Always use `id ASC`.
+Use one public Product scope/query abstraction.
 
 ---
 
-# 28. Tie-Breaker Direction
+# 13. Publication Migration Compatibility
 
-The frozen contract explicitly uses:
+Adding `is_published` must not accidentally make every existing public Product disappear.
 
-```text
-id ASC
-```
-
-regardless of primary sort direction.
-
-Therefore:
+Preferred migration strategy:
 
 ```text
-created_at DESC, id ASC
-price DESC, id ASC
-name DESC, id ASC
+new field default false for future safety
++
+explicitly backfill existing active legacy Products to true
 ```
 
-are valid.
+or an equivalent deterministic migration that preserves currently public legacy catalog data.
 
-Do not automatically make ID direction match the primary sort.
+Document the exact approach.
 
 ---
 
-# 29. Derived Price Sorting
+# 14. Future Product Creation
 
-Product does not own its own price column.
+Future catalog-management phases should explicitly choose publication state.
+
+Do not depend permanently on implicit auto-publishing.
+
+If a DB default is required:
+
+prefer safe draft behavior for new rows:
+
+```text
+is_published = false
+```
+
+while migration backfill preserves legacy visibility.
+
+---
+
+# 15. Product Model
+
+Update Product casts/type declarations for:
+
+```text
+product_type
+is_published
+```
+
+using project conventions.
+
+Do not make them client-mass-assignable merely because fields now exist.
+
+Management APIs later own writes.
+
+---
+
+# 16. Public Serialization
+
+Public Product responses now expose:
+
+```text
+product_type
+```
+
+because it is part of the frozen Product contract.
+
+Do **not** expose:
+
+```text
+is_active
+is_published
+```
+
+through CAT-001 or CAT-002.
+
+Those remain operational/internal flags.
+
+---
+
+# 17. Publication Masking
+
+For public Product detail:
+
+```text
+is_active = false
+OR
+is_published = false
+OR
+soft-deleted
+```
+
+must resolve as:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+Do not expose:
+
+```text
+PRODUCT_IS_DRAFT
+PRODUCT_UNPUBLISHED
+PRODUCT_INACTIVE
+```
+
+to public callers.
+
+---
+
+# 18. Variant Visibility Depends on Product Visibility
+
+A Variant is public only when:
+
+```text
+parent Product is public
+AND
+Variant.is_active = true
+```
+
+An active Variant under an unpublished Product is not publicly accessible.
+
+---
+
+# 19. Keep the Phase 5.5 Active-Variant Fix
+
+Relationship search must continue to require:
+
+```text
+variants.is_active = true
+```
+
+before SKU/attribute predicates.
+
+Do not regress this.
+
+Inactive Variants must never make a public Product appear through search.
+
+---
+
+# 20. Inventory Authority
+
+Inventory remains authoritative in:
+
+```text
+product_stocks
+```
+
+Each stock row already provides derived:
+
+```text
+available_quantity = quantity - reserved_quantity
+```
+
+Do not add an `available_quantity` database column.
+
+---
+
+# 21. Aggregate Across Locations
+
+A Variant may have stock in multiple locations.
+
+Variant total available stock is:
+
+```text
+SUM(stock.quantity - stock.reserved_quantity)
+```
+
+across all current stock rows belonging to that Variant.
+
+Do not inspect only the first location.
+
+---
+
+# 22. Location Is Internal
+
+Public availability aggregation may use all inventory locations, but must never expose:
+
+```text
+warehouse_location
+quantity
+reserved_quantity
+available_quantity
+```
+
+through public catalog APIs.
+
+---
+
+# 23. Variant Availability — IN_STOCK Product
+
+For an active Variant belonging to a public:
+
+```text
+product_type = IN_STOCK
+```
+
+derive:
+
+```text
+total_available_quantity > 0
+→ availability = "available"
+
+total_available_quantity <= 0
+→ availability = "unavailable"
+```
+
+No stock row is equivalent to zero available stock.
+
+---
+
+# 24. Product Availability — IN_STOCK Product
+
+For a public Product whose:
+
+```text
+product_type = IN_STOCK
+```
+
+Product availability is:
+
+```text
+"available"
+```
+
+if at least one active Variant has:
+
+```text
+total_available_quantity > 0
+```
+
+Otherwise:
+
+```text
+"unavailable"
+```
+
+---
+
+# 25. Do Not Include Inactive Variants in Product Availability
+
+Stock belonging to:
+
+```text
+Variant.is_active = false
+```
+
+must not make the Product available.
+
+Only active Variants contribute.
+
+---
+
+# 26. Do Not Include Hidden Product State
+
+A Product that is inactive/unpublished is not publicly serialized at all.
+
+Do not attempt to return:
+
+```text
+availability = unavailable
+```
+
+for an unpublished Product through CAT-001/CAT-002.
+
+It is hidden.
+
+---
+
+# 27. MADE_TO_ORDER Availability
+
+A public:
+
+```text
+product_type = MADE_TO_ORDER
+```
+
+does not derive public availability from physical inventory.
+
+Its inventory count is irrelevant to requestability.
+
+For a valid public MADE_TO_ORDER Product:
+
+```text
+availability = "available"
+stock_indicator = "MADE_TO_ORDER"
+```
+
+provided the Product has the existing valid public pricing/configuration required by the catalog.
+
+---
+
+# 28. MADE_TO_ORDER Variant Availability
+
+For an active Variant belonging to a public MADE_TO_ORDER Product:
+
+```text
+availability = "available"
+stock_indicator = "MADE_TO_ORDER"
+```
+
+regardless of ProductStock quantity.
+
+Do not require inventory rows for MADE_TO_ORDER Variant presentation.
+
+---
+
+# 29. MADE_TO_ORDER Is Not Purchasable
+
+Do not confuse:
+
+```text
+availability = "available"
+```
+
+with:
+
+```text
+purchasable through cart
+```
+
+For MADE_TO_ORDER:
+
+```text
+available
+→ available for the Request Furniture workflow
+
+NOT
+→ available for Cart/Checkout
+```
+
+Cart and Checkout must later reject it with:
+
+```text
+PRODUCT_NOT_PURCHASABLE
+```
+
+according to their own domain rules.
+
+---
+
+# 30. Do Not Implement Cart Rejection Here
+
+Do not modify CART-002 merely to finish Phase 5.7 unless that cart implementation already exists and explicitly consumes a shared availability/product-type service.
+
+This phase owns catalog rules.
+
+Cart domain behavior belongs to its implementation phase.
+
+---
+
+# 31. Do Not Implement Checkout Revalidation Here
 
 Do not add:
 
 ```text
-products.price
+inventory locks
+reservation
+row-level checkout locking
+order creation
 ```
 
-for sorting convenience.
+Availability reads remain informational.
 
-Sort using the exact same authoritative derived Product price that CAT-001 serializes.
+Checkout later performs authoritative transaction-time validation.
 
 ---
 
-# 30. Price Consistency Invariant
+# 32. Stock Indicator Contract
 
-For a Product:
+The frozen response values remain:
 
 ```text
-serialized Product price
-=
-value used for price filtering
-=
-value used for price sorting
+IN_STOCK
+LOW_STOCK
+MADE_TO_ORDER
 ```
 
-This is mandatory.
-
-Do not maintain three separate pricing calculations.
-
----
-
-# 31. Price Sorting Must Stay in SQL
-
-Do not:
+Do not add:
 
 ```text
-load page candidates
-serialize their price
-sort them in PHP
+OUT_OF_STOCK
+SOLD_OUT
+BACKORDER
 ```
 
-That produces incorrect pagination.
-
-Sorting must happen before pagination in the DB query.
+inside V1 without explicit contract review.
 
 ---
 
-# 32. Null Price Semantics
+# 33. `availability` Is Authoritative for Unavailable State
 
-Review current Product price derivation.
+Because the frozen `stock_indicator` enum has no `OUT_OF_STOCK` value:
 
-If a public Product can legitimately lack a usable active Variant/derived price:
-
-use the already-approved visibility/price semantics.
-
-Do not invent arbitrary:
+clients must treat:
 
 ```text
-NULL FIRST
-NULL LAST
-price = 0
+availability = "unavailable"
 ```
 
-rules.
+as the authoritative unavailable signal.
 
-Ideally public Product eligibility already prevents an invalid public pricing state.
+`stock_indicator` is secondary display/context information.
+
+Document this clearly.
 
 ---
 
-# 33. Search + Sorting
+# 34. IN_STOCK Product with Zero Stock
 
-Search results still use the frozen sort contract.
+For:
+
+```text
+product_type = IN_STOCK
+available_quantity = 0
+```
+
+return:
+
+```text
+availability = "unavailable"
+stock_indicator = "IN_STOCK"
+```
+
+Do not invent `OUT_OF_STOCK`.
+
+Frontend later must prioritize:
+
+```text
+availability
+```
+
+before displaying stock badge text.
+
+---
+
+# 35. LOW_STOCK Threshold — Contract Gap
+
+The existing docs define:
+
+```text
+LOW_STOCK
+```
+
+but do not currently establish a numeric threshold.
+
+Do not hide a magic number in SQL.
+
+Phase 5.7 must make the threshold explicit.
+
+---
+
+# 36. V1 Low-Stock Rule
+
+If no newer authoritative repository decision already defines the threshold, establish the smallest explicit V1 rule:
+
+```text
+LOW_STOCK_THRESHOLD = 5 units
+```
+
+Record it as a Phase 5.7 business assumption/decision.
+
+Do not add a DB column for the threshold.
+
+---
+
+# 37. Centralize Low-Stock Threshold
+
+Define the threshold once in an appropriate domain support class/value object, for example:
+
+```text
+CatalogAvailability
+StockIndicatorResolver
+```
+
+or equivalent.
+
+Do not duplicate:
+
+```text
+5
+```
+
+across:
+
+```text
+resources
+queries
+tests
+controllers
+```
+
+---
+
+# 38. Why No `low_stock_threshold` Column Yet
+
+Group C deliberately omitted:
+
+```text
+low_stock_threshold
+```
+
+from ProductStock.
+
+Keep that decision.
+
+V1 has one business-wide threshold.
+
+Per-Product or per-Variant thresholds can be introduced later only if the business actually needs them.
+
+---
+
+# 39. Variant Stock Indicator — IN_STOCK Product
+
+For an active Variant of an IN_STOCK Product:
+
+```text
+available_quantity == 0
+→ availability = unavailable
+→ stock_indicator = IN_STOCK
+
+1 <= available_quantity <= LOW_STOCK_THRESHOLD
+→ availability = available
+→ stock_indicator = LOW_STOCK
+
+available_quantity > LOW_STOCK_THRESHOLD
+→ availability = available
+→ stock_indicator = IN_STOCK
+```
+
+---
+
+# 40. Product Stock Indicator — IN_STOCK Product
+
+Use total available stock across all **active Variants**:
+
+```text
+product_available_quantity =
+SUM(active Variant available quantities)
+```
+
+Then:
+
+```text
+product_available_quantity == 0
+→ availability = unavailable
+→ stock_indicator = IN_STOCK
+
+1..LOW_STOCK_THRESHOLD
+→ availability = available
+→ stock_indicator = LOW_STOCK
+
+> LOW_STOCK_THRESHOLD
+→ availability = available
+→ stock_indicator = IN_STOCK
+```
+
+This gives Product-level catalog cards one stable badge.
+
+---
+
+# 41. Do Not Use Physical Quantity Directly
+
+Always derive from:
+
+```text
+quantity - reserved_quantity
+```
+
+not physical quantity alone.
 
 Example:
 
 ```text
-?search=oak&sort=price&sort_direction=asc
+quantity = 10
+reserved = 10
 ```
 
 means:
 
 ```text
-match search
-→ apply filters
-→ price ASC
+available = 0
+```
+
+not 10.
+
+---
+
+# 42. Clamp Is Not Needed
+
+Group C already guarantees:
+
+```text
+0 <= reserved_quantity <= quantity
+```
+
+Do not hide integrity bugs by writing:
+
+```text
+max(quantity - reserved, 0)
+```
+
+unless an established shared accessor already does that.
+
+Trust the invariant and surface test failures if violated.
+
+---
+
+# 43. Availability Resolver
+
+Create or finalize one focused service/value object such as:
+
+```text
+CatalogAvailabilityResolver
+```
+
+or use the current existing Phase 5.2 abstraction.
+
+It should own:
+
+```text
+Product availability
+Product stock indicator
+Variant availability
+Variant stock indicator
+```
+
+Do not put this logic into API Resources.
+
+---
+
+# 44. Resources Should Serialize, Not Decide
+
+Avoid:
+
+```php
+if ($this->stocks->sum(...) > 5) { ... }
+```
+
+inside ProductResource or VariantResource.
+
+Resources should consume already-derived catalog presentation state.
+
+---
+
+# 45. Query Filtering Must Match Serialization
+
+For every Product:
+
+```text
+availability used by
+?availability=...
+```
+
+must be identical to:
+
+```text
+availability returned in JSON
+```
+
+No separate filter interpretation.
+
+---
+
+# 46. `availability=available`
+
+CAT-001 filter:
+
+```text
+?availability=available
+```
+
+must include:
+
+```text
+public IN_STOCK Products with >0 available units
++
+public MADE_TO_ORDER Products
+```
+
+because MADE_TO_ORDER Products are available to the customer through the Request workflow.
+
+---
+
+# 47. `availability=unavailable`
+
+Must include only publicly visible:
+
+```text
+IN_STOCK
+```
+
+Products whose active Variants have zero total available quantity.
+
+It should not include hidden/unpublished Products.
+
+---
+
+# 48. Product Type Filter Now Becomes Fully Active
+
+Phase 5.7 completes:
+
+```text
+?product_type=IN_STOCK
+?product_type=MADE_TO_ORDER
+```
+
+in CAT-001.
+
+Use exact CLOSED values.
+
+---
+
+# 49. Product Type Filter Validation
+
+Reject:
+
+```text
+in_stock
+made_to_order
+STANDARD
+CUSTOM
+PREORDER
+```
+
+unless current global request normalization explicitly allows case normalization.
+
+Follow the current enum policy.
+
+---
+
+# 50. Product Type + Availability Composition
+
+Examples:
+
+```text
+?product_type=IN_STOCK&availability=available
+```
+
+→ stocked standard Products with positive available inventory.
+
+```text
+?product_type=IN_STOCK&availability=unavailable
+```
+
+→ visible standard Products currently out of stock.
+
+```text
+?product_type=MADE_TO_ORDER&availability=available
+```
+
+→ visible requestable made-to-order Products.
+
+```text
+?product_type=MADE_TO_ORDER&availability=unavailable
+```
+
+→ normally empty under current V1 semantics.
+
+---
+
+# 51. Search Must Respect Publication
+
+Phase 5.5 FULLTEXT/SQLite fallback must never return:
+
+```text
+is_published = false
+```
+
+Products.
+
+Add the new public scope before search predicates.
+
+---
+
+# 52. Search Must Respect Active Variant Rules
+
+SKU/attribute matches remain limited to:
+
+```text
+Variant.is_active = true
+```
+
+and parent:
+
+```text
+Product.is_active = true
+Product.is_published = true
+```
+
+---
+
+# 53. Sorting/Pagination Integration
+
+Phase 5.6 ordering remains:
+
+```text
+public visibility
+→ search
+→ filters
+→ sort
 → id ASC
 → paginate
 ```
 
----
+Availability/product-type filters fit into the existing filter stage.
 
-# 34. Search Without Sort
-
-Do not silently introduce relevance ordering during Phase 5.6.
-
-Existing default remains:
-
-```text
-created_at DESC
-id ASC
-```
-
-unless an explicit future API decision adds relevance sorting.
+Do not change pagination architecture.
 
 ---
 
-# 35. Phase 5.5 Search Integration
+# 54. Price Still Comes From Variants
 
-Do not rewrite Phase 5.5 search logic.
+Adding Product Type does not create Product price storage.
 
-Reuse its existing Product catalog query.
-
-Preserve:
+For both:
 
 ```text
-native MySQL FULLTEXT
-variant SKU search
-approved variant attribute search
-active Variant restriction
+IN_STOCK
+MADE_TO_ORDER
+```
+
+public Product price remains derived from the approved ProductVariant price rule.
+
+---
+
+# 55. MADE_TO_ORDER Price
+
+The frozen contract requires Product price for MADE_TO_ORDER.
+
+It represents:
+
+```text
+display / starting-at price
+```
+
+only.
+
+Do not make it authoritative for Cart/Checkout.
+
+---
+
+# 56. Product Must Have Determinable Public Price
+
+Do not return a Product that cannot satisfy the frozen non-null Product price contract.
+
+Reuse the existing price eligibility behavior.
+
+Do not emit:
+
+```text
+"price": null
+```
+
+to work around bad catalog data.
+
+---
+
+# 57. Public Product Summary
+
+CAT-001 must now fully serialize:
+
+```text
+id
+name
+slug
+product_type
+price
+category
+primary_image
+availability
+stock_indicator
+```
+
+according to the existing contract.
+
+---
+
+# 58. Product Detail
+
+CAT-002 must use exactly the same:
+
+```text
+product_type
+availability
+stock_indicator
+```
+
+values as CAT-001 for the same Product state.
+
+Add regression coverage.
+
+---
+
+# 59. Embedded Variant Availability
+
+CAT-002 embedded Variants must use the same availability resolver as:
+
+```text
+CAT-005
+CAT-006
+```
+
+No divergence.
+
+---
+
+# 60. Variant API Consistency
+
+For the same Variant:
+
+```text
+CAT-002 embedded
+CAT-005 collection
+CAT-006 detail
+```
+
+must produce identical:
+
+```text
+price
+availability
+stock_indicator
+```
+
+where fields overlap.
+
+---
+
+# 61. No Raw Stock Exposure
+
+Even after availability is complete, public responses must never include:
+
+```text
+quantity
+reserved_quantity
+available_quantity
+stock rows
+warehouse_location
 ```
 
 ---
 
-# 36. Active Variant Search Regression
+# 62. Public `availability` Enum
 
-Do not regress the corrected rule:
-
-```text
-whereHas('variants')
-```
-
-must only consider:
+Keep exact lowercase values:
 
 ```text
-is_active = true
+available
+unavailable
 ```
 
-Variants for SKU/attribute matching.
-
-Inactive Variants must never make a Product appear in public search.
+This is the frozen exception to the standard uppercase enum convention.
 
 ---
 
-# 37. Sorting Must Not Reactivate Hidden Results
+# 63. Stock Indicator Enum
 
-Sorting/pagination only operate on Products already satisfying:
+Keep exact values:
 
 ```text
-public visibility
-search
-filters
+IN_STOCK
+LOW_STOCK
+MADE_TO_ORDER
 ```
 
-Never expand the query set.
+Do not add aliases.
 
 ---
 
-# 38. Filters + Sorting
-
-Examples that must work correctly:
-
-```text
-?category=living-room&sort=name
-```
-
-```text
-?availability=available&sort=price&sort_direction=desc
-```
-
-```text
-?min_price=50000000&max_price=150000000&sort=price
-```
-
-Sorting never changes filter semantics.
-
----
-
-# 39. Product Type Dependency
-
-If `product_type` remains scheduled for Phase 5.7:
-
-do not change that here.
-
-Phase 5.6 simply preserves the query composition point.
-
----
-
-# 40. Publication Dependency
-
-Likewise:
-
-```text
-is_published
-```
-
-remains Phase 5.7 if still deferred.
-
-Pagination must reuse shared public scope so publication can later be added once without pagination changes.
-
----
-
-# 41. Stable Public Scope
-
-Preferred architecture:
-
-```text
-Product public scope/query
-→ search
-→ filters
-→ sort
-→ paginate
-```
-
-Do not duplicate visibility conditions in paginator code.
-
----
-
-# 42. Public Only
-
-CAT-001 remains:
-
-```text
-PUBLIC_READ
-```
-
-Pagination does not require authentication.
-
----
-
-# 43. No User-Specific Sort
-
-Do not add:
-
-```text
-recommended
-for_you
-recently_viewed
-personalized
-```
-
-sort modes.
-
-Those would make a public cacheable endpoint user-dependent.
-
----
-
-# 44. No Popularity Sort
+# 64. No `availability_display`
 
 Do not introduce:
 
 ```text
-best_selling
-most_popular
-trending
-rating
+availability_display
 ```
 
-without explicit business/data contracts.
+The contract explicitly rejects it.
 
-V1 supports only:
+---
+
+# 65. Stock Indicator Is Not a Filter
+
+Continue rejecting:
 
 ```text
-created_at
-price
-name
+?stock_indicator=LOW_STOCK
+```
+
+Only:
+
+```text
+?availability=
+```
+
+and:
+
+```text
+?product_type=
+```
+
+are filter inputs.
+
+---
+
+# 66. No Inventory Mutation
+
+This phase must not change:
+
+```text
+quantity
+reserved_quantity
+warehouse location
+```
+
+Availability is read-derived.
+
+---
+
+# 67. No Reservation
+
+Catalog reads must never increase:
+
+```text
+reserved_quantity
 ```
 
 ---
 
-# 45. No Random Sort
+# 68. No Availability Cache Column
 
-Do not implement:
-
-```text
-?sort=random
-```
-
-Random ordering:
+Do not add:
 
 ```text
-breaks deterministic pagination
-hurts caching
-is expensive
-causes duplicates
+products.availability
+products.stock_indicator
+product_variants.availability
+product_variants.stock_indicator
 ```
+
+These are derived values.
 
 ---
 
-# 46. No Client-Supplied SQL
+# 69. Avoid Stale Derived State
 
-Never map arbitrary request strings directly into:
+Do not persist coarse availability merely to make reads easy.
+
+The stock source is small enough to derive correctly in V1.
+
+---
+
+# 70. Query Efficiency
+
+CAT-001 must not issue:
 
 ```text
-column name
-raw ORDER BY
-direction
+one stock query per Product
+one stock query per Variant
 ```
 
-Use explicit mappings.
+Avoid N+1.
 
----
-
-# 47. Index Use
-
-Review existing indexes for:
+Use:
 
 ```text
-created_at
-name
+subqueries
+aggregate expressions
+withSum
+EXISTS
+joinSub
 ```
 
-and Product query behavior.
-
-Do not automatically add indexes unless query analysis shows a real need.
+or other clean Laravel/database mechanisms as appropriate.
 
 ---
 
-# 48. Price Sorting Index Limitation
+# 71. Product Availability Query
 
-Derived price may not be directly indexable because it comes from Variants.
-
-Do not denormalize Product price merely to get an index in V1.
-
-Use the current efficient aggregate/subquery implementation.
-
-Measure before redesigning.
-
----
-
-# 49. Pagination Count Query
-
-Laravel pagination generally performs:
+Prefer SQL-level existence/aggregation so:
 
 ```text
-COUNT query
+availability filtering
+sorting pipeline
+pagination totals
+```
+
+remain correct before pagination.
+
+Do not calculate availability after pagination in PHP.
+
+---
+
+# 72. Variant Availability Query
+
+CAT-005/CAT-006 may use bounded eager-loaded aggregate stock data.
+
+Do not load unrelated Product stock rows.
+
+---
+
+# 73. MySQL/SQLite Compatibility
+
+Availability calculations should be expressed in SQL that works consistently on:
+
+```text
+SQLite tests
+MySQL/MariaDB production
+```
+
+where practical.
+
+Do not add another database-specific branch unless necessary.
+
+---
+
+# 74. Phase 5.5 Blocker Is Unchanged
+
+Phase 5.5 remains:
+
+```text
+BLOCKED
+```
+
+until:
+
+```text
+disposable MySQL/MariaDB FULLTEXT integration check
 +
-page SELECT
+project PHPStan baseline resolution
 ```
 
-This is expected.
+are complete.
 
-Do not prematurely replace `paginate()` with `simplePaginate()` because V1 requires:
+Phase 5.7 does not erase that status.
+
+---
+
+# 75. Do Not Reinterpret SQLite Search Verification
+
+SQLite may verify availability/filter composition.
+
+It still does not prove native MySQL FULLTEXT behavior.
+
+Report these separately.
+
+---
+
+# 76. Migration Safety
+
+Because Phase 5.7 adds Product columns, migration verification matters.
+
+Do not edit existing Group C migrations.
+
+Create a new migration only.
+
+---
+
+# 77. Destructive Migration Guard
+
+If using:
 
 ```text
-total
-last_page
+php artisan migrate:fresh --seed --force
 ```
 
----
-
-# 50. Do Not Use `simplePaginate()`
-
-`simplePaginate()` omits the total count.
-
-It therefore cannot satisfy the frozen response contract.
-
-Use normal pagination.
-
----
-
-# 51. Do Not Use Cursor Pagination
-
-Similarly, `cursorPaginate()` does not match the V1 metadata contract.
-
-Do not use it.
-
----
-
-# 52. Performance Expectations
-
-For the expected V1 catalog scale:
+run only against:
 
 ```text
-normal Laravel paginate()
+non-production
 +
-indexed filters
+explicit disposable DB
 +
-bounded Product summary
+database-name safety check
 ```
 
-is appropriate.
-
-Do not optimize for millions of Products prematurely.
+Do not infer disposability from `APP_ENV` alone.
 
 ---
 
-# 53. Offset Pagination Limitation
+# 78. SQLite Migration Verification
 
-Document, but do not overengineer around, the known property of page/offset pagination:
+Ensure the new Product fields can rebuild cleanly under the canonical SQLite suite.
 
-if Product data changes between requests, page membership may shift.
+---
 
-This is acceptable for a live retail catalog.
+# 79. MySQL/MariaDB Migration Verification
 
-Do not implement:
+Where a disposable MySQL/MariaDB DB is available:
+
+verify:
 
 ```text
-snapshot tokens
-catalog versions
-transactional multi-page browsing
+product_type
+is_published
+backfill
+enum/value constraints
+indexes if added
+```
+
+Do not use the normal application database.
+
+---
+
+# 80. Index Review
+
+Because public queries now commonly use:
+
+```text
+is_active
+is_published
+product_type
+```
+
+inspect whether a targeted composite index is justified.
+
+Do not blindly index every boolean.
+
+---
+
+# 81. Preferred Index Philosophy
+
+Add an index only if it matches actual CAT-001 query shapes and EXPLAIN/query evidence.
+
+Possible candidate:
+
+```text
+(is_active, is_published, product_type)
+```
+
+but do not add it automatically without reviewing current indexes/database plans.
+
+---
+
+# 82. No `availability` Index
+
+Because availability is derived from Variant inventory:
+
+do not create a fake Product availability index/column.
+
+---
+
+# 83. Factory Updates
+
+Update ProductFactory so test/demo Products have explicit:
+
+```text
+product_type
+is_published
+```
+
+states.
+
+Default factory state should represent a normal usable Product unless current test conventions prefer draft by default.
+
+Use explicit factory states such as conceptually:
+
+```text
+inStock()
+madeToOrder()
+published()
+draft()
+inactive()
+```
+
+only where useful.
+
+Do not overbuild factory APIs.
+
+---
+
+# 84. Seeder Updates
+
+Review DemoSeeder/reference Product data.
+
+Ensure seeded Products explicitly reflect their intended:
+
+```text
+product_type
+publication state
+```
+
+Do not let demo data rely on accidental DB defaults.
+
+---
+
+# 85. Test — Product Type Migration
+
+Verify existing legacy Product rows are deterministically assigned:
+
+```text
+IN_STOCK
+```
+
+under migration compatibility behavior.
+
+---
+
+# 86. Test — Publication Migration
+
+Verify existing active public legacy Products remain visible after migration/backfill.
+
+---
+
+# 87. Test — New Draft Default
+
+If new Product DB default is:
+
+```text
+is_published = false
+```
+
+verify it.
+
+Do not accidentally auto-publish new catalog entries.
+
+---
+
+# 88. Test — Public Visibility
+
+Cover all combinations:
+
+```text
+active + published
+→ visible
+
+inactive + published
+→ hidden
+
+active + unpublished
+→ hidden
+
+inactive + unpublished
+→ hidden
+
+soft-deleted
+→ hidden
 ```
 
 ---
 
-# 54. Concurrent Catalog Changes
+# 89. Test — CAT-002 Masking
 
-If a Product is added/removed between:
-
-```text
-page 1
-page 2
-```
-
-the result set may shift.
-
-That is normal V1 behavior.
-
-The deterministic tie-breaker addresses ambiguous SQL ordering, not live-data mutation.
-
----
-
-# 55. Query String Compatibility
-
-Filters and sort parameters must remain usable together with page values.
-
-Example:
+Unpublished Product by:
 
 ```text
-/products
-?search=oak
-&category=dining-room
-&sort=price
-&sort_direction=asc
-&page=2
-&per_page=20
-```
-
-must work as one canonical request.
-
----
-
-# 56. Frontend URL Stability
-
-The API should support straightforward website URLs such as:
-
-```text
-/products?page=3&sort=price&sort_direction=asc
-```
-
-without special server state.
-
-Do not introduce session-based pagination.
-
----
-
-# 57. Cache Keys
-
-Public cache identity naturally depends on the complete query string:
-
-```text
-search
-filters
-sort
-page
-per_page
-```
-
-Do not manually cache all combinations in Phase 5.6.
-
----
-
-# 58. Response Resource
-
-Continue using:
-
-```text
-ProductSummaryResource
-```
-
-from Phase 5.2.
-
-Pagination must not change Product representation.
-
----
-
-# 59. No Paginator Internals
-
-Do not expose Laravel keys such as:
-
-```text
-first_page_url
-last_page_url
-next_page_url
-prev_page_url
-path
-links
-from
-to
-```
-
-unless explicitly approved.
-
-Transform paginator metadata into the frozen API representation.
-
----
-
-# 60. Avoid Double Pagination
-
-Do not call `paginate()` inside a helper and again in the controller.
-
-The query should be paginated exactly once.
-
----
-
-# 61. Avoid Double Sorting
-
-Sorting should have one authoritative application point.
-
-Do not:
-
-```text
-apply default sort in model scope
-then apply user sort in controller
-```
-
-without clearing/reconciling previous order clauses.
-
----
-
-# 62. Explicit Sort Application
-
-Ensure custom sort replaces the default primary sort rather than stacking unexpectedly.
-
-Expected:
-
-```text
-sort=price
-→ price <direction>, id ASC
-```
-
-not:
-
-```text
-created_at DESC,
-price ASC,
-id ASC
-```
-
-unless that ordering is explicitly intended.
-
----
-
-# 63. Query Builder Structure
-
-Prefer extending the focused catalog query from Phase 5.5.
-
-Conceptually:
-
-```text
-applySearch()
-applyFilters()
-applySort()
-paginate()
-```
-
-Do not introduce another:
-
-```text
-ProductPaginationService
-```
-
-if the existing query object already owns collection composition.
-
----
-
-# 64. Pagination Serialization Helper
-
-A small reusable pagination metadata mapper is acceptable if the project already has several paginated endpoints.
-
-For example conceptually:
-
-```text
-PaginationMeta
-```
-
-or:
-
-```text
-PaginationResource
-```
-
-But do not build an elaborate pagination framework.
-
----
-
-# 65. Reuse Global Pagination Conventions
-
-If the backend already has pagination response helpers from earlier phases:
-
-reuse them.
-
-CAT-001 should not create a different metadata shape from:
-
-```text
-CAT-003
-ORD-001
-NOT-001
-```
-
-later.
-
----
-
-# 66. Validation Layer
-
-Keep pagination/sort validation in the existing CAT-001 FormRequest.
-
-Do not validate:
-
-```text
-page
-per_page
-sort
-sort_direction
-```
-
-inside the controller.
-
----
-
-# 67. Strict Types
-
-Do not broadly coerce malformed values.
-
-Follow current query validation conventions.
-
-Examples:
-
-```text
-page=1
-```
-
-valid.
-
-```text
-page=1.0
-```
-
-should follow current integer validation policy.
-
----
-
-# 68. Unknown Sort Field
-
-Examples:
-
-```text
-?sort=sku
-?sort=id
-?sort=cost
-?sort=inventory
-?sort=deleted_at
+slug
+ID
 ```
 
 must return:
 
 ```text
-422 INVALID_VALUE
+404
 ```
-
-if not in the approved allow-list.
 
 ---
 
-# 69. Internal Field Protection
+# 90. Test — Variant Parent Publication
 
-Sorting must not become a side-channel that exposes internal fields.
-
-Do not allow sorting by:
+Variant under unpublished Product:
 
 ```text
-cost_price
+CAT-005
+CAT-006
+```
+
+must not be accessible.
+
+---
+
+# 91. Test — Product Type Response
+
+Verify Product Summary/Detail exposes:
+
+```text
+IN_STOCK
+```
+
+or:
+
+```text
+MADE_TO_ORDER
+```
+
+exactly.
+
+---
+
+# 92. Test — Product Type Filter
+
+Verify both valid filter values.
+
+Also test invalid values.
+
+---
+
+# 93. Test — Stock Aggregation by Location
+
+Variant:
+
+```text
+location A:
+quantity 5
+reserved 2
+available 3
+
+location B:
+quantity 4
+reserved 1
+available 3
+```
+
+must derive:
+
+```text
+Variant available quantity = 6
+```
+
+internally.
+
+Do not expose `6` publicly.
+
+---
+
+# 94. Test — Fully Reserved Stock
+
+Example:
+
+```text
+quantity 4
+reserved 4
+```
+
+must produce:
+
+```text
+availability = unavailable
+```
+
+for IN_STOCK Variant if no other location has availability.
+
+---
+
+# 95. Test — Missing Stock Rows
+
+Active IN_STOCK Variant with no ProductStock rows:
+
+```text
+availability = unavailable
+```
+
+---
+
+# 96. Test — Variant Available
+
+Positive available stock:
+
+```text
+availability = available
+```
+
+---
+
+# 97. Test — Product Available Through One Variant
+
+Product with:
+
+```text
+Variant A available = 0
+Variant B available > 0
+```
+
+must be:
+
+```text
+availability = available
+```
+
+---
+
+# 98. Test — Inactive Variant Stock Ignored
+
+Product:
+
+```text
+active Variant available = 0
+inactive Variant available = 100
+```
+
+must remain:
+
+```text
+availability = unavailable
+```
+
+for IN_STOCK.
+
+---
+
+# 99. Test — MADE_TO_ORDER Ignores Stock
+
+MADE_TO_ORDER Product/Variant with:
+
+```text
+zero stock
+no stock rows
+```
+
+still returns:
+
+```text
+availability = available
+stock_indicator = MADE_TO_ORDER
+```
+
+when otherwise public/valid.
+
+---
+
+# 100. Test — Low Stock Boundary
+
+If V1 threshold is 5:
+
+```text
+available = 0
+→ unavailable / IN_STOCK
+
+available = 1
+→ available / LOW_STOCK
+
+available = 5
+→ available / LOW_STOCK
+
+available = 6
+→ available / IN_STOCK
+```
+
+Test exact boundary values.
+
+---
+
+# 101. Test — Product-Level Low Stock
+
+Aggregate only active Variant availability.
+
+Verify:
+
+```text
+aggregate 1..5
+→ LOW_STOCK
+
+aggregate >5
+→ IN_STOCK
+```
+
+---
+
+# 102. Test — MADE_TO_ORDER Indicator Always Wins
+
+Even if stock rows exist accidentally for MADE_TO_ORDER:
+
+```text
+stock_indicator = MADE_TO_ORDER
+```
+
+Do not derive LOW_STOCK/IN_STOCK from inventory.
+
+---
+
+# 103. Test — Availability Filter
+
+Verify:
+
+```text
+?availability=available
+```
+
+includes:
+
+```text
+stocked IN_STOCK
+MADE_TO_ORDER
+```
+
+and excludes:
+
+```text
+out-of-stock IN_STOCK
+hidden Products
+```
+
+---
+
+# 104. Test — Unavailable Filter
+
+Verify:
+
+```text
+?availability=unavailable
+```
+
+includes visible out-of-stock IN_STOCK Products only under current semantics.
+
+---
+
+# 105. Test — Product Type + Availability
+
+Cover:
+
+```text
+IN_STOCK + available
+IN_STOCK + unavailable
+MADE_TO_ORDER + available
+MADE_TO_ORDER + unavailable
+```
+
+---
+
+# 106. Test — Search + Availability
+
+Verify Phase 5.5 search composes correctly with new availability rules.
+
+---
+
+# 107. Test — Inactive Variant Search Regression
+
+Retain and rerun:
+
+```text
+inactive matching Variant
+must not surface Product
+```
+
+---
+
+# 108. Test — Pagination Totals
+
+Availability filters must not duplicate Products due to stock joins.
+
+Paginator:
+
+```text
+total
+```
+
+must count distinct matching Products.
+
+---
+
+# 109. Test — CAT-001 / CAT-002 Consistency
+
+Same Product state must produce identical:
+
+```text
+product_type
+availability
+stock_indicator
+price
+```
+
+across collection/detail.
+
+---
+
+# 110. Test — Variant Consistency
+
+Same Variant must produce identical:
+
+```text
+availability
+stock_indicator
+```
+
+across:
+
+```text
+CAT-002
+CAT-005
+CAT-006
+```
+
+---
+
+# 111. Test — No Raw Inventory Leakage
+
+Search response JSON for prohibited keys such as:
+
+```text
+quantity
 reserved_quantity
-is_active
-is_published
-warehouse quantity
+available_quantity
+warehouse_location
 ```
 
----
-
-# 70. Case Handling
-
-Follow the frozen request semantics.
-
-If `sort_direction` is case-insensitive:
-
-normalize:
-
-```text
-ASC → asc
-DESC → desc
-```
-
-Do not necessarily make `sort` field names case-insensitive unless docs say so.
+where practical.
 
 ---
 
-# 71. Invalid `per_page` Is Not Silently Capped
+# 112. Test — Public Flags Hidden
 
-Do not turn:
-
-```text
-per_page=1000
-```
-
-into:
-
-```text
-100
-```
-
-unless the existing global convention says to clamp.
-
-Preferred frozen behavior is validation error.
-
----
-
-# 72. Test — Default Pagination
-
-Seed more than 20 visible Products.
-
-Request:
-
-```text
-GET /products
-```
-
-Assert:
-
-```text
-current_page = 1
-per_page = 20
-correct total
-correct last_page
-correct has_next
-has_previous = false
-```
-
----
-
-# 73. Test — Custom `per_page`
-
-Example:
-
-```text
-?per_page=10
-```
-
-Verify metadata and 10-or-fewer Product results.
-
----
-
-# 74. Test — Page 2
-
-Verify:
-
-```text
-?page=2
-```
-
-returns the expected second window.
-
----
-
-# 75. Test — Last Page
-
-Verify:
-
-```text
-has_next = false
-has_previous = true
-```
-
-for a multi-page collection's last page.
-
----
-
-# 76. Test — Beyond Last Page
-
-Verify:
-
-```text
-200
-data = []
-```
-
-and correct metadata.
-
----
-
-# 77. Test — Zero Results
-
-Use a filter/search producing no Products.
-
-Assert the exact zero-result convention.
-
----
-
-# 78. Test — Invalid Page
-
-Cover:
-
-```text
-0
--1
-non-integer
-```
-
----
-
-# 79. Test — Invalid Per Page
-
-Cover:
-
-```text
-0
-101
-negative
-non-integer
-```
-
----
-
-# 80. Test — Default Sort
-
-Create Products with deliberately different timestamps.
-
-Verify:
-
-```text
-created_at DESC
-id ASC
-```
-
----
-
-# 81. Test — Created Date Ascending
-
-Request:
-
-```text
-?sort=created_at&sort_direction=asc
-```
-
-Verify order.
-
----
-
-# 82. Test — Name Ascending
-
-Request:
-
-```text
-?sort=name
-```
-
-Verify default:
-
-```text
-ASC
-```
-
----
-
-# 83. Test — Name Descending
-
-Request:
-
-```text
-?sort=name&sort_direction=desc
-```
-
-Verify exact reverse primary ordering plus stable ID tie-break.
-
----
-
-# 84. Test — Price Ascending
-
-Seed Products with known derived Variant prices.
-
-Verify public price order.
-
----
-
-# 85. Test — Price Descending
-
-Verify:
-
-```text
-?sort=price&sort_direction=desc
-```
-
----
-
-# 86. Test — Price Source Consistency
-
-For every test Product:
-
-```text
-sort value
-=
-ProductSummaryResource price
-```
-
-Do not assert against an unrelated Variant price.
-
----
-
-# 87. Test — Tie on Name
-
-Create multiple visible Products with the same name.
-
-Verify final ordering by:
-
-```text
-id ASC
-```
-
----
-
-# 88. Test — Tie on Price
-
-Create multiple Products with the same derived price.
-
-Verify:
-
-```text
-id ASC
-```
-
----
-
-# 89. Test — Tie on Created At
-
-Create Products with identical timestamps.
-
-Verify:
-
-```text
-id ASC
-```
-
----
-
-# 90. Test — No Duplicate Between Pages
-
-Use tied primary sort values spanning multiple pages.
-
-Verify no Product ID appears on both pages.
-
----
-
-# 91. Test — No Missing Product
-
-Across a stable DB state, concatenate all pages.
-
-Verify all expected Product IDs appear exactly once.
-
----
-
-# 92. Test — Search + Pagination
-
-Use Phase 5.5 search.
-
-Verify totals/pages include only matching results.
-
----
-
-# 93. Test — Search + Sort
-
-Example:
-
-```text
-?search=oak&sort=price
-```
-
-Verify search runs before sort.
-
----
-
-# 94. Test — Filter + Pagination
-
-Example:
-
-```text
-?category=living-room&per_page=5
-```
-
-Ensure total reflects only filtered Products.
-
----
-
-# 95. Test — Combined Query
-
-Add at least one realistic full-pipeline regression:
-
-```text
-search
-category
-price filter
-availability where authoritative
-sort
-sort_direction
-page
-per_page
-```
-
-Verify the final result set and metadata.
-
----
-
-# 96. Test — Active Variant Search Restriction
-
-Preserve the Phase 5.5 regression:
-
-An active Product with:
-
-```text
-inactive Variant matching search
-```
-
-must not appear unless another active Variant or Product text matches.
-
-Pagination/sorting changes must not weaken this behavior.
-
----
-
-# 97. Test — Duplicate Variant Search Match
-
-If multiple active Variants match one Product:
-
-the Product appears only once and counts once toward:
-
-```text
-total
-```
-
-This is especially important for paginator totals.
-
----
-
-# 98. COUNT Correctness
-
-Relationship search must not cause:
-
-```text
-total
-```
-
-to count duplicate Product rows.
-
-Verify this explicitly.
-
----
-
-# 99. MySQL vs SQLite
-
-Phase 5.6 sorting/pagination semantics should work on both where possible.
-
-However, Phase 5.5 remains subject to the existing MySQL FULLTEXT verification gate.
-
-Do not claim MySQL FULLTEXT is verified merely because Phase 5.6 tests pass on SQLite.
-
----
-
-# 100. SQLite Coverage
-
-SQLite may validly prove:
-
-```text
-pagination
-metadata
-sort allow-list
-sort direction
-tie-breaking
-price sorting semantics
-filter composition
-duplicate suppression
-active-Variant search semantics
-```
-
-using the existing deterministic search fallback.
-
----
-
-# 101. MySQL FULLTEXT Blocker Remains Separate
-
-Until the disposable MySQL/MariaDB Phase 5.5 integration check succeeds:
-
-```text
-Phase 5.5 remains BLOCKED
-```
-
-Phase 5.6 implementation may still be independently correct.
-
-Do not rewrite this status.
-
----
-
-# 102. PHPStan Baseline
-
-The previously reported project PHPStan baseline issue also remains a Phase 5.5/quality blocker until resolved.
-
-Phase 5.6 must:
-
-```text
-not introduce additional PHPStan errors
-```
-
-and should report the existing baseline separately if still present.
-
----
-
-# 103. Phase 5.6 Status Classification
-
-If Phase 5.6's own implementation/tests pass but global PHPStan is still failing from a known pre-existing baseline:
-
-report:
-
-```text
-Phase 5.6 implementation: PASS
-Global static-analysis gate: BLOCKED by existing PHPStan baseline
-```
-
-or use the repository's established status convention.
-
-Do not hide pre-existing failures.
-
----
-
-# 104. No MySQL-Specific Pagination Rewrite
-
-Do not branch pagination behavior by DB driver.
-
-Only the Phase 5.5 FULLTEXT search mechanism needs the MySQL/SQLite distinction.
-
-Pagination/sorting semantics should remain shared.
-
----
-
-# 105. Query Performance
-
-Use database pagination.
-
-Do not load full filtered result sets into memory just to compute:
-
-```text
-total
-pages
-sorting
-```
-
----
-
-# 106. Query Plan Review
-
-Where a disposable MySQL environment becomes available, optionally inspect the combined query plan for:
-
-```text
-default sort
-name sort
-FULLTEXT + pagination
-```
-
-but do not make this a mandatory Phase 5.6 blocker unless performance is clearly poor.
-
----
-
-# 107. No Premature Keyset Optimization
-
-Do not replace offset pagination because deep-page offset becomes slower at massive scale.
-
-The expected V1 catalog does not justify that complexity.
-
----
-
-# 108. No Maximum Page Cap
-
-Do not introduce arbitrary:
-
-```text
-page <= 100
-```
-
-unless approved.
-
-Very high pages may return empty data naturally.
-
----
-
-# 109. No Stateful Pagination Tokens
-
-Do not store pagination state server-side.
-
-Every request is self-contained.
-
----
-
-# 110. No Sorting Preferences Storage
-
-Do not persist a customer's preferred sort order.
-
-Frontend-local preference may be considered later.
-
----
-
-# 111. Public Cache Safety
-
-Pagination and sorting remain public/user-neutral.
-
-Same URL/query should produce the same representation for:
-
-```text
-anonymous
-Customer
-Staff
-Admin
-```
-
-subject only to catalog changes.
-
----
-
-# 112. No Privileged Product Fields
-
-Sorting as Admin through public CAT-001 must not cause:
+Ensure CAT-001/CAT-002 do not expose:
 
 ```text
 is_active
 is_published
-inventory quantity
-cost
 ```
-
-to appear.
 
 ---
 
-# 113. OpenAPI
+# 113. Test — No Side Effects
 
-Verify OpenAPI accurately documents:
-
-```text
-page
-per_page
-sort
-sort_direction
-```
-
-including:
+Availability reads must not mutate:
 
 ```text
-defaults
-bounds
-allowed sort fields
-allowed directions
-pagination metadata
+Product
+Variant
+ProductStock
+reserved_quantity
+timestamps
 ```
-
-Do not add new query fields.
 
 ---
 
-# 114. Documentation
+# 114. Operational API Boundary
 
-Update consolidated API docs only if runtime behavior differs from current documentation.
+Future:
 
-Do not create a second pagination specification.
+```text
+CAT-013
+CAT-014
+INV-001
+INV-002
+```
+
+may expose operational state where authorized.
+
+Do not implement them here.
 
 ---
 
-# 115. Standard Customer-Facing Sort Mapping
+# 115. Catalog vs Cart Semantics
 
-Frontend later may label the existing sort combinations as:
-
-```text
-Newest
-Name: A–Z
-Name: Z–A
-Price: Low to High
-Price: High to Low
-```
-
-Backend remains:
+Keep these concepts distinct:
 
 ```text
-sort=created_at&sort_direction=desc
+catalog availability
+→ informational discovery
 
-sort=name&sort_direction=asc
+cart purchasability
+→ application/domain validation
 
-sort=name&sort_direction=desc
-
-sort=price&sort_direction=asc
-
-sort=price&sort_direction=desc
+checkout inventory
+→ transactional authority
 ```
 
-Do not encode display labels into the API.
+Do not collapse them into one boolean.
 
 ---
 
-# 116. Do Not Add "Recommended"
+# 116. Do Not Add `is_purchasable` to Product Public API
 
-Many established stores have:
+Unless already frozen for Product itself, do not add:
 
 ```text
-Recommended
-Featured
-Best Selling
+is_purchasable
 ```
 
-but those require ranking/merchandising data.
+to CAT-001/CAT-002.
 
-Do not imitate them without a business model.
+Product Type + availability provide public presentation data.
 
-The existing three sorts are enough for V1.
+Cart later owns purchasability.
 
 ---
 
-# 117. No Frontend Work
+# 117. MADE_TO_ORDER Request Eligibility
+
+Do not fully implement Request-domain eligibility rules here.
+
+Phase 5.7 only provides:
+
+```text
+product_type = MADE_TO_ORDER
+```
+
+as authoritative catalog classification.
+
+Group J owns request validation/workflow.
+
+---
+
+# 118. OpenAPI
+
+Update OpenAPI so runtime and contract agree on:
+
+```text
+ProductType
+availability
+stock_indicator
+product_type filter
+publication masking semantics where documented
+```
+
+Do not expose `is_published` publicly.
+
+---
+
+# 119. API Documentation
+
+Update the consolidated docs with the finalized derivation rules, especially:
+
+```text
+IN_STOCK availability
+MADE_TO_ORDER availability
+LOW_STOCK threshold
+multi-location stock aggregation
+zero-stock stock_indicator interpretation
+```
+
+Do not leave these as implementation-only knowledge.
+
+---
+
+# 120. Decision Record
+
+Record genuine new decisions:
+
+```text
+legacy Product type backfill
+legacy publication backfill
+LOW_STOCK threshold
+MADE_TO_ORDER availability semantics
+zero-stock stock_indicator behavior
+```
+
+Keep the ADR concise.
+
+---
+
+# 121. No New External Dependency
+
+Expected:
+
+```text
+Composer packages:
+NONE
+```
+
+---
+
+# 122. No Frontend Changes
 
 Do not modify:
 
@@ -2011,86 +2158,117 @@ frontend/app/
 frontend/design-system/
 ```
 
-No pagination component or sorting dropdown belongs here.
+Frontend badge/action presentation belongs to later groups.
 
 ---
 
-# 118. No Schema Change Expected
+# 123. No Inventory Adjustment UI/API
 
-Expected:
+Do not implement:
 
 ```text
-Schema changes:
-NONE
+stock receive
+stock decrement
+warehouse transfer
+manual adjustment
 ```
 
-Pagination/sorting should operate on existing Phase 5.2–5.5 query structures.
+here.
 
 ---
 
-# 119. Do Not Add Denormalized Sort Columns
+# 124. No Concurrency Reservation Algorithm
 
-Do not add:
+This phase performs reads only.
 
-```text
-sort_price
-catalog_rank
-popularity
-search_rank
-```
-
-to Product.
+Do not implement checkout stock locking.
 
 ---
 
-# 120. No New Dependencies
-
-Expected:
-
-```text
-Composer dependencies:
-NONE
-```
-
-Laravel pagination/query builder is sufficient.
-
----
-
-# 121. Code Quality
+# 125. Code Quality
 
 Maintain:
 
 ```text
 cognitive complexity <= 15
 <= 3 returns where practical
-explicit sort maps
-small query methods
-no raw untrusted ORDER BY
+small resolver methods
+centralized enum/threshold constants
+no duplicated inventory formulas
 minimal comments
 ```
 
 ---
 
-# 122. Likely Implementation Areas
+# 126. Likely Implementation Areas
 
-Likely changes should be limited to:
+Expected areas include:
 
 ```text
-CAT-001 FormRequest
+database/migrations/
+app/Models/Product.php
+app/Support/ProductType.php
+catalog availability resolver/query
 ProductCatalogQuery
-pagination metadata/resource helper
-Product collection controller/resource
-tests
-docs where required
+Product/Variant resources
+factories
+seeders where necessary
+tests/Feature/
+tests/Unit/
+docs/api/
+docs/decisions.md
 ```
 
-Do not broaden the phase.
+Modify only what this phase needs.
 
 ---
 
-# 123. Verification
+# 127. Static Analysis
 
-Run focused Phase 5.6 tests first.
+Run:
+
+```bash
+vendor/bin/phpstan analyse
+```
+
+Phase 5.7 must introduce:
+
+```text
+0 new PHPStan errors
+```
+
+If the repository's previously reported PHPStan baseline remains unresolved:
+
+report it separately.
+
+Do not claim the global quality gate passes if it does not.
+
+---
+
+# 128. Phase 5.5 Blocker Reporting
+
+The existing Phase 5.5 status remains:
+
+```text
+BLOCKED
+```
+
+until both:
+
+```text
+disposable MySQL/MariaDB FULLTEXT integration verification
+project PHPStan baseline resolution
+```
+
+are complete.
+
+Do not silently reclassify it during Phase 5.7.
+
+---
+
+# 129. Verification Commands
+
+Run focused tests first.
 
 Then:
 
@@ -2102,29 +2280,35 @@ composer audit
 git diff --check
 ```
 
-Report known pre-existing PHPStan failures separately from new failures.
+If schema rebuild testing is needed:
+
+use only the documented disposable DB guard.
 
 ---
 
-# 124. No Destructive Migration Expected
+# 130. MySQL/MariaDB Verification
 
-Do not run:
+Where disposable MySQL/MariaDB is available, verify:
 
 ```text
-migrate:fresh
+migration applies
+legacy backfill correct
+Product Type values persist canonically
+publication values persist correctly
+availability aggregate SQL behaves correctly
 ```
 
-merely for pagination/sorting.
+This may also be an opportunity to run the still-blocked Phase 5.5 FULLTEXT integration test, but do not make that implicit.
 
-If another phase's integration setup requires it, use the existing disposable-database safety rules.
+Report each verification independently.
 
 ---
 
-# 125. Completion Report
+# 131. Completion Report
 
 Return:
 
-## Phase 5.6 status
+## Phase 5.7 status
 
 ```text
 PASS
@@ -2136,71 +2320,78 @@ or:
 BLOCKED
 ```
 
-with exact reason.
-
-## Pagination
+## Schema
 
 Report:
 
 ```text
-page default
-per_page default/max
-metadata structure
-beyond-last behavior
-empty-result behavior
+product_type
+is_published
 ```
 
-## Sorting
+and migration/backfill behavior.
 
-Report:
-
-```text
-created_at
-price
-name
-default directions
-id ASC tie-breaker
-```
-
-## Price sorting
-
-State the authoritative derived-price expression reused.
-
-## Search integration
+## Product Type
 
 Confirm:
 
 ```text
-search → filter → sort → paginate
+IN_STOCK
+MADE_TO_ORDER
 ```
 
-and active-Variant relationship search remains enforced.
+only.
 
-## Duplicate protection
+## Public visibility
 
-State how relationship search avoids duplicate Product rows and inflated totals.
-
-## SQLite
-
-State which pagination/sorting semantics were verified under SQLite.
-
-## MySQL
-
-Do not conflate Phase 5.6 with the outstanding Phase 5.5 FULLTEXT integration check.
-
-## PHPStan
-
-Report whether:
+Confirm:
 
 ```text
-new Phase 5.6 errors = 0
+active
+AND published
+AND not deleted
 ```
 
-and separately identify any existing project baseline blocker.
+plus existing catalog eligibility.
 
-## Schema
+## IN_STOCK availability
 
-Expected:
+State exact active-Variant/stock aggregation semantics.
+
+## MADE_TO_ORDER availability
+
+State that physical inventory is ignored for public availability.
+
+## LOW_STOCK
+
+State exact threshold and where it is centralized.
+
+## Variant consistency
+
+Report CAT-002/CAT-005/CAT-006 consistency.
+
+## Filtering
+
+Report:
+
+```text
+product_type
+availability
+```
+
+behavior.
+
+## Data exposure
+
+Confirm raw stock and publication flags remain private.
+
+## Phase 5.5 status
+
+Restate its independent outstanding blockers if still unresolved.
+
+## Frontend
+
+Must state:
 
 ```text
 NONE
@@ -2214,17 +2405,9 @@ Expected:
 NONE
 ```
 
-## Frontend
-
-Must state:
-
-```text
-NONE
-```
-
 ## Tests
 
-Report exact focused/full counts.
+Report focused and full counts.
 
 ## Quality
 
@@ -2239,94 +2422,103 @@ git diff --check
 
 ---
 
-# 126. Definition of Done
+# 132. Definition of Done
 
-Phase 5.6 is complete when:
+Phase 5.7 is complete when:
 
-* CAT-001 uses standard 1-based page pagination;
-* default page is 1;
-* default per-page is 20;
-* maximum per-page is 100;
-* invalid pagination inputs are rejected;
-* pagination runs after search/filter/sort;
-* metadata is exactly under `meta.pagination`;
-* `current_page` is correct;
-* `per_page` is correct;
-* `total` counts distinct matching Products;
-* `last_page` is correct;
-* `has_next` is correct;
-* `has_previous` is correct;
-* zero-result behavior matches the V1 contract;
-* beyond-last-page requests return empty data rather than 404;
-* no Laravel paginator internals leak;
-* no pagination URLs are added;
-* sorting is allow-listed;
-* allowed fields remain `created_at`, `price`, and `name`;
-* sort directions remain `asc`/`desc`;
-* default catalog order remains `created_at DESC, id ASC`;
-* name and price default to ascending when explicitly selected;
-* every non-unique primary sort appends `id ASC`;
-* price sorting uses the same Product price used for filtering/serialization;
-* pagination does not duplicate Products across stable pages;
-* relationship search does not inflate paginator totals;
-* inactive Variant matches do not influence public search;
-* search/filter/sort/page composition works;
-* no cursor pagination is introduced;
-* no random/popularity/recommended sorting is invented;
-* no Product schema changes are introduced;
-* no new dependency is added;
-* no frontend code is modified;
-* focused pagination/sort tests pass;
-* existing CAT-001 search/filter tests remain green;
-* Phase 5.2–5.5 catalog regressions remain green;
-* no new PHPStan errors are introduced;
+* `product_type` exists authoritatively on Product;
+* `is_published` exists authoritatively on Product;
+* legacy Product rows receive deterministic Product Type;
+* legacy public Product visibility is preserved intentionally;
+* future publication defaults are safe;
+* Product Type uses only `IN_STOCK|MADE_TO_ORDER`;
+* public Product scope requires active + published + non-deleted;
+* hidden/unpublished Products return public 404;
+* Variant public access requires public parent + active Variant;
+* multi-location available stock aggregates correctly;
+* reserved stock is deducted from available stock;
+* inactive Variant stock is ignored;
+* IN_STOCK Product availability is derived from active Variant inventory;
+* IN_STOCK Variant availability is derived from its inventory;
+* MADE_TO_ORDER does not depend on physical inventory;
+* MADE_TO_ORDER returns `stock_indicator=MADE_TO_ORDER`;
+* LOW_STOCK uses one explicit centralized V1 threshold;
+* no per-Product threshold schema is introduced;
+* zero-stock IN_STOCK Products use `availability=unavailable`;
+* no new `OUT_OF_STOCK` enum is introduced;
+* availability filter and response use identical semantics;
+* Product Type filter is fully active;
+* CAT-001 and CAT-002 agree;
+* CAT-002/CAT-005/CAT-006 Variant availability agrees;
+* search respects publication and active Variant restrictions;
+* availability joins do not duplicate Product rows;
+* pagination totals remain correct;
+* raw inventory does not leak;
+* `is_active`/`is_published` do not leak publicly;
+* no Cart logic is implemented;
+* no Checkout reservation is implemented;
+* no Request workflow is implemented;
+* no frontend code is changed;
+* existing Group C inventory invariants remain green;
+* Phase 5.2–5.6 regressions remain green;
+* no new PHPStan failures are introduced;
 * Pint passes;
-* Composer audit has no blocker.
+* Composer audit has no new blocker.
 
 ---
 
-# 127. Out of Scope
+# 133. Out of Scope
 
 Do not implement:
 
 ```text
-cursor pagination
-keyset pagination
-Load More API
-infinite-scroll-specific API
-pagination links
-random sorting
-relevance sorting
-best-selling sorting
-popularity sorting
-recommended sorting
-ratings sorting
-frontend pagination
-frontend sort selector
-analytics
-catalog snapshots
+Cart admission
+Checkout inventory reservation
+inventory adjustment
+warehouse management
+per-Product low-stock thresholds
+per-Variant low-stock thresholds
+backorders
+preorders
+OUT_OF_STOCK enum
+stock notifications
+inventory history
+request workflow
+admin Product management
+frontend availability badges
 ```
 
 ---
 
-# 128. STOP Condition
+# 134. STOP Condition
 
-STOP when CAT-001 behaves like a conventional production e-commerce collection API:
+STOP when the entire public catalog uses one authoritative model:
 
 ```text
-public query
-→ search
-→ filters
-→ approved sort
-→ deterministic id tie-break
-→ page-based pagination
-→ ProductSummary collection
-→ meta.pagination
+Product visibility
+=
+active + published + non-deleted
+
+Product type
+=
+IN_STOCK | MADE_TO_ORDER
+
+IN_STOCK availability
+=
+derived from active Variant available inventory
+
+MADE_TO_ORDER availability
+=
+requestable catalog availability independent of physical stock
+
+public stock detail
+=
+availability + stock_indicator only
 ```
 
-with stable results for unchanged catalog state, correct distinct totals, and no schema/API expansion.
+with identical semantics across CAT-001, CAT-002, CAT-005, CAT-006, search, filters, and pagination.
 
-Do not continue automatically to Phase 5.7.
+Do not continue automatically to the next phase.
 
 DO NOT COMMIT, STAGE OR PUSH.
 

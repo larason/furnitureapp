@@ -44,11 +44,11 @@ class ProductReadApiTest extends TestCase
             ->assertJsonPath('data.0.price.amount', 125000000)
             ->assertJsonPath('data.0.price.currency', 'TZS')
             ->assertJsonPath('data.0.availability', 'available')
-            ->assertJsonMissingPath('data.0.product_type')
+            ->assertJsonPath('data.0.product_type', 'IN_STOCK')
             ->assertJsonMissingPath('data.0.is_active')
             ->assertJsonMissingPath('data.0.primary_image.file_path')
-            ->assertJsonMissingPath('data.0.stock_indicator')
-            ->assertJsonStructure(['data' => [['id', 'name', 'slug', 'price', 'category', 'primary_image', 'availability']], 'meta' => ['pagination']]);
+            ->assertJsonPath('data.0.stock_indicator', 'LOW_STOCK')
+            ->assertJsonStructure(['data' => [['id', 'name', 'slug', 'product_type', 'price', 'category', 'primary_image', 'availability', 'stock_indicator']], 'meta' => ['pagination']]);
     }
 
     public function test_detail_resolves_by_slug_and_opaque_id_with_ordered_active_variants(): void
@@ -70,8 +70,9 @@ class ProductReadApiTest extends TestCase
                 ->assertJsonCount(1, 'data.variants')
                 ->assertJsonPath('data.images.0.sort_order', 1)
                 ->assertJsonPath('data.category.id', 'cat_'.base_convert((string) $category->id, 10, 36))
-                ->assertJsonMissingPath('data.stock_indicator')
-                ->assertJsonMissingPath('data.variants.0.stock_indicator')
+                ->assertJsonPath('data.product_type', 'IN_STOCK')
+                ->assertJsonPath('data.stock_indicator', 'LOW_STOCK')
+                ->assertJsonPath('data.variants.0.stock_indicator', 'LOW_STOCK')
                 ->assertJsonMissingPath('data.variants.0.product_id')
                 ->assertJsonMissingPath('data.images.0.file_path')
                 ->assertJsonMissingPath('data.cost_price_amount');
@@ -142,11 +143,11 @@ class ProductReadApiTest extends TestCase
             ->assertJsonPath('data.0.price.amount', 100)
             ->assertJsonPath('data.0.availability', 'unavailable')
             ->assertJsonPath('data.1.availability', 'available')
-            ->assertJsonMissingPath('data.0.stock_indicator')
+            ->assertJsonPath('data.0.stock_indicator', 'IN_STOCK')
             ->assertJsonMissingPath('data.0.cost_price_amount')
             ->assertJsonMissingPath('data.0.is_active')
             ->assertJsonMissingPath('data.0.display_order')
-            ->assertJsonStructure(['data' => [['id', 'product_id', 'sku', 'name', 'price', 'availability', 'created_at', 'updated_at']]]);
+            ->assertJsonStructure(['data' => [['id', 'product_id', 'sku', 'name', 'price', 'availability', 'stock_indicator', 'created_at', 'updated_at']]]);
     }
 
     public function test_variant_detail_requires_public_parent_and_strict_parent_ownership(): void
@@ -160,7 +161,7 @@ class ProductReadApiTest extends TestCase
         $this->getJson('/api/v1/products/'.$product->slug.'/variants/'.VariantIdentifier::encode($variant))
             ->assertOk()
             ->assertJsonPath('data.id', VariantIdentifier::encode($variant))
-            ->assertJsonMissingPath('data.stock_indicator');
+            ->assertJsonPath('data.stock_indicator', 'IN_STOCK');
         $this->getJson('/api/v1/products/'.$other->slug.'/variants/'.VariantIdentifier::encode($variant))
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
@@ -308,11 +309,57 @@ class ProductReadApiTest extends TestCase
         $withSearch->assertJsonPath('meta.pagination.total', 1)->assertJsonPath('data.0.slug', 'visible-oak');
     }
 
-    public function test_product_type_filter_is_explicitly_deferred_until_authoritative_product_type_exists(): void
+    public function test_product_type_filter_uses_authoritative_product_type(): void
     {
+        Product::factory()->madeToOrder()->create();
+
         $this->getJson('/api/v1/products?product_type=IN_STOCK')
-            ->assertUnprocessable()
-            ->assertJsonStructure(['errors', 'meta' => ['request_id']]);
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 0);
+    }
+
+    public function test_made_to_order_products_are_available_without_stock_and_expose_request_type(): void
+    {
+        $product = Product::factory()->madeToOrder()->create(['name' => 'Custom Walnut Desk']);
+
+        $this->getJson('/api/v1/products?product_type=MADE_TO_ORDER&availability=available')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($product))
+            ->assertJsonPath('data.0.product_type', 'MADE_TO_ORDER')
+            ->assertJsonPath('data.0.availability', 'available')
+            ->assertJsonPath('data.0.stock_indicator', 'MADE_TO_ORDER');
+    }
+
+    public function test_unpublished_products_are_hidden_from_collection_and_detail(): void
+    {
+        $product = Product::factory()->draft()->create(['slug' => 'draft-table']);
+
+        $this->getJson('/api/v1/products')->assertOk()->assertJsonMissing(['slug' => 'draft-table']);
+        $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertNotFound()
+            ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+    }
+
+    public function test_stock_indicator_aggregates_available_quantity_across_locations(): void
+    {
+        $product = Product::factory()->create(['name' => 'Multi-location Table']);
+        $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
+        ProductStock::factory()->forVariant($variant)->create([
+            'warehouse_location' => 'main',
+            'quantity' => 4,
+            'reserved_quantity' => 1,
+        ]);
+        ProductStock::factory()->forVariant($variant)->create([
+            'warehouse_location' => 'secondary',
+            'quantity' => 3,
+            'reserved_quantity' => 0,
+        ]);
+
+        $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertOk()
+            ->assertJsonPath('data.availability', 'available')
+            ->assertJsonPath('data.stock_indicator', 'IN_STOCK');
     }
 
     public function test_default_pagination_uses_twenty_items_and_filtered_totals(): void
