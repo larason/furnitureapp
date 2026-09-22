@@ -838,7 +838,7 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 | Aspect | Contract |
 |---|---|
 | **Owner** | System (operational) |
-| **Privileged readers** | `STAFF`/`ADMIN` `inventory.view` — `GET /inventory` (`INV-001`), `GET /inventory/{inventory}` (`INV-002`, by product/variant) |
+| **Privileged readers** | `STAFF`/`ADMIN` `inventory.view` — `GET /inventory` (`INV-001`), `GET /inventory/{inventory}` (`INV-002`, by Inventory resource ID / `ProductStock` row) |
 | **Privileged writers** | `STAFF`/`ADMIN` `inventory.manage` — `POST /inventory/{product}/adjust` (`INV-003`) only; no `PATCH {quantity:999}` |
 | **Customer visibility** | **None** — public catalog shows `availability`/`stock_indicator` only (coarse); `quantity/reserved_quantity/available_quantity` never customer-visible |
 | **Immutable** | Derived `available_quantity = quantity - reserved_quantity` (read-only) |
@@ -846,6 +846,25 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 | **Validation** | `quantity_delta` integer, `reason` CLOSED (`STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT`), resulting `new_quantity >=0`, concurrent revalidation inside transaction |
 | **Audit** | Every `INV-003` adjustment audited (`actor/inventory/old/new/reason/occurred_at`); concurrency `Critical` |
 | **Field exposure** | `quantity` = integer units (not TZS minor units) |
+
+#### 10.2.1 Inventory read representation (`INV-001`/`INV-002`, Phase 5.8)
+
+One `ProductStock` row is one Inventory resource: one Variant at one `warehouse_location` (`UNIQUE(product_variant_id, warehouse_location)`). `INV-001` lists persisted rows (no fabricated zero rows, no aggregation across locations); `INV-002` resolves one row by its opaque Inventory ID (`inv_...`), never by Product slug/ID, Variant SKU, or warehouse name.
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | OPERATIONAL | no | Stable opaque Inventory resource ID (`inv_...`); equals the `ProductStock` row identity |
+| `product_id` | string | OPERATIONAL | no | Derived `ProductStock → ProductVariant → Product` (`prod_...`); no `products.product_id` storage |
+| `variant_id` | string | OPERATIONAL | no | Derived from `product_variants` (`var_...`); never raw `product_variant_id`; ProductStock always belongs to a Variant |
+| `warehouse_location` | string | OPERATIONAL | no | Bounded machine string (e.g. `main`, `dar-es-salaam`); distinguishes multiple stock rows for one Variant |
+| `quantity` | integer | OPERATIONAL | no | Physical units owned at this location |
+| `reserved_quantity` | integer | OPERATIONAL | no | Units currently reserved/unavailable for another reservation or consumption |
+| `available_quantity` | integer | OPERATIONAL | no | Derived `quantity - reserved_quantity`; never persisted, never client-submitted |
+| `updated_at` | ISO8601 UTC | OPERATIONAL | no | Row timestamp; `created_at` is not exposed on this resource |
+
+- **Filters (`INV-001`):** `product` (`prod_...`/numeric/slug), `variant` (`var_...` only), `warehouse_location` (exact). Unknown parameters/operators rejected `422`; pagination `page`/`per_page` (default `20`, max `100`); ordering `updated_at DESC, id ASC`.
+- **Scope:** operational reads are not scoped by public catalog visibility — zero-stock rows and stock attached to inactive, unpublished, or soft-deleted Products remain visible for reconciliation.
+- **Cache:** `private, no-store` + `Vary: Authorization`; never public.
 
 ### 10.3 Order Operational Resource (extends §3 Order historical)
 

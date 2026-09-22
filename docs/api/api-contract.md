@@ -4386,7 +4386,7 @@ Inventory is operational, not customer-editable (see `api-resources.md §9`).
 | ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
 |---|---|---|---|---|---|---|---|---|
 | `INV-001` | `GET` | `/api/v1/inventory` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (paginated, filtered) | — | — |
-| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory by product/variant | — | — |
+| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory detail (by Inventory resource ID) | — | — |
 | `INV-003` | `POST` | `/api/v1/inventory/{product}/adjust` | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable `reason` | Controlled stock adjustment (not `PATCH {quantity:999}`) | **Required** (`Idempotency-Key`) — same key replays `200` prior success (no second delta applied), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION` | **Critical** (race with concurrent adjust/checkout) |
 
 - **No arbitrary `PATCH /inventory/{id}`:** only explicit `POST .../adjust`.
@@ -4394,6 +4394,14 @@ Inventory is operational, not customer-editable (see `api-resources.md §9`).
 - **Response:** `200 {"data": {inventory: {id, product_id, variant_id, quantity, reserved_quantity, available_quantity, updated_at}}}` with server-calculated `new_quantity` transactional; `quantity` is item units, not TZS minor units.
 - **Validation:** `inventory exists`, `actor authorized`, `reason CLOSED`, `quantity_delta integer`, `resulting quantity >=0` where business prohibits negative, `concurrent modification` detected via transaction/locking.
 - **Errors:** `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 RESOURCE_NOT_FOUND`, `409 CONFLICT` (`RESOURCE_VERSION_CONFLICT`), `422 INVALID_VALUE`/`MISSING_REQUIRED_FIELD`, `429 RATE_LIMITED`.
+
+##### 30.5.1.1 Inventory read model (Phase 5.8 clarification)
+
+- **`{inventory}` meaning:** one `ProductStock` row — one Variant at one `warehouse_location`. The path parameter is the stable opaque Inventory resource ID (`inv_...`). It is **not** a Product slug/ID, Variant SKU, or warehouse name. `INV-002` never resolves by Product/Variant; use `INV-001` filters for that.
+- **`INV-001` filters (allow-list):** `product` (`prod_...` ID, numeric ID, or slug resolved through existing Product semantics), `variant` (`var_...` stable Variant ID; SKU not accepted), `warehouse_location` (exact bounded string). Unknown parameters and arbitrary columns/operators (`?sort=quantity`, `?reserved_quantity_gt=`) are rejected `422`. No public `availability` reuse; no full-text search.
+- **Ordering:** `updated_at DESC, id ASC` (deterministic).
+- **Representation:** `{id, product_id, variant_id, warehouse_location, quantity, reserved_quantity, available_quantity, updated_at}`. `product_id` is derived `ProductStock → ProductVariant → Product`; `variant_id` is derived from `product_variants` (never raw `product_variant_id`); `available_quantity = quantity - reserved_quantity` derived, never persisted; `created_at` is not exposed. Exact operational quantities and location require `inventory.view`; zero-stock rows and stock on inactive/unpublished/soft-deleted Products remain operationally visible (public catalog scope does not apply).
+- **Cache:** `Cache-Control: private, no-store` + `Vary: Authorization`; never public/CDN-cacheable.
 
 #### 30.5.2 Adjustment reasons (CLOSED)
 

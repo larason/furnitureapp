@@ -85,6 +85,31 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+    InventoryProductFilter:
+      name: product
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 100
+      description: Filter inventory by Product (`prod_...` ID, numeric ID, or slug resolved through existing Product semantics)
+    InventoryVariantFilter:
+      name: variant
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 100
+        pattern: '^var_[0-9a-z]+$'
+      description: Filter inventory by stable Variant ID (`var_...`); SKU is not accepted
+    InventoryLocationFilter:
+      name: warehouse_location
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 255
+      description: Exact bounded warehouse/location identifier (e.g. `main`, `dar-es-salaam`); no fuzzy matching
     ProductPath:
       name: product
       in: path
@@ -140,6 +165,7 @@ components:
       required: true
       schema:
         type: string
+      description: Stable opaque Inventory resource ID (`inv_...`) identifying one ProductStock row; not a Product, Variant, or warehouse identifier
     UserPath:
       name: user
       in: path
@@ -1195,6 +1221,8 @@ components:
       required:
       - id
       - product_id
+      - variant_id
+      - warehouse_location
       - quantity
       - reserved_quantity
       - available_quantity
@@ -1202,12 +1230,16 @@ components:
         id:
           type: string
           readOnly: true
+          description: Stable opaque Inventory resource ID (`inv_...`) identifying one ProductStock row (one Variant at one warehouse_location)
         product_id:
           type: string
+          description: Derived through ProductStock -> ProductVariant -> Product
         variant_id:
-          type:
-          - string
-          - 'null'
+          type: string
+          description: Derived from product_variants; required, never null (ProductStock always belongs to a Variant)
+        warehouse_location:
+          type: string
+          description: Bounded machine identifier (e.g. `main`, `dar-es-salaam`); distinguishes multiple stock rows for one Variant
         quantity:
           type: integer
           readOnly: true
@@ -1217,6 +1249,7 @@ components:
         available_quantity:
           type: integer
           readOnly: true
+          description: Derived `quantity - reserved_quantity`; never persisted
         updated_at:
           type: string
           format: date-time
@@ -3185,6 +3218,12 @@ paths:
       summary: List inventory
       security:
       - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/InventoryProductFilter'
+      - $ref: '#/components/parameters/InventoryVariantFilter'
+      - $ref: '#/components/parameters/InventoryLocationFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -3206,7 +3245,11 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
-      description: Requires STAFF/ADMIN inventory.view
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      description: Requires STAFF/ADMIN inventory.view. Lists persisted ProductStock rows (one Variant at one warehouse_location each). Ordering `updated_at DESC, id ASC`; filters `product`/`variant`/`warehouse_location`.
   /inventory/{inventory}:
     get:
       operationId: INV-002
@@ -3235,6 +3278,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+      description: Requires STAFF/ADMIN inventory.view. Retrieves one ProductStock/Inventory resource by Inventory ID (`inv_...`); unknown or non-Inventory identifiers return 404. Exact operational quantities and warehouse_location are exposed only here.
   /inventory/{product}/adjust:
     post:
       operationId: INV-003

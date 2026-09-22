@@ -1,75 +1,107 @@
-# Phase 5.7 — Product Availability Rules
+# Phase 5.8 — Inventory Read Model
 
 ## Purpose
 
-Complete the V1 catalog availability model by implementing the deferred Product authority for:
+Implement the read-only operational inventory surface:
 
-```text
-product_type
-is_published
+```text id="w2lg43"
+INV-001
+GET /api/v1/inventory
 ```
 
-and establishing one consistent derivation for:
+and:
 
-```text
-availability
-stock_indicator
-public visibility
+```text id="hya7ik"
+INV-002
+GET /api/v1/inventory/{inventory}
 ```
 
-across:
+using the existing Group C inventory model:
 
-```text
-CAT-001 Product Collection
-CAT-002 Product Detail
-CAT-005 Variant Collection
-CAT-006 Variant Detail
-```
-
-This phase completes catalog presentation rules.
-
-It does **not** implement cart admission, checkout reservation, inventory adjustment, or made-to-order request processing.
-
----
-
-# 1. Preserve the Existing Domain Model
-
-Do not redesign Group C.
-
-The authoritative model remains:
-
-```text
+```text id="x2s3zd"
 Product
     ↓
 ProductVariant
         ↓
 ProductStock
+            ↓
+warehouse_location
+quantity
+reserved_quantity
+derived available_quantity
 ```
 
-where:
+This phase is strictly read-only.
 
-```text
-Product
-→ catalog identity / visibility / product type
-
-ProductVariant
-→ sellable/pricing configuration
-
-ProductStock
-→ physical inventory by location
-```
-
-Do not add stock quantities to Product.
-
-Do not add stock quantities to ProductVariant.
+Do not implement inventory adjustments yet.
 
 ---
 
-# 2. Read Authoritative Repository State First
+# 1. Preserve Group C Inventory Architecture
 
-Before modifying code, inspect:
+The authoritative inventory persistence model remains:
 
-```text
+```text id="83tj8k"
+product_stocks
+```
+
+with:
+
+```text id="l76oze"
+id
+product_variant_id
+warehouse_location
+quantity
+reserved_quantity
+created_at
+updated_at
+```
+
+and:
+
+```text id="6kn29c"
+available_quantity
+=
+quantity - reserved_quantity
+```
+
+derived, never persisted.
+
+Do not redesign this schema.
+
+---
+
+# 2. Do Not Move Inventory to Product
+
+Do not add:
+
+```text id="5izhqb"
+products.quantity
+products.reserved_quantity
+products.available_quantity
+```
+
+---
+
+# 3. Do Not Move Inventory to Variant
+
+Do not add:
+
+```text id="9tygoi"
+product_variants.quantity
+product_variants.reserved_quantity
+product_variants.available_quantity
+```
+
+Inventory remains Variant + location scoped.
+
+---
+
+# 4. Read Authoritative Files First
+
+Before implementation inspect:
+
+```text id="2bgcbo"
 AGENTS.md
 docs/VISION.md
 docs/api/api-contract.md
@@ -78,2342 +110,1910 @@ docs/api/api-conventions.md
 docs/api/openapi.yaml
 docs/domain/business-rules.md
 docs/decisions.md
-phases/group-C-phases.md
 ```
 
-Also inspect current implementations from:
+Also inspect current:
 
-```text
-Phase 5.2
-Phase 5.3
-Phase 5.4
-Phase 5.5
-Phase 5.6
+```text id="8spqss"
+ProductStock
+ProductVariant
+Product
+inventory policies/permissions
+Phase 5.7 availability resolver
 ```
 
-especially the existing:
-
-```text
-Product public scope
-ProductCatalogQuery
-price resolver
-availability placeholder/resolver
-Variant resources
-Product resources
-```
-
-Do not create parallel logic.
+Use the latest repository state.
 
 ---
 
-# 3. Known Deferred Schema Gap
+# 5. Endpoint Scope
 
-Group C deliberately left these Product fields absent:
+Implement only:
 
-```text
-product_type
-is_published
-```
-
-The repository explicitly assigns their correction to Phase 5.7.
-
-This phase must now add them.
-
----
-
-# 4. Product Type
-
-Introduce authoritative Product field:
-
-```text
-product_type
-```
-
-Closed values:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-No third value.
-
-Do not add:
-
-```text
-PREORDER
-CUSTOM
-BACKORDER
-DIGITAL
-SERVICE
-```
-
-in V1.
-
----
-
-# 5. Product Type Support Type
-
-Use an existing project enum/value-object pattern.
-
-Preferred:
-
-```text
-App\Support\ProductType
-```
-
-or the current convention.
-
-Do not scatter:
-
-```php
-'IN_STOCK'
-'MADE_TO_ORDER'
-```
-
-through controllers/resources/query classes.
-
----
-
-# 6. Product Type Database Representation
-
-Follow the project's established CLOSED-enum storage strategy.
-
-Do not redesign enum handling globally.
-
-Remember the known MySQL/MariaDB case-insensitive enum behavior from Group C:
-
-application validation remains authoritative for canonical uppercase values.
-
----
-
-# 7. Product Type Migration
-
-Create a new migration.
-
-Do not modify historical Group C migrations.
-
-The migration must make existing rows valid.
-
-Preferred compatibility behavior:
-
-```text
-existing Product rows
-→ IN_STOCK
-```
-
-because legacy Products existed before Product Type could be represented and previously participated in the ordinary inventory-backed catalog.
-
-Record this explicitly as a migration compatibility decision.
-
----
-
-# 8. Do Not Infer Legacy MADE_TO_ORDER
-
-Do not attempt to identify legacy made-to-order Products from:
-
-```text
-zero stock
-category
-name
-description
-SKU
-```
-
-That would fabricate business meaning.
-
-Legacy rows become:
-
-```text
-IN_STOCK
-```
-
-unless an explicit repository data migration says otherwise.
-
----
-
-# 9. Publication State
-
-Introduce:
-
-```text
-is_published
-```
-
-as a Product-level boolean.
-
-This is distinct from:
-
-```text
-is_active
-```
-
----
-
-# 10. `is_active` vs `is_published`
-
-Keep the meanings separate:
-
-```text
-is_active
-→ Product is operationally active / not disabled
-
-is_published
-→ Product is intentionally visible in the public catalog
-```
-
-A Product must satisfy both to be publicly discoverable.
-
----
-
-# 11. Public Visibility Rule
-
-Canonical public Product predicate:
-
-```text
-deleted_at IS NULL
-AND is_active = true
-AND is_published = true
-```
-
-plus whatever existing public Category/pricing requirements already apply.
-
-Centralize this predicate.
-
----
-
-# 12. Do Not Duplicate Visibility Logic
-
-Do not independently write:
-
-```text
-CAT-001 visibility
-CAT-002 visibility
-CAT-005 visibility
-CAT-006 visibility
-search visibility
-```
-
-in separate implementations.
-
-Use one public Product scope/query abstraction.
-
----
-
-# 13. Publication Migration Compatibility
-
-Adding `is_published` must not accidentally make every existing public Product disappear.
-
-Preferred migration strategy:
-
-```text
-new field default false for future safety
-+
-explicitly backfill existing active legacy Products to true
-```
-
-or an equivalent deterministic migration that preserves currently public legacy catalog data.
-
-Document the exact approach.
-
----
-
-# 14. Future Product Creation
-
-Future catalog-management phases should explicitly choose publication state.
-
-Do not depend permanently on implicit auto-publishing.
-
-If a DB default is required:
-
-prefer safe draft behavior for new rows:
-
-```text
-is_published = false
-```
-
-while migration backfill preserves legacy visibility.
-
----
-
-# 15. Product Model
-
-Update Product casts/type declarations for:
-
-```text
-product_type
-is_published
-```
-
-using project conventions.
-
-Do not make them client-mass-assignable merely because fields now exist.
-
-Management APIs later own writes.
-
----
-
-# 16. Public Serialization
-
-Public Product responses now expose:
-
-```text
-product_type
-```
-
-because it is part of the frozen Product contract.
-
-Do **not** expose:
-
-```text
-is_active
-is_published
-```
-
-through CAT-001 or CAT-002.
-
-Those remain operational/internal flags.
-
----
-
-# 17. Publication Masking
-
-For public Product detail:
-
-```text
-is_active = false
-OR
-is_published = false
-OR
-soft-deleted
-```
-
-must resolve as:
-
-```text
-404 RESOURCE_NOT_FOUND
-```
-
-Do not expose:
-
-```text
-PRODUCT_IS_DRAFT
-PRODUCT_UNPUBLISHED
-PRODUCT_INACTIVE
-```
-
-to public callers.
-
----
-
-# 18. Variant Visibility Depends on Product Visibility
-
-A Variant is public only when:
-
-```text
-parent Product is public
-AND
-Variant.is_active = true
-```
-
-An active Variant under an unpublished Product is not publicly accessible.
-
----
-
-# 19. Keep the Phase 5.5 Active-Variant Fix
-
-Relationship search must continue to require:
-
-```text
-variants.is_active = true
-```
-
-before SKU/attribute predicates.
-
-Do not regress this.
-
-Inactive Variants must never make a public Product appear through search.
-
----
-
-# 20. Inventory Authority
-
-Inventory remains authoritative in:
-
-```text
-product_stocks
-```
-
-Each stock row already provides derived:
-
-```text
-available_quantity = quantity - reserved_quantity
-```
-
-Do not add an `available_quantity` database column.
-
----
-
-# 21. Aggregate Across Locations
-
-A Variant may have stock in multiple locations.
-
-Variant total available stock is:
-
-```text
-SUM(stock.quantity - stock.reserved_quantity)
-```
-
-across all current stock rows belonging to that Variant.
-
-Do not inspect only the first location.
-
----
-
-# 22. Location Is Internal
-
-Public availability aggregation may use all inventory locations, but must never expose:
-
-```text
-warehouse_location
-quantity
-reserved_quantity
-available_quantity
-```
-
-through public catalog APIs.
-
----
-
-# 23. Variant Availability — IN_STOCK Product
-
-For an active Variant belonging to a public:
-
-```text
-product_type = IN_STOCK
-```
-
-derive:
-
-```text
-total_available_quantity > 0
-→ availability = "available"
-
-total_available_quantity <= 0
-→ availability = "unavailable"
-```
-
-No stock row is equivalent to zero available stock.
-
----
-
-# 24. Product Availability — IN_STOCK Product
-
-For a public Product whose:
-
-```text
-product_type = IN_STOCK
-```
-
-Product availability is:
-
-```text
-"available"
-```
-
-if at least one active Variant has:
-
-```text
-total_available_quantity > 0
-```
-
-Otherwise:
-
-```text
-"unavailable"
-```
-
----
-
-# 25. Do Not Include Inactive Variants in Product Availability
-
-Stock belonging to:
-
-```text
-Variant.is_active = false
-```
-
-must not make the Product available.
-
-Only active Variants contribute.
-
----
-
-# 26. Do Not Include Hidden Product State
-
-A Product that is inactive/unpublished is not publicly serialized at all.
-
-Do not attempt to return:
-
-```text
-availability = unavailable
-```
-
-for an unpublished Product through CAT-001/CAT-002.
-
-It is hidden.
-
----
-
-# 27. MADE_TO_ORDER Availability
-
-A public:
-
-```text
-product_type = MADE_TO_ORDER
-```
-
-does not derive public availability from physical inventory.
-
-Its inventory count is irrelevant to requestability.
-
-For a valid public MADE_TO_ORDER Product:
-
-```text
-availability = "available"
-stock_indicator = "MADE_TO_ORDER"
-```
-
-provided the Product has the existing valid public pricing/configuration required by the catalog.
-
----
-
-# 28. MADE_TO_ORDER Variant Availability
-
-For an active Variant belonging to a public MADE_TO_ORDER Product:
-
-```text
-availability = "available"
-stock_indicator = "MADE_TO_ORDER"
-```
-
-regardless of ProductStock quantity.
-
-Do not require inventory rows for MADE_TO_ORDER Variant presentation.
-
----
-
-# 29. MADE_TO_ORDER Is Not Purchasable
-
-Do not confuse:
-
-```text
-availability = "available"
-```
-
-with:
-
-```text
-purchasable through cart
-```
-
-For MADE_TO_ORDER:
-
-```text
-available
-→ available for the Request Furniture workflow
-
-NOT
-→ available for Cart/Checkout
-```
-
-Cart and Checkout must later reject it with:
-
-```text
-PRODUCT_NOT_PURCHASABLE
-```
-
-according to their own domain rules.
-
----
-
-# 30. Do Not Implement Cart Rejection Here
-
-Do not modify CART-002 merely to finish Phase 5.7 unless that cart implementation already exists and explicitly consumes a shared availability/product-type service.
-
-This phase owns catalog rules.
-
-Cart domain behavior belongs to its implementation phase.
-
----
-
-# 31. Do Not Implement Checkout Revalidation Here
-
-Do not add:
-
-```text
-inventory locks
-reservation
-row-level checkout locking
-order creation
-```
-
-Availability reads remain informational.
-
-Checkout later performs authoritative transaction-time validation.
-
----
-
-# 32. Stock Indicator Contract
-
-The frozen response values remain:
-
-```text
-IN_STOCK
-LOW_STOCK
-MADE_TO_ORDER
-```
-
-Do not add:
-
-```text
-OUT_OF_STOCK
-SOLD_OUT
-BACKORDER
-```
-
-inside V1 without explicit contract review.
-
----
-
-# 33. `availability` Is Authoritative for Unavailable State
-
-Because the frozen `stock_indicator` enum has no `OUT_OF_STOCK` value:
-
-clients must treat:
-
-```text
-availability = "unavailable"
-```
-
-as the authoritative unavailable signal.
-
-`stock_indicator` is secondary display/context information.
-
-Document this clearly.
-
----
-
-# 34. IN_STOCK Product with Zero Stock
-
-For:
-
-```text
-product_type = IN_STOCK
-available_quantity = 0
-```
-
-return:
-
-```text
-availability = "unavailable"
-stock_indicator = "IN_STOCK"
-```
-
-Do not invent `OUT_OF_STOCK`.
-
-Frontend later must prioritize:
-
-```text
-availability
-```
-
-before displaying stock badge text.
-
----
-
-# 35. LOW_STOCK Threshold — Contract Gap
-
-The existing docs define:
-
-```text
-LOW_STOCK
-```
-
-but do not currently establish a numeric threshold.
-
-Do not hide a magic number in SQL.
-
-Phase 5.7 must make the threshold explicit.
-
----
-
-# 36. V1 Low-Stock Rule
-
-If no newer authoritative repository decision already defines the threshold, establish the smallest explicit V1 rule:
-
-```text
-LOW_STOCK_THRESHOLD = 5 units
-```
-
-Record it as a Phase 5.7 business assumption/decision.
-
-Do not add a DB column for the threshold.
-
----
-
-# 37. Centralize Low-Stock Threshold
-
-Define the threshold once in an appropriate domain support class/value object, for example:
-
-```text
-CatalogAvailability
-StockIndicatorResolver
-```
-
-or equivalent.
-
-Do not duplicate:
-
-```text
-5
-```
-
-across:
-
-```text
-resources
-queries
-tests
-controllers
-```
-
----
-
-# 38. Why No `low_stock_threshold` Column Yet
-
-Group C deliberately omitted:
-
-```text
-low_stock_threshold
-```
-
-from ProductStock.
-
-Keep that decision.
-
-V1 has one business-wide threshold.
-
-Per-Product or per-Variant thresholds can be introduced later only if the business actually needs them.
-
----
-
-# 39. Variant Stock Indicator — IN_STOCK Product
-
-For an active Variant of an IN_STOCK Product:
-
-```text
-available_quantity == 0
-→ availability = unavailable
-→ stock_indicator = IN_STOCK
-
-1 <= available_quantity <= LOW_STOCK_THRESHOLD
-→ availability = available
-→ stock_indicator = LOW_STOCK
-
-available_quantity > LOW_STOCK_THRESHOLD
-→ availability = available
-→ stock_indicator = IN_STOCK
-```
-
----
-
-# 40. Product Stock Indicator — IN_STOCK Product
-
-Use total available stock across all **active Variants**:
-
-```text
-product_available_quantity =
-SUM(active Variant available quantities)
-```
-
-Then:
-
-```text
-product_available_quantity == 0
-→ availability = unavailable
-→ stock_indicator = IN_STOCK
-
-1..LOW_STOCK_THRESHOLD
-→ availability = available
-→ stock_indicator = LOW_STOCK
-
-> LOW_STOCK_THRESHOLD
-→ availability = available
-→ stock_indicator = IN_STOCK
-```
-
-This gives Product-level catalog cards one stable badge.
-
----
-
-# 41. Do Not Use Physical Quantity Directly
-
-Always derive from:
-
-```text
-quantity - reserved_quantity
-```
-
-not physical quantity alone.
-
-Example:
-
-```text
-quantity = 10
-reserved = 10
-```
-
-means:
-
-```text
-available = 0
-```
-
-not 10.
-
----
-
-# 42. Clamp Is Not Needed
-
-Group C already guarantees:
-
-```text
-0 <= reserved_quantity <= quantity
-```
-
-Do not hide integrity bugs by writing:
-
-```text
-max(quantity - reserved, 0)
-```
-
-unless an established shared accessor already does that.
-
-Trust the invariant and surface test failures if violated.
-
----
-
-# 43. Availability Resolver
-
-Create or finalize one focused service/value object such as:
-
-```text
-CatalogAvailabilityResolver
-```
-
-or use the current existing Phase 5.2 abstraction.
-
-It should own:
-
-```text
-Product availability
-Product stock indicator
-Variant availability
-Variant stock indicator
-```
-
-Do not put this logic into API Resources.
-
----
-
-# 44. Resources Should Serialize, Not Decide
-
-Avoid:
-
-```php
-if ($this->stocks->sum(...) > 5) { ... }
-```
-
-inside ProductResource or VariantResource.
-
-Resources should consume already-derived catalog presentation state.
-
----
-
-# 45. Query Filtering Must Match Serialization
-
-For every Product:
-
-```text
-availability used by
-?availability=...
-```
-
-must be identical to:
-
-```text
-availability returned in JSON
-```
-
-No separate filter interpretation.
-
----
-
-# 46. `availability=available`
-
-CAT-001 filter:
-
-```text
-?availability=available
-```
-
-must include:
-
-```text
-public IN_STOCK Products with >0 available units
-+
-public MADE_TO_ORDER Products
-```
-
-because MADE_TO_ORDER Products are available to the customer through the Request workflow.
-
----
-
-# 47. `availability=unavailable`
-
-Must include only publicly visible:
-
-```text
-IN_STOCK
-```
-
-Products whose active Variants have zero total available quantity.
-
-It should not include hidden/unpublished Products.
-
----
-
-# 48. Product Type Filter Now Becomes Fully Active
-
-Phase 5.7 completes:
-
-```text
-?product_type=IN_STOCK
-?product_type=MADE_TO_ORDER
-```
-
-in CAT-001.
-
-Use exact CLOSED values.
-
----
-
-# 49. Product Type Filter Validation
-
-Reject:
-
-```text
-in_stock
-made_to_order
-STANDARD
-CUSTOM
-PREORDER
-```
-
-unless current global request normalization explicitly allows case normalization.
-
-Follow the current enum policy.
-
----
-
-# 50. Product Type + Availability Composition
-
-Examples:
-
-```text
-?product_type=IN_STOCK&availability=available
-```
-
-→ stocked standard Products with positive available inventory.
-
-```text
-?product_type=IN_STOCK&availability=unavailable
-```
-
-→ visible standard Products currently out of stock.
-
-```text
-?product_type=MADE_TO_ORDER&availability=available
-```
-
-→ visible requestable made-to-order Products.
-
-```text
-?product_type=MADE_TO_ORDER&availability=unavailable
-```
-
-→ normally empty under current V1 semantics.
-
----
-
-# 51. Search Must Respect Publication
-
-Phase 5.5 FULLTEXT/SQLite fallback must never return:
-
-```text
-is_published = false
-```
-
-Products.
-
-Add the new public scope before search predicates.
-
----
-
-# 52. Search Must Respect Active Variant Rules
-
-SKU/attribute matches remain limited to:
-
-```text
-Variant.is_active = true
-```
-
-and parent:
-
-```text
-Product.is_active = true
-Product.is_published = true
-```
-
----
-
-# 53. Sorting/Pagination Integration
-
-Phase 5.6 ordering remains:
-
-```text
-public visibility
-→ search
-→ filters
-→ sort
-→ id ASC
-→ paginate
-```
-
-Availability/product-type filters fit into the existing filter stage.
-
-Do not change pagination architecture.
-
----
-
-# 54. Price Still Comes From Variants
-
-Adding Product Type does not create Product price storage.
-
-For both:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-public Product price remains derived from the approved ProductVariant price rule.
-
----
-
-# 55. MADE_TO_ORDER Price
-
-The frozen contract requires Product price for MADE_TO_ORDER.
-
-It represents:
-
-```text
-display / starting-at price
-```
-
-only.
-
-Do not make it authoritative for Cart/Checkout.
-
----
-
-# 56. Product Must Have Determinable Public Price
-
-Do not return a Product that cannot satisfy the frozen non-null Product price contract.
-
-Reuse the existing price eligibility behavior.
-
-Do not emit:
-
-```text
-"price": null
-```
-
-to work around bad catalog data.
-
----
-
-# 57. Public Product Summary
-
-CAT-001 must now fully serialize:
-
-```text
-id
-name
-slug
-product_type
-price
-category
-primary_image
-availability
-stock_indicator
-```
-
-according to the existing contract.
-
----
-
-# 58. Product Detail
-
-CAT-002 must use exactly the same:
-
-```text
-product_type
-availability
-stock_indicator
-```
-
-values as CAT-001 for the same Product state.
-
-Add regression coverage.
-
----
-
-# 59. Embedded Variant Availability
-
-CAT-002 embedded Variants must use the same availability resolver as:
-
-```text
-CAT-005
-CAT-006
-```
-
-No divergence.
-
----
-
-# 60. Variant API Consistency
-
-For the same Variant:
-
-```text
-CAT-002 embedded
-CAT-005 collection
-CAT-006 detail
-```
-
-must produce identical:
-
-```text
-price
-availability
-stock_indicator
-```
-
-where fields overlap.
-
----
-
-# 61. No Raw Stock Exposure
-
-Even after availability is complete, public responses must never include:
-
-```text
-quantity
-reserved_quantity
-available_quantity
-stock rows
-warehouse_location
-```
-
----
-
-# 62. Public `availability` Enum
-
-Keep exact lowercase values:
-
-```text
-available
-unavailable
-```
-
-This is the frozen exception to the standard uppercase enum convention.
-
----
-
-# 63. Stock Indicator Enum
-
-Keep exact values:
-
-```text
-IN_STOCK
-LOW_STOCK
-MADE_TO_ORDER
-```
-
-Do not add aliases.
-
----
-
-# 64. No `availability_display`
-
-Do not introduce:
-
-```text
-availability_display
-```
-
-The contract explicitly rejects it.
-
----
-
-# 65. Stock Indicator Is Not a Filter
-
-Continue rejecting:
-
-```text
-?stock_indicator=LOW_STOCK
-```
-
-Only:
-
-```text
-?availability=
+```text id="y62gwc"
+INV-001
+GET /api/v1/inventory
 ```
 
 and:
 
-```text
-?product_type=
+```text id="w55n28"
+INV-002
+GET /api/v1/inventory/{inventory}
 ```
 
-are filter inputs.
+Do not implement:
 
----
-
-# 66. No Inventory Mutation
-
-This phase must not change:
-
-```text
-quantity
-reserved_quantity
-warehouse location
+```text id="ur3x9p"
+INV-003
+POST /api/v1/inventory/{product}/adjust
 ```
 
-Availability is read-derived.
+yet.
+
+That belongs to Phase 5.9.
 
 ---
 
-# 67. No Reservation
+# 6. Authentication Required
 
-Catalog reads must never increase:
+Unlike CAT-001..006, inventory endpoints are not public.
 
-```text
-reserved_quantity
-```
+Require authenticated Laravel-local identity resolved through the existing Clerk boundary.
 
----
+Anonymous request:
 
-# 68. No Availability Cache Column
-
-Do not add:
-
-```text
-products.availability
-products.stock_indicator
-product_variants.availability
-product_variants.stock_indicator
-```
-
-These are derived values.
-
----
-
-# 69. Avoid Stale Derived State
-
-Do not persist coarse availability merely to make reads easy.
-
-The stock source is small enough to derive correctly in V1.
-
----
-
-# 70. Query Efficiency
-
-CAT-001 must not issue:
-
-```text
-one stock query per Product
-one stock query per Variant
-```
-
-Avoid N+1.
-
-Use:
-
-```text
-subqueries
-aggregate expressions
-withSum
-EXISTS
-joinSub
-```
-
-or other clean Laravel/database mechanisms as appropriate.
-
----
-
-# 71. Product Availability Query
-
-Prefer SQL-level existence/aggregation so:
-
-```text
-availability filtering
-sorting pipeline
-pagination totals
-```
-
-remain correct before pagination.
-
-Do not calculate availability after pagination in PHP.
-
----
-
-# 72. Variant Availability Query
-
-CAT-005/CAT-006 may use bounded eager-loaded aggregate stock data.
-
-Do not load unrelated Product stock rows.
-
----
-
-# 73. MySQL/SQLite Compatibility
-
-Availability calculations should be expressed in SQL that works consistently on:
-
-```text
-SQLite tests
-MySQL/MariaDB production
-```
-
-where practical.
-
-Do not add another database-specific branch unless necessary.
-
----
-
-# 74. Phase 5.5 Blocker Is Unchanged
-
-Phase 5.5 remains:
-
-```text
-BLOCKED
-```
-
-until:
-
-```text
-disposable MySQL/MariaDB FULLTEXT integration check
-+
-project PHPStan baseline resolution
-```
-
-are complete.
-
-Phase 5.7 does not erase that status.
-
----
-
-# 75. Do Not Reinterpret SQLite Search Verification
-
-SQLite may verify availability/filter composition.
-
-It still does not prove native MySQL FULLTEXT behavior.
-
-Report these separately.
-
----
-
-# 76. Migration Safety
-
-Because Phase 5.7 adds Product columns, migration verification matters.
-
-Do not edit existing Group C migrations.
-
-Create a new migration only.
-
----
-
-# 77. Destructive Migration Guard
-
-If using:
-
-```text
-php artisan migrate:fresh --seed --force
-```
-
-run only against:
-
-```text
-non-production
-+
-explicit disposable DB
-+
-database-name safety check
-```
-
-Do not infer disposability from `APP_ENV` alone.
-
----
-
-# 78. SQLite Migration Verification
-
-Ensure the new Product fields can rebuild cleanly under the canonical SQLite suite.
-
----
-
-# 79. MySQL/MariaDB Migration Verification
-
-Where a disposable MySQL/MariaDB DB is available:
-
-verify:
-
-```text
-product_type
-is_published
-backfill
-enum/value constraints
-indexes if added
-```
-
-Do not use the normal application database.
-
----
-
-# 80. Index Review
-
-Because public queries now commonly use:
-
-```text
-is_active
-is_published
-product_type
-```
-
-inspect whether a targeted composite index is justified.
-
-Do not blindly index every boolean.
-
----
-
-# 81. Preferred Index Philosophy
-
-Add an index only if it matches actual CAT-001 query shapes and EXPLAIN/query evidence.
-
-Possible candidate:
-
-```text
-(is_active, is_published, product_type)
-```
-
-but do not add it automatically without reviewing current indexes/database plans.
-
----
-
-# 82. No `availability` Index
-
-Because availability is derived from Variant inventory:
-
-do not create a fake Product availability index/column.
-
----
-
-# 83. Factory Updates
-
-Update ProductFactory so test/demo Products have explicit:
-
-```text
-product_type
-is_published
-```
-
-states.
-
-Default factory state should represent a normal usable Product unless current test conventions prefer draft by default.
-
-Use explicit factory states such as conceptually:
-
-```text
-inStock()
-madeToOrder()
-published()
-draft()
-inactive()
-```
-
-only where useful.
-
-Do not overbuild factory APIs.
-
----
-
-# 84. Seeder Updates
-
-Review DemoSeeder/reference Product data.
-
-Ensure seeded Products explicitly reflect their intended:
-
-```text
-product_type
-publication state
-```
-
-Do not let demo data rely on accidental DB defaults.
-
----
-
-# 85. Test — Product Type Migration
-
-Verify existing legacy Product rows are deterministically assigned:
-
-```text
-IN_STOCK
-```
-
-under migration compatibility behavior.
-
----
-
-# 86. Test — Publication Migration
-
-Verify existing active public legacy Products remain visible after migration/backfill.
-
----
-
-# 87. Test — New Draft Default
-
-If new Product DB default is:
-
-```text
-is_published = false
-```
-
-verify it.
-
-Do not accidentally auto-publish new catalog entries.
-
----
-
-# 88. Test — Public Visibility
-
-Cover all combinations:
-
-```text
-active + published
-→ visible
-
-inactive + published
-→ hidden
-
-active + unpublished
-→ hidden
-
-inactive + unpublished
-→ hidden
-
-soft-deleted
-→ hidden
+```text id="z8v6pj"
+401 AUTHENTICATION_REQUIRED
 ```
 
 ---
 
-# 89. Test — CAT-002 Masking
+# 7. Authorization
 
-Unpublished Product by:
+Both read endpoints require:
 
-```text
-slug
-ID
+```text id="yfwgrl"
+inventory.view
 ```
 
-must return:
+through the existing Laravel authorization layer.
 
-```text
-404
+Allowed operational actors:
+
+```text id="53anqt"
+STAFF
+ADMIN
 ```
+
+subject to permission assignment.
+
+Do not authorize simply because role == STAFF.
+
+Permission remains authoritative.
 
 ---
 
-# 90. Test — Variant Parent Publication
+# 8. CUSTOMER Must Not Read Inventory
 
-Variant under unpublished Product:
+CUSTOMER access to:
 
-```text
-CAT-005
-CAT-006
+```text id="vzir87"
+/api/v1/inventory
 ```
 
-must not be accessible.
+must return the existing unauthorized/forbidden behavior.
+
+Do not expose operational quantities to Customers.
 
 ---
 
-# 91. Test — Product Type Response
+# 9. Public Catalog Separation
 
-Verify Product Summary/Detail exposes:
+CAT APIs expose only:
 
-```text
-IN_STOCK
-```
-
-or:
-
-```text
-MADE_TO_ORDER
-```
-
-exactly.
-
----
-
-# 92. Test — Product Type Filter
-
-Verify both valid filter values.
-
-Also test invalid values.
-
----
-
-# 93. Test — Stock Aggregation by Location
-
-Variant:
-
-```text
-location A:
-quantity 5
-reserved 2
-available 3
-
-location B:
-quantity 4
-reserved 1
-available 3
-```
-
-must derive:
-
-```text
-Variant available quantity = 6
-```
-
-internally.
-
-Do not expose `6` publicly.
-
----
-
-# 94. Test — Fully Reserved Stock
-
-Example:
-
-```text
-quantity 4
-reserved 4
-```
-
-must produce:
-
-```text
-availability = unavailable
-```
-
-for IN_STOCK Variant if no other location has availability.
-
----
-
-# 95. Test — Missing Stock Rows
-
-Active IN_STOCK Variant with no ProductStock rows:
-
-```text
-availability = unavailable
-```
-
----
-
-# 96. Test — Variant Available
-
-Positive available stock:
-
-```text
-availability = available
-```
-
----
-
-# 97. Test — Product Available Through One Variant
-
-Product with:
-
-```text
-Variant A available = 0
-Variant B available > 0
-```
-
-must be:
-
-```text
-availability = available
-```
-
----
-
-# 98. Test — Inactive Variant Stock Ignored
-
-Product:
-
-```text
-active Variant available = 0
-inactive Variant available = 100
-```
-
-must remain:
-
-```text
-availability = unavailable
-```
-
-for IN_STOCK.
-
----
-
-# 99. Test — MADE_TO_ORDER Ignores Stock
-
-MADE_TO_ORDER Product/Variant with:
-
-```text
-zero stock
-no stock rows
-```
-
-still returns:
-
-```text
-availability = available
-stock_indicator = MADE_TO_ORDER
-```
-
-when otherwise public/valid.
-
----
-
-# 100. Test — Low Stock Boundary
-
-If V1 threshold is 5:
-
-```text
-available = 0
-→ unavailable / IN_STOCK
-
-available = 1
-→ available / LOW_STOCK
-
-available = 5
-→ available / LOW_STOCK
-
-available = 6
-→ available / IN_STOCK
-```
-
-Test exact boundary values.
-
----
-
-# 101. Test — Product-Level Low Stock
-
-Aggregate only active Variant availability.
-
-Verify:
-
-```text
-aggregate 1..5
-→ LOW_STOCK
-
-aggregate >5
-→ IN_STOCK
-```
-
----
-
-# 102. Test — MADE_TO_ORDER Indicator Always Wins
-
-Even if stock rows exist accidentally for MADE_TO_ORDER:
-
-```text
-stock_indicator = MADE_TO_ORDER
-```
-
-Do not derive LOW_STOCK/IN_STOCK from inventory.
-
----
-
-# 103. Test — Availability Filter
-
-Verify:
-
-```text
-?availability=available
-```
-
-includes:
-
-```text
-stocked IN_STOCK
-MADE_TO_ORDER
-```
-
-and excludes:
-
-```text
-out-of-stock IN_STOCK
-hidden Products
-```
-
----
-
-# 104. Test — Unavailable Filter
-
-Verify:
-
-```text
-?availability=unavailable
-```
-
-includes visible out-of-stock IN_STOCK Products only under current semantics.
-
----
-
-# 105. Test — Product Type + Availability
-
-Cover:
-
-```text
-IN_STOCK + available
-IN_STOCK + unavailable
-MADE_TO_ORDER + available
-MADE_TO_ORDER + unavailable
-```
-
----
-
-# 106. Test — Search + Availability
-
-Verify Phase 5.5 search composes correctly with new availability rules.
-
----
-
-# 107. Test — Inactive Variant Search Regression
-
-Retain and rerun:
-
-```text
-inactive matching Variant
-must not surface Product
-```
-
----
-
-# 108. Test — Pagination Totals
-
-Availability filters must not duplicate Products due to stock joins.
-
-Paginator:
-
-```text
-total
-```
-
-must count distinct matching Products.
-
----
-
-# 109. Test — CAT-001 / CAT-002 Consistency
-
-Same Product state must produce identical:
-
-```text
-product_type
-availability
-stock_indicator
-price
-```
-
-across collection/detail.
-
----
-
-# 110. Test — Variant Consistency
-
-Same Variant must produce identical:
-
-```text
+```text id="m4okj3"
 availability
 stock_indicator
 ```
 
-across:
+They must never expose:
 
-```text
-CAT-002
-CAT-005
-CAT-006
-```
-
----
-
-# 111. Test — No Raw Inventory Leakage
-
-Search response JSON for prohibited keys such as:
-
-```text
+```text id="hmwtng"
 quantity
 reserved_quantity
 available_quantity
 warehouse_location
 ```
 
-where practical.
+Phase 5.8 must not weaken that boundary.
 
 ---
 
-# 112. Test — Public Flags Hidden
+# 10. Operational Read Model
 
-Ensure CAT-001/CAT-002 do not expose:
+Inventory read APIs may expose exact operational quantities because they are protected by:
 
-```text
-is_active
-is_published
+```text id="5iux29"
+authentication
++
+inventory.view
 ```
 
+This is intentional.
+
 ---
 
-# 113. Test — No Side Effects
+# 11. Read Model Source
 
-Availability reads must not mutate:
+The read model must derive from:
 
-```text
-Product
-Variant
+```text id="i5htg9"
 ProductStock
-reserved_quantity
-timestamps
+→ ProductVariant
+→ Product
+```
+
+Do not create a second inventory table or materialized domain model.
+
+---
+
+# 12. Inventory Row Identity
+
+Treat one `ProductStock` row as one inventory resource.
+
+That means:
+
+```text id="jyt5bs"
+Inventory resource
+=
+one Variant
+at one warehouse/location
+```
+
+This matches the Group C uniqueness rule:
+
+```text id="1ea3dp"
+UNIQUE(product_variant_id, warehouse_location)
 ```
 
 ---
 
-# 114. Operational API Boundary
+# 13. `{inventory}` Resolution
 
-Future:
+`INV-002` path is frozen as:
 
-```text
-CAT-013
-CAT-014
+```text id="s2gi6t"
+/inventory/{inventory}
+```
+
+Resolve `{inventory}` using the stable public Inventory resource ID.
+
+Do not reinterpret `{inventory}` as:
+
+```text id="vhyk64"
+product slug
+product ID
+variant SKU
+warehouse name
+```
+
+unless newer authoritative docs explicitly changed the route.
+
+---
+
+# 14. Contract Ambiguity — Resolve Explicitly
+
+Current docs contain wording that says:
+
+```text id="kb3t09"
+INV-002
+"Get inventory by product/variant"
+```
+
+while the actual path is:
+
+```text id="0huxf4"
+/inventory/{inventory}
+```
+
+Do not implement ambiguous lookup semantics.
+
+Preferred V1 clarification:
+
+```text id="9p30wp"
+INV-002
+retrieves one ProductStock / Inventory resource
+by Inventory ID.
+```
+
+Product/Variant lookup belongs in INV-001 filters if approved.
+
+Record this clarification in the existing consolidated docs.
+
+---
+
+# 15. Inventory Resource Contract Review
+
+Current OpenAPI Inventory representation contains:
+
+```text id="97ji93"
+id
+product_id
+variant_id
+quantity
+reserved_quantity
+available_quantity
+updated_at
+```
+
+Review this against the actual Group C schema before implementation.
+
+---
+
+# 16. `product_id` Is Derived
+
+`product_stocks` does not have:
+
+```text id="npws0e"
+product_id
+```
+
+The API may expose `product_id` by deriving:
+
+```text id="x7rtnj"
+ProductStock
+→ ProductVariant
+→ Product
+```
+
+Do not add `product_id` to `product_stocks`.
+
+---
+
+# 17. `variant_id` Is Derived from FK
+
+Expose:
+
+```text id="7g63nh"
+variant_id
+```
+
+from:
+
+```text id="0nlgpd"
+product_variant_id
+```
+
+through the normal public opaque ID representation.
+
+Do not expose raw DB FK values if API IDs are transformed.
+
+---
+
+# 18. Variant ID Nullability Contract Gap
+
+Group C requires every ProductStock row to belong to one Variant.
+
+Therefore operational Inventory rows should naturally have:
+
+```text id="5dprrw"
+variant_id != null
+```
+
+The current OpenAPI allows `variant_id: null`.
+
+Do not silently fabricate nullable semantics.
+
+Review:
+
+```text id="f6qcnx"
+api-resources.md
+api-contract.md
+openapi.yaml
+```
+
+and minimally correct the contract if Group C remains authoritative.
+
+Preferred interpretation:
+
+```text id="s9b1dt"
+Inventory.variant_id
+required
+non-null
+```
+
+because ProductStock cannot exist without ProductVariant.
+
+---
+
+# 19. `warehouse_location` Contract Gap
+
+Group C distinguishes stock rows using:
+
+```text id="w0n0sz"
+warehouse_location
+```
+
+Yet current OpenAPI Inventory does not expose it.
+
+This is operationally significant because:
+
+```text id="z79zu4"
+Variant A / main
+Variant A / dar-es-salaam
+```
+
+are two distinct inventory records.
+
+---
+
+# 20. Resolve Location Visibility Deliberately
+
+Before coding INV-001/002, determine whether the latest `api-resources.md` already exposes `warehouse_location`.
+
+If yes:
+
+follow it.
+
+If docs remain inconsistent:
+
+preferred Phase 5.8 clarification is to expose:
+
+```text id="uvif69"
+warehouse_location
+```
+
+on the STAFF/ADMIN Inventory representation.
+
+Reason:
+
+without it, two stock rows for the same Variant cannot be meaningfully distinguished operationally.
+
+Do not expose location publicly in CAT endpoints.
+
+---
+
+# 21. Do Not Add Warehouse Entity
+
+Even if `warehouse_location` becomes part of Inventory API:
+
+do not create:
+
+```text id="8tt77m"
+warehouses table
+Warehouse model
+warehouse address
+regions
+delivery zones
+```
+
+V1 location remains the existing bounded machine string.
+
+---
+
+# 22. Inventory Representation
+
+Preferred operational Inventory resource after contract reconciliation:
+
+```text id="nxip8s"
+id
+product_id
+variant_id
+warehouse_location
+quantity
+reserved_quantity
+available_quantity
+updated_at
+```
+
+Do not automatically add Product/Variant full objects unless current contract explicitly requires them.
+
+---
+
+# 23. Example Shape
+
+Conceptually:
+
+```json id="1rfiwj"
+{
+  "id": "inv_...",
+  "product_id": "prod_...",
+  "variant_id": "var_...",
+  "warehouse_location": "dar-es-salaam",
+  "quantity": 12,
+  "reserved_quantity": 3,
+  "available_quantity": 9,
+  "updated_at": "2026-09-22T09:00:00Z"
+}
+```
+
+Use the actual opaque ID conventions.
+
+---
+
+# 24. `available_quantity`
+
+Always calculate:
+
+```text id="uc4bsy"
+quantity - reserved_quantity
+```
+
+Do not store it.
+
+Do not accept it from clients.
+
+---
+
+# 25. Preserve Inventory Invariant
+
+Existing invariant remains:
+
+```text id="ux5fbc"
+0 <= reserved_quantity <= quantity
+```
+
+Phase 5.8 reads it.
+
+Do not redesign or weaken enforcement.
+
+---
+
+# 26. Read Model Is Current State
+
+INV-001/002 expose the current operational inventory state.
+
+They are not:
+
+```text id="9m34yf"
+inventory history
+stock ledger
+adjustment audit log
+reservation history
+```
+
+---
+
+# 27. No Historical Reconstruction
+
+Do not infer:
+
+```text id="zqmlnn"
+how stock became 12
+who changed it
+previous quantities
+```
+
+from timestamps.
+
+History/audit belongs to later mutation/audit phases.
+
+---
+
+# 28. INV-001 Collection
+
+Implement:
+
+```http id="8fji6k"
+GET /api/v1/inventory
+```
+
+as an operational paginated collection.
+
+---
+
+# 29. Pagination
+
+Use existing global conventions:
+
+```text id="9cn7l6"
+page
+per_page
+```
+
+with:
+
+```text id="ybyfn0"
+page >= 1
+per_page default 20
+per_page max 100
+```
+
+---
+
+# 30. Pagination Metadata
+
+Return:
+
+```text id="5jr2l3"
+meta.pagination.current_page
+meta.pagination.per_page
+meta.pagination.total
+meta.pagination.last_page
+meta.pagination.has_next
+meta.pagination.has_previous
+```
+
+No raw Laravel paginator fields.
+
+---
+
+# 31. Deterministic Ordering
+
+If no more specific frozen inventory sort exists:
+
+use:
+
+```text id="uy4m2w"
+updated_at DESC
+id ASC
+```
+
+only if consistent with current operational collection conventions.
+
+If docs define another inventory ordering, use that.
+
+Do not use random DB order.
+
+---
+
+# 32. Do Not Invent User Sorting
+
+Do not add:
+
+```text id="5tljna"
+?sort=quantity
+?sort=available_quantity
+?sort=warehouse_location
+```
+
+unless already approved by current API contract.
+
+Phase 5.8 is not a query-language expansion phase.
+
+---
+
+# 33. Inventory Filtering
+
+Inspect the frozen INV-001 contract before adding filters.
+
+Do not assume CAT-001 query parameters apply to inventory.
+
+---
+
+# 34. Preferred Minimal Filters if Contract Requires Clarification
+
+If current docs say "paginated, filtered" but do not define exact filters, resolve minimally around existing identifiers:
+
+```text id="pxt0u6"
+product
+variant
+warehouse_location
+```
+
+only if necessary for operational usability.
+
+Do not add arbitrary field filtering.
+
+---
+
+# 35. Product Filter
+
+If approved:
+
+```text id="5ait50"
+?product={product_id|slug}
+```
+
+should resolve through existing Product resolver semantics where appropriate.
+
+Do not create a new Product identity convention.
+
+---
+
+# 36. Variant Filter
+
+If approved:
+
+```text id="4x15n5"
+?variant={variant_id}
+```
+
+must use stable Variant ID.
+
+Do not resolve by SKU unless contract explicitly permits it.
+
+---
+
+# 37. Location Filter
+
+If approved:
+
+```text id="c9ngtf"
+?warehouse_location=dar-es-salaam
+```
+
+must be exact bounded string matching.
+
+Do not implement fuzzy location searching.
+
+---
+
+# 38. No Arbitrary Query Columns
+
+Reject or ignore according to global conventions:
+
+```text id="hy05of"
+?reserved_quantity_gt=
+?stock_lt=
+?product_name=
+?warehouse_contains=
+```
+
+unless explicitly contracted.
+
+---
+
+# 39. No Public Availability Filter Reuse
+
+Do not automatically reuse:
+
+```text id="c6s46p"
+?availability=
+```
+
+from CAT-001.
+
+Inventory read model deals in exact operational quantities, not public coarse availability.
+
+Only add if the frozen INV contract explicitly defines it.
+
+---
+
+# 40. No Product Type Filter by Default
+
+Do not add:
+
+```text id="vefcqx"
+?product_type=
+```
+
+unless existing operational contract explicitly includes it.
+
+---
+
+# 41. INV-002 Detail
+
+Implement:
+
+```http id="1j2sya"
+GET /api/v1/inventory/{inventory}
+```
+
+as one operational Inventory resource.
+
+---
+
+# 42. Unknown Inventory
+
+Return:
+
+```text id="886hdp"
+404 RESOURCE_NOT_FOUND
+```
+
+using canonical error envelope.
+
+---
+
+# 43. Authorization Before Serialization
+
+Do not serialize Inventory data before confirming:
+
+```text id="2md0ii"
+authenticated
+inventory.view authorized
+```
+
+Operational quantities are sensitive business data.
+
+---
+
+# 44. Staff Visibility
+
+Staff with:
+
+```text id="qywko8"
+inventory.view
+```
+
+may read operational inventory.
+
+Staff without permission:
+
+```text id="ezjm8z"
+403 FORBIDDEN
+```
+
+according to current authorization policy.
+
+---
+
+# 45. Admin Visibility
+
+Admin does not receive a universal bypass through public assumptions.
+
+Use the existing permission system.
+
+If ADMIN receives `inventory.view` by seeded permissions, authorize through that.
+
+---
+
+# 46. CUSTOMER Isolation
+
+Customer must never access exact stock values.
+
+Add explicit tests.
+
+---
+
+# 47. Authentication Failure
+
+Anonymous:
+
+```text id="316edh"
+401
+```
+
+Do not return:
+
+```text id="2sdqgd"
+404
+```
+
+merely to hide the route.
+
+This is a protected operational endpoint.
+
+---
+
+# 48. Cache Control
+
+Inventory endpoints contain operational state.
+
+Use:
+
+```text id="6qrcrf"
+private
+no-store
+```
+
+or the repository's current protected operational cache policy.
+
+Never mark:
+
+```text id="2lvsxg"
+public
+```
+
+or CDN-cache inventory responses.
+
+---
+
+# 49. No CAT Resource Reuse if It Leaks Shape
+
+Do not reuse public Product resources to serialize Inventory if that causes unnecessary catalog fields.
+
+Inventory should have an explicit operational resource.
+
+---
+
+# 50. InventoryResource
+
+Create/use an explicit resource such as:
+
+```text id="eldb33"
+InventoryResource
+```
+
+Do not serialize ProductStock directly.
+
+---
+
+# 51. Do Not Use `toArray()`
+
+Never:
+
+```php id="3p287q"
+return $stock->toArray();
+```
+
+Operational resources still require allow-listed fields.
+
+---
+
+# 52. No Internal DB FK Leakage
+
+Do not expose raw:
+
+```text id="fie1mr"
+product_variant_id
+```
+
+if public API uses:
+
+```text id="y23bzw"
+variant_id
+```
+
+Use the contracted name.
+
+---
+
+# 53. No Created Timestamp Unless Contracted
+
+Current Inventory schema requires:
+
+```text id="1q8jtm"
+updated_at
+```
+
+but not necessarily:
+
+```text id="hmamvr"
+created_at
+```
+
+Do not add created_at opportunistically.
+
+---
+
+# 54. Product ID Derivation Efficiency
+
+Avoid one Product query per Inventory row.
+
+Use:
+
+```text id="udixh0"
+ProductStock
+→ eager-loaded ProductVariant
+→ Product
+```
+
+or joins/subqueries as appropriate.
+
+---
+
+# 55. N+1 Prevention
+
+INV-001 must not produce:
+
+```text id="0hxnlg"
+1 query for inventory
++
+N queries for variants
++
+N queries for products
+```
+
+Use bounded eager loading.
+
+---
+
+# 56. Quantity Semantics
+
+`quantity` means:
+
+```text id="uf4kmj"
+physical units owned at this location
+```
+
+Do not reinterpret it as:
+
+```text id="832p38"
+sellable units
+available units
+ordered units
+```
+
+---
+
+# 57. Reserved Quantity
+
+`reserved_quantity` means:
+
+```text id="u1psrz"
+units currently reserved and unavailable
+for another reservation/consumption
+```
+
+It is operational state.
+
+---
+
+# 58. Available Quantity
+
+`available_quantity` means:
+
+```text id="0qi1wj"
+quantity - reserved_quantity
+```
+
+at that specific inventory row/location.
+
+Do not aggregate it in the row representation.
+
+---
+
+# 59. Product-Level Aggregate Is Separate
+
+Phase 5.7 may aggregate inventory across active Variants for public availability.
+
+INV-001/002 should still expose the underlying operational row values.
+
+Do not replace location rows with Product-level totals.
+
+---
+
+# 60. Do Not Hide Zero-Stock Rows
+
+Operational inventory lists should include legitimate rows where:
+
+```text id="ymlqra"
+quantity = 0
+reserved_quantity = 0
+available_quantity = 0
+```
+
+unless contract explicitly filters them.
+
+A zero-stock row is meaningful operational state.
+
+---
+
+# 61. Inactive Product/Variant Operational Read
+
+Unlike public CAT endpoints, operational inventory may need to show stock attached to:
+
+```text id="a6zjrx"
+inactive Product
+inactive Variant
+unpublished Product
+```
+
+Do not automatically reuse public visibility scope.
+
+---
+
+# 62. Important Separation
+
+Public catalog visibility:
+
+```text id="yapmdn"
+active + published + not deleted
+```
+
+Operational inventory visibility:
+
+```text id="zvwmvc"
+authorized inventory record
+```
+
+These are different.
+
+Do not hide operational stock merely because the catalog Product is unpublished.
+
+---
+
+# 63. Soft-Deleted Product Consideration
+
+Inspect FK/soft-delete semantics.
+
+If a Product is soft-deleted but Variant/stock still exists:
+
+operational inventory read may still need it for reconciliation.
+
+Do not automatically scope through `Product::public()`.
+
+Use current business/domain contract.
+
+---
+
+# 64. No Product Restoration Logic
+
+Reading inventory for archived/inactive records does not imply restoring Products.
+
+No mutation belongs here.
+
+---
+
+# 65. MADE_TO_ORDER Rows
+
+Phase 5.7 says MADE_TO_ORDER public availability ignores stock.
+
+However, if ProductStock rows exist operationally for a MADE_TO_ORDER Product:
+
+INV-001/002 may still display them.
+
+Do not hide or reinterpret the physical stock table.
+
+---
+
+# 66. No Public Stock Indicator Needed
+
+Operational Inventory resource does not need:
+
+```text id="k3tege"
+availability
+stock_indicator
+```
+
+unless the frozen Inventory contract explicitly includes them.
+
+It already exposes exact quantities.
+
+Avoid redundant representation.
+
+---
+
+# 67. No Inventory Calculation Duplication
+
+Reuse:
+
+```text id="k2rila"
+ProductStock.available_quantity
+```
+
+or equivalent authoritative domain accessor.
+
+Do not rewrite:
+
+```text id="w14zxr"
+quantity - reserved_quantity
+```
+
+in multiple resources/controllers.
+
+---
+
+# 68. Read-Only Means No Locks Needed
+
+INV-001 and INV-002 are observational reads.
+
+Do not add:
+
+```text id="bar2f5"
+SELECT ... FOR UPDATE
+pessimistic locks
+transactions solely for reading
+```
+
+Normal consistent reads are sufficient.
+
+---
+
+# 69. Snapshot Nature
+
+Inventory values are point-in-time operational reads.
+
+The response does not guarantee the quantities remain unchanged after the request.
+
+Document this if needed.
+
+---
+
+# 70. No Checkout Guarantee
+
+Even if INV-002 says:
+
+```text id="sbsu2f"
+available_quantity = 5
+```
+
+checkout later must still revalidate inventory transactionally.
+
+Do not treat read data as reservation authority.
+
+---
+
+# 71. No Mutation Through GET
+
+GET must never:
+
+```text id="ypo7vq"
+reserve stock
+adjust stock
+normalize quantities
+create missing stock rows
+touch timestamps
+```
+
+---
+
+# 72. Missing Stock Row
+
+Do not auto-create inventory when a Variant has no ProductStock rows.
+
+Absence remains absence.
+
+---
+
+# 73. INV-001 Lists Records, Not Every Variant
+
+Do not fabricate zero-valued Inventory resources for Variants that have no ProductStock rows unless contract explicitly defines that projection.
+
+Preferred:
+
+```text id="f5cb35"
+INV-001
+lists persisted inventory rows.
+```
+
+---
+
+# 74. No Inventory Aggregation Table
+
+Do not create:
+
+```text id="ng7o4n"
+inventory_summary
+product_inventory
+variant_inventory_totals
+```
+
+for Phase 5.8.
+
+---
+
+# 75. Search
+
+Do not automatically implement full-text search over inventory.
+
+Phase 5.5 FULLTEXT belongs to public Product discovery.
+
+Inventory does not need Algolia/MySQL FULLTEXT.
+
+---
+
+# 76. Inventory Query Should Be Simple
+
+Expected query shape:
+
+```text id="9ho2he"
+authorized ProductStock rows
+→ optional approved exact filters
+→ deterministic sort
+→ pagination
+→ InventoryResource
+```
+
+---
+
+# 77. Rate Limiting
+
+Use the existing protected operational/read limiter appropriate for Staff/Admin.
+
+Do not use public-read limits.
+
+Do not invent a new inventory-specific rate limiter unless current Phase 4.11 categories require one.
+
+---
+
+# 78. Error Contract
+
+Use canonical errors.
+
+Do not return:
+
+```json id="5uew0o"
+{"message":"No inventory"}
+```
+
+as an ad hoc response.
+
+---
+
+# 79. Empty Inventory Collection
+
+Valid empty list:
+
+```json id="k3vufm"
+{
+  "data": [],
+  "meta": {
+    "pagination": {
+    }
+  }
+}
+```
+
+Do not return 404.
+
+---
+
+# 80. Beyond Last Page
+
+Same global convention:
+
+```text id="xg153w"
+200
+data = []
+```
+
+with valid pagination metadata.
+
+---
+
+# 81. Tests — Authentication
+
+Test:
+
+```text id="hc07te"
+anonymous INV-001
+→ 401
+
+anonymous INV-002
+→ 401
+```
+
+---
+
+# 82. Tests — CUSTOMER Forbidden
+
+Authenticated CUSTOMER:
+
+```text id="9mndvq"
 INV-001
 INV-002
 ```
 
-may expose operational state where authorized.
-
-Do not implement them here.
+must not receive inventory data.
 
 ---
 
-# 115. Catalog vs Cart Semantics
+# 83. Tests — STAFF Permission
 
-Keep these concepts distinct:
+STAFF with:
 
-```text
-catalog availability
-→ informational discovery
-
-cart purchasability
-→ application/domain validation
-
-checkout inventory
-→ transactional authority
+```text id="266amg"
+inventory.view
 ```
 
-Do not collapse them into one boolean.
+can access both endpoints.
 
 ---
 
-# 116. Do Not Add `is_purchasable` to Product Public API
+# 84. Tests — STAFF Without Permission
 
-Unless already frozen for Product itself, do not add:
+Must fail according to current authorization contract.
 
-```text
-is_purchasable
+---
+
+# 85. Tests — ADMIN
+
+ADMIN with appropriate seeded permission can read inventory.
+
+Do not rely on a universal role bypass.
+
+---
+
+# 86. Tests — Collection Envelope
+
+Verify:
+
+```text id="alj1wn"
+data
+meta.pagination
 ```
 
-to CAT-001/CAT-002.
-
-Product Type + availability provide public presentation data.
-
-Cart later owns purchasability.
+and no raw paginator internals.
 
 ---
 
-# 117. MADE_TO_ORDER Request Eligibility
+# 87. Tests — Pagination
 
-Do not fully implement Request-domain eligibility rules here.
+Cover:
 
-Phase 5.7 only provides:
-
-```text
-product_type = MADE_TO_ORDER
-```
-
-as authoritative catalog classification.
-
-Group J owns request validation/workflow.
-
----
-
-# 118. OpenAPI
-
-Update OpenAPI so runtime and contract agree on:
-
-```text
-ProductType
-availability
-stock_indicator
-product_type filter
-publication masking semantics where documented
-```
-
-Do not expose `is_published` publicly.
-
----
-
-# 119. API Documentation
-
-Update the consolidated docs with the finalized derivation rules, especially:
-
-```text
-IN_STOCK availability
-MADE_TO_ORDER availability
-LOW_STOCK threshold
-multi-location stock aggregation
-zero-stock stock_indicator interpretation
-```
-
-Do not leave these as implementation-only knowledge.
-
----
-
-# 120. Decision Record
-
-Record genuine new decisions:
-
-```text
-legacy Product type backfill
-legacy publication backfill
-LOW_STOCK threshold
-MADE_TO_ORDER availability semantics
-zero-stock stock_indicator behavior
-```
-
-Keep the ADR concise.
-
----
-
-# 121. No New External Dependency
-
-Expected:
-
-```text
-Composer packages:
-NONE
+```text id="up322q"
+default page
+custom per_page
+second page
+beyond-last page
+empty dataset
 ```
 
 ---
 
-# 122. No Frontend Changes
+# 88. Tests — Inventory Resource Fields
 
-Do not modify:
+Assert exact approved operational fields.
 
-```text
-frontend/web/
-frontend/app/
-frontend/design-system/
-```
-
-Frontend badge/action presentation belongs to later groups.
+Do not merely test 200.
 
 ---
 
-# 123. No Inventory Adjustment UI/API
+# 89. Tests — Product ID Derivation
+
+Given:
+
+```text id="a4mk3y"
+Product
+→ Variant
+→ Stock
+```
+
+Inventory resource `product_id` must refer to the correct Product.
+
+---
+
+# 90. Tests — Variant ID Derivation
+
+Verify:
+
+```text id="ziqewl"
+variant_id
+```
+
+matches the stock row's Variant.
+
+---
+
+# 91. Tests — Location
+
+If Phase 5.8 resolves location as public-to-operations:
+
+verify exact:
+
+```text id="tx6ank"
+warehouse_location
+```
+
+serialization.
+
+---
+
+# 92. Tests — Multi-Location Rows
+
+Create:
+
+```text id="s5t0xa"
+same Variant
+main
+dar-es-salaam
+```
+
+INV-001 must return two distinct Inventory resources.
+
+Do not aggregate them into one.
+
+---
+
+# 93. Tests — Quantity Derivation
+
+Example:
+
+```text id="gzvhav"
+quantity = 10
+reserved = 4
+```
+
+must expose:
+
+```text id="5iudw8"
+available_quantity = 6
+```
+
+---
+
+# 94. Tests — Fully Reserved
+
+```text id="9gg4u8"
+quantity = 5
+reserved = 5
+available = 0
+```
+
+---
+
+# 95. Tests — Zero Stock
+
+```text id="esbe7y"
+0
+0
+0
+```
+
+must serialize correctly.
+
+---
+
+# 96. Tests — Exact Detail
+
+INV-002 returns exactly the selected Inventory row.
+
+---
+
+# 97. Tests — Unknown Inventory
+
+Return:
+
+```text id="qj4a52"
+404 RESOURCE_NOT_FOUND
+```
+
+---
+
+# 98. Tests — No Cross-Resource Confusion
+
+Product ID, Variant ID, and Inventory ID must not be interchangeable.
+
+Passing a Product ID in `{inventory}` should not accidentally resolve a stock row unless the contract explicitly says otherwise.
+
+---
+
+# 99. Tests — Operational Hidden Product
+
+If current domain permits stock on an inactive/unpublished Product:
+
+authorized inventory read should still expose the Inventory record.
+
+This protects public/operational scope separation.
+
+---
+
+# 100. Tests — No Public Leakage
+
+CAT-001/CAT-002 must still not expose:
+
+```text id="1e4d63"
+quantity
+reserved_quantity
+available_quantity
+warehouse_location
+```
+
+after Phase 5.8.
+
+Add regression coverage if not already present.
+
+---
+
+# 101. Tests — No Mutation
+
+Compare stock rows before/after:
+
+```text id="vvavl5"
+INV-001
+INV-002
+```
+
+No quantity, reservation, or timestamps should change.
+
+---
+
+# 102. Tests — N+1
+
+Where practical, guard against obvious:
+
+```text id="z6omhw"
+ProductStock
+→ Variant
+→ Product
+```
+
+N+1 queries.
+
+---
+
+# 103. Tests — Cache Headers
+
+Protected inventory response must not be publicly cacheable.
+
+Verify current private/no-store convention if headers are already machine-tested.
+
+---
+
+# 104. No Audit Event for Reads
+
+Inventory reads should not create privileged mutation audit entries merely because stock was viewed.
+
+Audit mutation belongs to INV-003.
+
+Access logging may remain normal application logging.
+
+---
+
+# 105. No Adjustment Logic
 
 Do not implement:
 
-```text
-stock receive
-stock decrement
-warehouse transfer
-manual adjustment
+```text id="4k955o"
+quantity_delta
+adjustment reason
+Idempotency-Key
+inventory locking
+audit event
 ```
 
-here.
+in Phase 5.8.
+
+Those belong to Phase 5.9 / 5.10.
 
 ---
 
-# 124. No Concurrency Reservation Algorithm
+# 106. No Generic PATCH
 
-This phase performs reads only.
+Do not create:
 
-Do not implement checkout stock locking.
+```text id="r8zpp9"
+PATCH /api/v1/inventory/{inventory}
+```
+
+The frozen contract explicitly uses controlled:
+
+```text id="wy7zcg"
+POST /inventory/{product}/adjust
+```
+
+for future mutation.
 
 ---
 
-# 125. Code Quality
+# 107. No Delete
 
-Maintain:
+Do not implement:
 
-```text
-cognitive complexity <= 15
-<= 3 returns where practical
-small resolver methods
-centralized enum/threshold constants
-no duplicated inventory formulas
-minimal comments
+```text id="ifbdua"
+DELETE /inventory/{inventory}
+```
+
+Inventory deletion is not an ordinary API action.
+
+---
+
+# 108. No Reservation Endpoint
+
+Do not create:
+
+```text id="hke8wa"
+/inventory/reserve
+/inventory/release
+```
+
+Checkout will own reservation behavior.
+
+---
+
+# 109. No Stock Ledger
+
+Do not introduce:
+
+```text id="uzckku"
+inventory_movements
+stock_transactions
+```
+
+unless a later phase explicitly requires them.
+
+---
+
+# 110. No Warehouse Model
+
+Do not normalize location yet.
+
+---
+
+# 111. OpenAPI Reconciliation
+
+Update OpenAPI only after reconciling the read model.
+
+Specifically verify:
+
+```text id="y4hqxw"
+Inventory.variant_id nullability
+warehouse_location presence
+INV-001 response pagination
+INV-002 {inventory} semantics
+auth/security
+403
+404
+429
 ```
 
 ---
 
-# 126. Likely Implementation Areas
+# 112. Documentation Reconciliation
 
-Expected areas include:
+If the current wording:
 
-```text
-database/migrations/
-app/Models/Product.php
-app/Support/ProductType.php
-catalog availability resolver/query
-ProductCatalogQuery
-Product/Variant resources
-factories
-seeders where necessary
-tests/Feature/
-tests/Unit/
-docs/api/
-docs/decisions.md
+```text id="fxn89q"
+"Get inventory by product/variant"
 ```
 
-Modify only what this phase needs.
+conflicts with:
+
+```text id="63ukwx"
+/inventory/{inventory}
+```
+
+clarify the docs.
+
+Do not leave two lookup semantics.
 
 ---
 
-# 127. Static Analysis
+# 113. Preferred V1 Inventory Detail Meaning
 
-Run:
+Unless newer repository authority says otherwise:
 
-```bash
-vendor/bin/phpstan analyse
+```text id="7cguwt"
+{inventory}
+=
+Inventory resource ID
+=
+ProductStock row ID
 ```
 
-Phase 5.7 must introduce:
+This is the least surprising REST/resource interpretation and matches the frozen route parameter.
 
-```text
+---
+
+# 114. Operational Product Views Remain Separate
+
+Do not fold:
+
+```text id="rtvs9j"
+CAT-013
+CAT-014
+```
+
+into INV-001/002.
+
+Operational Product APIs expose Product management context.
+
+Inventory APIs expose stock resources.
+
+---
+
+# 115. Schema Changes
+
+Expected:
+
+```text id="9oq2bd"
+NONE
+```
+
+The existing Group C schema already supports the read model.
+
+---
+
+# 116. Stop on Schema Temptation
+
+If implementation seems to require:
+
+```text id="z8b5rq"
+product_id column
+available_quantity column
+warehouse table
+inventory status column
+```
+
+stop and use existing relationships/derivation instead.
+
+---
+
+# 117. No New Dependencies
+
+Expected:
+
+```text id="at7b25"
+NONE
+```
+
+Laravel/Eloquent/API Resources are sufficient.
+
+---
+
+# 118. SQLite / MySQL
+
+Phase 5.8 inventory semantics should be testable under canonical SQLite.
+
+There is no FULLTEXT-specific behavior here.
+
+Keep Phase 5.5's separate MySQL FULLTEXT blocker unchanged.
+
+---
+
+# 119. PHPStan
+
+Phase 5.8 must introduce:
+
+```text id="l34suc"
 0 new PHPStan errors
 ```
 
-If the repository's previously reported PHPStan baseline remains unresolved:
+If the known project baseline remains unresolved:
 
 report it separately.
 
-Do not claim the global quality gate passes if it does not.
+Do not claim global static-analysis PASS if the baseline still fails.
 
 ---
 
-# 128. Phase 5.5 Blocker Reporting
+# 120. Phase 5.5 Status Is Independent
 
-The existing Phase 5.5 status remains:
+Do not mark Phase 5.5 PASS merely because Phase 5.8 succeeds.
 
-```text
-BLOCKED
+Phase 5.5 still requires its own:
+
+```text id="jtmyai"
+disposable MySQL/MariaDB FULLTEXT verification
++
+PHPStan baseline resolution
 ```
 
-until both:
-
-```text
-disposable MySQL/MariaDB FULLTEXT integration verification
-project PHPStan baseline resolution
-```
-
-are complete.
-
-Do not silently reclassify it during Phase 5.7.
+if those remain outstanding.
 
 ---
 
-# 129. Verification Commands
+# 121. Likely Implementation Areas
 
-Run focused tests first.
+Expected:
+
+```text id="v6bhwq"
+routes/api.php
+InventoryController
+InventoryResource
+InventoryQueryRequest
+ProductStock model/relations if read helpers needed
+policy/gate wiring
+tests/Feature/
+docs/api/
+docs/decisions.md
+openapi.yaml
+```
+
+Do not broaden the phase.
+
+---
+
+# 122. Verification Commands
+
+Run focused inventory tests.
 
 Then:
 
-```bash
+```bash id="qs0oeq"
 php artisan test
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 composer audit
 git diff --check
+php artisan route:list
 ```
 
-If schema rebuild testing is needed:
-
-use only the documented disposable DB guard.
+No destructive migration should normally be required.
 
 ---
 
-# 130. MySQL/MariaDB Verification
+# 123. Route Review
 
-Where disposable MySQL/MariaDB is available, verify:
+Verify exactly:
 
-```text
-migration applies
-legacy backfill correct
-Product Type values persist canonically
-publication values persist correctly
-availability aggregate SQL behaves correctly
+```text id="xv039t"
+GET /api/v1/inventory
+GET /api/v1/inventory/{inventory}
 ```
 
-This may also be an opportunity to run the still-blocked Phase 5.5 FULLTEXT integration test, but do not make that implicit.
+for this phase.
 
-Report each verification independently.
+Do not add INV-003 yet.
 
 ---
 
-# 131. Completion Report
+# 124. Completion Report
 
 Return:
 
-## Phase 5.7 status
+## Phase 5.8 status
 
-```text
+```text id="x8pgc9"
 PASS
 ```
 
 or:
 
-```text
+```text id="ik3ehc"
 BLOCKED
 ```
 
+## INV-001
+
+Report:
+
+```text id="dawcca"
+authentication
+inventory.view
+pagination
+filters if any
+ordering
+```
+
+## INV-002
+
+Report:
+
+```text id="3ljknp"
+Inventory ID resolution
+404 semantics
+```
+
+## Inventory read model
+
+State exact exposed fields.
+
+## Contract reconciliation
+
+State decisions for:
+
+```text id="by5tmd"
+variant_id nullability
+warehouse_location
+{inventory} meaning
+```
+
+## Quantity semantics
+
+Confirm:
+
+```text id="zzpzkd"
+quantity
+reserved_quantity
+available_quantity = quantity - reserved_quantity
+```
+
+## Multi-location behavior
+
+Confirm one Inventory resource per Variant/location row.
+
+## Public separation
+
+Confirm CAT endpoints still expose no exact inventory quantities.
+
 ## Schema
 
-Report:
+Must state:
 
-```text
-product_type
-is_published
+```text id="3hdhy1"
+NONE
 ```
 
-and migration/backfill behavior.
+## Mutation
 
-## Product Type
+Must state:
 
-Confirm:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
+```text id="sbup9h"
+NONE
 ```
-
-only.
-
-## Public visibility
-
-Confirm:
-
-```text
-active
-AND published
-AND not deleted
-```
-
-plus existing catalog eligibility.
-
-## IN_STOCK availability
-
-State exact active-Variant/stock aggregation semantics.
-
-## MADE_TO_ORDER availability
-
-State that physical inventory is ignored for public availability.
-
-## LOW_STOCK
-
-State exact threshold and where it is centralized.
-
-## Variant consistency
-
-Report CAT-002/CAT-005/CAT-006 consistency.
-
-## Filtering
-
-Report:
-
-```text
-product_type
-availability
-```
-
-behavior.
-
-## Data exposure
-
-Confirm raw stock and publication flags remain private.
-
-## Phase 5.5 status
-
-Restate its independent outstanding blockers if still unresolved.
 
 ## Frontend
 
 Must state:
 
-```text
-NONE
-```
-
-## Dependencies
-
-Expected:
-
-```text
+```text id="3pc9ku"
 NONE
 ```
 
 ## Tests
 
-Report focused and full counts.
+Report focused/full counts.
 
 ## Quality
 
 Report:
 
-```text
+```text id="z4csu1"
 Pint
 PHPStan
 Composer audit
@@ -2422,103 +2022,79 @@ git diff --check
 
 ---
 
-# 132. Definition of Done
+# 125. Definition of Done
 
-Phase 5.7 is complete when:
+Phase 5.8 is complete when:
 
-* `product_type` exists authoritatively on Product;
-* `is_published` exists authoritatively on Product;
-* legacy Product rows receive deterministic Product Type;
-* legacy public Product visibility is preserved intentionally;
-* future publication defaults are safe;
-* Product Type uses only `IN_STOCK|MADE_TO_ORDER`;
-* public Product scope requires active + published + non-deleted;
-* hidden/unpublished Products return public 404;
-* Variant public access requires public parent + active Variant;
-* multi-location available stock aggregates correctly;
-* reserved stock is deducted from available stock;
-* inactive Variant stock is ignored;
-* IN_STOCK Product availability is derived from active Variant inventory;
-* IN_STOCK Variant availability is derived from its inventory;
-* MADE_TO_ORDER does not depend on physical inventory;
-* MADE_TO_ORDER returns `stock_indicator=MADE_TO_ORDER`;
-* LOW_STOCK uses one explicit centralized V1 threshold;
-* no per-Product threshold schema is introduced;
-* zero-stock IN_STOCK Products use `availability=unavailable`;
-* no new `OUT_OF_STOCK` enum is introduced;
-* availability filter and response use identical semantics;
-* Product Type filter is fully active;
-* CAT-001 and CAT-002 agree;
-* CAT-002/CAT-005/CAT-006 Variant availability agrees;
-* search respects publication and active Variant restrictions;
-* availability joins do not duplicate Product rows;
-* pagination totals remain correct;
-* raw inventory does not leak;
-* `is_active`/`is_published` do not leak publicly;
-* no Cart logic is implemented;
-* no Checkout reservation is implemented;
-* no Request workflow is implemented;
-* no frontend code is changed;
-* existing Group C inventory invariants remain green;
-* Phase 5.2–5.6 regressions remain green;
-* no new PHPStan failures are introduced;
+* INV-001 exists;
+* INV-002 exists;
+* both require authentication;
+* both require `inventory.view`;
+* CUSTOMER cannot read operational inventory;
+* Staff/Admin authorization uses permissions, not blanket role trust;
+* INV-001 is paginated;
+* Inventory resources derive from ProductStock;
+* Product ID is derived through Variant → Product;
+* Variant ID correctly maps ProductStock ownership;
+* `{inventory}` has one unambiguous meaning;
+* warehouse/location semantics are explicitly resolved;
+* one Variant/location row remains one Inventory resource;
+* exact quantity is exposed only operationally;
+* reserved quantity is exposed only operationally;
+* available quantity is derived, not persisted;
+* multi-location rows are not accidentally aggregated;
+* zero-stock rows remain visible operationally;
+* inactive/unpublished Product stock is not hidden merely by public catalog scope;
+* public CAT endpoints continue hiding exact inventory data;
+* no inventory mutation occurs;
+* no locks/reservations are introduced;
+* no INV-003 code is pulled forward;
+* no generic PATCH inventory endpoint is created;
+* no schema redesign occurs;
+* no warehouse entity is introduced;
+* no frontend changes occur;
+* focused tests pass;
+* catalog availability regression tests remain green;
+* no new PHPStan errors are introduced;
 * Pint passes;
 * Composer audit has no new blocker.
 
 ---
 
-# 133. Out of Scope
+# 126. Out of Scope
 
 Do not implement:
 
-```text
-Cart admission
-Checkout inventory reservation
-inventory adjustment
-warehouse management
-per-Product low-stock thresholds
-per-Variant low-stock thresholds
-backorders
-preorders
-OUT_OF_STOCK enum
-stock notifications
+```text id="wfzi5n"
+INV-003 inventory adjustment
+inventory mutation
+quantity_delta
+adjustment reasons
+idempotency
+stock locking
+overselling protection
+checkout reservation
+inventory audit log
 inventory history
-request workflow
-admin Product management
-frontend availability badges
+warehouse entity
+warehouse transfers
+frontend inventory dashboard
 ```
 
 ---
 
-# 134. STOP Condition
+# 127. STOP Condition
 
-STOP when the entire public catalog uses one authoritative model:
+STOP when Staff/Admin with `inventory.view` can safely inspect the existing ProductStock state through:
 
-```text
-Product visibility
-=
-active + published + non-deleted
-
-Product type
-=
-IN_STOCK | MADE_TO_ORDER
-
-IN_STOCK availability
-=
-derived from active Variant available inventory
-
-MADE_TO_ORDER availability
-=
-requestable catalog availability independent of physical stock
-
-public stock detail
-=
-availability + stock_indicator only
+```text id="xlp6ka"
+GET /api/v1/inventory
+GET /api/v1/inventory/{inventory}
 ```
 
-with identical semantics across CAT-001, CAT-002, CAT-005, CAT-006, search, filters, and pagination.
+with exact operational quantities, proper Variant/Product identity, explicit location semantics, pagination, authorization, and no mutations.
 
-Do not continue automatically to the next phase.
+Do not continue automatically to Phase 5.9.
 
 DO NOT COMMIT, STAGE OR PUSH.
 
