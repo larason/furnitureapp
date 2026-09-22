@@ -2252,3 +2252,20 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`app/Services/Inventory/InventoryAllocator.php`, `app/Support/{ConcurrentTransaction,ApiErrorCode}.php`, `app/Models/OrderItemInventoryAllocation.php`, `database/migrations/2026_09_22_130000_create_order_item_inventory_allocations_table.php`, `tests/Feature/InventoryReservationTest.php`, `tests/Integration/InventoryConcurrencyMysqlTest.php`), `docs/api/api-contract.md`, `docs/decisions.md`
 
+---
+
+### ADR/BACKEND-030 — Group E Catalog & Inventory Closure (Phase 5.11)
+
+**Decision:** Group E is closed after consolidating regression coverage and running the mandatory driver-specific gates. No new features, schema, endpoints, or dependencies were introduced. The phase surfaced and fixed one genuine MySQL/MariaDB defect.
+
+- **Bug found & fixed (Group E defect, Phase 5.5 class):** on MySQL/MariaDB, any `?search=` request returned `500` because the variant SKU/attribute `LIKE` clause emitted `ESCAPE '\'` (PHP `"\\"` collapses to one backslash; invalid SQL string literal). SQLite was unaffected, so the MySQL branch had never been exercised. `ProductCatalogQuery` now builds the escape clause per driver (`ESCAPE '\'` for SQLite, `ESCAPE '\\'` for MySQL/MariaDB) via `likeEscapeClause()`, with the name/description fallback and variant SKU/attribute searches centralized through it. Regression coverage: `tests/Integration/ProductFulltextSearchMysqlTest.php` (exercises real MySQL search) plus the existing SQLite search suite.
+- **Driver split:** SQLite proves request validation, API shapes, authorization, public visibility, filter composition, sorting, pagination, availability formulas, inventory invariants, mutation semantics, and transaction rollback. MySQL/MariaDB proves native FULLTEXT, the FULLTEXT index, and real row-lock concurrency. SQLite is explicitly not concurrency/FULLTEXT proof.
+- **Permanent regressions consolidated in `tests/Feature/GroupEContractRegressionTest.php`:** inactive Variant **attribute** (and SKU) matches never surface a Product; exact Group E route surface; rejected routes (`/search`, `/variants`, `/categories/{c}/products`, GET `/products/{p}/images`, `PATCH`/`DELETE /inventory/{inventory}`); `LOW_STOCK` boundaries `0/1/5/6` against `CatalogAvailability::LOW_STOCK_THRESHOLD`; public CAT-001/002/005/006 leak no operational inventory fields.
+- **Mandatory gates:** SQLite canonical suite passes; disposable MariaDB FULLTEXT gate passes (`test_fulltext_index_exists_on_products`, name/description match, non-match excluded, public visibility enforced); disposable MariaDB concurrency gate passes (last-unit race, adjust-vs-adjust lost update, adjust-vs-reserve invariant, same-key idempotency; 10 barrier-synchronized iterations each). Disposable DB destroyed after use.
+- **Status resolution:** Phase 5.5 is now **PASS** (SQLite semantics + real MySQL FULLTEXT + PHPStan 0 — all prior blockers resolved). Phase 5.10 remains **PASS**. Group E overall **PASS**. PHPStan has no repository baseline remaining (0 errors).
+- **Known non-issues preserved:** MySQL/MariaDB enum case-insensitivity is handled by application casts; `carts.user_id` delete-action differs by driver but preservation is proven; Phase 5.5/5.10 were only ever blocked on the disposable MySQL harness, which is now available.
+
+**Reason:** Provides an evidence-based Group E exit that separates SQLite-proven application semantics from MySQL-proven engine behavior, permanently guards the inactive-Variant search rule and concurrency correctness, and records the MySQL search fix without broadening V1.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`app/Queries/ProductCatalogQuery.php`, `tests/Feature/GroupEContractRegressionTest.php`, `tests/Integration/ProductFulltextSearchMysqlTest.php`), `docs/decisions.md`
+

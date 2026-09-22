@@ -45,9 +45,15 @@ class InventoryConcurrencyMysqlTest extends TestCase
 
     private const RESULT_FAILURE = 2;
 
+    private const CHILD_TIMEOUT_SECONDS = 30;
+
+    private string $previousDefaultConnection = '';
+
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->previousDefaultConnection = (string) config('database.default');
 
         if (getenv('INVENTORY_MYSQL_CONCURRENCY') !== '1') {
             $this->markTestSkipped('Set INVENTORY_MYSQL_CONCURRENCY=1 to run MySQL concurrency verification.');
@@ -55,6 +61,10 @@ class InventoryConcurrencyMysqlTest extends TestCase
 
         if (! function_exists('pcntl_fork')) {
             $this->markTestSkipped('pcntl extension required.');
+        }
+
+        if (! function_exists('posix_kill')) {
+            $this->markTestSkipped('posix extension required for bounded concurrency-test cleanup.');
         }
 
         if (app()->environment('production')) {
@@ -80,6 +90,7 @@ class InventoryConcurrencyMysqlTest extends TestCase
     protected function tearDown(): void
     {
         DB::purge(self::CONNECTION);
+        config(['database.default' => $this->previousDefaultConnection]);
 
         parent::tearDown();
     }
@@ -214,17 +225,63 @@ class InventoryConcurrencyMysqlTest extends TestCase
         $this->awaitWorkersReady($barrier, count($workers));
         touch($barrier.'/go');
 
+        try {
+            $codes = $this->collectChildResults($pids);
+        } finally {
+            $this->clearBarrier($barrier);
+            DB::purge(self::CONNECTION);
+        }
+
+        return $codes;
+    }
+
+    /**
+     * Waits for every worker with a bounded deadline; stalled workers are
+     * killed and reaped before failing so a broken lock test cannot hang CI.
+     *
+     * @param  list<int>  $pids
+     * @return list<int>
+     */
+    private function collectChildResults(array $pids): array
+    {
+        $deadline = microtime(true) + self::CHILD_TIMEOUT_SECONDS;
         $codes = [];
+        $stalled = [];
+
+        foreach ($pids as $pid) {
+            $status = 0;
+            $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+            while ($result === 0 && microtime(true) <= $deadline) {
+                usleep(5_000);
+                $result = pcntl_waitpid($pid, $status, WNOHANG);
+            }
+
+            if ($result === 0) {
+                $stalled[] = $pid;
+            } elseif ($result > 0) {
+                $codes[] = pcntl_wexitstatus($status);
+            }
+        }
+
+        if ($stalled !== []) {
+            $this->terminateChildren($stalled);
+            $this->fail('Concurrency workers did not complete within '.self::CHILD_TIMEOUT_SECONDS.'s.');
+        }
+
+        return $codes;
+    }
+
+    /** @param list<int> $pids */
+    private function terminateChildren(array $pids): void
+    {
+        foreach ($pids as $pid) {
+            posix_kill($pid, SIGKILL);
+        }
 
         foreach ($pids as $pid) {
             pcntl_waitpid($pid, $status);
-            $codes[] = pcntl_wexitstatus($status);
         }
-
-        $this->clearBarrier($barrier);
-        DB::purge(self::CONNECTION);
-
-        return $codes;
     }
 
     private function awaitBarrierRelease(string $barrier): void
