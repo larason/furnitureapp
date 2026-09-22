@@ -149,7 +149,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
             Route::get('/inventory', [InventoryController::class, 'index'])->middleware('throttle:authenticated-read')->name('inventory.index');
             Route::get('/inventory/{inventory}', [InventoryController::class, 'show'])->middleware('throttle:authenticated-read')->name('inventory.show');
         });
-        Route::middleware(['permission:inventory.manage', 'throttle:inventory-adjust'])->post('/inventory/{product}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
+        Route::middleware(['permission:inventory.manage', 'throttle:inventory-adjust'])->post('/inventory/{inventory}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
     });
 
     // --------------------------------------------------------------------
