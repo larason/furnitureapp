@@ -5,11 +5,17 @@ namespace App\Models;
 use Database\Factories\ProductVariantFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $product_id
+ * @property-read Product|null $product
+ * @property-read Collection<int, ProductStock> $stocks
+ */
 #[Fillable([
     'sku',
     'variant_name',

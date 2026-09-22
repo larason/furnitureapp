@@ -1,2216 +1,1999 @@
-# Phase 5.6 — Pagination / Sorting
+# Phase 5.8 — Inventory Read Model
 
 ## Purpose
 
-Complete and harden the pagination and sorting behavior for the public catalog:
+Implement the read-only operational inventory surface:
 
-```text
-CAT-001
-GET /api/v1/products
+```text id="w2lg43"
+INV-001
+GET /api/v1/inventory
 ```
 
-using the conventional V1 e-commerce model already frozen in the API contract:
+and:
 
-```text
-page-based pagination
-+
-configurable page size
-+
-total result count
-+
-allow-listed sorting
-+
-deterministic secondary ordering
+```text id="hya7ik"
+INV-002
+GET /api/v1/inventory/{inventory}
 ```
 
-This phase must integrate with the existing Phase 5.5 pipeline:
+using the existing Group C inventory model:
 
-```text
-search
-→ filter
-→ sort
-→ deterministic tie-breaker
-→ paginate
+```text id="x2s3zd"
+Product
+    ↓
+ProductVariant
+        ↓
+ProductStock
+            ↓
+warehouse_location
+quantity
+reserved_quantity
+derived available_quantity
 ```
 
-Do not introduce cursor pagination, infinite-scroll-specific API contracts, or a second collection endpoint.
+This phase is strictly read-only.
+
+Do not implement inventory adjustments yet.
 
 ---
 
-# 1. Preserve Existing V1 Contract
+# 1. Preserve Group C Inventory Architecture
 
-The authoritative request parameters remain:
+The authoritative inventory persistence model remains:
 
-```text
-page
-per_page
-sort
-sort_direction
+```text id="83tj8k"
+product_stocks
 ```
 
-combined with the already-supported:
+with:
 
-```text
-search
-category
-availability
-min_price
-max_price
+```text id="l76oze"
+id
+product_variant_id
+warehouse_location
+quantity
+reserved_quantity
+created_at
+updated_at
 ```
 
-Do not rename them.
+and:
 
-Do not introduce aliases such as:
-
-```text
-pageSize
-page_number
-limit
-offset
-order
-orderBy
-sortBy
-direction
+```text id="6kn29c"
+available_quantity
+=
+quantity - reserved_quantity
 ```
+
+derived, never persisted.
+
+Do not redesign this schema.
 
 ---
 
-# 2. Standard Pagination Strategy
-
-Use conventional offset/page pagination through Laravel's normal paginator.
-
-Preferred implementation:
-
-```text
-Laravel paginate()
-```
-
-or the project's existing equivalent.
-
-Do not manually implement:
-
-```text
-OFFSET calculations
-total-count arithmetic
-last-page arithmetic
-```
-
-unless there is a concrete framework limitation.
-
----
-
-# 3. Do Not Introduce Cursor Pagination
+# 2. Do Not Move Inventory to Product
 
 Do not add:
 
-```text
-cursor
-after
-before
-next_cursor
-previous_cursor
+```text id="5izhqb"
+products.quantity
+products.reserved_quantity
+products.available_quantity
 ```
 
-in V1.
+---
 
-Cursor pagination may be useful for high-volume feeds, but CAT-001 already requires:
+# 3. Do Not Move Inventory to Variant
 
-```text
-current_page
+Do not add:
+
+```text id="9tygoi"
+product_variants.quantity
+product_variants.reserved_quantity
+product_variants.available_quantity
+```
+
+Inventory remains Variant + location scoped.
+
+---
+
+# 4. Read Authoritative Files First
+
+Before implementation inspect:
+
+```text id="2bgcbo"
+AGENTS.md
+docs/VISION.md
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/api/openapi.yaml
+docs/domain/business-rules.md
+docs/decisions.md
+```
+
+Also inspect current:
+
+```text id="8spqss"
+ProductStock
+ProductVariant
+Product
+inventory policies/permissions
+Phase 5.7 availability resolver
+```
+
+Use the latest repository state.
+
+---
+
+# 5. Endpoint Scope
+
+Implement only:
+
+```text id="y62gwc"
+INV-001
+GET /api/v1/inventory
+```
+
+and:
+
+```text id="w55n28"
+INV-002
+GET /api/v1/inventory/{inventory}
+```
+
+Do not implement:
+
+```text id="ur3x9p"
+INV-003
+POST /api/v1/inventory/{product}/adjust
+```
+
+yet.
+
+That belongs to Phase 5.9.
+
+---
+
+# 6. Authentication Required
+
+Unlike CAT-001..006, inventory endpoints are not public.
+
+Require authenticated Laravel-local identity resolved through the existing Clerk boundary.
+
+Anonymous request:
+
+```text id="z8v6pj"
+401 AUTHENTICATION_REQUIRED
+```
+
+---
+
+# 7. Authorization
+
+Both read endpoints require:
+
+```text id="yfwgrl"
+inventory.view
+```
+
+through the existing Laravel authorization layer.
+
+Allowed operational actors:
+
+```text id="53anqt"
+STAFF
+ADMIN
+```
+
+subject to permission assignment.
+
+Do not authorize simply because role == STAFF.
+
+Permission remains authoritative.
+
+---
+
+# 8. CUSTOMER Must Not Read Inventory
+
+CUSTOMER access to:
+
+```text id="vzir87"
+/api/v1/inventory
+```
+
+must return the existing unauthorized/forbidden behavior.
+
+Do not expose operational quantities to Customers.
+
+---
+
+# 9. Public Catalog Separation
+
+CAT APIs expose only:
+
+```text id="m4okj3"
+availability
+stock_indicator
+```
+
+They must never expose:
+
+```text id="hmwtng"
+quantity
+reserved_quantity
+available_quantity
+warehouse_location
+```
+
+Phase 5.8 must not weaken that boundary.
+
+---
+
+# 10. Operational Read Model
+
+Inventory read APIs may expose exact operational quantities because they are protected by:
+
+```text id="5iux29"
+authentication
++
+inventory.view
+```
+
+This is intentional.
+
+---
+
+# 11. Read Model Source
+
+The read model must derive from:
+
+```text id="i5htg9"
+ProductStock
+→ ProductVariant
+→ Product
+```
+
+Do not create a second inventory table or materialized domain model.
+
+---
+
+# 12. Inventory Row Identity
+
+Treat one `ProductStock` row as one inventory resource.
+
+That means:
+
+```text id="jyt5bs"
+Inventory resource
+=
+one Variant
+at one warehouse/location
+```
+
+This matches the Group C uniqueness rule:
+
+```text id="1ea3dp"
+UNIQUE(product_variant_id, warehouse_location)
+```
+
+---
+
+# 13. `{inventory}` Resolution
+
+`INV-002` path is frozen as:
+
+```text id="s2gi6t"
+/inventory/{inventory}
+```
+
+Resolve `{inventory}` using the stable public Inventory resource ID.
+
+Do not reinterpret `{inventory}` as:
+
+```text id="vhyk64"
+product slug
+product ID
+variant SKU
+warehouse name
+```
+
+unless newer authoritative docs explicitly changed the route.
+
+---
+
+# 14. Contract Ambiguity — Resolve Explicitly
+
+Current docs contain wording that says:
+
+```text id="kb3t09"
+INV-002
+"Get inventory by product/variant"
+```
+
+while the actual path is:
+
+```text id="0huxf4"
+/inventory/{inventory}
+```
+
+Do not implement ambiguous lookup semantics.
+
+Preferred V1 clarification:
+
+```text id="9p30wp"
+INV-002
+retrieves one ProductStock / Inventory resource
+by Inventory ID.
+```
+
+Product/Variant lookup belongs in INV-001 filters if approved.
+
+Record this clarification in the existing consolidated docs.
+
+---
+
+# 15. Inventory Resource Contract Review
+
+Current OpenAPI Inventory representation contains:
+
+```text id="97ji93"
+id
+product_id
+variant_id
+quantity
+reserved_quantity
+available_quantity
+updated_at
+```
+
+Review this against the actual Group C schema before implementation.
+
+---
+
+# 16. `product_id` Is Derived
+
+`product_stocks` does not have:
+
+```text id="npws0e"
+product_id
+```
+
+The API may expose `product_id` by deriving:
+
+```text id="x7rtnj"
+ProductStock
+→ ProductVariant
+→ Product
+```
+
+Do not add `product_id` to `product_stocks`.
+
+---
+
+# 17. `variant_id` Is Derived from FK
+
+Expose:
+
+```text id="7g63nh"
+variant_id
+```
+
+from:
+
+```text id="0nlgpd"
+product_variant_id
+```
+
+through the normal public opaque ID representation.
+
+Do not expose raw DB FK values if API IDs are transformed.
+
+---
+
+# 18. Variant ID Nullability Contract Gap
+
+Group C requires every ProductStock row to belong to one Variant.
+
+Therefore operational Inventory rows should naturally have:
+
+```text id="5dprrw"
+variant_id != null
+```
+
+The current OpenAPI allows `variant_id: null`.
+
+Do not silently fabricate nullable semantics.
+
+Review:
+
+```text id="f6qcnx"
+api-resources.md
+api-contract.md
+openapi.yaml
+```
+
+and minimally correct the contract if Group C remains authoritative.
+
+Preferred interpretation:
+
+```text id="s9b1dt"
+Inventory.variant_id
+required
+non-null
+```
+
+because ProductStock cannot exist without ProductVariant.
+
+---
+
+# 19. `warehouse_location` Contract Gap
+
+Group C distinguishes stock rows using:
+
+```text id="w0n0sz"
+warehouse_location
+```
+
+Yet current OpenAPI Inventory does not expose it.
+
+This is operationally significant because:
+
+```text id="z79zu4"
+Variant A / main
+Variant A / dar-es-salaam
+```
+
+are two distinct inventory records.
+
+---
+
+# 20. Resolve Location Visibility Deliberately
+
+Before coding INV-001/002, determine whether the latest `api-resources.md` already exposes `warehouse_location`.
+
+If yes:
+
+follow it.
+
+If docs remain inconsistent:
+
+preferred Phase 5.8 clarification is to expose:
+
+```text id="uvif69"
+warehouse_location
+```
+
+on the STAFF/ADMIN Inventory representation.
+
+Reason:
+
+without it, two stock rows for the same Variant cannot be meaningfully distinguished operationally.
+
+Do not expose location publicly in CAT endpoints.
+
+---
+
+# 21. Do Not Add Warehouse Entity
+
+Even if `warehouse_location` becomes part of Inventory API:
+
+do not create:
+
+```text id="8tt77m"
+warehouses table
+Warehouse model
+warehouse address
+regions
+delivery zones
+```
+
+V1 location remains the existing bounded machine string.
+
+---
+
+# 22. Inventory Representation
+
+Preferred operational Inventory resource after contract reconciliation:
+
+```text id="nxip8s"
+id
+product_id
+variant_id
+warehouse_location
+quantity
+reserved_quantity
+available_quantity
+updated_at
+```
+
+Do not automatically add Product/Variant full objects unless current contract explicitly requires them.
+
+---
+
+# 23. Example Shape
+
+Conceptually:
+
+```json id="1rfiwj"
+{
+  "id": "inv_...",
+  "product_id": "prod_...",
+  "variant_id": "var_...",
+  "warehouse_location": "dar-es-salaam",
+  "quantity": 12,
+  "reserved_quantity": 3,
+  "available_quantity": 9,
+  "updated_at": "2026-09-22T09:00:00Z"
+}
+```
+
+Use the actual opaque ID conventions.
+
+---
+
+# 24. `available_quantity`
+
+Always calculate:
+
+```text id="uc4bsy"
+quantity - reserved_quantity
+```
+
+Do not store it.
+
+Do not accept it from clients.
+
+---
+
+# 25. Preserve Inventory Invariant
+
+Existing invariant remains:
+
+```text id="ux5fbc"
+0 <= reserved_quantity <= quantity
+```
+
+Phase 5.8 reads it.
+
+Do not redesign or weaken enforcement.
+
+---
+
+# 26. Read Model Is Current State
+
+INV-001/002 expose the current operational inventory state.
+
+They are not:
+
+```text id="9m34yf"
+inventory history
+stock ledger
+adjustment audit log
+reservation history
+```
+
+---
+
+# 27. No Historical Reconstruction
+
+Do not infer:
+
+```text id="zqmlnn"
+how stock became 12
+who changed it
+previous quantities
+```
+
+from timestamps.
+
+History/audit belongs to later mutation/audit phases.
+
+---
+
+# 28. INV-001 Collection
+
+Implement:
+
+```http id="8fji6k"
+GET /api/v1/inventory
+```
+
+as an operational paginated collection.
+
+---
+
+# 29. Pagination
+
+Use existing global conventions:
+
+```text id="9cn7l6"
+page
 per_page
-total
-last_page
-has_next
-has_previous
 ```
 
-which naturally fits page-based pagination.
+with:
 
----
-
-# 4. Why Page Pagination Fits This Store
-
-Preserve page pagination because catalog browsing benefits from:
-
-```text
-page URLs
-total product counts
-jump-to-page behavior
-SEO-compatible query URLs
-back-button restoration
-desktop catalog navigation
-mobile pagination/infinite-scroll adaptation
-```
-
-The frontend may later visually implement:
-
-```text
-numbered pagination
-Load More
-infinite scrolling
-```
-
-while still consuming the same page-based backend API.
-
-Do not change the backend contract merely because the frontend interaction differs.
-
----
-
-# 5. Pagination Parameters
-
-`page`:
-
-```text
-optional
-integer
-1-based
-minimum = 1
-default = 1
-```
-
-`per_page`:
-
-```text
-optional
-integer
-minimum = 1
-maximum = 100
-default = 20
-```
-
-Use the exact frozen values.
-
----
-
-# 6. Strict Validation
-
-Reject invalid input.
-
-Examples:
-
-```text
-?page=0
-?page=-1
-?page=1.5
-?page=abc
-
-?per_page=0
-?per_page=-20
-?per_page=101
-?per_page=abc
-```
-
-must return the canonical validation error.
-
-Do not silently clamp malformed values unless current API conventions explicitly require it.
-
----
-
-# 7. Avoid Large Page Sizes
-
-Maximum:
-
-```text
-100
-```
-
-is a hard API limit.
-
-Do not allow:
-
-```text
-per_page=500
-per_page=1000
-```
-
-for convenience.
-
-This protects:
-
-```text
-DB load
-serialization cost
-network payload
-mobile clients
-shared caching
+```text id="ybyfn0"
+page >= 1
+per_page default 20
+per_page max 100
 ```
 
 ---
 
-# 8. Pagination Must Run Last
+# 30. Pagination Metadata
 
-The pipeline is mandatory:
+Return:
 
-```text
-1. public visibility
-2. search
-3. filters
-4. sort
-5. id tie-breaker
-6. paginate
+```text id="5jr2l3"
+meta.pagination.current_page
+meta.pagination.per_page
+meta.pagination.total
+meta.pagination.last_page
+meta.pagination.has_next
+meta.pagination.has_previous
 ```
+
+No raw Laravel paginator fields.
+
+---
+
+# 31. Deterministic Ordering
+
+If no more specific frozen inventory sort exists:
+
+use:
+
+```text id="uy4m2w"
+updated_at DESC
+id ASC
+```
+
+only if consistent with current operational collection conventions.
+
+If docs define another inventory ordering, use that.
+
+Do not use random DB order.
+
+---
+
+# 32. Do Not Invent User Sorting
+
+Do not add:
+
+```text id="5tljna"
+?sort=quantity
+?sort=available_quantity
+?sort=warehouse_location
+```
+
+unless already approved by current API contract.
+
+Phase 5.8 is not a query-language expansion phase.
+
+---
+
+# 33. Inventory Filtering
+
+Inspect the frozen INV-001 contract before adding filters.
+
+Do not assume CAT-001 query parameters apply to inventory.
+
+---
+
+# 34. Preferred Minimal Filters if Contract Requires Clarification
+
+If current docs say "paginated, filtered" but do not define exact filters, resolve minimally around existing identifiers:
+
+```text id="pxt0u6"
+product
+variant
+warehouse_location
+```
+
+only if necessary for operational usability.
+
+Do not add arbitrary field filtering.
+
+---
+
+# 35. Product Filter
+
+If approved:
+
+```text id="5ait50"
+?product={product_id|slug}
+```
+
+should resolve through existing Product resolver semantics where appropriate.
+
+Do not create a new Product identity convention.
+
+---
+
+# 36. Variant Filter
+
+If approved:
+
+```text id="4x15n5"
+?variant={variant_id}
+```
+
+must use stable Variant ID.
+
+Do not resolve by SKU unless contract explicitly permits it.
+
+---
+
+# 37. Location Filter
+
+If approved:
+
+```text id="c9ngtf"
+?warehouse_location=dar-es-salaam
+```
+
+must be exact bounded string matching.
+
+Do not implement fuzzy location searching.
+
+---
+
+# 38. No Arbitrary Query Columns
+
+Reject or ignore according to global conventions:
+
+```text id="hy05of"
+?reserved_quantity_gt=
+?stock_lt=
+?product_name=
+?warehouse_contains=
+```
+
+unless explicitly contracted.
+
+---
+
+# 39. No Public Availability Filter Reuse
+
+Do not automatically reuse:
+
+```text id="c6s46p"
+?availability=
+```
+
+from CAT-001.
+
+Inventory read model deals in exact operational quantities, not public coarse availability.
+
+Only add if the frozen INV contract explicitly defines it.
+
+---
+
+# 40. No Product Type Filter by Default
+
+Do not add:
+
+```text id="vefcqx"
+?product_type=
+```
+
+unless existing operational contract explicitly includes it.
+
+---
+
+# 41. INV-002 Detail
+
+Implement:
+
+```http id="1j2sya"
+GET /api/v1/inventory/{inventory}
+```
+
+as one operational Inventory resource.
+
+---
+
+# 42. Unknown Inventory
+
+Return:
+
+```text id="886hdp"
+404 RESOURCE_NOT_FOUND
+```
+
+using canonical error envelope.
+
+---
+
+# 43. Authorization Before Serialization
+
+Do not serialize Inventory data before confirming:
+
+```text id="2md0ii"
+authenticated
+inventory.view authorized
+```
+
+Operational quantities are sensitive business data.
+
+---
+
+# 44. Staff Visibility
+
+Staff with:
+
+```text id="qywko8"
+inventory.view
+```
+
+may read operational inventory.
+
+Staff without permission:
+
+```text id="ezjm8z"
+403 FORBIDDEN
+```
+
+according to current authorization policy.
+
+---
+
+# 45. Admin Visibility
+
+Admin does not receive a universal bypass through public assumptions.
+
+Use the existing permission system.
+
+If ADMIN receives `inventory.view` by seeded permissions, authorize through that.
+
+---
+
+# 46. CUSTOMER Isolation
+
+Customer must never access exact stock values.
+
+Add explicit tests.
+
+---
+
+# 47. Authentication Failure
+
+Anonymous:
+
+```text id="316edh"
+401
+```
+
+Do not return:
+
+```text id="2sdqgd"
+404
+```
+
+merely to hide the route.
+
+This is a protected operational endpoint.
+
+---
+
+# 48. Cache Control
+
+Inventory endpoints contain operational state.
+
+Use:
+
+```text id="6qrcrf"
+private
+no-store
+```
+
+or the repository's current protected operational cache policy.
+
+Never mark:
+
+```text id="2lvsxg"
+public
+```
+
+or CDN-cache inventory responses.
+
+---
+
+# 49. No CAT Resource Reuse if It Leaks Shape
+
+Do not reuse public Product resources to serialize Inventory if that causes unnecessary catalog fields.
+
+Inventory should have an explicit operational resource.
+
+---
+
+# 50. InventoryResource
+
+Create/use an explicit resource such as:
+
+```text id="eldb33"
+InventoryResource
+```
+
+Do not serialize ProductStock directly.
+
+---
+
+# 51. Do Not Use `toArray()`
 
 Never:
 
-```text
-paginate
-→ search/filter in PHP
+```php id="3p287q"
+return $stock->toArray();
+```
+
+Operational resources still require allow-listed fields.
+
+---
+
+# 52. No Internal DB FK Leakage
+
+Do not expose raw:
+
+```text id="fie1mr"
+product_variant_id
+```
+
+if public API uses:
+
+```text id="y23bzw"
+variant_id
+```
+
+Use the contracted name.
+
+---
+
+# 53. No Created Timestamp Unless Contracted
+
+Current Inventory schema requires:
+
+```text id="1q8jtm"
+updated_at
+```
+
+but not necessarily:
+
+```text id="hmamvr"
+created_at
+```
+
+Do not add created_at opportunistically.
+
+---
+
+# 54. Product ID Derivation Efficiency
+
+Avoid one Product query per Inventory row.
+
+Use:
+
+```text id="udixh0"
+ProductStock
+→ eager-loaded ProductVariant
+→ Product
+```
+
+or joins/subqueries as appropriate.
+
+---
+
+# 55. N+1 Prevention
+
+INV-001 must not produce:
+
+```text id="0hxnlg"
+1 query for inventory
++
+N queries for variants
++
+N queries for products
+```
+
+Use bounded eager loading.
+
+---
+
+# 56. Quantity Semantics
+
+`quantity` means:
+
+```text id="uf4kmj"
+physical units owned at this location
+```
+
+Do not reinterpret it as:
+
+```text id="832p38"
+sellable units
+available units
+ordered units
 ```
 
 ---
 
-# 9. Filtering Before Count
+# 57. Reserved Quantity
 
-Pagination totals must describe the **filtered result set**, not the entire Product table.
+`reserved_quantity` means:
 
-Example:
-
-```text
-search=oak
-category=dining-room
+```text id="u1psrz"
+units currently reserved and unavailable
+for another reservation/consumption
 ```
 
-If 17 Products match:
-
-```text
-total = 17
-```
-
-not total catalog size.
+It is operational state.
 
 ---
 
-# 10. No In-Memory Pagination
+# 58. Available Quantity
 
-Do not:
+`available_quantity` means:
 
-```php
-Product::all()
+```text id="0qi1wj"
+quantity - reserved_quantity
 ```
 
-and then call collection pagination helpers.
+at that specific inventory row/location.
 
-Filtering/sorting/pagination belong in SQL.
+Do not aggregate it in the row representation.
 
 ---
 
-# 11. Standard Response Envelope
+# 59. Product-Level Aggregate Is Separate
 
-CAT-001 must return:
+Phase 5.7 may aggregate inventory across active Variants for public availability.
 
-```json
+INV-001/002 should still expose the underlying operational row values.
+
+Do not replace location rows with Product-level totals.
+
+---
+
+# 60. Do Not Hide Zero-Stock Rows
+
+Operational inventory lists should include legitimate rows where:
+
+```text id="ymlqra"
+quantity = 0
+reserved_quantity = 0
+available_quantity = 0
+```
+
+unless contract explicitly filters them.
+
+A zero-stock row is meaningful operational state.
+
+---
+
+# 61. Inactive Product/Variant Operational Read
+
+Unlike public CAT endpoints, operational inventory may need to show stock attached to:
+
+```text id="a6zjrx"
+inactive Product
+inactive Variant
+unpublished Product
+```
+
+Do not automatically reuse public visibility scope.
+
+---
+
+# 62. Important Separation
+
+Public catalog visibility:
+
+```text id="yapmdn"
+active + published + not deleted
+```
+
+Operational inventory visibility:
+
+```text id="zvwmvc"
+authorized inventory record
+```
+
+These are different.
+
+Do not hide operational stock merely because the catalog Product is unpublished.
+
+---
+
+# 63. Soft-Deleted Product Consideration
+
+Inspect FK/soft-delete semantics.
+
+If a Product is soft-deleted but Variant/stock still exists:
+
+operational inventory read may still need it for reconciliation.
+
+Do not automatically scope through `Product::public()`.
+
+Use current business/domain contract.
+
+---
+
+# 64. No Product Restoration Logic
+
+Reading inventory for archived/inactive records does not imply restoring Products.
+
+No mutation belongs here.
+
+---
+
+# 65. MADE_TO_ORDER Rows
+
+Phase 5.7 says MADE_TO_ORDER public availability ignores stock.
+
+However, if ProductStock rows exist operationally for a MADE_TO_ORDER Product:
+
+INV-001/002 may still display them.
+
+Do not hide or reinterpret the physical stock table.
+
+---
+
+# 66. No Public Stock Indicator Needed
+
+Operational Inventory resource does not need:
+
+```text id="k3tege"
+availability
+stock_indicator
+```
+
+unless the frozen Inventory contract explicitly includes them.
+
+It already exposes exact quantities.
+
+Avoid redundant representation.
+
+---
+
+# 67. No Inventory Calculation Duplication
+
+Reuse:
+
+```text id="k2rila"
+ProductStock.available_quantity
+```
+
+or equivalent authoritative domain accessor.
+
+Do not rewrite:
+
+```text id="w14zxr"
+quantity - reserved_quantity
+```
+
+in multiple resources/controllers.
+
+---
+
+# 68. Read-Only Means No Locks Needed
+
+INV-001 and INV-002 are observational reads.
+
+Do not add:
+
+```text id="bar2f5"
+SELECT ... FOR UPDATE
+pessimistic locks
+transactions solely for reading
+```
+
+Normal consistent reads are sufficient.
+
+---
+
+# 69. Snapshot Nature
+
+Inventory values are point-in-time operational reads.
+
+The response does not guarantee the quantities remain unchanged after the request.
+
+Document this if needed.
+
+---
+
+# 70. No Checkout Guarantee
+
+Even if INV-002 says:
+
+```text id="sbsu2f"
+available_quantity = 5
+```
+
+checkout later must still revalidate inventory transactionally.
+
+Do not treat read data as reservation authority.
+
+---
+
+# 71. No Mutation Through GET
+
+GET must never:
+
+```text id="ypo7vq"
+reserve stock
+adjust stock
+normalize quantities
+create missing stock rows
+touch timestamps
+```
+
+---
+
+# 72. Missing Stock Row
+
+Do not auto-create inventory when a Variant has no ProductStock rows.
+
+Absence remains absence.
+
+---
+
+# 73. INV-001 Lists Records, Not Every Variant
+
+Do not fabricate zero-valued Inventory resources for Variants that have no ProductStock rows unless contract explicitly defines that projection.
+
+Preferred:
+
+```text id="f5cb35"
+INV-001
+lists persisted inventory rows.
+```
+
+---
+
+# 74. No Inventory Aggregation Table
+
+Do not create:
+
+```text id="ng7o4n"
+inventory_summary
+product_inventory
+variant_inventory_totals
+```
+
+for Phase 5.8.
+
+---
+
+# 75. Search
+
+Do not automatically implement full-text search over inventory.
+
+Phase 5.5 FULLTEXT belongs to public Product discovery.
+
+Inventory does not need Algolia/MySQL FULLTEXT.
+
+---
+
+# 76. Inventory Query Should Be Simple
+
+Expected query shape:
+
+```text id="9ho2he"
+authorized ProductStock rows
+→ optional approved exact filters
+→ deterministic sort
+→ pagination
+→ InventoryResource
+```
+
+---
+
+# 77. Rate Limiting
+
+Use the existing protected operational/read limiter appropriate for Staff/Admin.
+
+Do not use public-read limits.
+
+Do not invent a new inventory-specific rate limiter unless current Phase 4.11 categories require one.
+
+---
+
+# 78. Error Contract
+
+Use canonical errors.
+
+Do not return:
+
+```json id="5uew0o"
+{"message":"No inventory"}
+```
+
+as an ad hoc response.
+
+---
+
+# 79. Empty Inventory Collection
+
+Valid empty list:
+
+```json id="k3vufm"
 {
   "data": [],
   "meta": {
     "pagination": {
-      "current_page": 1,
-      "per_page": 20,
-      "total": 0,
-      "last_page": 1,
-      "has_next": false,
-      "has_previous": false
     }
   }
 }
 ```
 
-No Laravel-specific paginator internals should leak.
+Do not return 404.
 
 ---
 
-# 12. Exact Metadata Fields
+# 80. Beyond Last Page
 
-Only expose the approved metadata:
+Same global convention:
 
-```text
-current_page
-per_page
-total
-last_page
-has_next
-has_previous
-```
-
-Do not casually add:
-
-```text
-from
-to
-first_page_url
-last_page_url
-next_page_url
-prev_page_url
-path
-links[]
-```
-
-unless the V1 contract is deliberately changed.
-
----
-
-# 13. No Pagination Links Yet
-
-Pagination URLs are intentionally deferred.
-
-Do not return:
-
-```text
-links.next
-links.previous
-```
-
-in Phase 5.6.
-
-Clients can construct query requests using the metadata.
-
----
-
-# 14. Empty Catalog
-
-For zero results:
-
-```text
-data = []
-total = 0
-current_page = 1
-last_page = 1
-has_next = false
-has_previous = false
-```
-
-Use the exact current convention.
-
----
-
-# 15. Page Beyond Last Page
-
-Example:
-
-```text
-total = 41
-per_page = 20
-last_page = 3
-```
-
-Requesting:
-
-```text
-?page=50
-```
-
-must return:
-
-```text
+```text id="xg153w"
 200
 data = []
 ```
 
 with valid pagination metadata.
 
-Do not return 404.
-
 ---
 
-# 16. `has_next`
+# 81. Tests — Authentication
 
-Derive semantically from:
+Test:
 
-```text
-current_page < last_page
-```
+```text id="hc07te"
+anonymous INV-001
+→ 401
 
-through Laravel paginator metadata where possible.
-
-Do not maintain a duplicate manual state.
-
----
-
-# 17. `has_previous`
-
-Equivalent semantic rule:
-
-```text
-current_page > 1
-```
-
-subject to existing empty-result convention.
-
-Prefer paginator authority.
-
----
-
-# 18. Sorting Allow-List
-
-Public Product sorting supports only:
-
-```text
-created_at
-price
-name
-```
-
-Do not allow arbitrary database columns.
-
----
-
-# 19. Sort Mapping
-
-Map public sort values explicitly to trusted query expressions.
-
-Conceptually:
-
-```text
-created_at
-→ products.created_at
-
-name
-→ products.name
-
-price
-→ authoritative derived public Product price expression
-```
-
-Never:
-
-```php
-orderBy($request->sort)
-```
-
-without an allow-list.
-
----
-
-# 20. Default Sorting
-
-When `sort` is absent:
-
-```text
-created_at DESC
-id ASC
-```
-
-This is the default catalog display ordering.
-
-Preserve it.
-
----
-
-# 21. Name Sorting
-
-When:
-
-```text
-sort=name
-```
-
-default direction:
-
-```text
-ASC
-```
-
-unless `sort_direction` explicitly overrides it.
-
----
-
-# 22. Price Sorting
-
-When:
-
-```text
-sort=price
-```
-
-default direction:
-
-```text
-ASC
-```
-
-unless overridden.
-
-Use the authoritative Product public price expression established in Phase 5.2.
-
----
-
-# 23. Created Date Sorting
-
-When:
-
-```text
-sort=created_at
-```
-
-default direction:
-
-```text
-DESC
-```
-
-unless overridden.
-
----
-
-# 24. Sort Direction
-
-Accepted values:
-
-```text
-asc
-desc
-```
-
-Case-insensitive input may normalize to lowercase if the current request contract allows that.
-
-Do not accept:
-
-```text
-ascending
-descending
-1
--1
-random
+anonymous INV-002
+→ 401
 ```
 
 ---
 
-# 25. Direction Without Sort
+# 82. Tests — CUSTOMER Forbidden
 
-Inspect the current contract/request implementation.
+Authenticated CUSTOMER:
 
-Preferred behavior if already established:
-
-```text
-sort_direction without sort
-→ applies to the default created_at sort
+```text id="9mndvq"
+INV-001
+INV-002
 ```
 
-only if that matches current API docs.
-
-Otherwise reject or ignore consistently according to the existing contract.
-
-Do not invent ambiguous behavior in Phase 5.6.
+must not receive inventory data.
 
 ---
 
-# 26. Deterministic Secondary Ordering
+# 83. Tests — STAFF Permission
 
-Every Product collection ordering must end with:
+STAFF with:
 
-```text
-id ASC
+```text id="266amg"
+inventory.view
 ```
 
-unless `id` is already the unique primary sort.
-
-Examples:
-
-```sql
-ORDER BY created_at DESC, id ASC
-```
-
-```sql
-ORDER BY name ASC, id ASC
-```
-
-```sql
-ORDER BY derived_price ASC, id ASC
-```
-
-This is mandatory.
+can access both endpoints.
 
 ---
 
-# 27. Why Tie-Breaking Matters
+# 84. Tests — STAFF Without Permission
 
-Many Products may share:
-
-```text
-same name
-same price
-same created_at
-```
-
-Without a unique tie-breaker:
-
-```text
-Product can drift between pages
-duplicate across pages
-disappear between pages
-```
-
-when SQL chooses an undefined equal-value order.
-
-Always use `id ASC`.
+Must fail according to current authorization contract.
 
 ---
 
-# 28. Tie-Breaker Direction
+# 85. Tests — ADMIN
 
-The frozen contract explicitly uses:
+ADMIN with appropriate seeded permission can read inventory.
 
-```text
-id ASC
-```
-
-regardless of primary sort direction.
-
-Therefore:
-
-```text
-created_at DESC, id ASC
-price DESC, id ASC
-name DESC, id ASC
-```
-
-are valid.
-
-Do not automatically make ID direction match the primary sort.
+Do not rely on a universal role bypass.
 
 ---
 
-# 29. Derived Price Sorting
+# 86. Tests — Collection Envelope
 
-Product does not own its own price column.
+Verify:
 
-Do not add:
-
-```text
-products.price
+```text id="alj1wn"
+data
+meta.pagination
 ```
 
-for sorting convenience.
-
-Sort using the exact same authoritative derived Product price that CAT-001 serializes.
+and no raw paginator internals.
 
 ---
 
-# 30. Price Consistency Invariant
+# 87. Tests — Pagination
 
-For a Product:
+Cover:
 
-```text
-serialized Product price
-=
-value used for price filtering
-=
-value used for price sorting
+```text id="up322q"
+default page
+custom per_page
+second page
+beyond-last page
+empty dataset
 ```
-
-This is mandatory.
-
-Do not maintain three separate pricing calculations.
 
 ---
 
-# 31. Price Sorting Must Stay in SQL
+# 88. Tests — Inventory Resource Fields
 
-Do not:
+Assert exact approved operational fields.
 
-```text
-load page candidates
-serialize their price
-sort them in PHP
-```
-
-That produces incorrect pagination.
-
-Sorting must happen before pagination in the DB query.
+Do not merely test 200.
 
 ---
 
-# 32. Null Price Semantics
+# 89. Tests — Product ID Derivation
 
-Review current Product price derivation.
+Given:
 
-If a public Product can legitimately lack a usable active Variant/derived price:
-
-use the already-approved visibility/price semantics.
-
-Do not invent arbitrary:
-
-```text
-NULL FIRST
-NULL LAST
-price = 0
+```text id="a4mk3y"
+Product
+→ Variant
+→ Stock
 ```
 
-rules.
-
-Ideally public Product eligibility already prevents an invalid public pricing state.
+Inventory resource `product_id` must refer to the correct Product.
 
 ---
 
-# 33. Search + Sorting
+# 90. Tests — Variant ID Derivation
 
-Search results still use the frozen sort contract.
+Verify:
+
+```text id="ziqewl"
+variant_id
+```
+
+matches the stock row's Variant.
+
+---
+
+# 91. Tests — Location
+
+If Phase 5.8 resolves location as public-to-operations:
+
+verify exact:
+
+```text id="tx6ank"
+warehouse_location
+```
+
+serialization.
+
+---
+
+# 92. Tests — Multi-Location Rows
+
+Create:
+
+```text id="s5t0xa"
+same Variant
+main
+dar-es-salaam
+```
+
+INV-001 must return two distinct Inventory resources.
+
+Do not aggregate them into one.
+
+---
+
+# 93. Tests — Quantity Derivation
 
 Example:
 
-```text
-?search=oak&sort=price&sort_direction=asc
+```text id="gzvhav"
+quantity = 10
+reserved = 4
 ```
 
-means:
+must expose:
 
-```text
-match search
-→ apply filters
-→ price ASC
-→ id ASC
-→ paginate
+```text id="5iudw8"
+available_quantity = 6
 ```
 
 ---
 
-# 34. Search Without Sort
+# 94. Tests — Fully Reserved
 
-Do not silently introduce relevance ordering during Phase 5.6.
-
-Existing default remains:
-
-```text
-created_at DESC
-id ASC
-```
-
-unless an explicit future API decision adds relevance sorting.
-
----
-
-# 35. Phase 5.5 Search Integration
-
-Do not rewrite Phase 5.5 search logic.
-
-Reuse its existing Product catalog query.
-
-Preserve:
-
-```text
-native MySQL FULLTEXT
-variant SKU search
-approved variant attribute search
-active Variant restriction
+```text id="9gg4u8"
+quantity = 5
+reserved = 5
+available = 0
 ```
 
 ---
 
-# 36. Active Variant Search Regression
+# 95. Tests — Zero Stock
 
-Do not regress the corrected rule:
-
-```text
-whereHas('variants')
+```text id="esbe7y"
+0
+0
+0
 ```
 
-must only consider:
-
-```text
-is_active = true
-```
-
-Variants for SKU/attribute matching.
-
-Inactive Variants must never make a Product appear in public search.
+must serialize correctly.
 
 ---
 
-# 37. Sorting Must Not Reactivate Hidden Results
+# 96. Tests — Exact Detail
 
-Sorting/pagination only operate on Products already satisfying:
-
-```text
-public visibility
-search
-filters
-```
-
-Never expand the query set.
+INV-002 returns exactly the selected Inventory row.
 
 ---
 
-# 38. Filters + Sorting
+# 97. Tests — Unknown Inventory
 
-Examples that must work correctly:
+Return:
 
-```text
-?category=living-room&sort=name
+```text id="qj4a52"
+404 RESOURCE_NOT_FOUND
 ```
-
-```text
-?availability=available&sort=price&sort_direction=desc
-```
-
-```text
-?min_price=50000000&max_price=150000000&sort=price
-```
-
-Sorting never changes filter semantics.
 
 ---
 
-# 39. Product Type Dependency
+# 98. Tests — No Cross-Resource Confusion
 
-If `product_type` remains scheduled for Phase 5.7:
+Product ID, Variant ID, and Inventory ID must not be interchangeable.
 
-do not change that here.
-
-Phase 5.6 simply preserves the query composition point.
+Passing a Product ID in `{inventory}` should not accidentally resolve a stock row unless the contract explicitly says otherwise.
 
 ---
 
-# 40. Publication Dependency
+# 99. Tests — Operational Hidden Product
 
-Likewise:
+If current domain permits stock on an inactive/unpublished Product:
 
-```text
-is_published
+authorized inventory read should still expose the Inventory record.
+
+This protects public/operational scope separation.
+
+---
+
+# 100. Tests — No Public Leakage
+
+CAT-001/CAT-002 must still not expose:
+
+```text id="1e4d63"
+quantity
+reserved_quantity
+available_quantity
+warehouse_location
 ```
 
-remains Phase 5.7 if still deferred.
+after Phase 5.8.
 
-Pagination must reuse shared public scope so publication can later be added once without pagination changes.
+Add regression coverage if not already present.
 
 ---
 
-# 41. Stable Public Scope
+# 101. Tests — No Mutation
 
-Preferred architecture:
+Compare stock rows before/after:
 
-```text
-Product public scope/query
-→ search
-→ filters
-→ sort
-→ paginate
+```text id="vvavl5"
+INV-001
+INV-002
 ```
 
-Do not duplicate visibility conditions in paginator code.
+No quantity, reservation, or timestamps should change.
 
 ---
 
-# 42. Public Only
+# 102. Tests — N+1
 
-CAT-001 remains:
+Where practical, guard against obvious:
 
-```text
-PUBLIC_READ
+```text id="z6omhw"
+ProductStock
+→ Variant
+→ Product
 ```
 
-Pagination does not require authentication.
+N+1 queries.
 
 ---
 
-# 43. No User-Specific Sort
+# 103. Tests — Cache Headers
 
-Do not add:
+Protected inventory response must not be publicly cacheable.
 
-```text
-recommended
-for_you
-recently_viewed
-personalized
+Verify current private/no-store convention if headers are already machine-tested.
+
+---
+
+# 104. No Audit Event for Reads
+
+Inventory reads should not create privileged mutation audit entries merely because stock was viewed.
+
+Audit mutation belongs to INV-003.
+
+Access logging may remain normal application logging.
+
+---
+
+# 105. No Adjustment Logic
+
+Do not implement:
+
+```text id="4k955o"
+quantity_delta
+adjustment reason
+Idempotency-Key
+inventory locking
+audit event
 ```
 
-sort modes.
+in Phase 5.8.
 
-Those would make a public cacheable endpoint user-dependent.
+Those belong to Phase 5.9 / 5.10.
 
 ---
 
-# 44. No Popularity Sort
+# 106. No Generic PATCH
+
+Do not create:
+
+```text id="r8zpp9"
+PATCH /api/v1/inventory/{inventory}
+```
+
+The frozen contract explicitly uses controlled:
+
+```text id="wy7zcg"
+POST /inventory/{product}/adjust
+```
+
+for future mutation.
+
+---
+
+# 107. No Delete
+
+Do not implement:
+
+```text id="ifbdua"
+DELETE /inventory/{inventory}
+```
+
+Inventory deletion is not an ordinary API action.
+
+---
+
+# 108. No Reservation Endpoint
+
+Do not create:
+
+```text id="hke8wa"
+/inventory/reserve
+/inventory/release
+```
+
+Checkout will own reservation behavior.
+
+---
+
+# 109. No Stock Ledger
 
 Do not introduce:
 
-```text
-best_selling
-most_popular
-trending
-rating
+```text id="uzckku"
+inventory_movements
+stock_transactions
 ```
 
-without explicit business/data contracts.
+unless a later phase explicitly requires them.
 
-V1 supports only:
+---
 
-```text
-created_at
-price
-name
+# 110. No Warehouse Model
+
+Do not normalize location yet.
+
+---
+
+# 111. OpenAPI Reconciliation
+
+Update OpenAPI only after reconciling the read model.
+
+Specifically verify:
+
+```text id="y4hqxw"
+Inventory.variant_id nullability
+warehouse_location presence
+INV-001 response pagination
+INV-002 {inventory} semantics
+auth/security
+403
+404
+429
 ```
 
 ---
 
-# 45. No Random Sort
+# 112. Documentation Reconciliation
 
-Do not implement:
+If the current wording:
 
-```text
-?sort=random
+```text id="fxn89q"
+"Get inventory by product/variant"
 ```
 
-Random ordering:
+conflicts with:
 
-```text
-breaks deterministic pagination
-hurts caching
-is expensive
-causes duplicates
+```text id="63ukwx"
+/inventory/{inventory}
 ```
+
+clarify the docs.
+
+Do not leave two lookup semantics.
 
 ---
 
-# 46. No Client-Supplied SQL
+# 113. Preferred V1 Inventory Detail Meaning
 
-Never map arbitrary request strings directly into:
+Unless newer repository authority says otherwise:
 
-```text
-column name
-raw ORDER BY
-direction
-```
-
-Use explicit mappings.
-
----
-
-# 47. Index Use
-
-Review existing indexes for:
-
-```text
-created_at
-name
-```
-
-and Product query behavior.
-
-Do not automatically add indexes unless query analysis shows a real need.
-
----
-
-# 48. Price Sorting Index Limitation
-
-Derived price may not be directly indexable because it comes from Variants.
-
-Do not denormalize Product price merely to get an index in V1.
-
-Use the current efficient aggregate/subquery implementation.
-
-Measure before redesigning.
-
----
-
-# 49. Pagination Count Query
-
-Laravel pagination generally performs:
-
-```text
-COUNT query
-+
-page SELECT
-```
-
-This is expected.
-
-Do not prematurely replace `paginate()` with `simplePaginate()` because V1 requires:
-
-```text
-total
-last_page
-```
-
----
-
-# 50. Do Not Use `simplePaginate()`
-
-`simplePaginate()` omits the total count.
-
-It therefore cannot satisfy the frozen response contract.
-
-Use normal pagination.
-
----
-
-# 51. Do Not Use Cursor Pagination
-
-Similarly, `cursorPaginate()` does not match the V1 metadata contract.
-
-Do not use it.
-
----
-
-# 52. Performance Expectations
-
-For the expected V1 catalog scale:
-
-```text
-normal Laravel paginate()
-+
-indexed filters
-+
-bounded Product summary
-```
-
-is appropriate.
-
-Do not optimize for millions of Products prematurely.
-
----
-
-# 53. Offset Pagination Limitation
-
-Document, but do not overengineer around, the known property of page/offset pagination:
-
-if Product data changes between requests, page membership may shift.
-
-This is acceptable for a live retail catalog.
-
-Do not implement:
-
-```text
-snapshot tokens
-catalog versions
-transactional multi-page browsing
-```
-
----
-
-# 54. Concurrent Catalog Changes
-
-If a Product is added/removed between:
-
-```text
-page 1
-page 2
-```
-
-the result set may shift.
-
-That is normal V1 behavior.
-
-The deterministic tie-breaker addresses ambiguous SQL ordering, not live-data mutation.
-
----
-
-# 55. Query String Compatibility
-
-Filters and sort parameters must remain usable together with page values.
-
-Example:
-
-```text
-/products
-?search=oak
-&category=dining-room
-&sort=price
-&sort_direction=asc
-&page=2
-&per_page=20
-```
-
-must work as one canonical request.
-
----
-
-# 56. Frontend URL Stability
-
-The API should support straightforward website URLs such as:
-
-```text
-/products?page=3&sort=price&sort_direction=asc
-```
-
-without special server state.
-
-Do not introduce session-based pagination.
-
----
-
-# 57. Cache Keys
-
-Public cache identity naturally depends on the complete query string:
-
-```text
-search
-filters
-sort
-page
-per_page
-```
-
-Do not manually cache all combinations in Phase 5.6.
-
----
-
-# 58. Response Resource
-
-Continue using:
-
-```text
-ProductSummaryResource
-```
-
-from Phase 5.2.
-
-Pagination must not change Product representation.
-
----
-
-# 59. No Paginator Internals
-
-Do not expose Laravel keys such as:
-
-```text
-first_page_url
-last_page_url
-next_page_url
-prev_page_url
-path
-links
-from
-to
-```
-
-unless explicitly approved.
-
-Transform paginator metadata into the frozen API representation.
-
----
-
-# 60. Avoid Double Pagination
-
-Do not call `paginate()` inside a helper and again in the controller.
-
-The query should be paginated exactly once.
-
----
-
-# 61. Avoid Double Sorting
-
-Sorting should have one authoritative application point.
-
-Do not:
-
-```text
-apply default sort in model scope
-then apply user sort in controller
-```
-
-without clearing/reconciling previous order clauses.
-
----
-
-# 62. Explicit Sort Application
-
-Ensure custom sort replaces the default primary sort rather than stacking unexpectedly.
-
-Expected:
-
-```text
-sort=price
-→ price <direction>, id ASC
-```
-
-not:
-
-```text
-created_at DESC,
-price ASC,
-id ASC
-```
-
-unless that ordering is explicitly intended.
-
----
-
-# 63. Query Builder Structure
-
-Prefer extending the focused catalog query from Phase 5.5.
-
-Conceptually:
-
-```text
-applySearch()
-applyFilters()
-applySort()
-paginate()
-```
-
-Do not introduce another:
-
-```text
-ProductPaginationService
-```
-
-if the existing query object already owns collection composition.
-
----
-
-# 64. Pagination Serialization Helper
-
-A small reusable pagination metadata mapper is acceptable if the project already has several paginated endpoints.
-
-For example conceptually:
-
-```text
-PaginationMeta
-```
-
-or:
-
-```text
-PaginationResource
-```
-
-But do not build an elaborate pagination framework.
-
----
-
-# 65. Reuse Global Pagination Conventions
-
-If the backend already has pagination response helpers from earlier phases:
-
-reuse them.
-
-CAT-001 should not create a different metadata shape from:
-
-```text
-CAT-003
-ORD-001
-NOT-001
-```
-
-later.
-
----
-
-# 66. Validation Layer
-
-Keep pagination/sort validation in the existing CAT-001 FormRequest.
-
-Do not validate:
-
-```text
-page
-per_page
-sort
-sort_direction
-```
-
-inside the controller.
-
----
-
-# 67. Strict Types
-
-Do not broadly coerce malformed values.
-
-Follow current query validation conventions.
-
-Examples:
-
-```text
-page=1
-```
-
-valid.
-
-```text
-page=1.0
-```
-
-should follow current integer validation policy.
-
----
-
-# 68. Unknown Sort Field
-
-Examples:
-
-```text
-?sort=sku
-?sort=id
-?sort=cost
-?sort=inventory
-?sort=deleted_at
-```
-
-must return:
-
-```text
-422 INVALID_VALUE
-```
-
-if not in the approved allow-list.
-
----
-
-# 69. Internal Field Protection
-
-Sorting must not become a side-channel that exposes internal fields.
-
-Do not allow sorting by:
-
-```text
-cost_price
-reserved_quantity
-is_active
-is_published
-warehouse quantity
-```
-
----
-
-# 70. Case Handling
-
-Follow the frozen request semantics.
-
-If `sort_direction` is case-insensitive:
-
-normalize:
-
-```text
-ASC → asc
-DESC → desc
-```
-
-Do not necessarily make `sort` field names case-insensitive unless docs say so.
-
----
-
-# 71. Invalid `per_page` Is Not Silently Capped
-
-Do not turn:
-
-```text
-per_page=1000
-```
-
-into:
-
-```text
-100
-```
-
-unless the existing global convention says to clamp.
-
-Preferred frozen behavior is validation error.
-
----
-
-# 72. Test — Default Pagination
-
-Seed more than 20 visible Products.
-
-Request:
-
-```text
-GET /products
-```
-
-Assert:
-
-```text
-current_page = 1
-per_page = 20
-correct total
-correct last_page
-correct has_next
-has_previous = false
-```
-
----
-
-# 73. Test — Custom `per_page`
-
-Example:
-
-```text
-?per_page=10
-```
-
-Verify metadata and 10-or-fewer Product results.
-
----
-
-# 74. Test — Page 2
-
-Verify:
-
-```text
-?page=2
-```
-
-returns the expected second window.
-
----
-
-# 75. Test — Last Page
-
-Verify:
-
-```text
-has_next = false
-has_previous = true
-```
-
-for a multi-page collection's last page.
-
----
-
-# 76. Test — Beyond Last Page
-
-Verify:
-
-```text
-200
-data = []
-```
-
-and correct metadata.
-
----
-
-# 77. Test — Zero Results
-
-Use a filter/search producing no Products.
-
-Assert the exact zero-result convention.
-
----
-
-# 78. Test — Invalid Page
-
-Cover:
-
-```text
-0
--1
-non-integer
-```
-
----
-
-# 79. Test — Invalid Per Page
-
-Cover:
-
-```text
-0
-101
-negative
-non-integer
-```
-
----
-
-# 80. Test — Default Sort
-
-Create Products with deliberately different timestamps.
-
-Verify:
-
-```text
-created_at DESC
-id ASC
-```
-
----
-
-# 81. Test — Created Date Ascending
-
-Request:
-
-```text
-?sort=created_at&sort_direction=asc
-```
-
-Verify order.
-
----
-
-# 82. Test — Name Ascending
-
-Request:
-
-```text
-?sort=name
-```
-
-Verify default:
-
-```text
-ASC
-```
-
----
-
-# 83. Test — Name Descending
-
-Request:
-
-```text
-?sort=name&sort_direction=desc
-```
-
-Verify exact reverse primary ordering plus stable ID tie-break.
-
----
-
-# 84. Test — Price Ascending
-
-Seed Products with known derived Variant prices.
-
-Verify public price order.
-
----
-
-# 85. Test — Price Descending
-
-Verify:
-
-```text
-?sort=price&sort_direction=desc
-```
-
----
-
-# 86. Test — Price Source Consistency
-
-For every test Product:
-
-```text
-sort value
+```text id="7cguwt"
+{inventory}
 =
-ProductSummaryResource price
+Inventory resource ID
+=
+ProductStock row ID
 ```
 
-Do not assert against an unrelated Variant price.
+This is the least surprising REST/resource interpretation and matches the frozen route parameter.
 
 ---
 
-# 87. Test — Tie on Name
+# 114. Operational Product Views Remain Separate
 
-Create multiple visible Products with the same name.
+Do not fold:
 
-Verify final ordering by:
-
-```text
-id ASC
+```text id="rtvs9j"
+CAT-013
+CAT-014
 ```
 
----
+into INV-001/002.
 
-# 88. Test — Tie on Price
+Operational Product APIs expose Product management context.
 
-Create multiple Products with the same derived price.
-
-Verify:
-
-```text
-id ASC
-```
+Inventory APIs expose stock resources.
 
 ---
 
-# 89. Test — Tie on Created At
-
-Create Products with identical timestamps.
-
-Verify:
-
-```text
-id ASC
-```
-
----
-
-# 90. Test — No Duplicate Between Pages
-
-Use tied primary sort values spanning multiple pages.
-
-Verify no Product ID appears on both pages.
-
----
-
-# 91. Test — No Missing Product
-
-Across a stable DB state, concatenate all pages.
-
-Verify all expected Product IDs appear exactly once.
-
----
-
-# 92. Test — Search + Pagination
-
-Use Phase 5.5 search.
-
-Verify totals/pages include only matching results.
-
----
-
-# 93. Test — Search + Sort
-
-Example:
-
-```text
-?search=oak&sort=price
-```
-
-Verify search runs before sort.
-
----
-
-# 94. Test — Filter + Pagination
-
-Example:
-
-```text
-?category=living-room&per_page=5
-```
-
-Ensure total reflects only filtered Products.
-
----
-
-# 95. Test — Combined Query
-
-Add at least one realistic full-pipeline regression:
-
-```text
-search
-category
-price filter
-availability where authoritative
-sort
-sort_direction
-page
-per_page
-```
-
-Verify the final result set and metadata.
-
----
-
-# 96. Test — Active Variant Search Restriction
-
-Preserve the Phase 5.5 regression:
-
-An active Product with:
-
-```text
-inactive Variant matching search
-```
-
-must not appear unless another active Variant or Product text matches.
-
-Pagination/sorting changes must not weaken this behavior.
-
----
-
-# 97. Test — Duplicate Variant Search Match
-
-If multiple active Variants match one Product:
-
-the Product appears only once and counts once toward:
-
-```text
-total
-```
-
-This is especially important for paginator totals.
-
----
-
-# 98. COUNT Correctness
-
-Relationship search must not cause:
-
-```text
-total
-```
-
-to count duplicate Product rows.
-
-Verify this explicitly.
-
----
-
-# 99. MySQL vs SQLite
-
-Phase 5.6 sorting/pagination semantics should work on both where possible.
-
-However, Phase 5.5 remains subject to the existing MySQL FULLTEXT verification gate.
-
-Do not claim MySQL FULLTEXT is verified merely because Phase 5.6 tests pass on SQLite.
-
----
-
-# 100. SQLite Coverage
-
-SQLite may validly prove:
-
-```text
-pagination
-metadata
-sort allow-list
-sort direction
-tie-breaking
-price sorting semantics
-filter composition
-duplicate suppression
-active-Variant search semantics
-```
-
-using the existing deterministic search fallback.
-
----
-
-# 101. MySQL FULLTEXT Blocker Remains Separate
-
-Until the disposable MySQL/MariaDB Phase 5.5 integration check succeeds:
-
-```text
-Phase 5.5 remains BLOCKED
-```
-
-Phase 5.6 implementation may still be independently correct.
-
-Do not rewrite this status.
-
----
-
-# 102. PHPStan Baseline
-
-The previously reported project PHPStan baseline issue also remains a Phase 5.5/quality blocker until resolved.
-
-Phase 5.6 must:
-
-```text
-not introduce additional PHPStan errors
-```
-
-and should report the existing baseline separately if still present.
-
----
-
-# 103. Phase 5.6 Status Classification
-
-If Phase 5.6's own implementation/tests pass but global PHPStan is still failing from a known pre-existing baseline:
-
-report:
-
-```text
-Phase 5.6 implementation: PASS
-Global static-analysis gate: BLOCKED by existing PHPStan baseline
-```
-
-or use the repository's established status convention.
-
-Do not hide pre-existing failures.
-
----
-
-# 104. No MySQL-Specific Pagination Rewrite
-
-Do not branch pagination behavior by DB driver.
-
-Only the Phase 5.5 FULLTEXT search mechanism needs the MySQL/SQLite distinction.
-
-Pagination/sorting semantics should remain shared.
-
----
-
-# 105. Query Performance
-
-Use database pagination.
-
-Do not load full filtered result sets into memory just to compute:
-
-```text
-total
-pages
-sorting
-```
-
----
-
-# 106. Query Plan Review
-
-Where a disposable MySQL environment becomes available, optionally inspect the combined query plan for:
-
-```text
-default sort
-name sort
-FULLTEXT + pagination
-```
-
-but do not make this a mandatory Phase 5.6 blocker unless performance is clearly poor.
-
----
-
-# 107. No Premature Keyset Optimization
-
-Do not replace offset pagination because deep-page offset becomes slower at massive scale.
-
-The expected V1 catalog does not justify that complexity.
-
----
-
-# 108. No Maximum Page Cap
-
-Do not introduce arbitrary:
-
-```text
-page <= 100
-```
-
-unless approved.
-
-Very high pages may return empty data naturally.
-
----
-
-# 109. No Stateful Pagination Tokens
-
-Do not store pagination state server-side.
-
-Every request is self-contained.
-
----
-
-# 110. No Sorting Preferences Storage
-
-Do not persist a customer's preferred sort order.
-
-Frontend-local preference may be considered later.
-
----
-
-# 111. Public Cache Safety
-
-Pagination and sorting remain public/user-neutral.
-
-Same URL/query should produce the same representation for:
-
-```text
-anonymous
-Customer
-Staff
-Admin
-```
-
-subject only to catalog changes.
-
----
-
-# 112. No Privileged Product Fields
-
-Sorting as Admin through public CAT-001 must not cause:
-
-```text
-is_active
-is_published
-inventory quantity
-cost
-```
-
-to appear.
-
----
-
-# 113. OpenAPI
-
-Verify OpenAPI accurately documents:
-
-```text
-page
-per_page
-sort
-sort_direction
-```
-
-including:
-
-```text
-defaults
-bounds
-allowed sort fields
-allowed directions
-pagination metadata
-```
-
-Do not add new query fields.
-
----
-
-# 114. Documentation
-
-Update consolidated API docs only if runtime behavior differs from current documentation.
-
-Do not create a second pagination specification.
-
----
-
-# 115. Standard Customer-Facing Sort Mapping
-
-Frontend later may label the existing sort combinations as:
-
-```text
-Newest
-Name: A–Z
-Name: Z–A
-Price: Low to High
-Price: High to Low
-```
-
-Backend remains:
-
-```text
-sort=created_at&sort_direction=desc
-
-sort=name&sort_direction=asc
-
-sort=name&sort_direction=desc
-
-sort=price&sort_direction=asc
-
-sort=price&sort_direction=desc
-```
-
-Do not encode display labels into the API.
-
----
-
-# 116. Do Not Add "Recommended"
-
-Many established stores have:
-
-```text
-Recommended
-Featured
-Best Selling
-```
-
-but those require ranking/merchandising data.
-
-Do not imitate them without a business model.
-
-The existing three sorts are enough for V1.
-
----
-
-# 117. No Frontend Work
-
-Do not modify:
-
-```text
-frontend/web/
-frontend/app/
-frontend/design-system/
-```
-
-No pagination component or sorting dropdown belongs here.
-
----
-
-# 118. No Schema Change Expected
+# 115. Schema Changes
 
 Expected:
 
-```text
-Schema changes:
+```text id="9oq2bd"
 NONE
 ```
 
-Pagination/sorting should operate on existing Phase 5.2–5.5 query structures.
+The existing Group C schema already supports the read model.
 
 ---
 
-# 119. Do Not Add Denormalized Sort Columns
+# 116. Stop on Schema Temptation
 
-Do not add:
+If implementation seems to require:
 
-```text
-sort_price
-catalog_rank
-popularity
-search_rank
+```text id="z8b5rq"
+product_id column
+available_quantity column
+warehouse table
+inventory status column
 ```
 
-to Product.
+stop and use existing relationships/derivation instead.
 
 ---
 
-# 120. No New Dependencies
+# 117. No New Dependencies
 
 Expected:
 
-```text
-Composer dependencies:
+```text id="at7b25"
 NONE
 ```
 
-Laravel pagination/query builder is sufficient.
+Laravel/Eloquent/API Resources are sufficient.
 
 ---
 
-# 121. Code Quality
+# 118. SQLite / MySQL
 
-Maintain:
+Phase 5.8 inventory semantics should be testable under canonical SQLite.
 
-```text
-cognitive complexity <= 15
-<= 3 returns where practical
-explicit sort maps
-small query methods
-no raw untrusted ORDER BY
-minimal comments
+There is no FULLTEXT-specific behavior here.
+
+Keep Phase 5.5's separate MySQL FULLTEXT blocker unchanged.
+
+---
+
+# 119. PHPStan
+
+Phase 5.8 must introduce:
+
+```text id="l34suc"
+0 new PHPStan errors
 ```
 
+If the known project baseline remains unresolved:
+
+report it separately.
+
+Do not claim global static-analysis PASS if the baseline still fails.
+
 ---
 
-# 122. Likely Implementation Areas
+# 120. Phase 5.5 Status Is Independent
 
-Likely changes should be limited to:
+Do not mark Phase 5.5 PASS merely because Phase 5.8 succeeds.
 
-```text
-CAT-001 FormRequest
-ProductCatalogQuery
-pagination metadata/resource helper
-Product collection controller/resource
-tests
-docs where required
+Phase 5.5 still requires its own:
+
+```text id="jtmyai"
+disposable MySQL/MariaDB FULLTEXT verification
++
+PHPStan baseline resolution
+```
+
+if those remain outstanding.
+
+---
+
+# 121. Likely Implementation Areas
+
+Expected:
+
+```text id="v6bhwq"
+routes/api.php
+InventoryController
+InventoryResource
+InventoryQueryRequest
+ProductStock model/relations if read helpers needed
+policy/gate wiring
+tests/Feature/
+docs/api/
+docs/decisions.md
+openapi.yaml
 ```
 
 Do not broaden the phase.
 
 ---
 
-# 123. Verification
+# 122. Verification Commands
 
-Run focused Phase 5.6 tests first.
+Run focused inventory tests.
 
 Then:
 
-```bash
+```bash id="qs0oeq"
 php artisan test
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 composer audit
 git diff --check
+php artisan route:list
 ```
 
-Report known pre-existing PHPStan failures separately from new failures.
+No destructive migration should normally be required.
 
 ---
 
-# 124. No Destructive Migration Expected
+# 123. Route Review
 
-Do not run:
+Verify exactly:
 
-```text
-migrate:fresh
+```text id="xv039t"
+GET /api/v1/inventory
+GET /api/v1/inventory/{inventory}
 ```
 
-merely for pagination/sorting.
+for this phase.
 
-If another phase's integration setup requires it, use the existing disposable-database safety rules.
+Do not add INV-003 yet.
 
 ---
 
-# 125. Completion Report
+# 124. Completion Report
 
 Return:
 
-## Phase 5.6 status
+## Phase 5.8 status
 
-```text
+```text id="x8pgc9"
 PASS
 ```
 
 or:
 
-```text
+```text id="ik3ehc"
 BLOCKED
 ```
 
-with exact reason.
-
-## Pagination
+## INV-001
 
 Report:
 
-```text
-page default
-per_page default/max
-metadata structure
-beyond-last behavior
-empty-result behavior
+```text id="dawcca"
+authentication
+inventory.view
+pagination
+filters if any
+ordering
 ```
 
-## Sorting
+## INV-002
 
 Report:
 
-```text
-created_at
-price
-name
-default directions
-id ASC tie-breaker
+```text id="3ljknp"
+Inventory ID resolution
+404 semantics
 ```
 
-## Price sorting
+## Inventory read model
 
-State the authoritative derived-price expression reused.
+State exact exposed fields.
 
-## Search integration
+## Contract reconciliation
+
+State decisions for:
+
+```text id="by5tmd"
+variant_id nullability
+warehouse_location
+{inventory} meaning
+```
+
+## Quantity semantics
 
 Confirm:
 
-```text
-search → filter → sort → paginate
+```text id="zzpzkd"
+quantity
+reserved_quantity
+available_quantity = quantity - reserved_quantity
 ```
 
-and active-Variant relationship search remains enforced.
+## Multi-location behavior
 
-## Duplicate protection
+Confirm one Inventory resource per Variant/location row.
 
-State how relationship search avoids duplicate Product rows and inflated totals.
+## Public separation
 
-## SQLite
-
-State which pagination/sorting semantics were verified under SQLite.
-
-## MySQL
-
-Do not conflate Phase 5.6 with the outstanding Phase 5.5 FULLTEXT integration check.
-
-## PHPStan
-
-Report whether:
-
-```text
-new Phase 5.6 errors = 0
-```
-
-and separately identify any existing project baseline blocker.
+Confirm CAT endpoints still expose no exact inventory quantities.
 
 ## Schema
 
-Expected:
+Must state:
 
-```text
+```text id="3hdhy1"
 NONE
 ```
 
-## Dependencies
+## Mutation
 
-Expected:
+Must state:
 
-```text
+```text id="sbup9h"
 NONE
 ```
 
@@ -2218,19 +2001,19 @@ NONE
 
 Must state:
 
-```text
+```text id="3pc9ku"
 NONE
 ```
 
 ## Tests
 
-Report exact focused/full counts.
+Report focused/full counts.
 
 ## Quality
 
 Report:
 
-```text
+```text id="z4csu1"
 Pint
 PHPStan
 Composer audit
@@ -2239,94 +2022,79 @@ git diff --check
 
 ---
 
-# 126. Definition of Done
+# 125. Definition of Done
 
-Phase 5.6 is complete when:
+Phase 5.8 is complete when:
 
-* CAT-001 uses standard 1-based page pagination;
-* default page is 1;
-* default per-page is 20;
-* maximum per-page is 100;
-* invalid pagination inputs are rejected;
-* pagination runs after search/filter/sort;
-* metadata is exactly under `meta.pagination`;
-* `current_page` is correct;
-* `per_page` is correct;
-* `total` counts distinct matching Products;
-* `last_page` is correct;
-* `has_next` is correct;
-* `has_previous` is correct;
-* zero-result behavior matches the V1 contract;
-* beyond-last-page requests return empty data rather than 404;
-* no Laravel paginator internals leak;
-* no pagination URLs are added;
-* sorting is allow-listed;
-* allowed fields remain `created_at`, `price`, and `name`;
-* sort directions remain `asc`/`desc`;
-* default catalog order remains `created_at DESC, id ASC`;
-* name and price default to ascending when explicitly selected;
-* every non-unique primary sort appends `id ASC`;
-* price sorting uses the same Product price used for filtering/serialization;
-* pagination does not duplicate Products across stable pages;
-* relationship search does not inflate paginator totals;
-* inactive Variant matches do not influence public search;
-* search/filter/sort/page composition works;
-* no cursor pagination is introduced;
-* no random/popularity/recommended sorting is invented;
-* no Product schema changes are introduced;
-* no new dependency is added;
-* no frontend code is modified;
-* focused pagination/sort tests pass;
-* existing CAT-001 search/filter tests remain green;
-* Phase 5.2–5.5 catalog regressions remain green;
+* INV-001 exists;
+* INV-002 exists;
+* both require authentication;
+* both require `inventory.view`;
+* CUSTOMER cannot read operational inventory;
+* Staff/Admin authorization uses permissions, not blanket role trust;
+* INV-001 is paginated;
+* Inventory resources derive from ProductStock;
+* Product ID is derived through Variant → Product;
+* Variant ID correctly maps ProductStock ownership;
+* `{inventory}` has one unambiguous meaning;
+* warehouse/location semantics are explicitly resolved;
+* one Variant/location row remains one Inventory resource;
+* exact quantity is exposed only operationally;
+* reserved quantity is exposed only operationally;
+* available quantity is derived, not persisted;
+* multi-location rows are not accidentally aggregated;
+* zero-stock rows remain visible operationally;
+* inactive/unpublished Product stock is not hidden merely by public catalog scope;
+* public CAT endpoints continue hiding exact inventory data;
+* no inventory mutation occurs;
+* no locks/reservations are introduced;
+* no INV-003 code is pulled forward;
+* no generic PATCH inventory endpoint is created;
+* no schema redesign occurs;
+* no warehouse entity is introduced;
+* no frontend changes occur;
+* focused tests pass;
+* catalog availability regression tests remain green;
 * no new PHPStan errors are introduced;
 * Pint passes;
-* Composer audit has no blocker.
+* Composer audit has no new blocker.
 
 ---
 
-# 127. Out of Scope
+# 126. Out of Scope
 
 Do not implement:
 
-```text
-cursor pagination
-keyset pagination
-Load More API
-infinite-scroll-specific API
-pagination links
-random sorting
-relevance sorting
-best-selling sorting
-popularity sorting
-recommended sorting
-ratings sorting
-frontend pagination
-frontend sort selector
-analytics
-catalog snapshots
+```text id="wfzi5n"
+INV-003 inventory adjustment
+inventory mutation
+quantity_delta
+adjustment reasons
+idempotency
+stock locking
+overselling protection
+checkout reservation
+inventory audit log
+inventory history
+warehouse entity
+warehouse transfers
+frontend inventory dashboard
 ```
 
 ---
 
-# 128. STOP Condition
+# 127. STOP Condition
 
-STOP when CAT-001 behaves like a conventional production e-commerce collection API:
+STOP when Staff/Admin with `inventory.view` can safely inspect the existing ProductStock state through:
 
-```text
-public query
-→ search
-→ filters
-→ approved sort
-→ deterministic id tie-break
-→ page-based pagination
-→ ProductSummary collection
-→ meta.pagination
+```text id="xlp6ka"
+GET /api/v1/inventory
+GET /api/v1/inventory/{inventory}
 ```
 
-with stable results for unchanged catalog state, correct distinct totals, and no schema/API expansion.
+with exact operational quantities, proper Variant/Product identity, explicit location semantics, pagination, authorization, and no mutations.
 
-Do not continue automatically to Phase 5.7.
+Do not continue automatically to Phase 5.9.
 
 DO NOT COMMIT, STAGE OR PUSH.
 

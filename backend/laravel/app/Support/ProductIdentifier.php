@@ -10,7 +10,12 @@ final class ProductIdentifier
 
     public static function encode(Product $product): string
     {
-        return self::PREFIX.base_convert((string) $product->getKey(), 10, 36);
+        return self::encodeId((int) $product->getKey());
+    }
+
+    public static function encodeId(int $id): string
+    {
+        return self::PREFIX.base_convert((string) $id, 10, 36);
     }
 
     public static function decode(string $identifier): ?int

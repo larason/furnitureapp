@@ -223,6 +223,21 @@ class ProductSchemaTest extends TestCase
         $this->assertTrue(! Schema::hasColumn('products', 'image_url'));
     }
 
+    public function test_publication_controls_are_not_mass_assignable(): void
+    {
+        $product = Product::factory()->create();
+        $originalType = $product->product_type;
+        $originalPublished = $product->is_published;
+
+        $product->fill([
+            'product_type' => 'MADE_TO_ORDER',
+            'is_published' => false,
+        ]);
+
+        $this->assertSame($originalType, $product->product_type);
+        $this->assertSame($originalPublished, $product->is_published);
+    }
+
     private function createCategory(array $attributes = []): Category
     {
         $category = new Category([

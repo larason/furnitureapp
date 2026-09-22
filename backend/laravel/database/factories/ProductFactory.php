@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Category;
 use App\Models\Product;
 use App\Support\AssemblyRequired;
+use App\Support\ProductType;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -34,6 +35,8 @@ class ProductFactory extends Factory
             'assembly_required' => AssemblyRequired::NONE,
             'primary_material' => null,
             'is_active' => true,
+            'product_type' => ProductType::IN_STOCK,
+            'is_published' => true,
             'is_featured' => false,
         ];
     }
@@ -50,5 +53,25 @@ class ProductFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'is_featured' => true,
         ]);
+    }
+
+    public function inStock(): static
+    {
+        return $this->state(['product_type' => ProductType::IN_STOCK]);
+    }
+
+    public function madeToOrder(): static
+    {
+        return $this->state(['product_type' => ProductType::MADE_TO_ORDER]);
+    }
+
+    public function published(): static
+    {
+        return $this->state(['is_published' => true]);
+    }
+
+    public function draft(): static
+    {
+        return $this->state(['is_published' => false]);
     }
 }

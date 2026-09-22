@@ -1246,6 +1246,7 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 **Catalog (Public, Embedded Availability):**
 - `CAT-001` `GET /api/v1/products` — *Query:* `search`, `category` (`?category={id}` canonical; no separate `/categories/{category}/products` per §19.5), `product_type` CLOSED, `availability=available|unavailable`, `min_price/max_price` minor units string, `sort` allow-list + `sort_direction` + `id ASC` tie-breaker, `page`/`per_page` (1–100) per pagination `meta.pagination`. *Response:* `Product` collection `data[]` + `meta.pagination` (public-safe, no `reserved_quantity`). *Errors:* `INVALID_VALUE` (filter/sort/page), `RATE_LIMITED`. *Idempotency:* `SAFE` (read). *State:* none (public). Availability is **embedded** (`availability` + `stock_indicator`) in `Product`, not separate `/availability` endpoint (preferred embedding per §19.6).
 - `CAT-002` `GET /api/v1/products/{product}` — *Response:* single `Product` + `images[]` + `variants` summary + `availability`/`stock_indicator`. *Errors:* `RESOURCE_NOT_FOUND`/`PRODUCT_NOT_FOUND` 404, `RATE_LIMITED`. *Public*.
+- `CAT-005`/`CAT-006` variant responses include `availability` and `stock_indicator`; the indicator uses the parent product type and the variant's available quantity aggregated across all stock locations.
 - `CAT-003/004` Category collection/detail — *Response:* `Category` collection/detail; `GET /categories/{category}/products` is **REJECTED**; use `GET /products?category=` canonical.
 - `CAT-005/006` Variants — *Purpose:* independent variant retrieval when product summary insufficient; not required if clients always use embedded variants. *Response:* CAT-005 returns an unpaginated `{"data":[...]}` Variant collection; CAT-006 returns a `{"data":{...}}` Variant detail.
 
@@ -1312,6 +1313,16 @@ Availability is **embedded** in `Product` (`availability: available|unavailable`
 - **Pagination:** `CAT-001`, `CAT-003` where applicable, `ORD-001`, `ORD-005`, `REQ-004`, `ENQ-004`, `NOT-001`, `ADM-001`, `INV-001` use `page`/`per_page` (1–100) + `meta.pagination` (total/last_page/has_next/has_previous) per Phase 1.12; `CAT-002`/`ORD-002` single resource not paginated.
 - **Response:** every endpoint uses `{"data":…}` or `{"data":[], "meta":{"pagination":…}}` or `{"errors":…}` per Phase 1.13; no raw arrays or custom wrappers; `errors` per Phase 1.16 with `code`/`field`/`details` + `meta.request_id`.
 - **Input:** `CART-002` only `product_id`/`variant_id`/`quantity` (no `price`/`totals`), `CHK-001` only `fulfillment_type` + conditional `delivery_address`, no `role`/`status`/`inventory authority`/`payment confirmation` as customer inputs per Phase 1.14.
+
+### 19.8a Catalog Availability Derivation
+
+- `product_type` is a public, closed classification and a valid `CAT-001` filter with values `IN_STOCK` and `MADE_TO_ORDER`.
+- Public visibility requires `is_active = true`, `is_published = true`, no soft deletion, and an active parent category. `is_published` and `is_active` are never returned in public catalog resources.
+- For `IN_STOCK`, available quantity is the sum of `quantity - reserved_quantity` across all locations and active variants. Positive quantity means `availability: available`; zero or negative quantity means `availability: unavailable`.
+- For `IN_STOCK`, `stock_indicator` is `LOW_STOCK` when available quantity is 1 through 5 inclusive, otherwise `IN_STOCK`. The threshold is fixed at 5 for V1.
+- For `IN_STOCK` with zero or negative available quantity, the response is `availability: unavailable` with `stock_indicator: IN_STOCK`. The closed V1 `stock_indicator` enum has no `OUT_OF_STOCK` value, so `availability` is the authoritative out-of-stock signal and clients must prioritize it before rendering the badge.
+- For `MADE_TO_ORDER`, `availability` is always `available` and `stock_indicator` is always `MADE_TO_ORDER`; stock rows do not change the catalog result.
+- `stock_indicator` is response-only and is rejected as a query filter. Raw quantity and reservation fields are never public.
 
 ### 19.9 Authentication/Authorization per Endpoint
 
@@ -1647,14 +1658,15 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
     "currency": "TZS"
   },
   "availability": "available",
+  "stock_indicator": "LOW_STOCK",
   "created_at": "2026-08-30T10:00:00Z",
   "updated_at": "2026-08-31T12:00:00Z"
 }
 ```
 
 - **Embedded Variant Summary Structure (Embedded in `CAT-002` Product Detail):**
-  Embedded variants in `CAT-002` omit `product_id` (implicit in parent product) and timestamps (`created_at`, `updated_at`) to keep the payload clean. `stock_indicator` is deferred to Phase 5.7:
-  `[{ "id": "var_...", "sku": "SOFA-MOD-3S-GRY", "name": "Charcoal Grey", "price": { "amount": 125000000, "currency": "TZS" }, "availability": "available" }]`
+  Embedded variants in `CAT-002` omit `product_id` (implicit in parent product) and timestamps (`created_at`, `updated_at`) to keep the payload clean. `stock_indicator` is required and uses the same derivation as the standalone variant response:
+  `[{ "id": "var_...", "sku": "SOFA-MOD-3S-GRY", "name": "Charcoal Grey", "price": { "amount": 125000000, "currency": "TZS" }, "availability": "available", "stock_indicator": "LOW_STOCK" }]`
 
 ---
 
@@ -1682,7 +1694,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 |---|---|---|
 | **Product** | `id`, `name`, `slug`, `product_type`, `price`, `category` (summary), `primary_image`, `availability`, `stock_indicator` | Summary fields + `description`, `images[]` (full ordered gallery), `variants[]` (embedded summary list), `created_at`, `updated_at` |
 | **Category** | `id`, `name`, `slug`, `image` | `id`, `name`, `slug`, `description`, `image`, `created_at` |
-| **Variant** | `id`, `sku`, `name`, `price`, `availability` (embedded in `CAT-002`) | `id`, `product_id`, `sku`, `name`, `price`, `availability`, `created_at`, `updated_at` (`CAT-005`, `CAT-006`); `stock_indicator` deferred to Phase 5.7 |
+| **Variant** | `id`, `sku`, `name`, `price`, `availability`, `stock_indicator` (embedded in `CAT-002`) | `id`, `product_id`, `sku`, `name`, `price`, `availability`, `stock_indicator`, `created_at`, `updated_at` (`CAT-005`, `CAT-006`) |
 
 
 ---
@@ -4374,7 +4386,7 @@ Inventory is operational, not customer-editable (see `api-resources.md §9`).
 | ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
 |---|---|---|---|---|---|---|---|---|
 | `INV-001` | `GET` | `/api/v1/inventory` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (paginated, filtered) | — | — |
-| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory by product/variant | — | — |
+| `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory detail (by Inventory resource ID) | — | — |
 | `INV-003` | `POST` | `/api/v1/inventory/{product}/adjust` | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable `reason` | Controlled stock adjustment (not `PATCH {quantity:999}`) | **Required** (`Idempotency-Key`) — same key replays `200` prior success (no second delta applied), same key different `quantity_delta`/`reason` → `409 DUPLICATE_OPERATION` | **Critical** (race with concurrent adjust/checkout) |
 
 - **No arbitrary `PATCH /inventory/{id}`:** only explicit `POST .../adjust`.
@@ -4382,6 +4394,14 @@ Inventory is operational, not customer-editable (see `api-resources.md §9`).
 - **Response:** `200 {"data": {inventory: {id, product_id, variant_id, quantity, reserved_quantity, available_quantity, updated_at}}}` with server-calculated `new_quantity` transactional; `quantity` is item units, not TZS minor units.
 - **Validation:** `inventory exists`, `actor authorized`, `reason CLOSED`, `quantity_delta integer`, `resulting quantity >=0` where business prohibits negative, `concurrent modification` detected via transaction/locking.
 - **Errors:** `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 RESOURCE_NOT_FOUND`, `409 CONFLICT` (`RESOURCE_VERSION_CONFLICT`), `422 INVALID_VALUE`/`MISSING_REQUIRED_FIELD`, `429 RATE_LIMITED`.
+
+##### 30.5.1.1 Inventory read model (Phase 5.8 clarification)
+
+- **`{inventory}` meaning:** one `ProductStock` row — one Variant at one `warehouse_location`. The path parameter is the stable opaque Inventory resource ID (`inv_...`). It is **not** a Product slug/ID, Variant SKU, or warehouse name. `INV-002` never resolves by Product/Variant; use `INV-001` filters for that.
+- **`INV-001` filters (allow-list):** `product` (`prod_...` ID, numeric ID, or slug resolved through existing Product semantics), `variant` (`var_...` stable Variant ID; SKU not accepted), `warehouse_location` (exact bounded string). Unknown parameters and arbitrary columns/operators (`?sort=quantity`, `?reserved_quantity_gt=`) are rejected `422`. No public `availability` reuse; no full-text search.
+- **Ordering:** `updated_at DESC, id ASC` (deterministic).
+- **Representation:** `{id, product_id, variant_id, warehouse_location, quantity, reserved_quantity, available_quantity, updated_at}`. `product_id` is derived `ProductStock → ProductVariant → Product`; `variant_id` is derived from `product_variants` (never raw `product_variant_id`); `available_quantity = quantity - reserved_quantity` derived, never persisted; `created_at` is not exposed. Exact operational quantities and location require `inventory.view`; zero-stock rows and stock on inactive/unpublished/soft-deleted Products remain operationally visible (public catalog scope does not apply).
+- **Cache:** `Cache-Control: private, no-store` + `Vary: Authorization`; never public/CDN-cacheable.
 
 #### 30.5.2 Adjustment reasons (CLOSED)
 

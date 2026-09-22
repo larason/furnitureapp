@@ -42,8 +42,7 @@ class ProductController extends V1Controller
     {
         $query = Product::query()
             ->select('products.*')
-            ->where('is_active', true)
-            ->whereHas('category', fn ($category) => $category->where('is_active', true))
+            ->public()
             ->with([
                 'category:id,name,slug,description',
                 'primaryImage:id,product_id,file_path,alt_text,sort_order,is_primary',
@@ -59,6 +58,8 @@ class ProductController extends V1Controller
         if ($resolved === null) {
             throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested product was not found.', 404);
         }
+
+        $resolved->variants->each(fn ($variant) => $variant->setRelation('product', $resolved));
 
         return (new ProductDetailResource($resolved))->response()->withHeaders($this->publicCacheHeaders());
     }
@@ -138,9 +139,7 @@ class ProductController extends V1Controller
 
     private function resolvePublicProduct(string $identifier): Product
     {
-        $query = Product::query()
-            ->where('is_active', true)
-            ->whereHas('category', fn ($category) => $category->where('is_active', true));
+        $query = Product::query()->public();
         $decodedId = ProductIdentifier::decode($identifier);
         $product = $decodedId === null
             ? $query->where('slug', $identifier)->first()

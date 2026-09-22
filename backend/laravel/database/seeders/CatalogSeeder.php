@@ -46,6 +46,7 @@ class CatalogSeeder extends Seeder
                 'is_featured' => true,
             ]
         );
+        $product->forceFill(['product_type' => 'IN_STOCK', 'is_published' => true])->save();
 
         $grey = ProductVariant::firstOrCreate(
             ['sku' => 'NORDIC-SOFA-GREY'],
@@ -145,6 +146,7 @@ class CatalogSeeder extends Seeder
                 'is_featured' => false,
             ]
         );
+        $product->forceFill(['product_type' => 'IN_STOCK', 'is_published' => true])->save();
 
         $variant = ProductVariant::firstOrCreate(
             ['sku' => 'RUSTIC-TABLE-OAK'],
@@ -196,6 +198,7 @@ class CatalogSeeder extends Seeder
                 'is_featured' => false,
             ]
         );
+        $product->forceFill(['product_type' => 'IN_STOCK', 'is_published' => false])->save();
 
         ProductVariant::firstOrCreate(
             ['sku' => 'VINTAGE-CHAIR-BROWN'],

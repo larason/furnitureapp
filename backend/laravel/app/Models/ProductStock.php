@@ -16,7 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $warehouse_location
  * @property int $quantity
  * @property int $reserved_quantity
- * @property int $availableQuantity
+ * @property-read int $available_quantity
+ * @property-read ProductVariant $productVariant
  */
 #[Fillable([
     'product_variant_id',

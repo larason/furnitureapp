@@ -21,7 +21,7 @@
 | `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units; `125000000` = 1,250,000.00 TZS; required for all products |
 | `category` | `{id,slug,name,description:string\|null}` | PUBLIC | no | Embedded Category summary (`description` is nullable) |
 | `images` | `[{id,url,alt_text,sort_order,is_primary}]` | PUBLIC | no | Full gallery array, deterministically sorted by `sort_order ASC, id ASC` |
-| `variants` | `[{id,sku,name,price,availability}]` | PUBLIC | no | Array of active variants belonging to this product; `stock_indicator` is deferred to Phase 5.7 |
+| `variants` | `[{id,sku,name,price,availability,stock_indicator}]` | PUBLIC | no | Array of active variants belonging to this product |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Coarse public signal (filter `?availability=available`). Lowercase exception. |
 | `stock_indicator` | `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | **Display bucket only**, not filterable via query parameter |
 | `created_at` | ISO8601 UTC | PUBLIC | no | `2026-08-30T15:30:00Z` |
@@ -39,6 +39,7 @@
 | `category` | `{id,slug,name}` | PUBLIC | no | Lightweight category summary |
 | `primary_image` | `{id,url,alt_text}` | PUBLIC | yes | Primary thumbnail image object (`is_primary: true`) |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
+| `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display bucket derived from the parent product type and authoritative available stock |
 
 **Not exposed publicly on any Product representation:** `reserved_quantity`, `physical_quantity`, supplier internals, warehouse location, staff notes, internal cost prices, margin data.
 
@@ -91,6 +92,7 @@
 | `name` | string | PUBLIC | no | Option / variant display name (e.g. "Charcoal Grey", "3-Seater Walnut") |
 | `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` override |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
+| `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Display bucket derived from the parent product type and authoritative available stock |
 | `created_at` | ISO8601 UTC | PUBLIC | no | Variant creation timestamp |
 | `updated_at` | ISO8601 UTC | PUBLIC | no | Variant update timestamp |
 
@@ -103,6 +105,7 @@
 | `name` | string | PUBLIC | no | Option / variant display name |
 | `price` | `{amount:int,currency:"TZS"}` | PUBLIC | no | Minor units `{amount, currency}` |
 | `availability` | `"available"\|"unavailable"` | PUBLIC | no | Lowercase enum |
+| `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | no | Same derivation as standalone variant responses |
 
 *Note:* `product_id` and timestamps (`created_at`, `updated_at`) are omitted from the embedded summary in `CAT-002` to avoid redundancy with the parent Product container and maintain a lightweight payload. Standalone retrieval via `CAT-005` and `CAT-006` provides full timestamps and explicit `product_id`.
 
@@ -129,7 +132,7 @@
 | `availability` | enum `"available"\|"unavailable"` | PUBLIC | Coarse public boolean-like signal; matches query parameter `?availability=available`. |
 | `stock_indicator` | enum `"IN_STOCK"\|"LOW_STOCK"\|"MADE_TO_ORDER"` | PUBLIC | Informational customer badge bucket only. Rejected if used in query filter. |
 
-*Inventory Rule:* Informational on catalog; authoritative verification and deduction executed transactionally during checkout. Internal unit counts (`physical_quantity`, `reserved_quantity`, warehouse logs) remain strictly inaccessible.
+*Availability derivation:* For `IN_STOCK`, the backend sums `quantity - reserved_quantity` across all stock locations for active variants. Positive quantity is `available`; zero or negative quantity is `unavailable`. Positive quantity from 1 through 5 uses `LOW_STOCK`; positive quantity above 5 uses `IN_STOCK`. When an `IN_STOCK` product has zero or negative available quantity it reports `availability: unavailable` with `stock_indicator: IN_STOCK`, because the closed V1 enum has no `OUT_OF_STOCK` value and `availability` is the authoritative out-of-stock signal. For `MADE_TO_ORDER`, availability is always `available` and the indicator is always `MADE_TO_ORDER`, regardless of stock rows. The threshold is inclusive at 5 and is not a query filter. Internal unit counts (`physical_quantity`, `reserved_quantity`, warehouse logs) remain strictly inaccessible.
 
 ---
 
@@ -835,7 +838,7 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 | Aspect | Contract |
 |---|---|
 | **Owner** | System (operational) |
-| **Privileged readers** | `STAFF`/`ADMIN` `inventory.view` — `GET /inventory` (`INV-001`), `GET /inventory/{inventory}` (`INV-002`, by product/variant) |
+| **Privileged readers** | `STAFF`/`ADMIN` `inventory.view` — `GET /inventory` (`INV-001`), `GET /inventory/{inventory}` (`INV-002`, by Inventory resource ID / `ProductStock` row) |
 | **Privileged writers** | `STAFF`/`ADMIN` `inventory.manage` — `POST /inventory/{product}/adjust` (`INV-003`) only; no `PATCH {quantity:999}` |
 | **Customer visibility** | **None** — public catalog shows `availability`/`stock_indicator` only (coarse); `quantity/reserved_quantity/available_quantity` never customer-visible |
 | **Immutable** | Derived `available_quantity = quantity - reserved_quantity` (read-only) |
@@ -843,6 +846,25 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 | **Validation** | `quantity_delta` integer, `reason` CLOSED (`STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT`), resulting `new_quantity >=0`, concurrent revalidation inside transaction |
 | **Audit** | Every `INV-003` adjustment audited (`actor/inventory/old/new/reason/occurred_at`); concurrency `Critical` |
 | **Field exposure** | `quantity` = integer units (not TZS minor units) |
+
+#### 10.2.1 Inventory read representation (`INV-001`/`INV-002`, Phase 5.8)
+
+One `ProductStock` row is one Inventory resource: one Variant at one `warehouse_location` (`UNIQUE(product_variant_id, warehouse_location)`). `INV-001` lists persisted rows (no fabricated zero rows, no aggregation across locations); `INV-002` resolves one row by its opaque Inventory ID (`inv_...`), never by Product slug/ID, Variant SKU, or warehouse name.
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string | OPERATIONAL | no | Stable opaque Inventory resource ID (`inv_...`); equals the `ProductStock` row identity |
+| `product_id` | string | OPERATIONAL | no | Derived `ProductStock → ProductVariant → Product` (`prod_...`); no `products.product_id` storage |
+| `variant_id` | string | OPERATIONAL | no | Derived from `product_variants` (`var_...`); never raw `product_variant_id`; ProductStock always belongs to a Variant |
+| `warehouse_location` | string | OPERATIONAL | no | Bounded machine string (e.g. `main`, `dar-es-salaam`); distinguishes multiple stock rows for one Variant |
+| `quantity` | integer | OPERATIONAL | no | Physical units owned at this location |
+| `reserved_quantity` | integer | OPERATIONAL | no | Units currently reserved/unavailable for another reservation or consumption |
+| `available_quantity` | integer | OPERATIONAL | no | Derived `quantity - reserved_quantity`; never persisted, never client-submitted |
+| `updated_at` | ISO8601 UTC | OPERATIONAL | no | Row timestamp; `created_at` is not exposed on this resource |
+
+- **Filters (`INV-001`):** `product` (`prod_...`/numeric/slug), `variant` (`var_...` only), `warehouse_location` (exact). Unknown parameters/operators rejected `422`; pagination `page`/`per_page` (default `20`, max `100`); ordering `updated_at DESC, id ASC`.
+- **Scope:** operational reads are not scoped by public catalog visibility — zero-stock rows and stock attached to inactive, unpublished, or soft-deleted Products remain visible for reconciliation.
+- **Cache:** `private, no-store` + `Vary: Authorization`; never public.
 
 ### 10.3 Order Operational Resource (extends §3 Order historical)
 
