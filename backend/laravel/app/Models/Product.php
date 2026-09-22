@@ -8,13 +8,38 @@ use Database\Factories\ProductFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $category_id
+ * @property string $name
+ * @property string $slug
+ * @property string|null $short_description
+ * @property string|null $description
+ * @property ProductType $product_type
+ * @property bool $is_active
+ * @property bool $is_published
+ * @property bool $is_featured
+ * @property-read int|null $summary_price_amount
+ * @property-read string|null $summary_price_currency
+ * @property-read int|null $summary_available_quantity
+ * @property-read int|null $summary_has_available_stock
+ * @property-read Category $category
+ * @property-read ProductImage|null $primaryImage
+ * @property-read Collection<int, ProductImage> $images
+ * @property-read Collection<int, ProductVariant> $variants
+ * @property-read ProductVariant|null $defaultVariant
+ * @property-read Carbon|null $created_at
+ * @property-read Carbon|null $updated_at
+ */
 #[Fillable([
     'category_id',
     'name',

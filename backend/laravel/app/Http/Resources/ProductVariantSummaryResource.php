@@ -2,11 +2,19 @@
 
 namespace App\Http\Resources;
 
+use App\Models\ProductVariant;
 use App\Support\CatalogAvailability;
 use App\Support\VariantIdentifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/**
+ * @property-read ProductVariant $resource
+ * @property-read string $sku
+ * @property-read string $variant_name
+ * @property-read int $price_amount
+ * @property-read string $price_currency
+ */
 final class ProductVariantSummaryResource extends JsonResource
 {
     public function toArray(Request $request): array

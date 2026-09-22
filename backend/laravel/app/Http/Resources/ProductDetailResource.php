@@ -2,9 +2,24 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\ProductImage;
+use App\Models\ProductVariant;
 use App\Support\CategoryIdentifier;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property-read Product $resource
+ * @property-read string|null $description
+ * @property-read Category $category
+ * @property-read Collection<int, ProductImage> $images
+ * @property-read Collection<int, ProductVariant> $variants
+ * @property-read Carbon|null $created_at
+ * @property-read Carbon|null $updated_at
+ */
 final class ProductDetailResource extends ProductSummaryResource
 {
     public function toArray(Request $request): array
