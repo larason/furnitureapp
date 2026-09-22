@@ -11,6 +11,8 @@ return new class extends Migration
         Schema::create('idempotency_keys', function (Blueprint $table): void {
             $table->id();
 
+            // Ephemeral actor-scoped retry record: cascade with the actor.
+            // Audit history is immutable and uses restrictOnDelete instead.
             $table->foreignId('actor_id')
                 ->constrained('users')
                 ->cascadeOnDelete();

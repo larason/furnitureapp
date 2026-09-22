@@ -20,6 +20,12 @@ final class ConcurrentTransaction
 
     private const TRANSIENT_DRIVER_CODES = [1020, 1205, 1213];
 
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
     public static function run(Closure $callback): mixed
     {
         if (DB::transactionLevel() > 0) {

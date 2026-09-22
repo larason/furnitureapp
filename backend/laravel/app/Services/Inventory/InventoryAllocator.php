@@ -22,6 +22,14 @@ use Illuminate\Support\Collection;
  */
 final class InventoryAllocator
 {
+    /**
+     * Reserve stock for every item of an order, across locations, all-or-nothing.
+     *
+     * Callers (checkout/order workflows) own order-state and eligibility
+     * validation; this primitive owns stock state only and expects an order that
+     * is valid, not already reserved, with immutable item quantities created in
+     * the same business transaction.
+     */
     public function reserve(Order $order): void
     {
         ConcurrentTransaction::run(function () use ($order): void {
@@ -107,6 +115,10 @@ final class InventoryAllocator
     }
 
     /**
+     * Locks every candidate row in a single global order (`id ASC`), shared by
+     * reserve/release/consume to avoid deadlocks. The location-first ordering
+     * used to allocate units is applied afterwards, once rows are already locked.
+     *
      * @param  Collection<int, OrderItem>  $items
      * @return Collection<int, ProductStock>
      */
@@ -125,7 +137,13 @@ final class InventoryAllocator
             ->get();
     }
 
-    /** @param Collection<int, ProductStock> $stocks */
+    /**
+     * The given rows are already locked FOR UPDATE, so their
+     * quantity/reserved_quantity are stable for this transaction; allocation is
+     * validated against that locked state (no re-read can change it).
+     *
+     * @param  Collection<int, ProductStock>  $stocks
+     */
     private function reserveItem(OrderItem $item, Collection $stocks): void
     {
         $remaining = $item->quantity;

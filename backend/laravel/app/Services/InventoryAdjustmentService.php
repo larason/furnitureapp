@@ -42,6 +42,8 @@ final class InventoryAdjustmentService
     ): array {
         $this->assertDirectionIsValid($reason, $quantityDelta);
 
+        $stockId = (int) $stock->getKey();
+
         $intent = [
             'inventory' => InventoryIdentifier::encode($stock),
             'quantity_delta' => $quantityDelta,
@@ -53,7 +55,7 @@ final class InventoryAdjustmentService
             self::ACTION,
             $idempotencyKey,
             $intent,
-            fn (): array => $this->apply($stock->getKey(), $quantityDelta, $reason, $actor, $requestId),
+            fn (): array => $this->apply($stockId, $quantityDelta, $reason, $actor, $requestId),
         )->body;
     }
 
