@@ -1262,7 +1262,9 @@ components:
       properties:
         quantity_delta:
           type: integer
-          description: Delta applied transactionally; new quantity must remain >=0; reason CLOSED; idempotent via Idempotency-Key
+          not:
+            const: 0
+          description: Non-zero delta (server calculates new_quantity = current + delta); new_quantity must remain >= 0 and >= reserved_quantity. STOCK_RECEIPT/RETURN require > 0; DAMAGE requires < 0; CORRECTION/AUDIT_ADJUSTMENT accept either sign. Unknown reason or invalid direction returns 422 INVALID_VALUE.
         reason:
           type: string
           enum:
@@ -3279,16 +3281,16 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
       description: Requires STAFF/ADMIN inventory.view. Retrieves one ProductStock/Inventory resource by Inventory ID (`inv_...`); unknown or non-Inventory identifiers return 404. Exact operational quantities and warehouse_location are exposed only here.
-  /inventory/{product}/adjust:
+  /inventory/{inventory}/adjust:
     post:
       operationId: INV-003
       tags:
       - Inventory
-      summary: Adjust inventory alias
+      summary: Adjust inventory
       security:
       - bearerAuth: []
       parameters:
-      - $ref: '#/components/parameters/ProductPath'
+      - $ref: '#/components/parameters/InventoryPath'
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -3318,7 +3320,9 @@ paths:
           $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
-      description: Requires STAFF/ADMIN inventory.manage
+        '404':
+          $ref: '#/components/responses/NotFound'
+      description: Requires STAFF/ADMIN inventory.manage and an Idempotency-Key header. Adjusts one existing ProductStock/Inventory resource by quantity_delta with a CLOSED reason; server computes new_quantity = current + delta, rejecting negative results and results below reserved_quantity, and never changes reserved_quantity/location/Variant ownership. Same key + same intent replays the original 200; same key + different quantity_delta/reason/target returns 409 DUPLICATE_OPERATION.
   /requests:
     post:
       operationId: REQ-001

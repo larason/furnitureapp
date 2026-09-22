@@ -935,7 +935,7 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 ### 30.1 No Generic Administrative PATCH
 
-- `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions: `POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/set-delivery-fee` (canonical `POST .../delivery-fee` per `§30.8`), `POST /inventory/{product}/adjust`, `POST /admin/staff/{user}/approve|suspend|reactivate`.
+- `PATCH /admin/orders/{id}` / `PATCH /staff/orders/{id}` / `PATCH /admin/users/{id}` that changes business state is **prohibited**. Use explicit controlled actions: `POST /orders/{order}/accept`, `POST /orders/{order}/ship`, `POST /orders/{order}/set-delivery-fee` (canonical `POST .../delivery-fee` per `§30.8`), `POST /inventory/{inventory}/adjust`, `POST /admin/staff/{user}/approve|suspend|reactivate`.
 - Mass-assignment of `role`, `permissions`, `account_state`, `audit actor`, `timestamps`, `totals` via generic body is rejected `422 INVALID_VALUE` `field: role`.
 
 ### 30.2 Default Deny & Least Privilege
@@ -955,7 +955,7 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 ### 30.5 Inventory Conventions
 
-- Inventory is `operational` not customer-editable. Control via `POST /inventory/{product}/adjust` with `{quantity_delta:int, reason: CLOSED}`; server calculates `new_quantity = current + quantity_delta` transactionally; `quantity` = units (not TZS). `quantity_delta` may be negative where business permits but resulting `new_quantity >=0` where prohibited.
+- Inventory is `operational` not customer-editable. Control via `POST /inventory/{inventory}/adjust` with `{quantity_delta:int, reason: CLOSED}`; server calculates `new_quantity = current + quantity_delta` transactionally; `quantity` = units (not TZS). `quantity_delta` is non-zero and may be negative only where the reason permits: `STOCK_RECEIPT`/`RETURN` require `> 0`, `DAMAGE` requires `< 0`, `CORRECTION`/`AUDIT_ADJUSTMENT` accept either sign; resulting `new_quantity >= 0` and `new_quantity >= reserved_quantity`; `reserved_quantity` is never changed. `Idempotency-Key` is required (same key + same intent replays `200`; different intent → `409 DUPLICATE_OPERATION`), and every success is durably audited.
 - Reasons CLOSED `STOCK_RECEIPT/CORRECTION/DAMAGE/RETURN/AUDIT_ADJUSTMENT`.
 
 ### 30.6 Delivery-Fee Conventions
@@ -1011,7 +1011,7 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
 
 ### 32.6 Canonical Routes and Alias Deprecation
 
-- Removed 10 alias paths `/staff/orders`, `/staff/orders/{order}`, `/staff/orders/{order}/accept`, `/staff/inventory`, `/staff/inventory/{inventory}`, `/staff/products`, `/staff/requests`, `/staff/requests/{request}`, `/staff/enquiries`, `/staff/enquiries/{enquiry}` and duplicate `POST /inventory/{inventory}` (kept `GET`) — canonical are `/orders`, `/inventory/{product}/adjust`, `/products`, `/requests`, `/enquiries`. Reduces attack surface, prevents divergent role checks. If alias needed later, `308` redirect to canonical with identical `Policy`.
+- Removed 10 alias paths `/staff/orders`, `/staff/orders/{order}`, `/staff/orders/{order}/accept`, `/staff/inventory`, `/staff/inventory/{inventory}`, `/staff/products`, `/staff/requests`, `/staff/requests/{request}`, `/staff/enquiries`, `/staff/enquiries/{enquiry}` and duplicate `POST /inventory/{inventory}` (kept `GET`) — canonical are `/orders`, `/inventory/{inventory}/adjust`, `/products`, `/requests`, `/enquiries`. Reduces attack surface, prevents divergent role checks. If alias needed later, `308` redirect to canonical with identical `Policy`.
 
 ### 32.7 IDOR and 404 Masking
 
@@ -1031,7 +1031,7 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
 
 ### 32.11 Rate Limiting (Abuse Protection)
 
-- All security-sensitive ops `429 + Retry-After` (standard header). Identified thresholds: `POST /requests|enquiries 3/min/IP anonymous 10/min/user`, `POST /checkout 5/min/user`, `POST /me/cart/items 30/min/user`, `POST /me/orders/{order}/cancel 5/min/user`, `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` `10/h` per `X-Upload-Token ID + parent resource (request/enquiry ID) + IP` for anonymous (scoped token, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `POST /inventory/{product}/adjust 20/min/staff`, `POST /admin/staff/* 30/min/admin`, `GET /products 100/min/IP`. Historical Laravel auth thresholds (`POST /auth/register 5/h/IP`, `POST /auth/login 10/min/IP`, `POST /auth/password/* 3/min/IP`) are **RETIRED** by Phase 4.1 — Clerk owns sign-up/sign-in/recovery throttling. Anonymous parent submissions (`REQ-001`/`ENQ-001`) require validation + rate-limit + not enumerating parents (no upload token); the scoped `X-Upload-Token` requirement applies only to anonymous attachment uploads (`REQ-007`/`ENQ-007`).
+- All security-sensitive ops `429 + Retry-After` (standard header). Identified thresholds: `POST /requests|enquiries 3/min/IP anonymous 10/min/user`, `POST /checkout 5/min/user`, `POST /me/cart/items 30/min/user`, `POST /me/orders/{order}/cancel 5/min/user`, `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` `10/h` per `X-Upload-Token ID + parent resource (request/enquiry ID) + IP` for anonymous (scoped token, no user key; `5MB` max `1` per parent) and `10/h per user` for authenticated, `POST /inventory/{inventory}/adjust 20/min/staff`, `POST /admin/staff/* 30/min/admin`, `GET /products 100/min/IP`. Historical Laravel auth thresholds (`POST /auth/register 5/h/IP`, `POST /auth/login 10/min/IP`, `POST /auth/password/* 3/min/IP`) are **RETIRED** by Phase 4.1 — Clerk owns sign-up/sign-in/recovery throttling. Anonymous parent submissions (`REQ-001`/`ENQ-001`) require validation + rate-limit + not enumerating parents (no upload token); the scoped `X-Upload-Token` requirement applies only to anonymous attachment uploads (`REQ-007`/`ENQ-007`).
 
 ### 32.12 CSRF, CORS, Transport, Cache
 

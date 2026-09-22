@@ -1,2019 +1,2599 @@
-# Phase 5.8 — Inventory Read Model
+# Phase 5.10 — Concurrency / Overselling Protection
 
 ## Purpose
 
-Implement the read-only operational inventory surface:
+Harden the inventory domain so concurrent requests cannot:
 
-```text id="w2lg43"
-INV-001
-GET /api/v1/inventory
+```text
+oversell stock
+lose inventory adjustments
+double-reserve units
+release the same reservation twice
+consume the same reservation twice
+violate reserved_quantity <= quantity
 ```
 
-and:
+This phase establishes the authoritative concurrency primitives that later Cart/Checkout/Order/Payment workflows must reuse.
 
-```text id="hya7ik"
-INV-002
-GET /api/v1/inventory/{inventory}
+It must build on:
+
+```text
+Phase 5.7 — Product availability
+Phase 5.8 — Inventory read model
+Phase 5.9 — Inventory mutation rules
 ```
 
-using the existing Group C inventory model:
-
-```text id="x2s3zd"
-Product
-    ↓
-ProductVariant
-        ↓
-ProductStock
-            ↓
-warehouse_location
-quantity
-reserved_quantity
-derived available_quantity
-```
-
-This phase is strictly read-only.
-
-Do not implement inventory adjustments yet.
+Do not redesign Group C inventory.
 
 ---
 
-# 1. Preserve Group C Inventory Architecture
+# 1. Core Correctness Requirement
 
-The authoritative inventory persistence model remains:
+The system must guarantee:
 
-```text id="83tj8k"
-product_stocks
-```
-
-with:
-
-```text id="l76oze"
-id
-product_variant_id
-warehouse_location
-quantity
-reserved_quantity
-created_at
-updated_at
-```
-
-and:
-
-```text id="6kn29c"
-available_quantity
-=
-quantity - reserved_quantity
-```
-
-derived, never persisted.
-
-Do not redesign this schema.
-
----
-
-# 2. Do Not Move Inventory to Product
-
-Do not add:
-
-```text id="5izhqb"
-products.quantity
-products.reserved_quantity
-products.available_quantity
-```
-
----
-
-# 3. Do Not Move Inventory to Variant
-
-Do not add:
-
-```text id="9tygoi"
-product_variants.quantity
-product_variants.reserved_quantity
-product_variants.available_quantity
-```
-
-Inventory remains Variant + location scoped.
-
----
-
-# 4. Read Authoritative Files First
-
-Before implementation inspect:
-
-```text id="2bgcbo"
-AGENTS.md
-docs/VISION.md
-docs/api/api-contract.md
-docs/api/api-resources.md
-docs/api/api-conventions.md
-docs/api/openapi.yaml
-docs/domain/business-rules.md
-docs/decisions.md
-```
-
-Also inspect current:
-
-```text id="8spqss"
-ProductStock
-ProductVariant
-Product
-inventory policies/permissions
-Phase 5.7 availability resolver
-```
-
-Use the latest repository state.
-
----
-
-# 5. Endpoint Scope
-
-Implement only:
-
-```text id="y62gwc"
-INV-001
-GET /api/v1/inventory
-```
-
-and:
-
-```text id="w55n28"
-INV-002
-GET /api/v1/inventory/{inventory}
-```
-
-Do not implement:
-
-```text id="ur3x9p"
-INV-003
-POST /api/v1/inventory/{product}/adjust
-```
-
-yet.
-
-That belongs to Phase 5.9.
-
----
-
-# 6. Authentication Required
-
-Unlike CAT-001..006, inventory endpoints are not public.
-
-Require authenticated Laravel-local identity resolved through the existing Clerk boundary.
-
-Anonymous request:
-
-```text id="z8v6pj"
-401 AUTHENTICATION_REQUIRED
-```
-
----
-
-# 7. Authorization
-
-Both read endpoints require:
-
-```text id="yfwgrl"
-inventory.view
-```
-
-through the existing Laravel authorization layer.
-
-Allowed operational actors:
-
-```text id="53anqt"
-STAFF
-ADMIN
-```
-
-subject to permission assignment.
-
-Do not authorize simply because role == STAFF.
-
-Permission remains authoritative.
-
----
-
-# 8. CUSTOMER Must Not Read Inventory
-
-CUSTOMER access to:
-
-```text id="vzir87"
-/api/v1/inventory
-```
-
-must return the existing unauthorized/forbidden behavior.
-
-Do not expose operational quantities to Customers.
-
----
-
-# 9. Public Catalog Separation
-
-CAT APIs expose only:
-
-```text id="m4okj3"
-availability
-stock_indicator
-```
-
-They must never expose:
-
-```text id="hmwtng"
-quantity
-reserved_quantity
-available_quantity
-warehouse_location
-```
-
-Phase 5.8 must not weaken that boundary.
-
----
-
-# 10. Operational Read Model
-
-Inventory read APIs may expose exact operational quantities because they are protected by:
-
-```text id="5iux29"
-authentication
-+
-inventory.view
-```
-
-This is intentional.
-
----
-
-# 11. Read Model Source
-
-The read model must derive from:
-
-```text id="i5htg9"
-ProductStock
-→ ProductVariant
-→ Product
-```
-
-Do not create a second inventory table or materialized domain model.
-
----
-
-# 12. Inventory Row Identity
-
-Treat one `ProductStock` row as one inventory resource.
-
-That means:
-
-```text id="jyt5bs"
-Inventory resource
-=
-one Variant
-at one warehouse/location
-```
-
-This matches the Group C uniqueness rule:
-
-```text id="1ea3dp"
-UNIQUE(product_variant_id, warehouse_location)
-```
-
----
-
-# 13. `{inventory}` Resolution
-
-`INV-002` path is frozen as:
-
-```text id="s2gi6t"
-/inventory/{inventory}
-```
-
-Resolve `{inventory}` using the stable public Inventory resource ID.
-
-Do not reinterpret `{inventory}` as:
-
-```text id="vhyk64"
-product slug
-product ID
-variant SKU
-warehouse name
-```
-
-unless newer authoritative docs explicitly changed the route.
-
----
-
-# 14. Contract Ambiguity — Resolve Explicitly
-
-Current docs contain wording that says:
-
-```text id="kb3t09"
-INV-002
-"Get inventory by product/variant"
-```
-
-while the actual path is:
-
-```text id="0huxf4"
-/inventory/{inventory}
-```
-
-Do not implement ambiguous lookup semantics.
-
-Preferred V1 clarification:
-
-```text id="9p30wp"
-INV-002
-retrieves one ProductStock / Inventory resource
-by Inventory ID.
-```
-
-Product/Variant lookup belongs in INV-001 filters if approved.
-
-Record this clarification in the existing consolidated docs.
-
----
-
-# 15. Inventory Resource Contract Review
-
-Current OpenAPI Inventory representation contains:
-
-```text id="97ji93"
-id
-product_id
-variant_id
-quantity
-reserved_quantity
-available_quantity
-updated_at
-```
-
-Review this against the actual Group C schema before implementation.
-
----
-
-# 16. `product_id` Is Derived
-
-`product_stocks` does not have:
-
-```text id="npws0e"
-product_id
-```
-
-The API may expose `product_id` by deriving:
-
-```text id="x7rtnj"
-ProductStock
-→ ProductVariant
-→ Product
-```
-
-Do not add `product_id` to `product_stocks`.
-
----
-
-# 17. `variant_id` Is Derived from FK
-
-Expose:
-
-```text id="7g63nh"
-variant_id
-```
-
-from:
-
-```text id="0nlgpd"
-product_variant_id
-```
-
-through the normal public opaque ID representation.
-
-Do not expose raw DB FK values if API IDs are transformed.
-
----
-
-# 18. Variant ID Nullability Contract Gap
-
-Group C requires every ProductStock row to belong to one Variant.
-
-Therefore operational Inventory rows should naturally have:
-
-```text id="5dprrw"
-variant_id != null
-```
-
-The current OpenAPI allows `variant_id: null`.
-
-Do not silently fabricate nullable semantics.
-
-Review:
-
-```text id="f6qcnx"
-api-resources.md
-api-contract.md
-openapi.yaml
-```
-
-and minimally correct the contract if Group C remains authoritative.
-
-Preferred interpretation:
-
-```text id="s9b1dt"
-Inventory.variant_id
-required
-non-null
-```
-
-because ProductStock cannot exist without ProductVariant.
-
----
-
-# 19. `warehouse_location` Contract Gap
-
-Group C distinguishes stock rows using:
-
-```text id="w0n0sz"
-warehouse_location
-```
-
-Yet current OpenAPI Inventory does not expose it.
-
-This is operationally significant because:
-
-```text id="z79zu4"
-Variant A / main
-Variant A / dar-es-salaam
-```
-
-are two distinct inventory records.
-
----
-
-# 20. Resolve Location Visibility Deliberately
-
-Before coding INV-001/002, determine whether the latest `api-resources.md` already exposes `warehouse_location`.
-
-If yes:
-
-follow it.
-
-If docs remain inconsistent:
-
-preferred Phase 5.8 clarification is to expose:
-
-```text id="uvif69"
-warehouse_location
-```
-
-on the STAFF/ADMIN Inventory representation.
-
-Reason:
-
-without it, two stock rows for the same Variant cannot be meaningfully distinguished operationally.
-
-Do not expose location publicly in CAT endpoints.
-
----
-
-# 21. Do Not Add Warehouse Entity
-
-Even if `warehouse_location` becomes part of Inventory API:
-
-do not create:
-
-```text id="8tt77m"
-warehouses table
-Warehouse model
-warehouse address
-regions
-delivery zones
-```
-
-V1 location remains the existing bounded machine string.
-
----
-
-# 22. Inventory Representation
-
-Preferred operational Inventory resource after contract reconciliation:
-
-```text id="nxip8s"
-id
-product_id
-variant_id
-warehouse_location
-quantity
-reserved_quantity
-available_quantity
-updated_at
-```
-
-Do not automatically add Product/Variant full objects unless current contract explicitly requires them.
-
----
-
-# 23. Example Shape
-
-Conceptually:
-
-```json id="1rfiwj"
-{
-  "id": "inv_...",
-  "product_id": "prod_...",
-  "variant_id": "var_...",
-  "warehouse_location": "dar-es-salaam",
-  "quantity": 12,
-  "reserved_quantity": 3,
-  "available_quantity": 9,
-  "updated_at": "2026-09-22T09:00:00Z"
-}
-```
-
-Use the actual opaque ID conventions.
-
----
-
-# 24. `available_quantity`
-
-Always calculate:
-
-```text id="uc4bsy"
-quantity - reserved_quantity
-```
-
-Do not store it.
-
-Do not accept it from clients.
-
----
-
-# 25. Preserve Inventory Invariant
-
-Existing invariant remains:
-
-```text id="ux5fbc"
+```text
 0 <= reserved_quantity <= quantity
 ```
 
-Phase 5.8 reads it.
+under concurrency.
 
-Do not redesign or weaken enforcement.
+And:
+
+```text
+available_quantity
+=
+quantity - reserved_quantity
+```
+
+must never become negative.
 
 ---
 
-# 26. Read Model Is Current State
+# 2. Overselling Definition
 
-INV-001/002 expose the current operational inventory state.
+Overselling occurs when concurrent operations successfully reserve or consume more units than are physically available.
 
-They are not:
+Example:
 
-```text id="9m34yf"
-inventory history
-stock ledger
-adjustment audit log
-reservation history
+```text
+quantity = 1
+reserved_quantity = 0
+available = 1
+
+Customer A wants 1
+Customer B wants 1
+```
+
+Exactly one reservation may succeed.
+
+The other must fail safely.
+
+Final state must never become:
+
+```text
+reserved_quantity = 2
+```
+
+or:
+
+```text
+quantity < 0
 ```
 
 ---
 
-# 27. No Historical Reconstruction
+# 3. Read Current Authoritative State First
 
-Do not infer:
+Before implementation inspect:
 
-```text id="zqmlnn"
-how stock became 12
-who changed it
-previous quantities
+```text
+AGENTS.md
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/domain/business-rules.md
+docs/decisions.md
+docs/api/openapi.yaml
 ```
 
-from timestamps.
+Then inspect current implementations of:
 
-History/audit belongs to later mutation/audit phases.
+```text
+ProductStock
+InventoryAdjustmentService
+idempotency infrastructure
+audit infrastructure
+Product/Variant availability services
+cart/order schemas
+```
+
+Do not implement from assumptions.
 
 ---
 
-# 28. INV-001 Collection
+# 4. Preserve Group C Model
 
-Implement:
+Inventory remains:
 
-```http id="8fji6k"
-GET /api/v1/inventory
+```text
+ProductStock
+(
+    product_variant_id,
+    warehouse_location,
+    quantity,
+    reserved_quantity
+)
 ```
 
-as an operational paginated collection.
+Do not introduce:
+
+```text
+products.stock
+product_variants.stock
+available_quantity column
+reservation_count column
+```
 
 ---
 
-# 29. Pagination
+# 5. Concurrency Strategy
 
-Use existing global conventions:
+For V1, use **database transactions with pessimistic row locking** for authoritative inventory mutations.
 
-```text id="9cn7l6"
-page
-per_page
+Preferred Laravel mechanism:
+
+```text
+DB::transaction(...)
++
+lockForUpdate()
+```
+
+on the affected ProductStock rows.
+
+Do not build a distributed lock service.
+
+Do not introduce Redis locks for inventory correctness.
+
+The database is the inventory authority.
+
+---
+
+# 6. Why Pessimistic Locking
+
+The operations require authoritative read-modify-write semantics:
+
+```text
+read current quantity/reserved
+validate
+calculate
+persist
+```
+
+Pessimistic row locking is simple and appropriate for the expected V1 transaction volume.
+
+Do not introduce optimistic version columns unless a concrete need appears.
+
+---
+
+# 7. No `SELECT then UPDATE` Outside Lock
+
+Forbidden:
+
+```text
+SELECT quantity, reserved_quantity
+COMMIT / leave transaction
+
+if available >= requested:
+    UPDATE reserved_quantity
+```
+
+Two requests can both observe the same available stock.
+
+All state-dependent validation must use the locked authoritative row.
+
+---
+
+# 8. Locked Read Pattern
+
+Conceptually:
+
+```text
+DB::transaction(function () {
+    $stock = ProductStock::query()
+        ->whereKey(...)
+        ->lockForUpdate()
+        ->firstOrFail();
+
+    // validate against locked state
+    // mutate
+    // persist
+});
+```
+
+Use actual project abstractions.
+
+Do not put this directly in controllers.
+
+---
+
+# 9. Inventory Adjustment Concurrency
+
+Phase 5.9 `INV-003` must now be hardened.
+
+Concurrent adjustments to the same Inventory row must serialize through row locking.
+
+Example:
+
+```text
+quantity = 10
+
+Request A: +5
+Request B: -3
+```
+
+Final quantity must reflect both successful operations exactly once:
+
+```text
+12
+```
+
+not:
+
+```text
+15
+7
+```
+
+from a lost update.
+
+---
+
+# 10. Adjustment Uses Locked State
+
+Inside the lock:
+
+```text
+new_quantity
+=
+locked_current_quantity + quantity_delta
+```
+
+Do not calculate from a stale model instance loaded before the transaction.
+
+---
+
+# 11. Revalidate Reserved Boundary Under Lock
+
+The rule:
+
+```text
+new_quantity >= reserved_quantity
+```
+
+must use the locked `reserved_quantity`.
+
+Example:
+
+```text
+operator loads quantity=10 reserved=2
+checkout reserves 6
+operator later tries delta=-5
+```
+
+At mutation time the locked state may be:
+
+```text
+quantity=10 reserved=8
+```
+
+Therefore:
+
+```text
+new_quantity=5
+```
+
+must fail.
+
+Do not trust earlier reads.
+
+---
+
+# 12. Checkout Reservation Primitive
+
+Create a reusable inventory-domain primitive for reservation.
+
+Conceptually:
+
+```text
+reserve(
+    variant,
+    quantity
+)
+```
+
+or:
+
+```text
+InventoryReservationService
+```
+
+This primitive is infrastructure for later Group G checkout.
+
+Do not implement the entire `/checkout` endpoint here.
+
+---
+
+# 13. Reservation Formula
+
+For each locked Inventory row:
+
+```text
+available
+=
+quantity - reserved_quantity
+```
+
+Reservation succeeds only if:
+
+```text
+requested <= available
+```
+
+Then:
+
+```text
+reserved_quantity
+=
+reserved_quantity + requested
+```
+
+Physical:
+
+```text
+quantity
+```
+
+remains unchanged.
+
+---
+
+# 14. Reservation Failure
+
+If:
+
+```text
+requested > available
+```
+
+fail with:
+
+```text
+422 INSUFFICIENT_STOCK
+```
+
+or the exact frozen checkout/domain mapping.
+
+Do not partially reserve.
+
+---
+
+# 15. Multi-Location Inventory
+
+A Variant may have multiple ProductStock rows.
+
+Phase 5.10 must define deterministic reservation behavior across them.
+
+Do not treat aggregate availability as sufficient without deciding which rows receive reservations.
+
+---
+
+# 16. No Client Location Selection
+
+Customer must never choose:
+
+```text
+warehouse_location
+```
+
+during checkout.
+
+Location selection is server-controlled.
+
+---
+
+# 17. Deterministic Location Allocation
+
+If no newer repository rule exists, use a deterministic V1 strategy.
+
+Preferred:
+
+```text
+warehouse_location ASC
+then inventory row id ASC
+```
+
+Reserve from rows in that stable order.
+
+Do not use arbitrary database order.
+
+---
+
+# 18. Reservation May Span Locations
+
+If:
+
+```text
+main available = 2
+dar-es-salaam available = 3
+requested = 4
+```
+
+V1 may reserve:
+
+```text
+main = 2
+dar-es-salaam = 2
+```
+
+if the current checkout contract permits aggregate multi-location fulfillment.
+
+Before implementing this, inspect existing business rules.
+
+If the repository requires fulfillment from one location only:
+
+follow that instead.
+
+Do not invent cross-location fulfillment silently.
+
+---
+
+# 19. If Multi-Location Allocation Is Undefined
+
+Do not guess.
+
+Record a minimal Group E decision before implementing checkout-facing reservation.
+
+Preferred operationally simple rule for V1:
+
+```text
+reserve deterministically across existing inventory rows
+until requested quantity is satisfied
+```
+
+only if no fulfillment-location contract contradicts it.
+
+---
+
+# 20. Lock All Candidate Rows Before Allocation
+
+When reservation may span several locations:
+
+load the candidate ProductStock rows inside one transaction using:
+
+```text
+lockForUpdate()
+```
+
+before calculating the allocation.
+
+Do not lock one row, release logic, then discover another row later.
+
+---
+
+# 21. Lock Ordering
+
+Always lock multiple ProductStock rows in deterministic order:
+
+```text
+product_variant_id ASC
+warehouse_location ASC
+id ASC
+```
+
+or the most appropriate stable order.
+
+This reduces deadlock risk.
+
+---
+
+# 22. Multi-Item Checkout Deadlock Prevention
+
+A checkout may contain multiple Variants.
+
+Do not lock stock rows in cart insertion order.
+
+Normalize target Variant IDs and lock in deterministic order.
+
+Example:
+
+```text
+Variant 2
+Variant 8
+Variant 15
+```
+
+every concurrent checkout should acquire locks in the same order.
+
+---
+
+# 23. All-or-Nothing Reservation
+
+For checkout containing:
+
+```text
+Variant A x2
+Variant B x3
+```
+
+if A can reserve but B cannot:
+
+rollback A.
+
+Final result:
+
+```text
+no reservation
+no Order
+cart unchanged
+```
+
+No partial checkout.
+
+---
+
+# 24. Reservation Transaction Boundary
+
+Future checkout transaction must encompass:
+
+```text
+validate Product state
+validate Variant state
+lock inventory
+validate stock
+reserve stock
+recalculate price
+create Order
+create OrderItems
+create status history
+clear cart
+persist idempotency success
+```
+
+as required by the checkout contract.
+
+Phase 5.10 implements/reuses the inventory portion, not full checkout orchestration.
+
+---
+
+# 25. Reservation Is Not Consumption
+
+At successful checkout:
+
+```text
+quantity
+```
+
+does not decrease.
+
+Instead:
+
+```text
+reserved_quantity += requested
+```
+
+This preserves:
+
+```text
+physical stock
+```
+
+until payment success.
+
+---
+
+# 26. Reservation Lifecycle
+
+Canonical lifecycle:
+
+```text
+checkout
+→ reserve
+
+payment success
+→ consume reservation
+
+cancellation/failure/expiry
+→ release reservation
+```
+
+Do not invent a second stock lifecycle.
+
+---
+
+# 27. Release Primitive
+
+Provide a reusable inventory-domain primitive for:
+
+```text
+release reservation
+```
+
+Later callers include:
+
+```text
+customer cancellation
+admin cancellation
+payment failure
+system expiry
+```
+
+---
+
+# 28. Release Formula
+
+For each reserved quantity:
+
+```text
+reserved_quantity
+=
+reserved_quantity - release_quantity
+```
+
+Physical quantity remains unchanged.
+
+---
+
+# 29. Prevent Double Release
+
+Release must never allow:
+
+```text
+reserved_quantity < 0
+```
+
+If the same business event retries:
+
+idempotency/state validation must prevent a second release.
+
+---
+
+# 30. Release Must Be Atomic with Business Transition
+
+Future cancellation/failure workflow must execute:
+
+```text
+order state change
++
+reservation release
++
+status history
++
+audit/idempotency
+```
+
+atomically.
+
+Do not provide a public free-floating release endpoint.
+
+---
+
+# 31. Consumption Primitive
+
+Provide a reusable inventory-domain primitive for payment success.
+
+Consumption converts held units into sold units.
+
+---
+
+# 32. Consumption Formula
+
+For reservation quantity `q`:
+
+```text
+quantity
+=
+quantity - q
+
+reserved_quantity
+=
+reserved_quantity - q
+```
+
+Therefore:
+
+```text
+available_quantity
+```
+
+remains unchanged by the conversion.
+
+---
+
+# 33. Example Consumption
+
+Before payment:
+
+```text
+quantity = 10
+reserved = 3
+available = 7
+```
+
+Consume 3:
+
+```text
+quantity = 7
+reserved = 0
+available = 7
+```
+
+Correct.
+
+---
+
+# 34. Prevent Double Consumption
+
+Repeated payment-success event must not consume twice.
+
+Idempotent webhook/payment processing in Group H must cooperate with inventory state transition.
+
+Phase 5.10 should make the inventory primitive safe to call inside such an idempotent transaction.
+
+---
+
+# 35. Reservation Ownership Problem
+
+Do not decrement arbitrary `reserved_quantity` without knowing which Order owns the reservation.
+
+Inspect current schema/contracts carefully.
+
+If reservations are only represented as an aggregate integer today:
+
+document the limitation.
+
+---
+
+# 36. Do Not Invent a Reservation Table Without Review
+
+Group C intentionally deferred a reservation table.
+
+Do not automatically introduce:
+
+```text
+inventory_reservations
+```
+
+unless correctness of release/consume cannot be guaranteed otherwise.
+
+---
+
+# 37. Reservation Traceability
+
+Check whether existing OrderItems + order state are sufficient to determine:
+
+```text
+which Variant
+how many units
+```
+
+for release/consumption.
+
+If yes, reuse OrderItems as the business reservation record and `ProductStock.reserved_quantity` as the aggregate lock state.
+
+---
+
+# 38. Location Allocation Traceability
+
+If reservations span multiple locations, OrderItems alone may not record:
+
+```text
+which location supplied which units
+```
+
+This is a real correctness issue for later release/consume.
+
+Do not ignore it.
+
+---
+
+# 39. Minimal Location Allocation Persistence
+
+If multi-location reservation is allowed and there is no existing way to reconstruct allocation:
+
+introduce the smallest persistence needed to record reservation allocation.
+
+For example conceptually:
+
+```text
+order_item_inventory_allocations
 ```
 
 with:
 
-```text id="ybyfn0"
-page >= 1
-per_page default 20
-per_page max 100
+```text
+order_item_id
+product_stock_id
+quantity
 ```
 
+only if necessary.
+
+Do not add a generic warehouse-management subsystem.
+
 ---
 
-# 30. Pagination Metadata
+# 40. Prefer No New Table If One-Location Rule Exists
 
-Return:
+If current business rules guarantee each Variant is reserved from exactly one location:
 
-```text id="5jr2l3"
-meta.pagination.current_page
-meta.pagination.per_page
-meta.pagination.total
-meta.pagination.last_page
-meta.pagination.has_next
-meta.pagination.has_previous
+a new allocation table may be unnecessary.
+
+Use the existing rule.
+
+Do not create infrastructure before checking.
+
+---
+
+# 41. Allocation Record Requirements
+
+If a reservation-allocation table is genuinely required:
+
+it must be:
+
+```text
+server-created
+immutable through ordinary APIs
+foreign-keyed
+integer quantity > 0
 ```
 
-No raw Laravel paginator fields.
+and must not be exposed to customers unless later required.
 
 ---
 
-# 31. Deterministic Ordering
+# 42. Allocation Is Not Stock Ledger
 
-If no more specific frozen inventory sort exists:
+Do not turn allocation persistence into:
 
-use:
-
-```text id="uy4m2w"
-updated_at DESC
-id ASC
+```text
+stock movement history
+warehouse transfer system
+generic ledger
 ```
 
-only if consistent with current operational collection conventions.
-
-If docs define another inventory ordering, use that.
-
-Do not use random DB order.
+Keep it narrowly tied to reservation correctness.
 
 ---
 
-# 32. Do Not Invent User Sorting
+# 43. Concurrency and Inventory Adjustment Interaction
 
-Do not add:
+Inventory adjustment and checkout reservation operate on the same ProductStock rows.
 
-```text id="5tljna"
-?sort=quantity
-?sort=available_quantity
-?sort=warehouse_location
+Both must acquire the same row locks.
+
+This guarantees:
+
+```text
+adjust vs reserve
 ```
 
-unless already approved by current API contract.
-
-Phase 5.8 is not a query-language expansion phase.
+cannot independently validate stale state.
 
 ---
 
-# 33. Inventory Filtering
+# 44. Race Example — Damage vs Checkout
 
-Inspect the frozen INV-001 contract before adding filters.
+Initial:
 
-Do not assume CAT-001 query parameters apply to inventory.
-
----
-
-# 34. Preferred Minimal Filters if Contract Requires Clarification
-
-If current docs say "paginated, filtered" but do not define exact filters, resolve minimally around existing identifiers:
-
-```text id="pxt0u6"
-product
-variant
-warehouse_location
+```text
+quantity = 5
+reserved = 0
 ```
 
-only if necessary for operational usability.
+Concurrent:
 
-Do not add arbitrary field filtering.
-
----
-
-# 35. Product Filter
-
-If approved:
-
-```text id="5ait50"
-?product={product_id|slug}
+```text
+checkout wants 5
+operator DAMAGE -2
 ```
 
-should resolve through existing Product resolver semantics where appropriate.
+Valid outcomes are serialized.
 
-Do not create a new Product identity convention.
+Either:
 
----
-
-# 36. Variant Filter
-
-If approved:
-
-```text id="4x15n5"
-?variant={variant_id}
+```text
+damage first:
+quantity=3
+checkout fails insufficient stock
 ```
 
-must use stable Variant ID.
+or:
 
-Do not resolve by SKU unless contract explicitly permits it.
-
----
-
-# 37. Location Filter
-
-If approved:
-
-```text id="c9ngtf"
-?warehouse_location=dar-es-salaam
+```text
+checkout first:
+reserved=5
+damage -2 fails because new quantity 3 < reserved 5
 ```
-
-must be exact bounded string matching.
-
-Do not implement fuzzy location searching.
-
----
-
-# 38. No Arbitrary Query Columns
-
-Reject or ignore according to global conventions:
-
-```text id="hy05of"
-?reserved_quantity_gt=
-?stock_lt=
-?product_name=
-?warehouse_contains=
-```
-
-unless explicitly contracted.
-
----
-
-# 39. No Public Availability Filter Reuse
-
-Do not automatically reuse:
-
-```text id="c6s46p"
-?availability=
-```
-
-from CAT-001.
-
-Inventory read model deals in exact operational quantities, not public coarse availability.
-
-Only add if the frozen INV contract explicitly defines it.
-
----
-
-# 40. No Product Type Filter by Default
-
-Do not add:
-
-```text id="vefcqx"
-?product_type=
-```
-
-unless existing operational contract explicitly includes it.
-
----
-
-# 41. INV-002 Detail
-
-Implement:
-
-```http id="1j2sya"
-GET /api/v1/inventory/{inventory}
-```
-
-as one operational Inventory resource.
-
----
-
-# 42. Unknown Inventory
-
-Return:
-
-```text id="886hdp"
-404 RESOURCE_NOT_FOUND
-```
-
-using canonical error envelope.
-
----
-
-# 43. Authorization Before Serialization
-
-Do not serialize Inventory data before confirming:
-
-```text id="2md0ii"
-authenticated
-inventory.view authorized
-```
-
-Operational quantities are sensitive business data.
-
----
-
-# 44. Staff Visibility
-
-Staff with:
-
-```text id="qywko8"
-inventory.view
-```
-
-may read operational inventory.
-
-Staff without permission:
-
-```text id="ezjm8z"
-403 FORBIDDEN
-```
-
-according to current authorization policy.
-
----
-
-# 45. Admin Visibility
-
-Admin does not receive a universal bypass through public assumptions.
-
-Use the existing permission system.
-
-If ADMIN receives `inventory.view` by seeded permissions, authorize through that.
-
----
-
-# 46. CUSTOMER Isolation
-
-Customer must never access exact stock values.
-
-Add explicit tests.
-
----
-
-# 47. Authentication Failure
-
-Anonymous:
-
-```text id="316edh"
-401
-```
-
-Do not return:
-
-```text id="2sdqgd"
-404
-```
-
-merely to hide the route.
-
-This is a protected operational endpoint.
-
----
-
-# 48. Cache Control
-
-Inventory endpoints contain operational state.
-
-Use:
-
-```text id="6qrcrf"
-private
-no-store
-```
-
-or the repository's current protected operational cache policy.
-
-Never mark:
-
-```text id="2lvsxg"
-public
-```
-
-or CDN-cache inventory responses.
-
----
-
-# 49. No CAT Resource Reuse if It Leaks Shape
-
-Do not reuse public Product resources to serialize Inventory if that causes unnecessary catalog fields.
-
-Inventory should have an explicit operational resource.
-
----
-
-# 50. InventoryResource
-
-Create/use an explicit resource such as:
-
-```text id="eldb33"
-InventoryResource
-```
-
-Do not serialize ProductStock directly.
-
----
-
-# 51. Do Not Use `toArray()`
 
 Never:
 
-```php id="3p287q"
-return $stock->toArray();
-```
-
-Operational resources still require allow-listed fields.
-
----
-
-# 52. No Internal DB FK Leakage
-
-Do not expose raw:
-
-```text id="fie1mr"
-product_variant_id
-```
-
-if public API uses:
-
-```text id="y23bzw"
-variant_id
-```
-
-Use the contracted name.
-
----
-
-# 53. No Created Timestamp Unless Contracted
-
-Current Inventory schema requires:
-
-```text id="1q8jtm"
-updated_at
-```
-
-but not necessarily:
-
-```text id="hmamvr"
-created_at
-```
-
-Do not add created_at opportunistically.
-
----
-
-# 54. Product ID Derivation Efficiency
-
-Avoid one Product query per Inventory row.
-
-Use:
-
-```text id="udixh0"
-ProductStock
-→ eager-loaded ProductVariant
-→ Product
-```
-
-or joins/subqueries as appropriate.
-
----
-
-# 55. N+1 Prevention
-
-INV-001 must not produce:
-
-```text id="0hxnlg"
-1 query for inventory
-+
-N queries for variants
-+
-N queries for products
-```
-
-Use bounded eager loading.
-
----
-
-# 56. Quantity Semantics
-
-`quantity` means:
-
-```text id="uf4kmj"
-physical units owned at this location
-```
-
-Do not reinterpret it as:
-
-```text id="832p38"
-sellable units
-available units
-ordered units
+```text
+quantity=3
+reserved=5
 ```
 
 ---
 
-# 57. Reserved Quantity
+# 45. Race Example — Two Adjustments
 
-`reserved_quantity` means:
+Initial:
 
-```text id="u1psrz"
-units currently reserved and unavailable
-for another reservation/consumption
+```text
+quantity=10
 ```
 
-It is operational state.
+Concurrent:
 
----
-
-# 58. Available Quantity
-
-`available_quantity` means:
-
-```text id="0qi1wj"
-quantity - reserved_quantity
+```text
++5
+-3
 ```
 
-at that specific inventory row/location.
+Both may succeed sequentially.
 
-Do not aggregate it in the row representation.
+Final:
 
----
-
-# 59. Product-Level Aggregate Is Separate
-
-Phase 5.7 may aggregate inventory across active Variants for public availability.
-
-INV-001/002 should still expose the underlying operational row values.
-
-Do not replace location rows with Product-level totals.
-
----
-
-# 60. Do Not Hide Zero-Stock Rows
-
-Operational inventory lists should include legitimate rows where:
-
-```text id="ymlqra"
-quantity = 0
-reserved_quantity = 0
-available_quantity = 0
+```text
+12
 ```
 
-unless contract explicitly filters them.
-
-A zero-stock row is meaningful operational state.
+No lost update.
 
 ---
 
-# 61. Inactive Product/Variant Operational Read
+# 46. Race Example — Two Checkouts
 
-Unlike public CAT endpoints, operational inventory may need to show stock attached to:
+Initial:
 
-```text id="a6zjrx"
-inactive Product
-inactive Variant
-unpublished Product
+```text
+quantity=1
+reserved=0
 ```
 
-Do not automatically reuse public visibility scope.
+Two checkout reservation attempts each request one.
 
----
+Expected:
 
-# 62. Important Separation
-
-Public catalog visibility:
-
-```text id="yapmdn"
-active + published + not deleted
+```text
+one succeeds
+one fails INSUFFICIENT_STOCK
 ```
 
-Operational inventory visibility:
+Final:
 
-```text id="zvwmvc"
-authorized inventory record
-```
-
-These are different.
-
-Do not hide operational stock merely because the catalog Product is unpublished.
-
----
-
-# 63. Soft-Deleted Product Consideration
-
-Inspect FK/soft-delete semantics.
-
-If a Product is soft-deleted but Variant/stock still exists:
-
-operational inventory read may still need it for reconciliation.
-
-Do not automatically scope through `Product::public()`.
-
-Use current business/domain contract.
-
----
-
-# 64. No Product Restoration Logic
-
-Reading inventory for archived/inactive records does not imply restoring Products.
-
-No mutation belongs here.
-
----
-
-# 65. MADE_TO_ORDER Rows
-
-Phase 5.7 says MADE_TO_ORDER public availability ignores stock.
-
-However, if ProductStock rows exist operationally for a MADE_TO_ORDER Product:
-
-INV-001/002 may still display them.
-
-Do not hide or reinterpret the physical stock table.
-
----
-
-# 66. No Public Stock Indicator Needed
-
-Operational Inventory resource does not need:
-
-```text id="k3tege"
-availability
-stock_indicator
-```
-
-unless the frozen Inventory contract explicitly includes them.
-
-It already exposes exact quantities.
-
-Avoid redundant representation.
-
----
-
-# 67. No Inventory Calculation Duplication
-
-Reuse:
-
-```text id="k2rila"
-ProductStock.available_quantity
-```
-
-or equivalent authoritative domain accessor.
-
-Do not rewrite:
-
-```text id="w14zxr"
-quantity - reserved_quantity
-```
-
-in multiple resources/controllers.
-
----
-
-# 68. Read-Only Means No Locks Needed
-
-INV-001 and INV-002 are observational reads.
-
-Do not add:
-
-```text id="bar2f5"
-SELECT ... FOR UPDATE
-pessimistic locks
-transactions solely for reading
-```
-
-Normal consistent reads are sufficient.
-
----
-
-# 69. Snapshot Nature
-
-Inventory values are point-in-time operational reads.
-
-The response does not guarantee the quantities remain unchanged after the request.
-
-Document this if needed.
-
----
-
-# 70. No Checkout Guarantee
-
-Even if INV-002 says:
-
-```text id="sbsu2f"
-available_quantity = 5
-```
-
-checkout later must still revalidate inventory transactionally.
-
-Do not treat read data as reservation authority.
-
----
-
-# 71. No Mutation Through GET
-
-GET must never:
-
-```text id="ypo7vq"
-reserve stock
-adjust stock
-normalize quantities
-create missing stock rows
-touch timestamps
+```text
+quantity=1
+reserved=1
+available=0
 ```
 
 ---
 
-# 72. Missing Stock Row
+# 47. Race Example — Release vs Payment Success
 
-Do not auto-create inventory when a Variant has no ProductStock rows.
+Order reservation exists:
 
-Absence remains absence.
-
----
-
-# 73. INV-001 Lists Records, Not Every Variant
-
-Do not fabricate zero-valued Inventory resources for Variants that have no ProductStock rows unless contract explicitly defines that projection.
-
-Preferred:
-
-```text id="f5cb35"
-INV-001
-lists persisted inventory rows.
+```text
+quantity=10
+reserved=2
 ```
 
----
+Concurrent:
 
-# 74. No Inventory Aggregation Table
-
-Do not create:
-
-```text id="ng7o4n"
-inventory_summary
-product_inventory
-variant_inventory_totals
+```text
+payment success consume
+cancellation release
 ```
 
-for Phase 5.8.
+Only the valid Order transition may win.
+
+Inventory mutation must be coupled to authoritative Order state.
+
+Do not allow both inventory actions to succeed independently.
 
 ---
 
-# 75. Search
+# 48. Order Locking Dependency
 
-Do not automatically implement full-text search over inventory.
+When future workflows mutate Order state and inventory together:
 
-Phase 5.5 FULLTEXT belongs to public Product discovery.
+lock the Order and relevant ProductStock rows in one deterministic transaction strategy.
 
-Inventory does not need Algolia/MySQL FULLTEXT.
-
----
-
-# 76. Inventory Query Should Be Simple
-
-Expected query shape:
-
-```text id="9ho2he"
-authorized ProductStock rows
-→ optional approved exact filters
-→ deterministic sort
-→ pagination
-→ InventoryResource
-```
+Do not mutate stock independently of Order state validation.
 
 ---
 
-# 77. Rate Limiting
+# 49. Lock Ordering Across Domains
 
-Use the existing protected operational/read limiter appropriate for Staff/Admin.
-
-Do not use public-read limits.
-
-Do not invent a new inventory-specific rate limiter unless current Phase 4.11 categories require one.
-
----
-
-# 78. Error Contract
-
-Use canonical errors.
-
-Do not return:
-
-```json id="5uew0o"
-{"message":"No inventory"}
-```
-
-as an ad hoc response.
-
----
-
-# 79. Empty Inventory Collection
-
-Valid empty list:
-
-```json id="k3vufm"
-{
-  "data": [],
-  "meta": {
-    "pagination": {
-    }
-  }
-}
-```
-
-Do not return 404.
-
----
-
-# 80. Beyond Last Page
-
-Same global convention:
-
-```text id="xg153w"
-200
-data = []
-```
-
-with valid pagination metadata.
-
----
-
-# 81. Tests — Authentication
-
-Test:
-
-```text id="hc07te"
-anonymous INV-001
-→ 401
-
-anonymous INV-002
-→ 401
-```
-
----
-
-# 82. Tests — CUSTOMER Forbidden
-
-Authenticated CUSTOMER:
-
-```text id="9mndvq"
-INV-001
-INV-002
-```
-
-must not receive inventory data.
-
----
-
-# 83. Tests — STAFF Permission
-
-STAFF with:
-
-```text id="266amg"
-inventory.view
-```
-
-can access both endpoints.
-
----
-
-# 84. Tests — STAFF Without Permission
-
-Must fail according to current authorization contract.
-
----
-
-# 85. Tests — ADMIN
-
-ADMIN with appropriate seeded permission can read inventory.
-
-Do not rely on a universal role bypass.
-
----
-
-# 86. Tests — Collection Envelope
-
-Verify:
-
-```text id="alj1wn"
-data
-meta.pagination
-```
-
-and no raw paginator internals.
-
----
-
-# 87. Tests — Pagination
-
-Cover:
-
-```text id="up322q"
-default page
-custom per_page
-second page
-beyond-last page
-empty dataset
-```
-
----
-
-# 88. Tests — Inventory Resource Fields
-
-Assert exact approved operational fields.
-
-Do not merely test 200.
-
----
-
-# 89. Tests — Product ID Derivation
-
-Given:
-
-```text id="a4mk3y"
-Product
-→ Variant
-→ Stock
-```
-
-Inventory resource `product_id` must refer to the correct Product.
-
----
-
-# 90. Tests — Variant ID Derivation
-
-Verify:
-
-```text id="ziqewl"
-variant_id
-```
-
-matches the stock row's Variant.
-
----
-
-# 91. Tests — Location
-
-If Phase 5.8 resolves location as public-to-operations:
-
-verify exact:
-
-```text id="tx6ank"
-warehouse_location
-```
-
-serialization.
-
----
-
-# 92. Tests — Multi-Location Rows
-
-Create:
-
-```text id="s5t0xa"
-same Variant
-main
-dar-es-salaam
-```
-
-INV-001 must return two distinct Inventory resources.
-
-Do not aggregate them into one.
-
----
-
-# 93. Tests — Quantity Derivation
+Choose and document a consistent lock order.
 
 Example:
 
-```text id="gzvhav"
-quantity = 10
-reserved = 4
+```text
+Order
+→ ProductStock rows sorted by ID
+→ Cart if required
 ```
 
-must expose:
+or another repository-approved ordering.
 
-```text id="5iudw8"
-available_quantity = 6
+The key requirement is consistency across competing workflows.
+
+---
+
+# 50. Do Not Mix Lock Orders Arbitrarily
+
+If checkout locks:
+
+```text
+Cart → Stock → Order
+```
+
+while cancellation locks:
+
+```text
+Order → Stock → Cart
+```
+
+deadlock risk increases.
+
+Document one shared ordering before Group G/H implementations use it.
+
+---
+
+# 51. Deadlock Handling
+
+Database deadlocks can still occur.
+
+Use bounded transaction retry where Laravel/project conventions support it.
+
+Conceptually:
+
+```text
+DB::transaction($callback, retryCount)
+```
+
+for deadlock retries.
+
+Do not create an unbounded retry loop.
+
+---
+
+# 52. Retry Safety
+
+Retries must only rerun operations that are safe under:
+
+```text
+transaction rollback
++
+idempotency
+```
+
+Never retry after an external side effect already escaped the transaction.
+
+---
+
+# 53. No External Calls Inside Inventory Lock
+
+Do not call:
+
+```text
+payment provider
+email service
+Clerk API
+Cloudinary
+```
+
+while holding ProductStock row locks.
+
+Keep lock duration short.
+
+---
+
+# 54. Transaction Duration
+
+Inside the lock do only necessary:
+
+```text
+DB reads
+business validation
+DB mutation
+audit/idempotency persistence
+```
+
+Move non-authoritative side effects outside after commit.
+
+---
+
+# 55. Isolation Level
+
+Use the database's normal supported transaction isolation unless a demonstrated correctness gap requires changing it.
+
+Do not globally change MySQL isolation level for this phase.
+
+Explicit row locks are sufficient for the target V1 behavior.
+
+---
+
+# 56. SQLite Limitation
+
+SQLite does not faithfully reproduce MySQL/InnoDB row-level concurrency or `SELECT ... FOR UPDATE` behavior.
+
+This must be explicitly acknowledged.
+
+---
+
+# 57. Canonical SQLite Tests
+
+SQLite may verify:
+
+```text
+inventory formulas
+transaction rollback
+business invariants
+service orchestration
+single-threaded reservation/release/consume semantics
+```
+
+But SQLite cannot prove:
+
+```text
+InnoDB row locking
+deadlock behavior
+true parallel overselling protection
 ```
 
 ---
 
-# 94. Tests — Fully Reserved
+# 58. MySQL/MariaDB Concurrency Verification Is Mandatory
 
-```text id="9gg4u8"
-quantity = 5
-reserved = 5
-available = 0
+Use a disposable real MySQL/MariaDB database for concurrency tests.
+
+Phase 5.10 should not be marked fully PASS solely from SQLite tests.
+
+---
+
+# 59. Disposable Database
+
+Use only:
+
+```text
+furnitureapp_test_disposable
+```
+
+or the repository's exact approved disposable DB name.
+
+Verify:
+
+```text
+APP_ENV != production
+```
+
+and exact DB name before destructive setup.
+
+---
+
+# 60. Separate Connections
+
+True concurrency tests must use independent database connections/processes.
+
+Do not simulate concurrency by sequential calls on one transaction/connection.
+
+---
+
+# 61. Parallel Execution
+
+Tests should start competing transactions close enough that they actually contend for the same stock rows.
+
+Use the project's available process/concurrency mechanism.
+
+Do not mock `lockForUpdate()` and claim concurrency coverage.
+
+---
+
+# 62. Repeat Race Tests
+
+Concurrency tests can be nondeterministic.
+
+Repeat core scenarios:
+
+```text
+10–20 iterations
+```
+
+or another reasonable stable count.
+
+Every iteration must preserve invariants.
+
+---
+
+# 63. Test — Concurrent Reservation Last Unit
+
+Setup:
+
+```text
+quantity=1
+reserved=0
+```
+
+Run two independent reservation attempts for `1`.
+
+Assert:
+
+```text
+success count = 1
+failure count = 1
+final quantity = 1
+final reserved = 1
+final available = 0
 ```
 
 ---
 
-# 95. Tests — Zero Stock
+# 64. Test — Concurrent Reservation Capacity
 
-```text id="esbe7y"
-0
-0
-0
+Setup:
+
+```text
+quantity=10
+reserved=0
 ```
 
-must serialize correctly.
+Run multiple reservation attempts totaling more than 10.
+
+Assert successful total reserved:
+
+```text
+<= 10
+```
+
+and final invariant holds.
 
 ---
 
-# 96. Tests — Exact Detail
+# 65. Test — Concurrent Adjustments
 
-INV-002 returns exactly the selected Inventory row.
+Run:
+
+```text
++5
+-3
+```
+
+against quantity 10.
+
+Assert final:
+
+```text
+12
+```
+
+and both successful operations are audited exactly once.
 
 ---
 
-# 97. Tests — Unknown Inventory
+# 66. Test — Concurrent Negative Adjustments
 
-Return:
+Setup:
 
-```text id="qj4a52"
-404 RESOURCE_NOT_FOUND
+```text
+quantity=5
+reserved=0
+```
+
+two simultaneous:
+
+```text
+-4
+-4
+```
+
+Only one can succeed if the second would make quantity negative.
+
+---
+
+# 67. Test — Adjustment vs Reservation
+
+Use the damage/checkout race example.
+
+Assert no outcome violates:
+
+```text
+reserved <= quantity
 ```
 
 ---
 
-# 98. Tests — No Cross-Resource Confusion
+# 68. Test — Reservation vs Reservation Multi-Location
 
-Product ID, Variant ID, and Inventory ID must not be interchangeable.
+If multi-location allocation is supported:
 
-Passing a Product ID in `{inventory}` should not accidentally resolve a stock row unless the contract explicitly says otherwise.
-
----
-
-# 99. Tests — Operational Hidden Product
-
-If current domain permits stock on an inactive/unpublished Product:
-
-authorized inventory read should still expose the Inventory record.
-
-This protects public/operational scope separation.
+concurrent reservations must not oversubscribe aggregate stock or any row.
 
 ---
 
-# 100. Tests — No Public Leakage
+# 69. Test — Rollback Across Multiple Rows
 
-CAT-001/CAT-002 must still not expose:
+Request needs inventory from multiple rows.
 
-```text id="1e4d63"
+Force failure after one row would be updated.
+
+Transaction rollback must restore all rows.
+
+---
+
+# 70. Test — Multi-Item Atomicity
+
+Reserve Product A successfully, Product B insufficient.
+
+Assert no stock remains reserved for A.
+
+---
+
+# 71. Test — Release
+
+Create a known reservation.
+
+Release once.
+
+Assert:
+
+```text
+reserved decreases correctly
+quantity unchanged
+```
+
+---
+
+# 72. Test — Double Release Protection
+
+Attempt the same business release twice through the appropriate idempotent/state-aware path.
+
+Final reservation must not go negative.
+
+---
+
+# 73. Test — Consume
+
+Known reservation:
+
+```text
+quantity=10
+reserved=3
+```
+
+consume 3:
+
+```text
+quantity=7
+reserved=0
+```
+
+---
+
+# 74. Test — Double Consume Protection
+
+Repeated success event must not:
+
+```text
+quantity=4
+```
+
+after already consuming the same 3.
+
+Inventory action must cooperate with business idempotency/state.
+
+---
+
+# 75. Test — Consume vs Release Race
+
+One payment-success and one cancellation path contend for the same Order/reservation.
+
+Exactly one valid business transition succeeds.
+
+Inventory remains consistent.
+
+---
+
+# 76. Test — Lock Timeout / Deadlock Mapping
+
+If the DB reports a concurrency failure after bounded retries:
+
+map to existing:
+
+```text
+409 CONFLICT
+RESOURCE_VERSION_CONFLICT
+```
+
+where appropriate.
+
+Do not leak SQLSTATE/database internals.
+
+---
+
+# 77. Do Not Map Stock Shortage to Generic Conflict
+
+If locked authoritative state proves:
+
+```text
+requested > available
+```
+
+return:
+
+```text
+422 INSUFFICIENT_STOCK
+```
+
+This is a business condition, not necessarily a system conflict.
+
+---
+
+# 78. Stale Mutation Conflict
+
+Use:
+
+```text
+409 RESOURCE_VERSION_CONFLICT
+```
+
+only for genuine stale/concurrency semantics defined by the project.
+
+Do not use 409 for every inventory validation failure.
+
+---
+
+# 79. Idempotency Still Applies
+
+Concurrency protection does not replace idempotency.
+
+For INV-003:
+
+```text
+same key same request
+→ one mutation
+```
+
+even if requests arrive simultaneously.
+
+---
+
+# 80. Atomic Idempotency Claim
+
+Concurrent requests with the same Idempotency-Key must not both enter the business mutation.
+
+Use the shared idempotency store's unique constraint/claim mechanism inside the correct boundary.
+
+---
+
+# 81. Same-Key Race Test
+
+Send two simultaneous identical INV-003 requests with the same key.
+
+Assert:
+
+```text
+quantity adjusted once
+one durable idempotency result
+one audit event
+both callers receive compatible replay/success semantics
+```
+
+---
+
+# 82. Different-Key Race Test
+
+Same adjustment intent with two distinct keys represents two operations.
+
+Both may execute if invariants permit.
+
+Do not deduplicate by body alone.
+
+---
+
+# 83. Audit Concurrency
+
+Audit records must correspond exactly to committed privileged mutations.
+
+Rolled-back attempts must not appear as successful state-change audits.
+
+---
+
+# 84. Lock Scope Must Be Minimal
+
+Do not lock:
+
+```text
+all inventory rows
+entire products table
+all variants
+```
+
+for one mutation.
+
+Lock only the rows necessary for the business operation.
+
+---
+
+# 85. No Table Locks
+
+Do not use explicit table-level locks for V1 inventory.
+
+That would unnecessarily serialize the whole store.
+
+---
+
+# 86. Index Support
+
+Ensure lock lookup uses indexed identifiers:
+
+```text
+ProductStock primary key
+product_variant_id
+unique variant/location
+```
+
+Do not scan inventory table before locking.
+
+---
+
+# 87. Reservation Query Efficiency
+
+When locking stock for one Variant, query only rows for that Variant.
+
+Use deterministic indexed ordering.
+
+---
+
+# 88. Public Availability During Reservations
+
+Phase 5.7 availability derives:
+
+```text
+quantity - reserved_quantity
+```
+
+Therefore a successful checkout reservation must immediately reduce public available inventory on subsequent reads.
+
+No separate availability mutation.
+
+---
+
+# 89. Reservation Threshold Example
+
+Before:
+
+```text
+quantity=6
+reserved=0
+available=6
+stock_indicator=IN_STOCK
+```
+
+Reserve 1:
+
+```text
+quantity=6
+reserved=1
+available=5
+```
+
+Subsequent catalog read may become:
+
+```text
+LOW_STOCK
+```
+
+according to Phase 5.7.
+
+---
+
+# 90. Consumption Does Not Change Available Count
+
+Before consumption:
+
+```text
+quantity=6
+reserved=1
+available=5
+```
+
+Consume 1:
+
+```text
+quantity=5
+reserved=0
+available=5
+```
+
+Public availability remains unchanged.
+
+This is correct.
+
+---
+
+# 91. Release Increases Available Count
+
+Before:
+
+```text
+quantity=6
+reserved=1
+available=5
+```
+
+Release 1:
+
+```text
+quantity=6
+reserved=0
+available=6
+```
+
+Public availability increases.
+
+---
+
+# 92. Adjustment Availability Interaction
+
+INV-003 must use the same locked rows and cannot reduce physical quantity below reservations.
+
+This protects active checkout holds.
+
+---
+
+# 93. Cart Does Not Reserve
+
+Group F cart operations should not reserve inventory.
+
+Do not introduce reservation when adding an item to cart.
+
+Final reservation happens at checkout.
+
+---
+
+# 94. Availability in Cart Is Informational
+
+Cart may validate/display current availability, but inventory can change.
+
+Checkout must revalidate under lock.
+
+---
+
+# 95. No Long-Lived Cart Locks
+
+Never hold DB locks while a user browses or sits on a checkout screen.
+
+Locks exist only for short server transactions.
+
+---
+
+# 96. Pending-Payment Reservation
+
+The current contract intentionally holds reservation after successful checkout while Order is:
+
+```text
+PENDING_PAYMENT
+```
+
+Do not release it simply because payment has not happened yet.
+
+---
+
+# 97. Delivery Fee Pending Does Not Release
+
+For DELIVERY:
+
+```text
+checkout
+→ PENDING_PAYMENT
+→ delivery_fee_status=PENDING
+```
+
+reservation remains held while Staff/Admin finalizes fee.
+
+ORD-014 success/failure does not by itself release inventory.
+
+---
+
+# 98. Terminal Failure Releases
+
+Release occurs when the Order transitions to a terminal non-fulfilled state such as:
+
+```text
+CANCELLED
+```
+
+through approved customer/admin/system/payment failure workflows.
+
+---
+
+# 99. Do Not Add EXPIRED Inventory State
+
+The current contract maps timeout/expiry behavior to:
+
+```text
+CANCELLED
+```
+
+not a new inventory/order state.
+
+Do not invent:
+
+```text
+EXPIRED
+```
+
+as inventory state.
+
+---
+
+# 100. Payment Success Consumption
+
+Group H payment webhook will eventually invoke consumption within the same protected order/payment transition.
+
+Phase 5.10 should expose the primitive but not implement payment provider behavior.
+
+---
+
+# 101. No Payment Integration
+
+Do not:
+
+```text
+call provider
+verify webhook signatures
+create Payment records
+```
+
+in Phase 5.10.
+
+Group H owns that.
+
+---
+
+# 102. No Checkout Endpoint Implementation
+
+Do not implement full:
+
+```text
+POST /api/v1/checkout
+```
+
+unless the current roadmap explicitly moved it forward.
+
+Create concurrency-safe inventory primitives and tests that Group G can consume.
+
+---
+
+# 103. No Cart Endpoint Implementation
+
+Do not implement Group F cart logic.
+
+---
+
+# 104. No Order Transition Controllers
+
+Do not implement cancellation/payment actions solely to test inventory primitives.
+
+Use domain/service-level test fixtures where possible.
+
+---
+
+# 105. Transaction Service Design
+
+Prefer one focused inventory concurrency service/domain layer.
+
+Conceptually:
+
+```text
+InventoryAllocator
+```
+
+with operations such as:
+
+```text
+reserve()
+release()
+consume()
+adjust()
+```
+
+or use existing naming conventions.
+
+---
+
+# 106. Avoid God Service
+
+Do not mix:
+
+```text
+pricing
+payments
+orders
+emails
+catalog serialization
+```
+
+into InventoryAllocator.
+
+It owns stock concurrency only.
+
+---
+
+# 107. Domain Result
+
+Return explicit domain results/errors.
+
+Do not expose raw DB lock objects or SQL exceptions to controllers.
+
+---
+
+# 108. Central Invariant Helper
+
+Centralize checks such as:
+
+```text
+available = quantity - reserved
+quantity >= reserved
+requested <= available
+```
+
+Do not duplicate arithmetic across four workflows.
+
+---
+
+# 109. Keep `available_quantity` Derived
+
+Still do not persist it.
+
+Locks operate on:
+
+```text
+quantity
+reserved_quantity
+```
+
+only.
+
+---
+
+# 110. Schema Changes
+
+Preferred:
+
+```text
+NONE
+```
+
+for ProductStock itself.
+
+Pessimistic locking needs no version column.
+
+---
+
+# 111. Conditional Schema Addition
+
+Only add a reservation-allocation table if required by the already-approved multi-location reservation semantics and no existing schema can reconstruct exact allocation.
+
+Document why it is necessary.
+
+Do not add speculative persistence.
+
+---
+
+# 112. No `lock_version`
+
+Do not add optimistic locking fields if pessimistic locking is the chosen V1 approach.
+
+---
+
+# 113. MySQL / MariaDB Is Concurrency Authority
+
+Production correctness relies on InnoDB row locking.
+
+Use a storage engine/configuration that actually supports transactions and row locks.
+
+Verify the test database tables use the expected engine where applicable.
+
+---
+
+# 114. SQLite Is Not Concurrency Proof
+
+Repeat in documentation/completion report:
+
+```text
+SQLite tests prove business semantics.
+They do not prove InnoDB row-lock concurrency.
+```
+
+---
+
+# 115. MySQL Test Harness
+
+Use a disposable MySQL/MariaDB integration test harness.
+
+Do not reuse the normal development DB.
+
+---
+
+# 116. No Production Test Hooks
+
+Do not add:
+
+```text
+X-Test-Delay
+X-Test-User
+sleep query parameter
+```
+
+to production controllers to create races.
+
+Concurrency tests should orchestrate processes/connections from test code.
+
+---
+
+# 117. Test Synchronization
+
+Use test-only barriers/process synchronization where necessary so transactions actually overlap.
+
+Keep test instrumentation outside production request semantics.
+
+---
+
+# 118. Real Transactions
+
+Concurrency test workers must commit/rollback real independent transactions.
+
+Mocking the DB transaction facade is insufficient.
+
+---
+
+# 119. Verify Database State After Every Race
+
+Do not assert only HTTP status.
+
+Always inspect final:
+
+```text
 quantity
 reserved_quantity
 available_quantity
-warehouse_location
+audit count
+idempotency count
 ```
 
-after Phase 5.8.
-
-Add regression coverage if not already present.
+as relevant.
 
 ---
 
-# 101. Tests — No Mutation
+# 120. Invariant Sweep
 
-Compare stock rows before/after:
+After each concurrency test assert globally for affected rows:
 
-```text id="vvavl5"
-INV-001
-INV-002
-```
-
-No quantity, reservation, or timestamps should change.
-
----
-
-# 102. Tests — N+1
-
-Where practical, guard against obvious:
-
-```text id="z6omhw"
-ProductStock
-→ Variant
-→ Product
-```
-
-N+1 queries.
-
----
-
-# 103. Tests — Cache Headers
-
-Protected inventory response must not be publicly cacheable.
-
-Verify current private/no-store convention if headers are already machine-tested.
-
----
-
-# 104. No Audit Event for Reads
-
-Inventory reads should not create privileged mutation audit entries merely because stock was viewed.
-
-Audit mutation belongs to INV-003.
-
-Access logging may remain normal application logging.
-
----
-
-# 105. No Adjustment Logic
-
-Do not implement:
-
-```text id="4k955o"
-quantity_delta
-adjustment reason
-Idempotency-Key
-inventory locking
-audit event
-```
-
-in Phase 5.8.
-
-Those belong to Phase 5.9 / 5.10.
-
----
-
-# 106. No Generic PATCH
-
-Do not create:
-
-```text id="r8zpp9"
-PATCH /api/v1/inventory/{inventory}
-```
-
-The frozen contract explicitly uses controlled:
-
-```text id="wy7zcg"
-POST /inventory/{product}/adjust
-```
-
-for future mutation.
-
----
-
-# 107. No Delete
-
-Do not implement:
-
-```text id="ifbdua"
-DELETE /inventory/{inventory}
-```
-
-Inventory deletion is not an ordinary API action.
-
----
-
-# 108. No Reservation Endpoint
-
-Do not create:
-
-```text id="hke8wa"
-/inventory/reserve
-/inventory/release
-```
-
-Checkout will own reservation behavior.
-
----
-
-# 109. No Stock Ledger
-
-Do not introduce:
-
-```text id="uzckku"
-inventory_movements
-stock_transactions
-```
-
-unless a later phase explicitly requires them.
-
----
-
-# 110. No Warehouse Model
-
-Do not normalize location yet.
-
----
-
-# 111. OpenAPI Reconciliation
-
-Update OpenAPI only after reconciling the read model.
-
-Specifically verify:
-
-```text id="y4hqxw"
-Inventory.variant_id nullability
-warehouse_location presence
-INV-001 response pagination
-INV-002 {inventory} semantics
-auth/security
-403
-404
-429
+```text
+quantity >= 0
+reserved_quantity >= 0
+reserved_quantity <= quantity
 ```
 
 ---
 
-# 112. Documentation Reconciliation
+# 121. No Partial Order Reservation
 
-If the current wording:
+Where test scaffolding includes Order creation:
 
-```text id="fxn89q"
-"Get inventory by product/variant"
+failed stock allocation must leave:
+
+```text
+no partial order
+no partial OrderItems
+no partial status history
+no stock reservation
 ```
-
-conflicts with:
-
-```text id="63ukwx"
-/inventory/{inventory}
-```
-
-clarify the docs.
-
-Do not leave two lookup semantics.
 
 ---
 
-# 113. Preferred V1 Inventory Detail Meaning
+# 122. Error Stability
 
-Unless newer repository authority says otherwise:
+Reuse the frozen codes:
 
-```text id="7cguwt"
-{inventory}
-=
-Inventory resource ID
-=
-ProductStock row ID
+```text
+INSUFFICIENT_STOCK
+CONFLICT
+RESOURCE_VERSION_CONFLICT
+DUPLICATE_OPERATION
 ```
 
-This is the least surprising REST/resource interpretation and matches the frozen route parameter.
+Do not invent:
 
----
-
-# 114. Operational Product Views Remain Separate
-
-Do not fold:
-
-```text id="rtvs9j"
-CAT-013
-CAT-014
+```text
+STOCK_LOCKED
+RACE_DETECTED
+DEADLOCK_ERROR
 ```
 
-into INV-001/002.
-
-Operational Product APIs expose Product management context.
-
-Inventory APIs expose stock resources.
+in V1.
 
 ---
 
-# 115. Schema Changes
+# 123. Database Exceptions
 
-Expected:
+Translate expected concurrency/database failures into domain/API errors.
 
-```text id="9oq2bd"
-NONE
+Do not leak:
+
+```text
+SQLSTATE
+table name
+lock wait SQL
+deadlock trace
 ```
 
-The existing Group C schema already supports the read model.
+to clients.
 
 ---
 
-# 116. Stop on Schema Temptation
+# 124. Logging
 
-If implementation seems to require:
+Log unexpected concurrency failures with:
 
-```text id="z8b5rq"
-product_id column
-available_quantity column
-warehouse table
-inventory status column
+```text
+request_id
+operation
+resource identifiers
+safe error context
 ```
 
-stop and use existing relationships/derivation instead.
+Do not log secrets/idempotency keys in full.
 
 ---
 
-# 117. No New Dependencies
+# 125. Observability
 
-Expected:
+Where existing logging conventions support it, distinguish:
 
-```text id="at7b25"
-NONE
+```text
+insufficient stock
+deadlock retry
+deadlock exhausted
+idempotency replay
+inventory adjustment conflict
 ```
 
-Laravel/Eloquent/API Resources are sufficient.
+without creating a new monitoring system.
 
 ---
 
-# 118. SQLite / MySQL
+# 126. Rate Limiting
 
-Phase 5.8 inventory semantics should be testable under canonical SQLite.
+Keep Phase 5.9 rate limiting for INV-003.
 
-There is no FULLTEXT-specific behavior here.
-
-Keep Phase 5.5's separate MySQL FULLTEXT blocker unchanged.
+Concurrency handling does not replace abuse controls.
 
 ---
 
-# 119. PHPStan
+# 127. Audit
 
-Phase 5.8 must introduce:
+Keep the Phase 5.9 rule:
 
-```text id="l34suc"
+successful INV-003 adjustment produces exactly one durable audit entry.
+
+Reservation/consumption audit behavior should follow the owning checkout/order/payment workflow contracts later.
+
+Do not create duplicate audit events merely for internal helper calls.
+
+---
+
+# 128. Performance
+
+Row locking should be short-lived.
+
+Do not optimize away correctness for throughput.
+
+Expected V1 furniture-store transaction volume does not justify distributed inventory infrastructure.
+
+---
+
+# 129. No Redis Inventory Authority
+
+Redis may later cache read data, but must not become authoritative stock state.
+
+Do not implement Redis counters for available stock.
+
+---
+
+# 130. No Eventual-Consistency Inventory
+
+Checkout cannot accept an eventually consistent search/cache value as final stock authority.
+
+Final state comes from MySQL/MariaDB transaction.
+
+---
+
+# 131. No Queue-Based Reservation
+
+Do not enqueue checkout inventory reservation and respond before it commits.
+
+Customer checkout requires synchronous success/failure.
+
+---
+
+# 132. No Global Mutex
+
+Do not serialize every checkout through one application-wide mutex.
+
+Lock only affected rows.
+
+---
+
+# 133. Multiple Variant Lock Ordering
+
+For cart variants:
+
+```text
+sort unique Variant IDs
+```
+
+before resolving/locking their stock rows.
+
+Ensure every checkout follows the same order.
+
+---
+
+# 134. Duplicate Cart Variant Handling
+
+If the same Variant somehow appears more than once in checkout input/cart representation:
+
+aggregate required quantity before locking/reservation.
+
+Do not reserve it in separate passes.
+
+---
+
+# 135. Integer Arithmetic Only
+
+Inventory quantities remain integers.
+
+No decimal quantities.
+
+No floating-point arithmetic.
+
+---
+
+# 136. Upper Bounds
+
+Use existing quantity bounds where contracts define them.
+
+Do not invent huge-unbounded requested quantities that could overflow integer operations.
+
+---
+
+# 137. Transaction Callback Exceptions
+
+Domain failure inside transaction must throw/return in a way that triggers rollback.
+
+Do not catch an invariant exception inside the transaction and then commit partial state.
+
+---
+
+# 138. After-Commit Side Effects
+
+If later workflows need notifications:
+
+dispatch them after successful commit.
+
+Do not notify customer of reservation/order success before transaction commits.
+
+---
+
+# 139. Product/Variant State Revalidation
+
+The inventory primitive itself should not duplicate every catalog business rule unless required.
+
+The checkout orchestration later must validate:
+
+```text
+Product exists
+active
+published
+IN_STOCK
+Variant belongs
+Variant active
+```
+
+before/inside the same business transaction.
+
+Inventory service owns stock state, not catalog eligibility.
+
+---
+
+# 140. Lock State Close to Mutation
+
+Where product/variant state can affect validity and can change concurrently in future admin APIs, Group G may need to lock or otherwise revalidate those rows too.
+
+Document the dependency.
+
+Do not prematurely lock all Product rows in Phase 5.10 without a mutation path requiring it.
+
+---
+
+# 141. Inventory Adjustment Target
+
+INV-003 continues to target one Inventory resource ID established in Phase 5.9.
+
+The locked row must be that exact ProductStock record.
+
+---
+
+# 142. Adjustment Idempotency + Row Lock
+
+Recommended ordering:
+
+```text
+authenticate
+authorize
+validate request
+claim/check idempotency
+begin/participate transaction
+lock ProductStock
+revalidate invariants
+mutate
+audit
+store idempotent success
+commit
+```
+
+Fit this to the shared idempotency infrastructure.
+
+---
+
+# 143. Do Not Hold Row Lock While Waiting on Idempotency Conflict Externally
+
+Idempotency claiming must be designed so duplicate callers do not perform duplicate mutations.
+
+Keep lock ordering deterministic between idempotency and inventory resources.
+
+---
+
+# 144. Idempotency Deadlock Review
+
+If idempotency records are themselves locked:
+
+document a consistent ordering such as:
+
+```text
+idempotency record
+→ domain aggregate
+→ ProductStock rows
+```
+
+and reuse it across operations where applicable.
+
+---
+
+# 145. Checkout Idempotency
+
+Future CHK-001 uses Idempotency-Key too.
+
+A retry must return the same Order and must not create additional reservation.
+
+Phase 5.10's reservation primitive must support that transactional behavior.
+
+---
+
+# 146. Reservation Record Idempotency
+
+Do not rely on:
+
+```text
+reserved_quantity already > 0
+```
+
+to guess whether a retry previously reserved stock.
+
+The business operation/idempotency record determines that.
+
+---
+
+# 147. Release Record Idempotency
+
+Likewise, `reserved_quantity` alone cannot identify whether one Order's reservation was already released.
+
+Order state/idempotent transition owns that decision.
+
+---
+
+# 148. Consume Record Idempotency
+
+Payment event/order state owns whether reservation consumption has already occurred.
+
+Inventory helper should be called only within that protected transition.
+
+---
+
+# 149. Completion Status Rule
+
+Phase 5.10 should not be marked PASS unless true MySQL/MariaDB concurrent integration tests run successfully.
+
+SQLite-only verification is insufficient for this phase.
+
+---
+
+# 150. If MySQL Harness Is Unavailable
+
+Report:
+
+```text
+Implementation complete
+SQLite semantic tests PASS
+Phase 5.10 BLOCKED on real concurrency verification
+```
+
+Do not weaken the exit gate.
+
+---
+
+# 151. Relationship to Phase 5.5 Blocker
+
+Phase 5.5's MySQL FULLTEXT verification remains independent.
+
+If the disposable MySQL harness now exists, both targeted suites may be run.
+
+Do not conflate their results.
+
+---
+
+# 152. PHPStan
+
+Phase 5.10 must introduce:
+
+```text
 0 new PHPStan errors
 ```
 
-If the known project baseline remains unresolved:
+If the known project-wide baseline remains unresolved:
 
 report it separately.
 
-Do not claim global static-analysis PASS if the baseline still fails.
+Do not falsely mark global quality PASS.
 
 ---
 
-# 120. Phase 5.5 Status Is Independent
+# 153. Schema Migration Safety
 
-Do not mark Phase 5.5 PASS merely because Phase 5.8 succeeds.
+If any narrowly justified allocation migration is needed:
 
-Phase 5.5 still requires its own:
+use a new migration.
 
-```text id="jtmyai"
-disposable MySQL/MariaDB FULLTEXT verification
-+
-PHPStan baseline resolution
+Never edit Group C history.
+
+---
+
+# 154. Destructive Test Safety
+
+Before:
+
+```text
+migrate:fresh --seed --force
 ```
 
-if those remain outstanding.
+require:
+
+```text
+APP_ENV != production
+AND
+DB_DATABASE == approved disposable test DB
+```
+
+Use the existing repository guard exactly.
 
 ---
 
-# 121. Likely Implementation Areas
+# 155. No Frontend Changes
+
+Do not modify:
+
+```text
+frontend/web/
+frontend/app/
+frontend/design-system/
+```
+
+No concurrency behavior belongs in the clients.
+
+---
+
+# 156. No New External Dependencies
 
 Expected:
 
-```text id="v6bhwq"
-routes/api.php
-InventoryController
-InventoryResource
-InventoryQueryRequest
-ProductStock model/relations if read helpers needed
-policy/gate wiring
-tests/Feature/
-docs/api/
-docs/decisions.md
-openapi.yaml
+```text
+NONE
 ```
 
-Do not broaden the phase.
+Laravel transactions and MySQL/InnoDB are sufficient.
 
 ---
 
-# 122. Verification Commands
+# 157. Code Quality
 
-Run focused inventory tests.
+Maintain:
 
-Then:
+```text
+cognitive complexity <= 15
+<= 3 returns where practical
+small transaction services
+single inventory arithmetic authority
+deterministic lock ordering
+no duplicated reservation formulas
+```
 
-```bash id="qs0oeq"
+---
+
+# 158. Likely Implementation Areas
+
+Expected:
+
+```text
+app/Services/Inventory/
+app/Actions/Inventory/
+ProductStock model/helpers
+InventoryAdjustmentService
+shared transaction/idempotency integration
+tests/Integration/
+tests/Feature/
+docs/api/
+docs/domain/
+docs/decisions.md
+```
+
+Modify only what is required.
+
+---
+
+# 159. Verification — Canonical Suite
+
+Run:
+
+```bash
 php artisan test
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 composer audit
 git diff --check
-php artisan route:list
 ```
-
-No destructive migration should normally be required.
 
 ---
 
-# 123. Route Review
+# 160. Verification — MySQL Concurrency
 
-Verify exactly:
+Against the approved disposable MySQL/MariaDB DB, run targeted tests for:
 
-```text id="xv039t"
-GET /api/v1/inventory
-GET /api/v1/inventory/{inventory}
+```text
+reserve vs reserve
+adjust vs adjust
+adjust vs reserve
+multi-item rollback
+same-key idempotency race
+release vs consume where scaffolded
 ```
 
-for this phase.
-
-Do not add INV-003 yet.
+Use independent connections/processes.
 
 ---
 
-# 124. Completion Report
+# 161. Completion Report
 
 Return:
 
-## Phase 5.8 status
+## Phase 5.10 status
 
-```text id="x8pgc9"
+```text
 PASS
 ```
 
 or:
 
-```text id="ik3ehc"
+```text
 BLOCKED
 ```
 
-## INV-001
+## Concurrency strategy
+
+State:
+
+```text
+DB transaction
+pessimistic row locking
+deterministic lock order
+bounded deadlock retries
+```
+
+as actually implemented.
+
+## Inventory adjustment
+
+Confirm lost updates are prevented.
+
+## Reservation
+
+State exact atomic reservation semantics.
+
+## Multi-location
+
+State exact allocation rule and whether allocation persistence was required.
+
+## Release
+
+State exact reservation-release behavior.
+
+## Consumption
+
+State exact reserved→sold conversion.
+
+## Overselling
+
+Report real concurrent last-unit test result.
+
+## MySQL verification
 
 Report:
 
-```text id="dawcca"
-authentication
-inventory.view
-pagination
-filters if any
-ordering
+```text
+PASS
+NOT RUN
+BLOCKED
 ```
 
-## INV-002
+with exact reason.
 
-Report:
+## SQLite
 
-```text id="3ljknp"
-Inventory ID resolution
-404 semantics
-```
-
-## Inventory read model
-
-State exact exposed fields.
-
-## Contract reconciliation
-
-State decisions for:
-
-```text id="by5tmd"
-variant_id nullability
-warehouse_location
-{inventory} meaning
-```
-
-## Quantity semantics
-
-Confirm:
-
-```text id="zzpzkd"
-quantity
-reserved_quantity
-available_quantity = quantity - reserved_quantity
-```
-
-## Multi-location behavior
-
-Confirm one Inventory resource per Variant/location row.
-
-## Public separation
-
-Confirm CAT endpoints still expose no exact inventory quantities.
+Explicitly state what it does and does not verify.
 
 ## Schema
 
-Must state:
+State:
 
-```text id="3hdhy1"
+```text
 NONE
 ```
 
-## Mutation
+unless a narrowly required allocation table was introduced.
 
-Must state:
+## Phase 5.5
 
-```text id="sbup9h"
-NONE
-```
+Report its independent MySQL FULLTEXT/PHPStan state separately.
 
 ## Frontend
 
 Must state:
 
-```text id="3pc9ku"
+```text
 NONE
 ```
 
 ## Tests
 
-Report focused/full counts.
+Report exact counts and race repetitions.
 
 ## Quality
 
 Report:
 
-```text id="z4csu1"
+```text
 Pint
 PHPStan
 Composer audit
@@ -2022,80 +2602,100 @@ git diff --check
 
 ---
 
-# 125. Definition of Done
+# 162. Definition of Done
 
-Phase 5.8 is complete when:
+Phase 5.10 is complete only when:
 
-* INV-001 exists;
-* INV-002 exists;
-* both require authentication;
-* both require `inventory.view`;
-* CUSTOMER cannot read operational inventory;
-* Staff/Admin authorization uses permissions, not blanket role trust;
-* INV-001 is paginated;
-* Inventory resources derive from ProductStock;
-* Product ID is derived through Variant → Product;
-* Variant ID correctly maps ProductStock ownership;
-* `{inventory}` has one unambiguous meaning;
-* warehouse/location semantics are explicitly resolved;
-* one Variant/location row remains one Inventory resource;
-* exact quantity is exposed only operationally;
-* reserved quantity is exposed only operationally;
-* available quantity is derived, not persisted;
-* multi-location rows are not accidentally aggregated;
-* zero-stock rows remain visible operationally;
-* inactive/unpublished Product stock is not hidden merely by public catalog scope;
-* public CAT endpoints continue hiding exact inventory data;
-* no inventory mutation occurs;
-* no locks/reservations are introduced;
-* no INV-003 code is pulled forward;
-* no generic PATCH inventory endpoint is created;
-* no schema redesign occurs;
-* no warehouse entity is introduced;
+* ProductStock remains authoritative;
+* `available_quantity` remains derived;
+* `reserved_quantity <= quantity` remains true under concurrency;
+* inventory adjustments lock authoritative rows;
+* concurrent adjustments do not lose updates;
+* checkout-facing reservation primitive exists;
+* stock validation happens against locked current state;
+* two concurrent buyers cannot reserve the same last unit;
+* reservation increments only `reserved_quantity`;
+* reservation does not decrement physical quantity;
+* multi-item reservation is all-or-nothing;
+* multiple stock rows are locked deterministically;
+* multiple Variants are locked deterministically;
+* adjustment vs reservation races preserve invariants;
+* release decrements reserved quantity only;
+* consumption decrements both physical and reserved quantity;
+* release/consume cannot be safely double-applied by retrying the owning business operation;
+* no public reservation/release endpoint is introduced;
+* cart does not reserve inventory;
+* public availability reflects reservations automatically;
+* row locks are held only for short DB work;
+* no external service calls happen inside stock locks;
+* expected concurrency errors map to stable API/domain codes;
+* SQL/database internals do not leak;
+* true MySQL/MariaDB concurrent tests use separate connections/processes;
+* last-unit overselling race passes repeatedly;
+* SQLite is not treated as concurrency proof;
+* no Product/Variant inventory duplication is introduced;
+* no Redis/distributed lock system is introduced;
 * no frontend changes occur;
-* focused tests pass;
-* catalog availability regression tests remain green;
 * no new PHPStan errors are introduced;
 * Pint passes;
 * Composer audit has no new blocker.
 
 ---
 
-# 126. Out of Scope
+# 163. Out of Scope
 
 Do not implement:
 
-```text id="wfzi5n"
-INV-003 inventory adjustment
-inventory mutation
-quantity_delta
-adjustment reasons
-idempotency
-stock locking
-overselling protection
-checkout reservation
-inventory audit log
-inventory history
-warehouse entity
-warehouse transfers
-frontend inventory dashboard
+```text
+full checkout controller/workflow
+cart APIs
+payment provider/webhooks
+customer cancellation endpoint
+admin cancellation endpoint
+system TTL worker
+warehouse transfer
+inventory forecasting
+stock replenishment automation
+distributed locking
+Redis inventory counters
+inventory analytics
+frontend concurrency UX
 ```
+
+Only provide the safe inventory concurrency primitives required by those later workflows.
 
 ---
 
-# 127. STOP Condition
+# 164. STOP Condition
 
-STOP when Staff/Admin with `inventory.view` can safely inspect the existing ProductStock state through:
+STOP when MySQL/MariaDB is proven to preserve this invariant under real concurrent operations:
 
-```text id="xlp6ka"
-GET /api/v1/inventory
-GET /api/v1/inventory/{inventory}
+```text
+quantity >= 0
+reserved_quantity >= 0
+reserved_quantity <= quantity
+available_quantity = quantity - reserved_quantity
 ```
 
-with exact operational quantities, proper Variant/Product identity, explicit location semantics, pagination, authorization, and no mutations.
+and the canonical race:
 
-Do not continue automatically to Phase 5.9.
+```text
+1 physical unit
+2 concurrent buyers
+```
 
-DO NOT COMMIT, STAGE OR PUSH.
+results in:
+
+```text
+exactly 1 successful reservation
+exactly 1 INSUFFICIENT_STOCK failure
+0 oversold units
+```
+
+while concurrent Staff/Admin inventory adjustments cannot invalidate existing reservations or lose updates.
+
+Do not continue automatically to Phase 5.11.
+
+DO NOT COMMIT OR PUSH.
 
 The project owner handles all Git operations.

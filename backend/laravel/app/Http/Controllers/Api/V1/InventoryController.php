@@ -3,21 +3,29 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Api\ApiException;
+use App\Http\Requests\AdjustInventoryRequest;
 use App\Http\Requests\InventoryIndexRequest;
 use App\Http\Resources\InventoryResource;
 use App\Models\Product;
 use App\Models\ProductStock;
+use App\Models\User;
+use App\Services\InventoryAdjustmentService;
 use App\Support\ApiErrorCode;
+use App\Support\InventoryAdjustmentReason;
 use App\Support\InventoryIdentifier;
 use App\Support\ProductIdentifier;
 use App\Support\VariantIdentifier;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Str;
 
 class InventoryController extends V1Controller
 {
     private const DEFAULT_PER_PAGE = 20;
+
+    private const NOT_FOUND_MESSAGE = 'The requested inventory was not found.';
 
     public function index(InventoryIndexRequest $request): JsonResponse
     {
@@ -45,15 +53,67 @@ class InventoryController extends V1Controller
             ->first();
 
         if ($stock === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested inventory was not found.', 404);
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::NOT_FOUND_MESSAGE, 404);
         }
 
         return (new InventoryResource($stock))->response()->withHeaders($this->privateHeaders());
     }
 
-    public function adjust(): JsonResponse
+    public function adjust(
+        AdjustInventoryRequest $request,
+        string $inventory,
+        InventoryAdjustmentService $adjustments,
+    ): JsonResponse {
+        $stock = $this->resolveInventory($inventory);
+
+        $data = $adjustments->adjust(
+            $stock,
+            (int) $request->validated('quantity_delta'),
+            InventoryAdjustmentReason::from((string) $request->validated('reason')),
+            $this->actor($request),
+            $this->idempotencyKey($request),
+            (string) $request->attributes->get('request_id'),
+        );
+
+        return response()->json(['data' => $data])->withHeaders($this->privateHeaders());
+    }
+
+    private function resolveInventory(string $inventory): ProductStock
     {
-        return $this->notImplemented();
+        $id = InventoryIdentifier::decode($inventory);
+        $stock = $id === null ? null : ProductStock::query()->whereKey($id)->first();
+
+        if ($stock === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::NOT_FOUND_MESSAGE, 404);
+        }
+
+        return $stock;
+    }
+
+    private function actor(Request $request): User
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
+        }
+
+        return $user;
+    }
+
+    private function idempotencyKey(Request $request): string
+    {
+        $key = $request->header('Idempotency-Key');
+
+        if (! is_string($key) || trim($key) === '') {
+            throw new ApiException(ApiErrorCode::MISSING_REQUIRED_FIELD, 'The Idempotency-Key header is required.', 422, 'Idempotency-Key');
+        }
+
+        if (! Str::isUuid($key)) {
+            throw new ApiException(ApiErrorCode::INVALID_FORMAT, 'The Idempotency-Key header must be a UUID.', 422, 'Idempotency-Key');
+        }
+
+        return $key;
     }
 
     private function applyFilters(Builder $query, array $filters): void
