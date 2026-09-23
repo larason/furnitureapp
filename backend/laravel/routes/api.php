@@ -81,7 +81,6 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::middleware('clerk.auth')->prefix('me')->name('me.')->group(function (): void {
         Route::middleware('throttle:authenticated-read')->group(function (): void {
             Route::get('/', [MeController::class, 'show'])->name('show');
-            Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
             Route::get('/orders', [CustomerOrderController::class, 'index'])->name('orders.index');
             Route::get('/orders/{order}', [CustomerOrderController::class, 'show'])->name('orders.show');
             Route::get('/orders/{order}/tracking', [CustomerOrderController::class, 'tracking'])->name('orders.tracking');
@@ -102,6 +101,14 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
         Route::post('/orders/{order}/cancel', [CustomerOrderController::class, 'cancel'])->middleware('throttle:order-cancel')->name('orders.cancel');
         Route::patch('/notifications/{notification}', [NotificationController::class, 'meUpdate'])->middleware('throttle:authenticated-write')->name('notifications.update');
     });
+
+    // ---------------------------------------------------------------------
+    // CART — holder-scoped create/get. Optional Clerk auth so anonymous
+    // guests can resolve/create their own guest cart via the guest credential.
+    // ---------------------------------------------------------------------
+    Route::middleware(['clerk.optional', 'throttle:authenticated-read'])
+        ->get('/me/cart', [CartController::class, 'show'])
+        ->name('me.cart.show');
 
     // ---------------------------------------------------------------------
     // CHECKOUT — authenticated customer only

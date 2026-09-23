@@ -190,7 +190,15 @@ class ApiRoutingSmokeTest extends TestCase
         $this->getJson(self::API_REQUESTS)->assertUnauthorized();
         $this->getJson(self::API_ENQUIRIES)->assertUnauthorized();
         $this->getJson('/api/v1/me/notifications')->assertUnauthorized();
-        $this->getJson('/api/v1/me/cart')->assertUnauthorized();
+    }
+
+    public function test_cart_get_is_guest_accessible_but_cart_mutations_require_authentication(): void
+    {
+        $this->getJson('/api/v1/me/cart')->assertOk();
+        $this->postJson('/api/v1/me/cart/items')->assertUnauthorized();
+        $this->patchJson('/api/v1/me/cart/items/item_1')->assertUnauthorized();
+        $this->deleteJson('/api/v1/me/cart/items/item_1')->assertUnauthorized();
+        $this->postJson('/api/v1/me/cart/merge')->assertUnauthorized();
     }
 
     public function test_operational_routes_do_not_become_public(): void

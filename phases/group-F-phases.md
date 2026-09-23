@@ -1,1437 +1,1463 @@
-# Phase 6.1 — Cart Model Review
+# Phase 6.2 — Create / Get Cart
 
 ## Purpose
 
-Begin **Phase Group F — Cart** by reviewing and reconciling the existing Cart persistence/domain model against the frozen V1 Cart API contract and the completed Group E catalog/inventory behavior.
-
-This is primarily a:
+Implement:
 
 ```text
-model review
-contract reconciliation
-invariant review
-ownership/security review
-dependency review
-implementation-gap inventory
+CART-001
+GET /api/v1/me/cart
 ```
 
-phase.
+as the canonical holder-scoped Cart retrieval endpoint for both:
 
-Do not implement the Cart API workflows yet unless a very small correction is required to make the existing model conform to already-approved V1 rules.
+```text
+authenticated users
+guest holders
+```
 
-Phase 6.2 will begin actual create/get cart behavior.
+with lazy empty-Cart creation where no active Cart exists.
+
+This phase establishes the foundational Cart access path that Phases 6.3–6.7 will reuse.
+
+Do not implement add/update/remove/merge behavior yet.
 
 ---
 
-# 1. Group F Roadmap
+# 1. Canonical Endpoint
 
-Per `AGENTS.md`:
+Implement exactly:
 
-```text
-Phase 6.1 — Cart model review
-Phase 6.2 — Create/get cart
-Phase 6.3 — Add item
-Phase 6.4 — Update quantity
-Phase 6.5 — Remove item
-Phase 6.6 — Cart validation
-Phase 6.7 — Stock revalidation
-Phase 6.8 — Cart tests
+```http
+GET /api/v1/me/cart
 ```
-
-Do not implement later phases during 6.1.
-
----
-
-# 2. Primary Goal
-
-Confirm that the existing Group C Cart model can support all approved V1 Cart behaviors without unnecessary schema redesign.
-
-Answer:
-
-```text
-Can the current carts/cart_items model safely support:
-- authenticated carts
-- guest carts
-- secure guest ownership
-- active-cart lookup
-- add/update/remove
-- duplicate-line merging
-- guest→customer merge
-- live pricing
-- live availability
-- stale cart items
-- checkout handoff
-```
-
-If yes:
-
-document the mapping and proceed without schema changes.
-
-If no:
-
-identify the exact mismatch and make only the smallest necessary correction.
-
----
-
-# 3. Read Authoritative Files First
-
-Inspect:
-
-```text
-AGENTS.md
-docs/VISION.md
-docs/api/api-contract.md
-docs/api/api-resources.md
-docs/api/api-conventions.md
-docs/api/openapi.yaml
-docs/domain/business-rules.md
-docs/decisions.md
-```
-
-Also inspect:
-
-```text
-Phase 3.8 Cart schema implementation
-Phase 4.x authentication/authorization
-Phase 5.2 Product pricing
-Phase 5.4 Variant behavior
-Phase 5.7 availability rules
-Phase 5.10 concurrency/reservation boundary
-Phase 5.11 Group E closure results
-```
-
-Do not rely only on historical phase instructions.
-
-The current repository implementation and accepted ADRs are authoritative.
-
----
-
-# 4. Existing Cart Persistence Model
-
-Verify the actual schema still matches the Group C decision.
-
-Expected:
-
-```text
-carts
-cart_items
-```
-
-Do not redesign unless a real V1 mismatch is found.
-
----
-
-# 5. Cart Ownership Model
-
-A Cart has exactly one owner context:
-
-```text
-Authenticated:
-user_id != null
-guest_token_digest == null
-```
-
-or:
-
-```text
-Guest:
-user_id == null
-guest_token_digest != null
-```
-
-Never both.
-
-Never neither.
-
-This XOR invariant must remain.
-
----
-
-# 6. Ownership Is Server-Controlled
-
-Clients must never be allowed to set:
-
-```text
-user_id
-guest_token_digest
-```
-
-directly.
-
-Authenticated ownership comes from:
-
-```text
-Clerk-authenticated principal
-→ Laravel local user
-```
-
-Guest ownership comes from:
-
-```text
-validated guest credential
-```
-
----
-
-# 7. Guest Cart Credential Model
-
-Review:
-
-```text
-GuestCartCredential
-config/cart.php
-GUEST_CART_TOKEN_KEY
-```
-
-The raw guest credential must:
-
-```text
-be generated server-side
-be cryptographically strong
-never be stored in the database
-never be logged
-never appear in errors
-never appear in analytics
-```
-
-Only the digest is persisted.
-
----
-
-# 8. Guest Digest
-
-Current persistence uses:
-
-```text
-HMAC-SHA-256(server secret, raw token)
-```
-
-stored as:
-
-```text
-guest_token_digest
-```
-
-Keep this design.
-
-Do not switch to:
-
-```text
-raw token storage
-bcrypt
-Argon2
-plain SHA256 without server key
-```
-
-without a security reason.
-
----
-
-# 9. Guest Token Contract Reconciliation
-
-The API contract describes:
-
-```text
-X-Guest-Cart-Id
-guest_cart_id cookie
-```
-
-as the client-side guest bearer credential.
-
-Review whether the current `GuestCartCredential` terminology and generated value align with this wire contract.
-
-Do not expose the database digest as `X-Guest-Cart-Id`.
-
----
-
-# 10. Guest Token Format
-
-Current API security decision expects a high-entropy opaque credential, represented as UUIDv4 in the contract.
-
-Current Group C ADR mentions an approximately 192+ bit random raw token.
-
-Review actual implementation and frozen OpenAPI.
-
-If there is a discrepancy:
-
-choose the current frozen V1 wire contract and reconcile minimally.
-
-Do not weaken entropy.
-
-Do not change guest ownership semantics.
-
----
-
-# 11. Guest Credential Is a Bearer Credential
-
-Possession of a valid guest token authorizes access only to:
-
-```text
-that bound guest Cart
-```
-
-It must not authorize:
-
-```text
-/me profile
-orders
-checkout
-authenticated merge by itself
-another guest Cart
-```
-
----
-
-# 12. One Active Cart per Customer
-
-Existing invariant:
-
-```text
-one ACTIVE Cart per authenticated user
-```
-
-must remain.
-
-A customer may still have:
-
-```text
-multiple historical INACTIVE carts
-```
-
----
-
-# 13. Active Cart Guard
-
-Review:
-
-```text
-active_user_guard
-```
-
-and its unique constraint.
-
-Confirm it works on:
-
-```text
-SQLite
-MariaDB/MySQL
-```
-
-according to existing schema tests.
-
-Do not replace it with:
-
-```text
-UNIQUE(user_id)
-```
-
-because that would prevent historical carts.
-
----
-
-# 14. Cart Status
-
-V1 CLOSED status remains:
-
-```text
-ACTIVE
-INACTIVE
-```
-
-Only.
 
 Do not add:
 
 ```text
-ABANDONED
-EXPIRED
-MERGED
-CHECKED_OUT
-ORDERED
+GET /api/v1/carts/{cart}
+GET /api/v1/guest/cart
+POST /api/v1/carts
+GET /api/v1/my-cart
 ```
 
-during Group F unless the frozen contract is formally changed.
+The Cart is always resolved from holder context.
 
 ---
 
-# 15. Meaning of ACTIVE
+# 2. CART-001 Is Create-or-Get
 
-`ACTIVE` means:
+CART-001 has lazy create/get semantics.
+
+It does not require a separate Cart creation endpoint.
+
+The canonical behavior is:
 
 ```text
-the current mutable cart for its holder
+resolve holder
+→ find holder's ACTIVE Cart
+→ if found, return it
+→ if absent, create empty ACTIVE Cart
+→ return it
 ```
-
-It is not an Order status.
 
 ---
 
-# 16. Meaning of INACTIVE
+# 3. Authenticated Caller
 
-`INACTIVE` means:
+For a valid Clerk-authenticated Laravel user:
 
 ```text
-cart is no longer the holder's current active cart
+find ACTIVE Cart where user_id = authenticated local user ID
 ```
 
-Do not infer another lifecycle state from it.
+If found:
+
+```text
+return existing Cart
+```
+
+If not found:
+
+```text
+create new ACTIVE user-owned Cart
+```
+
+Ownership:
+
+```text
+user_id = authenticated local user ID
+guest_token_digest = null
+status = ACTIVE
+```
 
 ---
 
-# 17. No Automatic Expiry
+# 4. Authenticated Identity Is Server-Derived
 
-The current model has no approved guest/customer Cart TTL.
-
-Do not invent:
+Never accept:
 
 ```text
-30-day expiry
-90-day cleanup
-abandoned-cart worker
-```
-
-in Phase 6.1.
-
----
-
-# 18. Cart Item Persistence
-
-Expected core stored fields:
-
-```text
+user_id
 cart_id
-product_id
-variant_id nullable
-quantity
-timestamps
+owner_id
 ```
 
-Review actual migration/model.
+from request input.
 
----
-
-# 19. No Persisted Prices
-
-Cart persistence must not contain authoritative:
+Authenticated Cart ownership comes only from:
 
 ```text
-unit_price
-line_total
-subtotal
-total
-```
-
-Those values are derived from current catalog state for display.
-
-Do not add price snapshot fields.
-
----
-
-# 20. Why No Cart Price Snapshot
-
-Cart is:
-
-```text
-mutable purchase intent
-```
-
-not historical purchase evidence.
-
-Checkout recalculates authoritative prices.
-
-Historical price snapshot belongs to:
-
-```text
-OrderItem
-```
-
-after checkout.
-
----
-
-# 21. No Persisted Availability
-
-Do not add:
-
-```text
-availability
-stock_indicator
-is_purchasable
-```
-
-columns to `cart_items`.
-
-These must be calculated from current Product/Variant/Inventory state.
-
----
-
-# 22. No Inventory Columns
-
-Do not add:
-
-```text
-stock_id
-quantity_available
-reserved_quantity
-available_quantity
-warehouse_location
-```
-
-to Cart or CartItem.
-
----
-
-# 23. No Reservation Fields
-
-Do not add:
-
-```text
-reservation_id
-reserved_at
-reservation_expires_at
-```
-
-to Cart.
-
-Group E established:
-
-```text
-Cart does not reserve stock.
-Checkout reserves stock.
-```
-
-This boundary is mandatory.
-
----
-
-# 24. Group E Dependency
-
-Cart must consume the authoritative Group E rules for:
-
-```text
-Product visibility
-Product product_type
-Variant validity
-current price
-availability
-stock_indicator
-```
-
-Do not reimplement them independently.
-
----
-
-# 25. Cart Admission vs Stale Cart State
-
-These are different concepts.
-
-At **add-item time**:
-
-the requested item must satisfy cart admission rules.
-
-After it is already in the Cart:
-
-a Product/Variant may become unavailable later.
-
-Do not silently remove stale items.
-
----
-
-# 26. Cart Admission — Product
-
-For a new Cart item, Product must be:
-
-```text
-exists
-active
-published
-product_type = IN_STOCK
-```
-
-according to the frozen Cart contract.
-
----
-
-# 27. MADE_TO_ORDER
-
-A:
-
-```text
-product_type = MADE_TO_ORDER
-```
-
-Product must never be admitted to normal Cart.
-
-Return:
-
-```text
-422 PRODUCT_NOT_PURCHASABLE
-```
-
-Made-to-order goes through the Request Furniture workflow.
-
----
-
-# 28. Variant Requirement Review
-
-The frozen Cart contract says:
-
-```text
-variant_id required if Product has variants
-variant_id null/omitted if Product has no variants
-```
-
-Review whether the current Product domain permits Products with no Variant rows.
-
-This is especially important because the current catalog pricing architecture treats ProductVariant as the canonical pricing/sellable boundary.
-
----
-
-# 29. Potential Variant Contract Tension
-
-Group C/Group E architecture establishes Variant as:
-
-```text
-SKU
-pricing
-sellable configuration
-```
-
-while the Cart contract retains:
-
-```text
-variant_id nullable when product has no variants
-```
-
-Do not silently resolve this by changing the contract.
-
-Review actual Product data/model and determine whether V1 genuinely supports:
-
-```text
-Product without any ProductVariant
-```
-
-If every purchasable Product necessarily has a Variant, record that fact and identify the nullable Cart field as compatibility/general-contract allowance rather than removing it casually.
-
----
-
-# 30. Variant Ownership
-
-When `variant_id` is present:
-
-```text
-variant.product_id
-must equal
-product_id
-```
-
-Keep existing:
-
-```text
-CartItem::assertVariantBelongsToProduct()
-```
-
-or equivalent.
-
----
-
-# 31. Variant Active State
-
-New Cart admission requires:
-
-```text
-Variant.is_active = true
-```
-
-Inactive Variant:
-
-```text
-422 INVALID_PRODUCT_VARIANT
-```
-
-according to the frozen error contract.
-
----
-
-# 32. Duplicate Cart Item Identity
-
-A Cart item identity is:
-
-```text
-product_id + variant_id
-```
-
-within one Cart.
-
-Do not redefine uniqueness as SKU only.
-
----
-
-# 33. Null-Variant Duplicate Handling
-
-The current schema uses a special guard because SQL UNIQUE constraints permit multiple NULLs.
-
-Review:
-
-```text
-null_variant_guard / identity guard
-```
-
-and preserve the existing defense.
-
----
-
-# 34. Same Product, Different Variants
-
-These should remain separate Cart lines.
-
-Example:
-
-```text
-Chair / red
-Chair / blue
-```
-
-must coexist as separate lines.
-
----
-
-# 35. Repeat Add Behavior
-
-The frozen Cart contract says repeated addition of the same line should:
-
-```text
-merge by increasing quantity
-```
-
-not create duplicate rows.
-
-Phase 6.3 will implement this.
-
-Phase 6.1 should verify the schema supports it safely.
-
----
-
-# 36. Quantity Bounds
-
-V1 Cart quantity remains:
-
-```text
-integer
-1..100
-```
-
-Use:
-
-```text
-CartItem::MAX_QUANTITY
-```
-
-or the current centralized constant.
-
-Do not duplicate magic `100`.
-
----
-
-# 37. Quantity Must Remain Integer
-
-Do not allow:
-
-```text
-1.5
-"2"
-null
-negative
-0
-```
-
-under strict request validation.
-
-Actual API enforcement comes in later phases.
-
----
-
-# 38. Repeated Add Quantity Overflow
-
-Review the future invariant:
-
-```text
-existing quantity + requested quantity <= 100
-```
-
-Example:
-
-```text
-existing 80
-add 30
-```
-
-must eventually fail rather than store 110.
-
-Phase 6.3 owns implementation.
-
-Phase 6.1 should record the requirement.
-
----
-
-# 39. Items Count Semantics
-
-Frozen Cart representation defines:
-
-```text
-items_count
-=
-number of distinct Cart item lines
-```
-
-not total quantity.
-
-Example:
-
-```text
-Sofa x3
-Lamp x2
-```
-
-means:
-
-```text
-items_count = 2
-```
-
-not 5.
-
-Record this explicitly for Phase 6.2+ serialization.
-
----
-
-# 40. Cart Subtotal
-
-Cart response includes informational:
-
-```text
-subtotal
-```
-
-calculated from current catalog prices.
-
-It must not be persisted as Cart authority.
-
----
-
-# 41. Unit Price
-
-Each CartItem exposes current:
-
-```text
-unit_price
-```
-
-resolved from the current Product/Variant pricing rule.
-
-Do not use stale client price.
-
----
-
-# 42. Line Total
-
-Calculate:
-
-```text
-unit_price.amount * quantity
-```
-
-using integer minor units.
-
-No floating point.
-
----
-
-# 43. Subtotal
-
-Calculate:
-
-```text
-SUM(line_total)
-```
-
-using current server-side prices.
-
-Cart subtotal is informational.
-
-Checkout recalculates again.
-
----
-
-# 44. Price Changes While in Cart
-
-If Variant price changes after an item was added:
-
-next Cart read should reflect the current price.
-
-Do not preserve the original add-time price.
-
----
-
-# 45. Checkout Price Authority
-
-Even if Cart read displays current price:
-
-Checkout must recalculate it again.
-
-Do not treat Cart representation as transaction authority.
-
----
-
-# 46. Stale Product Handling
-
-If an existing Cart item Product becomes:
-
-```text
-inactive
-unpublished
-```
-
-do not delete the line.
-
-Return it as stale/unpurchasable according to frozen Cart representation.
-
----
-
-# 47. Stale Variant Handling
-
-If an existing Cart item's Variant becomes inactive:
-
-do not silently remove it.
-
-Preserve line identity if the FK still exists.
-
-Expose:
-
-```text
-is_purchasable = false
-```
-
-with the appropriate availability state.
-
----
-
-# 48. Out-of-Stock Handling
-
-If inventory depletes after an item was added:
-
-the Cart line remains.
-
-Do not remove it.
-
----
-
-# 49. Cart Availability
-
-Each CartItem exposes:
-
-```text
-availability
-stock_indicator
-```
-
-from current Group E catalog/inventory derivation.
-
-Do not persist them.
-
----
-
-# 50. `is_purchasable`
-
-This Cart-specific derived boolean answers:
-
-```text
-Can this Cart line currently proceed toward checkout?
-```
-
-It is not the same field as public Product `availability`.
-
----
-
-# 51. Purchasability Inputs
-
-Review the frozen definition against completed Group E behavior.
-
-Conceptually `is_purchasable` should require:
-
-```text
-Product exists
-Product active
-Product published
-Product type IN_STOCK
-Variant valid
-Variant active
-current availability sufficient for intended Cart quantity
-```
-
-But distinguish:
-
-```text
-Cart informational validation
-```
-
-from:
-
-```text
-Checkout authoritative locked validation
+verified Clerk session
+→ local Laravel User
 ```
 
 ---
 
-# 52. Cart Quantity vs Available Stock
+# 5. One Active Cart Invariant
 
-Frozen Cart errors include:
-
-```text
-INSUFFICIENT_STOCK
-```
-
-for add/update when current informational available stock is below the requested quantity.
-
-Review whether:
-
-```text
-add/update should reject quantity > current availability
-```
-
-while existing stale items can later become unavailable.
-
-This distinction should be documented clearly.
-
----
-
-# 53. Cart Does Not Reserve
-
-Even after a successful add/update:
-
-```text
-ProductStock.reserved_quantity
-```
-
-must not change.
-
-This must remain one of Group F's strongest invariants.
-
----
-
-# 54. Concurrency Boundary
-
-Group E proved reservation concurrency under real MariaDB.
-
-Do not introduce Cart-level row locks on ProductStock for normal add/update merely to "protect stock".
-
-Cart availability can change after mutation.
-
-Checkout owns final locked stock validation.
-
----
-
-# 55. Cart Mutation Concurrency
-
-The frozen contract describes Cart mutation as:
-
-```text
-Medium/Safe
-duplicate additions merge
-last valid mutation wins
-```
-
-Phase 6.1 should review how to implement this later without:
-
-```text
-duplicate lines
-quantity lost updates
-quantity > 100
-```
-
----
-
-# 56. Same-Line Concurrent Adds
-
-Two simultaneous repeated adds could otherwise race:
-
-```text
-existing quantity = 1
-
-A +1
-B +1
-```
-
-Desired result should eventually be consistent with the chosen mutation semantics.
-
-Review whether schema uniqueness + transaction/retry will be sufficient in Phase 6.3.
-
-Do not implement it yet.
-
----
-
-# 57. Guest Cart vs Authenticated Cart
-
-Both Cart types use the same:
-
-```text
-Cart
-CartItem
-Cart representation
-domain validation
-pricing
-availability
-```
-
-Do not build separate guest Cart models.
-
-Only ownership/credential resolution differs.
-
----
-
-# 58. `/me/cart` Naming
-
-The contract uses:
-
-```text
-/api/v1/me/cart
-```
-
-for the holder's current Cart.
-
-For guests, this remains conceptually holder-scoped through the guest credential.
-
-Do not create:
-
-```text
-/api/v1/guest/cart
-/api/v1/carts/{id}
-```
-
-as duplicate APIs.
-
----
-
-# 59. Cart ID Is Not Authority
-
-Knowledge of:
-
-```text
-cart_...
-```
-
-must never authorize access.
-
-Ownership comes from:
-
-```text
-authenticated principal
-```
-
-or:
-
-```text
-validated guest credential
-```
-
----
-
-# 60. Item ID Is Not Authority
-
-Knowledge of:
-
-```text
-item_...
-```
-
-must not allow cross-Cart mutation.
-
-Future update/remove must verify:
-
-```text
-item.cart_id == caller active cart.id
-```
-
----
-
-# 61. Cross-Customer Masking
-
-Attempt to access another holder's Cart item must return:
-
-```text
-404 CART_ITEM_NOT_FOUND
-```
-
-not a revealing permission response.
-
----
-
-# 62. Staff/Admin Do Not Own Customer Carts
-
-`STAFF` and `ADMIN` roles do not receive:
-
-```text
-cart.view_all
-cart.manage_all
-```
-
-or ordinary Cart mutation rights.
-
-Keep this boundary.
-
----
-
-# 63. Staff Self-Purchase
-
-Project rules permit Staff/Admin to purchase for themselves.
-
-Review how this interacts with Cart ownership.
-
-Expected:
-
-```text
-authenticated local user can own their own customer-commerce Cart
-```
-
-without needing a CUSTOMER role.
-
-Do not require:
-
-```text
-role == CUSTOMER
-```
-
-if existing authz policy already allows Staff/Admin self-commerce.
-
-Use ownership capability, not role-name shortcut.
-
----
-
-# 64. Guest Cart Merge
-
-CART-005 will later merge:
-
-```text
-guest Cart
-→ authenticated user's active Cart
-```
-
-Phase 6.1 must verify the existing schema can support this.
-
----
-
-# 65. Merge Requires Both Authorities
-
-Merge must require:
-
-```text
-authenticated principal
-+
-valid guest credential
-```
-
-Guest token alone must not claim an authenticated Cart.
-
----
-
-# 66. Merge Must Not Transfer Raw Ownership Fields from Client
-
-Client cannot send:
-
-```text
-user_id
-guest_token_digest
-target_cart_id
-```
-
-as authority.
-
-Server resolves both source and target.
-
----
-
-# 67. Merge Outcome
-
-Review the frozen merge semantics in the current Cart contract.
-
-Expected concepts include:
-
-```text
-source guest items merged into authenticated active Cart
-duplicate item identities consolidated
-quantity bounds enforced
-guest Cart retired/inactivated
-guest credential retired
-```
-
-Do not invent exact algorithm if current docs already specify it.
-
----
-
-# 68. Guest Credential Retirement
-
-After successful merge:
-
-the old guest credential must not continue authorizing the source Cart.
-
-Phase 6.1 should verify the model supports this lifecycle.
-
----
-
-# 69. Source Guest Cart Preservation
-
-Do not hard-delete the source guest Cart unless the frozen contract explicitly requires it.
-
-Given V1 status model:
-
-preferred lifecycle is likely:
-
-```text
-ACTIVE → INACTIVE
-```
-
-Review current contract.
-
----
-
-# 70. Authenticated Target Cart
-
-If authenticated user already has an active Cart:
-
-merge into it.
-
-Do not create a second active customer Cart.
-
----
-
-# 71. No Existing Active Cart
-
-If authenticated user has none:
-
-review whether the guest Cart can be converted/transferred or whether a new customer Cart must be created and merged.
-
-Do not decide by convenience.
-
-Use frozen CART-005 semantics where specified.
-
----
-
-# 72. One-Active-Cart Constraint During Merge
-
-Merge workflow must preserve:
+Phase 6.2 must preserve:
 
 ```text
 at most one ACTIVE Cart per authenticated user
 ```
 
-under all paths.
+The existing database `active_user_guard` remains the defensive constraint.
 
 ---
 
-# 73. Merge Quantity Conflict
+# 6. Concurrent Lazy Creation
+
+Two simultaneous first-time CART-001 requests for the same authenticated user must not create two active Carts.
 
 Example:
 
 ```text
-target Cart:
-chair red x80
-
-guest Cart:
-chair red x30
+Request A → no cart
+Request B → no cart
 ```
 
-Cannot become:
+must end with:
 
 ```text
-x110
+exactly one ACTIVE cart
 ```
-
-Review the frozen expected conflict behavior.
-
-Phase 6.5/merge implementation must respect max 100.
 
 ---
 
-# 74. Stale Guest Items During Merge
+# 7. Do Not Rely Only on "Find Then Insert"
 
-Guest Cart items may become:
-
-```text
-inactive
-unpublished
-out of stock
-```
-
-before login.
-
-Review whether merge:
+Naive:
 
 ```text
-preserves stale items
-or rejects them
+SELECT active cart
+if none:
+    INSERT cart
 ```
 
-according to current frozen CART-005 contract.
+may race.
 
-Do not invent behavior.
+Use an implementation that safely handles the unique active-cart constraint.
+
+Examples include:
+
+```text
+transaction + retry after unique violation
+```
+
+or another existing repository pattern.
+
+Do not weaken/remove the DB uniqueness guard.
 
 ---
 
-# 75. Guest Header vs Cookie
+# 8. Authenticated Race Outcome
 
-Contract recognizes:
+If concurrent creation races:
+
+both requests should ultimately resolve and return the same single ACTIVE Cart.
+
+Do not expose an internal unique-constraint exception.
+
+---
+
+# 9. Guest Caller
+
+Anonymous Cart access is supported.
+
+Guest identity comes from the approved guest Cart credential.
+
+A guest request may be:
+
+```text
+browser cookie holder
+Flutter/header holder
+first-time anonymous holder with no credential
+```
+
+---
+
+# 10. Existing Guest Credential
+
+If an anonymous request provides a valid guest credential:
+
+```text
+digest raw credential
+→ lookup ACTIVE Cart by guest_token_digest
+```
+
+If found:
+
+return that Cart.
+
+Do not create another Cart.
+
+---
+
+# 11. Guest Digest Lookup
+
+Use the existing:
+
+```text
+GuestCartCredential
+```
+
+HMAC mechanism.
+
+Conceptually:
+
+```text
+digest = HMAC-SHA-256(raw_token, GUEST_CART_TOKEN_KEY)
+```
+
+Search by persisted digest.
+
+Never search by raw token.
+
+---
+
+# 12. First-Time Guest
+
+If the request is anonymous and provides no existing guest credential:
+
+create:
+
+```text
+new raw UUIDv4 guest credential
+new digest
+new ACTIVE guest Cart
+```
+
+Persist only:
+
+```text
+guest_token_digest
+```
+
+Return the Cart and issue the raw credential through the correct client transport.
+
+---
+
+# 13. Empty Guest Cart Is Valid
+
+A newly created guest Cart is:
+
+```text
+ACTIVE
+items = []
+items_count = 0
+subtotal = 0 TZS
+```
+
+It is not a 404.
+
+---
+
+# 14. Missing Cart Is Not an Error
+
+For a valid holder context:
+
+```text
+no active Cart
+```
+
+means:
+
+```text
+create one
+```
+
+not:
+
+```text
+CART_NOT_FOUND
+```
+
+CART-001 is intentionally create/get.
+
+---
+
+# 15. Invalid Guest Credential
+
+A malformed, unknown, or retired guest credential must not be treated as authority.
+
+Do not bind it to another Cart.
+
+Do not expose whether a digest exists historically.
+
+---
+
+# 16. Invalid / Retired Guest Credential Behavior
+
+Follow the accepted Phase 6.1 rule:
+
+```text
+invalid or retired credential
+→ no ACTIVE guest cart
+```
+
+Where a provided credential is expected to authorize an existing guest Cart:
+
+return:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+rather than silently treating a bad credential as a valid existing holder.
+
+---
+
+# 17. Do Not Auto-Recycle Retired Token
+
+A guest Cart retired through CART-005 later becomes:
+
+```text
+INACTIVE
+```
+
+Its credential must not become valid again.
+
+CART-001 lookup for guest credential must therefore require:
+
+```text
+status = ACTIVE
+```
+
+---
+
+# 18. Do Not Create New Cart Under Invalid Supplied Credential
+
+If a caller explicitly sends a guest credential that is invalid/retired:
+
+do not silently create a fresh Cart under a new token in the same request.
+
+That can hide lost/expired credential state and complicate client recovery.
+
+Return the canonical auth failure.
+
+---
+
+# 19. Anonymous Request With No Credential
+
+This is different from an invalid supplied credential.
+
+No credential:
+
+```text
+new guest holder
+→ create empty ACTIVE guest Cart
+→ issue new credential
+```
+
+Invalid supplied credential:
+
+```text
+401
+```
+
+Keep these distinct.
+
+---
+
+# 20. Authenticated + Guest Credential
+
+If request is authenticated and also carries a guest credential:
+
+for CART-001:
+
+```text
+authenticated principal wins
+```
+
+Return the authenticated user's ACTIVE Cart.
+
+Do not automatically merge.
+
+---
+
+# 21. Merge Is Explicit
+
+Guest Cart handoff happens only through:
+
+```text
+CART-005
+POST /api/v1/me/cart/merge
+```
+
+Do not trigger merge as a side effect of:
+
+```text
+GET /me/cart
+login
+token verification
+```
+
+---
+
+# 22. Ignore Guest Credential for Authenticated CART-001 Ownership
+
+Authenticated CART-001 must not switch to the guest Cart merely because a guest credential is present.
+
+Holder authority is:
+
+```text
+authenticated principal
+```
+
+for this endpoint.
+
+---
+
+# 23. Do Not Retire Guest Token Yet
+
+If an authenticated CART-001 request includes a guest credential but does not call CART-005:
+
+do not:
+
+```text
+invalidate token
+mark guest Cart inactive
+merge items
+delete guest Cart
+```
+
+No mutation beyond create/get of the authenticated Cart.
+
+---
+
+# 24. Staff/Admin Personal Commerce
+
+Phase 6.1 deferred this policy to 6.2.
+
+Project-level rule:
+
+```text
+Staff/Admin may purchase for themselves
+```
+
+Therefore self-owned Cart access must not require:
+
+```text
+role == CUSTOMER
+```
+
+if the authenticated local User is otherwise permitted to use personal commerce.
+
+---
+
+# 25. Staff/Admin Must Not Gain Operational Cart Access
+
+Support:
+
+```text
+STAFF own personal Cart
+ADMIN own personal Cart
+```
+
+only.
+
+Do not support:
+
+```text
+STAFF → another customer's Cart
+ADMIN → another customer's Cart
+```
+
+through CART-001.
+
+---
+
+# 26. Cart Ownership Is Self-Context
+
+Authenticated CART-001 always resolves:
+
+```text
+current local user
+```
+
+Never another user's Cart.
+
+Role does not change this.
+
+---
+
+# 27. Suspended / Inactive Account Policy
+
+Reuse the existing Group D account-state authorization boundary.
+
+Do not create a Cart-specific alternate account-state policy.
+
+If current middleware blocks commerce for an ineligible local account:
+
+CART-001 should respect that existing rule.
+
+---
+
+# 28. Guest Route Authentication Middleware
+
+Current Cart routes were previously auth-only.
+
+CART-001 must now support:
+
+```text
+optional Clerk authentication
+```
+
+rather than mandatory authentication.
+
+Use the existing optional-auth middleware pattern if available.
+
+Do not duplicate Clerk token parsing.
+
+---
+
+# 29. Optional Authentication Semantics
+
+If:
+
+```text
+valid Bearer token present
+```
+
+resolve authenticated user.
+
+If:
+
+```text
+no Bearer token
+```
+
+continue to guest holder resolution.
+
+If:
+
+```text
+Bearer token present but invalid
+```
+
+do not silently downgrade to guest.
+
+Return the canonical authentication error.
+
+---
+
+# 30. No Auth Downgrade
+
+This is security-critical.
+
+Request:
+
+```text
+Authorization: Bearer invalid-token
+```
+
+must not become:
+
+```text
+anonymous guest request
+```
+
+Invalid attempted authentication remains authentication failure.
+
+---
+
+# 31. Holder Resolver
+
+Introduce a focused reusable holder-resolution abstraction.
+
+Example concept:
+
+```text
+CartHolderResolver
+```
+
+Responsibilities:
+
+```text
+authenticated holder detection
+guest credential resolution
+client transport detection
+holder type
+```
+
+Do not make it responsible for:
+
+```text
+pricing
+availability
+item mutation
+merge
+checkout
+```
+
+---
+
+# 32. Suggested Holder Result
+
+Conceptually:
+
+```text
+AuthenticatedCartHolder(User $user)
+```
+
+or:
+
+```text
+GuestCartHolder(raw credential / digest context)
+```
+
+Use repository conventions.
+
+Do not expose raw guest credential beyond the narrow layer that needs to issue transport.
+
+---
+
+# 33. Cart Finder / Creator
+
+Use a separate focused service/action such as:
+
+```text
+ResolveActiveCart
+GetOrCreateActiveCart
+```
+
+Responsibilities:
+
+```text
+find active Cart
+create when absent
+handle creation race
+return authoritative Cart
+```
+
+---
+
+# 34. Avoid Giant Cart Service
+
+Do not create one class that already contains:
+
+```text
+create
+get
+add
+update
+remove
+merge
+pricing
+availability
+checkout
+```
+
+Keep Phase 6.2 responsibilities narrow.
+
+---
+
+# 35. Guest Cart Creation
+
+When creating guest Cart:
+
+```text
+user_id = null
+guest_token_digest = digest(new raw UUIDv4)
+status = ACTIVE
+```
+
+Persist no raw token.
+
+---
+
+# 36. Authenticated Cart Creation
+
+When creating user Cart:
+
+```text
+user_id = current local user id
+guest_token_digest = null
+status = ACTIVE
+```
+
+---
+
+# 37. No Ownership Mutation
+
+CART-001 must not convert:
+
+```text
+guest Cart → customer Cart
+```
+
+or:
+
+```text
+customer Cart → guest Cart
+```
+
+Ownership transfer belongs only to explicit merge/handoff logic.
+
+---
+
+# 38. No Cart Status Transition Except Required Creation
+
+CART-001 may create:
+
+```text
+ACTIVE
+```
+
+Cart.
+
+It must not mark existing carts:
+
+```text
+INACTIVE
+```
+
+except if a narrowly required race-recovery mechanism uses an already-approved domain rule.
+
+Normal status transitions belong to later workflows.
+
+---
+
+# 39. Opaque Cart IDs
+
+Phase 6.1 identified opaque IDs as a Phase 6.2 implementation gap.
+
+Cart response IDs must follow:
+
+```text
+cart_...
+```
+
+rather than exposing raw DB integer IDs.
+
+---
+
+# 40. Opaque CartItem IDs
+
+Even though item mutation is not implemented yet, Cart representation contains CartItem IDs.
+
+They must follow:
+
+```text
+item_...
+```
+
+not raw database IDs.
+
+---
+
+# 41. Reuse Existing Opaque-ID Infrastructure
+
+Inspect repository for the existing public ID/opaque ID mechanism used by:
+
+```text
+products
+variants
+inventory
+orders
+```
+
+Reuse it.
+
+Do not invent a second incompatible encoding library.
+
+---
+
+# 42. Stable IDs
+
+Opaque Cart/CartItem IDs must be:
+
+```text
+stable
+non-sequential externally where existing policy requires
+non-guess-authority
+```
+
+But remember:
+
+```text
+ID is not authorization
+```
+
+Even opaque IDs must still undergo holder checks later.
+
+---
+
+# 43. Do Not Add Public ID Columns Without Need
+
+If the existing application already derives opaque IDs from DB IDs through a codec:
+
+reuse that.
+
+Do not add:
+
+```text
+public_id
+uuid
+external_id
+```
+
+columns merely because the wire contract uses prefixes.
+
+---
+
+# 44. Cart Representation
+
+Return:
+
+```text
+{
+  "data": {
+    "id": "cart_...",
+    "items_count": 0,
+    "items": [],
+    "subtotal": {
+      "amount": 0,
+      "currency": "TZS"
+    },
+    "updated_at": "..."
+  }
+}
+```
+
+for a new empty Cart.
+
+---
+
+# 45. Successful Response Envelope
+
+Use canonical:
+
+```text
+data
+```
+
+single-resource envelope.
+
+Do not use:
+
+```text
+cart
+result
+payload
+```
+
+at the top level.
+
+---
+
+# 46. No Pagination
+
+Cart item list is embedded.
+
+Do not return:
+
+```text
+meta.pagination
+```
+
+for CART-001.
+
+---
+
+# 47. Empty Items
+
+Empty Cart:
+
+```text
+items: []
+```
+
+never:
+
+```text
+items: null
+items omitted
+404
+```
+
+---
+
+# 48. Items Count
+
+For CART-001:
+
+```text
+items_count
+=
+number of distinct CartItem rows
+```
+
+not sum of quantities.
+
+---
+
+# 49. Empty Subtotal
+
+Use:
+
+```json
+{
+  "amount": 0,
+  "currency": "TZS"
+}
+```
+
+not:
+
+```text
+null
+0
+"TZS 0"
+```
+
+---
+
+# 50. Current Cart Projection
+
+For an existing non-empty Cart, CART-001 must eventually return current:
+
+```text
+Product/Variant display data
+unit_price
+line_total
+availability
+stock_indicator
+is_purchasable
+```
+
+according to the frozen representation.
+
+However this phase must be careful not to implement Phase 6.6/6.7 prematurely.
+
+---
+
+# 51. Phase 6.2 Projection Boundary
+
+Implement only the amount of Cart projection required to make CART-001 conform to its response contract.
+
+Reuse existing Group E:
+
+```text
+price
+availability
+stock_indicator
+```
+
+resolvers.
+
+Do not build new stock validation algorithms.
+
+---
+
+# 52. Existing Cart Items Must Be Renderable
+
+CART-001 cannot assume every Cart is empty.
+
+Therefore existing CartItems must serialize correctly.
+
+Use current Product/Variant relations and Group E projection.
+
+---
+
+# 53. Stale Cart Items
+
+CART-001 must not silently drop existing stale lines.
+
+If Product/Variant has become stale:
+
+preserve line in `items`.
+
+Detailed stale-validation hardening remains Phase 6.6/6.7, but Phase 6.2 must not make stale items disappear due to using the public Product scope.
+
+---
+
+# 54. Do Not Query Through Public Product Scope Only
+
+Public scope excludes inactive/unpublished Products.
+
+Cart read must still be able to resolve stored lines and represent them as stale.
+
+Use context-appropriate relationships.
+
+---
+
+# 55. Category Visibility in Purchasability
+
+Phase 6.1 recorded `is_purchasable` as requiring:
+
+```text
+Product active
+Product published
+Product not deleted
+Category active
+product_type = IN_STOCK
+active parent-owned Variant
+live availability available
+```
+
+Do not weaken this definition.
+
+---
+
+# 56. MADE_TO_ORDER Existing Line
+
+Although future admission rejects MADE_TO_ORDER, historical/test data might contain one.
+
+CART-001 must not crash.
+
+Return:
+
+```text
+is_purchasable = false
+```
+
+according to current Cart semantics.
+
+Do not reserve or mutate anything.
+
+---
+
+# 57. Price Projection
+
+Use current active-Variant catalog pricing.
+
+Do not persist:
+
+```text
+unit_price
+line_total
+subtotal
+```
+
+during CART-001.
+
+---
+
+# 58. Cart GET Is Read-Only Except Lazy Creation
+
+For existing Cart:
+
+GET must not update:
+
+```text
+Cart.updated_at
+CartItem.updated_at
+prices
+availability fields
+inventory
+```
+
+because current display data changed.
+
+---
+
+# 59. Creating a New Cart Is the Only Normal CART-001 Mutation
+
+For an existing holder with existing ACTIVE Cart:
+
+GET remains observational.
+
+---
+
+# 60. No Inventory Reservation
+
+CART-001 must not modify:
+
+```text
+ProductStock.quantity
+ProductStock.reserved_quantity
+```
+
+under any circumstance.
+
+---
+
+# 61. No Product Locks
+
+Do not acquire:
+
+```text
+lockForUpdate()
+```
+
+on ProductStock merely to display Cart.
+
+Final stock locking remains Group G checkout.
+
+---
+
+# 62. Guest Credential Transport
+
+Implement the accepted split exactly.
+
+Browser:
+
+```text
+Set-Cookie: guest_cart_id=<raw UUIDv4>
+HttpOnly
+Secure
+SameSite=None
+```
+
+Non-browser:
+
+```text
+X-Guest-Cart-Id: <raw UUIDv4>
+```
+
+Never both.
+
+---
+
+# 63. Browser Must Never Receive Guest Token Header
+
+For browser requests:
+
+do not emit:
 
 ```text
 X-Guest-Cart-Id
 ```
 
-and browser:
+even if convenient for frontend JavaScript.
+
+That would defeat HttpOnly protection.
+
+---
+
+# 64. Flutter Must Not Receive Guest Cookie
+
+For non-browser/Flutter transport:
+
+do not emit:
+
+```text
+Set-Cookie: guest_cart_id=...
+```
+
+Return only the header.
+
+---
+
+# 65. Guest Token Input
+
+Browser:
+
+read guest credential from approved cookie.
+
+Flutter/non-browser:
+
+read guest credential from:
+
+```text
+X-Guest-Cart-Id
+```
+
+Do not accept it in JSON body.
+
+---
+
+# 66. No Query Token
+
+Do not accept:
+
+```text
+?guest_cart_id=...
+```
+
+URLs may be logged/bookmarked.
+
+---
+
+# 67. No Guest Token in Response Body
+
+Do not serialize:
+
+```json
+{
+  "guest_cart_id": "..."
+}
+```
+
+in Cart JSON.
+
+Credential transport stays cookie/header only.
+
+---
+
+# 68. Client-Type Detection
+
+Inspect the existing:
+
+```text
+api-conventions.md §22.6
+```
+
+and current middleware/request metadata strategy.
+
+Reuse the frozen client-classification mechanism if already implemented.
+
+Do not invent a new public query parameter such as:
+
+```text
+?client=flutter
+```
+
+unless already contracted.
+
+---
+
+# 69. Browser/Non-Browser Classification Must Be Centralized
+
+Do not repeat transport-selection logic in every Cart controller.
+
+Use a focused helper/middleware/service.
+
+Future CART-002..005 must use the same rules.
+
+---
+
+# 70. Mutually Exclusive Guest Transport
+
+Reject or deterministically handle requests that improperly provide both:
 
 ```text
 guest_cart_id cookie
+X-Guest-Cart-Id header
 ```
 
-Review exact precedence/mutual-exclusion rules.
+according to existing security conventions.
 
-Do not accept conflicting identities silently.
-
----
-
-# 76. Browser Security
-
-If cookie is used, ensure later implementation aligns with approved:
+Preferred behavior if contract defines mutual exclusion:
 
 ```text
-HttpOnly
-Secure
-appropriate SameSite
+reject ambiguous credential input
 ```
 
-policy.
-
-Phase 6.1 only records the requirement.
+rather than guessing.
 
 ---
 
-# 77. Flutter
+# 71. Never Log Guest Credential
 
-Flutter may send the opaque guest identifier through:
+Ensure application/request logging does not record:
 
 ```text
 X-Guest-Cart-Id
+guest_cart_id cookie
+raw token
 ```
-
-Do not create mobile-only Cart behavior.
-
-Same backend rules serve Web and Flutter.
 
 ---
 
-# 78. Cache Policy
+# 72. Redaction
 
-Cart endpoints are private holder data.
+If the current HTTP logging layer has sensitive-header/cookie redaction:
 
-Required:
+add these names there if not already covered.
+
+Do not introduce a second logging system.
+
+---
+
+# 73. Cookie Lifetime
+
+Use the exact Cart guest credential cookie lifetime from current API conventions/configuration.
+
+If current contract does not define one:
+
+do not invent business expiry semantics.
+
+A browser cookie lifetime is transport persistence, not Cart business expiration.
+
+---
+
+# 74. Secure Cookie
+
+Production behavior must use:
+
+```text
+Secure
+HttpOnly
+SameSite=None
+```
+
+as frozen.
+
+Do not weaken `Secure` merely for local convenience in production config.
+
+---
+
+# 75. Local Development
+
+If local HTTP development needs cookie accommodation:
+
+use environment-aware framework configuration without changing production contract.
+
+Do not hardcode insecure production cookies.
+
+---
+
+# 76. CORS Dependency
+
+Browser cross-origin credentialed requests require:
+
+```text
+credentials: include
+Access-Control-Allow-Credentials: true
+strict allowed Origin
+```
+
+Verify existing CORS configuration supports this.
+
+Do not broaden:
+
+```text
+Access-Control-Allow-Origin: *
+```
+
+with credentials.
+
+---
+
+# 77. Do Not Build Frontend
+
+Only verify the backend contract.
+
+Do not modify Next.js or Flutter clients.
+
+---
+
+# 78. Cart Resource
+
+Create/use an explicit:
+
+```text
+CartResource
+```
+
+Do not return:
+
+```php
+$cart->toArray()
+```
+
+---
+
+# 79. CartItem Resource
+
+Use explicit:
+
+```text
+CartItemResource
+```
+
+or equivalent projection object.
+
+No mass serialization.
+
+---
+
+# 80. Cart Resource Sensitive Fields
+
+Never expose:
+
+```text
+user_id
+guest_token_digest
+active_user_guard
+status
+internal DB IDs
+```
+
+unless status is explicitly part of frozen Cart representation.
+
+Current Cart response does not require those fields.
+
+---
+
+# 81. Item Sensitive Fields
+
+Never expose:
+
+```text
+cart_id
+raw ProductStock data
+cost_price
+warehouse_location
+reserved_quantity
+internal FK fields
+```
+
+outside the contracted representation.
+
+---
+
+# 82. Current Item Ordering
+
+Return CartItems in deterministic insertion order.
+
+Preferred existing rule:
+
+```text
+created_at ASC
+id ASC
+```
+
+unless current contract/relation already specifies equivalent ordering.
+
+Do not rely on implicit database order.
+
+---
+
+# 83. `updated_at`
+
+Return Cart's own mutation timestamp.
+
+Do not calculate it from:
+
+```text
+Product price change
+inventory change
+```
+
+---
+
+# 84. Parent Touch Behavior
+
+CART-001 itself should not touch the Cart.
+
+Later mutations must update Cart.updated_at.
+
+Do not implement those mutation flows now.
+
+---
+
+# 85. Private Cache Policy
+
+Every CART-001 response must be:
 
 ```text
 Cache-Control:
@@ -1441,1185 +1467,458 @@ no-store,
 must-revalidate
 ```
 
-or exact existing middleware convention.
-
-Never public CDN-cache Cart responses.
+or exact shared middleware equivalent.
 
 ---
 
-# 79. Response Representation Review
+# 86. Never Public Cache Cart
 
-Frozen Cart object:
+This applies to:
 
 ```text
-id
-items_count
-items[]
-subtotal
-updated_at
+authenticated Cart
+guest Cart
 ```
 
-Verify no required field conflicts with the persistence design.
+Both are holder-private.
 
 ---
 
-# 80. Cart Item Representation Review
+# 87. Vary / Credential Safety
 
-Frozen CartItem includes:
+Review whether responses need appropriate:
 
 ```text
-id
-product_id
-variant_id
-product
-variant
-quantity
-unit_price
-line_total
-availability
-stock_indicator
-is_purchasable
-created_at
-updated_at
+Vary
 ```
 
-All dynamic fields must be derived without changing Cart schema.
+headers under existing CORS/caching middleware.
+
+Do not create a shared cache identity based on guest token.
 
 ---
 
-# 81. Embedded Product Summary
+# 88. Authentication Middleware Pipeline
 
-Cart does not necessarily embed the full public ProductSummary.
-
-The Cart contract specifies the exact embedded fields.
-
-Use explicit Cart-specific serialization if needed.
-
-Do not automatically dump ProductResource.
-
----
-
-# 82. Embedded Variant Summary
-
-Likewise use the exact Cart contract representation.
-
-Do not leak:
+Desired conceptual pipeline:
 
 ```text
-cost_price
-dimensions
-internal attributes
-inventory rows
+request
+→ optional Clerk authentication
+→ if auth attempted and invalid: 401
+→ determine authenticated vs guest holder
+→ resolve/create ACTIVE Cart
+→ project Cart
+→ set private cache
+→ issue guest credential transport if newly created
+→ response
 ```
-
-unless explicitly contracted.
 
 ---
 
-# 83. Missing Product/Variant via FK Rules
+# 89. Do Not Hit Clerk for Pure Guest Request
 
-Current CartItem Product/Variant FKs use:
+If no Authorization header is present:
 
-```text
-RESTRICT
-```
+do not make unnecessary Clerk Backend API calls.
 
-so normal hard deletion cannot orphan a Cart line.
-
-Review how soft-deleted Products behave.
-
-Product soft-delete may make a Cart line stale while relationship data still exists.
-
-This should be supported.
+Proceed through guest resolution.
 
 ---
 
-# 84. Soft-Deleted Product in Cart
+# 90. Authenticated Existing Local User
 
-A Product soft-deleted after Cart addition should not be purchasable.
+Use the already-proven Group D local-user resolution.
 
-Review how the Cart read resolver can still provide enough data to signal stale state without violating public Product scope.
-
-Do not silently drop the line.
+Do not duplicate JIT provisioning in Cart code.
 
 ---
 
-# 85. Cart Resolver / Presenter Boundary
+# 91. JIT Provisioning
 
-Phase 6.1 should identify a clean future architecture for Cart reads.
+If the existing authentication middleware provisions the local User on first valid authenticated request:
 
-Prefer something like:
+CART-001 should naturally work after that.
 
-```text
-Cart query/loader
-→ Cart item domain projection
-→ current pricing/availability resolver
-→ CartResource
-```
-
-Avoid placing all logic in the controller.
+Do not add a Cart-specific provisioner.
 
 ---
 
-# 86. Reuse Group E Pricing Logic
+# 92. Authenticated Cart Creation Race
 
-Use the same Product/Variant price authority from Group E.
+Add focused test with two separate requests/processes or simulated DB conflict where practical.
 
-Do not create:
+Expected:
 
 ```text
-CartPriceResolver
+one ACTIVE cart
+same Cart returned
 ```
-
-with different pricing semantics unless it is only a thin reuse wrapper.
 
 ---
 
-# 87. Reuse Group E Availability
+# 93. Guest Cart Creation Race
 
-Cart current:
+A first guest request has no credential, so two independent requests are two independent guest holders.
 
-```text
-availability
-stock_indicator
-```
+They may each receive separate guest Carts.
 
-should use Group E's authoritative derivation.
+This is correct.
 
-Do not recreate stock aggregation formulas.
+Do not deduplicate anonymous users by IP/browser fingerprint.
 
 ---
 
-# 88. Cart-Specific Purchasability Resolver
+# 94. Guest Existing Cart Race
 
-A small Cart-domain resolver for:
+Two requests carrying the same valid guest token must resolve the same Cart.
 
-```text
-is_purchasable
-```
-
-may be appropriate because Cart rules include:
-
-```text
-Product type
-visibility
-Variant validity
-requested Cart quantity
-```
-
-beyond public availability alone.
-
-Do not overload the public availability resolver with Cart ownership/workflow concerns.
+GET does not create a second one.
 
 ---
 
-# 89. No Checkout Service Reuse Yet
+# 95. No IP Ownership
 
-Cart validation can share domain rules, but do not make Cart call the full Checkout service.
-
-Checkout has:
+Never bind guest Cart ownership to:
 
 ```text
-locking
-reservation
-Order creation
-idempotency
+IP address
+User-Agent
+device fingerprint
 ```
 
-which Cart must not trigger.
+Guest token alone is the guest holder credential.
 
 ---
 
-# 90. Error Contract Review
+# 96. Opaque Cart Route Isolation
 
-Ensure future Group F phases use existing frozen codes:
+CART-001 has no Cart ID parameter.
 
-```text
-CART_NOT_FOUND
-CART_ITEM_NOT_FOUND
-INVALID_VALUE
-INVALID_TYPE
-MISSING_REQUIRED_FIELD
-INVALID_PRODUCT_VARIANT
-PRODUCT_NOT_PURCHASABLE
-PRODUCT_UNAVAILABLE
-CART_ITEM_UNAVAILABLE
-INSUFFICIENT_STOCK
-RATE_LIMITED
-```
+Therefore client cannot select another Cart through URL manipulation.
 
-Do not invent new Cart error codes casually.
+Preserve self-context architecture.
 
 ---
 
-# 91. Product Unpublished Error Reconciliation
+# 97. Cart Not Found Code
 
-The Cart resource contract says active draft/unpublished Product admission maps to:
+CART_NOT_FOUND remains useful in later holder-specific failure cases.
 
-```text
-PRODUCT_NOT_PURCHASABLE
-```
-
-while another error table also mentions:
-
-```text
-PRODUCT_UNAVAILABLE
-```
-
-for failed Product purchasability flags.
-
-Review current canonical endpoint-specific mapping carefully.
-
-Do not implement contradictory mappings in later phases.
-
-Record the final authoritative mapping in Phase 6.1 review.
+But CART-001 valid-holder/no-cart should lazily create instead of returning it.
 
 ---
 
-# 92. Stale Read Is Not Admission Error
+# 98. Empty Authenticated Cart
 
-An already-stored stale line should generally be returned:
+Authenticated user with no existing Cart receives:
 
 ```text
 200
-is_purchasable = false
+empty active Cart
 ```
 
-rather than causing entire Cart GET to fail.
+not 201.
 
-Keep this distinction.
+CART-001 is a GET create/get endpoint whose wire response remains the Cart resource.
 
----
-
-# 93. Checkout Rejects Invalid Cart
-
-Future Checkout will reject Cart containing stale/unpurchasable lines.
-
-Do not make Cart GET itself unusable because one line is stale.
-
-Customer needs to see and remove it.
+Do not introduce a separate creation status solely because lazy persistence occurred.
 
 ---
 
-# 94. No Cart Pagination
+# 99. Empty Guest Cart
 
-Cart items are embedded in the Cart object.
-
-Do not introduce:
+Likewise:
 
 ```text
-page
-per_page
-```
-
-for Cart items in V1 unless frozen docs say otherwise.
-
----
-
-# 95. Deterministic Cart Item Ordering
-
-The Cart contract says:
-
-```text
-deterministic insertion order
-```
-
-Review how this maps to current schema.
-
-Likely:
-
-```text
-created_at ASC
-id ASC
-```
-
-or existing relation ordering.
-
-Document one stable rule.
-
-Do not rely on unspecified DB order.
-
----
-
-# 96. Item Ordering Is Not User Sort
-
-Do not add:
-
-```text
-sort
-display_order
-```
-
-fields to CartItem.
-
-Insertion order is enough.
-
----
-
-# 97. Updated Timestamp
-
-Cart's:
-
-```text
-updated_at
-```
-
-should represent last meaningful Cart mutation.
-
-Review how item mutations will touch/update the parent Cart.
-
-Do not assume Eloquent automatically updates parent Cart unless configured.
-
----
-
-# 98. Cart Timestamp Touching
-
-Decide whether future:
-
-```text
-add
-quantity update
-remove
-merge
-```
-
-should explicitly update Cart.updated_at.
-
-Given the response contract, they should.
-
-Document mechanism for later phases.
-
----
-
-# 99. Read Should Not Touch Cart
-
-GET Cart must not update:
-
-```text
-updated_at
-```
-
-simply because live prices/availability were recalculated.
-
----
-
-# 100. No Pricing Mutation of Cart
-
-A catalog price change should alter the next serialized Cart subtotal without mutating Cart persistence or timestamps.
-
----
-
-# 101. No Availability Mutation of Cart
-
-A stock change should alter serialized availability without writing CartItem.
-
----
-
-# 102. One Active Guest Cart?
-
-Review whether schema enforces one ACTIVE Cart per guest credential.
-
-Because:
-
-```text
-guest_token_digest is globally unique
-```
-
-one credential naturally identifies one Cart.
-
-Confirm no additional active-guest guard is needed.
-
----
-
-# 103. Guest Cart Creation
-
-Phase 6.2 will need to define:
-
-```text
-GET /me/cart with no valid guest credential
-```
-
-behavior for anonymous users.
-
-Review frozen CART-001 behavior now.
-
-Does GET create a Cart or only return existing?
-
-Do not guess if docs specify it.
-
----
-
-# 104. Authenticated Cart Creation
-
-Likewise review whether:
-
-```text
-GET /me/cart
-```
-
-must lazily create an active Cart if none exists.
-
-This impacts Phase 6.2.
-
-Document exact frozen behavior.
-
----
-
-# 105. Create/Get Boundary
-
-If the contract intentionally combines create/get through:
-
-```text
-CART-001
-GET /me/cart
-```
-
-record the idempotent lazy-create semantics.
-
-Do not add:
-
-```text
-POST /carts
-```
-
-unless already approved.
-
----
-
-# 106. No User-Supplied Cart ID
-
-Future Cart APIs remain self-context.
-
-Do not accept:
-
-```text
-cart_id
-user_id
-```
-
-in request bodies/query strings.
-
----
-
-# 107. Cart Mutation Rate Limiting
-
-Review Phase 4.11 limiter assignments.
-
-Frozen security contract includes Cart mutation abuse controls.
-
-Later phases should reuse the correct limiter.
-
-Do not create one here unless missing and clearly required.
-
----
-
-# 108. Cart Reads Rate Limit
-
-Review current protected read limiter for:
-
-```text
-GET /me/cart
-```
-
-Do not apply public catalog limiter accidentally.
-
----
-
-# 109. Authentication Optionality
-
-Cart routes support two holder modes:
-
-```text
-authenticated local user
-or
-valid guest credential
-```
-
-Do not make the middleware require Clerk unconditionally before guest resolution.
-
----
-
-# 110. Ambiguous Dual Identity
-
-If a request has:
-
-```text
-authenticated user
+200
+empty Cart
 +
-guest credential
+credential transport
 ```
 
-review canonical semantics.
+unless the frozen API contract explicitly says otherwise.
 
-Likely:
+Use current OpenAPI as final authority.
+
+---
+
+# 100. GET Idempotency
+
+Repeated CART-001 for the same holder:
 
 ```text
-normal authenticated Cart access
+same ACTIVE Cart
+same Cart ID
 ```
 
-versus explicit:
+No new Cart on each GET.
+
+---
+
+# 101. Guest Credential Re-Issuance
+
+For an existing valid guest Cart:
+
+do not rotate raw credential automatically unless current security contract says so.
+
+Use the credential supplied by holder.
+
+---
+
+# 102. New Guest Credential Response
+
+Only newly created anonymous guest Cart requires new credential issuance.
+
+---
+
+# 103. Authenticated Response Must Not Issue Guest Credential
+
+For authenticated CART-001:
+
+do not emit:
 
 ```text
-CART-005 merge
+guest_cart_id cookie
+X-Guest-Cart-Id
 ```
 
-for guest handoff.
-
-Do not silently auto-merge guest Cart on every authenticated Cart request unless the contract says so.
+even if a guest credential was also sent.
 
 ---
 
-# 111. Merge Must Be Explicit
+# 104. Product/Variant Loading
 
-The V1 surface includes:
+Avoid N+1.
+
+For a non-empty Cart preload only data needed for:
 
 ```text
-POST /me/cart/merge
-```
-
-Therefore login/authentication alone should not accidentally perform hidden Cart mutation unless current auth architecture explicitly defines that workflow.
-
-Preserve explicitness.
-
----
-
-# 112. Checkout Cart Lifecycle Dependency
-
-Future successful checkout clears Cart items so a new empty active Cart is available, according to the Checkout contract.
-
-Review whether the existing Cart schema/status design supports:
-
-```text
-clear existing Cart items
-keep Cart ACTIVE
-```
-
-versus:
-
-```text
-mark Cart INACTIVE
-create new active Cart
-```
-
-The Checkout contract currently favors clearing items.
-
-Do not change it in Phase 6.1.
-
----
-
-# 113. Cart Historical Status vs Checkout Clear
-
-Group C allows inactive historical Carts, but checkout may simply clear the active Cart.
-
-These concepts are not contradictory.
-
-Document when INACTIVE is actually intended to be used:
-
-```text
-merge/retirement
-ownership lifecycle
-other explicit workflow
-```
-
-rather than assuming checkout always inactivates.
-
----
-
-# 114. No Order History in Cart
-
-Clearing Cart after checkout is safe because historical purchase information is in:
-
-```text
-Order
-OrderItem snapshots
-```
-
-Do not keep Cart prices/items as order history.
-
----
-
-# 115. Cart FK Delete Policy
-
-Review current:
-
-```text
-cart_items.product_id RESTRICT
-cart_items.variant_id RESTRICT
-```
-
-and ensure this remains compatible with stale Cart preservation.
-
-Do not switch to cascade.
-
----
-
-# 116. User Delete Policy Variance
-
-Known Group C variance:
-
-```text
-carts.user_id
-RESTRICT on MySQL
-RESTRICT-equivalent / null-related SQLite behavior
-```
-
-Review current repository state.
-
-Do not change it during Cart model review unless account-retention policy has now been finalized.
-
----
-
-# 117. No User Deletion Policy Invention
-
-If account deletion remains deferred:
-
-leave the FK variance documented.
-
-Do not redesign Cart ownership for an unrelated future feature.
-
----
-
-# 118. Cart Factory Review
-
-Verify current:
-
-```text
-CartFactory
-CartItemFactory
-```
-
-can generate:
-
-```text
-customer-owned active Cart
-guest-owned active Cart
-inactive Cart
-valid Product/Variant line
-null-Variant line if supported
-quantity boundaries
-```
-
-without fabricating pricing/reservation state.
-
----
-
-# 119. Group E Product Factory Compatibility
-
-Ensure Cart factories/tests can explicitly create:
-
-```text
-published IN_STOCK Product
-MADE_TO_ORDER Product
-inactive Product
-unpublished Product
-active Variant
-inactive Variant
-stocked Variant
-out-of-stock Variant
-```
-
-using the post-Group-E model.
-
----
-
-# 120. Existing Cart Schema Tests
-
-Review:
-
-```text
-tests/Feature/CartSchemaTest.php
-```
-
-Do not duplicate its schema/invariant tests in later API tests.
-
----
-
-# 121. Existing Coverage to Preserve
-
-At minimum preserve:
-
-```text
-ownership XOR
-guest digest security
-one active customer Cart
-status CLOSED
-quantity bounds
-duplicate line identity
-Variant belongs to Product
-no pricing columns
-no inventory columns
-no reservation columns
-```
-
----
-
-# 122. New Review-Level Tests?
-
-Phase 6.1 should generally not add large API tests.
-
-Add only focused regression tests if the review discovers a genuine model defect or post-Group-E incompatibility.
-
-Full Cart API coverage belongs to Phase 6.8.
-
----
-
-# 123. Review Group E Integration
-
-Verify Cart model assumptions still hold after Group E changes:
-
-```text
-products.product_type now exists
-products.is_published now exists
-availability derives from inventory
-Variant active restriction exists
-price resolver finalized
-```
-
-No Cart schema migration should be necessary just because these fields now exist.
-
----
-
-# 124. Public vs Cart Product Resolution
-
-Do not blindly use the public Product query scope for stale Cart lines.
-
-Public scope hides inactive/unpublished Products.
-
-Cart read may need to resolve an existing stored Product specifically so it can return the stale line as unavailable.
-
-This is an important architectural distinction.
-
----
-
-# 125. Stale Cart Lookup Strategy
-
-Existing Cart item points to Product through FK.
-
-Cart projection should be able to load that Product even when no longer public and then derive:
-
-```text
-is_purchasable = false
-```
-
-without exposing it elsewhere.
-
-Do not call CAT-002 endpoint internally.
-
----
-
-# 126. Variant Stale Lookup Strategy
-
-Likewise, do not filter inactive Variants out before Cart can evaluate an existing line.
-
-For admission:
-
-```text
-active Variant required
-```
-
-For existing-line presentation:
-
-```text
-inactive Variant may need to remain loadable
-```
-
-so Cart can signal staleness.
-
----
-
-# 127. Avoid Public Scope on Cart Relations
-
-Review model relations/scopes to ensure Cart item Product/Variant relations do not automatically apply public/active scopes that make stale lines disappear.
-
-Use explicit context-specific querying.
-
----
-
-# 128. Current Price for Stale Item
-
-Review the frozen contract's expected behavior if Product/Variant becomes inactive but still has pricing data.
-
-Likely Cart can still show current/last live database price informationally while marking item unpurchasable.
-
-Do not invent null price if price contract is non-null.
-
-Follow current docs.
-
----
-
-# 129. Hard-Deleted Referents
-
-FK RESTRICT should normally prevent Product/Variant hard delete while CartItem exists.
-
-Confirm this remains true.
-
-This simplifies stale Cart serialization.
-
----
-
-# 130. Cart Domain Services Needed Later
-
-Phase 6.1 may recommend, but not overbuild, focused boundaries such as:
-
-```text
-CartHolderResolver
-CartFinder
-CartItemPurchasabilityResolver
-CartPricingProjection
-GuestCartCredentialResolver
-```
-
-Only create them later as implementation demands.
-
-Do not build speculative abstractions now.
-
----
-
-# 131. Avoid One Giant `CartService`
-
-Do not plan a monolithic class that handles:
-
-```text
-guest auth
-cart lookup
-pricing
-availability
-add
-update
-delete
-merge
-checkout
-```
-
-Prefer small responsibilities.
-
----
-
-# 132. DTO / Request Boundary
-
-Future Cart mutation requests must follow:
-
-```text
-FormRequest::validated()
-→ DTO/command where useful
-→ domain/service
-```
-
-No `$request->all()`.
-
----
-
-# 133. Server-Controlled Fields
-
-Future add/update requests must reject client-supplied:
-
-```text
+CartItem representation
 price
-unit_price
-line_total
-subtotal
-total
-currency
-stock
 availability
-stock_indicator
-is_purchasable
-discount
-delivery_fee
-user_id
-guest_token_digest
-cart_id
+purchasability
 ```
-
-unless a field is explicitly part of the frozen request.
 
 ---
 
-# 134. Add Item Request
+# 105. Inventory Query Efficiency
 
-Future CART-002 accepts only:
+Do not issue one ProductStock query per line where the Phase 5.7 resolver already supports aggregate loading.
+
+Reuse existing Group E query patterns.
+
+---
+
+# 106. No Full Catalog Query
+
+Do not resolve Cart items by running:
 
 ```text
-product_id
-variant_id conditional
-quantity
+CAT-001 search/filter
 ```
 
-Record this unchanged.
+for each Product.
+
+Use direct relationships/domain services.
 
 ---
 
-# 135. Update Item Request
+# 107. Stale Soft-Deleted Products
 
-Future CART-003 accepts only:
+Because Products may be soft-deleted:
+
+Cart projection may need:
 
 ```text
-quantity
+withTrashed()
 ```
 
-Product and Variant identity are immutable for a line.
+or equivalent context-specific relation.
+
+Use it only within the holder-private Cart projection where needed.
+
+Do not alter public catalog scope.
 
 ---
 
-# 136. Remove Item Request
+# 108. Inactive Variant Loading
 
-Future CART-004:
+Cart projection may need inactive Variant records to render stale lines.
+
+Do not globally remove active scopes from public Variant APIs.
+
+Use context-specific lookup.
+
+---
+
+# 109. Item Product Summary
+
+Use the Cart contract's embedded Product summary.
+
+Do not assume it is byte-for-byte identical to CAT-001 ProductSummary if the frozen Cart contract defines a subset.
+
+---
+
+# 110. Item Variant Summary
+
+Likewise use the Cart-specific Variant representation.
+
+---
+
+# 111. Pricing Failure
+
+If an existing stale CartItem cannot determine a valid current price:
+
+follow the frozen Cart representation/error rules.
+
+Do not silently invent:
 
 ```text
-DELETE
-no body
+amount = 0
 ```
 
-Do not use:
+unless current contract explicitly requires it.
+
+---
+
+# 112. Do Not Break Entire Cart for Normal Staleness
+
+Normal cases such as:
 
 ```text
-quantity = 0
+out of stock
+inactive
+unpublished
 ```
 
-as deletion.
+should result in stale line signaling, not entire CART-001 failure.
 
 ---
 
-# 137. Merge Request
+# 113. Truly Corrupt Cart Data
 
-Future CART-005 accepts only the approved guest identifier transport.
+If database invariants are broken unexpectedly:
 
-Do not accept arbitrary source/target Cart IDs.
+fail safely through existing internal error handling.
+
+Do not expose SQL/model details.
+
+Do not automatically delete corrupt rows during GET.
 
 ---
 
-# 138. No Cart Bulk Update
+# 114. No Cart Repair Side Effects
 
-Do not add:
+GET must not silently:
 
 ```text
-PATCH /me/cart
+delete stale item
+change quantity
+change Product/Variant
+merge duplicates
 ```
 
-with arbitrary items array in V1.
-
-The frozen surface uses item-level operations.
+except lazy Cart creation itself.
 
 ---
 
-# 139. No Clear-Cart Endpoint
+# 115. Rate Limiting
 
-Do not invent:
+Attach the existing holder/private read limiter appropriate to CART-001.
+
+Do not use the public catalog limiter.
+
+---
+
+# 116. Guest Rate-Limit Key
+
+Use the existing rate-limit security conventions.
+
+Do not put raw guest token into limiter keys/logs.
+
+If guest Cart requests need credential-derived throttling:
+
+use safe server-side digest/keying according to current limiter conventions.
+
+---
+
+# 117. Authenticated Rate-Limit Key
+
+Use local:
 
 ```text
-DELETE /me/cart
-POST /me/cart/clear
+users.id
 ```
 
-unless later explicitly approved.
+as existing conventions require.
 
-Checkout clearing is internal workflow behavior.
-
----
-
-# 140. No Save-for-Later
-
-Out of scope.
+Do not use Clerk `sub` or bearer token.
 
 ---
 
-# 141. No Wishlist Coupling
+# 118. Error Envelope
 
-Out of scope.
-
----
-
-# 142. No Promotions/Coupons
-
-Cart schema should not be expanded for:
+All failures use canonical:
 
 ```text
-coupon
-promotion
-discount
+errors[]
+meta.request_id
 ```
 
-because V1 excludes those features.
-
 ---
 
-# 143. No Delivery Fee in Cart
+# 119. Invalid Authentication
 
-Delivery fee belongs to Order/fulfillment after checkout.
-
-Do not add delivery fee to Cart totals.
-
-Cart subtotal is Product line subtotal only.
-
----
-
-# 144. Currency
-
-All current purchasable catalog prices use:
+Invalid attempted Clerk auth:
 
 ```text
-TZS
+401 INVALID_AUTHENTICATION
 ```
 
-with integer minor units.
+or exact current Group D mapping.
 
-Cart should preserve standard money object shape.
-
-No formatted currency strings.
+Do not downgrade to guest.
 
 ---
 
-# 145. Overflow Safety
+# 120. Invalid Guest Credential
 
-Review multiplication:
+Use the canonical holder-auth failure agreed during Phase 6.1:
 
 ```text
-unit_price.amount * quantity
+401 AUTHENTICATION_REQUIRED
 ```
 
-for integer safety with existing price/quantity bounds.
+where applicable.
 
-Do not use floats.
-
----
-
-# 146. Cart Empty State
-
-A valid active Cart with:
+Do not expose:
 
 ```text
-items = []
-```
-
-is normal.
-
-Do not treat empty Cart as missing Cart.
-
----
-
-# 147. `items_count = 0`
-
-Empty Cart representation should still return:
-
-```text
-items_count = 0
-items = []
-subtotal = 0 TZS
-```
-
-according to contract.
-
-Review exact money representation.
-
----
-
-# 148. Cart Not Found vs Lazy Create
-
-Reconcile:
-
-```text
-CART_NOT_FOUND
-```
-
-with Phase 6.2 create/get behavior.
-
-Determine exactly when CART-001 should:
-
-```text
-create an empty Cart
-```
-
-versus:
-
-```text
-return CART_NOT_FOUND
-```
-
-Do not leave this ambiguous before 6.2.
-
----
-
-# 149. Guest Invalid Credential
-
-Review frozen behavior for:
-
-```text
-malformed guest credential
-unknown guest credential
-retired merged credential
-```
-
-and record exact status/error mapping for Phase 6.2.
-
-Do not leak whether arbitrary tokens map to stored Carts.
-
----
-
-# 150. Guest Token Rotation
-
-Do not implement token rotation unless current contract requires it.
-
----
-
-# 151. Logging Security
-
-Later Cart logging must never include:
-
-```text
-raw guest token
-guest cookie value
-guest header value
-```
-
-Review current request logging/redaction configuration.
-
----
-
-# 152. Cart Representation Is Private
-
-Even guest Cart is not "PUBLIC_READ".
-
-It is holder-private via bearer guest credential.
-
-Do not reuse public cache middleware.
-
----
-
-# 153. No Raw Guest Digest in Serialization
-
-Ensure:
-
-```text
-guest_token_digest
-```
-
-remains hidden in:
-
-```text
-models
-resources
-logs/errors
+guest cart exists but inactive
+digest not found
+token mismatch
 ```
 
 ---
 
-# 154. No Cart Ownership Fields in API
+# 121. No 403 for Unknown Guest Token
 
-Cart response should not expose:
-
-```text
-user_id
-guest_token_digest
-active_user_guard
-```
-
-unless explicitly contracted.
-
-Current frozen Cart object does not.
+Anonymous guest token failure is credential failure, not an authenticated authorization failure.
 
 ---
 
-# 155. Database Schema Change Expectation
+# 122. Internal Unique Conflict
+
+If active-cart creation hits unique constraint from a race:
+
+resolve/retry internally.
+
+Do not return database conflict to normal caller if the Cart now exists and can safely be returned.
+
+---
+
+# 123. Schema Changes
 
 Expected:
 
@@ -2627,37 +1926,617 @@ Expected:
 NONE
 ```
 
-for Phase 6.1.
-
-The existing Group C schema was intentionally designed for Group F.
+Do not alter `carts` or `cart_items`.
 
 ---
 
-# 156. Acceptable Schema Change
+# 124. No New Cart Ownership Columns
 
-Only add a migration if the review proves a concrete contradiction between:
+Do not add:
 
 ```text
-existing Group C persistence
-and
-frozen V1 Cart contract
+session_id
+device_id
+client_type
+token
+guest_id
+owner_type
 ```
-
-Do not modify historical migrations.
 
 ---
 
-# 157. No New Dependency Expected
+# 125. No New Status
+
+Do not add:
+
+```text
+MERGED
+ABANDONED
+EXPIRED
+```
+
+---
+
+# 126. Dependencies
 
 Expected:
 
 ```text
-Composer dependencies: NONE
+NONE
+```
+
+Use Laravel + existing application abstractions.
+
+---
+
+# 127. No Idempotency-Key
+
+CART-001 does not need the mutation Idempotency-Key contract.
+
+GET holder resolution is naturally idempotent.
+
+Do not introduce idempotency records for GET.
+
+---
+
+# 128. Do Not Implement CART-005 Idempotency
+
+Merge idempotency belongs to its own later phase.
+
+---
+
+# 129. Tests — Authenticated Existing Cart
+
+Given a local authenticated User with ACTIVE Cart:
+
+```text
+GET /me/cart
+→ 200
+→ same Cart ID
+→ no new Cart
 ```
 
 ---
 
-# 158. No Frontend Changes
+# 130. Tests — Authenticated No Cart
+
+Given authenticated User with none:
+
+```text
+GET
+→ 200
+→ creates one ACTIVE user Cart
+→ empty representation
+```
+
+---
+
+# 131. Tests — Repeated Authenticated GET
+
+Call twice.
+
+Assert:
+
+```text
+one Cart row
+same ID
+```
+
+---
+
+# 132. Tests — Concurrent Authenticated Creation
+
+Two concurrent first CART-001 calls:
+
+assert:
+
+```text
+one ACTIVE cart
+no unhandled unique error
+both callers resolve same Cart
+```
+
+Use real MariaDB integration only if SQLite cannot faithfully prove generated-column uniqueness/concurrency behavior.
+
+---
+
+# 133. Tests — Guest No Credential
+
+Anonymous request without credential:
+
+```text
+→ 200
+→ creates ACTIVE guest Cart
+→ emits raw UUIDv4 through correct transport
+→ stores only digest
+```
+
+---
+
+# 134. Tests — Raw Credential Never Persisted
+
+Search DB representation.
+
+Raw token must not appear in:
+
+```text
+carts
+logs where testable
+JSON
+```
+
+---
+
+# 135. Tests — Browser Token Issuance
+
+Browser-classified request:
+
+assert:
+
+```text
+Set-Cookie guest_cart_id
+HttpOnly
+Secure
+SameSite=None
+```
+
+and:
+
+```text
+no X-Guest-Cart-Id response header
+```
+
+---
+
+# 136. Tests — Flutter Token Issuance
+
+Non-browser request:
+
+assert:
+
+```text
+X-Guest-Cart-Id present
+```
+
+and:
+
+```text
+no guest_cart_id Set-Cookie
+```
+
+---
+
+# 137. Tests — UUIDv4
+
+New guest credential must satisfy:
+
+```text
+valid UUID
+version 4
+```
+
+---
+
+# 138. Tests — Guest Existing Cart
+
+Use previously issued raw token.
+
+Next GET:
+
+```text
+→ same Cart
+→ no duplicate Cart
+```
+
+---
+
+# 139. Tests — Guest Digest
+
+Assert persisted digest matches:
+
+```text
+GuestCartCredential::digest(raw)
+```
+
+and is not raw.
+
+---
+
+# 140. Tests — Unknown Guest Token
+
+Valid UUID format but no matching active digest:
+
+```text
+→ 401
+```
+
+according to accepted semantics.
+
+---
+
+# 141. Tests — Retired Guest Token
+
+Create guest Cart:
+
+```text
+status = INACTIVE
+```
+
+with valid digest.
+
+Request with its raw token:
+
+```text
+→ 401
+```
+
+Do not reactivate it.
+
+---
+
+# 142. Tests — Malformed Guest Token
+
+Reject malformed credential through canonical validation/auth error.
+
+Do not hash arbitrary huge unbounded input without normal validation limits.
+
+---
+
+# 143. Tests — Authenticated + Guest
+
+Authenticated User has own Cart.
+
+Also provide valid guest token.
+
+CART-001 returns:
+
+```text
+authenticated Cart
+```
+
+Guest Cart:
+
+```text
+remains unchanged
+remains ACTIVE
+```
+
+No merge.
+
+---
+
+# 144. Tests — Authenticated + Invalid Guest Token
+
+If authenticated identity is authoritative for CART-001:
+
+the invalid guest token should not redirect ownership.
+
+Follow the frozen precedence rule exactly.
+
+Ensure it cannot cause access to another Cart.
+
+---
+
+# 145. Tests — Invalid Bearer + Valid Guest
+
+If Authorization header is present but invalid:
+
+```text
+401
+```
+
+Do not fall back to valid guest token.
+
+This protects authentication downgrade behavior.
+
+---
+
+# 146. Tests — Staff Personal Cart
+
+Authenticated STAFF:
+
+```text
+GET /me/cart
+→ own Cart
+```
+
+if current personal-commerce policy permits.
+
+Must not require CUSTOMER role merely to maintain a self-owned Cart.
+
+---
+
+# 147. Tests — Admin Personal Cart
+
+Same self-context behavior for ADMIN where approved.
+
+---
+
+# 148. Tests — No Cross-User Access
+
+Because endpoint has no Cart selector:
+
+verify attempts to supply:
+
+```text
+cart_id
+user_id
+```
+
+through query/body cannot alter holder selection.
+
+---
+
+# 149. Tests — Empty Cart Shape
+
+Assert exact:
+
+```text
+id
+items_count = 0
+items = []
+subtotal.amount = 0
+subtotal.currency = TZS
+updated_at
+```
+
+---
+
+# 150. Tests — Existing Cart Shape
+
+Seed at least one CartItem and verify response fields match frozen Cart representation.
+
+Do not wait until 6.8 to verify basic CART-001 shape.
+
+---
+
+# 151. Tests — Items Count
+
+Cart:
+
+```text
+Product A x4
+Product B x2
+```
+
+returns:
+
+```text
+items_count = 2
+```
+
+---
+
+# 152. Tests — Current Price
+
+Create CartItem, then modify Variant price.
+
+Next GET must show updated price.
+
+Cart row remains unchanged.
+
+---
+
+# 153. Tests — Line Total
+
+Verify:
+
+```text
+unit_price * quantity
+```
+
+using integer minor units.
+
+---
+
+# 154. Tests — Subtotal
+
+Verify sum of current line totals.
+
+---
+
+# 155. Tests — GET Does Not Persist Price
+
+Ensure no price-related Cart columns/state are created or updated.
+
+---
+
+# 156. Tests — Availability Read Does Not Reserve
+
+Compare ProductStock before and after GET:
+
+```text
+quantity unchanged
+reserved_quantity unchanged
+```
+
+---
+
+# 157. Tests — Stale Product Preserved
+
+Stored CartItem Product becomes inactive/unpublished/soft-deleted.
+
+GET must retain the CartItem.
+
+It must not silently disappear.
+
+---
+
+# 158. Tests — Stale Variant Preserved
+
+Stored Variant becomes inactive.
+
+GET retains the line.
+
+---
+
+# 159. Tests — Out-of-Stock Preserved
+
+Available stock becomes 0.
+
+GET retains the line.
+
+---
+
+# 160. Tests — Private Cache
+
+Assert expected Cart cache headers.
+
+---
+
+# 161. Tests — No Credential Leakage
+
+Cart JSON must not contain:
+
+```text
+guest_token_digest
+raw guest credential
+user_id
+active_user_guard
+```
+
+---
+
+# 162. Tests — Browser Header Leakage
+
+For browser request:
+
+assert raw token does not appear in any custom response header other than the cookie transport permitted by contract.
+
+---
+
+# 163. Tests — Flutter Cookie Leakage
+
+For Flutter:
+
+assert no guest token cookie is emitted.
+
+---
+
+# 164. Tests — Database Ownership
+
+New authenticated Cart:
+
+```text
+user_id set
+digest null
+```
+
+New guest Cart:
+
+```text
+user_id null
+digest set
+```
+
+---
+
+# 165. Tests — One Active Cart
+
+Lazy creation must continue to satisfy DB and model invariant.
+
+---
+
+# 166. Tests — No Schema Changes
+
+Existing CartSchemaTest remains green.
+
+---
+
+# 167. SQLite Coverage
+
+SQLite may validate:
+
+```text
+holder resolution
+resource shape
+credential hashing
+guest/auth precedence
+empty Cart behavior
+serialization
+price projection
+availability projection
+cache headers
+```
+
+---
+
+# 168. MariaDB Coverage
+
+MariaDB-specific integration is only required where Phase 6.2 behavior depends on engine-specific concurrency/generated-column uniqueness behavior.
+
+Do not unnecessarily move the full Group F suite to MariaDB.
+
+---
+
+# 169. Creation Race Gate
+
+If the authenticated lazy-create race cannot be proven correctly under SQLite:
+
+add a focused disposable MariaDB integration test.
+
+Do not claim race safety without testing the actual production uniqueness behavior.
+
+---
+
+# 170. No Group E Regression
+
+Run relevant catalog/availability tests because CART-001 projection consumes those services.
+
+Do not modify Group E semantics.
+
+---
+
+# 171. No Phase 6.3 Work
+
+Do not implement:
+
+```text
+POST /me/cart/items
+```
+
+yet.
+
+---
+
+# 172. No Phase 6.4 Work
+
+Do not implement:
+
+```text
+PATCH /me/cart/items/{item}
+```
+
+yet.
+
+---
+
+# 173. No Phase 6.5 Work
+
+Do not implement:
+
+```text
+DELETE /me/cart/items/{item}
+POST /me/cart/merge
+```
+
+yet.
+
+---
+
+# 174. No Checkout Work
+
+Do not implement:
+
+```text
+POST /checkout
+```
+
+or invoke stock reservation primitives from Cart GET.
+
+---
+
+# 175. No Frontend
 
 Do not modify:
 
@@ -2667,33 +2546,96 @@ frontend/app/
 frontend/design-system/
 ```
 
-Group F is backend API/domain work.
-
 ---
 
-# 159. PHPStan
+# 176. Likely Implementation Areas
 
-Run static analysis if code changes occur.
-
-Phase 6.1 must introduce:
+Expected:
 
 ```text
-0 new PHPStan errors
+routes/api.php
+CartController or MeCartController
+CartHolderResolver
+GetOrCreateActiveCart action/service
+GuestCartCredential transport middleware/helper
+CartResource
+CartItemResource/projection
+optional auth middleware wiring
+opaque ID serialization support
+tests/Feature/CartReadApiTest.php
+tests/Integration/... only if creation race needs MariaDB
+docs/api/openapi.yaml if implementation drift exists
+docs/decisions.md closure ADR
+```
+
+Use actual repository naming conventions.
+
+---
+
+# 177. Route Review
+
+Final route for this phase:
+
+```text
+GET /api/v1/me/cart
+```
+
+This phase adds only `CART-001`.
+
+Existing Cart mutation stubs (`CART-002..005`: add/update/remove/merge) are
+registered by the Phase 2.6 routing foundation but remain unimplemented
+(`501`) and are outside Phase 6.2 scope.
+
+Do not implement or enable additional Cart behavior in this phase.
+
+---
+
+# 178. OpenAPI
+
+Verify CART-001 accurately documents:
+
+```text
+optional authenticated bearer
+guest cookie/header behavior
+200 Cart response
+private response
+guest credential issuance transport
+401 invalid attempted credentials
+```
+
+Do not expose token in response schema body.
+
+---
+
+# 179. Documentation
+
+Update docs only for genuine runtime reconciliation.
+
+Do not rewrite the already accepted Cart architecture.
+
+---
+
+# 180. Code Quality
+
+Maintain:
+
+```text
+cognitive complexity <= 15
+<= 3 returns where practical
+thin controller
+small holder resolver
+small get/create service
+explicit resources
+no duplicated credential logic
 ```
 
 ---
 
-# 160. Verification
+# 181. Verification
 
-At minimum run the existing focused Cart model/schema tests:
+Run focused tests first.
 
-```bash
-php artisan test --filter=CartSchemaTest
-```
-
-or actual relevant test command.
-
-If code/docs change, also run:
+Then:
 
 ```bash
 php artisan test
@@ -2701,185 +2643,36 @@ vendor/bin/pint --test
 vendor/bin/phpstan analyse
 composer audit
 git diff --check
+php artisan route:list
 ```
+
+If MariaDB race verification is required:
+
+run it against the approved disposable database only.
 
 ---
 
-# 161. Review Deliverable
+# 182. Destructive DB Safety
 
-Phase 6.1 should produce a concise Cart model review documenting:
+If using the MariaDB disposable harness:
+
+require existing repository guard:
 
 ```text
-existing model
-approved invariants
-API mapping
-Group E dependencies
-auth/guest ownership mapping
-identified gaps
-required future services
-schema-change decision
-Phase 6.2 readiness
+APP_ENV != production
+AND
+DB_DATABASE == approved disposable DB
 ```
+
+Never touch normal development/staging/production database.
 
 ---
 
-# 162. Gap Classification
-
-For every discrepancy classify it as:
-
-```text
-NO GAP
-DOC DRIFT
-MODEL GAP
-API IMPLEMENTATION GAP
-DEFERRED TO LATER GROUP F PHASE
-```
-
-Do not implement every future gap during Phase 6.1.
-
----
-
-# 163. Mandatory Review — Ownership
-
-Confirm:
-
-```text
-customer ownership
-guest ownership
-ownership XOR
-one active customer Cart
-Cart ID not authority
-Staff/Admin isolation
-Staff/Admin self-commerce
-```
-
----
-
-# 164. Mandatory Review — Item Identity
-
-Confirm:
-
-```text
-Product + Variant identity
-nullable Variant semantics
-duplicate prevention
-same Product/different Variant coexistence
-quantity bounds
-```
-
----
-
-# 165. Mandatory Review — Pricing
-
-Confirm:
-
-```text
-no persisted price
-live current pricing
-line totals derived
-subtotal derived
-checkout recalculates
-```
-
----
-
-# 166. Mandatory Review — Inventory
-
-Confirm:
-
-```text
-no Cart reservation
-live informational availability
-stale items preserved
-checkout owns locked reservation
-```
-
----
-
-# 167. Mandatory Review — Security
-
-Confirm:
-
-```text
-raw guest credential never persisted
-digest only
-credential high entropy
-credential scope limited
-private cache
-IDOR protection design
-```
-
----
-
-# 168. Mandatory Review — Merge
-
-Confirm model can support:
-
-```text
-guest source
-authenticated target
-duplicate consolidation
-max quantity rules
-source retirement
-credential retirement
-one active target
-```
-
----
-
-# 169. Mandatory Review — Stale Items
-
-Confirm model can preserve:
-
-```text
-inactive Product
-unpublished Product
-inactive Variant
-out-of-stock Variant
-```
-
-without silently deleting lines.
-
----
-
-# 170. Mandatory Review — Checkout Handoff
-
-Confirm model supports:
-
-```text
-cart remains mutable until checkout
-checkout revalidates all state
-checkout reserves inventory
-checkout recalculates price
-successful checkout clears Cart
-failed checkout preserves Cart
-```
-
-without schema redesign.
-
----
-
-# 171. Phase 6.2 Readiness Gate
-
-Do not mark Phase 6.1 PASS until the agent can state exactly how CART-001 will resolve:
-
-```text
-authenticated active Cart
-guest active Cart
-no existing Cart
-invalid guest credential
-authenticated + guest credential
-```
-
-No implementation needed yet, but semantics must be unambiguous.
-
----
-
-# 172. Completion Report
+# 183. Completion Report
 
 Return:
 
-## Phase 6.1 status
+## Phase 6.2 status
 
 ```text
 PASS
@@ -2891,66 +2684,90 @@ or:
 BLOCKED
 ```
 
-## Existing schema
-
-State whether:
-
-```text
-carts/cart_items
-```
-
-remain fit for purpose.
-
-## Ownership
-
-Report:
-
-```text
-customer
-guest
-XOR
-active-cart rule
-guest credential model
-```
-
-## Cart item model
-
-Report:
-
-```text
-Product/Variant identity
-quantity
-duplicate rules
-```
-
-## Pricing
+## CART-001
 
 Confirm:
 
 ```text
-no persisted prices
-current catalog derivation
+GET /api/v1/me/cart
 ```
 
-## Availability
+and lazy create/get semantics.
+
+## Authenticated holder
+
+Report:
+
+```text
+existing Cart
+lazy creation
+one-active invariant
+race handling
+```
+
+## Guest holder
+
+Report:
+
+```text
+new guest creation
+existing credential lookup
+invalid credential behavior
+retired credential behavior
+```
+
+## Transport
+
+Report separately:
+
+```text
+Browser cookie behavior
+Flutter/header behavior
+mutual exclusivity
+```
+
+## Identity precedence
 
 Confirm:
 
 ```text
-no reservation
-current Group E availability
-stale item preservation
+authenticated identity wins
+CART-001 does not auto-merge
 ```
 
-## Merge readiness
+## Personal commerce
 
-State whether CART-005 can be implemented without schema change.
+State Staff/Admin self-owned Cart behavior.
 
-## Contract gaps
+## Representation
 
-List each discovered mismatch with classification.
+Report:
 
-## Schema changes
+```text
+opaque cart_/item_ IDs
+empty Cart representation
+items_count
+subtotal
+```
+
+## Projection
+
+Report reuse of:
+
+```text
+current price
+availability
+stock_indicator
+is_purchasable
+```
+
+without persistence/reservation.
+
+## Cache
+
+Confirm private/no-store behavior.
+
+## Schema
 
 Expected:
 
@@ -2976,7 +2793,11 @@ NONE
 
 ## Tests
 
-Report relevant focused/full suite results.
+Report exact focused/full results.
+
+## Database-specific tests
+
+Report any MariaDB creation-race gate separately.
 
 ## Quality
 
@@ -2989,11 +2810,9 @@ Composer audit
 git diff --check
 ```
 
-if applicable.
+## Phase 6.3 readiness
 
-## Phase 6.2 readiness
-
-Explicit:
+Return:
 
 ```text
 READY
@@ -3005,84 +2824,103 @@ or:
 BLOCKED
 ```
 
-with reasons.
+with exact reason.
 
 ---
 
-# 173. Definition of Done
+# 184. Definition of Done
 
-Phase 6.1 is complete when:
+Phase 6.2 is complete when:
 
-* the Group C Cart schema is reviewed against current V1 contracts;
-* ownership XOR remains valid;
-* guest credential security remains valid;
-* raw guest credential is never persisted;
-* one active Cart per authenticated user remains valid;
-* ACTIVE/INACTIVE remains sufficient;
-* Cart item identity remains Product + Variant;
-* duplicate line prevention remains valid;
-* quantity 1..100 remains authoritative;
-* nullable Variant semantics are explicitly reconciled with current Product/Variant architecture;
-* no Cart prices are persisted;
-* no Cart totals are persisted;
-* no Cart availability is persisted;
-* no Cart reservation fields exist;
-* current Product/Variant prices can be projected into Cart;
-* Group E availability can be projected into Cart;
-* stale Cart items can remain visible rather than disappearing;
-* public Product scopes will not accidentally hide stale Cart relations;
-* Cart-specific `is_purchasable` semantics are defined;
-* MADE_TO_ORDER remains prohibited;
-* Staff/Admin ordinary Cart access remains prohibited;
-* Staff/Admin self-commerce remains supported according to authz policy;
-* guest→authenticated merge is model-compatible;
-* merge cannot produce multiple active customer Carts;
-* successful checkout Cart-clearing behavior is model-compatible;
-* failed checkout can preserve Cart;
-* no schema redesign is performed without proven need;
-* no frontend work occurs;
-* Phase 6.2 holder/create/get semantics are unambiguous.
+* `GET /api/v1/me/cart` is active;
+* no separate Cart-create endpoint exists;
+* authenticated callers resolve only their own ACTIVE Cart;
+* authenticated caller with no Cart receives a lazily created empty ACTIVE Cart;
+* repeated GET returns the same Cart;
+* concurrent authenticated lazy creation cannot create duplicate active Carts;
+* guests can retrieve their Cart with a valid `guest_cart_id` cookie or `X-Guest-Cart-Id` header;
+* anonymous caller with no credential gets a new empty guest Cart;
+* only guest-token digest is persisted;
+* raw guest token never enters DB/log/JSON;
+* new guest token is UUIDv4;
+* browser receives token only via HttpOnly Secure SameSite=None cookie;
+* browser never receives guest token response header;
+* Flutter/non-browser receives token only via `X-Guest-Cart-Id`;
+* Flutter does not receive guest cookie;
+* invalid guest token does not authorize/create under that token;
+* retired guest token cannot reactivate its Cart;
+* invalid attempted Clerk authentication does not downgrade to guest;
+* authenticated identity wins when both auth and guest credential are present;
+* CART-001 never auto-merges;
+* Staff/Admin may resolve only their own personal Cart under approved self-commerce policy;
+* Cart ID is not accepted as ownership input;
+* Cart response uses opaque `cart_...` ID;
+* item IDs use opaque `item_...` representation;
+* empty Cart returns `items: []`;
+* empty Cart returns `items_count: 0`;
+* empty subtotal is zero TZS money object;
+* existing Cart displays current server-derived price;
+* existing Cart displays current availability/stock indicator;
+* stale lines are not silently deleted;
+* GET does not reserve inventory;
+* GET does not mutate Cart timestamps for ordinary reads;
+* Cart response is private/no-store;
+* no sensitive ownership/digest fields leak;
+* no schema changes are required;
+* no external dependencies are added;
+* no frontend code is modified;
+* existing Group E and Cart schema tests remain green;
+* no new PHPStan errors exist;
+* Pint passes;
+* Composer audit has no blocker.
 
 ---
 
-# 174. Out of Scope
+# 185. Out of Scope
 
-Do not implement yet:
+Do not implement:
 
 ```text
-CART-001 controller behavior
-CART-002 add item
-CART-003 update quantity
-CART-004 remove item
-CART-005 merge
-full Cart resource projection
-stock revalidation workflow
+add item
+repeat-add merge
+update quantity
+remove item
+guest→customer merge
+CART-005 idempotency
+full stale-cart validation workflow
 checkout
 inventory reservation
 Order creation
 frontend Cart UI
 ```
 
-Those belong to later Group F/G phases.
-
 ---
 
-# 175. STOP Condition
+# 186. STOP Condition
 
-STOP when the existing Cart model has been fully reviewed and reconciled against:
+STOP when CART-001 reliably establishes the holder's canonical active Cart:
 
 ```text
-Group C persistence
-Group D ownership/authentication
-Group E pricing/availability/inventory
-V1 CART-001..005 contract
-Checkout boundary
+authenticated user
+    → own ACTIVE Cart
+    → create empty one if absent
+
+anonymous + valid guest credential
+    → bound ACTIVE guest Cart
+
+anonymous + no credential
+    → create ACTIVE guest Cart
+    → issue secure credential
+
+authenticated + guest credential
+    → authenticated Cart only
+    → no implicit merge
 ```
 
-and the agent can confidently state whether Phase 6.2 can begin without schema redesign.
+and returns the private Cart representation without persisting pricing/availability or reserving inventory.
 
-Do not continue automatically to Phase 6.2.
+Do not continue automatically to Phase 6.3.
 
-DO NOT COMMIT OR PUSH.
+DO NOT COMMIT, STAGE OR PUSH.
 
 The project owner handles all Git operations.
