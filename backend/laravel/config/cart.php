@@ -12,12 +12,11 @@ return [
     | random value via GUEST_CART_TOKEN_KEY in production; never store the
     | secret in the database and never expose it to clients.
     |
-    | max_item_quantity: V1 per-line cart-item quantity ceiling.
+    | The cart-item quantity ceiling is the domain constant
+    | App\Models\CartItem::MAX_QUANTITY (1..100); it is not configurable in V1.
     |
     */
 
     'guest_token_key' => env('GUEST_CART_TOKEN_KEY', ''),
-
-    'max_item_quantity' => 100,
 
 ];

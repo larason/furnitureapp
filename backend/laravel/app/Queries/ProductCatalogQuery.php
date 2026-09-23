@@ -115,31 +115,50 @@ final class ProductCatalogQuery
 
     private function applySearch(Builder $query, string $search): void
     {
-        $query->where(function (Builder $searchQuery) use ($search): void {
-            if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+        $driver = $this->driver();
+        $escape = $this->likeEscapeClause($driver);
+
+        $query->where(function (Builder $searchQuery) use ($search, $driver, $escape): void {
+            if (in_array($driver, ['mysql', 'mariadb'], true)) {
                 $searchQuery->whereFullText(['products.name', 'products.description'], $search);
             } else {
                 $pattern = '%'.$this->escapeLike($search).'%';
-                $searchQuery->whereRaw("products.name LIKE ? ESCAPE '\\'", [$pattern])
-                    ->orWhereRaw("products.description LIKE ? ESCAPE '\\'", [$pattern]);
+                $searchQuery->whereRaw("products.name LIKE ? {$escape}", [$pattern])
+                    ->orWhereRaw("products.description LIKE ? {$escape}", [$pattern]);
             }
 
-            $searchQuery->orWhereHas('variants', function (Builder $variant) use ($search): void {
-                $variant->where('is_active', true)->where(function (Builder $variantSearch) use ($search): void {
-                    $prefix = $this->escapeLike($search).'%';
-                    $variantSearch->whereRaw("sku LIKE ? ESCAPE '\\'", [$prefix]);
-                    foreach (['color', 'fabric', 'finish', 'size', 'configuration', 'leg_finish'] as $key) {
-                        $path = '$.'.$key;
+            $searchQuery->orWhereHas('variants', function (Builder $variant) use ($search, $driver, $escape): void {
+                $variant->where('is_active', true)->where(function (Builder $variantSearch) use ($search, $driver, $escape): void {
+                    $variantSearch->whereRaw("sku LIKE ? {$escape}", [$this->escapeLike($search).'%']);
+
+                    foreach ($this->searchableAttributeKeys() as $key) {
                         $pattern = '%'.$this->escapeLike($search).'%';
-                        if (DB::connection()->getDriverName() === 'sqlite') {
-                            $variantSearch->orWhereRaw("LOWER(json_extract(attributes, ?)) LIKE LOWER(?) ESCAPE '\\'", [$path, $pattern]);
-                        } else {
-                            $variantSearch->orWhereRaw("LOWER(JSON_UNQUOTE(JSON_EXTRACT(attributes, ?))) LIKE LOWER(?) ESCAPE '\\'", [$path, $pattern]);
-                        }
+                        $expression = $driver === 'sqlite'
+                            ? 'LOWER(json_extract(attributes, ?))'
+                            : 'LOWER(JSON_UNQUOTE(JSON_EXTRACT(attributes, ?)))';
+
+                        $variantSearch->orWhereRaw("{$expression} LIKE LOWER(?) {$escape}", ['$.'.$key, $pattern]);
                     }
                 });
             });
         });
+    }
+
+    /** @return list<string> */
+    private function searchableAttributeKeys(): array
+    {
+        return ['color', 'fabric', 'finish', 'size', 'configuration', 'leg_finish'];
+    }
+
+    private function driver(): string
+    {
+        return DB::connection()->getDriverName();
+    }
+
+    private function likeEscapeClause(string $driver): string
+    {
+        // MySQL/MariaDB need a doubled backslash inside the SQL string literal.
+        return $driver === 'sqlite' ? "ESCAPE '\\'" : "ESCAPE '\\\\'";
     }
 
     private function escapeLike(string $value): string

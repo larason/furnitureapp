@@ -126,8 +126,8 @@ class CartSchemaTest extends TestCase
     {
         $token = GuestCartCredential::generate();
 
-        $this->assertGreaterThanOrEqual(32, strlen($token));
-        $this->assertGreaterThanOrEqual(256, strlen($token) * 8 * 0.75, 'Token should carry at least ~192 bits of randomness via 48 random alphanumeric chars');
+        $this->assertTrue(Str::isUuid($token), 'Guest cart token must be a UUIDv4 per the frozen wire contract (>=122 bits CSPRNG).');
+        $this->assertSame('4', $token[14], 'Guest cart token must be UUID version 4.');
     }
 
     public function test_guest_tokens_are_unique_and_unpredictable(): void
@@ -138,7 +138,8 @@ class CartSchemaTest extends TestCase
 
         $this->assertSame(count($tokens), count(array_unique($tokens)));
         foreach ($tokens as $token) {
-            $this->assertTrue(strlen($token) >= 32);
+            $this->assertTrue(Str::isUuid($token));
+            $this->assertSame('4', $token[14]);
         }
     }
 
