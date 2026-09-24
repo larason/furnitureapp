@@ -36,7 +36,7 @@ final class CartItemAdmission
 
     public function findProduct(?int $productId): ?Product
     {
-        return $productId === null ? null : Product::withTrashed()->withExists('variants')->find($productId);
+        return $productId === null ? null : Product::withTrashed()->with('category')->withExists('variants')->find($productId);
     }
 
     public function validatedProduct(?Product $product): Product

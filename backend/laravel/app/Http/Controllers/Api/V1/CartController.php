@@ -82,11 +82,32 @@ class CartController extends V1Controller
         GetOrCreateActiveCart $getOrCreate,
         RemoveCartItem $removeItem,
     ): Response {
+        $this->rejectRequestBody($request);
+
         $holder = $resolver->resolve($request);
         $cart = $getOrCreate->requireExistingForHolder($holder);
         $removeItem->remove($this->resolveItem($cart, $item));
 
         return response()->noContent()->withHeaders($this->privateHeaders());
+    }
+
+    /** CART-004 is bodyless; a body carrying fields is a strict unknown-field violation. */
+    private function rejectRequestBody(Request $request): void
+    {
+        if ($this->hasRequestBody($request)) {
+            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'This endpoint does not accept a request body.', 422);
+        }
+    }
+
+    private function hasRequestBody(Request $request): bool
+    {
+        if ($request->isJson()) {
+            $decoded = json_decode($request->getContent(), true);
+
+            return is_array($decoded) && $decoded !== [];
+        }
+
+        return $request->request->all() !== [];
     }
 
     public function merge(): JsonResponse

@@ -184,35 +184,49 @@ class CartMutationConcurrencyMysqlTest extends TestCase
 
         $pids = [];
 
-        foreach ($workers as $index => $worker) {
-            $pid = pcntl_fork();
-            $this->assertNotSame(-1, $pid);
+        try {
+            foreach ($workers as $index => $worker) {
+                $pid = pcntl_fork();
+                $this->assertNotSame(-1, $pid);
 
-            if ($pid === 0) {
-                $code = 1;
-
-                try {
-                    DB::purge(self::CONNECTION);
-                    DB::connection(self::CONNECTION)->selectOne('select 1');
-
-                    touch($barrier.'/ready-'.$index);
-                    $this->awaitBarrier($barrier);
-
-                    file_put_contents($barrier.'/result-'.$index, (string) $worker());
-                    $code = 0;
-                } catch (\Throwable) {
-                    $code = 1;
+                if ($pid === 0) {
+                    exit($this->runWorker($barrier, $index, $worker));
                 }
 
-                exit($code);
+                $pids[] = $pid;
             }
 
-            $pids[] = $pid;
+            $this->awaitReady($barrier, count($workers));
+            touch($barrier.'/go');
+
+            $this->reapWorkers($pids);
+        } finally {
+            $this->terminateWorkers($pids);
+            $this->destroyBarrier($barrier);
+            DB::purge(self::CONNECTION);
         }
+    }
 
-        $this->awaitReady($barrier, count($workers));
-        touch($barrier.'/go');
+    private function runWorker(string $barrier, int $index, callable $worker): int
+    {
+        try {
+            DB::purge(self::CONNECTION);
+            DB::connection(self::CONNECTION)->selectOne('select 1');
 
+            touch($barrier.'/ready-'.$index);
+            $this->awaitBarrier($barrier);
+
+            file_put_contents($barrier.'/result-'.$index, (string) $worker());
+
+            return 0;
+        } catch (\Throwable) {
+            return 1;
+        }
+    }
+
+    /** @param list<int> $pids */
+    private function reapWorkers(array $pids): void
+    {
         $deadline = microtime(true) + 30;
 
         foreach ($pids as $pid) {
@@ -235,13 +249,28 @@ class CartMutationConcurrencyMysqlTest extends TestCase
                 'Concurrency worker failed.',
             );
         }
+    }
 
+    /** @param list<int> $pids */
+    private function terminateWorkers(array $pids): void
+    {
+        foreach ($pids as $pid) {
+            $status = 0;
+
+            if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
+                posix_kill($pid, SIGKILL);
+                pcntl_waitpid($pid, $status);
+            }
+        }
+    }
+
+    private function destroyBarrier(string $barrier): void
+    {
         foreach (glob($barrier.'/*') ?: [] as $file) {
             @unlink($file);
         }
 
         @rmdir($barrier);
-        DB::purge(self::CONNECTION);
     }
 
     private function awaitBarrier(string $barrier): void

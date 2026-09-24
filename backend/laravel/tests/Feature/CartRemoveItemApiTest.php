@@ -93,6 +93,21 @@ class CartRemoveItemApiTest extends TestCase
         $this->assertSame(1, $cart->fresh()->items()->count());
     }
 
+    public function test_request_body_is_rejected_and_item_is_preserved(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10);
+        $user = $this->cartCustomer();
+        $cart = $this->activeCartFor($user);
+        $item = $this->itemFor($cart, $product, $variant, 2);
+
+        $this->withHeaders($this->authenticateAs($user))
+            ->deleteJson('/api/v1/me/cart/items/'.CartItemIdentifier::encode($item), ['quantity' => 1])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+
+        $this->assertSame(1, $cart->fresh()->items()->count());
+    }
+
     public function test_removal_does_not_touch_inventory(): void
     {
         [$product, $variant] = $this->stockedProduct(quantity: 10, reserved: 2);
