@@ -44,7 +44,15 @@ final class GuestCartTransport
 
     public function isBrowser(Request $request): bool
     {
-        return $request->hasHeader('Origin') || $request->hasCookie(self::COOKIE);
+        if ($request->hasHeader(self::HEADER)) {
+            return false;
+        }
+
+        return $request->hasCookie(self::COOKIE)
+            || $request->hasHeader('Origin')
+            || $request->hasHeader('Sec-Fetch-Mode')
+            || $request->hasHeader('Sec-Fetch-Site')
+            || $request->hasHeader('Sec-Fetch-Dest');
     }
 
     public function issue(Request $request, JsonResponse $response, string $rawToken): JsonResponse

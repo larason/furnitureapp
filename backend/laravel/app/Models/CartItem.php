@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $product_id
  * @property int|null $variant_id
  * @property int $quantity
+ * @property-read Cart $cart
  * @property-read Product|null $product
  * @property-read ProductVariant|null $variant
  * @property Carbon|null $created_at

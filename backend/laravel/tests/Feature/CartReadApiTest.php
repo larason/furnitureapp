@@ -108,6 +108,21 @@ class CartReadApiTest extends TestCase
         $this->assertTrue(Str::isUuid($cookie->getValue()));
     }
 
+    public function test_browser_guest_without_origin_but_with_fetch_metadata_receives_cookie(): void
+    {
+        $response = $this->withHeaders([
+            'Sec-Fetch-Mode' => 'cors',
+            'Sec-Fetch-Site' => 'same-origin',
+        ])->getJson(self::CART_URL)->assertOk();
+
+        $this->assertNull($response->headers->get(GuestCartTransport::HEADER));
+        $cookie = collect($response->headers->getCookies())
+            ->first(fn ($cookie): bool => $cookie->getName() === GuestCartTransport::COOKIE);
+
+        $this->assertNotNull($cookie);
+        $this->assertTrue($cookie->isHttpOnly());
+    }
+
     public function test_guest_with_existing_credential_resolves_the_same_cart_without_reissue(): void
     {
         $raw = $this->getJson(self::CART_URL)->assertOk()->headers->get(GuestCartTransport::HEADER);

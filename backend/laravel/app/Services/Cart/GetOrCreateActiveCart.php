@@ -22,6 +22,23 @@ final class GetOrCreateActiveCart
             : $this->forGuest($holder);
     }
 
+    public function requireExistingForHolder(CartHolder $holder): Cart
+    {
+        $cart = $holder->user !== null
+            ? $this->activeCustomerCart($holder->user)
+            : Cart::query()->where('guest_token_digest', $holder->digest)->where('status', CartStatus::ACTIVE)->first();
+
+        if ($cart !== null) {
+            return $cart;
+        }
+
+        if ($holder->user === null && $holder->credentialSupplied) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'The guest cart credential is invalid.', 401);
+        }
+
+        throw new ApiException(ApiErrorCode::CART_ITEM_NOT_FOUND, 'The requested cart item was not found.', 404);
+    }
+
     private function forCustomer(User $user): Cart
     {
         $existing = $this->activeCustomerCart($user);

@@ -882,6 +882,10 @@ components:
           type:
           - string
           - 'null'
+          description: >-
+            Conditionally required. Required when the referenced product defines variants (V1 is variant-priced); must
+            reference an active variant belonging to `product_id`, otherwise `422 INVALID_PRODUCT_VARIANT`. Omit/null
+            only for a product that has no variants, which is not purchasable in V1 (`422 PRODUCT_NOT_PURCHASABLE`).
         quantity:
           type: integer
           minimum: 1
@@ -2604,6 +2608,10 @@ paths:
       summary: Add item
       security:
       - bearerAuth: []
+      - {}
+      parameters:
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       requestBody:
         required: true
         content:
@@ -2612,7 +2620,27 @@ paths:
               $ref: '#/components/schemas/AddCartItemRequest'
       responses:
         '201':
-          description: Created
+          description: Created (new line); duplicate additions merge into an existing line and return 200
+          headers:
+            Set-Cookie:
+              description: Browser guest credential, issued only when a new guest cart is created
+              schema:
+                type: string
+            X-Guest-Cart-Id:
+              description: Non-browser guest credential, issued only when a new guest cart is created
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+        '200':
+          description: OK (quantity merged into an existing (product_id, variant_id) line, clamped to 100)
           content:
             application/json:
               schema:
@@ -2636,8 +2664,11 @@ paths:
       summary: Update item
       security:
       - bearerAuth: []
+      - {}
       parameters:
       - $ref: '#/components/parameters/ItemPath'
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       responses:
         '200':
           description: OK
@@ -2673,8 +2704,11 @@ paths:
       summary: Remove item
       security:
       - bearerAuth: []
+      - {}
       parameters:
       - $ref: '#/components/parameters/ItemPath'
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       responses:
         '204':
           description: No content

@@ -93,9 +93,6 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
 
         Route::patch('/', [MeController::class, 'update'])->middleware('throttle:authenticated-write')->name('update');
 
-        Route::post('/cart/items', [CartController::class, 'addItem'])->middleware('throttle:cart-add')->name('cart.items.store');
-        Route::patch('/cart/items/{item}', [CartController::class, 'updateItem'])->middleware('throttle:authenticated-write')->name('cart.items.update');
-        Route::delete('/cart/items/{item}', [CartController::class, 'removeItem'])->middleware('throttle:authenticated-write')->name('cart.items.destroy');
         Route::post('/cart/merge', [CartController::class, 'merge'])->middleware('throttle:authenticated-write')->name('cart.merge');
 
         Route::post('/orders/{order}/cancel', [CustomerOrderController::class, 'cancel'])->middleware('throttle:order-cancel')->name('orders.cancel');
@@ -109,6 +106,18 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::middleware(['clerk.optional', 'throttle:authenticated-read'])
         ->get('/me/cart', [CartController::class, 'show'])
         ->name('me.cart.show');
+
+    Route::middleware(['clerk.optional', 'throttle:cart-add'])
+        ->post('/me/cart/items', [CartController::class, 'addItem'])
+        ->name('me.cart.items.store');
+
+    Route::middleware(['clerk.optional', 'throttle:authenticated-write'])
+        ->patch('/me/cart/items/{item}', [CartController::class, 'updateItem'])
+        ->name('me.cart.items.update');
+
+    Route::middleware(['clerk.optional', 'throttle:authenticated-write'])
+        ->delete('/me/cart/items/{item}', [CartController::class, 'removeItem'])
+        ->name('me.cart.items.destroy');
 
     // ---------------------------------------------------------------------
     // CHECKOUT — authenticated customer only
