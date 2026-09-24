@@ -6,11 +6,10 @@ use App\Exceptions\Api\ApiException;
 use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Cart\CartItemEligibility;
 use App\Support\ApiErrorCode;
 use App\Support\CartItemIdentifier;
-use App\Support\CatalogAvailability;
 use App\Support\ProductIdentifier;
-use App\Support\ProductType;
 use App\Support\VariantIdentifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -35,12 +34,7 @@ final class CartItemResource extends JsonResource
             $variant->setRelation('product', $product);
         }
 
-        $visible = $this->isPubliclyVisible($product);
-        $variantActive = $variant !== null && $variant->is_active;
-        $availability = $visible && $variantActive
-            ? CatalogAvailability::variant($variant)
-            : ['availability' => 'unavailable', 'stock_indicator' => CatalogAvailability::product($product)['stock_indicator']];
-
+        $evaluation = CartItemEligibility::evaluate($product, $variant, $item->quantity);
         $unitPrice = $this->unitPrice($variant);
 
         return [
@@ -57,23 +51,12 @@ final class CartItemResource extends JsonResource
             'quantity' => $item->quantity,
             'unit_price' => $unitPrice,
             'line_total' => $unitPrice === null ? null : $this->money($unitPrice['amount'] * $item->quantity, $unitPrice['currency']),
-            'availability' => $availability['availability'],
-            'stock_indicator' => $availability['stock_indicator'],
-            'is_purchasable' => $visible
-                && $product->product_type === ProductType::IN_STOCK
-                && $variantActive
-                && $availability['availability'] === 'available',
+            'availability' => $evaluation->availability,
+            'stock_indicator' => $evaluation->stockIndicator,
+            'is_purchasable' => $evaluation->isPurchasable,
             'created_at' => $item->created_at?->toISOString(),
             'updated_at' => $item->updated_at?->toISOString(),
         ];
-    }
-
-    private function isPubliclyVisible(Product $product): bool
-    {
-        return ! $product->trashed()
-            && $product->is_active
-            && $product->is_published
-            && $product->category->is_active;
     }
 
     /**

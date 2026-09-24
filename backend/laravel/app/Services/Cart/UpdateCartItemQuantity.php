@@ -10,7 +10,8 @@ use App\Support\ConcurrentTransaction;
 
 /**
  * Updates one owned cart line's quantity after revalidating the current
- * catalog/stock state. Quantity only; no reservation, no ProductStock lock.
+ * catalog/stock state through the shared admission rules. Quantity only;
+ * no reservation, no ProductStock lock.
  */
 final class UpdateCartItemQuantity
 {
@@ -28,9 +29,8 @@ final class UpdateCartItemQuantity
                 throw new ApiException(ApiErrorCode::CART_ITEM_NOT_FOUND, 'The requested cart item was not found.', 404);
             }
 
-            $product = $this->admission->validatedProduct($this->admission->findProduct($locked->product_id));
-            $variant = $this->admission->validatedVariant(
-                $product,
+            [, $variant] = $this->admission->admissible(
+                $this->admission->findProduct($locked->product_id),
                 $locked->variant_id === null ? null : ProductVariant::find($locked->variant_id),
             );
 

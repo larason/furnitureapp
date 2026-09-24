@@ -1,375 +1,521 @@
-# Combined Phase 6.3–6.5 — Cart Item Mutations
+# Phase 6.6 — Cart Validation
 
-## Scope
+## Purpose
 
-Combine:
+Consolidate all Cart-domain validation into one coherent, reusable validation layer.
 
-```text
-Phase 6.3 — Add cart item
-Phase 6.4 — Update cart item quantity
-Phase 6.5 — Remove cart item
-```
-
-into one implementation phase.
-
-Implement:
+Phases 6.2–6.5 already implemented:
 
 ```text
-CART-002
-POST /api/v1/me/cart/items
-
-CART-003
-PATCH /api/v1/me/cart/items/{item}
-
-CART-004
-DELETE /api/v1/me/cart/items/{item}
+CART-001 — create/get Cart
+CART-002 — add item
+CART-003 — update quantity
+CART-004 — remove item
 ```
 
-These operations must work for:
+Phase 6.6 must now eliminate validation drift between those operations and formalize:
 
 ```text
-authenticated self-owned carts
-guest credential-owned carts
+Cart admission validation
+existing-line validation
+stale-state classification
+purchasability
+quantity validation
+Product/Variant relationship validation
+error mapping
+validation ordering
+mutation-vs-read semantics
 ```
 
-using the holder-resolution infrastructure completed in Phase 6.2.
-
-Do not implement Checkout.
+Do not add new Cart endpoints.
 
 Do not reserve inventory.
 
-Do not implement CART-005 guest-cart merge in this combined phase unless the current AGENTS.md explicitly places merge inside Phase 6.5.
+Do not implement Checkout.
 
 ---
 
-# 1. Reuse Phase 6.2 Infrastructure
+# 1. Main Objective
 
-Do not recreate:
+There must be one authoritative answer to:
 
 ```text
-CartHolderResolver
-active Cart resolution
-guest credential validation
-browser-vs-Flutter transport handling
-opaque Cart IDs
-opaque CartItem IDs
-CartResource
+Can this Product/Variant/quantity enter or remain purchasable in this Cart?
+```
+
+All relevant Cart workflows must use that answer consistently.
+
+Avoid separate rules inside:
+
+```text
+AddCartItem
+UpdateCartItemQuantity
 CartItemResource
-private cache behavior
-optional Clerk authentication
+Cart read projection
+future Checkout prevalidation
 ```
 
-All three mutation endpoints must use the same established holder boundary.
+that can drift apart.
 
 ---
 
-# 2. Core Mutation Pipeline
+# 2. Existing Accepted Purchasability Definition
 
-For every Cart item mutation follow:
+Phase 6.1 established:
 
 ```text
-Transport
-→ Schema validation
-→ Authentication / guest credential validation
-→ Holder resolution
-→ Cart ownership
-→ Item ownership where applicable
-→ Domain validation
-→ Current catalog / stock read
-→ Transactional Cart mutation
-→ Reload Cart projection
-→ Response
+Product:
+- exists
+- is_active = true
+- is_published = true
+- not soft-deleted
+- Category active
+- product_type = IN_STOCK
+
+Variant:
+- referenced Variant exists where required
+- belongs to Product
+- is_active = true
+
+Inventory:
+- live availability = available
 ```
 
-Do not collapse everything into the controller.
+Then:
+
+```text
+is_purchasable = true
+```
+
+Otherwise:
+
+```text
+is_purchasable = false
+```
+
+for existing Cart lines.
+
+Preserve this definition.
 
 ---
 
-# 3. Holder Rules Remain Unchanged
+# 3. Distinguish Three Validation Contexts
 
-Authenticated request:
+Do not treat all Cart validation identically.
 
-```text
-authenticated local User
-→ own ACTIVE Cart
-```
-
-Guest request:
+Explicitly separate:
 
 ```text
-valid guest credential
-→ bound ACTIVE guest Cart
+A. Admission validation
+B. Mutation validation
+C. Existing-line projection validation
 ```
 
-Invalid attempted Clerk authentication must not downgrade to guest.
-
-Authenticated identity continues to win over a simultaneously supplied guest credential.
-
-No implicit merge.
+These have different failure behavior.
 
 ---
 
-# 4. No Client Cart Selection
+# 4. Admission Validation
 
-The client must never submit:
+Used when:
 
 ```text
-cart_id
-user_id
-guest_token_digest
-owner_id
+CART-002 adds a new Cart identity
 ```
 
-to select mutation ownership.
+Admission answers:
 
-All mutations operate on the resolved holder's ACTIVE Cart.
+```text
+May this item enter the Cart now?
+```
+
+Failure:
+
+```text
+reject request
+do not create line
+```
 
 ---
 
-# 5. CART-002 — Add Item
+# 5. Mutation Validation
 
-Implement:
+Used when:
 
-```http
-POST /api/v1/me/cart/items
+```text
+CART-003 changes quantity
 ```
 
-Request body:
+Mutation answers:
 
-```json
-{
-  "product_id": "prod_...",
-  "variant_id": "var_...",
-  "quantity": 2
-}
+```text
+May this existing line be changed to this requested quantity now?
 ```
 
-with conditional `variant_id` behavior according to the finalized Cart/Product model.
+Failure:
+
+```text
+reject request
+preserve existing line unchanged
+```
 
 ---
 
-# 6. CART-002 Accepted Fields
+# 6. Projection Validation
 
-Only:
+Used when:
 
 ```text
-product_id
-variant_id
-quantity
+CART-001 reads existing Cart
 ```
 
-may be accepted.
+and after successful mutations when CartResource is rendered.
 
-Use strict request validation.
+Projection answers:
 
-Unknown fields must fail.
+```text
+Is this already-stored line currently purchasable?
+```
+
+Failure of purchasability does **not** fail the Cart GET.
+
+Instead:
+
+```text
+retain CartItem
+availability = unavailable where appropriate
+is_purchasable = false
+```
+
+The accepted Cart ADR explicitly requires stale items to remain in the Cart instead of being silently removed.
 
 ---
 
-# 7. Reject Server-Controlled Fields
+# 7. Removal Is Special
 
-Reject attempts to send:
+CART-004 must not run admission/mutation purchasability validation.
+
+Removal requires only:
 
 ```text
-price
-unit_price
-line_total
-subtotal
-total
-currency
-discount
-delivery_fee
+valid holder
+ACTIVE holder Cart
+CartItem belongs to that Cart
+```
+
+A stale item must always remain removable.
+
+---
+
+# 8. Recommended Architecture
+
+Create or consolidate around one focused Cart-domain component.
+
+Examples:
+
+```text
+CartItemValidator
+CartItemPurchasability
+CartItemEligibilityResolver
+```
+
+Choose repository naming conventions.
+
+Avoid:
+
+```text
+CartValidationService
+```
+
+becoming a giant class containing transport/auth/DB/controller logic.
+
+---
+
+# 9. Suggested Responsibilities
+
+The shared domain component may expose concepts such as:
+
+```text
+validateForAdmission(...)
+validateForQuantityMutation(...)
+evaluateExistingLine(...)
+```
+
+or equivalent value-object/result-based design.
+
+It should centralize:
+
+```text
+Product state
+Category state
+Product type
+Variant requirement
+Variant ownership
+Variant active state
+quantity bounds
+current stock sufficiency
+Cart-specific purchasability
+```
+
+---
+
+# 10. Do Not Duplicate Group E
+
+Do not reimplement:
+
+```text
 availability
 stock_indicator
-is_purchasable
-reserved_quantity
-available_quantity
-stock
-warehouse_location
-cart_id
-user_id
-guest_token_digest
-created_at
-updated_at
+available quantity aggregation
+multi-location inventory aggregation
+LOW_STOCK threshold
 ```
 
-Do not silently mass assign them.
-
----
-
-# 8. FormRequest
-
-Use a dedicated request such as:
+Use completed Group E components such as:
 
 ```text
-AddCartItemRequest
+CatalogAvailability
 ```
 
-Use:
-
-```php
-$request->validated()
-```
-
-Never:
-
-```php
-$request->all()
-```
+and established pricing logic.
 
 ---
 
-# 9. Product Resolution
+# 11. No ProductStock Mutation
 
-Resolve `product_id` through the canonical opaque-ID mechanism.
+Validation may read ProductStock.
 
-Do not accept raw DB ID if the public contract requires:
+It must not:
 
 ```text
-prod_...
+increment reserved_quantity
+decrement quantity
+lock stock for purchase
+create reservations
 ```
 
----
-
-# 10. Product Must Exist
-
-Unknown Product:
-
-use the canonical Cart-domain validation/error mapping.
-
-Do not leak database exceptions.
+Phase 5.10/Group G checkout remain authoritative for reservation.
 
 ---
 
-# 11. Product Must Be Cart-Purchasable
+# 12. Validation Ordering
 
-For new admission Product must satisfy the already-recorded Phase 6.1 rules:
+Use a predictable domain sequence.
+
+Recommended:
 
 ```text
-is_active = true
-is_published = true
-not soft-deleted
-Category active
-product_type = IN_STOCK
+1. Product existence
+2. Product visible/purchasable state
+3. Product type
+4. Variant requirement
+5. Variant existence
+6. Variant belongs to Product
+7. Variant active
+8. Quantity validity
+9. Current informational stock sufficiency
 ```
 
-Do not use public availability alone as the complete admission rule.
+Do not perform inventory queries when an earlier Product/Variant rule already makes the request invalid.
 
 ---
 
-# 12. MADE_TO_ORDER
+# 13. Product Existence
+
+For CART-002 admission:
+
+unknown Product must map through the currently frozen Cart error contract.
+
+Do not leak database/model exceptions.
+
+---
+
+# 14. Product Active
 
 If:
 
 ```text
-product_type = MADE_TO_ORDER
+is_active = false
 ```
 
-reject:
+new admission/update requiring purchasability must fail.
+
+Existing line read:
+
+```text
+preserve line
+is_purchasable = false
+```
+
+---
+
+# 15. Product Publication
+
+If:
+
+```text
+is_published = false
+```
+
+new admission/update must fail.
+
+Existing Cart line remains visible and non-purchasable.
+
+---
+
+# 16. Soft-Deleted Product
+
+Soft-deleted Product cannot be newly admitted or quantity-mutated as purchasable.
+
+Existing Cart line must remain representable.
+
+Do not lose it because public Product scope hides soft-deleted records.
+
+---
+
+# 17. Category Activity
+
+If Product's Category becomes inactive:
+
+new admission/update fails according to existing Product-unavailable semantics.
+
+Existing Cart line:
+
+```text
+is_purchasable = false
+```
+
+---
+
+# 18. Product Type
+
+Only:
+
+```text
+IN_STOCK
+```
+
+may enter or be quantity-mutated through normal Cart flow.
+
+`MADE_TO_ORDER` remains rejected with:
 
 ```text
 422 PRODUCT_NOT_PURCHASABLE
 ```
 
-It belongs to the Request Furniture workflow.
-
-Do not permit it because it has a display price.
+The accepted Cart decision explicitly keeps MADE_TO_ORDER outside normal Cart commerce.
 
 ---
 
-# 13. Unpublished / Inactive Product
+# 19. Existing MADE_TO_ORDER Line
 
-Use the finalized endpoint-specific Cart error mapping from the frozen contract.
+If historical/corrupt/test state contains such a line:
 
-Do not expose internal publication state unnecessarily.
+CART-001 must not fail.
 
-Do not silently add the line.
-
----
-
-# 14. Variant Ownership
-
-When `variant_id` is supplied:
+Return:
 
 ```text
-Variant exists
-Variant belongs to Product
-Variant is active
+is_purchasable = false
+stock_indicator = MADE_TO_ORDER
 ```
 
-All must hold.
+as appropriate.
 
-Otherwise:
+CART-004 must still allow removal.
+
+---
+
+# 20. Variant Requirement
+
+Formalize the result of Phase 6.1.
+
+If a Product requires a sellable Variant:
+
+```text
+variant_id required
+```
+
+If the current model genuinely supports Product-without-Variant:
+
+follow the frozen nullable Variant contract.
+
+Do not create an ad hoc Product-level pricing fallback.
+
+---
+
+# 21. Variant Existence
+
+Unknown Variant:
 
 ```text
 422 INVALID_PRODUCT_VARIANT
 ```
 
-according to the contract.
+for add/update validation.
+
+Existing stale line should normally remain representable where FK/history permits.
 
 ---
 
-# 15. Variant Parent Validation
+# 22. Variant Ownership
 
-Never accept:
+Must satisfy:
 
 ```text
-Product A
-Variant belonging to Product B
+variant.product_id === product.id
 ```
 
-even if the Variant has a valid price and inventory.
+No exceptions.
 
----
-
-# 16. Variant Is Server-Validated
-
-Do not trust:
+Wrong-parent Variant:
 
 ```text
-variant_id
+422 INVALID_PRODUCT_VARIANT
 ```
 
-simply because it exists.
+---
 
-Validate parent ownership and activity.
+# 23. Variant Active State
+
+Inactive Variant:
+
+Admission/mutation:
+
+```text
+reject
+```
+
+Projection:
+
+```text
+retain line
+is_purchasable = false
+```
 
 ---
 
-# 17. Nullable Variant Semantics
+# 24. Quantity Validation
 
-Follow the result of Phase 6.1's model reconciliation.
-
-If the current V1 implementation requires every purchasable Product to have a Variant because ProductVariant is the pricing/sellable boundary:
-
-enforce that rule consistently.
-
-Do not invent a Product-level price fallback.
-
----
-
-# 18. Quantity
-
-Quantity must be:
+Centralize:
 
 ```text
 integer
-1..CartItem::MAX_QUANTITY
+minimum 1
+maximum CartItem::MAX_QUANTITY
 ```
 
-Current maximum:
+Use:
 
 ```text
-100
+CartItem::MAX_QUANTITY
 ```
 
-Use the domain constant.
-
-Do not duplicate magic `100` throughout requests/services/tests.
+as the only maximum source.
 
 ---
 
-# 19. Strict Quantity Input
+# 25. Quantity Types
 
 Reject:
 
@@ -377,2071 +523,1654 @@ Reject:
 0
 negative
 101+
-1.5
-"2"
+float
+numeric string
 null
 array
+boolean
 ```
 
-using canonical validation errors.
+according to strict request validation.
 
 ---
 
-# 20. Informational Stock Validation on Add
+# 26. Duplicate Add Quantity Rule
 
-Cart mutation does not reserve stock.
-
-However add-item admission should verify current availability sufficiently to avoid knowingly adding an impossible quantity.
-
-Conceptually:
+Do not change the now-implemented accepted semantics:
 
 ```text
-current available stock >= resulting cart quantity
+resulting quantity =
+min(existing + requested, CartItem::MAX_QUANTITY)
 ```
 
-for IN_STOCK Products.
+Duplicate additions merge and clamp rather than creating duplicate lines. The accepted ADR freezes this behavior.
 
 ---
 
-# 21. Available Stock
+# 27. Effective Quantity
 
-Use Group E authority:
+Shared validation must distinguish:
 
 ```text
-available_quantity
-=
-quantity - reserved_quantity
+incoming quantity
 ```
 
-aggregated according to existing Variant inventory rules.
+from:
 
-Do not recreate stock arithmetic.
+```text
+effective resulting Cart quantity
+```
+
+For duplicate add:
+
+```text
+effective = min(existing + incoming, 100)
+```
+
+For PATCH:
+
+```text
+effective = requested quantity
+```
+
+Stock validation must use effective quantity.
 
 ---
 
-# 22. No Stock Reservation
+# 28. Informational Stock Validation
 
-Successful CART-002 must not alter:
-
-```text
-ProductStock.quantity
-ProductStock.reserved_quantity
-```
-
-Cart validation is informational only.
-
-Checkout owns reservation.
-
----
-
-# 23. Duplicate Add Behavior
-
-If the same Cart already contains:
+For add/update:
 
 ```text
-(product_id, variant_id)
+effective_quantity <= current available quantity
 ```
 
-do not insert another row.
-
-Merge quantities.
-
----
-
-# 24. Resulting Quantity
-
-Conceptually:
-
-```text
-resulting_quantity
-=
-existing_quantity + requested_quantity
-```
-
----
-
-# 25. Frozen Duplicate Behavior
-
-The frozen decision says duplicate additions merge quantities rather than creating a duplicate CartItem.
-
-Preserve this behavior.
-
----
-
-# 26. Quantity Ceiling During Repeat Add
-
-Do not let the stored quantity exceed:
-
-```text
-CartItem::MAX_QUANTITY
-```
-
-Review the frozen ADR wording carefully because it says duplicate additions are "clamped" to 100.
-
-Implement exactly the accepted contract.
-
-If accepted runtime semantics are:
-
-```text
-min(existing + requested, 100)
-```
-
-use that.
-
-Do not silently change it into a 422 overflow rejection merely because another earlier planning document suggested rejection.
-
----
-
-# 27. Stock Check Uses Resulting Quantity
-
-Example:
-
-```text
-existing cart qty = 3
-new add qty = 2
-```
-
-stock validation should evaluate:
-
-```text
-resulting cart qty = 5
-```
-
-not merely the incoming 2.
-
----
-
-# 28. Add Item Transaction
-
-Repeat-add must be concurrency-safe.
-
-A naive:
-
-```text
-SELECT existing item
-then INSERT/UPDATE
-```
-
-can race.
-
-Use a DB transaction and existing uniqueness constraints as defensive protection.
-
----
-
-# 29. Same-Line Concurrent Add Race
-
-Example:
-
-```text
-current qty = 1
-
-Request A adds 1
-Request B adds 1
-```
-
-The implementation must not:
-
-```text
-create duplicate rows
-lose one increment
-break the max quantity
-```
-
----
-
-# 30. Concurrency Strategy
-
-Use the simplest correct database-backed strategy.
-
-Preferred:
-
-```text
-transaction
-→ resolve target CartItem
-→ lock existing line when present
-→ calculate resulting quantity
-→ validate
-→ update
-```
-
-For absent-line races:
-
-use the unique item identity constraint and clean recovery/retry.
-
-Do not remove the DB uniqueness constraints.
-
----
-
-# 31. Deterministic Item Identity
-
-Identity remains:
-
-```text
-cart_id + product_id + variant_id
-```
-
-with the existing null-Variant duplicate guard.
-
----
-
-# 32. No Inventory Row Lock for Cart Add
-
-Do not use:
-
-```text
-ProductStock::lockForUpdate()
-```
-
-just to add to Cart.
-
-Stock can change immediately after Cart mutation anyway.
-
-Only checkout performs authoritative locked inventory reservation.
-
----
-
-# 33. Stock Race Semantics
-
-If stock changes between:
-
-```text
-Cart validation
-and
-Checkout
-```
-
-that is expected.
-
-Checkout revalidates authoritatively.
-
-Cart success is never a stock guarantee.
-
----
-
-# 34. CART-002 Response
-
-Return the updated Cart representation.
-
-Preferred:
-
-```text
-200
-```
-
-with:
-
-```json
-{
-  "data": {
-    "...": "full current Cart"
-  }
-}
-```
-
-if that matches frozen OpenAPI.
-
-Do not invent a different item-only response if the frozen contract returns Cart.
-
-Check current OpenAPI and follow it exactly.
-
----
-
-# 35. CART-003 — Update Quantity
-
-Implement:
-
-```http
-PATCH /api/v1/me/cart/items/{item}
-```
-
----
-
-# 36. Update Request Body
-
-Accept exactly:
-
-```json
-{
-  "quantity": 4
-}
-```
-
-Only `quantity` is mutable.
-
----
-
-# 37. Immutable Fields
-
-Reject attempts to change:
-
-```text
-product_id
-variant_id
-cart_id
-price
-availability
-stock
-```
-
-through CART-003.
-
-Changing Product/Variant means removing one line and adding another.
-
----
-
-# 38. Quantity Zero Is Not Delete
-
-Frozen rule:
-
-```text
-quantity = 0
-```
-
-is invalid.
-
-Removal uses:
-
-```text
-DELETE /me/cart/items/{item}
-```
-
-Do not overload PATCH with deletion behavior.
-
----
-
-# 39. Item Resolution
-
-Decode the opaque:
-
-```text
-item_...
-```
-
-identifier.
-
-Then resolve it only inside the current holder's ACTIVE Cart.
-
----
-
-# 40. Object-Level IDOR Protection
-
-Never:
-
-```text
-find CartItem globally by ID
-→ authorize after
-```
-
-in a way that leaks existence.
-
-Prefer holder-scoped resolution:
-
-```text
-current Cart
-→ its items
-→ matching item ID
-```
-
----
-
-# 41. Cross-Cart Item
-
-If the item:
-
-```text
-does not exist
-or
-belongs to another Cart
-```
-
-return the same masked result:
-
-```text
-404 CART_ITEM_NOT_FOUND
-```
-
-or the exact frozen equivalent.
-
-Do not return 403 for cross-holder probes.
-
-The security ADR explicitly requires CART-003/004 ownership masking.
-
----
-
-# 42. Update Revalidates Current Domain State
-
-Before accepting a new quantity, re-evaluate current:
-
-```text
-Product
-Product type
-publication/activity
-Variant validity/activity
-current stock availability
-```
-
-Do not rely solely on state from when the item was originally added.
-
----
-
-# 43. Stale Item Update
-
-If an existing item has become unpurchasable:
-
-do not silently repair it.
-
-Follow the canonical Cart error mapping.
-
-The customer may still remove it through CART-004.
-
----
-
-# 44. Stock Check on Update
-
-For an otherwise purchasable IN_STOCK item:
-
-ensure current informational availability can satisfy the requested quantity.
+must hold.
 
 If not:
-
-return:
 
 ```text
 422 INSUFFICIENT_STOCK
 ```
 
-according to the frozen Cart contract.
-
-Do not reserve stock.
+according to current implemented Cart semantics.
 
 ---
 
-# 45. Update to Same Quantity
+# 29. Multi-Location Stock
 
-Review frozen semantics.
+Available quantity must use the established Group E aggregation.
 
-Preferred standard behavior:
-
-```text
-PATCH quantity = current quantity
-→ successful idempotent no-op
-→ return current Cart
-```
-
-Do not create an error solely because the value is unchanged unless contract says otherwise.
-
----
-
-# 46. Cart Timestamp
-
-Successful quantity mutation must update:
+Do not validate against:
 
 ```text
-CartItem.updated_at
-Cart.updated_at
-```
-
-according to the Phase 6.1/6.2 timestamp decision.
-
----
-
-# 47. Failed Update Timestamp
-
-Validation failure must not touch:
-
-```text
-CartItem.updated_at
-Cart.updated_at
+first ProductStock row
+one warehouse
+quantity without reservations
 ```
 
 ---
 
-# 48. CART-004 — Remove Item
+# 30. Reserved Stock Matters
 
-Implement:
+Example:
 
-```http
-DELETE /api/v1/me/cart/items/{item}
+```text
+quantity = 10
+reserved_quantity = 8
+available = 2
 ```
+
+Cart validation must treat:
+
+```text
+available = 2
+```
+
+not 10.
 
 ---
 
-# 49. Remove Request Body
+# 31. Cart Stock Validation Is Not a Guarantee
 
-Accept no request body.
-
-Do not require:
+Document clearly:
 
 ```text
-quantity
-product_id
-cart_id
+Cart validation = current informational admission check
+Checkout = final authoritative locked validation
 ```
+
+Successful add/update does not guarantee future Checkout success.
 
 ---
 
-# 50. Removal Ownership
+# 32. Do Not Hold Inventory Locks
 
-Resolve item strictly through current holder's ACTIVE Cart.
-
-Cross-Cart or unknown item:
+Phase 6.6 must not introduce:
 
 ```text
-404 CART_ITEM_NOT_FOUND
+ProductStock::lockForUpdate()
 ```
 
-with existence masking.
+for Cart validation.
+
+The Cart intentionally does not reserve stock.
 
 ---
 
-# 51. Removal Is Allowed for Stale Items
+# 33. Projection Availability
 
-CART-004 must allow removing an item even if its:
-
-```text
-Product is inactive
-Product is unpublished
-Product is soft-deleted
-Variant is inactive
-stock = 0
-Product type changed / is invalid for purchase
-```
-
-The customer must always be able to clean stale Cart lines.
-
----
-
-# 52. Removal Requires No Stock Validation
-
-Do not block deletion because:
+For existing line, expose Group E:
 
 ```text
-stock changed
-Product inactive
-Variant inactive
-```
-
-Removal only requires:
-
-```text
-valid holder
-owned Cart
-owned CartItem
-```
-
----
-
-# 53. Remove Does Not Touch Inventory
-
-Deleting CartItem must not:
-
-```text
-release reservation
-increase stock
-decrease stock
-```
-
-because Cart never reserved inventory.
-
----
-
-# 54. Cart Record Remains
-
-Removing the last line:
-
-```text
-Cart remains ACTIVE
-items = []
-items_count = 0
-subtotal = 0
-```
-
-Do not delete the Cart record.
-
----
-
-# 55. Cart Status Remains ACTIVE
-
-Ordinary add/update/remove does not set:
-
-```text
-INACTIVE
-```
-
----
-
-# 56. Removal Response
-
-Follow frozen CART-004 wire contract exactly.
-
-If it returns:
-
-```text
-updated Cart
-```
-
-return that.
-
-If the frozen OpenAPI requires:
-
-```text
-204 No Content
-```
-
-use that.
-
-Do not invent response semantics.
-
----
-
-# 57. Cart Projection After Mutations
-
-For any endpoint returning Cart:
-
-reuse Phase 6.2:
-
-```text
-CartResource
-CartItemResource
-current pricing
 availability
 stock_indicator
-is_purchasable
-opaque IDs
-deterministic item ordering
 ```
+
+from current state.
 
 ---
 
-# 58. Server-Derived Pricing
+# 34. Quantity-Aware `is_purchasable`
 
-After add/update/remove:
+Review the existing Phase 6.2 projection carefully.
 
-recalculate response values from current server state.
+A line with:
 
-Never trust request price.
+```text
+availability = available
+```
+
+may still have:
+
+```text
+Cart quantity > current available quantity
+```
+
+Example:
+
+```text
+Cart quantity = 5
+available stock = 2
+```
+
+That line should not be considered checkout-ready.
+
+Therefore Cart-specific `is_purchasable` should consider the entire line quantity, not merely coarse Variant availability.
 
 ---
 
-# 59. Line Total
+# 35. Canonical Purchasability Formula
 
-For every **priceable** returned line (one whose saved active Variant gives a
-resolvable current price):
+Prefer:
 
 ```text
-line_total.amount
-=
-unit_price.amount * quantity
+is_purchasable =
+    product visible/purchasable
+    AND product_type = IN_STOCK
+    AND variant valid/active
+    AND live available quantity >= CartItem.quantity
 ```
 
-using integer minor units.
-
-For an **unpriceable** line (missing or inactive Variant), expose:
+This is more precise than:
 
 ```text
-unit_price = null
-line_total = null
+availability == available
+```
+
+alone.
+
+If current Phase 6.2 implementation only checks `availability == available`, Phase 6.6 should correct that as a genuine validation consolidation defect.
+
+---
+
+# 36. Important Example
+
+Given:
+
+```text
+Cart line quantity = 8
+current available quantity = 3
+```
+
+Group E coarse Variant availability may still be:
+
+```text
+available
+```
+
+because stock is greater than zero.
+
+But Cart line must be:
+
+```text
 is_purchasable = false
 ```
 
-Do not dereference a missing price and do not fabricate a price (no implicit
-`amount = 0`). This matches the frozen OpenAPI `CartItem` nullability.
+because Checkout cannot currently satisfy the requested quantity.
 
 ---
 
-# 60. Subtotal
+# 37. `availability` vs `is_purchasable`
 
-After every mutation:
+Do not conflate them.
+
+`availability` answers:
 
 ```text
-subtotal
-=
-SUM(current line totals of priceable lines)
+Does this Product/Variant currently have any sellable availability?
 ```
 
-Unpriceable (`null`) line totals are **excluded** from the sum, not treated as
-zero. Subtotal remains a server-derived, non-persisted integer-minor-unit value.
-
-Do not persist subtotal.
-
----
-
-# 61. Price Changes
-
-If another Product's Variant price changed while the Cart was open:
-
-the next mutation response should reflect the current live price for that line too.
-
-The Cart response is a current projection.
-
----
-
-# 62. Items Count
-
-Still:
+Cart `is_purchasable` answers:
 
 ```text
-number of distinct CartItem rows
-```
-
-not sum of quantities.
-
----
-
-# 63. Current Availability
-
-Response must use Phase 5.7:
-
-```text
-availability
-stock_indicator
-```
-
-not duplicated Cart calculations.
-
----
-
-# 64. `is_purchasable`
-
-Continue the Phase 6.1 definition.
-
-Do not redefine it separately in add/update/remove code.
-
-Use a shared Cart projection/domain component.
-
----
-
-# 65. Stale Items Remain
-
-Adding/updating/removing one line must not cause unrelated stale lines to disappear.
-
-Cart mutation should affect only the intended line except recalculated derived response state.
-
----
-
-# 66. No Silent Cleanup
-
-Do not perform background cleanup such as:
-
-```text
-delete all unavailable items
-delete unpublished items
-remove MADE_TO_ORDER lines
-```
-
-during unrelated mutations.
-
----
-
-# 67. Holder-Credential Transport
-
-Guest mutation requests use the exact Phase 6.2 transport behavior.
-
-Browser:
-
-```text
-guest_cart_id cookie
-```
-
-Flutter/non-browser:
-
-```text
-X-Guest-Cart-Id
+Can this specific Cart line at its current quantity proceed?
 ```
 
 ---
 
-# 68. Do Not Re-Issue Existing Guest Credential
+# 38. Out-of-Stock Line
 
-Normal add/update/remove using an existing valid guest Cart should not rotate its guest credential.
-
----
-
-# 69. Authenticated + Guest Credential
-
-Authenticated principal still wins.
-
-Ordinary item mutation targets authenticated Cart.
-
-Do not mutate supplied guest Cart.
-
----
-
-# 70. No Auto-Merge
-
-Do not merge guest Cart as side effect of:
+If:
 
 ```text
-POST item
-PATCH item
-DELETE item
+available quantity = 0
+```
+
+then:
+
+```text
+availability = unavailable
+is_purchasable = false
 ```
 
 ---
 
-# 71. CART-005 Merge Remains Separate
+# 39. Partial Stock Line
 
-Unless current AGENTS.md explicitly says otherwise, do not implement:
-
-```http
-POST /api/v1/me/cart/merge
-```
-
-inside this combined add/update/remove phase.
-
-Merge has additional concerns:
+If:
 
 ```text
-authenticated + guest dual authority
-source retirement
-duplicate consolidation
-quantity conflicts
-idempotency
-credential retirement
+available quantity > 0
+but
+available quantity < Cart quantity
 ```
 
-and deserves its own bounded implementation.
+then expected:
+
+```text
+availability = available
+is_purchasable = false
+```
+
+unless the frozen Cart contract explicitly requires `availability` to become unavailable for quantity-specific semantics.
+
+Do not redefine Group E `availability`.
 
 ---
 
-# 72. No Idempotency-Key for Normal Item Mutations Unless Frozen
+# 40. LOW_STOCK
 
-Do not automatically impose Checkout-style durable Idempotency-Key behavior on CART-002/003/004 unless the frozen contract explicitly requires it.
+`LOW_STOCK` is informational.
 
-The database mutation itself still needs concurrency correctness.
+It does not itself make a line unpurchasable.
 
----
-
-# 73. Retry Semantics for Add
-
-Be careful:
+Example:
 
 ```text
-POST add
+available = 4
+Cart quantity = 2
 ```
 
-is not naturally idempotent.
-
-A network retry may add quantity again unless the contract defines idempotency.
-
-Do not silently claim retry-safe semantics that are not contracted.
-
----
-
-# 74. Duplicate Add vs Network Retry
-
-The frozen "duplicate item merges quantities" rule describes:
+may be:
 
 ```text
-adding the same identity
-```
-
-not necessarily HTTP request deduplication.
-
-Do not confuse:
-
-```text
-line merging
-```
-
-with:
-
-```text
-idempotent request replay
+stock_indicator = LOW_STOCK
+is_purchasable = true
 ```
 
 ---
 
-# 75. Rate Limiting
+# 41. Stale-State Classification
 
-Apply the existing Cart mutation limiter to:
+Centralize reasons internally.
 
-```text
-CART-002
-CART-003
-CART-004
-```
-
-Use current configured rate-limit category.
-
----
-
-# 76. Retry-After
-
-429 responses must include:
+Potential internal reasons:
 
 ```text
-Retry-After
-```
-
-according to global conventions.
-
----
-
-# 77. Cache Control
-
-All mutation responses remain:
-
-```text
-private
-no-cache
-no-store
-must-revalidate
-```
-
----
-
-# 78. No Public Cache
-
-Applies to guest and authenticated Carts.
-
----
-
-# 79. Error Envelope
-
-Use:
-
-```text
-errors[]
-meta.request_id
-```
-
-for all failures.
-
----
-
-# 80. Add Errors
-
-Cover at least:
-
-```text
-missing product_id
-invalid product_id
-missing/invalid variant_id
-variant wrong Product
-inactive Variant
+PRODUCT_INACTIVE
+PRODUCT_UNPUBLISHED
+PRODUCT_DELETED
+CATEGORY_INACTIVE
 MADE_TO_ORDER
-inactive/unpublished Product
-invalid quantity
-insufficient current stock
-unknown input field
-invalid holder credential
-rate limit
+VARIANT_MISSING
+VARIANT_WRONG_PARENT
+VARIANT_INACTIVE
+OUT_OF_STOCK
+INSUFFICIENT_FOR_CART_QUANTITY
 ```
 
-using already-frozen codes.
+These do not automatically become public API enums.
 
 ---
 
-# 81. Update Errors
+# 42. Do Not Expand Public Contract Accidentally
 
-Cover:
+Internal validation reasons must not become new:
 
 ```text
-item not found / not owned
-quantity invalid
-quantity > 100
-Product/Variant currently invalid
-insufficient stock
-invalid holder
-unknown fields
-rate limit
+error codes
+response fields
+CLOSED enums
 ```
+
+unless already frozen.
+
+Use them internally to derive existing API behavior.
 
 ---
 
-# 82. Remove Errors
+# 43. Validation Result Object
 
-Cover:
-
-```text
-item not found / not owned
-invalid holder
-rate limit
-```
-
-Do not add Product/stock validation errors to removal.
-
----
-
-# 83. No Data Leakage
-
-Errors must never expose:
-
-```text
-another user's Cart ID
-another user's item
-raw DB IDs
-guest digest
-raw guest token
-SQL
-table names
-ProductStock quantities beyond approved safe details
-```
-
----
-
-# 84. Safe Stock Error Details
-
-If the frozen `INSUFFICIENT_STOCK` contract permits:
-
-```text
-details.available_quantity
-```
-
-for Cart mutations, use the approved safe representation.
-
-Otherwise do not invent operational quantity leakage.
-
-Review endpoint-specific contract.
-
----
-
-# 85. Add Service
-
-Use a focused action/service such as:
-
-```text
-AddCartItem
-```
-
-Responsibilities:
-
-```text
-validate resolved Product/Variant domain state
-calculate resulting quantity
-informational stock check
-transactional create-or-increment
-touch Cart
-return result
-```
-
----
-
-# 86. Update Service
-
-Use:
-
-```text
-UpdateCartItemQuantity
-```
-
-or equivalent.
-
-Keep ownership resolution outside or clearly bounded.
-
----
-
-# 87. Remove Service
-
-Use:
-
-```text
-RemoveCartItem
-```
-
-or equivalent.
-
-No stock/catalog validation beyond what is necessary for holder ownership.
-
----
-
-# 88. Shared Cart Item Admission Rule
-
-Do not duplicate Product/Variant admission logic in:
-
-```text
-AddCartItem
-UpdateCartItemQuantity
-```
-
-Use one focused reusable domain validator/resolver.
-
----
-
-# 89. Keep Controller Thin
+Prefer a structured internal result over a pile of booleans.
 
 Conceptually:
 
 ```text
-FormRequest
-→ holder/current Cart
-→ action/service
-→ CartResource / response
+CartItemValidationResult
 ```
 
-No large transaction/domain logic in controller.
+with safe concepts such as:
+
+```text
+isPurchasable
+availability
+stockIndicator
+effectiveAvailableQuantity (internal only)
+reason
+```
+
+Do not expose internal inventory quantities from the Resource unless contracted.
 
 ---
 
-# 90. Transaction Boundary — Add
+# 44. Admission Errors vs Projection Reasons
 
-The add operation should be atomic around:
+The same internal validation reason may map differently depending on context.
 
-```text
-existing-line resolution
-resulting quantity calculation
-CartItem insert/update
-Cart touch
-```
-
----
-
-# 91. Transaction Boundary — Update
-
-Atomic:
+Example:
 
 ```text
-owned-item lock/read
-validation against current state
-quantity update
-Cart touch
+MADE_TO_ORDER
 ```
 
----
-
-# 92. Transaction Boundary — Remove
-
-Atomic:
-
-```text
-owned-item resolution
-delete
-Cart touch
-```
-
-No need for inventory transaction/lock.
-
----
-
-# 93. CartItem Locking
-
-For concurrent mutation of the same existing CartItem:
-
-use:
-
-```text
-lockForUpdate()
-```
-
-or equivalent appropriate row serialization.
-
-This prevents lost quantity updates.
-
----
-
-# 94. Cart Locking
-
-Avoid unnecessarily locking the entire Cart for every operation if locking the affected CartItem plus proper uniqueness is sufficient.
-
-But ensure:
-
-```text
-Cart.updated_at
-```
-
-touch behavior remains consistent.
-
----
-
-# 95. New-Line Race
-
-Two concurrent adds for the same absent identity may both attempt insert.
-
-Use the DB unique constraints as final defense.
-
-Recover safely:
-
-```text
-one inserts
-other resolves winner
-then applies its quantity merge transactionally
-```
-
-Do not surface raw duplicate-key exceptions.
-
----
-
-# 96. Different-Line Concurrency
-
-Adding:
-
-```text
-Variant A
-Variant B
-```
-
-to the same Cart concurrently should not unnecessarily block each other beyond what Cart timestamp updates require.
-
-Prefer row-level contention over global serialization.
-
----
-
-# 97. Update vs Remove Race
-
-Same item concurrently receives:
-
-```text
-PATCH quantity
-DELETE
-```
-
-The system must produce one valid serialized outcome.
-
-Never resurrect a removed line unexpectedly.
-
----
-
-# 98. Add vs Remove Race
-
-If the same identity is removed while another request adds it:
-
-result may depend on transaction ordering, but final state must:
-
-```text
-obey uniqueness
-obey quantity bounds
-remain owned by same Cart
-```
-
-No duplicate rows.
-
----
-
-# 99. Cart Mutation Does Not Need ProductStock Locks
-
-Repeat:
-
-```text
-no ProductStock lock
-no reservation
-```
-
-for ordinary Cart operations.
-
----
-
-# 100. Group E Concurrency Remains Checkout Authority
-
-Do not weaken or duplicate:
-
-```text
-InventoryAllocator / reservation primitive
-```
-
-from Phase 5.10.
-
-Group F only reads availability.
-
----
-
-# 101. Add Test — New Line
-
-Given empty Cart:
-
-```text
-POST Product A / Variant A / qty 2
-```
-
-assert:
-
-```text
-one CartItem
-quantity 2
-correct identity
-```
-
----
-
-# 102. Add Test — Duplicate Line
-
-Existing qty:
-
-```text
-2
-```
-
-add:
-
-```text
-3
-```
-
-result:
-
-```text
-5
-```
-
-with one CartItem row.
-
----
-
-# 103. Add Test — Quantity Ceiling
-
-Test behavior at:
-
-```text
-99 + 1
-99 + 2
-100 + 1
-```
-
-according to frozen clamping semantics.
-
----
-
-# 104. Add Test — Same Product Different Variant
-
-Add:
-
-```text
-red
-blue
-```
-
-Both remain separate lines.
-
----
-
-# 105. Add Test — Wrong Parent Variant
-
-Must fail without Cart mutation.
-
----
-
-# 106. Add Test — MADE_TO_ORDER
-
-Must return:
+Admission:
 
 ```text
 422 PRODUCT_NOT_PURCHASABLE
 ```
 
-and create no CartItem.
-
----
-
-# 107. Add Test — Inactive Product
-
-Must fail.
-
----
-
-# 108. Add Test — Unpublished Product
-
-Must fail.
-
----
-
-# 109. Add Test — Inactive Category
-
-Must fail according to Phase 6.1 purchasability definition.
-
----
-
-# 110. Add Test — Inactive Variant
-
-Must fail.
-
----
-
-# 111. Add Test — Insufficient Stock
-
-Example:
+Projection:
 
 ```text
-available = 3
-requested resulting quantity = 4
+200 Cart
+is_purchasable = false
 ```
 
-must fail without reservation or Cart mutation.
+This is why validation context must be explicit.
 
 ---
 
-# 112. Add Test — Fully Reserved Inventory
+# 45. Error Mapping
 
-Physical:
+Create one consistent mapping from validation failure to existing Cart errors.
+
+Do not let controllers decide independently.
+
+---
+
+# 46. Product Type Error
+
+Canonical:
 
 ```text
-10
+MADE_TO_ORDER
+→ PRODUCT_NOT_PURCHASABLE
 ```
 
-Reserved:
+---
+
+# 47. Other Product Visibility Failures
+
+Based on the completed 6.3–6.5 behavior:
 
 ```text
-10
+inactive
+unpublished
+soft-deleted
+inactive Category
+→ PRODUCT_UNAVAILABLE
 ```
 
-Available:
+Preserve this established mapping unless the frozen API contract explicitly contradicts it.
+
+---
+
+# 48. Variant Errors
+
+Canonical:
 
 ```text
-0
+missing required Variant
+unknown Variant
+wrong-parent Variant
+inactive Variant
+→ INVALID_PRODUCT_VARIANT
 ```
 
-add should fail informational stock admission.
+where current contract already maps them this way.
 
 ---
 
-# 113. Add Test — Multi-Location
+# 49. Quantity Errors
 
-Available stock aggregation must match Group E.
-
-Do not inspect first stock row only.
-
----
-
-# 114. Add Test — No Reservation
-
-Compare ProductStock before/after successful add.
-
-Must remain identical.
-
----
-
-# 115. Add Test — Current Price
-
-Response must use current Variant price.
-
-Client cannot override it.
-
----
-
-# 116. Add Test — Unknown Fields
-
-Send:
+Structural/type/bounds errors remain:
 
 ```text
-price
-user_id
-cart_id
-reserved_quantity
+INVALID_TYPE
+INVALID_VALUE
+MISSING_REQUIRED_FIELD
 ```
 
-Expect strict validation failure.
+as appropriate.
+
+Do not convert schema errors into domain errors.
 
 ---
 
-# 117. Add Test — Authenticated
+# 50. Stock Errors
 
-Works against own active Cart.
-
----
-
-# 118. Add Test — Guest Browser
-
-Works with cookie credential.
-
----
-
-# 119. Add Test — Guest Flutter
-
-Works with header credential.
-
----
-
-# 120. Add Test — Invalid Guest
-
-401.
-
-No Cart mutation.
-
----
-
-# 121. Add Test — Concurrent Duplicate Addition
-
-Use concurrent requests against same identity.
-
-Assert:
+When otherwise valid line cannot satisfy requested effective quantity:
 
 ```text
-one CartItem
-correct final quantity
-no duplicate-key leak
-quantity <= 100
+INSUFFICIENT_STOCK
 ```
 
-Run real MariaDB if SQLite cannot prove the target race.
-
 ---
 
-# 122. Update Test — Quantity Increase
+# 51. Ownership Errors Stay Outside Domain Validator
 
-Update from:
+Do not make CartItemValidator responsible for:
 
 ```text
-2 → 5
+Clerk verification
+guest credential verification
+Cart holder ownership
+IDOR masking
 ```
 
-assert exact result.
+Those remain Phase 6.2 holder/route concerns.
 
 ---
 
-# 123. Update Test — Quantity Decrease
+# 52. Validation Layering
+
+Preserve project pipeline:
 
 ```text
-5 → 2
+Transport
+→ Schema
+→ Authentication
+→ Holder/Authorization
+→ Domain Cart Validation
+→ Transaction
+→ Persistence
 ```
 
-valid.
+Do not query Product records before malformed request input is rejected.
 
 ---
 
-# 124. Update Test — Quantity One
+# 53. Add Workflow Refactor
 
-Boundary:
+Refactor CART-002 to use the shared validator.
+
+Target flow:
 
 ```text
-1
+validated input
+→ resolve holder Cart
+→ resolve Product/Variant
+→ calculate effective duplicate quantity
+→ shared admission validation
+→ transactional insert/increment
+→ CartResource
 ```
 
-valid.
-
 ---
 
-# 125. Update Test — Quantity 100
+# 54. Update Workflow Refactor
 
-Boundary:
+CART-003 target:
 
 ```text
-100
+validated quantity
+→ resolve holder Cart
+→ holder-scoped CartItem
+→ shared mutation validation
+→ transaction/lock item
+→ update quantity
+→ CartResource
 ```
 
-valid if stock permits current informational validation.
-
 ---
 
-# 126. Update Test — Zero
+# 55. Projection Refactor
 
-Rejected.
+CART-001 / CartItemResource should use the same validation/purchasability component.
 
-No deletion.
-
----
-
-# 127. Update Test — Over 100
-
-Rejected.
-
----
-
-# 128. Update Test — Strict Type
-
-Reject numeric string/float/null.
-
----
-
-# 129. Update Test — Stock Insufficient
-
-Requested quantity > current available:
-
-reject.
-
-Original quantity remains unchanged.
-
----
-
-# 130. Update Test — No Reservation
-
-ProductStock unchanged.
-
----
-
-# 131. Update Test — Cross-Holder Item
-
-Customer/guest A attempts to mutate B's item.
-
-Result:
+Do not duplicate:
 
 ```text
-404
-```
-
-same as nonexistent item.
-
----
-
-# 132. Update Test — Same Quantity
-
-Verify finalized no-op behavior.
-
----
-
-# 133. Update Test — Cart Timestamp
-
-Successful mutation updates Cart.updated_at.
-
----
-
-# 134. Update Test — Failed Mutation Timestamp
-
-Failure leaves timestamps unchanged.
-
----
-
-# 135. Update Test — Concurrent Updates
-
-Two same-line updates must produce a valid "last successfully serialized mutation wins" result.
-
-No malformed quantity or duplicate line.
-
----
-
-# 136. Remove Test — Existing Item
-
-Delete owned line successfully.
-
----
-
-# 137. Remove Test — Last Item
-
-Cart remains ACTIVE and becomes empty.
-
----
-
-# 138. Remove Test — Stale Product
-
-Can remove successfully.
-
----
-
-# 139. Remove Test — Inactive Variant
-
-Can remove successfully.
-
----
-
-# 140. Remove Test — Out of Stock
-
-Can remove successfully.
-
----
-
-# 141. Remove Test — MADE_TO_ORDER Stale Line
-
-If legacy/corrupt historical Cart contains such a line:
-
-owner can remove it.
-
----
-
-# 142. Remove Test — Cross-Holder
-
-Masked 404.
-
----
-
-# 143. Remove Test — Unknown Item
-
-Same masked 404.
-
----
-
-# 144. Remove Test — No Inventory Effect
-
-ProductStock remains unchanged.
-
----
-
-# 145. Remove Test — Cart Timestamp
-
-Successful removal updates parent Cart.updated_at.
-
----
-
-# 146. Projection Regression
-
-After every mutation verify:
-
-```text
-items_count
-subtotal
-line totals
-current prices
+is_active
+is_published
+product_type
+Variant active
 availability
-stock_indicator
-is_purchasable
 ```
 
-are coherent.
+checks inside Resource code.
 
 ---
 
-# 147. Stale Unrelated Line Regression
+# 56. Resource Must Not Own Business Rules
 
-Cart has:
+API Resources should format results.
 
-```text
-valid line A
-stale line B
+Avoid:
+
+```php
+if ($product->is_active && ...)
 ```
 
-mutate A.
+business-rule chains directly inside `toArray()`.
 
-B must remain present.
-
----
-
-# 148. No Raw Inventory Leakage
-
-Mutation responses must not expose:
-
-```text
-quantity
-reserved_quantity
-available_quantity
-warehouse_location
-```
-
-unless already part of an explicitly safe Cart error detail.
+Move them to the shared domain resolver.
 
 ---
 
-# 149. No Ownership Leakage
+# 57. Remove Workflow
 
-Never expose:
+CART-004 should intentionally bypass purchasability validation.
 
-```text
-user_id
-guest_token_digest
-active_user_guard
-cart_id on item
-```
+Only holder-scoped CartItem resolution is needed.
 
-outside approved opaque representation.
+Document this explicitly so a future refactor does not accidentally prevent stale-line removal.
 
 ---
 
-# 150. Opaque IDs
+# 58. Do Not Validate Stock on DELETE
 
-Requests use:
-
-```text
-prod_...
-var_...
-item_...
-```
-
-where frozen.
-
-Responses keep:
-
-```text
-cart_...
-item_...
-```
-
-stable.
+Removal must remain possible regardless of Product/Variant/inventory state.
 
 ---
 
-# 151. Invalid Opaque ID
-
-Malformed IDs should fail through canonical validation/not-found behavior.
-
-Do not accidentally interpret raw integer `1` as a valid opaque item ID.
-
----
-
-# 152. Guest Credential Security
-
-Mutation endpoints must preserve Phase 6.2:
-
-```text
-browser cookie only
-Flutter header only
-```
-
-credential transport.
-
-Do not emit the raw credential in JSON.
-
----
-
-# 153. Cookie Security
-
-Browser Cart mutation response remains compatible with:
-
-```text
-HttpOnly
-Secure
-SameSite=None
-```
-
-No JavaScript-readable guest credential.
-
----
-
-# 154. No Guest Credential Rotation
-
-Ordinary item mutations do not rotate credential.
-
----
-
-# 155. Authenticated Mutation Does Not Touch Guest Cart
-
-Even if request carries a guest credential:
-
-authenticated Cart remains target.
-
-No merge/retirement.
-
----
-
-# 156. Staff/Admin Self-Commerce
-
-STAFF/ADMIN may mutate only their own personal Cart using the same self-context rule established in Phase 6.2.
-
-Role must never permit mutation of somebody else's Cart.
-
----
-
-# 157. No Operational Cart API
-
-Do not add:
-
-```text
-/admin/carts
-/carts/{user}
-/staff/carts
-```
-
----
-
-# 158. No Cart Clearing Endpoint
-
-Do not implement:
-
-```text
-DELETE /me/cart
-POST /me/cart/clear
-```
-
----
-
-# 159. No Bulk Mutation
-
-Do not implement:
-
-```text
-PATCH /me/cart
-{
-  "items": [...]
-}
-```
-
----
-
-# 160. No Save-for-Later
-
-Out of scope.
-
----
-
-# 161. No Wishlist
-
-Out of scope.
-
----
-
-# 162. No Discounts/Coupons
-
-Do not introduce discount fields or calculations.
-
----
-
-# 163. No Delivery Fee
-
-Cart subtotal remains Product merchandise only.
-
----
-
-# 164. No Checkout
+# 59. Stale Line Persistence
 
 Do not:
 
 ```text
-reserve inventory
-create Order
-create OrderItem snapshot
-calculate delivery fee
+delete
+detach
+replace
+fix
 ```
 
----
+a stale line automatically.
 
-# 165. No Order Mutation
-
-Group F Cart mutation does not touch Orders.
+The accepted contract says stale lines remain and are flagged.
 
 ---
 
-# 166. No Audit Trail Required for Ordinary Cart Mutation
+# 60. Stale Line Price
 
-Do not create privileged audit records for normal customer Cart add/update/remove unless current general auditing contract explicitly requires them.
+Reuse current Cart projection semantics.
 
-These are ordinary holder actions.
+If the Product/Variant still has a resolvable catalog price:
+
+display current server-side price.
+
+Do not persist a stale snapshot.
+
+If a valid price genuinely cannot be resolved, follow current frozen resource behavior; do not invent zero price.
 
 ---
 
-# 167. Logging
+# 61. Category Visibility Regression
 
-Normal application logs may record:
+Ensure Category activity is part of Cart purchasability.
+
+This was recorded in Phase 6.1 and must not be lost when validation is centralized.
+
+---
+
+# 62. Product Soft Delete Regression
+
+Ensure:
 
 ```text
-request_id
-operation
-opaque resource IDs where safe
+Product::withTrashed()
 ```
 
-but not guest credentials.
+or equivalent context-specific loading remains available for Cart projection.
+
+Do not alter public Product queries.
 
 ---
 
-# 168. Schema Changes
+# 63. Variant Active Regression
 
-Expected:
+Ensure inactive Variant remains visible enough in the private Cart projection to mark the line stale.
+
+Do not globally apply active-only relation scope to stored CartItem projection.
+
+---
+
+# 64. Product Type Change Regression
+
+If a Product already in Cart changes:
 
 ```text
-NONE
+IN_STOCK → MADE_TO_ORDER
 ```
 
-Existing Cart constraints already support these operations.
+Cart read must preserve line and mark it not purchasable.
 
 ---
 
-# 169. Dependencies
+# 65. Publication Change Regression
 
-Expected:
+If:
 
 ```text
-NONE
+published → unpublished
 ```
 
----
-
-# 170. Frontend
-
-Must remain:
+same behavior:
 
 ```text
-NONE
+line retained
+is_purchasable = false
 ```
 
 ---
 
-# 171. Documentation
+# 66. Category Change Regression
 
-Update OpenAPI/docs only if runtime implementation reveals genuine drift.
+If Product remains active/published but Category becomes inactive:
 
-Do not redesign the frozen Cart contract during implementation.
+line remains but becomes not purchasable.
 
 ---
 
-# 172. Recommended Test Organization
+# 67. Quantity/Stock Drift Regression
 
-Prefer focused suites such as:
+If Cart had quantity:
+
+```text
+6
+```
+
+and inventory later drops to:
+
+```text
+4 available
+```
+
+Cart GET must show:
+
+```text
+line retained
+is_purchasable = false
+```
+
+without changing quantity.
+
+---
+
+# 68. Stock Recovery
+
+If inventory later increases again to satisfy quantity:
+
+next Cart GET should automatically show:
+
+```text
+is_purchasable = true
+```
+
+without any Cart persistence mutation.
+
+---
+
+# 69. Product Recovery
+
+If an unpublished/inactive Product is legitimately reactivated/published again:
+
+next Cart read may become purchasable again if all other conditions pass.
+
+No CartItem rewrite required.
+
+---
+
+# 70. Validation Is Live
+
+Cart validation state is derived at request time.
+
+Do not persist:
+
+```text
+validation_status
+invalid_reason
+is_purchasable
+availability
+```
+
+into `cart_items`.
+
+---
+
+# 71. No Validation Timestamp
+
+Do not add:
+
+```text
+validated_at
+last_stock_check_at
+```
+
+unless explicitly required by a later contract.
+
+---
+
+# 72. No Cart Error State
+
+Do not add Cart status values such as:
+
+```text
+INVALID
+STALE
+NEEDS_REVIEW
+```
+
+ACTIVE/INACTIVE remain sufficient.
+
+---
+
+# 73. No Automatic Quantity Reduction
+
+If available quantity falls below Cart quantity:
+
+do not silently reduce:
+
+```text
+8 → 3
+```
+
+Mark line not purchasable.
+
+Customer may explicitly PATCH quantity.
+
+---
+
+# 74. PATCH Can Repair Stale Quantity
+
+Example:
+
+```text
+Cart quantity = 8
+available = 3
+```
+
+PATCH:
+
+```text
+quantity = 3
+```
+
+should succeed if all Product/Variant rules pass.
+
+This is how customer can repair stock-related stale state.
+
+---
+
+# 75. PATCH Cannot Repair Product State
+
+If Product is:
+
+```text
+unpublished
+inactive
+MADE_TO_ORDER
+```
+
+changing quantity alone must not make the line valid.
+
+Return the established Product-domain error.
+
+Customer can remove it.
+
+---
+
+# 76. Add Current Stock Boundary
+
+Adding a new item with requested quantity exceeding availability continues to fail.
+
+Do not loosen admission just because stale lines are allowed to remain.
+
+---
+
+# 77. Validation vs Stock Revalidation Phase 6.7
+
+Keep the phase boundary clear.
+
+Phase 6.6 owns:
+
+```text
+shared validation semantics
+purchasability definition
+error mapping
+validation context
+consolidation
+```
+
+Phase 6.7 should own deeper stock-revalidation workflow/hardening.
+
+Do not pull checkout concurrency or reservation into 6.6.
+
+---
+
+# 78. What 6.7 May Build On
+
+Expose clean interfaces so Phase 6.7 can efficiently:
+
+```text
+re-evaluate all Cart lines
+identify insufficient stock
+produce checkout preflight state
+```
+
+without rewriting Product/Variant validation.
+
+---
+
+# 79. No Checkout Preflight Endpoint
+
+Do not invent:
+
+```text
+POST /me/cart/validate
+GET /me/cart/validation
+```
+
+in Phase 6.6.
+
+Validation remains internal to existing Cart operations.
+
+---
+
+# 80. No New Public Fields
+
+Do not add fields such as:
+
+```text
+validation_errors
+invalid_reason
+required_quantity
+available_quantity
+```
+
+to CartItem unless already in frozen API contract.
+
+---
+
+# 81. `is_purchasable` Remains Boolean
+
+Do not change it to:
+
+```text
+status enum
+string reason
+object
+```
+
+within V1.
+
+---
+
+# 82. Preserve Public Inventory Privacy
+
+Even if validation internally knows:
+
+```text
+available quantity
+```
+
+normal Cart response must not start exposing raw ProductStock quantities unless frozen contract explicitly permits it.
+
+---
+
+# 83. Safe `INSUFFICIENT_STOCK` Details
+
+Inspect current contract before emitting quantity details in errors.
+
+If safe details are already approved:
+
+reuse them.
+
+Otherwise do not introduce them.
+
+---
+
+# 84. Cart Pricing Validation
+
+Validation must use the same Variant that determines:
+
+```text
+unit_price
+```
+
+Do not validate Variant A while pricing Variant B.
+
+---
+
+# 85. No Client Price Validation
+
+Do not compare client-supplied price against server price because client price must not be accepted at all.
+
+---
+
+# 86. Money Is Not Purchasability
+
+A price of zero or a valid price object does not by itself make Product purchasable.
+
+Follow Product type/state rules.
+
+---
+
+# 87. Transaction Semantics
+
+Validation used to decide a mutation must happen close enough to persistence to avoid avoidable state drift.
+
+For Cart mutations, exact stock can still change immediately afterward and that is acceptable.
+
+Do not turn Cart validation into checkout-grade locking.
+
+---
+
+# 88. Same-Line Lock Ordering
+
+CART-002/003 concurrency mechanics from the completed combined phase should remain intact.
+
+Do not weaken:
+
+```text
+CartItem lock
+unique-line recovery
+serialized quantity update
+```
+
+during refactor.
+
+---
+
+# 89. Refactor Must Preserve MariaDB Race Safety
+
+After validation consolidation rerun:
+
+```text
+CartMutationConcurrencyMysqlTest
+```
+
+All existing races must stay green.
+
+---
+
+# 90. No Change to Duplicate Clamp
+
+Validation refactor must not accidentally convert:
+
+```text
+99 + 2 → 100
+```
+
+into:
+
+```text
+422
+```
+
+The accepted duplicate-add ADR says merge/clamp.
+
+---
+
+# 91. Direct PATCH Still Strict
+
+Contrast:
+
+```text
+POST duplicate add:
+99 + 2 → 100
+```
+
+with:
+
+```text
+PATCH quantity: 101
+→ 422
+```
+
+These are intentionally different semantics.
+
+Document and test them.
+
+---
+
+# 92. Admission/Projection Matrix
+
+Create a concise internal test matrix similar to:
+
+```text
+State                     Add    Update   GET
+------------------------------------------------
+valid                      OK     OK       purchasable
+inactive Product           422    422      stale
+unpublished Product        422    422      stale
+deleted Product            422    422      stale
+inactive Category          422    422      stale
+MADE_TO_ORDER              422    422      stale
+wrong Variant              422    422*     stale/corrupt
+inactive Variant           422    422      stale
+stock = 0                  422    422      stale
+stock < cart quantity      422    422      stale
+stock >= cart quantity     OK     OK       purchasable
+```
+
+Use exact existing error codes.
+
+`*` Existing persisted wrong-parent Variant should normally be prevented by model/FK-domain invariants.
+
+---
+
+# 93. Removal Matrix
+
+For all stale states above:
+
+```text
+DELETE
+→ allowed
+```
+
+provided item belongs to holder's Cart.
+
+---
+
+# 94. Test — Shared Product Validation
+
+Prove CART-002 and CART-003 map identical Product invalid states consistently.
+
+---
+
+# 95. Test — Shared Variant Validation
+
+Same for:
+
+```text
+wrong parent
+inactive
+missing required Variant
+```
+
+---
+
+# 96. Test — Shared Quantity Validation
+
+Ensure same central bounds are used where appropriate.
+
+---
+
+# 97. Test — Cart GET Valid Line
+
+Valid Product/Variant with enough quantity:
+
+```text
+is_purchasable = true
+```
+
+---
+
+# 98. Test — Quantity Greater Than Available
+
+Example:
+
+```text
+Cart quantity = 5
+available quantity = 2
+```
+
+assert:
+
+```text
+availability = available
+is_purchasable = false
+```
+
+if Group E coarse availability remains positive.
+
+This is a critical Phase 6.6 regression test.
+
+---
+
+# 99. Test — Exact Stock Boundary
+
+```text
+Cart quantity = 5
+available = 5
+```
+
+must be purchasable.
+
+---
+
+# 100. Test — One Less Stock
+
+```text
+Cart quantity = 5
+available = 4
+```
+
+must not be purchasable.
+
+---
+
+# 101. Test — Reserved Stock
+
+```text
+physical = 10
+reserved = 6
+Cart quantity = 5
+available = 4
+```
+
+must be non-purchasable.
+
+---
+
+# 102. Test — Multi-Location Aggregate
+
+Use multiple ProductStock rows.
+
+Validation must compare Cart quantity to Group E aggregate available quantity.
+
+---
+
+# 103. Test — Stale Product Read
+
+For each:
+
+```text
+inactive
+unpublished
+soft-deleted
+inactive Category
+```
+
+CART-001:
+
+```text
+200
+line present
+is_purchasable false
+```
+
+---
+
+# 104. Test — Stale Variant Read
+
+Inactive Variant:
+
+same behavior.
+
+---
+
+# 105. Test — MADE_TO_ORDER Read
+
+Historical line:
+
+```text
+line remains
+is_purchasable false
+```
+
+---
+
+# 106. Test — Stock Recovery
+
+Cart line begins invalid due to stock.
+
+Increase ProductStock.
+
+GET again:
+
+```text
+is_purchasable true
+```
+
+without CartItem update.
+
+---
+
+# 107. Test — Product Reactivation
+
+Where Product is legitimately restored:
+
+Cart projection should reflect current state automatically.
+
+---
+
+# 108. Test — No Persistence From GET
+
+Comparing DB before/after validation projection:
+
+```text
+Cart unchanged
+CartItem unchanged
+ProductStock unchanged
+timestamps unchanged
+```
+
+---
+
+# 109. Test — Update Repair
+
+Invalid due only to quantity:
+
+```text
+qty 8
+available 4
+```
+
+PATCH to:
+
+```text
+4
+```
+
+succeeds.
+
+---
+
+# 110. Test — Update Cannot Repair Inactive Product
+
+PATCH quantity on inactive Product:
+
+fails.
+
+Line remains unchanged.
+
+---
+
+# 111. Test — Delete Always Cleans Stale Line
+
+Repeat stale scenarios with DELETE.
+
+Must succeed if owned.
+
+---
+
+# 112. Test — Duplicate Add Clamp Preserved
+
+Validation consolidation must keep:
+
+```text
+99 + 2 → 100
+```
+
+---
+
+# 113. Test — Direct 101 Rejected
+
+PATCH:
+
+```text
+101
+```
+
+must remain invalid.
+
+---
+
+# 114. Test — Existing Mutation Suite
+
+All:
 
 ```text
 CartAddItemApiTest
 CartUpdateItemApiTest
 CartRemoveItemApiTest
+```
+
+must remain green.
+
+---
+
+# 115. Test — Phase 6.2 Read Suite
+
+Cart read/create tests must remain green.
+
+---
+
+# 116. Test — MariaDB Concurrency
+
+Rerun:
+
+```text
 CartMutationConcurrencyMysqlTest
 ```
 
-or equivalent repository naming.
-
-Do not create one enormous CartEverything test.
+because refactoring validation around mutation transactions could affect lock timing/flow.
 
 ---
 
-# 173. SQLite Tests
+# 117. No New MariaDB Algorithm
 
-SQLite should prove:
+Do not alter the proven Cart concurrency algorithm unless consolidation requires it.
+
+---
+
+# 118. Performance
+
+Validation consolidation should reduce duplicate queries.
+
+Do not introduce:
 
 ```text
-validation
-ownership
-IDOR masking
-Product/Variant admission
-quantity semantics
-pricing
-availability reads
-no reservation
-response shapes
-stale item preservation
+one Product query
+one Variant query
+multiple stock queries
+```
+
+per validation layer when existing eager-loading/resolvers can supply state efficiently.
+
+---
+
+# 119. Avoid N+1 on CART-001
+
+Cart with multiple lines should still use bounded/eager queries.
+
+Phase 6.6 should not make each CartItem invoke independent ProductStock queries if Group E supports batching.
+
+---
+
+# 120. Query Count Regression
+
+Where current tests support stable query-count bounds:
+
+retain or add a reasonable N+1 regression test for multi-item Cart projection.
+
+Avoid brittle exact SQL counts.
+
+---
+
+# 121. Domain Result Reuse
+
+The same resolved validation result should ideally feed:
+
+```text
+availability
+stock_indicator
+is_purchasable
+```
+
+for a CartItem response.
+
+Do not calculate these three through unrelated code paths.
+
+---
+
+# 122. Do Not Expose Validation Reasons
+
+Internal stale reason is for backend reasoning/tests.
+
+Cart API remains frozen.
+
+---
+
+# 123. Error Message Consistency
+
+The same failure should map to the same machine code across:
+
+```text
+CART-002
+CART-003
+```
+
+Messages may be human-readable but clients branch on code.
+
+---
+
+# 124. Do Not Change HTTP Statuses
+
+Keep existing:
+
+```text
+422 domain validation
+404 ownership masked item
+401 holder credential failure
+429 rate limit
+```
+
+according to current endpoints.
+
+---
+
+# 125. No New Cart Endpoint
+
+Routes remain:
+
+```text
+GET    /api/v1/me/cart
+POST   /api/v1/me/cart/items
+PATCH  /api/v1/me/cart/items/{item}
+DELETE /api/v1/me/cart/items/{item}
+```
+
+CART-005 remains separate.
+
+---
+
+# 126. CART-005 Still Out of Scope
+
+Do not implement:
+
+```text
+POST /api/v1/me/cart/merge
+```
+
+during Phase 6.6.
+
+---
+
+# 127. CART-005 Future Reuse
+
+Design validation so merge can eventually reuse the same:
+
+```text
+Product/Variant state
+quantity rules
+purchasability projection
+```
+
+without prematurely implementing merge.
+
+---
+
+# 128. Checkout Future Reuse
+
+Likewise, future checkout may reuse semantic validation concepts, but Checkout still must perform its own authoritative transaction-time stock validation.
+
+Do not make Checkout simply trust:
+
+```text
+CartItem.is_purchasable
+```
+
+from an earlier read.
+
+---
+
+# 129. Cart Validation Is Advisory to Checkout
+
+Even if:
+
+```text
+all Cart lines currently is_purchasable = true
+```
+
+Checkout must still lock/revalidate stock.
+
+Document this boundary.
+
+---
+
+# 130. No Reservation
+
+Explicit completion report must state:
+
+```text
+ProductStock quantity mutations: NONE
+reserved_quantity mutations: NONE
+ProductStock locks: NONE
+inventory reservations: NONE
 ```
 
 ---
 
-# 174. MariaDB Targeted Tests
-
-Use real MariaDB where needed to prove:
-
-```text
-concurrent duplicate add
-unique-line race recovery
-lost quantity update prevention
-update/remove serialization
-```
-
-Do not require full-suite MariaDB merely for these cases.
-
----
-
-# 175. Concurrent Add Gate
-
-At minimum test:
-
-```text
-existing line qty 1
-
-two simultaneous add +1
-```
+# 131. Schema Changes
 
 Expected:
 
 ```text
-one line
-final qty 3
+NONE
 ```
 
-unless request ordering/frozen contract produces another explicitly approved result.
-
-No lost increment.
+No validation state belongs in database schema.
 
 ---
 
-# 176. Concurrent First Add Gate
+# 132. Dependencies
 
-Two simultaneous adds for the same absent Product/Variant must result in:
+Expected:
 
 ```text
-one CartItem row
-combined quantity
+NONE
 ```
-
-subject to max-quantity rule.
 
 ---
 
-# 177. Concurrent Overflow
+# 133. Frontend
 
-Example:
+Expected:
 
 ```text
-current 99
-two concurrent +1
+NONE
 ```
 
-final must never exceed 100.
-
-Apply frozen clamping semantics.
+Do not modify Next.js, Flutter, or design system.
 
 ---
 
-# 178. Full Regression
+# 134. Documentation
 
-After implementation run:
+Update:
+
+```text
+docs/decisions.md
+```
+
+with a Phase 6.6 backend ADR if repository conventions continue that sequence.
+
+Record:
+
+```text
+shared validator/resolver
+three validation contexts
+quantity-aware is_purchasable
+error mappings
+no-reservation boundary
+```
+
+---
+
+# 135. OpenAPI
+
+Expected wire contract change:
+
+```text
+NONE
+```
+
+unless Phase 6.6 discovers existing runtime/OpenAPI drift.
+
+Do not add validation-reason fields.
+
+---
+
+# 136. Likely Implementation Areas
+
+Expected:
+
+```text
+app/Services/Cart/
+app/Domain/Cart/
+shared Cart item validation/result object
+AddCartItem
+UpdateCartItemQuantity
+CartItemResource/projection
+tests/Feature/
+tests/Unit/
+docs/decisions.md
+```
+
+Use actual project naming conventions.
+
+---
+
+# 137. Code Quality
+
+Use `.github/instructions/sonarqube_mcp.instructions.md` to analyze the code
+
+And also
+
+Maintain:
+
+```text
+cognitive complexity <= 15
+<= 3 returns where practical
+single Cart eligibility authority
+no Product/Variant rule duplication
+no stock arithmetic duplication
+thin controllers/resources
+```
+
+---
+
+# 138. Verification
+
+Use sonarqube to analyze the codebase changes for code quality and security. Instructions are in `.github/instructions/sonarqube_mcp.instructions.md`.
+
+Run focused Cart tests.
+
+Then:
 
 ```bash
 php artisan test
@@ -2452,56 +2181,15 @@ git diff --check
 php artisan route:list
 ```
 
----
-
-# 179. Required Routes
-
-Verify active:
-
-```text
-GET    /api/v1/me/cart
-POST   /api/v1/me/cart/items
-PATCH  /api/v1/me/cart/items/{item}
-DELETE /api/v1/me/cart/items/{item}
-```
+Rerun the existing MariaDB Cart mutation concurrency gate.
 
 ---
 
-# 180. CART-005 Must Not Accidentally Activate
-
-Unless explicitly included by current AGENTS.md:
-
-do not activate:
-
-```text
-POST /api/v1/me/cart/merge
-```
-
-as part of this combined phase.
-
----
-
-# 181. Code Quality
-
-Maintain:
-
-```text
-cognitive complexity <= 15
-<= 3 returns where practical
-thin controllers
-small actions
-shared admission resolver
-shared Cart projection
-no duplicated price/availability logic
-```
-
----
-
-# 182. Completion Report
+# 139. Completion Report
 
 Return:
 
-## Combined Phase 6.3–6.5 status
+## Phase 6.6 status
 
 ```text
 PASS
@@ -2513,76 +2201,106 @@ or:
 BLOCKED
 ```
 
-## CART-002 Add
+## Codebase analysis
+
+use `.github/instructions/sonarqube_mcp.instructions.md` to enforce and analyze the code for code quality and security
+
+## Shared validation
+
+State the final central component(s).
+
+## Validation contexts
 
 Report:
 
 ```text
-Product admission
-Variant ownership
-quantity rules
-stock informational validation
-duplicate merge
-concurrency
+admission
+mutation
+projection
 ```
 
-## CART-003 Update
+and how their outcomes differ.
+
+## Product rules
 
 Report:
 
 ```text
-ownership masking
-quantity-only mutation
-stock revalidation
-timestamp behavior
-concurrency
+active
+published
+not deleted
+Category active
+IN_STOCK
 ```
 
-## CART-004 Remove
+## Variant rules
 
 Report:
 
 ```text
-ownership masking
-stale-item removal
-empty-cart behavior
-no stock effect
+required semantics
+exists
+parent-owned
+active
 ```
 
-## Holder behavior
+## Quantity
 
-Report authenticated/guest behavior and credential transport reuse.
-
-## Pricing
-
-Confirm all money remains server-derived and unpersisted.
-
-## Inventory
-
-Must explicitly state:
+Report:
 
 ```text
+1..100
+duplicate-add clamp preserved
+effective quantity handling
+```
+
+## Stock
+
+Report:
+
+```text
+aggregate Group E available quantity
+quantity-aware Cart purchasability
+```
+
+## `is_purchasable`
+
+State the exact formula.
+
+## Error mapping
+
+Report exact mapping for:
+
+```text
+MADE_TO_ORDER
+Product unavailable
+Variant invalid
+quantity invalid
+insufficient stock
+```
+
+## Stale Cart behavior
+
+Confirm:
+
+```text
+preserved
+not silently mutated
+removable
+```
+
+## Inventory boundary
+
+Must state:
+
+```text
+ProductStock mutations: NONE
 reserved_quantity mutations: NONE
 ProductStock locks: NONE
-inventory reservations: NONE
+reservations: NONE
 ```
-
-## Concurrency
-
-Report:
-
-```text
-duplicate first-add
-repeat-add race
-quantity lost-update protection
-overflow boundary
-```
-
-and identify MariaDB-specific verification.
 
 ## Schema
-
-Expected:
 
 ```text
 NONE
@@ -2590,15 +2308,11 @@ NONE
 
 ## Dependencies
 
-Expected:
-
 ```text
 NONE
 ```
 
 ## Frontend
-
-Must state:
 
 ```text
 NONE
@@ -2606,7 +2320,11 @@ NONE
 
 ## Tests
 
-Report focused and canonical test results.
+Report focused/full counts.
+
+## MariaDB
+
+Report Cart mutation concurrency regression status.
 
 ## Quality
 
@@ -2619,7 +2337,7 @@ Composer audit
 git diff --check
 ```
 
-## Phase 6.6 readiness
+## Phase 6.7 readiness
 
 Return:
 
@@ -2635,108 +2353,92 @@ BLOCKED
 
 ---
 
-# 183. Definition of Done
+# 140. Definition of Done
 
-This combined phase is complete when:
+Phase 6.6 is complete when:
 
-* CART-002 is active;
-* CART-003 is active;
-* CART-004 is active;
-* all use Phase 6.2 holder resolution;
-* authenticated users mutate only their own Cart;
-* guests mutate only their credential-bound Cart;
-* Staff/Admin mutate only personal self-commerce Cart;
-* invalid Clerk authentication never downgrades to guest;
-* Cart ID is never client-selected;
-* add accepts only Product/Variant/quantity;
-* update accepts quantity only;
-* remove accepts no mutation body;
-* unknown fields are rejected;
-* only IN_STOCK Products can be newly added;
-* MADE_TO_ORDER returns PRODUCT_NOT_PURCHASABLE;
-* Product active/public/category-active rules are enforced;
-* Variant belongs to Product;
-* Variant is active;
-* quantity stays within 1..100;
-* duplicate additions merge into one line;
-* duplicate adds obey frozen maximum-quantity semantics;
-* same Product/different Variants remain separate lines;
-* informational stock checks use current Group E availability;
-* no Cart operation reserves inventory;
-* no Cart operation mutates ProductStock;
-* ProductStock rows are not locked by ordinary Cart operations;
-* repeat-add is concurrency-safe;
-* first-add race cannot create duplicate CartItems;
-* same-line updates do not lose data;
-* update quantity 0 is rejected;
-* removal uses DELETE;
-* removal works even for stale/unavailable items;
-* cross-Cart update/delete uses masked 404;
-* removing last item leaves an empty ACTIVE Cart;
-* mutations touch parent Cart.updated_at;
-* failed mutations do not touch Cart timestamps;
-* Cart money remains server-derived;
-* Cart money is not persisted;
-* Cart response continues using current prices;
-* stale unrelated Cart lines remain present;
-* opaque IDs remain enforced;
-* private cache policy remains enforced;
-* guest credential transport remains secure;
-* no implicit guest merge occurs;
-* no Checkout logic is introduced;
-* no schema changes occur;
-* no frontend code changes;
-* focused tests pass;
-* targeted MariaDB concurrency tests pass where required;
-* full canonical suite remains green;
-* no new PHPStan errors;
+* Cart validation rules have one authoritative implementation;
+* admission, mutation, and projection contexts are explicitly distinguished;
+* CART-002 uses shared validation;
+* CART-003 uses shared validation;
+* CART-001 projection uses shared purchasability evaluation;
+* CART-004 intentionally bypasses Product/stock purchasability checks;
+* inactive Product behavior is consistent;
+* unpublished Product behavior is consistent;
+* soft-deleted Product behavior is consistent;
+* inactive Category behavior is consistent;
+* MADE_TO_ORDER behavior is consistent;
+* Variant ownership validation is consistent;
+* inactive Variant behavior is consistent;
+* quantity validation is centralized;
+* duplicate-add clamp semantics remain unchanged;
+* direct PATCH quantity >100 remains rejected;
+* stock validation uses Group E aggregate available quantity;
+* reserved stock is accounted for;
+* multi-location inventory remains correct;
+* `is_purchasable` is quantity-aware;
+* coarse `availability` is not incorrectly used as a substitute for line-level purchasability;
+* stale lines remain visible;
+* stale lines are never silently removed;
+* stale quantity is never silently reduced;
+* stale lines remain removable;
+* stock recovery automatically makes eligible lines purchasable again;
+* Product recovery automatically updates projection;
+* Cart GET causes no persistence mutation;
+* no ProductStock mutation occurs;
+* no stock reservation occurs;
+* no ProductStock lock is introduced;
+* existing Cart mutation concurrency remains safe;
+* MariaDB Cart concurrency tests remain green;
+* no API schema expansion occurs;
+* no Cart schema change occurs;
+* no frontend changes occur;
+* PHPStan reports zero new errors;
 * Pint passes;
-* Composer audit has no blocker.
+* Composer audit remains clean.
 
 ---
 
-# 184. Out of Scope
+# 141. Out of Scope
 
 Do not implement:
 
 ```text
-CART-005 guest→authenticated merge
+CART-005 merge
 merge idempotency
-full stale Cart validation orchestration
-Phase 6.6 validation consolidation
-Phase 6.7 stock revalidation hardening
+new Cart validation endpoint
 checkout
-reservation
+inventory reservation
 Order creation
 payment
-frontend Cart UI
+automatic stale-line cleanup
+automatic quantity correction
+frontend warnings/UI
 ```
 
 ---
 
-# 185. STOP Condition
+# 142. STOP Condition
 
-STOP when the holder can safely perform the complete ordinary Cart item lifecycle:
-
-```text
-add
-update quantity
-remove
-```
-
-while preserving:
+STOP when every Cart path answers Product/Variant/quantity validity through the same shared Cart-domain validation rules, while preserving the deliberate difference:
 
 ```text
-one CartItem per Product/Variant identity
-quantity 1..100
-holder ownership
-stale-line visibility
-live server pricing
-live informational availability
-zero inventory reservation
+new invalid item
+→ reject
+
+invalid quantity mutation
+→ reject
+
+existing stale line
+→ retain + is_purchasable false
+
+remove stale line
+→ allow
 ```
 
-Do not continue automatically to Phase 6.6.
+and a Cart line is considered purchasable only when the **entire requested Cart quantity** can currently be satisfied.
+
+Do not continue automatically to Phase 6.7.
 
 DO NOT COMMIT OR PUSH.
 
