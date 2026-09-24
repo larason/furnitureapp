@@ -54,7 +54,7 @@ final class GetOrCreateActiveCart
                 'status' => CartStatus::ACTIVE,
             ]);
         } catch (UniqueConstraintViolationException) {
-            return $this->activeCustomerCart($user) ?? throw $this->unresolvable();
+            return $this->activeCustomerCart($user, lock: true) ?? throw $this->unresolvable();
         }
     }
 
@@ -80,12 +80,17 @@ final class GetOrCreateActiveCart
         ]);
     }
 
-    private function activeCustomerCart(User $user): ?Cart
+    private function activeCustomerCart(User $user, bool $lock = false): ?Cart
     {
-        return Cart::query()
+        $query = Cart::query()
             ->where('user_id', $user->getKey())
-            ->where('status', CartStatus::ACTIVE)
-            ->first();
+            ->where('status', CartStatus::ACTIVE);
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->first();
     }
 
     private function unresolvable(): ApiException
