@@ -101,7 +101,7 @@ final class CartItemEligibility
     /** @return array{availability: string, stock_indicator: string} */
     private static function availabilityBucket(?Product $product, ?ProductVariant $variant): array
     {
-        if ($product !== null && self::isPubliclyVisible($product) && $variant !== null && $variant->is_active) {
+        if ($product !== null && self::isPubliclyVisible($product) && $variant !== null && $variant->is_active && $variant->product_id === $product->getKey()) {
             return CatalogAvailability::variant($variant);
         }
 

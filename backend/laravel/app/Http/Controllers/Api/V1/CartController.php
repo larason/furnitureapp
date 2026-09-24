@@ -12,6 +12,7 @@ use App\Services\Cart\AddCartItem;
 use App\Services\Cart\CartHolder;
 use App\Services\Cart\CartHolderResolver;
 use App\Services\Cart\CartItemAdmission;
+use App\Services\Cart\CartStockRevalidator;
 use App\Services\Cart\GetOrCreateActiveCart;
 use App\Services\Cart\GuestCartTransport;
 use App\Services\Cart\RemoveCartItem;
@@ -24,6 +25,8 @@ use Illuminate\Http\Response;
 
 class CartController extends V1Controller
 {
+    public function __construct(private readonly CartStockRevalidator $revalidator) {}
+
     public function show(
         Request $request,
         CartHolderResolver $resolver,
@@ -148,7 +151,7 @@ class CartController extends V1Controller
         $this->loadCart($cart);
 
         $response = response()
-            ->json(['data' => (new CartResource($cart))->resolve()], $status)
+            ->json(['data' => (new CartResource($cart, $this->revalidator->revalidate($cart)))->resolve()], $status)
             ->withHeaders($this->privateHeaders());
 
         if ($holder->user === null && ! $holder->credentialSupplied && $wasRecentlyCreated && $holder->rawToken !== null) {
@@ -166,9 +169,7 @@ class CartController extends V1Controller
             'items.product.category',
             'items.product.primaryImage',
             'items.product.variants',
-            'items.product.variants.stocks',
             'items.variant',
-            'items.variant.stocks',
         ]);
     }
 

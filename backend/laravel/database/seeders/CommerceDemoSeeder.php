@@ -111,6 +111,13 @@ class CommerceDemoSeeder extends Seeder
     {
         $subtotal = $this->lineSubtotal($lines);
         $amounts = $this->orderAmounts($orderState, $subtotal);
+        $products = Product::query()
+            ->whereKey(array_unique(array_map(
+                fn (array $line): int => $line[0]->product_id,
+                $lines,
+            )))
+            ->get()
+            ->keyBy('id');
 
         $order = Order::factory()->for($customer, 'customer')->{$orderState}()->create(array_merge([
             'subtotal_amount' => $subtotal,
@@ -119,7 +126,11 @@ class CommerceDemoSeeder extends Seeder
         ], $amounts));
 
         foreach ($lines as [$variant, $quantity]) {
-            $product = Product::whereKey($variant->product_id)->firstOrFail();
+            $product = $products->get($variant->product_id);
+            if ($product === null) {
+                throw new InvalidArgumentException("Product [{$variant->product_id}] was not found for demo order.");
+            }
+
             OrderItem::factory()->for($order)->for($product)->create([
                 'variant_id' => $variant->id,
                 'sku' => $variant->sku,

@@ -7,6 +7,7 @@ use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Cart\CartItemEligibility;
+use App\Services\Cart\CartItemValidationResult;
 use App\Support\ApiErrorCode;
 use App\Support\CartItemIdentifier;
 use App\Support\ProductIdentifier;
@@ -20,6 +21,16 @@ use Illuminate\Support\Facades\Storage;
  */
 final class CartItemResource extends JsonResource
 {
+    private ?CartItemValidationResult $validation = null;
+
+    /** Consume a Cart-wide revalidation result instead of evaluating stock here. */
+    public function withValidation(?CartItemValidationResult $validation): static
+    {
+        $this->validation = $validation;
+
+        return $this;
+    }
+
     public function toArray(Request $request): array
     {
         $item = $this->resource;
@@ -34,7 +45,7 @@ final class CartItemResource extends JsonResource
             $variant->setRelation('product', $product);
         }
 
-        $evaluation = CartItemEligibility::evaluate($product, $variant, $item->quantity);
+        $evaluation = $this->validation ?? CartItemEligibility::evaluate($product, $variant, $item->quantity);
         $unitPrice = $this->unitPrice($variant);
 
         return [

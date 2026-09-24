@@ -1,783 +1,411 @@
-# Phase 6.6 — Cart Validation
+# Phase 6.7 — Stock Revalidation
 
 ## Purpose
 
-Consolidate all Cart-domain validation into one coherent, reusable validation layer.
+Implement the Cart-wide stock revalidation layer that ensures every existing Cart line is evaluated against the **latest live inventory state** whenever the Cart is projected or otherwise requires current stock information.
 
-Phases 6.2–6.5 already implemented:
-
-```text
-CART-001 — create/get Cart
-CART-002 — add item
-CART-003 — update quantity
-CART-004 — remove item
-```
-
-Phase 6.6 must now eliminate validation drift between those operations and formalize:
+Build directly on:
 
 ```text
-Cart admission validation
-existing-line validation
-stale-state classification
-purchasability
-quantity validation
-Product/Variant relationship validation
-error mapping
-validation ordering
-mutation-vs-read semantics
+Phase 5.7  — Catalog availability
+Phase 5.10 — Inventory concurrency / overselling protection
+Phase 6.2  — Create/get Cart
+Phase 6.3–6.5 — Cart mutations
+Phase 6.6  — Cart validation consolidation
 ```
 
-Do not add new Cart endpoints.
+Phase 6.6 already established:
 
-Do not reserve inventory.
+```text
+CartItemEligibility
+CartItemValidationResult
+CartItemInvalidReason
+```
 
-Do not implement Checkout.
+as the authoritative Cart eligibility system.
+
+Phase 6.7 must **reuse those components**.
+
+Do not create a second set of stock/purchasability rules.
 
 ---
 
-# 1. Main Objective
+# 1. Phase Boundary
 
-There must be one authoritative answer to:
+Phase 6.7 is about:
 
 ```text
-Can this Product/Variant/quantity enter or remain purchasable in this Cart?
+live Cart stock revalidation
+cart-wide evaluation
+efficient current-stock resolution
+stock drift detection
+consistent projection
+pre-checkout readiness data internally
 ```
 
-All relevant Cart workflows must use that answer consistently.
-
-Avoid separate rules inside:
+It is NOT:
 
 ```text
-AddCartItem
-UpdateCartItemQuantity
-CartItemResource
-Cart read projection
-future Checkout prevalidation
-```
-
-that can drift apart.
-
----
-
-# 2. Existing Accepted Purchasability Definition
-
-Phase 6.1 established:
-
-```text
-Product:
-- exists
-- is_active = true
-- is_published = true
-- not soft-deleted
-- Category active
-- product_type = IN_STOCK
-
-Variant:
-- referenced Variant exists where required
-- belongs to Product
-- is_active = true
-
-Inventory:
-- live availability = available
-```
-
-Then:
-
-```text
-is_purchasable = true
-```
-
-Otherwise:
-
-```text
-is_purchasable = false
-```
-
-for existing Cart lines.
-
-Preserve this definition.
-
----
-
-# 3. Distinguish Three Validation Contexts
-
-Do not treat all Cart validation identically.
-
-Explicitly separate:
-
-```text
-A. Admission validation
-B. Mutation validation
-C. Existing-line projection validation
-```
-
-These have different failure behavior.
-
----
-
-# 4. Admission Validation
-
-Used when:
-
-```text
-CART-002 adds a new Cart identity
-```
-
-Admission answers:
-
-```text
-May this item enter the Cart now?
-```
-
-Failure:
-
-```text
-reject request
-do not create line
+inventory reservation
+checkout
+order creation
+stock mutation
+Cart mutation
+a new public validation endpoint
 ```
 
 ---
 
-# 5. Mutation Validation
+# 2. No New API Endpoint
 
-Used when:
-
-```text
-CART-003 changes quantity
-```
-
-Mutation answers:
+The current OpenAPI Cart surface remains:
 
 ```text
-May this existing line be changed to this requested quantity now?
+GET    /api/v1/me/cart                 CART-001
+POST   /api/v1/me/cart/items           CART-002
+PATCH  /api/v1/me/cart/items/{item}    CART-003
+DELETE /api/v1/me/cart/items/{item}    CART-004
+POST   /api/v1/me/cart/merge           CART-005
 ```
 
-Failure:
+Phase 6.7 must NOT add:
 
 ```text
-reject request
-preserve existing line unchanged
+GET  /api/v1/me/cart/validate
+POST /api/v1/me/cart/validate
+GET  /api/v1/me/cart/revalidate
+POST /api/v1/me/cart/revalidate
 ```
+
+Stock revalidation is an internal Cart-domain behavior.
 
 ---
 
-# 6. Projection Validation
+# 3. Do Not Implement CART-005
 
-Used when:
+`POST /api/v1/me/cart/merge` remains outside this phase.
 
-```text
-CART-001 reads existing Cart
-```
-
-and after successful mutations when CartResource is rendered.
-
-Projection answers:
-
-```text
-Is this already-stored line currently purchasable?
-```
-
-Failure of purchasability does **not** fail the Cart GET.
-
-Instead:
-
-```text
-retain CartItem
-availability = unavailable where appropriate
-is_purchasable = false
-```
-
-The accepted Cart ADR explicitly requires stale items to remain in the Cart instead of being silently removed.
+Do not implement guest-cart merge merely because stock revalidation may eventually be reused by merge.
 
 ---
 
-# 7. Removal Is Special
+# 4. Core Question
 
-CART-004 must not run admission/mutation purchasability validation.
-
-Removal requires only:
+The revalidation layer must answer:
 
 ```text
-valid holder
-ACTIVE holder Cart
-CartItem belongs to that Cart
+Given the Cart as it exists right now,
+which lines can currently be satisfied by live inventory?
 ```
 
-A stale item must always remain removable.
+It must answer this without changing the Cart.
 
 ---
 
-# 8. Recommended Architecture
+# 5. Stock Revalidation Is Live
 
-Create or consolidate around one focused Cart-domain component.
-
-Examples:
+Never trust stock state captured when the CartItem was:
 
 ```text
-CartItemValidator
-CartItemPurchasability
-CartItemEligibilityResolver
+added
+last updated
+last read
 ```
 
-Choose repository naming conventions.
-
-Avoid:
-
-```text
-CartValidationService
-```
-
-becoming a giant class containing transport/auth/DB/controller logic.
+Every revalidation must use current Group E inventory state.
 
 ---
 
-# 9. Suggested Responsibilities
+# 6. Cart Does Not Own Stock State
 
-The shared domain component may expose concepts such as:
+Do not persist any of the following on:
 
 ```text
-validateForAdmission(...)
-validateForQuantityMutation(...)
-evaluateExistingLine(...)
+carts
+cart_items
 ```
 
-or equivalent value-object/result-based design.
-
-It should centralize:
-
 ```text
-Product state
-Category state
-Product type
-Variant requirement
-Variant ownership
-Variant active state
-quantity bounds
-current stock sufficiency
-Cart-specific purchasability
-```
-
----
-
-# 10. Do Not Duplicate Group E
-
-Do not reimplement:
-
-```text
-availability
+available_quantity
+reserved_quantity
 stock_indicator
-available quantity aggregation
-multi-location inventory aggregation
-LOW_STOCK threshold
+availability
+is_purchasable
+stock_checked_at
+validated_at
+inventory_version
 ```
 
-Use completed Group E components such as:
+All remain derived.
+
+---
+
+# 7. Existing Inventory Authority
+
+Continue using:
+
+```text
+ProductStock.quantity
+ProductStock.reserved_quantity
+```
+
+with:
+
+```text
+available_quantity
+=
+quantity - reserved_quantity
+```
+
+through the existing Group E abstraction.
+
+Do not query or calculate availability independently if:
 
 ```text
 CatalogAvailability
 ```
 
-and established pricing logic.
+already provides the authoritative calculation.
 
 ---
 
-# 11. No ProductStock Mutation
+# 8. Multi-Location Inventory
 
-Validation may read ProductStock.
-
-It must not:
+For a Variant with several ProductStock rows:
 
 ```text
-increment reserved_quantity
-decrement quantity
-lock stock for purchase
-create reservations
+available =
+SUM(quantity - reserved_quantity)
 ```
 
-Phase 5.10/Group G checkout remain authoritative for reservation.
+according to the already-established Group E semantics.
+
+Do not use:
+
+```text
+first warehouse
+largest warehouse
+one arbitrary ProductStock row
+```
+
+for Cart revalidation.
 
 ---
 
-# 12. Validation Ordering
+# 9. Reuse `CartItemEligibility`
 
-Use a predictable domain sequence.
-
-Recommended:
+Phase 6.6 made:
 
 ```text
-1. Product existence
-2. Product visible/purchasable state
-3. Product type
-4. Variant requirement
-5. Variant existence
-6. Variant belongs to Product
-7. Variant active
-8. Quantity validity
-9. Current informational stock sufficiency
+CartItemEligibility
 ```
 
-Do not perform inventory queries when an earlier Product/Variant rule already makes the request invalid.
+the sole Cart-domain eligibility authority.
+
+Phase 6.7 must not introduce:
+
+```text
+CartStockValidator
+```
+
+with another independent definition of:
+
+```text
+is_purchasable
+```
+
+Instead, introduce only orchestration around the existing evaluator if needed.
 
 ---
 
-# 13. Product Existence
+# 10. Recommended New Boundary
 
-For CART-002 admission:
+A focused component such as:
 
-unknown Product must map through the currently frozen Cart error contract.
+```text
+CartStockRevalidator
+```
 
-Do not leak database/model exceptions.
+is appropriate.
+
+Its responsibility should be:
+
+```text
+load the Cart's relevant inventory efficiently
+evaluate every CartItem through CartItemEligibility
+produce current validation results
+```
+
+It must not own Product/Variant business rules.
 
 ---
 
-# 14. Product Active
+# 11. Possible Interface
 
-If:
-
-```text
-is_active = false
-```
-
-new admission/update requiring purchasability must fail.
-
-Existing line read:
+Conceptually:
 
 ```text
-preserve line
-is_purchasable = false
+CartStockRevalidator::revalidate(Cart $cart)
 ```
+
+returning something like:
+
+```text
+CartStockRevalidationResult
+```
+
+containing per-item:
+
+```text
+CartItemValidationResult
+```
+
+Do not expose these internal result objects directly through the API.
 
 ---
 
-# 15. Product Publication
+# 12. Do Not Duplicate `CartItemValidationResult`
 
-If:
+Phase 6.6 already introduced the immutable validation result.
+
+Reuse it.
+
+Do not create:
 
 ```text
-is_published = false
+StockValidationResult
+CartLineStockStatus
+PurchasabilityResultV2
 ```
 
-new admission/update must fail.
-
-Existing Cart line remains visible and non-purchasable.
+carrying the same facts.
 
 ---
 
-# 16. Soft-Deleted Product
+# 13. Cart-Wide Revalidation
 
-Soft-deleted Product cannot be newly admitted or quantity-mutated as purchasable.
+The revalidator should evaluate all CartItems in one Cart invocation.
 
-Existing Cart line must remain representable.
+Conceptually:
 
-Do not lose it because public Product scope hides soft-deleted records.
+```text
+Cart
+ ├── item A → current eligibility
+ ├── item B → current eligibility
+ └── item C → current eligibility
+```
+
+This allows consistent orchestration and efficient inventory loading.
 
 ---
 
-# 17. Category Activity
+# 14. Individual Result
 
-If Product's Category becomes inactive:
-
-new admission/update fails according to existing Product-unavailable semantics.
-
-Existing Cart line:
+For every Cart line the authoritative result remains equivalent to:
 
 ```text
-is_purchasable = false
-```
-
----
-
-# 18. Product Type
-
-Only:
-
-```text
-IN_STOCK
-```
-
-may enter or be quantity-mutated through normal Cart flow.
-
-`MADE_TO_ORDER` remains rejected with:
-
-```text
-422 PRODUCT_NOT_PURCHASABLE
-```
-
-The accepted Cart decision explicitly keeps MADE_TO_ORDER outside normal Cart commerce.
-
----
-
-# 19. Existing MADE_TO_ORDER Line
-
-If historical/corrupt/test state contains such a line:
-
-CART-001 must not fail.
-
-Return:
-
-```text
-is_purchasable = false
-stock_indicator = MADE_TO_ORDER
-```
-
-as appropriate.
-
-CART-004 must still allow removal.
-
----
-
-# 20. Variant Requirement
-
-Formalize the result of Phase 6.1.
-
-If a Product requires a sellable Variant:
-
-```text
-variant_id required
-```
-
-If the current model genuinely supports Product-without-Variant:
-
-follow the frozen nullable Variant contract.
-
-Do not create an ad hoc Product-level pricing fallback.
-
----
-
-# 21. Variant Existence
-
-Unknown Variant:
-
-```text
-422 INVALID_PRODUCT_VARIANT
-```
-
-for add/update validation.
-
-Existing stale line should normally remain representable where FK/history permits.
-
----
-
-# 22. Variant Ownership
-
-Must satisfy:
-
-```text
-variant.product_id === product.id
-```
-
-No exceptions.
-
-Wrong-parent Variant:
-
-```text
-422 INVALID_PRODUCT_VARIANT
-```
-
----
-
-# 23. Variant Active State
-
-Inactive Variant:
-
-Admission/mutation:
-
-```text
-reject
-```
-
-Projection:
-
-```text
-retain line
-is_purchasable = false
-```
-
----
-
-# 24. Quantity Validation
-
-Centralize:
-
-```text
-integer
-minimum 1
-maximum CartItem::MAX_QUANTITY
-```
-
-Use:
-
-```text
-CartItem::MAX_QUANTITY
-```
-
-as the only maximum source.
-
----
-
-# 25. Quantity Types
-
-Reject:
-
-```text
-0
-negative
-101+
-float
-numeric string
-null
-array
-boolean
-```
-
-according to strict request validation.
-
----
-
-# 26. Duplicate Add Quantity Rule
-
-Do not change the now-implemented accepted semantics:
-
-```text
-resulting quantity =
-min(existing + requested, CartItem::MAX_QUANTITY)
-```
-
-Duplicate additions merge and clamp rather than creating duplicate lines. The accepted ADR freezes this behavior.
-
----
-
-# 27. Effective Quantity
-
-Shared validation must distinguish:
-
-```text
-incoming quantity
-```
-
-from:
-
-```text
-effective resulting Cart quantity
-```
-
-For duplicate add:
-
-```text
-effective = min(existing + incoming, 100)
-```
-
-For PATCH:
-
-```text
-effective = requested quantity
-```
-
-Stock validation must use effective quantity.
-
----
-
-# 28. Informational Stock Validation
-
-For add/update:
-
-```text
-effective_quantity <= current available quantity
-```
-
-must hold.
-
-If not:
-
-```text
-422 INSUFFICIENT_STOCK
-```
-
-according to current implemented Cart semantics.
-
----
-
-# 29. Multi-Location Stock
-
-Available quantity must use the established Group E aggregation.
-
-Do not validate against:
-
-```text
-first ProductStock row
-one warehouse
-quantity without reservations
-```
-
----
-
-# 30. Reserved Stock Matters
-
-Example:
-
-```text
-quantity = 10
-reserved_quantity = 8
-available = 2
-```
-
-Cart validation must treat:
-
-```text
-available = 2
-```
-
-not 10.
-
----
-
-# 31. Cart Stock Validation Is Not a Guarantee
-
-Document clearly:
-
-```text
-Cart validation = current informational admission check
-Checkout = final authoritative locked validation
-```
-
-Successful add/update does not guarantee future Checkout success.
-
----
-
-# 32. Do Not Hold Inventory Locks
-
-Phase 6.6 must not introduce:
-
-```text
-ProductStock::lockForUpdate()
-```
-
-for Cart validation.
-
-The Cart intentionally does not reserve stock.
-
----
-
-# 33. Projection Availability
-
-For existing line, expose Group E:
-
-```text
+isPurchasable
 availability
-stock_indicator
+stockIndicator
+internal invalid reason
 ```
 
-from current state.
+as finalized by Phase 6.6.
 
 ---
 
-# 34. Quantity-Aware `is_purchasable`
+# 15. Quantity-Aware Revalidation
 
-Review the existing Phase 6.2 projection carefully.
+Revalidation must compare:
 
-A line with:
+```text
+CartItem.quantity
+```
+
+against:
+
+```text
+current aggregate available quantity
+```
+
+not simply check whether the Variant has at least one available unit.
+
+---
+
+# 16. Critical Example
+
+Cart:
+
+```text
+quantity = 5
+```
+
+Current aggregate Variant inventory:
+
+```text
+available = 2
+```
+
+Expected:
 
 ```text
 availability = available
+is_purchasable = false
 ```
 
-may still have:
+because Group E coarse availability remains positive while this particular Cart line cannot be fulfilled.
 
-```text
-Cart quantity > current available quantity
-```
-
-Example:
-
-```text
-Cart quantity = 5
-available stock = 2
-```
-
-That line should not be considered checkout-ready.
-
-Therefore Cart-specific `is_purchasable` should consider the entire line quantity, not merely coarse Variant availability.
+Do not change Group E `availability` semantics.
 
 ---
 
-# 35. Canonical Purchasability Formula
-
-Prefer:
-
-```text
-is_purchasable =
-    product visible/purchasable
-    AND product_type = IN_STOCK
-    AND variant valid/active
-    AND live available quantity >= CartItem.quantity
-```
-
-This is more precise than:
-
-```text
-availability == available
-```
-
-alone.
-
-If current Phase 6.2 implementation only checks `availability == available`, Phase 6.6 should correct that as a genuine validation consolidation defect.
-
----
-
-# 36. Important Example
+# 17. Exact Quantity Boundary
 
 Given:
 
 ```text
-Cart line quantity = 8
-current available quantity = 3
+Cart quantity = 5
+available = 5
 ```
 
-Group E coarse Variant availability may still be:
+expected:
 
 ```text
-available
+is_purchasable = true
 ```
 
-because stock is greater than zero.
+assuming all Product/Variant rules are valid.
 
-But Cart line must be:
+---
+
+# 18. One Below Boundary
+
+Given:
+
+```text
+Cart quantity = 5
+available = 4
+```
+
+expected:
 
 ```text
 is_purchasable = false
 ```
 
-because Checkout cannot currently satisfy the requested quantity.
-
 ---
 
-# 37. `availability` vs `is_purchasable`
+# 19. Fully Reserved Inventory
 
-Do not conflate them.
-
-`availability` answers:
+Given:
 
 ```text
-Does this Product/Variant currently have any sellable availability?
+physical quantity = 10
+reserved quantity = 10
+available = 0
 ```
 
-Cart `is_purchasable` answers:
-
-```text
-Can this specific Cart line at its current quantity proceed?
-```
-
----
-
-# 38. Out-of-Stock Line
-
-If:
-
-```text
-available quantity = 0
-```
-
-then:
+expected:
 
 ```text
 availability = unavailable
@@ -786,34 +414,47 @@ is_purchasable = false
 
 ---
 
-# 39. Partial Stock Line
+# 20. Partial Reservation
 
-If:
+Given:
 
 ```text
-available quantity > 0
-but
-available quantity < Cart quantity
+physical quantity = 10
+reserved quantity = 6
+available = 4
+Cart quantity = 5
 ```
 
-then expected:
+expected:
 
 ```text
 availability = available
 is_purchasable = false
 ```
 
-unless the frozen Cart contract explicitly requires `availability` to become unavailable for quantity-specific semantics.
+---
 
-Do not redefine Group E `availability`.
+# 21. Reservation Awareness
+
+Revalidation must account for inventory reserved by:
+
+```text
+other checkout/order transactions
+```
+
+through:
+
+```text
+quantity - reserved_quantity
+```
+
+Do not consider physical quantity alone.
 
 ---
 
-# 40. LOW_STOCK
+# 22. LOW_STOCK
 
-`LOW_STOCK` is informational.
-
-It does not itself make a line unpurchasable.
+`LOW_STOCK` remains informational.
 
 Example:
 
@@ -822,381 +463,92 @@ available = 4
 Cart quantity = 2
 ```
 
-may be:
+may correctly return:
 
 ```text
+availability = available
 stock_indicator = LOW_STOCK
 is_purchasable = true
 ```
 
----
-
-# 41. Stale-State Classification
-
-Centralize reasons internally.
-
-Potential internal reasons:
-
-```text
-PRODUCT_INACTIVE
-PRODUCT_UNPUBLISHED
-PRODUCT_DELETED
-CATEGORY_INACTIVE
-MADE_TO_ORDER
-VARIANT_MISSING
-VARIANT_WRONG_PARENT
-VARIANT_INACTIVE
-OUT_OF_STOCK
-INSUFFICIENT_FOR_CART_QUANTITY
-```
-
-These do not automatically become public API enums.
+Do not treat LOW_STOCK itself as failure.
 
 ---
 
-# 42. Do Not Expand Public Contract Accidentally
-
-Internal validation reasons must not become new:
-
-```text
-error codes
-response fields
-CLOSED enums
-```
-
-unless already frozen.
-
-Use them internally to derive existing API behavior.
-
----
-
-# 43. Validation Result Object
-
-Prefer a structured internal result over a pile of booleans.
-
-Conceptually:
-
-```text
-CartItemValidationResult
-```
-
-with safe concepts such as:
-
-```text
-isPurchasable
-availability
-stockIndicator
-effectiveAvailableQuantity (internal only)
-reason
-```
-
-Do not expose internal inventory quantities from the Resource unless contracted.
-
----
-
-# 44. Admission Errors vs Projection Reasons
-
-The same internal validation reason may map differently depending on context.
-
-Example:
-
-```text
-MADE_TO_ORDER
-```
-
-Admission:
-
-```text
-422 PRODUCT_NOT_PURCHASABLE
-```
-
-Projection:
-
-```text
-200 Cart
-is_purchasable = false
-```
-
-This is why validation context must be explicit.
-
----
-
-# 45. Error Mapping
-
-Create one consistent mapping from validation failure to existing Cart errors.
-
-Do not let controllers decide independently.
-
----
-
-# 46. Product Type Error
-
-Canonical:
-
-```text
-MADE_TO_ORDER
-→ PRODUCT_NOT_PURCHASABLE
-```
-
----
-
-# 47. Other Product Visibility Failures
-
-Based on the completed 6.3–6.5 behavior:
-
-```text
-inactive
-unpublished
-soft-deleted
-inactive Category
-→ PRODUCT_UNAVAILABLE
-```
-
-Preserve this established mapping unless the frozen API contract explicitly contradicts it.
-
----
-
-# 48. Variant Errors
-
-Canonical:
-
-```text
-missing required Variant
-unknown Variant
-wrong-parent Variant
-inactive Variant
-→ INVALID_PRODUCT_VARIANT
-```
-
-where current contract already maps them this way.
-
----
-
-# 49. Quantity Errors
-
-Structural/type/bounds errors remain:
-
-```text
-INVALID_TYPE
-INVALID_VALUE
-MISSING_REQUIRED_FIELD
-```
-
-as appropriate.
-
-Do not convert schema errors into domain errors.
-
----
-
-# 50. Stock Errors
-
-When otherwise valid line cannot satisfy requested effective quantity:
-
-```text
-INSUFFICIENT_STOCK
-```
-
----
-
-# 51. Ownership Errors Stay Outside Domain Validator
-
-Do not make CartItemValidator responsible for:
-
-```text
-Clerk verification
-guest credential verification
-Cart holder ownership
-IDOR masking
-```
-
-Those remain Phase 6.2 holder/route concerns.
-
----
-
-# 52. Validation Layering
-
-Preserve project pipeline:
-
-```text
-Transport
-→ Schema
-→ Authentication
-→ Holder/Authorization
-→ Domain Cart Validation
-→ Transaction
-→ Persistence
-```
-
-Do not query Product records before malformed request input is rejected.
-
----
-
-# 53. Add Workflow Refactor
-
-Refactor CART-002 to use the shared validator.
-
-Target flow:
-
-```text
-validated input
-→ resolve holder Cart
-→ resolve Product/Variant
-→ calculate effective duplicate quantity
-→ shared admission validation
-→ transactional insert/increment
-→ CartResource
-```
-
----
-
-# 54. Update Workflow Refactor
-
-CART-003 target:
-
-```text
-validated quantity
-→ resolve holder Cart
-→ holder-scoped CartItem
-→ shared mutation validation
-→ transaction/lock item
-→ update quantity
-→ CartResource
-```
-
----
-
-# 55. Projection Refactor
-
-CART-001 / CartItemResource should use the same validation/purchasability component.
-
-Do not duplicate:
-
-```text
-is_active
-is_published
-product_type
-Variant active
-availability
-```
-
-checks inside Resource code.
-
----
-
-# 56. Resource Must Not Own Business Rules
-
-API Resources should format results.
-
-Avoid:
-
-```php
-if ($product->is_active && ...)
-```
-
-business-rule chains directly inside `toArray()`.
-
-Move them to the shared domain resolver.
-
----
-
-# 57. Remove Workflow
-
-CART-004 should intentionally bypass purchasability validation.
-
-Only holder-scoped CartItem resolution is needed.
-
-Document this explicitly so a future refactor does not accidentally prevent stale-line removal.
-
----
-
-# 58. Do Not Validate Stock on DELETE
-
-Removal must remain possible regardless of Product/Variant/inventory state.
-
----
-
-# 59. Stale Line Persistence
-
-Do not:
-
-```text
-delete
-detach
-replace
-fix
-```
-
-a stale line automatically.
-
-The accepted contract says stale lines remain and are flagged.
-
----
-
-# 60. Stale Line Price
-
-Reuse current Cart projection semantics.
-
-If the Product/Variant still has a resolvable catalog price:
-
-display current server-side price.
-
-Do not persist a stale snapshot.
-
-If a valid price genuinely cannot be resolved, follow current frozen resource behavior; do not invent zero price.
-
----
-
-# 61. Category Visibility Regression
-
-Ensure Category activity is part of Cart purchasability.
-
-This was recorded in Phase 6.1 and must not be lost when validation is centralized.
-
----
-
-# 62. Product Soft Delete Regression
-
-Ensure:
-
-```text
-Product::withTrashed()
-```
-
-or equivalent context-specific loading remains available for Cart projection.
-
-Do not alter public Product queries.
-
----
-
-# 63. Variant Active Regression
-
-Ensure inactive Variant remains visible enough in the private Cart projection to mark the line stale.
-
-Do not globally apply active-only relation scope to stored CartItem projection.
-
----
-
-# 64. Product Type Change Regression
-
-If a Product already in Cart changes:
-
-```text
-IN_STOCK → MADE_TO_ORDER
-```
-
-Cart read must preserve line and mark it not purchasable.
-
----
-
-# 65. Publication Change Regression
+# 23. Out of Stock
 
 If:
 
 ```text
-published → unpublished
+available = 0
 ```
 
-same behavior:
+expect:
+
+```text
+availability = unavailable
+is_purchasable = false
+```
+
+---
+
+# 24. MADE_TO_ORDER
+
+MADE_TO_ORDER must remain:
+
+```text
+is_purchasable = false
+```
+
+for a Cart line.
+
+Do not consult physical stock to make it Cart-purchasable.
+
+Even if ProductStock exists:
+
+```text
+product_type = MADE_TO_ORDER
+```
+
+still excludes normal Cart checkout.
+
+---
+
+# 25. Product Rules Still Come First
+
+Use Phase 6.6 ordering:
+
+```text
+Product existence
+→ visibility
+→ Product type
+→ Variant requirement
+→ Variant ownership/activity
+→ stock sufficiency
+```
+
+If an earlier rule fails:
+
+do not perform unnecessary inventory queries for that line.
+
+---
+
+# 26. Inactive Product
+
+An existing Cart line whose Product becomes inactive:
+
+```text
+line retained
+is_purchasable = false
+```
+
+No stock query should be required merely to determine that.
+
+---
+
+# 27. Unpublished Product
+
+Same:
 
 ```text
 line retained
@@ -1205,124 +557,72 @@ is_purchasable = false
 
 ---
 
-# 66. Category Change Regression
+# 28. Soft-Deleted Product
 
-If Product remains active/published but Category becomes inactive:
-
-line remains but becomes not purchasable.
-
----
-
-# 67. Quantity/Stock Drift Regression
-
-If Cart had quantity:
-
-```text
-6
-```
-
-and inventory later drops to:
-
-```text
-4 available
-```
-
-Cart GET must show:
+Same:
 
 ```text
 line retained
 is_purchasable = false
 ```
 
-without changing quantity.
+Do not make the line disappear because public Product scopes exclude it.
 
 ---
 
-# 68. Stock Recovery
+# 29. Inactive Category
 
-If inventory later increases again to satisfy quantity:
-
-next Cart GET should automatically show:
+Product otherwise valid but Category inactive:
 
 ```text
-is_purchasable = true
+is_purchasable = false
 ```
 
-without any Cart persistence mutation.
+Do not waste an inventory query afterward.
 
 ---
 
-# 69. Product Recovery
+# 30. Inactive Variant
 
-If an unpublished/inactive Product is legitimately reactivated/published again:
+Existing line remains visible.
 
-next Cart read may become purchasable again if all other conditions pass.
-
-No CartItem rewrite required.
-
----
-
-# 70. Validation Is Live
-
-Cart validation state is derived at request time.
-
-Do not persist:
+Expected:
 
 ```text
-validation_status
-invalid_reason
-is_purchasable
-availability
+is_purchasable = false
 ```
 
-into `cart_items`.
+No stock sufficiency check needed after Variant failure.
 
 ---
 
-# 71. No Validation Timestamp
+# 31. Wrong-Parent / Corrupt Variant
 
-Do not add:
+Existing persistence should normally prevent this.
+
+If encountered:
+
+fail safely through existing internal validation result/error handling.
+
+Do not reinterpret another Product's inventory.
+
+---
+
+# 32. Stock Revalidation Never Removes Items
+
+Never:
 
 ```text
-validated_at
-last_stock_check_at
+DELETE cart_items
 ```
 
-unless explicitly required by a later contract.
+because stock changed.
+
+The accepted Cart behavior preserves stale lines.
 
 ---
 
-# 72. No Cart Error State
-
-Do not add Cart status values such as:
-
-```text
-INVALID
-STALE
-NEEDS_REVIEW
-```
-
-ACTIVE/INACTIVE remain sufficient.
-
----
-
-# 73. No Automatic Quantity Reduction
-
-If available quantity falls below Cart quantity:
-
-do not silently reduce:
-
-```text
-8 → 3
-```
-
-Mark line not purchasable.
-
-Customer may explicitly PATCH quantity.
-
----
-
-# 74. PATCH Can Repair Stale Quantity
+# 33. Stock Revalidation Never Reduces Quantity
 
 Example:
 
@@ -1331,599 +631,737 @@ Cart quantity = 8
 available = 3
 ```
 
-PATCH:
+do NOT mutate:
 
 ```text
-quantity = 3
+8 → 3
 ```
 
-should succeed if all Product/Variant rules pass.
-
-This is how customer can repair stock-related stale state.
-
----
-
-# 75. PATCH Cannot Repair Product State
-
-If Product is:
+Expected:
 
 ```text
-unpublished
-inactive
-MADE_TO_ORDER
+quantity = 8
+is_purchasable = false
 ```
 
-changing quantity alone must not make the line valid.
-
-Return the established Product-domain error.
-
-Customer can remove it.
+The customer must explicitly PATCH the quantity.
 
 ---
 
-# 76. Add Current Stock Boundary
+# 34. Stock Recovery
 
-Adding a new item with requested quantity exceeding availability continues to fail.
-
-Do not loosen admission just because stale lines are allowed to remain.
-
----
-
-# 77. Validation vs Stock Revalidation Phase 6.7
-
-Keep the phase boundary clear.
-
-Phase 6.6 owns:
+If inventory later changes:
 
 ```text
-shared validation semantics
-purchasability definition
-error mapping
-validation context
-consolidation
+available 3 → 8
 ```
 
-Phase 6.7 should own deeper stock-revalidation workflow/hardening.
-
-Do not pull checkout concurrency or reservation into 6.6.
-
----
-
-# 78. What 6.7 May Build On
-
-Expose clean interfaces so Phase 6.7 can efficiently:
-
-```text
-re-evaluate all Cart lines
-identify insufficient stock
-produce checkout preflight state
-```
-
-without rewriting Product/Variant validation.
-
----
-
-# 79. No Checkout Preflight Endpoint
-
-Do not invent:
-
-```text
-POST /me/cart/validate
-GET /me/cart/validation
-```
-
-in Phase 6.6.
-
-Validation remains internal to existing Cart operations.
-
----
-
-# 80. No New Public Fields
-
-Do not add fields such as:
-
-```text
-validation_errors
-invalid_reason
-required_quantity
-available_quantity
-```
-
-to CartItem unless already in frozen API contract.
-
----
-
-# 81. `is_purchasable` Remains Boolean
-
-Do not change it to:
-
-```text
-status enum
-string reason
-object
-```
-
-within V1.
-
----
-
-# 82. Preserve Public Inventory Privacy
-
-Even if validation internally knows:
-
-```text
-available quantity
-```
-
-normal Cart response must not start exposing raw ProductStock quantities unless frozen contract explicitly permits it.
-
----
-
-# 83. Safe `INSUFFICIENT_STOCK` Details
-
-Inspect current contract before emitting quantity details in errors.
-
-If safe details are already approved:
-
-reuse them.
-
-Otherwise do not introduce them.
-
----
-
-# 84. Cart Pricing Validation
-
-Validation must use the same Variant that determines:
-
-```text
-unit_price
-```
-
-Do not validate Variant A while pricing Variant B.
-
----
-
-# 85. No Client Price Validation
-
-Do not compare client-supplied price against server price because client price must not be accepted at all.
-
----
-
-# 86. Money Is Not Purchasability
-
-A price of zero or a valid price object does not by itself make Product purchasable.
-
-Follow Product type/state rules.
-
----
-
-# 87. Transaction Semantics
-
-Validation used to decide a mutation must happen close enough to persistence to avoid avoidable state drift.
-
-For Cart mutations, exact stock can still change immediately afterward and that is acceptable.
-
-Do not turn Cart validation into checkout-grade locking.
-
----
-
-# 88. Same-Line Lock Ordering
-
-CART-002/003 concurrency mechanics from the completed combined phase should remain intact.
-
-Do not weaken:
-
-```text
-CartItem lock
-unique-line recovery
-serialized quantity update
-```
-
-during refactor.
-
----
-
-# 89. Refactor Must Preserve MariaDB Race Safety
-
-After validation consolidation rerun:
-
-```text
-CartMutationConcurrencyMysqlTest
-```
-
-All existing races must stay green.
-
----
-
-# 90. No Change to Duplicate Clamp
-
-Validation refactor must not accidentally convert:
-
-```text
-99 + 2 → 100
-```
-
-into:
-
-```text
-422
-```
-
-The accepted duplicate-add ADR says merge/clamp.
-
----
-
-# 91. Direct PATCH Still Strict
-
-Contrast:
-
-```text
-POST duplicate add:
-99 + 2 → 100
-```
-
-with:
-
-```text
-PATCH quantity: 101
-→ 422
-```
-
-These are intentionally different semantics.
-
-Document and test them.
-
----
-
-# 92. Admission/Projection Matrix
-
-Create a concise internal test matrix similar to:
-
-```text
-State                     Add    Update   GET
-------------------------------------------------
-valid                      OK     OK       purchasable
-inactive Product           422    422      stale
-unpublished Product        422    422      stale
-deleted Product            422    422      stale
-inactive Category          422    422      stale
-MADE_TO_ORDER              422    422      stale
-wrong Variant              422    422*     stale/corrupt
-inactive Variant           422    422      stale
-stock = 0                  422    422      stale
-stock < cart quantity      422    422      stale
-stock >= cart quantity     OK     OK       purchasable
-```
-
-Use exact existing error codes.
-
-`*` Existing persisted wrong-parent Variant should normally be prevented by model/FK-domain invariants.
-
----
-
-# 93. Removal Matrix
-
-For all stale states above:
-
-```text
-DELETE
-→ allowed
-```
-
-provided item belongs to holder's Cart.
-
----
-
-# 94. Test — Shared Product Validation
-
-Prove CART-002 and CART-003 map identical Product invalid states consistently.
-
----
-
-# 95. Test — Shared Variant Validation
-
-Same for:
-
-```text
-wrong parent
-inactive
-missing required Variant
-```
-
----
-
-# 96. Test — Shared Quantity Validation
-
-Ensure same central bounds are used where appropriate.
-
----
-
-# 97. Test — Cart GET Valid Line
-
-Valid Product/Variant with enough quantity:
+the next revalidation should automatically produce:
 
 ```text
 is_purchasable = true
 ```
 
+without Cart persistence changes.
+
 ---
 
-# 98. Test — Quantity Greater Than Available
+# 35. Reservation Drift
 
-Example:
+If another checkout reserves units:
 
 ```text
-Cart quantity = 5
-available quantity = 2
+available 8 → 3
 ```
 
-assert:
+the next Cart read/revalidation must reflect that immediately.
+
+Do not cache old available quantity in Cart persistence.
+
+---
+
+# 36. Release Drift
+
+If reservations are released:
 
 ```text
-availability = available
+available 3 → 8
+```
+
+Cart becomes purchasable again automatically where all other rules pass.
+
+---
+
+# 37. Inventory Adjustment Drift
+
+If Staff/Admin inventory adjustment changes physical quantity:
+
+Cart revalidation must reflect the new state.
+
+No Cart mutation is required.
+
+---
+
+# 38. Revalidation Trigger — CART-001
+
+Every:
+
+```text
+GET /api/v1/me/cart
+```
+
+must return CartItems based on live current stock.
+
+Do not return stale cached eligibility from a previous request.
+
+---
+
+# 39. Revalidation Trigger — CART-002 Response
+
+After successful add:
+
+the returned Cart projection must reflect live eligibility.
+
+Reuse the same revalidation/projection path.
+
+---
+
+# 40. Revalidation Trigger — CART-003 Response
+
+After successful quantity update:
+
+the returned Cart projection must reflect current stock.
+
+---
+
+# 41. CART-004
+
+DELETE returns:
+
+```text
+204
+```
+
+and therefore requires no Cart projection response.
+
+Do not perform a full stock revalidation merely to remove a Cart line.
+
+---
+
+# 42. No Scheduled Revalidation Worker
+
+Do not create:
+
+```text
+queue job
+cron
+scheduler
+stock-monitoring worker
+```
+
+to continually update Carts.
+
+Cart stock state is revalidated when required by request workflows.
+
+---
+
+# 43. No Push Notifications
+
+Do not notify users when stock changes.
+
+That is outside this phase.
+
+---
+
+# 44. No Persistent Stale Marker
+
+Do not write:
+
+```text
+cart_items.is_stale
+cart_items.stock_valid
+cart_items.needs_attention
+```
+
+---
+
+# 45. No Revalidation Timestamp
+
+Do not persist:
+
+```text
+last_stock_check_at
+```
+
+The derived result can become stale immediately anyway.
+
+---
+
+# 46. Avoid N+1
+
+Phase 6.7 must explicitly review the Cart projection query shape.
+
+A Cart containing N items should not trigger:
+
+```text
+N Product queries
+N Variant queries
+N inventory aggregation queries
+```
+
+when those facts can be resolved in bounded batches.
+
+---
+
+# 47. Main Performance Goal
+
+Stock revalidation should scale approximately with:
+
+```text
+a bounded set of queries per Cart
+```
+
+rather than:
+
+```text
+queries × number of Cart lines
+```
+
+where practical with the existing Laravel architecture.
+
+---
+
+# 48. Batch Relevant Variants
+
+Collect the valid Variant IDs required by the Cart.
+
+Conceptually:
+
+```text
+variantIds = Cart items
+    → eligible Product/Variant candidates
+    → unique Variant IDs
+```
+
+Then resolve their stock aggregates efficiently.
+
+---
+
+# 49. Do Not Query Inventory for Invalid Lines
+
+If Product or Variant validation already fails:
+
+exclude that line from the stock-aggregation query.
+
+This preserves the Phase 6.6 validation ordering.
+
+---
+
+# 50. Batch Multi-Location Availability
+
+For all relevant Variant IDs, aggregate:
+
+```text
+SUM(quantity - reserved_quantity)
+GROUP BY product_variant_id
+```
+
+or reuse the existing Group E equivalent.
+
+Do not create a conflicting SQL definition if `CatalogAvailability` already provides a batch-capable API.
+
+---
+
+# 51. Extend Existing Group E Component Carefully
+
+If `CatalogAvailability` currently only supports:
+
+```text
+availableQuantity(ProductVariant $variant)
+```
+
+and causes one query per item:
+
+add the smallest batch-capable API.
+
+For example conceptually:
+
+```text
+availableQuantities(iterable $variantIds)
+```
+
+returning:
+
+```text
+variant_id => available_quantity
+```
+
+Only if needed.
+
+---
+
+# 52. Single Availability Authority
+
+Whether single-item or batched:
+
+the formula must remain centralized under Group E.
+
+Do not place raw:
+
+```sql
+SUM(quantity - reserved_quantity)
+```
+
+inside three separate Cart services.
+
+---
+
+# 53. Batch Availability Must Match Single Availability
+
+For every Variant:
+
+```text
+batchAvailable[variant]
+==
+CatalogAvailability::availableQuantity(variant)
+```
+
+under the same database state.
+
+Add regression tests.
+
+---
+
+# 54. Negative Available Defense
+
+The database/domain invariant already requires:
+
+```text
+reserved_quantity <= quantity
+```
+
+Therefore available should never be negative.
+
+If corrupt data somehow produces it:
+
+do not expose a negative public availability.
+
+Fail safely according to existing Group E invariant handling.
+
+Do not normalize corrupt persistence silently unless existing Group E does so.
+
+---
+
+# 55. Revalidation Result Container
+
+A Cart-level result can conceptually contain:
+
+```text
+cart
+resultsByCartItemId
+```
+
+where each result is:
+
+```text
+CartItemValidationResult
+```
+
+Do not add public response fields solely for this container.
+
+---
+
+# 56. Stable Item Matching
+
+Use internal CartItem identity to associate validation results.
+
+Do not key business logic by:
+
+```text
+array position
+Product name
+SKU text
+```
+
+---
+
+# 57. Resource Integration
+
+`CartItemResource` should consume an already-computed:
+
+```text
+CartItemValidationResult
+```
+
+where practical.
+
+Do not let the Resource independently hit ProductStock.
+
+---
+
+# 58. Resource Must Not Run Stock Queries
+
+Phase 6.7 should move toward:
+
+```text
+query / projection layer
+→ resolve live state
+→ Resource formats it
+```
+
+instead of:
+
+```text
+Resource::toArray()
+→ database query
+```
+
+API Resources should remain serialization-focused.
+
+---
+
+# 59. Cart Resource
+
+`CartResource` should orchestrate or receive the validated/projection data through the established application layer.
+
+Do not transform it into a domain service.
+
+---
+
+# 60. Pricing Remains Separate
+
+Stock revalidation must not alter current pricing authority.
+
+Cart response still resolves:
+
+```text
+unit_price
+line_total
+subtotal
+```
+
+from live catalog pricing.
+
+Do not make inventory service responsible for pricing.
+
+---
+
+# 61. Missing/Inactive Variant Price
+
+Preserve the accepted Phase 6.2 behavior:
+
+where a stale/unpriceable line lacks an active own Variant price:
+
+```text
+unit_price = null
+line_total = null
 is_purchasable = false
 ```
 
-if Group E coarse availability remains positive.
+and it contributes nothing to subtotal according to the current contract.
 
-This is a critical Phase 6.6 regression test.
+Do not borrow another Variant's price.
 
 ---
 
-# 99. Test — Exact Stock Boundary
+# 62. Stock Revalidation and Price Revalidation Are Distinct
+
+Both are live in Cart projection, but Phase 6.7 is specifically about stock.
+
+Do not redesign pricing.
+
+---
+
+# 63. No External Cache Authority
+
+Do not use:
 
 ```text
-Cart quantity = 5
-available = 5
+Redis
+application cache
+CDN cache
+session cache
 ```
 
-must be purchasable.
+as authoritative inventory state.
+
+Live DB inventory remains authority.
 
 ---
 
-# 100. Test — One Less Stock
+# 64. Private Cart Response Cache
+
+Continue:
 
 ```text
-Cart quantity = 5
-available = 4
+Cache-Control:
+private,
+no-cache,
+no-store,
+must-revalidate
 ```
 
-must not be purchasable.
+Cart responses must never be served from public cache.
 
 ---
 
-# 101. Test — Reserved Stock
+# 65. Do Not Cache Revalidation Across Users
+
+Never cache:
 
 ```text
-physical = 10
-reserved = 6
-Cart quantity = 5
-available = 4
+Cart A validation result
 ```
 
-must be non-purchasable.
+and reuse it as Cart B's line-level result.
+
+The requested quantity may differ.
 
 ---
 
-# 102. Test — Multi-Location Aggregate
+# 66. Variant Availability May Be Shared; Line Validation May Not
 
-Use multiple ProductStock rows.
+The current aggregate available quantity for a Variant can conceptually be reused within one request.
 
-Validation must compare Cart quantity to Group E aggregate available quantity.
-
----
-
-# 103. Test — Stale Product Read
-
-For each:
+But:
 
 ```text
-inactive
-unpublished
-soft-deleted
-inactive Category
+is_purchasable
 ```
 
-CART-001:
+must still be evaluated against each line's quantity.
+
+---
+
+# 67. Same Variant in One Cart
+
+Current uniqueness rules should prevent duplicate same Product/Variant lines.
+
+Do not rely solely on that for the stock service's correctness.
+
+Use unique Variant IDs for aggregate lookup.
+
+---
+
+# 68. No ProductStock Locks
+
+Stock revalidation is read-only.
+
+Do NOT introduce:
 
 ```text
-200
-line present
-is_purchasable false
+lockForUpdate()
 ```
 
----
-
-# 104. Test — Stale Variant Read
-
-Inactive Variant:
-
-same behavior.
+for Cart stock reads.
 
 ---
 
-# 105. Test — MADE_TO_ORDER Read
+# 69. Why No Locks
 
-Historical line:
+Even if revalidation locks stock:
+
+the lock would be released before the user eventually presses Checkout.
+
+Therefore it would not guarantee inventory.
+
+Only Checkout reservation matters.
+
+---
+
+# 70. No Reservation
+
+Explicitly forbidden:
 
 ```text
-line remains
-is_purchasable false
+reserved_quantity += CartItem.quantity
 ```
+
+during revalidation.
 
 ---
 
-# 106. Test — Stock Recovery
+# 71. No Physical Quantity Mutation
 
-Cart line begins invalid due to stock.
-
-Increase ProductStock.
-
-GET again:
+Explicitly forbidden:
 
 ```text
-is_purchasable true
+quantity -= ...
 ```
 
-without CartItem update.
+during revalidation.
 
 ---
 
-# 107. Test — Product Reactivation
+# 72. No Inventory Allocation
 
-Where Product is legitimately restored:
+Do not allocate warehouse/location rows to CartItems.
 
-Cart projection should reflect current state automatically.
+Location allocation remains part of checkout reservation/fulfilment concerns.
 
 ---
 
-# 108. Test — No Persistence From GET
+# 73. No CartItem→ProductStock Relationship
 
-Comparing DB before/after validation projection:
+Do not add:
 
 ```text
-Cart unchanged
-CartItem unchanged
-ProductStock unchanged
-timestamps unchanged
+product_stock_id
+warehouse_location
+reservation_id
 ```
+
+to CartItem.
 
 ---
 
-# 109. Test — Update Repair
+# 74. Revalidation Is Not Checkout Validation
 
-Invalid due only to quantity:
+Phase 6.7 may conclude:
 
 ```text
-qty 8
-available 4
+all Cart lines currently purchasable
 ```
 
-PATCH to:
+but this is not a checkout guarantee.
+
+---
+
+# 75. Checkout Still Revalidates
+
+Group G must:
 
 ```text
-4
+lock current ProductStock
+re-read authoritative state
+validate again
+reserve transactionally
 ```
 
-succeeds.
+It must never trust a Phase 6.7 result captured earlier.
 
 ---
 
-# 110. Test — Update Cannot Repair Inactive Product
+# 76. No Revalidation Token
 
-PATCH quantity on inactive Product:
-
-fails.
-
-Line remains unchanged.
-
----
-
-# 111. Test — Delete Always Cleans Stale Line
-
-Repeat stale scenarios with DELETE.
-
-Must succeed if owned.
-
----
-
-# 112. Test — Duplicate Add Clamp Preserved
-
-Validation consolidation must keep:
+Do not create:
 
 ```text
-99 + 2 → 100
+validation_token
+stock_version
+cart_validation_id
 ```
+
+for Checkout to trust later.
 
 ---
 
-# 113. Test — Direct 101 Rejected
+# 77. No "Validated Cart" State
 
-PATCH:
+Do not mark:
 
 ```text
-101
+Cart.status = VALIDATED
 ```
 
-must remain invalid.
+ACTIVE/INACTIVE remain the only Cart statuses.
 
 ---
 
-# 114. Test — Existing Mutation Suite
+# 78. No Pre-Reservation
 
-All:
+Do not create temporary reservation because:
 
 ```text
-CartAddItemApiTest
-CartUpdateItemApiTest
-CartRemoveItemApiTest
+all Cart lines validated
 ```
 
-must remain green.
+---
+
+# 79. Existing Mutation Validation
+
+CART-002 and CART-003 already validate stock against effective quantity.
+
+Do not remove those checks just because Cart-wide revalidation exists.
+
+They prevent knowingly invalid mutations.
 
 ---
 
-# 115. Test — Phase 6.2 Read Suite
+# 80. Shared Stock Logic
 
-Cart read/create tests must remain green.
-
----
-
-# 116. Test — MariaDB Concurrency
-
-Rerun:
+However, the calculation used by:
 
 ```text
-CartMutationConcurrencyMysqlTest
+CART-002
+CART-003
+CART-001 projection
+CartStockRevalidator
 ```
 
-because refactoring validation around mutation transactions could affect lock timing/flow.
+must ultimately use the same Group E stock authority.
 
 ---
 
-# 117. No New MariaDB Algorithm
+# 81. No Divergence
 
-Do not alter the proven Cart concurrency algorithm unless consolidation requires it.
-
----
-
-# 118. Performance
-
-Validation consolidation should reduce duplicate queries.
-
-Do not introduce:
+Forbidden situation:
 
 ```text
-one Product query
-one Variant query
-multiple stock queries
+CART-002 says available = 5
+CART-001 says available = 3
 ```
 
-per validation layer when existing eager-loading/resolvers can supply state efficiently.
+under the same stable database state because different formulas were used.
 
 ---
 
-# 119. Avoid N+1 on CART-001
+# 82. Read Consistency
 
-Cart with multiple lines should still use bounded/eager queries.
+Within one CART-001 projection:
 
-Phase 6.6 should not make each CartItem invoke independent ProductStock queries if Group E supports batching.
+try to compute inventory facts from one coherent database read window.
 
----
-
-# 120. Query Count Regression
-
-Where current tests support stable query-count bounds:
-
-retain or add a reasonable N+1 regression test for multi-item Cart projection.
-
-Avoid brittle exact SQL counts.
+Do not intentionally fetch the same Variant's available stock several times during one response.
 
 ---
 
-# 121. Domain Result Reuse
+# 83. Transaction Not Normally Required for GET
 
-The same resolved validation result should ideally feed:
+Do not wrap CART-001 in a long transaction merely for stock revalidation.
+
+A point-in-time read is sufficient.
+
+Stock remains advisory.
+
+---
+
+# 84. Snapshot Semantics
+
+Do not promise serializable snapshot semantics for Cart GET.
+
+Inventory may change immediately after the response.
+
+That is expected.
+
+---
+
+# 85. API Representation Must Remain Frozen
+
+Do not add:
+
+```text
+available_quantity
+requested_quantity
+stock_shortfall
+stock_checked_at
+validation_status
+validation_reason
+```
+
+to `CartItem`.
+
+The updated OpenAPI still defines:
 
 ```text
 availability
@@ -1931,246 +1369,1198 @@ stock_indicator
 is_purchasable
 ```
 
-for a CartItem response.
-
-Do not calculate these three through unrelated code paths.
+as the Cart stock-facing fields.
 
 ---
 
-# 122. Do Not Expose Validation Reasons
+# 86. `is_purchasable` Meaning
 
-Internal stale reason is for backend reasoning/tests.
-
-Cart API remains frozen.
-
----
-
-# 123. Error Message Consistency
-
-The same failure should map to the same machine code across:
+Preserve Phase 6.6:
 
 ```text
-CART-002
-CART-003
-```
-
-Messages may be human-readable but clients branch on code.
-
----
-
-# 124. Do Not Change HTTP Statuses
-
-Keep existing:
-
-```text
-422 domain validation
-404 ownership masked item
-401 holder credential failure
-429 rate limit
-```
-
-according to current endpoints.
-
----
-
-# 125. No New Cart Endpoint
-
-Routes remain:
-
-```text
-GET    /api/v1/me/cart
-POST   /api/v1/me/cart/items
-PATCH  /api/v1/me/cart/items/{item}
-DELETE /api/v1/me/cart/items/{item}
-```
-
-CART-005 remains separate.
-
----
-
-# 126. CART-005 Still Out of Scope
-
-Do not implement:
-
-```text
-POST /api/v1/me/cart/merge
-```
-
-during Phase 6.6.
-
----
-
-# 127. CART-005 Future Reuse
-
-Design validation so merge can eventually reuse the same:
-
-```text
-Product/Variant state
-quantity rules
-purchasability projection
-```
-
-without prematurely implementing merge.
-
----
-
-# 128. Checkout Future Reuse
-
-Likewise, future checkout may reuse semantic validation concepts, but Checkout still must perform its own authoritative transaction-time stock validation.
-
-Do not make Checkout simply trust:
-
-```text
-CartItem.is_purchasable
-```
-
-from an earlier read.
-
----
-
-# 129. Cart Validation Is Advisory to Checkout
-
-Even if:
-
-```text
-all Cart lines currently is_purchasable = true
-```
-
-Checkout must still lock/revalidate stock.
-
-Document this boundary.
-
----
-
-# 130. No Reservation
-
-Explicit completion report must state:
-
-```text
-ProductStock quantity mutations: NONE
-reserved_quantity mutations: NONE
-ProductStock locks: NONE
-inventory reservations: NONE
+is_purchasable =
+Product requirements valid
+AND Variant requirements valid
+AND current aggregate available quantity >= CartItem.quantity
 ```
 
 ---
 
-# 131. Schema Changes
+# 87. `availability` Meaning
+
+Preserve Group E coarse availability.
+
+For an IN_STOCK Variant:
+
+```text
+available quantity > 0
+→ availability = available
+
+available quantity = 0
+→ availability = unavailable
+```
+
+Do not make `availability` quantity-specific to Cart.
+
+---
+
+# 88. `stock_indicator`
+
+Preserve:
+
+```text
+IN_STOCK
+LOW_STOCK
+MADE_TO_ORDER
+```
+
+according to Group E.
+
+Do not introduce:
+
+```text
+PARTIALLY_AVAILABLE
+INSUFFICIENT_FOR_CART
+OUT_OF_STOCK
+```
+
+---
+
+# 89. Internal Shortfall
+
+The service may internally know:
+
+```text
+requested quantity
+available quantity
+shortfall
+```
+
+for decision-making.
+
+Do not expose those values unless current frozen API already allows them.
+
+---
+
+# 90. Existing Stock Error Contract
+
+CART-002/CART-003 continue returning:
+
+```text
+422 INSUFFICIENT_STOCK
+```
+
+where current effective quantity cannot be met.
+
+Do not add a new error such as:
+
+```text
+CART_STOCK_CHANGED
+CART_NEEDS_REVALIDATION
+```
+
+---
+
+# 91. CART-001 Does Not Fail on Stock Shortage
+
+If one or more lines lack sufficient stock:
+
+```text
+GET /me/cart
+→ 200
+```
+
+The problematic lines are preserved with:
+
+```text
+is_purchasable = false
+```
+
+Do not return:
+
+```text
+422 INSUFFICIENT_STOCK
+```
+
+for the whole Cart read.
+
+---
+
+# 92. Multiple Invalid Lines
+
+A Cart may contain:
+
+```text
+line A — insufficient stock
+line B — inactive Product
+line C — valid
+```
+
+CART-001 must still return all three.
+
+Each line receives its own current projection.
+
+---
+
+# 93. Empty Cart
+
+Revalidation of:
+
+```text
+items = []
+```
+
+should be cheap and valid.
+
+Do not perform inventory queries for an empty Cart.
+
+---
+
+# 94. Empty Cart Result
+
+Still:
+
+```text
+items_count = 0
+items = []
+subtotal = 0 TZS
+```
+
+---
+
+# 95. Cart Record Must Not Be Touched
+
+Stock revalidation must not change:
+
+```text
+Cart.updated_at
+```
+
+---
+
+# 96. CartItems Must Not Be Touched
+
+Stock revalidation must not change:
+
+```text
+CartItem.updated_at
+```
+
+---
+
+# 97. ProductStock Must Not Be Touched
+
+No inventory timestamps or quantities may change because a Cart was read.
+
+---
+
+# 98. No Audit Entry
+
+Ordinary Cart stock revalidation is a read operation.
+
+Do not create privileged inventory audit events.
+
+---
+
+# 99. Test — Empty Cart
+
+CART-001 empty Cart:
+
+assert no ProductStock queries if practical and no errors.
+
+---
+
+# 100. Test — Fully Available Cart
+
+Several valid lines all have enough stock.
+
+Every:
+
+```text
+is_purchasable = true
+```
+
+---
+
+# 101. Test — One Insufficient Line
+
+Cart has:
+
+```text
+A qty 2 / available 4
+B qty 5 / available 3
+```
+
+expected:
+
+```text
+A is_purchasable = true
+B is_purchasable = false
+```
+
+Cart response still 200.
+
+---
+
+# 102. Test — Zero Stock
+
+```text
+qty 1
+available 0
+```
+
+expected:
+
+```text
+availability = unavailable
+is_purchasable = false
+```
+
+---
+
+# 103. Test — Partial Stock
+
+```text
+qty 5
+available 2
+```
+
+expected:
+
+```text
+availability = available
+is_purchasable = false
+```
+
+This remains a critical regression.
+
+---
+
+# 104. Test — Exact Boundary
+
+```text
+qty = 5
+available = 5
+```
+
+purchasable.
+
+---
+
+# 105. Test — Reserved Quantity
+
+Ensure current reservation reduces available stock.
+
+---
+
+# 106. Test — Multi-Location
+
+Example:
+
+```text
+location A: quantity 3, reserved 1 → available 2
+location B: quantity 4, reserved 1 → available 3
+
+aggregate = 5
+```
+
+Cart quantity:
+
+```text
+5 → purchasable
+6 → not purchasable
+```
+
+---
+
+# 107. Test — Multi-Line Multi-Location
+
+Several Variants across several locations.
+
+Verify each Variant gets only its own aggregate inventory.
+
+No cross-Variant stock mixing.
+
+---
+
+# 108. Test — Stock Drop Between Reads
+
+First GET:
+
+```text
+available = 5
+Cart qty = 5
+is_purchasable = true
+```
+
+Change inventory:
+
+```text
+available = 4
+```
+
+Second GET:
+
+```text
+is_purchasable = false
+```
+
+without Cart mutation.
+
+---
+
+# 109. Test — Stock Recovery
+
+Reverse the prior test.
+
+Second GET becomes purchasable again.
+
+---
+
+# 110. Test — Reservation Created Elsewhere
+
+Simulate another checkout reservation through existing inventory primitive.
+
+Next Cart read must account for it.
+
+Do not create Checkout endpoint merely for this test.
+
+---
+
+# 111. Test — Reservation Release
+
+Release reservation through domain primitive/test fixture.
+
+Next Cart read reflects increased availability.
+
+---
+
+# 112. Test — Inventory Adjustment
+
+Use existing inventory adjustment service or fixture to reduce physical stock.
+
+Next Cart read reflects it.
+
+Do not call operational HTTP endpoint unnecessarily unless integration value requires it.
+
+---
+
+# 113. Test — Inactive Product Short-Circuit
+
+Line Product is inactive.
+
+Assert:
+
+```text
+is_purchasable = false
+```
+
+and where practical verify stock aggregation is not performed for that line.
+
+---
+
+# 114. Test — MADE_TO_ORDER Short-Circuit
+
+Same.
+
+Physical stock must not make the line purchasable.
+
+---
+
+# 115. Test — Inactive Variant Short-Circuit
+
+Same.
+
+---
+
+# 116. Test — Current LOW_STOCK
+
+Available stock within threshold but still enough for line quantity:
+
+```text
+stock_indicator = LOW_STOCK
+is_purchasable = true
+```
+
+---
+
+# 117. Test — LOW_STOCK Not Enough
+
+Available still >0 but less than Cart quantity:
+
+```text
+stock_indicator = LOW_STOCK
+availability = available
+is_purchasable = false
+```
+
+---
+
+# 118. Test — No Persistence Side Effects
+
+Capture before:
+
+```text
+Cart.updated_at
+CartItem.updated_at
+ProductStock.updated_at
+quantity
+reserved_quantity
+```
+
+Run revalidation / CART-001.
+
+Assert all unchanged.
+
+---
+
+# 119. Test — No Reservation
+
+Explicitly assert:
+
+```text
+reserved_quantity before == after
+```
+
+for every relevant stock row.
+
+---
+
+# 120. Test — No Inventory Locking
+
+Unit/integration architecture should show Cart revalidation does not call the reservation allocator or `lockForUpdate`.
+
+Do not create brittle SQL-string tests if a service-level dependency test is clearer.
+
+---
+
+# 121. Test — Batch vs Single Calculation
+
+For representative Variants:
+
+```text
+batch result
+==
+existing CatalogAvailability single result
+```
+
+---
+
+# 122. Test — N+1 Regression
+
+Create a Cart with multiple items.
+
+Assert query growth remains bounded according to the chosen implementation.
+
+Do not rely on an excessively brittle exact number if framework internals add harmless queries.
+
+---
+
+# 123. Query Scaling Test
+
+Prefer a comparison such as:
+
+```text
+1 item
+10 items
+```
+
+and ensure stock query count does not increase one-for-one if batch loading is implemented.
+
+---
+
+# 124. Existing Phase 6.6 Tests
+
+Keep green:
+
+```text
+CartPurchasabilityApiTest
+CartItemInvalidReasonTest
+```
+
+---
+
+# 125. Existing Mutation Tests
+
+Keep green:
+
+```text
+CartAddItemApiTest
+CartUpdateItemApiTest
+CartRemoveItemApiTest
+```
+
+---
+
+# 126. Existing Read Tests
+
+Keep green:
+
+```text
+CartReadApiTest
+```
+
+---
+
+# 127. Existing MariaDB Cart Concurrency Gate
+
+Rerun:
+
+```text
+CartMutationConcurrencyMysqlTest
+```
+
+Phase 6.7 should not alter mutation locking semantics.
+
+---
+
+# 128. Group E Regression
+
+Run focused availability/inventory tests because Phase 6.7 depends directly on them.
+
+At minimum ensure regressions around:
+
+```text
+multi-location aggregation
+reserved quantity
+LOW_STOCK
+IN_STOCK availability
+```
+
+remain green.
+
+---
+
+# 129. No New Concurrency Algorithm
+
+Phase 6.7 is read-only.
+
+Do not introduce new:
+
+```text
+deadlock handling
+inventory transaction retry
+row-lock ordering
+```
+
+for revalidation.
+
+Those already belong to Group E/Checkout.
+
+---
+
+# 130. Read vs Concurrent Inventory Mutation
+
+It is acceptable for:
+
+```text
+Cart GET
+```
+
+to observe either state immediately before or after a concurrent committed inventory adjustment.
+
+What must never happen is:
+
+```text
+invented quantity
+negative derived availability
+Cart persistence corruption
+```
+
+---
+
+# 131. Do Not Promise Repeatable Read
+
+A Cart response is a current observation, not a reservation certificate.
+
+Document this internally.
+
+---
+
+# 132. Performance Scope
+
+Optimize obvious N+1 inventory behavior only.
+
+Do not turn Phase 6.7 into:
+
+```text
+Redis caching
+materialized inventory views
+read replicas
+CQRS
+```
+
+---
+
+# 133. No New Dependency
 
 Expected:
 
 ```text
-NONE
+Dependencies: NONE
 ```
 
-No validation state belongs in database schema.
+Use Laravel/database/application infrastructure.
 
 ---
 
-# 132. Dependencies
+# 134. Schema
 
 Expected:
 
 ```text
-NONE
+Schema changes: NONE
 ```
 
 ---
 
-# 133. Frontend
+# 135. No Migration
+
+Do not add:
+
+```text
+cart stock validation columns
+inventory cache tables
+cart validity tables
+```
+
+---
+
+# 136. OpenAPI
 
 Expected:
 
 ```text
-NONE
+wire-contract changes: NONE
 ```
 
-Do not modify Next.js, Flutter, or design system.
+The existing CartItem fields are sufficient:
+
+```text
+availability
+stock_indicator
+is_purchasable
+```
+
+Only correct OpenAPI if a genuine implementation/documentation drift is discovered.
 
 ---
 
-# 134. Documentation
+# 137. No New Public Error
 
-Update:
+Expected:
 
 ```text
-docs/decisions.md
+new V1 error codes: NONE
 ```
 
-with a Phase 6.6 backend ADR if repository conventions continue that sequence.
+---
+
+# 138. Documentation
+
+Add the normal backend ADR for Phase 6.7.
 
 Record:
 
 ```text
-shared validator/resolver
-three validation contexts
-quantity-aware is_purchasable
-error mappings
-no-reservation boundary
+cart-wide stock revalidation design
+batch/current inventory resolution
+CartItemEligibility reuse
+quantity-aware behavior
+no persistence/no locks/no reservation
+performance/N+1 decision
+Checkout authority boundary
 ```
 
 ---
 
-# 135. OpenAPI
+# 139. Suggested ADR Name
 
-Expected wire contract change:
+For example:
 
 ```text
-NONE
+ADR/BACKEND-035 —
+Cart-Wide Live Stock Revalidation
 ```
 
-unless Phase 6.6 discovers existing runtime/OpenAPI drift.
+Use the actual next repository ADR number.
 
-Do not add validation-reason fields.
+Do not assume `035` if another accepted ADR has already taken it.
 
 ---
 
-# 136. Likely Implementation Areas
+# 140. Likely Implementation Areas
 
 Expected:
 
 ```text
-app/Services/Cart/
-app/Domain/Cart/
-shared Cart item validation/result object
-AddCartItem
-UpdateCartItemQuantity
-CartItemResource/projection
-tests/Feature/
-tests/Unit/
+app/Services/Cart/CartStockRevalidator.php
+app/Services/Cart/CartItemEligibility.php
+app/Services/Cart/CartItemValidationResult.php
+app/Support/CatalogAvailability.php
+app/Http/Resources/CartResource.php
+app/Http/Resources/CartItemResource.php
+Cart query/projection service
+tests/Feature/CartStockRevalidationTest.php
+tests/Unit/... where useful
 docs/decisions.md
 ```
 
-Use actual project naming conventions.
+Modify only what is actually necessary.
 
 ---
 
-# 137. Code Quality
+# 141. Avoid God Revalidator
 
-Use `.github/instructions/sonarqube_mcp.instructions.md` to analyze the code
+`CartStockRevalidator` should not absorb:
 
-And also
+```text
+holder authentication
+guest token handling
+Cart mutation
+price calculation
+inventory reservation
+checkout
+```
+
+Its concern is current Cart-level stock evaluation.
+
+---
+
+# 142. Controller Changes
+
+Expected controller changes should be minimal or none.
+
+Do not move stock logic into `CartController`.
+
+---
+
+# 143. Resource Changes
+
+Resources should become simpler if stock evaluation previously happened lazily inside serialization.
+
+Do not make them more business-heavy.
+
+---
+
+# 144. Existing `CartItemEligibility`
+
+Do not weaken its invariant that it is the sole Cart rule source.
+
+The revalidator orchestrates it; it does not compete with it.
+
+---
+
+# 145. Existing `CartItemInvalidReason`
+
+Reuse internal reasons.
+
+Do not add stock-revalidation-specific public states unnecessarily.
+
+If an internal reason such as insufficient quantity already exists:
+
+reuse it.
+
+---
+
+# 146. Effective Quantity
+
+For existing Cart revalidation:
+
+```text
+effective quantity = CartItem.quantity
+```
+
+No duplicate-add calculation is involved.
+
+---
+
+# 147. CART-002 Effective Quantity
+
+CART-002 still uses:
+
+```text
+min(existing + requested, 100)
+```
+
+for duplicate add before stock sufficiency evaluation.
+
+Do not change this while integrating shared stock loading.
+
+---
+
+# 148. CART-003 Effective Quantity
+
+CART-003 still uses:
+
+```text
+requested quantity
+```
+
+as effective quantity.
+
+---
+
+# 149. No Mutation Semantics Change
+
+Phase 6.7 must not change:
+
+```text
+CART-002 status codes
+CART-003 behavior
+CART-004 204 behavior
+quantity clamp semantics
+timestamps
+holder resolution
+guest transport
+```
+
+---
+
+# 150. Guest Carts
+
+Stock revalidation works identically for:
+
+```text
+guest Cart
+authenticated Cart
+Staff/Admin personal Cart
+```
+
+once holder resolution has supplied the Cart.
+
+Do not create different inventory semantics for guests.
+
+---
+
+# 151. Credential Handling
+
+Do not touch:
+
+```text
+GuestCartCredential
+GuestCartTransport
+```
+
+unless a genuine bug is discovered.
+
+Stock revalidation must never see the raw guest credential.
+
+---
+
+# 152. Security
+
+Cart revalidation must not expose:
+
+```text
+warehouse_location
+physical quantity
+reserved quantity
+internal ProductStock IDs
+supplier data
+```
+
+---
+
+# 153. Internal Availability Map
+
+If using a map such as:
+
+```text
+variant_id → aggregate available quantity
+```
+
+keep it internal to the request/service.
+
+Do not serialize it.
+
+---
+
+# 154. Numeric Safety
+
+Quantities remain integers.
+
+No floating point.
+
+Use database integer values and PHP integer arithmetic.
+
+---
+
+# 155. Empty/Missing Stock Rows
+
+For IN_STOCK Variant with no ProductStock rows:
+
+follow Group E authority.
+
+Expected conceptual result:
+
+```text
+available quantity = 0
+availability = unavailable
+is_purchasable = false
+```
+
+Do not fabricate stock.
+
+---
+
+# 156. Zero Stock Rows
+
+Persisted zero-stock rows remain meaningful.
+
+Treat aggregate available as zero.
+
+---
+
+# 157. Inactive Variant Inventory
+
+Inventory belonging to an inactive Variant must not make its Cart line purchasable.
+
+Product/Variant requirement failure precedes stock.
+
+---
+
+# 158. Other Variant Inventory
+
+Do not use stock from another active Variant of the same Product to satisfy a CartItem targeting a specific Variant.
+
+Inventory is Variant-specific.
+
+---
+
+# 159. Product-Level Availability vs Cart Variant
+
+Cart line validation should use the referenced sellable Variant's inventory.
+
+Do not use Product-level aggregate availability across sibling Variants to satisfy a specific Variant line.
+
+Example:
+
+```text
+Sofa red: 0
+Sofa blue: 10
+Cart contains red
+```
+
+Red remains unavailable.
+
+---
+
+# 160. Critical Variant Regression
+
+Add a test for:
+
+```text
+same Product
+Variant A available = 0
+Variant B available = 10
+Cart line references Variant A
+```
+
+Expected:
+
+```text
+Cart line unavailable / not purchasable
+```
+
+Do not borrow Variant B stock.
+
+---
+
+# 161. Multi-Location Is Within Same Variant
+
+Aggregation is across:
+
+```text
+locations for one Variant
+```
+
+not across sibling Variants.
+
+---
+
+# 162. Stock Indicator Scope
+
+Use the same Variant/Product scope already established by Cart projection.
+
+Do not accidentally calculate a Variant line's stock indicator from sibling Variant stock.
+
+---
+
+# 163. Stale Product Price vs Stock
+
+Do not perform stock aggregation solely to make an inactive Product display a stock indicator if Phase 6.6 already short-circuits it.
+
+Preserve established projection behavior.
+
+---
+
+# 164. Failure Handling
+
+If an unexpected inventory query failure occurs:
+
+use existing application error handling.
+
+Do not convert infrastructure failure into:
+
+```text
+INSUFFICIENT_STOCK
+```
+
+That error means authoritative business stock shortage, not database failure.
+
+---
+
+# 165. No Exception Swallowing
+
+Do not silently treat:
+
+```text
+database unavailable
+```
+
+as:
+
+```text
+available = 0
+```
+
+That would falsely report business state.
+
+---
+
+# 166. Observability
+
+Normal safe logs may identify:
+
+```text
+request_id
+Cart operation
+safe internal IDs
+unexpected failure class
+```
+
+Never log guest bearer credential.
+
+No new monitoring framework required.
+
+---
+
+# 167. Unit Tests
+
+Useful unit coverage may include:
+
+```text
+quantity comparison
+availability map integration
+invalid-line short circuiting
+Variant-specific lookup
+```
+
+Do not duplicate Phase 6.6 error-mapping tests unnecessarily.
+
+---
+
+# 168. Feature Tests
+
+Feature tests should prove what a Cart client actually sees after inventory drift.
+
+This is the main value of Phase 6.7.
+
+---
+
+# 169. MariaDB Requirement
+
+The revalidation calculation itself does not require concurrency locks.
+
+SQLite is sufficient for most semantic coverage.
+
+Use MariaDB only where:
+
+```text
+production query shape
+aggregation behavior
+or an existing MySQL-specific regression
+```
+
+requires verification.
+
+---
+
+# 170. Do Not Add Unnecessary Parallel Tests
+
+Phase 5.10 already proved reservation/overselling concurrency.
+
+Phase 6.7 is not another overselling phase.
+
+---
+
+# 171. Still Run Existing MariaDB Gate
+
+Run the existing Cart mutation concurrency gate as regression because shared services may have changed.
+
+Do not create redundant stock race suites.
+
+---
+
+# 172. Query-Portability
+
+Any new aggregate query must work on:
+
+```text
+SQLite
+MySQL/MariaDB
+```
+
+unless cleanly isolated behind an explicit driver-specific implementation.
+
+Prefer portable SQL/Eloquent.
+
+---
+
+# 173. No FULLTEXT Interaction
+
+Phase 6.7 has nothing to do with search.
+
+Do not touch ProductCatalogQuery FULLTEXT logic.
+
+---
+
+# 174. Code Quality
 
 Maintain:
 
 ```text
 cognitive complexity <= 15
 <= 3 returns where practical
+small orchestration service
+single availability authority
 single Cart eligibility authority
-no Product/Variant rule duplication
-no stock arithmetic duplication
-thin controllers/resources
+no queries in Resource where avoidable
+no duplicated stock formulas
 ```
 
 ---
 
-# 138. Verification
+# 175. Focused Verification
 
-Use sonarqube to analyze the codebase changes for code quality and security. Instructions are in `.github/instructions/sonarqube_mcp.instructions.md`.
+Run focused suites including actual repository equivalents of:
 
-Run focused Cart tests.
+```text
+CartReadApiTest
+CartPurchasabilityApiTest
+CartStockRevalidationTest
+CartAddItemApiTest
+CartUpdateItemApiTest
+CartRemoveItemApiTest
+CartMutationConcurrencyMysqlTest
+```
 
-Then:
+---
+
+# 176. Canonical Verification
+
+Then run:
 
 ```bash
 php artisan test
@@ -2181,15 +2571,42 @@ git diff --check
 php artisan route:list
 ```
 
-Rerun the existing MariaDB Cart mutation concurrency gate.
+---
+
+# 177. Route Verification
+
+Phase 6.7 must introduce:
+
+```text
+new routes = NONE
+```
+
+Verify the Cart route set remains unchanged.
 
 ---
 
-# 139. Completion Report
+# 178. OpenAPI Verification
+
+Confirm Phase 6.7 did not accidentally alter:
+
+```text
+Cart
+CartItem
+CART-001
+CART-002
+CART-003
+CART-004
+```
+
+wire shapes/statuses.
+
+---
+
+# 179. Completion Report
 
 Return:
 
-## Phase 6.6 status
+## Phase 6.7 status
 
 ```text
 PASS
@@ -2201,103 +2618,98 @@ or:
 BLOCKED
 ```
 
-## Codebase analysis
-
-use `.github/instructions/sonarqube_mcp.instructions.md` to enforce and analyze the code for code quality and security
-
-## Shared validation
-
-State the final central component(s).
-
-## Validation contexts
+## Revalidation architecture
 
 Report:
 
 ```text
-admission
-mutation
-projection
+cart-wide orchestration component
+CartItemEligibility reuse
+CatalogAvailability reuse
 ```
 
-and how their outcomes differ.
+## Stock authority
 
-## Product rules
+State exact source/formula.
 
-Report:
-
-```text
-active
-published
-not deleted
-Category active
-IN_STOCK
-```
-
-## Variant rules
-
-Report:
-
-```text
-required semantics
-exists
-parent-owned
-active
-```
-
-## Quantity
-
-Report:
-
-```text
-1..100
-duplicate-add clamp preserved
-effective quantity handling
-```
-
-## Stock
-
-Report:
-
-```text
-aggregate Group E available quantity
-quantity-aware Cart purchasability
-```
-
-## `is_purchasable`
-
-State the exact formula.
-
-## Error mapping
-
-Report exact mapping for:
-
-```text
-MADE_TO_ORDER
-Product unavailable
-Variant invalid
-quantity invalid
-insufficient stock
-```
-
-## Stale Cart behavior
+## Quantity awareness
 
 Confirm:
 
 ```text
-preserved
-not silently mutated
-removable
+available >= CartItem.quantity
 ```
 
-## Inventory boundary
+is required for line-level purchasability.
+
+## Variant scope
+
+Confirm stock is Variant-specific and sibling Variant stock is never borrowed.
+
+## Multi-location
+
+Report aggregate semantics.
+
+## Live drift
+
+Report tests for:
+
+```text
+stock decrease
+reservation increase
+reservation release
+inventory increase
+```
+
+and automatic Cart projection changes.
+
+## Performance
+
+Report:
+
+```text
+query strategy
+N+1 result
+batch availability behavior
+```
+
+## Persistence
 
 Must state:
 
 ```text
+Cart mutations: NONE
+CartItem mutations: NONE
 ProductStock mutations: NONE
 reserved_quantity mutations: NONE
+```
+
+for revalidation.
+
+## Locking
+
+Must state:
+
+```text
 ProductStock locks: NONE
-reservations: NONE
+```
+
+## Reservation
+
+Must state:
+
+```text
+inventory reservation: NONE
+```
+
+## Public API
+
+Must state:
+
+```text
+new endpoints: NONE
+new fields: NONE
+new error codes: NONE
 ```
 
 ## Schema
@@ -2320,11 +2732,11 @@ NONE
 
 ## Tests
 
-Report focused/full counts.
+Report exact focused and canonical results.
 
 ## MariaDB
 
-Report Cart mutation concurrency regression status.
+Report existing mutation concurrency regression status.
 
 ## Quality
 
@@ -2337,7 +2749,7 @@ Composer audit
 git diff --check
 ```
 
-## Phase 6.7 readiness
+## Phase 6.8 readiness
 
 Return:
 
@@ -2351,95 +2763,117 @@ or:
 BLOCKED
 ```
 
+with exact reason.
+
 ---
 
-# 140. Definition of Done
+# 180. Definition of Done
 
-Phase 6.6 is complete when:
+Phase 6.7 is complete when:
 
-* Cart validation rules have one authoritative implementation;
-* admission, mutation, and projection contexts are explicitly distinguished;
-* CART-002 uses shared validation;
-* CART-003 uses shared validation;
-* CART-001 projection uses shared purchasability evaluation;
-* CART-004 intentionally bypasses Product/stock purchasability checks;
-* inactive Product behavior is consistent;
-* unpublished Product behavior is consistent;
-* soft-deleted Product behavior is consistent;
-* inactive Category behavior is consistent;
-* MADE_TO_ORDER behavior is consistent;
-* Variant ownership validation is consistent;
-* inactive Variant behavior is consistent;
-* quantity validation is centralized;
-* duplicate-add clamp semantics remain unchanged;
-* direct PATCH quantity >100 remains rejected;
-* stock validation uses Group E aggregate available quantity;
-* reserved stock is accounted for;
-* multi-location inventory remains correct;
-* `is_purchasable` is quantity-aware;
-* coarse `availability` is not incorrectly used as a substitute for line-level purchasability;
-* stale lines remain visible;
-* stale lines are never silently removed;
-* stale quantity is never silently reduced;
-* stale lines remain removable;
-* stock recovery automatically makes eligible lines purchasable again;
-* Product recovery automatically updates projection;
-* Cart GET causes no persistence mutation;
-* no ProductStock mutation occurs;
-* no stock reservation occurs;
-* no ProductStock lock is introduced;
-* existing Cart mutation concurrency remains safe;
-* MariaDB Cart concurrency tests remain green;
-* no API schema expansion occurs;
-* no Cart schema change occurs;
-* no frontend changes occur;
-* PHPStan reports zero new errors;
+* Cart stock is revalidated from live Group E inventory;
+* revalidation is Cart-wide rather than ad hoc per Resource;
+* `CartItemEligibility` remains the single Cart-domain eligibility authority;
+* `CartItemValidationResult` is reused;
+* Group E availability logic remains the single stock arithmetic authority;
+* current reserved quantities reduce Cart-visible purchasability;
+* multi-location stock aggregates correctly per Variant;
+* sibling Variant stock cannot satisfy another Variant;
+* a full Cart-line quantity must be satisfiable for `is_purchasable=true`;
+* coarse `availability` remains independent of requested Cart quantity;
+* LOW_STOCK remains informational;
+* stock decrease is reflected on the next Cart read;
+* reservation changes are reflected on the next Cart read;
+* inventory increases/release can automatically restore purchasability;
+* stale lines remain stored and visible;
+* quantities are never silently reduced;
+* unavailable lines are never silently deleted;
+* revalidation performs no Cart persistence mutation;
+* revalidation performs no CartItem persistence mutation;
+* revalidation performs no ProductStock mutation;
+* revalidation performs no `reserved_quantity` mutation;
+* revalidation acquires no ProductStock write locks;
+* revalidation creates no inventory reservation;
+* empty Cart revalidation performs no unnecessary inventory work;
+* inventory-invalid Product/Variant lines short-circuit before stock lookup;
+* stock loading avoids N+1 behavior;
+* Resources do not independently reinvent stock logic;
+* no new Cart endpoint is added;
+* no new response field is added;
+* no new V1 error code is added;
+* no schema migration is added;
+* no dependency is added;
+* no frontend code is changed;
+* existing add/update/remove semantics remain unchanged;
+* existing MariaDB Cart mutation concurrency remains green;
+* Group E availability regressions remain green;
+* full canonical test suite remains green;
+* PHPStan reports zero errors;
 * Pint passes;
 * Composer audit remains clean.
 
 ---
 
-# 141. Out of Scope
+# 181. Out of Scope
 
 Do not implement:
 
 ```text
-CART-005 merge
+CART-005 guest-cart merge
 merge idempotency
-new Cart validation endpoint
 checkout
+order creation
+delivery selection
+delivery fee
 inventory reservation
-Order creation
 payment
-automatic stale-line cleanup
+stock allocation persistence
+warehouse selection
+stock notifications
+Cart validation endpoint
+automatic stale-item cleanup
 automatic quantity correction
-frontend warnings/UI
+frontend Cart warnings
 ```
 
 ---
 
-# 142. STOP Condition
+# 182. STOP Condition
 
-STOP when every Cart path answers Product/Variant/quantity validity through the same shared Cart-domain validation rules, while preserving the deliberate difference:
+STOP when a Cart containing existing items can be read at any later time and accurately reflect the **current live stock situation** without changing the Cart itself:
 
 ```text
-new invalid item
-→ reject
+Cart quantity <= live available
+→ is_purchasable true
 
-invalid quantity mutation
-→ reject
+Cart quantity > live available > 0
+→ availability available
+→ is_purchasable false
 
-existing stale line
-→ retain + is_purchasable false
-
-remove stale line
-→ allow
+live available = 0
+→ availability unavailable
+→ is_purchasable false
 ```
 
-and a Cart line is considered purchasable only when the **entire requested Cart quantity** can currently be satisfied.
+while stock is calculated:
 
-Do not continue automatically to Phase 6.7.
+```text
+per Variant
+across that Variant's locations
+after reserved quantity
+```
 
-DO NOT COMMIT OR PUSH.
+and revalidation performs:
+
+```text
+no stock mutation
+no reservation
+no ProductStock lock
+no Cart mutation
+```
+
+Do not continue automatically to Phase 6.8.
+
+DO NOT COMMIT, STAGE OR PUSH.
 
 The project owner handles all Git operations.
