@@ -50,7 +50,7 @@ class CartController extends V1Controller
 
         try {
             $item = $addItem->add($cart, $product, $variant, (int) $request->validated('quantity'));
-        } catch (\Throwable $exception) {
+        } catch (\Exception $exception) {
             $this->discardUnreachableGuestCart($cart);
 
             throw $exception;

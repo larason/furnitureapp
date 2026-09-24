@@ -28,10 +28,15 @@ final class CartItemAdmission
             throw new ApiException(ApiErrorCode::INVALID_PRODUCT_VARIANT, 'The selected variant is not available for this product.', 422, 'variant_id');
         }
 
-        $product = $this->validatedProduct($productId === null ? null : Product::withTrashed()->find($productId));
+        $product = $this->validatedProduct($this->findProduct($productId));
         $variant = $this->validatedVariant($product, $variantId === null ? null : ProductVariant::find($variantId));
 
         return [$product, $variant];
+    }
+
+    public function findProduct(?int $productId): ?Product
+    {
+        return $productId === null ? null : Product::withTrashed()->withExists('variants')->find($productId);
     }
 
     public function validatedProduct(?Product $product): Product
@@ -50,11 +55,18 @@ final class CartItemAdmission
             throw new ApiException(ApiErrorCode::PRODUCT_NOT_PURCHASABLE, 'The product must be requested instead of purchased.', 422, 'product_id');
         }
 
-        if (! $product->variants()->exists()) {
+        if (! $this->hasPurchasableVariants($product)) {
             throw new ApiException(ApiErrorCode::PRODUCT_NOT_PURCHASABLE, 'The product has no purchasable variant.', 422, 'product_id');
         }
 
         return $product;
+    }
+
+    private function hasPurchasableVariants(Product $product): bool
+    {
+        return $product->variants_exists !== null
+            ? (bool) $product->variants_exists
+            : $product->variants()->exists();
     }
 
     public function validatedVariant(Product $product, ?ProductVariant $variant): ProductVariant

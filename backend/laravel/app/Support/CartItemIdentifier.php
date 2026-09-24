@@ -15,18 +15,38 @@ final class CartItemIdentifier
 
     public static function decode(string $identifier): ?int
     {
-        if (! str_starts_with($identifier, self::PREFIX)) {
-            return null;
+        $decoded = null;
+
+        if (str_starts_with($identifier, self::PREFIX)) {
+            $value = substr($identifier, strlen(self::PREFIX));
+
+            if ($value !== '' && preg_match('/^[0-9a-z]+$/', $value) === 1) {
+                $decoded = self::toInt($value);
+            }
         }
 
-        $value = substr($identifier, strlen(self::PREFIX));
+        return $decoded;
+    }
 
-        if ($value === '' || preg_match('/^[0-9a-z]+$/', $value) !== 1) {
-            return null;
+    private static function toInt(string $value): ?int
+    {
+        $decoded = 0;
+
+        for ($i = 0, $length = strlen($value); $i < $length; $i++) {
+            $digit = self::digitValue($value[$i]);
+
+            if ($decoded > intdiv(PHP_INT_MAX - $digit, 36)) {
+                return null;
+            }
+
+            $decoded = $decoded * 36 + $digit;
         }
 
-        $decoded = base_convert($value, 36, 10);
+        return $decoded > 0 ? $decoded : null;
+    }
 
-        return ctype_digit($decoded) && (int) $decoded > 0 ? (int) $decoded : null;
+    private static function digitValue(string $character): int
+    {
+        return $character <= '9' ? (int) $character : ord($character) - 87;
     }
 }

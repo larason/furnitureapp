@@ -4,7 +4,6 @@ namespace App\Services\Cart;
 
 use App\Exceptions\Api\ApiException;
 use App\Models\CartItem;
-use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Support\ApiErrorCode;
 use App\Support\ConcurrentTransaction;
@@ -29,7 +28,7 @@ final class UpdateCartItemQuantity
                 throw new ApiException(ApiErrorCode::CART_ITEM_NOT_FOUND, 'The requested cart item was not found.', 404);
             }
 
-            $product = $this->admission->validatedProduct(Product::withTrashed()->find($locked->product_id));
+            $product = $this->admission->validatedProduct($this->admission->findProduct($locked->product_id));
             $variant = $this->admission->validatedVariant(
                 $product,
                 $locked->variant_id === null ? null : ProductVariant::find($locked->variant_id),

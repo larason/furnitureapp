@@ -92,7 +92,12 @@ final class CartItemResource extends JsonResource
         return $this->money((int) $variant->price_amount, $variant->price_currency);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Embedded `ProductSummary`: `price` is the product's catalog price
+     * (cheapest active variant), independent of this line's variant `unit_price`.
+     *
+     * @return array<string, mixed>
+     */
     private function productSummary(Product $product): array
     {
         $cheapestActive = $product->variants
