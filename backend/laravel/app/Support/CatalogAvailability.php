@@ -19,7 +19,7 @@ final class CatalogAvailability
         if ($availableQuantity === null) {
             $availableQuantity = $product->variants
                 ->where('is_active', true)
-                ->sum(fn (ProductVariant $variant): int => self::variantAvailableQuantity($variant));
+                ->sum(fn (ProductVariant $variant): int => self::availableQuantity($variant));
         }
 
         return self::fromQuantity((int) $availableQuantity);
@@ -31,10 +31,10 @@ final class CatalogAvailability
             return ['availability' => 'available', 'stock_indicator' => 'MADE_TO_ORDER'];
         }
 
-        return self::fromQuantity(self::variantAvailableQuantity($variant));
+        return self::fromQuantity(self::availableQuantity($variant));
     }
 
-    private static function variantAvailableQuantity(ProductVariant $variant): int
+    public static function availableQuantity(ProductVariant $variant): int
     {
         return (int) $variant->stocks->sum(
             fn ($stock): int => $stock->quantity - $stock->reserved_quantity

@@ -32,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property-read string|null $summary_price_currency
  * @property-read int|null $summary_available_quantity
  * @property-read int|null $summary_has_available_stock
+ * @property-read int|null $variants_exists
  * @property-read Category $category
  * @property-read ProductImage|null $primaryImage
  * @property-read Collection<int, ProductImage> $images

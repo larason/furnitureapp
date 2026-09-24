@@ -81,7 +81,6 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     Route::middleware('clerk.auth')->prefix('me')->name('me.')->group(function (): void {
         Route::middleware('throttle:authenticated-read')->group(function (): void {
             Route::get('/', [MeController::class, 'show'])->name('show');
-            Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
             Route::get('/orders', [CustomerOrderController::class, 'index'])->name('orders.index');
             Route::get('/orders/{order}', [CustomerOrderController::class, 'show'])->name('orders.show');
             Route::get('/orders/{order}/tracking', [CustomerOrderController::class, 'tracking'])->name('orders.tracking');
@@ -94,14 +93,31 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
 
         Route::patch('/', [MeController::class, 'update'])->middleware('throttle:authenticated-write')->name('update');
 
-        Route::post('/cart/items', [CartController::class, 'addItem'])->middleware('throttle:cart-add')->name('cart.items.store');
-        Route::patch('/cart/items/{item}', [CartController::class, 'updateItem'])->middleware('throttle:authenticated-write')->name('cart.items.update');
-        Route::delete('/cart/items/{item}', [CartController::class, 'removeItem'])->middleware('throttle:authenticated-write')->name('cart.items.destroy');
         Route::post('/cart/merge', [CartController::class, 'merge'])->middleware('throttle:authenticated-write')->name('cart.merge');
 
         Route::post('/orders/{order}/cancel', [CustomerOrderController::class, 'cancel'])->middleware('throttle:order-cancel')->name('orders.cancel');
         Route::patch('/notifications/{notification}', [NotificationController::class, 'meUpdate'])->middleware('throttle:authenticated-write')->name('notifications.update');
     });
+
+    // ---------------------------------------------------------------------
+    // CART — holder-scoped create/get. Optional Clerk auth so anonymous
+    // guests can resolve/create their own guest cart via the guest credential.
+    // ---------------------------------------------------------------------
+    Route::middleware(['clerk.optional', 'throttle:authenticated-read'])
+        ->get('/me/cart', [CartController::class, 'show'])
+        ->name('me.cart.show');
+
+    Route::middleware(['clerk.optional', 'throttle:cart-add'])
+        ->post('/me/cart/items', [CartController::class, 'addItem'])
+        ->name('me.cart.items.store');
+
+    Route::middleware(['clerk.optional', 'throttle:authenticated-write'])
+        ->patch('/me/cart/items/{item}', [CartController::class, 'updateItem'])
+        ->name('me.cart.items.update');
+
+    Route::middleware(['clerk.optional', 'throttle:authenticated-write'])
+        ->delete('/me/cart/items/{item}', [CartController::class, 'removeItem'])
+        ->name('me.cart.items.destroy');
 
     // ---------------------------------------------------------------------
     // CHECKOUT — authenticated customer only

@@ -199,6 +199,14 @@ components:
         not guessable, unpredictable) scoped strictly to its bound guest cart (authorizes that cart only); never authorizes
         account operations and never authorizes merge by itself (merge requires authenticated principal + valid guest token
         + server-side check); retired after merge
+    GuestCartCookie:
+      name: guest_cart_id
+      in: cookie
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Browser transport for the same opaque guest cart bearer credential. Mutually exclusive with `X-Guest-Cart-Id`; supplying both is rejected. HttpOnly/Secure/SameSite=None on issuance.
     UploadToken:
       name: X-Upload-Token
       in: header
@@ -803,13 +811,17 @@ components:
           maximum: 100
           example: 1
         unit_price:
-          $ref: '#/components/schemas/Money'
+          anyOf:
+          - $ref: '#/components/schemas/Money'
+          - type: 'null'
           readOnly: true
-          description: Current catalog unit price
+          description: Current catalog unit price; null only for a stale/unpriceable line (no resolvable variant price), which is never fabricated as zero
         line_total:
-          $ref: '#/components/schemas/Money'
+          anyOf:
+          - $ref: '#/components/schemas/Money'
+          - type: 'null'
           readOnly: true
-          description: unit_price * quantity
+          description: unit_price * quantity; null when unit_price is null (stale/unpriceable line)
         availability:
           $ref: '#/components/schemas/Availability'
           readOnly: true
@@ -870,6 +882,10 @@ components:
           type:
           - string
           - 'null'
+          description: >-
+            Conditionally required. Required when the referenced product defines variants (V1 is variant-priced); must
+            reference an active variant belonging to `product_id`, otherwise `422 INVALID_PRODUCT_VARIANT`. Omit/null
+            only for a product that has no variants, which is not purchasable in V1 (`422 PRODUCT_NOT_PURCHASABLE`).
         quantity:
           type: integer
           minimum: 1
@@ -2554,11 +2570,22 @@ paths:
       summary: Get cart
       security:
       - bearerAuth: []
+      - {}
       parameters:
       - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       responses:
         '200':
           description: OK
+          headers:
+            Set-Cookie:
+              description: Browser guest credential (`guest_cart_id`), issued only when a new guest cart is created; HttpOnly, Secure, SameSite=None
+              schema:
+                type: string
+            X-Guest-Cart-Id:
+              description: Non-browser guest credential, issued only when a new guest cart is created
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -2568,6 +2595,11 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Cart'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      description: Create-or-get the holder's ACTIVE cart. Optional Clerk bearer; anonymous guests use the guest credential (cookie or header). Invalid attempted bearer or guest credential returns 401; lazy creation returns 200 with an empty cart.
   /me/cart/items:
     post:
       operationId: CART-002
@@ -2576,6 +2608,10 @@ paths:
       summary: Add item
       security:
       - bearerAuth: []
+      - {}
+      parameters:
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       requestBody:
         required: true
         content:
@@ -2584,7 +2620,27 @@ paths:
               $ref: '#/components/schemas/AddCartItemRequest'
       responses:
         '201':
-          description: Created
+          description: Created (new line); duplicate additions merge into an existing line and return 200
+          headers:
+            Set-Cookie:
+              description: Browser guest credential, issued only when a new guest cart is created
+              schema:
+                type: string
+            X-Guest-Cart-Id:
+              description: Non-browser guest credential, issued only when a new guest cart is created
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+        '200':
+          description: OK (quantity merged into an existing (product_id, variant_id) line, clamped to 100)
           content:
             application/json:
               schema:
@@ -2608,8 +2664,11 @@ paths:
       summary: Update item
       security:
       - bearerAuth: []
+      - {}
       parameters:
       - $ref: '#/components/parameters/ItemPath'
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       responses:
         '200':
           description: OK
@@ -2645,8 +2704,11 @@ paths:
       summary: Remove item
       security:
       - bearerAuth: []
+      - {}
       parameters:
       - $ref: '#/components/parameters/ItemPath'
+      - $ref: '#/components/parameters/GuestCartId'
+      - $ref: '#/components/parameters/GuestCartCookie'
       responses:
         '204':
           description: No content

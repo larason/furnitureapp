@@ -13,6 +13,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $product_id
+ * @property string $sku
+ * @property string $variant_name
+ * @property int $price_amount
+ * @property string $price_currency
+ * @property bool $is_active
  * @property-read Product|null $product
  * @property-read Collection<int, ProductStock> $stocks
  */

@@ -19,4 +19,6 @@ return [
 
     'guest_token_key' => env('GUEST_CART_TOKEN_KEY', ''),
 
+    'guest_cookie_secure' => (bool) env('GUEST_CART_COOKIE_SECURE', true),
+
 ];
