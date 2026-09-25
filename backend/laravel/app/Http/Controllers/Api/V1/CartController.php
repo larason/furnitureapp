@@ -5,25 +5,32 @@ namespace App\Http\Controllers\Api\V1;
 use App\Exceptions\Api\ApiException;
 use App\Http\Requests\AddCartItemRequest;
 use App\Http\Requests\UpdateCartItemRequest;
-use App\Http\Resources\CartResource;
 use App\Models\Cart;
 use App\Models\CartItem;
+use App\Models\User;
 use App\Services\Cart\AddCartItem;
 use App\Services\Cart\CartHolder;
 use App\Services\Cart\CartHolderResolver;
 use App\Services\Cart\CartItemAdmission;
+use App\Services\Cart\CartProjection;
 use App\Services\Cart\GetOrCreateActiveCart;
 use App\Services\Cart\GuestCartTransport;
+use App\Services\Cart\MergeGuestCart;
 use App\Services\Cart\RemoveCartItem;
 use App\Services\Cart\UpdateCartItemQuantity;
+use App\Services\IdempotencyService;
 use App\Support\ApiErrorCode;
 use App\Support\CartItemIdentifier;
+use App\Support\GuestCartCredential;
+use App\Support\IdempotencyKeyHeader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class CartController extends V1Controller
 {
+    public function __construct(private readonly CartProjection $projection) {}
+
     public function show(
         Request $request,
         CartHolderResolver $resolver,
@@ -91,6 +98,38 @@ class CartController extends V1Controller
         return response()->noContent()->withHeaders($this->privateHeaders());
     }
 
+    public function merge(
+        Request $request,
+        GuestCartTransport $transport,
+        MergeGuestCart $merge,
+        IdempotencyService $idempotency,
+    ): JsonResponse {
+        $actor = $request->user();
+
+        if (! $actor instanceof User) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
+        }
+
+        $key = IdempotencyKeyHeader::require($request);
+        $credential = $transport->readCredential($request);
+
+        if ($credential === null) {
+            throw new ApiException(ApiErrorCode::MISSING_REQUIRED_FIELD, 'The guest cart credential is required.', 422, GuestCartTransport::HEADER);
+        }
+
+        $digest = GuestCartCredential::digest($credential);
+
+        $outcome = $idempotency->execute(
+            $actor,
+            MergeGuestCart::ACTION,
+            $key,
+            ['source_guest_digest' => $digest],
+            fn (): array => $this->projection->render($merge->merge($actor, $digest)),
+        );
+
+        return response()->json(['data' => $outcome->body])->withHeaders($this->privateHeaders());
+    }
+
     /** CART-004 is bodyless; a body carrying fields is a strict unknown-field violation. */
     private function rejectRequestBody(Request $request): void
     {
@@ -108,11 +147,6 @@ class CartController extends V1Controller
         }
 
         return $request->request->all() !== [];
-    }
-
-    public function merge(): JsonResponse
-    {
-        return $this->notImplemented();
     }
 
     private function discardUnreachableGuestCart(Cart $cart): void
@@ -145,10 +179,9 @@ class CartController extends V1Controller
         int $status = 200,
     ): JsonResponse {
         $wasRecentlyCreated = $cart->wasRecentlyCreated;
-        $this->loadCart($cart);
 
         $response = response()
-            ->json(['data' => (new CartResource($cart))->resolve()], $status)
+            ->json(['data' => $this->projection->render($cart)], $status)
             ->withHeaders($this->privateHeaders());
 
         if ($holder->user === null && ! $holder->credentialSupplied && $wasRecentlyCreated && $holder->rawToken !== null) {
@@ -156,20 +189,6 @@ class CartController extends V1Controller
         }
 
         return $response;
-    }
-
-    private function loadCart(Cart $cart): void
-    {
-        $cart->load([
-            'items' => fn ($query) => $query->orderBy('created_at')->orderBy('id'),
-            'items.product' => fn ($query) => $query->withTrashed(),
-            'items.product.category',
-            'items.product.primaryImage',
-            'items.product.variants',
-            'items.product.variants.stocks',
-            'items.variant',
-            'items.variant.stocks',
-        ]);
     }
 
     /** @return array<string, string> */

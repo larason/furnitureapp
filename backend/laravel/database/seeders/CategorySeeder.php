@@ -44,9 +44,19 @@ class CategorySeeder extends Seeder
 
     private function seedRecommendations(): void
     {
-        foreach (self::recommendations() as $mapping) {
-            $source = Category::where('slug', $mapping['source'])->first();
-            $target = Category::where('slug', $mapping['target'])->first();
+        $mappings = self::recommendations();
+        $slugs = collect($mappings)
+            ->flatMap(fn (array $mapping): array => [$mapping['source'], $mapping['target']])
+            ->unique()
+            ->values();
+        $categories = Category::query()
+            ->whereIn('slug', $slugs)
+            ->get()
+            ->keyBy('slug');
+
+        foreach ($mappings as $mapping) {
+            $source = $categories->get($mapping['source']);
+            $target = $categories->get($mapping['target']);
 
             if (! $source || ! $target) {
                 continue;

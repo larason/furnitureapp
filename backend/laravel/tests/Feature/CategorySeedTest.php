@@ -30,6 +30,20 @@ class CategorySeedTest extends TestCase
         $this->assertSame($firstRecommendations, $secondRecommendations, 'Recommendation priorities and targets must be identical after repeated seeds');
     }
 
+    public function test_recommendation_seeding_batches_category_lookups(): void
+    {
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            if (preg_match('/from [`"]categories[`"].*where [`"]slug[`"] in/i', $query->sql) === 1) {
+                $queries[] = $query->sql;
+            }
+        });
+
+        $this->seed(CategorySeeder::class);
+
+        $this->assertCount(1, $queries);
+    }
+
     private function canonicalCategories(): array
     {
         return DB::table('categories')

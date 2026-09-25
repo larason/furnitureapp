@@ -11,6 +11,7 @@ use App\Models\ProductStock;
 use App\Models\User;
 use App\Services\InventoryAdjustmentService;
 use App\Support\ApiErrorCode;
+use App\Support\IdempotencyKeyHeader;
 use App\Support\InventoryAdjustmentReason;
 use App\Support\InventoryIdentifier;
 use App\Support\ProductIdentifier;
@@ -19,7 +20,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Str;
 
 class InventoryController extends V1Controller
 {
@@ -71,7 +71,7 @@ class InventoryController extends V1Controller
             (int) $request->validated('quantity_delta'),
             InventoryAdjustmentReason::from((string) $request->validated('reason')),
             $this->actor($request),
-            $this->idempotencyKey($request),
+            IdempotencyKeyHeader::require($request),
             (string) $request->attributes->get('request_id'),
         );
 
@@ -99,21 +99,6 @@ class InventoryController extends V1Controller
         }
 
         return $user;
-    }
-
-    private function idempotencyKey(Request $request): string
-    {
-        $key = $request->header('Idempotency-Key');
-
-        if (! is_string($key) || trim($key) === '') {
-            throw new ApiException(ApiErrorCode::MISSING_REQUIRED_FIELD, 'The Idempotency-Key header is required.', 422, 'Idempotency-Key');
-        }
-
-        if (! Str::isUuid($key)) {
-            throw new ApiException(ApiErrorCode::INVALID_FORMAT, 'The Idempotency-Key header must be a UUID.', 422, 'Idempotency-Key');
-        }
-
-        return $key;
     }
 
     private function applyFilters(Builder $query, array $filters): void
