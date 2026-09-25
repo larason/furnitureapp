@@ -86,12 +86,10 @@ class CartMergeConcurrencyMysqlTest extends TestCase
             fn (): string => $this->idempotentMerge($user->id, $digest, $key),
         );
 
-        // One request performs the merge; the other either replays the recorded
-        // result or observes the claimed key as in-progress (shared idempotency).
-        $this->assertContains('merged', $results);
-        foreach ($results as $result) {
-            $this->assertContains($result, ['merged', 'error:CONFLICT']);
-        }
+        // Both same-key requests must receive the merge result: one performs it,
+        // the other replays the recorded outcome (Phase 6.8 §59/§98).
+        $this->assertSame('merged', $results[0]);
+        $this->assertSame('merged', $results[1]);
 
         $target = Cart::query()->where('user_id', $user->id)->where('status', CartStatus::ACTIVE)->sole();
         $line = CartItem::query()->where('cart_id', $target->id)->sole();

@@ -30,6 +30,9 @@ final class CartItemEligibility
         );
     }
 
+    /**
+     * Callers must provide a Product with its `category` relation eager-loaded.
+     */
     public static function productReason(Product $product): ?CartItemInvalidReason
     {
         return match (true) {
@@ -80,7 +83,7 @@ final class CartItemEligibility
         };
     }
 
-    public static function isPubliclyVisible(Product $product): bool
+    private static function isPubliclyVisible(Product $product): bool
     {
         return ! $product->trashed()
             && $product->is_active

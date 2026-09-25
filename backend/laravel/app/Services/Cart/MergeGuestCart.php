@@ -80,6 +80,11 @@ final class MergeGuestCart
         return [$lockedSource instanceof Cart ? $lockedSource : null, $lockedTarget];
     }
 
+    /**
+     * Runs while the source and target cart rows are locked (see merge()), so
+     * concurrent merges into one target serialise here; the CartItem identity
+     * unique constraint remains the final backstop.
+     */
     private function consolidate(Cart $source, Cart $target): void
     {
         $sourceItems = CartItem::query()
