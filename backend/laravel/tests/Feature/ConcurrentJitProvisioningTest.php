@@ -18,6 +18,12 @@ use Throwable;
 
 class ConcurrentJitProvisioningTest extends TestCase
 {
+    private const RESULT_STATUS_KEY = 'status';
+
+    private const RESULT_FILE_SUFFIX = '.result.';
+
+    private const RESULT_SUCCESS = 'success';
+
     public function test_concurrent_first_authenticated_requests_create_only_one_local_customer(): void
     {
         if (! function_exists('pcntl_fork')) {
@@ -41,7 +47,7 @@ class ConcurrentJitProvisioningTest extends TestCase
                 $connection['password'],
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
             );
-            $server->exec('CREATE DATABASE `'.$database.'`');
+            $server->exec(sprintf('CREATE DATABASE %s', $this->quoteMySqlIdentifier($database)));
             config(['database.connections.concurrency_mysql' => array_merge($connection, ['database' => $database])]);
             Artisan::call('migrate:fresh', ['--database' => 'concurrency_mysql', '--force' => true]);
             config(['database.default' => 'concurrency_mysql']);
@@ -58,7 +64,7 @@ class ConcurrentJitProvisioningTest extends TestCase
                 $this->assertNotSame(-1, $pid, 'Unable to fork concurrency worker.');
 
                 if ($pid === 0) {
-                    $this->runWorker($database, $barrier, $worker, $identity);
+                    $this->runWorker($barrier, $worker, $identity);
                 }
 
                 $children[] = $pid;
@@ -77,7 +83,7 @@ class ConcurrentJitProvisioningTest extends TestCase
             }
 
             $results = array_map(
-                fn (int $worker): array => json_decode((string) file_get_contents($barrier.'.result.'.$worker), true, flags: JSON_THROW_ON_ERROR),
+                fn (int $worker): array => json_decode((string) file_get_contents($barrier.self::RESULT_FILE_SUFFIX.$worker), true, flags: JSON_THROW_ON_ERROR),
                 [0, 1],
             );
 
@@ -85,8 +91,8 @@ class ConcurrentJitProvisioningTest extends TestCase
                 $this->assertSame(0, $statuses[$children[$index]], json_encode($result, JSON_THROW_ON_ERROR));
             }
 
-            $this->assertSame('success', $results[0]['status']);
-            $this->assertSame('success', $results[1]['status']);
+            $this->assertSame(self::RESULT_SUCCESS, $results[0][self::RESULT_STATUS_KEY]);
+            $this->assertSame(self::RESULT_SUCCESS, $results[1][self::RESULT_STATUS_KEY]);
             $this->assertSame($results[0]['user_id'], $results[1]['user_id']);
 
             config(['database.default' => 'concurrency_mysql']);
@@ -103,8 +109,9 @@ class ConcurrentJitProvisioningTest extends TestCase
             DB::purge('concurrency_mysql');
             try {
                 $server ??= null;
-                $server?->exec('DROP DATABASE IF EXISTS `'.$database.'`');
+                $server?->exec(sprintf('DROP DATABASE IF EXISTS %s', $this->quoteMySqlIdentifier($database)));
             } catch (Throwable) {
+                // Cleanup must not mask the test result.
             }
             foreach (glob($barrier.'.*') ?: [] as $file) {
                 @unlink($file);
@@ -112,7 +119,7 @@ class ConcurrentJitProvisioningTest extends TestCase
         }
     }
 
-    private function runWorker(string $database, string $barrier, int $worker, AuthenticatedClerkIdentity $identity): never
+    private function runWorker(string $barrier, int $worker, AuthenticatedClerkIdentity $identity): never
     {
         DB::purge('concurrency_mysql');
         config(['database.default' => 'concurrency_mysql']);
@@ -122,11 +129,14 @@ class ConcurrentJitProvisioningTest extends TestCase
 
         try {
             $user = (new LocalUserProvisioner(new ConcurrentClerkUserGateway))->resolve($identity);
-            file_put_contents($barrier.'.result.'.$worker, json_encode(['status' => 'success', 'user_id' => $user->getKey()], JSON_THROW_ON_ERROR));
+            file_put_contents($barrier.self::RESULT_FILE_SUFFIX.$worker, json_encode([
+                self::RESULT_STATUS_KEY => self::RESULT_SUCCESS,
+                'user_id' => $user->getKey(),
+            ], JSON_THROW_ON_ERROR));
             exit(0);
         } catch (Throwable $exception) {
-            file_put_contents($barrier.'.result.'.$worker, json_encode([
-                'status' => 'failure',
+            file_put_contents($barrier.self::RESULT_FILE_SUFFIX.$worker, json_encode([
+                self::RESULT_STATUS_KEY => 'failure',
                 'error' => $exception::class.': '.$exception->getMessage(),
             ], JSON_THROW_ON_ERROR));
             exit(1);
@@ -141,6 +151,11 @@ class ConcurrentJitProvisioningTest extends TestCase
         }
 
         $this->assertFileExists($path);
+    }
+
+    private function quoteMySqlIdentifier(string $identifier): string
+    {
+        return '`'.str_replace('`', '``', $identifier).'`';
     }
 }
 
