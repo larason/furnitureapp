@@ -264,7 +264,7 @@ private `no-store` cache semantics.
 | Cart clear-and-retain ACTIVE semantics | NO GAP | Group F closure and current Cart model |
 | Checkout response status in shared idempotency replay | IMPLEMENTATION GAP | Phase 7.7/7.9 |
 | Idempotency success/result atomicity with checkout transaction | IMPLEMENTATION GAP | Phase 7.7 |
-| Existing address helper requires `region`, while CHK-001 requires `city` | IMPLEMENTATION GAP / DOC DRIFT | Phase 7.2/7.8 must reconcile without changing frozen API |
+| Existing address helper requires `region`, while frozen CHK-001 requires `city` | IMPLEMENTATION GAP / DOC DRIFT | Phase 7.2/7.8 must reconcile the helper without changing the frozen API |
 | Full Checkout service, request, transaction, and route activation | DEFERRED | Phases 7.2-7.9 |
 | Payment, fee finalization, release/consume, and expiry workflows | DEFERRED | Group H and Order operations |
 
@@ -285,5 +285,5 @@ Order snapshots/history, and Cart preservation on every failed attempt.
 Phase 7.1 is complete because CHK-001 now has explicit actor, Cart, request,
 pricing, Model B, reservation, traceability, idempotency, atomicity, error,
 and Group H boundaries. Phase 7.2 is **READY** to review the address model,
-provided it resolves the `city` versus `region` implementation drift before
-Checkout validation is implemented.
+provided it resolves the existing `city` versus `region` implementation drift
+without changing the frozen Checkout API.
