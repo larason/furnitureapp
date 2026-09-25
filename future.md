@@ -22,8 +22,4 @@
 
 8. USE font awesome icons [fontawesome](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css)
 
-9. mitigate the recorded Group C data risks when their owner phase arrives (see `docs/decisions.md` ADR/BACKEND-020/022, phase 3.19 §23):
-* `products.product_type` / `is_published` absent from schema though the frozen catalog contract references them — add when catalog availability lands (Group E, phase 5.7); made-to-order eligibility stays Group J domain validation.
-* MySQL enums match case-insensitively (e.g. lowercase `relation_type` persists at DB level; app enum casts remain authoritative) — Group K admin category/product writes must validate CLOSED values before attach; do not rely on DB rejection alone.
-* `carts.user_id` FK is RESTRICT on MySQL but SET NULL on sqlite (preservation holds on both, proven) — unify delete action when the user-account retention policy is decided (Group D profile ops / Group K customer management).
-* 9 suite failures occur only on MySQL-backed runs (raw `PRAGMA`, pcntl-fork connection loss, raw `DROP CHECK` in test helpers) — sqlite remains canonical CI; port those harness assumptions only if MySQL-backed CI is introduced (Group U).
+9. use lovable or ai studio to speed up development for the admin dashboard UI and features.
