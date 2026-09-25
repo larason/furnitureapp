@@ -183,6 +183,7 @@ class Order extends Model
         }
 
         if ($this->delivery_fee_status === DeliveryFeeStatus::PENDING) {
+            $this->normalizeDeliveryAddress();
             $this->assertDeliveryPendingState();
 
             return;
@@ -195,16 +196,20 @@ class Order extends Model
             throw new DomainException('Finalized delivery orders require a non-negative delivery fee, total equal to subtotal plus delivery fee, and a delivery address.');
         }
 
-        $this->assertFinalizedDeliveryAddress();
+        $this->normalizeDeliveryAddress();
     }
 
-    private function assertFinalizedDeliveryAddress(): void
+    private function normalizeDeliveryAddress(): void
     {
         if (! is_array($this->delivery_address)) {
-            throw new DomainException('Finalized delivery orders require a structured delivery address.');
+            throw new DomainException('Delivery orders require a structured delivery address.');
         }
 
-        AddressField::validate($this->delivery_address);
+        $normalized = AddressField::normalizeSnapshot($this->delivery_address);
+
+        if (! $this->exists || $this->isDirty('delivery_address')) {
+            $this->delivery_address = $normalized;
+        }
     }
 
     private function assertDeliveryPendingState(): void
@@ -303,13 +308,19 @@ class Order extends Model
                 throw new DomainException('A delivery record is only valid for a DELIVERY order.');
             }
 
+            if (! is_array($locked->delivery_address)) {
+                throw new DomainException('Delivery orders require a structured delivery address.');
+            }
+
+            $normalizedAddress = AddressField::normalizeSnapshot($locked->delivery_address);
+
             $delivery = new Delivery;
             $delivery->setConnection($this->getConnectionName());
             $delivery->forceFill([
                 'order_id' => $locked->id,
                 'recipient_name' => $locked->recipient_name,
                 'recipient_phone' => $locked->recipient_phone,
-                'delivery_address' => $locked->delivery_address,
+                'delivery_address' => $normalizedAddress,
                 'delivery_instructions' => $deliveryInstructions,
             ]);
             $delivery->save();

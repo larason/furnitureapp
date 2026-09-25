@@ -206,7 +206,7 @@ class OrderDeliverySnapshotConcurrencyTest extends TestCase
             'total_amount' => 10000,
             'recipient_name' => 'Original',
             'recipient_phone' => '+255700000000',
-            'delivery_address' => ['address_line' => '1 St', 'city' => 'Dar es Salaam', 'region' => 'Dar es Salaam', 'postal_code' => null],
+            'delivery_address' => ['address_line' => '1 St', 'city' => 'Dar es Salaam'],
         ]);
         $order->save();
 

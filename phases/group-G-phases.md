@@ -1,499 +1,471 @@
-# Phase 7.1 — Checkout Requirements
+# Phase 7.2 — Address Model Review
 
 ## Purpose
 
-Define and freeze the backend implementation requirements for:
+Review and reconcile the Checkout delivery-address model before implementing PICKUP and DELIVERY workflows.
 
-```text
-CHK-001
-POST /api/v1/checkout
-```
-
-before implementing Checkout behavior in later Group G phases.
-
-This phase is primarily:
-
-```text
-contract review
-domain-boundary review
-dependency mapping
-transaction planning
-validation matrix reconciliation
-implementation-gap classification
-test-plan definition
-```
-
-Do not implement the full Checkout workflow yet.
-
-Do not reserve inventory yet.
-
-Do not create Orders yet unless a minimal compile-time/domain preparation change is absolutely required by a confirmed gap.
-
----
-
-# 1. Group G Context
-
-Group F is now:
-
-```text
-GROUP F — PASS / CLOSED
-```
-
-The Cart entering Checkout now provides:
-
-```text
-authenticated owner
-ACTIVE own Cart
-validated CartItem identities
-server-authoritative live pricing projection
-quantity-aware is_purchasable
-live stock projection
-guest→authenticated merge complete
-zero Cart-stage inventory reservations
-```
-
-Phase 7.1 defines how that Cart becomes an Order in later phases.
-
----
-
-# 2. Group G Roadmap
-
-Keep the established roadmap:
-
-```text
-7.1 — Checkout requirements
-7.2 — Address model review
-7.3 — Pickup flow
-7.4 — Delivery flow
-7.5 — Delivery fee rules
-7.6 — Order totals
-7.7 — Transaction boundaries
-7.8 — Checkout validation
-7.9 — Checkout tests
-```
-
-Do not pull all of these phases into 7.1.
-
----
-
-# 3. Phase 7.1 Objective
-
-By the end of this phase the implementation agent must be able to answer, unambiguously:
-
-```text
-Who may checkout?
-
-Which Cart is used?
-
-What request fields are accepted?
-
-What request fields are forbidden?
-
-What Product/Variant/Cart conditions must hold?
-
-How does PICKUP differ from DELIVERY?
-
-When is delivery fee known?
-
-What prices are authoritative?
-
-What inventory state is authoritative?
-
-When is inventory reserved?
-
-What Order state is created?
-
-What Cart mutation happens after success?
-
-What must be atomic?
-
-What does Idempotency-Key cover?
-
-What happens on retries?
-
-What happens on failure?
-
-Which parts belong to later Group G phases?
-
-Which parts belong to Group H?
-```
-
----
-
-# 4. Canonical Endpoint
-
-The only Checkout endpoint is:
-
-```http
-POST /api/v1/checkout
-```
-
-Operation:
-
-```text
-CHK-001
-```
-
-Do not add:
-
-```text
-POST /checkout/preview
-POST /checkout/start
-POST /orders
-POST /me/cart/checkout
-POST /checkout/confirm
-```
-
-unless a future approved contract explicitly adds them.
-
----
-
-# 5. Checkout Is a Dedicated Business Workflow
-
-Checkout is not:
-
-```text
-PATCH /me/cart
-```
-
-and is not:
-
-```text
-POST /orders
-```
-
-with client-controlled financial/order fields.
-
-Canonical conceptual workflow:
-
-```text
-authenticate Customer
-→ derive own ACTIVE Cart
-→ validate fulfillment request
-→ validate Cart not empty
-→ revalidate Product/Variant state
-→ revalidate authoritative stock
-→ recalculate current prices
-→ snapshot fulfillment data
-→ reserve inventory
-→ create PENDING_PAYMENT Order
-→ create OrderItem snapshots
-→ create fulfillment/delivery state
-→ clear Cart items
-→ persist idempotent result
-→ commit
-→ return Checkout response
-```
-
-This later becomes one protected transaction boundary.
-
----
-
-# 6. Actor
-
-Checkout requires:
-
-```text
-authenticated CUSTOMER
-```
-
-Anonymous checkout is **prohibited**.
-
-Guest credential alone is insufficient.
-
-Expected:
-
-```text
-401 AUTHENTICATION_REQUIRED
-```
-
----
-
-# 7. Guest Handoff
-
-A guest must:
-
-```text
-build guest Cart
-→ authenticate
-→ CART-005 merge
-→ checkout authenticated Cart
-```
-
-CHK-001 must not merge guest Cart automatically.
-
----
-
-# 8. STAFF / ADMIN
-
-Review current role/self-commerce policy carefully.
-
-Project-level rules already allow STAFF/ADMIN personal purchasing in Cart.
-
-However the frozen Checkout contract currently says:
-
-```text
-CUSTOMER-only
-```
-
-Do not silently broaden CHK-001 based on Cart self-commerce alone.
-
-Phase 7.1 must explicitly reconcile:
-
-```text
-Cart self-commerce for STAFF/ADMIN
-vs
-CHK-001 actor = CUSTOMER
-```
-
-Classify this as one of:
-
-```text
-NO GAP
-DOC DRIFT
-POLICY GAP
-IMPLEMENTATION GAP
-```
-
-Do not guess.
-
-If the frozen Checkout contract is authoritative, preserve CUSTOMER-only behavior until an approved decision changes it.
-
----
-
-# 9. Identity Authority
-
-Checkout ownership comes only from:
-
-```text
-verified Clerk principal
-→ local Laravel User
-→ server-derived active Cart
-```
-
-Never from request:
-
-```text
-user_id
-customer_id
-cart_id
-guest_cart_id
-owner_id
-```
-
----
-
-# 10. Cart Selection
-
-Server derives:
-
-```text
-authenticated Customer
-→ own ACTIVE Cart
-```
-
-No Cart selector is accepted.
-
----
-
-# 11. Cart Ownership
-
-Checkout must never allow Customer A to submit Customer B's Cart.
-
-Because no Cart ID is supplied, self-context is the primary IDOR defense.
-
-Do not introduce a Cart selector merely for implementation convenience.
-
----
-
-# 12. No Active Cart
-
-Determine exact frozen behavior when authenticated Customer has no ACTIVE Cart.
-
-Likely conceptual outcome:
-
-```text
-422 CART_INVALID
-```
-
-rather than implicitly creating an empty Cart solely for checkout.
-
-Verify current contract.
-
-Do not reuse CART-001 lazy-create blindly if Checkout semantics require an existing non-empty Cart.
-
-Record exact decision.
-
----
-
-# 13. Empty Cart
-
-Empty Cart checkout is prohibited.
-
-Canonical:
-
-```text
-422 CART_INVALID
-```
-
-No separate public:
-
-```text
-CART_EMPTY
-```
-
-error exists.
-
-No Order.
-
-No reservation.
-
-No Cart mutation.
-
----
-
-# 14. Checkout Request Schema
-
-Frozen request:
-
-```json
-{
-  "fulfillment_type": "PICKUP"
-}
-```
-
-or:
+The frozen Version 1 Checkout API remains:
 
 ```json
 {
   "fulfillment_type": "DELIVERY",
   "delivery_address": {
-    "recipient_name": "...",
-    "phone": "...",
-    "address_line": "...",
-    "city": "..."
+    "recipient_name": "Asha Mwangi",
+    "phone": "+255700000001",
+    "address_line": "Jengo Street 12",
+    "city": "Dar es Salaam"
   }
 }
 ```
 
----
-
-# 15. Strict Request Allow-List
-
-Allowed:
+The canonical V1 public field is:
 
 ```text
-fulfillment_type
-delivery_address
+city
 ```
 
-Nothing else.
-
-`additionalProperties: false`.
-
----
-
-# 16. Forbidden Client-Controlled Fields
-
-Reject:
+NOT:
 
 ```text
-cart_id
-user_id
-customer_id
-
-price
-unit_price
-line_total
-subtotal
-total
-currency
-discount
-
-delivery_fee
-delivery_fee_status
-
-available_quantity
-reserved_quantity
-stock
-
-status
-order_status
-payment_status
-
-order_reference
-order_id
-
-created_at
-updated_at
+region
 ```
 
-Do not silently ignore authoritative financial/ownership fields.
+Phase 7.2 must adapt the Laravel implementation to the frozen contract.
+
+Do not change OpenAPI from `city` to `region`.
 
 ---
 
-# 17. FormRequest
+# 1. Phase Scope
 
-Later implementation should use dedicated strict:
+Phase 7.2 owns:
+
+```text
+Checkout delivery-address model review
+AddressField implementation reconciliation
+request → normalized address mapping
+Order address snapshot compatibility
+PICKUP null-address behavior
+DELIVERY required-address behavior
+address persistence compatibility
+validation boundary preparation
+```
+
+It does NOT own:
+
+```text
+full Checkout implementation
+inventory reservation
+Order creation transaction
+delivery fee finalization
+Order totals implementation
+transaction locking
+payment
+frontend
+```
+
+---
+
+# 2. Starting State
+
+Phase 7.1 is:
+
+```text
+PASS
+```
+
+and froze:
+
+```text
+CHK-001
+POST /api/v1/checkout
+```
+
+with:
+
+```text
+CUSTOMER-only
+own ACTIVE Cart
+Idempotency-Key required
+PICKUP | DELIVERY
+Model B delivery fee
+current pricing
+transaction-time stock
+Order PENDING_PAYMENT
+Cart clear-on-success
+```
+
+Phase 7.2 must preserve every Phase 7.1 decision.
+
+---
+
+# 3. Frozen Address Contract
+
+The public V1 Checkout DELIVERY address is exactly:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+These names are frozen.
+
+---
+
+# 4. OpenAPI Is Authoritative
+
+Current OpenAPI defines:
+
+```text
+DeliveryAddressInput
+```
+
+required fields:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+and:
+
+```text
+DeliveryAddressSnapshot
+```
+
+with the same field names.
+
+Do not modify these to `region`.
+
+---
+
+# 5. Existing Laravel Drift
+
+Current implementation has an existing helper/value object/field implementation referred to as:
+
+```text
+AddressField
+```
+
+which currently expects:
+
+```text
+region
+```
+
+This is implementation drift.
+
+Phase 7.2 must reconcile the Laravel implementation to:
+
+```text
+city
+```
+
+while preserving the frozen external API.
+
+---
+
+# 6. Core Rule
+
+The correct direction is:
+
+```text
+frozen API contract
+        ↓
+Laravel adapts
+```
+
+NOT:
+
+```text
+Laravel helper
+        ↓
+rewrite frozen API
+```
+
+---
+
+# 7. Do Not Support Both Names by Default
+
+Do not silently accept:
+
+```json
+{
+  "city": "...",
+  "region": "..."
+}
+```
+
+or treat `region` as a V1 alias unless an explicit compatibility requirement already exists.
+
+The V1 request schema has:
+
+```text
+additionalProperties: false
+```
+
+Therefore:
+
+```text
+region
+```
+
+from a client should be rejected as an unknown field.
+
+---
+
+# 8. No Alias Drift
+
+Avoid validation such as:
+
+```php
+'delivery_address.city' => ...
+'delivery_address.region' => ...
+```
+
+with "either/or" semantics.
+
+That would broaden the frozen contract.
+
+---
+
+# 9. Public vs Internal Naming
+
+If internal persistence genuinely still uses a column/property named:
+
+```text
+region
+```
+
+that is acceptable only if the mapping boundary is explicit:
+
+```text
+API city
+→ internal region
+```
+
+and the API never exposes `region`.
+
+However, first inspect whether changing the internal helper to use:
+
+```text
+city
+```
+
+is cleaner and safer.
+
+Do not assume internal compatibility requirements before inspecting usage.
+
+---
+
+# 10. Preferred Outcome
+
+Prefer one vocabulary throughout Checkout:
+
+```text
+city
+```
+
+if changing the internal helper is safe.
+
+This reduces translation drift.
+
+---
+
+# 11. Compatibility Outcome
+
+If existing persisted models or unrelated domains require:
+
+```text
+region
+```
+
+internally:
+
+create a focused mapper/adapter.
+
+Conceptually:
+
+```text
+DeliveryAddressInput.city
+→ AddressField.region
+```
+
+but serialize snapshots back as:
+
+```text
+city
+```
+
+Never leak internal `region`.
+
+---
+
+# 12. Inspect All `AddressField` Callers
+
+Before modifying it, search all repository usages.
+
+Classify each caller:
+
+```text
+Checkout
+Order
+Delivery
+Furniture Request
+Enquiry
+Customer profile
+tests/factories
+other
+```
+
+Determine whether `AddressField` is:
+
+```text
+checkout-specific
+shared globally
+legacy
+unused
+```
+
+Do not change shared behavior blindly.
+
+---
+
+# 13. Search for `region`
+
+Audit:
+
+```text
+app/
+database/
+tests/
+docs/
+config/
+```
+
+for:
+
+```text
+region
+```
+
+and classify every relevant occurrence.
+
+---
+
+# 14. Search for `city`
+
+Likewise audit:
+
+```text
+city
+```
+
+and identify:
+
+```text
+API request usage
+Order snapshot columns
+Delivery columns
+DTOs
+Resources
+Factories
+Tests
+Documentation
+```
+
+---
+
+# 15. Address Model Inventory
+
+Document the exact model chain:
 
 ```text
 CheckoutRequest
+→ normalized delivery address
+→ Order snapshot
+→ later Delivery record
+→ Order API response
 ```
 
-or repository equivalent.
-
-Use:
-
-```php
-$request->validated()
-```
-
-Never:
-
-```php
-$request->all()
-```
+For every stage record the concrete field names.
 
 ---
 
-# 18. Fulfillment Type
+# 16. Checkout Request Boundary
 
-Closed V1 values:
+Future CHK-001 request validation must accept only:
 
-```text
-PICKUP
-DELIVERY
+```json
+{
+  "recipient_name": "...",
+  "phone": "...",
+  "address_line": "...",
+  "city": "..."
+}
 ```
 
-Exact uppercase enum semantics.
-
-Reject invented values such as:
-
-```text
-pickup
-shipping
-courier
-LOCAL_DELIVERY
-EXPRESS
-```
+for `delivery_address`.
 
 ---
 
-# 19. Invalid Fulfillment
+# 17. Strict Nested Schema
 
-Map according to frozen contract:
+Unknown nested fields must fail.
+
+Examples:
 
 ```text
-INVALID_FULFILLMENT
+region
+district
+country
+postal_code
+latitude
+longitude
+instructions
 ```
 
-or request-schema `INVALID_VALUE` where structural validation applies.
-
-Phase 7.1 must document the exact mapping boundary.
+must be rejected unless explicitly present in frozen V1.
 
 ---
 
-# 20. PICKUP Request
+# 18. Required Fields
+
+For DELIVERY:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+are all required.
+
+---
+
+# 19. Nullability
+
+For DELIVERY:
+
+none of the four required address fields may be:
+
+```text
+missing
+null
+empty
+whitespace-only
+```
+
+after normalization.
+
+---
+
+# 20. PICKUP Address Rule
 
 For:
 
@@ -509,13 +481,733 @@ or
 null
 ```
 
-depending exact frozen schema.
-
-A populated delivery address on PICKUP must be rejected.
+according to the frozen Checkout contract.
 
 ---
 
-# 21. DELIVERY Request
+# 21. PICKUP Must Not Persist Fake Address
+
+Do not create:
+
+```text
+recipient_name = ""
+phone = ""
+address_line = ""
+city = ""
+```
+
+for PICKUP.
+
+Use:
+
+```text
+delivery_address = null
+```
+
+---
+
+# 22. DELIVERY Historical Snapshot
+
+For DELIVERY, the validated address becomes immutable historical Order data.
+
+It must not remain a live reference to:
+
+```text
+customer_profiles
+future saved-address table
+user profile
+```
+
+---
+
+# 23. Saved Addresses Remain Deferred
+
+Do not add:
+
+```text
+saved_address_id
+address_book
+default_address
+customer_addresses
+```
+
+during Phase 7.2.
+
+---
+
+# 24. Customer Profile Fallback Is Forbidden
+
+Do not silently fill missing:
+
+```text
+recipient_name
+phone
+city
+```
+
+from profile data.
+
+Checkout requires the frozen DELIVERY payload.
+
+---
+
+# 25. Address Snapshot Authority
+
+Once Checkout creates an Order:
+
+```text
+Order.delivery_address
+```
+
+must reflect the address supplied and normalized at Checkout time.
+
+Future profile edits must not alter it.
+
+---
+
+# 26. Order Response
+
+The Order API must eventually expose:
+
+```json
+{
+  "delivery_address": {
+    "recipient_name": "...",
+    "phone": "...",
+    "address_line": "...",
+    "city": "..."
+  }
+}
+```
+
+Never:
+
+```json
+{
+  "region": "..."
+}
+```
+
+---
+
+# 27. Billing Address
+
+Review existing V1 Order schema for:
+
+```text
+billing_address
+```
+
+Do not invent billing-address behavior.
+
+If current contract says:
+
+```text
+null for PICKUP
+```
+
+or reuses the delivery snapshot shape, document exact behavior.
+
+Do not expand Phase 7.2 into billing functionality.
+
+---
+
+# 28. Delivery Model
+
+Phase 7.1 determined:
+
+```text
+CHK-001 does not create a Delivery row
+```
+
+The Order stores the fulfillment snapshot first.
+
+A Delivery record is created later.
+
+Phase 7.2 must verify that when it is eventually created, it can faithfully carry or reference the frozen Order address snapshot.
+
+---
+
+# 29. Do Not Create Delivery Row
+
+No Delivery persistence workflow should be activated in Phase 7.2.
+
+This remains model review/preparation.
+
+---
+
+# 30. Review Database Columns
+
+Inspect relevant migrations for:
+
+```text
+orders
+deliveries
+```
+
+and any address/value-object fields.
+
+Record whether persistence currently uses:
+
+```text
+city
+region
+JSON address
+individual columns
+```
+
+---
+
+# 31. No Blind Migration
+
+Do not create a migration merely because `AddressField` uses `region`.
+
+First determine whether the mismatch exists only in code.
+
+---
+
+# 32. Schema Decision
+
+Expected:
+
+```text
+Schema changes: NONE
+```
+
+if existing storage can represent the frozen snapshot.
+
+---
+
+# 33. True Model Gap
+
+Only classify:
+
+```text
+MODEL GAP
+```
+
+if existing persistence literally cannot store:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+without losing meaning or violating constraints.
+
+---
+
+# 34. Prefer Mapper Over Migration When Appropriate
+
+If storage uses a generic field/value that can carry city correctly:
+
+adapt at the application boundary.
+
+Avoid unnecessary schema churn.
+
+---
+
+# 35. `AddressField` Review
+
+Inspect the actual implementation.
+
+Determine whether it is:
+
+```text
+validation helper
+DTO
+value object
+cast
+model accessor
+database mapper
+request-field list
+```
+
+Do not infer from its name.
+
+---
+
+# 36. If `AddressField` Is Only a Field Constant
+
+If it merely defines:
+
+```text
+recipient_name
+phone
+address_line
+region
+```
+
+replace/reconcile `region` to:
+
+```text
+city
+```
+
+where safe.
+
+---
+
+# 37. If `AddressField` Is Shared
+
+If changing it would break unrelated domains:
+
+do NOT force global renaming.
+
+Instead introduce a Checkout-specific address contract/value object such as:
+
+```text
+CheckoutDeliveryAddress
+```
+
+or equivalent repository-style abstraction.
+
+---
+
+# 38. Avoid Generic Premature Abstraction
+
+Do not create:
+
+```text
+UniversalAddress
+AddressFramework
+AddressSchemaEngine
+```
+
+for four fields.
+
+Prefer the smallest coherent abstraction.
+
+---
+
+# 39. Recommended Domain Object
+
+A small immutable object may be appropriate:
+
+```text
+CheckoutDeliveryAddress
+```
+
+containing:
+
+```text
+recipientName
+phone
+addressLine
+city
+```
+
+if existing architecture uses DTO/value objects.
+
+---
+
+# 40. Transport Naming
+
+Public JSON remains:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+Internal PHP property naming may follow repository standards.
+
+---
+
+# 41. Mapping Must Be Explicit
+
+For example conceptually:
+
+```text
+validated request
+→ CheckoutDeliveryAddress
+→ Order snapshot fields
+```
+
+Do not pass unstructured request arrays deep into Checkout.
+
+---
+
+# 42. No `$request->all()`
+
+Future request processing must use:
+
+```php
+$request->validated()
+```
+
+and explicit mapping.
+
+---
+
+# 43. Address Normalization
+
+Phase 7.1 froze:
+
+```text
+trimmed strings
+```
+
+for all fields.
+
+Implement/review normalization rules accordingly.
+
+---
+
+# 44. Recipient Name
+
+`recipient_name`:
+
+```text
+required
+string
+trimmed
+non-empty
+max 255
+```
+
+according to Phase 7.1.
+
+---
+
+# 45. Phone
+
+`phone`:
+
+```text
+required
+string
+trimmed
+normalized
+non-empty
+max 30
+```
+
+Use existing phone normalization behavior where compatible.
+
+---
+
+# 46. Phone Format
+
+Phase 7.1 refers to:
+
+```text
+E.164-ish representation
+```
+
+Do not silently tighten this to full libphonenumber validation unless already frozen.
+
+No new dependency.
+
+---
+
+# 47. Address Line
+
+`address_line`:
+
+```text
+required
+string
+trimmed
+non-empty
+```
+
+Do not invent a new numeric max length if the frozen contract does not define one.
+
+---
+
+# 48. City
+
+`city`:
+
+```text
+required
+string
+trimmed
+non-empty
+```
+
+No new arbitrary length restriction unless persistence itself requires one.
+
+---
+
+# 49. Persistence Limit Conflict
+
+If database schema imposes a narrower maximum than the API contract:
+
+classify that explicitly.
+
+Do not silently truncate input.
+
+Possible outcomes:
+
+```text
+MODEL GAP
+or
+DOC DRIFT
+```
+
+depending authority.
+
+---
+
+# 50. Never Truncate Address Data
+
+Do not:
+
+```text
+substr()
+silent database truncation
+```
+
+for valid API input.
+
+If persistence cannot represent valid contract data:
+
+the model must be fixed before implementation.
+
+---
+
+# 51. `region` Request Test
+
+Future validation test:
+
+```json
+{
+  "delivery_address": {
+    "recipient_name": "Asha",
+    "phone": "+255700000001",
+    "address_line": "Jengo Street",
+    "region": "Dar es Salaam"
+  }
+}
+```
+
+must fail.
+
+Expected:
+
+```text
+422 INVALID_VALUE
+field: delivery_address.region
+```
+
+or exact strict-schema mapping.
+
+---
+
+# 52. Missing `city`
+
+Payload with:
+
+```text
+region
+```
+
+but without:
+
+```text
+city
+```
+
+must also report the missing canonical `city` field according to validation-envelope behavior.
+
+Do not accept `region` as substitute.
+
+---
+
+# 53. Both `city` and `region`
+
+Payload containing both:
+
+```text
+city
+region
+```
+
+must fail because `region` is an unknown field.
+
+Do not silently prefer `city`.
+
+---
+
+# 54. Snapshot Test
+
+Given:
+
+```text
+city = "Dar es Salaam"
+```
+
+the historical Order snapshot must later return exactly the normalized value under:
+
+```text
+city
+```
+
+---
+
+# 55. Internal `region` Must Never Leak
+
+If adapter mapping to an internal `region` property is unavoidable:
+
+assert resources/OpenAPI serialization still exposes:
+
+```text
+city
+```
+
+only.
+
+---
+
+# 56. Round-Trip Requirement
+
+Prove conceptually:
+
+```text
+request.city
+→ normalized internal representation
+→ persistence
+→ Order resource city
+```
+
+without:
+
+```text
+field rename drift
+data loss
+```
+
+---
+
+# 57. Historical Stability
+
+If internal Delivery structure changes later:
+
+existing Order snapshots must still serialize correctly.
+
+The Order snapshot is historical authority.
+
+---
+
+# 58. No Address Geocoding
+
+Out of scope:
+
+```text
+Google Maps
+geocoding
+coordinates
+distance
+delivery zones
+maps API
+```
+
+---
+
+# 59. No Region/City Lookup Table
+
+Do not create:
+
+```text
+regions
+cities
+districts
+wards
+```
+
+tables during Phase 7.2.
+
+The contract accepts a string snapshot.
+
+---
+
+# 60. No Address Verification Service
+
+Do not call external APIs to verify:
+
+```text
+city
+street
+phone
+```
+
+---
+
+# 61. No Country Field
+
+Do not add:
+
+```text
+country
+country_code
+```
+
+to V1 Checkout address.
+
+TZS/business geography does not justify widening frozen schema.
+
+---
+
+# 62. No Postal Code
+
+Do not add it.
+
+---
+
+# 63. No District/Ward
+
+Do not add them.
+
+---
+
+# 64. No Delivery Instructions
+
+Do not add them.
+
+---
+
+# 65. No Coordinates
+
+Do not add:
+
+```text
+lat
+lng
+```
+
+---
+
+# 66. Fulfillment Validation Separation
+
+Address-model validation should distinguish:
+
+```text
+request shape
+```
+
+from:
+
+```text
+fulfillment branch rule
+```
+
+Example:
+
+```text
+PICKUP + populated delivery_address
+```
+
+is an invalid fulfillment combination.
+
+---
+
+# 67. DELIVERY Missing Address
 
 For:
 
@@ -523,13 +1215,644 @@ For:
 fulfillment_type = DELIVERY
 ```
 
-`delivery_address` is mandatory.
+missing `delivery_address` must produce the frozen missing-field behavior.
 
 ---
 
-# 22. Delivery Address Fields
+# 68. Wrong Address Type
 
-Required DELIVERY snapshot inputs:
+Examples:
+
+```json
+"delivery_address": "Dar es Salaam"
+```
+
+or:
+
+```json
+"delivery_address": []
+```
+
+must fail strict type validation.
+
+---
+
+# 69. Unknown Nested Field
+
+Example:
+
+```json
+{
+  "city": "Dar es Salaam",
+  "region": "Dar es Salaam"
+}
+```
+
+must fail unknown-field validation.
+
+---
+
+# 70. Null Nested Field
+
+Example:
+
+```json
+{
+  "city": null
+}
+```
+
+must fail.
+
+---
+
+# 71. Empty City
+
+```json
+{
+  "city": ""
+}
+```
+
+must fail after normalization.
+
+---
+
+# 72. Whitespace City
+
+```json
+{
+  "city": "   "
+}
+```
+
+must fail after trim.
+
+---
+
+# 73. Valid City
+
+```json
+{
+  "city": "Dar es Salaam"
+}
+```
+
+must remain:
+
+```text
+Dar es Salaam
+```
+
+after normalization.
+
+---
+
+# 74. City Is Not an Enum
+
+Do not restrict:
+
+```text
+Dar es Salaam
+Dodoma
+Arusha
+Mwanza
+...
+```
+
+to a hardcoded list.
+
+The frozen contract says string.
+
+---
+
+# 75. City Is Not Delivery-Fee Authority
+
+The presence of:
+
+```text
+city
+```
+
+does not authorize Checkout to calculate a fee.
+
+Model B remains:
+
+```text
+Staff/Admin set fee later via ORD-014
+```
+
+---
+
+# 76. No Flat Fee Logic
+
+Do not reintroduce:
+
+```text
+TZS 20,000
+```
+
+based on city.
+
+---
+
+# 77. No Zone Mapping
+
+Phase 7.5 may review delivery-fee workflow, but V1 currently uses Staff/Admin fee assignment.
+
+Do not implement:
+
+```text
+city → delivery fee
+```
+
+mapping.
+
+---
+
+# 78. Snapshot and Idempotency
+
+Normalized delivery address participates in CHK-001's idempotency fingerprint.
+
+Therefore address normalization must be deterministic.
+
+---
+
+# 79. Equivalent Whitespace
+
+Decide and document whether:
+
+```text
+" Dar es Salaam "
+```
+
+normalizes to:
+
+```text
+"Dar es Salaam"
+```
+
+before fingerprinting.
+
+Expected:
+
+```text
+YES
+```
+
+given Phase 7.1 trim rule.
+
+---
+
+# 80. Fingerprint Uses Normalized Address
+
+Do not fingerprint raw input before normalization.
+
+Otherwise harmless whitespace differences could cause false:
+
+```text
+409 DUPLICATE_OPERATION
+```
+
+---
+
+# 81. Field Ordering
+
+JSON key order must not materially affect the idempotency fingerprint.
+
+Use normalized structured representation.
+
+---
+
+# 82. Phone Normalization and Fingerprint
+
+Use normalized phone representation before fingerprinting.
+
+The same logical phone must not produce accidental idempotency mismatch due solely to supported formatting differences.
+
+---
+
+# 83. Address Object Immutability
+
+Once built, prefer immutable DTO/value semantics.
+
+Do not mutate address later during Order creation.
+
+---
+
+# 84. Request Validation Ownership
+
+Phase 7.8 owns final Checkout validation orchestration.
+
+Phase 7.2 may prepare:
+
+```text
+address DTO
+normalizer
+field mapping
+unit tests
+```
+
+but must not fully activate CHK-001.
+
+---
+
+# 85. Phase 7.3 Boundary
+
+Phase 7.3 will implement/review PICKUP behavior.
+
+Phase 7.2 should ensure:
+
+```text
+delivery_address = null
+```
+
+is easy and valid for PICKUP.
+
+---
+
+# 86. Phase 7.4 Boundary
+
+Phase 7.4 will implement/review DELIVERY behavior.
+
+Phase 7.2 must provide a stable:
+
+```text
+validated normalized city-based address snapshot
+```
+
+for it.
+
+---
+
+# 87. Phase 7.5 Boundary
+
+Delivery fee remains separate.
+
+Address is input to business review/fulfillment but not a client fee authority.
+
+---
+
+# 88. Phase 7.6 Boundary
+
+Order totals should not depend on arbitrary address model logic.
+
+---
+
+# 89. Phase 7.7 Boundary
+
+Phase 7.7 eventually persists the address snapshot atomically with Order creation.
+
+Phase 7.2 only ensures model compatibility.
+
+---
+
+# 90. Phase 7.8 Boundary
+
+Phase 7.8 integrates strict Checkout request validation.
+
+Do not fully duplicate that phase now.
+
+---
+
+# 91. Existing Order Schema
+
+Review actual:
+
+```text
+orders
+```
+
+migration/model.
+
+Record how delivery address is stored.
+
+---
+
+# 92. Existing Delivery Schema
+
+Review actual:
+
+```text
+deliveries
+```
+
+migration/model.
+
+Record whether it currently expects:
+
+```text
+city
+region
+```
+
+or neither.
+
+---
+
+# 93. Existing Casts
+
+Inspect:
+
+```text
+casts()
+custom Casts
+JSON casts
+AddressField
+DTO hydration
+```
+
+that affect address persistence.
+
+---
+
+# 94. Existing Resources
+
+Inspect Order API resources for:
+
+```text
+delivery_address
+billing_address
+```
+
+Confirm serialized key is:
+
+```text
+city
+```
+
+---
+
+# 95. Factories
+
+Update/test factories only where required to reflect correct internal model shape.
+
+Do not casually rewrite unrelated fixtures.
+
+---
+
+# 96. Seeders
+
+No production seeder changes expected.
+
+---
+
+# 97. Migration Tests
+
+If schema is unchanged:
+
+add/retain tests proving existing columns can store the frozen snapshot.
+
+---
+
+# 98. Address DTO Test
+
+If introducing or modifying a DTO/value object, test:
+
+```text
+valid construction
+trim normalization
+city retained
+region rejected/not represented
+phone normalization
+immutable behavior
+```
+
+---
+
+# 99. Mapping Test
+
+If internal storage uses `region`:
+
+test explicitly:
+
+```text
+API city
+→ internal region
+→ API city
+```
+
+to prevent future regression.
+
+---
+
+# 100. Prefer Elimination of Mapping
+
+If safely possible, changing the internal helper itself to `city` is preferable to maintaining permanent translation.
+
+But only after caller audit.
+
+---
+
+# 101. No Public `region`
+
+Run codebase search after implementation.
+
+Any public Checkout/Order schema/resource/test expectation of:
+
+```text
+region
+```
+
+is a failure.
+
+---
+
+# 102. Internal `region`
+
+If retained internally, document exactly why and where.
+
+Do not leave unexplained dual terminology.
+
+---
+
+# 103. Documentation Scope
+
+Update Phase 7.2 documentation to state:
+
+```text
+city = frozen V1 API
+region = legacy/internal implementation detail only, if retained
+```
+
+---
+
+# 104. Do Not Change Frozen OpenAPI to Region
+
+Absolutely do not edit:
+
+```text
+DeliveryAddressInput.city
+DeliveryAddressSnapshot.city
+CHK-001 delivery example city
+```
+
+to `region`.
+
+---
+
+# 105. Do Not Change Phase 7.1
+
+Phase 7.1 is already correct.
+
+Its finding:
+
+```text
+AddressField region vs API city
+```
+
+is the issue Phase 7.2 resolves.
+
+Do not rewrite history to pretend the mismatch did not exist.
+
+---
+
+# 106. Decision Record
+
+Add a backend ADR if implementation reconciliation requires a durable architectural decision.
+
+Suggested concept:
+
+```text
+Checkout/Order public address vocabulary is `city`.
+Existing Laravel address helpers must adapt to the frozen API.
+```
+
+Do not create a new public API decision.
+
+---
+
+# 107. Suggested ADR
+
+If needed:
+
+```text
+ADR/BACKEND-0XX —
+Checkout Address Model Alignment
+```
+
+Use actual next ADR number.
+
+---
+
+# 108. Gap Classification
+
+At the end classify:
+
+```text
+AddressField region mismatch
+```
+
+as one of:
+
+```text
+RESOLVED
+BLOCKED
+```
+
+It must not remain partially unresolved if Phase 7.2 passes.
+
+---
+
+# 109. Expected Resolution
+
+Preferred:
+
+```text
+RESOLVED
+```
+
+with:
+
+```text
+public API = city
+Laravel Checkout mapping = city-compatible
+Order snapshot = city
+```
+
+---
+
+# 110. Schema Change Expected
+
+Expected:
+
+```text
+NONE
+```
+
+unless persistence truly cannot represent the V1 snapshot.
+
+---
+
+# 111. Dependency Change Expected
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 112. Frontend
+
+Expected:
+
+```text
+NONE
+```
+
+No Next.js or Flutter changes in Phase 7.2.
+
+---
+
+# 113. No Checkout Route Activation
+
+CHK-001 may remain:
+
+```text
+501/stub
+```
+
+until later implementation phases.
+
+Do not partially activate it just to test address parsing.
+
+---
+
+# 114. Existing Tests
+
+Run relevant existing:
+
+```text
+Order schema tests
+Delivery schema tests
+API resource contract tests
+OpenAPI tests
+AddressField/helper unit tests
+```
+
+---
+
+# 115. Add Focused Tests
+
+Create focused Phase 7.2 tests as appropriate.
+
+Possible suites:
+
+```text
+CheckoutDeliveryAddressTest
+OrderAddressSnapshotTest
+AddressFieldCompatibilityTest
+```
+
+Use actual repository naming.
+
+---
+
+# 116. Test — Frozen Keys
+
+Assert canonical keys exactly:
 
 ```text
 recipient_name
@@ -540,2301 +1863,356 @@ city
 
 ---
 
-# 23. Delivery Address Validation
+# 117. Test — `region` Rejected
 
-Review existing contract for:
+Where request-schema logic can be tested without activating Checkout:
 
-```text
-trim rules
-lengths
-phone normalization
-nullability
-empty strings
-```
-
-Do not invent saved-address behavior.
-
-Saved addresses are deferred.
-
----
-
-# 24. Delivery Address Is Snapshot Input
-
-The Checkout address becomes historical Order fulfillment data.
-
-It is not:
-
-```text
-live Customer profile reference
-saved_address_id
-```
-
-unless later approved.
-
----
-
-# 25. Model B Delivery-Fee Workflow
-
-V1 uses:
-
-```text
-Model B — fee after Order creation
-```
-
-For DELIVERY:
-
-```text
-Checkout
-→ create PENDING_PAYMENT Order
-→ delivery_fee = null
-→ delivery_fee_status = PENDING
-→ Staff/Admin sets fee via ORD-014
-→ delivery_fee_status = FINALIZED
-→ total becomes final
-→ payment permitted
-```
-
----
-
-# 26. DELIVERY Must Not Calculate Fee in CHK-001
-
-Do not:
-
-```text
-calculate flat TZS 20,000
-estimate fee from city
-use frontend fee
-```
-
-inside Checkout.
-
-The old flat fee is superseded.
-
----
-
-# 27. Customer Cannot Supply Delivery Fee
-
-Any:
-
-```json
-{
-  "delivery_fee": ...
-}
-```
-
-must fail validation.
-
----
-
-# 28. PICKUP Delivery Fee
-
-For PICKUP:
-
-```text
-delivery_fee = 0 TZS
-delivery_fee_status = FINALIZED
-```
-
-according to the frozen Order model.
-
-No Staff fee step is required.
-
----
-
-# 29. DELIVERY Total Semantics
-
-Because delivery fee is pending at initial DELIVERY checkout:
-
-Phase 7.1 must inspect and record the exact current `CheckoutResponseData.total` semantics.
-
-The OpenAPI requires:
-
-```text
-subtotal
-total
-currency
-```
-
-yet Model B makes final DELIVERY total provisional until ORD-014.
-
-Do not invent behavior.
-
-Explicitly reconcile:
-
-```text
-OpenAPI CheckoutResponseData.total required
-vs
-delivery_fee = null / PENDING
-```
-
-Determine whether current contract defines:
-
-```text
-total = subtotal while fee pending
-```
-
-or another provisional representation.
-
-Record the authoritative result.
-
-This is a high-priority Phase 7.1 contract check.
-
----
-
-# 30. Pricing Authority
-
-Checkout recalculates every Cart line from:
-
-```text
-current authoritative catalog price
-```
-
-Do not trust Cart display values as final transaction prices.
-
----
-
-# 31. Cart Pricing Is Advisory
-
-Even though Cart currently displays live price:
-
-Checkout must re-read/recalculate it.
-
-Cart data is not a transaction snapshot.
-
----
-
-# 32. No Client Price
-
-Client does not submit price.
-
-No price comparison against client input is required because client price is forbidden.
-
----
-
-# 33. Integer Minor Units
-
-All monetary values remain:
-
-```text
-integer minor units
-```
-
-with:
-
-```text
-currency = TZS
-```
-
-No floats.
-
----
-
-# 34. Current Price Drift
-
-Example:
-
-```text
-Cart displayed: 1,000,000
-Current checkout price: 1,100,000
-```
-
-Checkout authoritative Order item price:
-
-```text
-1,100,000
-```
-
-Do not preserve stale Cart price.
-
----
-
-# 35. Order Item Snapshot
-
-Checkout creates historical OrderItem snapshots.
-
-Snapshot must not depend on future Product changes.
-
-Review Group C order item schema for the exact snapshot fields.
-
-Phase 7.1 should map:
-
-```text
-CartItem
-Product
-Variant
-current unit price
-quantity
-line total
-```
-
-to OrderItem persistence requirements.
-
-Do not implement yet.
-
----
-
-# 36. Product Revalidation
-
-Checkout must independently revalidate every line.
-
-Required Product state includes:
-
-```text
-exists
-active
-published
-not soft-deleted
-IN_STOCK
-```
-
-plus Category/public-purchasability rules where already authoritative.
-
----
-
-# 37. MADE_TO_ORDER
-
-Any MADE_TO_ORDER Cart line:
-
-```text
-422 PRODUCT_NOT_PURCHASABLE
-```
-
-No partial checkout.
-
----
-
-# 38. Variant Revalidation
-
-Variant must:
-
-```text
-exist
-belong to Product
-be active
-be the exact Variant referenced by CartItem
-```
-
-Do not substitute sibling Variant.
-
----
-
-# 39. Cart Validation vs Checkout Validation
-
-Group F:
-
-```text
-CartItemEligibility
-CartStockRevalidator
-```
-
-are useful semantic authorities.
-
-But Checkout cannot simply trust an earlier:
-
-```text
-is_purchasable = true
-```
-
-result.
-
-Checkout must revalidate current state inside its own transaction.
-
----
-
-# 40. Reuse Without Trusting Cached Result
-
-Checkout may reuse:
-
-```text
-CartItemEligibility
-CatalogAvailability semantics
-Product/Variant rule components
-```
-
-but must invoke/re-evaluate them against transaction-time state.
-
-Do not use stale precomputed Cart projection result as final authorization.
-
----
-
-# 41. Stock Authority
-
-Checkout stock is:
-
-```text
-authoritative current ProductStock state
-```
-
-not Cart projection.
-
----
-
-# 42. Available Quantity
-
-Continue:
-
-```text
-available =
-quantity - reserved_quantity
-```
-
-aggregated per Variant across allowed locations according to Group E.
-
----
-
-# 43. Inventory Check
-
-For every line:
-
-```text
-requested quantity <= authoritative available quantity
-```
-
-must hold inside the eventual atomic transaction.
-
----
-
-# 44. Checkout Is the First Reservation Point
-
-Group F performs:
-
-```text
-reservations = NONE
-```
-
-Checkout changes that.
-
-CHK-001 must eventually:
-
-```text
-reserved_quantity += ordered quantity
-```
-
-atomically with Order creation and Cart transition.
-
----
-
-# 45. Reservation, Not Consumption
-
-At Checkout:
-
-```text
-physical quantity stays unchanged
-reserved_quantity increases
-available decreases
-```
-
-This creates a hold for the `PENDING_PAYMENT` Order.
-
-Do not immediately decrement physical inventory.
-
----
-
-# 46. Consumption Is Later
-
-Physical inventory is consumed later in the payment/fulfillment lifecycle.
-
-Current contract says no later than:
-
-```text
-PAID → fulfillment
-```
-
-Group H owns payment-side behavior.
-
-Do not implement consumption in CHK-001.
-
----
-
-# 47. Existing Inventory Primitive
-
-Phase 5.10 already created reservation primitives.
-
-Phase 7.1 must map Checkout onto:
-
-```text
-reserve
-release
-consume
-```
-
-and determine which exact existing primitive CHK-001 should call later.
-
-Expected:
-
-```text
-reserve
-```
-
-only.
-
----
-
-# 48. Deterministic Inventory Locking
-
-Phase 5.10 already established deterministic locking for multi-item reservation.
-
-Phase 7.1 should verify that Checkout can reuse it.
-
-Do not design a second locking mechanism.
-
----
-
-# 49. Multi-Item Atomicity
-
-Checkout with:
-
-```text
-A x2
-B x3
-C x1
-```
-
-must either:
-
-```text
-reserve all
-create complete Order
-clear Cart
-```
-
-or:
-
-```text
-do none
-```
-
-No partial reservation/order.
-
----
-
-# 50. Overselling Scenario
-
-Required later test:
-
-```text
-1 unit available
-
-Customer A checkout
-Customer B checkout
-```
-
-Exactly one may reserve successfully.
-
-The other must fail safely.
-
-No negative availability.
-
----
-
-# 51. Stock Failure
-
-Determine exact CHK-001 endpoint mapping for insufficient stock.
-
-Global registry allows endpoint-specific:
-
-```text
-409 or 422
-```
-
-but Phase 7.1 must identify the frozen Checkout-specific choice.
-
-Do not defer if the current contract already resolves it.
-
-Record:
-
-```text
-INSUFFICIENT_STOCK → <exact status>
-```
-
----
-
-# 52. No Partial Order
-
-Stock failure on one line means:
-
-```text
-no Order
-no partial OrderItems
-no reservation
-no Cart clearance
-```
-
----
-
-# 53. Cart Preservation on Failure
-
-Ordinary validation failures preserve Cart.
-
-Includes:
-
-```text
-empty/invalid line
-insufficient stock
-invalid fulfillment
-invalid delivery address
-```
-
-where safe.
-
----
-
-# 54. Cart After Success
-
-The latest accepted direction is:
-
-```text
-clear Cart items
-keep Cart record ACTIVE
-```
-
-Same Cart ID remains available as empty active Cart.
-
-Do not mark Cart INACTIVE if latest repository authority says clear-and-retain.
-
----
-
-# 55. Checkout Cart Clear Timing
-
-Cart items may be cleared only inside the successful atomic Checkout transaction.
-
-Do not:
-
-```text
-clear Cart
-then create Order
-```
-
-in separate commits.
-
----
-
-# 56. Order Creation
-
-Successful CHK-001 creates:
-
-```text
-Order status = PENDING_PAYMENT
-```
-
----
-
-# 57. Delivery Fee Status
-
-PICKUP:
-
-```text
-delivery_fee = 0
-delivery_fee_status = FINALIZED
-```
-
-DELIVERY:
-
-```text
-delivery_fee = null
-delivery_fee_status = PENDING
-```
-
----
-
-# 58. Payment Is Not Part of Checkout
-
-CHK-001 must not:
-
-```text
-contact provider
-create provider payment
-confirm payment
-process webhook
-set Order PAID
-```
-
-Group H owns payment.
-
----
-
-# 59. Checkout Response
-
-OpenAPI defines:
-
-```text
-CheckoutResponseData
-```
-
-with at least:
-
-```text
-order_id
-order_reference
-status
-fulfillment_type
-subtotal
-total
-currency
-```
-
-Review the complete schema and document exact response fields.
-
-Do not implement a generic OrderResource response if Checkout has its own frozen response shape.
-
----
-
-# 60. Order ID
-
-Use existing opaque:
-
-```text
-ord_...
-```
-
-contract if applicable.
-
-Do not expose DB IDs.
-
----
-
-# 61. Order Reference
-
-Generated server-side by:
-
-```text
-ReferenceGenerator
-```
-
-following the latest accepted format:
-
-```text
-OD- + 5
-```
-
-Verify current repository authority.
-
-Do not use faker in production.
-
----
-
-# 62. Reference Generation Timing
-
-Order reference must be generated inside or safely coordinated with Order creation.
-
-Do not accept it from client.
-
----
-
-# 63. Idempotency Required
-
-Header:
-
-```http
-Idempotency-Key: <uuid>
-```
-
-is mandatory.
-
----
-
-# 64. Reuse Durable Idempotency Infrastructure
-
-Group E / CART-005 already uses shared durable:
-
-```text
-IdempotencyService
-```
-
-Phase 7.1 must verify CHK-001 can reuse it.
-
-No Checkout-specific duplicate subsystem.
-
----
-
-# 65. Checkout Idempotency Scope
-
-Use established:
-
-```text
-authenticated identity
-+
-action / endpoint
-+
-key
-```
-
----
-
-# 66. Checkout Fingerprint
-
-Material logical input includes:
-
-```text
-fulfillment_type
-delivery_address
-```
-
-and any server-derived identity needed to bind the operation safely.
-
-Do not include volatile current price/stock in the client-intent fingerprint unless existing infrastructure explicitly requires it.
-
-The purpose is:
-
-```text
-same logical request → replay
-different client intent → conflict
-```
-
----
-
-# 67. Same-Key Replay
-
-Same Customer:
-
-```text
-same Idempotency-Key
-same logical checkout input
-```
-
-must return original:
-
-```text
-201
-same order_id
-same order_reference
-same CheckoutResponseData
-```
-
-No second Order.
-
-No second reservation.
-
-No second Cart clear.
-
----
-
-# 68. Same-Key Different Input
-
-Example:
-
-```text
-first:
-PICKUP
-
-retry same key:
-DELIVERY
-```
-
-or delivery address changes.
-
-Expected:
-
-```text
-409 DUPLICATE_OPERATION
-```
-
-or exact frozen conflict mapping.
-
----
-
-# 69. Replay After Cart Is Empty
-
-This is critical.
-
-After successful Checkout:
-
-```text
-Cart is now empty
-```
-
-A legitimate same-key retry must still replay original Checkout success.
-
-Therefore idempotency replay must be resolved before normal:
-
-```text
-Cart not empty
-```
-
-validation would reject the request.
-
----
-
-# 70. Correct Idempotency Ordering
-
-Conceptually:
-
-```text
-authenticate Customer
-→ validate Idempotency-Key
-→ validate/normalize request shape
-→ calculate request fingerprint
-→ inspect durable idempotency record
-→ matching completed replay?
-      return original 201 result
-→ otherwise execute Checkout transaction
-```
-
-Do not:
-
-```text
-load empty Cart
-→ return CART_INVALID
-→ only afterward inspect idempotency
-```
-
----
-
-# 71. Concurrent Same-Key Checkout
-
-Two concurrent requests:
-
-```text
-same user
-same key
-same intent
-```
-
-must result in:
-
-```text
-one Order
-one inventory reservation effect
-one Cart clear
-same logical response
-```
-
----
-
-# 72. Different-Key Concurrent Checkout
-
-Two requests from same Customer:
-
-```text
-same Cart
-different Idempotency-Key
-```
-
-must not both create Orders from the same Cart contents.
-
-Transaction/cart locking must prevent duplicate checkout.
-
----
-
-# 73. Cart Locking
-
-Phase 7.1 must determine the target Cart locking strategy used later.
-
-Likely:
-
-```text
-lock authenticated active Cart
-```
-
-before authoritative final Cart snapshot/clear.
-
-Reuse repository concurrency conventions.
-
----
-
-# 74. Lock Ordering
-
-Checkout eventually touches:
-
-```text
-Cart
-CartItems
-ProductStock rows
-Order
-OrderItems
-Delivery
-Idempotency
-```
-
-Phase 7.1 should define deterministic lock ordering at the architecture level.
-
-Do not implement it yet if Phase 7.7 owns transaction details.
-
-At minimum record that lock-order consistency is mandatory.
-
----
-
-# 75. Phase 7.7 Boundary
-
-Detailed transaction implementation belongs to:
-
-```text
-Phase 7.7 — Transaction boundaries
-```
-
-Phase 7.1 should freeze requirements, not prematurely build final locking code.
-
----
-
-# 76. Pricing Snapshot Timing
-
-Current price used for Order snapshot must be re-read during the Checkout workflow.
-
-Phase 7.1 must document whether price reads occur:
-
-```text
-inside same transaction
-```
-
-or under another guaranteed consistency mechanism.
-
-Given financial authority, prefer eventual Phase 7.7 design that prevents inconsistent partial snapshotting.
-
----
-
-# 77. Product/Variant Snapshot Consistency
-
-OrderItem must represent:
-
-```text
-the Product/Variant actually validated and reserved
-```
-
-Do not validate Variant A then snapshot Variant B.
-
----
-
-# 78. Fulfillment Snapshot Consistency
-
-DELIVERY Order must snapshot:
-
-```text
-delivery_address
-```
-
-from validated request.
-
-PICKUP must not persist a fake delivery address.
-
----
-
-# 79. Order Status History
-
-Review Group C/Order contract for whether initial:
-
-```text
-PENDING_PAYMENT
-```
-
-history entry is created atomically with Order.
-
-Phase 7.1 should map this dependency.
-
-Do not implement transitions beyond initial creation.
-
----
-
-# 80. Delivery Model Dependency
-
-Review Group C `deliveries` schema.
-
-Determine whether CHK-001 creates:
-
-```text
-Delivery row for both PICKUP/DELIVERY
-```
-
-or only DELIVERY.
-
-Follow repository authority.
-
-Do not guess.
-
----
-
-# 81. Order Financial Fields
-
-Map exact initial state.
-
-At minimum:
-
-```text
-subtotal
-delivery_fee
-delivery_fee_status
-total
-currency
-```
-
-Need precise PICKUP/DELIVERY semantics.
-
----
-
-# 82. DELIVERY Provisional Total
-
-Explicitly settle during this phase:
-
-```text
-what is stored in Order.total
-while delivery_fee_status = PENDING?
-```
-
-The source documents must answer this.
-
-Do not leave later implementation to invent it.
-
----
-
-# 83. PICKUP Total
-
-Expected:
-
-```text
-total = subtotal
-delivery_fee = 0
-delivery_fee_status = FINALIZED
-```
-
-Verify against Order contract.
-
----
-
-# 84. DELIVERY Total After ORD-014
-
-Later:
-
-```text
-total =
-subtotal + delivery_fee
-```
-
-after Staff/Admin finalizes fee.
-
-Phase 7.5/Order operation owns that mutation.
-
----
-
-# 85. Payment Eligibility
-
-PICKUP Order:
-
-payment may proceed subject to Group H rules because fee is finalized.
-
-DELIVERY Order:
-
-PAY-001 blocked while:
-
-```text
-delivery_fee_status = PENDING
-```
-
-with:
-
-```text
-409 DELIVERY_FEE_PENDING
-```
-
-Do not implement payment here.
-
----
-
-# 86. Cancellation/Reservation Release Dependency
-
-Checkout creates reservation.
-
-Later cancellation/payment failure/expiry releases it.
-
-Phase 7.1 must record these future consumers so reservation lifecycle is not implemented as one-way.
-
-Do not implement them yet.
-
----
-
-# 87. Indefinite Hold Prohibited
-
-PENDING_PAYMENT reservation cannot remain forever.
-
-The current contract requires eventual cancellation/expiry and release.
-
-Expiry mechanism is deferred.
-
-Record dependency on Group H/system workflow.
-
----
-
-# 88. Checkout Failure Categories
-
-Classify expected failures:
-
-```text
-authentication
-request schema
-fulfillment
-delivery information
-Cart state
-Product state
-Variant state
-stock
-idempotency conflict
-concurrency/internal conflict
-unexpected internal failure
-rate limit
-```
-
----
-
-# 89. Error Envelope
-
-All errors use:
-
-```text
-errors[]
-meta.request_id
-```
-
----
-
-# 90. Authentication Failure
-
-Expected:
-
-```text
-401 AUTHENTICATION_REQUIRED
-```
-
----
-
-# 91. Empty / Invalid Cart
-
-Expected:
-
-```text
-422 CART_INVALID
-```
-
-where no more-specific frozen error supersedes it.
-
----
-
-# 92. MADE_TO_ORDER
-
-Expected:
-
-```text
-422 PRODUCT_NOT_PURCHASABLE
-```
-
----
-
-# 93. Invalid Variant
-
-Expected:
+assert `region` is not an accepted public field.
 
-```text
-INVALID_PRODUCT_VARIANT
-```
-
-with exact Checkout status from frozen contract.
-
----
-
-# 94. Insufficient Stock
-
-Determine and record exact:
-
-```text
-INSUFFICIENT_STOCK
-HTTP ?
-```
-
-Do not leave a `409/422*` ambiguity if CHK-001 contract resolves it.
-
----
-
-# 95. Invalid Fulfillment
-
-Expected frozen mapping:
-
-```text
-INVALID_FULFILLMENT
-```
-
----
-
-# 96. Invalid Delivery Information
-
-Expected:
-
-```text
-INVALID_DELIVERY_INFORMATION
-```
-
-where domain-level DELIVERY structure is syntactically valid but business-invalid.
-
-Separate from generic request schema failures.
-
----
-
-# 97. Idempotency Conflict
-
-Expected:
-
-```text
-409 DUPLICATE_OPERATION
-```
-
-for same key + materially different request.
-
----
-
-# 98. Rate Limit
-
-CHK-001:
-
-```text
-5/min/user
-```
-
-according to accepted security decision.
-
-429 must include:
-
-```text
-Retry-After
-```
-
----
-
-# 99. Cache
-
-Checkout response is private financial/customer state.
-
-Use:
-
-```text
-private
-no-store
-```
-
-according to conventions.
-
-Do not cache publicly.
-
----
-
-# 100. No External Calls
-
-Phase 7.1 should confirm CHK-001 requires no payment-provider call.
-
-This helps define transaction boundaries.
-
----
-
-# 101. Required Existing Components Review
-
-Inspect and document reuse readiness for:
-
-```text
-Cart / CartItem
-CartItemEligibility
-CartStockRevalidator
-CatalogAvailability
-
-InventoryAllocator / reservation primitive
-ConcurrentTransaction
-IdempotencyService
-
-Order
-OrderItem
-OrderStatusHistory
-Delivery
-
-ReferenceGenerator
-
-Money/value objects/enums
-FulfillmentType
-OrderStatus
-delivery_fee_status
-```
-
----
-
-# 102. Do Not Assume Component Names
-
-Use actual repository classes.
-
-Classify each dependency:
-
-```text
-READY
-NEEDS SMALL EXTENSION
-MISSING
-DEFERRED TO LATER GROUP G
-```
-
----
-
-# 103. Cart Validation Reuse
-
-Checkout should reuse existing semantic definitions where safe.
-
-But avoid using HTTP Cart mutation actions like:
-
-```text
-AddCartItem
-UpdateCartItemQuantity
-```
-
-inside Checkout.
-
-Checkout needs its own domain workflow.
-
----
-
-# 104. Inventory Reuse
-
-Prefer reusing Phase 5.10 reservation primitives.
-
-Do not reimplement raw stock locking inside Checkout if existing service already guarantees:
-
-```text
-deterministic locks
-multi-item atomic reservation
-overselling prevention
-```
-
----
-
-# 105. Idempotency Reuse
-
-Prefer shared IdempotencyService already proven by:
-
-```text
-INV-003
-CART-005
-```
-
----
-
-# 106. ReferenceGenerator Reuse
-
-Checkout's Order creation must use:
-
-```text
-ReferenceGenerator
-```
-
-not factory/faker.
-
-Verify latest reference format.
-
----
-
-# 107. Order Schema Review
-
-Phase 7.1 must review Group C Order schema and ensure it can represent:
-
-```text
-PENDING_PAYMENT
-PICKUP
-DELIVERY
-subtotal
-delivery fee pending/finalized
-total
-customer ownership
-reference
-historical snapshot
-```
-
----
-
-# 108. OrderItem Schema Review
-
-Verify it can snapshot:
-
-```text
-Product
-Variant
-quantity
-unit price
-line total
-names/SKU/etc. required by contract
-```
-
----
-
-# 109. Delivery Schema Review
-
-Verify it supports both fulfillment modes and Model B.
-
----
-
-# 110. Reservation Traceability Review
-
-Determine how an Order later knows which reservation quantities to release/consume.
-
-This is critical.
-
-Review whether:
-
-```text
-OrderItems + Variant IDs
-```
-
-are sufficient to call release/consume primitives later or whether existing inventory reservation records are required.
-
-Do not invent new schema before reviewing Group C.
-
----
-
-# 111. Critical Reservation Question
-
-Phase 7.1 must answer:
-
-```text
-How will cancellation/payment failure later know exactly what reserved quantities to release?
-```
-
-If Group C schema already solves this:
-
-document it.
-
-If not:
-
-classify as:
-
-```text
-MODEL GAP
-```
-
-for later resolution before implementation.
-
----
-
-# 112. Inventory Location Allocation
-
-Phase 5.10 may reserve across specific ProductStock rows/locations.
-
-Phase 7.1 must determine whether those allocations are persisted anywhere.
-
-If release requires exact rows but Checkout has no durable allocation record:
-
-this is a critical design gap.
-
-Do not hide it.
-
----
-
-# 113. Do Not Reserve Against Aggregate Only
-
-If the reservation primitive allocates across locations:
-
-Order lifecycle must later release/consume the same allocation correctly.
-
-Review current implementation.
-
----
-
-# 114. Transaction Requirements Matrix
-
-Create a requirements matrix covering:
-
-```text
-Operation                      Atomic with CHK-001?
-----------------------------------------------------
-Cart ownership read            yes
-Cart item final snapshot       yes
-Product validation             yes
-Variant validation             yes
-price recalculation            yes
-stock validation               yes
-inventory reservation          yes
-Order insert                   yes
-OrderItem inserts              yes
-initial Order status/history   yes
-Delivery/fulfillment snapshot  yes if applicable
-Cart item clear                yes
-idempotency success record     yes
-payment provider call          NO
-```
-
-Adjust only where repository authority specifies otherwise.
-
----
-
-# 115. Failure Rollback Matrix
-
-Define expected rollback:
-
-```text
-failure before reservation
-→ nothing mutated
-
-failure after partial reservation attempt
-→ transaction rolls back reservation
-
-failure after Order insert
-→ transaction rolls back Order
-
-failure during OrderItem snapshot
-→ Order + reservation rolled back
-
-failure during Cart clear
-→ Order + reservation rolled back
-
-unexpected transaction exception
-→ no orphan reservation/order
-```
-
----
-
-# 116. Idempotency Failure State
-
-Review how shared IdempotencyService handles:
-
-```text
-IN_PROGRESS
-SUCCEEDED
-FAILED
-```
-
-or equivalent.
-
-Checkout must not leave a durable success record before transaction commits.
-
----
-
-# 117. Response Replay Storage
-
-The durable idempotency result must be sufficient to replay:
-
-```text
-201
-CheckoutResponseData
-```
-
-after:
-
-```text
-Cart has been cleared
-inventory is reserved
-Order already exists
-```
-
----
-
-# 118. No Order Lookup Guessing on Retry
-
-Do not reconstruct replay merely by:
-
-```text
-look up latest Order for customer
-```
-
-Use durable idempotency association.
-
----
-
-# 119. Security Review
-
-Phase 7.1 must explicitly verify Checkout prevents:
-
-```text
-guest checkout
-Cart substitution
-Customer substitution
-price manipulation
-subtotal/total manipulation
-delivery fee manipulation
-status injection
-reference injection
-stock input manipulation
-currency override
-variant substitution
-MADE_TO_ORDER bypass
-network duplicate Order
-overselling
-```
-
----
-
-# 120. Input Tampering Test Plan
-
-Define future tests for request attempts containing:
-
-```text
-cart_id
-user_id
-customer_id
-unit_price
-subtotal
-total
-delivery_fee
-currency
-status
-order_reference
-available_quantity
-reserved_quantity
-```
-
-Every must fail strict request validation.
-
----
-
-# 121. Cart Integrity Test Plan
-
-Future Group G tests must include:
-
-```text
-no Cart
-empty Cart
-valid Cart
-stale Product
-unpublished Product
-soft-deleted Product
-inactive Category
-MADE_TO_ORDER
-invalid/inactive/wrong-parent Variant
-quantity invalid in persistence defense
-insufficient stock
-```
-
----
-
-# 122. Stock Concurrency Test Plan
-
-Required MariaDB scenarios:
-
-```text
-last unit:
-two Customers checkout concurrently
-→ exactly one success
-
-multi-line:
-one shared constrained Variant
-→ no partial reservation
-
-same Customer / different keys:
-same Cart checkout race
-→ at most one Order
-
-same Customer / same key:
-→ one business effect, replay
-```
-
 ---
 
-# 123. Pricing Test Plan
+# 118. Test — Round Trip
 
-Include:
+Ensure:
 
 ```text
-Cart price changes before Checkout
-→ Order snapshots new price
-
-multiple lines
-→ subtotal exact
-
-integer arithmetic only
-
-client total tampering
-→ rejected
+city
+→ storage
+→ city
 ```
 
 ---
 
-# 124. Fulfillment Test Plan
+# 119. Test — PICKUP Null
 
-PICKUP:
+Ensure models/DTOs allow:
 
 ```text
 no address
-fee 0
-fee finalized
-total = subtotal
 ```
 
-DELIVERY:
+without fake values.
+
+---
+
+# 120. Test — DELIVERY Complete Snapshot
+
+All four fields survive normalization/persistence mapping.
+
+---
+
+# 121. Test — Historical Snapshot
+
+Mutating Customer profile afterward must not alter the stored Order address representation.
+
+If Order creation is not yet active, test at model/value-object level rather than building future Checkout workflow early.
+
+---
+
+# 122. Test — No Truncation
+
+Where persistence length limits exist, verify valid frozen input is not silently truncated.
+
+---
+
+# 123. Test — City Whitespace
+
+Input:
 
 ```text
-valid address required
-fee pending
-no client fee
-address snapshotted
+"  Dar es Salaam  "
 ```
 
----
-
-# 125. Delivery Address Test Plan
-
-Include:
+normalizes to:
 
 ```text
-missing recipient_name
-missing phone
-missing address_line
-missing city
-blank values
-whitespace
-invalid phone
-address on PICKUP
-unknown address fields
+"Dar es Salaam"
 ```
-
-according to exact frozen constraints.
 
 ---
 
-# 126. Idempotency Test Plan
+# 124. Test — Empty City
 
-Include:
+Rejected by prepared validator/value object.
+
+---
+
+# 125. Test — Phone
+
+Verify current approved normalization.
+
+Do not expand validation scope beyond contract.
+
+---
+
+# 126. Test — AddressLine
+
+Trim but do not arbitrarily rewrite.
+
+---
+
+# 127. Test — Recipient Name
+
+Trim and preserve Unicode.
+
+Do not assume ASCII-only names.
+
+---
+
+# 128. Unicode
+
+Address strings must remain Unicode-safe.
+
+Do not corrupt:
 
 ```text
-missing key
-malformed key
-first success
-same-key replay
-same-key changed fulfillment
-same-key changed address
-concurrent same-key
-network retry after commit
-replay after Cart cleared
-same key different Customer
+names
+street names
+city names
 ```
+
+through normalization.
 
 ---
 
-# 127. Order Creation Test Plan
+# 129. No Lowercasing City
 
-Verify:
+Do not normalize:
 
 ```text
-one Order
-correct customer
-correct reference
-PENDING_PAYMENT
-correct fulfillment
-correct subtotal
-correct fee state
-correct total state
-correct OrderItems
-correct address snapshot
-initial status history
+Dar es Salaam
 ```
 
----
-
-# 128. Cart Success Test
-
-After successful Checkout:
+to:
 
 ```text
-same active Cart record
-items = []
-items_count = 0
-subtotal = 0
+dar es salaam
 ```
 
-if latest clear-and-retain decision remains authoritative.
+unless contract explicitly requires it.
+
+Trim only.
 
 ---
 
-# 129. Cart Failure Test
+# 130. No Uppercasing City
 
-After failed Checkout:
-
-Cart lines remain unchanged.
-
-No timestamp/quantity mutation beyond anything explicitly allowed.
+Likewise do not force uppercase.
 
 ---
 
-# 130. Reservation Success Test
+# 131. Phone Is Different
 
-After CHK-001 success:
+Phone may use canonical normalization.
+
+Keep field-specific behavior separate.
+
+---
+
+# 132. Error Field Paths
+
+Future validation errors should identify:
 
 ```text
-physical quantity unchanged
-reserved_quantity increased by ordered quantity
-available quantity decreased
+delivery_address.city
+delivery_address.phone
+...
 ```
 
----
-
-# 131. Reservation Failure Test
-
-After failed Checkout:
+not:
 
 ```text
-quantity unchanged
-reserved_quantity unchanged
+region
 ```
 
 ---
 
-# 132. Order/Reservation Atomicity Test
-
-Force failure after reservation but before final transaction completion.
-
-Expected:
-
-```text
-no Order
-no reservation
-Cart preserved
-```
-
----
-
-# 133. Model B Test
-
-DELIVERY success:
-
-```text
-status = PENDING_PAYMENT
-delivery_fee = null
-delivery_fee_status = PENDING
-```
-
-No payment call.
-
----
-
-# 134. PICKUP Model Test
-
-PICKUP success:
-
-```text
-status = PENDING_PAYMENT
-delivery_fee = 0
-delivery_fee_status = FINALIZED
-```
-
----
-
-# 135. Checkout Response Contract Test
-
-Compare response exactly with current:
-
-```text
-CheckoutResponseData
-```
-
-No extra raw persistence fields.
-
----
-
-# 136. No Inventory Internals in Response
+# 133. Internal Exception Leakage
 
 Do not expose:
 
 ```text
-ProductStock IDs
-warehouse allocation internals
-reserved_quantity
-physical quantity
-lock state
+AddressField::REGION
+database column names
+cast implementation
 ```
 
----
-
-# 137. No Payment Internals
-
-Do not include provider/payment token because Group H has not run.
+in public errors.
 
 ---
 
-# 138. N+1 Review
+# 134. Mass Assignment
 
-Phase 7.1 should identify the expected read/write query shape.
+Do not pass raw address arrays into a mass assignment boundary that accepts unrelated fields.
 
-Checkout will naturally issue multiple writes.
+Use explicit mapping.
 
-Do not misclassify necessary:
+---
+
+# 135. Security
+
+Ensure no client address field can override:
 
 ```text
-OrderItem inserts
-inventory allocation writes
+user_id
+order_id
+delivery_fee
+status
+created_at
 ```
 
-as N+1 read problems.
+---
 
-But avoid:
+# 136. No HTML Sanitization Requirement
+
+This phase is data validation, not rendering.
+
+Do not destroy legitimate characters with aggressive HTML stripping unless repository conventions already require it.
+
+Output escaping belongs at UI/rendering layer.
+
+---
+
+# 137. Database Safety
+
+Eloquent/query parameterization handles SQL injection.
+
+Do not build SQL from address strings.
+
+---
+
+# 138. Address Data Privacy
+
+Addresses are private customer/order data.
+
+Do not log full:
 
 ```text
-one Product query per CartItem
-one Variant query per CartItem
-one stock-read query per CartItem
+recipient_name
+phone
+address_line
 ```
 
-where existing batch/eager mechanisms suffice.
+unnecessarily.
 
 ---
 
-# 139. Checkout Projection vs Cart Projection
+# 139. Logging
 
-Do not run full `CartResource` merely to validate Checkout.
-
-Use domain data directly.
-
-API Resources should not drive Checkout business logic.
-
----
-
-# 140. Phase 7.1 Deliverable — Requirements Document
-
-Create/update a repository phase record such as:
+Safe logs may contain:
 
 ```text
-phases/phase-7.1-checkout-requirements.md
+request_id
+operation
+validation failure code
 ```
 
-if this matches project conventions.
+Avoid full address payload.
 
-Document:
+---
+
+# 140. Audit
+
+Ordinary customer Checkout address input does not require a privileged audit event merely for address validation.
+
+Order creation/history handles business record later.
+
+---
+
+# 141. Cache
+
+Order/Checkout address information remains private/no-store.
+
+No public caching.
+
+---
+
+# 142. API Contract Verification
+
+Verify current OpenAPI still has:
 
 ```text
-contract
-actors
-request
-authority boundaries
-validation order
-pricing
-inventory
-reservation lifecycle
-fulfillment
-Model B
-idempotency
-transaction requirements
-dependencies
-gaps
-future test matrix
+DeliveryAddressInput.city
+DeliveryAddressSnapshot.city
 ```
 
----
-
-# 141. Decision Record
-
-Add a backend ADR only if Phase 7.1 resolves a real implementation-level ambiguity not already frozen.
-
-Do not duplicate all CHK ADRs into a new ADR.
+after Phase 7.2.
 
 ---
 
-# 142. Gap Classification
+# 143. No Contract Widening
 
-Classify every finding as:
+Do not add:
 
 ```text
-NO GAP
-DOC DRIFT
-MODEL GAP
-IMPLEMENTATION GAP
-DEFERRED
+region
+country
+district
+postal_code
 ```
+
+to OpenAPI.
 
 ---
 
-# 143. Critical Gaps
+# 144. Code Review Search
 
-Phase 7.1 must not return READY if any unresolved critical gap remains around:
+Before completion search for relevant public serialization of:
 
 ```text
-reservation traceability
-DELIVERY provisional total
-Order schema ability
-OrderItem snapshot
-idempotency durability
-Cart clearing semantics
-Checkout actor authorization
+region
 ```
+
+within Checkout/Order paths.
+
+Any leak must be resolved.
 
 ---
 
-# 144. STAFF/ADMIN Checkout Ambiguity
+# 145. Internal Compatibility Search
 
-Explicitly classify the tension:
+Also ensure changing `AddressField` does not break unrelated modules.
+
+Run focused tests for every caller found in the initial audit.
+
+---
+
+# 146. Complexity
+
+Keep:
 
 ```text
-Cart supports personal self-commerce for Staff/Admin
-Checkout contract says CUSTOMER-only
-```
-
-Do not silently decide based on convenience.
-
-Use current frozen contract/AGENTS authority.
-
----
-
-# 145. Cart Clear Wording Drift
-
-Some older source wording may say:
-
-```text
-clear/inactivate
-```
-
-while latest Group F closure says:
-
-```text
-clear items, keep ACTIVE Cart
-```
-
-Resolve using latest accepted repository authority.
-
-Document the final interpretation.
-
----
-
-# 146. Delivery Total Drift
-
-Resolve the `CheckoutResponseData.total` vs pending DELIVERY fee question from current sources.
-
-This must be explicit before Phase 7.4/7.6.
-
----
-
-# 147. Reservation Release Dependency
-
-Even though release is outside CHK-001 implementation:
-
-ensure chosen reservation representation supports later:
-
-```text
-ORD-004 cancellation
-payment failure
-system expiry
-payment success consumption
+cognitive complexity <= 15
+<= 3 returns where practical
 ```
 
 ---
 
-# 148. Group H Boundary
+# 147. Do Not Build a God Address Service
 
-Record:
-
-Checkout ends with:
-
-```text
-Order PENDING_PAYMENT
-reservation held
-```
-
-Group H later handles:
-
-```text
-payment initiation
-provider communication
-provider webhook
-PAID/CANCELLED effects
-release/consume
-```
+Avoid a huge service for simple snapshot mapping.
 
 ---
 
-# 149. Group G Internal Boundary
+# 148. Reuse Existing Normalization
 
-Phase 7.1 requirements should map responsibilities:
+If a safe shared string/phone normalizer exists:
 
-```text
-7.2 Address model
-→ address persistence/snapshot compatibility
+reuse it.
 
-7.3 Pickup
-→ PICKUP branch
-
-7.4 Delivery
-→ DELIVERY branch
-
-7.5 Delivery fee
-→ Model B rules / pending-finalized
-
-7.6 Order totals
-→ authoritative monetary calculations
-
-7.7 Transaction boundaries
-→ atomicity / locks / reservation
-
-7.8 Checkout validation
-→ final validation implementation
-
-7.9 Tests
-→ complete Group G gate
-```
+Do not duplicate.
 
 ---
 
-# 150. Do Not Implement Phases 7.2–7.9 Early
+# 149. No New Third-Party Package
 
-Small review helpers are acceptable.
-
-Do not fully implement:
-
-```text
-CheckoutService
-reservation transaction
-Order creation workflow
-delivery fee operation
-checkout API activation
-```
-
-during 7.1 unless required solely to inspect/verify interfaces.
+Do not add an address library.
 
 ---
 
-# 151. Current CHK-001 Route
+# 150. Verification Commands
 
-Inspect current route/controller state.
-
-If still 501:
-
-leave it 501 during requirements phase unless project convention explicitly activates only after implementation.
-
-Do not partially expose Checkout.
-
----
-
-# 152. OpenAPI Must Remain Frozen
-
-Do not edit CHK-001 merely because implementation has not begun.
-
-Only fix actual contract contradiction supported by accepted decisions.
-
----
-
-# 153. Schema Changes
-
-Expected:
-
-```text
-NONE
-```
-
-for Phase 7.1.
-
-If a true model gap is discovered:
-
-document it.
-
-Do not immediately migrate unless 7.1 scope explicitly permits a minimal required correction.
-
----
-
-# 154. Dependencies
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 155. Frontend
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 156. Tests During Requirements Phase
-
-Run existing tests relevant to assumptions:
-
-```text
-Cart Group F
-Inventory allocator/reservation tests
-Order schema tests
-Delivery schema tests
-Idempotency tests
-ReferenceGenerator tests
-```
-
-Do not write a giant CHK-001 feature suite before implementation.
-
----
-
-# 157. Add Requirement-Level Tests Only if Valuable
-
-Acceptable examples:
-
-```text
-schema supports required enum/state
-reservation primitive can release exactly what it reserves
-Order models support Model B fields
-ReferenceGenerator output matches latest format
-```
-
-Avoid testing nonexistent Checkout behavior.
-
----
-
-# 158. Verify Shared Idempotency
-
-Confirm:
-
-```text
-IdempotencyService
-```
-
-supports:
-
-```text
-201 replay
-arbitrary response payload
-same-key fingerprint conflict
-identity/action scope
-24h retention
-concurrent claimant behavior
-```
-
-If not, classify gap for Phase 7.7/7.8.
-
----
-
-# 159. Verify Reservation Primitive
-
-Confirm existing Phase 5.10 service supports:
-
-```text
-multi-line reservation
-deterministic locking
-all-or-nothing
-release
-consume
-```
-
-and determine return type needed for persistence/reversal.
-
----
-
-# 160. Verify Order Creation Models
-
-Review actual models/factories:
-
-```text
-Order
-OrderItem
-OrderStatusHistory
-Delivery
-```
-
-No assumptions.
-
----
-
-# 161. Verify ReferenceGenerator
-
-Confirm Order production reference:
-
-```text
-OD- + 5
-```
-
-or exact latest repository value.
-
-Document any drift.
-
----
-
-# 162. Verification Commands
-
-Run relevant focused tests.
-
-Then, if documentation/code was changed:
+Run focused tests, then:
 
 ```bash
 php artisan test
@@ -2847,19 +2225,33 @@ php artisan route:list
 
 ---
 
-# 163. No MariaDB Checkout Race Yet
+# 151. OpenAPI Parse
 
-Do not invent checkout concurrency tests before the transaction implementation exists.
+Also verify:
 
-However rerun existing Phase 5.10 inventory concurrency tests if assumptions depend on those primitives.
+```text
+docs/api/openapi.yaml
+```
+
+still parses successfully.
 
 ---
 
-# 164. Completion Report
+# 152. Route Count
+
+Phase 7.2 must introduce:
+
+```text
+new routes = NONE
+```
+
+---
+
+# 153. Completion Report
 
 Return:
 
-## Phase 7.1 status
+## Phase 7.2 status
 
 ```text
 PASS
@@ -2871,149 +2263,86 @@ or:
 BLOCKED
 ```
 
-## CHK-001 contract
+## Frozen API
 
 Confirm:
 
 ```text
-POST /api/v1/checkout
+public location field = city
+region = not accepted by V1 API
 ```
 
-and whether route remains stubbed.
+## AddressField
 
-## Actor
+Report:
 
-State exact Checkout role requirement.
+```text
+previous behavior
+final behavior
+whether modified or adapted
+all callers audited
+```
 
-Explicitly address Staff/Admin self-commerce tension.
+## Public/Internal Mapping
 
-## Cart authority
+If internal `region` remains:
+
+state the exact mapper.
+
+If eliminated:
+
+state that clearly.
+
+## Checkout Request
+
+Confirm canonical fields:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+## PICKUP
 
 Confirm:
 
 ```text
-authenticated principal
-→ own ACTIVE Cart
+delivery_address = null/absent
 ```
 
-and no Cart selector.
+## DELIVERY
 
-## Request schema
+Confirm required normalized historical snapshot behavior.
 
-Report exact accepted fields.
+## Order Snapshot
 
-## Fulfillment
+Report how `city` is stored and later serialized.
+
+## Delivery Model
+
+Report compatibility with the Order snapshot.
+
+## Validation
 
 Report:
 
 ```text
-PICKUP
-DELIVERY
-```
-
-and address conditionality.
-
-## Pricing
-
-Report current-price authority and minor-unit semantics.
-
-## Delivery fee
-
-Report Model B semantics.
-
-## DELIVERY provisional total
-
-State exact resolved rule.
-
-This section is mandatory.
-
-## Inventory
-
-Report:
-
-```text
-stock authority
-reservation timing
-reservation primitive
-lock requirement
-```
-
-## Reservation traceability
-
-State exactly how future cancellation/payment failure will release the Checkout reservation.
-
-This section is mandatory.
-
-## Cart success behavior
-
-State whether successful Checkout:
-
-```text
-clears items and retains ACTIVE Cart
-```
-
-or another current authoritative behavior.
-
-## Order creation
-
-Report:
-
-```text
-initial status
-OrderItem snapshot
-status history
-fulfillment/delivery snapshot
-reference generation
+requiredness
+trimming
+phone normalization
+unknown-field behavior
+region rejection
 ```
 
 ## Idempotency
 
-Report:
+Confirm normalized address is suitable for later deterministic fingerprinting.
 
-```text
-required header
-fingerprint
-same-key replay
-different-input conflict
-replay after Cart clear
-shared service readiness
-```
+## Privacy
 
-## Transaction requirements
-
-List the exact operations that must be atomic.
-
-## Payment boundary
-
-Confirm provider/payment logic is Group H.
-
-## Error mapping
-
-Report exact known mappings, especially:
-
-```text
-empty cart
-MADE_TO_ORDER
-invalid variant
-insufficient stock
-invalid fulfillment
-invalid delivery information
-duplicate operation
-```
-
-## Gap classification
-
-Provide:
-
-```text
-NO GAP
-DOC DRIFT
-MODEL GAP
-IMPLEMENTATION GAP
-DEFERRED
-```
-
-for each finding.
+Report logging/private-data handling.
 
 ## Schema
 
@@ -3037,9 +2366,19 @@ NONE
 NONE
 ```
 
+## OpenAPI
+
+Confirm:
+
+```text
+unchanged frozen city contract
+```
+
+unless a genuine documentation typo unrelated to field naming was corrected.
+
 ## Tests
 
-Report focused/canonical results.
+Report focused and full test results.
 
 ## Quality
 
@@ -3050,16 +2389,31 @@ Pint
 PHPStan
 Composer audit
 git diff --check
+OpenAPI parse
 ```
 
-if applicable.
+## Drift Resolution
 
-## Phase 7.2 readiness
+Return exactly:
+
+```text
+CITY / REGION DRIFT — RESOLVED
+```
+
+or:
+
+```text
+CITY / REGION DRIFT — BLOCKED
+```
+
+with concrete reason.
+
+## Phase 7.3 readiness
 
 Return:
 
 ```text
-READY
+Phase 7.3 — Pickup flow: READY
 ```
 
 or:
@@ -3068,114 +2422,94 @@ or:
 BLOCKED
 ```
 
-with exact blocker.
+---
+
+# 154. Definition of Done
+
+Phase 7.2 is complete when:
+
+- frozen V1 still uses `city`;
+- `region` has not been added to the public API;
+- `AddressField` and all callers have been audited;
+- Laravel can consume a valid `city` Checkout address;
+- Laravel can persist/map the `city` snapshot without data loss;
+- Order serialization returns `city`;
+- internal `region`, if retained, is hidden behind an explicit adapter;
+- PICKUP requires no fake address;
+- DELIVERY requires all four frozen fields;
+- unknown nested address fields are rejected;
+- `region` is rejected publicly;
+- strings are trimmed;
+- empty/whitespace values are rejected;
+- phone normalization remains contract-compatible;
+- no saved-address system is introduced;
+- no geocoding is introduced;
+- no delivery-zone logic is introduced;
+- no fee calculation is introduced;
+- no arbitrary city enum/list is introduced;
+- normalized address can participate deterministically in later idempotency fingerprinting;
+- Checkout/Order resources cannot leak `region`;
+- no unnecessary migration exists;
+- no new dependency exists;
+- no frontend code changes;
+- full regression suite remains green;
+- PHPStan has zero errors;
+- Pint passes;
+- Composer audit is clean;
+- OpenAPI remains valid;
+- CITY / REGION drift is fully resolved.
 
 ---
 
-# 165. Definition of Done
+# 155. Out of Scope
 
-Phase 7.1 is complete when:
-
-- CHK-001 actor is unambiguous;
-- guest checkout is prohibited;
-- Staff/Admin personal-checkout policy is explicitly reconciled;
-- Checkout Cart selection is self-context only;
-- no client Cart ID is accepted;
-- empty Cart behavior is defined;
-- request allow-list is frozen;
-- forbidden server-controlled fields are listed;
-- PICKUP/DELIVERY behavior is frozen;
-- delivery address conditionality is frozen;
-- saved-address behavior remains deferred;
-- Model B delivery-fee timing is understood;
-- DELIVERY provisional total semantics are explicitly resolved;
-- current price is authoritative;
-- client financial values are rejected;
-- Order item price snapshot timing is defined;
-- Product/Variant revalidation requirements are known;
-- MADE_TO_ORDER rejection is known;
-- transaction-time stock authority is known;
-- reservation occurs only at Checkout;
-- reservation is not physical consumption;
-- existing inventory reservation primitive is mapped;
-- reservation release/consume traceability is proven or identified as a model gap;
-- multi-line reservation must be atomic;
-- checkout overselling requirements are frozen;
-- successful Checkout Cart behavior is explicit;
-- failed Checkout Cart preservation is explicit;
-- initial Order status is explicit;
-- Model B delivery fee status is explicit for PICKUP and DELIVERY;
-- payment provider behavior remains outside Checkout;
-- Checkout response fields are known;
-- ReferenceGenerator authority is known;
-- Idempotency-Key is mandatory;
-- idempotency replay ordering is specified;
-- replay after Cart clear is accounted for;
-- same-key changed intent conflict is specified;
-- transaction operations requiring atomicity are enumerated;
-- error mapping is reconciled;
-- rate limit requirement is identified;
-- no critical schema ambiguity remains;
-- no critical reservation lifecycle ambiguity remains;
-- later Group G phase ownership is clear;
-- no frontend work is introduced;
-- Phase 7.2 can begin without guessing Checkout fundamentals.
-
----
-
-# 166. Out of Scope
-
-Do not implement yet:
+Do not implement:
 
 ```text
-full CheckoutService
-inventory reservation transaction
-Order creation transaction
-OrderItem inserts
-Delivery record creation
-delivery fee finalization
-payment provider
-payment webhook
-order cancellation
-reservation release workflow
-stock consumption workflow
-system expiry
-frontend checkout
+Phase 7.3 PICKUP workflow
+Phase 7.4 DELIVERY workflow
+delivery fee logic
+Order totals
+Checkout transaction
+stock reservation
+Order creation
+payment
+saved addresses
+address verification
+geocoding
+delivery zones
+frontend
 ```
 
 ---
 
-# 167. STOP Condition
+# 156. STOP Condition
 
-STOP when CHK-001 is fully specified as a backend workflow:
+STOP when the backend address model can faithfully support:
 
 ```text
-authenticated CUSTOMER
-→ own non-empty ACTIVE Cart
-→ strict PICKUP/DELIVERY input
-→ authoritative Product/Variant/price revalidation
-→ authoritative stock validation
-→ atomic reservation
+DELIVERY request
+city
+→ normalized address
 → historical Order snapshot
-→ PENDING_PAYMENT
-→ Cart cleared only on success
-→ durable idempotent 201 result
-→ no payment-provider call
+→ Order response city
 ```
 
-and all model/contract ambiguities needed by Phase 7.2 are either:
+while:
 
 ```text
-resolved
+region
 ```
 
-or explicitly:
+remains absent from the frozen V1 API.
+
+Then report:
 
 ```text
-BLOCKING
+CITY / REGION DRIFT — RESOLVED
 ```
 
-Do not continue automatically to Phase 7.2.
+Do not continue automatically to Phase 7.3.
 
 DO NOT COMMIT OR PUSH.
 

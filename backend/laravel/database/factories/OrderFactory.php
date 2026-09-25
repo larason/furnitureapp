@@ -101,8 +101,6 @@ class OrderFactory extends Factory
         return [
             'address_line' => fake()->streetAddress(),
             'city' => 'Dar es Salaam',
-            'region' => 'Dar es Salaam',
-            'postal_code' => null,
         ];
     }
 }
