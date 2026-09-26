@@ -11,6 +11,12 @@ use DomainException;
 
 final readonly class DeliveryFulfillmentState
 {
+    private const MAX_RECIPIENT_NAME = 255;
+
+    private const MAX_PHONE = 30;
+
+    private const PHONE_PATTERN = '/^\+?[0-9][0-9 ().-]{6,29}$/';
+
     private function __construct(
         private array $deliveryAddress,
         private array $billingAddress,
@@ -128,19 +134,36 @@ final readonly class DeliveryFulfillmentState
         ]);
 
         return [
-            'recipient_name' => self::normalizeRequiredString('recipient_name', $address['recipient_name'] ?? null),
-            'phone' => self::normalizeRequiredString('phone', $address['phone'] ?? null),
+            'recipient_name' => self::normalizeRequiredString('recipient_name', $address['recipient_name'] ?? null, self::MAX_RECIPIENT_NAME),
+            'phone' => self::normalizePhone($address['phone'] ?? null),
             ...$nested,
         ];
     }
 
-    private static function normalizeRequiredString(string $field, mixed $value): string
+    private static function normalizeRequiredString(string $field, mixed $value, ?int $maxLength = null): string
     {
         if (! is_string($value) || trim($value) === '') {
             throw new DomainException("Delivery address {$field} is required.");
         }
 
-        return trim($value);
+        $normalized = trim($value);
+
+        if ($maxLength !== null && mb_strlen($normalized) > $maxLength) {
+            throw new DomainException("Delivery address {$field} is too long.");
+        }
+
+        return $normalized;
+    }
+
+    private static function normalizePhone(mixed $value): string
+    {
+        $phone = self::normalizeRequiredString('phone', $value, self::MAX_PHONE);
+
+        if (preg_match(self::PHONE_PATTERN, $phone) !== 1) {
+            throw new DomainException('Delivery address phone is invalid.');
+        }
+
+        return $phone;
     }
 
     /** @return array{amount: int, currency: string} */

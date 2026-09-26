@@ -98,4 +98,23 @@ class DeliveryFulfillmentStateTest extends TestCase
             }
         }
     }
+
+    public function test_delivery_rejects_overlong_recipient_name_and_invalid_phone(): void
+    {
+        foreach ([
+            ['recipient_name' => str_repeat('A', 256)],
+            ['phone' => str_repeat('7', 31)],
+            ['phone' => 'not-a-phone'],
+        ] as $replacement) {
+            $input = $this->input();
+            $input['delivery_address'] = [...$input['delivery_address'], ...$replacement];
+
+            try {
+                DeliveryFulfillmentState::fromInput($input);
+                $this->fail('Expected invalid delivery contact to be rejected.');
+            } catch (DomainException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
 }
