@@ -74,7 +74,7 @@ class DeliveryFeeConcurrencyMysqlTest extends TestCase
         sort($results);
         $this->assertSame(['error:INVALID_ORDER_TRANSITION', 'success'], $results);
         $this->assertSame(1, AuditEvent::query()->where('action', 'DELIVERY_FEE_FINALIZED')->count());
-        $this->assertSame(2, IdempotencyKey::query()->where('action', DeliveryFeeFinalizer::ACTION)->count());
+        $this->assertSame(1, IdempotencyKey::query()->where('action', DeliveryFeeFinalizer::ACTION)->count());
 
         $order = $order->fresh();
         $this->assertSame(DeliveryFeeStatus::FINALIZED, $order->delivery_fee_status);
