@@ -20,11 +20,9 @@ final class OrderIdentifier
 
     public static function decode(string $identifier): ?int
     {
-        if (! str_starts_with($identifier, self::PREFIX)) {
-            return null;
-        }
-
-        $value = substr($identifier, strlen(self::PREFIX));
+        $value = str_starts_with($identifier, self::PREFIX)
+            ? substr($identifier, strlen(self::PREFIX))
+            : '';
         if ($value === '' || preg_match('/^[0-9a-z]+$/', $value) !== 1) {
             return null;
         }

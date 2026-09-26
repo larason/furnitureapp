@@ -15,7 +15,10 @@ use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\TestCase;
+
+final class DeliveryFeeConcurrencyBarrierTimeout extends RuntimeException {}
 
 /**
  * ORD-014 concurrency gate on real MySQL/MariaDB.
@@ -28,6 +31,8 @@ class DeliveryFeeConcurrencyMysqlTest extends TestCase
     private const CONNECTION = 'mysql_delivery_fee';
 
     private const DISPOSABLE_DATABASE = 'furnitureapp_test_disposable';
+
+    private const RESULT_FILE_PREFIX = '/result-';
 
     private string $previousDefaultConnection = '';
 
@@ -188,11 +193,11 @@ class DeliveryFeeConcurrencyMysqlTest extends TestCase
             DB::connection(self::CONNECTION)->selectOne('select 1');
             touch($barrier.'/ready-'.$index);
             $this->awaitBarrier($barrier);
-            file_put_contents($barrier.'/result-'.$index, (string) $worker());
+            file_put_contents($barrier.self::RESULT_FILE_PREFIX.$index, (string) $worker());
 
             return 0;
         } catch (\Throwable $exception) {
-            @file_put_contents($barrier.'/result-'.$index, 'crash:'.$exception::class.':'.$exception->getMessage());
+            @file_put_contents($barrier.self::RESULT_FILE_PREFIX.$index, 'crash:'.$exception::class.':'.$exception->getMessage());
 
             return 1;
         }
@@ -227,7 +232,7 @@ class DeliveryFeeConcurrencyMysqlTest extends TestCase
 
     private function resultFor(string $barrier, int $index): string
     {
-        $file = $barrier.'/result-'.$index;
+        $file = $barrier.self::RESULT_FILE_PREFIX.$index;
 
         return is_file($file) ? (string) file_get_contents($file) : '';
     }
@@ -260,7 +265,7 @@ class DeliveryFeeConcurrencyMysqlTest extends TestCase
 
         while (! is_file($barrier.'/go')) {
             if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Barrier timeout.');
+                throw new DeliveryFeeConcurrencyBarrierTimeout('Barrier timeout.');
             }
 
             usleep(200);
@@ -273,7 +278,7 @@ class DeliveryFeeConcurrencyMysqlTest extends TestCase
 
         while (count(glob($barrier.'/ready-*') ?: []) < $count) {
             if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Workers did not become ready in time.');
+                throw new DeliveryFeeConcurrencyBarrierTimeout('Workers did not become ready in time.');
             }
 
             usleep(200);

@@ -32,7 +32,7 @@ class DeliveryFeeApiTest extends TestCase
         $staff = User::factory()->staff()->create(['clerk_user_id' => 'delivery_fee_staff']);
         $headers = $this->authenticateAs($staff);
 
-        $response = $this->withHeaders($headers + ['Idempotency-Key' => $key = (string) Str::uuid()])
+        $response = $this->withHeaders($headers + ['Idempotency-Key' => (string) Str::uuid()])
             ->postJson($this->url($order), $this->payload(2_500_000));
 
         $response->assertOk()
