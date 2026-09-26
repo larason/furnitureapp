@@ -2399,7 +2399,7 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 PICKUP order projection remains `PENDING_PAYMENT` with `payment=null`; finalized delivery-fee state does not mean payment occurred. The state boundary performs no Order insert, Cart mutation, inventory query/reservation, idempotency operation, Delivery-row creation, pickup-location selection, payment call, or Checkout route activation. Client-controlled fee, total, currency, status, billing-address, and pickup-location fields are rejected at this branch boundary; complete transport/schema validation remains Phase 7.8-owned.
 
-The response and persistence representations are deliberately separate. `responseForSubtotal()` is API-facing and exposes money objects as `subtotal`, `delivery_fee`, and `total`; it must not be passed directly to an `Order` model. `orderAttributesForSubtotal()` provides scalar model attributes (`subtotal_amount`, `delivery_fee_amount`, and `total_amount`) for a later checkout workflow, performs no write itself, and is covered by a unit-level mapping assertion.
+The response and persistence representations are deliberately separate. `orderProjectionForSubtotal()` is API-facing and exposes money objects as `subtotal`, `delivery_fee`, and `total`; it must not be passed directly to an `Order` model. `orderPersistenceAttributesForSubtotal()` provides scalar model attributes (`subtotal_amount`, `delivery_fee_amount`, and `total_amount`) for a later checkout workflow, performs no write itself, and is covered by a unit-level mapping assertion.
 
 **Reason:** Establishes one deterministic branch result for later Checkout composition without creating a partial PICKUP-only checkout or bypassing the Group G transaction and Group H payment boundaries.
 
