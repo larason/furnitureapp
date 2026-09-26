@@ -52,10 +52,11 @@ lookup, geocoding, city lookup, or delivery-fee logic was introduced.
 
 For already-persisted snapshots from the previous Laravel contract,
 `AddressField::normalizeSnapshot()` provides a narrow read/write compatibility
-path: a legacy `region` equal to `city` is collapsed to `city`, and a legacy
-null `postal_code` is discarded. New public input still uses strict
-`normalize()` and rejects both fields. A conflicting legacy `region`/`city`
-pair is rejected rather than silently choosing one value.
+path: a legacy `region` and optional `postal_code` are validated using their
+previous field rules and then discarded. The existing `city` is preserved
+when both legacy `region` and `city` are present; `region` supplies `city`
+only when the legacy snapshot has no `city`. New public input still uses
+strict `normalize()` and rejects both fields.
 
 `recipient_name` remains bounded by the existing 255-character persistence
 boundary. Phone normalization remains the existing contract-level concern and
