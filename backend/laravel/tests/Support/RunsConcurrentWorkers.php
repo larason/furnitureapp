@@ -11,6 +11,8 @@ trait RunsConcurrentWorkers
 {
     private const RESULT_FILE_PREFIX = '/result-';
 
+    abstract protected function databaseConnectionName(): string;
+
     /** @param callable(): string ...$workers */
     /** @return list<string> */
     protected function runConcurrentWorkers(callable ...$workers): array
@@ -44,15 +46,15 @@ trait RunsConcurrentWorkers
         } finally {
             $this->terminateConcurrentWorkers($pids);
             $this->destroyConcurrentBarrier($barrier);
-            DB::purge($this::CONNECTION);
+            DB::purge($this->databaseConnectionName());
         }
     }
 
     private function runConcurrentWorker(string $barrier, int $index, callable $worker): int
     {
         try {
-            DB::purge($this::CONNECTION);
-            DB::connection($this::CONNECTION)->selectOne('select 1');
+            DB::purge($this->databaseConnectionName());
+            DB::connection($this->databaseConnectionName())->selectOne('select 1');
             touch($barrier.'/ready-'.$index);
             $this->awaitConcurrentBarrier($barrier);
             file_put_contents($barrier.self::RESULT_FILE_PREFIX.$index, (string) $worker());

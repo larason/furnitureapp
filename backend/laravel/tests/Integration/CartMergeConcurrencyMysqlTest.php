@@ -16,10 +16,9 @@ use App\Services\IdempotencyService;
 use App\Support\CartStatus;
 use App\Support\GuestCartCredential;
 use App\Support\ProductType;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\RunsConcurrentWorkers;
+use Tests\Support\UsesDisposableMysqlDatabase;
 use Tests\TestCase;
 
 /**
@@ -33,49 +32,16 @@ use Tests\TestCase;
 class CartMergeConcurrencyMysqlTest extends TestCase
 {
     use RunsConcurrentWorkers;
+    use UsesDisposableMysqlDatabase;
 
-    private const CONNECTION = 'mysql_cart_merge';
-
-    private const DISPOSABLE_DATABASE = 'furnitureapp_test_disposable';
-
-    private string $previousDefaultConnection = '';
-
-    protected function setUp(): void
+    protected function databaseConnectionName(): string
     {
-        parent::setUp();
-
-        $this->previousDefaultConnection = (string) config('database.default');
-
-        $database = (string) getenv('CART_MERGE_MYSQL_TEST_DATABASE');
-
-        if ($database !== self::DISPOSABLE_DATABASE) {
-            $this->markTestSkipped('requires disposable MySQL/MariaDB integration database (set CART_MERGE_MYSQL_TEST_DATABASE='.self::DISPOSABLE_DATABASE.').');
-        }
-
-        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
-            $this->markTestSkipped('pcntl and posix extensions required.');
-        }
-
-        if (app()->environment('production')) {
-            $this->fail('Refusing to run destructive concurrency tests in production.');
-        }
-
-        config(['database.connections.'.self::CONNECTION => array_merge(
-            config('database.connections.mysql'),
-            ['database' => $database],
-        )]);
-        config(['database.default' => self::CONNECTION]);
-
-        DB::purge(self::CONNECTION);
-        Artisan::call('migrate:fresh', ['--database' => self::CONNECTION, '--force' => true]);
+        return 'mysql_cart_merge';
     }
 
-    protected function tearDown(): void
+    protected function databaseEnvironmentVariable(): string
     {
-        DB::purge(self::CONNECTION);
-        config(['database.default' => $this->previousDefaultConnection]);
-
-        parent::tearDown();
+        return 'CART_MERGE_MYSQL_TEST_DATABASE';
     }
 
     public function test_concurrent_same_key_merge_produces_exactly_one_effect(): void

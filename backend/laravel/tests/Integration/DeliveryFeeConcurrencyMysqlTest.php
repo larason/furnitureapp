@@ -12,10 +12,9 @@ use App\Support\DeliveryFeeStatus;
 use App\Support\OrderIdentifier;
 use App\Support\OrderStatus;
 use Database\Seeders\RbacSeeder;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\RunsConcurrentWorkers;
+use Tests\Support\UsesDisposableMysqlDatabase;
 use Tests\TestCase;
 
 /**
@@ -27,49 +26,21 @@ use Tests\TestCase;
 class DeliveryFeeConcurrencyMysqlTest extends TestCase
 {
     use RunsConcurrentWorkers;
+    use UsesDisposableMysqlDatabase;
 
-    private const CONNECTION = 'mysql_delivery_fee';
-
-    private const DISPOSABLE_DATABASE = 'furnitureapp_test_disposable';
-
-    private string $previousDefaultConnection = '';
-
-    protected function setUp(): void
+    protected function seedDisposableMysqlDatabase(): void
     {
-        parent::setUp();
-
-        $this->previousDefaultConnection = (string) config('database.default');
-        $database = (string) getenv('DELIVERY_FEE_MYSQL_TEST_DATABASE');
-
-        if ($database !== self::DISPOSABLE_DATABASE) {
-            $this->markTestSkipped('requires disposable MySQL/MariaDB integration database (set DELIVERY_FEE_MYSQL_TEST_DATABASE='.self::DISPOSABLE_DATABASE.').');
-        }
-
-        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
-            $this->markTestSkipped('pcntl and posix extensions required.');
-        }
-
-        if (app()->environment('production')) {
-            $this->fail('Refusing to run destructive concurrency tests in production.');
-        }
-
-        config(['database.connections.'.self::CONNECTION => array_merge(
-            config('database.connections.mysql'),
-            ['database' => $database],
-        )]);
-        config(['database.default' => self::CONNECTION]);
-
-        DB::purge(self::CONNECTION);
-        Artisan::call('migrate:fresh', ['--database' => self::CONNECTION, '--force' => true]);
-        Artisan::call('db:seed', ['--class' => RbacSeeder::class, '--database' => self::CONNECTION, '--force' => true]);
+        $this->seed(RbacSeeder::class);
     }
 
-    protected function tearDown(): void
+    protected function databaseConnectionName(): string
     {
-        DB::purge(self::CONNECTION);
-        config(['database.default' => $this->previousDefaultConnection]);
+        return 'mysql_delivery_fee';
+    }
 
-        parent::tearDown();
+    protected function databaseEnvironmentVariable(): string
+    {
+        return 'DELIVERY_FEE_MYSQL_TEST_DATABASE';
     }
 
     public function test_concurrent_same_actor_same_key_replays_one_finalization(): void
