@@ -15,9 +15,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
+ * @property string $public_id
  * @property int $customer_id
  * @property string $order_reference
  * @property OrderStatus|null $status
@@ -41,6 +43,8 @@ class Order extends Model
 {
     public const CURRENCY_TZS = 'TZS';
 
+    public const MAX_DELIVERY_FEE_AMOUNT = 5_000_000;
+
     public const REFERENCE_PREFIX = 'OD-';
 
     private const DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE = 'Order delivery snapshot is immutable once a delivery record exists.';
@@ -50,6 +54,10 @@ class Order extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (Order $order): void {
+            $order->public_id ??= strtolower((string) Str::ulid());
+        });
+
         static::saving(fn (Order $order) => $order->assertValid());
     }
 

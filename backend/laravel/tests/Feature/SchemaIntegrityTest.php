@@ -27,6 +27,7 @@ use Database\Factories\OrderFactory;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SchemaIntegrityTest extends TestCase
@@ -512,6 +513,7 @@ class SchemaIntegrityTest extends TestCase
 
         DB::table('orders')->insert([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::PICKUP->value,
@@ -531,6 +533,7 @@ class SchemaIntegrityTest extends TestCase
 
         DB::table('orders')->insert([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::DELIVERY->value,

@@ -34,6 +34,24 @@ class PickupFulfillmentStateTest extends TestCase
         ));
     }
 
+    public function test_order_persistence_attributes_use_order_scalar_fields(): void
+    {
+        $state = PickupFulfillmentState::fromInput([
+            'fulfillment_type' => 'PICKUP',
+        ]);
+
+        $this->assertSame([
+            'fulfillment_type' => 'PICKUP',
+            'delivery_address' => null,
+            'status' => 'PENDING_PAYMENT',
+            'delivery_fee_status' => 'FINALIZED',
+            'currency' => 'TZS',
+            'subtotal_amount' => 125000,
+            'delivery_fee_amount' => 0,
+            'total_amount' => 125000,
+        ], $state->orderPersistenceAttributesForSubtotal(125000));
+    }
+
     public function test_absent_and_null_delivery_addresses_have_the_same_state(): void
     {
         $withoutAddress = PickupFulfillmentState::fromInput(['fulfillment_type' => 'PICKUP']);

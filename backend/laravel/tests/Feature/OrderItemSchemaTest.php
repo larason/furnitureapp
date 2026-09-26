@@ -115,6 +115,7 @@ class OrderItemSchemaTest extends TestCase
     {
         return DB::table('orders')->insertGetId([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::PICKUP->value,

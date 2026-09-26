@@ -1,60 +1,84 @@
-# Phase 7.3 — Pickup Flow
+# Phase 7.5 — Delivery Fee Rules
 
 ## Purpose
 
-Implement the **PICKUP fulfillment branch** of Checkout without prematurely implementing the full CHK-001 transaction.
+Implement and harden the Version 1 **delivery-fee finalization rules** for DELIVERY Orders.
 
-This phase should make the backend capable of producing the correct PICKUP-specific fulfillment and financial state for a future successful Checkout transaction.
-
-The frozen PICKUP semantics are:
+This phase owns the business behavior around:
 
 ```text
-fulfillment_type    = PICKUP
-delivery_address    = null
-billing_address     = null
-delivery_fee        = {amount: 0, currency: TZS}
-delivery_fee_status = FINALIZED
-total               = subtotal
-status              = PENDING_PAYMENT
-payment             = null
+ORD-014
+POST /api/v1/orders/{order}/delivery-fee
 ```
 
-Payment remains Group H.
+It complements Phase 7.4:
 
-Inventory reservation remains part of the later Checkout transaction boundary.
+```text
+CHK-001 DELIVERY
+→ Order PENDING_PAYMENT
+→ delivery_fee = null
+→ delivery_fee_status = PENDING
+→ total = subtotal (provisional)
+```
+
+Phase 7.5 must implement the controlled transition:
+
+```text
+delivery_fee = null
+delivery_fee_status = PENDING
+
+        ↓ ORD-014
+
+delivery_fee = authoritative Money
+delivery_fee_status = FINALIZED
+total = subtotal + delivery_fee
+```
+
+No payment is created.
+
+No inventory is changed.
+
+No Order status transition occurs.
 
 ---
 
 # 1. Scope
 
-Phase 7.3 owns:
+Phase 7.5 owns:
 
 ```text
-PICKUP fulfillment semantics
-PICKUP request branch
-PICKUP address prohibition
-zero delivery-fee representation
-FINALIZED delivery-fee state
-PICKUP total relationship
-PICKUP Order snapshot preparation
-PICKUP response preparation
-PICKUP-specific domain tests
+ORD-014 delivery-fee finalization
+Staff/Admin authorization
+orders.set_delivery_fee permission
+strict fee input
+zero-fee delivery support
+TZS authority
+minor-unit validation
+PENDING → FINALIZED rule
+total recomputation
+idempotency
+concurrency
+audit recording
+historical fee immutability
+payment-eligibility boundary
+focused tests
 ```
 
 It does NOT own:
 
 ```text
-DELIVERY workflow
-delivery-address snapshot implementation
-delivery fee assignment
-ORD-014
-full Checkout transaction
-inventory reservation orchestration
-Cart locking
-final idempotency transaction
-payment provider
+CHK-001 Checkout transaction
+delivery-fee estimation at Checkout
+automatic city-based pricing
+delivery zones
 payment creation
+PAY-001
+payment provider
 payment webhook
+inventory reservation
+reservation release
+inventory consumption
+Order acceptance/processing/shipping
 frontend
 ```
 
@@ -67,955 +91,258 @@ Assume:
 ```text
 Group F — PASS / CLOSED
 Phase 7.1 — PASS
-Phase 7.2 — address model reviewed/aligned
+Phase 7.2 — PASS
+Phase 7.3 — PASS
+Phase 7.4 — BLOCKED: billing snapshot persistence model gap
 ```
 
-Phase 7.1 froze:
+Phase 7.4 currently establishes a DELIVERY state projection, not a persisted
+Order. The projection describes the intended CHK-001 output once the billing
+snapshot model and persistence path are resolved:
 
 ```text
-CUSTOMER-only checkout
-own ACTIVE Cart
-strict request
-PICKUP | DELIVERY CLOSED enum
-current Product/Variant/price authority
-Checkout-time inventory reservation
-PENDING_PAYMENT Order
-Cart clear only after successful transaction
-Idempotency-Key required
-```
-
-Do not revisit those decisions.
-
----
-
-# 3. Frozen PICKUP Contract
-
-For:
-
-```json
-{
-  "fulfillment_type": "PICKUP"
-}
-```
-
-the server must produce fulfillment state equivalent to:
-
-```text
-fulfillment_type    = PICKUP
-delivery_address    = null
-billing_address     = null
-delivery_fee        = 0 TZS
-delivery_fee_status = FINALIZED
-total               = subtotal
-payment             = null
-```
-
----
-
-# 4. PICKUP Has No Delivery Address
-
-A PICKUP Checkout does not accept a populated:
-
-```text
-delivery_address
-```
-
-Valid:
-
-```json
-{
-  "fulfillment_type": "PICKUP"
-}
-```
-
-and where the schema permits:
-
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "delivery_address": null
-}
-```
-
-Invalid:
-
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "delivery_address": {
-    "recipient_name": "Asha",
-    "phone": "+255700000001",
-    "address_line": "Street",
-    "city": "Dar es Salaam"
-  }
-}
-```
-
----
-
-# 5. Invalid PICKUP + Address Combination
-
-A syntactically valid address object attached to:
-
-```text
-PICKUP
-```
-
-is a fulfillment-rule violation.
-
-Use the frozen mapping:
-
-```text
-422 INVALID_FULFILLMENT
-```
-
-Do not silently discard the address.
-
----
-
-# 6. Null Address
-
-Internal PICKUP representation must be:
-
-```text
-delivery_address = null
-```
-
-not:
-
-```text
-{}
-```
-
-and not:
-
-```text
-{
-  recipient_name: "",
-  phone: "",
-  address_line: "",
-  city: ""
-}
-```
-
----
-
-# 7. Billing Address
-
-V1 does not collect a separate billing address.
-
-For PICKUP:
-
-```text
-billing_address = null
-```
-
-Do not derive one from:
-
-```text
-customer profile
-pickup location
-delivery address
-```
-
----
-
-# 8. No Delivery Record at Checkout
-
-Phase 7.1 determined that CHK-001 does not create the later operational:
-
-```text
-Delivery
-```
-
-record.
-
-For PICKUP this is especially clear:
-
-```text
-delivery = null
-```
-
-Do not create a fake Delivery row.
-
----
-
-# 9. No Pickup Address Snapshot
-
-Do not create an address representing:
-
-```text
-store location
-warehouse
-pickup point
-```
-
-unless a future contract explicitly introduces pickup-location selection.
-
-V1 has no customer-supplied pickup location.
-
----
-
-# 10. No Pickup Location Selector
-
-Do not add:
-
-```text
-pickup_location_id
-warehouse_id
-store_id
-branch_id
-collection_point
-```
-
-to CHK-001.
-
----
-
-# 11. Delivery Fee
-
-For PICKUP:
-
-```text
-delivery_fee.amount = 0
-delivery_fee.currency = TZS
-```
-
-This is server-controlled.
-
----
-
-# 12. Delivery Fee Status
-
-For PICKUP:
-
-```text
-delivery_fee_status = FINALIZED
-```
-
-immediately when the Order is created.
-
-There is no later ORD-014 step for PICKUP.
-
----
-
-# 13. ORD-014 Must Not Apply to PICKUP
-
-Later:
-
-```text
-POST /orders/{order}/delivery-fee
-```
-
-against a PICKUP Order must remain invalid.
-
-Current contract maps PICKUP fee assignment to a business-rule failure.
-
-Do not create any dependency from PICKUP Checkout to ORD-014.
-
----
-
-# 14. Total
-
-For PICKUP:
-
-```text
-total = subtotal + 0
-```
-
-therefore:
-
-```text
-total = subtotal
-```
-
-This total is final from the delivery-fee perspective.
-
----
-
-# 15. Currency
-
-Use:
-
-```text
-TZS
-```
-
-only.
-
-No client override.
-
----
-
-# 16. Minor Units
-
-All amounts remain:
-
-```text
-integer minor units
-```
-
-No floats.
-
----
-
-# 17. Do Not Copy Money Objects Casually
-
-If the project has:
-
-```text
-Money
-MoneyValue
-Price
-```
-
-or equivalent:
-
-reuse the canonical money abstraction.
-
-Do not invent a second PICKUP-specific money type.
-
----
-
-# 18. Zero Fee Constant
-
-Avoid scattered literal structures such as:
-
-```php
-['amount' => 0, 'currency' => 'TZS']
-```
-
-if the repository already has an authoritative money/value-object factory.
-
-Prefer something conceptually equivalent to:
-
-```text
-Money::zeroTzs()
-```
-
-only if consistent with existing architecture.
-
-Do not create abstraction solely for this phase if none is needed.
-
----
-
-# 19. Initial Order Status
-
-Successful PICKUP Checkout eventually creates:
-
-```text
+fulfillment_type = DELIVERY
 status = PENDING_PAYMENT
-```
-
-NOT:
-
-```text
-PAID
-ACCEPTED
-READY_FOR_PICKUP
-COMPLETED
-```
-
----
-
-# 20. Why PENDING_PAYMENT
-
-PICKUP being fee-finalized does not mean payment has occurred.
-
-It only means:
-
-```text
-delivery_fee_status = FINALIZED
-```
-
-The customer still has to enter the Group H payment flow.
-
----
-
-# 21. Payment Representation
-
-At CHK-001 success for PICKUP:
-
-```text
+delivery_fee = null
+delivery_fee_status = PENDING
+total = subtotal   # provisional
 payment = null
 ```
 
-Do not create:
-
-```text
-payment_status = PENDING
-```
-
-inside Checkout.
-
-The Payment resource appears only when PAY-001 later creates it.
+Phase 7.5 must not change that projected CHK-001 state or imply that DELIVERY
+Checkout already persists it.
 
 ---
 
-# 22. Payment Eligibility
+# 3. Canonical Endpoint
 
-Because PICKUP has:
+Implement/harden only:
+
+```http
+POST /api/v1/orders/{order}/delivery-fee
+```
+
+Operation:
 
 ```text
-delivery_fee_status = FINALIZED
+ORD-014
 ```
-
-PAY-001 will later be eligible immediately from the fee-state perspective.
-
-But:
-
-```text
-Phase 7.3 must not call PAY-001
-```
-
-or implement payment.
-
----
-
-# 23. Product/Cart Preconditions Still Apply
-
-PICKUP does not bypass Checkout rules.
-
-Eventually successful PICKUP still requires:
-
-```text
-authenticated CUSTOMER
-own ACTIVE Cart
-Cart not empty
-valid Product
-valid Variant
-IN_STOCK only
-current price
-current stock
-quantity valid
-Idempotency-Key
-```
-
----
-
-# 24. MADE_TO_ORDER
-
-PICKUP does not make MADE_TO_ORDER purchasable.
-
-A MADE_TO_ORDER Cart line remains:
-
-```text
-422 PRODUCT_NOT_PURCHASABLE
-```
-
----
-
-# 25. Stock Requirement
-
-PICKUP still reserves stock at successful Checkout.
-
-Do not treat pickup as:
-
-```text
-reserve later when customer arrives
-```
-
-The frozen lifecycle says Checkout reserves for both PICKUP and DELIVERY.
-
----
-
-# 26. Reservation Timing
-
-The eventual transaction does:
-
-```text
-validate available stock
-→ reserve stock
-→ create PICKUP Order
-→ clear Cart
-```
-
-atomically.
-
-Phase 7.3 should prepare the branch data but should not duplicate Phase 7.7 transaction mechanics.
-
----
-
-# 27. Physical Stock
-
-At Checkout:
-
-```text
-physical quantity unchanged
-reserved_quantity increases
-```
-
-PICKUP does not consume inventory immediately.
-
----
-
-# 28. Consumption
-
-Later payment/fulfillment converts reservation into consumption according to Group H/order lifecycle.
-
-Do not consume stock in 7.3.
-
----
-
-# 29. Pickup Fulfillment Object
-
-Introduce or refine the smallest domain representation needed to express:
-
-```text
-PICKUP
-delivery_address = null
-billing_address = null
-delivery_fee = zero
-delivery_fee_status = FINALIZED
-```
-
-Examples could include:
-
-```text
-CheckoutFulfillment
-PickupFulfillment
-CheckoutFulfillmentState
-```
-
-Use actual repository conventions.
-
----
-
-# 30. Avoid Branch Logic Everywhere
-
-Do not scatter:
-
-```php
-if ($fulfillmentType === 'PICKUP')
-```
-
-through:
-
-```text
-controller
-resource
-order model
-pricing service
-checkout service
-```
-
-Centralize the PICKUP-specific fulfillment projection/state in one focused boundary.
-
----
-
-# 31. Do Not Build Giant CheckoutService Yet
-
-Phase 7.3 should not prematurely introduce the entire:
-
-```text
-CheckoutService
-```
-
-unless the repository already created a shell specifically intended for branch composition.
-
-Prefer a focused PICKUP branch component.
-
----
-
-# 32. Suggested Component
-
-A small component such as:
-
-```text
-BuildPickupCheckoutState
-```
-
-or:
-
-```text
-PickupFulfillment
-```
-
-may own:
-
-```text
-fulfillment type
-address nullability
-fee zero
-fee status FINALIZED
-```
-
-Do not let it own inventory, Cart, idempotency, or persistence.
-
----
-
-# 33. Branch Result
-
-Conceptually the PICKUP branch can yield:
-
-```text
-fulfillment_type = PICKUP
-delivery_address = null
-billing_address = null
-delivery_fee = zero TZS
-delivery_fee_status = FINALIZED
-```
-
-Then Phase 7.6 later combines:
-
-```text
-subtotal
-+ delivery fee
-→ total
-```
-
----
-
-# 34. Do Not Let PICKUP Own Subtotal
-
-Subtotal comes from validated OrderItems/current prices.
-
-The PICKUP branch only contributes:
-
-```text
-delivery fee = 0
-```
-
----
-
-# 35. Phase 7.6 Boundary
-
-Phase 7.6 owns the canonical financial calculation implementation.
-
-Phase 7.3 may assert:
-
-```text
-PICKUP total must equal subtotal
-```
-
-but should not create a second totals engine.
-
----
-
-# 36. No Discounts
 
 Do not add:
 
 ```text
-pickup discount
-delivery discount
-coupon
-promotion
+PATCH /orders/{order}
+PATCH /orders/{order}/delivery-fee
+POST /orders/{order}/fee
+POST /checkout/delivery-fee
 ```
 
 ---
 
-# 37. No Pickup Fee
+# 4. ORD-014 Is Operational
 
-Do not introduce:
+This endpoint is not a customer action.
+
+Allowed actors:
 
 ```text
-service fee
-handling fee
-pickup fee
+STAFF
+ADMIN
 ```
 
-V1 delivery fee for pickup is zero.
-
----
-
-# 38. No Minimum Order
-
-Do not add minimum-order logic.
-
----
-
-# 39. No Pickup Scheduling
-
-Do not add:
+with:
 
 ```text
-pickup_time
-pickup_date
-pickup_slot
+orders.set_delivery_fee
+```
+
+permission.
+
+---
+
+# 5. Customer Access
+
+A CUSTOMER must not set or alter a delivery fee.
+
+Expected:
+
+```text
+403 FORBIDDEN
+```
+
+for an authenticated customer attempting ORD-014.
+
+---
+
+# 6. Anonymous Access
+
+Expected:
+
+```text
+401 AUTHENTICATION_REQUIRED
 ```
 
 ---
 
-# 40. No Store Hours Validation
+# 7. STAFF Permission
 
-Out of scope.
+STAFF must have:
 
----
+```text
+orders.set_delivery_fee
+```
 
-# 41. No Pickup Location Inventory Selection
-
-Inventory reservation remains based on Group E's allocation mechanism.
-
-Do not expose which warehouse fulfils PICKUP.
+Being STAFF alone is insufficient if the authorization model requires explicit permission.
 
 ---
 
-# 42. Inventory Allocation Is Internal
+# 8. ADMIN
 
-If `InventoryAllocator` reserves across one or more locations:
+ADMIN may perform the operation according to the established highest-authority operational policy.
 
-the customer does not choose them.
+Still enforce all Order-state/business rules.
 
-Do not put allocation details into PICKUP response.
+Admin does not bypass:
+
+```text
+PENDING_PAYMENT
+DELIVERY
+PENDING fee status
+```
+
+requirements.
 
 ---
 
-# 43. Response Contract
+# 9. Wrong Permission
 
-PICKUP CHK-001 response eventually must follow:
+Permissions such as:
+
+```text
+inventory.manage
+products.manage
+orders.view
+```
+
+must not implicitly grant delivery-fee authority.
+
+Use exactly the established permission.
+
+---
+
+# 10. Request Contract
+
+Canonical request:
 
 ```json
 {
-  "data": {
-    "order_id": "ord_...",
-    "order_reference": "OD-.....",
-    "status": "PENDING_PAYMENT",
-    "fulfillment_type": "PICKUP",
-    "delivery_address": null,
-    "subtotal": {
-      "amount": 0,
-      "currency": "TZS"
-    },
-    "delivery_fee": {
-      "amount": 0,
-      "currency": "TZS"
-    },
-    "delivery_fee_status": "FINALIZED",
-    "total": {
-      "amount": 0,
-      "currency": "TZS"
-    },
-    "currency": "TZS",
-    "payment": null
+  "delivery_fee": {
+    "amount": 35000,
+    "currency": "TZS"
   }
 }
 ```
 
-Use actual calculated monetary amounts.
-
----
-
-# 44. Do Not Return Billing Address Unless Contract Includes It
-
-`CheckoutResponseData` is not automatically identical to OrderDetail.
-
-Do not add:
-
-```text
-billing_address
-delivery
-status_history
-```
-
-to CHK-001 response unless frozen schema includes them.
-
----
-
-# 45. Explicit Serializer
-
-Later response must use explicit:
-
-```text
-CheckoutResponseResource
-CheckoutResponseData
-```
-
-or existing equivalent.
-
-Do not serialize the raw Order model.
-
----
-
-# 46. Order Persistence Mapping
-
-Review how future Order creation will map PICKUP fields:
-
-```text
-fulfillment_type = PICKUP
-delivery_fee = zero
-delivery_fee_status = FINALIZED
-subtotal = authoritative subtotal
-total = subtotal
-currency = TZS
-delivery_address = null
-billing_address = null
-status = PENDING_PAYMENT
-```
-
-Document exact fields.
-
----
-
-# 47. No Delivery Row
-
-Confirm Order persistence does not require a Delivery row merely because an Order exists.
-
-If the database forces one:
-
-classify as a model gap.
-
-Do not create dummy Delivery records.
-
----
-
-# 48. Order Address Nullability
-
-Verify schema allows:
-
-```text
-delivery_address = null
-billing_address = null
-```
-
-for PICKUP.
-
-If not:
-
-```text
-MODEL GAP
-```
-
-must be reported.
-
----
-
-# 49. Fee Nullability
-
-Verify Order schema can persist:
-
-```text
-delivery_fee = zero Money
-delivery_fee_status = FINALIZED
-```
-
-for PICKUP.
-
----
-
-# 50. Total Persistence
-
-Verify:
-
-```text
-total = subtotal
-```
-
-can be represented without a delivery-fee finalization operation.
-
----
-
-# 51. State Enum
-
-Verify:
-
-```text
-PENDING_PAYMENT
-```
-
-is valid initial status for PICKUP.
-
----
-
-# 52. Fulfillment Enum
-
-Verify:
-
-```text
-PICKUP
-```
-
-is the canonical persisted enum.
-
-Do not use:
-
-```text
-SELF_PICKUP
-COLLECTION
-STORE_PICKUP
-```
-
----
-
-# 53. Initial History Entry
-
-Later successful Checkout must append:
-
-```text
-PENDING_PAYMENT
-```
-
-to Order status history.
-
-Phase 7.3 should verify the PICKUP branch requires no special alternate initial history state.
-
----
-
-# 54. Pickup Is Not READY_FOR_PICKUP Yet
-
-Do not initialize Order as:
-
-```text
-READY_FOR_PICKUP
-```
-
-That status belongs later in the operational lifecycle after payment and processing.
-
----
-
-# 55. PICKUP Operational Path
-
-Future PICKUP path is conceptually:
-
-```text
-PENDING_PAYMENT
-→ PAID
-→ ACCEPTED
-→ PROCESSING
-→ READY_FOR_PICKUP
-→ COMPLETED
-```
-
-Only the initial state is relevant to Phase 7.3.
-
-Do not implement transitions.
-
----
-
-# 56. No SHIPPED for PICKUP
-
-PICKUP later must not enter:
-
-```text
-SHIPPED
-DELIVERED
-```
-
-But Phase 7.3 should only record this dependency, not implement staff transition guards.
-
----
-
-# 57. Fulfillment-Type Integrity
-
-Once Order is created:
-
-```text
-fulfillment_type = PICKUP
-```
-
-is historical Order meaning.
-
-Do not allow ordinary Checkout/PICKUP code to mutate it later.
-
----
-
-# 58. Client Cannot Set Delivery Fee
-
-Strict validation already forbids:
+Optional where frozen contract allows:
 
 ```json
 {
-  "fulfillment_type": "PICKUP",
+  "delivery_fee": {
+    "amount": 35000,
+    "currency": "TZS"
+  },
+  "reason": "Mikocheni zone 2"
+}
+```
+
+---
+
+# 11. Strict Allow-List
+
+Allowed fields:
+
+```text
+delivery_fee
+reason   # optional only if current OpenAPI/contract includes it
+```
+
+Do not accept anything else.
+
+---
+
+# 12. Server-Controlled Fields
+
+Reject:
+
+```text
+subtotal
+total
+status
+delivery_fee_status
+currency at top level
+customer_id
+user_id
+order_reference
+payment_status
+payment
+updated_at
+created_at
+```
+
+---
+
+# 13. Money Shape
+
+`delivery_fee` must use canonical Money shape:
+
+```json
+{
+  "amount": 35000,
+  "currency": "TZS"
+}
+```
+
+---
+
+# 14. Amount Type
+
+`amount` must be:
+
+```text
+integer
+```
+
+Reject:
+
+```text
+float
+numeric string
+boolean
+null
+array
+object
+```
+
+---
+
+# 15. Minimum
+
+Valid:
+
+```text
+amount >= 0
+```
+
+Zero is explicitly valid.
+
+---
+
+# 16. Zero-Fee DELIVERY
+
+This must succeed when all other conditions hold:
+
+```json
+{
   "delivery_fee": {
     "amount": 0,
     "currency": "TZS"
@@ -1023,222 +350,706 @@ Strict validation already forbids:
 }
 ```
 
-Even the correct zero value is server-controlled and must be rejected if client supplies it.
+A free delivery zone is valid business behavior.
 
 ---
 
-# 59. Client Cannot Set Total
+# 17. Negative Fee
 
 Reject:
 
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "total": {
-    "amount": 1000,
-    "currency": "TZS"
-  }
-}
+```text
+amount < 0
+```
+
+with:
+
+```text
+422 INVALID_VALUE
+```
+
+or exact frozen validation mapping.
+
+---
+
+# 18. Currency
+
+Currency must be exactly:
+
+```text
+TZS
 ```
 
 ---
 
-# 60. Client Cannot Set Status
+# 19. Reject Currency Drift
 
 Reject:
 
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "status": "PENDING_PAYMENT"
-}
+```text
+USD
+EUR
+KES
+tzs
 ```
 
-Server owns status even when client sends the correct value.
+V1 is closed around TZS.
 
 ---
 
-# 61. Client Cannot Set Currency
+# 20. Minor Units
 
-Reject:
+Fee amount uses integer minor units.
 
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "currency": "TZS"
-}
-```
-
-because currency is server-controlled.
-
----
-
-# 62. Request Normalization
-
-Normalize:
+Never use:
 
 ```text
-fulfillment_type
-```
-
-only according to frozen enum rules.
-
-Do not lowercase/uppercase arbitrary client values into validity.
-
----
-
-# 63. Exact Enum
-
-This:
-
-```text
-PICKUP
-```
-
-is valid.
-
-These:
-
-```text
-pickup
-Pickup
-SELF_PICKUP
-```
-
-are invalid.
-
----
-
-# 64. No PICKUP Alias
-
-Do not accept:
-
-```text
-COLLECT
-COLLECTION
-SELF_PICK
+float
+decimal currency arithmetic
+formatted currency strings
 ```
 
 ---
 
-# 65. Address Branch Ordering
+# 21. Reason
 
-For PICKUP:
-
-first determine valid fulfillment enum.
-
-Then enforce:
+If `reason` is present in current frozen request schema:
 
 ```text
-delivery_address must be null/absent
+trim
+non-empty where supplied
+audit safely
 ```
 
-Do not run DELIVERY nested-field validation when no address is required.
+Do not make it required unless contract says so.
 
 ---
 
-# 66. Null vs Absent
+# 22. Reason Is Not Fee Authority
 
-Both:
+`reason` has no effect on:
 
-```json
-{
-  "fulfillment_type": "PICKUP"
-}
+```text
+amount
+currency
+total
+permissions
 ```
-
-and:
-
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "delivery_address": null
-}
-```
-
-should normalize to the same logical PICKUP intent if this matches the frozen schema.
 
 ---
 
-# 67. Idempotency Fingerprint
+# 23. No Automatic Fee Calculation
 
-Those two logically equivalent PICKUP requests should produce the same normalized Checkout intent.
-
-Do not make:
+The backend does NOT calculate the delivery fee from:
 
 ```text
-absent delivery_address
+city
+address_line
+distance
+zone
+warehouse
+inventory location
+order subtotal
+item quantity
 ```
 
-and:
-
-```text
-delivery_address = null
-```
-
-materially different idempotency fingerprints.
+The authorized Staff/Admin supplies the authoritative fee.
 
 ---
 
-# 68. Canonical PICKUP Fingerprint
+# 24. No Flat Fee
+
+Do not reintroduce:
+
+```text
+TZS 20,000
+```
+
+or any fixed default.
+
+---
+
+# 25. Order Preconditions
+
+ORD-014 succeeds only if all hold:
+
+```text
+Order exists
+actor authorized
+fulfillment_type = DELIVERY
+status = PENDING_PAYMENT
+delivery_fee_status = PENDING
+```
+
+---
+
+# 26. DELIVERY Only
+
+For:
+
+```text
+fulfillment_type = PICKUP
+```
+
+ORD-014 must fail.
+
+Expected:
+
+```text
+422 BUSINESS_RULE_VIOLATION
+```
+
+according to frozen contract.
+
+---
+
+# 27. Why PICKUP Fails
+
+PICKUP already has:
+
+```text
+delivery_fee = 0 TZS
+delivery_fee_status = FINALIZED
+```
+
+at Checkout.
+
+There is nothing for ORD-014 to finalize.
+
+---
+
+# 28. Order Status Requirement
+
+Order must still be:
+
+```text
+PENDING_PAYMENT
+```
+
+---
+
+# 29. PAID Order
+
+Do not allow ordinary ORD-014 fee finalization once Order is:
+
+```text
+PAID
+```
+
+The normal workflow requires fee finalization before payment.
+
+---
+
+# 30. Other Order States
+
+Reject ORD-014 for:
+
+```text
+ACCEPTED
+PROCESSING
+READY_FOR_PICKUP
+SHIPPED
+DELIVERED
+COMPLETED
+CANCELLED
+```
+
+according to the frozen state rules.
+
+---
+
+# 31. Fee Status Requirement
+
+Current value must be:
+
+```text
+PENDING
+```
+
+---
+
+# 32. Already Finalized
+
+If:
+
+```text
+delivery_fee_status = FINALIZED
+```
+
+a fresh different operation must fail:
+
+```text
+409 INVALID_ORDER_TRANSITION
+```
+
+unless it is a valid same-key idempotent replay of the original success.
+
+---
+
+# 33. One-Way Transition
+
+Normal ORD-014 transition is exactly:
+
+```text
+PENDING → FINALIZED
+```
+
+There is no:
+
+```text
+FINALIZED → PENDING
+```
+
+---
+
+# 34. One-Time Finalization
+
+Do not support repeated arbitrary changes such as:
+
+```text
+35000
+→ 50000
+→ 20000
+```
+
+through normal ORD-014.
+
+Once finalized, fee is historical.
+
+---
+
+# 35. Controlled Future Correction
+
+If a later controlled Admin correction workflow exists or is introduced:
+
+it is separate from normal ORD-014.
+
+Do not implement it in Phase 7.5 unless explicitly frozen elsewhere.
+
+---
+
+# 36. Total Calculation
+
+On successful finalization:
+
+```text
+total =
+subtotal
++
+delivery_fee.amount
+```
+
+---
+
+# 37. Example
+
+Given:
+
+```text
+subtotal = 170000000
+delivery_fee = 2500000
+```
+
+result:
+
+```text
+total = 172500000
+```
+
+---
+
+# 38. Zero-Fee Example
+
+Given:
+
+```text
+subtotal = 170000000
+delivery_fee = 0
+```
+
+result:
+
+```text
+total = 170000000
+```
+
+---
+
+# 39. No Client Total
+
+Client must not supply:
+
+```text
+total
+```
+
+even if mathematically correct.
+
+Backend computes it.
+
+---
+
+# 40. No Client Subtotal
+
+Subtotal remains historical Checkout authority.
+
+ORD-014 must not recalculate or modify it.
+
+---
+
+# 41. Subtotal Is Immutable Here
+
+ORD-014 reads:
+
+```text
+subtotal
+```
+
+and computes total from it.
+
+Do not modify:
+
+```text
+subtotal_amount
+```
+
+---
+
+# 42. Price Is Immutable Here
+
+ORD-014 does not re-read Product/Variant prices.
+
+OrderItems are already historical snapshots.
+
+---
+
+# 43. Cart Is Irrelevant
+
+ORD-014 does not read or mutate the customer's Cart.
+
+The Order already exists.
+
+---
+
+# 44. Inventory Is Unchanged
+
+ORD-014 must not mutate:
+
+```text
+ProductStock.quantity
+ProductStock.reserved_quantity
+order_item_inventory_allocations
+```
+
+---
+
+# 45. Reservation Remains Held
+
+The Checkout-created stock reservation remains exactly as-is after successful fee finalization.
+
+Do not:
+
+```text
+reserve again
+release reservation
+consume reservation
+```
+
+---
+
+# 46. No Second Reservation
+
+Finalizing delivery fee must never call:
+
+```text
+InventoryAllocator::reserve()
+```
+
+---
+
+# 47. No Release
+
+A successful ORD-014 does not release inventory.
+
+---
+
+# 48. No Consumption
+
+A successful ORD-014 does not consume inventory.
+
+---
+
+# 49. Payment Boundary
+
+Before ORD-014:
+
+```text
+delivery_fee_status = PENDING
+PAY-001 blocked
+```
+
+After ORD-014:
+
+```text
+delivery_fee_status = FINALIZED
+PAY-001 eligible from fee-state perspective
+```
+
+---
+
+# 50. ORD-014 Does Not Create Payment
+
+After fee finalization:
+
+```text
+payment = null
+```
+
+until PAY-001 is called.
+
+---
+
+# 51. No Payment Provider Call
+
+Do not call:
+
+```text
+Stripe
+Flutterwave
+Pesapal
+mobile money provider
+bank gateway
+```
+
+or any provider.
+
+---
+
+# 52. No Status Change
+
+Successful ORD-014 leaves:
+
+```text
+Order.status = PENDING_PAYMENT
+```
+
+---
+
+# 53. No Status History Transition
+
+Do not append a fake Order status change such as:
+
+```text
+FEE_FINALIZED
+```
+
+to `order_status_history` if that enum is not an Order status.
+
+Fee finalization is a financial mutation, not an Order-status transition.
+
+---
+
+# 54. Audit Is Required
+
+Successful fee finalization is privileged and auditable.
+
+Audit should capture safe fields such as:
+
+```text
+actor
+order
+old delivery fee
+new delivery fee
+reason
+occurred_at
+request_id
+```
+
+according to existing Audit infrastructure.
+
+---
+
+# 55. Server-Derived Actor
+
+Never accept:
+
+```text
+actor_id
+actor_role
+approved_by
+```
+
+from the request.
+
+---
+
+# 56. Server-Derived Timestamp
+
+`occurred_at` must use server time.
+
+Do not accept a client timestamp.
+
+---
+
+# 57. No Sensitive Audit Leakage
+
+Do not audit:
+
+```text
+Authorization token
+session JWT
+payment secrets
+unnecessary full customer address
+```
+
+---
+
+# 58. Idempotency Required
+
+ORD-014 requires:
+
+```http
+Idempotency-Key: <uuid>
+```
+
+---
+
+# 59. Reuse Shared Service
+
+Reuse existing:
+
+```text
+IdempotencyService
+```
+
+proven by earlier phases.
+
+Do not create:
+
+```text
+DeliveryFeeIdempotencyService
+```
+
+---
+
+# 60. Idempotency Scope
+
+Use established scope:
+
+```text
+authenticated actor
++
+action ORD-014
++
+Idempotency-Key
+```
+
+---
+
+# 61. Logical Fingerprint
+
+Material request input should include normalized:
+
+```text
+order identity
+delivery_fee.amount
+delivery_fee.currency
+reason   # if part of request semantics
+```
+
+Follow existing shared-service conventions.
+
+---
+
+# 62. Do Not Fingerprint Volatile State
+
+Do not include:
+
+```text
+current total
+updated_at
+current reservation
+payment availability
+```
+
+as logical client-input fingerprint unless shared infrastructure explicitly requires it.
+
+---
+
+# 63. Same-Key Replay
+
+Same actor + same order + same key + same logical request:
+
+```text
+200
+```
+
+replay original successful result.
+
+No second mutation.
+
+No second audit event.
+
+---
+
+# 64. Replay After FINALIZED
+
+This is critical.
+
+After first success the Order is:
+
+```text
+delivery_fee_status = FINALIZED
+```
+
+A legitimate same-key retry must still replay success.
+
+Do not reject it merely because the Order is no longer PENDING.
+
+---
+
+# 65. Correct Replay Ordering
 
 Conceptually:
 
 ```text
-fulfillment_type = PICKUP
-delivery_address = null
+authenticate
+→ authorize
+→ validate Idempotency-Key
+→ validate request shape
+→ normalize request
+→ derive fingerprint
+→ inspect durable idempotency record
+→ matching completed replay?
+     return original 200
+→ otherwise lock/revalidate Order
+→ execute transition
 ```
 
-after normalization.
-
----
-
-# 69. No Address Data in Fingerprint
-
-For PICKUP:
-
-there is no delivery-address payload in the normalized fingerprint.
-
----
-
-# 70. Idempotency Still Required
-
-PICKUP CHK-001 still requires:
+Do not:
 
 ```text
-Idempotency-Key
+load Order
+→ see FINALIZED
+→ return INVALID_ORDER_TRANSITION
+→ then check replay
 ```
-
-Phase 7.3 does not weaken this.
 
 ---
 
-# 71. Same-Key Replay
+# 66. Same Key, Different Amount
 
-Later:
-
-```text
-PICKUP + key K
-```
-
-replay returns original 201 result.
-
-No second Order.
-
-No second reservation.
-
----
-
-# 72. Same-Key Changed to DELIVERY
-
-Later:
+Example:
 
 ```text
-first K = PICKUP
-retry K = DELIVERY
+first:
+35000
+
+same key retry:
+50000
 ```
 
-must:
+Expected:
 
 ```text
 409 DUPLICATE_OPERATION
@@ -1246,542 +1057,1447 @@ must:
 
 ---
 
-# 73. No Idempotency Implementation Duplication
+# 67. Same Key, Different Currency
 
-Do not build PICKUP-specific idempotency.
-
-Reuse shared Checkout idempotency later.
+Also conflict.
 
 ---
 
-# 74. Security
+# 68. Same Key, Different Reason
 
-PICKUP does not change actor policy:
+If `reason` is included in fingerprint semantics:
+
+different reason should conflict.
+
+Follow shared conventions consistently.
+
+---
+
+# 69. Different Key After Finalized
+
+A fresh different key against an already-finalized Order:
 
 ```text
-CUSTOMER-only
+409 INVALID_ORDER_TRANSITION
 ```
 
-No Staff/Admin checkout unless frozen contract changes later.
+No fee rewrite.
 
 ---
 
-# 75. Guest Checkout
+# 70. Same Key, Different Order
 
-Still:
+Must not replay a result from another Order.
+
+Order identity is part of operation scope/fingerprint.
+
+---
+
+# 71. Different Actor, Same Key
+
+Idempotency is actor-scoped.
+
+No cross-actor replay.
+
+---
+
+# 72. Concurrency Is Critical
+
+ORD-014 must handle:
 
 ```text
-401
+Staff A sets fee
+Staff B sets fee
 ```
 
-for guest-only caller.
-
-PICKUP is not an exception.
+safely.
 
 ---
 
-# 76. Cart Ownership
+# 73. Order Row Lock
 
-Server derives authenticated customer's own active Cart.
+Acquire a write lock on the Order before validating mutable business state for first execution.
 
-No Cart ID accepted.
-
----
-
-# 77. No Pickup Cart Shortcut
-
-Do not expose:
+Conceptually:
 
 ```text
-POST /me/cart/pickup
+SELECT ... FOR UPDATE
+```
+
+through repository conventions.
+
+---
+
+# 74. Revalidate Under Lock
+
+Inside transaction re-check:
+
+```text
+fulfillment_type
+status
+delivery_fee_status
+```
+
+Do not trust a pre-transaction read.
+
+---
+
+# 75. Concurrent Different Fees
+
+Two concurrent operations:
+
+```text
+A sets 35000
+B sets 50000
+```
+
+must not both succeed.
+
+Expected:
+
+```text
+one success
+one conflict/state failure
+```
+
+depending exact locking/idempotency path.
+
+---
+
+# 76. No Lost Update
+
+Never allow:
+
+```text
+fee=35000 committed
+then silently overwritten with 50000
+```
+
+through normal ORD-014.
+
+---
+
+# 77. Race With PAY-001
+
+Frozen contract requires critical concurrency for:
+
+```text
+fee SET
+vs
+PAY-001
+```
+
+Phase 7.5 should prepare/implement the fee-side lock/state semantics so Group H can safely share them.
+
+---
+
+# 78. Payment While Pending
+
+PAY-001 must later reject:
+
+```text
+delivery_fee_status = PENDING
 ```
 
 ---
 
-# 78. Error Mapping
+# 79. Payment After Finalized
 
-Expected PICKUP-specific failures include:
-
-```text
-invalid fulfillment enum
-→ schema/domain 422
-
-PICKUP + populated delivery_address
-→ 422 INVALID_FULFILLMENT
-
-client delivery_fee
-→ 422 INVALID_VALUE
-
-client total/subtotal/currency/status
-→ 422 INVALID_VALUE
-```
-
-Use exact frozen envelope.
-
----
-
-# 79. Domain Result Type
-
-If creating a PICKUP branch result, make invalid states impossible.
-
-It should not permit:
-
-```text
-PICKUP + non-null delivery address
-PICKUP + pending delivery fee
-PICKUP + non-zero delivery fee
-```
-
----
-
-# 80. Strong Invariant
-
-The code should encode:
-
-```text
-PICKUP
-implies
-delivery_address = null
-delivery_fee = zero
-delivery_fee_status = FINALIZED
-```
-
-as one coherent domain decision.
-
----
-
-# 81. Avoid Mutable State Object
-
-Do not create an object that can later be mutated into:
-
-```text
-PICKUP + delivery_fee_status=PENDING
-```
-
-without explicit invariant checks.
-
-Prefer immutable construction where repository style allows it.
-
----
-
-# 82. Reuse Fulfillment Enum
-
-Do not create:
-
-```text
-PickupType
-```
-
-if existing:
-
-```text
-FulfillmentType::PICKUP
-```
-
-already exists.
-
----
-
-# 83. Reuse DeliveryFeeStatus Enum
-
-Use existing:
+PAY-001 may later proceed only after seeing:
 
 ```text
 FINALIZED
 ```
 
-enum/value.
-
-No magic string.
+inside its own transaction/state validation.
 
 ---
 
-# 84. Reuse OrderStatus Enum
+# 80. Atomic Fee Finalization
+
+At minimum, one transaction must cover:
+
+```text
+Order lock
+state revalidation
+delivery_fee write
+delivery_fee_status write
+total recomputation
+audit write
+idempotency success record
+```
+
+where existing infrastructure supports atomic audit/idempotency participation.
+
+---
+
+# 81. No Partial Financial Mutation
+
+Failure must not leave:
+
+```text
+delivery_fee set
+but delivery_fee_status PENDING
+```
+
+or:
+
+```text
+status FINALIZED
+but total old
+```
+
+---
+
+# 82. Total and Fee Must Commit Together
+
+These fields form one business transition:
+
+```text
+delivery_fee
+delivery_fee_status
+total
+```
+
+---
+
+# 83. Order Model Invariants
+
+Reuse `Order::assertValid()` / current financial invariants.
+
+Do not bypass them with raw query updates unless repository architecture explicitly requires safe internal mutation.
+
+---
+
+# 84. Financial Immutability
+
+Current model protects finalized/historical financial state.
+
+ORD-014 must use the legitimate:
+
+```text
+PENDING
+→ FINALIZED
+```
+
+path without weakening immutability globally.
+
+---
+
+# 85. Do Not Disable Model Protection
+
+Do not:
+
+```text
+remove financial immutability hook
+disable model events globally
+mass update protected fields
+```
+
+just to make ORD-014 pass.
+
+---
+
+# 86. Dedicated Domain Action
+
+Prefer a focused service such as:
+
+```text
+FinalizeDeliveryFee
+SetDeliveryFee
+```
+
+following repository naming.
+
+---
+
+# 87. Service Responsibilities
+
+The domain/application action may own:
+
+```text
+Order locking
+state validation
+fee normalization/value
+total recomputation
+financial transition
+audit coordination
+```
+
+Do not put all logic in controller.
+
+---
+
+# 88. Controller
+
+Controller should remain thin:
+
+```text
+validated request
+→ action/service
+→ resource
+```
+
+---
+
+# 89. FormRequest
+
+Use a strict request class.
+
+Never:
+
+```php
+$request->all()
+```
+
+Use:
+
+```php
+$request->validated()
+```
+
+---
+
+# 90. Additional Properties
+
+Reject unknown request fields.
+
+---
+
+# 91. Resource
+
+Use existing:
+
+```text
+OrderSummary
+OrderOperationalDetail
+```
+
+or exact frozen ORD-014 response resource.
+
+Do not serialize raw model.
+
+---
+
+# 92. Response
+
+Successful ORD-014:
+
+```text
+200
+```
+
+with updated Order representation.
+
+At minimum it must expose the frozen financial state:
+
+```text
+status = PENDING_PAYMENT
+delivery_fee = {amount, currency}
+delivery_fee_status = FINALIZED
+total = subtotal + fee
+```
+
+---
+
+# 93. Payment Still Null
+
+If response includes `payment`:
+
+```text
+payment = null
+```
+
+until PAY-001 creates one.
+
+---
+
+# 94. Do Not Return Internal Allocation Data
+
+No:
+
+```text
+ProductStock IDs
+reservation allocation IDs
+warehouse IDs
+```
+
+in ordinary customer/staff fee response unless separately contracted.
+
+---
+
+# 95. Masked Order Access
+
+Use the established operational Order lookup/authorization semantics.
+
+Unauthorized actors must not gain an existence oracle.
+
+Follow current 404/403 rules exactly.
+
+---
+
+# 96. Order Not Found
+
+Expected:
+
+```text
+404 ORDER_NOT_FOUND
+```
+
+or current canonical resource-not-found mapping.
+
+Do not leak raw model exceptions.
+
+---
+
+# 97. PICKUP Error
+
+Expected:
+
+```text
+422 BUSINESS_RULE_VIOLATION
+```
+
+---
+
+# 98. Already Finalized Error
+
+Expected:
+
+```text
+409 INVALID_ORDER_TRANSITION
+```
+
+for a fresh operation.
+
+---
+
+# 99. Wrong Order State
+
+Expected endpoint mapping should use:
+
+```text
+409 INVALID_ORDER_TRANSITION
+```
+
+or:
+
+```text
+409 ORDER_STATE_CONFLICT
+```
+
+according to frozen distinction.
+
+Do not invent a new code.
+
+---
+
+# 100. Concurrent Modification
+
+Expected:
+
+```text
+409 ORDER_STATE_CONFLICT
+```
+
+where the current state changed under concurrency.
+
+---
+
+# 101. Invalid Amount
+
+Expected:
+
+```text
+422 INVALID_VALUE
+```
+
+---
+
+# 102. Invalid Currency
+
+Expected:
+
+```text
+422 INVALID_VALUE
+```
+
+---
+
+# 103. Missing Fee
+
+Expected request-schema missing-field error.
+
+---
+
+# 104. Wrong Fee Type
+
+Expected:
+
+```text
+422 INVALID_TYPE
+```
+
+or current validation mapping.
+
+---
+
+# 105. Missing Idempotency Key
+
+Use shared required-header error semantics.
+
+Do not generate a server key automatically.
+
+---
+
+# 106. Invalid Idempotency Key
+
+Reject before mutation.
+
+---
+
+# 107. Rate Limit
+
+Use the established operational mutation limiter.
+
+Every:
+
+```text
+429
+```
+
+must include:
+
+```text
+Retry-After
+```
+
+---
+
+# 108. Cache
+
+ORD-014 response is private Order state.
 
 Use:
 
 ```text
-PENDING_PAYMENT
+private
+no-store
 ```
 
-from existing closed enum.
+according to existing conventions.
 
 ---
 
-# 85. Reuse Currency Authority
+# 109. No Checkout Fee Mutation
 
-Use existing TZS source.
-
-Do not hardcode currency differently across branch services.
-
----
-
-# 86. Phase 7.3 Implementation Target
-
-The desired result is that later Checkout orchestration can ask:
+CHK-001 must continue to create DELIVERY as:
 
 ```text
-Build the fulfillment state for PICKUP
+fee=null
+PENDING
 ```
 
-and receive a correct, validated immutable branch result.
+Phase 7.5 must not move fee finalization into Checkout.
 
 ---
 
-# 87. Suggested Flow
+# 110. No Customer Fee Preview
 
-Conceptually:
+Do not add a customer endpoint that calculates or previews the eventual fee.
+
+---
+
+# 111. No Fee Table
+
+Do not create:
 
 ```text
-validated fulfillment_type
-→ PICKUP branch resolver
-→ verify delivery_address absent/null
-→ produce PickupFulfillmentState
+delivery_fee_rules
+delivery_zones
+city_fees
+distance_rates
 ```
 
-No DB mutation required.
+unless separately approved in a future version.
 
 ---
 
-# 88. No Inventory Query in PICKUP Branch Component
+# 112. Address Is Context, Not Algorithm
 
-The branch component should not query ProductStock.
+Staff/Admin may inspect Order delivery address operationally when deciding the fee.
 
-Inventory belongs to Checkout transaction orchestration.
-
----
-
-# 89. No Product Query
-
-Likewise no Product/Variant validation inside the pure PICKUP fulfillment component.
+Backend does not infer the fee from the address.
 
 ---
 
-# 90. No Order Insert
+# 113. No Geocoding
 
-Do not persist Order in the branch component.
-
----
-
-# 91. No Cart Mutation
-
-Do not clear Cart in Phase 7.3 branch code.
+No maps API.
 
 ---
 
-# 92. No Transaction Requirement Yet
+# 114. No Distance Calculation
 
-Pure PICKUP branch construction does not need a DB transaction.
-
-Actual persistence belongs later.
+No kilometer formula.
 
 ---
 
-# 93. Database Review
+# 115. No Automatic Zone Matching
 
-Still verify Order schema supports PICKUP invariants.
-
-No runtime persistence required yet.
+Out of scope.
 
 ---
 
-# 94. Likely Files
+# 116. Historical Fee
 
-Potential implementation areas:
+After successful ORD-014:
 
 ```text
-app/Domain/Checkout/
-app/Services/Checkout/
-app/Enums/FulfillmentType.php
-app/Enums/DeliveryFeeStatus.php
-app/ValueObjects/Money.php
-tests/Unit/Checkout/
-tests/Feature/Checkout/
-docs/decisions.md
+delivery_fee
 ```
 
-Use actual repository structure.
+is historical business data.
+
+Future policy changes must not alter it.
 
 ---
 
-# 95. Do Not Activate Checkout Route Yet
+# 117. Historical Total
 
-Unless the project's established implementation plan explicitly activates CHK-001 incrementally, leave:
+After finalization:
 
 ```text
-POST /checkout
+total
 ```
 
-as its current stub.
-
-Phase 7.3 is one branch of a later complete workflow.
+is authoritative final Order amount before payment.
 
 ---
 
-# 96. If Route Is Already Activated
+# 118. Finality
 
-If previous implementation unexpectedly activated it:
-
-do not expose a half-implemented PICKUP-only Checkout while DELIVERY remains incomplete unless the frozen contract permits partial availability.
-
-Prefer maintaining current stub until both branches and transaction behavior are ready.
-
----
-
-# 97. Focused Unit Tests
-
-Add unit tests for PICKUP branch semantics.
-
-At minimum:
+For DELIVERY:
 
 ```text
-PICKUP produces null delivery address
-PICKUP produces null billing address
-PICKUP produces zero TZS delivery fee
-PICKUP produces FINALIZED fee status
+delivery_fee_status = FINALIZED
+```
+
+is the financial finality gate for fee.
+
+---
+
+# 119. Payment Amount Dependency
+
+Group H must later use:
+
+```text
+Order.total
+```
+
+after fee finalization.
+
+It must not accept:
+
+```text
+client payment amount
+provisional subtotal-only total
 ```
 
 ---
 
-# 98. Test — Total Relationship
+# 120. Notification Boundary
+
+The contract mentions customer notification after fee finalization.
+
+Do not make notification delivery failure roll back the successful fee transition.
+
+Use existing notification failure-isolation convention if notification creation is in scope.
+
+---
+
+# 121. If Notification Infrastructure Is Deferred
+
+Record:
+
+```text
+notification event / intent
+```
+
+only if current backend pattern already supports it.
+
+Do not build Group R push/email.
+
+---
+
+# 122. In-App Notification
+
+If current Order operation convention requires an in-app business notification:
+
+implement only the established internal notification side effect.
+
+No email/push.
+
+---
+
+# 123. Notification Is Not Transaction Authority
+
+Financial mutation succeeds based on Order rules, not notification success.
+
+---
+
+# 124. Audit Failure
+
+Follow existing audit integrity policy.
+
+If privileged action requires audit transactionally:
+
+ensure audit cannot silently disappear.
+
+Do not invent inconsistent failure behavior.
+
+---
+
+# 125. No Order Status History Entry Unless Contract Says So
+
+Fee status is not Order status.
+
+Do not pollute `order_status_history` with fee-only records.
+
+Use audit/financial state instead.
+
+---
+
+# 126. Test — Successful Fee
 
 Given:
 
 ```text
-subtotal = X
+DELIVERY
+PENDING_PAYMENT
+fee status PENDING
+subtotal 170000000
 ```
 
-assert branch/totals integration expectation:
+request:
 
 ```text
-delivery fee = 0
-total = X
+2500000 TZS
 ```
 
-If Phase 7.6 owns totals implementation, keep this as requirement-level/unit integration without duplicating calculator logic.
-
----
-
-# 99. Test — No Delivery Address
-
-Valid request:
-
-```json
-{
-  "fulfillment_type": "PICKUP"
-}
-```
-
-passes PICKUP branch validation.
-
----
-
-# 100. Test — Null Address
-
-Valid:
-
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "delivery_address": null
-}
-```
-
-normalizes identically.
-
----
-
-# 101. Test — Populated Address
-
-Reject:
-
-```json
-{
-  "fulfillment_type": "PICKUP",
-  "delivery_address": {
-    "recipient_name": "Asha",
-    "phone": "+255700000001",
-    "address_line": "Jengo Street",
-    "city": "Dar es Salaam"
-  }
-}
-```
-
-with:
+assert:
 
 ```text
-INVALID_FULFILLMENT
+fee = 2500000
+fee status = FINALIZED
+total = 172500000
+status = PENDING_PAYMENT
 ```
-
-at the appropriate domain boundary.
 
 ---
 
-# 102. Test — Correct Client-Supplied Fee Still Rejected
+# 127. Test — Zero Fee
 
-Payload containing:
+Request:
 
 ```text
-delivery_fee = 0
+0 TZS
 ```
 
-must still fail.
+succeeds.
 
 ---
 
-# 103. Test — Total Injection
+# 128. Test — Negative Fee
 
 Reject.
 
 ---
 
-# 104. Test — Status Injection
+# 129. Test — Float Fee
 
 Reject.
 
 ---
 
-# 105. Test — Currency Injection
+# 130. Test — Numeric String
 
 Reject.
 
 ---
 
-# 106. Test — Billing Address Injection
+# 131. Test — Wrong Currency
 
-Because V1 Checkout does not accept billing address:
-
-reject it as unknown.
+Reject.
 
 ---
 
-# 107. Test — Pickup Location Injection
+# 132. Test — Lowercase Currency
 
-Reject:
+Reject.
+
+---
+
+# 133. Test — Unknown Field
+
+Reject.
+
+---
+
+# 134. Test — Client Total
+
+Reject.
+
+---
+
+# 135. Test — Client Status
+
+Reject.
+
+---
+
+# 136. Test — Customer Actor
+
+Customer:
 
 ```text
-pickup_location_id
+403
 ```
 
-as unknown.
+---
+
+# 137. Test — Staff With Permission
+
+Succeeds.
 
 ---
 
-# 108. Test — Lowercase Enum
-
-Reject:
+# 138. Test — Staff Without Permission
 
 ```text
-pickup
+403
 ```
 
 ---
 
-# 109. Test — PAYMENT Remains Null
+# 139. Test — Admin
 
-Any branch/result object intended for Checkout response must not fabricate Payment.
+Succeeds when business state valid.
 
 ---
 
-# 110. Test — No Delivery Object
-
-PICKUP Order projection later must have:
+# 140. Test — PICKUP
 
 ```text
-delivery = null
+422 BUSINESS_RULE_VIOLATION
 ```
 
-where OrderDetail includes that field.
+---
+
+# 141. Test — PAID Order
+
+Reject.
 
 ---
 
-# 111. Model Compatibility Test
+# 142. Test — ACCEPTED Order
 
-Verify Order model can represent:
+Reject.
+
+---
+
+# 143. Test — CANCELLED Order
+
+Reject.
+
+---
+
+# 144. Test — Already FINALIZED
+
+Fresh key:
 
 ```text
-PICKUP
-delivery_address null
-billing_address null
-delivery_fee zero
-delivery_fee_status FINALIZED
+409 INVALID_ORDER_TRANSITION
+```
+
+---
+
+# 145. Test — Same-Key Replay After FINALIZED
+
+Original successful key:
+
+```text
+200 replay
+```
+
+No second update.
+
+---
+
+# 146. Test — Same-Key Different Amount
+
+```text
+409 DUPLICATE_OPERATION
+```
+
+---
+
+# 147. Test — Same-Key Different Order
+
+Must not replay another Order's result.
+
+---
+
+# 148. Test — Different Actor Same Key
+
+Separate actor scope.
+
+---
+
+# 149. Test — Audit Exactly Once
+
+Successful first execution:
+
+```text
+1 audit event
+```
+
+Same-key replay:
+
+```text
+still 1
+```
+
+---
+
+# 150. Test — Reservation Unchanged
+
+Capture:
+
+```text
+reserved_quantity
+quantity
+allocations
+```
+
+before/after ORD-014.
+
+Assert unchanged.
+
+---
+
+# 151. Test — Order Status Unchanged
+
+Before:
+
+```text
 PENDING_PAYMENT
 ```
 
-without violating model assertions or DB constraints.
+After:
+
+```text
+PENDING_PAYMENT
+```
 
 ---
 
-# 112. No Dummy Address Regression
+# 152. Test — Payment Not Created
 
-Explicitly verify no helper substitutes:
+No Payment row/representation side effect.
+
+---
+
+# 153. Test — Subtotal Unchanged
+
+Fee finalization must not modify authoritative subtotal.
+
+---
+
+# 154. Test — Address Unchanged
+
+Fee finalization must not modify historical delivery/billing snapshots.
+
+---
+
+# 155. Test — Items Unchanged
+
+OrderItems remain unchanged.
+
+---
+
+# 156. Test — Cart Unchanged
+
+Customer Cart remains untouched.
+
+---
+
+# 157. Test — Financial Atomicity
+
+Force failure after fee mutation before transaction completion.
+
+Assert rollback:
 
 ```text
-region
+fee remains null
+status remains PENDING
+total remains provisional
+no audit success
+no idempotency success
+```
+
+Use a safe test seam.
+
+---
+
+# 158. Test — Concurrent Same Key
+
+MariaDB:
+
+```text
+same actor
+same order
+same key
+same fee
+```
+
+Expected:
+
+```text
+one business mutation
+one audit event
+one durable result
+both logical responses same
+```
+
+---
+
+# 159. Test — Concurrent Different Fees
+
+MariaDB:
+
+```text
+Staff A: 35000
+Staff B: 50000
+```
+
+Expected:
+
+```text
+exactly one final fee
+no overwrite
+other request conflicts/fails state validation
+```
+
+---
+
+# 160. Test — Same Fee Different Keys Race
+
+Two distinct keys with same fee:
+
+still only one first-time transition.
+
+Do not execute the transition twice.
+
+---
+
+# 161. Test — Fee vs Simulated Payment Lock
+
+If PAY-001 is not implemented yet:
+
+add an integration-level lock/state test only if the repository can safely model the competing transaction without building Group H.
+
+Otherwise document this as required Group H concurrency coverage.
+
+Do not invent PAY-001 early.
+
+---
+
+# 162. MariaDB Requirement
+
+Real concurrency behavior must be proven on MariaDB/MySQL.
+
+SQLite alone is insufficient for row-lock semantics.
+
+---
+
+# 163. Disposable DB
+
+Reuse existing guarded disposable test DB conventions.
+
+Never run destructive concurrency harness against production/dev primary DB.
+
+---
+
+# 164. Idempotency Persistence
+
+Verify successful response can be replayed after the Order is already FINALIZED.
+
+This is essential.
+
+---
+
+# 165. Response Status Replay
+
+ORD-014 replay must preserve:
+
+```text
+200
+```
+
+not return another status.
+
+---
+
+# 166. Shared Idempotency Improvements
+
+If Phase 7.1 identified shared service shortcomings around response-status storage:
+
+do not prematurely solve CHK-001-specific `201` behavior here unless the shared improvement is clean and required for ORD-014.
+
+ORD-014 itself uses `200`.
+
+---
+
+# 167. No New Idempotency Schema
+
+Expected:
+
+```text
+NONE
+```
+
+Reuse durable shared store.
+
+---
+
+# 168. Order Model
+
+Use current:
+
+```text
+DeliveryFeeStatus
+FulfillmentType
+OrderStatus
+```
+
+enums.
+
+No magic strings.
+
+---
+
+# 169. Money Arithmetic
+
+Use safe integer addition.
+
+Check for any existing overflow guard/convention.
+
+Do not cast to float.
+
+---
+
+# 170. Overflow Defense
+
+If:
+
+```text
+subtotal + fee
+```
+
+could exceed supported integer/database range:
+
+fail safely according to existing money/domain convention.
+
+Do not wrap.
+
+---
+
+# 171. Maximum Fee
+
+Do not invent a business maximum unless frozen contract/schema already defines one.
+
+Current normative minimum is:
+
+```text
+>= 0
+```
+
+If database type imposes technical upper bound, validate safely against representable range.
+
+---
+
+# 172. No Percent Fee
+
+Do not add percentage pricing.
+
+---
+
+# 173. No Discount Fee
+
+Do not add negative fee as discount.
+
+Zero is minimum.
+
+---
+
+# 174. No Tax Logic
+
+Do not add tax.
+
+---
+
+# 175. No Surcharge Type
+
+Do not add fee categories.
+
+---
+
+# 176. No Customer Negotiation State
+
+Do not add:
+
+```text
+fee proposed
+fee accepted
+fee rejected
+```
+
+states.
+
+V1 has:
+
+```text
+PENDING
+FINALIZED
+```
+
+only.
+
+---
+
+# 177. No Second Approval
+
+No dual-admin approval requirement exists.
+
+Do not invent one.
+
+---
+
+# 178. No Customer Confirmation Endpoint
+
+Not part of V1.
+
+---
+
+# 179. No Automatic Refund Logic
+
+Out of scope.
+
+---
+
+# 180. OpenAPI
+
+Keep ORD-014 aligned with current frozen:
+
+```text
+POST /orders/{order}/delivery-fee
+Idempotency-Key required
+SetDeliveryFeeRequest
+200
+401
+403
+404
+409
+422
+429
+```
+
+---
+
+# 181. Do Not Broaden Request Schema
+
+No additional:
+
+```text
+zone
+distance
 city
-store address
-customer profile address
+calculated_by
+payment_amount
 ```
 
-for PICKUP.
+fields.
 
 ---
 
-# 113. Phase 7.2 Regression
+# 182. Documentation
 
-Run address-model tests.
-
-PICKUP changes must not reintroduce:
+Add/update backend ADR only for implementation-specific choices such as:
 
 ```text
-region
+lock ordering
+idempotency replay ordering
+audit atomicity
 ```
 
-to public V1 Checkout/Order schemas.
+Do not rewrite the frozen fee policy.
 
 ---
 
-# 114. Existing Cart Regression
+# 183. Suggested Service Boundary
 
-No Cart behavior should change during PICKUP implementation.
-
-Run relevant Group F focused tests if Checkout helper touches shared Cart code.
-
----
-
-# 115. Existing Inventory Regression
-
-If PICKUP code references money/fulfillment enums only:
-
-no inventory changes expected.
-
-If any shared reservation interface is touched, rerun its focused tests.
-
----
-
-# 116. No MariaDB Checkout Race Yet
-
-Phase 7.7 owns actual Checkout transaction concurrency.
-
-Do not fabricate a partial MariaDB checkout race harness before Checkout persistence exists.
-
----
-
-# 117. No Schema Change Expected
-
-Expected:
+Potential structure:
 
 ```text
-Schema: NONE
+SetDeliveryFeeRequest
+→ OrderController
+→ FinalizeDeliveryFee
+→ Order model
+→ AuditRecorder
+→ IdempotencyService
+→ Order Resource
 ```
 
-If Order model cannot represent PICKUP state:
-
-report a MODEL GAP rather than silently altering V1.
+Use actual project patterns.
 
 ---
 
-# 118. Dependencies
+# 184. Thin Controller
+
+Controller should not contain:
+
+```text
+fee state machine
+money arithmetic
+row locking
+audit construction
+idempotency logic
+```
+
+---
+
+# 185. Authorization Before Mutation
+
+Resolve authenticated actor and permission before business mutation.
+
+Still re-check mutable Order business state under lock.
+
+---
+
+# 186. Information Disclosure
+
+Do not expose customer private address or other Order data beyond the authorized operational response shape.
+
+---
+
+# 187. N+1
+
+Single-resource ORD-014 is not a collection N+1 risk.
+
+Do not add broad eager-loading optimization work unless the response resource triggers accidental lazy queries.
+
+---
+
+# 188. Resource Loading
+
+Load only relationships needed for the frozen response.
+
+Avoid unnecessary Customer/payment/inventory relation loading.
+
+---
+
+# 189. Notifications
+
+If fee-finalized in-app notification is required by current notification contract, ensure it is not duplicated on replay.
+
+---
+
+# 190. Replay Side Effects
+
+Same-key replay must NOT duplicate:
+
+```text
+audit
+notification
+database writes
+```
+
+---
+
+# 191. Failed Attempts
+
+Validation/state failures must not create success audit/notification records.
+
+Security logging can remain separate under existing conventions.
+
+---
+
+# 192. Existing PICKUP Regression
+
+Run Phase 7.3 tests.
+
+No change to:
+
+```text
+PICKUP fee = 0
+PICKUP fee status = FINALIZED
+PICKUP total = subtotal
+```
+
+---
+
+# 193. Existing DELIVERY Regression
+
+Run Phase 7.4 tests.
+
+Initial DELIVERY state must remain:
+
+```text
+fee null
+PENDING
+provisional total=subtotal
+```
+
+before ORD-014.
+
+---
+
+# 194. Order Model Regression
+
+Run financial-immutability tests.
+
+Ensure legitimate:
+
+```text
+PENDING → FINALIZED
+```
+
+still succeeds.
+
+---
+
+# 195. Idempotency Regression
+
+Run existing:
+
+```text
+INV-003
+CART-005
+operational action
+```
+
+idempotency suites if shared service changes.
+
+---
+
+# 196. Audit Regression
+
+Run focused audit tests if AuditRecorder or shared action code changes.
+
+---
+
+# 197. Schema
 
 Expected:
 
@@ -1791,7 +2507,7 @@ NONE
 
 ---
 
-# 119. Frontend
+# 198. Dependencies
 
 Expected:
 
@@ -1801,337 +2517,19 @@ NONE
 
 ---
 
-# 120. Documentation
+# 199. Frontend
 
-Record the PICKUP implementation decision if needed:
-
-```text
-PICKUP:
-delivery_address null
-billing_address null
-fee 0 TZS
-fee status FINALIZED
-total=subtotal
-Order PENDING_PAYMENT
-payment null
-```
-
-Do not create a duplicate API contract.
-
----
-
-# 121. No Delivery Fee ADR Redesign
-
-This phase does not reconsider Model B.
-
----
-
-# 122. No Payment ADR Redesign
-
-This phase does not reconsider Group H boundaries.
-
----
-
-# 123. Validation Responsibility
-
-If Phase 7.8 owns final Checkout FormRequest, Phase 7.3 may provide a reusable PICKUP branch validator but must not duplicate final transport/schema validation.
-
----
-
-# 124. Keep Separation
-
-Preferred layers:
+Expected:
 
 ```text
-request schema
-→ normalized Checkout input
-→ fulfillment branch
-→ later Checkout transaction
+NONE
 ```
 
 ---
 
-# 125. No Request Object in Domain
+# 200. Verification
 
-Avoid passing the Laravel Request directly into the PICKUP domain component.
-
-Use validated normalized input.
-
----
-
-# 126. Deterministic Output
-
-Given identical PICKUP input, the branch result must be deterministic.
-
-No current-time/random/database dependency.
-
----
-
-# 127. Money Equality
-
-When comparing:
-
-```text
-total
-subtotal
-```
-
-compare integer amount + currency.
-
-No float conversion.
-
----
-
-# 128. Currency Mismatch Impossible
-
-The branch should not permit:
-
-```text
-subtotal TZS
-delivery fee USD
-```
-
-V1 uses TZS only.
-
----
-
-# 129. Total Finality
-
-For PICKUP:
-
-```text
-delivery_fee_status = FINALIZED
-```
-
-means:
-
-```text
-total is final
-```
-
-from the Order financial perspective before payment.
-
-Document this distinction from DELIVERY's provisional total.
-
----
-
-# 130. Payment Still Null
-
-Final total does not mean Payment exists.
-
-Keep those concepts separate.
-
----
-
-# 131. Cancellation Window Dependency
-
-The future Order's:
-
-```text
-created_at
-```
-
-starts the configured cancellation window.
-
-Phase 7.3 does not implement cancellation.
-
-Do not special-case PICKUP.
-
----
-
-# 132. Operational Fulfillment Dependency
-
-Later Staff processing uses:
-
-```text
-PICKUP
-```
-
-to determine valid transition:
-
-```text
-PROCESSING → READY_FOR_PICKUP
-```
-
-This phase should preserve the enum exactly so operational code can branch reliably.
-
----
-
-# 133. No Tracking Delivery Object
-
-PICKUP should not generate delivery tracking state.
-
----
-
-# 134. No Shipping Status
-
-Do not initialize:
-
-```text
-shipping_status
-```
-
-or equivalent.
-
----
-
-# 135. No Store Notification
-
-Notification behavior is outside this phase.
-
----
-
-# 136. No Email
-
-Out of scope.
-
----
-
-# 137. No FCM
-
-Out of scope.
-
----
-
-# 138. No Receipt
-
-Out of scope.
-
----
-
-# 139. Security Review
-
-Ensure PICKUP cannot be used to bypass:
-
-```text
-stock validation
-price recalculation
-authentication
-Cart ownership
-idempotency
-```
-
-just because delivery address is absent.
-
----
-
-# 140. Do Not Branch Before Authorization
-
-Future CHK-001 should still authenticate CUSTOMER before exposing domain behavior according to Phase 7.1 validation ordering.
-
----
-
-# 141. No Fee Finalization Permission Required
-
-PICKUP customer's Checkout does not invoke the staff permission:
-
-```text
-orders.set_delivery_fee
-```
-
-Fee zero/finalized is intrinsic server behavior.
-
----
-
-# 142. Audit
-
-No privileged delivery-fee audit event is needed merely because PICKUP gets zero fee.
-
-This is not ORD-014.
-
----
-
-# 143. Historical Financial Record
-
-Once the Order is later created:
-
-```text
-delivery_fee = zero
-delivery_fee_status = FINALIZED
-```
-
-must remain part of historical financial meaning.
-
-Do not recalculate it based on later delivery policy changes.
-
----
-
-# 144. No Later Fee Addition
-
-A PICKUP Order must not later gain a delivery fee through normal flow.
-
----
-
-# 145. Pickup→Delivery Conversion
-
-Do not implement changing an Order from:
-
-```text
-PICKUP
-```
-
-to:
-
-```text
-DELIVERY
-```
-
-after Checkout.
-
-No such V1 operation exists.
-
----
-
-# 146. Delivery→Pickup Conversion
-
-Likewise out of scope.
-
----
-
-# 147. Test Naming
-
-Prefer focused suites such as:
-
-```text
-PickupFulfillmentTest
-CheckoutPickupContractTest
-```
-
-Use repository conventions.
-
----
-
-# 148. Avoid Premature Full Feature Tests
-
-Do not write tests that expect a fully working CHK-001 transaction if that route is intentionally still stubbed.
-
-Test the branch/component/model compatibility now.
-
----
-
-# 149. Full Checkout Tests Later
-
-Phase 7.9 will prove:
-
-```text
-authenticated request
-Cart
-reservation
-Order
-Cart clear
-idempotency
-response
-```
-
-end-to-end.
-
----
-
-# 150. Verification
-
-Run focused Phase 7.3 tests.
-
-Then:
+Run focused tests, then:
 
 ```bash
 php artisan test
@@ -2144,37 +2542,40 @@ php artisan route:list
 
 ---
 
-# 151. Route Verification
+# 201. MariaDB Verification
 
-Expected:
+Run dedicated concurrency coverage for ORD-014.
+
+Report exact:
 
 ```text
-new routes = NONE
+tests
+assertions
+race count
 ```
-
-unless existing roadmap specifically activates CHK-001 earlier.
-
-Do not add a PICKUP-only route.
 
 ---
 
-# 152. OpenAPI
+# 202. Route Verification
 
-Expected:
+Confirm:
 
 ```text
-changes = NONE
+POST /api/v1/orders/{order}/delivery-fee
+→ real implementation
 ```
 
-The frozen PICKUP contract already exists.
+if Phase 7.5 is the implementation point.
+
+No duplicate route.
 
 ---
 
-# 153. Completion Report
+# 203. Completion Report
 
 Return:
 
-## Phase 7.3 status
+## Phase 7.5 status
 
 ```text
 PASS
@@ -2186,95 +2587,115 @@ or:
 BLOCKED
 ```
 
-## PICKUP branch
+## ORD-014
 
-Report the component(s) responsible for PICKUP state.
+Report implementation component and route status.
 
-## Fulfillment
-
-Confirm:
-
-```text
-fulfillment_type = PICKUP
-```
-
-## Addresses
-
-Confirm:
-
-```text
-delivery_address = null
-billing_address = null
-```
-
-and no dummy address.
-
-## Delivery fee
-
-Confirm:
-
-```text
-amount = 0
-currency = TZS
-status = FINALIZED
-```
-
-## Total
-
-Confirm:
-
-```text
-total = subtotal
-```
-
-and note whether final total calculation itself remains Phase 7.6-owned.
-
-## Order status
-
-Confirm:
-
-```text
-PENDING_PAYMENT
-```
-
-## Payment
-
-Confirm:
-
-```text
-payment = null
-provider calls = NONE
-```
-
-## Inventory
+## Authorization
 
 Report:
 
 ```text
-reservation implementation in this phase = NONE
-ProductStock mutation = NONE
+CUSTOMER = denied
+STAFF + orders.set_delivery_fee = allowed
+STAFF without permission = denied
+ADMIN = allowed subject to state
 ```
 
-unless roadmap explicitly required otherwise.
+## Request
 
-## Validation
+Report exact allow-list.
 
-Report PICKUP/address branch behavior.
+## Fee rules
 
-## Model compatibility
+Report:
 
-Report Order/Delivery schema compatibility.
+```text
+integer minor units
+amount >= 0
+zero valid
+currency TZS
+```
+
+## Order preconditions
+
+Report:
+
+```text
+DELIVERY
+PENDING_PAYMENT
+delivery_fee_status=PENDING
+```
+
+## Transition
+
+Report:
+
+```text
+delivery_fee null → Money
+PENDING → FINALIZED
+total=subtotal+fee
+```
+
+## Historical immutability
+
+Confirm subsequent fresh ORD-014 cannot overwrite finalized fee.
+
+## PICKUP
+
+Confirm ORD-014 rejects PICKUP.
 
 ## Idempotency
 
-Confirm normalized PICKUP intent:
+Report:
 
 ```text
-fulfillment_type=PICKUP
-delivery_address=null
+same-key replay
+same-key different fee
+replay after FINALIZED
+different-key finalized behavior
+durable store reuse
 ```
 
-is deterministic for later fingerprinting.
+## Concurrency
+
+Report:
+
+```text
+same-key race
+different-fee race
+same-fee different-key race
+```
+
+## Inventory
+
+Must state:
+
+```text
+ProductStock quantity mutations: NONE
+reserved_quantity mutations: NONE
+reservation changes: NONE
+allocation changes: NONE
+```
+
+## Payment
+
+Must state:
+
+```text
+payment created: NO
+provider calls: NONE
+Order status remains PENDING_PAYMENT
+PAY-001 becomes eligible only from fee-state perspective
+```
+
+## Audit
+
+Report exactly-once privileged audit behavior.
+
+## Notification
+
+Report behavior if implemented/required.
 
 ## Schema
 
@@ -2302,6 +2723,10 @@ NONE
 
 Report focused and canonical results.
 
+## MariaDB
+
+Report real concurrency results.
+
 ## Quality
 
 Report:
@@ -2311,14 +2736,15 @@ Pint
 PHPStan
 Composer audit
 git diff --check
+route:list
 ```
 
-## Phase 7.4 readiness
+## Phase 7.6 readiness
 
 Return:
 
 ```text
-Phase 7.4 — Delivery flow: READY
+Phase 7.6 — Order totals: READY
 ```
 
 or:
@@ -2327,90 +2753,126 @@ or:
 BLOCKED
 ```
 
+with exact reason.
+
 ---
 
-# 154. Definition of Done
+# 204. Definition of Done
 
-Phase 7.3 is complete when:
+Phase 7.5 is complete when:
 
-- PICKUP is represented by the frozen enum;
-- PICKUP accepts no populated delivery address;
-- absent and null delivery address normalize identically;
-- delivery address remains null;
-- billing address remains null;
-- no Delivery row is required at Checkout;
-- no pickup location selector is introduced;
-- no fake address is created;
-- delivery fee is exactly zero TZS;
-- delivery fee status is FINALIZED;
-- total relationship is frozen as total=subtotal;
-- initial Order state remains PENDING_PAYMENT;
-- Payment remains null;
-- no payment provider call exists;
-- no MADE_TO_ORDER bypass exists;
-- no stock-validation bypass exists;
-- Checkout reservation requirement remains intact;
-- no stock reservation is prematurely implemented by the branch component;
-- no physical stock is consumed;
-- client-supplied delivery fee is rejected;
-- client-supplied total is rejected;
-- client-supplied currency is rejected;
-- client-supplied status is rejected;
-- PICKUP enum aliases are rejected;
-- normalized PICKUP intent is deterministic for idempotency;
-- Order persistence can represent the PICKUP state;
-- public address vocabulary remains `city` for DELIVERY and does not leak `region`;
-- no schema migration is required unless a real model gap is found;
-- no new dependency is added;
-- no frontend work occurs;
-- full regression suite remains green;
-- PHPStan reports zero errors;
+- ORD-014 is implemented according to the frozen contract;
+- endpoint requires authentication;
+- CUSTOMER cannot set fee;
+- STAFF requires `orders.set_delivery_fee`;
+- ADMIN remains subject to Order-state rules;
+- Idempotency-Key is mandatory;
+- fee amount is a strict integer;
+- fee amount may be zero;
+- negative fee is rejected;
+- currency must be exactly TZS;
+- unknown fields are rejected;
+- subtotal cannot be supplied;
+- total cannot be supplied;
+- Order status cannot be supplied;
+- only DELIVERY Orders can use ORD-014;
+- Order must be PENDING_PAYMENT;
+- delivery fee must still be PENDING;
+- fee transition is PENDING→FINALIZED exactly once;
+- delivery fee becomes historical after finalization;
+- total becomes subtotal + fee;
+- subtotal remains unchanged;
+- Order status remains PENDING_PAYMENT;
+- payment remains null;
+- no payment provider call occurs;
+- existing inventory reservation remains held;
+- ProductStock quantity does not change;
+- reserved_quantity does not change;
+- allocation rows do not change;
+- same-key replay after finalization succeeds;
+- same-key changed amount conflicts;
+- fresh key cannot overwrite finalized fee;
+- concurrent fee writes cannot overwrite one another;
+- privileged audit is exactly once;
+- replay does not duplicate audit/notification;
+- PICKUP behavior remains unchanged;
+- initial DELIVERY pending-fee behavior remains unchanged;
+- no fee calculator is introduced;
+- no delivery-zone table is introduced;
+- no geocoding/distance logic is introduced;
+- no schema migration is required;
+- no dependency is added;
+- no frontend changes occur;
+- MariaDB concurrency verification passes;
+- full test suite remains green;
+- PHPStan has zero errors;
 - Pint passes;
-- Composer audit remains clean.
+- Composer audit is clean.
 
 ---
 
-# 155. Out of Scope
+# 205. Out of Scope
 
 Do not implement:
 
 ```text
-Phase 7.4 DELIVERY flow
-Phase 7.5 delivery fee rules
-Phase 7.6 final totals engine
+Phase 7.6 totals engine beyond required ORD-014 recomputation
 Phase 7.7 Checkout transaction
-Phase 7.8 complete Checkout validation
-Phase 7.9 full Checkout tests
-payment
-order cancellation
+Phase 7.8 Checkout validation
+Phase 7.9 Checkout closure tests
+PAY-001
+payment provider
+payment webhook
+inventory reservation
 reservation release
 stock consumption
-pickup scheduling
-pickup locations
+delivery zones
+distance pricing
+geocoding
+automatic delivery-fee calculation
+customer fee acceptance
+refunds
 frontend
 ```
 
 ---
 
-# 156. STOP Condition
+# 206. STOP Condition
 
-STOP when the backend can represent the PICKUP branch unambiguously as:
+STOP when the backend can enforce this exact transition safely and idempotently:
 
 ```text
-PICKUP
-→ delivery_address null
-→ billing_address null
-→ delivery_fee 0 TZS
-→ delivery_fee_status FINALIZED
-→ total = subtotal
-→ Order PENDING_PAYMENT
-→ payment null
+DELIVERY
+PENDING_PAYMENT
+delivery_fee = null
+delivery_fee_status = PENDING
+total = subtotal
+reserved inventory unchanged
+
+        ↓
+authorized ORD-014
+Idempotency-Key required
+
+delivery_fee = authoritative non-negative TZS Money
+delivery_fee_status = FINALIZED
+total = subtotal + delivery_fee
+status = PENDING_PAYMENT
+payment = null
+reserved inventory unchanged
 ```
 
-without activating a partial or unsafe Checkout workflow.
+with:
 
-Do not continue automatically to Phase 7.4.
+```text
+no overwrite after finalization
+no customer authority
+no inventory mutation
+no payment creation
+no duplicate side effects on replay
+```
 
-DO NOT COMMIT OR PUSH.
+Do not continue automatically to Phase 7.6.
+
+DO NOT COMMIT, STAGE OR PUSH.
 
 The project owner handles all Git operations.

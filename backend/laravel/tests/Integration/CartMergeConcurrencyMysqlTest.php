@@ -16,9 +16,9 @@ use App\Services\IdempotencyService;
 use App\Support\CartStatus;
 use App\Support\GuestCartCredential;
 use App\Support\ProductType;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\RunsConcurrentWorkers;
+use Tests\Support\UsesDisposableMysqlDatabase;
 use Tests\TestCase;
 
 /**
@@ -31,57 +31,26 @@ use Tests\TestCase;
  */
 class CartMergeConcurrencyMysqlTest extends TestCase
 {
-    private const CONNECTION = 'mysql_cart_merge';
+    use RunsConcurrentWorkers;
+    use UsesDisposableMysqlDatabase;
 
-    private const DISPOSABLE_DATABASE = 'furnitureapp_test_disposable';
-
-    private string $previousDefaultConnection = '';
-
-    protected function setUp(): void
+    protected function databaseConnectionName(): string
     {
-        parent::setUp();
-
-        $this->previousDefaultConnection = (string) config('database.default');
-
-        $database = (string) getenv('CART_MERGE_MYSQL_TEST_DATABASE');
-
-        if ($database !== self::DISPOSABLE_DATABASE) {
-            $this->markTestSkipped('requires disposable MySQL/MariaDB integration database (set CART_MERGE_MYSQL_TEST_DATABASE='.self::DISPOSABLE_DATABASE.').');
-        }
-
-        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
-            $this->markTestSkipped('pcntl and posix extensions required.');
-        }
-
-        if (app()->environment('production')) {
-            $this->fail('Refusing to run destructive concurrency tests in production.');
-        }
-
-        config(['database.connections.'.self::CONNECTION => array_merge(
-            config('database.connections.mysql'),
-            ['database' => $database],
-        )]);
-        config(['database.default' => self::CONNECTION]);
-
-        DB::purge(self::CONNECTION);
-        Artisan::call('migrate:fresh', ['--database' => self::CONNECTION, '--force' => true]);
+        return 'mysql_cart_merge';
     }
 
-    protected function tearDown(): void
+    protected function databaseEnvironmentVariable(): string
     {
-        DB::purge(self::CONNECTION);
-        config(['database.default' => $this->previousDefaultConnection]);
-
-        parent::tearDown();
+        return 'CART_MERGE_MYSQL_TEST_DATABASE';
     }
 
     public function test_concurrent_same_key_merge_produces_exactly_one_effect(): void
     {
-        [$user, $guest, $raw] = $this->userAndGuest(quantity: 3);
+        [$user, $guest] = $this->userAndGuest(quantity: 3);
         $digest = (string) $guest->guest_token_digest;
         $key = (string) Str::uuid();
 
-        $results = $this->runConcurrently(
+        $results = $this->runConcurrentWorkers(
             fn (): string => $this->idempotentMerge($user->id, $digest, $key),
             fn (): string => $this->idempotentMerge($user->id, $digest, $key),
         );
@@ -101,10 +70,10 @@ class CartMergeConcurrencyMysqlTest extends TestCase
 
     public function test_concurrent_different_key_merge_of_the_same_source_is_not_duplicated(): void
     {
-        [$user, $guest, $raw] = $this->userAndGuest(quantity: 4);
+        [$user, $guest] = $this->userAndGuest(quantity: 4);
         $digest = (string) $guest->guest_token_digest;
 
-        $results = $this->runConcurrently(
+        $results = $this->runConcurrentWorkers(
             fn (): string => $this->idempotentMerge($user->id, $digest, (string) Str::uuid()),
             fn (): string => $this->idempotentMerge($user->id, $digest, (string) Str::uuid()),
         );
@@ -129,7 +98,7 @@ class CartMergeConcurrencyMysqlTest extends TestCase
         [$first] = $this->guestFor($product, $variant, 3);
         [$second] = $this->guestFor($product, $variant, 4);
 
-        $results = $this->runConcurrently(
+        $results = $this->runConcurrentWorkers(
             fn (): string => $this->plainMerge($user->id, (string) $first->guest_token_digest),
             fn (): string => $this->plainMerge($user->id, (string) $second->guest_token_digest),
         );
@@ -215,144 +184,5 @@ class CartMergeConcurrencyMysqlTest extends TestCase
         ProductStock::factory()->forVariant($variant)->create(['warehouse_location' => 'main', 'quantity' => 100, 'reserved_quantity' => 0]);
 
         return [$product, $variant];
-    }
-
-    /** @return list<string> */
-    private function runConcurrently(callable ...$workers): array
-    {
-        $barrier = sys_get_temp_dir().'/cart-merge-barrier-'.bin2hex(random_bytes(8));
-        mkdir($barrier, 0777, true);
-
-        $pids = [];
-
-        try {
-            foreach ($workers as $index => $worker) {
-                $pid = pcntl_fork();
-                $this->assertNotSame(-1, $pid);
-
-                if ($pid === 0) {
-                    exit($this->runWorker($barrier, $index, $worker));
-                }
-
-                $pids[] = $pid;
-            }
-
-            $this->awaitReady($barrier, count($workers));
-            touch($barrier.'/go');
-
-            $this->reapWorkers($pids, $barrier);
-
-            $results = [];
-            foreach (array_keys($workers) as $index) {
-                $results[] = $this->resultFor($barrier, $index);
-            }
-
-            return $results;
-        } finally {
-            $this->terminateWorkers($pids);
-            $this->destroyBarrier($barrier);
-            DB::purge(self::CONNECTION);
-        }
-    }
-
-    private function runWorker(string $barrier, int $index, callable $worker): int
-    {
-        try {
-            DB::purge(self::CONNECTION);
-            DB::connection(self::CONNECTION)->selectOne('select 1');
-
-            touch($barrier.'/ready-'.$index);
-            $this->awaitBarrier($barrier);
-
-            file_put_contents($barrier.'/result-'.$index, (string) $worker());
-
-            return 0;
-        } catch (\Throwable $exception) {
-            @file_put_contents($barrier.'/result-'.$index, 'crash:'.$exception::class.':'.$exception->getMessage());
-
-            return 1;
-        }
-    }
-
-    /** @param list<int> $pids */
-    private function reapWorkers(array $pids, string $barrier): void
-    {
-        $deadline = microtime(true) + 30;
-
-        foreach ($pids as $index => $pid) {
-            $status = 0;
-            $result = pcntl_waitpid($pid, $status, WNOHANG);
-
-            while ($result === 0 && microtime(true) <= $deadline) {
-                usleep(5_000);
-                $result = pcntl_waitpid($pid, $status, WNOHANG);
-            }
-
-            if ($result === 0) {
-                posix_kill($pid, SIGKILL);
-                pcntl_waitpid($pid, $status);
-                $this->fail('Concurrency worker did not complete in time.');
-            }
-
-            $this->assertTrue(
-                pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0,
-                'Concurrency worker failed: '.$this->resultFor($barrier, $index),
-            );
-        }
-    }
-
-    private function resultFor(string $barrier, int $index): string
-    {
-        $file = $barrier.'/result-'.$index;
-
-        return is_file($file) ? (string) file_get_contents($file) : '';
-    }
-
-    /** @param list<int> $pids */
-    private function terminateWorkers(array $pids): void
-    {
-        foreach ($pids as $pid) {
-            $status = 0;
-
-            if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
-                posix_kill($pid, SIGKILL);
-                pcntl_waitpid($pid, $status);
-            }
-        }
-    }
-
-    private function destroyBarrier(string $barrier): void
-    {
-        foreach (glob($barrier.'/*') ?: [] as $file) {
-            @unlink($file);
-        }
-
-        @rmdir($barrier);
-    }
-
-    private function awaitBarrier(string $barrier): void
-    {
-        $deadline = microtime(true) + 10;
-
-        while (! is_file($barrier.'/go')) {
-            if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Barrier timeout.');
-            }
-
-            usleep(200);
-        }
-    }
-
-    private function awaitReady(string $barrier, int $count): void
-    {
-        $deadline = microtime(true) + 10;
-
-        while (count(glob($barrier.'/ready-*') ?: []) < $count) {
-            if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Workers did not become ready in time.');
-            }
-
-            usleep(200);
-        }
     }
 }

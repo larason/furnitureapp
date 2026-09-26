@@ -8,4 +8,5 @@ namespace App\Support;
 enum AuditAction: string
 {
     case INVENTORY_ADJUSTED = 'INVENTORY_ADJUSTED';
+    case DELIVERY_FEE_FINALIZED = 'DELIVERY_FEE_FINALIZED';
 }

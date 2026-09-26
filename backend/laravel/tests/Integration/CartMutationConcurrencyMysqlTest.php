@@ -12,8 +12,8 @@ use App\Services\Cart\AddCartItem;
 use App\Services\Cart\UpdateCartItemQuantity;
 use App\Support\CartStatus;
 use App\Support\ProductType;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
+use Tests\Support\RunsConcurrentWorkers;
+use Tests\Support\UsesDisposableMysqlDatabase;
 use Tests\TestCase;
 
 /**
@@ -25,50 +25,19 @@ use Tests\TestCase;
  */
 class CartMutationConcurrencyMysqlTest extends TestCase
 {
-    private const CONNECTION = 'mysql_cart_mutation';
-
-    private const DISPOSABLE_DATABASE = 'furnitureapp_test_disposable';
+    use RunsConcurrentWorkers;
+    use UsesDisposableMysqlDatabase;
 
     private const RACES = 10;
 
-    private string $previousDefaultConnection = '';
-
-    protected function setUp(): void
+    protected function databaseConnectionName(): string
     {
-        parent::setUp();
-
-        $this->previousDefaultConnection = (string) config('database.default');
-
-        $database = (string) getenv('CART_MUTATION_MYSQL_TEST_DATABASE');
-
-        if ($database !== self::DISPOSABLE_DATABASE) {
-            $this->markTestSkipped('requires disposable MySQL/MariaDB integration database (set CART_MUTATION_MYSQL_TEST_DATABASE='.self::DISPOSABLE_DATABASE.').');
-        }
-
-        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
-            $this->markTestSkipped('pcntl and posix extensions required.');
-        }
-
-        if (app()->environment('production')) {
-            $this->fail('Refusing to run destructive concurrency tests in production.');
-        }
-
-        config(['database.connections.'.self::CONNECTION => array_merge(
-            config('database.connections.mysql'),
-            ['database' => $database],
-        )]);
-        config(['database.default' => self::CONNECTION]);
-
-        DB::purge(self::CONNECTION);
-        Artisan::call('migrate:fresh', ['--database' => self::CONNECTION, '--force' => true]);
+        return 'mysql_cart_mutation';
     }
 
-    protected function tearDown(): void
+    protected function databaseEnvironmentVariable(): string
     {
-        DB::purge(self::CONNECTION);
-        config(['database.default' => $this->previousDefaultConnection]);
-
-        parent::tearDown();
+        return 'CART_MUTATION_MYSQL_TEST_DATABASE';
     }
 
     public function test_repeat_add_race_never_loses_an_increment(): void
@@ -79,7 +48,7 @@ class CartMutationConcurrencyMysqlTest extends TestCase
             $cart = $this->cart();
             CartItem::query()->create(['cart_id' => $cart->id, 'product_id' => $variant->product_id, 'variant_id' => $variant->id, 'quantity' => 1]);
 
-            $this->runConcurrently(
+            $this->runConcurrentWorkers(
                 fn () => $this->add($cart->id, $variant->id, 1),
                 fn () => $this->add($cart->id, $variant->id, 1),
             );
@@ -97,7 +66,7 @@ class CartMutationConcurrencyMysqlTest extends TestCase
         for ($iteration = 0; $iteration < self::RACES; $iteration++) {
             $cart = $this->cart();
 
-            $this->runConcurrently(
+            $this->runConcurrentWorkers(
                 fn () => $this->add($cart->id, $variant->id, 1),
                 fn () => $this->add($cart->id, $variant->id, 1),
             );
@@ -116,7 +85,7 @@ class CartMutationConcurrencyMysqlTest extends TestCase
             $cart = $this->cart();
             CartItem::query()->create(['cart_id' => $cart->id, 'product_id' => $variant->product_id, 'variant_id' => $variant->id, 'quantity' => 99]);
 
-            $this->runConcurrently(
+            $this->runConcurrentWorkers(
                 fn () => $this->add($cart->id, $variant->id, 1),
                 fn () => $this->add($cart->id, $variant->id, 1),
             );
@@ -133,7 +102,7 @@ class CartMutationConcurrencyMysqlTest extends TestCase
             $cart = $this->cart();
             $item = CartItem::query()->create(['cart_id' => $cart->id, 'product_id' => $variant->product_id, 'variant_id' => $variant->id, 'quantity' => 1]);
 
-            $this->runConcurrently(
+            $this->runConcurrentWorkers(
                 fn () => $this->update($item->id, 4),
                 fn () => $this->update($item->id, 7),
             );
@@ -175,127 +144,5 @@ class CartMutationConcurrencyMysqlTest extends TestCase
     private function cart(): Cart
     {
         return Cart::factory()->guestOwned()->create(['status' => CartStatus::ACTIVE]);
-    }
-
-    private function runConcurrently(callable ...$workers): void
-    {
-        $barrier = sys_get_temp_dir().'/cart-mutation-barrier-'.bin2hex(random_bytes(8));
-        mkdir($barrier, 0777, true);
-
-        $pids = [];
-
-        try {
-            foreach ($workers as $index => $worker) {
-                $pid = pcntl_fork();
-                $this->assertNotSame(-1, $pid);
-
-                if ($pid === 0) {
-                    exit($this->runWorker($barrier, $index, $worker));
-                }
-
-                $pids[] = $pid;
-            }
-
-            $this->awaitReady($barrier, count($workers));
-            touch($barrier.'/go');
-
-            $this->reapWorkers($pids);
-        } finally {
-            $this->terminateWorkers($pids);
-            $this->destroyBarrier($barrier);
-            DB::purge(self::CONNECTION);
-        }
-    }
-
-    private function runWorker(string $barrier, int $index, callable $worker): int
-    {
-        try {
-            DB::purge(self::CONNECTION);
-            DB::connection(self::CONNECTION)->selectOne('select 1');
-
-            touch($barrier.'/ready-'.$index);
-            $this->awaitBarrier($barrier);
-
-            file_put_contents($barrier.'/result-'.$index, (string) $worker());
-
-            return 0;
-        } catch (\Throwable) {
-            return 1;
-        }
-    }
-
-    /** @param list<int> $pids */
-    private function reapWorkers(array $pids): void
-    {
-        $deadline = microtime(true) + 30;
-
-        foreach ($pids as $pid) {
-            $status = 0;
-            $result = pcntl_waitpid($pid, $status, WNOHANG);
-
-            while ($result === 0 && microtime(true) <= $deadline) {
-                usleep(5_000);
-                $result = pcntl_waitpid($pid, $status, WNOHANG);
-            }
-
-            if ($result === 0) {
-                posix_kill($pid, SIGKILL);
-                pcntl_waitpid($pid, $status);
-                $this->fail('Concurrency worker did not complete in time.');
-            }
-
-            $this->assertTrue(
-                pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0,
-                'Concurrency worker failed.',
-            );
-        }
-    }
-
-    /** @param list<int> $pids */
-    private function terminateWorkers(array $pids): void
-    {
-        foreach ($pids as $pid) {
-            $status = 0;
-
-            if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
-                posix_kill($pid, SIGKILL);
-                pcntl_waitpid($pid, $status);
-            }
-        }
-    }
-
-    private function destroyBarrier(string $barrier): void
-    {
-        foreach (glob($barrier.'/*') ?: [] as $file) {
-            @unlink($file);
-        }
-
-        @rmdir($barrier);
-    }
-
-    private function awaitBarrier(string $barrier): void
-    {
-        $deadline = microtime(true) + 10;
-
-        while (! is_file($barrier.'/go')) {
-            if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Barrier timeout.');
-            }
-
-            usleep(200);
-        }
-    }
-
-    private function awaitReady(string $barrier, int $count): void
-    {
-        $deadline = microtime(true) + 10;
-
-        while (count(glob($barrier.'/ready-*') ?: []) < $count) {
-            if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Workers did not become ready in time.');
-            }
-
-            usleep(200);
-        }
     }
 }

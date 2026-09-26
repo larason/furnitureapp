@@ -55,19 +55,66 @@ final readonly class PickupFulfillmentState
         return $subtotalAmount;
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Build the API-facing order representation. These money values are not
+     * the attribute names used by the orders table.
+     *
+     * @return array<string, mixed>
+     */
     public function orderProjectionForSubtotal(int $subtotalAmount): array
     {
-        $totalAmount = $this->totalAmountForSubtotal($subtotalAmount);
+        $amounts = $this->amountsForSubtotal($subtotalAmount);
         $projection = $this->toArray();
 
         return [
             ...$projection,
             'status' => OrderStatus::PENDING_PAYMENT->value,
-            'subtotal' => $this->money($subtotalAmount),
-            'total' => $this->money($totalAmount),
+            'subtotal' => $this->money($amounts['subtotal_amount']),
+            'total' => $this->money($amounts['total_amount']),
             'currency' => Order::CURRENCY_TZS,
             'payment' => null,
+        ];
+    }
+
+    /**
+     * Build scalar attributes for a future Order persistence workflow.
+     * This method performs no persistence and intentionally excludes API-only
+     * fields such as money objects, billing_address, and payment.
+     *
+     * @return array{
+     *     fulfillment_type: string,
+     *     delivery_address: null,
+     *     status: string,
+     *     delivery_fee_status: string,
+     *     currency: string,
+     *     subtotal_amount: int,
+     *     delivery_fee_amount: int,
+     *     total_amount: int
+     * }
+     */
+    public function orderPersistenceAttributesForSubtotal(int $subtotalAmount): array
+    {
+        $amounts = $this->amountsForSubtotal($subtotalAmount);
+
+        return [
+            'fulfillment_type' => FulfillmentType::PICKUP->value,
+            'delivery_address' => null,
+            'status' => OrderStatus::PENDING_PAYMENT->value,
+            'delivery_fee_status' => DeliveryFeeStatus::FINALIZED->value,
+            'currency' => Order::CURRENCY_TZS,
+            ...$amounts,
+        ];
+    }
+
+    /** @return array{subtotal_amount: int, delivery_fee_amount: int, total_amount: int} */
+    private function amountsForSubtotal(int $subtotalAmount): array
+    {
+        $totalAmount = $this->totalAmountForSubtotal($subtotalAmount);
+
+        return [
+            'subtotal_amount' => $subtotalAmount,
+            'delivery_fee_amount' => 0,
+            'total_amount' => $totalAmount,
         ];
     }
 
