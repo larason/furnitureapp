@@ -2399,8 +2399,20 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 PICKUP order projection remains `PENDING_PAYMENT` with `payment=null`; finalized delivery-fee state does not mean payment occurred. The state boundary performs no Order insert, Cart mutation, inventory query/reservation, idempotency operation, Delivery-row creation, pickup-location selection, payment call, or Checkout route activation. Client-controlled fee, total, currency, status, billing-address, and pickup-location fields are rejected at this branch boundary; complete transport/schema validation remains Phase 7.8-owned.
 
-The response and persistence representations are deliberately separate. `orderProjectionForSubtotal()` is API-facing and exposes money objects as `subtotal`, `delivery_fee`, and `total`; it must not be passed directly to an `Order` model. `orderPersistenceAttributesForSubtotal()` provides scalar model attributes (`subtotal_amount`, `delivery_fee_amount`, and `total_amount`) for a later checkout workflow, performs no write itself, and is covered by a unit-level mapping assertion.
+The response and persistence representations are deliberately separate. `responseForSubtotal()` is API-facing and exposes money objects as `subtotal`, `delivery_fee`, and `total`; it must not be passed directly to an `Order` model. `orderAttributesForSubtotal()` provides scalar model attributes (`subtotal_amount`, `delivery_fee_amount`, and `total_amount`) for a later checkout workflow, performs no write itself, and is covered by a unit-level mapping assertion.
 
 **Reason:** Establishes one deterministic branch result for later Checkout composition without creating a partial PICKUP-only checkout or bypassing the Group G transaction and Group H payment boundaries.
 
 **Status:** Accepted | **Affected:** `backend/laravel/app/Services/Checkout/PickupFulfillmentState.php`, `backend/laravel/tests/Unit/PickupFulfillmentStateTest.php`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-038 — Delivery Fulfillment State and Billing Snapshot Model Gap (Phase 7.4)
+
+**Decision:** Represent the normalized DELIVERY branch with the pure immutable `DeliveryFulfillmentState`. It requires the exact `DELIVERY` enum and all four canonical address fields (`recipient_name`, `phone`, `address_line`, `city`), trims them, copies the normalized address into an independent billing snapshot, and produces `delivery_fee=null`, `delivery_fee_status=PENDING`, `total=subtotal` provisionally, `status=PENDING_PAYMENT`, and `payment=null`. It performs no Order insert, inventory reservation, Delivery-row creation, fee lookup, idempotency operation, or payment call.
+
+The current `orders` schema has no `billing_address` column and the repository has no `OrderAddress` model/table. Therefore the DELIVERY branch can prepare both immutable snapshots and the current Order's scalar financial/address attributes, but cannot yet persist the required billing snapshot without a model/schema decision. This is recorded as a **MODEL GAP**; no dummy mapping into `delivery_address` and no unapproved migration is introduced in Phase 7.4.
+
+**Reason:** Preserves the frozen V1 copy semantics and Model B pending-fee state while preventing an incomplete checkout implementation from silently losing billing history.
+
+**Status:** Blocked by model gap | **Affected:** `backend/laravel/app/Services/Checkout/DeliveryFulfillmentState.php`, `backend/laravel/tests/Unit/DeliveryFulfillmentStateTest.php`, `backend/laravel/database/migrations/2026_09_10_140000_create_orders_table.php`, `docs/decisions.md`
