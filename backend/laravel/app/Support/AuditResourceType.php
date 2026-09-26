@@ -8,4 +8,5 @@ namespace App\Support;
 enum AuditResourceType: string
 {
     case INVENTORY = 'inventory';
+    case ORDER = 'order';
 }

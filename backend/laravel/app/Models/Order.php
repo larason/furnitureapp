@@ -41,6 +41,8 @@ class Order extends Model
 {
     public const CURRENCY_TZS = 'TZS';
 
+    public const MAX_DELIVERY_FEE_AMOUNT = 5_000_000;
+
     public const REFERENCE_PREFIX = 'OD-';
 
     private const DELIVERY_SNAPSHOT_IMMUTABLE_MESSAGE = 'Order delivery snapshot is immutable once a delivery record exists.';

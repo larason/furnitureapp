@@ -2,7 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Exceptions\Api\ApiException;
+use App\Http\Requests\SetDeliveryFeeRequest;
+use App\Models\User;
+use App\Services\DeliveryFeeFinalizer;
+use App\Support\ApiErrorCode;
+use App\Support\IdempotencyKeyHeader;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class OrderController extends V1Controller
 {
@@ -46,9 +53,24 @@ class OrderController extends V1Controller
         return $this->notImplemented();
     }
 
-    public function deliveryFee(): JsonResponse
+    public function deliveryFee(Request $request, SetDeliveryFeeRequest $validated, string $order, DeliveryFeeFinalizer $finalizer): JsonResponse
     {
-        return $this->notImplemented();
+        $actor = $request->user();
+        if (! $actor instanceof User) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
+        }
+
+        $body = $finalizer->finalize(
+            $order,
+            (int) $validated->validated('delivery_fee.amount'),
+            $actor,
+            IdempotencyKeyHeader::require($request),
+            $request->attributes->get('request_id'),
+        );
+
+        return response()->json(['data' => $body])->withHeaders([
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     public function tracking(): JsonResponse

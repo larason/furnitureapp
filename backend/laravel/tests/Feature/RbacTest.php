@@ -171,7 +171,7 @@ class RbacTest extends TestCase
 
         $this->withHeaders(['Authorization' => 'Bearer session-token'])
             ->postJson('/api/v1/orders/OD-1/delivery-fee', [])
-            ->assertStatus(501);
+            ->assertUnprocessable();
     }
 
     public function test_staff_with_direct_staff_approval_permission_is_denied(): void
