@@ -1,66 +1,60 @@
-# Phase 7.2 — Address Model Review
+# Phase 7.3 — Pickup Flow
 
 ## Purpose
 
-Review and reconcile the Checkout delivery-address model before implementing PICKUP and DELIVERY workflows.
+Implement the **PICKUP fulfillment branch** of Checkout without prematurely implementing the full CHK-001 transaction.
 
-The frozen Version 1 Checkout API remains:
+This phase should make the backend capable of producing the correct PICKUP-specific fulfillment and financial state for a future successful Checkout transaction.
 
-```json
-{
-  "fulfillment_type": "DELIVERY",
-  "delivery_address": {
-    "recipient_name": "Asha Mwangi",
-    "phone": "+255700000001",
-    "address_line": "Jengo Street 12",
-    "city": "Dar es Salaam"
-  }
-}
-```
-
-The canonical V1 public field is:
+The frozen PICKUP semantics are:
 
 ```text
-city
+fulfillment_type    = PICKUP
+delivery_address    = null
+billing_address     = null
+delivery_fee        = {amount: 0, currency: TZS}
+delivery_fee_status = FINALIZED
+total               = subtotal
+status              = PENDING_PAYMENT
+payment             = null
 ```
 
-NOT:
+Payment remains Group H.
 
-```text
-region
-```
-
-Phase 7.2 must adapt the Laravel implementation to the frozen contract.
-
-Do not change OpenAPI from `city` to `region`.
+Inventory reservation remains part of the later Checkout transaction boundary.
 
 ---
 
-# 1. Phase Scope
+# 1. Scope
 
-Phase 7.2 owns:
+Phase 7.3 owns:
 
 ```text
-Checkout delivery-address model review
-AddressField implementation reconciliation
-request → normalized address mapping
-Order address snapshot compatibility
-PICKUP null-address behavior
-DELIVERY required-address behavior
-address persistence compatibility
-validation boundary preparation
+PICKUP fulfillment semantics
+PICKUP request branch
+PICKUP address prohibition
+zero delivery-fee representation
+FINALIZED delivery-fee state
+PICKUP total relationship
+PICKUP Order snapshot preparation
+PICKUP response preparation
+PICKUP-specific domain tests
 ```
 
 It does NOT own:
 
 ```text
-full Checkout implementation
-inventory reservation
-Order creation transaction
-delivery fee finalization
-Order totals implementation
-transaction locking
-payment
+DELIVERY workflow
+delivery-address snapshot implementation
+delivery fee assignment
+ORD-014
+full Checkout transaction
+inventory reservation orchestration
+Cart locking
+final idempotency transaction
+payment provider
+payment creation
+payment webhook
 frontend
 ```
 
@@ -68,1347 +62,1183 @@ frontend
 
 # 2. Starting State
 
-Phase 7.1 is:
+Assume:
 
 ```text
-PASS
+Group F — PASS / CLOSED
+Phase 7.1 — PASS
+Phase 7.2 — address model reviewed/aligned
 ```
 
-and froze:
+Phase 7.1 froze:
 
 ```text
-CHK-001
-POST /api/v1/checkout
-```
-
-with:
-
-```text
-CUSTOMER-only
+CUSTOMER-only checkout
 own ACTIVE Cart
+strict request
+PICKUP | DELIVERY CLOSED enum
+current Product/Variant/price authority
+Checkout-time inventory reservation
+PENDING_PAYMENT Order
+Cart clear only after successful transaction
 Idempotency-Key required
-PICKUP | DELIVERY
-Model B delivery fee
-current pricing
-transaction-time stock
-Order PENDING_PAYMENT
-Cart clear-on-success
 ```
 
-Phase 7.2 must preserve every Phase 7.1 decision.
+Do not revisit those decisions.
 
 ---
 
-# 3. Frozen Address Contract
-
-The public V1 Checkout DELIVERY address is exactly:
-
-```text
-recipient_name
-phone
-address_line
-city
-```
-
-These names are frozen.
-
----
-
-# 4. OpenAPI Is Authoritative
-
-Current OpenAPI defines:
-
-```text
-DeliveryAddressInput
-```
-
-required fields:
-
-```text
-recipient_name
-phone
-address_line
-city
-```
-
-and:
-
-```text
-DeliveryAddressSnapshot
-```
-
-with the same field names.
-
-Do not modify these to `region`.
-
----
-
-# 5. Existing Laravel Drift
-
-Current implementation has an existing helper/value object/field implementation referred to as:
-
-```text
-AddressField
-```
-
-which currently expects:
-
-```text
-region
-```
-
-This is implementation drift.
-
-Phase 7.2 must reconcile the Laravel implementation to:
-
-```text
-city
-```
-
-while preserving the frozen external API.
-
----
-
-# 6. Core Rule
-
-The correct direction is:
-
-```text
-frozen API contract
-        ↓
-Laravel adapts
-```
-
-NOT:
-
-```text
-Laravel helper
-        ↓
-rewrite frozen API
-```
-
----
-
-# 7. Do Not Support Both Names by Default
-
-Do not silently accept:
-
-```json
-{
-  "city": "...",
-  "region": "..."
-}
-```
-
-or treat `region` as a V1 alias unless an explicit compatibility requirement already exists.
-
-The V1 request schema has:
-
-```text
-additionalProperties: false
-```
-
-Therefore:
-
-```text
-region
-```
-
-from a client should be rejected as an unknown field.
-
----
-
-# 8. No Alias Drift
-
-Avoid validation such as:
-
-```php
-'delivery_address.city' => ...
-'delivery_address.region' => ...
-```
-
-with "either/or" semantics.
-
-That would broaden the frozen contract.
-
----
-
-# 9. Public vs Internal Naming
-
-If internal persistence genuinely still uses a column/property named:
-
-```text
-region
-```
-
-that is acceptable only if the mapping boundary is explicit:
-
-```text
-API city
-→ internal region
-```
-
-and the API never exposes `region`.
-
-However, first inspect whether changing the internal helper to use:
-
-```text
-city
-```
-
-is cleaner and safer.
-
-Do not assume internal compatibility requirements before inspecting usage.
-
----
-
-# 10. Preferred Outcome
-
-Prefer one vocabulary throughout Checkout:
-
-```text
-city
-```
-
-if changing the internal helper is safe.
-
-This reduces translation drift.
-
----
-
-# 11. Compatibility Outcome
-
-If existing persisted models or unrelated domains require:
-
-```text
-region
-```
-
-internally:
-
-create a focused mapper/adapter.
-
-Conceptually:
-
-```text
-DeliveryAddressInput.city
-→ AddressField.region
-```
-
-but serialize snapshots back as:
-
-```text
-city
-```
-
-Never leak internal `region`.
-
----
-
-# 12. Inspect All `AddressField` Callers
-
-Before modifying it, search all repository usages.
-
-Classify each caller:
-
-```text
-Checkout
-Order
-Delivery
-Furniture Request
-Enquiry
-Customer profile
-tests/factories
-other
-```
-
-Determine whether `AddressField` is:
-
-```text
-checkout-specific
-shared globally
-legacy
-unused
-```
-
-Do not change shared behavior blindly.
-
----
-
-# 13. Search for `region`
-
-Audit:
-
-```text
-app/
-database/
-tests/
-docs/
-config/
-```
-
-for:
-
-```text
-region
-```
-
-and classify every relevant occurrence.
-
----
-
-# 14. Search for `city`
-
-Likewise audit:
-
-```text
-city
-```
-
-and identify:
-
-```text
-API request usage
-Order snapshot columns
-Delivery columns
-DTOs
-Resources
-Factories
-Tests
-Documentation
-```
-
----
-
-# 15. Address Model Inventory
-
-Document the exact model chain:
-
-```text
-CheckoutRequest
-→ normalized delivery address
-→ Order snapshot
-→ later Delivery record
-→ Order API response
-```
-
-For every stage record the concrete field names.
-
----
-
-# 16. Checkout Request Boundary
-
-Future CHK-001 request validation must accept only:
-
-```json
-{
-  "recipient_name": "...",
-  "phone": "...",
-  "address_line": "...",
-  "city": "..."
-}
-```
-
-for `delivery_address`.
-
----
-
-# 17. Strict Nested Schema
-
-Unknown nested fields must fail.
-
-Examples:
-
-```text
-region
-district
-country
-postal_code
-latitude
-longitude
-instructions
-```
-
-must be rejected unless explicitly present in frozen V1.
-
----
-
-# 18. Required Fields
-
-For DELIVERY:
-
-```text
-recipient_name
-phone
-address_line
-city
-```
-
-are all required.
-
----
-
-# 19. Nullability
-
-For DELIVERY:
-
-none of the four required address fields may be:
-
-```text
-missing
-null
-empty
-whitespace-only
-```
-
-after normalization.
-
----
-
-# 20. PICKUP Address Rule
+# 3. Frozen PICKUP Contract
 
 For:
 
-```text
-fulfillment_type = PICKUP
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
 ```
 
-`delivery_address` must be:
+the server must produce fulfillment state equivalent to:
 
 ```text
-absent
-or
-null
+fulfillment_type    = PICKUP
+delivery_address    = null
+billing_address     = null
+delivery_fee        = 0 TZS
+delivery_fee_status = FINALIZED
+total               = subtotal
+payment             = null
 ```
-
-according to the frozen Checkout contract.
 
 ---
 
-# 21. PICKUP Must Not Persist Fake Address
+# 4. PICKUP Has No Delivery Address
 
-Do not create:
+A PICKUP Checkout does not accept a populated:
 
 ```text
-recipient_name = ""
-phone = ""
-address_line = ""
-city = ""
+delivery_address
 ```
 
-for PICKUP.
+Valid:
 
-Use:
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
+```
+
+and where the schema permits:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": null
+}
+```
+
+Invalid:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": {
+    "recipient_name": "Asha",
+    "phone": "+255700000001",
+    "address_line": "Street",
+    "city": "Dar es Salaam"
+  }
+}
+```
+
+---
+
+# 5. Invalid PICKUP + Address Combination
+
+A syntactically valid address object attached to:
+
+```text
+PICKUP
+```
+
+is a fulfillment-rule violation.
+
+Use the frozen mapping:
+
+```text
+422 INVALID_FULFILLMENT
+```
+
+Do not silently discard the address.
+
+---
+
+# 6. Null Address
+
+Internal PICKUP representation must be:
 
 ```text
 delivery_address = null
 ```
 
----
-
-# 22. DELIVERY Historical Snapshot
-
-For DELIVERY, the validated address becomes immutable historical Order data.
-
-It must not remain a live reference to:
+not:
 
 ```text
-customer_profiles
-future saved-address table
-user profile
+{}
+```
+
+and not:
+
+```text
+{
+  recipient_name: "",
+  phone: "",
+  address_line: "",
+  city: ""
+}
 ```
 
 ---
 
-# 23. Saved Addresses Remain Deferred
+# 7. Billing Address
+
+V1 does not collect a separate billing address.
+
+For PICKUP:
+
+```text
+billing_address = null
+```
+
+Do not derive one from:
+
+```text
+customer profile
+pickup location
+delivery address
+```
+
+---
+
+# 8. No Delivery Record at Checkout
+
+Phase 7.1 determined that CHK-001 does not create the later operational:
+
+```text
+Delivery
+```
+
+record.
+
+For PICKUP this is especially clear:
+
+```text
+delivery = null
+```
+
+Do not create a fake Delivery row.
+
+---
+
+# 9. No Pickup Address Snapshot
+
+Do not create an address representing:
+
+```text
+store location
+warehouse
+pickup point
+```
+
+unless a future contract explicitly introduces pickup-location selection.
+
+V1 has no customer-supplied pickup location.
+
+---
+
+# 10. No Pickup Location Selector
 
 Do not add:
 
 ```text
-saved_address_id
-address_book
-default_address
-customer_addresses
+pickup_location_id
+warehouse_id
+store_id
+branch_id
+collection_point
 ```
 
-during Phase 7.2.
+to CHK-001.
 
 ---
 
-# 24. Customer Profile Fallback Is Forbidden
+# 11. Delivery Fee
 
-Do not silently fill missing:
+For PICKUP:
 
 ```text
-recipient_name
-phone
-city
+delivery_fee.amount = 0
+delivery_fee.currency = TZS
 ```
 
-from profile data.
-
-Checkout requires the frozen DELIVERY payload.
+This is server-controlled.
 
 ---
 
-# 25. Address Snapshot Authority
+# 12. Delivery Fee Status
 
-Once Checkout creates an Order:
+For PICKUP:
 
 ```text
-Order.delivery_address
+delivery_fee_status = FINALIZED
 ```
 
-must reflect the address supplied and normalized at Checkout time.
+immediately when the Order is created.
 
-Future profile edits must not alter it.
+There is no later ORD-014 step for PICKUP.
 
 ---
 
-# 26. Order Response
+# 13. ORD-014 Must Not Apply to PICKUP
 
-The Order API must eventually expose:
+Later:
 
-```json
-{
-  "delivery_address": {
-    "recipient_name": "...",
-    "phone": "...",
-    "address_line": "...",
-    "city": "..."
-  }
-}
+```text
+POST /orders/{order}/delivery-fee
 ```
 
-Never:
+against a PICKUP Order must remain invalid.
 
-```json
-{
-  "region": "..."
-}
-```
+Current contract maps PICKUP fee assignment to a business-rule failure.
+
+Do not create any dependency from PICKUP Checkout to ORD-014.
 
 ---
 
-# 27. Billing Address
+# 14. Total
 
-Review existing V1 Order schema for:
-
-```text
-billing_address
-```
-
-Do not invent billing-address behavior.
-
-If current contract says:
+For PICKUP:
 
 ```text
-null for PICKUP
+total = subtotal + 0
 ```
 
-or reuses the delivery snapshot shape, document exact behavior.
+therefore:
 
-Do not expand Phase 7.2 into billing functionality.
+```text
+total = subtotal
+```
+
+This total is final from the delivery-fee perspective.
 
 ---
 
-# 28. Delivery Model
+# 15. Currency
 
-Phase 7.1 determined:
-
-```text
-CHK-001 does not create a Delivery row
-```
-
-The Order stores the fulfillment snapshot first.
-
-A Delivery record is created later.
-
-Phase 7.2 must verify that when it is eventually created, it can faithfully carry or reference the frozen Order address snapshot.
-
----
-
-# 29. Do Not Create Delivery Row
-
-No Delivery persistence workflow should be activated in Phase 7.2.
-
-This remains model review/preparation.
-
----
-
-# 30. Review Database Columns
-
-Inspect relevant migrations for:
+Use:
 
 ```text
-orders
-deliveries
-```
-
-and any address/value-object fields.
-
-Record whether persistence currently uses:
-
-```text
-city
-region
-JSON address
-individual columns
-```
-
----
-
-# 31. No Blind Migration
-
-Do not create a migration merely because `AddressField` uses `region`.
-
-First determine whether the mismatch exists only in code.
-
----
-
-# 32. Schema Decision
-
-Expected:
-
-```text
-Schema changes: NONE
-```
-
-if existing storage can represent the frozen snapshot.
-
----
-
-# 33. True Model Gap
-
-Only classify:
-
-```text
-MODEL GAP
-```
-
-if existing persistence literally cannot store:
-
-```text
-recipient_name
-phone
-address_line
-city
-```
-
-without losing meaning or violating constraints.
-
----
-
-# 34. Prefer Mapper Over Migration When Appropriate
-
-If storage uses a generic field/value that can carry city correctly:
-
-adapt at the application boundary.
-
-Avoid unnecessary schema churn.
-
----
-
-# 35. `AddressField` Review
-
-Inspect the actual implementation.
-
-Determine whether it is:
-
-```text
-validation helper
-DTO
-value object
-cast
-model accessor
-database mapper
-request-field list
-```
-
-Do not infer from its name.
-
----
-
-# 36. If `AddressField` Is Only a Field Constant
-
-If it merely defines:
-
-```text
-recipient_name
-phone
-address_line
-region
-```
-
-replace/reconcile `region` to:
-
-```text
-city
-```
-
-where safe.
-
----
-
-# 37. If `AddressField` Is Shared
-
-If changing it would break unrelated domains:
-
-do NOT force global renaming.
-
-Instead introduce a Checkout-specific address contract/value object such as:
-
-```text
-CheckoutDeliveryAddress
-```
-
-or equivalent repository-style abstraction.
-
----
-
-# 38. Avoid Generic Premature Abstraction
-
-Do not create:
-
-```text
-UniversalAddress
-AddressFramework
-AddressSchemaEngine
-```
-
-for four fields.
-
-Prefer the smallest coherent abstraction.
-
----
-
-# 39. Recommended Domain Object
-
-A small immutable object may be appropriate:
-
-```text
-CheckoutDeliveryAddress
-```
-
-containing:
-
-```text
-recipientName
-phone
-addressLine
-city
-```
-
-if existing architecture uses DTO/value objects.
-
----
-
-# 40. Transport Naming
-
-Public JSON remains:
-
-```text
-recipient_name
-phone
-address_line
-city
-```
-
-Internal PHP property naming may follow repository standards.
-
----
-
-# 41. Mapping Must Be Explicit
-
-For example conceptually:
-
-```text
-validated request
-→ CheckoutDeliveryAddress
-→ Order snapshot fields
-```
-
-Do not pass unstructured request arrays deep into Checkout.
-
----
-
-# 42. No `$request->all()`
-
-Future request processing must use:
-
-```php
-$request->validated()
-```
-
-and explicit mapping.
-
----
-
-# 43. Address Normalization
-
-Phase 7.1 froze:
-
-```text
-trimmed strings
-```
-
-for all fields.
-
-Implement/review normalization rules accordingly.
-
----
-
-# 44. Recipient Name
-
-`recipient_name`:
-
-```text
-required
-string
-trimmed
-non-empty
-max 255
-```
-
-according to Phase 7.1.
-
----
-
-# 45. Phone
-
-`phone`:
-
-```text
-required
-string
-trimmed
-normalized
-non-empty
-max 30
-```
-
-Use existing phone normalization behavior where compatible.
-
----
-
-# 46. Phone Format
-
-Phase 7.1 refers to:
-
-```text
-E.164-ish representation
-```
-
-Do not silently tighten this to full libphonenumber validation unless already frozen.
-
-No new dependency.
-
----
-
-# 47. Address Line
-
-`address_line`:
-
-```text
-required
-string
-trimmed
-non-empty
-```
-
-Do not invent a new numeric max length if the frozen contract does not define one.
-
----
-
-# 48. City
-
-`city`:
-
-```text
-required
-string
-trimmed
-non-empty
-```
-
-No new arbitrary length restriction unless persistence itself requires one.
-
----
-
-# 49. Persistence Limit Conflict
-
-If database schema imposes a narrower maximum than the API contract:
-
-classify that explicitly.
-
-Do not silently truncate input.
-
-Possible outcomes:
-
-```text
-MODEL GAP
-or
-DOC DRIFT
-```
-
-depending authority.
-
----
-
-# 50. Never Truncate Address Data
-
-Do not:
-
-```text
-substr()
-silent database truncation
-```
-
-for valid API input.
-
-If persistence cannot represent valid contract data:
-
-the model must be fixed before implementation.
-
----
-
-# 51. `region` Request Test
-
-Future validation test:
-
-```json
-{
-  "delivery_address": {
-    "recipient_name": "Asha",
-    "phone": "+255700000001",
-    "address_line": "Jengo Street",
-    "region": "Dar es Salaam"
-  }
-}
-```
-
-must fail.
-
-Expected:
-
-```text
-422 INVALID_VALUE
-field: delivery_address.region
-```
-
-or exact strict-schema mapping.
-
----
-
-# 52. Missing `city`
-
-Payload with:
-
-```text
-region
-```
-
-but without:
-
-```text
-city
-```
-
-must also report the missing canonical `city` field according to validation-envelope behavior.
-
-Do not accept `region` as substitute.
-
----
-
-# 53. Both `city` and `region`
-
-Payload containing both:
-
-```text
-city
-region
-```
-
-must fail because `region` is an unknown field.
-
-Do not silently prefer `city`.
-
----
-
-# 54. Snapshot Test
-
-Given:
-
-```text
-city = "Dar es Salaam"
-```
-
-the historical Order snapshot must later return exactly the normalized value under:
-
-```text
-city
-```
-
----
-
-# 55. Internal `region` Must Never Leak
-
-If adapter mapping to an internal `region` property is unavoidable:
-
-assert resources/OpenAPI serialization still exposes:
-
-```text
-city
+TZS
 ```
 
 only.
 
+No client override.
+
 ---
 
-# 56. Round-Trip Requirement
+# 16. Minor Units
 
-Prove conceptually:
+All amounts remain:
 
 ```text
-request.city
-→ normalized internal representation
-→ persistence
-→ Order resource city
+integer minor units
 ```
 
-without:
+No floats.
+
+---
+
+# 17. Do Not Copy Money Objects Casually
+
+If the project has:
 
 ```text
-field rename drift
-data loss
+Money
+MoneyValue
+Price
 ```
 
----
+or equivalent:
 
-# 57. Historical Stability
+reuse the canonical money abstraction.
 
-If internal Delivery structure changes later:
-
-existing Order snapshots must still serialize correctly.
-
-The Order snapshot is historical authority.
+Do not invent a second PICKUP-specific money type.
 
 ---
 
-# 58. No Address Geocoding
+# 18. Zero Fee Constant
 
-Out of scope:
+Avoid scattered literal structures such as:
+
+```php
+['amount' => 0, 'currency' => 'TZS']
+```
+
+if the repository already has an authoritative money/value-object factory.
+
+Prefer something conceptually equivalent to:
 
 ```text
-Google Maps
-geocoding
-coordinates
-distance
-delivery zones
-maps API
+Money::zeroTzs()
+```
+
+only if consistent with existing architecture.
+
+Do not create abstraction solely for this phase if none is needed.
+
+---
+
+# 19. Initial Order Status
+
+Successful PICKUP Checkout eventually creates:
+
+```text
+status = PENDING_PAYMENT
+```
+
+NOT:
+
+```text
+PAID
+ACCEPTED
+READY_FOR_PICKUP
+COMPLETED
 ```
 
 ---
 
-# 59. No Region/City Lookup Table
+# 20. Why PENDING_PAYMENT
+
+PICKUP being fee-finalized does not mean payment has occurred.
+
+It only means:
+
+```text
+delivery_fee_status = FINALIZED
+```
+
+The customer still has to enter the Group H payment flow.
+
+---
+
+# 21. Payment Representation
+
+At CHK-001 success for PICKUP:
+
+```text
+payment = null
+```
 
 Do not create:
 
 ```text
-regions
-cities
-districts
-wards
+payment_status = PENDING
 ```
 
-tables during Phase 7.2.
+inside Checkout.
 
-The contract accepts a string snapshot.
+The Payment resource appears only when PAY-001 later creates it.
 
 ---
 
-# 60. No Address Verification Service
+# 22. Payment Eligibility
 
-Do not call external APIs to verify:
+Because PICKUP has:
 
 ```text
-city
-street
-phone
+delivery_fee_status = FINALIZED
 ```
 
----
+PAY-001 will later be eligible immediately from the fee-state perspective.
 
-# 61. No Country Field
-
-Do not add:
+But:
 
 ```text
-country
-country_code
+Phase 7.3 must not call PAY-001
 ```
 
-to V1 Checkout address.
-
-TZS/business geography does not justify widening frozen schema.
+or implement payment.
 
 ---
 
-# 62. No Postal Code
+# 23. Product/Cart Preconditions Still Apply
 
-Do not add it.
+PICKUP does not bypass Checkout rules.
 
----
-
-# 63. No District/Ward
-
-Do not add them.
-
----
-
-# 64. No Delivery Instructions
-
-Do not add them.
-
----
-
-# 65. No Coordinates
-
-Do not add:
+Eventually successful PICKUP still requires:
 
 ```text
-lat
-lng
+authenticated CUSTOMER
+own ACTIVE Cart
+Cart not empty
+valid Product
+valid Variant
+IN_STOCK only
+current price
+current stock
+quantity valid
+Idempotency-Key
 ```
 
 ---
 
-# 66. Fulfillment Validation Separation
+# 24. MADE_TO_ORDER
 
-Address-model validation should distinguish:
+PICKUP does not make MADE_TO_ORDER purchasable.
 
-```text
-request shape
-```
-
-from:
+A MADE_TO_ORDER Cart line remains:
 
 ```text
-fulfillment branch rule
+422 PRODUCT_NOT_PURCHASABLE
 ```
-
-Example:
-
-```text
-PICKUP + populated delivery_address
-```
-
-is an invalid fulfillment combination.
 
 ---
 
-# 67. DELIVERY Missing Address
+# 25. Stock Requirement
 
-For:
+PICKUP still reserves stock at successful Checkout.
+
+Do not treat pickup as:
 
 ```text
-fulfillment_type = DELIVERY
+reserve later when customer arrives
 ```
 
-missing `delivery_address` must produce the frozen missing-field behavior.
+The frozen lifecycle says Checkout reserves for both PICKUP and DELIVERY.
 
 ---
 
-# 68. Wrong Address Type
+# 26. Reservation Timing
 
-Examples:
+The eventual transaction does:
 
-```json
-"delivery_address": "Dar es Salaam"
+```text
+validate available stock
+→ reserve stock
+→ create PICKUP Order
+→ clear Cart
+```
+
+atomically.
+
+Phase 7.3 should prepare the branch data but should not duplicate Phase 7.7 transaction mechanics.
+
+---
+
+# 27. Physical Stock
+
+At Checkout:
+
+```text
+physical quantity unchanged
+reserved_quantity increases
+```
+
+PICKUP does not consume inventory immediately.
+
+---
+
+# 28. Consumption
+
+Later payment/fulfillment converts reservation into consumption according to Group H/order lifecycle.
+
+Do not consume stock in 7.3.
+
+---
+
+# 29. Pickup Fulfillment Object
+
+Introduce or refine the smallest domain representation needed to express:
+
+```text
+PICKUP
+delivery_address = null
+billing_address = null
+delivery_fee = zero
+delivery_fee_status = FINALIZED
+```
+
+Examples could include:
+
+```text
+CheckoutFulfillment
+PickupFulfillment
+CheckoutFulfillmentState
+```
+
+Use actual repository conventions.
+
+---
+
+# 30. Avoid Branch Logic Everywhere
+
+Do not scatter:
+
+```php
+if ($fulfillmentType === 'PICKUP')
+```
+
+through:
+
+```text
+controller
+resource
+order model
+pricing service
+checkout service
+```
+
+Centralize the PICKUP-specific fulfillment projection/state in one focused boundary.
+
+---
+
+# 31. Do Not Build Giant CheckoutService Yet
+
+Phase 7.3 should not prematurely introduce the entire:
+
+```text
+CheckoutService
+```
+
+unless the repository already created a shell specifically intended for branch composition.
+
+Prefer a focused PICKUP branch component.
+
+---
+
+# 32. Suggested Component
+
+A small component such as:
+
+```text
+BuildPickupCheckoutState
 ```
 
 or:
 
-```json
-"delivery_address": []
+```text
+PickupFulfillment
 ```
 
-must fail strict type validation.
-
----
-
-# 69. Unknown Nested Field
-
-Example:
-
-```json
-{
-  "city": "Dar es Salaam",
-  "region": "Dar es Salaam"
-}
-```
-
-must fail unknown-field validation.
-
----
-
-# 70. Null Nested Field
-
-Example:
-
-```json
-{
-  "city": null
-}
-```
-
-must fail.
-
----
-
-# 71. Empty City
-
-```json
-{
-  "city": ""
-}
-```
-
-must fail after normalization.
-
----
-
-# 72. Whitespace City
-
-```json
-{
-  "city": "   "
-}
-```
-
-must fail after trim.
-
----
-
-# 73. Valid City
-
-```json
-{
-  "city": "Dar es Salaam"
-}
-```
-
-must remain:
+may own:
 
 ```text
-Dar es Salaam
+fulfillment type
+address nullability
+fee zero
+fee status FINALIZED
+```
+
+Do not let it own inventory, Cart, idempotency, or persistence.
+
+---
+
+# 33. Branch Result
+
+Conceptually the PICKUP branch can yield:
+
+```text
+fulfillment_type = PICKUP
+delivery_address = null
+billing_address = null
+delivery_fee = zero TZS
+delivery_fee_status = FINALIZED
+```
+
+Then Phase 7.6 later combines:
+
+```text
+subtotal
++ delivery fee
+→ total
+```
+
+---
+
+# 34. Do Not Let PICKUP Own Subtotal
+
+Subtotal comes from validated OrderItems/current prices.
+
+The PICKUP branch only contributes:
+
+```text
+delivery fee = 0
+```
+
+---
+
+# 35. Phase 7.6 Boundary
+
+Phase 7.6 owns the canonical financial calculation implementation.
+
+Phase 7.3 may assert:
+
+```text
+PICKUP total must equal subtotal
+```
+
+but should not create a second totals engine.
+
+---
+
+# 36. No Discounts
+
+Do not add:
+
+```text
+pickup discount
+delivery discount
+coupon
+promotion
+```
+
+---
+
+# 37. No Pickup Fee
+
+Do not introduce:
+
+```text
+service fee
+handling fee
+pickup fee
+```
+
+V1 delivery fee for pickup is zero.
+
+---
+
+# 38. No Minimum Order
+
+Do not add minimum-order logic.
+
+---
+
+# 39. No Pickup Scheduling
+
+Do not add:
+
+```text
+pickup_time
+pickup_date
+pickup_slot
+```
+
+---
+
+# 40. No Store Hours Validation
+
+Out of scope.
+
+---
+
+# 41. No Pickup Location Inventory Selection
+
+Inventory reservation remains based on Group E's allocation mechanism.
+
+Do not expose which warehouse fulfils PICKUP.
+
+---
+
+# 42. Inventory Allocation Is Internal
+
+If `InventoryAllocator` reserves across one or more locations:
+
+the customer does not choose them.
+
+Do not put allocation details into PICKUP response.
+
+---
+
+# 43. Response Contract
+
+PICKUP CHK-001 response eventually must follow:
+
+```json
+{
+  "data": {
+    "order_id": "ord_...",
+    "order_reference": "OD-.....",
+    "status": "PENDING_PAYMENT",
+    "fulfillment_type": "PICKUP",
+    "delivery_address": null,
+    "subtotal": {
+      "amount": 0,
+      "currency": "TZS"
+    },
+    "delivery_fee": {
+      "amount": 0,
+      "currency": "TZS"
+    },
+    "delivery_fee_status": "FINALIZED",
+    "total": {
+      "amount": 0,
+      "currency": "TZS"
+    },
+    "currency": "TZS",
+    "payment": null
+  }
+}
+```
+
+Use actual calculated monetary amounts.
+
+---
+
+# 44. Do Not Return Billing Address Unless Contract Includes It
+
+`CheckoutResponseData` is not automatically identical to OrderDetail.
+
+Do not add:
+
+```text
+billing_address
+delivery
+status_history
+```
+
+to CHK-001 response unless frozen schema includes them.
+
+---
+
+# 45. Explicit Serializer
+
+Later response must use explicit:
+
+```text
+CheckoutResponseResource
+CheckoutResponseData
+```
+
+or existing equivalent.
+
+Do not serialize the raw Order model.
+
+---
+
+# 46. Order Persistence Mapping
+
+Review how future Order creation will map PICKUP fields:
+
+```text
+fulfillment_type = PICKUP
+delivery_fee = zero
+delivery_fee_status = FINALIZED
+subtotal = authoritative subtotal
+total = subtotal
+currency = TZS
+delivery_address = null
+billing_address = null
+status = PENDING_PAYMENT
+```
+
+Document exact fields.
+
+---
+
+# 47. No Delivery Row
+
+Confirm Order persistence does not require a Delivery row merely because an Order exists.
+
+If the database forces one:
+
+classify as a model gap.
+
+Do not create dummy Delivery records.
+
+---
+
+# 48. Order Address Nullability
+
+Verify schema allows:
+
+```text
+delivery_address = null
+billing_address = null
+```
+
+for PICKUP.
+
+If not:
+
+```text
+MODEL GAP
+```
+
+must be reported.
+
+---
+
+# 49. Fee Nullability
+
+Verify Order schema can persist:
+
+```text
+delivery_fee = zero Money
+delivery_fee_status = FINALIZED
+```
+
+for PICKUP.
+
+---
+
+# 50. Total Persistence
+
+Verify:
+
+```text
+total = subtotal
+```
+
+can be represented without a delivery-fee finalization operation.
+
+---
+
+# 51. State Enum
+
+Verify:
+
+```text
+PENDING_PAYMENT
+```
+
+is valid initial status for PICKUP.
+
+---
+
+# 52. Fulfillment Enum
+
+Verify:
+
+```text
+PICKUP
+```
+
+is the canonical persisted enum.
+
+Do not use:
+
+```text
+SELF_PICKUP
+COLLECTION
+STORE_PICKUP
+```
+
+---
+
+# 53. Initial History Entry
+
+Later successful Checkout must append:
+
+```text
+PENDING_PAYMENT
+```
+
+to Order status history.
+
+Phase 7.3 should verify the PICKUP branch requires no special alternate initial history state.
+
+---
+
+# 54. Pickup Is Not READY_FOR_PICKUP Yet
+
+Do not initialize Order as:
+
+```text
+READY_FOR_PICKUP
+```
+
+That status belongs later in the operational lifecycle after payment and processing.
+
+---
+
+# 55. PICKUP Operational Path
+
+Future PICKUP path is conceptually:
+
+```text
+PENDING_PAYMENT
+→ PAID
+→ ACCEPTED
+→ PROCESSING
+→ READY_FOR_PICKUP
+→ COMPLETED
+```
+
+Only the initial state is relevant to Phase 7.3.
+
+Do not implement transitions.
+
+---
+
+# 56. No SHIPPED for PICKUP
+
+PICKUP later must not enter:
+
+```text
+SHIPPED
+DELIVERED
+```
+
+But Phase 7.3 should only record this dependency, not implement staff transition guards.
+
+---
+
+# 57. Fulfillment-Type Integrity
+
+Once Order is created:
+
+```text
+fulfillment_type = PICKUP
+```
+
+is historical Order meaning.
+
+Do not allow ordinary Checkout/PICKUP code to mutate it later.
+
+---
+
+# 58. Client Cannot Set Delivery Fee
+
+Strict validation already forbids:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_fee": {
+    "amount": 0,
+    "currency": "TZS"
+  }
+}
+```
+
+Even the correct zero value is server-controlled and must be rejected if client supplies it.
+
+---
+
+# 59. Client Cannot Set Total
+
+Reject:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "total": {
+    "amount": 1000,
+    "currency": "TZS"
+  }
+}
+```
+
+---
+
+# 60. Client Cannot Set Status
+
+Reject:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "status": "PENDING_PAYMENT"
+}
+```
+
+Server owns status even when client sends the correct value.
+
+---
+
+# 61. Client Cannot Set Currency
+
+Reject:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "currency": "TZS"
+}
+```
+
+because currency is server-controlled.
+
+---
+
+# 62. Request Normalization
+
+Normalize:
+
+```text
+fulfillment_type
+```
+
+only according to frozen enum rules.
+
+Do not lowercase/uppercase arbitrary client values into validity.
+
+---
+
+# 63. Exact Enum
+
+This:
+
+```text
+PICKUP
+```
+
+is valid.
+
+These:
+
+```text
+pickup
+Pickup
+SELF_PICKUP
+```
+
+are invalid.
+
+---
+
+# 64. No PICKUP Alias
+
+Do not accept:
+
+```text
+COLLECT
+COLLECTION
+SELF_PICK
+```
+
+---
+
+# 65. Address Branch Ordering
+
+For PICKUP:
+
+first determine valid fulfillment enum.
+
+Then enforce:
+
+```text
+delivery_address must be null/absent
+```
+
+Do not run DELIVERY nested-field validation when no address is required.
+
+---
+
+# 66. Null vs Absent
+
+Both:
+
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
+```
+
+and:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": null
+}
+```
+
+should normalize to the same logical PICKUP intent if this matches the frozen schema.
+
+---
+
+# 67. Idempotency Fingerprint
+
+Those two logically equivalent PICKUP requests should produce the same normalized Checkout intent.
+
+Do not make:
+
+```text
+absent delivery_address
+```
+
+and:
+
+```text
+delivery_address = null
+```
+
+materially different idempotency fingerprints.
+
+---
+
+# 68. Canonical PICKUP Fingerprint
+
+Conceptually:
+
+```text
+fulfillment_type = PICKUP
+delivery_address = null
 ```
 
 after normalization.
 
 ---
 
-# 74. City Is Not an Enum
+# 69. No Address Data in Fingerprint
 
-Do not restrict:
+For PICKUP:
 
-```text
-Dar es Salaam
-Dodoma
-Arusha
-Mwanza
-...
-```
-
-to a hardcoded list.
-
-The frozen contract says string.
+there is no delivery-address payload in the normalized fingerprint.
 
 ---
 
-# 75. City Is Not Delivery-Fee Authority
+# 70. Idempotency Still Required
 
-The presence of:
-
-```text
-city
-```
-
-does not authorize Checkout to calculate a fee.
-
-Model B remains:
+PICKUP CHK-001 still requires:
 
 ```text
-Staff/Admin set fee later via ORD-014
+Idempotency-Key
 ```
+
+Phase 7.3 does not weaken this.
 
 ---
 
-# 76. No Flat Fee Logic
+# 71. Same-Key Replay
 
-Do not reintroduce:
+Later:
 
 ```text
-TZS 20,000
+PICKUP + key K
 ```
 
-based on city.
+replay returns original 201 result.
+
+No second Order.
+
+No second reservation.
 
 ---
 
-# 77. No Zone Mapping
+# 72. Same-Key Changed to DELIVERY
 
-Phase 7.5 may review delivery-fee workflow, but V1 currently uses Staff/Admin fee assignment.
-
-Do not implement:
+Later:
 
 ```text
-city → delivery fee
+first K = PICKUP
+retry K = DELIVERY
 ```
 
-mapping.
-
----
-
-# 78. Snapshot and Idempotency
-
-Normalized delivery address participates in CHK-001's idempotency fingerprint.
-
-Therefore address normalization must be deterministic.
-
----
-
-# 79. Equivalent Whitespace
-
-Decide and document whether:
-
-```text
-" Dar es Salaam "
-```
-
-normalizes to:
-
-```text
-"Dar es Salaam"
-```
-
-before fingerprinting.
-
-Expected:
-
-```text
-YES
-```
-
-given Phase 7.1 trim rule.
-
----
-
-# 80. Fingerprint Uses Normalized Address
-
-Do not fingerprint raw input before normalization.
-
-Otherwise harmless whitespace differences could cause false:
+must:
 
 ```text
 409 DUPLICATE_OPERATION
@@ -1416,803 +1246,892 @@ Otherwise harmless whitespace differences could cause false:
 
 ---
 
-# 81. Field Ordering
+# 73. No Idempotency Implementation Duplication
 
-JSON key order must not materially affect the idempotency fingerprint.
+Do not build PICKUP-specific idempotency.
 
-Use normalized structured representation.
-
----
-
-# 82. Phone Normalization and Fingerprint
-
-Use normalized phone representation before fingerprinting.
-
-The same logical phone must not produce accidental idempotency mismatch due solely to supported formatting differences.
+Reuse shared Checkout idempotency later.
 
 ---
 
-# 83. Address Object Immutability
+# 74. Security
 
-Once built, prefer immutable DTO/value semantics.
-
-Do not mutate address later during Order creation.
-
----
-
-# 84. Request Validation Ownership
-
-Phase 7.8 owns final Checkout validation orchestration.
-
-Phase 7.2 may prepare:
+PICKUP does not change actor policy:
 
 ```text
-address DTO
-normalizer
-field mapping
-unit tests
+CUSTOMER-only
 ```
 
-but must not fully activate CHK-001.
+No Staff/Admin checkout unless frozen contract changes later.
 
 ---
 
-# 85. Phase 7.3 Boundary
+# 75. Guest Checkout
 
-Phase 7.3 will implement/review PICKUP behavior.
-
-Phase 7.2 should ensure:
+Still:
 
 ```text
+401
+```
+
+for guest-only caller.
+
+PICKUP is not an exception.
+
+---
+
+# 76. Cart Ownership
+
+Server derives authenticated customer's own active Cart.
+
+No Cart ID accepted.
+
+---
+
+# 77. No Pickup Cart Shortcut
+
+Do not expose:
+
+```text
+POST /me/cart/pickup
+```
+
+---
+
+# 78. Error Mapping
+
+Expected PICKUP-specific failures include:
+
+```text
+invalid fulfillment enum
+→ schema/domain 422
+
+PICKUP + populated delivery_address
+→ 422 INVALID_FULFILLMENT
+
+client delivery_fee
+→ 422 INVALID_VALUE
+
+client total/subtotal/currency/status
+→ 422 INVALID_VALUE
+```
+
+Use exact frozen envelope.
+
+---
+
+# 79. Domain Result Type
+
+If creating a PICKUP branch result, make invalid states impossible.
+
+It should not permit:
+
+```text
+PICKUP + non-null delivery address
+PICKUP + pending delivery fee
+PICKUP + non-zero delivery fee
+```
+
+---
+
+# 80. Strong Invariant
+
+The code should encode:
+
+```text
+PICKUP
+implies
 delivery_address = null
+delivery_fee = zero
+delivery_fee_status = FINALIZED
 ```
 
-is easy and valid for PICKUP.
+as one coherent domain decision.
 
 ---
 
-# 86. Phase 7.4 Boundary
+# 81. Avoid Mutable State Object
 
-Phase 7.4 will implement/review DELIVERY behavior.
-
-Phase 7.2 must provide a stable:
+Do not create an object that can later be mutated into:
 
 ```text
-validated normalized city-based address snapshot
+PICKUP + delivery_fee_status=PENDING
 ```
 
-for it.
+without explicit invariant checks.
+
+Prefer immutable construction where repository style allows it.
 
 ---
 
-# 87. Phase 7.5 Boundary
+# 82. Reuse Fulfillment Enum
 
-Delivery fee remains separate.
-
-Address is input to business review/fulfillment but not a client fee authority.
-
----
-
-# 88. Phase 7.6 Boundary
-
-Order totals should not depend on arbitrary address model logic.
-
----
-
-# 89. Phase 7.7 Boundary
-
-Phase 7.7 eventually persists the address snapshot atomically with Order creation.
-
-Phase 7.2 only ensures model compatibility.
-
----
-
-# 90. Phase 7.8 Boundary
-
-Phase 7.8 integrates strict Checkout request validation.
-
-Do not fully duplicate that phase now.
-
----
-
-# 91. Existing Order Schema
-
-Review actual:
+Do not create:
 
 ```text
-orders
+PickupType
 ```
 
-migration/model.
-
-Record how delivery address is stored.
-
----
-
-# 92. Existing Delivery Schema
-
-Review actual:
+if existing:
 
 ```text
-deliveries
+FulfillmentType::PICKUP
 ```
 
-migration/model.
+already exists.
 
-Record whether it currently expects:
+---
+
+# 83. Reuse DeliveryFeeStatus Enum
+
+Use existing:
 
 ```text
-city
-region
+FINALIZED
 ```
 
-or neither.
+enum/value.
+
+No magic string.
 
 ---
 
-# 93. Existing Casts
+# 84. Reuse OrderStatus Enum
 
-Inspect:
+Use:
 
 ```text
-casts()
-custom Casts
-JSON casts
-AddressField
-DTO hydration
+PENDING_PAYMENT
 ```
 
-that affect address persistence.
+from existing closed enum.
 
 ---
 
-# 94. Existing Resources
+# 85. Reuse Currency Authority
 
-Inspect Order API resources for:
+Use existing TZS source.
+
+Do not hardcode currency differently across branch services.
+
+---
+
+# 86. Phase 7.3 Implementation Target
+
+The desired result is that later Checkout orchestration can ask:
 
 ```text
-delivery_address
-billing_address
+Build the fulfillment state for PICKUP
 ```
 
-Confirm serialized key is:
+and receive a correct, validated immutable branch result.
+
+---
+
+# 87. Suggested Flow
+
+Conceptually:
 
 ```text
-city
+validated fulfillment_type
+→ PICKUP branch resolver
+→ verify delivery_address absent/null
+→ produce PickupFulfillmentState
 ```
 
----
-
-# 95. Factories
-
-Update/test factories only where required to reflect correct internal model shape.
-
-Do not casually rewrite unrelated fixtures.
+No DB mutation required.
 
 ---
 
-# 96. Seeders
+# 88. No Inventory Query in PICKUP Branch Component
 
-No production seeder changes expected.
+The branch component should not query ProductStock.
 
----
-
-# 97. Migration Tests
-
-If schema is unchanged:
-
-add/retain tests proving existing columns can store the frozen snapshot.
+Inventory belongs to Checkout transaction orchestration.
 
 ---
 
-# 98. Address DTO Test
+# 89. No Product Query
 
-If introducing or modifying a DTO/value object, test:
+Likewise no Product/Variant validation inside the pure PICKUP fulfillment component.
+
+---
+
+# 90. No Order Insert
+
+Do not persist Order in the branch component.
+
+---
+
+# 91. No Cart Mutation
+
+Do not clear Cart in Phase 7.3 branch code.
+
+---
+
+# 92. No Transaction Requirement Yet
+
+Pure PICKUP branch construction does not need a DB transaction.
+
+Actual persistence belongs later.
+
+---
+
+# 93. Database Review
+
+Still verify Order schema supports PICKUP invariants.
+
+No runtime persistence required yet.
+
+---
+
+# 94. Likely Files
+
+Potential implementation areas:
 
 ```text
-valid construction
-trim normalization
-city retained
-region rejected/not represented
-phone normalization
-immutable behavior
+app/Domain/Checkout/
+app/Services/Checkout/
+app/Enums/FulfillmentType.php
+app/Enums/DeliveryFeeStatus.php
+app/ValueObjects/Money.php
+tests/Unit/Checkout/
+tests/Feature/Checkout/
+docs/decisions.md
 ```
 
+Use actual repository structure.
+
 ---
 
-# 99. Mapping Test
+# 95. Do Not Activate Checkout Route Yet
 
-If internal storage uses `region`:
-
-test explicitly:
+Unless the project's established implementation plan explicitly activates CHK-001 incrementally, leave:
 
 ```text
-API city
-→ internal region
-→ API city
+POST /checkout
 ```
 
-to prevent future regression.
+as its current stub.
+
+Phase 7.3 is one branch of a later complete workflow.
 
 ---
 
-# 100. Prefer Elimination of Mapping
+# 96. If Route Is Already Activated
 
-If safely possible, changing the internal helper itself to `city` is preferable to maintaining permanent translation.
+If previous implementation unexpectedly activated it:
 
-But only after caller audit.
+do not expose a half-implemented PICKUP-only Checkout while DELIVERY remains incomplete unless the frozen contract permits partial availability.
+
+Prefer maintaining current stub until both branches and transaction behavior are ready.
 
 ---
 
-# 101. No Public `region`
+# 97. Focused Unit Tests
 
-Run codebase search after implementation.
+Add unit tests for PICKUP branch semantics.
 
-Any public Checkout/Order schema/resource/test expectation of:
+At minimum:
 
 ```text
-region
-```
-
-is a failure.
-
----
-
-# 102. Internal `region`
-
-If retained internally, document exactly why and where.
-
-Do not leave unexplained dual terminology.
-
----
-
-# 103. Documentation Scope
-
-Update Phase 7.2 documentation to state:
-
-```text
-city = frozen V1 API
-region = legacy/internal implementation detail only, if retained
+PICKUP produces null delivery address
+PICKUP produces null billing address
+PICKUP produces zero TZS delivery fee
+PICKUP produces FINALIZED fee status
 ```
 
 ---
 
-# 104. Do Not Change Frozen OpenAPI to Region
+# 98. Test — Total Relationship
 
-Absolutely do not edit:
+Given:
 
 ```text
-DeliveryAddressInput.city
-DeliveryAddressSnapshot.city
-CHK-001 delivery example city
+subtotal = X
 ```
 
-to `region`.
+assert branch/totals integration expectation:
+
+```text
+delivery fee = 0
+total = X
+```
+
+If Phase 7.6 owns totals implementation, keep this as requirement-level/unit integration without duplicating calculator logic.
 
 ---
 
-# 105. Do Not Change Phase 7.1
+# 99. Test — No Delivery Address
 
-Phase 7.1 is already correct.
+Valid request:
 
-Its finding:
-
-```text
-AddressField region vs API city
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
 ```
 
-is the issue Phase 7.2 resolves.
-
-Do not rewrite history to pretend the mismatch did not exist.
+passes PICKUP branch validation.
 
 ---
 
-# 106. Decision Record
+# 100. Test — Null Address
 
-Add a backend ADR if implementation reconciliation requires a durable architectural decision.
+Valid:
 
-Suggested concept:
-
-```text
-Checkout/Order public address vocabulary is `city`.
-Existing Laravel address helpers must adapt to the frozen API.
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": null
+}
 ```
 
-Do not create a new public API decision.
+normalizes identically.
 
 ---
 
-# 107. Suggested ADR
+# 101. Test — Populated Address
 
-If needed:
+Reject:
 
-```text
-ADR/BACKEND-0XX —
-Checkout Address Model Alignment
-```
-
-Use actual next ADR number.
-
----
-
-# 108. Gap Classification
-
-At the end classify:
-
-```text
-AddressField region mismatch
-```
-
-as one of:
-
-```text
-RESOLVED
-BLOCKED
-```
-
-It must not remain partially unresolved if Phase 7.2 passes.
-
----
-
-# 109. Expected Resolution
-
-Preferred:
-
-```text
-RESOLVED
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": {
+    "recipient_name": "Asha",
+    "phone": "+255700000001",
+    "address_line": "Jengo Street",
+    "city": "Dar es Salaam"
+  }
+}
 ```
 
 with:
 
 ```text
-public API = city
-Laravel Checkout mapping = city-compatible
-Order snapshot = city
+INVALID_FULFILLMENT
+```
+
+at the appropriate domain boundary.
+
+---
+
+# 102. Test — Correct Client-Supplied Fee Still Rejected
+
+Payload containing:
+
+```text
+delivery_fee = 0
+```
+
+must still fail.
+
+---
+
+# 103. Test — Total Injection
+
+Reject.
+
+---
+
+# 104. Test — Status Injection
+
+Reject.
+
+---
+
+# 105. Test — Currency Injection
+
+Reject.
+
+---
+
+# 106. Test — Billing Address Injection
+
+Because V1 Checkout does not accept billing address:
+
+reject it as unknown.
+
+---
+
+# 107. Test — Pickup Location Injection
+
+Reject:
+
+```text
+pickup_location_id
+```
+
+as unknown.
+
+---
+
+# 108. Test — Lowercase Enum
+
+Reject:
+
+```text
+pickup
 ```
 
 ---
 
-# 110. Schema Change Expected
+# 109. Test — PAYMENT Remains Null
 
-Expected:
-
-```text
-NONE
-```
-
-unless persistence truly cannot represent the V1 snapshot.
+Any branch/result object intended for Checkout response must not fabricate Payment.
 
 ---
 
-# 111. Dependency Change Expected
+# 110. Test — No Delivery Object
 
-Expected:
+PICKUP Order projection later must have:
 
 ```text
-NONE
+delivery = null
 ```
+
+where OrderDetail includes that field.
 
 ---
 
-# 112. Frontend
+# 111. Model Compatibility Test
 
-Expected:
+Verify Order model can represent:
 
 ```text
-NONE
+PICKUP
+delivery_address null
+billing_address null
+delivery_fee zero
+delivery_fee_status FINALIZED
+PENDING_PAYMENT
 ```
 
-No Next.js or Flutter changes in Phase 7.2.
+without violating model assertions or DB constraints.
 
 ---
 
-# 113. No Checkout Route Activation
+# 112. No Dummy Address Regression
 
-CHK-001 may remain:
-
-```text
-501/stub
-```
-
-until later implementation phases.
-
-Do not partially activate it just to test address parsing.
-
----
-
-# 114. Existing Tests
-
-Run relevant existing:
+Explicitly verify no helper substitutes:
 
 ```text
-Order schema tests
-Delivery schema tests
-API resource contract tests
-OpenAPI tests
-AddressField/helper unit tests
-```
-
----
-
-# 115. Add Focused Tests
-
-Create focused Phase 7.2 tests as appropriate.
-
-Possible suites:
-
-```text
-CheckoutDeliveryAddressTest
-OrderAddressSnapshotTest
-AddressFieldCompatibilityTest
-```
-
-Use actual repository naming.
-
----
-
-# 116. Test — Frozen Keys
-
-Assert canonical keys exactly:
-
-```text
-recipient_name
-phone
-address_line
+region
 city
+store address
+customer profile address
+```
+
+for PICKUP.
+
+---
+
+# 113. Phase 7.2 Regression
+
+Run address-model tests.
+
+PICKUP changes must not reintroduce:
+
+```text
+region
+```
+
+to public V1 Checkout/Order schemas.
+
+---
+
+# 114. Existing Cart Regression
+
+No Cart behavior should change during PICKUP implementation.
+
+Run relevant Group F focused tests if Checkout helper touches shared Cart code.
+
+---
+
+# 115. Existing Inventory Regression
+
+If PICKUP code references money/fulfillment enums only:
+
+no inventory changes expected.
+
+If any shared reservation interface is touched, rerun its focused tests.
+
+---
+
+# 116. No MariaDB Checkout Race Yet
+
+Phase 7.7 owns actual Checkout transaction concurrency.
+
+Do not fabricate a partial MariaDB checkout race harness before Checkout persistence exists.
+
+---
+
+# 117. No Schema Change Expected
+
+Expected:
+
+```text
+Schema: NONE
+```
+
+If Order model cannot represent PICKUP state:
+
+report a MODEL GAP rather than silently altering V1.
+
+---
+
+# 118. Dependencies
+
+Expected:
+
+```text
+NONE
 ```
 
 ---
 
-# 117. Test — `region` Rejected
+# 119. Frontend
 
-Where request-schema logic can be tested without activating Checkout:
-
-assert `region` is not an accepted public field.
-
----
-
-# 118. Test — Round Trip
-
-Ensure:
+Expected:
 
 ```text
-city
-→ storage
-→ city
+NONE
 ```
 
 ---
 
-# 119. Test — PICKUP Null
+# 120. Documentation
 
-Ensure models/DTOs allow:
+Record the PICKUP implementation decision if needed:
 
 ```text
-no address
+PICKUP:
+delivery_address null
+billing_address null
+fee 0 TZS
+fee status FINALIZED
+total=subtotal
+Order PENDING_PAYMENT
+payment null
 ```
 
-without fake values.
+Do not create a duplicate API contract.
 
 ---
 
-# 120. Test — DELIVERY Complete Snapshot
+# 121. No Delivery Fee ADR Redesign
 
-All four fields survive normalization/persistence mapping.
-
----
-
-# 121. Test — Historical Snapshot
-
-Mutating Customer profile afterward must not alter the stored Order address representation.
-
-If Order creation is not yet active, test at model/value-object level rather than building future Checkout workflow early.
+This phase does not reconsider Model B.
 
 ---
 
-# 122. Test — No Truncation
+# 122. No Payment ADR Redesign
 
-Where persistence length limits exist, verify valid frozen input is not silently truncated.
+This phase does not reconsider Group H boundaries.
 
 ---
 
-# 123. Test — City Whitespace
+# 123. Validation Responsibility
 
-Input:
+If Phase 7.8 owns final Checkout FormRequest, Phase 7.3 may provide a reusable PICKUP branch validator but must not duplicate final transport/schema validation.
+
+---
+
+# 124. Keep Separation
+
+Preferred layers:
 
 ```text
-"  Dar es Salaam  "
-```
-
-normalizes to:
-
-```text
-"Dar es Salaam"
+request schema
+→ normalized Checkout input
+→ fulfillment branch
+→ later Checkout transaction
 ```
 
 ---
 
-# 124. Test — Empty City
+# 125. No Request Object in Domain
 
-Rejected by prepared validator/value object.
+Avoid passing the Laravel Request directly into the PICKUP domain component.
 
----
-
-# 125. Test — Phone
-
-Verify current approved normalization.
-
-Do not expand validation scope beyond contract.
+Use validated normalized input.
 
 ---
 
-# 126. Test — AddressLine
+# 126. Deterministic Output
 
-Trim but do not arbitrarily rewrite.
+Given identical PICKUP input, the branch result must be deterministic.
 
----
-
-# 127. Test — Recipient Name
-
-Trim and preserve Unicode.
-
-Do not assume ASCII-only names.
+No current-time/random/database dependency.
 
 ---
 
-# 128. Unicode
+# 127. Money Equality
 
-Address strings must remain Unicode-safe.
-
-Do not corrupt:
+When comparing:
 
 ```text
-names
-street names
-city names
+total
+subtotal
 ```
 
-through normalization.
+compare integer amount + currency.
+
+No float conversion.
 
 ---
 
-# 129. No Lowercasing City
+# 128. Currency Mismatch Impossible
 
-Do not normalize:
+The branch should not permit:
 
 ```text
-Dar es Salaam
+subtotal TZS
+delivery fee USD
+```
+
+V1 uses TZS only.
+
+---
+
+# 129. Total Finality
+
+For PICKUP:
+
+```text
+delivery_fee_status = FINALIZED
+```
+
+means:
+
+```text
+total is final
+```
+
+from the Order financial perspective before payment.
+
+Document this distinction from DELIVERY's provisional total.
+
+---
+
+# 130. Payment Still Null
+
+Final total does not mean Payment exists.
+
+Keep those concepts separate.
+
+---
+
+# 131. Cancellation Window Dependency
+
+The future Order's:
+
+```text
+created_at
+```
+
+starts the configured cancellation window.
+
+Phase 7.3 does not implement cancellation.
+
+Do not special-case PICKUP.
+
+---
+
+# 132. Operational Fulfillment Dependency
+
+Later Staff processing uses:
+
+```text
+PICKUP
+```
+
+to determine valid transition:
+
+```text
+PROCESSING → READY_FOR_PICKUP
+```
+
+This phase should preserve the enum exactly so operational code can branch reliably.
+
+---
+
+# 133. No Tracking Delivery Object
+
+PICKUP should not generate delivery tracking state.
+
+---
+
+# 134. No Shipping Status
+
+Do not initialize:
+
+```text
+shipping_status
+```
+
+or equivalent.
+
+---
+
+# 135. No Store Notification
+
+Notification behavior is outside this phase.
+
+---
+
+# 136. No Email
+
+Out of scope.
+
+---
+
+# 137. No FCM
+
+Out of scope.
+
+---
+
+# 138. No Receipt
+
+Out of scope.
+
+---
+
+# 139. Security Review
+
+Ensure PICKUP cannot be used to bypass:
+
+```text
+stock validation
+price recalculation
+authentication
+Cart ownership
+idempotency
+```
+
+just because delivery address is absent.
+
+---
+
+# 140. Do Not Branch Before Authorization
+
+Future CHK-001 should still authenticate CUSTOMER before exposing domain behavior according to Phase 7.1 validation ordering.
+
+---
+
+# 141. No Fee Finalization Permission Required
+
+PICKUP customer's Checkout does not invoke the staff permission:
+
+```text
+orders.set_delivery_fee
+```
+
+Fee zero/finalized is intrinsic server behavior.
+
+---
+
+# 142. Audit
+
+No privileged delivery-fee audit event is needed merely because PICKUP gets zero fee.
+
+This is not ORD-014.
+
+---
+
+# 143. Historical Financial Record
+
+Once the Order is later created:
+
+```text
+delivery_fee = zero
+delivery_fee_status = FINALIZED
+```
+
+must remain part of historical financial meaning.
+
+Do not recalculate it based on later delivery policy changes.
+
+---
+
+# 144. No Later Fee Addition
+
+A PICKUP Order must not later gain a delivery fee through normal flow.
+
+---
+
+# 145. Pickup→Delivery Conversion
+
+Do not implement changing an Order from:
+
+```text
+PICKUP
 ```
 
 to:
 
 ```text
-dar es salaam
+DELIVERY
 ```
 
-unless contract explicitly requires it.
+after Checkout.
 
-Trim only.
-
----
-
-# 130. No Uppercasing City
-
-Likewise do not force uppercase.
+No such V1 operation exists.
 
 ---
 
-# 131. Phone Is Different
+# 146. Delivery→Pickup Conversion
 
-Phone may use canonical normalization.
-
-Keep field-specific behavior separate.
+Likewise out of scope.
 
 ---
 
-# 132. Error Field Paths
+# 147. Test Naming
 
-Future validation errors should identify:
+Prefer focused suites such as:
 
 ```text
-delivery_address.city
-delivery_address.phone
-...
+PickupFulfillmentTest
+CheckoutPickupContractTest
 ```
 
-not:
+Use repository conventions.
+
+---
+
+# 148. Avoid Premature Full Feature Tests
+
+Do not write tests that expect a fully working CHK-001 transaction if that route is intentionally still stubbed.
+
+Test the branch/component/model compatibility now.
+
+---
+
+# 149. Full Checkout Tests Later
+
+Phase 7.9 will prove:
 
 ```text
-region
+authenticated request
+Cart
+reservation
+Order
+Cart clear
+idempotency
+response
 ```
 
----
-
-# 133. Internal Exception Leakage
-
-Do not expose:
-
-```text
-AddressField::REGION
-database column names
-cast implementation
-```
-
-in public errors.
+end-to-end.
 
 ---
 
-# 134. Mass Assignment
+# 150. Verification
 
-Do not pass raw address arrays into a mass assignment boundary that accepts unrelated fields.
+Run focused Phase 7.3 tests.
 
-Use explicit mapping.
-
----
-
-# 135. Security
-
-Ensure no client address field can override:
-
-```text
-user_id
-order_id
-delivery_fee
-status
-created_at
-```
-
----
-
-# 136. No HTML Sanitization Requirement
-
-This phase is data validation, not rendering.
-
-Do not destroy legitimate characters with aggressive HTML stripping unless repository conventions already require it.
-
-Output escaping belongs at UI/rendering layer.
-
----
-
-# 137. Database Safety
-
-Eloquent/query parameterization handles SQL injection.
-
-Do not build SQL from address strings.
-
----
-
-# 138. Address Data Privacy
-
-Addresses are private customer/order data.
-
-Do not log full:
-
-```text
-recipient_name
-phone
-address_line
-```
-
-unnecessarily.
-
----
-
-# 139. Logging
-
-Safe logs may contain:
-
-```text
-request_id
-operation
-validation failure code
-```
-
-Avoid full address payload.
-
----
-
-# 140. Audit
-
-Ordinary customer Checkout address input does not require a privileged audit event merely for address validation.
-
-Order creation/history handles business record later.
-
----
-
-# 141. Cache
-
-Order/Checkout address information remains private/no-store.
-
-No public caching.
-
----
-
-# 142. API Contract Verification
-
-Verify current OpenAPI still has:
-
-```text
-DeliveryAddressInput.city
-DeliveryAddressSnapshot.city
-```
-
-after Phase 7.2.
-
----
-
-# 143. No Contract Widening
-
-Do not add:
-
-```text
-region
-country
-district
-postal_code
-```
-
-to OpenAPI.
-
----
-
-# 144. Code Review Search
-
-Before completion search for relevant public serialization of:
-
-```text
-region
-```
-
-within Checkout/Order paths.
-
-Any leak must be resolved.
-
----
-
-# 145. Internal Compatibility Search
-
-Also ensure changing `AddressField` does not break unrelated modules.
-
-Run focused tests for every caller found in the initial audit.
-
----
-
-# 146. Complexity
-
-Keep:
-
-```text
-cognitive complexity <= 15
-<= 3 returns where practical
-```
-
----
-
-# 147. Do Not Build a God Address Service
-
-Avoid a huge service for simple snapshot mapping.
-
----
-
-# 148. Reuse Existing Normalization
-
-If a safe shared string/phone normalizer exists:
-
-reuse it.
-
-Do not duplicate.
-
----
-
-# 149. No New Third-Party Package
-
-Do not add an address library.
-
----
-
-# 150. Verification Commands
-
-Run focused tests, then:
+Then:
 
 ```bash
 php artisan test
@@ -2225,25 +2144,29 @@ php artisan route:list
 
 ---
 
-# 151. OpenAPI Parse
+# 151. Route Verification
 
-Also verify:
-
-```text
-docs/api/openapi.yaml
-```
-
-still parses successfully.
-
----
-
-# 152. Route Count
-
-Phase 7.2 must introduce:
+Expected:
 
 ```text
 new routes = NONE
 ```
+
+unless existing roadmap specifically activates CHK-001 earlier.
+
+Do not add a PICKUP-only route.
+
+---
+
+# 152. OpenAPI
+
+Expected:
+
+```text
+changes = NONE
+```
+
+The frozen PICKUP contract already exists.
 
 ---
 
@@ -2251,7 +2174,7 @@ new routes = NONE
 
 Return:
 
-## Phase 7.2 status
+## Phase 7.3 status
 
 ```text
 PASS
@@ -2263,86 +2186,95 @@ or:
 BLOCKED
 ```
 
-## Frozen API
+## PICKUP branch
+
+Report the component(s) responsible for PICKUP state.
+
+## Fulfillment
 
 Confirm:
 
 ```text
-public location field = city
-region = not accepted by V1 API
+fulfillment_type = PICKUP
 ```
 
-## AddressField
+## Addresses
+
+Confirm:
+
+```text
+delivery_address = null
+billing_address = null
+```
+
+and no dummy address.
+
+## Delivery fee
+
+Confirm:
+
+```text
+amount = 0
+currency = TZS
+status = FINALIZED
+```
+
+## Total
+
+Confirm:
+
+```text
+total = subtotal
+```
+
+and note whether final total calculation itself remains Phase 7.6-owned.
+
+## Order status
+
+Confirm:
+
+```text
+PENDING_PAYMENT
+```
+
+## Payment
+
+Confirm:
+
+```text
+payment = null
+provider calls = NONE
+```
+
+## Inventory
 
 Report:
 
 ```text
-previous behavior
-final behavior
-whether modified or adapted
-all callers audited
+reservation implementation in this phase = NONE
+ProductStock mutation = NONE
 ```
 
-## Public/Internal Mapping
-
-If internal `region` remains:
-
-state the exact mapper.
-
-If eliminated:
-
-state that clearly.
-
-## Checkout Request
-
-Confirm canonical fields:
-
-```text
-recipient_name
-phone
-address_line
-city
-```
-
-## PICKUP
-
-Confirm:
-
-```text
-delivery_address = null/absent
-```
-
-## DELIVERY
-
-Confirm required normalized historical snapshot behavior.
-
-## Order Snapshot
-
-Report how `city` is stored and later serialized.
-
-## Delivery Model
-
-Report compatibility with the Order snapshot.
+unless roadmap explicitly required otherwise.
 
 ## Validation
 
-Report:
+Report PICKUP/address branch behavior.
 
-```text
-requiredness
-trimming
-phone normalization
-unknown-field behavior
-region rejection
-```
+## Model compatibility
+
+Report Order/Delivery schema compatibility.
 
 ## Idempotency
 
-Confirm normalized address is suitable for later deterministic fingerprinting.
+Confirm normalized PICKUP intent:
 
-## Privacy
+```text
+fulfillment_type=PICKUP
+delivery_address=null
+```
 
-Report logging/private-data handling.
+is deterministic for later fingerprinting.
 
 ## Schema
 
@@ -2366,19 +2298,9 @@ NONE
 NONE
 ```
 
-## OpenAPI
-
-Confirm:
-
-```text
-unchanged frozen city contract
-```
-
-unless a genuine documentation typo unrelated to field naming was corrected.
-
 ## Tests
 
-Report focused and full test results.
+Report focused and canonical results.
 
 ## Quality
 
@@ -2389,31 +2311,14 @@ Pint
 PHPStan
 Composer audit
 git diff --check
-OpenAPI parse
 ```
 
-## Drift Resolution
-
-Return exactly:
-
-```text
-CITY / REGION DRIFT — RESOLVED
-```
-
-or:
-
-```text
-CITY / REGION DRIFT — BLOCKED
-```
-
-with concrete reason.
-
-## Phase 7.3 readiness
+## Phase 7.4 readiness
 
 Return:
 
 ```text
-Phase 7.3 — Pickup flow: READY
+Phase 7.4 — Delivery flow: READY
 ```
 
 or:
@@ -2426,38 +2331,42 @@ BLOCKED
 
 # 154. Definition of Done
 
-Phase 7.2 is complete when:
+Phase 7.3 is complete when:
 
-- frozen V1 still uses `city`;
-- `region` has not been added to the public API;
-- `AddressField` and all callers have been audited;
-- Laravel can consume a valid `city` Checkout address;
-- Laravel can persist/map the `city` snapshot without data loss;
-- Order serialization returns `city`;
-- internal `region`, if retained, is hidden behind an explicit adapter;
-- PICKUP requires no fake address;
-- DELIVERY requires all four frozen fields;
-- unknown nested address fields are rejected;
-- `region` is rejected publicly;
-- strings are trimmed;
-- empty/whitespace values are rejected;
-- phone normalization remains contract-compatible;
-- no saved-address system is introduced;
-- no geocoding is introduced;
-- no delivery-zone logic is introduced;
-- no fee calculation is introduced;
-- no arbitrary city enum/list is introduced;
-- normalized address can participate deterministically in later idempotency fingerprinting;
-- Checkout/Order resources cannot leak `region`;
-- no unnecessary migration exists;
-- no new dependency exists;
-- no frontend code changes;
+- PICKUP is represented by the frozen enum;
+- PICKUP accepts no populated delivery address;
+- absent and null delivery address normalize identically;
+- delivery address remains null;
+- billing address remains null;
+- no Delivery row is required at Checkout;
+- no pickup location selector is introduced;
+- no fake address is created;
+- delivery fee is exactly zero TZS;
+- delivery fee status is FINALIZED;
+- total relationship is frozen as total=subtotal;
+- initial Order state remains PENDING_PAYMENT;
+- Payment remains null;
+- no payment provider call exists;
+- no MADE_TO_ORDER bypass exists;
+- no stock-validation bypass exists;
+- Checkout reservation requirement remains intact;
+- no stock reservation is prematurely implemented by the branch component;
+- no physical stock is consumed;
+- client-supplied delivery fee is rejected;
+- client-supplied total is rejected;
+- client-supplied currency is rejected;
+- client-supplied status is rejected;
+- PICKUP enum aliases are rejected;
+- normalized PICKUP intent is deterministic for idempotency;
+- Order persistence can represent the PICKUP state;
+- public address vocabulary remains `city` for DELIVERY and does not leak `region`;
+- no schema migration is required unless a real model gap is found;
+- no new dependency is added;
+- no frontend work occurs;
 - full regression suite remains green;
-- PHPStan has zero errors;
+- PHPStan reports zero errors;
 - Pint passes;
-- Composer audit is clean;
-- OpenAPI remains valid;
-- CITY / REGION drift is fully resolved.
+- Composer audit remains clean.
 
 ---
 
@@ -2466,18 +2375,18 @@ Phase 7.2 is complete when:
 Do not implement:
 
 ```text
-Phase 7.3 PICKUP workflow
-Phase 7.4 DELIVERY workflow
-delivery fee logic
-Order totals
-Checkout transaction
-stock reservation
-Order creation
+Phase 7.4 DELIVERY flow
+Phase 7.5 delivery fee rules
+Phase 7.6 final totals engine
+Phase 7.7 Checkout transaction
+Phase 7.8 complete Checkout validation
+Phase 7.9 full Checkout tests
 payment
-saved addresses
-address verification
-geocoding
-delivery zones
+order cancellation
+reservation release
+stock consumption
+pickup scheduling
+pickup locations
 frontend
 ```
 
@@ -2485,31 +2394,22 @@ frontend
 
 # 156. STOP Condition
 
-STOP when the backend address model can faithfully support:
+STOP when the backend can represent the PICKUP branch unambiguously as:
 
 ```text
-DELIVERY request
-city
-→ normalized address
-→ historical Order snapshot
-→ Order response city
+PICKUP
+→ delivery_address null
+→ billing_address null
+→ delivery_fee 0 TZS
+→ delivery_fee_status FINALIZED
+→ total = subtotal
+→ Order PENDING_PAYMENT
+→ payment null
 ```
 
-while:
+without activating a partial or unsafe Checkout workflow.
 
-```text
-region
-```
-
-remains absent from the frozen V1 API.
-
-Then report:
-
-```text
-CITY / REGION DRIFT — RESOLVED
-```
-
-Do not continue automatically to Phase 7.3.
+Do not continue automatically to Phase 7.4.
 
 DO NOT COMMIT OR PUSH.
 

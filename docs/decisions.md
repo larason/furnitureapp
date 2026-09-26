@@ -2391,3 +2391,14 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 **Status:** Accepted | **Affected:** `backend/laravel` (`app/Services/Cart/{MergeGuestCart,CartProjection}.php` new, `app/Services/Cart/GetOrCreateActiveCart.php`, `app/Support/IdempotencyKeyHeader.php` new, `app/Http/Controllers/Api/V1/{CartController,InventoryController}.php`, `tests/Feature/CartMergeApiTest.php`, `tests/Integration/CartMergeConcurrencyMysqlTest.php`), `docs/api/openapi.yaml`, `docs/decisions.md`
 
+---
+
+### ADR/BACKEND-037 — Pickup Fulfillment State Boundary (Phase 7.3)
+
+**Decision:** Represent the normalized PICKUP branch with the pure immutable `PickupFulfillmentState`. It accepts only the exact `PICKUP` fulfillment type and an absent or `null` delivery address. The branch produces `delivery_address=null`, `billing_address=null`, zero `TZS` delivery fee, and `delivery_fee_status=FINALIZED`. For an authoritative subtotal, its total relationship is `total=subtotal`, while the later canonical totals implementation remains Phase 7.6-owned.
+
+PICKUP order projection remains `PENDING_PAYMENT` with `payment=null`; finalized delivery-fee state does not mean payment occurred. The state boundary performs no Order insert, Cart mutation, inventory query/reservation, idempotency operation, Delivery-row creation, pickup-location selection, payment call, or Checkout route activation. Client-controlled fee, total, currency, status, billing-address, and pickup-location fields are rejected at this branch boundary; complete transport/schema validation remains Phase 7.8-owned.
+
+**Reason:** Establishes one deterministic branch result for later Checkout composition without creating a partial PICKUP-only checkout or bypassing the Group G transaction and Group H payment boundaries.
+
+**Status:** Accepted | **Affected:** `backend/laravel/app/Services/Checkout/PickupFulfillmentState.php`, `backend/laravel/tests/Unit/PickupFulfillmentStateTest.php`, `docs/decisions.md`
