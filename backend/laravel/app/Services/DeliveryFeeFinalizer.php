@@ -32,8 +32,8 @@ final class DeliveryFeeFinalizer
         string $idempotencyKey,
         ?string $requestId,
     ): array {
-        $orderId = OrderIdentifier::decode($orderIdentifier);
-        if ($orderId === null) {
+        $publicId = OrderIdentifier::decode($orderIdentifier);
+        if ($publicId === null) {
             throw $this->orderNotFound();
         }
 
@@ -47,15 +47,15 @@ final class DeliveryFeeFinalizer
             self::ACTION,
             $idempotencyKey,
             $intent,
-            fn (): array => $this->apply($orderId, $amount, $actor, $requestId),
+            fn (): array => $this->apply($publicId, $amount, $actor, $requestId),
         )->body;
     }
 
     /** @return array<string, mixed> */
-    private function apply(int $orderId, int $amount, User $actor, ?string $requestId): array
+    private function apply(string $publicId, int $amount, User $actor, ?string $requestId): array
     {
-        return DB::transaction(function () use ($orderId, $amount, $actor, $requestId): array {
-            $order = Order::query()->lockForUpdate()->find($orderId);
+        return DB::transaction(function () use ($publicId, $amount, $actor, $requestId): array {
+            $order = Order::query()->lockForUpdate()->where('public_id', $publicId)->first();
             if ($order === null) {
                 throw $this->orderNotFound();
             }

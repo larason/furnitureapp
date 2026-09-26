@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class OrderSchemaTest extends TestCase
@@ -115,6 +116,7 @@ class OrderSchemaTest extends TestCase
 
         DB::table('orders')->insert([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => $existing->order_reference,
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::PICKUP->value,
@@ -161,6 +163,7 @@ class OrderSchemaTest extends TestCase
     {
         $row = DB::table('orders')->insertGetId([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'fulfillment_type' => FulfillmentType::PICKUP->value,
             'delivery_fee_status' => DeliveryFeeStatus::FINALIZED->value,
@@ -174,6 +177,15 @@ class OrderSchemaTest extends TestCase
 
         $this->assertSame('PENDING_PAYMENT', DB::table('orders')->where('id', $row)->value('status'));
         $this->assertSame(OrderStatus::PENDING_PAYMENT, Order::find($row)->status);
+    }
+
+    public function test_public_id_cannot_be_cleared_by_raw_update(): void
+    {
+        $order = Order::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        DB::table('orders')->where('id', $order->id)->update(['public_id' => null]);
     }
 
     public function test_new_order_with_paid_status_is_rejected(): void
@@ -469,6 +481,7 @@ class OrderSchemaTest extends TestCase
 
         DB::table('orders')->insert([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::PICKUP->value,
@@ -488,6 +501,7 @@ class OrderSchemaTest extends TestCase
 
         DB::table('orders')->insert([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::DELIVERY->value,
@@ -507,6 +521,7 @@ class OrderSchemaTest extends TestCase
 
         DB::table('orders')->insert([
             'customer_id' => User::factory()->create()->id,
+            'public_id' => strtolower((string) Str::ulid()),
             'order_reference' => OrderFactory::generateReference(),
             'status' => OrderStatus::PENDING_PAYMENT->value,
             'fulfillment_type' => FulfillmentType::PICKUP->value,
