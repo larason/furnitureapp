@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Delivery;
 use App\Models\Order;
+use App\Support\AddressField;
 use App\Support\FulfillmentType;
 use DomainException;
 use Illuminate\Database\QueryException;
@@ -20,8 +21,6 @@ class DeliverySchemaTest extends TestCase
         return [
             'address_line' => '123 Example Street',
             'city' => 'Dar es Salaam',
-            'region' => 'Dar es Salaam',
-            'postal_code' => null,
         ];
     }
 
@@ -43,7 +42,7 @@ class DeliverySchemaTest extends TestCase
     public function test_delivery_belongs_to_order(): void
     {
         $order = Order::factory()->deliveryFinalized()->create();
-        $delivery = Delivery::factory()->forOrder($order)->create();
+        $delivery = Delivery::factory()->forOrder($order->fresh())->create();
 
         $this->assertSame($order->id, $delivery->order_id);
         $this->assertTrue($delivery->order->is($order));
@@ -52,7 +51,7 @@ class DeliverySchemaTest extends TestCase
     public function test_order_has_one_delivery(): void
     {
         $order = Order::factory()->deliveryFinalized()->create();
-        $delivery = Delivery::factory()->forOrder($order)->create();
+        $delivery = Delivery::factory()->forOrder($order->fresh())->create();
 
         $this->assertTrue($order->fresh()->delivery->is($delivery));
     }
@@ -226,6 +225,89 @@ class DeliverySchemaTest extends TestCase
         $this->expectExceptionMessage('Delivery address contains unsupported fields.');
 
         $delivery->save();
+    }
+
+    public function test_region_is_not_an_address_field(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Delivery address contains unsupported fields.');
+
+        AddressField::normalize([...$this->address(), 'region' => 'Dar es Salaam']);
+    }
+
+    public function test_legacy_region_snapshot_is_normalized_to_city(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create([
+            'delivery_address' => [
+                ...$this->address(),
+                'region' => 'Dar es Salaam',
+                'postal_code' => null,
+            ],
+        ]);
+
+        $this->assertSame($this->address(), $order->fresh()->delivery_address);
+    }
+
+    public function test_legacy_snapshot_accepts_non_matching_region_and_postal_code(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create([
+            'delivery_address' => [
+                ...$this->address(),
+                'region' => 'Coastal Zone',
+                'postal_code' => '14101',
+            ],
+        ]);
+
+        $this->assertSame($this->address(), $order->fresh()->delivery_address);
+    }
+
+    public function test_delivery_creation_supports_legacy_region_snapshot(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+        $legacyAddress = [...$this->address(), 'region' => 'Dar es Salaam', 'postal_code' => null];
+
+        $order->getConnection()->table('orders')->where('id', $order->id)->update([
+            'delivery_address' => json_encode($legacyAddress, JSON_THROW_ON_ERROR),
+        ]);
+
+        $delivery = $order->fresh()->createDelivery();
+
+        $this->assertSame($this->address(), $delivery->delivery_address);
+    }
+
+    public function test_instructions_update_does_not_rewrite_legacy_delivery_address(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create();
+        $legacyAddress = [...$this->address(), 'region' => 'Coastal Zone', 'postal_code' => '14101'];
+
+        $delivery = Delivery::factory()->forOrder($order)->create();
+        $order->getConnection()->table('orders')->where('id', $order->id)->update([
+            'delivery_address' => json_encode($legacyAddress, JSON_THROW_ON_ERROR),
+        ]);
+        $delivery->getConnection()->table('deliveries')->where('id', $delivery->id)->update([
+            'delivery_address' => json_encode($legacyAddress, JSON_THROW_ON_ERROR),
+        ]);
+
+        $delivery = $delivery->fresh();
+        $delivery->delivery_instructions = 'Leave at the gate.';
+        $delivery->save();
+
+        $this->assertSame($legacyAddress, $delivery->fresh()->delivery_address);
+    }
+
+    public function test_address_fields_are_trimmed_before_persistence(): void
+    {
+        $order = Order::factory()->deliveryFinalized()->create([
+            'delivery_address' => [
+                'address_line' => '  123 Example Street  ',
+                'city' => '  Dar es Salaam  ',
+            ],
+        ]);
+
+        $this->assertSame([
+            'address_line' => '123 Example Street',
+            'city' => 'Dar es Salaam',
+        ], $order->fresh()->delivery_address);
     }
 
     public function test_address_without_required_fields_is_rejected(): void

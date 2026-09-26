@@ -196,3 +196,10 @@ To inspect or serve design system assets:
 ```bash
 pnpm tools-dev run web
 ```
+
+# Delivery fee
+
+For delivery orders, Checkout creates a pending order and shows the
+provisional subtotal while the delivery fee is pending. After staff or admin
+sets the location-based fee, Checkout shows the final total. Payment can
+proceed only after the fee is finalized.

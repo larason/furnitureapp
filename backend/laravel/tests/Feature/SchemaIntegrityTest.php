@@ -539,7 +539,7 @@ class SchemaIntegrityTest extends TestCase
             'subtotal_amount' => 10000,
             'delivery_fee_amount' => 2000,
             'total_amount' => 10000,
-            'delivery_address' => json_encode(['address_line' => '1 Main St', 'city' => 'Dar es Salaam', 'region' => 'Dar es Salaam']),
+            'delivery_address' => json_encode(['address_line' => '1 Main St', 'city' => 'Dar es Salaam']),
             'created_at' => now(),
             'updated_at' => now(),
         ]);

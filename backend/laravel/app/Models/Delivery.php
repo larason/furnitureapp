@@ -101,6 +101,10 @@ class Delivery extends Model
             throw new DomainException('A delivery record is only valid for a DELIVERY order.');
         }
 
+        if (! is_array($order->delivery_address)) {
+            throw new DomainException('Delivery requires a structured order address.');
+        }
+
         return $order;
     }
 
@@ -131,7 +135,11 @@ class Delivery extends Model
             throw new DomainException('Delivery address is required.');
         }
 
-        AddressField::validate($address);
+        $normalized = AddressField::normalizeSnapshot($address);
+
+        if (! $this->exists) {
+            $this->delivery_address = $normalized;
+        }
     }
 
     private function assertInstructions(): void
@@ -164,7 +172,10 @@ class Delivery extends Model
             throw new DomainException('Delivery recipient phone must match the order snapshot.');
         }
 
-        if ($this->delivery_address !== $order->delivery_address) {
+        $deliveryAddress = AddressField::normalizeSnapshot($this->delivery_address);
+        $orderAddress = AddressField::normalizeSnapshot($order->delivery_address);
+
+        if ($deliveryAddress !== $orderAddress) {
             throw new DomainException('Delivery address must match the order snapshot.');
         }
     }

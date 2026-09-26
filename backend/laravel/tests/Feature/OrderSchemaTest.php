@@ -227,7 +227,7 @@ class OrderSchemaTest extends TestCase
     public function test_pickup_order_with_delivery_address_is_rejected(): void
     {
         $order = Order::factory()->pickup()->make([
-            'delivery_address' => ['address_line' => '123 Example Street', 'city' => 'Dar es Salaam', 'region' => 'Dar es Salaam', 'postal_code' => null],
+            'delivery_address' => ['address_line' => '123 Example Street', 'city' => 'Dar es Salaam'],
         ]);
 
         $this->expectException(DomainException::class);
@@ -426,7 +426,7 @@ class OrderSchemaTest extends TestCase
         $order = Order::factory()->deliveryFinalized()->create();
         Delivery::factory()->forOrder($order)->create();
 
-        $order->delivery_address = ['address_line' => 'New St', 'city' => 'X', 'region' => 'Y', 'postal_code' => null];
+        $order->delivery_address = ['address_line' => 'New St', 'city' => 'X'];
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('Order delivery snapshot is immutable once a delivery record exists.');
@@ -545,7 +545,7 @@ class OrderSchemaTest extends TestCase
 
     public function test_delivery_address_snapshot_is_independent_of_later_changes(): void
     {
-        $address = ['address_line' => '123 Example Street', 'city' => 'Dar es Salaam', 'region' => 'Dar es Salaam', 'postal_code' => null];
+        $address = ['address_line' => '123 Example Street', 'city' => 'Dar es Salaam'];
         $order = Order::factory()->deliveryFinalized()->create(['delivery_address' => $address])->fresh();
 
         $this->assertSame($address, $order->delivery_address);
