@@ -21,14 +21,9 @@ final class ValidateGuestCartMutation
         if ($request->hasCookie(GuestCartTransport::COOKIE)) {
             $origin = (string) $request->headers->get('Origin', '');
             $allowedOrigins = config('cors.allowed_origins', []);
-            $fetchSite = strtolower((string) $request->headers->get('Sec-Fetch-Site', ''));
 
             if ($origin === '' || ! is_array($allowedOrigins) || ! in_array($origin, $allowedOrigins, true)) {
                 throw new ApiException(ApiErrorCode::FORBIDDEN, 'The request origin is not allowed.', 403);
-            }
-
-            if ($fetchSite === 'cross-site') {
-                throw new ApiException(ApiErrorCode::FORBIDDEN, 'Cross-site cart mutation is not allowed.', 403);
             }
         }
 

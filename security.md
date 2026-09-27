@@ -8,7 +8,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 1. **Resolved: Clerk authentication executed before rate limiting.** `EnforceApiRequestLimits` now applies an IP-based pre-authentication quota before Clerk verification, rejects oversized Authorization headers, and retains the existing post-authentication per-user limits. A regression test proves Clerk verification is not called after the early quota is exhausted.
 
-2. **Resolved: Anonymous cart reads created persistent records.** A first-time anonymous `GET /api/v1/me/cart` now returns a non-persistent empty projection and issues no credential. The guest cart and credential are created by the first successful add-item mutation. New guest-cart creation has a separate IP quota, and stale empty guest carts are pruned daily.
+2. **Resolved: Anonymous cart reads created persistent records.** A first-time anonymous `GET /api/v1/me/cart` now returns a non-persistent, well-formed transient empty Cart (opaque per-guest `id`, non-null `updated_at`) and issues no credential. The guest cart and credential are created by the first successful add-item mutation, which supersedes the transient handle. New guest-cart creation has a separate IP quota, and stale empty guest carts are pruned daily.
 
 ## Medium Findings
 
@@ -47,7 +47,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Verification
 
-- PHPUnit: 1,030 tests executed, 1,029 passed, 1 skipped, 4,020 assertions.
+- PHPUnit: 1,033 tests executed, 1,032 passed, 1 skipped, 4,028 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
 - `php artisan schedule:list`: idempotency pruning hourly; stale empty guest-cart pruning daily.
 - `git diff --check`: passed.

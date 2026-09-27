@@ -97,6 +97,11 @@ class SecurityRequestBoundaryTest extends TestCase
             ->withHeaders(['Origin' => 'https://shop.example.test', 'Sec-Fetch-Site' => 'same-site'])
             ->postJson('/api/v1/__test__/guest-mutation', [])
             ->assertOk();
+
+        $this->withCredentials()->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
+            ->withHeaders(['Origin' => 'https://shop.example.test', 'Sec-Fetch-Site' => 'cross-site'])
+            ->postJson('/api/v1/__test__/guest-mutation', [])
+            ->assertOk();
     }
 
     public function test_security_headers_are_present_on_success_and_error(): void

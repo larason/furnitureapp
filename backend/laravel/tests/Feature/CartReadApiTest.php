@@ -82,7 +82,11 @@ class CartReadApiTest extends TestCase
 
         $this->assertNull($response->headers->get(GuestCartTransport::HEADER));
         $this->assertSame([], $response->headers->getCookies());
-        $this->assertSame('cart_0', $response->json('data.id'));
+        $id = $response->json('data.id');
+        $this->assertIsString($id);
+        $this->assertStringStartsWith('cart_', $id);
+        $this->assertNotSame('cart_0', $id);
+        $this->assertNotNull($response->json('data.updated_at'));
         $this->assertDatabaseCount('carts', 0);
     }
 

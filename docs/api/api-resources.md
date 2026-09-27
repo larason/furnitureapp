@@ -252,7 +252,9 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 | `items_count` | integer | CUSTOMER / GUEST | no | Number of distinct lines in the cart, including stale/unavailable lines (matches `items[].length`) |
 | `items` | `CartItem[]` | CUSTOMER / GUEST | no | Ordered list of cart item objects |
 | `subtotal` | `{amount:int,currency:"TZS"}` | CUSTOMER / GUEST | no | Informational server-calculated subtotal (minor units) |
-| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation (for a transient cart, the time the empty handle was returned) |
+
+**Transient anonymous cart:** A first anonymous `GET /api/v1/me/cart` with no guest credential returns the empty Cart representation without persisting a cart or issuing a credential. Such a cart carries a non-null, opaque, per-guest `id` (`cart_...`, deterministic for the request's guest token, never equal to a persisted id) and a non-null `updated_at` (the response time). This transient handle is superseded by the persisted cart `id` when the first successful `CART-002` mutation creates the guest cart; the shopper keeps a stable cart from that point onward. `items` is `[]` and `subtotal` is `0`.
 
 ### 4.2 Cart Item Representation
 

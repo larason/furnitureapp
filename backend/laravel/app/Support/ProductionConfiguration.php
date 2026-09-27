@@ -117,12 +117,25 @@ final class ProductionConfiguration
         }
 
         $smtp = config('mail.mailers.smtp', []);
-        $scheme = strtolower((string) ($smtp['scheme'] ?? ''));
-        $url = strtolower((string) ($smtp['url'] ?? ''));
 
-        if (self::isRemoteHost((string) ($smtp['host'] ?? ''))
-            && ! in_array($scheme, ['tls', 'ssl', 'smtps'], true)
-            && ! str_starts_with($url, 'smtps://')) {
+        if (! is_array($smtp)) {
+            $missing[] = 'secure MAIL_SCHEME or MAIL_URL';
+
+            return;
+        }
+
+        $url = (string) ($smtp['url'] ?? '');
+
+        if ($url !== '') {
+            $host = (string) (parse_url($url, PHP_URL_HOST) ?? '');
+            $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        } else {
+            $host = (string) ($smtp['host'] ?? '');
+            $scheme = strtolower((string) ($smtp['scheme'] ?? ''));
+        }
+
+        if (($url !== '' && $host === '')
+            || (self::isRemoteHost($host) && ! in_array($scheme, ['tls', 'ssl', 'smtps'], true))) {
             $missing[] = 'secure MAIL_SCHEME or MAIL_URL';
         }
     }

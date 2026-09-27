@@ -125,6 +125,49 @@ class ProductionConfigurationTest extends TestCase
         ProductionConfiguration::validate();
     }
 
+    public function test_remote_smtp_url_overrides_the_loopback_host_for_tls_validation(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => '127.0.0.1',
+            'mail.mailers.smtp.scheme' => null,
+            'mail.mailers.smtp.url' => 'smtp://mail.example.test:25',
+        ]);
+
+        $this->expectExceptionMessage('secure MAIL_SCHEME or MAIL_URL');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_remote_smtps_url_with_loopback_host_passes(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => '127.0.0.1',
+            'mail.mailers.smtp.url' => 'smtps://mail.example.test:465',
+        ]);
+
+        ProductionConfiguration::validate();
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_non_array_smtp_configuration_fails_cleanly(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp' => 'smtps://mail.example.test',
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('secure MAIL_SCHEME or MAIL_URL');
+        ProductionConfiguration::validate();
+    }
+
     private function safeProductionConfig(): void
     {
         config([

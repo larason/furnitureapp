@@ -38,6 +38,7 @@ final class GetOrCreateActiveCart
             'status' => CartStatus::ACTIVE,
         ]);
         $cart->setRelation('items', $cart->newCollection());
+        $cart->updated_at = now();
 
         return $cart;
     }
