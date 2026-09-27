@@ -264,6 +264,23 @@ class SeedDataTest extends TestCase
         (new DevelopmentUserSeeder)->run();
     }
 
+    public function test_development_user_seeder_re_enforces_the_configured_password_on_existing_accounts(): void
+    {
+        config(['demo.user_password' => 'first-demo-password']);
+        (new DevelopmentUserSeeder)->run();
+
+        $existing = User::query()->where('email', 'admin@example.com')->sole();
+        $firstHash = $existing->password;
+
+        config(['demo.user_password' => 'rotated-demo-password']);
+        (new DevelopmentUserSeeder)->run();
+
+        $existing->refresh();
+        $this->assertNotSame($firstHash, $existing->password);
+        $this->assertTrue(password_verify('rotated-demo-password', $existing->password));
+        $this->assertFalse(password_verify('first-demo-password', $existing->password));
+    }
+
     public function test_unknown_demo_order_state_throws(): void
     {
         $method = new \ReflectionMethod(CommerceDemoSeeder::class, 'orderAmounts');

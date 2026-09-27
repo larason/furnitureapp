@@ -90,6 +90,18 @@ class CartReadApiTest extends TestCase
         $this->assertDatabaseCount('carts', 0);
     }
 
+    public function test_independent_anonymous_reads_return_independent_transient_handles(): void
+    {
+        $first = $this->getJson(self::CART_URL)->assertOk()->json('data.id');
+        $second = $this->getJson(self::CART_URL)->assertOk()->json('data.id');
+
+        $this->assertIsString($first);
+        $this->assertIsString($second);
+        $this->assertStringStartsWith('cart_', $first);
+        $this->assertNotSame($first, $second);
+        $this->assertDatabaseCount('carts', 0);
+    }
+
     public function test_browser_guest_read_does_not_issue_a_cookie(): void
     {
         $response = $this->withHeaders(['Origin' => 'https://www.example.com'])->getJson(self::CART_URL)->assertOk();

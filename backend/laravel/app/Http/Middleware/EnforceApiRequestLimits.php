@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Exceptions\Api\ApiException;
 use App\Support\ApiErrorCode;
+use App\Support\JsonMediaType;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -56,7 +57,7 @@ final class EnforceApiRequestLimits
 
     private function captureBoundedJsonBody(Request $request): void
     {
-        if (! $request->isJson()) {
+        if (! JsonMediaType::accepts($request->headers->get('CONTENT_TYPE'))) {
             return;
         }
 

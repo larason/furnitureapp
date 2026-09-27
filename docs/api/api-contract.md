@@ -1945,7 +1945,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | `subtotal` | `{amount: int, currency: "TZS"}` | CUSTOMER / GUEST | no | Informational sum of line totals (minor units) |
 | `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation (for a transient cart, the time the empty handle was returned) |
 
-**Transient anonymous cart:** A first anonymous `GET /api/v1/me/cart` with no guest credential returns the empty Cart representation without persisting a cart or issuing a credential. Its `id` is a non-null, opaque, per-guest handle (`cart_...`, never equal to a persisted id) and its `updated_at` is the response time; both are superseded by the persisted cart values on the first successful `CART-002` mutation.
+**Transient anonymous cart:** A first anonymous `GET /api/v1/me/cart` with no guest credential returns the empty Cart representation without persisting a cart or issuing a credential. Its `id` is a non-null, opaque, transient handle (`cart_...`, derived from that request's guest token and never equal to a persisted id) and its `updated_at` is the response time. Two such reads are independent and may return different transient ids; clients must not rely on the transient id for continuity. Both values are superseded by the persisted cart values once the first successful `CART-002` mutation issues the guest credential.
 
 #### Cart Item Object Structure
 

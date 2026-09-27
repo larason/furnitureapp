@@ -22,8 +22,10 @@ final class CartIdentifier
     }
 
     /**
-     * Deterministic opaque handle for a not-yet-persisted guest cart. It never
-     * equals a persisted id and is superseded once the cart is created.
+     * Opaque handle for a not-yet-persisted guest cart, derived from that
+     * request's guest token. It never equals a persisted id and is superseded
+     * once the cart is created; independent first-time reads yield independent
+     * handles.
      */
     private static function transientSuffix(string $digest): string
     {

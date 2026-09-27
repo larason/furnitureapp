@@ -52,6 +52,10 @@ class DevelopmentUserSeeder extends Seeder
             ]
         );
 
+        if (! $user->wasRecentlyCreated) {
+            $user->forceFill(['password' => Hash::make($password)])->save();
+        }
+
         if ($isStaff && $user->account_state === null) {
             $user->forceFill(['account_state' => 'ACTIVE'])->save();
         }

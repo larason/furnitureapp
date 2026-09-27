@@ -79,6 +79,81 @@ class SecurityRequestBoundaryTest extends TestCase
             ->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
     }
 
+    public function test_chunked_non_json_body_without_content_length_is_rejected(): void
+    {
+        Route::middleware('api')->post('/api/v1/__test__/chunked-media', fn () => response()->json(['ok' => true]));
+
+        $this->call(
+            'POST',
+            '/api/v1/__test__/chunked-media',
+            server: ['CONTENT_TYPE' => 'text/plain', 'HTTP_TRANSFER_ENCODING' => 'chunked'],
+            content: 'plain text body that declares no content length',
+        )->assertStatus(415)->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    public function test_bodyless_non_json_post_is_allowed(): void
+    {
+        Route::middleware('api')->post('/api/v1/__test__/bodyless-media', fn () => response()->json(['ok' => true]));
+
+        $this->call('POST', '/api/v1/__test__/bodyless-media', server: ['CONTENT_TYPE' => 'text/plain'])
+            ->assertOk();
+    }
+
+    public function test_jsonp_media_type_is_not_accepted_as_json(): void
+    {
+        Route::middleware('api')->post('/api/v1/__test__/jsonp-media', fn () => response()->json(['ok' => true]));
+
+        $this->call(
+            'POST',
+            '/api/v1/__test__/jsonp-media',
+            server: ['CONTENT_TYPE' => 'application/jsonp'],
+            content: json_encode(['value' => 'x']),
+        )->assertStatus(415)->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    public function test_bare_json_suffix_media_type_is_rejected(): void
+    {
+        Route::middleware('api')->post('/api/v1/__test__/bare-suffix-media', fn () => response()->json(['ok' => true]));
+
+        $this->call(
+            'POST',
+            '/api/v1/__test__/bare-suffix-media',
+            server: ['CONTENT_TYPE' => '+json'],
+            content: json_encode(['value' => 'x']),
+        )->assertStatus(415)->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    public function test_structured_suffix_json_media_type_is_accepted(): void
+    {
+        Route::middleware('api')->post('/api/v1/__test__/suffix-json-media', fn () => response()->json(['ok' => true]));
+
+        $this->call(
+            'POST',
+            '/api/v1/__test__/suffix-json-media',
+            server: ['CONTENT_TYPE' => 'application/ld+json'],
+            content: json_encode(['value' => 'x']),
+        )->assertOk();
+    }
+
+    public function test_delete_with_non_json_body_is_rejected(): void
+    {
+        Route::middleware('api')->delete('/api/v1/__test__/delete-with-body', fn () => response()->noContent());
+
+        $this->call(
+            'DELETE',
+            '/api/v1/__test__/delete-with-body',
+            server: ['CONTENT_TYPE' => 'text/plain'],
+            content: 'plain body',
+        )->assertStatus(415)->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    public function test_bodyless_delete_is_allowed(): void
+    {
+        Route::middleware('api')->delete('/api/v1/__test__/bodyless-delete', fn () => response()->noContent());
+
+        $this->deleteJson('/api/v1/__test__/bodyless-delete')->assertNoContent();
+    }
+
     public function test_guest_cookie_mutation_requires_an_allowed_origin(): void
     {
         config(['cors.allowed_origins' => ['https://shop.example.test']]);
