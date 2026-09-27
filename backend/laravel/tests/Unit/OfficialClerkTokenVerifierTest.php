@@ -199,7 +199,7 @@ class OfficialClerkTokenVerifierTest extends TestCase
         }
     }
 
-    public function test_missing_or_wrong_audience_and_authorized_party_are_rejected(): void
+    public function test_wrong_audience_and_authorized_party_are_rejected(): void
     {
         config([
             'clerk.secret_key' => 'test-secret-key',
@@ -209,19 +209,17 @@ class OfficialClerkTokenVerifierTest extends TestCase
         ]);
 
         foreach ([
-            ['aud' => null, 'azp' => 'https://shop.example.test'],
             ['aud' => 'another-api', 'azp' => 'https://shop.example.test'],
-            ['aud' => 'furniture-api', 'azp' => null],
             ['aud' => 'furniture-api', 'azp' => 'https://evil.example.test'],
         ] as $claims) {
-            $payload = (object) array_filter([
+            $payload = (object) [
                 'sub' => 'user_123',
                 'sid' => 'sess_123',
                 'iss' => 'https://clerk.example.test',
                 'sts' => 'active',
                 'aud' => $claims['aud'],
                 'azp' => $claims['azp'],
-            ], fn (mixed $value): bool => $value !== null);
+            ];
             $verifier = new OfficialClerkTokenVerifier(
                 static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
             );
@@ -233,6 +231,57 @@ class OfficialClerkTokenVerifierTest extends TestCase
                 $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
             }
         }
+    }
+
+    public function test_absent_audience_and_authorized_party_claims_are_accepted(): void
+    {
+        config([
+            'clerk.secret_key' => 'test-secret-key',
+            'clerk.jwt_key' => 'test-jwt-key',
+            'clerk.audiences' => ['furniture-api'],
+            'clerk.authorized_parties' => ['https://shop.example.test'],
+        ]);
+
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+            'sts' => 'active',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        $identity = $verifier->verify($this->requestWithBearerToken());
+
+        $this->assertSame('user_123', $identity->clerkUserId);
+        $this->assertSame('sess_123', $identity->sessionId);
+    }
+
+    public function test_present_audience_with_absent_authorized_party_is_accepted(): void
+    {
+        config([
+            'clerk.secret_key' => 'test-secret-key',
+            'clerk.jwt_key' => 'test-jwt-key',
+            'clerk.audiences' => ['furniture-api'],
+            'clerk.authorized_parties' => ['https://shop.example.test'],
+        ]);
+
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+            'sts' => 'active',
+            'aud' => 'furniture-api',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        $identity = $verifier->verify($this->requestWithBearerToken());
+
+        $this->assertSame('user_123', $identity->clerkUserId);
+        $this->assertSame('sess_123', $identity->sessionId);
     }
 
     public function test_invalid_signature_state_is_rejected_before_identity_resolution(): void
