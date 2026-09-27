@@ -38,9 +38,9 @@ class CartController extends V1Controller
         GuestCartTransport $transport,
     ): JsonResponse {
         $holder = $resolver->resolve($request);
-        $cart = $getOrCreate->forHolder($holder);
+        $cart = $getOrCreate->forRead($holder);
 
-        return $this->present($request, $cart, $holder, $transport);
+        return $this->present($request, $cart, $holder, $transport, issueCredential: false);
     }
 
     public function addItem(
@@ -177,6 +177,7 @@ class CartController extends V1Controller
         CartHolder $holder,
         GuestCartTransport $transport,
         int $status = 200,
+        bool $issueCredential = true,
     ): JsonResponse {
         $wasRecentlyCreated = $cart->wasRecentlyCreated;
 
@@ -184,7 +185,7 @@ class CartController extends V1Controller
             ->json(['data' => $this->projection->render($cart)], $status)
             ->withHeaders($this->privateHeaders());
 
-        if ($holder->user === null && ! $holder->credentialSupplied && $wasRecentlyCreated && $holder->rawToken !== null) {
+        if ($issueCredential && $holder->user === null && ! $holder->credentialSupplied && $wasRecentlyCreated && $holder->rawToken !== null) {
             return $transport->issue($request, $response, $holder->rawToken);
         }
 

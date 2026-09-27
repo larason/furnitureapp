@@ -25,7 +25,6 @@ class ApiLogContext
             'status' => $status,
             'code' => $code->value,
             'exception_class' => $exception::class,
-            'exception' => $exception,
         ];
     }
 

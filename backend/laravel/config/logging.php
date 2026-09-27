@@ -1,5 +1,6 @@
 <?php
 
+use App\Logging\SanitizeApiExceptionLogs;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -58,6 +59,7 @@ return [
             'driver' => 'stack',
             'channels' => explode(',', (string) env('LOG_STACK', 'single')),
             'ignore_exceptions' => false,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'single' => [
@@ -65,6 +67,7 @@ return [
             'path' => storage_path($storagePath),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'daily' => [
@@ -73,6 +76,7 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'max_files' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'monthly' => [
@@ -81,6 +85,7 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'max_files' => 3,
             'replace_placeholders' => true,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'slack' => [
@@ -90,6 +95,7 @@ return [
             'emoji' => env('LOG_SLACK_EMOJI', ':boom:'),
             'level' => env('LOG_LEVEL', 'critical'),
             'replace_placeholders' => true,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'papertrail' => [
@@ -102,6 +108,7 @@ return [
                 'connectionString' => 'tls://'.env('PAPERTRAIL_URL').':'.env('PAPERTRAIL_PORT'),
             ],
             'processors' => [PsrLogMessageProcessor::class],
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'stderr' => [
@@ -113,6 +120,7 @@ return [
             ],
             'formatter' => env('LOG_STDERR_FORMATTER'),
             'processors' => [PsrLogMessageProcessor::class],
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'syslog' => [
@@ -120,12 +128,14 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'facility' => env('LOG_SYSLOG_FACILITY', LOG_USER),
             'replace_placeholders' => true,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'errorlog' => [
             'driver' => 'errorlog',
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
         'null' => [
@@ -135,6 +145,7 @@ return [
 
         'emergency' => [
             'path' => storage_path($storagePath),
+            'tap' => [SanitizeApiExceptionLogs::class],
         ],
 
     ],

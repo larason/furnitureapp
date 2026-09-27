@@ -199,6 +199,42 @@ class OfficialClerkTokenVerifierTest extends TestCase
         }
     }
 
+    public function test_missing_or_wrong_audience_and_authorized_party_are_rejected(): void
+    {
+        config([
+            'clerk.secret_key' => 'test-secret-key',
+            'clerk.jwt_key' => 'test-jwt-key',
+            'clerk.audiences' => ['furniture-api'],
+            'clerk.authorized_parties' => ['https://shop.example.test'],
+        ]);
+
+        foreach ([
+            ['aud' => null, 'azp' => 'https://shop.example.test'],
+            ['aud' => 'another-api', 'azp' => 'https://shop.example.test'],
+            ['aud' => 'furniture-api', 'azp' => null],
+            ['aud' => 'furniture-api', 'azp' => 'https://evil.example.test'],
+        ] as $claims) {
+            $payload = (object) array_filter([
+                'sub' => 'user_123',
+                'sid' => 'sess_123',
+                'iss' => 'https://clerk.example.test',
+                'sts' => 'active',
+                'aud' => $claims['aud'],
+                'azp' => $claims['azp'],
+            ], fn (mixed $value): bool => $value !== null);
+            $verifier = new OfficialClerkTokenVerifier(
+                static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+            );
+
+            try {
+                $verifier->verify($this->requestWithBearerToken());
+                $this->fail('Expected invalid audience or authorized party to be rejected.');
+            } catch (ClerkAuthenticationFailure $exception) {
+                $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            }
+        }
+    }
+
     public function test_invalid_signature_state_is_rejected_before_identity_resolution(): void
     {
         config(['clerk.secret_key' => 'test-secret-key', 'clerk.jwt_key' => 'test-jwt-key']);

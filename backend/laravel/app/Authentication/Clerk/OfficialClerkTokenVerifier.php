@@ -41,9 +41,7 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
                 authorizedParties: $authorizedParties,
                 acceptsToken: ['session_token'],
             ));
-        } catch (\Throwable $exception) {
-            report($exception);
-
+        } catch (\Throwable) {
             throw ClerkAuthenticationFailure::external();
         }
 
@@ -68,6 +66,11 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         $configuredIssuer = config('clerk.issuer');
 
         if ($configuredIssuer !== null && $configuredIssuer !== '' && $issuer !== $configuredIssuer) {
+            throw ClerkAuthenticationFailure::invalid();
+        }
+
+        if (! $this->claimMatches($payload->aud ?? null, $audiences)
+            || ! $this->claimMatches($payload->azp ?? null, $authorizedParties)) {
             throw ClerkAuthenticationFailure::invalid();
         }
 
@@ -131,5 +134,20 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         }
 
         return true;
+    }
+
+    /** @param array<int, string>|null $allowed */
+    private function claimMatches(mixed $claim, ?array $allowed): bool
+    {
+        if ($allowed === null) {
+            return true;
+        }
+
+        $values = is_string($claim) ? [$claim] : $claim;
+
+        return is_array($values)
+            && $values !== []
+            && $this->containsOnlyStrings($values)
+            && array_intersect($values, $allowed) !== [];
     }
 }

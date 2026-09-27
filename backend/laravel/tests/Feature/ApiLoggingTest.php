@@ -2,11 +2,15 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger as MonologLogger;
 use Tests\TestCase;
 
 final class LoggingTestBoomException extends \Exception {}
@@ -88,6 +92,49 @@ class ApiLoggingTest extends TestCase
         $this->assertSame('error', $captured[0]->level);
         $this->assertSame(500, $captured[0]->context['status'] ?? null);
         $this->assertStringContainsString('LoggingTestBoomException', $captured[0]->context['exception_class'] ?? '');
+        $this->assertArrayNotHasKey('exception', $captured[0]->context);
+    }
+
+    public function test_api_server_exception_reaches_registered_error_tracker(): void
+    {
+        $reported = null;
+        $handler = app(ExceptionHandler::class);
+        $this->assertInstanceOf(Handler::class, $handler);
+        $handler->reportable(function (\Throwable $reportedException) use (&$reported): void {
+            $reported = $reportedException;
+        });
+        $exception = new LoggingTestBoomException('tracker-visible failure');
+        Route::middleware('api')->get('/api/v1/__test__/tracked-boom', fn () => throw $exception);
+
+        $this->getJson('/api/v1/__test__/tracked-boom')->assertStatus(500);
+
+        $this->assertSame($exception, $reported);
+    }
+
+    public function test_exception_messages_and_previous_chain_are_not_logged(): void
+    {
+        $events = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$events): void {
+            $events[] = $event;
+        });
+        $testHandler = new TestHandler;
+        $logger = Log::getLogger();
+        $this->assertInstanceOf(MonologLogger::class, $logger);
+        $logger->pushHandler($testHandler);
+
+        Route::middleware('api')->get('/api/v1/__test__/secret-chain', function (): never {
+            $previous = new \RuntimeException('Bearer previous-secret-token');
+            throw new LoggingTestBoomException('provider body sk_live_current-secret', previous: $previous);
+        });
+
+        $this->getJson('/api/v1/__test__/secret-chain')->assertStatus(500);
+        $logged = json_encode(array_map(fn ($record): array => [$record->message, $record->context], $testHandler->getRecords()));
+        $dispatched = json_encode(array_map(fn (MessageLogged $event): array => [$event->message, $event->context], $events));
+
+        $this->assertStringNotContainsString('previous-secret-token', $logged);
+        $this->assertStringNotContainsString('sk_live_current-secret', $logged);
+        $this->assertStringNotContainsString('previous-secret-token', $dispatched);
+        $this->assertStringNotContainsString('sk_live_current-secret', $dispatched);
     }
 
     public function test_sensitive_headers_and_tokens_not_logged(): void

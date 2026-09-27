@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Authentication\AuthenticatedClerkIdentity;
+use App\Authentication\Clerk\ClerkAuthenticationFailure;
 use App\Authentication\ClerkTokenVerifier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,6 +30,38 @@ class RateLimitingTest extends TestCase
         foreach (range(1, 5) as $attempt) {
             $this->getJson('/api/v1/__test__/public-read')->assertOk();
         }
+    }
+
+    public function test_pre_authentication_limit_stops_clerk_verification(): void
+    {
+        config(['security.pre_auth_requests_per_minute' => 1]);
+        RateLimiter::clear('pre-auth:127.0.0.1');
+
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->once()
+            ->andThrow(ClerkAuthenticationFailure::invalid());
+
+        $headers = ['Authorization' => 'Bearer invalid'];
+        $this->withHeaders($headers)->getJson('/api/v1/me')->assertUnauthorized();
+        $this->withHeaders($headers)->getJson('/api/v1/me')
+            ->assertStatus(429)
+            ->assertJsonPath('errors.0.code', 'RATE_LIMITED');
+    }
+
+    public function test_malformed_json_counts_toward_the_pre_authentication_limit(): void
+    {
+        config(['security.pre_auth_requests_per_minute' => 1]);
+        RateLimiter::clear('pre-auth:127.0.0.1');
+        Route::middleware('api')->post('/api/v1/__test__/malformed-rate-limit', fn () => response()->json(['ok' => true]));
+
+        $server = ['CONTENT_TYPE' => 'application/json'];
+        $this->call('POST', '/api/v1/__test__/malformed-rate-limit', server: $server, content: '{invalid')
+            ->assertBadRequest()
+            ->assertJsonPath('errors.0.code', 'INVALID_JSON');
+        $this->call('POST', '/api/v1/__test__/malformed-rate-limit', server: $server, content: '{invalid')
+            ->assertStatus(429)
+            ->assertJsonPath('errors.0.code', 'RATE_LIMITED');
     }
 
     public function test_anonymous_submission_is_limited_by_ip(): void

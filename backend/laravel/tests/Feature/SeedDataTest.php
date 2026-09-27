@@ -254,6 +254,16 @@ class SeedDataTest extends TestCase
         (new DemoSeeder)->run();
     }
 
+    public function test_development_user_seeder_refuses_direct_production_execution(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('local or testing');
+
+        (new DevelopmentUserSeeder)->run();
+    }
+
     public function test_unknown_demo_order_state_throws(): void
     {
         $method = new \ReflectionMethod(CommerceDemoSeeder::class, 'orderAmounts');

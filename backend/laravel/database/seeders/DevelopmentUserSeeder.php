@@ -8,7 +8,7 @@ use App\Models\User;
 use App\Support\RoleName;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use RuntimeException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -16,13 +16,20 @@ use Spatie\Permission\Models\Role;
  *
  * Creates one customer, one staff, and one admin account sharing the password
  * from the SEED_DEMO_PASSWORD environment variable (see .env.example).
- * When unset, a random password is generated and printed once to the console.
  * Repeatable: existing emails are reused and roles/profiles are ensured.
  */
 class DevelopmentUserSeeder extends Seeder
 {
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            throw new RuntimeException('DevelopmentUserSeeder may run only in local or testing environments.');
+        }
+
+        if (app()->environment('local') && (! is_string(config('demo.user_password')) || config('demo.user_password') === '')) {
+            throw new RuntimeException('SEED_DEMO_PASSWORD must be set before running DevelopmentUserSeeder.');
+        }
+
         $this->seedUser('Amina Customer', 'customer@example.com', RoleName::CUSTOMER, false);
         $this->seedUser('Baraka Staff', 'staff@example.com', RoleName::STAFF, true);
         $this->seedUser('Zawadi Admin', 'admin@example.com', RoleName::ADMIN, true);
@@ -30,9 +37,9 @@ class DevelopmentUserSeeder extends Seeder
 
     private function seedUser(string $name, string $email, RoleName $role, bool $isStaff): void
     {
-        $configured = config('demo.user_password');
-        $generated = ! is_string($configured) || $configured === '';
-        $password = $generated ? Str::random(16) : $configured;
+        $password = app()->environment('testing')
+            ? (string) (config('demo.user_password') ?: 'testing-only-password')
+            : (string) config('demo.user_password');
 
         $user = User::firstOrCreate(
             ['email' => $email],
@@ -44,10 +51,6 @@ class DevelopmentUserSeeder extends Seeder
                 'account_state' => $isStaff ? 'ACTIVE' : null,
             ]
         );
-
-        if ($generated && $user->wasRecentlyCreated) {
-            $this->command->info("Demo user {$email} created with generated password: {$password}");
-        }
 
         if ($isStaff && $user->account_state === null) {
             $user->forceFill(['account_state' => 'ACTIVE'])->save();

@@ -308,16 +308,15 @@ class CartMergeApiTest extends TestCase
         [$productB, $variantB] = $this->stockedProduct(quantity: 50);
 
         $this->flushHeaders();
-        $raw = $this->getJson('/api/v1/me/cart')->assertOk()->headers->get(GuestCartTransport::HEADER);
-        $this->assertNotNull($raw);
-
-        $guestHeaders = [GuestCartTransport::HEADER => (string) $raw];
-
-        $this->withHeaders($guestHeaders)->postJson('/api/v1/me/cart/items', [
+        $firstAdd = $this->postJson('/api/v1/me/cart/items', [
             'product_id' => ProductIdentifier::encode($productA),
             'variant_id' => VariantIdentifier::encode($variantA),
             'quantity' => 2,
         ])->assertStatus(201);
+        $raw = $firstAdd->headers->get(GuestCartTransport::HEADER);
+        $this->assertNotNull($raw);
+
+        $guestHeaders = [GuestCartTransport::HEADER => (string) $raw];
 
         $this->withHeaders($guestHeaders)->postJson('/api/v1/me/cart/items', [
             'product_id' => ProductIdentifier::encode($productB),

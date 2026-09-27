@@ -10,6 +10,6 @@ final class CartIdentifier
 
     public static function encode(Cart $cart): string
     {
-        return self::PREFIX.base_convert((string) $cart->getKey(), 10, 36);
+        return self::PREFIX.base_convert((string) ($cart->getKey() ?? 0), 10, 36);
     }
 }

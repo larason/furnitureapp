@@ -2,12 +2,10 @@
 
 namespace App\Http\Middleware;
 
-use App\Exceptions\Api\ApiException;
-use App\Support\ApiErrorCode;
 use Closure;
 use Illuminate\Http\Request;
-use JsonException;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 
 /**
  * Transport-layer check for malformed JSON on API requests so the contract's
@@ -17,21 +15,20 @@ class ValidateJsonBody
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($this->isJsonPayload($request)) {
-            try {
-                json_decode($request->getContent(), true, 512, JSON_THROW_ON_ERROR);
-            } catch (JsonException) {
-                throw new ApiException(ApiErrorCode::INVALID_JSON, 'The request body contains invalid JSON.', 400);
-            }
+        $hasBody = $this->hasBody($request);
+
+        if ($hasBody && ! $request->isJson()) {
+            throw new UnsupportedMediaTypeHttpException('API request bodies must use application/json.');
         }
 
         return $next($request);
     }
 
-    private function isJsonPayload(Request $request): bool
+    private function hasBody(Request $request): bool
     {
-        $contentType = strtolower((string) $request->headers->get('CONTENT_TYPE', ''));
-
-        return $request->getContent() !== '' && str_contains($contentType, 'application/json');
+        return in_array($request->method(), ['POST', 'PUT', 'PATCH'], true)
+            && ((int) $request->server('CONTENT_LENGTH', 0) > 0
+                || $request->request->all() !== []
+                || $request->attributes->get(EnforceApiRequestLimits::JSON_BODY_ATTRIBUTE, '') !== '');
     }
 }

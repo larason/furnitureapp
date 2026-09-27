@@ -366,7 +366,7 @@
 
 ### ADR/API-ERR-004 — Production Errors Never Expose Implementation Details (Security)
 
-**Decision:** Production responses never expose `database SQL`, stack traces, `password`/`auth`/`payment secrets`, `internal file paths`, server IPs, framework exception names (`ModelNotFoundException`), `other_customer_id`, `internal_reservation_id`, provider secrets. Client sees safe `code`/`message`/`field`/`details` + `meta.request_id`; server logs retain full exception/stack/deployment context. Unauthorized resource access (another customer's order) does not reveal existence via error. Security tests verify this.
+**Decision:** Production responses never expose `database SQL`, stack traces, `password`/`auth`/`payment secrets`, `internal file paths`, server IPs, framework exception names (`ModelNotFoundException`), `other_customer_id`, `internal_reservation_id`, provider secrets. Client sees safe `code`/`message`/`field`/`details` + `meta.request_id`; server logs retain allow-listed diagnostic metadata (request ID, safe category, status, and exception class), never raw throwable messages, provider bodies, or previous-exception chains. Unauthorized resource access (another customer's order) does not reveal existence via error. Security tests verify this.
 
 **Reason:** `phase-1.16.md §15, §28, §61, §88-89` — prevents data leakage and supports support workflow (`request_id` → logs).
 
@@ -2296,7 +2296,7 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 ### ADR/BACKEND-032 — Cart Create/Get (CART-001, Phase 6.2)
 
-**Decision:** Implement `GET /api/v1/me/cart` as the canonical holder-scoped create-or-get endpoint for authenticated customers and anonymous guests, with no separate cart-create endpoint and no schema change. Lazy creation is race-safe; the response is the frozen `Cart` representation with server-derived pricing/availability and opaque IDs.
+**Decision:** Implement `GET /api/v1/me/cart` as the canonical holder-scoped read endpoint, with no separate cart-create endpoint and no schema change. Authenticated customer carts remain lazily created. A first-time anonymous read returns the empty Cart representation without persisting a cart or issuing a credential; the first successful `CART-002` mutation creates the guest cart and issues its credential. This security correction prevents unbounded persistent records from anonymous reads.
 
 - **Route/auth:** `GET /api/v1/me/cart` now sits behind `clerk.optional` + the private read limiter (was `clerk.auth`), so guests are supported while authenticated bearers still resolve a local user. Invalid attempted bearer is never downgraded to guest (handled by `AuthenticateClerkIfPresent`). CART-002..005 remain auth-only until their own phases.
 - **Holder resolution:** `CartHolderResolver` + `GuestCartTransport` resolve `authenticated customer` (from the Clerk-resolved local user) vs `guest` (from the guest credential). Authenticated identity always wins; a supplied guest credential is ignored for ownership and never triggers merge. No `user_id`/`cart_id` input is ever accepted.

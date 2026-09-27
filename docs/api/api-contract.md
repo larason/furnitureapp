@@ -695,7 +695,7 @@ When future provider/upstream fails, **map** to stable project-level API error (
 }
 ```
 
-- Purpose: connects customer-facing error → server logs/monitoring without embedding secrets; support workflow is *"Please provide your request ID"* (`§31, §90`). ID is per-request processing context, **not** `user_id`/`order_id`/`payment_id`/`session token` unless explicitly designed (`§32`), and must not contain sensitive information. Logging of `INTERNAL_SERVER_ERROR` keeps full exception/stack on server, client only sees generic envelope (`§29, §89`).
+- Purpose: connects customer-facing error → server logs/monitoring without embedding secrets; support workflow is *"Please provide your request ID"* (`§31, §90`). ID is per-request processing context, **not** `user_id`/`order_id`/`payment_id`/`session token` unless explicitly designed (`§32`), and must not contain sensitive information. Logging of `INTERNAL_SERVER_ERROR` keeps allow-listed diagnostic metadata on server, never raw throwable/provider content; the client sees only the generic envelope (`§29, §89`).
 
 ### 15.14 Retry Guidance (Conceptual, Not Per-Error Field)
 
@@ -773,7 +773,7 @@ Do not add arbitrary `retryable:true` field to every error; contract defines cla
 Production errors **never** expose (`§28, §58-59, §61, §88`):
 
 - `database SQL`, stack traces, `password`/`authentication secret`/`payment secret`, `internal file paths`, server IPs, framework exception names, `other_customer_id`, `internal_inventory_reservation_id`, `provider_secret`, `staff_only_note`.
-- Logging keeps full diagnostics server-side; client sees safe `code`/`message`/`field`/`details` + `meta.request_id` (`§89`).
+- Logging keeps only allow-listed diagnostic metadata server-side (request ID, safe category/status, and exception class), never raw throwable messages, provider bodies, or previous-exception chains; client sees safe `code`/`message`/`field`/`details` + `meta.request_id` (`§89`).
 - Security tests must verify unauthorized access does **not** reveal `resource existence`, `private data`, `internal identifiers`, `database details` through errors (`§88`).
 - Error/transaction correspondence enforced: error response accurately reflects commit status — `INSUFFICIENT_STOCK` must not hide a phantom reservation (`§65`).
 

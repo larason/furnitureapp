@@ -19,6 +19,7 @@ final class AuthenticateClerkIfPresent
     {
         if ($request->bearerToken() !== null) {
             $user = $this->provisioner->resolve($this->verifier->verify($request));
+            EnsureActiveAccount::assert($user);
             auth()->setUser($user);
         }
 
