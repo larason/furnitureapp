@@ -50,7 +50,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // PUBLIC — unauthenticated by contract (SSR/SEO catalog + anonymous flows)
     // ---------------------------------------------------------------------
     Route::middleware('throttle:public-read')->group(function () use ($products, $productPath): void {
-        Route::get($products, [ProductController::class, 'index'])->middleware('throttle:catalog-search')->name('products.index');
+        Route::get($products, [ProductController::class, 'index'])->name('products.index');
         Route::get($products.$productPath, [ProductController::class, 'show'])->name('products.show');
         Route::get($products.'/{product}/variants', [ProductController::class, 'indexVariants'])->name('products.variants.index');
         Route::get($products.'/{product}/variants/{variant}', [ProductController::class, 'showVariant'])->name('products.variants.show');

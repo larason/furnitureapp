@@ -35,6 +35,45 @@ class SecurityRequestBoundaryTest extends TestCase
             ->assertJsonPath('errors.0.code', 'INVALID_FORMAT');
     }
 
+    public function test_cross_origin_error_response_includes_cors_headers(): void
+    {
+        config([
+            'cors.allowed_origins' => ['https://shop.example.test'],
+            'cors.supports_credentials' => true,
+            'security.max_authorization_header_bytes' => 8,
+        ]);
+
+        $response = $this->withHeaders([
+            'Origin' => 'https://shop.example.test',
+            'Authorization' => 'Bearer token-that-is-too-long',
+        ])->getJson('/api/v1/me');
+
+        $response->assertBadRequest();
+        $this->assertSame('https://shop.example.test', $response->headers->get('Access-Control-Allow-Origin'));
+        $this->assertSame('true', $response->headers->get('Access-Control-Allow-Credentials'));
+    }
+
+    public function test_rate_limited_cross_origin_response_is_readable(): void
+    {
+        config([
+            'cors.allowed_origins' => ['https://shop.example.test'],
+            'security.pre_auth_requests_per_minute' => 1,
+        ]);
+        RateLimiter::clear('pre-auth:127.0.0.1');
+        Route::middleware('api')->get('/api/v1/__test__/cors-429', fn () => response()->json(['ok' => true]));
+
+        $this->withHeaders(['Origin' => 'https://shop.example.test'])
+            ->getJson('/api/v1/__test__/cors-429')
+            ->assertOk();
+
+        $response = $this->withHeaders(['Origin' => 'https://shop.example.test'])
+            ->getJson('/api/v1/__test__/cors-429');
+
+        $response->assertStatus(429);
+        $this->assertSame('https://shop.example.test', $response->headers->get('Access-Control-Allow-Origin'));
+        $this->assertNotNull($response->headers->get('Retry-After'));
+    }
+
     public function test_oversized_json_body_is_rejected_before_decoding(): void
     {
         config(['security.max_json_body_bytes' => 10]);

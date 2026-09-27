@@ -12,7 +12,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Medium Findings
 
-3. **Resolved: Cross-site guest-cart mutation.** Cookie-authenticated guest mutations require an exact configured Origin and reject cross-site Fetch Metadata. API mutations with bodies require `application/json`. Credentialed CORS is enabled only for configured origins; the guest credential header is explicitly allowed/exposed.
+3. **Resolved: Cross-site guest-cart mutation.** Cookie-authenticated guest mutations require an exact configured `Origin` (missing or mismatched `Origin` is rejected); allow-listed cross-site requests are permitted, matching the frozen conventions. API mutations with bodies require `application/json`. Credentialed CORS is enabled only for configured origins; the guest credential header is explicitly allowed/exposed.
 
 4. **Resolved: Suspended accounts on optional-auth routes.** The active-account assertion is centralized and applied by both required and optional Clerk middleware.
 
@@ -22,7 +22,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 7. **Resolved: Clerk restrictions failed open.** Production boot now requires issuer, audiences, authorized parties, and a verification credential. Verification rejects a mismatched `iss`, and rejects a present `aud`/`azp` that is not allow-listed. Absent `aud`/`azp` claims are accepted to match the Clerk SDK and default session tokens (which carry `azp` but may omit `aud`), so valid authenticated users are not rejected.
 
-8. **Resolved in application and repository configuration: HTTPS, proxy trust, and browser headers.** Production requires an HTTPS application URL, secure cookies, and explicit trusted proxy CIDRs. HTTP API requests are rejected in production. API success and error responses receive CSP, nosniff, frame, referrer, permissions, and production HSTS headers. Deployment must still terminate/redirect HTTP at the ingress and supply only the real proxy CIDRs.
+8. **Resolved in application and repository configuration: HTTPS, proxy trust, and browser headers.** Production requires an HTTPS application URL, secure cookies, and explicit trusted proxy CIDRs. HTTP API requests are rejected in production. API success and error responses receive CSP, nosniff, frame, referrer, permissions, and production HSTS headers. Rendered API error responses (including early pre-auth `429`/`400`) also receive the configured CORS headers so browsers can read them; the CORS middleware alone decorated only successful responses. Deployment must still terminate/redirect HTTP at the ingress and supply only the real proxy CIDRs.
 
 9. **Resolved with layered repository limits: request-body size.** Declared and actual JSON bodies are capped before domain handling, with the frozen `413 REQUEST_TOO_LARGE` response. Apache and PHP limits are committed in `public/.htaccess` and `public/.user.ini`; production ingress must apply an equivalent or stricter 6 MiB hard limit when Apache/user INI files are not used.
 
@@ -32,7 +32,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 2. **Resolved: Idempotency retention.** Expired idempotency rows are pruned hourly through the Laravel scheduler.
 
-3. **Resolved: Expensive catalog search.** Product listing/search now has a dedicated 30/minute IP limiter in addition to the general public-read limit. Query/index optimization remains measurement-driven.
+3. **Deferred pending frozen-contract change: Expensive catalog search.** A stricter search-specific quota would lower the frozen `GET /products 100/min/IP` behavior (`api-conventions.md` §32.11), which is not permitted without the post-freeze contract-change process. The documented 100/min/IP limit is preserved; a search-specific limiter must go through that process before it can be enabled. Query/index optimization remains measurement-driven.
 
 4. **Resolved: Unthrottled API routes.** All 75 Version 1 API routes now have a route-specific limiter. An automated topology test prevents new unthrottled Version 1 routes.
 
@@ -47,7 +47,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Verification
 
-- PHPUnit: 1,065 tests executed, 1,064 passed, 1 skipped, 4,073 assertions.
+- PHPUnit: 1,067 tests executed, 1,066 passed, 1 skipped, 4,080 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
 - `php artisan schedule:list`: idempotency pruning hourly; stale empty guest-cart pruning daily.
 - `git diff --check`: passed.

@@ -57,7 +57,6 @@ class AppServiceProvider extends ServiceProvider
             && ! $request->hasCookie(GuestCartTransport::COOKIE)
                 ? Limit::perMinute(10)->by('ip:'.$request->ip())
                 : Limit::none());
-        RateLimiter::for('catalog-search', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
         RateLimiter::for('retired-auth', fn (Request $request) => Limit::perMinute(20)->by($request->ip()));
         RateLimiter::for('upload', fn (Request $request) => Limit::perMinute(10)->by($this->userKey($request)));
         RateLimiter::for('payment', fn (Request $request) => Limit::perMinute(10)->by($this->userKey($request)));

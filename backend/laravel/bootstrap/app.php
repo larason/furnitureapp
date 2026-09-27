@@ -15,6 +15,7 @@ use App\Http\Middleware\StaffOrAdminAccess;
 use App\Http\Middleware\ValidateApiRequestLimits;
 use App\Http\Middleware\ValidateGuestCartMutation;
 use App\Http\Middleware\ValidateJsonBody;
+use App\Support\CorsHeaders;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -72,9 +73,13 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $exceptions->render(fn (Throwable $e, Request $request) => app(ApiExceptionRenderer::class)->render($e, $request));
-        $exceptions->respond(fn ($response, Throwable $e, Request $request) => $request->is('api/*')
-            ? AddSecurityHeaders::apply($response, $request)
-            : $response);
+        $exceptions->respond(function ($response, Throwable $e, Request $request) {
+            if (! $request->is('api/*')) {
+                return $response;
+            }
+
+            return CorsHeaders::apply(AddSecurityHeaders::apply($response, $request), $request);
+        });
     })
     ->withSingletons([
         ExceptionHandler::class => Handler::class,
