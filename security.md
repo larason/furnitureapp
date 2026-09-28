@@ -8,7 +8,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 1. **Resolved: Clerk authentication executed before rate limiting.** `EnforceApiRequestLimits` now applies an IP-based pre-authentication quota before Clerk verification, rejects oversized Authorization headers, and retains the existing post-authentication per-user limits. A regression test proves Clerk verification is not called after the early quota is exhausted.
 
-2. **Resolved: Anonymous cart reads created persistent records.** A first-time anonymous `GET /api/v1/me/cart` now returns a non-persistent, well-formed transient empty Cart (opaque `id`, non-null `updated_at`) and issues no credential. Consecutive first-time reads are independent transient handles and must not be treated as continuous; the client gains a stable cart identity only after the first successful add-item mutation issues the guest credential, which supersedes the transient handle. New guest-cart creation has a separate IP quota, and stale empty guest carts are pruned daily.
+2. **Resolved: Anonymous cart reads created persistent records.** A first-time anonymous `GET /api/v1/me/cart` now returns a non-persistent, well-formed transient empty Cart (opaque `id`, non-null `updated_at`) and issues no credential. Consecutive first-time reads are independent transient handles and must not be treated as continuous; the client gains a stable cart identity only after the first successful add-item mutation issues the guest credential, which supersedes the transient handle. New guest-cart creation has a separate IP quota (mutation-only, so growth is bounded by rate-limited adds rather than reads). Guest carts are deliberately not time-pruned: deleting a cart whose credential a client may still hold would strand that guest with a `401` (the frozen contract rejects unknown/retired credentials), so the credential is kept resolvable instead.
 
 ## Medium Findings
 
@@ -40,14 +40,14 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Operational Requirements
 
-- Run Laravel's scheduler every minute in production so hourly/daily pruning executes.
+- Run Laravel's scheduler every minute in production so the hourly idempotency-key pruning executes.
 - Configure `TRUSTED_PROXIES` with only ingress CIDRs; never use a public wildcard.
 - Enforce HTTPS redirects and the 6 MiB request ceiling at the production load balancer/reverse proxy.
 - Set production Clerk restrictions, secure cookies, remote-service TLS values, and exact `CORS_ALLOWED_ORIGINS` before boot.
 
 ## Verification
 
-- PHPUnit: 1,071 tests executed, 1,070 passed, 1 skipped, 4,125 assertions.
+- PHPUnit: 1,072 tests executed, 1,071 passed, 1 skipped, 4,128 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
-- `php artisan schedule:list`: idempotency pruning hourly; stale empty guest-cart pruning daily.
+- `php artisan schedule:list`: idempotency-key pruning hourly.
 - `git diff --check`: passed.

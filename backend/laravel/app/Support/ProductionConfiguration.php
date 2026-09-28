@@ -9,6 +9,12 @@ use RuntimeException;
 
 final class ProductionConfiguration
 {
+    private const SMTP_REQUIREMENT = 'secure MAIL_SCHEME or MAIL_URL';
+
+    private const SMTP_PEER_VERIFICATION = 'MAIL verify_peer';
+
+    private const SMTP_SUPPORTED_SCHEMES = ['smtp', 'smtps'];
+
     public static function validate(): void
     {
         if (! app()->isProduction()) {
@@ -80,12 +86,20 @@ final class ProductionConfiguration
         }
 
         $driver = (string) ($database['driver'] ?? $connection);
+        $options = is_array($database['options'] ?? null) ? $database['options'] : [];
 
-        if (in_array($driver, ['mysql', 'mariadb'], true)
-            && self::isRemoteHost((string) ($database['host'] ?? ''))
-            && empty($database['unix_socket'])
-            && empty($database['options'][Mysql::ATTR_SSL_CA] ?? null)) {
+        if (! in_array($driver, ['mysql', 'mariadb'], true)
+            || ! self::isRemoteHost((string) ($database['host'] ?? ''))
+            || ! empty($database['unix_socket'])) {
+            return;
+        }
+
+        if (empty($options[Mysql::ATTR_SSL_CA] ?? null)) {
             $missing[] = 'MYSQL_ATTR_SSL_CA';
+        }
+
+        if (($options[Mysql::ATTR_SSL_VERIFY_SERVER_CERT] ?? null) === false) {
+            $missing[] = 'MYSQL_ATTR_SSL_VERIFY_SERVER_CERT';
         }
     }
 
@@ -112,32 +126,130 @@ final class ProductionConfiguration
 
     private static function validateSmtpTls(array &$missing): void
     {
-        if (config('mail.default') !== 'smtp') {
-            return;
+        foreach (self::smtpMailerNames((string) config('mail.default')) as $name) {
+            self::validateSmtpMailer($missing, config('mail.mailers.'.$name));
+        }
+    }
+
+    /**
+     * Resolves the SMTP mailers reachable from the default mailer, expanding
+     * `failover` and `roundrobin` member lists (including nested ones). A
+     * visited set guards against cyclic member references.
+     *
+     * @param  list<string>  $visited
+     * @return list<string>
+     */
+    private static function smtpMailerNames(string $name, array $visited = []): array
+    {
+        if (in_array($name, $visited, true)) {
+            return [];
         }
 
-        $smtp = config('mail.mailers.smtp', []);
+        $visited[] = $name;
+        $config = config('mail.mailers.'.$name);
+        $transport = is_array($config) ? ($config['transport'] ?? null) : null;
 
+        if (in_array($transport, ['failover', 'roundrobin'], true)) {
+            $names = [];
+
+            foreach ((array) ($config['mailers'] ?? []) as $member) {
+                if (is_string($member)) {
+                    $names = array_merge($names, self::smtpMailerNames($member, $visited));
+                }
+            }
+
+            return array_values(array_unique($names));
+        }
+
+        return $transport === 'smtp' || $name === 'smtp' ? [$name] : [];
+    }
+
+    private static function validateSmtpMailer(array &$missing, mixed $smtp): void
+    {
         if (! is_array($smtp)) {
-            $missing[] = 'secure MAIL_SCHEME or MAIL_URL';
+            $missing[] = self::SMTP_REQUIREMENT;
 
             return;
         }
 
-        $url = (string) ($smtp['url'] ?? '');
+        try {
+            $transport = (new ConfigurationUrlParser)->parseConfiguration($smtp);
+        } catch (InvalidArgumentException) {
+            $missing[] = self::SMTP_REQUIREMENT;
 
-        if ($url !== '') {
-            $host = (string) (parse_url($url, PHP_URL_HOST) ?? '');
-            $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-        } else {
-            $host = (string) ($smtp['host'] ?? '');
-            $scheme = strtolower((string) ($smtp['scheme'] ?? ''));
+            return;
         }
 
-        if (($url !== '' && $host === '')
-            || (self::isRemoteHost($host) && ! in_array($scheme, ['tls', 'ssl', 'smtps'], true))) {
-            $missing[] = 'secure MAIL_SCHEME or MAIL_URL';
+        foreach (self::smtpSecurityProblems($smtp, $transport) as $problem) {
+            $missing[] = $problem;
         }
+    }
+
+    /**
+     * Inspects the effective SMTP transport configuration (including options
+     * merged from `MAIL_URL`) so remote mailers cannot silently disable
+     * encryption or peer verification.
+     *
+     * @param  array<string, mixed>  $raw
+     * @param  array<string, mixed>  $transport
+     * @return list<string>
+     */
+    private static function smtpSecurityProblems(array $raw, array $transport): array
+    {
+        $url = (string) ($raw['url'] ?? '');
+        $host = (string) ($transport['host'] ?? '');
+        $scheme = self::resolveSmtpScheme($transport, $url);
+        $problems = [];
+
+        if ($url !== '' && $host === '') {
+            $problems[] = self::SMTP_REQUIREMENT;
+        } elseif (self::isRemoteHost($host)) {
+            $tlsEnforced = self::isTruthy($transport['require_tls'] ?? false);
+
+            if (! in_array($scheme, self::SMTP_SUPPORTED_SCHEMES, true)
+                || ($scheme === 'smtp' && ! $tlsEnforced)) {
+                $problems[] = self::SMTP_REQUIREMENT;
+            }
+
+            if (self::disablesPeerVerification($transport)) {
+                $problems[] = self::SMTP_PEER_VERIFICATION;
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * @param  array<string, mixed>  $transport
+     */
+    private static function resolveSmtpScheme(array $transport, string $url): string
+    {
+        $scheme = $url !== ''
+            ? (string) parse_url($url, PHP_URL_SCHEME)
+            : (string) ($transport['scheme'] ?? '');
+
+        if ($scheme === '') {
+            $scheme = (int) ($transport['port'] ?? 0) === 465 ? 'smtps' : 'smtp';
+        }
+
+        return strtolower($scheme);
+    }
+
+    /**
+     * @param  array<string, mixed>  $transport
+     */
+    private static function disablesPeerVerification(array $transport): bool
+    {
+        $verifyPeer = $transport['verify_peer'] ?? null;
+
+        return $verifyPeer !== null
+            && $verifyPeer !== ''
+            && ! self::isTruthy($verifyPeer);
+    }
+
+    private static function isTruthy(mixed $value): bool
+    {
+        return filter_var($value, FILTER_VALIDATE_BOOL) === true;
     }
 
     private static function isRemoteHost(string $host): bool

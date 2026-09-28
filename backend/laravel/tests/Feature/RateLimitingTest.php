@@ -79,6 +79,22 @@ class RateLimitingTest extends TestCase
         $this->assertNotNull($response->headers->get('Retry-After'));
     }
 
+    public function test_guest_cart_create_limit_cannot_be_bypassed_with_a_credential(): void
+    {
+        Route::middleware('throttle:guest-cart-create')
+            ->post('/api/v1/__test__/guest-cart-create', fn () => response()->json(['ok' => true]));
+
+        $headers = ['X-Guest-Cart-Id' => '00000000-0000-4000-8000-000000000000'];
+
+        foreach (range(1, 10) as $attempt) {
+            $this->withHeaders($headers)->postJson('/api/v1/__test__/guest-cart-create')->assertOk();
+        }
+
+        $this->withHeaders($headers)->postJson('/api/v1/__test__/guest-cart-create')
+            ->assertStatus(429)
+            ->assertJsonPath('errors.0.code', 'RATE_LIMITED');
+    }
+
     public function test_authenticated_read_limit_isolated_by_local_user_id(): void
     {
         config(['rate_limits.authenticated_read_per_minute' => 1]);

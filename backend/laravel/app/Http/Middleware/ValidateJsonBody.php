@@ -2,9 +2,12 @@
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\Api\ApiException;
+use App\Support\ApiErrorCode;
 use App\Support\JsonMediaType;
 use Closure;
 use Illuminate\Http\Request;
+use JsonException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 
@@ -36,7 +39,36 @@ class ValidateJsonBody
             throw new UnsupportedMediaTypeHttpException('API request bodies must use application/json.');
         }
 
+        $this->assertDecodableJson($request);
+
         return $next($request);
+    }
+
+    /**
+     * Rejects malformed JSON for accepted `application/json` (and `+json`)
+     * bodies before they reach the application. The bounded body captured by
+     * `EnforceApiRequestLimits` is reused when present so non-seekable request
+     * streams are not read a second time.
+     */
+    private function assertDecodableJson(Request $request): void
+    {
+        if (! JsonMediaType::accepts($request->headers->get('CONTENT_TYPE'))) {
+            return;
+        }
+
+        $content = $request->attributes->has(EnforceApiRequestLimits::JSON_BODY_ATTRIBUTE)
+            ? (string) $request->attributes->get(EnforceApiRequestLimits::JSON_BODY_ATTRIBUTE)
+            : (string) $request->getContent();
+
+        if ($content === '') {
+            return;
+        }
+
+        try {
+            json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new ApiException(ApiErrorCode::INVALID_JSON, 'The request body contains invalid JSON.', 400);
+        }
     }
 
     private function isContractedMultipartUpload(Request $request): bool
@@ -59,19 +91,28 @@ class ValidateJsonBody
 
         return (int) $request->server('CONTENT_LENGTH', 0) > 0
             || $request->request->all() !== []
+            || $request->files->all() !== []
             || $request->attributes->get(EnforceApiRequestLimits::JSON_BODY_ATTRIBUTE, '') !== ''
             || $this->hasUnreadStreamedBody($request);
     }
 
     /**
      * Detects a body that has no Content-Length and was not parsed as form
-     * input (for example a chunked non-JSON request). At most one byte is read
-     * and no buffering occurs; a matched body is rejected as unsupported media
-     * type immediately afterward.
+     * input (for example a chunked non-JSON request). Seekable streams are
+     * probed with a single byte that is then rewound. Non-seekable streams
+     * cannot be rewound, so they are read through the request content cache,
+     * which leaves the full body available to downstream readers.
      */
     private function hasUnreadStreamedBody(Request $request): bool
     {
-        $read = fread($request->getContent(true), 1);
+        $stream = $request->getContent(true);
+
+        if (! stream_get_meta_data($stream)['seekable']) {
+            return $request->getContent() !== '';
+        }
+
+        $read = fread($stream, 1);
+        rewind($stream);
 
         return $read !== false && $read !== '';
     }

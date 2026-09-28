@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\ProductionConfiguration;
+use Pdo\Mysql;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -42,6 +43,41 @@ class ProductionConfigurationTest extends TestCase
 
         $this->expectExceptionMessage('MYSQL_ATTR_SSL_CA');
         ProductionConfiguration::validate();
+    }
+
+    public function test_remote_mysql_rejects_disabled_server_certificate_verification(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'database.default' => 'mysql',
+            'database.connections.mysql.host' => 'db.example.test',
+            'database.connections.mysql.unix_socket' => '',
+            'database.connections.mysql.options' => [
+                Mysql::ATTR_SSL_CA => '/etc/ssl/certs/ca.pem',
+                Mysql::ATTR_SSL_VERIFY_SERVER_CERT => false,
+            ],
+        ]);
+
+        $this->expectExceptionMessage('MYSQL_ATTR_SSL_VERIFY_SERVER_CERT');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_local_mysql_is_exempt_from_certificate_verification_validation(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'database.default' => 'mysql',
+            'database.connections.mysql.host' => '127.0.0.1',
+            'database.connections.mysql.unix_socket' => '',
+            'database.connections.mysql.options' => [
+                Mysql::ATTR_SSL_VERIFY_SERVER_CERT => false,
+            ],
+        ]);
+
+        ProductionConfiguration::validate();
+        $this->addToAssertionCount(1);
     }
 
     public function test_mysql_url_host_overrides_the_fallback_local_host_for_tls_validation(): void
@@ -148,6 +184,179 @@ class ProductionConfigurationTest extends TestCase
             'mail.default' => 'smtp',
             'mail.mailers.smtp.host' => '127.0.0.1',
             'mail.mailers.smtp.url' => 'smtps://mail.example.test:465',
+        ]);
+
+        ProductionConfiguration::validate();
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_remote_smtp_member_of_a_failover_default_requires_a_secure_scheme(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'failover',
+            'mail.mailers.failover' => [
+                'transport' => 'failover',
+                'mailers' => ['smtp', 'log'],
+                'retry_after' => 60,
+            ],
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => null,
+            'mail.mailers.smtp.url' => null,
+        ]);
+
+        $this->expectExceptionMessage('secure MAIL_SCHEME or MAIL_URL');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_secure_smtp_member_of_a_roundrobin_default_passes(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'roundrobin',
+            'mail.mailers.roundrobin' => [
+                'transport' => 'roundrobin',
+                'mailers' => ['smtp'],
+                'retry_after' => 60,
+            ],
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => 'smtps',
+            'mail.mailers.smtp.url' => null,
+        ]);
+
+        ProductionConfiguration::validate();
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_tls_is_not_a_supported_smtp_scheme(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => 'tls',
+            'mail.mailers.smtp.url' => null,
+        ]);
+
+        $this->expectExceptionMessage('secure MAIL_SCHEME or MAIL_URL');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_remote_smtp_requires_tls_to_be_enforced(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => 'smtp',
+            'mail.mailers.smtp.url' => null,
+            'mail.mailers.smtp.require_tls' => false,
+        ]);
+
+        $this->expectExceptionMessage('secure MAIL_SCHEME or MAIL_URL');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_remote_smtp_with_required_tls_passes(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => 'smtp',
+            'mail.mailers.smtp.url' => null,
+            'mail.mailers.smtp.require_tls' => true,
+        ]);
+
+        ProductionConfiguration::validate();
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_remote_smtps_with_disabled_peer_verification_is_rejected(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => 'smtps',
+            'mail.mailers.smtp.url' => null,
+            'mail.mailers.smtp.verify_peer' => 0,
+        ]);
+
+        $this->expectExceptionMessage('MAIL verify_peer');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_remote_smtps_url_with_disabled_peer_verification_is_rejected(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.url' => 'smtps://mail.example.test:465?verify_peer=0',
+        ]);
+
+        $this->expectExceptionMessage('MAIL verify_peer');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_cyclic_failover_references_do_not_recurse_indefinitely(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'failover',
+            'mail.mailers.failover' => [
+                'transport' => 'failover',
+                'mailers' => ['failover', 'roundrobin'],
+                'retry_after' => 60,
+            ],
+            'mail.mailers.roundrobin' => [
+                'transport' => 'roundrobin',
+                'mailers' => ['failover'],
+                'retry_after' => 60,
+            ],
+        ]);
+
+        ProductionConfiguration::validate();
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_cyclic_failover_still_resolves_smtp_members(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'failover',
+            'mail.mailers.failover' => [
+                'transport' => 'failover',
+                'mailers' => ['failover', 'smtp'],
+                'retry_after' => 60,
+            ],
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => null,
+            'mail.mailers.smtp.url' => null,
+        ]);
+
+        $this->expectExceptionMessage('secure MAIL_SCHEME or MAIL_URL');
+        ProductionConfiguration::validate();
+    }
+
+    public function test_non_smtp_default_does_not_validate_smtp_members(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        $this->safeProductionConfig();
+        config([
+            'mail.default' => 'log',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+            'mail.mailers.smtp.scheme' => null,
+            'mail.mailers.smtp.url' => null,
         ]);
 
         ProductionConfiguration::validate();

@@ -57,6 +57,23 @@ class SecurityRequestBoundaryTest extends TestCase
         $this->assertSame('true', $response->headers->get('Access-Control-Allow-Credentials'));
     }
 
+    public function test_cors_preflight_allows_the_idempotency_key_header(): void
+    {
+        config(['cors.allowed_origins' => [self::ALLOWED_ORIGIN]]);
+
+        $response = $this->call('OPTIONS', '/api/v1/me/cart/merge', server: [
+            'HTTP_ORIGIN' => self::ALLOWED_ORIGIN,
+            'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+            'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'idempotency-key',
+        ]);
+
+        $response->assertNoContent();
+        $this->assertStringContainsString(
+            'idempotency-key',
+            strtolower((string) $response->headers->get('Access-Control-Allow-Headers')),
+        );
+    }
+
     public function test_rate_limited_cross_origin_response_is_readable(): void
     {
         config([
