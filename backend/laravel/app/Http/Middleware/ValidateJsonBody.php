@@ -33,9 +33,9 @@ class ValidateJsonBody
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($this->hasBody($request)
-            && ! JsonMediaType::accepts($request->headers->get('CONTENT_TYPE'))
-            && ! $this->isContractedMultipartUpload($request)) {
+        if (! JsonMediaType::accepts($request->headers->get('CONTENT_TYPE'))
+            && ! $this->isContractedMultipartUpload($request)
+            && $this->hasBody($request)) {
             throw new UnsupportedMediaTypeHttpException('API request bodies must use application/json.');
         }
 
@@ -98,21 +98,19 @@ class ValidateJsonBody
 
     /**
      * Detects a body that has no Content-Length and was not parsed as form
-     * input (for example a chunked non-JSON request). Seekable streams are
-     * probed with a single byte that is then rewound. Non-seekable streams
-     * cannot be rewound, so they are read through the request content cache,
-     * which leaves the full body available to downstream readers.
+     * input (for example a chunked non-JSON request). This only runs after the
+     * media type and multipart checks have already failed, so the request is
+     * rejected on a positive result and no downstream reader needs the body.
+     * A single-byte probe is therefore used and the body is never buffered.
      */
     private function hasUnreadStreamedBody(Request $request): bool
     {
         $stream = $request->getContent(true);
-
-        if (! stream_get_meta_data($stream)['seekable']) {
-            return $request->getContent() !== '';
-        }
-
         $read = fread($stream, 1);
-        rewind($stream);
+
+        if (stream_get_meta_data($stream)['seekable']) {
+            rewind($stream);
+        }
 
         return $read !== false && $read !== '';
     }

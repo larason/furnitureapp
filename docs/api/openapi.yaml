@@ -2576,16 +2576,11 @@ paths:
       - $ref: '#/components/parameters/GuestCartCookie'
       responses:
         '200':
-          description: OK
-          headers:
-            Set-Cookie:
-              description: Browser guest credential (`guest_cart_id`), issued only when a new guest cart is created; HttpOnly, Secure, SameSite=None
-              schema:
-                type: string
-            X-Guest-Cart-Id:
-              description: Non-browser guest credential, issued only when a new guest cart is created
-              schema:
-                type: string
+          description: >-
+            The holder's ACTIVE cart. A first anonymous read without a guest credential returns a transient empty
+            cart representation (`items: []`, `items_count: 0`, zero subtotal) that is not persisted and issues no
+            credential; its `id` is an opaque per-request handle and `updated_at` is the response time, so clients
+            must not rely on either for continuity. A valid guest credential returns the persisted guest cart.
           content:
             application/json:
               schema:
@@ -2599,7 +2594,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
-      description: Create-or-get the holder's ACTIVE cart. Optional Clerk bearer; anonymous guests use the guest credential (cookie or header). Invalid attempted bearer or guest credential returns 401; lazy creation returns 200 with an empty cart.
+      description: >-
+        Return the holder's ACTIVE cart. Optional Clerk bearer; anonymous guests may present an existing guest
+        credential (cookie or header). This operation never persists a cart and never issues a guest credential;
+        the guest credential is issued only by the first successful CART-002 mutation. An invalid attempted bearer
+        or guest credential returns 401.
   /me/cart/items:
     post:
       operationId: CART-002

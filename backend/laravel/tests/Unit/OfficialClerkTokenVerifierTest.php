@@ -233,7 +233,7 @@ class OfficialClerkTokenVerifierTest extends TestCase
         }
     }
 
-    public function test_absent_audience_and_authorized_party_claims_are_accepted(): void
+    public function test_absent_audience_and_authorized_party_claims_are_rejected(): void
     {
         config([
             'clerk.secret_key' => 'test-secret-key',
@@ -252,13 +252,16 @@ class OfficialClerkTokenVerifierTest extends TestCase
             static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
         );
 
-        $identity = $verifier->verify($this->requestWithBearerToken());
-
-        $this->assertSame('user_123', $identity->clerkUserId);
-        $this->assertSame('sess_123', $identity->sessionId);
+        try {
+            $verifier->verify($this->requestWithBearerToken());
+            $this->fail('Expected absent audience and authorized party claims to be rejected.');
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+        }
     }
 
-    public function test_present_audience_with_absent_authorized_party_is_accepted(): void
+    public function test_present_audience_with_absent_authorized_party_is_rejected(): void
     {
         config([
             'clerk.secret_key' => 'test-secret-key',
@@ -273,6 +276,34 @@ class OfficialClerkTokenVerifierTest extends TestCase
             'iss' => 'https://clerk.example.test',
             'sts' => 'active',
             'aud' => 'furniture-api',
+        ];
+        $verifier = new OfficialClerkTokenVerifier(
+            static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),
+        );
+
+        try {
+            $verifier->verify($this->requestWithBearerToken());
+            $this->fail('Expected an absent authorized party claim to be rejected.');
+        } catch (ClerkAuthenticationFailure $exception) {
+            $this->assertSame('INVALID_AUTHENTICATION', $exception->errorCode()->value);
+            $this->assertSame(401, $exception->status());
+        }
+    }
+
+    public function test_absent_claims_are_accepted_when_no_allow_list_is_configured(): void
+    {
+        config([
+            'clerk.secret_key' => 'test-secret-key',
+            'clerk.jwt_key' => 'test-jwt-key',
+            'clerk.audiences' => [],
+            'clerk.authorized_parties' => [],
+        ]);
+
+        $payload = (object) [
+            'sub' => 'user_123',
+            'sid' => 'sess_123',
+            'iss' => 'https://clerk.example.test',
+            'sts' => 'active',
         ];
         $verifier = new OfficialClerkTokenVerifier(
             static fn (Request $request, AuthenticateRequestOptions $options): RequestState => RequestState::signedIn('token', $payload),

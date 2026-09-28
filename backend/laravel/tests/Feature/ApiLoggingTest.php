@@ -98,6 +98,27 @@ class ApiLoggingTest extends TestCase
         $this->assertArrayNotHasKey('exception', $captured[0]->context);
     }
 
+    public function test_same_class_failures_are_distinguishable_by_redacted_message(): void
+    {
+        $captured = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$captured): void {
+            if ($event->message === 'api.exception') {
+                $captured[] = $event;
+            }
+        });
+
+        Route::middleware('api')->get('/api/v1/__test__/boom-first', fn () => throw new LoggingTestBoomException('first failure'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-second', fn () => throw new LoggingTestBoomException('second failure'));
+
+        $this->getJson('/api/v1/__test__/boom-first')->assertStatus(500);
+        $this->getJson('/api/v1/__test__/boom-second')->assertStatus(500);
+
+        $this->assertCount(2, $captured);
+        $this->assertSame($captured[0]->context['exception_class'], $captured[1]->context['exception_class']);
+        $this->assertSame('first failure', $captured[0]->context['exception_message'] ?? null);
+        $this->assertSame('second failure', $captured[1]->context['exception_message'] ?? null);
+    }
+
     public function test_api_server_exception_reaches_registered_error_tracker(): void
     {
         $reported = null;
@@ -114,7 +135,7 @@ class ApiLoggingTest extends TestCase
         $this->assertSame($exception, $reported);
     }
 
-    public function test_exception_messages_and_previous_chain_are_not_logged(): void
+    public function test_exception_message_is_logged_redacted_and_previous_chain_is_excluded(): void
     {
         $events = [];
         Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$events): void {
@@ -135,6 +156,12 @@ class ApiLoggingTest extends TestCase
         $records = $testHandler->getRecords();
         $this->assertNotEmpty($records, 'Expected the sanitized API exception to be written to the log.');
         $this->assertStringContainsString('api.exception', (new LineFormatter)->format($records[0]));
+
+        $apiEvent = collect($events)->firstWhere('message', 'api.exception');
+        $this->assertNotNull($apiEvent);
+        $this->assertArrayHasKey('exception_message', $apiEvent->context);
+        $this->assertStringContainsString('[REDACTED]', (string) $apiEvent->context['exception_message']);
+        $this->assertArrayHasKey('exception_trace', $apiEvent->context);
 
         $this->assertLogExcludes(['previous-secret-token', 'sk_live_current-secret'], $records, $events);
     }

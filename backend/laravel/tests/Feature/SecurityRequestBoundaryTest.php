@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Exceptions\Api\ApiException;
 use App\Http\Middleware\EnforceApiRequestLimits;
 use App\Http\Middleware\ValidateApiRequestLimits;
+use App\Models\User;
 use App\Providers\AppServiceProvider;
 use App\Services\Cart\GuestCartTransport;
 use App\Support\ApiErrorCode;
@@ -262,6 +263,18 @@ class SecurityRequestBoundaryTest extends TestCase
 
         $this->withCredentials()->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
             ->withHeaders(['Origin' => self::ALLOWED_ORIGIN, 'Sec-Fetch-Site' => 'cross-site'])
+            ->postJson(self::GUEST_MUTATION_URL, [])
+            ->assertOk();
+    }
+
+    public function test_authenticated_customer_with_stale_guest_cookie_skips_the_origin_check(): void
+    {
+        config(['cors.allowed_origins' => [self::ALLOWED_ORIGIN]]);
+        Route::middleware(['api', 'guest-cart-mutation'])->post(self::GUEST_MUTATION_URL, fn () => response()->json(['ok' => true]));
+
+        $this->actingAs(User::factory()->make())
+            ->withCredentials()
+            ->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
             ->postJson(self::GUEST_MUTATION_URL, [])
             ->assertOk();
     }

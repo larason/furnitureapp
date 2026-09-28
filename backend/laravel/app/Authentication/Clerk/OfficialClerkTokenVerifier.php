@@ -137,16 +137,17 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
     }
 
     /**
-     * Enforces a configured restriction only when the claim is present, matching
-     * the Clerk SDK and default session tokens (which carry `azp` but may omit
-     * `aud`). Absent claims are not treated as a mismatch; a present claim is
-     * still rejected unless it intersects the configured allow-list.
+     * Fails closed against the configured allow-list: a claim must be present
+     * and intersect the allow-list. A token that omits `aud`/`azp` is rejected
+     * whenever the corresponding restriction is configured; the claim is only
+     * ignored when no allow-list is configured. The Clerk SDK skips absent
+     * claims, so this application-level check is what enforces the restriction.
      *
      * @param  array<int, string>|null  $allowed
      */
     private function claimMatches(mixed $claim, ?array $allowed): bool
     {
-        if ($allowed === null || $claim === null) {
+        if ($allowed === null) {
             return true;
         }
 

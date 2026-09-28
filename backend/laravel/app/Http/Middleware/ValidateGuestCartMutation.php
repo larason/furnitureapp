@@ -18,7 +18,7 @@ final class ValidateGuestCartMutation
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->hasCookie(GuestCartTransport::COOKIE)) {
+        if ($request->user() === null && $request->hasCookie(GuestCartTransport::COOKIE)) {
             $origin = (string) $request->headers->get('Origin', '');
             $allowedOrigins = config('cors.allowed_origins', []);
 
