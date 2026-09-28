@@ -17,13 +17,38 @@ class ValidateJsonBody
 {
     private const BODY_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
+    /**
+     * Contracted endpoints that accept `multipart/form-data` attachments
+     * (`api-contract.md` §13.16, REQ-001/ENQ-001 inline, REQ-007/ENQ-007).
+     */
+    private const MULTIPART_ROUTES = [
+        'api.requests.store',
+        'api.enquiries.store',
+        'api.requests.attachments.store',
+        'api.enquiries.attachments.store',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
-        if ($this->hasBody($request) && ! JsonMediaType::accepts($request->headers->get('CONTENT_TYPE'))) {
+        if ($this->hasBody($request)
+            && ! JsonMediaType::accepts($request->headers->get('CONTENT_TYPE'))
+            && ! $this->isContractedMultipartUpload($request)) {
             throw new UnsupportedMediaTypeHttpException('API request bodies must use application/json.');
         }
 
         return $next($request);
+    }
+
+    private function isContractedMultipartUpload(Request $request): bool
+    {
+        $contentType = (string) $request->headers->get('CONTENT_TYPE');
+        $mediaType = strtolower(trim(explode(';', $contentType, 2)[0]));
+
+        if ($mediaType !== 'multipart/form-data') {
+            return false;
+        }
+
+        return in_array($request->route()?->getName(), self::MULTIPART_ROUTES, true);
     }
 
     private function hasBody(Request $request): bool

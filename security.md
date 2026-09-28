@@ -12,7 +12,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Medium Findings
 
-3. **Resolved: Cross-site guest-cart mutation.** Cookie-authenticated guest mutations require an exact configured `Origin` (missing or mismatched `Origin` is rejected); allow-listed cross-site requests are permitted, matching the frozen conventions. API mutations with bodies require `application/json`. Credentialed CORS is enabled only for configured origins; the guest credential header is explicitly allowed/exposed.
+3. **Resolved: Cross-site guest-cart mutation.** Cookie-authenticated guest mutations require an exact configured `Origin` (missing or mismatched `Origin` is rejected); allow-listed cross-site requests are permitted, matching the frozen conventions. API mutations with bodies require `application/json`, except the contracted upload endpoints (`REQ-001`/`ENQ-001` inline and `REQ-007`/`ENQ-007`) which accept `multipart/form-data`. Credentialed CORS is enabled only for configured origins; the guest credential header is explicitly allowed/exposed.
 
 4. **Resolved: Suspended accounts on optional-auth routes.** The active-account assertion is centralized and applied by both required and optional Clerk middleware.
 
@@ -47,7 +47,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Verification
 
-- PHPUnit: 1,067 tests executed, 1,066 passed, 1 skipped, 4,080 assertions.
+- PHPUnit: 1,071 tests executed, 1,070 passed, 1 skipped, 4,125 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
 - `php artisan schedule:list`: idempotency pruning hourly; stale empty guest-cart pruning daily.
 - `git diff --check`: passed.

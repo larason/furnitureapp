@@ -19,6 +19,10 @@ use Tests\TestCase;
 
 class SecurityRequestBoundaryTest extends TestCase
 {
+    private const GUEST_MUTATION_URL = '/api/v1/__test__/guest-mutation';
+
+    private const ALLOWED_ORIGIN = 'https://shop.example.test';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -38,39 +42,39 @@ class SecurityRequestBoundaryTest extends TestCase
     public function test_cross_origin_error_response_includes_cors_headers(): void
     {
         config([
-            'cors.allowed_origins' => ['https://shop.example.test'],
+            'cors.allowed_origins' => [self::ALLOWED_ORIGIN],
             'cors.supports_credentials' => true,
             'security.max_authorization_header_bytes' => 8,
         ]);
 
         $response = $this->withHeaders([
-            'Origin' => 'https://shop.example.test',
+            'Origin' => self::ALLOWED_ORIGIN,
             'Authorization' => 'Bearer token-that-is-too-long',
         ])->getJson('/api/v1/me');
 
         $response->assertBadRequest();
-        $this->assertSame('https://shop.example.test', $response->headers->get('Access-Control-Allow-Origin'));
+        $this->assertSame(self::ALLOWED_ORIGIN, $response->headers->get('Access-Control-Allow-Origin'));
         $this->assertSame('true', $response->headers->get('Access-Control-Allow-Credentials'));
     }
 
     public function test_rate_limited_cross_origin_response_is_readable(): void
     {
         config([
-            'cors.allowed_origins' => ['https://shop.example.test'],
+            'cors.allowed_origins' => [self::ALLOWED_ORIGIN],
             'security.pre_auth_requests_per_minute' => 1,
         ]);
         RateLimiter::clear('pre-auth:127.0.0.1');
         Route::middleware('api')->get('/api/v1/__test__/cors-429', fn () => response()->json(['ok' => true]));
 
-        $this->withHeaders(['Origin' => 'https://shop.example.test'])
+        $this->withHeaders(['Origin' => self::ALLOWED_ORIGIN])
             ->getJson('/api/v1/__test__/cors-429')
             ->assertOk();
 
-        $response = $this->withHeaders(['Origin' => 'https://shop.example.test'])
+        $response = $this->withHeaders(['Origin' => self::ALLOWED_ORIGIN])
             ->getJson('/api/v1/__test__/cors-429');
 
         $response->assertStatus(429);
-        $this->assertSame('https://shop.example.test', $response->headers->get('Access-Control-Allow-Origin'));
+        $this->assertSame(self::ALLOWED_ORIGIN, $response->headers->get('Access-Control-Allow-Origin'));
         $this->assertNotNull($response->headers->get('Retry-After'));
     }
 
@@ -114,6 +118,33 @@ class SecurityRequestBoundaryTest extends TestCase
         Route::middleware('api')->post('/api/v1/__test__/json-only', fn () => response()->json(['ok' => true]));
 
         $this->post('/api/v1/__test__/json-only', ['value' => 'x'])
+            ->assertStatus(415)
+            ->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    public function test_multipart_is_allowed_on_contracted_submission_routes(): void
+    {
+        foreach (['/api/v1/requests', '/api/v1/enquiries'] as $path) {
+            $this->withHeaders(['Content-Type' => 'multipart/form-data; boundary=----test'])
+                ->post($path, ['name' => 'x'])
+                ->assertStatus(501);
+        }
+    }
+
+    public function test_malformed_multipart_media_type_is_rejected_on_contracted_routes(): void
+    {
+        $this->withHeaders(['Content-Type' => 'multipart/form-datax'])
+            ->post('/api/v1/requests', ['name' => 'x'])
+            ->assertStatus(415)
+            ->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    public function test_multipart_is_rejected_on_json_only_routes(): void
+    {
+        Route::middleware('api')->post('/api/v1/__test__/multipart-json-only', fn () => response()->json(['ok' => true]));
+
+        $this->withHeaders(['Content-Type' => 'multipart/form-data; boundary=----test'])
+            ->post('/api/v1/__test__/multipart-json-only', ['value' => 'x'])
             ->assertStatus(415)
             ->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
     }
@@ -195,26 +226,26 @@ class SecurityRequestBoundaryTest extends TestCase
 
     public function test_guest_cookie_mutation_requires_an_allowed_origin(): void
     {
-        config(['cors.allowed_origins' => ['https://shop.example.test']]);
-        Route::middleware(['api', 'guest-cart-mutation'])->post('/api/v1/__test__/guest-mutation', fn () => response()->json(['ok' => true]));
+        config(['cors.allowed_origins' => [self::ALLOWED_ORIGIN]]);
+        Route::middleware(['api', 'guest-cart-mutation'])->post(self::GUEST_MUTATION_URL, fn () => response()->json(['ok' => true]));
 
         $this->withCredentials()->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
-            ->postJson('/api/v1/__test__/guest-mutation', [])
+            ->postJson(self::GUEST_MUTATION_URL, [])
             ->assertForbidden();
 
         $this->withCredentials()->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
             ->withHeaders(['Origin' => 'https://evil.example.test', 'Sec-Fetch-Site' => 'cross-site'])
-            ->postJson('/api/v1/__test__/guest-mutation', [])
+            ->postJson(self::GUEST_MUTATION_URL, [])
             ->assertForbidden();
 
         $this->withCredentials()->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
-            ->withHeaders(['Origin' => 'https://shop.example.test', 'Sec-Fetch-Site' => 'same-site'])
-            ->postJson('/api/v1/__test__/guest-mutation', [])
+            ->withHeaders(['Origin' => self::ALLOWED_ORIGIN, 'Sec-Fetch-Site' => 'same-site'])
+            ->postJson(self::GUEST_MUTATION_URL, [])
             ->assertOk();
 
         $this->withCredentials()->withUnencryptedCookie(GuestCartTransport::COOKIE, 'credential')
-            ->withHeaders(['Origin' => 'https://shop.example.test', 'Sec-Fetch-Site' => 'cross-site'])
-            ->postJson('/api/v1/__test__/guest-mutation', [])
+            ->withHeaders(['Origin' => self::ALLOWED_ORIGIN, 'Sec-Fetch-Site' => 'cross-site'])
+            ->postJson(self::GUEST_MUTATION_URL, [])
             ->assertOk();
     }
 
