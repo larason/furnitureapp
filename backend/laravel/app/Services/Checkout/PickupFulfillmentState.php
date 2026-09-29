@@ -48,11 +48,7 @@ final readonly class PickupFulfillmentState
 
     public function totalAmountForSubtotal(int $subtotalAmount): int
     {
-        if ($subtotalAmount < 0) {
-            throw new DomainException('Pickup subtotal must not be negative.');
-        }
-
-        return $subtotalAmount;
+        return OrderTotalsCalculator::forPickup($subtotalAmount)->totalAmount;
     }
 
     /**
@@ -109,18 +105,20 @@ final readonly class PickupFulfillmentState
     /** @return array{subtotal_amount: int, delivery_fee_amount: int, total_amount: int} */
     private function amountsForSubtotal(int $subtotalAmount): array
     {
-        $totalAmount = $this->totalAmountForSubtotal($subtotalAmount);
+        $totals = OrderTotalsCalculator::forPickup($subtotalAmount);
 
         return [
-            'subtotal_amount' => $subtotalAmount,
-            'delivery_fee_amount' => 0,
-            'total_amount' => $totalAmount,
+            'subtotal_amount' => $totals->subtotalAmount,
+            'delivery_fee_amount' => $totals->deliveryFeeAmount,
+            'total_amount' => $totals->totalAmount,
         ];
     }
 
     /** @return array{amount: int, currency: string} */
     private function deliveryFee(): array
     {
+        // PICKUP branch semantics: zero fee (canonical totals live in
+        // OrderTotalsCalculator).
         return [
             'amount' => 0,
             'currency' => Order::CURRENCY_TZS,

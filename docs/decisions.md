@@ -2444,3 +2444,19 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Records the cart hardening through the required Post-Freeze Change Process so the observable changes are explicit, classified, reviewed, and approved instead of drifting from the frozen V1 baseline.
 
 **Status:** Accepted (Non-Breaking) | **Date:** 2026-09-29 | **Affected:** `backend/laravel` (`app/Models/Cart.php`, `app/Services/Cart/*`, `app/Http/Controllers/Api/V1/CartController.php`, `app/Http/Middleware/CustomerCartAccess.php`), `docs/api/{api-contract.md,api-examples.md,openapi.yaml}`, `security.md`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-039 — Canonical Order Totals Calculator (Phase 7.6)
+
+**Decision:** Phase 7.6 establishes `App\Services\Checkout\OrderTotalsCalculator` as the single canonical, pure calculation boundary for Checkout/Order financial totals, producing the immutable `App\Services\Checkout\OrderTotals` result and `App\Services\Checkout\OrderLineAmount` per-line values. Money is integer minor units (1 TZS = 100), currency fixed `TZS`, with no floats, no DB/Eloquent access, and no Cart/Order/inventory/payment side effects. Overflow is guarded for unit price × quantity, subtotal accumulation, and subtotal + delivery fee.
+
+- **Canonical rules:** PICKUP → fee `0`, `FINALIZED`, `total = subtotal`, financially final; DELIVERY pending → fee `null`, `PENDING`, `total = subtotal`, provisional; DELIVERY finalized → fee `>= 0`, `FINALIZED`, `total = subtotal + fee`, financially final. Null and zero fee remain distinct states; finality is derived from the branch plus `delivery_fee_status`, never numerical equality. All other combinations fail explicitly.
+- **Single authority:** `PickupFulfillmentState` and `DeliveryFulfillmentState` delegate amount arithmetic to the calculator (only branch semantics remain local), and `DeliveryFeeFinalizer` (ORD-014) computes the finalized total through `forDeliveryFinalized`, removing the second embedded `subtotal + fee` formula. ORD-014 authorization, fee validation, idempotency, audit-exactly-once, and financial immutability are unchanged.
+- **Boundary validation:** scalar entry points accept `mixed` and reject non-`int` values (`is_int`) before any coercion, so a float passed by a caller without `strict_types=1` fails explicitly rather than being silently truncated.
+- **Not resolved:** Phase 7.4 remains **BLOCKED** by the missing `orders.billing_address` snapshot persistence. No schema, dependency, frontend, OpenAPI, payment, reservation, Order insert, Cart mutation, or OrderItem persistence is introduced.
+- **Verification:** `tests/Unit/OrderTotalsCalculatorTest.php` (financial matrix, null-vs-zero distinction, overflow, float rejection, determinism), `tests/Feature/OrderTotalsCompatibilityTest.php` (Order model agreement), plus the Phase 7.3/7.4 state tests and the Phase 7.5 `DeliveryFeeApiTest` regression.
+
+**Reason:** Gives Checkout, ORD-014, and Group H one reusable calculation authority so no branch or workflow owns a competing total formula, without claiming the blocked DELIVERY persistence path is solved.
+
+**Status:** PASS (financial calculation) / Phase 7.4 DELIVERY persistence remains BLOCKED | **Date:** 2026-09-29 | **Affected:** `backend/laravel` (`app/Services/Checkout/{OrderTotalsCalculator,OrderTotals,OrderLineAmount,PickupFulfillmentState,DeliveryFulfillmentState}.php`, `app/Services/DeliveryFeeFinalizer.php`, `tests/Unit/OrderTotalsCalculatorTest.php`, `tests/Feature/OrderTotalsCompatibilityTest.php`), `docs/decisions.md`
