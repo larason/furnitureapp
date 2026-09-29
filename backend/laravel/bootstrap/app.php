@@ -73,7 +73,7 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $exceptions->render(fn (Throwable $e, Request $request) => app(ApiExceptionRenderer::class)->render($e, $request));
-        $exceptions->respond(function ($response, Throwable $e, Request $request) {
+        $exceptions->respond(function ($response, Throwable $_, Request $request) {
             if (! $request->is('api/*')) {
                 return $response;
             }

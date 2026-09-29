@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\MigrationPreconditionException;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +50,7 @@ return new class extends Migration
             ->exists();
 
         if ($exists) {
-            throw new RuntimeException('Cannot enforce line-total invariant: existing order_items rows violate line_total = unit_price * quantity.');
+            throw new MigrationPreconditionException('Cannot enforce line-total invariant: existing order_items rows violate line_total = unit_price * quantity.');
         }
     }
 

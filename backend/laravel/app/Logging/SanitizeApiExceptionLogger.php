@@ -19,7 +19,7 @@ final class SanitizeApiExceptionLogger extends AbstractLogger
         private readonly ?Request $request,
     ) {}
 
-    public function log($level, Stringable|string $message, array $context = []): void
+    public function log(mixed $level, Stringable|string $message, array $context = []): void
     {
         $exception = $context['exception'] ?? null;
 

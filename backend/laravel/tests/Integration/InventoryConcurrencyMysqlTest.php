@@ -19,6 +19,7 @@ use App\Support\ProductType;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\ConcurrentWorkerTimeout;
 use Tests\TestCase;
 
 /**
@@ -290,7 +291,7 @@ class InventoryConcurrencyMysqlTest extends TestCase
 
         while (! file_exists($barrier.'/go')) {
             if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Timed out waiting for the concurrency barrier release.');
+                throw new ConcurrentWorkerTimeout('Timed out waiting for the concurrency barrier release.');
             }
 
             usleep(200);

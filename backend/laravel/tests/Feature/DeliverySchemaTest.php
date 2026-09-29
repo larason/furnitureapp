@@ -423,7 +423,7 @@ class DeliverySchemaTest extends TestCase
     public function test_deleting_user_is_restricted_while_they_own_an_order(): void
     {
         $order = Order::factory()->deliveryFinalized()->create();
-        $delivery = Delivery::factory()->forOrder($order)->create();
+        Delivery::factory()->forOrder($order)->create();
         $user = $order->customer;
 
         $this->expectException(QueryException::class);

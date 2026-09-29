@@ -6,6 +6,7 @@ use App\Exceptions\Api\ApiException;
 use App\Http\Resources\OrderSummaryResource;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Checkout\OrderTotalsCalculator;
 use App\Support\ApiErrorCode;
 use App\Support\AuditAction;
 use App\Support\AuditResourceType;
@@ -63,9 +64,11 @@ final class DeliveryFeeFinalizer
             $this->assertFinalizable($order);
             $previous = $this->snapshot($order);
 
-            $order->delivery_fee_amount = $amount;
-            $order->delivery_fee_status = DeliveryFeeStatus::FINALIZED;
-            $order->total_amount = $order->subtotal_amount + $amount;
+            $totals = OrderTotalsCalculator::forDeliveryFinalized($order->subtotal_amount, $amount);
+
+            $order->delivery_fee_amount = $totals->deliveryFeeAmount;
+            $order->delivery_fee_status = $totals->deliveryFeeStatus;
+            $order->total_amount = $totals->totalAmount;
             $order->save();
 
             $this->audit->record(

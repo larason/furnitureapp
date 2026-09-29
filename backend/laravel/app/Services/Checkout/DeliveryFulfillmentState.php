@@ -53,18 +53,17 @@ final readonly class DeliveryFulfillmentState
     /** @return array{fulfillment_type: string, status: string, delivery_fee_status: string, currency: string, subtotal_amount: int, delivery_fee_amount: null, total_amount: int, recipient_name: string, recipient_phone: string, delivery_address: array{address_line: string, city: string}} */
     public function orderAttributesForSubtotal(int $subtotalAmount): array
     {
-        if ($subtotalAmount < 0) {
-            throw new DomainException('Delivery subtotal must not be negative.');
-        }
+        $totals = OrderTotalsCalculator::forDeliveryPending($subtotalAmount);
 
         return [
             'fulfillment_type' => FulfillmentType::DELIVERY->value,
             'status' => OrderStatus::PENDING_PAYMENT->value,
-            'delivery_fee_status' => DeliveryFeeStatus::PENDING->value,
-            'currency' => Order::CURRENCY_TZS,
-            'subtotal_amount' => $subtotalAmount,
+            'delivery_fee_status' => $totals->deliveryFeeStatus->value,
+            'currency' => $totals->currency,
+            'subtotal_amount' => $totals->subtotalAmount,
+            // DELIVERY pending branch semantics: the fee is null, not zero.
             'delivery_fee_amount' => null,
-            'total_amount' => $subtotalAmount,
+            'total_amount' => $totals->totalAmount,
             'recipient_name' => $this->deliveryAddress['recipient_name'],
             'recipient_phone' => $this->deliveryAddress['phone'],
             'delivery_address' => [

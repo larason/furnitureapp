@@ -36,7 +36,7 @@ class PaymentWebhookEventSchemaTest extends TestCase
 
     public function test_provider_event_unique_constraint_exists(): void
     {
-        $first = PaymentWebhookEvent::factory()->create([
+        PaymentWebhookEvent::factory()->create([
             'provider' => 'provider_a',
             'provider_event_id' => 'EVT-12345678',
         ]);
