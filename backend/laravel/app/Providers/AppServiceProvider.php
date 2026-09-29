@@ -8,6 +8,7 @@ use App\Authentication\Clerk\OfficialClerkSessionGateway;
 use App\Authentication\Clerk\OfficialClerkTokenVerifier;
 use App\Authentication\Clerk\OfficialClerkUserGateway;
 use App\Authentication\ClerkTokenVerifier;
+use App\Services\Cart\GuestCartTransport;
 use App\Support\ProductionConfiguration;
 use Clerk\Backend\ClerkBackend;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -52,8 +53,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('inventory-adjust', fn (Request $request) => Limit::perMinute(20)->by($this->userKey($request)));
         RateLimiter::for('admin-staff', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('guest-cart-create', fn (Request $request) => $request->user() === null
-            ? Limit::perMinute(10)->by('ip:'.$request->ip())
-            : Limit::none());
+            && ! app(GuestCartTransport::class)->suppliesValidCredential($request)
+                ? Limit::perMinute(10)->by('ip:'.$request->ip())
+                : Limit::none());
         RateLimiter::for('retired-auth', fn (Request $request) => Limit::perMinute(20)->by($request->ip()));
         RateLimiter::for('upload', fn (Request $request) => Limit::perMinute(10)->by($this->userKey($request)));
         RateLimiter::for('payment', fn (Request $request) => Limit::perMinute(10)->by($this->userKey($request)));
