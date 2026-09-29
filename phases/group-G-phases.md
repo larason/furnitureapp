@@ -540,19 +540,28 @@ The locked Cart is the authoritative Checkout snapshot.
 
 # 29. Lock Prevents Concurrent Checkout
 
-Two different Idempotency-Keys against the same Cart must not both create Orders.
+Two different Idempotency-Keys against the same Cart **contents generation**
+must not both create Orders for those same contents. The Cart row lock
+serialises the checkouts: whichever acquires the lock first processes the
+locked contents; a second checkout that acquires the lock while those contents
+are still present observes them already cleared and fails `CART_INVALID`.
 
-Cart row locking must ensure:
+The guarantee is scoped to the locked contents, not to the Cart row identity:
 
 ```text
-at most one successful Checkout
+at most one successful Checkout per Cart contents generation
 ```
+
+Because the Cart row stays `ACTIVE` (#74/#76), a customer may add new items
+after a successful Checkout. Those items form a new contents generation, and a
+later Checkout with a different key legitimately creates a new Order. The lock
+guarantee never prevents a customer from ordering newly added items.
 
 ---
 
 # 30. Different-Key Race
 
-Conceptually:
+Conceptually, with unchanged Cart contents:
 
 ```text
 request A locks Cart
@@ -565,7 +574,24 @@ B sees empty Cart
 B fails CART_INVALID
 ```
 
-No second Order.
+No second Order for the same contents.
+
+Refill race (contents change while B waits):
+
+```text
+request A locks Cart
+request B waits
+
+A succeeds + clears items + commits
+customer adds new items (new contents generation)
+B acquires Cart
+B orders the newly added items (a second, legitimate Order)
+```
+
+The Cart lock alone does not make the Cart identity single-use: the second
+Checkout is bounded by, and orders, the contents it observes under the lock.
+B cannot distinguish "the contents A already ordered" except by the Cart lock
+and current contents; a refill between A and B is a new order, not a duplicate.
 
 ---
 
@@ -1368,6 +1394,20 @@ one success outcome
 same logical 201 response
 ```
 
+Overlap resolution (resolves the #93/#125 ambiguity): the second request's
+idempotency claim insert waits on the unique claim key until the first
+transaction commits or rolls back.
+
+```text
+first commits  -> second observes the stored outcome and replays the original 201
+first rolls back -> second acquires the claim and performs the Checkout itself
+```
+
+The second caller therefore **waits** for completion and receives the same
+logical `201`; it does not receive `409` on the normal overlapping path. The
+`409 CONFLICT` behaviour in #125 is only the fallback for a completed claim
+observed with no stored outcome.
+
 ---
 
 # 94. Different-Key Same Cart Race
@@ -1738,13 +1778,17 @@ stack trace
 
 # 125. Idempotency Race Failure
 
-An unresolved idempotency claim should use the existing:
+A completed-but-unresolved claim (a claim row with no stored response, e.g.
+after an abnormal termination) must use the existing:
 
 ```text
 409 CONFLICT
 ```
 
-behavior.
+behavior; the caller retries the same key to obtain the eventual `201`.
+
+This is **not** the normal overlapping same-key path: concurrent same-key
+requests wait on the claim key and reconcile to one `201` per #93.
 
 ---
 
@@ -1814,14 +1858,19 @@ response payload
 
 # 131. Different-Key Same-Cart Test
 
-Expected:
+Race two different keys against the same Cart **contents**:
 
 ```text
 1 success
-1 CART_INVALID or defined conflict after lock/re-read
+1 CART_INVALID after lock/re-read (the locked contents were already cleared)
 ```
 
-No duplicate Order.
+No duplicate Order for the same contents.
+
+Refill race (required): if the customer adds items after the first Checkout
+clears the Cart but before the waiting second Checkout acquires the lock, the
+second Checkout orders the new contents generation and a new Order is expected
+(see #30). Assert the scoped guarantee, not an unconditional one-Order rule.
 
 ---
 

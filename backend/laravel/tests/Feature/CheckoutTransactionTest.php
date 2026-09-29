@@ -246,6 +246,44 @@ class CheckoutTransactionTest extends TestCase
         $this->assertSame(CartStatus::ACTIVE, $cart->fresh()->status);
     }
 
+    public function test_different_key_checkout_of_unchanged_cart_fails_after_the_first_clears_it(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10);
+        $customer = $this->cartCustomer();
+        $cart = $this->activeCartFor($customer);
+        $this->itemFor($cart, $product, $variant, 1);
+
+        $this->checkout()->execute(CheckoutCommand::pickup($customer, 'generation-1'));
+
+        $this->expectApiError('CART_INVALID', fn () => $this->checkout()->execute(CheckoutCommand::pickup($customer, 'generation-2')));
+
+        $this->assertSame(1, Order::query()->count());
+        $this->assertSame(0, $cart->fresh()->items()->count());
+    }
+
+    public function test_checkout_after_the_customer_refills_the_active_cart_creates_a_new_order(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10);
+        $customer = $this->cartCustomer();
+        $cart = $this->activeCartFor($customer);
+        $this->itemFor($cart, $product, $variant, 1);
+
+        $this->checkout()->execute(CheckoutCommand::pickup($customer, 'generation-1'));
+        $this->assertSame(0, $cart->fresh()->items()->count());
+
+        // The Cart stays ACTIVE; new items are a new contents generation.
+        [$secondProduct, $secondVariant] = $this->stockedProduct(quantity: 10);
+        $this->itemFor($cart, $secondProduct, $secondVariant, 2);
+
+        $second = $this->checkout()->execute(CheckoutCommand::pickup($customer, 'generation-2'));
+
+        $this->assertSame(201, $second->status);
+        $this->assertFalse($second->replayed);
+        $this->assertSame(2, Order::query()->count());
+        $this->assertSame(0, $cart->fresh()->items()->count());
+        $this->assertSame(CartStatus::ACTIVE, $cart->fresh()->status);
+    }
+
     public function test_same_key_with_a_changed_intent_conflicts(): void
     {
         $customer = $this->cartCustomer();
