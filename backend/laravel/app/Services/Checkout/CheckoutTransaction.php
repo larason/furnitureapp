@@ -54,7 +54,6 @@ final class CheckoutTransaction
     public function execute(CheckoutCommand $command): IdempotentOutcome
     {
         $this->assertCustomer($command->customer);
-        $this->assertFulfillmentSupported($command);
 
         $intent = [
             'fulfillment_type' => $command->fulfillmentType->value,
@@ -74,6 +73,8 @@ final class CheckoutTransaction
     /** @return array<string, mixed> */
     private function perform(CheckoutCommand $command): array
     {
+        $this->assertFulfillmentSupported($command);
+
         $cart = $this->lockActiveCart($command->customer);
         $items = $cart->items()->orderBy('id')->lockForUpdate()->get();
 

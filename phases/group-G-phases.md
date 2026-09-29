@@ -1,850 +1,929 @@
-# Phase 7.7 — Transaction Boundaries
+# Phase 7.8 — Checkout Validation
 
-## Purpose
+## 1. Objective
 
-Implement the authoritative transactional boundary for CHK-001 Checkout.
+Implement the complete validation and HTTP/application boundary for:
 
-This phase owns the atomicity, locking, rollback, idempotency-completion, Order aggregate persistence, inventory reservation coordination, and Cart-clear semantics required to safely turn a validated Cart snapshot into a pending Order.
-
-The core invariant is:
-
-```text
-either Checkout commits completely
-
-or
-
-Checkout leaves no business side effect
+```http
+POST /api/v1/checkout
 ```
 
-A successful Checkout transaction must eventually commit together:
+Endpoint ID:
 
 ```text
-idempotency success
-Cart final locked snapshot
-authoritative Product/Variant/price snapshot
-Order
-OrderItems
-initial PENDING_PAYMENT history
-fulfillment snapshot
-inventory reservation
-exact reservation allocations
-Cart item deletion
+CHK-001
 ```
 
-A failed Checkout transaction must leave:
+Phase 7.8 owns:
 
 ```text
-no Order
-no OrderItems
-no history
-no reservation
-no allocation
-no Cart clear
-no successful idempotency result
-```
-
-No payment-provider call belongs inside this transaction.
-
----
-
-# 1. Current Group G State
-
-Treat the current repository status as:
-
-```text
-7.1  PASS — Checkout requirements
-7.2  PASS — Address model review
-7.3  PASS — Pickup flow
-7.4  BLOCKED — DELIVERY billing snapshot persistence model gap
-7.5  PASS — Delivery fee rules / ORD-014
-7.6  PASS — Canonical Order totals
-7.7  CURRENT — Transaction boundaries
-```
-
-Do not mark Phase 7.4 PASS.
-
-Do not mark Group G closed.
-
----
-
-# 2. Phase 7.4 Blocker Still Applies
-
-ADR/BACKEND-038 remains authoritative:
-
-```text
-DELIVERY branch can project:
-- delivery snapshot
-- billing snapshot
-- pending delivery fee
-- provisional total
-
-but cannot persist the frozen billing snapshot
-```
-
-because there is no currently approved persistence location for:
-
-```text
-billing_address
-```
-
-Therefore Phase 7.7 must NOT silently persist an incomplete DELIVERY Order.
-
----
-
-# 3. What Phase 7.7 May Implement
-
-Phase 7.7 may implement:
-
-```text
-shared Checkout transaction coordinator
-PICKUP transaction path
-Order + OrderItem persistence
-inventory reservation orchestration
-initial status history
-Cart clearing
-idempotency atomic completion
-lock ordering
-deadlock retry
-rollback guarantees
-transaction-focused tests
-```
-
----
-
-# 4. What Phase 7.7 Must Not Claim
-
-Do not claim:
-
-```text
-DELIVERY Checkout persistence complete
-CHK-001 fully production-ready
-Group G complete
-```
-
-while Phase 7.4 remains blocked.
-
----
-
-# 5. Route Activation Boundary
-
-Do not activate a partially supported public CHK-001 route merely because the transaction service exists.
-
-Phase 7.8 still owns:
-
-```text
-complete request validation
-transport/schema orchestration
-final route activation decision
-```
-
-The safest outcome for 7.7 is:
-
-```text
-internal transaction workflow implemented and tested
-public Checkout route still not exposed as incomplete DELIVERY support
-```
-
-unless the existing roadmap explicitly says route activation occurs here.
-
----
-
-# 6. Canonical Transaction Coordinator
-
-Introduce or complete one Checkout application service.
-
-Examples:
-
-```text
-CheckoutTransaction
-CreateCheckoutOrder
-CheckoutService
-ExecuteCheckout
-```
-
-Use repository naming conventions.
-
-It must own orchestration, not reimplement domain rules.
-
----
-
-# 7. Service Responsibilities
-
-The coordinator may own:
-
-```text
-transaction creation
-lock ordering
-Cart locking
-final Cart snapshot
-authoritative line resolution
-calling OrderTotalsCalculator
-creating Order aggregate
-calling InventoryAllocator
-creating initial history
-clearing Cart
-completing idempotency success
-```
-
----
-
-# 8. It Must Not Own
-
-Do not duplicate:
-
-```text
-Cart eligibility rules
-catalog visibility rules
-money formulas
-inventory allocation algorithm
+authentication attachment
+CUSTOMER-only authorization
+Idempotency-Key validation
+JSON/content-type validation
+strict request allow-list
+fulfillment_type validation
+conditional delivery_address validation
 address normalization
-fee finalization
-payment
+CheckoutCommand construction
+canonical API error mapping
+Checkout controller orchestration
+Checkout response serialization
+private/no-store response behavior
+validation regression tests
+route activation readiness assessment
 ```
 
-Reuse existing authorities.
+Phase 7.8 must **not** reimplement any of the transaction, inventory, pricing, totals, or persistence behavior already owned by earlier phases.
 
 ---
 
-# 9. Reuse Canonical Components
+# 2. Current Group G Baseline
 
-Expected authorities include:
+Assume:
 
 ```text
-CartItemEligibility / equivalent
+7.1 PASS — Checkout requirements
+7.2 PASS — Address model review
+7.3 PASS — Pickup flow
+7.4 BLOCKED — DELIVERY billing snapshot persistence
+7.5 PASS — Delivery fee rules / ORD-014
+7.6 PASS — Canonical Order totals
+7.7 PASS — Checkout transaction boundary
+7.8 CURRENT — Checkout validation
+```
+
+Group G remains open.
+
+The Phase 7.4 blocker is still:
+
+```text
+The frozen V1 DELIVERY Checkout requires a historical billing_address
+snapshot copied from delivery_address.
+
+The current persistence model has no approved place to store that snapshot.
+```
+
+Do not resolve or bypass that problem inside Phase 7.8.
+
+---
+
+# 3. Important Phase 7.7 Baseline
+
+Reuse the existing transaction implementation.
+
+The transaction owner is:
+
+```php
+App\Services\Checkout\CheckoutTransaction::execute(CheckoutCommand $command)
+```
+
+It already owns:
+
+```text
+idempotency transaction
+Cart locking
+Cart-line locking
+current Product/Variant validation
+current authoritative pricing
 OrderTotalsCalculator
-PickupFulfillmentState
-DeliveryFulfillmentState
-InventoryAllocator
-ReferenceGenerator
-IdempotencyService
+PICKUP fulfillment persistence
+Order creation
+OrderItem creation
+InventoryAllocator::reserve()
+exact inventory allocations
+initial Order status history
+Cart clearing
+successful 201 idempotency outcome
+rollback
 ```
 
-Use actual repository names.
+Phase 7.8 must call this boundary.
+
+Do not duplicate its behavior.
 
 ---
 
-# 10. Transaction Scope
+# 4. Phase Boundary
 
-The entire business mutation must run inside one DB transaction.
-
-Conceptually:
+The desired layering is:
 
 ```text
-BEGIN
-
-idempotency coordination
-Cart lock
-Cart snapshot
-catalog/variant revalidation
-authoritative pricing
-totals calculation
-fulfillment projection
-Order insert
-OrderItem inserts
-inventory reserve
-status history insert
-Cart item clear
-idempotency success/result write
-
-COMMIT
+HTTP request
+    ↓
+security middleware
+    ↓
+Clerk authentication
+    ↓
+active-account enforcement
+    ↓
+CUSTOMER authorization
+    ↓
+CheckoutRequest
+    ↓
+normalized CheckoutCommand
+    ↓
+CheckoutTransaction
+    ↓
+Checkout response mapper/resource
 ```
+
+Do not let transport-layer objects leak into the domain transaction service.
 
 ---
 
-# 11. No External Calls Inside Transaction
+# 5. Public Endpoint Contract
 
-Do not call:
+The frozen endpoint remains:
 
-```text
-Clerk API
-payment provider
-email
-push
-maps/geocoding
-external shipping service
+```http
+POST /api/v1/checkout
 ```
 
-inside the transaction.
-
-Authentication should already be resolved before entering the business transaction.
-
----
-
-# 12. Keep Transaction Short
-
-Do not perform:
+The contract supports exactly:
 
 ```text
-network calls
-large serialization work
-notification delivery
-file operations
-sleep/backoff while locks are held
-```
-
-inside a successful transaction body.
-
-Retries should restart a rolled-back transaction.
-
----
-
-# 13. Idempotency Must Participate Atomically
-
-Phase 7.1 identified an implementation gap:
-
-```text
-successful idempotency result must commit atomically
-with the Checkout business transaction
-```
-
-Close that gap here.
-
----
-
-# 14. No Second Idempotency System
-
-Reuse:
-
-```text
-IdempotencyService
+PICKUP
+DELIVERY
 ```
 
 Do not create:
 
 ```text
-CheckoutIdempotencyService
-CheckoutKeys
-CheckoutReplayTable
+POST /checkout/pickup
+POST /checkout/delivery
+POST /orders
+POST /checkout/validate
 ```
 
 ---
 
-# 15. Preserve HTTP Status
+# 6. Route Activation Constraint
 
-CHK-001 success is:
+This is critical.
+
+Phase 7.4 still blocks complete DELIVERY persistence.
+
+Therefore Phase 7.8 must **not activate CHK-001 as a PICKUP-only public endpoint** unless the project owner separately approves a formal post-freeze API change.
+
+The frozen endpoint promises both:
 
 ```text
-201
+PICKUP
+DELIVERY
 ```
 
-Same-key replay must also return:
+It would be contract drift to expose:
 
 ```text
-201
+PICKUP → works
+DELIVERY → implementation-only unsupported error
 ```
 
-not a hard-coded:
+Do not invent:
 
 ```text
-200
+DELIVERY_NOT_IMPLEMENTED
+DELIVERY_UNSUPPORTED
+CHECKOUT_DELIVERY_UNAVAILABLE
+```
+
+Do not return `501` only for DELIVERY.
+
+Preferred Phase 7.8 state:
+
+```text
+validation/controller components = COMPLETE
+public CHK-001 route = remains stub/gated
+```
+
+until the Phase 7.4 persistence model gap is resolved.
+
+---
+
+# 7. Authentication
+
+CHK-001 requires authenticated Clerk identity.
+
+Use the existing protected middleware.
+
+Unauthenticated:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+A guest Cart credential does not authenticate Checkout.
+
+These are not sufficient:
+
+```text
+X-Guest-Cart-Id
+guest Cart cookie
+```
+
+A guest must first authenticate and complete the already-supported guest→Customer Cart merge flow.
+
+---
+
+# 8. Active-Account Enforcement
+
+Preserve the hardened security baseline.
+
+A suspended/inactive Customer must be rejected before reaching Checkout validation/business execution.
+
+Do not add a second account-state rule inside CheckoutController.
+
+Reuse centralized account enforcement.
+
+---
+
+# 9. Authorization
+
+CHK-001 is:
+
+```text
+CUSTOMER only
+```
+
+Allowed:
+
+```text
+active CUSTOMER
+```
+
+Denied:
+
+```text
+STAFF
+ADMIN
+```
+
+Expected authenticated-but-wrong-role response:
+
+```text
+403 FORBIDDEN
+```
+
+Do not reintroduce Staff/Admin personal Cart Checkout.
+
+The current security boundary is Customer-only.
+
+---
+
+# 10. Validation Order
+
+Preserve the established ordering.
+
+Conceptually:
+
+```text
+1. pre-auth security controls
+2. authentication
+3. active-account check
+4. CUSTOMER authorization
+5. Idempotency-Key validation
+6. JSON / request-shape validation
+7. request normalization
+8. CheckoutCommand construction
+9. CheckoutTransaction
+10. response serialization
+```
+
+Do not expose detailed Checkout validation to anonymous users before authentication.
+
+---
+
+# 11. Request Content Type
+
+Checkout is a JSON mutation.
+
+Require:
+
+```http
+Content-Type: application/json
+```
+
+Reuse the project's existing JSON-body validation middleware.
+
+Do not allow:
+
+```text
+application/x-www-form-urlencoded
+multipart/form-data
+text/plain
+```
+
+for CHK-001.
+
+---
+
+# 12. Body-Size Protection
+
+Reuse the hardened repository-level request-size enforcement.
+
+Do not add custom raw-body parsing in CheckoutRequest.
+
+The production ingress still has its broader hard ceiling.
+
+Checkout itself should remain a very small JSON request.
+
+---
+
+# 13. Dedicated Request Object
+
+Create or complete:
+
+```php
+App\Http\Requests\CheckoutRequest
+```
+
+or the repository-equivalent name.
+
+The request object owns:
+
+```text
+shape validation
+strict field allow-list
+type validation
+closed enum validation
+conditional branch validation
+field normalization support
+```
+
+It must not own:
+
+```text
+Cart lookup
+Product lookup
+Variant lookup
+inventory lookup
+pricing
+Order creation
+reservation
 ```
 
 ---
 
-# 16. Shared Idempotency Improvement
+# 14. Never Use `$request->all()`
 
-If the shared service currently assumes `200`, generalize it safely so stored outcomes can preserve:
+Use:
 
-```text
-HTTP status
-response payload
-fingerprint
+```php
+$request->validated()
 ```
 
-without breaking existing:
+Never:
 
-```text
-INV-003
-CART-005
-ORD-014
+```php
+$request->all()
 ```
 
-behavior.
+The transaction command must be built only from validated normalized input plus authenticated server context.
 
 ---
 
-# 17. Regression Requirement for Shared Service
+# 15. Top-Level Request Allow-List
 
-Any generic idempotency refactor must rerun existing idempotent operations.
-
-Do not fix Checkout by breaking earlier phases.
-
----
-
-# 18. Idempotency Replay Ordering
-
-For CHK-001:
-
-```text
-authenticate CUSTOMER
-validate Idempotency-Key
-validate/normalize request
-derive fingerprint
-check matching completed result
-```
-
-must occur before treating an empty Cart as a new failure.
-
----
-
-# 19. Replay After Cart Clear
-
-This is mandatory.
-
-First request:
-
-```text
-Checkout succeeds
-Cart items cleared
-```
-
-Retry same key/same intent:
-
-```text
-must replay original 201
-```
-
-It must NOT fail:
-
-```text
-422 CART_INVALID
-```
-
-because the Cart is now empty.
-
----
-
-# 20. Same Key Different Intent
-
-If the same key is reused with changed:
+Only permit:
 
 ```text
 fulfillment_type
 delivery_address
 ```
 
-return:
+No other fields.
+
+Unknown top-level fields must fail validation rather than be silently discarded.
+
+---
+
+# 16. Explicit Server-Controlled Field Rejection
+
+Test and reject attempts to submit:
 
 ```text
-409 DUPLICATE_OPERATION
+cart_id
+user_id
+customer_id
+guest_cart_id
+guest_token
+
+product_id
+variant_id
+
+subtotal
+total
+unit_price
+line_total
+currency
+
+delivery_fee
+delivery_fee_status
+
+status
+payment_status
+payment
+
+order_reference
+order_id
+
+billing_address
+saved_address_id
+
+created_at
+updated_at
 ```
+
+These are server-controlled.
 
 ---
 
-# 21. Fingerprint Inputs
+# 17. `fulfillment_type`
 
-Use normalized logical request data.
+Required.
 
-Include:
+Must be a JSON string.
+
+Allowed values:
 
 ```text
-authenticated identity scope
-fulfillment_type
-normalized delivery_address
+PICKUP
+DELIVERY
 ```
 
-Do not include volatile:
-
-```text
-stock
-current price
-Cart timestamp
-Order reference
-```
-
----
-
-# 22. Identity Scope
-
-Same key from another Customer is a separate scope.
-
-No cross-user replay.
-
----
-
-# 23. Cart Authority
-
-Checkout derives the authenticated CUSTOMER's own:
-
-```text
-ACTIVE Cart
-```
-
-No client Cart selector.
-
----
-
-# 24. Customer-Only Boundary
-
-Preserve the current security baseline:
-
-```text
-CUSTOMER only
-```
-
-STAFF and ADMIN must not use customer Checkout.
-
-Do not reopen the old self-commerce behavior.
-
----
-
-# 25. Cart Must Be Locked
-
-Inside the transaction:
-
-```text
-SELECT active Cart ... FOR UPDATE
-```
-
-or equivalent repository pattern.
-
----
-
-# 26. Missing Cart
-
-Missing ACTIVE Cart:
-
-```text
-422 CART_INVALID
-```
-
-for a new execution.
-
----
-
-# 27. Empty Cart
-
-Empty ACTIVE Cart:
-
-```text
-422 CART_INVALID
-```
-
-for a new execution.
-
----
-
-# 28. Lock Cart Before Final Snapshot
-
-Do not:
-
-```text
-load Cart
-calculate
-then lock
-```
-
-The locked Cart is the authoritative Checkout snapshot.
-
----
-
-# 29. Lock Prevents Concurrent Checkout
-
-Two different Idempotency-Keys against the same Cart **contents generation**
-must not both create Orders for those same contents. The Cart row lock
-serialises the checkouts: whichever acquires the lock first processes the
-locked contents; a second checkout that acquires the lock while those contents
-are still present observes them already cleared and fails `CART_INVALID`.
-
-The guarantee is scoped to the locked contents, not to the Cart row identity:
-
-```text
-at most one successful Checkout per Cart contents generation
-```
-
-Because the Cart row stays `ACTIVE` (#74/#76), a customer may add new items
-after a successful Checkout. Those items form a new contents generation, and a
-later Checkout with a different key legitimately creates a new Order. The lock
-guarantee never prevents a customer from ordering newly added items.
-
----
-
-# 30. Different-Key Race
-
-Conceptually, with unchanged Cart contents:
-
-```text
-request A locks Cart
-request B waits
-
-A succeeds + clears items + commits
-
-B acquires Cart
-B sees empty Cart
-B fails CART_INVALID
-```
-
-No second Order for the same contents.
-
-Refill race (contents change while B waits):
-
-```text
-request A locks Cart
-request B waits
-
-A succeeds + clears items + commits
-customer adds new items (new contents generation)
-B acquires Cart
-B orders the newly added items (a second, legitimate Order)
-```
-
-The Cart lock alone does not make the Cart identity single-use: the second
-Checkout is bounded by, and orders, the contents it observes under the lock.
-B cannot distinguish "the contents A already ordered" except by the Cart lock
-and current contents; a refill between A and B is a new order, not a duplicate.
-
----
-
-# 31. Cart Mutations vs Checkout
-
-Checkout must be safe against concurrent:
-
-```text
-add
-update
-remove
-merge
-```
-
-operations.
-
-The Cart ACTIVE-state and locking rules must serialize correctly.
-
----
-
-# 32. Lock Compatibility With CART-005
-
-CART-005 already has deterministic Cart locking.
-
-Do not introduce a reversed lock order that creates avoidable deadlocks.
-
----
-
-# 33. Cart Item Snapshot
-
-After Cart lock:
-
-load the authoritative CartItems.
-
-Do not rely on earlier API projection.
-
----
-
-# 34. Revalidate Product
-
-Inside the Checkout transaction re-evaluate current Product state:
-
-```text
-exists
-active
-published
-not soft-deleted
-active category
-IN_STOCK
-```
-
----
-
-# 35. MADE_TO_ORDER
+Closed enum.
 
 Reject:
 
 ```text
-422 PRODUCT_NOT_PURCHASABLE
+pickup
+delivery
+Pickup
+Delivery
+SHIPPING
+COURIER
+EXPRESS
+SELF_PICKUP
 ```
 
 ---
 
-# 36. Revalidate Variant
+# 18. Missing Fulfillment Type
 
-Variant must:
+Example:
+
+```json
+{}
+```
+
+Expected:
 
 ```text
-exist
-belong to Product
-be active
-match CartItem
+422 MISSING_REQUIRED_FIELD
+field: fulfillment_type
+```
+
+Use the project's standard error envelope.
+
+---
+
+# 19. Wrong Fulfillment Type
+
+Example:
+
+```json
+{
+  "fulfillment_type": 12
+}
+```
+
+Expected:
+
+```text
+422 INVALID_TYPE
+field: fulfillment_type
 ```
 
 ---
 
-# 37. Do Not Trust Cart `is_purchasable`
+# 20. Unknown Fulfillment Value
 
-Cart projection is informational.
+Example:
 
-Recompute eligibility from authoritative records inside Checkout.
+```json
+{
+  "fulfillment_type": "SHIPPING"
+}
+```
 
----
-
-# 38. Current Price Authority
-
-Use the current authoritative Variant price at the transaction point.
-
-Do not use:
+Expected:
 
 ```text
-Cart response unit_price
-old client price
-cached frontend value
+422 INVALID_VALUE
+field: fulfillment_type
 ```
 
 ---
 
-# 39. OrderTotalsCalculator Authority
+# 21. PICKUP Request
 
-For each trusted line:
+Canonical minimal request:
 
-```text
-unit price
-quantity
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
 ```
 
-use:
+Also valid:
 
-```text
-OrderTotalsCalculator
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": null
+}
 ```
 
-for:
-
-```text
-line totals
-subtotal
-branch financial result
-```
+Normalize these into the same logical Checkout intent.
 
 ---
 
-# 40. No Competing Arithmetic
-
-Do not calculate:
-
-```text
-unit_price * quantity
-SUM(...)
-subtotal + fee
-```
-
-again inside Checkout orchestration except through the calculator's API.
-
----
-
-# 41. Line Total Consistency
-
-The calculator now rejects inconsistent supplied line totals.
-
-Use this behavior rather than trusting a caller-provided line total.
-
----
-
-# 42. Order Snapshot Fields
-
-Each future persisted OrderItem must snapshot:
-
-```text
-product_id
-variant_id
-SKU
-product name
-variant name
-quantity
-unit price
-line total
-```
-
-using current transaction-time data.
-
----
-
-# 43. Historical Snapshot
-
-Once stored:
-
-```text
-Product rename
-Variant rename
-price change
-Product deletion
-```
-
-must not alter the OrderItem historical fields.
-
----
-
-# 44. Reference Generation
-
-Use:
-
-```text
-ReferenceGenerator
-```
-
-for:
-
-```text
-OD-*****
-```
-
-Do not use faker/random test code in production.
-
----
-
-# 45. Opaque Order ID
-
-Use existing:
-
-```text
-ord_...
-```
-
-identifier behavior.
-
-Do not expose numeric DB IDs.
-
----
-
-# 46. Initial Order State
-
-Persist:
-
-```text
-PENDING_PAYMENT
-```
-
-only.
-
----
-
-# 47. PICKUP Financial State
+# 22. PICKUP Address Rule
 
 For PICKUP:
 
 ```text
-delivery_fee = 0
-delivery_fee_status = FINALIZED
-total = subtotal
+delivery_address
 ```
 
-via canonical totals.
-
----
-
-# 48. PICKUP Addresses
-
-Persist:
+must be:
 
 ```text
-delivery_address = null
-billing_address = null
+absent
+or null
 ```
 
-where the current schema supports the existing PICKUP semantics.
+A populated object is invalid.
 
 ---
 
-# 49. DELIVERY Financial Projection
+# 23. PICKUP With Populated Address
 
-For DELIVERY:
+Example:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": {
+    "recipient_name": "Asha Mwangi",
+    "phone": "+255700000001",
+    "address_line": "Street 12",
+    "city": "Dar es Salaam"
+  }
+}
+```
+
+Expected:
+
+```text
+422 INVALID_FULFILLMENT
+```
+
+Do not silently discard the supplied address.
+
+---
+
+# 24. PICKUP Idempotency Normalization
+
+These must fingerprint identically:
+
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
+```
+
+and:
+
+```json
+{
+  "fulfillment_type": "PICKUP",
+  "delivery_address": null
+}
+```
+
+---
+
+# 25. DELIVERY Request
+
+Canonical request:
+
+```json
+{
+  "fulfillment_type": "DELIVERY",
+  "delivery_address": {
+    "recipient_name": "Asha Mwangi",
+    "phone": "+255700000001",
+    "address_line": "Jengo Street 12",
+    "city": "Dar es Salaam"
+  }
+}
+```
+
+---
+
+# 26. DELIVERY Address Required
+
+For:
+
+```text
+fulfillment_type = DELIVERY
+```
+
+`delivery_address` is required.
+
+It cannot be:
+
+```text
+missing
+null
+```
+
+---
+
+# 27. DELIVERY Address Type
+
+Must be a JSON object.
+
+Reject:
+
+```text
+string
+integer
+boolean
+array/list
+```
+
+using the canonical validation code.
+
+---
+
+# 28. Delivery Address Allow-List
+
+Exact public fields:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+Nothing else.
+
+---
+
+# 29. Canonical City Field
+
+The frozen V1 API uses:
+
+```text
+city
+```
+
+Never publicly accept:
+
+```text
+region
+```
+
+---
+
+# 30. Reject Region Alias
+
+This is invalid:
+
+```json
+{
+  "fulfillment_type": "DELIVERY",
+  "delivery_address": {
+    "recipient_name": "Asha",
+    "phone": "+255700000001",
+    "address_line": "Street 1",
+    "region": "Dar es Salaam"
+  }
+}
+```
+
+Do not treat `region` as an alias.
+
+---
+
+# 31. Reject City + Region
+
+This is also invalid:
+
+```json
+{
+  "delivery_address": {
+    "recipient_name": "Asha",
+    "phone": "+255700000001",
+    "address_line": "Street",
+    "city": "Dar es Salaam",
+    "region": "Dar es Salaam"
+  }
+}
+```
+
+because `region` is an unknown nested property.
+
+---
+
+# 32. Unknown Nested Address Fields
+
+Reject:
+
+```text
+region
+country
+postal_code
+district
+ward
+latitude
+longitude
+instructions
+landmark
+saved_address_id
+```
+
+unless a field is explicitly in the frozen V1 request contract.
+
+---
+
+# 33. `recipient_name`
+
+Required for DELIVERY.
+
+Must be:
+
+```text
+string
+trimmed
+non-empty
+max 255
+```
+
+Reject:
+
+```text
+missing
+null
+integer
+array
+boolean
+empty string
+whitespace-only
+```
+
+---
+
+# 34. `phone`
+
+Required.
+
+Must be:
+
+```text
+string
+trimmed
+normalized
+non-empty
+max 30
+```
+
+Reuse the existing Phase 7.2 phone normalization.
+
+Do not introduce a second parser.
+
+---
+
+# 35. No Phone Fallback
+
+If `phone` is absent, do not populate it from:
+
+```text
+CustomerProfile
+Clerk
+previous Order
+billing data
+```
+
+The Checkout address snapshot must come from the explicit DELIVERY request.
+
+---
+
+# 36. Invalid Phone Mapping
+
+Differentiate:
+
+```text
+wrong JSON type
+```
+
+from:
+
+```text
+string-shaped but invalid after normalization
+```
+
+Wrong JSON type:
+
+```text
+INVALID_TYPE
+```
+
+Domain-invalid normalized phone:
+
+```text
+INVALID_DELIVERY_INFORMATION
+```
+
+where this matches the frozen error contract.
+
+---
+
+# 37. `address_line`
+
+Required.
+
+Must be:
+
+```text
+string
+trimmed
+non-empty
+```
+
+Do not invent a new arbitrary V1 maximum.
+
+Use only an already-approved persistence-bound technical limit if one exists.
+
+---
+
+# 38. `city`
+
+Required.
+
+Must be:
+
+```text
+string
+trimmed
+non-empty
+```
+
+Do not introduce a city enum.
+
+---
+
+# 39. No City Whitelist
+
+Do not restrict valid requests to:
+
+```text
+Dar es Salaam
+Dodoma
+Arusha
+Mwanza
+```
+
+or any other fixed list.
+
+Location-based fee decisions remain Staff/Admin operational logic.
+
+---
+
+# 40. No Address Verification
+
+Do not add:
+
+```text
+Google Maps
+geocoding
+postal verification
+distance lookup
+zone validation
+GPS
+```
+
+---
+
+# 41. No Delivery-Fee Calculation
+
+Checkout validation does not calculate the delivery fee.
+
+DELIVERY still enters the financial model as:
 
 ```text
 delivery_fee = null
@@ -852,1579 +931,579 @@ delivery_fee_status = PENDING
 total = subtotal
 ```
 
-remains valid as a projection.
+when persistence is eventually enabled.
 
 ---
 
-# 50. DELIVERY Persistence Block
+# 42. Billing Address
 
-Do not persist a complete DELIVERY Order until the billing snapshot model gap is resolved.
-
----
-
-# 51. Explicit Guard
-
-If the transaction service can receive DELIVERY input before the blocker is solved:
-
-fail before any mutation.
-
-Use an internal/domain blocker appropriate to the phase.
-
-Do not expose a half-created Order.
-
----
-
-# 52. Do Not Invent Public Error
-
-Phase 7.7 should not invent a new V1 public error just for an internal unfinished implementation.
-
-The route should remain unactivated until 7.8 if necessary.
-
----
-
-# 53. No Fake Billing Persistence
-
-Forbidden workarounds:
+The client must not submit:
 
 ```text
-billing_address omitted
-billing snapshot dropped
-delivery_address reused as billing storage without explicit schema
-billing stored in notes
-billing stored in Delivery row
-billing stored in metadata
+billing_address
 ```
 
----
+V1 derives the billing snapshot from the normalized DELIVERY address.
 
-# 54. Order Insert Ordering
-
-Because `InventoryAllocator::reserve(Order)` works from an Order and its items:
-
-the Order aggregate may need to exist inside the open transaction before reservation.
-
-That is acceptable.
-
----
-
-# 55. Important Atomicity Rule
-
-Creating:
+For PICKUP:
 
 ```text
-Order
-OrderItems
+billing_address = null
 ```
 
-before reservation inside the transaction does NOT create a partial business record if reservation failure rolls the transaction back.
-
----
-
-# 56. Correct Internal Sequence
-
-A likely safe sequence is:
+For DELIVERY:
 
 ```text
-1. lock Cart
-2. snapshot/revalidate lines
-3. calculate totals
-4. build fulfillment state
-5. insert Order
-6. insert OrderItems
-7. reserve(Order)
-8. insert initial history
-9. clear Cart items
-10. store idempotency success
-11. commit
+billing_address = copy(normalized delivery_address)
 ```
 
-Adapt to actual repository requirements.
+This remains a domain projection until Phase 7.4 persistence is resolved.
 
 ---
 
-# 57. InventoryAllocator Lock Order
+# 43. Normalization
 
-Do not change its established order.
+Normalize before building CheckoutCommand.
 
-It owns:
+At minimum:
 
 ```text
-Order row
-→ ProductStock rows id ASC
+trim recipient_name
+trim address_line
+trim city
+normalize phone according to existing Phase 7.2 behavior
 ```
 
-with variant normalization and deterministic allocation.
+Do not mutate semantic content beyond approved normalization.
 
 ---
 
-# 58. Order Lock
+# 44. Normalization and Idempotency
 
-If `reserve(Order)` locks the just-inserted Order row:
+The idempotency fingerprint must use normalized values.
 
-ensure this works correctly inside the same transaction.
-
-Do not bypass its lock merely because the Order was just created.
-
----
-
-# 59. ProductStock Locks
-
-Use only:
+Example:
 
 ```text
-InventoryAllocator
+" Dar es Salaam "
 ```
 
-to perform reservation.
-
-Do not manually increment:
+and:
 
 ```text
-reserved_quantity
+"Dar es Salaam"
 ```
 
-inside Checkout.
+must represent the same logical intent after normalization.
 
 ---
 
-# 60. Reservation Arithmetic
+# 45. JSON Property Order
 
-Existing authority remains:
+Input property order must not change the fingerprint.
 
-```text
-available = quantity - reserved_quantity
+These are equivalent:
+
+```json
+{
+  "fulfillment_type": "DELIVERY",
+  "delivery_address": {
+    "recipient_name": "Asha",
+    "phone": "+255700000001",
+    "address_line": "Street",
+    "city": "Dar es Salaam"
+  }
+}
 ```
 
+and the same fields in another JSON property order.
+
 ---
 
-# 61. Reservation Effect
+# 46. Idempotency-Key
 
-On Checkout success:
+Required header:
 
-```text
-reserved_quantity += ordered quantity
-quantity unchanged
+```http
+Idempotency-Key: <uuid>
 ```
 
----
+Reuse the current:
 
-# 62. Physical Quantity
-
-Do not decrement:
-
-```text
-quantity
+```php
+IdempotencyKeyHeader
 ```
 
-during Checkout.
-
-Consumption belongs later.
+or existing canonical parser.
 
 ---
 
-# 63. Exact Allocations
-
-Reservation must persist:
-
-```text
-order_item_inventory_allocations
-```
-
-so later:
-
-```text
-release(Order)
-consume(Order)
-```
-
-target the exact same stock rows.
-
----
-
-# 64. Multi-Location
-
-Do not add single-location assumptions.
-
-Existing allocator may span multiple stock locations.
-
----
-
-# 65. Customer Cannot Select Warehouse
-
-No Checkout input for:
-
-```text
-warehouse
-stock row
-location
-```
-
----
-
-# 66. Reservation Failure
-
-If any line cannot reserve fully:
-
-rollback:
-
-```text
-all ProductStock reserved changes
-all allocation rows
-Order
-OrderItems
-history
-Cart changes
-idempotency success
-```
-
----
-
-# 67. No Partial Reservation
-
-Never retain reservation for the first lines when a later line fails.
-
----
-
-# 68. Insufficient Stock Mapping
-
-Preserve the frozen Checkout mapping:
-
-```text
-422 INSUFFICIENT_STOCK
-```
-
-for authoritative failure under the existing allocator semantics.
-
-If an established transaction-race mapping differs in current contract implementation, verify before changing.
-
----
-
-# 69. Initial Status History
-
-Create exactly one initial:
-
-```text
-SYSTEM → PENDING_PAYMENT
-```
-
-or equivalent initial event according to the existing history model.
-
----
-
-# 70. History Timestamp
-
-Server-generated.
-
----
-
-# 71. History Actor
-
-Use existing initial-event semantics.
-
-Do not invent a fake Customer actor if schema defines initial event as SYSTEM.
-
----
-
-# 72. History Atomicity
-
-Initial history must commit with Order.
-
-No Order without initial history after successful Checkout.
-
----
-
-# 73. Cart Clear
-
-On success:
-
-```text
-delete CartItems
-```
-
-but preserve the Cart row.
-
----
-
-# 74. Cart Status
-
-After successful Checkout:
-
-```text
-Cart remains ACTIVE
-```
-
----
-
-# 75. Do Not Inactivate Cart
-
-Do not use:
-
-```text
-ACTIVE → INACTIVE
-```
-
-for successful Checkout.
-
-That behavior belongs to guest merge source retirement, not Checkout.
-
----
-
-# 76. Empty ACTIVE Cart After Success
-
-The customer keeps the same Cart identity for future shopping.
-
----
-
-# 77. Cart Updated Timestamp
-
-Follow existing Cart timestamp conventions.
-
-If clearing items should touch Cart `updated_at`, do so consistently.
-
-Document exact behavior.
-
----
-
-# 78. Failure Preserves Cart
-
-Any ordinary failure must preserve:
-
-```text
-Cart items
-quantities
-Cart status
-```
-
----
-
-# 79. Reference Collision
-
-If `OD-*****` collides with unique reference:
-
-retry safely using existing ReferenceGenerator strategy.
-
-Do not restart the entire external request manually if only reference generation needs bounded retry.
-
----
-
-# 80. Transaction Retry
-
-Use existing:
-
-```text
-ConcurrentTransaction
-```
-
-or equivalent bounded retry mechanism.
-
----
-
-# 81. Retry Only Transient DB Conflicts
-
-Examples already recognized by repository:
-
-```text
-deadlock
-SQLSTATE 40001
-lock wait timeout
-1213
-1205
-ER_RECORD_CHANGED
-```
-
----
-
-# 82. Business Failures Are Not Retried
-
-Do not retry:
-
-```text
-CART_INVALID
-PRODUCT_NOT_PURCHASABLE
-INVALID_PRODUCT_VARIANT
-INSUFFICIENT_STOCK
-INVALID_FULFILLMENT
-```
-
-as transient DB conflicts.
-
----
-
-# 83. Retry Must Re-run Entire Transaction
-
-A transient conflict retry must restart from:
-
-```text
-Cart lock
-current state
-current prices
-current stock
-```
-
-Do not resume halfway.
-
----
-
-# 84. No Side Effects Outside Transaction Before Success
-
-Do not:
-
-```text
-clear Cart before transaction
-reserve before transaction
-write history after commit
-write idempotency result after commit
-```
-
----
-
-# 85. Transaction Rollback Test Seams
-
-Provide safe internal test seams where needed to simulate failure after:
-
-```text
-Order insert
-OrderItem insert
-reservation
-history insert
-Cart clear
-```
-
-without production branching.
-
----
-
-# 86. Rollback After Order Insert
-
-Force a failure after Order creation.
-
-Assert:
-
-```text
-Order does not exist
-OrderItems do not exist
-Cart intact
-stock unchanged
-idempotency success absent
-```
-
----
-
-# 87. Rollback After Reservation
-
-Force failure after successful reservation.
-
-Assert:
-
-```text
-reserved_quantity restored
-allocations removed
-Order rolled back
-Cart intact
-```
-
----
-
-# 88. Rollback After History
-
-Assert everything rolls back.
-
----
-
-# 89. Rollback After Cart Clear
-
-Force failure before idempotency completion/commit.
-
-Assert Cart items return because deletion rolled back.
-
----
-
-# 90. Idempotency Success Last
-
-Successful idempotency result should be recorded only once all business effects are ready inside the same transaction.
-
----
-
-# 91. But Replay Lookup Comes First
-
-Distinguish:
-
-```text
-lookup completed replay
-```
-
-from:
-
-```text
-write successful outcome
-```
-
-Replay lookup happens before Cart validation.
-
-Success write happens near the end of the transaction.
-
----
-
-# 92. Failed Request Idempotency
-
-Do not store a successful replay result for failed validation/business attempts.
-
-Follow current service behavior for claim cleanup/failure state.
-
----
-
-# 93. Same-Key Concurrent Checkout
-
-Two requests:
-
-```text
-same Customer
-same Idempotency-Key
-same input
-```
-
-must produce:
-
-```text
-one Order
-one reservation
-one Cart clear
-one history
-one success outcome
-same logical 201 response
-```
-
-Overlap resolution (resolves the #93/#125 ambiguity): the second request's
-idempotency claim insert waits on the unique claim key until the first
-transaction commits or rolls back.
-
-```text
-first commits  -> second observes the stored outcome and replays the original 201
-first rolls back -> second acquires the claim and performs the Checkout itself
-```
-
-The second caller therefore **waits** for completion and receives the same
-logical `201`; it does not receive `409` on the normal overlapping path. The
-`409 CONFLICT` behaviour in #125 is only the fallback for a completed claim
-observed with no stored outcome.
-
----
-
-# 94. Different-Key Same Cart Race
-
-Two requests:
-
-```text
-same Customer
-same Cart
-different keys
-```
-
-must produce at most:
-
-```text
-one Order
-```
-
----
-
-# 95. Last Unit Race
-
-Two different customers attempt the same last unit.
+# 47. Missing Idempotency-Key
 
 Expected:
 
 ```text
-one succeeds
-one fails safely
+422 MISSING_REQUIRED_FIELD
+field: Idempotency-Key
 ```
 
-No:
-
-```text
-negative availability
-double reservation
-oversell
-```
+according to the repository's frozen representation.
 
 ---
 
-# 96. Multi-Line Failure
-
-Cart:
-
-```text
-line A enough stock
-line B insufficient
-```
-
-Checkout result:
-
-```text
-whole transaction fails
-```
-
-No reservation for A.
-
----
-
-# 97. Adjust vs Checkout
-
-Existing InventoryAllocator/INV-003 locking must serialize:
-
-```text
-staff inventory adjustment
-vs
-Checkout reservation
-```
-
-without violating:
-
-```text
-reserved_quantity <= quantity
-```
-
----
-
-# 98. No New Inventory Locks
-
-Do not invent a second locking pattern.
-
----
-
-# 99. Catalog Read Locking
-
-Do not indiscriminately lock all Product/Variant rows if immutable transaction-time reads plus inventory locks are sufficient.
-
-However price/state consistency must be verified against actual current code.
-
----
-
-# 100. Price Race Review
-
-Explicitly inspect whether Product/Variant price can be concurrently changed by currently active admin APIs.
-
-If such writes exist and can race Checkout:
-
-define a deterministic consistency strategy.
-
-Do not guess.
-
----
-
-# 101. If Catalog Mutation Is Not Yet Active
-
-Do not add speculative row locks solely for a future endpoint.
-
-Document current assumption.
-
----
-
-# 102. Snapshot Timing
-
-The OrderItem price/name/SKU snapshot must reflect the authoritative values read during this transaction.
-
----
-
-# 103. No Cart Projection Resource Reuse as Authority
-
-Do not serialize Cart then rebuild Order from that public response.
-
-Use domain/model data.
-
----
-
-# 104. No Lazy Loading Under Critical Locks
-
-Preload required relationships deliberately.
-
-Avoid hidden N+1/lazy loads while holding transaction locks.
-
----
-
-# 105. Query Count
-
-Checkout query behavior should be bounded in Cart line count where reasonable.
-
-Do not create one Product/Variant/stock query per item if existing batched patterns can be reused.
-
----
-
-# 106. InventoryAllocator May Query Per Structured Batch
-
-Preserve its tested behavior.
-
-Do not optimize it casually in this phase.
-
----
-
-# 107. Order Ownership
-
-Set:
-
-```text
-customer_id
-```
-
-from authenticated principal.
-
-Never client input.
-
----
-
-# 108. Reference and IDs
-
-Set:
-
-```text
-order_reference
-opaque order id
-timestamps
-```
-
-server-side.
-
----
-
-# 109. Financial Fields
-
-Set from:
-
-```text
-OrderTotalsCalculator
-```
-
-only.
-
----
-
-# 110. PICKUP Persistence Attributes
-
-Use existing `PickupFulfillmentState` mapping for branch fields.
-
-Do not duplicate:
-
-```text
-fee=0
-FINALIZED
-addresses=null
-```
-
-manually in the transaction coordinator.
-
----
-
-# 111. DELIVERY State
-
-Use `DeliveryFulfillmentState` only for projection/preparation.
-
-Do not persist an incomplete DELIVERY aggregate.
-
----
-
-# 112. Blocker Check Before Mutation
-
-If DELIVERY is unsupported due to the open persistence gap:
-
-ensure that decision is made before:
-
-```text
-Order insert
-OrderItem insert
-reservation
-Cart clear
-```
-
----
-
-# 113. Prefer Compile-Time/Domain Separation
-
-If practical, structure transaction execution so the currently supported persisted branch is explicit rather than a late runtime surprise.
-
----
-
-# 114. Do Not Change Frozen API
-
-Do not remove:
-
-```text
-DELIVERY
-```
-
-from OpenAPI just because persistence is currently blocked.
-
-This is an implementation blocker, not a contract deletion.
-
----
-
-# 115. No Post-Freeze API Change
-
-Phase 7.7 should not change request/response shapes.
+# 48. Malformed Idempotency-Key
 
 Expected:
 
 ```text
-OpenAPI changes = NONE
-```
-
-unless fixing an independently approved documentation bug.
-
----
-
-# 116. No Schema Change Expected
-
-Expected:
-
-```text
-Schema: NONE
-```
-
-for transaction-boundary implementation itself.
-
----
-
-# 117. Billing Blocker Exception
-
-Do not solve the Phase 7.4 billing schema here unless the project owner has explicitly approved that model decision as part of a separate remediation.
-
----
-
-# 118. Dependencies
-
-Expected:
-
-```text
-NONE
+422 INVALID_FORMAT
+field: Idempotency-Key
 ```
 
 ---
 
-# 119. Frontend
+# 49. Do Not Generate a Key
 
-Expected:
+Never generate one server-side when missing.
 
-```text
-NONE
+Safe retries require the client to retain the same key.
+
+---
+
+# 50. CheckoutCommand
+
+Build an immutable normalized command.
+
+Reuse the existing:
+
+```php
+App\Services\Checkout\CheckoutCommand
 ```
 
----
+or current location.
 
-# 120. Payment
-
-Must remain:
-
-```text
-NONE
-```
-
-No Payment row.
-
-No provider call.
-
----
-
-# 121. Notifications
-
-Do not send external notifications inside Checkout transaction.
-
-If future in-app notification creation belongs to Checkout, verify contract ownership first.
-
-Do not invent it here.
-
----
-
-# 122. Audit
-
-Customer Checkout itself does not need a privileged audit event unless current audit contract explicitly requires one.
-
-Do not add admin-style audit noise.
-
----
-
-# 123. Cache
-
-Future CHK-001 response remains:
-
-```text
-private
-no-store
-```
-
-Phase 7.7 need not activate response middleware.
-
----
-
-# 124. Error Leakage
-
-Transient DB failures must map to safe:
-
-```text
-409 CONFLICT
-```
-
-or current canonical mapping.
-
-Do not expose:
-
-```text
-SQLSTATE
-table
-lock name
-constraint name
-stack trace
-```
-
----
-
-# 125. Idempotency Race Failure
-
-A completed-but-unresolved claim (a claim row with no stored response, e.g.
-after an abnormal termination) must use the existing:
-
-```text
-409 CONFLICT
-```
-
-behavior; the caller retries the same key to obtain the eventual `201`.
-
-This is **not** the normal overlapping same-key path: concurrent same-key
-requests wait on the claim key and reconcile to one `201` per #93.
-
----
-
-# 126. Database Driver Strategy
-
-SQLite can prove:
-
-```text
-rollback
-persistence relationships
-business atomicity
-model invariants
-```
-
-but not true row-lock concurrency.
-
----
-
-# 127. MariaDB Is Mandatory for Concurrency
-
-Use disposable MariaDB/MySQL for:
-
-```text
-same-key race
-different-key same-cart race
-last-unit race
-multi-line reservation rollback under contention
-adjust-vs-checkout lock interaction where practical
-```
-
----
-
-# 128. Do Not Treat SQLite as Lock Proof
-
-Explicitly document the driver split.
-
----
-
-# 129. Same-Key Race Test
-
-Run repeated concurrent processes/connections.
-
-Expected:
-
-```text
-one Order
-one set of items
-one reservation allocation set
-one history event
-one Cart clear
-one idempotency success record
-```
-
----
-
-# 130. Same-Key Responses
-
-Both logical callers should reconcile to the same:
-
-```text
-order_reference
-response payload
-201
-```
-
----
-
-# 131. Different-Key Same-Cart Test
-
-Race two different keys against the same Cart **contents**:
-
-```text
-1 success
-1 CART_INVALID after lock/re-read (the locked contents were already cleared)
-```
-
-No duplicate Order for the same contents.
-
-Refill race (required): if the customer adds items after the first Checkout
-clears the Cart but before the waiting second Checkout acquires the lock, the
-second Checkout orders the new contents generation and a new Order is expected
-(see #30). Assert the scoped guarantee, not an unconditional one-Order rule.
-
----
-
-# 132. Last-Unit Test
-
-Two customers, one unit available.
-
-Expected:
-
-```text
-1 successful reservation
-1 INSUFFICIENT_STOCK
-```
-
----
-
-# 133. Allocation Test
-
-Multi-location stock:
-
-```text
-location A = 2
-location B = 3
-order qty = 4
-```
-
-assert deterministic allocations consistent with InventoryAllocator.
-
----
-
-# 134. Rollback Exactness
-
-Failure after allocation creation must restore both:
-
-```text
-reserved_quantity
-allocation rows
-```
-
----
-
-# 135. OrderItem Snapshot Test
-
-Verify persisted line fields remain correct even if Product is modified after transaction.
-
----
-
-# 136. Cart Retention Test
-
-After successful PICKUP transaction:
-
-```text
-same Cart row exists
-status ACTIVE
-items = []
-```
-
----
-
-# 137. Cart Failure Test
-
-After any forced business/transaction failure:
-
-```text
-same Cart
-same items
-same quantities
-```
-
----
-
-# 138. Idempotency Replay Test
-
-After Cart cleared:
-
-retry same key.
-
-Expect exact original:
-
-```text
-201
-Order response
-```
-
----
-
-# 139. Response Serialization
-
-If Phase 7.7 needs to store an idempotent response body:
-
-use the frozen Checkout response shape or an internal immutable representation that Phase 7.8 can serialize deterministically.
-
-Do not store raw Eloquent serialization.
-
----
-
-# 140. Avoid Resource Drift
-
-If the public response Resource is not finalized until 7.8:
-
-store a stable internal outcome capable of reproducing the exact response later.
-
----
-
-# 141. Idempotency Outcome Must Be Durable
-
-The stored successful result must survive:
-
-```text
-Cart clear
-later retry
-worker/process restart
-```
-
----
-
-# 142. Transaction Commit and Response
-
-Never return 201 before transaction commit succeeds.
-
----
-
-# 143. Commit Failure
-
-If COMMIT fails:
-
-do not return success.
-
-The idempotency success record must not appear committed independently.
-
----
-
-# 144. ReferenceGenerator Failure
-
-A reference collision retry must not leave partial data.
-
----
-
-# 145. OrderItem Creation Failure
-
-Any DB/model validation failure must roll back Order.
-
----
-
-# 146. History Failure
-
-Must roll back the entire Checkout.
-
----
-
-# 147. Cart Clear Failure
-
-Must roll back:
-
-```text
-Order
-reservation
-history
-```
-
----
-
-# 148. Idempotency Completion Failure
-
-Must roll back the whole business mutation.
-
-This is the main Phase 7.1 gap to close.
-
----
-
-# 149. Shared Service Transaction Ownership
-
-Inspect current `IdempotencyService::execute()` transaction behavior.
-
-Avoid nested transaction semantics that accidentally commit the business mutation before idempotency completion.
-
----
-
-# 150. Prefer One Outer Transaction Owner
-
-There should be one clearly documented owner of the Checkout transaction.
-
-Do not layer:
-
-```text
-Checkout DB::transaction
-inside IdempotencyService transaction
-inside InventoryAllocator independent commit
-```
-
-if those scopes can commit independently.
-
----
-
-# 151. Nested Laravel Transactions
-
-Remember Laravel nested `DB::transaction()` uses savepoint/counter semantics depending driver.
-
-Verify actual behavior.
-
-Do not assume nested calls are independent commits.
-
----
-
-# 152. InventoryAllocator Integration Review
-
-If `InventoryAllocator::reserve()` starts its own transaction:
-
-verify it correctly joins the existing connection/outer transaction.
-
-If necessary, provide a repository-consistent method for "run within existing transaction" rather than duplicate commit boundaries.
-
----
-
-# 153. Do Not Rewrite Proven Allocator Unnecessarily
-
-Any change to allocator transaction handling must preserve:
-
-```text
-reserve
-release
-consume
-INV-003 races
-```
-
-and rerun its existing tests.
-
----
-
-# 154. Lock Ordering — Global Rule
-
-Document exact Checkout lock order.
-
-Target from accepted requirements:
-
-```text
-idempotency coordination
-→ active Cart
-→ Order / OrderItems
-→ ProductStock rows through allocator
-```
-
----
-
-# 155. OrderItems Locks
-
-New rows do not normally require explicit locks.
-
-Do not add pointless locking unless current allocator/relationship needs it.
-
----
-
-# 156. ProductStock Order
-
-Follow allocator:
-
-```text
-variant ids normalized
-ProductStock deterministic order
-```
-
-Do not acquire rows ad hoc.
-
----
-
-# 157. Deadlock Prevention
-
-Never acquire ProductStock before Cart in one path and Cart before ProductStock in another Checkout path.
-
----
-
-# 158. Interaction With Inventory Adjustment
-
-INV-003 locks ProductStock.
-
-Checkout must use allocator's same stock lock discipline.
-
----
-
-# 159. Interaction With Release/Consume
-
-Later cancellation/payment flows use:
-
-```text
-Order → ProductStock
-```
-
-lock ordering.
-
-Checkout must not create a conflicting reverse order.
-
----
-
-# 160. Newly Inserted Order Caveat
-
-Document how the new Order fits the global:
-
-```text
-Order → ProductStock
-```
-
-locking convention.
-
----
-
-# 161. Transaction Input Object
-
-Consider a normalized immutable Checkout command containing:
-
-```text
-customer
-idempotency key/fingerprint
-fulfillment state/input
-```
-
-but do not let it contain client-controlled financials.
-
----
-
-# 162. No Request Object in Transaction Service
-
-The transaction service should not receive:
-
-```text
-Illuminate\Http\Request
-```
-
-directly.
-
----
-
-# 163. Validation Ownership
-
-Phase 7.8 will build final validated request DTO/command.
-
-Phase 7.7 may use direct domain inputs in tests.
-
----
-
-# 164. Public Route May Remain Stub
-
-That is acceptable for Phase 7.7.
-
-The transaction service can be fully tested internally.
-
----
-
-# 165. Functional Success Scope
-
-Because DELIVERY persistence is blocked, Phase 7.7 may demonstrate full transactional success for:
-
-```text
-PICKUP
-```
-
-and transactional rollback/shared infrastructure for DELIVERY-independent pieces.
-
----
-
-# 166. Do Not Create PICKUP-Only Public API Semantics
-
-The contract exposes one CHK-001 with both fulfillment values.
-
-Do not publicly advertise Checkout as PICKUP-only.
-
----
-
-# 167. Internal Branch Support Is Different
-
-Internally supporting PICKUP persistence while DELIVERY remains blocked is acceptable if the public route is not misleadingly activated.
-
----
-
-# 168. Phase 7.4 Future Integration
-
-Structure transaction code so once billing persistence is resolved, DELIVERY can plug into:
-
-```text
-same transaction
-same idempotency
-same reservation
-same history
-same Cart clear
-```
-
-without a second Checkout workflow.
-
----
-
-# 169. No Duplicate DELIVERY Transaction Later
-
-Build common transaction composition now.
-
----
-
-# 170. Suggested Layering
+It should contain only server-trusted fields.
 
 Conceptually:
 
 ```text
-Checkout command
-    ↓
-Checkout transaction coordinator
-    ↓
-locked Cart resolver
-    ↓
-authoritative line resolver
-    ↓
-OrderTotalsCalculator
-    ↓
-FulfillmentState
-    ↓
-Order aggregate persister
-    ↓
-InventoryAllocator
-    ↓
-History
-    ↓
+authenticated Customer identity
+idempotency key
+fulfillment type
+normalized delivery address or null
+```
+
+---
+
+# 51. CheckoutCommand Must Not Contain
+
+Do not include client-controlled:
+
+```text
+cart id
+customer id override
+subtotal
+total
+delivery fee
+currency
+stock values
+payment status
+Order status
+```
+
+---
+
+# 52. Customer Identity
+
+Customer identity is derived from authenticated context.
+
+Never request body.
+
+---
+
+# 53. Raw Request Boundary
+
+`CheckoutTransaction` must not receive:
+
+```php
+Illuminate\Http\Request
+```
+
+Controller responsibility:
+
+```text
+HTTP Request
+→ CheckoutRequest
+→ normalized DTO/command
+→ CheckoutTransaction
+```
+
+---
+
+# 54. Thin Controller
+
+The Checkout controller should do approximately:
+
+```text
+resolve authenticated Customer
+obtain validated request
+normalize fulfillment data
+resolve Idempotency-Key
+construct CheckoutCommand
+execute CheckoutTransaction
+serialize Checkout outcome
+return appropriate response
+```
+
+It must not perform:
+
+```text
+Product validation
+Variant validation
+money arithmetic
+Order insert
+reservation
 Cart clear
-    ↓
-IdempotentOutcome
 ```
 
 ---
 
-# 171. Avoid God Service
+# 55. Controller Error Handling
 
-Split focused internal helpers if complexity exceeds limits.
+Do not fill CheckoutController with repeated:
 
-Possible helpers:
+```php
+try {
+   ...
+} catch (...) {
+   ...
+}
+```
+
+for domain errors if the existing API exception renderer already owns mapping.
+
+Prefer domain/application exceptions mapped centrally.
+
+---
+
+# 56. Canonical Error Envelope
+
+Use the existing standard:
+
+```json
+{
+  "errors": [
+    {
+      "code": "...",
+      "message": "...",
+      "field": "..."
+    }
+  ],
+  "meta": {
+    "request_id": "..."
+  }
+}
+```
+
+according to current API conventions.
+
+Do not return Laravel's default validator JSON.
+
+---
+
+# 57. Error Code Registry
+
+Reuse the CLOSED `ApiErrorCode`.
+
+Do not invent new codes.
+
+`CART_INVALID` is already available.
+
+---
+
+# 58. Structural Error Mapping
+
+Use the established categories:
 
 ```text
-CheckoutCartSnapshot
-CheckoutLineResolver
-OrderSnapshotFactory
-CheckoutOrderPersister
+MISSING_REQUIRED_FIELD
+INVALID_TYPE
+INVALID_FORMAT
+INVALID_VALUE
 ```
-
-Only introduce abstractions justified by complexity/reuse.
 
 ---
 
-# 172. Cognitive Complexity
+# 59. Branch Error Mapping
 
-Keep:
+Use:
 
 ```text
-<= 15
+INVALID_FULFILLMENT
 ```
 
----
+for valid enum + invalid branch combination.
 
-# 173. Returns
-
-Keep:
+Example:
 
 ```text
-<= 3 returns where practical
+PICKUP + populated delivery_address
 ```
 
 ---
 
-# 174. No Magic Strings
+# 60. Delivery-Domain Error Mapping
 
-Reuse:
+Use:
 
 ```text
-FulfillmentType
-OrderStatus
-DeliveryFeeStatus
-OrderActorType
+INVALID_DELIVERY_INFORMATION
 ```
+
+for delivery input that passes basic JSON shape but fails established normalized domain requirements.
 
 ---
 
-# 175. Tests — Pure Transaction Success
+# 61. Cart Errors
 
-Add focused feature/service tests for PICKUP:
+From Phase 7.7:
 
 ```text
-valid Cart
-current price
-reserve
-Order
-OrderItems
-history
-Cart clear
-idempotency outcome
+missing active Cart
+empty active Cart
 ```
 
----
-
-# 176. Test — Current Price Drift
-
-Cart previously displayed price A.
-
-Variant now price B.
-
-Checkout OrderItem must snapshot B.
-
----
-
-# 177. Test — Product Inactive After Cart Add
-
-Checkout rejects.
-
-No mutation.
-
----
-
-# 178. Test — Variant Inactive
-
-Checkout rejects.
-
----
-
-# 179. Test — MADE_TO_ORDER
-
-Reject.
-
----
-
-# 180. Test — Insufficient Stock
-
-Reject.
-
-Assert:
+map to:
 
 ```text
-Cart intact
-no Order
-no allocations
-reserved unchanged
+422 CART_INVALID
+```
+
+for a new execution.
+
+---
+
+# 62. Product/Variant Errors
+
+Preserve established domain mappings, including as applicable:
+
+```text
+PRODUCT_NOT_PURCHASABLE
+PRODUCT_UNAVAILABLE
+INVALID_PRODUCT_VARIANT
+INSUFFICIENT_STOCK
+```
+
+Do not collapse them into generic validation errors.
+
+---
+
+# 63. MADE_TO_ORDER
+
+Checkout of a MADE_TO_ORDER Product remains:
+
+```text
+422 PRODUCT_NOT_PURCHASABLE
 ```
 
 ---
 
-# 181. Test — Multi-Line Rollback
+# 64. Idempotency Conflict
 
-One valid line + one failing line.
+Same Customer + same key + changed normalized intent:
 
-Everything rolls back.
-
----
-
-# 182. Test — Order History
-
-Exactly one initial PENDING_PAYMENT event.
+```text
+409 DUPLICATE_OPERATION
+```
 
 ---
 
-# 183. Test — Reference
+# 65. Transaction Conflict
 
-Server-generated valid:
+Exhausted transient concurrency retries:
+
+```text
+409 CONFLICT
+```
+
+using the current safe mapping.
+
+---
+
+# 66. Rate Limit
+
+Checkout must remain behind the dedicated limiter introduced during security remediation.
+
+Expected:
+
+```text
+429
+Retry-After
+```
+
+---
+
+# 67. Security Middleware
+
+Do not weaken or bypass:
+
+```text
+pre-auth IP throttling
+Authorization header size bounds
+body-size protection
+active-account enforcement
+CUSTOMER role enforcement
+production HTTPS controls
+safe logging
+```
+
+---
+
+# 68. Middleware Ordering
+
+Inspect the route after implementation.
+
+Ensure the effective ordering preserves the existing security architecture.
+
+Do not casually reorder security middleware just to make tests easier.
+
+---
+
+# 69. JSON-Only Enforcement
+
+Confirm CHK-001 receives the repository's JSON-only mutation behavior.
+
+Do not rely solely on FormRequest rules after decoding form data.
+
+---
+
+# 70. CORS
+
+Do not redesign CORS.
+
+Use the existing hardened production configuration.
+
+---
+
+# 71. CSRF
+
+CHK-001 uses Clerk bearer authentication.
+
+Do not attach guest-cart cookie mutation CSRF/origin middleware unless architecture explicitly requires it.
+
+---
+
+# 72. Logging
+
+Do not log:
+
+```text
+Authorization header
+raw Clerk token
+full Checkout request body
+full delivery address
+guest Cart credentials
+```
+
+Use existing safe request ID and allow-listed context.
+
+---
+
+# 73. Checkout Success Serializer
+
+Prepare/use an explicit Checkout response serializer/resource.
+
+Do not return raw:
+
+```php
+Order::toArray()
+```
+
+---
+
+# 74. Frozen PICKUP Response
+
+Eventually:
+
+```json
+{
+  "data": {
+    "order_id": "ord_...",
+    "order_reference": "OD-12345",
+    "status": "PENDING_PAYMENT",
+    "fulfillment_type": "PICKUP",
+    "delivery_address": null,
+    "subtotal": {
+      "amount": 170000000,
+      "currency": "TZS"
+    },
+    "delivery_fee": {
+      "amount": 0,
+      "currency": "TZS"
+    },
+    "delivery_fee_status": "FINALIZED",
+    "total": {
+      "amount": 170000000,
+      "currency": "TZS"
+    },
+    "currency": "TZS",
+    "payment": null
+  }
+}
+```
+
+Use the exact current frozen field names.
+
+---
+
+# 75. Frozen DELIVERY Response
+
+When persistence is eventually unblocked:
+
+```text
+status = PENDING_PAYMENT
+fulfillment_type = DELIVERY
+delivery_address = normalized historical snapshot
+billing snapshot persisted internally
+delivery_fee = null
+delivery_fee_status = PENDING
+total = subtotal
+currency = TZS
+payment = null
+```
+
+Do not alter this response now.
+
+---
+
+# 76. No Raw Internal IDs
+
+Never expose:
+
+```text
+orders.id
+customer_id
+cart numeric id
+ProductStock id
+reservation allocation id
+guest_token_digest
+```
+
+---
+
+# 77. Order Identifier
+
+Public identifier:
+
+```text
+ord_...
+```
+
+---
+
+# 78. Order Reference
+
+Public reference:
 
 ```text
 OD-*****
@@ -2432,49 +1511,314 @@ OD-*****
 
 ---
 
-# 184. Test — Opaque Order ID
+# 79. Money Serialization
 
-Response/internal projection uses:
+Use:
 
-```text
-ord_...
+```json
+{
+  "amount": 123,
+  "currency": "TZS"
+}
 ```
 
-not DB id.
+No floats.
 
 ---
 
-# 185. Test — Order Ownership
+# 80. Payment
 
-Authenticated customer owns Order.
+Checkout response remains:
 
----
+```text
+payment = null
+```
 
-# 186. Test — Staff/Admin
-
-Cannot execute Checkout transaction as customer.
-
----
-
-# 187. Test — Cart Clear Retains Row
-
-Required.
+No Payment record is created.
 
 ---
 
-# 188. Test — Retry Same Key
+# 81. Cache-Control
 
-Required.
+Protected Checkout results/errors that contain private Order data must use:
+
+```text
+Cache-Control: private, no-store
+```
+
+Use the existing protected-response middleware/convention.
 
 ---
 
-# 189. Test — Retry Same Key After Empty Cart
+# 82. `Vary`
 
-Required.
+Preserve the current protected API response behavior where applicable:
+
+```text
+Vary: Authorization
+```
 
 ---
 
-# 190. Test — Same Key Changed Fulfillment
+# 83. Public Route Activation Decision
+
+At the end of this phase, inspect whether Phase 7.4 has been resolved.
+
+If not:
+
+```text
+DO NOT expose CHK-001 as a one-branch-only public endpoint.
+```
+
+Recommended:
+
+```text
+route remains globally stubbed/gated
+```
+
+while the validation stack is fully implemented/tested internally.
+
+---
+
+# 84. Do Not Remove DELIVERY From OpenAPI
+
+The contract remains frozen.
+
+Phase 7.4 is an implementation gap, not a contract removal.
+
+---
+
+# 85. Do Not Add a Temporary Feature Flag to Contract
+
+Avoid externally visible states such as:
+
+```text
+delivery_checkout_enabled=false
+```
+
+unless separately approved.
+
+---
+
+# 86. DELIVERY Internal Validation
+
+A valid DELIVERY request should be fully normalized successfully.
+
+Then, if passed to the current Phase 7.7 transaction implementation, it may reach:
+
+```text
+DeliveryCheckoutUnsupportedException
+```
+
+before mutation.
+
+This remains an internal blocker.
+
+---
+
+# 87. Invalid DELIVERY Must Not Reach the Blocker
+
+Example:
+
+```text
+DELIVERY missing city
+```
+
+must fail normal validation.
+
+It must not simply fail as:
+
+```text
+DeliveryCheckoutUnsupportedException
+```
+
+---
+
+# 88. No Public Mapping for the Internal Blocker
+
+Do not invent a client-facing error for `DeliveryCheckoutUnsupportedException`.
+
+Until persistence is resolved, keep the route gated.
+
+---
+
+# 89. No Mutation on Blocked DELIVERY
+
+Internal test must prove:
+
+```text
+valid DELIVERY
+→ blocker
+→ no Order
+→ no OrderItems
+→ no reservation
+→ no allocations
+→ no history
+→ Cart unchanged
+→ no idempotency success
+```
+
+---
+
+# 90. Preserve Phase 7.7 Variant Snapshot Fix
+
+Historical `variant_name` may be:
+
+```text
+null
+```
+
+Do not coerce it to:
+
+```text
+""
+```
+
+Phase 7.8 serialization must preserve correct nullable semantics if the field appears in downstream Order resources.
+
+---
+
+# 91. Preserve Last-Unit Semantics
+
+Do not regress:
+
+```text
+quantity = 1
+reserved_quantity = 1
+available_quantity = 0
+```
+
+Validation must not interpret physical quantity alone as available stock.
+
+---
+
+# 92. No Pre-Transaction Stock Authority
+
+Phase 7.8 must not perform an authoritative stock decision before `CheckoutTransaction`.
+
+Final stock authority remains inside the Phase 7.7 transaction.
+
+---
+
+# 93. Request Validation vs Domain Validation
+
+Keep separation:
+
+```text
+CheckoutRequest
+→ input shape
+
+CheckoutTransaction
+→ Cart/Product/Variant/stock business authority
+```
+
+Do not put Product/stock queries into FormRequest rules.
+
+---
+
+# 94. No Cart Query in FormRequest
+
+Avoid:
+
+```php
+Cart::where(...)->exists()
+```
+
+inside CheckoutRequest.
+
+---
+
+# 95. No Inventory Query in FormRequest
+
+Same.
+
+---
+
+# 96. No Pricing Query in FormRequest
+
+Same.
+
+---
+
+# 97. No Total Calculation in Controller
+
+Phase 7.6 owns totals.
+
+---
+
+# 98. No Inventory Reservation in Controller
+
+Phase 7.7 owns reservation.
+
+---
+
+# 99. No Order Persistence in Controller
+
+Phase 7.7 owns persistence.
+
+---
+
+# 100. No Cart Clearing in Controller
+
+Phase 7.7 owns Cart clearing.
+
+---
+
+# 101. Idempotent Replay
+
+Controller must preserve the `IdempotentOutcome` returned from Phase 7.7.
+
+New Checkout:
+
+```text
+201
+```
+
+Same-key replay:
+
+```text
+201
+```
+
+---
+
+# 102. Replay After Cart Clear
+
+Explicitly test:
+
+```text
+first request
+→ 201
+→ Cart becomes empty
+
+same key + same request
+→ same original 201
+```
+
+Do not validate the now-empty Cart before replay resolution.
+
+---
+
+# 103. Same-Key Changed PICKUP/DELIVERY
+
+Example:
+
+First:
+
+```json
+{
+  "fulfillment_type": "PICKUP"
+}
+```
+
+retry same key:
+
+```json
+{
+  "fulfillment_type": "DELIVERY",
+  "delivery_address": { ... }
+}
+```
 
 Expected:
 
@@ -2484,25 +1828,517 @@ Expected:
 
 ---
 
-# 191. Test — Different Customer Same Key
+# 104. Same-Key Address Whitespace
 
-Separate scope.
-
----
-
-# 192. Test — Forced Failure Before Commit
-
-No successful idempotency outcome.
+Equivalent normalized DELIVERY address should not create an idempotency conflict.
 
 ---
 
-# 193. Test — 201 Stored/Replayed
+# 105. Same-Key Address Change
 
-Explicitly test status code persistence if shared service now supports it.
+A genuinely changed normalized address should conflict.
 
 ---
 
-# 194. Existing Idempotency Regressions
+# 106. Different Customer Same Key
+
+Different identity scope.
+
+No cross-customer replay.
+
+---
+
+# 107. Test: Authentication
+
+Add cases for:
+
+```text
+no bearer token → 401
+invalid bearer token → 401
+active CUSTOMER → allowed through auth boundary
+suspended CUSTOMER → rejected
+STAFF → 403
+ADMIN → 403
+```
+
+---
+
+# 108. Test: Idempotency Header
+
+Cases:
+
+```text
+missing
+empty
+malformed
+valid UUID
+```
+
+---
+
+# 109. Test: Top-Level Unknown Fields
+
+Use table-driven tests.
+
+At minimum:
+
+```text
+cart_id
+user_id
+customer_id
+subtotal
+total
+delivery_fee
+delivery_fee_status
+currency
+status
+payment
+billing_address
+saved_address_id
+```
+
+---
+
+# 110. Test: Fulfillment Type
+
+Cases:
+
+```text
+missing
+null
+integer
+boolean
+PICKUP
+DELIVERY
+pickup
+delivery
+SHIPPING
+```
+
+---
+
+# 111. Test: PICKUP Address
+
+Cases:
+
+```text
+absent → valid
+null → valid
+{} → invalid
+populated object → INVALID_FULFILLMENT
+string → invalid
+```
+
+---
+
+# 112. Test: DELIVERY Address Container
+
+Cases:
+
+```text
+missing
+null
+string
+integer
+list
+object
+```
+
+---
+
+# 113. Test: Delivery Required Fields
+
+Each missing independently:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+---
+
+# 114. Test: Delivery Wrong Types
+
+Each field:
+
+```text
+integer
+boolean
+array
+object
+null
+```
+
+as appropriate.
+
+---
+
+# 115. Test: Delivery Empty Strings
+
+For each string field:
+
+```text
+""
+"   "
+```
+
+must fail.
+
+---
+
+# 116. Test: Recipient Name Length
+
+Exactly the existing approved boundary.
+
+Do not invent another limit.
+
+---
+
+# 117. Test: Phone
+
+Cover:
+
+```text
+normalization
+valid value
+whitespace trimming
+invalid normalized value
+too long
+wrong type
+missing
+```
+
+---
+
+# 118. Test: City
+
+Cover:
+
+```text
+normal value
+trimmed
+empty
+wrong type
+region substitution rejected
+```
+
+---
+
+# 119. Test: Address Line
+
+Cover:
+
+```text
+normal
+trimmed
+empty
+wrong type
+```
+
+---
+
+# 120. Test: Unknown Nested Fields
+
+Use table-driven cases:
+
+```text
+region
+country
+postal_code
+district
+ward
+latitude
+longitude
+instructions
+saved_address_id
+```
+
+---
+
+# 121. Test: No Profile Fallback
+
+Customer profile may contain:
+
+```text
+name
+phone
+```
+
+but DELIVERY request omits them.
+
+Expected:
+
+```text
+validation failure
+```
+
+not fallback.
+
+---
+
+# 122. Test: No Billing Address Input
+
+Explicitly reject it.
+
+---
+
+# 123. Test: Valid PICKUP Command
+
+Assert normalized `CheckoutCommand` contains:
+
+```text
+fulfillment_type = PICKUP
+delivery address = null
+authenticated Customer
+validated Idempotency-Key
+```
+
+---
+
+# 124. Test: Valid DELIVERY Command
+
+Assert normalized command contains exact:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+and no `region`.
+
+---
+
+# 125. Test: PICKUP Absent vs Null
+
+Commands/fingerprints should match.
+
+---
+
+# 126. Test: Property Ordering
+
+Equivalent DELIVERY objects with different JSON field order produce equivalent normalized intent.
+
+---
+
+# 127. Test: Structural Failure Has No Side Effects
+
+For invalid request:
+
+```text
+no Order
+no OrderItem
+no inventory reservation
+no allocation
+no history
+Cart unchanged
+no idempotency success
+```
+
+---
+
+# 128. Test: Authorization Failure Has No Side Effects
+
+Same.
+
+---
+
+# 129. Test: Invalid Idempotency-Key Has No Side Effects
+
+Same.
+
+---
+
+# 130. Test: Valid PICKUP Internal Execution
+
+Where controller/service integration allows:
+
+```text
+valid validated request
+→ CheckoutCommand
+→ CheckoutTransaction
+→ 201 IdempotentOutcome
+```
+
+---
+
+# 131. Test: Checkout Errors Through Controller
+
+Use domain fixtures to prove mappings for:
+
+```text
+CART_INVALID
+PRODUCT_NOT_PURCHASABLE
+INVALID_PRODUCT_VARIANT
+INSUFFICIENT_STOCK
+DUPLICATE_OPERATION
+CONFLICT
+```
+
+Do not recreate domain conditions inside request validation.
+
+---
+
+# 132. Test: Private Cache Headers
+
+Check success/error behavior as appropriate.
+
+---
+
+# 133. Test: Request ID
+
+Confirm canonical request ID survives into error/success metadata where the contract requires it.
+
+---
+
+# 134. Test: Rate Limiter Attachment
+
+Verify the Checkout route is attached to the correct dedicated limiter.
+
+Do not merely assume global throttling covers it.
+
+---
+
+# 135. Test: Security Logging
+
+A validation failure containing address data must not dump the full body into logs.
+
+---
+
+# 136. Test: JSON-Only
+
+Attempt form-urlencoded Checkout.
+
+Expected:
+
+```text
+rejected
+```
+
+through existing mutation transport rules.
+
+---
+
+# 137. Test: Oversized Request
+
+Do not reproduce the global 6 MiB test unnecessarily if already proven centrally.
+
+A route/middleware attachment regression is sufficient unless Checkout adds a custom limit.
+
+---
+
+# 138. Controller Resource Test
+
+Assert the Checkout response uses only frozen public fields.
+
+No internal DB identifiers.
+
+---
+
+# 139. Idempotent Response Stability
+
+Replay should not re-read current Product prices to rebuild the response.
+
+Use the stored successful Checkout outcome.
+
+---
+
+# 140. Existing Phase 7.3 Regression
+
+Run:
+
+```text
+PickupFulfillmentStateTest
+```
+
+---
+
+# 141. Existing Phase 7.4 Regression
+
+Run:
+
+```text
+DeliveryFulfillmentStateTest
+```
+
+The test should continue to prove:
+
+```text
+city canonical
+billing snapshot copied
+persistence gap remains
+```
+
+---
+
+# 142. Existing Phase 7.5 Regression
+
+Run:
+
+```text
+DeliveryFeeApiTest
+```
+
+Validation work must not affect ORD-014.
+
+---
+
+# 143. Existing Phase 7.6 Regression
+
+Run:
+
+```text
+OrderTotalsCalculatorTest
+OrderTotalsCompatibilityTest
+```
+
+---
+
+# 144. Existing Phase 7.7 Regression
+
+Run:
+
+```text
+CheckoutTransactionTest
+```
+
+---
+
+# 145. Cart Regressions
+
+Run critical:
+
+```text
+CartGetApiTest
+CartAddItemApiTest
+CartUpdateItemApiTest
+CartRemoveItemApiTest
+CartMergeApiTest
+```
+
+or current names.
+
+---
+
+# 146. Security Regressions
+
+Run relevant:
+
+```text
+auth middleware
+active-account tests
+Customer-only Cart tests
+JSON mutation protection
+request-size/security tests
+rate-limit tests
+```
+
+---
+
+# 147. Idempotency Regressions
 
 Run:
 
@@ -2510,214 +2346,96 @@ Run:
 InventoryAdjustmentApiTest
 CartMergeApiTest
 DeliveryFeeApiTest
-```
-
-or current equivalents.
-
----
-
-# 195. Inventory Regressions
-
-Run:
-
-```text
-InventoryReservationTest
-InventoryConcurrencyMysqlTest
-```
-
-where shared allocator code changes.
-
----
-
-# 196. Cart Regressions
-
-Run Group F critical suites because Cart locking/clear behavior is now consumed by Checkout.
-
----
-
-# 197. Totals Regressions
-
-Run:
-
-```text
-OrderTotalsCalculatorTest
-OrderTotalsCompatibilityTest
-PickupFulfillmentStateTest
-DeliveryFulfillmentStateTest
+CheckoutTransactionTest
 ```
 
 ---
 
-# 198. Order Model Regressions
+# 148. MariaDB Concurrency Qualification
 
-Run:
+Do not falsely state Phase 7.7's MariaDB concurrency proof exists if the suite has still not been executed.
 
-```text
-OrderSchemaTest
-OrderItemSchemaTest
-OrderStatusHistorySchemaTest
-```
-
----
-
-# 199. MariaDB Concurrency Suite
-
-Add dedicated Checkout concurrency tests.
-
-Possible name:
+Current status from the previous phase:
 
 ```text
 CheckoutTransactionConcurrencyMysqlTest
+= implemented
+= not yet run in the reported environment
 ```
 
-Use repository conventions.
+Phase 7.8 adds no new row-lock mechanism.
 
 ---
 
-# 200. Concurrency Iterations
+# 149. Preserve Correct Last-Unit Assertion
 
-Use repeated barrier-synchronized iterations consistent with existing MariaDB tests.
-
-Report exact count.
-
----
-
-# 201. Disposable Database Only
-
-Never run destructive/forked concurrency tests against dev or production DB.
-
----
-
-# 202. SQLite Suite
-
-Canonical PHPUnit suite remains SQLite where configured.
-
----
-
-# 203. Driver Split Documentation
-
-State:
+The MariaDB test must continue to expect:
 
 ```text
-SQLite:
-business atomicity / rollback / persistence
-
-MariaDB:
-row-lock concurrency / deadlock behavior / oversell proof
+quantity = 1
+reserved_quantity = 1
+available_quantity = 0
 ```
 
 ---
 
-# 204. Performance
+# 150. If MariaDB Becomes Available
 
-Do not hold locks while generating large API resources.
+Run the existing Phase 7.7 concurrency suite.
 
-Build the minimum durable idempotency outcome needed.
+Report separately from Phase 7.8 validation success.
 
 ---
 
-# 205. Response Snapshot
+# 151. SQLite vs MariaDB
 
-If idempotency stores the whole response JSON:
-
-ensure it contains no unstable:
+Document:
 
 ```text
-lazy relationships
-current catalog values
+SQLite
+→ validation / HTTP / rollback semantics
+
+MariaDB
+→ row-lock concurrency proof
 ```
 
-It must represent the created Order snapshot.
+Do not claim SQLite proves lock behavior.
 
 ---
 
-# 206. Private Data
-
-DELIVERY address data, when eventually supported, must not appear in logs.
-
----
-
-# 207. Safe Errors
-
-Rollback exceptions must pass through the safe exception renderer already hardened.
-
----
-
-# 208. Scheduler
-
-No new scheduler required in Phase 7.7.
-
-Existing idempotency pruning remains operational.
-
----
-
-# 209. Security Baseline
-
-Do not undo:
-
-```text
-pre-auth throttling
-CUSTOMER-only Cart
-optional-auth account state enforcement
-body-size limits
-JSON mutation requirements
-safe logging
-Clerk fail-closed production settings
-```
-
----
-
-# 210. Production Security Work Is Closed
-
-Do not reopen security-remediation scope unless a genuine regression is discovered while implementing transaction logic.
-
----
-
-# 211. Security Finding Handling
-
-If a new code-review finding appears:
-
-verify it against current code before changing behavior.
-
-Do not blindly implement review text.
-
----
-
-# 212. Schema
+# 152. No Schema Change
 
 Expected:
 
 ```text
-NONE
+Schema: NONE
 ```
 
-unless Phase 7.4 billing persistence is separately approved and intentionally pulled forward.
-
-Do not do that silently.
+Do not add `billing_address` here.
 
 ---
 
-# 213. Dependencies
+# 153. No Dependency Change
 
 Expected:
 
 ```text
-NONE
+Dependencies: NONE
 ```
 
 ---
 
-# 214. Frontend
+# 154. No Frontend Work
 
 Expected:
 
 ```text
-NONE
+Frontend: NONE
 ```
 
 ---
 
-# 215. OpenAPI
+# 155. OpenAPI
 
 Expected:
 
@@ -2725,46 +2443,56 @@ Expected:
 UNCHANGED
 ```
 
+because the phase implements already-frozen behavior.
+
+If you discover actual OpenAPI drift:
+
+do not silently fix behavior.
+
+Classify the drift and follow the post-freeze change process if externally observable.
+
 ---
 
-# 216. Documentation
+# 156. Documentation
 
-Add:
+Add the next available backend ADR.
+
+Likely:
 
 ```text
-ADR/BACKEND-040 — Checkout Transaction Boundary
+ADR/BACKEND-041 — Checkout Validation Boundary
 ```
 
-if 040 is the actual next available ADR.
-
-Do not assume numbering; inspect current file.
+but inspect the current highest ADR number before using it.
 
 ---
 
-# 217. ADR Content
+# 157. ADR Content
 
-Record:
+Document:
 
 ```text
-transaction owner
-atomic operations
-lock order
-idempotency atomicity
-201 replay support
-InventoryAllocator integration
-Cart clear-retain semantics
-rollback guarantee
-MariaDB concurrency proof
-Phase 7.4 blocker preserved
+CHK-001 authentication boundary
+CUSTOMER-only authorization
+strict request allow-list
+Idempotency-Key requirement
+PICKUP validation
+DELIVERY validation
+city canonical
+address normalization
+server-controlled field rejection
+CheckoutCommand mapping
+canonical error mapping
+controller/resource composition
+route activation decision
+Phase 7.4 blocker preservation
 ```
 
 ---
 
-# 218. Group G Phase File
+# 158. Group G Phase Documentation
 
-Update current Group G tracking.
-
-Expected after PASS:
+After Phase 7.8 passes:
 
 ```text
 7.1 PASS
@@ -2773,30 +2501,86 @@ Expected after PASS:
 7.4 BLOCKED — billing snapshot persistence
 7.5 PASS
 7.6 PASS
-7.7 PASS — transaction boundary infrastructure
+7.7 PASS
+7.8 PASS — Checkout validation boundary
 ```
 
-Do not mark DELIVERY persistence complete.
+Group G remains open.
 
 ---
 
-# 219. Phase 7.8 Readiness
+# 159. Route Status Documentation
 
-If Phase 7.7 succeeds:
+Report exactly whether:
 
 ```text
-Phase 7.8 — Checkout validation: READY WITH DELIVERY PERSISTENCE BLOCKER
+POST /api/v1/checkout
 ```
 
-unless 7.8 explicitly requires 7.4 resolved before work can proceed.
+is:
+
+```text
+ACTIVE
+```
+
+or:
+
+```text
+STUB / GATED
+```
+
+Recommended while 7.4 remains blocked:
+
+```text
+STUB / GATED
+```
+
+Do not obscure this in the completion report.
 
 ---
 
-# 220. Completion Report
+# 160. Phase 7.9 Readiness
 
-Return:
+If validation work passes while the persistence gap remains:
 
-## Phase 7.7 status
+report:
+
+```text
+Phase 7.9 — READY WITH DELIVERY PERSISTENCE BLOCKER
+```
+
+Phase 7.9 may consolidate tests and closure readiness, but it cannot honestly close Group G while 7.4 remains unresolved.
+
+---
+
+# 161. Full Verification
+
+Run:
+
+```bash
+php artisan test
+vendor/bin/phpstan analyse
+vendor/bin/pint --test
+composer audit
+git diff --check
+php artisan route:list
+```
+
+Also validate that:
+
+```text
+docs/api/openapi.yaml
+```
+
+still parses successfully.
+
+---
+
+# 162. Completion Report
+
+Return the following.
+
+## Phase 7.8 status
 
 ```text
 PASS
@@ -2810,143 +2594,246 @@ BLOCKED
 
 ---
 
-## Transaction owner
+## Request validation component
 
-Report the class/service owning the outer Checkout transaction.
+Report exact class/path.
 
----
-
-## Atomic boundary
-
-List exactly what commits together:
+Example:
 
 ```text
-Cart lock/final snapshot
-authoritative lines
-totals
-Order
-OrderItems
-reservation
-allocation rows
-initial history
-Cart clear
-idempotency success
+App\Http\Requests\CheckoutRequest
 ```
 
 ---
 
-## Lock order
-
-Report actual order.
-
----
-
-## Idempotency
+## Actor boundary
 
 Report:
 
 ```text
-shared service reused
-201 preserved
-same-key replay after Cart clear
-changed-intent conflict
-success atomic with transaction
+anonymous → 401
+active CUSTOMER → allowed
+STAFF → 403
+ADMIN → 403
+suspended/inactive CUSTOMER → rejected
 ```
 
 ---
 
-## Cart
+## Request allow-list
+
+Report exactly:
+
+```text
+fulfillment_type
+delivery_address
+```
+
+---
+
+## Fulfillment enum
 
 Report:
 
 ```text
-row locked
-same ACTIVE Cart retained
-items cleared only on commit
-failure preserves items
+PICKUP
+DELIVERY
 ```
+
+closed.
 
 ---
 
-## Pricing
+## PICKUP validation
 
 Report:
 
 ```text
-current server-side Variant price
-OrderTotalsCalculator used
-Cart display price not trusted
+delivery_address absent → valid
+delivery_address null → valid
+delivery_address object → INVALID_FULFILLMENT
 ```
 
 ---
 
-## Order
+## DELIVERY validation
+
+Report exact required fields:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+---
+
+## City / Region
+
+State explicitly:
+
+```text
+city = canonical
+region = rejected
+no alias
+```
+
+---
+
+## Normalization
+
+Report exact behavior for:
+
+```text
+recipient_name
+phone
+address_line
+city
+```
+
+---
+
+## Idempotency-Key
 
 Report:
 
 ```text
-PENDING_PAYMENT
-server ownership
-OD reference
-opaque id
+required
+UUID
+shared parser reused
+normalized request becomes fingerprint input
 ```
 
 ---
 
-## OrderItems
+## Server-controlled field rejection
 
-Report snapshot fields.
+List the major rejected classes:
+
+```text
+identity
+Cart selector
+money
+delivery fee
+Order status/reference
+payment
+billing address
+saved address
+```
+
+---
+
+## CheckoutCommand
+
+Report exact class and fields.
+
+---
+
+## Controller
+
+Report exact orchestration.
+
+---
+
+## Error mapping
+
+Report tested behavior for:
+
+```text
+MISSING_REQUIRED_FIELD
+INVALID_TYPE
+INVALID_FORMAT
+INVALID_VALUE
+INVALID_FULFILLMENT
+INVALID_DELIVERY_INFORMATION
+CART_INVALID
+PRODUCT_NOT_PURCHASABLE
+INVALID_PRODUCT_VARIANT
+INSUFFICIENT_STOCK
+DUPLICATE_OPERATION
+CONFLICT
+```
+
+---
+
+## Response serializer
+
+Report exact resource/data mapper.
+
+---
+
+## Success status
+
+Report:
+
+```text
+new success = 201
+same-key replay = 201
+```
+
+---
+
+## Route status
+
+State one:
+
+```text
+ACTIVE
+```
+
+or:
+
+```text
+STUB/GATED
+```
+
+If Phase 7.4 is still unresolved, expected:
+
+```text
+STUB/GATED
+```
+
+---
+
+## DELIVERY persistence
+
+Must state:
+
+```text
+NOT IMPLEMENTED
+Phase 7.4 remains BLOCKED
+```
+
+---
+
+## Billing snapshot persistence
+
+Must state:
+
+```text
+NOT RESOLVED IN PHASE 7.8
+```
+
+---
+
+## Transaction
+
+Confirm:
+
+```text
+CheckoutTransaction reused
+no duplicated transaction logic
+```
 
 ---
 
 ## Inventory
 
-Report:
-
-```text
-InventoryAllocator reused
-reserved_quantity increments only
-physical quantity unchanged
-exact allocations persisted
-```
-
----
-
-## History
-
-Report initial history behavior.
-
----
-
-## Rollback
-
-Report forced-failure tests and resulting zero side effects.
-
----
-
-## PICKUP
-
-Report whether a complete internal PICKUP transaction now works.
-
----
-
-## DELIVERY
-
-Must state explicitly:
-
-```text
-Phase 7.4 persistence blocker remains open
-complete DELIVERY Checkout persistence = NOT IMPLEMENTED
-```
-
----
-
-## Billing snapshot
-
 State:
 
 ```text
-NOT RESOLVED IN PHASE 7.7
+validation-layer inventory mutation = NONE
 ```
 
 ---
@@ -2956,8 +2843,8 @@ NOT RESOLVED IN PHASE 7.7
 State:
 
 ```text
-Payment rows: NONE
-Provider calls: NONE
+Payment rows = NONE
+provider calls = NONE
 ```
 
 ---
@@ -2984,6 +2871,8 @@ NONE
 
 ## Frontend
 
+Expected:
+
 ```text
 NONE
 ```
@@ -2991,6 +2880,8 @@ NONE
 ---
 
 ## OpenAPI
+
+Expected:
 
 ```text
 UNCHANGED
@@ -3003,29 +2894,32 @@ UNCHANGED
 Report:
 
 ```text
-transaction tests
-rollback tests
-idempotency regressions
+Checkout request validation
+actor/auth tests
+Idempotency-Key tests
+PICKUP branch tests
+DELIVERY branch tests
+tampering tests
+normalization tests
+error mapping tests
+controller/command tests
+transaction regressions
 Cart regressions
-Inventory regressions
-Order regressions
-totals regressions
+security regressions
 ```
 
 ---
 
 ## MariaDB
 
-Report:
+Report accurately:
 
 ```text
-same-key race
-different-key same-Cart race
-last-unit race
-adjust-vs-checkout race if implemented
-iterations
-assertions
+CheckoutTransactionConcurrencyMysqlTest
+executed / not executed
 ```
+
+Do not claim row-lock proof if skipped.
 
 ---
 
@@ -3035,11 +2929,14 @@ Report:
 
 ```text
 PHPUnit
+assertions
+skipped tests
 PHPStan
 Pint
-Composer audit
+composer audit
 git diff --check
 route:list
+OpenAPI parse
 ```
 
 ---
@@ -3055,138 +2952,151 @@ Return:
 7.4 BLOCKED — billing snapshot persistence
 7.5 PASS
 7.6 PASS
-7.7 PASS/BLOCKED
+7.7 PASS
+7.8 PASS/BLOCKED
 ```
 
 ---
 
-## Phase 7.8 readiness
+## Phase 7.9 readiness
 
-Return one:
+Return:
 
 ```text
-Phase 7.8 — READY WITH DELIVERY PERSISTENCE BLOCKER
+Phase 7.9 — READY WITH DELIVERY PERSISTENCE BLOCKER
 ```
 
 or:
 
 ```text
-Phase 7.8 — BLOCKED
+Phase 7.9 — BLOCKED
 ```
 
-with exact reason.
+with the exact reason.
 
 ---
 
-# 221. Definition of Done
+# 163. Definition of Done
 
-Phase 7.7 is complete when:
+Phase 7.8 is complete when:
 
-- exactly one Checkout transaction owner exists;
-- Cart row is locked before authoritative snapshot;
-- different-key same-Cart Checkout cannot create two Orders;
-- Products/Variants are revalidated inside the transaction;
-- current server price is authoritative;
-- OrderTotalsCalculator is reused;
-- Order reference is server-generated;
-- Order starts PENDING_PAYMENT;
-- OrderItems snapshot current transaction facts;
-- Order and items are created inside the same transaction;
-- InventoryAllocator is reused;
-- Checkout never manually updates reserved_quantity;
-- reservation is all-or-nothing;
-- exact allocation rows are persisted;
-- physical stock is not decremented;
-- initial status history is atomic with Order;
-- Cart items clear only on success;
-- Cart row remains ACTIVE;
-- failure preserves Cart;
-- failure leaves no Order;
-- failure leaves no OrderItems;
-- failure leaves no history;
-- failure leaves no reservation;
-- failure leaves no allocation;
-- failure leaves no success idempotency record;
-- same-key retry after Cart clear replays original 201;
-- changed intent with same key conflicts;
-- concurrent same-key execution has one business effect;
-- stored idempotency outcome preserves 201;
-- existing 200 idempotent operations still replay 200;
-- transient DB conflicts use bounded retry;
-- business errors are not blindly retried;
-- MariaDB proves real concurrency behavior;
-- PICKUP transaction behavior is correct;
-- DELIVERY persistence remains blocked;
+- CHK-001 has a dedicated validation boundary;
+- authentication occurs before Checkout details are exposed;
+- suspended/inactive users are rejected;
+- only CUSTOMER may Checkout;
+- Staff/Admin are denied;
+- Idempotency-Key is mandatory;
+- malformed Idempotency-Key is rejected;
+- request is JSON-only;
+- only `fulfillment_type` and conditional `delivery_address` are accepted;
+- unknown top-level fields are rejected;
+- server-controlled financial fields are rejected;
+- server-controlled identity fields are rejected;
+- Cart selectors are rejected;
+- payment/status/reference fields are rejected;
+- `billing_address` input is rejected;
+- `saved_address_id` is rejected;
+- fulfillment enum is exactly PICKUP/DELIVERY;
+- lowercase/aliases are rejected;
+- PICKUP accepts absent/null delivery address;
+- PICKUP rejects populated delivery address;
+- DELIVERY requires a delivery address;
+- DELIVERY address is an object;
+- DELIVERY address accepts exactly recipient_name/phone/address_line/city;
+- `city` is canonical;
+- `region` is rejected;
+- unknown nested fields are rejected;
+- recipient name is trimmed/non-empty/max 255;
+- phone uses the existing Phase 7.2 normalization;
+- address line is trimmed/non-empty;
+- city is trimmed/non-empty;
+- profile fallback is not used;
+- normalized input feeds the idempotency fingerprint;
+- JSON property order does not alter logical intent;
+- PICKUP absent/null normalize identically;
+- CheckoutCommand contains only trusted normalized inputs;
+- raw Request does not enter CheckoutTransaction;
+- controller remains thin;
+- Phase 7.7 transaction code is reused;
+- Phase 7.6 totals code is not duplicated;
+- Phase 7.7 inventory logic is not duplicated;
+- successful PICKUP internal composition returns 201;
+- successful same-key replay returns the original 201;
+- invalid requests produce no business side effects;
+- structural errors use canonical error codes;
+- domain errors remain distinct;
+- protected responses use private/no-store semantics;
+- response serializer exposes only frozen fields;
+- no raw Eloquent serialization is used;
+- the public endpoint is not activated as PICKUP-only without an explicit contract decision;
+- valid DELIVERY input is fully validated even while persistence remains blocked;
+- invalid DELIVERY fails validation before reaching the persistence blocker;
+- valid blocked DELIVERY causes no mutation;
+- no new public error is invented for the Phase 7.4 implementation gap;
+- Phase 7.4 remains explicitly BLOCKED;
 - billing snapshot persistence is not bypassed;
-- no Payment logic is introduced;
-- no external calls occur inside the transaction;
-- no new schema is introduced;
+- no schema change is introduced;
 - no dependency is introduced;
-- no frontend changes occur;
-- OpenAPI remains unchanged;
-- full regression suite remains green;
+- no frontend change occurs;
+- OpenAPI remains aligned;
+- full regression suite passes;
 - PHPStan reports zero errors;
 - Pint passes;
-- Composer audit is clean.
+- Composer audit is clean;
+- `git diff --check` passes.
 
 ---
 
-# 222. Out of Scope
+# 164. Out of Scope
 
 Do not implement:
 
 ```text
-Phase 7.4 billing snapshot persistence fix
-Phase 7.8 full Checkout request validation
+Phase 7.4 billing snapshot persistence
+new billing-address schema
+OrderAddress table
+DELIVERY persistence workaround
 Phase 7.9 Group G closure
-public partial PICKUP-only Checkout contract
-Payment creation
+Payment initiation
 PAY-001
-payment provider calls
+payment provider
 payment webhook
+delivery fee calculation
 reservation release
 reservation consumption
 Order cancellation
-Order lifecycle transitions
-delivery fee recalculation
-Delivery operational record creation
+Order lifecycle actions
 frontend
 ```
 
 ---
 
-# 223. STOP Condition
+# 165. STOP Condition
 
-STOP when the repository has one transaction boundary that can safely prove:
+STOP when CHK-001 has a complete validation/application boundary:
 
 ```text
-lock Cart
-→ revalidate current purchase facts
-→ calculate authoritative totals
-→ persist Order aggregate
-→ reserve exact inventory
-→ create initial history
-→ clear Cart
-→ persist successful idempotent 201 result
-→ commit
+authenticated active CUSTOMER
+→ strict Idempotency-Key
+→ strict JSON body
+→ exact fulfillment validation
+→ normalized PICKUP/DELIVERY intent
+→ CheckoutCommand
+→ existing CheckoutTransaction
+→ canonical Checkout outcome/error mapping
 ```
 
-with:
+while preserving:
 
 ```text
-any failure
-→ total rollback
-```
-
-while still stating clearly:
-
-```text
-Phase 7.4 DELIVERY persistence = BLOCKED
+Phase 7.4 = BLOCKED
 billing snapshot persistence = unresolved
-full DELIVERY CHK-001 persistence = not ready
+DELIVERY Order persistence = not implemented
+public CHK-001 must not falsely operate as PICKUP-only
+Group G = not closed
 ```
 
-Do not continue automatically to Phase 7.8.
+Do not continue automatically to Phase 7.9.
 
 DO NOT COMMIT, STAGE OR PUSH.
 

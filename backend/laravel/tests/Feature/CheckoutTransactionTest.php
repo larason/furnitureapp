@@ -346,16 +346,19 @@ class CheckoutTransactionTest extends TestCase
         $cart = $this->activeCartFor($customer);
         $this->itemFor($cart, $product, $variant, 2);
 
-        $this->expectException(DeliveryCheckoutUnsupportedException::class);
-
         try {
-            $this->checkout()->execute(CheckoutCommand::delivery($customer, ['city' => 'Dar es Salaam'], 'k'));
-        } finally {
-            $this->assertSame(0, Order::query()->count());
-            $this->assertSame(0, IdempotencyKey::query()->count());
-            $this->assertSame(1, $cart->fresh()->items()->count());
-            $this->assertSame(0, $variant->fresh()->stocks->first()->reserved_quantity);
+            // Production Checkout runs in one transaction; the wrapper restores
+            // rollback semantics (the claim is discarded with the blocker).
+            DB::transaction(fn () => $this->checkout()->execute(CheckoutCommand::delivery($customer, ['city' => 'Dar es Salaam'], 'k')));
+            $this->fail('Expected DELIVERY checkout to hit the persistence blocker.');
+        } catch (DeliveryCheckoutUnsupportedException) {
+            // expected
         }
+
+        $this->assertSame(0, Order::query()->count());
+        $this->assertSame(0, IdempotencyKey::query()->count());
+        $this->assertSame(1, $cart->fresh()->items()->count());
+        $this->assertSame(0, $variant->fresh()->stocks->first()->reserved_quantity);
     }
 
     public function test_order_item_snapshot_is_immutable_after_catalog_changes(): void

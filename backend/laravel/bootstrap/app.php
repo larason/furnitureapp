@@ -9,6 +9,7 @@ use App\Http\Middleware\AuthenticateClerk;
 use App\Http\Middleware\AuthenticateClerkIfPresent;
 use App\Http\Middleware\CustomerCartAccess;
 use App\Http\Middleware\EnforceApiRequestLimits;
+use App\Http\Middleware\EnsureCheckoutEnabled;
 use App\Http\Middleware\OperationalAccess;
 use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\StaffOrAdminAccess;
@@ -53,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'clerk.auth' => AuthenticateClerk::class,
             'clerk.optional' => AuthenticateClerkIfPresent::class,
             'customer-cart' => CustomerCartAccess::class,
+            'checkout.enabled' => EnsureCheckoutEnabled::class,
             'guest-cart-mutation' => ValidateGuestCartMutation::class,
             'operational' => OperationalAccess::class,
             'admin' => AdministrativeAccess::class,
