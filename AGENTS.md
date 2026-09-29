@@ -1,5 +1,7 @@
 # AI Agent Project Guide — Furniture E-Commerce Platform
 
+*Debugging is twice as hard as writing the code in the first place. Therefore, if you write the code as cleverly as possible, you are, by definition, not smart enough to debug it - One wise man once said*.
+
 ## 1. Project Identity
 
 **Project type:** Small-to-medium furniture e-commerce platform
