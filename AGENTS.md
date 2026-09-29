@@ -22,6 +22,9 @@
 
 **Primary architecture:** API-first, shared backend, shared data model, separate customer frontends
 
+## Note:
+
+As of 2026-09-26 Initial Production Commerce Mode — Request Only. The first production release publishes only MADE_TO_ORDER products. Normal Cart→Checkout→Payment→Order purchasing remains disabled until business registration, payment-provider onboarding, and the deferred Groups G/H/I prerequisites are completed. Customers express purchase intent through the Made-to-Order Request flow. This is a deployment-scope decision, not removal of the frozen V1 commerce contracts.
 ---
 
 ## 2. Project Vision

@@ -4,6 +4,16 @@
 
 ---
 
+### ADR/GROUP-H-AND-I-DEFER
+
+**Decision:** Initial Production Commerce Mode — Request Only. The first production release publishes only MADE_TO_ORDER products. Normal Cart→Checkout→Payment→Order purchasing remains disabled until business registration, payment-provider onboarding, and the deferred Groups G/H/I prerequisites are completed. Customers express purchase intent through the Made-to-Order Request flow. This is a deployment-scope decision, not removal of the frozen V1 commerce contracts.
+
+**Reason:** business registration/payment-provider onboarding is complete.
+
+**Status:** Defered
+**Date:** 2026-09-29
+**Affected:** Phase group G, H and I
+
 ### ADR/AUTH-002 — Application API Rate Limiting
 
 **Decision:** Clerk owns credential-flow abuse protection. Laravel uses named built-in limiters for application API traffic: generous IP-keyed public reads, local-user-keyed authenticated reads/writes, checkout, order cancellation, anonymous submissions, and operational/admin actions. Limits are temporary, configurable where meaningful, and never bypassed by role.
