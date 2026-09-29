@@ -252,7 +252,9 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 | `items_count` | integer | CUSTOMER / GUEST | no | Number of distinct lines in the cart, including stale/unavailable lines (matches `items[].length`) |
 | `items` | `CartItem[]` | CUSTOMER / GUEST | no | Ordered list of cart item objects |
 | `subtotal` | `{amount:int,currency:"TZS"}` | CUSTOMER / GUEST | no | Informational server-calculated subtotal (minor units) |
-| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation (for a transient cart, the time the empty handle was returned) |
+
+**Transient anonymous cart:** A first anonymous `GET /api/v1/me/cart` with no guest credential returns the empty Cart representation without persisting a cart or issuing a credential. It carries a non-null, opaque, transient `id` (`cart_...`, derived from that request's guest token and never equal to a persisted id) and a non-null `updated_at` (the response time); `items` is `[]` and `subtotal` is `0`. Because no credential is issued until the first successful `CART-002`, two such reads are independent and **may return different transient ids — clients must not rely on the transient id for continuity**. Once the client holds a guest credential (issued by the first successful `CART-002`), every later response returns the persisted cart `id`, which is stable across reads and mutations.
 
 ### 4.2 Cart Item Representation
 
@@ -754,7 +756,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 - **Validation:** All fields may also return `INVALID_TYPE`/`INVALID_FORMAT`/`INVALID_VALUE`/`MISSING_REQUIRED_FIELD` with `field` dot path. Unknown fields → 422.
 - **Auth:** `AUTHENTICATION_REQUIRED` (401) vs `FORBIDDEN` (403) kept distinct; 401 never masks as 403. Private-resource 404 masking per `api-contract.md §15.8` (and cart holder 404 per §11.3) prevents enumeration.
 - **Rate limit:** Any operation may return `RATE_LIMITED` 429 with `Retry-After` header; body follows same envelope.
-- **Internal:** Unexpected failure → `500 INTERNAL_SERVER_ERROR` + `meta.request_id` only; full stack stays in server logs, never in `message`/`details`.
+- **Internal:** Unexpected failure → `500 INTERNAL_SERVER_ERROR` + `meta.request_id` only; server logs retain allow-listed diagnostic metadata, never raw throwable/provider content or secrets.
 - **Pagination/query** `page/per_page` out of range, `sort`/`filter` allow-list miss → 422 `INVALID_VALUE` with `field` indicating param.
 
 ## 8. User/Profile — Self-Service Account (Phase 1.28)

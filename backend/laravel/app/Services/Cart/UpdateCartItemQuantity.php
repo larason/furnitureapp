@@ -18,12 +18,19 @@ final class UpdateCartItemQuantity
     public function __construct(
         private readonly CartItemAdmission $admission,
         private readonly CartStockGuard $stock,
+        private readonly ActiveCartLock $cartLock,
     ) {}
 
     public function update(CartItem $item, int $quantity): CartItem
     {
         return ConcurrentTransaction::run(function () use ($item, $quantity): CartItem {
-            $locked = CartItem::query()->whereKey($item->getKey())->lockForUpdate()->first();
+            $lockedCart = $this->cartLock->acquire($item->cart_id);
+
+            $locked = CartItem::query()
+                ->whereKey($item->getKey())
+                ->where('cart_id', $lockedCart->getKey())
+                ->lockForUpdate()
+                ->first();
 
             if ($locked === null) {
                 throw new ApiException(ApiErrorCode::CART_ITEM_NOT_FOUND, 'The requested cart item was not found.', 404);
@@ -39,7 +46,7 @@ final class UpdateCartItemQuantity
             if ($locked->quantity !== $quantity) {
                 $locked->quantity = $quantity;
                 $locked->save();
-                $locked->cart->touch();
+                $lockedCart->touch();
             }
 
             return $locked;

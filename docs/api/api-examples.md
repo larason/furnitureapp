@@ -344,6 +344,13 @@ Authorization: Bearer <ACCESS_TOKEN>
 
 `Customer B GET /api/v1/me/cart` with `Customer A` token → not applicable (self-context `/me/cart` prevents IDOR); `PATCH /api/v1/me/cart/items/{item_of_B}` → `404 CART_ITEM_NOT_FOUND` masked per `§15.8`, not `403` leak.
 
+### 6.6 Cart limits, concurrency, and bodyless boundaries (Post-Freeze `API-FRZ-002`)
+
+- Adding a **new** line to a cart that already holds `100` distinct `(product_id, variant_id)` lines → `422 INVALID_VALUE` (line cap). Increasing the quantity of an existing line is unaffected.
+- Any `CART-002/003/004` mutation whose holder cart was concurrently retired by `CART-005` merge → `409 CONFLICT`; the mutation is never written to the inactive cart.
+- `CART-005` `POST /api/v1/me/cart/merge` is **bodyless**: a non-empty body (object, array, scalar, or `null`) → `422 INVALID_VALUE`; empty/`[]`/`{}` is accepted.
+- A `CART-005` merge that would exceed the `100` distinct-line cap → `422 INVALID_VALUE`; the source guest cart is left `ACTIVE` (no partial merge).
+
 ---
 
 ## 7. Checkout Examples

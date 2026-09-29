@@ -22,6 +22,27 @@ final class GetOrCreateActiveCart
             : $this->forGuest($holder);
     }
 
+    public function forRead(CartHolder $holder): Cart
+    {
+        if ($holder->user !== null) {
+            return $this->forCustomer($holder->user);
+        }
+
+        if ($holder->credentialSupplied) {
+            return $this->requireExistingForHolder($holder);
+        }
+
+        $cart = new Cart([
+            'user_id' => null,
+            'guest_token_digest' => $holder->digest,
+            'status' => CartStatus::ACTIVE,
+        ]);
+        $cart->setRelation('items', $cart->newCollection());
+        $cart->updated_at = now();
+
+        return $cart;
+    }
+
     public function requireExistingForHolder(CartHolder $holder): Cart
     {
         $cart = $holder->user !== null

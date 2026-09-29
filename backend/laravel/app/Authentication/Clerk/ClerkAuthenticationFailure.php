@@ -4,6 +4,7 @@ namespace App\Authentication\Clerk;
 
 use App\Exceptions\Api\ApiException;
 use App\Support\ApiErrorCode;
+use Throwable;
 
 final class ClerkAuthenticationFailure extends ApiException
 {
@@ -27,9 +28,9 @@ final class ClerkAuthenticationFailure extends ApiException
         return new self(ApiErrorCode::INVALID_AUTHENTICATION, 'The authentication credential is invalid.', 401);
     }
 
-    public static function external(): self
+    public static function external(?Throwable $previous = null): self
     {
-        return new self(ApiErrorCode::EXTERNAL_SERVICE_ERROR, 'The authentication provider is temporarily unavailable.', 503);
+        return new self(ApiErrorCode::EXTERNAL_SERVICE_ERROR, 'The authentication provider is temporarily unavailable.', 503, previous: $previous);
     }
 
     public static function internal(): self

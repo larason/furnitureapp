@@ -8,8 +8,11 @@ use App\Authentication\Clerk\OfficialClerkSessionGateway;
 use App\Authentication\Clerk\OfficialClerkTokenVerifier;
 use App\Authentication\Clerk\OfficialClerkUserGateway;
 use App\Authentication\ClerkTokenVerifier;
+use App\Services\Cart\GuestCartTransport;
+use App\Support\ProductionConfiguration;
 use Clerk\Backend\ClerkBackend;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -34,6 +37,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        ProductionConfiguration::validate();
+        $this->configureTrustedProxies();
+
         RateLimiter::for('public-read', fn (Request $request) => Limit::perMinute(100)->by($request->ip()));
         RateLimiter::for('authenticated-read', fn (Request $request) => Limit::perMinute((int) config('rate_limits.authenticated_read_per_minute', 180))->by($this->userKey($request)));
         RateLimiter::for('authenticated-write', fn (Request $request) => Limit::perMinute((int) config('rate_limits.authenticated_write_per_minute', 60))->by($this->userKey($request)));
@@ -46,6 +52,28 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('order-cancel', fn (Request $request) => Limit::perMinute(5)->by($this->userKey($request)));
         RateLimiter::for('inventory-adjust', fn (Request $request) => Limit::perMinute(20)->by($this->userKey($request)));
         RateLimiter::for('admin-staff', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
+        RateLimiter::for('guest-cart-create', fn (Request $request) => $request->user() === null
+            && ! app(GuestCartTransport::class)->suppliesValidCredential($request)
+                ? Limit::perMinute(10)->by('ip:'.$request->ip())
+                : Limit::none());
+        RateLimiter::for('retired-auth', fn (Request $request) => Limit::perMinute(20)->by($request->ip()));
+        RateLimiter::for('upload', fn (Request $request) => Limit::perMinute(10)->by($this->userKey($request)));
+        RateLimiter::for('payment', fn (Request $request) => Limit::perMinute(10)->by($this->userKey($request)));
+        RateLimiter::for('webhook', fn (Request $request) => Limit::perMinute(60)->by($request->ip()));
+    }
+
+    private function configureTrustedProxies(): void
+    {
+        $trustedProxies = config('security.trusted_proxies', []);
+
+        if (! is_array($trustedProxies) || $trustedProxies === []) {
+            return;
+        }
+
+        TrustProxies::at($trustedProxies);
+        TrustProxies::withHeaders(
+            Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO | Request::HEADER_X_FORWARDED_PORT,
+        );
     }
 
     private function userKey(Request $request): string

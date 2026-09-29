@@ -2,12 +2,19 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Monolog\Formatter\LineFormatter;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger as MonologLogger;
+use Monolog\LogRecord;
 use Tests\TestCase;
+use Throwable;
 
 final class LoggingTestBoomException extends \Exception {}
 
@@ -88,6 +95,79 @@ class ApiLoggingTest extends TestCase
         $this->assertSame('error', $captured[0]->level);
         $this->assertSame(500, $captured[0]->context['status'] ?? null);
         $this->assertStringContainsString('LoggingTestBoomException', $captured[0]->context['exception_class'] ?? '');
+        $this->assertArrayNotHasKey('exception', $captured[0]->context);
+    }
+
+    public function test_same_class_failures_are_distinguishable_by_fingerprint(): void
+    {
+        $captured = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$captured): void {
+            if ($event->message === 'api.exception') {
+                $captured[] = $event;
+            }
+        });
+
+        Route::middleware('api')->get('/api/v1/__test__/boom-first', fn () => throw new LoggingTestBoomException('first failure'));
+        Route::middleware('api')->get('/api/v1/__test__/boom-second', fn () => throw new LoggingTestBoomException('second failure'));
+
+        $this->getJson('/api/v1/__test__/boom-first')->assertStatus(500);
+        $this->getJson('/api/v1/__test__/boom-second')->assertStatus(500);
+
+        $this->assertCount(2, $captured);
+        $this->assertSame($captured[0]->context['exception_class'], $captured[1]->context['exception_class']);
+        $this->assertNotSame($captured[0]->context['exception_fingerprint'], $captured[1]->context['exception_fingerprint']);
+        $this->assertArrayNotHasKey('exception_message', $captured[0]->context);
+    }
+
+    public function test_api_server_exception_reaches_registered_error_tracker(): void
+    {
+        $reported = null;
+        $handler = app(ExceptionHandler::class);
+        $this->assertInstanceOf(Handler::class, $handler);
+        $handler->reportable(function (Throwable $reportedException) use (&$reported): void {
+            $reported = $reportedException;
+        });
+        $exception = new LoggingTestBoomException('tracker-visible failure');
+        Route::middleware('api')->get('/api/v1/__test__/tracked-boom', fn () => throw $exception);
+
+        $this->getJson('/api/v1/__test__/tracked-boom')->assertStatus(500);
+
+        $this->assertSame($exception, $reported);
+    }
+
+    public function test_exception_fingerprint_is_logged_and_raw_message_is_excluded(): void
+    {
+        $events = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$events): void {
+            $events[] = $event;
+        });
+        $testHandler = new TestHandler;
+        $logger = Log::getLogger();
+        $this->assertInstanceOf(MonologLogger::class, $logger);
+        $logger->pushHandler($testHandler);
+
+        Route::middleware('api')->get('/api/v1/__test__/secret-chain', function (): never {
+            $previous = new \RuntimeException('Bearer previous-secret-token');
+            throw new LoggingTestBoomException('provider said api_key=provider-secret for bob@example.com sk_live_current-secret', previous: $previous);
+        });
+
+        $this->getJson('/api/v1/__test__/secret-chain')->assertStatus(500);
+
+        $records = $testHandler->getRecords();
+        $this->assertNotEmpty($records, 'Expected the sanitized API exception to be written to the log.');
+        $this->assertStringContainsString('api.exception', (new LineFormatter)->format($records[0]));
+
+        $apiEvent = collect($events)->firstWhere('message', 'api.exception');
+        $this->assertNotNull($apiEvent);
+        $this->assertArrayHasKey('exception_fingerprint', $apiEvent->context);
+        $this->assertArrayNotHasKey('exception_message', $apiEvent->context);
+        $this->assertArrayHasKey('exception_trace', $apiEvent->context);
+
+        $this->assertLogExcludes(
+            ['previous-secret-token', 'sk_live_current-secret', 'provider-secret', 'api_key', 'bob@example.com'],
+            $records,
+            $events,
+        );
     }
 
     public function test_sensitive_headers_and_tokens_not_logged(): void
@@ -112,7 +192,8 @@ class ApiLoggingTest extends TestCase
         $response->assertStatus(500);
 
         $this->assertCount(1, $captured);
-        $contextJson = json_encode($captured[0]->context);
+        $this->assertLogContextHasNoThrowable($captured[0]->context);
+        $contextJson = $this->renderLogContext($captured[0]->context);
 
         $this->assertStringNotContainsString('secret-access-token', $contextJson);
         $this->assertStringNotContainsString('guest-cart-secret-value', $contextJson);
@@ -142,7 +223,8 @@ class ApiLoggingTest extends TestCase
         $response->assertStatus(500);
 
         $this->assertCount(1, $captured);
-        $contextJson = json_encode($captured[0]->context);
+        $this->assertLogContextHasNoThrowable($captured[0]->context);
+        $contextJson = $this->renderLogContext($captured[0]->context);
 
         $this->assertStringNotContainsString(self::SECRET, $contextJson);
         $this->assertStringNotContainsString('123 Private Street', $contextJson);
@@ -195,7 +277,7 @@ class ApiLoggingTest extends TestCase
 
         $this->assertTrue(Str::isUuid($loggedId));
         $this->assertSame($requestId, $loggedId);
-        $this->assertStringNotContainsString("\n", json_encode($captured[0]->context));
+        $this->assertStringNotContainsString("\n", $this->renderLogContext($captured[0]->context));
     }
 
     public function test_trusted_request_id_is_propagated_when_valid_uuid(): void
@@ -228,8 +310,72 @@ class ApiLoggingTest extends TestCase
         $response->assertStatus(500);
 
         $this->assertCount(1, $captured);
-        $contextJson = json_encode($captured[0]->context);
+        $this->assertLogContextHasNoThrowable($captured[0]->context);
+        $contextJson = $this->renderLogContext($captured[0]->context);
 
         $this->assertStringNotContainsString('Free-form private enquiry', $contextJson);
+    }
+
+    /**
+     * Asserts secrets do not reach the formatted log output. Records are run
+     * through Monolog's LineFormatter (which renders a context `exception`,
+     * including its protected message and previous chain), and event contexts
+     * are rendered and inspected for raw Throwable values, since json_encode()
+     * would silently omit their private state.
+     *
+     * @param  array<int, string>  $needles
+     * @param  array<int, LogRecord>  $records
+     * @param  array<int, MessageLogged>  $events
+     */
+    private function assertLogExcludes(array $needles, array $records, array $events): void
+    {
+        $formatted = '';
+        foreach ($records as $record) {
+            $this->assertLogContextHasNoThrowable($record->context);
+            $formatted .= (new LineFormatter)->format($record)."\n";
+        }
+
+        $dispatched = '';
+        foreach ($events as $event) {
+            $this->assertLogContextHasNoThrowable($event->context);
+            $dispatched .= $event->message.' '.$this->renderLogContext($event->context)."\n";
+        }
+
+        foreach ($needles as $needle) {
+            $this->assertStringNotContainsString($needle, $formatted);
+            $this->assertStringNotContainsString($needle, $dispatched);
+        }
+    }
+
+    private function assertLogContextHasNoThrowable(array $context): void
+    {
+        foreach ($context as $key => $value) {
+            $this->assertFalse($value instanceof Throwable, "Log context [{$key}] contains a raw Throwable value.");
+            if (is_array($value)) {
+                $this->assertLogContextHasNoThrowable($value);
+            }
+        }
+    }
+
+    private function renderLogContext(array $context): string
+    {
+        $render = function (mixed $value) use (&$render): string {
+            if ($value instanceof Throwable) {
+                $chain = $value->getMessage();
+                for ($previous = $value->getPrevious(); $previous !== null; $previous = $previous->getPrevious()) {
+                    $chain .= ' '.$previous->getMessage();
+                }
+
+                return $chain;
+            }
+
+            if (is_array($value)) {
+                return implode(' ', array_map($render, $value));
+            }
+
+            return is_scalar($value) ? (string) $value : '';
+        };
+
+        return implode(' ', array_map($render, $context));
     }
 }

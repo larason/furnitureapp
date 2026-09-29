@@ -76,39 +76,42 @@ class CartReadApiTest extends TestCase
         $this->assertSame(1, Cart::query()->count());
     }
 
-    public function test_flutter_guest_without_credential_receives_header_and_digest_only(): void
+    public function test_flutter_guest_read_does_not_create_or_issue_a_cart(): void
     {
         $response = $this->getJson(self::CART_URL)->assertOk();
-        $raw = $response->headers->get(GuestCartTransport::HEADER);
 
-        $this->assertNotNull($raw);
-        $this->assertTrue(Str::isUuid($raw), 'guest credential must be a UUID');
-        $this->assertSame('4', $raw[14], 'guest credential must be UUIDv4');
+        $this->assertNull($response->headers->get(GuestCartTransport::HEADER));
         $this->assertSame([], $response->headers->getCookies());
-
-        $cart = Cart::query()->sole();
-        $this->assertNull($cart->user_id);
-        $this->assertSame(GuestCartCredential::digest($raw), $cart->guest_token_digest);
-        $this->assertNotSame($raw, $cart->guest_token_digest);
-        $this->assertStringNotContainsString((string) $raw, (string) $response->getContent());
+        $id = $response->json('data.id');
+        $this->assertIsString($id);
+        $this->assertStringStartsWith('cart_', $id);
+        $this->assertNotSame('cart_0', $id);
+        $this->assertNotNull($response->json('data.updated_at'));
+        $this->assertDatabaseCount('carts', 0);
     }
 
-    public function test_browser_guest_without_credential_receives_httponly_cookie_only(): void
+    public function test_independent_anonymous_reads_return_independent_transient_handles(): void
+    {
+        $first = $this->getJson(self::CART_URL)->assertOk()->json('data.id');
+        $second = $this->getJson(self::CART_URL)->assertOk()->json('data.id');
+
+        $this->assertIsString($first);
+        $this->assertIsString($second);
+        $this->assertStringStartsWith('cart_', $first);
+        $this->assertNotSame($first, $second);
+        $this->assertDatabaseCount('carts', 0);
+    }
+
+    public function test_browser_guest_read_does_not_issue_a_cookie(): void
     {
         $response = $this->withHeaders(['Origin' => 'https://www.example.com'])->getJson(self::CART_URL)->assertOk();
 
         $this->assertNull($response->headers->get(GuestCartTransport::HEADER));
-        $cookie = collect($response->headers->getCookies())
-            ->first(fn ($cookie): bool => $cookie->getName() === GuestCartTransport::COOKIE);
-
-        $this->assertNotNull($cookie);
-        $this->assertTrue($cookie->isHttpOnly());
-        $this->assertTrue($cookie->isSecure());
-        $this->assertSame('none', $cookie->getSameSite());
-        $this->assertTrue(Str::isUuid($cookie->getValue()));
+        $this->assertSame([], $response->headers->getCookies());
+        $this->assertDatabaseCount('carts', 0);
     }
 
-    public function test_browser_guest_without_origin_but_with_fetch_metadata_receives_cookie(): void
+    public function test_browser_guest_read_with_fetch_metadata_remains_non_persistent(): void
     {
         $response = $this->withHeaders([
             'Sec-Fetch-Mode' => 'cors',
@@ -116,17 +119,18 @@ class CartReadApiTest extends TestCase
         ])->getJson(self::CART_URL)->assertOk();
 
         $this->assertNull($response->headers->get(GuestCartTransport::HEADER));
-        $cookie = collect($response->headers->getCookies())
-            ->first(fn ($cookie): bool => $cookie->getName() === GuestCartTransport::COOKIE);
-
-        $this->assertNotNull($cookie);
-        $this->assertTrue($cookie->isHttpOnly());
+        $this->assertSame([], $response->headers->getCookies());
+        $this->assertDatabaseCount('carts', 0);
     }
 
     public function test_guest_with_existing_credential_resolves_the_same_cart_without_reissue(): void
     {
-        $raw = $this->getJson(self::CART_URL)->assertOk()->headers->get(GuestCartTransport::HEADER);
-        $cart = Cart::query()->sole();
+        $raw = GuestCartCredential::generate();
+        $cart = Cart::factory()->create([
+            'user_id' => null,
+            'guest_token_digest' => GuestCartCredential::digest($raw),
+            'status' => CartStatus::ACTIVE,
+        ]);
 
         $response = $this->withHeaders([GuestCartTransport::HEADER => $raw])->getJson(self::CART_URL)->assertOk();
 
@@ -211,16 +215,15 @@ class CartReadApiTest extends TestCase
             ->assertUnauthorized();
     }
 
-    public function test_staff_may_resolve_only_their_own_personal_cart(): void
+    public function test_staff_may_not_use_customer_cart(): void
     {
         $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_cart', 'account_state' => 'ACTIVE']);
 
         $this->withHeaders($this->authenticateAs($staff))->getJson(self::CART_URL)
-            ->assertOk()
-            ->assertJsonPath('data.items', []);
+            ->assertForbidden()
+            ->assertJsonPath('errors.0.code', 'FORBIDDEN');
 
-        $cart = Cart::query()->sole();
-        $this->assertSame($staff->id, $cart->user_id);
+        $this->assertDatabaseCount('carts', 0);
     }
 
     public function test_holder_selection_ignores_client_supplied_cart_and_user_identifiers(): void

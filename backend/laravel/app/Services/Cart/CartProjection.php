@@ -18,14 +18,16 @@ final class CartProjection
     /** @return array<string, mixed> */
     public function render(Cart $cart): array
     {
-        $cart->load([
-            'items' => fn ($query) => $query->orderBy('created_at')->orderBy('id'),
-            'items.product' => fn ($query) => $query->withTrashed(),
-            'items.product.category',
-            'items.product.primaryImage',
-            'items.product.variants',
-            'items.variant',
-        ]);
+        if ($cart->exists) {
+            $cart->load([
+                'items' => fn ($query) => $query->orderBy('created_at')->orderBy('id'),
+                'items.product' => fn ($query) => $query->withTrashed(),
+                'items.product.category',
+                'items.product.primaryImage',
+                'items.product.variants',
+                'items.variant',
+            ]);
+        }
 
         return (new CartResource($cart, $this->revalidator->revalidate($cart)))->resolve();
     }

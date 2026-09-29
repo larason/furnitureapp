@@ -20,7 +20,10 @@ final class AddCartItem
 {
     private const MAX_ATTEMPTS = 3;
 
-    public function __construct(private readonly CartStockGuard $stock) {}
+    public function __construct(
+        private readonly CartStockGuard $stock,
+        private readonly ActiveCartLock $cartLock,
+    ) {}
 
     public function add(Cart $cart, Product $product, ProductVariant $variant, int $quantity): CartItem
     {
@@ -38,12 +41,18 @@ final class AddCartItem
     private function apply(Cart $cart, Product $product, ProductVariant $variant, int $quantity): CartItem
     {
         return ConcurrentTransaction::run(function () use ($cart, $product, $variant, $quantity): CartItem {
+            $lockedCart = $this->cartLock->acquire($cart->getKey());
+
             $item = CartItem::query()
-                ->where('cart_id', $cart->getKey())
+                ->where('cart_id', $lockedCart->getKey())
                 ->where('product_id', $product->getKey())
                 ->where('variant_id', $variant->getKey())
                 ->lockForUpdate()
                 ->first();
+
+            if ($item === null) {
+                $this->assertLineCapacity($lockedCart);
+            }
 
             $existingQuantity = $item === null ? 0 : $item->quantity;
             $resulting = min($existingQuantity + $quantity, CartItem::MAX_QUANTITY);
@@ -52,7 +61,7 @@ final class AddCartItem
 
             if ($item === null) {
                 $item = new CartItem([
-                    'cart_id' => $cart->getKey(),
+                    'cart_id' => $lockedCart->getKey(),
                     'product_id' => $product->getKey(),
                     'variant_id' => $variant->getKey(),
                     'quantity' => $resulting,
@@ -62,9 +71,22 @@ final class AddCartItem
             }
 
             $item->save();
-            $cart->touch();
+            $lockedCart->touch();
 
             return $item;
         });
+    }
+
+    private function assertLineCapacity(Cart $cart): void
+    {
+        // Locking (current) read: an outer REPEATABLE READ transaction may have
+        // established an earlier snapshot, so a plain count could miss a line
+        // committed while this transaction waited for the cart lock. Matches
+        // MergeGuestCart::consolidate.
+        $lines = CartItem::query()->where('cart_id', $cart->getKey())->lockForUpdate()->count();
+
+        if ($lines >= Cart::MAX_ITEMS) {
+            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'The cart cannot contain more than '.Cart::MAX_ITEMS.' distinct items.', 422);
+        }
     }
 }

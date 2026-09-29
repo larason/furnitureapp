@@ -22,15 +22,17 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pdo, pdo_sqlite, sqlite3, bcmath, fileinfo, openssl, tokenizer, xml, ctype, json
           coverage: none
 
+      - name: Prepare environment
+        working-directory: backend/laravel
+        run: cp .env.example .env
+
       - name: Install dependencies
         working-directory: backend/laravel
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Prepare environment
+      - name: Generate application key
         working-directory: backend/laravel
-        run: |
-          cp .env.example .env
-          php artisan key:generate --ansi
+        run: php artisan key:generate --ansi
 
       - name: Format check
         working-directory: backend/laravel

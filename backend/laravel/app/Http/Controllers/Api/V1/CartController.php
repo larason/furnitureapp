@@ -38,9 +38,9 @@ class CartController extends V1Controller
         GuestCartTransport $transport,
     ): JsonResponse {
         $holder = $resolver->resolve($request);
-        $cart = $getOrCreate->forHolder($holder);
+        $cart = $getOrCreate->forRead($holder);
 
-        return $this->present($request, $cart, $holder, $transport);
+        return $this->present($request, $cart, $holder, $transport, issueCredential: false);
     }
 
     public function addItem(
@@ -104,6 +104,8 @@ class CartController extends V1Controller
         MergeGuestCart $merge,
         IdempotencyService $idempotency,
     ): JsonResponse {
+        $this->rejectRequestBody($request);
+
         $actor = $request->user();
 
         if (! $actor instanceof User) {
@@ -141,9 +143,15 @@ class CartController extends V1Controller
     private function hasRequestBody(Request $request): bool
     {
         if ($request->isJson()) {
-            $decoded = json_decode($request->getContent(), true);
+            $content = trim($request->getContent());
 
-            return is_array($decoded) && $decoded !== [];
+            if ($content === '') {
+                return false;
+            }
+
+            // Only an empty array/object is bodyless; scalars, null, and
+            // non-empty arrays/objects still carry a body and are rejected.
+            return json_decode($content, true) !== [];
         }
 
         return $request->request->all() !== [];
@@ -177,6 +185,7 @@ class CartController extends V1Controller
         CartHolder $holder,
         GuestCartTransport $transport,
         int $status = 200,
+        bool $issueCredential = true,
     ): JsonResponse {
         $wasRecentlyCreated = $cart->wasRecentlyCreated;
 
@@ -184,7 +193,7 @@ class CartController extends V1Controller
             ->json(['data' => $this->projection->render($cart)], $status)
             ->withHeaders($this->privateHeaders());
 
-        if ($holder->user === null && ! $holder->credentialSupplied && $wasRecentlyCreated && $holder->rawToken !== null) {
+        if ($issueCredential && $holder->user === null && ! $holder->credentialSupplied && $wasRecentlyCreated && $holder->rawToken !== null) {
             return $transport->issue($request, $response, $holder->rawToken);
         }
 

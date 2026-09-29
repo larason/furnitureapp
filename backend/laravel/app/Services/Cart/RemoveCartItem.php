@@ -11,16 +11,23 @@ use App\Support\ConcurrentTransaction;
  */
 final class RemoveCartItem
 {
+    public function __construct(private readonly ActiveCartLock $cartLock) {}
+
     public function remove(CartItem $item): void
     {
         ConcurrentTransaction::run(function () use ($item): void {
-            $locked = CartItem::query()->whereKey($item->getKey())->lockForUpdate()->first();
+            $cart = $this->cartLock->acquire($item->cart_id);
+
+            $locked = CartItem::query()
+                ->whereKey($item->getKey())
+                ->where('cart_id', $cart->getKey())
+                ->lockForUpdate()
+                ->first();
 
             if ($locked === null) {
                 return;
             }
 
-            $cart = $locked->cart;
             $locked->delete();
             $cart->touch();
         });

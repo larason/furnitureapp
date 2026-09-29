@@ -33,10 +33,12 @@ class ApiRoutingSmokeTest extends TestCase
 
     private const API_ENQUIRIES = '/api/v1/enquiries';
 
+    private const BEARER_TOKEN = 'Bearer session-token';
+
     public function test_administrative_routes_deny_authenticated_non_admin_users(): void
     {
-        $this->configureClerkUser($user = User::factory()->create(['clerk_user_id' => 'user_customer']));
-        $headers = ['Authorization' => 'Bearer session-token'];
+        $this->configureClerkUser(User::factory()->create(['clerk_user_id' => 'user_customer']));
+        $headers = ['Authorization' => self::BEARER_TOKEN];
 
         $this->withHeaders($headers)->getJson(self::API_ADMIN)->assertForbidden();
         $this->withHeaders($headers)->getJson('/api/v1/admin/audit-logs')->assertForbidden();
@@ -49,8 +51,8 @@ class ApiRoutingSmokeTest extends TestCase
 
     public function test_operational_routes_deny_authenticated_non_staff_users(): void
     {
-        $this->configureClerkUser($user = User::factory()->create(['clerk_user_id' => 'user_customer']));
-        $headers = ['Authorization' => 'Bearer session-token'];
+        $this->configureClerkUser(User::factory()->create(['clerk_user_id' => 'user_customer']));
+        $headers = ['Authorization' => self::BEARER_TOKEN];
 
         $this->withHeaders($headers)->getJson('/api/v1/orders')->assertForbidden();
         $this->withHeaders($headers)->postJson('/api/v1/orders/OD-1/accept')->assertForbidden();
@@ -70,7 +72,7 @@ class ApiRoutingSmokeTest extends TestCase
             ]);
             $this->configureClerkUser($staff);
 
-            $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            $this->withHeaders(['Authorization' => self::BEARER_TOKEN])
                 ->getJson('/api/v1/orders')
                 ->assertForbidden();
         }
@@ -85,7 +87,7 @@ class ApiRoutingSmokeTest extends TestCase
             ]);
             $this->configureClerkUser($admin);
 
-            $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            $this->withHeaders(['Authorization' => self::BEARER_TOKEN])
                 ->getJson('/api/v1/admin/staff')
                 ->assertForbidden();
         }
@@ -117,6 +119,19 @@ class ApiRoutingSmokeTest extends TestCase
         $this->postJson('/api/v1/enquiries/ENQ-1/attachments')->assertUnauthorized();
     }
 
+    public function test_authenticated_multipart_attachment_uploads_reach_the_endpoint(): void
+    {
+        $user = User::factory()->customer()->create(['clerk_user_id' => 'user_uploader']);
+        $this->configureClerkUser($user);
+
+        foreach (['/api/v1/requests/REQ-1/attachments', '/api/v1/enquiries/ENQ-1/attachments'] as $path) {
+            $this->withHeaders([
+                'Authorization' => self::BEARER_TOKEN,
+                'Content-Type' => 'multipart/form-data; boundary=----test',
+            ])->post($path, ['name' => 'x'])->assertStatus(501);
+        }
+    }
+
     public function test_optional_authentication_accepts_anonymous_and_authenticated_requests(): void
     {
         $user = User::factory()->customer()->create(['clerk_user_id' => 'user_123']);
@@ -126,7 +141,7 @@ class ApiRoutingSmokeTest extends TestCase
         $this->app->instance(ClerkTokenVerifier::class, $verifier);
 
         $this->postJson(self::API_REQUESTS)->assertStatus(501);
-        $this->postJson(self::API_REQUESTS, [], ['Authorization' => 'Bearer session-token'])->assertStatus(501);
+        $this->postJson(self::API_REQUESTS, [], ['Authorization' => self::BEARER_TOKEN])->assertStatus(501);
         $this->assertTrue($user->exists);
     }
 
@@ -175,7 +190,7 @@ class ApiRoutingSmokeTest extends TestCase
         $this->app->instance(ClerkTokenVerifier::class, $this->mockVerifier());
         $user->forceFill(['clerk_user_id' => 'user_123'])->save();
 
-        $response = $this->getJson('/api/v1/me', ['Authorization' => 'Bearer session-token']);
+        $response = $this->getJson('/api/v1/me', ['Authorization' => self::BEARER_TOKEN]);
 
         $response->assertOk()->assertJsonPath('data.id', (string) $user->id)
             ->assertJsonPath('data.role', 'CUSTOMER')

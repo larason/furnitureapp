@@ -9,8 +9,11 @@ use App\Authentication\Clerk\RevokeClerkSession;
 use App\Authentication\ClerkTokenVerifier;
 use App\Exceptions\Api\ApiException;
 use App\Models\User;
+use App\Support\RoleName;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ClerkSecurityBoundaryTest extends TestCase
@@ -158,6 +161,67 @@ class ClerkSecurityBoundaryTest extends TestCase
         $response->assertForbidden()
             ->assertJsonPath('errors.0.code', 'FORBIDDEN');
         $this->assertSame('SUSPENDED', $user->fresh()->account_state);
+    }
+
+    public function test_suspended_local_account_is_denied_on_optional_auth_cart_route(): void
+    {
+        User::factory()->customer()->create([
+            'clerk_user_id' => 'user_optional_suspended',
+            'account_state' => 'SUSPENDED',
+        ]);
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->andReturn(new AuthenticatedClerkIdentity('user_optional_suspended', 'sess_123', 'https://clerk.example.test'));
+
+        $this->withHeaders(['Authorization' => 'Bearer session-token'])
+            ->getJson('/api/v1/me/cart')
+            ->assertForbidden();
+    }
+
+    public function test_staff_is_denied_across_all_customer_cart_operations(): void
+    {
+        User::factory()->staff()->create(['clerk_user_id' => 'staff_cart_denied', 'account_state' => 'ACTIVE']);
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->andReturn(new AuthenticatedClerkIdentity('staff_cart_denied', 'sess_123', 'https://clerk.example.test'));
+        $headers = ['Authorization' => 'Bearer session-token'];
+
+        $this->withHeaders($headers)->getJson('/api/v1/me/cart')->assertForbidden();
+        $this->withHeaders($headers)->postJson('/api/v1/me/cart/items', [])->assertForbidden();
+        $this->withHeaders($headers)->patchJson('/api/v1/me/cart/items/item_1', [])->assertForbidden();
+        $this->withHeaders($headers)->deleteJson('/api/v1/me/cart/items/item_1')->assertForbidden();
+        $this->withHeaders($headers)->postJson('/api/v1/me/cart/merge', [])->assertForbidden();
+    }
+
+    public function test_mixed_privileged_customer_accounts_are_denied_customer_cart_access(): void
+    {
+        foreach (RoleName::cases() as $role) {
+            Role::firstOrCreate(['name' => $role->value, 'guard_name' => config('auth.defaults.guard')]);
+        }
+
+        $admin = User::factory()->create(['clerk_user_id' => 'mixed_admin', 'account_state' => 'ACTIVE']);
+        $admin->assignRole(RoleName::CUSTOMER->value, RoleName::ADMIN->value);
+
+        $staff = User::factory()->create(['clerk_user_id' => 'mixed_staff', 'account_state' => 'ACTIVE']);
+        $staff->assignRole(RoleName::CUSTOMER->value, RoleName::STAFF->value);
+
+        $this->mock(ClerkTokenVerifier::class)
+            ->shouldReceive('verify')
+            ->andReturnUsing(static function (Request $request): AuthenticatedClerkIdentity {
+                $subject = $request->bearerToken() === 'admin-session' ? 'mixed_admin' : 'mixed_staff';
+
+                return new AuthenticatedClerkIdentity($subject, 'sess_mixed', 'https://clerk.example.test');
+            });
+
+        foreach (['admin-session', 'staff-session'] as $token) {
+            $headers = ['Authorization' => 'Bearer '.$token];
+
+            $this->withHeaders($headers)->getJson('/api/v1/me/cart')->assertForbidden();
+            $this->withHeaders($headers)->postJson('/api/v1/me/cart/items', [])->assertForbidden();
+            $this->withHeaders($headers)->patchJson('/api/v1/me/cart/items/item_1', [])->assertForbidden();
+            $this->withHeaders($headers)->deleteJson('/api/v1/me/cart/items/item_1')->assertForbidden();
+            $this->withHeaders($headers)->postJson('/api/v1/me/cart/merge', [])->assertForbidden();
+        }
     }
 
     public function test_enumeration_protection_does_not_reveal_account_existence(): void

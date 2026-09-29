@@ -42,9 +42,7 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
                 acceptsToken: ['session_token'],
             ));
         } catch (\Throwable $exception) {
-            report($exception);
-
-            throw ClerkAuthenticationFailure::external();
+            throw ClerkAuthenticationFailure::external($exception);
         }
 
         if (! $state->isAuthenticated()) {
@@ -68,6 +66,11 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         $configuredIssuer = config('clerk.issuer');
 
         if ($configuredIssuer !== null && $configuredIssuer !== '' && $issuer !== $configuredIssuer) {
+            throw ClerkAuthenticationFailure::invalid();
+        }
+
+        if (! $this->claimMatches($payload->aud ?? null, $audiences)
+            || ! $this->claimMatches($payload->azp ?? null, $authorizedParties)) {
             throw ClerkAuthenticationFailure::invalid();
         }
 
@@ -131,5 +134,28 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
         }
 
         return true;
+    }
+
+    /**
+     * Fails closed against the configured allow-list: a claim must be present
+     * and intersect the allow-list. A token that omits `aud`/`azp` is rejected
+     * whenever the corresponding restriction is configured; the claim is only
+     * ignored when no allow-list is configured. The Clerk SDK skips absent
+     * claims, so this application-level check is what enforces the restriction.
+     *
+     * @param  array<int, string>|null  $allowed
+     */
+    private function claimMatches(mixed $claim, ?array $allowed): bool
+    {
+        if ($allowed === null) {
+            return true;
+        }
+
+        $values = is_string($claim) ? [$claim] : $claim;
+
+        return is_array($values)
+            && $values !== []
+            && $this->containsOnlyStrings($values)
+            && array_intersect($values, $allowed) !== [];
     }
 }

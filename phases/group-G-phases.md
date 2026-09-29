@@ -1,380 +1,1892 @@
-# Phase 7.5 — Delivery Fee Rules
+# Phase 7.6 — Order Totals
 
 ## Purpose
 
-Implement and harden the Version 1 **delivery-fee finalization rules** for DELIVERY Orders.
+Implement the single authoritative backend calculation boundary for Checkout and Order financial totals.
 
-This phase owns the business behavior around:
+Phase 7.6 must centralize:
 
 ```text
-ORD-014
-POST /api/v1/orders/{order}/delivery-fee
+line_total
+subtotal
+delivery_fee relationship
+total
+currency
+financial finality
+overflow protection
 ```
 
-It complements Phase 7.4:
+without persisting a Checkout Order, reserving inventory, or resolving the Phase 7.4 billing-address persistence gap.
+
+This phase must produce a financial component that later phases can safely reuse from:
 
 ```text
-CHK-001 DELIVERY
-→ Order PENDING_PAYMENT
-→ delivery_fee = null
-→ delivery_fee_status = PENDING
-→ total = subtotal (provisional)
+Phase 7.7 — Checkout transaction boundaries
+Phase 7.8 — Checkout validation
+ORD-014 — delivery-fee finalization
+Group H — payment amount authority
 ```
 
-Phase 7.5 must implement the controlled transition:
+---
+
+# 1. Current Group G Status
+
+Treat the current roadmap state as:
 
 ```text
+7.1  PASS     — Checkout requirements
+7.2  PASS     — Address model review
+7.3  PASS     — Pickup flow
+7.4  BLOCKED  — Delivery flow persistence
+                 billing-address snapshot model gap
+7.5  PASS     — Delivery fee rules / ORD-014
+7.6  CURRENT  — Order totals
+```
+
+Do not incorrectly report Phase 7.4 as PASS.
+
+---
+
+# 2. Phase 7.4 Blocker Must Remain Explicit
+
+The DELIVERY branch currently exists as:
+
+```text
+DeliveryFulfillmentState
+```
+
+and can project:
+
+```text
+delivery_address
+billing_address
 delivery_fee = null
 delivery_fee_status = PENDING
+total = subtotal
+```
 
-        ↓ ORD-014
+but cannot persist a complete frozen V1 DELIVERY Order because:
 
-delivery_fee = authoritative Money
+```text
+orders has no billing_address persistence
+```
+
+and there is currently no approved alternative snapshot model.
+
+Phase 7.6 must NOT resolve this indirectly.
+
+---
+
+# 3. Phase 7.6 Is Safe to Continue
+
+Financial calculation does not require:
+
+```text
+billing_address persistence
+Delivery row creation
+Checkout Order insert
+Cart clear
+inventory reservation
+```
+
+Therefore Phase 7.6 may be implemented independently as a pure financial/domain boundary.
+
+---
+
+# 4. Primary Objective
+
+There must be exactly one authoritative answer to:
+
+```text
+Given authoritative line amounts,
+fulfillment type,
+delivery-fee state,
+and currency,
+
+what are:
+- subtotal
+- delivery fee representation
+- total
+- whether the total is final?
+```
+
+Avoid separate formulas inside:
+
+```text
+PickupFulfillmentState
+DeliveryFulfillmentState
+FinalizeDeliveryFee
+Checkout transaction
+OrderResource
+Payment initiation
+```
+
+---
+
+# 5. Canonical Financial Rules
+
+The frozen V1 rules are:
+
+```text
+PICKUP
+delivery_fee = 0
+delivery_fee_status = FINALIZED
+total = subtotal
+total final = YES
+```
+
+```text
+DELIVERY + PENDING fee
+delivery_fee = null
+delivery_fee_status = PENDING
+total = subtotal
+total final = NO
+```
+
+```text
+DELIVERY + FINALIZED fee
+delivery_fee >= 0
 delivery_fee_status = FINALIZED
 total = subtotal + delivery_fee
+total final = YES
 ```
 
-No payment is created.
-
-No inventory is changed.
-
-No Order status transition occurs.
+These rules are already reflected in the Order model invariants.
 
 ---
 
-# 1. Scope
+# 6. Model Does Not Own Calculation
 
-Phase 7.5 owns:
+Current `Order::assertValid()` validates financial consistency.
+
+It intentionally does not calculate totals.
+
+Preserve that design.
+
+Target separation:
 
 ```text
-ORD-014 delivery-fee finalization
-Staff/Admin authorization
-orders.set_delivery_fee permission
-strict fee input
-zero-fee delivery support
-TZS authority
-minor-unit validation
-PENDING → FINALIZED rule
-total recomputation
-idempotency
-concurrency
-audit recording
-historical fee immutability
-payment-eligibility boundary
-focused tests
+calculator
+→ creates authoritative amounts
+
+Order model
+→ validates persistence invariants
 ```
 
-It does NOT own:
+Do not turn the Order model into a calculator.
+
+---
+
+# 7. One Calculation Authority
+
+Introduce or consolidate one focused component.
+
+Examples:
 
 ```text
-CHK-001 Checkout transaction
-delivery-fee estimation at Checkout
-automatic city-based pricing
-delivery zones
-payment creation
-PAY-001
-payment provider
-payment webhook
-inventory reservation
-reservation release
-inventory consumption
-Order acceptance/processing/shipping
-frontend
+OrderTotalsCalculator
+CheckoutTotals
+OrderFinancialCalculator
+```
+
+Use repository naming conventions.
+
+Prefer a name that expresses:
+
+```text
+pure calculation
+```
+
+rather than workflow.
+
+---
+
+# 8. Suggested Responsibility
+
+Conceptually:
+
+```text
+calculateSubtotal(lines)
+
+forPickup(subtotal)
+
+forDeliveryPending(subtotal)
+
+forDeliveryFinalized(subtotal, deliveryFee)
+```
+
+or an equivalent cohesive API.
+
+Do not mechanically implement these exact method names if the repository has a better pattern.
+
+---
+
+# 9. Suggested Result Object
+
+A small immutable value/result object may contain:
+
+```text
+subtotal
+deliveryFee
+deliveryFeeStatus
+total
+currency
+isFinal
+```
+
+Conceptually:
+
+```text
+OrderTotals
 ```
 
 ---
 
-# 2. Starting State
+# 10. Result Must Be Immutable
 
-Assume:
-
-```text
-Group F — PASS / CLOSED
-Phase 7.1 — PASS
-Phase 7.2 — PASS
-Phase 7.3 — PASS
-Phase 7.4 — BLOCKED: billing snapshot persistence model gap
-```
-
-Phase 7.4 currently establishes a DELIVERY state projection, not a persisted
-Order. The projection describes the intended CHK-001 output once the billing
-snapshot model and persistence path are resolved:
+Financial calculation output should not permit:
 
 ```text
-fulfillment_type = DELIVERY
-status = PENDING_PAYMENT
-delivery_fee = null
-delivery_fee_status = PENDING
-total = subtotal   # provisional
-payment = null
+total changed independently
+delivery fee changed independently
+status changed independently
 ```
 
-Phase 7.5 must not change that projected CHK-001 state or imply that DELIVERY
-Checkout already persists it.
+after construction.
+
+Prefer immutable values.
 
 ---
 
-# 3. Canonical Endpoint
+# 11. Currency
 
-Implement/harden only:
-
-```http
-POST /api/v1/orders/{order}/delivery-fee
-```
-
-Operation:
+V1 uses:
 
 ```text
-ORD-014
+TZS
 ```
+
+only.
+
+Every financial result must use the same canonical currency.
+
+---
+
+# 12. No Currency Conversion
+
+Do not introduce:
+
+```text
+USD
+KES
+EUR
+FX conversion
+exchange rate
+```
+
+---
+
+# 13. Integer Minor Units
+
+Every monetary amount uses:
+
+```text
+integer minor units
+```
+
+No floating point.
+
+---
+
+# 14. TZS Precision
+
+Preserve project convention:
+
+```text
+1 TZS = 100 minor units
+```
+
+Do not silently reinterpret existing stored amounts as major units.
+
+---
+
+# 15. No Decimal Money
+
+Do not use:
+
+```text
+float
+double
+decimal strings
+round()
+number_format()
+```
+
+for domain calculations.
+
+---
+
+# 16. Line Total Formula
+
+For every Checkout line:
+
+```text
+line_total =
+unit_price × quantity
+```
+
+using integer arithmetic.
+
+---
+
+# 17. Unit Price Authority
+
+The calculator receives:
+
+```text
+server-resolved current unit price
+```
+
+not client-submitted price.
+
+---
+
+# 18. Quantity Authority
+
+The quantity comes from the locked/revalidated Cart item during Checkout later.
+
+Phase 7.6 should calculate from trusted inputs.
+
+Do not make this calculator responsible for Cart ownership or request validation.
+
+---
+
+# 19. Historical OrderItem Rule
+
+The calculated:
+
+```text
+unit_price
+quantity
+line_total
+```
+
+later become immutable `OrderItem` snapshot values.
+
+Current OrderItem invariants already require:
+
+```text
+line_total_amount = unit_price_amount × quantity
+```
+
+so the calculator should produce values compatible with those persistence rules.
+
+---
+
+# 20. Subtotal Formula
+
+Canonical:
+
+```text
+subtotal =
+SUM(line_total)
+```
+
+for all Checkout OrderItems.
+
+---
+
+# 21. No Delivery Fee in Subtotal
+
+Do NOT calculate:
+
+```text
+subtotal =
+line totals + delivery fee
+```
+
+Delivery fee is separate.
+
+---
+
+# 22. No Tax
+
+Do not add tax.
+
+---
+
+# 23. No Discount
 
 Do not add:
 
 ```text
-PATCH /orders/{order}
-PATCH /orders/{order}/delivery-fee
-POST /orders/{order}/fee
-POST /checkout/delivery-fee
+discount
+coupon
+promotion
+voucher
+```
+
+to Order totals.
+
+---
+
+# 24. No Service Fee
+
+Do not add:
+
+```text
+handling fee
+platform fee
+pickup fee
+processing fee
 ```
 
 ---
 
-# 4. ORD-014 Is Operational
+# 25. PICKUP Formula
 
-This endpoint is not a customer action.
-
-Allowed actors:
+For PICKUP:
 
 ```text
-STAFF
-ADMIN
+delivery_fee_amount = 0
+delivery_fee_status = FINALIZED
+total_amount = subtotal_amount
+```
+
+---
+
+# 26. PICKUP Finality
+
+PICKUP's total is:
+
+```text
+FINAL
+```
+
+from the Order financial perspective.
+
+It is still:
+
+```text
+PENDING_PAYMENT
+```
+
+until Group H confirms payment.
+
+Do not confuse:
+
+```text
+financial finality
 ```
 
 with:
 
 ```text
-orders.set_delivery_fee
+payment status
 ```
-
-permission.
 
 ---
 
-# 5. Customer Access
+# 27. DELIVERY Pending Formula
 
-A CUSTOMER must not set or alter a delivery fee.
-
-Expected:
+For DELIVERY before ORD-014:
 
 ```text
-403 FORBIDDEN
+delivery_fee_amount = null
+delivery_fee_status = PENDING
+total_amount = subtotal_amount
 ```
-
-for an authenticated customer attempting ORD-014.
 
 ---
 
-# 6. Anonymous Access
+# 28. DELIVERY Pending Total Is Provisional
 
-Expected:
+Even though:
 
 ```text
-401 AUTHENTICATION_REQUIRED
+total_amount == subtotal_amount
 ```
 
----
-
-# 7. STAFF Permission
-
-STAFF must have:
+the total is:
 
 ```text
-orders.set_delivery_fee
+PROVISIONAL
 ```
 
-Being STAFF alone is insufficient if the authorization model requires explicit permission.
+and must not be considered payable.
 
 ---
 
-# 8. ADMIN
+# 29. Do Not Use `total == subtotal` to Infer Finality
 
-ADMIN may perform the operation according to the established highest-authority operational policy.
-
-Still enforce all Order-state/business rules.
-
-Admin does not bypass:
+Both of these may be true:
 
 ```text
-PENDING_PAYMENT
-DELIVERY
-PENDING fee status
+PICKUP:
+total == subtotal
+FINAL
 ```
-
-requirements.
-
----
-
-# 9. Wrong Permission
-
-Permissions such as:
 
 ```text
-inventory.manage
-products.manage
-orders.view
+DELIVERY/PENDING:
+total == subtotal
+NOT FINAL
 ```
 
-must not implicitly grant delivery-fee authority.
-
-Use exactly the established permission.
-
----
-
-# 10. Request Contract
-
-Canonical request:
-
-```json
-{
-  "delivery_fee": {
-    "amount": 35000,
-    "currency": "TZS"
-  }
-}
-```
-
-Optional where frozen contract allows:
-
-```json
-{
-  "delivery_fee": {
-    "amount": 35000,
-    "currency": "TZS"
-  },
-  "reason": "Mikocheni zone 2"
-}
-```
-
----
-
-# 11. Strict Allow-List
-
-Allowed fields:
+Therefore finality comes from:
 
 ```text
-delivery_fee
-reason   # optional only if current OpenAPI/contract includes it
-```
-
-Do not accept anything else.
-
----
-
-# 12. Server-Controlled Fields
-
-Reject:
-
-```text
-subtotal
-total
-status
 delivery_fee_status
-currency at top level
-customer_id
-user_id
-order_reference
-payment_status
-payment
-updated_at
-created_at
++
+fulfillment semantics
+```
+
+not numerical equality.
+
+---
+
+# 30. DELIVERY Finalized Formula
+
+After ORD-014:
+
+```text
+delivery_fee_status = FINALIZED
+
+total =
+subtotal
++
+delivery_fee
 ```
 
 ---
 
-# 13. Money Shape
+# 31. Zero-Fee DELIVERY
 
-`delivery_fee` must use canonical Money shape:
+If authorized ORD-014 later finalizes:
+
+```text
+delivery_fee = 0
+```
+
+then:
+
+```text
+total = subtotal
+delivery_fee_status = FINALIZED
+total final = YES
+```
+
+This must remain distinguishable from:
+
+```text
+delivery_fee = null
+delivery_fee_status = PENDING
+total final = NO
+```
+
+---
+
+# 32. Null vs Zero Is Semantically Important
+
+Never normalize:
+
+```text
+null delivery fee
+```
+
+into:
+
+```text
+0 delivery fee
+```
+
+for DELIVERY/PENDING.
+
+These states mean different things.
+
+---
+
+# 33. Exact Financial Matrix
+
+Encode/test:
+
+| Fulfillment | Fee status | Fee | Total | Final |
+|---|---|---:|---:|---|
+| PICKUP | FINALIZED | 0 | subtotal | yes |
+| DELIVERY | PENDING | null | subtotal | no |
+| DELIVERY | FINALIZED | >=0 | subtotal + fee | yes |
+
+All other combinations are invalid.
+
+---
+
+# 34. Invalid PICKUP Pending State
+
+This is invalid:
+
+```text
+PICKUP
+delivery_fee_status = PENDING
+```
+
+---
+
+# 35. Invalid PICKUP Null Fee
+
+This is invalid:
+
+```text
+PICKUP
+delivery_fee = null
+```
+
+---
+
+# 36. Invalid PICKUP Non-Zero Fee
+
+This is invalid:
+
+```text
+PICKUP
+delivery_fee > 0
+```
+
+---
+
+# 37. Invalid DELIVERY Pending With Fee
+
+This is invalid:
+
+```text
+DELIVERY
+PENDING
+delivery_fee != null
+```
+
+---
+
+# 38. Invalid DELIVERY Finalized Without Fee
+
+This is invalid:
+
+```text
+DELIVERY
+FINALIZED
+delivery_fee = null
+```
+
+---
+
+# 39. Negative Fee
+
+Must never be accepted by the totals calculator.
+
+Caller validation already protects ORD-014, but calculator/domain layer should not produce invalid financial state from:
+
+```text
+deliveryFee < 0
+```
+
+---
+
+# 40. Negative Unit Price
+
+Must fail safely.
+
+Even though catalog pricing should prevent this, trusted-domain components should defend invariants.
+
+---
+
+# 41. Zero Unit Price
+
+If zero-priced Product/Variant is otherwise valid in the existing catalog contract:
+
+```text
+unit_price = 0
+```
+
+is mathematically valid.
+
+Do not reject zero solely in the totals calculator unless current catalog policy prohibits it.
+
+---
+
+# 42. Quantity
+
+Quantity must be:
+
+```text
+> 0
+```
+
+when calculating an OrderItem.
+
+The Cart domain already enforces 1..100.
+
+Do not introduce a different Checkout quantity maximum.
+
+---
+
+# 43. Empty Line Set
+
+Checkout cannot succeed with an empty Cart.
+
+However decide how the pure subtotal calculator behaves with:
+
+```text
+[]
+```
+
+Prefer one of:
+
+```text
+subtotal = 0
+```
+
+as pure arithmetic, with Checkout validation responsible for rejecting empty Cart,
+
+or an explicit domain exception if existing style requires non-empty collections.
+
+Do not duplicate `CART_INVALID` HTTP behavior inside the pure calculator.
+
+---
+
+# 44. Separation of Arithmetic and Checkout Validation
+
+Preferred:
+
+```text
+OrderTotalsCalculator
+→ arithmetic / financial invariants
+
+Checkout validation
+→ Cart must be non-empty
+```
+
+Keep HTTP/business validation outside pure arithmetic.
+
+---
+
+# 45. Overflow Safety
+
+Integer multiplication and addition must not overflow PHP/database-supported monetary ranges.
+
+Protect:
+
+```text
+unit_price × quantity
+SUM(line totals)
+subtotal + delivery fee
+```
+
+---
+
+# 46. Never Allow Integer Wrap
+
+Do not permit overflow to produce:
+
+```text
+negative value
+truncated value
+wrapped integer
+```
+
+---
+
+# 47. Overflow Error
+
+Use an internal domain exception/value error consistent with existing code.
+
+Do not invent a public Checkout error code in Phase 7.6.
+
+Phase 7.8 can map impossible/invalid financial state appropriately.
+
+---
+
+# 48. Database Range
+
+Current amounts use:
+
+```text
+unsignedBigInteger
+```
+
+at persistence.
+
+Calculator output must remain representable by the persistence boundary.
+
+---
+
+# 49. PHP Runtime Range
+
+Account for the actual PHP integer range used by production.
+
+Do not assume arbitrary precision.
+
+---
+
+# 50. Multiplication Guard
+
+Before:
+
+```text
+unit_price * quantity
+```
+
+guard against overflow using safe integer logic.
+
+Avoid float-based checks.
+
+---
+
+# 51. Addition Guard
+
+Before:
+
+```text
+subtotal + line_total
+```
+
+and:
+
+```text
+subtotal + delivery_fee
+```
+
+perform safe integer addition.
+
+---
+
+# 52. No BCMath Dependency Unless Already Present
+
+Do not add a dependency merely for normal integer money unless genuinely necessary.
+
+Expected:
+
+```text
+Dependencies: NONE
+```
+
+---
+
+# 53. Canonical Money Representation
+
+If existing code has a Money value object:
+
+reuse it.
+
+If it does not:
+
+do not create an excessively general currency framework.
+
+The project only needs V1 TZS integer money.
+
+---
+
+# 54. Avoid Duplicate Money Shapes
+
+Do not maintain separate:
+
+```text
+CartMoney
+CheckoutMoney
+OrderMoney
+DeliveryFeeMoney
+```
+
+if one existing representation suffices.
+
+---
+
+# 55. Persistence vs Projection
+
+Preserve the useful pattern from Phase 7.3:
+
+```text
+API projection
+≠
+Order persistence attributes
+```
+
+The calculator should not leak transport format into model persistence.
+
+---
+
+# 56. API Projection Shape
+
+Public money:
 
 ```json
 {
-  "amount": 35000,
+  "amount": 170000000,
   "currency": "TZS"
 }
 ```
 
 ---
 
-# 14. Amount Type
+# 57. Persistence Shape
 
-`amount` must be:
-
-```text
-integer
-```
-
-Reject:
+Order model expects scalar fields such as:
 
 ```text
-float
-numeric string
-boolean
-null
-array
-object
+subtotal_amount
+delivery_fee_amount
+total_amount
+currency
+delivery_fee_status
 ```
 
 ---
 
-# 15. Minimum
+# 58. Do Not Pass API Money Object Directly to Order Model
 
-Valid:
+Avoid:
 
 ```text
-amount >= 0
+Order::create([
+  'subtotal' => ['amount' => ...]
+])
 ```
 
-Zero is explicitly valid.
+unless model explicitly supports it.
+
+Use trusted persistence mapping.
 
 ---
 
-# 16. Zero-Fee DELIVERY
+# 59. Calculator Should Support Both Consumers Cleanly
 
-This must succeed when all other conditions hold:
+Prefer:
 
-```json
-{
-  "delivery_fee": {
-    "amount": 0,
-    "currency": "TZS"
-  }
+```text
+OrderTotals
+```
+
+as internal value data that can be mapped separately to:
+
+```text
+API resource
+Order attributes
+```
+
+---
+
+# 60. Existing PickupFulfillmentState
+
+Phase 7.3 currently exposes methods equivalent to:
+
+```text
+orderProjectionForSubtotal()
+orderPersistenceAttributesForSubtotal()
+```
+
+Phase 7.6 should review these.
+
+The goal is to move canonical arithmetic out of branch-specific state where appropriate.
+
+---
+
+# 61. Do Not Break Phase 7.3 API Needlessly
+
+Refactor only enough to make Phase 7.6 the calculation authority.
+
+Do not churn public/internal class APIs without reason.
+
+---
+
+# 62. Pickup State After Refactor
+
+`PickupFulfillmentState` should express:
+
+```text
+PICKUP branch semantics
+zero fee
+FINALIZED
+null addresses
+```
+
+while canonical total arithmetic comes from Phase 7.6.
+
+---
+
+# 63. Existing DeliveryFulfillmentState
+
+Likewise review Phase 7.4.
+
+It currently projects:
+
+```text
+delivery_fee = null
+PENDING
+total = subtotal
+```
+
+Phase 7.6 should centralize the financial calculation relationship without claiming the blocked branch can now persist an Order.
+
+---
+
+# 64. Critical: Do Not Close Phase 7.4
+
+If Phase 7.6 integration makes:
+
+```text
+DeliveryFulfillmentState
+```
+
+calculate through the new totals component successfully, Phase 7.4 is STILL:
+
+```text
+BLOCKED
+```
+
+because billing snapshot persistence remains unresolved.
+
+---
+
+# 65. DELIVERY Remains Projection-Only
+
+Do not add:
+
+```text
+Order::create()
+```
+
+to DELIVERY merely because totals are now available.
+
+---
+
+# 66. No Billing Gap Workaround
+
+Do not:
+
+```text
+drop billing snapshot
+reuse delivery_address as billing storage
+store billing in metadata
+stuff billing into Delivery
+```
+
+to unblock Checkout.
+
+---
+
+# 67. Phase 7.5 Integration
+
+`FinalizeDeliveryFee` currently calculates:
+
+```text
+total = subtotal + fee
+```
+
+Review it.
+
+Phase 7.6 should make the new canonical calculator authoritative for this calculation if doing so is clean and preserves proven 7.5 behavior.
+
+---
+
+# 68. Prefer ORD-014 Reuse
+
+After Phase 7.6, ORD-014 should ideally use:
+
+```text
+OrderTotalsCalculator::forDeliveryFinalized(...)
+```
+
+or equivalent.
+
+Do not keep a second arithmetic formula embedded in `FinalizeDeliveryFee`.
+
+---
+
+# 69. Preserve Phase 7.5 Behavior
+
+Refactor must retain:
+
+```text
+zero fee valid
+PENDING→FINALIZED
+PENDING_PAYMENT unchanged
+idempotency
+audit exactly once
+financial immutability
+```
+
+---
+
+# 70. Do Not Touch ORD-014 Authorization
+
+Phase 7.6 is not an authorization phase.
+
+---
+
+# 71. Do Not Change Fee Validation
+
+Do not broaden or tighten ORD-014 fee validation during totals refactor unless a real contract defect is separately identified.
+
+Use the already-validated fee passed into the calculator.
+
+---
+
+# 72. Payment Authority Later
+
+Group H must eventually use the finalized:
+
+```text
+Order.total_amount
+```
+
+as the payment amount authority.
+
+Phase 7.6 should make that relationship explicit.
+
+---
+
+# 73. Payment Must Never Recalculate Product Prices
+
+After Order creation:
+
+```text
+Order subtotal
+Order fee
+Order total
+```
+
+are historical financial values.
+
+Group H should not rebuild them from the live catalog.
+
+---
+
+# 74. Final Payment Rule
+
+Conceptually later:
+
+```text
+if delivery_fee_status != FINALIZED:
+    payment prohibited
+
+payment amount = Order.total
+```
+
+Phase 7.6 does not implement PAY-001.
+
+---
+
+# 75. Checkout Price Recalculation
+
+CHK-001 later recalculates:
+
+```text
+unit prices
+line totals
+subtotal
+```
+
+from current server-authoritative catalog state.
+
+Do not use Cart subtotal as transaction authority.
+
+---
+
+# 76. Cart Subtotal Is Informational
+
+Group F Cart subtotal may be identical at a point in time, but Checkout must independently calculate the authoritative Order subtotal.
+
+---
+
+# 77. Checkout Input Should Be Trusted Domain Data
+
+The totals calculator should receive line inputs such as:
+
+```text
+unitPriceAmount
+quantity
+```
+
+from the future transaction-time Checkout resolver.
+
+Do not let it query Cart itself.
+
+---
+
+# 78. No Database Query in Calculator
+
+Target:
+
+```text
+pure deterministic computation
+```
+
+No Eloquent.
+
+No DB connection.
+
+No Product lookup.
+
+No Cart lookup.
+
+No Order lookup.
+
+---
+
+# 79. No Time Dependency
+
+Calculation must not depend on:
+
+```text
+now()
+created_at
+timezone
+```
+
+---
+
+# 80. No Randomness
+
+Deterministic inputs must produce deterministic output.
+
+---
+
+# 81. No Request Dependency
+
+Do not pass Laravel Request/FormRequest into calculator.
+
+---
+
+# 82. No Actor Dependency
+
+Calculator should not know:
+
+```text
+Customer
+Staff
+Admin
+```
+
+---
+
+# 83. No Idempotency Dependency
+
+Financial arithmetic does not own idempotency.
+
+---
+
+# 84. No Inventory Dependency
+
+Do not read:
+
+```text
+quantity
+reserved_quantity
+ProductStock
+```
+
+except OrderItem quantity as a trusted calculation input.
+
+---
+
+# 85. No Reservation Side Effect
+
+Must state explicitly:
+
+```text
+inventory reservation changes = NONE
+```
+
+---
+
+# 86. No Order Persistence
+
+Phase 7.6 should not create Checkout Orders.
+
+---
+
+# 87. No Cart Mutation
+
+Do not clear Cart.
+
+---
+
+# 88. No OrderItem Insert
+
+Do not persist OrderItems.
+
+---
+
+# 89. No Status History Insert
+
+Out of scope.
+
+---
+
+# 90. No Delivery Persistence
+
+Out of scope.
+
+---
+
+# 91. No Billing Snapshot Persistence
+
+Still blocked.
+
+---
+
+# 92. No Payment Record
+
+Out of scope.
+
+---
+
+# 93. No Notification
+
+Pure financial calculation should not notify anybody.
+
+---
+
+# 94. Error Model
+
+Use domain-level exceptions/results.
+
+Do not emit API response envelopes from the calculator.
+
+---
+
+# 95. Invalid Financial Combination
+
+If asked to produce something impossible such as:
+
+```text
+PICKUP + non-zero delivery fee
+```
+
+fail explicitly.
+
+Do not silently correct it.
+
+---
+
+# 96. No Silent Coercion
+
+Do not turn:
+
+```text
+negative → zero
+null → zero
+float → integer
+```
+
+inside domain calculation.
+
+---
+
+# 97. Server-Controlled Financials
+
+Nothing in Phase 7.6 should accept client-provided:
+
+```text
+subtotal
+total
+line_total
+currency
+```
+
+as authoritative.
+
+This component is consumed only after trusted server resolution.
+
+---
+
+# 98. Recommended Internal Line Input
+
+A small immutable calculation input may contain:
+
+```text
+unitPriceAmount: int
+quantity: int
+```
+
+or receive equivalent typed parameters.
+
+Do not include Product model if unnecessary.
+
+---
+
+# 99. Snapshot Names Not Needed
+
+The calculator does not need:
+
+```text
+SKU
+product name
+variant name
+```
+
+to calculate money.
+
+Keep SRP.
+
+---
+
+# 100. Calculation Result for Lines
+
+If useful, return:
+
+```text
+unitPrice
+quantity
+lineTotal
+```
+
+for later OrderItem snapshot construction.
+
+But do not duplicate already-proven OrderItem snapshot DTOs if one exists.
+
+---
+
+# 101. Phase 7.7 Consumer
+
+Phase 7.7 should be able to:
+
+```text
+lock Cart
+resolve current prices
+construct trusted line inputs
+call Phase 7.6 calculator
+reserve inventory
+persist Order + OrderItems
+```
+
+without recomputing totals manually.
+
+---
+
+# 102. Phase 7.8 Consumer
+
+Phase 7.8 should not implement arithmetic.
+
+It validates request/domain eligibility.
+
+---
+
+# 103. Phase 7.9 Tests
+
+Phase 7.9 will prove the full:
+
+```text
+Cart → authoritative prices → totals → Order
+```
+
+workflow.
+
+Phase 7.6 should provide strong unit-level financial proof now.
+
+---
+
+# 104. Totals Result API
+
+Conceptual output:
+
+```text
+OrderTotals {
+  subtotalAmount
+  deliveryFeeAmount
+  deliveryFeeStatus
+  totalAmount
+  currency
+  isFinal
 }
 ```
 
-A free delivery zone is valid business behavior.
+For `deliveryFeeAmount`, allow:
+
+```text
+int|null
+```
+
+because DELIVERY/PENDING requires null.
 
 ---
 
-# 17. Negative Fee
+# 105. Currency Constant
 
-Reject:
-
-```text
-amount < 0
-```
-
-with:
+Reuse:
 
 ```text
-422 INVALID_VALUE
+Order::CURRENCY_TZS
 ```
 
-or exact frozen validation mapping.
+or a more appropriate existing currency authority.
+
+Do not duplicate `"TZS"` everywhere.
 
 ---
 
-# 18. Currency
+# 106. DeliveryFeeStatus
 
-Currency must be exactly:
+Reuse existing:
+
+```text
+DeliveryFeeStatus::PENDING
+DeliveryFeeStatus::FINALIZED
+```
+
+---
+
+# 107. FulfillmentType
+
+Reuse:
+
+```text
+FulfillmentType::PICKUP
+FulfillmentType::DELIVERY
+```
+
+---
+
+# 108. No New Financial Status Enum
+
+Do not invent:
+
+```text
+PROVISIONAL
+FINAL
+```
+
+as a persisted enum unless already contracted.
+
+`isFinal` may be an internal derived boolean/value if useful.
+
+The persisted/public financial signal remains:
+
+```text
+delivery_fee_status
+```
+
+---
+
+# 109. Public `total`
+
+Public API always exposes a Money total.
+
+For DELIVERY/PENDING:
+
+```text
+total = subtotal
+```
+
+but remains provisional.
+
+This matches the frozen resource contract.
+
+---
+
+# 110. Persistence `total_amount`
+
+Current Order schema expects a stored total relationship compatible with:
+
+```text
+DELIVERY/PENDING total=subtotal
+```
+
+Do not set total null merely because fee is pending.
+
+The current accepted decisions define the provisional stored total.
+
+---
+
+# 111. Address an Older Comment Carefully
+
+If older schema comments imply:
+
+```text
+total_amount nullable until finalized
+```
+
+but accepted Model B behavior/tests now require:
+
+```text
+DELIVERY/PENDING total=subtotal
+```
+
+follow the latest accepted runtime/domain invariant and document any stale comment as documentation drift.
+
+Do not change the frozen API to make total null.
+
+---
+
+# 112. Financial Immutability
+
+Current Order model enforces immutability once:
+
+```text
+fee already FINALIZED
+or
+Order leaves PENDING_PAYMENT
+```
+
+Phase 7.6 must preserve this.
+
+---
+
+# 113. Calculator Does Not Mutate Historical Orders
+
+The calculator may be reused to verify values, but it must not automatically recalculate historical Orders because catalog prices changed.
+
+---
+
+# 114. ORD-014 Is the Only Normal Finalization Mutation
+
+For DELIVERY/PENDING:
+
+```text
+subtotal remains fixed
+fee is introduced
+total changes
+```
+
+That is valid.
+
+---
+
+# 115. Pickup Is Final at Creation
+
+PICKUP financial fields should not be recalculated later through normal business flow.
+
+---
+
+# 116. Database Invariants
+
+Review that calculated values satisfy existing:
+
+```text
+CHECK
+model saving hooks
+unsigned integer constraints
+```
+
+Do not weaken DB validation.
+
+---
+
+# 117. Calculator + Model Agreement Test
+
+For each valid totals result:
+
+construct equivalent Order state and ensure:
+
+```text
+Order::assertValid()
+```
+
+accepts it.
+
+---
+
+# 118. Invalid State Agreement
+
+For invalid financial combinations:
+
+both the calculator/domain factory and Order model should reject them where responsibility overlaps.
+
+Do not make contradictory rules.
+
+---
+
+# 119. Test — Line Total
+
+Example:
+
+```text
+unit price = 25_000
+quantity = 4
+```
+
+expect:
+
+```text
+line total = 100_000
+```
+
+---
+
+# 120. Test — Multiple Lines
+
+Example:
+
+```text
+line A = 100_000
+line B = 250_000
+line C = 0
+```
+
+expect:
+
+```text
+subtotal = 350_000
+```
+
+---
+
+# 121. Test — PICKUP
+
+Given:
+
+```text
+subtotal = 350_000
+```
+
+expect:
+
+```text
+fee = 0
+fee status = FINALIZED
+total = 350_000
+is final = true
+```
+
+---
+
+# 122. Test — DELIVERY Pending
+
+Given:
+
+```text
+subtotal = 350_000
+```
+
+expect:
+
+```text
+fee = null
+fee status = PENDING
+total = 350_000
+is final = false
+```
+
+---
+
+# 123. Test — DELIVERY Finalized
+
+Given:
+
+```text
+subtotal = 350_000
+fee = 50_000
+```
+
+expect:
+
+```text
+fee status = FINALIZED
+total = 400_000
+is final = true
+```
+
+---
+
+# 124. Test — DELIVERY Finalized Zero Fee
+
+Expect:
+
+```text
+fee = 0
+status = FINALIZED
+total = subtotal
+is final = true
+```
+
+---
+
+# 125. Test — Pending vs Free Delivery Distinction
+
+Explicitly prove:
+
+```text
+PENDING + null fee
+```
+
+is not equivalent to:
+
+```text
+FINALIZED + zero fee
+```
+
+even though both totals numerically equal subtotal.
+
+This is a critical regression test.
+
+---
+
+# 126. Test — Negative Fee
+
+Reject.
+
+---
+
+# 127. Test — Negative Unit Price
+
+Reject.
+
+---
+
+# 128. Test — Zero Quantity
+
+Reject at domain input or rely on trusted OrderItem invariant depending architecture.
+
+Do not calculate a valid line total for an invalid quantity.
+
+---
+
+# 129. Test — Negative Quantity
+
+Reject.
+
+---
+
+# 130. Test — Maximum Cart Quantity
+
+Ensure normal supported:
+
+```text
+quantity = 100
+```
+
+calculates correctly.
+
+---
+
+# 131. Test — Overflow Multiplication
+
+Use a value near integer bounds.
+
+Expect controlled failure.
+
+---
+
+# 132. Test — Overflow Subtotal Addition
+
+Multiple individually-valid lines whose sum exceeds supported range.
+
+Expect controlled failure.
+
+---
+
+# 133. Test — Overflow Fee Addition
+
+```text
+subtotal near max
++
+fee
+```
+
+must fail safely.
+
+---
+
+# 134. Test — Currency
+
+Output always:
 
 ```text
 TZS
@@ -382,1784 +1894,333 @@ TZS
 
 ---
 
-# 19. Reject Currency Drift
+# 135. Test — No Float
 
-Reject:
+An `int` parameter alone does not prevent float coercion: when the calling file does not declare `declare(strict_types=1)`, PHP converts a `float` argument to `int` (e.g. `100.5 → 100`) before the call, so the calculator can receive a silently truncated value.
 
-```text
-USD
-EUR
-KES
-tzs
-```
-
-V1 is closed around TZS.
-
----
-
-# 20. Minor Units
-
-Fee amount uses integer minor units.
-
-Never use:
-
-```text
-float
-decimal currency arithmetic
-formatted currency strings
-```
-
----
-
-# 21. Reason
-
-If `reason` is present in current frozen request schema:
-
-```text
-trim
-non-empty where supplied
-audit safely
-```
-
-Do not make it required unless contract says so.
-
----
-
-# 22. Reason Is Not Fee Authority
-
-`reason` has no effect on:
-
-```text
-amount
-currency
-total
-permissions
-```
-
----
-
-# 23. No Automatic Fee Calculation
-
-The backend does NOT calculate the delivery fee from:
-
-```text
-city
-address_line
-distance
-zone
-warehouse
-inventory location
-order subtotal
-item quantity
-```
-
-The authorized Staff/Admin supplies the authoritative fee.
-
----
-
-# 24. No Flat Fee
-
-Do not reintroduce:
-
-```text
-TZS 20,000
-```
-
-or any fixed default.
-
----
-
-# 25. Order Preconditions
-
-ORD-014 succeeds only if all hold:
-
-```text
-Order exists
-actor authorized
-fulfillment_type = DELIVERY
-status = PENDING_PAYMENT
-delivery_fee_status = PENDING
-```
-
----
-
-# 26. DELIVERY Only
-
-For:
-
-```text
-fulfillment_type = PICKUP
-```
-
-ORD-014 must fail.
-
-Expected:
-
-```text
-422 BUSINESS_RULE_VIOLATION
-```
-
-according to frozen contract.
-
----
-
-# 27. Why PICKUP Fails
-
-PICKUP already has:
-
-```text
-delivery_fee = 0 TZS
-delivery_fee_status = FINALIZED
-```
-
-at Checkout.
-
-There is nothing for ORD-014 to finalize.
-
----
-
-# 28. Order Status Requirement
-
-Order must still be:
-
-```text
-PENDING_PAYMENT
-```
-
----
-
-# 29. PAID Order
-
-Do not allow ordinary ORD-014 fee finalization once Order is:
-
-```text
-PAID
-```
-
-The normal workflow requires fee finalization before payment.
-
----
-
-# 30. Other Order States
-
-Reject ORD-014 for:
-
-```text
-ACCEPTED
-PROCESSING
-READY_FOR_PICKUP
-SHIPPED
-DELIVERED
-COMPLETED
-CANCELLED
-```
-
-according to the frozen state rules.
-
----
-
-# 31. Fee Status Requirement
-
-Current value must be:
-
-```text
-PENDING
-```
-
----
-
-# 32. Already Finalized
-
-If:
-
-```text
-delivery_fee_status = FINALIZED
-```
-
-a fresh different operation must fail:
-
-```text
-409 INVALID_ORDER_TRANSITION
-```
-
-unless it is a valid same-key idempotent replay of the original success.
-
----
-
-# 33. One-Way Transition
-
-Normal ORD-014 transition is exactly:
-
-```text
-PENDING → FINALIZED
-```
-
-There is no:
-
-```text
-FINALIZED → PENDING
-```
-
----
-
-# 34. One-Time Finalization
-
-Do not support repeated arbitrary changes such as:
-
-```text
-35000
-→ 50000
-→ 20000
-```
-
-through normal ORD-014.
-
-Once finalized, fee is historical.
-
----
-
-# 35. Controlled Future Correction
-
-If a later controlled Admin correction workflow exists or is introduced:
-
-it is separate from normal ORD-014.
-
-Do not implement it in Phase 7.5 unless explicitly frozen elsewhere.
-
----
-
-# 36. Total Calculation
-
-On successful finalization:
-
-```text
-total =
-subtotal
-+
-delivery_fee.amount
-```
-
----
-
-# 37. Example
-
-Given:
-
-```text
-subtotal = 170000000
-delivery_fee = 2500000
-```
-
-result:
-
-```text
-total = 172500000
-```
-
----
-
-# 38. Zero-Fee Example
-
-Given:
-
-```text
-subtotal = 170000000
-delivery_fee = 0
-```
-
-result:
-
-```text
-total = 170000000
-```
-
----
-
-# 39. No Client Total
-
-Client must not supply:
-
-```text
-total
-```
-
-even if mathematically correct.
-
-Backend computes it.
-
----
-
-# 40. No Client Subtotal
-
-Subtotal remains historical Checkout authority.
-
-ORD-014 must not recalculate or modify it.
-
----
-
-# 41. Subtotal Is Immutable Here
-
-ORD-014 reads:
-
-```text
-subtotal
-```
-
-and computes total from it.
-
-Do not modify:
-
-```text
-subtotal_amount
-```
-
----
-
-# 42. Price Is Immutable Here
-
-ORD-014 does not re-read Product/Variant prices.
-
-OrderItems are already historical snapshots.
-
----
-
-# 43. Cart Is Irrelevant
-
-ORD-014 does not read or mutate the customer's Cart.
-
-The Order already exists.
-
----
-
-# 44. Inventory Is Unchanged
-
-ORD-014 must not mutate:
-
-```text
-ProductStock.quantity
-ProductStock.reserved_quantity
-order_item_inventory_allocations
-```
-
----
-
-# 45. Reservation Remains Held
-
-The Checkout-created stock reservation remains exactly as-is after successful fee finalization.
-
-Do not:
-
-```text
-reserve again
-release reservation
-consume reservation
-```
-
----
-
-# 46. No Second Reservation
-
-Finalizing delivery fee must never call:
-
-```text
-InventoryAllocator::reserve()
-```
-
----
-
-# 47. No Release
-
-A successful ORD-014 does not release inventory.
-
----
-
-# 48. No Consumption
-
-A successful ORD-014 does not consume inventory.
-
----
-
-# 49. Payment Boundary
-
-Before ORD-014:
-
-```text
-delivery_fee_status = PENDING
-PAY-001 blocked
-```
-
-After ORD-014:
-
-```text
-delivery_fee_status = FINALIZED
-PAY-001 eligible from fee-state perspective
-```
-
----
-
-# 50. ORD-014 Does Not Create Payment
-
-After fee finalization:
-
-```text
-payment = null
-```
-
-until PAY-001 is called.
-
----
-
-# 51. No Payment Provider Call
-
-Do not call:
-
-```text
-Stripe
-Flutterwave
-Pesapal
-mobile money provider
-bank gateway
-```
-
-or any provider.
-
----
-
-# 52. No Status Change
-
-Successful ORD-014 leaves:
-
-```text
-Order.status = PENDING_PAYMENT
-```
-
----
-
-# 53. No Status History Transition
-
-Do not append a fake Order status change such as:
-
-```text
-FEE_FINALIZED
-```
-
-to `order_status_history` if that enum is not an Order status.
-
-Fee finalization is a financial mutation, not an Order-status transition.
-
----
-
-# 54. Audit Is Required
-
-Successful fee finalization is privileged and auditable.
-
-Audit should capture safe fields such as:
-
-```text
-actor
-order
-old delivery fee
-new delivery fee
-reason
-occurred_at
-request_id
-```
-
-according to existing Audit infrastructure.
-
----
-
-# 55. Server-Derived Actor
-
-Never accept:
-
-```text
-actor_id
-actor_role
-approved_by
-```
-
-from the request.
-
----
-
-# 56. Server-Derived Timestamp
-
-`occurred_at` must use server time.
-
-Do not accept a client timestamp.
-
----
-
-# 57. No Sensitive Audit Leakage
-
-Do not audit:
-
-```text
-Authorization token
-session JWT
-payment secrets
-unnecessary full customer address
-```
-
----
-
-# 58. Idempotency Required
-
-ORD-014 requires:
-
-```http
-Idempotency-Key: <uuid>
-```
-
----
-
-# 59. Reuse Shared Service
-
-Reuse existing:
-
-```text
-IdempotencyService
-```
-
-proven by earlier phases.
-
-Do not create:
-
-```text
-DeliveryFeeIdempotencyService
-```
-
----
-
-# 60. Idempotency Scope
-
-Use established scope:
-
-```text
-authenticated actor
-+
-action ORD-014
-+
-Idempotency-Key
-```
-
----
-
-# 61. Logical Fingerprint
-
-Material request input should include normalized:
-
-```text
-order identity
-delivery_fee.amount
-delivery_fee.currency
-reason   # if part of request semantics
-```
-
-Follow existing shared-service conventions.
-
----
-
-# 62. Do Not Fingerprint Volatile State
-
-Do not include:
-
-```text
-current total
-updated_at
-current reservation
-payment availability
-```
-
-as logical client-input fingerprint unless shared infrastructure explicitly requires it.
-
----
-
-# 63. Same-Key Replay
-
-Same actor + same order + same key + same logical request:
-
-```text
-200
-```
-
-replay original successful result.
-
-No second mutation.
-
-No second audit event.
-
----
-
-# 64. Replay After FINALIZED
-
-This is critical.
-
-After first success the Order is:
-
-```text
-delivery_fee_status = FINALIZED
-```
-
-A legitimate same-key retry must still replay success.
-
-Do not reject it merely because the Order is no longer PENDING.
-
----
-
-# 65. Correct Replay Ordering
-
-Conceptually:
-
-```text
-authenticate
-→ authorize
-→ validate Idempotency-Key
-→ validate request shape
-→ normalize request
-→ derive fingerprint
-→ inspect durable idempotency record
-→ matching completed replay?
-     return original 200
-→ otherwise lock/revalidate Order
-→ execute transition
-```
-
-Do not:
-
-```text
-load Order
-→ see FINALIZED
-→ return INVALID_ORDER_TRANSITION
-→ then check replay
-```
-
----
-
-# 66. Same Key, Different Amount
-
-Example:
-
-```text
-first:
-35000
-
-same key retry:
-50000
-```
-
-Expected:
-
-```text
-409 DUPLICATE_OPERATION
-```
-
----
-
-# 67. Same Key, Different Currency
-
-Also conflict.
-
----
-
-# 68. Same Key, Different Reason
-
-If `reason` is included in fingerprint semantics:
-
-different reason should conflict.
-
-Follow shared conventions consistently.
-
----
-
-# 69. Different Key After Finalized
-
-A fresh different key against an already-finalized Order:
-
-```text
-409 INVALID_ORDER_TRANSITION
-```
-
-No fee rewrite.
-
----
-
-# 70. Same Key, Different Order
-
-Must not replay a result from another Order.
-
-Order identity is part of operation scope/fingerprint.
-
----
-
-# 71. Different Actor, Same Key
-
-Idempotency is actor-scoped.
-
-No cross-actor replay.
-
----
-
-# 72. Concurrency Is Critical
-
-ORD-014 must handle:
-
-```text
-Staff A sets fee
-Staff B sets fee
-```
-
-safely.
-
----
-
-# 73. Order Row Lock
-
-Acquire a write lock on the Order before validating mutable business state for first execution.
-
-Conceptually:
-
-```text
-SELECT ... FOR UPDATE
-```
-
-through repository conventions.
-
----
-
-# 74. Revalidate Under Lock
-
-Inside transaction re-check:
-
-```text
-fulfillment_type
-status
-delivery_fee_status
-```
-
-Do not trust a pre-transaction read.
-
----
-
-# 75. Concurrent Different Fees
-
-Two concurrent operations:
-
-```text
-A sets 35000
-B sets 50000
-```
-
-must not both succeed.
-
-Expected:
-
-```text
-one success
-one conflict/state failure
-```
-
-depending exact locking/idempotency path.
-
----
-
-# 76. No Lost Update
-
-Never allow:
-
-```text
-fee=35000 committed
-then silently overwritten with 50000
-```
-
-through normal ORD-014.
-
----
-
-# 77. Race With PAY-001
-
-Frozen contract requires critical concurrency for:
-
-```text
-fee SET
-vs
-PAY-001
-```
-
-Phase 7.5 should prepare/implement the fee-side lock/state semantics so Group H can safely share them.
-
----
-
-# 78. Payment While Pending
-
-PAY-001 must later reject:
-
-```text
-delivery_fee_status = PENDING
-```
-
----
-
-# 79. Payment After Finalized
-
-PAY-001 may later proceed only after seeing:
-
-```text
-FINALIZED
-```
-
-inside its own transaction/state validation.
-
----
-
-# 80. Atomic Fee Finalization
-
-At minimum, one transaction must cover:
-
-```text
-Order lock
-state revalidation
-delivery_fee write
-delivery_fee_status write
-total recomputation
-audit write
-idempotency success record
-```
-
-where existing infrastructure supports atomic audit/idempotency participation.
-
----
-
-# 81. No Partial Financial Mutation
-
-Failure must not leave:
-
-```text
-delivery_fee set
-but delivery_fee_status PENDING
-```
-
-or:
-
-```text
-status FINALIZED
-but total old
-```
-
----
-
-# 82. Total and Fee Must Commit Together
-
-These fields form one business transition:
-
-```text
-delivery_fee
-delivery_fee_status
-total
-```
-
----
-
-# 83. Order Model Invariants
-
-Reuse `Order::assertValid()` / current financial invariants.
-
-Do not bypass them with raw query updates unless repository architecture explicitly requires safe internal mutation.
-
----
-
-# 84. Financial Immutability
-
-Current model protects finalized/historical financial state.
-
-ORD-014 must use the legitimate:
-
-```text
-PENDING
-→ FINALIZED
-```
-
-path without weakening immutability globally.
-
----
-
-# 85. Do Not Disable Model Protection
-
-Do not:
-
-```text
-remove financial immutability hook
-disable model events globally
-mass update protected fields
-```
-
-just to make ORD-014 pass.
-
----
-
-# 86. Dedicated Domain Action
-
-Prefer a focused service such as:
-
-```text
-FinalizeDeliveryFee
-SetDeliveryFee
-```
-
-following repository naming.
-
----
-
-# 87. Service Responsibilities
-
-The domain/application action may own:
-
-```text
-Order locking
-state validation
-fee normalization/value
-total recomputation
-financial transition
-audit coordination
-```
-
-Do not put all logic in controller.
-
----
-
-# 88. Controller
+Test must call the calculator/domain API through a boundary that does **not** declare `strict_types=1`, passing a float:
 
-Controller should remain thin:
-
-```text
-validated request
-→ action/service
-→ resource
-```
-
----
-
-# 89. FormRequest
-
-Use a strict request class.
-
-Never:
-
-```php
-$request->all()
-```
-
-Use:
-
-```php
-$request->validated()
-```
-
----
-
-# 90. Additional Properties
-
-Reject unknown request fields.
-
----
-
-# 91. Resource
-
-Use existing:
-
-```text
-OrderSummary
-OrderOperationalDetail
-```
-
-or exact frozen ORD-014 response resource.
-
-Do not serialize raw model.
-
----
-
-# 92. Response
-
-Successful ORD-014:
-
-```text
-200
-```
-
-with updated Order representation.
-
-At minimum it must expose the frozen financial state:
-
-```text
-status = PENDING_PAYMENT
-delivery_fee = {amount, currency}
-delivery_fee_status = FINALIZED
-total = subtotal + fee
-```
-
----
-
-# 93. Payment Still Null
-
-If response includes `payment`:
-
-```text
-payment = null
-```
-
-until PAY-001 creates one.
-
----
-
-# 94. Do Not Return Internal Allocation Data
-
-No:
-
-```text
-ProductStock IDs
-reservation allocation IDs
-warehouse IDs
-```
-
-in ordinary customer/staff fee response unless separately contracted.
-
----
-
-# 95. Masked Order Access
-
-Use the established operational Order lookup/authorization semantics.
-
-Unauthorized actors must not gain an existence oracle.
-
-Follow current 404/403 rules exactly.
-
----
-
-# 96. Order Not Found
-
-Expected:
-
-```text
-404 ORDER_NOT_FOUND
-```
-
-or current canonical resource-not-found mapping.
-
-Do not leak raw model exceptions.
-
----
-
-# 97. PICKUP Error
-
-Expected:
-
-```text
-422 BUSINESS_RULE_VIOLATION
-```
-
----
-
-# 98. Already Finalized Error
-
-Expected:
-
-```text
-409 INVALID_ORDER_TRANSITION
-```
-
-for a fresh operation.
-
----
-
-# 99. Wrong Order State
-
-Expected endpoint mapping should use:
-
-```text
-409 INVALID_ORDER_TRANSITION
-```
-
-or:
-
-```text
-409 ORDER_STATE_CONFLICT
-```
-
-according to frozen distinction.
-
-Do not invent a new code.
-
----
-
-# 100. Concurrent Modification
-
-Expected:
-
-```text
-409 ORDER_STATE_CONFLICT
-```
-
-where the current state changed under concurrency.
-
----
-
-# 101. Invalid Amount
-
-Expected:
-
-```text
-422 INVALID_VALUE
-```
-
----
-
-# 102. Invalid Currency
-
-Expected:
-
-```text
-422 INVALID_VALUE
-```
-
----
-
-# 103. Missing Fee
-
-Expected request-schema missing-field error.
-
----
-
-# 104. Wrong Fee Type
-
-Expected:
-
 ```text
-422 INVALID_TYPE
+float input (e.g. 100.5) → explicit rejection
 ```
 
-or current validation mapping.
+Assert the input is rejected, never silently coerced (`100.5` must not become `100`).
 
----
-
-# 105. Missing Idempotency Key
-
-Use shared required-header error semantics.
-
-Do not generate a server key automatically.
-
----
-
-# 106. Invalid Idempotency Key
-
-Reject before mutation.
-
----
-
-# 107. Rate Limit
-
-Use the established operational mutation limiter.
-
-Every:
-
-```text
-429
-```
-
-must include:
-
-```text
-Retry-After
-```
-
----
-
-# 108. Cache
-
-ORD-014 response is private Order state.
-
-Use:
-
-```text
-private
-no-store
-```
-
-according to existing conventions.
-
----
-
-# 109. No Checkout Fee Mutation
-
-CHK-001 must continue to create DELIVERY as:
-
-```text
-fee=null
-PENDING
-```
-
-Phase 7.5 must not move fee finalization into Checkout.
-
----
-
-# 110. No Customer Fee Preview
-
-Do not add a customer endpoint that calculates or previews the eventual fee.
-
----
-
-# 111. No Fee Table
-
-Do not create:
-
-```text
-delivery_fee_rules
-delivery_zones
-city_fees
-distance_rates
-```
-
-unless separately approved in a future version.
-
----
-
-# 112. Address Is Context, Not Algorithm
-
-Staff/Admin may inspect Order delivery address operationally when deciding the fee.
-
-Backend does not infer the fee from the address.
-
----
-
-# 113. No Geocoding
-
-No maps API.
-
----
-
-# 114. No Distance Calculation
-
-No kilometer formula.
-
----
+The public/domain API must validate the raw value (`is_int`) before scalar coercion (reject or throw), or every caller must declare `strict_types=1`. Strict typing only protects calls made from strict files, so boundary validation of the raw value is authoritative; transport-level request validation remains the first line of defence.
 
-# 115. No Automatic Zone Matching
-
-Out of scope.
-
----
-
-# 116. Historical Fee
-
-After successful ORD-014:
-
-```text
-delivery_fee
-```
-
-is historical business data.
-
-Future policy changes must not alter it.
-
----
-
-# 117. Historical Total
-
-After finalization:
-
-```text
-total
-```
-
-is authoritative final Order amount before payment.
-
----
-
-# 118. Finality
-
-For DELIVERY:
-
-```text
-delivery_fee_status = FINALIZED
-```
-
-is the financial finality gate for fee.
-
----
-
-# 119. Payment Amount Dependency
-
-Group H must later use:
-
-```text
-Order.total
-```
-
-after fee finalization.
-
-It must not accept:
-
-```text
-client payment amount
-provisional subtotal-only total
-```
-
----
-
-# 120. Notification Boundary
-
-The contract mentions customer notification after fee finalization.
-
-Do not make notification delivery failure roll back the successful fee transition.
-
-Use existing notification failure-isolation convention if notification creation is in scope.
-
 ---
 
-# 121. If Notification Infrastructure Is Deferred
+# 136. Test — Determinism
 
-Record:
+Same inputs:
 
 ```text
-notification event / intent
+same result
 ```
-
-only if current backend pattern already supports it.
-
-Do not build Group R push/email.
-
----
-
-# 122. In-App Notification
-
-If current Order operation convention requires an in-app business notification:
-
-implement only the established internal notification side effect.
-
-No email/push.
-
----
-
-# 123. Notification Is Not Transaction Authority
 
-Financial mutation succeeds based on Order rules, not notification success.
+every time.
 
 ---
-
-# 124. Audit Failure
-
-Follow existing audit integrity policy.
-
-If privileged action requires audit transactionally:
-
-ensure audit cannot silently disappear.
-
-Do not invent inconsistent failure behavior.
-
----
-
-# 125. No Order Status History Entry Unless Contract Says So
-
-Fee status is not Order status.
 
-Do not pollute `order_status_history` with fee-only records.
+# 137. Test — Order Model Compatibility: PICKUP
 
-Use audit/financial state instead.
+Calculated values should satisfy existing PICKUP Order invariant.
 
 ---
 
-# 126. Test — Successful Fee
+# 138. Test — Order Model Compatibility: DELIVERY Pending
 
-Given:
+Calculated values should satisfy:
 
 ```text
 DELIVERY
-PENDING_PAYMENT
-fee status PENDING
-subtotal 170000000
+PENDING
+fee=null
+total=subtotal
 ```
 
-request:
+model invariant.
+
+This can remain model-level even though Phase 7.4 persistence is blocked by billing snapshot.
+
+Do not persist a fake complete DELIVERY Checkout Order merely for the test.
+
+---
+
+# 139. Test — Order Model Compatibility: DELIVERY Finalized
+
+Use an appropriate fixture/model state independent of Checkout persistence.
+
+Phase 7.5 already creates valid finalization cases.
+
+---
+
+# 140. Test — PickupFulfillmentState Integration
+
+Ensure Phase 7.3 uses or agrees with the new calculator.
+
+No duplicate formula drift.
+
+---
+
+# 141. Test — DeliveryFulfillmentState Integration
+
+Ensure Phase 7.4 state projection uses/agrees with the calculator.
+
+Still report Phase 7.4 BLOCKED.
+
+---
+
+# 142. Test — ORD-014 Integration
+
+Ensure Phase 7.5 finalization uses/agrees with the same canonical formula.
+
+---
+
+# 143. Test — Phase 7.5 Zero Fee
+
+Must remain green.
+
+---
+
+# 144. Test — Phase 7.5 Historical Immutability
+
+Must remain green.
+
+---
+
+# 145. Test — No Inventory Side Effects
+
+Calculator has:
 
 ```text
-2500000 TZS
+ProductStock mutation = NONE
+reserved_quantity mutation = NONE
+allocation mutation = NONE
 ```
 
-assert:
+---
+
+# 146. Test — No Order Persistence
+
+Pure calculator tests should not require DB writes.
+
+---
+
+# 147. Unit Tests Preferred
+
+Most Phase 7.6 behavior should be covered by fast unit tests.
+
+Use feature tests only for integration with:
 
 ```text
-fee = 2500000
-fee status = FINALIZED
-total = 172500000
-status = PENDING_PAYMENT
+Order model
+Phase 7.3
+Phase 7.4
+Phase 7.5
 ```
 
 ---
 
-# 127. Test — Zero Fee
+# 148. No MariaDB Concurrency Requirement
 
-Request:
+Phase 7.6 is pure arithmetic.
+
+There is no new concurrency algorithm to prove.
+
+Do not invent a MariaDB race suite for the calculator.
+
+---
+
+# 149. Existing MariaDB Regression
+
+If Phase 7.5 service is refactored to use the calculator:
+
+rerun its existing concurrency tests.
+
+Do not change their semantics.
+
+---
+
+# 150. N+1
+
+There is no N+1 concern in a pure calculator.
+
+Do not add database queries.
+
+If the component queries Eloquent, architecture is wrong.
+
+---
+
+# 151. Performance
+
+Calculation complexity should be:
 
 ```text
-0 TZS
+O(number of order lines)
 ```
 
-succeeds.
+with constant additional memory unless result snapshots require otherwise.
 
 ---
 
-# 128. Test — Negative Fee
+# 152. No Premature Micro-Optimization
 
-Reject.
-
----
-
-# 129. Test — Float Fee
-
-Reject.
+Normal Cart maximum sizes do not justify exotic arithmetic structures.
 
 ---
 
-# 130. Test — Numeric String
+# 153. Suggested Files
 
-Reject.
-
----
-
-# 131. Test — Wrong Currency
-
-Reject.
-
----
-
-# 132. Test — Lowercase Currency
-
-Reject.
-
----
-
-# 133. Test — Unknown Field
-
-Reject.
-
----
-
-# 134. Test — Client Total
-
-Reject.
-
----
-
-# 135. Test — Client Status
-
-Reject.
-
----
-
-# 136. Test — Customer Actor
-
-Customer:
+Possible:
 
 ```text
-403
+app/Services/Checkout/OrderTotalsCalculator.php
+app/Services/Checkout/OrderTotals.php
+tests/Unit/OrderTotalsCalculatorTest.php
 ```
 
----
-
-# 137. Test — Staff With Permission
-
-Succeeds.
-
----
-
-# 138. Test — Staff Without Permission
+and small integrations with:
 
 ```text
-403
+PickupFulfillmentState
+DeliveryFulfillmentState
+FinalizeDeliveryFee
 ```
 
----
-
-# 139. Test — Admin
-
-Succeeds when business state valid.
+Use repository naming conventions.
 
 ---
 
-# 140. Test — PICKUP
+# 154. Avoid `Support` Dumping Ground
+
+If this is Checkout/Order-domain logic, keep it in the appropriate service/domain namespace.
+
+---
+
+# 155. Cognitive Complexity
+
+Maintain:
 
 ```text
-422 BUSINESS_RULE_VIOLATION
+<= 15
 ```
 
 ---
 
-# 141. Test — PAID Order
+# 156. Returns
 
-Reject.
-
----
-
-# 142. Test — ACCEPTED Order
-
-Reject.
-
----
-
-# 143. Test — CANCELLED Order
-
-Reject.
-
----
-
-# 144. Test — Already FINALIZED
-
-Fresh key:
+Keep:
 
 ```text
-409 INVALID_ORDER_TRANSITION
+<= 3 returns where practical
 ```
 
 ---
 
-# 145. Test — Same-Key Replay After FINALIZED
+# 157. No Magic Strings
 
-Original successful key:
+Use enums/constants for:
 
 ```text
-200 replay
+PICKUP
+DELIVERY
+PENDING
+FINALIZED
+TZS
 ```
-
-No second update.
 
 ---
 
-# 146. Test — Same-Key Different Amount
+# 158. Documentation
+
+Add an implementation ADR if current project practice requires it.
+
+Suggested concept:
 
 ```text
-409 DUPLICATE_OPERATION
+Phase 7.6 establishes one canonical OrderTotalsCalculator for line totals,
+subtotal, pending/final delivery fee semantics, and total.
 ```
 
 ---
 
-# 147. Test — Same-Key Different Order
+# 159. ADR Must Preserve 7.4 Blocker
 
-Must not replay another Order's result.
-
----
-
-# 148. Test — Different Actor Same Key
-
-Separate actor scope.
-
----
-
-# 149. Test — Audit Exactly Once
-
-Successful first execution:
+Explicitly state:
 
 ```text
-1 audit event
+Financial calculation is complete independently of DELIVERY persistence.
+Phase 7.4 remains blocked by billing snapshot persistence.
 ```
 
-Same-key replay:
+---
+
+# 160. Update Group G Phase Tracking
+
+Keep:
 
 ```text
-still 1
+Phase 7.4 — BLOCKED
+Phase 7.5 — PASS
+Phase 7.6 — PASS
 ```
+
+if 7.6 itself succeeds.
+
+Do not flatten Group G into sequential-all-PASS.
 
 ---
 
-# 150. Test — Reservation Unchanged
+# 161. Phase 7.7 Readiness Is Conditional
 
-Capture:
+Even if Phase 7.6 passes:
+
+Phase 7.7 may begin to design/implement transaction boundaries that are independent of the billing snapshot gap.
+
+However a complete DELIVERY Checkout transaction must not be declared ready for successful persistence while 7.4 remains blocked.
+
+---
+
+# 162. Report Readiness Precisely
+
+At completion prefer:
 
 ```text
-reserved_quantity
-quantity
-allocations
+Phase 7.7 — Transaction boundaries: READY WITH BLOCKER
 ```
 
-before/after ORD-014.
+if transaction infrastructure can proceed while the DELIVERY model gap remains.
 
-Assert unchanged.
-
----
-
-# 151. Test — Order Status Unchanged
-
-Before:
+Or:
 
 ```text
-PENDING_PAYMENT
+BLOCKED
 ```
 
-After:
+if current roadmap requires the persistence gap resolved before any 7.7 work.
+
+Base this on updated `phases/group-G-phases.md`.
+
+Do not claim unconditional DELIVERY Checkout readiness.
+
+---
+
+# 163. Do Not Resolve Billing Snapshot in 7.6
+
+Explicitly forbidden:
 
 ```text
-PENDING_PAYMENT
+add billing_address column
+add order_addresses table
+add billing JSON into unrelated field
+remove billing snapshot requirement
+alter frozen API
 ```
 
 ---
 
-# 152. Test — Payment Not Created
-
-No Payment row/representation side effect.
-
----
-
-# 153. Test — Subtotal Unchanged
-
-Fee finalization must not modify authoritative subtotal.
-
----
-
-# 154. Test — Address Unchanged
-
-Fee finalization must not modify historical delivery/billing snapshots.
-
----
-
-# 155. Test — Items Unchanged
-
-OrderItems remain unchanged.
-
----
-
-# 156. Test — Cart Unchanged
-
-Customer Cart remains untouched.
-
----
-
-# 157. Test — Financial Atomicity
-
-Force failure after fee mutation before transaction completion.
-
-Assert rollback:
-
-```text
-fee remains null
-status remains PENDING
-total remains provisional
-no audit success
-no idempotency success
-```
-
-Use a safe test seam.
-
----
-
-# 158. Test — Concurrent Same Key
-
-MariaDB:
-
-```text
-same actor
-same order
-same key
-same fee
-```
-
-Expected:
-
-```text
-one business mutation
-one audit event
-one durable result
-both logical responses same
-```
-
----
-
-# 159. Test — Concurrent Different Fees
-
-MariaDB:
-
-```text
-Staff A: 35000
-Staff B: 50000
-```
-
-Expected:
-
-```text
-exactly one final fee
-no overwrite
-other request conflicts/fails state validation
-```
-
----
-
-# 160. Test — Same Fee Different Keys Race
-
-Two distinct keys with same fee:
-
-still only one first-time transition.
-
-Do not execute the transition twice.
-
----
-
-# 161. Test — Fee vs Simulated Payment Lock
-
-If PAY-001 is not implemented yet:
-
-add an integration-level lock/state test only if the repository can safely model the competing transaction without building Group H.
-
-Otherwise document this as required Group H concurrency coverage.
-
-Do not invent PAY-001 early.
-
----
-
-# 162. MariaDB Requirement
-
-Real concurrency behavior must be proven on MariaDB/MySQL.
-
-SQLite alone is insufficient for row-lock semantics.
-
----
-
-# 163. Disposable DB
-
-Reuse existing guarded disposable test DB conventions.
-
-Never run destructive concurrency harness against production/dev primary DB.
-
----
-
-# 164. Idempotency Persistence
-
-Verify successful response can be replayed after the Order is already FINALIZED.
-
-This is essential.
-
----
-
-# 165. Response Status Replay
-
-ORD-014 replay must preserve:
-
-```text
-200
-```
-
-not return another status.
-
----
-
-# 166. Shared Idempotency Improvements
-
-If Phase 7.1 identified shared service shortcomings around response-status storage:
-
-do not prematurely solve CHK-001-specific `201` behavior here unless the shared improvement is clean and required for ORD-014.
-
-ORD-014 itself uses `200`.
-
----
-
-# 167. No New Idempotency Schema
+# 164. Schema Changes
 
 Expected:
 
@@ -2167,415 +2228,167 @@ Expected:
 NONE
 ```
 
-Reuse durable shared store.
+for Phase 7.6.
 
 ---
 
-# 168. Order Model
+# 165. Dependencies
 
-Use current:
+Expected:
 
 ```text
-DeliveryFeeStatus
-FulfillmentType
-OrderStatus
+NONE
 ```
 
-enums.
-
-No magic strings.
-
 ---
 
-# 169. Money Arithmetic
+# 166. Frontend
 
-Use safe integer addition.
-
-Check for any existing overflow guard/convention.
-
-Do not cast to float.
-
----
-
-# 170. Overflow Defense
-
-If:
+Expected:
 
 ```text
-subtotal + fee
+NONE
 ```
-
-could exceed supported integer/database range:
-
-fail safely according to existing money/domain convention.
-
-Do not wrap.
 
 ---
 
-# 171. Maximum Fee
+# 167. OpenAPI
 
-Do not invent a business maximum unless frozen contract/schema already defines one.
-
-Current normative minimum is:
+Expected:
 
 ```text
->= 0
+changes = NONE
 ```
 
-If database type imposes technical upper bound, validate safely against representable range.
+Totals rules are already frozen.
 
 ---
 
-# 172. No Percent Fee
-
-Do not add percentage pricing.
-
----
-
-# 173. No Discount Fee
-
-Do not add negative fee as discount.
-
-Zero is minimum.
-
----
-
-# 174. No Tax Logic
-
-Do not add tax.
-
----
-
-# 175. No Surcharge Type
-
-Do not add fee categories.
-
----
-
-# 176. No Customer Negotiation State
+# 168. Do Not Add Public Fields
 
 Do not add:
 
 ```text
-fee proposed
-fee accepted
-fee rejected
+is_total_final
+financial_status
+calculation_version
 ```
 
-states.
+to the API.
 
-V1 has:
+Clients already use:
 
 ```text
-PENDING
-FINALIZED
+delivery_fee_status
 ```
 
-only.
+to understand finality.
 
 ---
 
-# 177. No Second Approval
+# 169. Do Not Remove Provisional Total
 
-No dual-admin approval requirement exists.
-
-Do not invent one.
-
----
-
-# 178. No Customer Confirmation Endpoint
-
-Not part of V1.
-
----
-
-# 179. No Automatic Refund Logic
-
-Out of scope.
-
----
-
-# 180. OpenAPI
-
-Keep ORD-014 aligned with current frozen:
+Do not change DELIVERY/PENDING API to:
 
 ```text
-POST /orders/{order}/delivery-fee
-Idempotency-Key required
-SetDeliveryFeeRequest
-200
-401
-403
-404
-409
-422
-429
+total = null
 ```
 
----
-
-# 181. Do Not Broaden Request Schema
-
-No additional:
+Frozen contract requires:
 
 ```text
-zone
-distance
-city
-calculated_by
-payment_amount
+total = subtotal
 ```
 
-fields.
+provisionally.
 
 ---
 
-# 182. Documentation
+# 170. Do Not Mark Provisional Total as Payable
 
-Add/update backend ADR only for implementation-specific choices such as:
+The data model may contain a numeric total, but payment remains blocked while:
 
 ```text
-lock ordering
-idempotency replay ordering
-audit atomicity
+delivery_fee_status = PENDING
 ```
-
-Do not rewrite the frozen fee policy.
 
 ---
 
-# 183. Suggested Service Boundary
+# 171. No Payment Eligibility Calculation Needed
 
-Potential structure:
+Phase 7.6 need not return:
 
 ```text
-SetDeliveryFeeRequest
-→ OrderController
-→ FinalizeDeliveryFee
-→ Order model
-→ AuditRecorder
-→ IdempotencyService
-→ Order Resource
+can_pay
 ```
-
-Use actual project patterns.
 
 ---
 
-# 184. Thin Controller
+# 172. Group H Boundary
 
-Controller should not contain:
+Later payment logic must consume:
 
 ```text
-fee state machine
-money arithmetic
-row locking
-audit construction
-idempotency logic
+FINALIZED Order total
 ```
 
----
+and never receive a client-supplied amount.
 
-# 185. Authorization Before Mutation
-
-Resolve authenticated actor and permission before business mutation.
-
-Still re-check mutable Order business state under lock.
+Document this dependency.
 
 ---
 
-# 186. Information Disclosure
+# 173. Financial Snapshot Semantics
 
-Do not expose customer private address or other Order data beyond the authorized operational response shape.
-
----
-
-# 187. N+1
-
-Single-resource ORD-014 is not a collection N+1 risk.
-
-Do not add broad eager-loading optimization work unless the response resource triggers accidental lazy queries.
-
----
-
-# 188. Resource Loading
-
-Load only relationships needed for the frozen response.
-
-Avoid unnecessary Customer/payment/inventory relation loading.
-
----
-
-# 189. Notifications
-
-If fee-finalized in-app notification is required by current notification contract, ensure it is not duplicated on replay.
-
----
-
-# 190. Replay Side Effects
-
-Same-key replay must NOT duplicate:
+Once Checkout later persists:
 
 ```text
-audit
-notification
-database writes
+OrderItems
+subtotal
 ```
 
----
+catalog changes must not alter them.
 
-# 191. Failed Attempts
-
-Validation/state failures must not create success audit/notification records.
-
-Security logging can remain separate under existing conventions.
-
----
-
-# 192. Existing PICKUP Regression
-
-Run Phase 7.3 tests.
-
-No change to:
+Once fee finalizes:
 
 ```text
-PICKUP fee = 0
-PICKUP fee status = FINALIZED
-PICKUP total = subtotal
+delivery_fee
+total
 ```
 
----
-
-# 193. Existing DELIVERY Regression
-
-Run Phase 7.4 tests.
-
-Initial DELIVERY state must remain:
-
-```text
-fee null
-PENDING
-provisional total=subtotal
-```
-
-before ORD-014.
+policy changes must not alter them.
 
 ---
 
-# 194. Order Model Regression
+# 174. No Repricing Historical Orders
 
-Run financial-immutability tests.
-
-Ensure legitimate:
-
-```text
-PENDING → FINALIZED
-```
-
-still succeeds.
+Do not add a recalculation command that reads live Product prices for existing Orders.
 
 ---
 
-# 195. Idempotency Regression
+# 175. Cart Price Drift
 
-Run existing:
+Future Phase 7.7/7.8 will intentionally use current catalog price at Checkout time.
 
-```text
-INV-003
-CART-005
-operational action
-```
-
-idempotency suites if shared service changes.
+Phase 7.6 calculator simply calculates from the trusted current price inputs it receives.
 
 ---
 
-# 196. Audit Regression
+# 176. ORD-014 Historical Rule
 
-Run focused audit tests if AuditRecorder or shared action code changes.
+ORD-014 adds the fee to already-fixed subtotal.
 
----
+It must not reprice items.
 
-# 197. Schema
-
-Expected:
-
-```text
-NONE
-```
+The calculator interface should make that natural.
 
 ---
 
-# 198. Dependencies
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 199. Frontend
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 200. Verification
-
-Run focused tests, then:
-
-```bash
-php artisan test
-vendor/bin/pint --test
-vendor/bin/phpstan analyse
-composer audit
-git diff --check
-php artisan route:list
-```
-
----
-
-# 201. MariaDB Verification
-
-Run dedicated concurrency coverage for ORD-014.
-
-Report exact:
-
-```text
-tests
-assertions
-race count
-```
-
----
-
-# 202. Route Verification
-
-Confirm:
-
-```text
-POST /api/v1/orders/{order}/delivery-fee
-→ real implementation
-```
-
-if Phase 7.5 is the implementation point.
-
-No duplicate route.
-
----
-
-# 203. Completion Report
+# 177. Completion Report
 
 Return:
 
-## Phase 7.5 status
+## Phase 7.6 status
 
 ```text
 PASS
@@ -2587,95 +2400,116 @@ or:
 BLOCKED
 ```
 
-## ORD-014
-
-Report implementation component and route status.
-
-## Authorization
+## Canonical calculator
 
 Report:
 
 ```text
-CUSTOMER = denied
-STAFF + orders.set_delivery_fee = allowed
-STAFF without permission = denied
-ADMIN = allowed subject to state
+class/component
+result/value object
+location
 ```
 
-## Request
+## Line totals
 
-Report exact allow-list.
+State exact formula.
 
-## Fee rules
+## Subtotal
 
-Report:
-
-```text
-integer minor units
-amount >= 0
-zero valid
-currency TZS
-```
-
-## Order preconditions
-
-Report:
-
-```text
-DELIVERY
-PENDING_PAYMENT
-delivery_fee_status=PENDING
-```
-
-## Transition
-
-Report:
-
-```text
-delivery_fee null → Money
-PENDING → FINALIZED
-total=subtotal+fee
-```
-
-## Historical immutability
-
-Confirm subsequent fresh ORD-014 cannot overwrite finalized fee.
+State exact formula.
 
 ## PICKUP
 
-Confirm ORD-014 rejects PICKUP.
+Report:
 
-## Idempotency
+```text
+fee = 0
+fee status = FINALIZED
+total = subtotal
+financial finality = final
+```
+
+## DELIVERY pending
 
 Report:
 
 ```text
-same-key replay
-same-key different fee
-replay after FINALIZED
-different-key finalized behavior
-durable store reuse
+fee = null
+fee status = PENDING
+total = subtotal
+financial finality = provisional
 ```
 
-## Concurrency
+## DELIVERY finalized
 
 Report:
 
 ```text
-same-key race
-different-fee race
-same-fee different-key race
+fee >= 0
+fee status = FINALIZED
+total = subtotal + fee
+financial finality = final
 ```
+
+## Null vs zero
+
+Explicitly confirm they remain different states.
+
+## Currency
+
+Confirm:
+
+```text
+TZS
+integer minor units
+no floats
+```
+
+## Overflow
+
+Report protection for:
+
+```text
+unit price × quantity
+subtotal accumulation
+subtotal + fee
+```
+
+## Pickup integration
+
+Report Phase 7.3 integration.
+
+## Delivery integration
+
+Report Phase 7.4 projection integration and state explicitly:
+
+```text
+Phase 7.4 remains BLOCKED
+```
+
+## ORD-014 integration
+
+Report whether Phase 7.5 now delegates total calculation to the canonical calculator.
 
 ## Inventory
 
 Must state:
 
 ```text
-ProductStock quantity mutations: NONE
-reserved_quantity mutations: NONE
-reservation changes: NONE
-allocation changes: NONE
+ProductStock mutation: NONE
+reserved_quantity mutation: NONE
+allocation mutation: NONE
+```
+
+## Persistence
+
+Must state:
+
+```text
+Checkout Order inserts: NONE
+Cart mutation: NONE
+OrderItem inserts: NONE
+billing snapshot persistence: NOT RESOLVED
 ```
 
 ## Payment
@@ -2683,19 +2517,9 @@ allocation changes: NONE
 Must state:
 
 ```text
-payment created: NO
+Payment creation: NONE
 provider calls: NONE
-Order status remains PENDING_PAYMENT
-PAY-001 becomes eligible only from fee-state perspective
 ```
-
-## Audit
-
-Report exactly-once privileged audit behavior.
-
-## Notification
-
-Report behavior if implemented/required.
 
 ## Schema
 
@@ -2719,13 +2543,25 @@ NONE
 NONE
 ```
 
+## OpenAPI
+
+Expected:
+
+```text
+UNCHANGED
+```
+
 ## Tests
 
-Report focused and canonical results.
+Report:
 
-## MariaDB
-
-Report real concurrency results.
+```text
+focused calculator tests
+Phase 7.3 regression
+Phase 7.4 projection regression
+Phase 7.5 regression
+canonical suite
+```
 
 ## Quality
 
@@ -2736,142 +2572,163 @@ Pint
 PHPStan
 Composer audit
 git diff --check
-route:list
 ```
 
-## Phase 7.6 readiness
+## Group G status
 
-Return:
+Report individually:
 
 ```text
-Phase 7.6 — Order totals: READY
+7.1  PASS
+7.2  PASS
+7.3  PASS
+7.4  BLOCKED — billing snapshot persistence
+7.5  PASS
+7.6  PASS/BLOCKED
+```
+
+Do not mark Group G closed.
+
+## Phase 7.7 readiness
+
+Return one:
+
+```text
+Phase 7.7 — READY
+```
+
+```text
+Phase 7.7 — READY WITH DELIVERY PERSISTENCE BLOCKER
 ```
 
 or:
 
 ```text
-BLOCKED
+Phase 7.7 — BLOCKED
 ```
 
-with exact reason.
+based on the updated roadmap and actual dependency analysis.
 
 ---
 
-# 204. Definition of Done
+# 178. Definition of Done
 
-Phase 7.5 is complete when:
+Phase 7.6 is complete when:
 
-- ORD-014 is implemented according to the frozen contract;
-- endpoint requires authentication;
-- CUSTOMER cannot set fee;
-- STAFF requires `orders.set_delivery_fee`;
-- ADMIN remains subject to Order-state rules;
-- Idempotency-Key is mandatory;
-- fee amount is a strict integer;
-- fee amount may be zero;
-- negative fee is rejected;
-- currency must be exactly TZS;
-- unknown fields are rejected;
-- subtotal cannot be supplied;
-- total cannot be supplied;
-- Order status cannot be supplied;
-- only DELIVERY Orders can use ORD-014;
-- Order must be PENDING_PAYMENT;
-- delivery fee must still be PENDING;
-- fee transition is PENDING→FINALIZED exactly once;
-- delivery fee becomes historical after finalization;
-- total becomes subtotal + fee;
-- subtotal remains unchanged;
-- Order status remains PENDING_PAYMENT;
-- payment remains null;
-- no payment provider call occurs;
-- existing inventory reservation remains held;
-- ProductStock quantity does not change;
-- reserved_quantity does not change;
-- allocation rows do not change;
-- same-key replay after finalization succeeds;
-- same-key changed amount conflicts;
-- fresh key cannot overwrite finalized fee;
-- concurrent fee writes cannot overwrite one another;
-- privileged audit is exactly once;
-- replay does not duplicate audit/notification;
-- PICKUP behavior remains unchanged;
-- initial DELIVERY pending-fee behavior remains unchanged;
-- no fee calculator is introduced;
-- no delivery-zone table is introduced;
-- no geocoding/distance logic is introduced;
-- no schema migration is required;
-- no dependency is added;
-- no frontend changes occur;
-- MariaDB concurrency verification passes;
-- full test suite remains green;
+- one canonical totals calculator exists;
+- line total is `unit_price × quantity`;
+- subtotal is the sum of line totals;
+- PICKUP fee is zero;
+- PICKUP fee status is FINALIZED;
+- PICKUP total equals subtotal;
+- PICKUP total is financially final;
+- DELIVERY pending fee is null;
+- DELIVERY pending fee status is PENDING;
+- DELIVERY pending total equals subtotal;
+- DELIVERY pending total is explicitly provisional;
+- DELIVERY finalized fee is non-negative;
+- DELIVERY finalized total is subtotal + fee;
+- zero-fee finalized delivery works;
+- null fee and zero fee remain distinct;
+- currency remains TZS;
+- money uses integers only;
+- no float arithmetic exists;
+- multiplication overflow is guarded;
+- subtotal-addition overflow is guarded;
+- fee-addition overflow is guarded;
+- calculated values satisfy Order model invariants;
+- calculated line values satisfy OrderItem invariants;
+- PickupFulfillmentState no longer owns a competing total formula;
+- DeliveryFulfillmentState no longer owns a competing total formula;
+- ORD-014 no longer owns a competing total formula where clean integration is possible;
+- historical Order subtotal is not repriced;
+- no Cart subtotal is trusted as Checkout authority;
+- calculator performs no DB query;
+- calculator performs no inventory mutation;
+- calculator performs no reservation;
+- calculator performs no Order persistence;
+- calculator performs no Cart mutation;
+- calculator performs no billing snapshot persistence;
+- no payment logic is introduced;
+- Phase 7.4 remains explicitly BLOCKED;
+- the billing-address persistence gap is not silently bypassed;
+- no schema migration is introduced;
+- no dependency is introduced;
+- no frontend work occurs;
+- OpenAPI remains unchanged;
+- full regressions remain green;
 - PHPStan has zero errors;
 - Pint passes;
 - Composer audit is clean.
 
 ---
 
-# 205. Out of Scope
+# 179. Out of Scope
 
 Do not implement:
 
 ```text
-Phase 7.6 totals engine beyond required ORD-014 recomputation
-Phase 7.7 Checkout transaction
+Phase 7.4 billing-address persistence fix
+Phase 7.7 transaction boundaries
 Phase 7.8 Checkout validation
 Phase 7.9 Checkout closure tests
+Checkout Order creation
+Cart clearing
+inventory reservation
+OrderItem persistence
+status-history persistence
+Delivery-row creation
+billing snapshot schema
 PAY-001
 payment provider
 payment webhook
-inventory reservation
 reservation release
-stock consumption
-delivery zones
-distance pricing
-geocoding
-automatic delivery-fee calculation
-customer fee acceptance
-refunds
+inventory consumption
 frontend
 ```
 
 ---
 
-# 206. STOP Condition
+# 180. STOP Condition
 
-STOP when the backend can enforce this exact transition safely and idempotently:
-
-```text
-DELIVERY
-PENDING_PAYMENT
-delivery_fee = null
-delivery_fee_status = PENDING
-total = subtotal
-reserved inventory unchanged
-
-        ↓
-authorized ORD-014
-Idempotency-Key required
-
-delivery_fee = authoritative non-negative TZS Money
-delivery_fee_status = FINALIZED
-total = subtotal + delivery_fee
-status = PENDING_PAYMENT
-payment = null
-reserved inventory unchanged
-```
-
-with:
+STOP when all financial branches use one canonical calculation authority:
 
 ```text
-no overwrite after finalization
-no customer authority
-no inventory mutation
-no payment creation
-no duplicate side effects on replay
+trusted line prices × quantities
+→ line totals
+→ subtotal
+
+PICKUP
+→ fee 0
+→ FINALIZED
+→ total = subtotal
+→ final
+
+DELIVERY/PENDING
+→ fee null
+→ PENDING
+→ total = subtotal
+→ provisional
+
+DELIVERY/FINALIZED
+→ fee >= 0
+→ FINALIZED
+→ total = subtotal + fee
+→ final
 ```
 
-Do not continue automatically to Phase 7.6.
+while:
+
+```text
+Phase 7.4 remains BLOCKED
+billing snapshot persistence remains unresolved
+no Checkout Order is created
+no inventory is reserved
+no Cart is cleared
+no Payment is created
+```
+
+Do not continue automatically to Phase 7.7.
 
 DO NOT COMMIT, STAGE OR PUSH.
 

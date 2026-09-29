@@ -695,7 +695,7 @@ When future provider/upstream fails, **map** to stable project-level API error (
 }
 ```
 
-- Purpose: connects customer-facing error → server logs/monitoring without embedding secrets; support workflow is *"Please provide your request ID"* (`§31, §90`). ID is per-request processing context, **not** `user_id`/`order_id`/`payment_id`/`session token` unless explicitly designed (`§32`), and must not contain sensitive information. Logging of `INTERNAL_SERVER_ERROR` keeps full exception/stack on server, client only sees generic envelope (`§29, §89`).
+- Purpose: connects customer-facing error → server logs/monitoring without embedding secrets; support workflow is *"Please provide your request ID"* (`§31, §90`). ID is per-request processing context, **not** `user_id`/`order_id`/`payment_id`/`session token` unless explicitly designed (`§32`), and must not contain sensitive information. Logging of `INTERNAL_SERVER_ERROR` keeps allow-listed diagnostic metadata on server, never raw throwable/provider content; the client sees only the generic envelope (`§29, §89`).
 
 ### 15.14 Retry Guidance (Conceptual, Not Per-Error Field)
 
@@ -773,7 +773,7 @@ Do not add arbitrary `retryable:true` field to every error; contract defines cla
 Production errors **never** expose (`§28, §58-59, §61, §88`):
 
 - `database SQL`, stack traces, `password`/`authentication secret`/`payment secret`, `internal file paths`, server IPs, framework exception names, `other_customer_id`, `internal_inventory_reservation_id`, `provider_secret`, `staff_only_note`.
-- Logging keeps full diagnostics server-side; client sees safe `code`/`message`/`field`/`details` + `meta.request_id` (`§89`).
+- Logging keeps only allow-listed diagnostic metadata server-side (request ID, safe category/status, and exception class), never raw throwable messages, provider bodies, or previous-exception chains; client sees safe `code`/`message`/`field`/`details` + `meta.request_id` (`§89`).
 - Security tests must verify unauthorized access does **not** reveal `resource existence`, `private data`, `internal identifiers`, `database details` through errors (`§88`).
 - Error/transaction correspondence enforced: error response accurately reflects commit status — `INSUFFICIENT_STOCK` must not hide a phantom reservation (`§65`).
 
@@ -1878,6 +1878,8 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
   - `product_type`: must be `IN_STOCK`. If `product_type === MADE_TO_ORDER`, the backend strictly rejects with `PRODUCT_NOT_PURCHASABLE` (422).
   - `variant_id`: conditional. If the product defines variants, `variant_id` is required, must reference an active variant, and must strictly belong to `product_id` (`VAR-OWN-001`). If the product has no variants, `variant_id` must be `null` or omitted. Mismatched variant returns `INVALID_PRODUCT_VARIANT` (422).
   - `quantity`: required integer, strict minimum `1`, maximum `100` per item (ADR/API-CART-008). Non-integers, strings, negative values, and `0` are rejected with `INVALID_VALUE` (422).
+  - `items`: a cart holds at most `100` distinct `(product_id, variant_id)` lines (`Cart::MAX_ITEMS`). Adding a **new** line beyond the cap returns `INVALID_VALUE` (422); increasing the quantity of an existing line is unaffected.
+  - **Concurrency:** every cart mutation locks the holder cart row first and requires it to still be `ACTIVE`; a mutation that loses a race with `CART-005` merge (source cart retired) is rejected `CONFLICT` (409) instead of writing to the inactive cart.
   - Client-supplied financial and inventory fields (`price`, `subtotal`, `total`, `discount`, `stock`) are strictly rejected with `INVALID_VALUE` (422). Silently ignoring them is inconsistent with the global unknown-field rejection rule and would hide client payload errors.
 - **Item Aggregation & Duplicate Handling:** If the caller adds an item whose `(product_id, variant_id)` already exists in the cart, the server merges the items by incrementing the existing line's quantity: `new_quantity = existing_quantity + added_quantity` (clamped to max `100`).
 - **Inventory Check Semantics:** The backend performs an informational availability check on add/update using these mutually exclusive predicates: if the product fails the purchasability flags (`is_active: false` or `is_published: false`), returns `PRODUCT_UNAVAILABLE` (422); if the product is purchasable but `available_quantity < requested_quantity`, returns `INSUFFICIENT_STOCK` (422). Successful addition **does not place an inventory hold or lock** (ADR/API-CART-002).
@@ -1921,10 +1923,12 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 ### 22.6 Endpoint CART-005 — Merge Guest Cart
 
 - **HTTP Method & Path:** `POST /api/v1/me/cart/merge`
+- **Request Body:** None (bodyless action). A non-empty body is rejected with `INVALID_VALUE` (422); an empty/`[]`/`{}` body is accepted.
 - **Purpose:** Explicitly merge an anonymous guest cart into the authenticated customer's account cart.
 - **Authentication:** Required (`AUTHENTICATED_OWNER`).
 - **Guest Token Input:** The server reads the guest token from the transport channel appropriate to the client type: `guest_cart_id` cookie (browser path) or `X-Guest-Cart-Id` request header (Flutter path). A client must not send the token value in a JSON body field, as this would expose the bearer credential in request logs.
 - **Merge Semantics:**
+  - Locks the source and target cart rows (ordered by id) and the source lines, so a concurrent guest add/update/remove serialises and never lands on the retired source cart.
   - Matches items by `(product_id, variant_id)`: sums quantities up to the `100` unit limit.
   - Copies unique items into the customer's cart.
   - Deactivates/clears the guest cart record so it cannot be re-merged or accessed.
@@ -1943,7 +1947,9 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | `items_count` | integer | CUSTOMER / GUEST | no | Total number of distinct item lines in the cart |
 | `items` | `CartItem[]` | CUSTOMER / GUEST | no | Array of item lines in deterministic insertion order |
 | `subtotal` | `{amount: int, currency: "TZS"}` | CUSTOMER / GUEST | no | Informational sum of line totals (minor units) |
-| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation |
+| `updated_at` | ISO8601 UTC | CUSTOMER / GUEST | no | Timestamp of last cart mutation (for a transient cart, the time the empty handle was returned) |
+
+**Transient anonymous cart:** A first anonymous `GET /api/v1/me/cart` with no guest credential returns the empty Cart representation without persisting a cart or issuing a credential. Its `id` is a non-null, opaque, transient handle (`cart_...`, derived from that request's guest token and never equal to a persisted id) and its `updated_at` is the response time. Two such reads are independent and may return different transient ids; clients must not rely on the transient id for continuity. Both values are superseded by the persisted cart values once the first successful `CART-002` mutation issues the guest credential.
 
 #### Cart Item Object Structure
 

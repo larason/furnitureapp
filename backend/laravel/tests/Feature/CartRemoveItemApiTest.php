@@ -100,8 +100,16 @@ class CartRemoveItemApiTest extends TestCase
         $cart = $this->activeCartFor($user);
         $item = $this->itemFor($cart, $product, $variant, 2);
 
-        $this->withHeaders($this->authenticateAs($user))
-            ->deleteJson('/api/v1/me/cart/items/'.CartItemIdentifier::encode($item), ['quantity' => 1])
+        $headers = $this->authenticateAs($user);
+        $url = '/api/v1/me/cart/items/'.CartItemIdentifier::encode($item);
+
+        $this->withHeaders($headers)
+            ->deleteJson($url, ['quantity' => 1])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+
+        $this->withHeaders($headers)
+            ->call('DELETE', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '"unexpected"')
             ->assertStatus(422)
             ->assertJsonPath('errors.0.code', 'INVALID_VALUE');
 

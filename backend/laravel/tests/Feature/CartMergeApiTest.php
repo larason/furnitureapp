@@ -54,6 +54,35 @@ class CartMergeApiTest extends TestCase
         $this->assertSame(0, Cart::query()->where('user_id', $user->id)->count());
     }
 
+    public function test_merge_rejects_a_non_empty_request_body(): void
+    {
+        [$guest, $raw] = $this->guestCart([[null, null, 1]]);
+        $user = $this->cartCustomer();
+
+        $this->withHeaders($this->mergeHeaders($user, $raw, (string) Str::uuid()))
+            ->postJson(self::URL, ['unexpected' => 'value'])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+
+        $this->assertSame(CartStatus::ACTIVE, $guest->fresh()->status);
+    }
+
+    public function test_merge_rejects_scalar_json_bodies(): void
+    {
+        [$guest, $raw] = $this->guestCart([[null, null, 1]]);
+        $user = $this->cartCustomer();
+        $headers = $this->mergeHeaders($user, $raw, (string) Str::uuid());
+
+        foreach (['"unexpected"', '123', 'null', '[1]'] as $content) {
+            $this->withHeaders($headers)
+                ->call('POST', self::URL, server: ['CONTENT_TYPE' => 'application/json'], content: $content)
+                ->assertUnprocessable()
+                ->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+        }
+
+        $this->assertSame(CartStatus::ACTIVE, $guest->fresh()->status);
+    }
+
     public function test_merge_requires_an_idempotency_key(): void
     {
         [, $raw] = $this->guestCart([[null, null, 1]]);
@@ -308,16 +337,15 @@ class CartMergeApiTest extends TestCase
         [$productB, $variantB] = $this->stockedProduct(quantity: 50);
 
         $this->flushHeaders();
-        $raw = $this->getJson('/api/v1/me/cart')->assertOk()->headers->get(GuestCartTransport::HEADER);
-        $this->assertNotNull($raw);
-
-        $guestHeaders = [GuestCartTransport::HEADER => (string) $raw];
-
-        $this->withHeaders($guestHeaders)->postJson('/api/v1/me/cart/items', [
+        $firstAdd = $this->postJson('/api/v1/me/cart/items', [
             'product_id' => ProductIdentifier::encode($productA),
             'variant_id' => VariantIdentifier::encode($variantA),
             'quantity' => 2,
         ])->assertStatus(201);
+        $raw = $firstAdd->headers->get(GuestCartTransport::HEADER);
+        $this->assertNotNull($raw);
+
+        $guestHeaders = [GuestCartTransport::HEADER => (string) $raw];
 
         $this->withHeaders($guestHeaders)->postJson('/api/v1/me/cart/items', [
             'product_id' => ProductIdentifier::encode($productB),

@@ -62,14 +62,16 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // RETIRED — Clerk owns credential, session, recovery, and verification
     // flows. These always return `410 GONE` regardless of authentication
     // state; never behind auth middleware.
-    Route::post('/auth/register', [AuthController::class, 'register'])->name('auth.register');
-    Route::post('/auth/login', [AuthController::class, 'login'])->name('auth.login');
-    Route::post('/auth/password/forgot', [AuthController::class, 'passwordForgot'])->name('auth.password.forgot');
-    Route::post('/auth/password/reset', [AuthController::class, 'passwordReset'])->name('auth.password.reset');
-    Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
-    Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
-    Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
-    Route::post('/email/verify/resend', [AuthController::class, 'resendEmailVerification'])->name('auth.email.resend');
+    Route::middleware('throttle:retired-auth')->group(function (): void {
+        Route::post('/auth/register', [AuthController::class, 'register'])->name('auth.register');
+        Route::post('/auth/login', [AuthController::class, 'login'])->name('auth.login');
+        Route::post('/auth/password/forgot', [AuthController::class, 'passwordForgot'])->name('auth.password.forgot');
+        Route::post('/auth/password/reset', [AuthController::class, 'passwordReset'])->name('auth.password.reset');
+        Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
+        Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
+        Route::post('/email/verify', [AuthController::class, 'verifyEmail'])->name('auth.email.verify');
+        Route::post('/email/verify/resend', [AuthController::class, 'resendEmailVerification'])->name('auth.email.resend');
+    });
 
     Route::middleware(['clerk.optional', 'throttle:anonymous-submit'])->post('/requests', [RequestController::class, 'store'])->name('requests.store');
     Route::middleware(['clerk.optional', 'throttle:anonymous-submit'])->post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
@@ -93,7 +95,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
 
         Route::patch('/', [MeController::class, 'update'])->middleware('throttle:authenticated-write')->name('update');
 
-        Route::post('/cart/merge', [CartController::class, 'merge'])->middleware('throttle:authenticated-write')->name('cart.merge');
+        Route::post('/cart/merge', [CartController::class, 'merge'])->middleware(['customer-cart', 'throttle:authenticated-write'])->name('cart.merge');
 
         Route::post('/orders/{order}/cancel', [CustomerOrderController::class, 'cancel'])->middleware('throttle:order-cancel')->name('orders.cancel');
         Route::patch('/notifications/{notification}', [NotificationController::class, 'meUpdate'])->middleware('throttle:authenticated-write')->name('notifications.update');
@@ -103,19 +105,19 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // CART — holder-scoped create/get. Optional Clerk auth so anonymous
     // guests can resolve/create their own guest cart via the guest credential.
     // ---------------------------------------------------------------------
-    Route::middleware(['clerk.optional', 'throttle:authenticated-read'])
+    Route::middleware(['clerk.optional', 'customer-cart', 'throttle:authenticated-read'])
         ->get('/me/cart', [CartController::class, 'show'])
         ->name('me.cart.show');
 
-    Route::middleware(['clerk.optional', 'throttle:cart-add'])
+    Route::middleware(['clerk.optional', 'customer-cart', 'guest-cart-mutation', 'throttle:guest-cart-create', 'throttle:cart-add'])
         ->post('/me/cart/items', [CartController::class, 'addItem'])
         ->name('me.cart.items.store');
 
-    Route::middleware(['clerk.optional', 'throttle:authenticated-write'])
+    Route::middleware(['clerk.optional', 'customer-cart', 'guest-cart-mutation', 'throttle:authenticated-write'])
         ->patch('/me/cart/items/{item}', [CartController::class, 'updateItem'])
         ->name('me.cart.items.update');
 
-    Route::middleware(['clerk.optional', 'throttle:authenticated-write'])
+    Route::middleware(['clerk.optional', 'customer-cart', 'guest-cart-mutation', 'throttle:authenticated-write'])
         ->delete('/me/cart/items/{item}', [CartController::class, 'removeItem'])
         ->name('me.cart.items.destroy');
 
@@ -196,7 +198,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // Token binding/verification is implemented in the attachment phase
     // (Group J / 10.6); routes remain stub-only until then.
     // --------------------------------------------------------------------
-    Route::middleware('clerk.auth')->group(function (): void {
+    Route::middleware(['clerk.auth', 'throttle:upload'])->group(function (): void {
         Route::post('/requests/{request}/attachments', [RequestController::class, 'storeAttachment'])->name('requests.attachments.store');
         Route::post('/enquiries/{enquiry}/attachments', [EnquiryController::class, 'storeAttachment'])->name('enquiries.attachments.store');
     });
@@ -206,18 +208,18 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {
         Route::middleware('permission:products.manage')->group(function () use ($products, $productPath): void {
-            Route::get($products, [ProductController::class, 'adminIndex'])->name('products.index');
-            Route::get($products.$productPath, [ProductController::class, 'adminShow'])->name('products.show');
+            Route::get($products, [ProductController::class, 'adminIndex'])->middleware('throttle:authenticated-read')->name('products.index');
+            Route::get($products.$productPath, [ProductController::class, 'adminShow'])->middleware('throttle:authenticated-read')->name('products.show');
         });
         Route::middleware('permission:staff.manage')->group(function (): void {
-            Route::get('/staff', [AdminController::class, 'staffIndex'])->name('staff.index');
+            Route::get('/staff', [AdminController::class, 'staffIndex'])->middleware('throttle:authenticated-read')->name('staff.index');
             Route::post('/staff', [AdminController::class, 'staffStore'])->middleware('throttle:admin-staff')->name('staff.store');
-            Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->name('staff.show');
+            Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->middleware('throttle:authenticated-read')->name('staff.show');
         });
         Route::middleware(['permission:staff.approve', 'throttle:admin-staff'])->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
         Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
         Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
-        Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->name('audit-logs.index');
+        Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->middleware('throttle:authenticated-read')->name('audit-logs.index');
     });
 
     // --------------------------------------------------------------------
@@ -225,15 +227,15 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'admin'])->group(function (): void {
         Route::middleware('permission:users.manage_authorized')->group(function (): void {
-            Route::get('/users', [AdminController::class, 'userIndex'])->name('users.index');
-            Route::get('/users/{user}', [AdminController::class, 'userShow'])->name('users.show');
+            Route::get('/users', [AdminController::class, 'userIndex'])->middleware('throttle:authenticated-read')->name('users.index');
+            Route::get('/users/{user}', [AdminController::class, 'userShow'])->middleware('throttle:authenticated-read')->name('users.show');
         });
     });
 
     // --------------------------------------------------------------------
     // PAYMENTS — Group H placeholders (authenticated customer)
     // --------------------------------------------------------------------
-    Route::middleware('clerk.auth')->group(function (): void {
+    Route::middleware(['clerk.auth', 'customer-cart', 'throttle:payment'])->group(function (): void {
         Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
         Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
     });
@@ -242,5 +244,5 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // WEBHOOKS — provider signature verification (Group H); NOT bearer auth.
     // Route stays stub-only until signature middleware is implemented.
     // --------------------------------------------------------------------
-    Route::post('/webhooks/payment/{provider}', [WebhookController::class, 'handlePaymentProvider'])->name('webhooks.payments.handle');
+    Route::post('/webhooks/payment/{provider}', [WebhookController::class, 'handlePaymentProvider'])->middleware('throttle:webhook')->name('webhooks.payments.handle');
 });

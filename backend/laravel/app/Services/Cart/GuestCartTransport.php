@@ -42,6 +42,26 @@ final class GuestCartTransport
         return $credential;
     }
 
+    /**
+     * Whether the request carries exactly one well-formed guest credential.
+     * A supplied credential is never used to create a cart (it resolves an
+     * existing one or is rejected), so this distinguishes a returning guest
+     * from a genuine creation attempt without resolving the holder.
+     */
+    public function suppliesValidCredential(Request $request): bool
+    {
+        $header = $request->header(self::HEADER);
+        $cookie = $request->cookie(self::COOKIE);
+
+        if ($header !== null && $cookie !== null) {
+            return false;
+        }
+
+        $credential = $header ?? $cookie;
+
+        return is_string($credential) && $this->isValidCredential($credential);
+    }
+
     public function isBrowser(Request $request): bool
     {
         if ($request->hasHeader(self::HEADER)) {

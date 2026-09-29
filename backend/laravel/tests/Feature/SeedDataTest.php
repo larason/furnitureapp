@@ -254,6 +254,34 @@ class SeedDataTest extends TestCase
         (new DemoSeeder)->run();
     }
 
+    public function test_development_user_seeder_refuses_direct_production_execution(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('local or testing');
+
+        (new DevelopmentUserSeeder)->run();
+    }
+
+    public function test_development_user_seeder_sets_credentials_once_and_preserves_them_on_rerun(): void
+    {
+        config(['demo.user_password' => 'first-demo-password']);
+        (new DevelopmentUserSeeder)->run();
+
+        $existing = User::query()->where('email', 'admin@example.com')->sole();
+        $originalHash = $existing->password;
+        $this->assertTrue(password_verify('first-demo-password', (string) $existing->password));
+
+        config(['demo.user_password' => 'rotated-demo-password']);
+        (new DevelopmentUserSeeder)->run();
+
+        $existing->refresh();
+        $this->assertSame($originalHash, $existing->password);
+        $this->assertTrue(password_verify('first-demo-password', (string) $existing->password));
+        $this->assertFalse(password_verify('rotated-demo-password', (string) $existing->password));
+    }
+
     public function test_unknown_demo_order_state_throws(): void
     {
         $method = new \ReflectionMethod(CommerceDemoSeeder::class, 'orderAmounts');

@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Services\Cart\AddCartItem;
 use App\Services\Cart\MergeGuestCart;
 use App\Services\IdempotencyService;
 use App\Support\CartStatus;
@@ -110,6 +111,96 @@ class CartMergeConcurrencyMysqlTest extends TestCase
 
         $this->assertSame(7, $line->quantity);
         $this->assertSame(1, CartItem::query()->where('cart_id', $target->id)->count());
+    }
+
+    public function test_concurrent_guest_add_and_merge_never_lose_the_added_line(): void
+    {
+        [$firstProduct, $firstVariant] = $this->stockedProduct();
+        [, $secondVariant] = $this->stockedProduct();
+        $user = $this->user();
+        [$guest] = $this->guestFor($firstProduct, $firstVariant, 1);
+
+        $results = $this->runConcurrentWorkers(
+            fn (): string => $this->guestAdd($guest->id, $secondVariant->id, 1),
+            fn (): string => $this->plainMerge($user->id, (string) $guest->guest_token_digest),
+        );
+
+        // The add either committed before merge locked/retired the source (its
+        // line is carried onto the target) or it lost the race and was rejected
+        // as a concurrency conflict. It must never silently land on the retired
+        // source cart.
+        $target = Cart::query()->where('user_id', $user->id)->where('status', CartStatus::ACTIVE)->sole();
+        $targetVariants = CartItem::query()->where('cart_id', $target->id)->pluck('variant_id')->sort()->values()->all();
+
+        if ($results[0] === 'ok') {
+            $this->assertContains($firstVariant->id, $targetVariants);
+            $this->assertContains($secondVariant->id, $targetVariants);
+        } else {
+            $this->assertSame('error:CONFLICT', $results[0]);
+            $this->assertSame([$firstVariant->id], $targetVariants);
+        }
+
+        $this->assertSame(CartStatus::INACTIVE, $guest->fresh()->status);
+    }
+
+    public function test_concurrent_target_add_and_merge_never_exceed_the_line_limit(): void
+    {
+        $user = $this->user();
+        $target = Cart::query()->create([
+            'user_id' => $user->id,
+            'guest_token_digest' => null,
+            'status' => CartStatus::ACTIVE,
+        ]);
+
+        for ($i = 0; $i < Cart::MAX_ITEMS - 1; $i++) {
+            [$product, $variant] = $this->stockedProduct();
+            CartItem::query()->create([
+                'cart_id' => $target->id,
+                'product_id' => $product->id,
+                'variant_id' => $variant->id,
+                'quantity' => 1,
+            ]);
+        }
+
+        [$guestProduct, $guestVariant] = $this->stockedProduct();
+        [$guest] = $this->guestFor($guestProduct, $guestVariant, 1);
+        [, $addVariant] = $this->stockedProduct();
+
+        $this->runConcurrentWorkers(
+            fn (): string => $this->guestAdd($target->id, $addVariant->id, 1),
+            fn (): string => $this->safePlainMerge($user->id, (string) $guest->guest_token_digest),
+        );
+
+        // Both operations want to add one distinct line to a target holding
+        // MAX_ITEMS - 1; exactly one may, so the cap is never exceeded.
+        $lines = CartItem::query()->where('cart_id', $target->id)->count();
+
+        $this->assertSame(Cart::MAX_ITEMS, $lines);
+    }
+
+    private function safePlainMerge(int $userId, string $digest): string
+    {
+        try {
+            app(MergeGuestCart::class)->merge(User::query()->findOrFail($userId), $digest);
+        } catch (ApiException $exception) {
+            return 'error:'.$exception->errorCode()->value;
+        }
+
+        return 'merged';
+    }
+
+    private function guestAdd(int $cartId, int $variantId, int $quantity): string
+    {
+        $cart = Cart::query()->findOrFail($cartId);
+        $variant = ProductVariant::query()->findOrFail($variantId);
+
+        try {
+            app(AddCartItem::class)->add($cart, $variant->product, $variant, $quantity);
+        } catch (ApiException $exception) {
+            return 'error:'.$exception->errorCode()->value;
+        }
+
+        return 'ok';
     }
 
     private function idempotentMerge(int $userId, string $digest, string $key): string

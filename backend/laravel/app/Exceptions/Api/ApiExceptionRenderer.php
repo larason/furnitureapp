@@ -4,14 +4,12 @@ namespace App\Exceptions\Api;
 
 use App\Support\ApiErrorCode;
 use App\Support\ApiErrorResponse;
-use App\Support\ApiLogContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -59,16 +57,12 @@ class ApiExceptionRenderer
 
     private function apiExceptionResponse(ApiException $e, Request $request): JsonResponse
     {
-        $this->logIfServerError($request, $e, $e->errorCode(), $e->status());
-
         return $this->response->error($e->status(), $e->errorCode(), $e->getMessage(), $request, $e->field(), $e->details(), $e->headers());
     }
 
     private function httpExceptionResponse(HttpExceptionInterface $e, Request $request): JsonResponse
     {
         $status = $e->getStatusCode();
-
-        $this->logIfServerError($request, $e, $this->httpExceptionCode($status), $status);
 
         return $this->response->error(
             $status,
@@ -81,25 +75,7 @@ class ApiExceptionRenderer
 
     private function genericError(Request $request, Throwable $e): JsonResponse
     {
-        $this->log($request, $e, ApiErrorCode::INTERNAL_SERVER_ERROR, 500);
-
         return $this->response->error(500, ApiErrorCode::INTERNAL_SERVER_ERROR, 'An unexpected error occurred.', $request);
-    }
-
-    private function log(Request $request, Throwable $exception, ApiErrorCode $code, int $status): void
-    {
-        try {
-            Log::error('api.exception', ApiLogContext::forException($request, $exception, $code, $status));
-        } catch (Throwable $e) {
-            error_log('api.exception logging failed: '.$e->getMessage());
-        }
-    }
-
-    private function logIfServerError(Request $request, Throwable $exception, ApiErrorCode $code, int $status): void
-    {
-        if ($status >= 500) {
-            $this->log($request, $exception, $code, $status);
-        }
     }
 
     private function httpExceptionCode(int $status): ApiErrorCode
