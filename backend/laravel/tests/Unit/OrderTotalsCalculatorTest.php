@@ -43,6 +43,18 @@ class OrderTotalsCalculatorTest extends TestCase
         OrderTotalsCalculator::calculateSubtotal([new OrderLineAmount(1, 1, 1), 100]);
     }
 
+    public function test_subtotal_accepts_a_consistent_directly_constructed_line(): void
+    {
+        $this->assertSame(200, OrderTotalsCalculator::calculateSubtotal([new OrderLineAmount(100, 2, 200)]));
+    }
+
+    public function test_subtotal_rejects_an_inconsistent_line_total(): void
+    {
+        $this->expectException(DomainException::class);
+
+        OrderTotalsCalculator::calculateSubtotal([new OrderLineAmount(100, 2, 1)]);
+    }
+
     public function test_pickup_is_final_zero_fee_equal_to_subtotal(): void
     {
         $totals = OrderTotalsCalculator::forPickup(350_000);

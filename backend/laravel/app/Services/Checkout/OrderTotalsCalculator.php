@@ -37,10 +37,28 @@ final class OrderTotalsCalculator
                 throw new DomainException('Order subtotal lines must be OrderLineAmount values.');
             }
 
-            $subtotal = self::add($subtotal, $line->lineTotalAmount);
+            $subtotal = self::add($subtotal, self::verifiedLineTotal($line));
         }
 
         return $subtotal;
+    }
+
+    /**
+     * Re-derives the line total from first principles and rejects a supplied
+     * line whose total is inconsistent with unit price x quantity.
+     */
+    private static function verifiedLineTotal(OrderLineAmount $line): int
+    {
+        $expected = self::multiply(
+            self::amount($line->unitPriceAmount, 'unit_price_amount', 0),
+            self::amount($line->quantity, 'quantity', 1),
+        );
+
+        if ($line->lineTotalAmount !== $expected) {
+            throw new DomainException('Order line total must equal unit price multiplied by quantity.');
+        }
+
+        return $expected;
     }
 
     public static function forPickup(mixed $subtotalAmount): OrderTotals
