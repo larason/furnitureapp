@@ -104,6 +104,8 @@ class CartController extends V1Controller
         MergeGuestCart $merge,
         IdempotencyService $idempotency,
     ): JsonResponse {
+        $this->rejectRequestBody($request);
+
         $actor = $request->user();
 
         if (! $actor instanceof User) {

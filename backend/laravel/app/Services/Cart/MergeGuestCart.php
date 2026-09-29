@@ -90,18 +90,26 @@ final class MergeGuestCart
         $sourceItems = CartItem::query()
             ->where('cart_id', $source->getKey())
             ->orderBy('id')
+            ->lockForUpdate()
             ->get();
+
+        $targetLines = CartItem::query()->where('cart_id', $target->getKey())->count();
 
         foreach ($sourceItems as $sourceItem) {
             $targetItem = $this->targetLine($target, $sourceItem);
 
             if ($targetItem === null) {
+                if ($targetLines >= Cart::MAX_ITEMS) {
+                    throw new ApiException(ApiErrorCode::INVALID_VALUE, 'The cart cannot contain more than '.Cart::MAX_ITEMS.' distinct items.', 422);
+                }
+
                 CartItem::query()->create([
                     'cart_id' => $target->getKey(),
                     'product_id' => $sourceItem->product_id,
                     'variant_id' => $sourceItem->variant_id,
                     'quantity' => min($sourceItem->quantity, CartItem::MAX_QUANTITY),
                 ]);
+                $targetLines++;
 
                 continue;
             }

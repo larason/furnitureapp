@@ -30,6 +30,13 @@ use Illuminate\Support\Carbon;
 #[Hidden(['guest_token_digest'])]
 class Cart extends Model
 {
+    /**
+     * Maximum distinct cart lines. Bounds cart read/projection cost and
+     * database growth; `quantity` per line is additionally capped by
+     * CartItem::MAX_QUANTITY.
+     */
+    public const MAX_ITEMS = 100;
+
     /** @use HasFactory<CartFactory> */
     use HasFactory;
 

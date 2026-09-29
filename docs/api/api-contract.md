@@ -1878,6 +1878,8 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
   - `product_type`: must be `IN_STOCK`. If `product_type === MADE_TO_ORDER`, the backend strictly rejects with `PRODUCT_NOT_PURCHASABLE` (422).
   - `variant_id`: conditional. If the product defines variants, `variant_id` is required, must reference an active variant, and must strictly belong to `product_id` (`VAR-OWN-001`). If the product has no variants, `variant_id` must be `null` or omitted. Mismatched variant returns `INVALID_PRODUCT_VARIANT` (422).
   - `quantity`: required integer, strict minimum `1`, maximum `100` per item (ADR/API-CART-008). Non-integers, strings, negative values, and `0` are rejected with `INVALID_VALUE` (422).
+  - `items`: a cart holds at most `100` distinct `(product_id, variant_id)` lines (`Cart::MAX_ITEMS`). Adding a **new** line beyond the cap returns `INVALID_VALUE` (422); increasing the quantity of an existing line is unaffected.
+  - **Concurrency:** every cart mutation locks the holder cart row first and requires it to still be `ACTIVE`; a mutation that loses a race with `CART-005` merge (source cart retired) is rejected `CONFLICT` (409) instead of writing to the inactive cart.
   - Client-supplied financial and inventory fields (`price`, `subtotal`, `total`, `discount`, `stock`) are strictly rejected with `INVALID_VALUE` (422). Silently ignoring them is inconsistent with the global unknown-field rejection rule and would hide client payload errors.
 - **Item Aggregation & Duplicate Handling:** If the caller adds an item whose `(product_id, variant_id)` already exists in the cart, the server merges the items by incrementing the existing line's quantity: `new_quantity = existing_quantity + added_quantity` (clamped to max `100`).
 - **Inventory Check Semantics:** The backend performs an informational availability check on add/update using these mutually exclusive predicates: if the product fails the purchasability flags (`is_active: false` or `is_published: false`), returns `PRODUCT_UNAVAILABLE` (422); if the product is purchasable but `available_quantity < requested_quantity`, returns `INSUFFICIENT_STOCK` (422). Successful addition **does not place an inventory hold or lock** (ADR/API-CART-002).
@@ -1921,10 +1923,12 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 ### 22.6 Endpoint CART-005 — Merge Guest Cart
 
 - **HTTP Method & Path:** `POST /api/v1/me/cart/merge`
+- **Request Body:** None (bodyless action). A non-empty body is rejected with `INVALID_VALUE` (422); an empty/`[]`/`{}` body is accepted.
 - **Purpose:** Explicitly merge an anonymous guest cart into the authenticated customer's account cart.
 - **Authentication:** Required (`AUTHENTICATED_OWNER`).
 - **Guest Token Input:** The server reads the guest token from the transport channel appropriate to the client type: `guest_cart_id` cookie (browser path) or `X-Guest-Cart-Id` request header (Flutter path). A client must not send the token value in a JSON body field, as this would expose the bearer credential in request logs.
 - **Merge Semantics:**
+  - Locks the source and target cart rows (ordered by id) and the source lines, so a concurrent guest add/update/remove serialises and never lands on the retired source cart.
   - Matches items by `(product_id, variant_id)`: sums quantities up to the `100` unit limit.
   - Copies unique items into the customer's cart.
   - Deactivates/clears the guest cart record so it cannot be re-merged or accessed.

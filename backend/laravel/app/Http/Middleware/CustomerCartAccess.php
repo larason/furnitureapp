@@ -20,7 +20,9 @@ final class CustomerCartAccess
     {
         $user = $request->user();
 
-        if ($user instanceof User && ! $user->hasRole(RoleName::CUSTOMER->value)) {
+        if ($user instanceof User
+            && (! $user->hasRole(RoleName::CUSTOMER->value)
+                || $user->hasAnyRole([RoleName::STAFF->value, RoleName::ADMIN->value]))) {
             throw new AuthorizationException('Customer cart access is required.');
         }
 

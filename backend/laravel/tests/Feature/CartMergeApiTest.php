@@ -54,6 +54,19 @@ class CartMergeApiTest extends TestCase
         $this->assertSame(0, Cart::query()->where('user_id', $user->id)->count());
     }
 
+    public function test_merge_rejects_a_non_empty_request_body(): void
+    {
+        [$guest, $raw] = $this->guestCart([[null, null, 1]]);
+        $user = $this->cartCustomer();
+
+        $this->withHeaders($this->mergeHeaders($user, $raw, (string) Str::uuid()))
+            ->postJson(self::URL, ['unexpected' => 'value'])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+
+        $this->assertSame(CartStatus::ACTIVE, $guest->fresh()->status);
+    }
+
     public function test_merge_requires_an_idempotency_key(): void
     {
         [, $raw] = $this->guestCart([[null, null, 1]]);
