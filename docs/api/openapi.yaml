@@ -2596,15 +2596,21 @@ paths:
           $ref: '#/components/responses/ValidationError'
       description: >-
         Return the holder's ACTIVE cart. Optional Clerk bearer; anonymous guests may present an existing guest
-        credential (cookie or header). This operation never persists a cart and never issues a guest credential;
-        the guest credential is issued only by the first successful CART-002 mutation. An invalid attempted bearer
-        or guest credential returns 401.
+        credential (cookie or header). An authenticated read may lazily create the customer's cart; an anonymous
+        read without a guest credential does not persist a cart. This operation never issues a guest credential —
+        that is issued only by the first successful CART-002 mutation. An invalid attempted bearer or guest
+        credential returns 401.
   /me/cart/items:
     post:
       operationId: CART-002
       tags:
       - Cart
       summary: Add item
+      description: >-
+        Adds a purchasable line, merging duplicates. A cart holds at most 100 distinct `(product_id, variant_id)`
+        lines; adding a new line beyond the cap returns `422 INVALID_VALUE`. Every mutation locks the holder cart
+        row first and requires it to still be `ACTIVE`, so a mutation racing `CART-005` merge (source cart retired)
+        returns `409 CONFLICT` instead of writing to the inactive cart.
       security:
       - bearerAuth: []
       - {}
@@ -2655,6 +2661,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /me/cart/items/{item}:
     patch:
       operationId: CART-003
@@ -2688,6 +2696,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '409':
+          $ref: '#/components/responses/Conflict'
       requestBody:
         required: true
         content:
@@ -2695,7 +2705,7 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateCartItemRequest'
       description: Holder-scoped; Customer A -> Customer B item returns 404 CART_ITEM_NOT_FOUND masked (not 403); ownership
-        via /me context
+        via /me context. A mutation racing CART-005 merge on a retired cart returns 409 CONFLICT.
     delete:
       operationId: CART-004
       tags:
@@ -2715,16 +2725,27 @@ paths:
           $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
-      description: Holder-scoped; Customer A -> Customer B item returns 404 CART_ITEM_NOT_FOUND masked (not 403); ownership
-        via /me context
+        '409':
+          $ref: '#/components/responses/Conflict'
+      description: >-
+        Bodyless action: a non-empty request body is rejected `422 INVALID_VALUE` (empty/`[]`/`{}` accepted).
+        Holder-scoped; Customer A -> Customer B item returns 404 CART_ITEM_NOT_FOUND masked (not 403); ownership
+        via /me context. A mutation racing CART-005 merge on a retired cart returns 409 CONFLICT.
   /me/cart/merge:
     post:
       operationId: CART-005
       tags:
       - Cart
       summary: Merge guest cart
+      description: >-
+        Bodyless authenticated action. A non-empty request body is rejected `422 INVALID_VALUE` (empty/`[]`/`{}`
+        accepted). Locks the source and target cart rows and source lines, so a concurrent guest mutation
+        serialises and never lands on the retired source cart; a merge that would exceed the 100 distinct-line
+        cap is rejected `422 INVALID_VALUE` with the source left `ACTIVE`.
       security:
       - bearerAuth: []
       parameters:
@@ -2743,6 +2764,14 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Cart'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /checkout:
     post:
       operationId: CHK-001

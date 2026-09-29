@@ -7,7 +7,6 @@ use App\Models\StaffProfile;
 use App\Models\User;
 use App\Support\RoleName;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
 
@@ -16,7 +15,9 @@ use Spatie\Permission\Models\Role;
  *
  * Creates one customer, one staff, and one admin account sharing the password
  * from the SEED_DEMO_PASSWORD environment variable (see .env.example).
- * Repeatable: existing emails are reused and roles/profiles are ensured.
+ * Repeatable: existing emails are reused and roles/profiles are ensured, but
+ * an existing account's credentials are never overwritten — rerunning must not
+ * reset a changed password back to the shared demo value.
  */
 class DevelopmentUserSeeder extends Seeder
 {
@@ -46,14 +47,15 @@ class DevelopmentUserSeeder extends Seeder
             [
                 'name' => $name,
                 'phone' => '+255700000001',
-                'password' => Hash::make($password),
                 'email_verified_at' => now(),
                 'account_state' => $isStaff ? 'ACTIVE' : null,
             ]
         );
 
-        if (! $user->wasRecentlyCreated) {
-            $user->forceFill(['password' => Hash::make($password)])->save();
+        if ($user->wasRecentlyCreated) {
+            // `password` is guarded from mass assignment; apply the demo
+            // credential once on creation and never on later reruns.
+            $user->forceFill(['password' => $password])->save();
         }
 
         if ($isStaff && $user->account_state === null) {

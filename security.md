@@ -28,7 +28,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Additional Risks
 
-1. **Resolved: Development seeder.** `DevelopmentUserSeeder` is restricted to local/testing environments and never generates or prints a plaintext password. Local execution requires an explicit demo password.
+1. **Resolved: Development seeder.** `DevelopmentUserSeeder` is restricted to local/testing environments and never generates or prints a plaintext password. Local execution requires an explicit demo password. Rerunning it reuses existing emails and ensures roles/profiles but never overwrites an existing account's credentials, so it cannot reset a changed password back to the shared demo value.
 
 2. **Resolved: Idempotency retention.** Expired idempotency rows are pruned hourly through the Laravel scheduler.
 
@@ -61,7 +61,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Verification
 
-- PHPUnit: 1,103 tests executed, 1,102 passed, 1 skipped, 4,260 assertions.
+- PHPUnit: 1,103 tests executed, 1,102 passed, 1 skipped, 4,261 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
 - `php artisan schedule:list`: idempotency-key pruning hourly.
 - `git diff --check`: passed.

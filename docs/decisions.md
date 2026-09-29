@@ -2417,3 +2417,30 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Preserves the frozen V1 copy semantics and Model B pending-fee state while preventing an incomplete checkout implementation from silently losing billing history.
 
 **Status:** Blocked by model gap | **Affected:** `backend/laravel/app/Services/Checkout/DeliveryFulfillmentState.php`, `backend/laravel/tests/Unit/DeliveryFulfillmentStateTest.php`, `backend/laravel/database/migrations/2026_09_10_140000_create_orders_table.php`, `docs/decisions.md`
+
+---
+
+### ADR/API-FRZ-002 — Post-Freeze Cart Contract Change: Line Cap, Mutation Concurrency, and Bodyless Merge
+
+**Change Request:** The Cart Operation security review raised externally visible cart hardening: (1) cap a cart at `Cart::MAX_ITEMS = 100` distinct `(product_id, variant_id)` lines on `CART-002`/`CART-005`; (2) require `CART-002/003/004` mutations to operate only on a still-`ACTIVE` holder cart (`409 CONFLICT` otherwise); (3) reject non-empty request bodies on the bodyless `CART-005` merge (`422 INVALID_VALUE`). Raised under the formal Post-Freeze Change Process of `ADR/API-FRZ-001`.
+
+**Impact Analysis:**
+- Conforming Next.js/Flutter clients never rely on unbounded distinct cart lines, on writing to a retired cart, or on sending a body to a bodyless action. Normal add/update/remove/merge flows are unchanged.
+- Newly rejected shapes are undefined/unsafe inputs rather than supported behavior: a cart exceeding 100 distinct lines; a mutation racing `CART-005` merge on a retired guest cart; a merge carrying a body; a `CART-005` merge that would exceed the cap.
+- Affected surface: `CART-002` may return `422 INVALID_VALUE` (line cap) and `409 CONFLICT`; `CART-003/004` may return `409 CONFLICT` and (CART-004) `422 INVALID_VALUE`; `CART-005` may return `409 CONFLICT`/`422 INVALID_VALUE`. No path, method, required field, response field, enum, state machine, or financial rule changes.
+
+**Classification:** **Non-Breaking** compatibility refinement (security/DoS and concurrency hardening). It closes undefined/unsafe inputs, preserves all accepted fields and normal-flow semantics, and aligns `CART-005` behavior with its documented bodyless action (`docs/api/api-contract.md §22.6`). Per `phases/api-breaking-change-policy.md` §2, this is a clarification/bug-fix class change, not a removal or narrowing of any documented client contract.
+
+**Contract Review:** Reviewed against `phases/api-breaking-change-policy.md` §1/§2 and `AGENTS.md §7`. The contract text, OpenAPI, and examples are updated together; the change is recorded here rather than introduced silently.
+
+**OpenAPI Update:** `docs/api/openapi.yaml` — `CART-002` line-cap/`409` description and `409` response; `CART-003`/`CART-004` `409` (and `CART-004` `422`); `CART-005` bodyless/line-cap description with `401`/`409`/`422`/`429`.
+
+**Example Update:** `docs/api/api-examples.md §6.6` adds the line-cap, concurrency-`409`, and bodyless-merge error cases.
+
+**Verification:** `tests/Feature/CartMutationGuardTest.php`, `tests/Feature/CartMergeApiTest.php`, `tests/Feature/CartRemoveItemApiTest.php`, `tests/Feature/CartAddItemApiTest.php`, and the MySQL-gated `tests/Integration/CartMergeConcurrencyMysqlTest.php` (mutation-vs-merge and target-add-vs-merge cap races).
+
+**Approval:** Project owner (review remediation request).
+
+**Reason:** Records the cart hardening through the required Post-Freeze Change Process so the observable changes are explicit, classified, reviewed, and approved instead of drifting from the frozen V1 baseline.
+
+**Status:** Accepted (Non-Breaking) | **Date:** 2026-09-29 | **Affected:** `backend/laravel` (`app/Models/Cart.php`, `app/Services/Cart/*`, `app/Http/Controllers/Api/V1/CartController.php`, `app/Http/Middleware/CustomerCartAccess.php`), `docs/api/{api-contract.md,api-examples.md,openapi.yaml}`, `security.md`, `docs/decisions.md`
