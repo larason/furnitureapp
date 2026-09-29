@@ -73,7 +73,6 @@ class CheckoutValidationTest extends TestCase
 
         RateLimiter::clear($this->checkoutKey($customer));
 
-        // Invalid body and no Idempotency-Key: the route gate still wins.
         $this->withHeaders($this->authenticateAs($customer))
             ->postJson(self::URL, [])
             ->assertStatus(501);
@@ -119,7 +118,6 @@ class CheckoutValidationTest extends TestCase
 
         RateLimiter::clear($this->checkoutKey($customer));
 
-        // Both the key and fulfillment_type are missing; the key error wins.
         $this->withHeaders($this->authenticateAs($customer))
             ->postJson(self::URL, [])
             ->assertStatus(422)
@@ -241,15 +239,11 @@ class CheckoutValidationTest extends TestCase
                 ->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_TYPE');
         }
 
-        // Blank strings are trimmed to null by the global request middleware
-        // and rejected structurally.
         foreach (['recipient_name', 'address_line', 'city'] as $field) {
             $this->attempt($customer, ['fulfillment_type' => 'DELIVERY', 'delivery_address' => [...$address, $field => '   ']])
                 ->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_TYPE');
         }
 
-        // A non-empty string that fails established normalization is a
-        // delivery-domain error, not a type error.
         $this->attempt($customer, ['fulfillment_type' => 'DELIVERY', 'delivery_address' => [...$address, 'phone' => 'not-a-phone']])
             ->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_DELIVERY_INFORMATION');
 
@@ -338,6 +332,40 @@ class CheckoutValidationTest extends TestCase
         $this->assertSame(0, $variant->fresh()->stocks->first()->reserved_quantity);
     }
 
+    public function test_query_parameters_cannot_supply_business_input(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10);
+        $customer = $this->cartCustomer();
+        $cart = $this->activeCartFor($customer);
+        $this->itemFor($cart, $product, $variant, 1);
+
+        RateLimiter::clear($this->checkoutKey($customer));
+
+        $this->withHeaders($this->authenticateAs($customer) + ['Idempotency-Key' => (string) Str::uuid()])
+            ->postJson(self::URL.'?fulfillment_type=PICKUP', [])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE')
+            ->assertJsonPath('errors.0.field', 'fulfillment_type');
+
+        $this->assertSame(0, Order::query()->count());
+    }
+
+    public function test_empty_property_name_does_not_bypass_the_allow_list(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10);
+        $customer = $this->cartCustomer();
+        $cart = $this->activeCartFor($customer);
+        $this->itemFor($cart, $product, $variant, 1);
+
+        $this->attempt($customer, ['' => 'x', 'fulfillment_type' => 'PICKUP'])
+            ->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+
+        $this->attempt($customer, ['' => 'x', 'total' => 1, 'fulfillment_type' => 'PICKUP'])
+            ->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+
+        $this->assertSame(0, Order::query()->count());
+    }
+
     public function test_form_encoded_checkout_is_rejected(): void
     {
         [$product, $variant] = $this->stockedProduct(quantity: 10);
@@ -349,7 +377,10 @@ class CheckoutValidationTest extends TestCase
 
         $this->withHeaders($this->authenticateAs($customer) + ['Idempotency-Key' => (string) Str::uuid()])
             ->post(self::URL, ['fulfillment_type' => 'PICKUP'])
-            ->assertStatus(415);
+            ->assertStatus(415)
+            ->assertJsonPath('errors.0.code', 'UNSUPPORTED_MEDIA_TYPE');
+
+        $this->assertSame(0, Order::query()->count());
     }
 
     public function test_invalid_requests_have_no_side_effects(): void

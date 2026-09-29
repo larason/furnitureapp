@@ -12,10 +12,12 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * CHK-001 request boundary: strict transport/shape validation only. It owns no
- * Cart/Product/Variant/stock/pricing queries; those are decided inside the
- * Phase 7.7 transaction. Branch and delivery-domain checks reuse the existing
- * Phase 7.2/7.4 normalization authority and map to canonical codes.
+ * CHK-001 request boundary: strict transport/shape validation only. Input is
+ * JSON-body only; any query parameter is rejected so business values cannot be
+ * supplied outside the documented allow-list. It owns no Cart/Product/Variant/
+ * stock/pricing queries; those are decided inside the Phase 7.7 transaction.
+ * Branch and delivery-domain checks reuse the existing Phase 7.2/7.4
+ * normalization authority and map to canonical codes.
  */
 final class CheckoutRequest extends FormRequest
 {
@@ -35,14 +37,25 @@ final class CheckoutRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        // Runs after authentication/authorization middleware but before body
-        // rules, so a missing/malformed Idempotency-Key is reported first.
         $this->idempotencyKey = IdempotencyKeyHeader::require($this);
+
+        $queryParameter = array_key_first($this->query->all());
+
+        if ($queryParameter !== null) {
+            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'Checkout accepts a JSON body only.', 422, (string) $queryParameter);
+        }
 
         $unknown = array_diff(array_keys($this->all()), self::TOP_LEVEL_FIELDS);
 
         if ($unknown !== []) {
-            $this->merge(['_unknown_parameter' => reset($unknown)]);
+            $field = (string) reset($unknown);
+
+            throw new ApiException(
+                ApiErrorCode::INVALID_VALUE,
+                'The request contains an unsupported parameter.',
+                422,
+                $field === '' ? null : $field,
+            );
         }
     }
 
@@ -55,7 +68,6 @@ final class CheckoutRequest extends FormRequest
     public function rules(): array
     {
         return [
-            '_unknown_parameter' => ['prohibited'],
             'fulfillment_type' => ['required', 'string', Rule::in([
                 FulfillmentType::PICKUP->value,
                 FulfillmentType::DELIVERY->value,

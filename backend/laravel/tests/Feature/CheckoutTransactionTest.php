@@ -347,8 +347,6 @@ class CheckoutTransactionTest extends TestCase
         $this->itemFor($cart, $product, $variant, 2);
 
         try {
-            // Production Checkout runs in one transaction; the wrapper restores
-            // rollback semantics (the claim is discarded with the blocker).
             DB::transaction(fn () => $this->checkout()->execute(CheckoutCommand::delivery($customer, ['city' => 'Dar es Salaam'], 'k')));
             $this->fail('Expected DELIVERY checkout to hit the persistence blocker.');
         } catch (DeliveryCheckoutUnsupportedException) {
