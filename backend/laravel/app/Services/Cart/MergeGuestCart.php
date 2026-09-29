@@ -93,7 +93,14 @@ final class MergeGuestCart
             ->lockForUpdate()
             ->get();
 
-        $targetLines = CartItem::query()->where('cart_id', $target->getKey())->count();
+        // Locking read (current read): a plain count here would use the
+        // transaction's earlier REPEATABLE READ snapshot and could miss a line
+        // committed after merge's first read but before the cart locks, letting
+        // this insert exceed Cart::MAX_ITEMS.
+        $targetLines = CartItem::query()
+            ->where('cart_id', $target->getKey())
+            ->lockForUpdate()
+            ->count();
 
         foreach ($sourceItems as $sourceItem) {
             $targetItem = $this->targetLine($target, $sourceItem);

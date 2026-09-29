@@ -42,7 +42,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 1. **Resolved: Guest-cart mutation racing guest-to-customer merge.** Every cart mutation now locks the holder cart row first (`ActiveCartLock`) and requires it to still be `ACTIVE` before touching a line; `CART-005` merge locks the source and target cart rows (ordered by id) then the source lines. A mutation that loses the race is rejected `409 CONFLICT` and never silently writes to the retired cart. (Previously lines were locked without the cart row, so an add/update could commit after merge read and retired the source and disappear.)
 
-2. **Resolved: Unbounded cart lines.** A cart is capped at `Cart::MAX_ITEMS = 100` distinct `(product_id, variant_id)` lines, enforced transactionally inside the add path after the cart lock; adding a new line beyond the cap returns `422 INVALID_VALUE`. Increasing the quantity of an existing line is unaffected. This bounds cart read/projection cost and per-cart growth.
+2. **Resolved: Unbounded cart lines.** A cart is capped at `Cart::MAX_ITEMS = 100` distinct `(product_id, variant_id)` lines, enforced transactionally inside the add path after the cart lock; adding a new line beyond the cap returns `422 INVALID_VALUE`. Increasing the quantity of an existing line is unaffected. The merge path counts the target lines with a **locking (current) read** so a stale `REPEATABLE READ` snapshot cannot let a concurrent target add push the cart past the cap. This bounds cart read/projection cost and per-cart growth.
 
 3. **Resolved: Mixed-role customer-cart boundary.** `CustomerCartAccess` denies `STAFF`/`ADMIN` even when the account also holds `CUSTOMER` (see Medium item 5).
 
