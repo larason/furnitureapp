@@ -7,7 +7,6 @@ use App\Models\StaffProfile;
 use App\Models\User;
 use App\Support\RoleName;
 use Illuminate\Database\Seeder;
-use RuntimeException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -24,11 +23,11 @@ class DevelopmentUserSeeder extends Seeder
     public function run(): void
     {
         if (! app()->environment(['local', 'testing'])) {
-            throw new RuntimeException('DevelopmentUserSeeder may run only in local or testing environments.');
+            throw new DevelopmentSeederException('DevelopmentUserSeeder may run only in local or testing environments.');
         }
 
         if (app()->environment('local') && (! is_string(config('demo.user_password')) || config('demo.user_password') === '')) {
-            throw new RuntimeException('SEED_DEMO_PASSWORD must be set before running DevelopmentUserSeeder.');
+            throw new DevelopmentSeederException('SEED_DEMO_PASSWORD must be set before running DevelopmentUserSeeder.');
         }
 
         $this->seedUser('Amina Customer', 'customer@example.com', RoleName::CUSTOMER, false);
@@ -38,9 +37,11 @@ class DevelopmentUserSeeder extends Seeder
 
     private function seedUser(string $name, string $email, RoleName $role, bool $isStaff): void
     {
-        $password = app()->environment('testing')
-            ? (string) (config('demo.user_password') ?: 'testing-only-password')
-            : (string) config('demo.user_password');
+        $password = (string) config('demo.user_password');
+
+        if (app()->environment('testing') && ! $password) {
+            $password = 'testing-only-password';
+        }
 
         $user = User::firstOrCreate(
             ['email' => $email],

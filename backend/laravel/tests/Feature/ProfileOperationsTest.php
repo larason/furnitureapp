@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\ClerkTokenVerifier;
+use App\Exceptions\MigrationPreconditionException;
 use App\Models\Cart;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -160,7 +161,7 @@ class ProfileOperationsTest extends TestCase
 
         $migration = require database_path('migrations/2026_09_17_110000_make_user_name_nullable.php');
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(MigrationPreconditionException::class);
         $this->expectExceptionMessage('no approved backfill value exists');
 
         try {

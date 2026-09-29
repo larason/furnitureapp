@@ -56,7 +56,7 @@ class OfficialClerkTokenVerifierTest extends TestCase
             new Psr7Request('GET', 'https://clerk.example.test/jwks'),
         );
         $verifier = new OfficialClerkTokenVerifier(
-            static function (Request $request, AuthenticateRequestOptions $options) use ($transportFailure): never {
+            static function () use ($transportFailure): never {
                 throw $transportFailure;
             },
         );

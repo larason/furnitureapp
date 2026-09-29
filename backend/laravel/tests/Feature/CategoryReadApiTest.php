@@ -14,7 +14,7 @@ class CategoryReadApiTest extends TestCase
     {
         $root = Category::factory()->create(['name' => 'Furnitures Root', 'slug' => 'furnitures-root', 'parent_id' => null]);
         $first = Category::factory()->create(['parent_id' => $root->id, 'display_order' => 1, 'name' => 'Living Room', 'slug' => 'living-room']);
-        $second = Category::factory()->create(['parent_id' => $root->id, 'display_order' => 2, 'name' => 'Bedroom', 'slug' => 'bedroom']);
+        Category::factory()->create(['parent_id' => $root->id, 'display_order' => 2, 'name' => 'Bedroom', 'slug' => 'bedroom']);
         Category::factory()->create(['parent_id' => $first->id, 'name' => 'Sofas', 'slug' => 'sofas']);
         Category::factory()->inactive()->create(['parent_id' => $root->id, 'name' => 'Hidden', 'slug' => 'hidden']);
 

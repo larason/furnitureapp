@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\MigrationPreconditionException;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ return new class extends Migration
     public function down(): void
     {
         if (DB::table('users')->whereNull('password')->exists()) {
-            throw new LogicException(
+            throw new MigrationPreconditionException(
                 'Cannot safely restore NOT NULL passwords after Clerk users are provisioned.'
             );
         }

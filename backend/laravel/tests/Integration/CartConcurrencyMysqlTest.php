@@ -9,6 +9,7 @@ use App\Services\Cart\GetOrCreateActiveCart;
 use App\Support\CartStatus;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\ConcurrentWorkerTimeout;
 use Tests\TestCase;
 
 /**
@@ -155,7 +156,7 @@ class CartConcurrencyMysqlTest extends TestCase
 
         while (! is_file($barrier.'/go')) {
             if (microtime(true) > $deadline) {
-                throw new \RuntimeException('Barrier timeout.');
+                throw new ConcurrentWorkerTimeout('Barrier timeout.');
             }
 
             usleep(200);

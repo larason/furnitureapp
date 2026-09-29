@@ -441,6 +441,8 @@ class SchemaIntegrityTest extends TestCase
         $product = Product::factory()->create();
 
         foreach ([0, 101] as $quantity) {
+            $rejected = false;
+
             try {
                 DB::table('cart_items')->insert([
                     'cart_id' => $cart->id,
@@ -450,9 +452,11 @@ class SchemaIntegrityTest extends TestCase
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                $this->fail("Cart item quantity {$quantity} must be rejected.");
             } catch (QueryException) {
+                $rejected = true;
             }
+
+            $this->assertTrue($rejected, "Cart item quantity {$quantity} must be rejected.");
         }
 
         $this->assertSame(0, $cart->items()->count());

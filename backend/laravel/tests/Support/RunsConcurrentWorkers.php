@@ -3,9 +3,6 @@
 namespace Tests\Support;
 
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
-
-final class ConcurrentWorkerTimeout extends RuntimeException {}
 
 trait RunsConcurrentWorkers
 {
