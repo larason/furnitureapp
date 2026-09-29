@@ -48,7 +48,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 4. **Deferred: Abandoned/inactive guest-cart retention.** Time-pruning is intentionally **not** re-added: deleting a cart whose credential a client may still hold strands that guest with `401` (see High item 2), and inactive carts are never read. Growth is bounded by the per-cart line cap and the mutation-only creation quota. A retention policy that preserves credential resolvability (e.g., retirement that still answers `401` deterministically) can be designed later.
 
-5. **Resolved: CART-005 bodyless boundary.** `POST /me/cart/merge` rejects a non-empty request body `422 INVALID_VALUE` (empty/`[]`/`{}` accepted), matching the bodyless action contract.
+5. **Resolved: CART-005 bodyless boundary.** `POST /me/cart/merge` (and the bodyless `CART-004` remove) rejects any non-empty request body with `422 INVALID_VALUE`, including scalar JSON bodies (`"x"`, `123`, `null`) and non-empty arrays/objects that the earlier `is_array()` check missed; only empty/`[]`/`{}` are accepted, matching the bodyless action contract.
 
 6. **Accepted defense-in-depth gap: Fetch Metadata on cookie guest mutations.** Anonymous cookie mutations still require an exact allow-listed `Origin`; allow-listed cross-site requests are deliberately permitted per the frozen conventions, so additionally rejecting `Sec-Fetch-Site: cross-site` would be a frozen-contract change. The `Origin` allow-list remains the authoritative control.
 
@@ -61,7 +61,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Verification
 
-- PHPUnit: 1,102 tests executed, 1,101 passed, 1 skipped, 4,249 assertions.
+- PHPUnit: 1,103 tests executed, 1,102 passed, 1 skipped, 4,260 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
 - `php artisan schedule:list`: idempotency-key pruning hourly.
 - `git diff --check`: passed.

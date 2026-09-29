@@ -143,9 +143,15 @@ class CartController extends V1Controller
     private function hasRequestBody(Request $request): bool
     {
         if ($request->isJson()) {
-            $decoded = json_decode($request->getContent(), true);
+            $content = trim($request->getContent());
 
-            return is_array($decoded) && $decoded !== [];
+            if ($content === '') {
+                return false;
+            }
+
+            // Only an empty array/object is bodyless; scalars, null, and
+            // non-empty arrays/objects still carry a body and are rejected.
+            return json_decode($content, true) !== [];
         }
 
         return $request->request->all() !== [];
