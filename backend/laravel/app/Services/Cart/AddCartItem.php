@@ -79,7 +79,11 @@ final class AddCartItem
 
     private function assertLineCapacity(Cart $cart): void
     {
-        $lines = CartItem::query()->where('cart_id', $cart->getKey())->count();
+        // Locking (current) read: an outer REPEATABLE READ transaction may have
+        // established an earlier snapshot, so a plain count could miss a line
+        // committed while this transaction waited for the cart lock. Matches
+        // MergeGuestCart::consolidate.
+        $lines = CartItem::query()->where('cart_id', $cart->getKey())->lockForUpdate()->count();
 
         if ($lines >= Cart::MAX_ITEMS) {
             throw new ApiException(ApiErrorCode::INVALID_VALUE, 'The cart cannot contain more than '.Cart::MAX_ITEMS.' distinct items.', 422);
