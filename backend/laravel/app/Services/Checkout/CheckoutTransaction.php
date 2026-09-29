@@ -216,7 +216,10 @@ final class CheckoutTransaction
 
     private function clearCart(Cart $cart): void
     {
-        CartItem::query()->where('cart_id', $cart->getKey())->get()->each->delete();
+        // Locking (current) read so the clear matches the locked Checkout
+        // snapshot instead of an earlier REPEATABLE READ snapshot that could
+        // miss a line committed before the cart lock was acquired.
+        CartItem::query()->where('cart_id', $cart->getKey())->lockForUpdate()->get()->each->delete();
 
         $cart->touch();
     }
