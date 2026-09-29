@@ -98,7 +98,7 @@ class ApiLoggingTest extends TestCase
         $this->assertArrayNotHasKey('exception', $captured[0]->context);
     }
 
-    public function test_same_class_failures_are_distinguishable_by_redacted_message(): void
+    public function test_same_class_failures_are_distinguishable_by_fingerprint(): void
     {
         $captured = [];
         Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$captured): void {
@@ -115,8 +115,8 @@ class ApiLoggingTest extends TestCase
 
         $this->assertCount(2, $captured);
         $this->assertSame($captured[0]->context['exception_class'], $captured[1]->context['exception_class']);
-        $this->assertSame('first failure', $captured[0]->context['exception_message'] ?? null);
-        $this->assertSame('second failure', $captured[1]->context['exception_message'] ?? null);
+        $this->assertNotSame($captured[0]->context['exception_fingerprint'], $captured[1]->context['exception_fingerprint']);
+        $this->assertArrayNotHasKey('exception_message', $captured[0]->context);
     }
 
     public function test_api_server_exception_reaches_registered_error_tracker(): void
@@ -135,7 +135,7 @@ class ApiLoggingTest extends TestCase
         $this->assertSame($exception, $reported);
     }
 
-    public function test_exception_message_is_logged_redacted_and_previous_chain_is_excluded(): void
+    public function test_exception_fingerprint_is_logged_and_raw_message_is_excluded(): void
     {
         $events = [];
         Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$events): void {
@@ -148,7 +148,7 @@ class ApiLoggingTest extends TestCase
 
         Route::middleware('api')->get('/api/v1/__test__/secret-chain', function (): never {
             $previous = new \RuntimeException('Bearer previous-secret-token');
-            throw new LoggingTestBoomException('provider body sk_live_current-secret', previous: $previous);
+            throw new LoggingTestBoomException('provider said api_key=provider-secret for bob@example.com sk_live_current-secret', previous: $previous);
         });
 
         $this->getJson('/api/v1/__test__/secret-chain')->assertStatus(500);
@@ -159,11 +159,15 @@ class ApiLoggingTest extends TestCase
 
         $apiEvent = collect($events)->firstWhere('message', 'api.exception');
         $this->assertNotNull($apiEvent);
-        $this->assertArrayHasKey('exception_message', $apiEvent->context);
-        $this->assertStringContainsString('[REDACTED]', (string) $apiEvent->context['exception_message']);
+        $this->assertArrayHasKey('exception_fingerprint', $apiEvent->context);
+        $this->assertArrayNotHasKey('exception_message', $apiEvent->context);
         $this->assertArrayHasKey('exception_trace', $apiEvent->context);
 
-        $this->assertLogExcludes(['previous-secret-token', 'sk_live_current-secret'], $records, $events);
+        $this->assertLogExcludes(
+            ['previous-secret-token', 'sk_live_current-secret', 'provider-secret', 'api_key', 'bob@example.com'],
+            $records,
+            $events,
+        );
     }
 
     public function test_sensitive_headers_and_tokens_not_logged(): void

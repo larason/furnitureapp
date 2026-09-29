@@ -18,7 +18,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 5. **Resolved: Staff/Admin customer-cart access.** Cart read, add, update, remove, merge, and payment placeholder routes require an authenticated CUSTOMER and explicitly deny any account that also holds `STAFF` or `ADMIN` (Spatie roles are additive, so a mixed `ADMIN`+`CUSTOMER` account is still denied the customer-cart boundary). Anonymous guest access remains available where the contract permits it.
 
-6. **Resolved: Raw exception/provider content in logs.** API exception logs carry allow-listed request metadata, status/code, exception class, and redacted diagnostics: a secret-redacted exception message and a compact, argument-free, basename-only stack trace, so 500s of the same class stay distinguishable by request ID. Raw throwable objects, unredacted messages, provider bodies, previous-exception chains, call arguments, and full filesystem paths are not persisted or transmitted by configured log channels; redaction uses the shared `DiagnosticText` secret patterns. Laravel exception reporting remains enabled so error-tracker report callbacks receive real server failures. Clerk transport exceptions are mapped without separately reporting the provider throwable.
+6. **Resolved: Raw exception/provider content in logs.** API exception logs carry allow-listed request metadata, status/code, exception class, a keyed message fingerprint, and a compact, argument-free, basename-only stack trace. The raw exception message is **never** persisted — pattern redaction was rejected as insufficient because arbitrary provider responses/customer data (e.g. `api_key=...`, email addresses) do not match fixed patterns; instead an HMAC-of-class+message fingerprint keeps same-class failures distinguishable and correlatable without retaining content. The trace excludes call arguments and full paths. Raw throwable objects, messages, provider bodies, previous-exception chains, call arguments, and full filesystem paths are not persisted by configured log channels. Laravel exception reporting remains enabled so error-tracker report callbacks receive real server failures; Clerk transport exceptions map to a generic `503` while retaining the original provider/network throwable as the mapped exception's `previous` cause for error-tracker reporting only (never rendered into sanitized logs).
 
 7. **Resolved: Clerk restrictions fail closed.** Production boot requires issuer, audiences, authorized parties, and a verification credential. Verification rejects a mismatched `iss` and, when an allow-list is configured, requires the corresponding `aud`/`azp` claim to be present and to intersect that allow-list — an omitted claim is rejected rather than bypassing the restriction. The Clerk SDK skips absent claims, so this application-level check is what enforces the restriction. Claims are only ignored when no allow-list is configured (local/testing).
 
@@ -61,7 +61,7 @@ No Critical vulnerability was confirmed. Every reported High, Medium, and Additi
 
 ## Verification
 
-- PHPUnit: 1,102 tests executed, 1,101 passed, 1 skipped, 4,242 assertions.
+- PHPUnit: 1,102 tests executed, 1,101 passed, 1 skipped, 4,249 assertions.
 - `php artisan route:list --path=api -vv`: all 75 Version 1 routes show throttle middleware.
 - `php artisan schedule:list`: idempotency-key pruning hourly.
 - `git diff --check`: passed.

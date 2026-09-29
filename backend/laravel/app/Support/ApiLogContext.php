@@ -27,14 +27,21 @@ class ApiLogContext
             'status' => $status,
             'code' => $code->value,
             'exception_class' => $exception::class,
-            'exception_message' => self::diagnostic($exception->getMessage()),
-            'exception_trace' => self::diagnostic(self::trace($exception)),
+            'exception_fingerprint' => self::fingerprint($exception),
+            'exception_trace' => self::sanitize(self::trace($exception)),
         ];
     }
 
-    private static function diagnostic(string $value): string
+    /**
+     * Stable, non-reversible discriminator for failures of the same class. The
+     * raw message is never persisted; the keyed hash lets operators correlate
+     * identical failures without retaining provider or customer content.
+     */
+    private static function fingerprint(Throwable $exception): string
     {
-        return self::sanitize((string) DiagnosticText::sanitize($value));
+        $key = (string) config('app.key');
+
+        return substr(hash_hmac('sha256', $exception::class.'|'.$exception->getMessage(), $key), 0, 16);
     }
 
     /**

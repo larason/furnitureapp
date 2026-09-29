@@ -41,8 +41,8 @@ final class OfficialClerkTokenVerifier implements ClerkTokenVerifier
                 authorizedParties: $authorizedParties,
                 acceptsToken: ['session_token'],
             ));
-        } catch (\Throwable) {
-            throw ClerkAuthenticationFailure::external();
+        } catch (\Throwable $exception) {
+            throw ClerkAuthenticationFailure::external($exception);
         }
 
         if (! $state->isAuthenticated()) {

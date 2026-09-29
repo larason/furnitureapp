@@ -49,6 +49,8 @@ class OfficialClerkTokenVerifierTest extends TestCase
 
     public function test_transport_failure_is_external_service_error(): void
     {
+        config(['clerk.secret_key' => 'test-secret-key', 'clerk.jwt_key' => 'test-jwt-key']);
+
         $transportFailure = new ConnectException(
             'Clerk JWKS connection failed.',
             new Psr7Request('GET', 'https://clerk.example.test/jwks'),
@@ -67,6 +69,7 @@ class OfficialClerkTokenVerifierTest extends TestCase
         } catch (ClerkAuthenticationFailure $exception) {
             $this->assertSame('EXTERNAL_SERVICE_ERROR', $exception->errorCode()->value);
             $this->assertSame(503, $exception->status());
+            $this->assertSame($transportFailure, $exception->getPrevious());
 
             throw $exception;
         }
