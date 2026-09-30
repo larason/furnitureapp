@@ -97,7 +97,7 @@ class FurnitureRequestStatusTransitionTest extends TestCase
     public function test_same_state_transition_is_an_idempotent_no_op(): void
     {
         foreach ([RequestStatus::SUBMITTED, RequestStatus::IN_REVIEW, RequestStatus::CLOSED] as $status) {
-            $request = $this->requestInStatus($status);
+            $request = $this->requestInStatus($status)->fresh();
             $originalUpdatedAt = $request->updated_at;
 
             $this->travel(5)->minutes();
@@ -115,7 +115,7 @@ class FurnitureRequestStatusTransitionTest extends TestCase
         $request = FurnitureRequest::factory()->create();
 
         $first = $this->service()->transition($request, RequestStatus::IN_REVIEW);
-        $firstUpdatedAt = $first->updated_at;
+        $firstUpdatedAt = $first->fresh()->updated_at;
 
         $this->travel(5)->minutes();
 
