@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Cart;
+use App\Models\FurnitureRequest;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Product;
@@ -137,7 +138,7 @@ class FurnitureRequestCreationServiceTest extends TestCase
         ?string $material = null,
         ?string $color = null,
         ?string $notes = 'Custom bookshelf request',
-    ) {
+    ): FurnitureRequest {
         return app(CreateFurnitureRequest::class)->create(new CreateFurnitureRequestCommand(
             actor: $actor,
             productId: $productId,
