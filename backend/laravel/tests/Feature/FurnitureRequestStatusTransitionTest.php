@@ -224,7 +224,8 @@ class FurnitureRequestStatusTransitionTest extends TestCase
         $product = Product::factory()->madeToOrder()->create();
         $request = FurnitureRequest::factory()->forProduct($product)->create();
 
-        $product->update(['is_published' => false]);
+        $product->forceFill(['is_published' => false])->save();
+        $this->assertFalse($product->fresh()->is_published);
 
         $result = $this->service()->transition($request, RequestStatus::IN_REVIEW);
 
