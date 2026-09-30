@@ -1,1878 +1,2124 @@
-# Phase 10.3 — Furniture Request Status Lifecycle
+# Phase 10.4 — Product-Linked Furniture Requests
 
 ## 1. Objective
 
-Implement the authoritative Version 1 lifecycle/state-transition boundary for:
+Implement the authoritative **domain eligibility boundary for `product_id` on REQ-001**:
 
-```text
-FurnitureRequest.request_status
+```http
+POST /api/v1/requests
 ```
 
-using the frozen CLOSED enum:
+Phase 10.4 answers one business question:
 
 ```text
-SUBMITTED
-IN_REVIEW
-CLOSED
+If product_id is supplied,
+is that Product currently eligible to be referenced by a Furniture Request?
 ```
 
-The approved state machine is:
+The frozen V1 rule is:
 
 ```text
-SUBMITTED ─────────────→ IN_REVIEW ─────────────→ CLOSED
-     │                                                ▲
-     └────────────────────────────────────────────────┘
+product_id omitted/null
+→ valid custom furniture request
+
+product_id supplied
+→ Product must exist
+→ Product must be publicly visible
+→ Product must be MADE_TO_ORDER
+→ otherwise reject
 ```
 
-Meaning:
+Do not create a second Furniture Request creation workflow.
+
+Integrate the product-domain validation into the existing:
 
 ```text
-SUBMITTED → IN_REVIEW   allowed
-SUBMITTED → CLOSED      allowed
-IN_REVIEW → CLOSED      allowed
-IN_REVIEW → SUBMITTED   forbidden
-CLOSED → SUBMITTED      forbidden
-CLOSED → IN_REVIEW      forbidden
+CreateFurnitureRequestRequest
+→ FurnitureRequestInput
+→ CreateFurnitureRequestCommand
+→ CreateFurnitureRequest
 ```
 
-Repeated assignment of the already-current status must be handled as an **idempotent no-op success**, not as another transition.
-
-This phase establishes the domain/application authority for request-status changes.
-
-It does **not** implement the complete staff request-management surface.
+pipeline.
 
 ---
 
-# 2. Current Group J State
+# 2. Current Group J Baseline
 
-Treat the repository state as:
+Treat the current repository state as:
 
 ```text
 10.1 PASS — Furniture Request API foundation
-10.2 PASS — REQ-001 validation
-10.3 CURRENT — Request status lifecycle
-10.4 NOT STARTED — product-linked requests
-10.5 NOT STARTED — general enquiries
-10.6 NOT STARTED — attachments
-10.7 NOT STARTED — staff/admin request management
-10.8 NOT STARTED — request/enquiry tests
+10.2 PASS — Request validation
+10.3 PASS — Request status lifecycle
+10.4 CURRENT — Product-linked requests
+10.5 NOT STARTED — General enquiries
+10.6 NOT STARTED — Attachments
+10.7 NOT STARTED — Staff/Admin request management
+10.8 NOT STARTED — Request/enquiry closure tests
 ```
 
-REQ-001 remains gated because:
+REQ-001 remains publicly gated.
 
-```text
-10.4 product eligibility
-10.6 attachments
-```
-
-are still outstanding.
-
-Do not change that route state in Phase 10.3.
+Do not activate it automatically in this phase because Phase 10.6 attachment support is still outstanding.
 
 ---
 
-# 3. Frozen Lifecycle Contract
+# 3. Existing REQ-001 Architecture
 
-Version 1 supports exactly:
-
-```text
-SUBMITTED
-IN_REVIEW
-CLOSED
-```
-
-No additional status values.
-
-Do not add:
+Reuse:
 
 ```text
-CONTACTED
-QUOTED
-APPROVED
-REJECTED
-PRODUCING
-IN_PRODUCTION
-READY
-COMPLETED
-CANCELLED
-ARCHIVED
+Validator:
+App\Http\Requests\CreateFurnitureRequestRequest
+
+Normalized input:
+App\Services\Requests\FurnitureRequestInput
+
+Command:
+App\Services\Requests\CreateFurnitureRequestCommand
+
+Creation service:
+App\Services\Requests\CreateFurnitureRequest
+
+Resource:
+App\Http\Resources\FurnitureRequestResource
 ```
 
-Adding another status is a Version 1 contract compatibility decision.
+Do not replace any of these.
 
 ---
 
-# 4. Status Meanings
+# 4. Validation Layering
 
-Preserve the frozen meanings.
-
-### `SUBMITTED`
+Preserve the project's validation model:
 
 ```text
-new intake
-not yet acknowledged/handled by staff
-server-created default
+Transport
+→ Schema
+→ Optional Authentication
+→ Authorization
+→ Domain
+→ Persistence
 ```
 
-### `IN_REVIEW`
+Phase 10.2 already owns schema validation.
 
-```text
-staff has acknowledged/opened the request
-business is actively reviewing/handling it
-```
-
-### `CLOSED`
-
-```text
-business has finished handling the request
-terminal state
-```
-
-Do not reinterpret `CLOSED` as:
-
-```text
-rejected
-approved
-manufactured
-ordered
-paid
-delivered
-```
-
-It simply means the intake workflow has been closed.
-
----
-
-# 5. Request Is Still Not an Order
-
-A lifecycle transition must never:
-
-```text
-create Order
-create OrderItem
-reserve inventory
-create Payment
-create quote
-create invoice
-set delivery fee
-create manufacturing job
-```
-
-Status changes remain request-workflow operations only.
-
----
-
-# 6. Domain Enum
-
-Inspect and reuse the existing enum if Phase 3.14 already created one.
-
-Expected concept:
-
-```php
-App\Enums\RequestStatus
-```
-
-or current repository equivalent.
-
-It must represent exactly:
-
-```php
-SUBMITTED
-IN_REVIEW
-CLOSED
-```
-
-Do not introduce a parallel second enum.
-
----
-
-# 7. Enum as Domain Authority
-
-Avoid scattered literal checks such as:
-
-```php
-if ($status === 'SUBMITTED')
-```
-
-through multiple services/controllers.
-
-Centralize semantic transition logic around the enum/state-machine boundary.
-
----
-
-# 8. Creation Status
-
-Phase 10.1 behavior remains:
-
-```text
-new FurnitureRequest
-→ SUBMITTED
-```
-
-The client cannot choose initial status.
-
-Do not alter REQ-001.
-
----
-
-# 9. Lifecycle Authority
-
-Introduce one focused transition authority.
-
-Possible design:
-
-```php
-App\Services\Requests\RequestStatusTransition
-```
-
-or:
-
-```php
-App\Services\Requests\RequestStatusMachine
-```
-
-and one persistence/application service such as:
-
-```php
-App\Services\Requests\TransitionFurnitureRequestStatus
-```
-
-Use repository naming conventions.
-
----
-
-# 10. Separation of Concerns
-
-A good layering is:
-
-```text
-RequestStatusMachine
-→ pure transition decision
-
-TransitionFurnitureRequestStatus
-→ transaction + row lock + persistence
-```
-
-Do not make the controller contain transition tables.
-
----
-
-# 11. Pure State Machine
-
-The state machine should be deterministic.
-
-Conceptually:
-
-```php
-transition(
-    RequestStatus $current,
-    RequestStatus $target
-): TransitionDecision
-```
-
-It must not depend on:
-
-```text
-database
-HTTP Request
-authenticated actor
-clock
-randomness
-Product state
-payment state
-inventory
-```
-
----
-
-# 12. Transition Matrix
-
-Implement and test the exact matrix:
-
-| Current | Target | Result |
-|---|---|---|
-| SUBMITTED | SUBMITTED | idempotent no-op |
-| SUBMITTED | IN_REVIEW | allowed |
-| SUBMITTED | CLOSED | allowed |
-| IN_REVIEW | SUBMITTED | forbidden |
-| IN_REVIEW | IN_REVIEW | idempotent no-op |
-| IN_REVIEW | CLOSED | allowed |
-| CLOSED | SUBMITTED | forbidden |
-| CLOSED | IN_REVIEW | forbidden |
-| CLOSED | CLOSED | idempotent no-op |
-
-Do not infer additional transitions.
-
----
-
-# 13. Same-Status Idempotence
-
-REQ-006 is designed to be idempotent.
+Phase 10.4 now implements the Product **domain** check.
 
 Therefore:
 
 ```text
-current = IN_REVIEW
-target = IN_REVIEW
+CreateFurnitureRequestRequest
 ```
 
-must not fail.
-
-Likewise:
+should continue validating only:
 
 ```text
-SUBMITTED → SUBMITTED
-CLOSED → CLOSED
+product_id optional
+product_id nullable
+product_id string
+product_id opaque prod_... format
 ```
 
-must return the current state without another business effect.
+It must not become the Product database/business-query authority.
 
 ---
 
-# 14. Idempotent Does Not Mean `Idempotency-Key`
+# 5. Domain Rule
 
-Do not add:
-
-```text
-Idempotency-Key
-```
-
-to REQ-006 solely because status updates are idempotent.
-
-The frozen contract describes semantic idempotence:
+The frozen rule for a supplied `product_id` is:
 
 ```text
-same target applied repeatedly
-→ same resulting state
+exists
+AND is_active = true
+AND is_published = true
+AND not soft-deleted
+AND parent Category is active
+AND product_type = MADE_TO_ORDER
 ```
 
-not a stored-key replay mechanism.
+Only then may the Request link to it.
 
 ---
 
-# 15. CLOSED Is Terminal
+# 6. Reuse Public Catalog Visibility
 
-Terminal means:
-
-```text
-CLOSED → any different status
-```
-
-is forbidden.
-
-It does **not** mean repeated:
+Do not invent another definition of:
 
 ```text
-CLOSED → CLOSED
+publicly visible Product
 ```
 
-must fail.
-
-Same-state repetition remains an idempotent no-op.
-
----
-
-# 16. Invalid Backward Transition
-
-This must fail:
+Group E already defines public visibility as:
 
 ```text
-IN_REVIEW → SUBMITTED
+Product.is_active = true
+Product.is_published = true
+Product.deleted_at IS NULL
+Category.is_active = true
 ```
 
----
+Reuse the existing Product/catalog scope/query authority if one exists.
 
-# 17. Direct Close
-
-This is explicitly allowed:
-
-```text
-SUBMITTED → CLOSED
-```
-
-Do not require every request to pass through `IN_REVIEW`.
-
-Small/simple requests may be closed directly.
-
----
-
-# 18. Transition Failure Type
-
-Use a focused domain/application exception.
-
-Example:
+Possible examples:
 
 ```php
-InvalidRequestStatusTransition
+Product::publiclyVisible()
+PublicProductQuery
+CatalogProductQuery
 ```
 
-or current repository pattern.
-
-Do not throw:
-
-```text
-RuntimeException
-LogicException
-generic Exception
-```
-
-directly into the API boundary.
+Use actual repository naming.
 
 ---
 
-# 19. API Mapping for Invalid Transition
+# 7. No Duplicate Visibility Logic
 
-Frozen semantics require a conflict-style response.
+Do not write a second ad-hoc chain such as:
 
-Use the repository's deterministic Request mapping, expected:
+```php
+Product::where('is_active', true)
+    ->where('is_published', true)
+    ...
+```
+
+if an authoritative visibility scope/service already exists.
+
+The Request domain should consume the same truth as CAT-001/CAT-002.
+
+---
+
+# 8. Category Activity Matters
+
+A Product that is itself:
 
 ```text
-409 CONFLICT
+active
+published
+not deleted
+```
+
+but belongs to an inactive Category is not publicly requestable.
+
+Reject it exactly as a non-public Product.
+
+---
+
+# 9. Soft-Deleted Product
+
+A soft-deleted Product must not be requestable.
+
+Do not use:
+
+```php
+withTrashed()
+```
+
+for REQ-001 product eligibility.
+
+Operational inventory reads may intentionally see archived Products; public Request intake must not.
+
+---
+
+# 10. Product Type
+
+The Product must be:
+
+```text
+MADE_TO_ORDER
+```
+
+Use the existing closed enum:
+
+```text
+ProductType::MADE_TO_ORDER
+```
+
+or repository equivalent.
+
+Do not compare arbitrary strings where an enum already exists.
+
+---
+
+# 11. IN_STOCK Product
+
+A currently public:
+
+```text
+IN_STOCK
+```
+
+Product supplied to REQ-001 must be rejected.
+
+Frozen business error:
+
+```text
+409 PRODUCT_NOT_REQUESTABLE
+```
+
+This is intentionally different from:
+
+```text
+PRODUCT_NOT_PURCHASABLE
+```
+
+used by Cart/Checkout.
+
+Do not reuse the Checkout error code.
+
+---
+
+# 12. Why the Error Is Different
+
+These represent opposite domain mistakes:
+
+```text
+MADE_TO_ORDER → Cart
+= PRODUCT_NOT_PURCHASABLE
+
+IN_STOCK → Furniture Request product link
+= PRODUCT_NOT_REQUESTABLE
+```
+
+Keep those semantics distinct.
+
+---
+
+# 13. MADE_TO_ORDER Inventory Is Irrelevant
+
+A requestable MADE_TO_ORDER Product does **not** require:
+
+```text
+stock row
+positive quantity
+active Variant with stock
+warehouse allocation
+available_quantity > 0
+```
+
+Group E already defines MADE_TO_ORDER catalog availability independently from inventory.
+
+Therefore do not query ProductStock for Request eligibility.
+
+---
+
+# 14. No Variant Requirement
+
+REQ-001 links:
+
+```text
+Product
+```
+
+not:
+
+```text
+ProductVariant
+```
+
+Do not require:
+
+```text
+variant_id
+SKU
+variant availability
+```
+
+for Furniture Requests.
+
+---
+
+# 15. No Product Price Requirement
+
+A linked Product may have a catalog price/starting estimate, but Request creation does not price-lock anything.
+
+Do not copy Product price into:
+
+```text
+FurnitureRequest
+```
+
+and do not return an authoritative quote.
+
+---
+
+# 16. No Product Snapshot Invention
+
+The existing schema contains:
+
+```text
+product_details
+```
+
+but it is not part of the frozen REQ-001 contract and Phase 10.1 deliberately kept it non-public.
+
+Do not suddenly use it as:
+
+```text
+product snapshot
+price snapshot
+name snapshot
+```
+
+without a separately approved contract/schema decision.
+
+Phase 10.4 should persist the valid:
+
+```text
+product_id
+```
+
+relationship only.
+
+---
+
+# 17. Historical Rule
+
+The Request must preserve the originally submitted:
+
+```text
+product_id
+```
+
+relationship.
+
+Do not silently relink it if Product data later changes.
+
+Do not mutate the Request based on later catalog changes.
+
+---
+
+# 18. Custom Request Remains Valid
+
+These remain valid:
+
+```json
+{
+  "name": "Asha",
+  "phone": "+255700000001",
+  "notes": "Can you make a custom bookshelf?"
+}
+```
+
+and:
+
+```json
+{
+  "product_id": null,
+  "name": "Asha",
+  "phone": "+255700000001"
+}
+```
+
+Do not make `product_id` required.
+
+---
+
+# 19. Omitted vs Null
+
+Both:
+
+```text
+product_id omitted
+```
+
+and:
+
+```text
+product_id = null
+```
+
+must continue through the custom-request path without a Product database lookup.
+
+---
+
+# 20. Avoid Pointless Query
+
+For:
+
+```text
+productId === null
+```
+
+do not query `products`.
+
+Proceed directly with creation.
+
+---
+
+# 21. Introduce Focused Domain Resolver
+
+Create or reuse a focused service/value boundary.
+
+Recommended concept:
+
+```php
+App\Services\Requests\RequestableProductResolver
+```
+
+or:
+
+```php
+ResolveRequestableProduct
+```
+
+Use repository naming conventions.
+
+Its job:
+
+```text
+input:
+opaque product_id|null
+
+output:
+Product|null
+
+rules:
+null → null
+valid ID + public MADE_TO_ORDER → Product
+non-public/not found → not-found error
+public IN_STOCK → PRODUCT_NOT_REQUESTABLE
+```
+
+---
+
+# 22. Keep Creation Service Focused
+
+`CreateFurnitureRequest` should coordinate:
+
+```text
+trusted command
+→ resolve optional requestable Product
+→ persist FurnitureRequest
+```
+
+Do not turn it into a large catalog-query implementation.
+
+---
+
+# 23. Suggested Composition
+
+Conceptually:
+
+```text
+CreateFurnitureRequestCommand
+            │
+            ├── productId null
+            │      ↓
+            │    no Product
+            │
+            └── productId supplied
+                   ↓
+            RequestableProductResolver
+                   ↓
+             Product domain check
+                   ↓
+             CreateFurnitureRequest
+```
+
+---
+
+# 24. Pass Internal Product Identity Safely
+
+Phase 10.2 already validates the public opaque:
+
+```text
+prod_...
+```
+
+format.
+
+Phase 10.4 must resolve that identifier through the existing:
+
+```text
+ProductIdentifier
+```
+
+or equivalent Product ID decoder.
+
+Do not manually strip prefixes in multiple places.
+
+---
+
+# 25. Never Accept Numeric Product DB ID Publicly
+
+This stays invalid:
+
+```json
+{
+  "product_id": 42
+}
+```
+
+Phase 10.2 should already reject it.
+
+Phase 10.4 must not add a hidden numeric-ID fallback.
+
+---
+
+# 26. Do Not Accept Slug in REQ-001
+
+CAT-002 may resolve Product by:
+
+```text
+slug
+or opaque id
+```
+
+but REQ-001 `product_id` specifically means the machine identifier.
+
+Do not reinterpret arbitrary strings/slugs as Product references.
+
+---
+
+# 27. Product Resolution Privacy
+
+REQ-001 is public.
+
+Do not expose internal publication/activity distinctions unnecessarily.
+
+An anonymous user should not be able to probe:
+
+```text
+draft Product
+inactive Product
+soft-deleted Product
+Product under inactive Category
+```
+
+and receive different sensitive state details.
+
+---
+
+# 28. Non-Public Product Mapping
+
+Preferred domain behavior:
+
+```text
+unknown product_id
+inactive Product
+unpublished Product
+soft-deleted Product
+inactive Category
+```
+
+all resolve as:
+
+```text
+Product not publicly available / not found
+```
+
+Use the repository's canonical:
+
+```text
+PRODUCT_NOT_FOUND
 ```
 
 or:
 
 ```text
-409 INVALID_REQUEST
+RESOURCE_NOT_FOUND
 ```
 
-according to the exact existing error registry/renderer.
-
-Do not alternate randomly between 422 and 409 for the same state-transition condition.
+mapping consistently.
 
 ---
 
-# 20. Review Existing Registry
+# 29. Determine Exact Not-Found Code
 
 Before implementation, inspect:
 
 ```text
 ApiErrorCode
-exception renderer
+Product public lookup behavior
+CAT-002 not-found mapping
 api-contract.md §15
-api-contract.md §26.19
+REQ-001 tests/conventions
 ```
 
-Choose the existing canonical code.
+Choose the existing canonical public Product-not-found response.
 
-Do not invent:
-
-```text
-REQUEST_STATUS_INVALID_TRANSITION
-```
-
-unless already approved.
+Do not invent a Request-specific not-found code.
 
 ---
 
-# 21. Invalid Status Value vs Invalid Transition
+# 30. Avoid `INVALID_REQUEST` for Invisible Product If Existing Not-Found Exists
 
-Keep these distinct.
+The contract documents several historical possibilities for Product missing/inactive behavior.
 
-### Invalid enum value
+Phase 10.4 must make the implementation deterministic.
 
-Example:
+Prefer existing Product public-resolution semantics rather than creating another interpretation.
 
-```json
-{
-  "request_status": "APPROVED"
-}
-```
-
-should ultimately map to:
-
-```text
-422 INVALID_VALUE
-field: request_status
-```
-
-### Valid enum but illegal current→target transition
-
-Example:
-
-```text
-IN_REVIEW → SUBMITTED
-```
-
-should map to:
-
-```text
-409 conflict
-```
-
-Do not collapse both cases.
+Document the selected mapping.
 
 ---
 
-# 22. Persistence Service
+# 31. Public IN_STOCK Is Different
 
-Implement an atomic service that changes a request's status.
-
-Possible API:
-
-```php
-transition(
-    FurnitureRequest $request,
-    RequestStatus $target
-): FurnitureRequest
-```
-
-or an opaque request identifier input following repository conventions.
-
----
-
-# 23. Concurrency Requirement
-
-REQ-006 has a known race:
+A Product that **is publicly visible** but has:
 
 ```text
-Staff A closes
-Staff B updates stale request
+product_type = IN_STOCK
 ```
 
-Therefore status mutation must validate against the **current database state inside the mutation transaction**.
+must not be hidden as "not found."
 
-Do not validate against a stale Eloquent instance read before the transaction.
+The client referenced a real visible Product but used the wrong business workflow.
+
+Return:
+
+```text
+409 PRODUCT_NOT_REQUESTABLE
+```
 
 ---
 
-# 24. Row Lock
-
-Use a pessimistic lock on the FurnitureRequest row for state-changing execution.
-
-Conceptually:
-
-```sql
-SELECT ...
-FROM furniture_requests
-WHERE id = ?
-FOR UPDATE
-```
-
-inside the transaction.
-
----
-
-# 25. Correct Mutation Order
+# 32. Correct Evaluation Order
 
 Conceptually:
 
 ```text
-BEGIN
-
-load request FOR UPDATE
-read current authoritative status
-evaluate target against state machine
-
-if same target:
-    no-op
-
-if allowed:
-    update request_status
-
-if forbidden:
-    throw conflict
-
-COMMIT
+1. decode product_id
+2. resolve Product through public visibility authority
+3. if not found → canonical Product not-found
+4. inspect product_type
+5. if not MADE_TO_ORDER → PRODUCT_NOT_REQUESTABLE
+6. return eligible Product
 ```
 
 ---
 
-# 26. No Validate-Then-Lock
+# 33. Do Not Inspect Type Before Visibility
 
-Do not:
+Avoid allowing users to distinguish hidden Product types.
 
-```text
-load Request
-validate transition
-BEGIN
-lock Request
-save stale decision
-```
-
-That introduces race conditions.
-
-Validation must use the locked current state.
+Visibility should be established before returning a business-type error.
 
 ---
 
-# 27. Same-State No-Op Persistence
+# 34. `PRODUCT_NOT_REQUESTABLE` Registry Check
 
-For:
+Phase 10.2 identified an important contract inconsistency:
 
-```text
-current == target
-```
-
-prefer avoiding an unnecessary UPDATE.
-
-Do not modify:
+The frozen REQ contract explicitly uses:
 
 ```text
-updated_at
+PRODUCT_NOT_REQUESTABLE
 ```
 
-solely because the same status was sent again unless repository conventions explicitly require it.
+but the global surfaced OpenAPI error-code enum must be checked because it may not currently contain it.
 
-Semantic idempotence should ideally have zero persistence effect.
+Phase 10.4 owns this reconciliation.
 
 ---
 
-# 28. Verify Timestamp Semantics
+# 35. If `ApiErrorCode` Lacks It
 
-Test/document whether idempotent same-state replay:
+Add:
 
 ```text
-CLOSED → CLOSED
+PRODUCT_NOT_REQUESTABLE
 ```
 
-leaves `updated_at` unchanged.
+to the backend closed error registry.
 
-Prefer unchanged because no state changed.
+This is **not a new business contract**.
 
-If current repository conventions require touching the row, document the behavior rather than guessing.
+It is implementation of the already-approved frozen REQ-001 contract.
 
 ---
 
-# 29. Valid Transition Persistence
+# 36. If OpenAPI Error Enum Lacks It
 
-For an actual transition:
-
-```text
-SUBMITTED → IN_REVIEW
-```
-
-persist exactly:
+Add:
 
 ```text
-request_status
-updated_at
+PRODUCT_NOT_REQUESTABLE
 ```
 
-No other customer-submitted field changes.
+to the existing global error-code enum in:
+
+```text
+docs/api/openapi.yaml
+```
+
+provided the normative contract already defines the code.
+
+Classify this as:
+
+```text
+frozen-contract consistency correction
+```
+
+not API expansion.
 
 ---
 
-# 30. Immutable Intake Fields
+# 37. Documentation Alignment
 
-Status transition must not mutate:
+After correction, ensure these agree:
 
 ```text
-product_id
-quantity
-name
-phone
-email
-dimensions
-material
-color
-message/notes
-user_id
-request_reference
-created_at
+api-contract.md
+api-conventions.md
+business-rules.md
+openapi.yaml
+ApiErrorCode
+implementation
+tests
 ```
+
+Do not leave the API docs and implementation with different CLOSED code sets.
 
 ---
 
-# 31. Staff Internal Notes
+# 38. No Other OpenAPI Changes
 
-REQ-006 eventually allows:
-
-```text
-staff_internal_notes
-```
-
-but full staff update behavior belongs to:
+Do not change:
 
 ```text
-Phase 10.7
+REQ-001 fields
+requiredness
+status codes
+product_id nullability
+request response shape
 ```
 
-Do not implement staff-note mutation merely because the same PATCH endpoint eventually contains both fields.
-
-Phase 10.3 owns status lifecycle only.
+Only reconcile an already-approved missing error enum entry if confirmed.
 
 ---
 
-# 32. No Generic Update Service
+# 39. Error Exception
 
-Do not implement:
+Introduce/reuse a focused exception such as:
 
 ```php
-$request->fill($validated)->save();
+ProductNotRequestable
 ```
 
-for REQ-006.
+extending the project's API/domain exception hierarchy.
 
-That would allow future accidental mutation of intake fields.
-
-Status mutation should be explicit.
-
----
-
-# 33. No Mass Assignment
-
-Never treat operational request updates as generic model editing.
-
----
-
-# 34. Authorization Boundary
-
-Frozen REQ-006 actors are:
+It should map to:
 
 ```text
-STAFF with requests.manage
-ADMIN with appropriate authority
-```
-
-Customers cannot set status.
-
-Anonymous users cannot set status.
-
-However full operational route/policy implementation belongs primarily to Phase 10.7.
-
----
-
-# 35. Phase 10.3 Authorization Scope
-
-Implement only enough authorization integration to protect any internal route/service exposure created for lifecycle testing.
-
-Prefer:
-
-```text
-state machine + transition service
-```
-
-without prematurely implementing the entire staff-management endpoint.
-
----
-
-# 36. Do Not Activate REQ-006 Prematurely
-
-Phase 10.7 owns:
-
-```text
-staff/admin request management
-REQ-004
-REQ-005
-REQ-006 operational API
-staff representations
-staff_internal_notes
-filtering/listing
-permissions orchestration
-```
-
-Therefore Phase 10.3 should not declare:
-
-```text
-REQ-006 production complete
+HTTP 409
+code PRODUCT_NOT_REQUESTABLE
+field product_id
 ```
 
 ---
 
-# 37. Public Route State
+# 40. Safe Error Message
 
-If REQ-006 is currently a stub:
+Use a stable human-readable message.
 
-keep it:
-
-```text
-STUB / GATED
-```
-
-unless existing repository architecture explicitly activates internal status-only behavior safely without stealing 10.7 scope.
-
-Default recommendation:
+Do not leak:
 
 ```text
-domain lifecycle implemented
-public operational PATCH remains gated
+product internal state
+category state
+database id
+publication timestamps
 ```
 
 ---
 
-# 38. Customer Cannot Set Status During REQ-001
+# 41. Product Not Found Exception
 
-Preserve Phase 10.2:
+Reuse established Product-not-found behavior.
 
-```json
-{
-  "request_status": "CLOSED"
-}
-```
-
-on request creation remains:
+Do not create:
 
 ```text
-422 INVALID_VALUE
+FurnitureRequestProductNotFound
 ```
 
----
-
-# 39. Anonymous Cannot Set Status During Creation
-
-Same rule.
+unless the repository architecture requires one.
 
 ---
 
-# 40. No Customer Status Mutation Endpoint
+# 42. Domain Service Not HTTP-Aware
+
+The resolver/service should not receive:
+
+```php
+Illuminate\Http\Request
+```
+
+It should receive:
+
+```text
+string product ID
+```
+
+or a typed identifier/value.
+
+---
+
+# 43. Domain Service Not Actor-Aware
+
+Eligibility is the same for:
+
+```text
+Anonymous
+CUSTOMER
+```
+
+Do not make requestability depend on actor identity.
+
+---
+
+# 44. Staff/Admin Irrelevant
+
+REQ-001 already rejects Staff/Admin in the middleware boundary.
+
+Do not add role branches to Product eligibility.
+
+---
+
+# 45. Product Relationship Persistence
+
+After eligibility passes:
+
+```text
+FurnitureRequest.product_id
+```
+
+must store the resolved Product's internal FK.
+
+Do not persist the opaque public string directly if the schema uses numeric FK.
+
+---
+
+# 46. Trust the Resolved Product
+
+Prefer passing/resolving:
+
+```text
+Product model
+```
+
+to the persistence boundary rather than decoding the identifier twice.
+
+Avoid TOCTOU-like mismatched lookups.
+
+---
+
+# 47. Low-Concurrency Domain
+
+Request intake is low-concurrency.
+
+No Product row lock is normally required merely to create the relation.
 
 Do not add:
 
 ```text
-PATCH /me/requests/{id}
-POST /me/requests/{id}/close
+FOR UPDATE
 ```
 
-No such V1 capability exists.
+to public Product resolution unless there is a current writer that makes it necessary.
 
 ---
 
-# 41. No Cancel Request State
+# 48. Current Product Mutation Reality
 
-Do not introduce:
+Inspect whether Product publication/type management endpoints are active or still stubs.
+
+If no concurrent public Product mutation workflow currently exists:
+
+do not invent speculative Product locking.
+
+Record the assumption.
+
+---
+
+# 49. If Product Can Change Concurrently
+
+If repository already has active admin Product mutation capable of changing:
 
 ```text
-CANCELLED
+is_active
+is_published
+product_type
+category_id
 ```
 
-because it feels intuitive.
+between validation and Request persistence:
 
-It is not in the frozen lifecycle.
+define a minimal consistency strategy.
+
+Do not guess.
+
+Prefer a transaction-time domain recheck if required.
 
 ---
 
-# 42. No Reopen
+# 50. Do Not Over-Lock Category Graph
 
-Do not allow:
+No category-tree lock is needed for Request creation.
+
+Only current public visibility matters.
+
+---
+
+# 51. MADE_TO_ORDER Availability
+
+For a public MADE_TO_ORDER Product:
 
 ```text
-CLOSED → IN_REVIEW
+availability = available
+stock_indicator = MADE_TO_ORDER
 ```
 
-or:
+regardless of stock.
+
+Do not require stock.
+
+---
+
+# 52. Zero Stock Is Still Requestable
+
+Test explicitly:
 
 ```text
-CLOSED → SUBMITTED
+public MADE_TO_ORDER
+no ProductStock rows
+→ requestable
 ```
-
-V1 has no Request reopen action.
 
 ---
 
-# 43. No Approval Semantics
+# 53. Reserved Stock Is Irrelevant
 
-Do not interpret:
+Test:
 
 ```text
-CLOSED
+public MADE_TO_ORDER
+reserved quantities arbitrary
+→ requestable
 ```
 
-as approval.
+if ProductStock rows exist.
 
-Do not trigger production/order creation.
-
----
-
-# 44. No Rejection Semantics
-
-Likewise do not treat CLOSED as rejection.
-
-That distinction is deliberately absent from the minimal V1 model.
+No stock reads should be necessary.
 
 ---
 
-# 45. No Status History Table
+# 54. Variant State Is Irrelevant
 
-The current V1 Request schema does not define a dedicated request-status-history entity/table.
+A MADE_TO_ORDER Product must not become unrequestable simply because it has:
 
-Do not create one in Phase 10.3 unless the current repository already has one.
+```text
+no variants
+inactive variant
+zero-stock variant
+```
 
-The frozen docs describe future auditability as a candidate, not a command to invent schema here.
+unless another frozen Product-domain invariant explicitly requires variants for public Product visibility.
+
+Use the established catalog authority.
+
+---
+
+# 55. Category Visibility Test
+
+Test:
+
+```text
+MADE_TO_ORDER
+product active
+published
+category inactive
+→ not publicly requestable
+```
+
+---
+
+# 56. Product Inactive Test
+
+```text
+MADE_TO_ORDER
+is_active = false
+→ not found/non-public
+```
+
+---
+
+# 57. Product Unpublished Test
+
+```text
+MADE_TO_ORDER
+is_published = false
+→ not found/non-public
+```
+
+---
+
+# 58. Soft-Deleted Test
+
+```text
+MADE_TO_ORDER
+soft deleted
+→ not found/non-public
+```
+
+---
+
+# 59. IN_STOCK Test
+
+```text
+public IN_STOCK
+→ 409 PRODUCT_NOT_REQUESTABLE
+→ no Request persisted
+```
+
+Mandatory regression.
+
+---
+
+# 60. Public MADE_TO_ORDER Test
+
+```text
+public MADE_TO_ORDER
+→ 201 internally when route enabled in test
+→ product_id persisted
+→ Product summary returned
+```
+
+assuming no attachment is required.
+
+---
+
+# 61. Custom Request Test
+
+```text
+product_id omitted
+→ valid
+→ product_id null
+→ product null
+```
+
+---
+
+# 62. Explicit Null Test
+
+```text
+product_id = null
+→ same custom-request semantics
+```
+
+---
+
+# 63. No Product Query Test for Null
+
+Where reasonable, verify the resolver does not query Product for null input.
+
+Do not make this a brittle SQL-count test if architecture makes it awkward.
+
+---
+
+# 64. Product Resource Summary
+
+The Phase 10.1 resource already returns:
+
+```text
+product:
+{
+  id,
+  name,
+  slug
+}
+```
+
+for linked requests.
+
+Preserve that exact safe summary.
+
+---
+
+# 65. No Product Price in Request Resource
+
+Do not expand the embedded summary with:
+
+```text
+price
+availability
+stock
+description
+variants
+```
+
+unless already frozen.
+
+---
+
+# 66. No Internal Product Fields
+
+Never expose:
+
+```text
+is_active
+is_published
+deleted_at
+category_id
+numeric product id
+inventory values
+```
+
+through `FurnitureRequestResource`.
+
+---
+
+# 67. Eager Loading
+
+For a created linked Request, ensure the Product relation is available without accidental N+1 behavior.
+
+One created resource does not justify complex collection optimization.
+
+Use a simple bounded load.
+
+---
+
+# 68. Later Retrieval Compatibility
+
+Do not design Phase 10.4 so later REQ-002/003/004/005 must rerun "is Product still public?" merely to display historical Request data.
+
+Eligibility is an **intake-time** rule.
+
+Historical Request retrieval should not disappear because Product is later unpublished.
+
+---
+
+# 69. Important Historical Principle
+
+Once the Request was validly created:
+
+```text
+later Product deactivation
+later unpublish
+later Category deactivation
+```
+
+must not invalidate/delete the historical Request.
+
+Do not cascade business state from Product into past Request validity.
+
+---
+
+# 70. Product Deletion FK
+
+Inspect the existing FurnitureRequest→Product FK delete policy.
+
+Do not change it in Phase 10.4 unless there is a genuine schema-contract defect.
 
 Expected:
 
 ```text
-Schema changes: NONE
+Schema changes NONE
 ```
 
 ---
 
-# 46. Audit Boundary
+# 71. No Request Rewrite on Catalog Change
 
-If an existing generic audit infrastructure already automatically captures operational mutations, reuse it.
-
-Do not build a Request-specific audit/event system in this phase.
+Do not schedule background updates to historical requests when Product changes.
 
 ---
 
-# 47. Notifications
+# 72. Product Type Later Changes
 
-Do not send:
+If a Product later changes from:
 
 ```text
-request acknowledged
-request closed
+MADE_TO_ORDER → IN_STOCK
 ```
 
-email/push/in-app notifications.
+an already-created Request remains historical intake.
 
-Group R owns notifications.
+Do not invalidate it retroactively.
 
 ---
 
-# 48. Customer Visibility
+# 73. New Request Uses Current Type
 
-The `request_status` field is customer-visible in the Request resource.
-
-Therefore valid service transitions must eventually appear as:
-
-```text
-SUBMITTED
-IN_REVIEW
-CLOSED
-```
-
-to the owner through later REQ-002/REQ-003 APIs.
-
-Do not create separate public labels in the backend.
+A **new** Request after such a change must use current Product state and therefore reject the now-IN_STOCK Product.
 
 ---
 
-# 49. No Human Label Persistence
+# 74. Catalog Price Later Changes
 
-Do not store:
-
-```text
-"Under review"
-"Closed"
-```
-
-as database state.
-
-Store enum value only.
-
-Presentation labels belong to clients.
+No effect on the Request.
 
 ---
 
-# 50. Database Enum/Constraint Review
+# 75. No Price Snapshot
 
-Inspect the Phase 3.14 schema.
+Again, no price snapshot should be persisted.
 
-Verify the DB/model already supports exactly:
-
-```text
-SUBMITTED
-IN_REVIEW
-CLOSED
-```
-
-If it does, no migration.
-
-If schema/model permits broader strings, application enum remains authoritative.
-
-Do not alter an old migration.
+Request is not a quote.
 
 ---
 
-# 51. Model Cast
+# 76. No Cart Interaction
 
-Ensure:
-
-```php
-FurnitureRequest::$casts
-```
-
-uses the RequestStatus enum if repository conventions support it.
-
-Do not maintain:
+Product-linked Request creation must not:
 
 ```text
-string in one service
-enum in another
-```
-
-unless existing architecture requires it.
-
----
-
-# 52. Model Guard
-
-If `FurnitureRequest` already has status assertions/setters:
-
-align them with the same enum.
-
-Do not create conflicting transition behavior in model and service.
-
----
-
-# 53. Model vs State Machine
-
-The model may enforce:
-
-```text
-status is a recognized enum
-```
-
-The lifecycle service should enforce:
-
-```text
-whether current → target is allowed
-```
-
-Keep those responsibilities distinct.
-
----
-
-# 54. Concurrency Service
-
-Use existing repository transaction primitives if suitable.
-
-Possible:
-
-```php
-ConcurrentTransaction
-```
-
-if already used for bounded transient DB retries.
-
-Do not create a second generic retry framework.
-
----
-
-# 55. Retry Scope
-
-Transient DB conflicts may be retried according to existing project conventions.
-
-Business-state conflicts must not be retried blindly.
-
-Example:
-
-```text
-IN_REVIEW → SUBMITTED
-```
-
-is never fixed by retrying.
-
----
-
-# 56. Race Example A
-
-Initial state:
-
-```text
-SUBMITTED
-```
-
-Staff A target:
-
-```text
-IN_REVIEW
-```
-
-Staff B target:
-
-```text
-CLOSED
-```
-
-Possible serialization:
-
-```text
-A locks
-A commits IN_REVIEW
-B locks after
-B sees IN_REVIEW
-B → CLOSED allowed
-```
-
-Final:
-
-```text
-CLOSED
-```
-
-This is valid.
-
----
-
-# 57. Race Example B
-
-Initial:
-
-```text
-SUBMITTED
-```
-
-Staff A:
-
-```text
-CLOSED
-```
-
-Staff B stale target:
-
-```text
-IN_REVIEW
-```
-
-Serialization:
-
-```text
-A closes
-B later locks
-B sees CLOSED
-CLOSED → IN_REVIEW forbidden
-```
-
-B must receive conflict.
-
-Do not overwrite CLOSED.
-
----
-
-# 58. Race Example C — Same Target
-
-Two staff concurrently target:
-
-```text
-IN_REVIEW
-```
-
-Expected:
-
-```text
-one actual transition
-one same-state no-op
-final IN_REVIEW
-```
-
-No corruption.
-
----
-
-# 59. Race Example D — Both Close
-
-Two staff target CLOSED.
-
-Expected:
-
-```text
-one actual close
-one same-state no-op
-final CLOSED
+create Cart
+add CartItem
+remove CartItem
+merge Cart
 ```
 
 ---
 
-# 60. Idempotent Same-State Result
+# 77. No Checkout Interaction
 
-The service should return the current Request state for same-state calls.
-
-Do not throw conflict just because no transition occurred.
+No CHK-001 call.
 
 ---
 
-# 61. Transition Result Object
+# 78. No Order
 
-Consider a small immutable result if useful:
-
-```php
-RequestStatusTransitionResult
-```
-
-with e.g.:
-
-```text
-request
-changed: bool
-previousStatus
-currentStatus
-```
-
-Only if this materially helps Phase 10.7/audit integration.
-
-Do not overengineer.
-
-A returned `FurnitureRequest` may be sufficient if the caller does not need transition metadata.
+No Order/OrderItem.
 
 ---
 
-# 62. Preserve Original Intake
+# 79. No Inventory Reservation
 
-Transition tests should explicitly prove no changes to:
+No:
 
 ```text
-contact snapshot
-notes
-specifications
-ownership
-product reference
+InventoryAllocator
+reserved_quantity
+allocation rows
 ```
 
 ---
 
-# 63. No Order Side Effects
+# 80. No Payment
 
-Every status transition:
+No Payment row.
 
-```text
-Order count unchanged
-OrderItem count unchanged
-```
+No ClickPesa call.
 
 ---
 
-# 64. No Inventory Side Effects
+# 81. No Delivery
 
-Every transition:
-
-```text
-ProductStock unchanged
-reserved_quantity unchanged
-allocations unchanged
-```
+No delivery fee or fulfillment choice.
 
 ---
 
-# 65. No Payment Side Effects
+# 82. No Quote
 
-Every transition:
-
-```text
-Payment count unchanged
-provider calls NONE
-```
-
----
-
-# 66. No ClickPesa
-
-Do not introduce payment-gateway code anywhere in Request lifecycle.
-
----
-
-# 67. No Request-to-Order Conversion
-
-Even:
+No:
 
 ```text
-CLOSED
-```
-
-must not automatically:
-
-```text
-create Order
-convert lead
-create invoice
-```
-
----
-
-# 68. API Validation Preparation
-
-If Phase 10.3 introduces a request object for future REQ-006 status input, keep it status-focused.
-
-Possible:
-
-```php
-UpdateFurnitureRequestStatusRequest
-```
-
-It may accept only:
-
-```text
-request_status
-```
-
-for Phase 10.3 internal/controller testing.
-
-Do not expand into full 10.7 operational input.
-
----
-
-# 69. Strict Status Input
-
-If status validation is implemented:
-
-```text
-request_status required
-string
-closed enum
-```
-
-Reject arbitrary values.
-
----
-
-# 70. Wrong Type
-
-Examples:
-
-```json
-{"request_status": 1}
-{"request_status": true}
-{"request_status": []}
-```
-
-should map:
-
-```text
-422 INVALID_TYPE
-```
-
----
-
-# 71. Invalid Enum
-
-Examples:
-
-```json
-{"request_status": "APPROVED"}
-{"request_status": "closed"}
-{"request_status": "REJECTED"}
-```
-
-should map:
-
-```text
-422 INVALID_VALUE
-field: request_status
-```
-
----
-
-# 72. Exact Case
-
-Enum values are exact:
-
-```text
-SUBMITTED
-IN_REVIEW
-CLOSED
-```
-
-No lowercase aliases.
-
----
-
-# 73. Unknown Fields
-
-If a status-only internal validation request is created in 10.3:
-
-reject any extra fields.
-
-Do not accidentally allow:
-
-```text
-notes
-product_id
-quantity
-name
-phone
-email
-user_id
-order_id
 quoted_price
+estimated_total
+starting_total
 ```
+
+as Request authority.
 
 ---
 
-# 74. Staff Internal Notes Deferred
+# 83. Creation Status
 
-If client submits:
+Linked Requests still begin:
 
 ```text
-staff_internal_notes
+SUBMITTED
 ```
 
-to the status-only Phase 10.3 internal endpoint/test surface, do not implement mutation yet.
-
-Full combined REQ-006 body belongs to 10.7.
-
-Do not change the frozen OpenAPI; this is an implementation staging choice, not contract removal.
+Phase 10.3 remains unchanged.
 
 ---
 
-# 75. API Contract Remains Frozen
+# 84. Lifecycle Independence
 
-The eventual REQ-006 body remains:
+Product eligibility is checked only at creation.
+
+Lifecycle transitions:
 
 ```text
-request_status
-staff_internal_notes
+SUBMITTED
+IN_REVIEW
+CLOSED
 ```
 
-Do not remove `staff_internal_notes` from OpenAPI merely because Phase 10.3 doesn't implement it yet.
+must not revalidate Product public visibility.
 
 ---
 
-# 76. Route Activation Remains Later
+# 85. Example
 
-10.7 will complete the externally usable REQ-006 behavior.
-
----
-
-# 77. Request Lookup
-
-When persistence service transitions a Request:
-
-use actual internal database identity/opaque resolution according to repository conventions.
-
-Do not accept raw numeric IDs from public callers.
-
----
-
-# 78. Not Found
-
-Future operational API should map missing Request to:
+Valid:
 
 ```text
-404 REQUEST_NOT_FOUND
+Day 1:
+Product public MADE_TO_ORDER
+Request created SUBMITTED
+
+Day 2:
+Product unpublished
+
+Day 3:
+Staff transitions Request → IN_REVIEW
 ```
 
-or established masked equivalent.
+The transition must remain valid.
 
-If Phase 10.3 route remains gated, service tests may operate on model instances without defining API behavior anew.
+Do not couple Phase 10.3 to live catalog state.
 
 ---
 
-# 79. Authorization Future Contract
+# 86. Validation Failure Side Effects
 
-REQ-006 requires:
+If linked Product fails domain validation:
 
 ```text
-requests.manage
+FurnitureRequest inserts = 0
+Order inserts = 0
+Payment inserts = 0
+Inventory mutations = 0
 ```
 
-Staff operational access is not ownership.
-
-Do not write lifecycle service logic like:
-
-```text
-$request->user_id === $staff->id
-```
-
-Staff never owns the customer Request.
-
 ---
 
-# 80. Admin
+# 87. Contact Validation Still Runs
 
-Admin may eventually perform REQ-006 under explicit authorization.
+Do not bypass Phase 10.2 merely because Product is eligible.
 
-Do not hard-code role strings in state machine.
-
-Authorization belongs outside pure transition logic.
-
----
-
-# 81. Customer
-
-Customer is never authorized to transition Request status.
-
-Even if customer owns the Request.
-
-Ownership does not grant lifecycle-control authority.
-
----
-
-# 82. Anonymous
-
-Anonymous submitter has no lifecycle mutation authority.
-
----
-
-# 83. Immutability of Historical Contact
-
-After any lifecycle transition:
+A request with valid Product but invalid:
 
 ```text
 name
-email
-phone
-```
-
-must remain exactly the request-time snapshot.
-
----
-
-# 84. Immutability of Specifications
-
-Likewise:
-
-```text
+phone/email
 quantity
 dimensions
-material
-color
-notes/message
+```
+
+must still fail normal schema validation.
+
+---
+
+# 88. Validation Ordering
+
+Preserve:
+
+```text
+schema first
+then Product domain lookup
+```
+
+Do not query Product for a body already invalid at schema level.
+
+---
+
+# 89. Avoid Enumeration Through Malformed IDs
+
+Malformed:
+
+```text
 product_id
 ```
 
-remain unchanged.
-
----
-
-# 85. `updated_at`
-
-Real transition should update it naturally.
-
-Do not manually rewrite `created_at`.
-
----
-
-# 86. Database Transaction
-
-A real status mutation should be atomic.
-
-Expected:
+must fail Phase 10.2:
 
 ```text
-one row lock
-one state evaluation
-one update
-one commit
+422 INVALID_FORMAT
 ```
 
-No need for broad multi-table transaction.
+without querying Product.
 
 ---
 
-# 87. No Heavyweight Locking
+# 90. Valid-Looking Unknown ID
 
-Do not lock:
+A well-formed opaque ID that resolves to no public Product reaches domain resolution and returns canonical not-found.
+
+---
+
+# 91. Product Eligibility Component Tests
+
+Create a focused unit/feature suite, e.g.:
 
 ```text
-Product
-User
-Inventory
-Order
+RequestableProductResolverTest
 ```
 
-for Request status change.
-
-Only the Request row is relevant.
+Use actual repository naming.
 
 ---
 
-# 88. Concurrency Test Environment
+# 92. Resolver Test Matrix
 
-SQLite can test:
-
-```text
-transition matrix
-persistence
-no-op semantics
-side effects
-```
-
-but it does not prove MySQL pessimistic-lock behavior.
-
----
-
-# 89. MariaDB Concurrency
-
-Because REQ-006 has an explicitly documented staff race, add a disposable MariaDB integration test if the repository's existing concurrency harness makes this straightforward.
-
-Suggested:
+At minimum:
 
 ```text
-FurnitureRequestStatusConcurrencyMysqlTest
+null                         → null/allowed
+public MADE_TO_ORDER         → allowed
+public IN_STOCK              → PRODUCT_NOT_REQUESTABLE
+inactive MADE_TO_ORDER       → not found/non-public
+unpublished MADE_TO_ORDER    → not found/non-public
+soft-deleted MADE_TO_ORDER   → not found/non-public
+inactive-category MTO        → not found/non-public
+unknown opaque Product ID    → not found
 ```
 
 ---
 
-# 90. Required MariaDB Race
+# 93. No Inventory Dependency Test
 
-At minimum test:
-
-```text
-initial SUBMITTED
-
-worker A → CLOSED
-worker B → IN_REVIEW
-```
-
-Final must never become an invalid reopened state.
-
-Acceptable outcome:
+Create a public MADE_TO_ORDER Product with:
 
 ```text
-CLOSED
+zero stock rows
 ```
 
-with stale `IN_REVIEW` writer receiving conflict/no overwrite.
+It must still resolve successfully.
 
 ---
 
-# 91. Same-Target MariaDB Race
+# 94. Request API Integration Test
 
-Also useful:
-
-```text
-SUBMITTED
-A → IN_REVIEW
-B → IN_REVIEW
-```
-
-Expected:
+With the gated route enabled in-process:
 
 ```text
-final IN_REVIEW
-one transition + one idempotent no-op
+public MADE_TO_ORDER
++ valid REQ-001 body
+→ 201
 ```
-
----
-
-# 92. Disposable Database Guard
-
-Follow `AGENTS.md` safety rule exactly.
-
-Never run destructive concurrency setup against dev/staging/production DB.
-
-Disposable database:
-
-```text
-furnitureapp_test_disposable
-```
-
-only.
-
----
-
-# 93. If MariaDB Is Unavailable
-
-Do not falsely claim row-lock proof.
-
-Report:
-
-```text
-concurrency integration test implemented
-MariaDB execution pending
-```
-
-This need not necessarily block Phase 10.3 domain PASS if repository conventions reserve full integration proof for 10.8, but report the limitation explicitly.
-
----
-
-# 94. Unit Tests — Transition Matrix
-
-Create a complete matrix test.
-
-Suggested:
-
-```text
-RequestStatusMachineTest
-```
-
-Cover all 9 combinations.
-
----
-
-# 95. Unit Test — Valid Forward
-
-Test:
-
-```text
-SUBMITTED → IN_REVIEW
-IN_REVIEW → CLOSED
-SUBMITTED → CLOSED
-```
-
----
-
-# 96. Unit Test — Forbidden Backward
-
-Test:
-
-```text
-IN_REVIEW → SUBMITTED
-CLOSED → SUBMITTED
-CLOSED → IN_REVIEW
-```
-
----
-
-# 97. Unit Test — Same State
-
-Test:
-
-```text
-SUBMITTED → SUBMITTED
-IN_REVIEW → IN_REVIEW
-CLOSED → CLOSED
-```
-
-all as no-op success.
-
----
-
-# 98. Service Test — Actual Persistence
-
-For valid transition:
-
-```text
-DB status updated
-updated_at updated
-other request fields unchanged
-```
-
----
-
-# 99. Service Test — No-Op
-
-For same-state update:
-
-```text
-status unchanged
-no second business mutation
-```
-
-Prefer `updated_at` unchanged if implementation avoids UPDATE.
-
----
-
-# 100. Service Test — Invalid Transition
 
 Assert:
 
 ```text
-DB status unchanged
+FurnitureRequest.product_id = correct internal Product FK
+resource product.id = original opaque Product ID
+resource product.name correct
+resource product.slug correct
 ```
 
-and focused domain exception.
-
 ---
 
-# 101. Service Test — CLOSED Terminal
+# 95. Anonymous Linked Request
 
-Once CLOSED:
+Test anonymous + public MADE_TO_ORDER.
 
-attempt both other enum states.
-
-Assert no mutation.
-
----
-
-# 102. Service Test — Direct Close
-
-From SUBMITTED:
+Expected:
 
 ```text
-target CLOSED
-```
-
-must succeed.
-
----
-
-# 103. Creation Regression
-
-New REQ-001-created Request still begins:
-
-```text
+201
+user_id null
+product linked
 SUBMITTED
 ```
 
 ---
 
-# 104. Phase 10.2 Regression
+# 96. CUSTOMER Linked Request
 
-REQ-001 still rejects client-supplied:
+Test authenticated CUSTOMER.
+
+Expected:
 
 ```text
-request_status
+201
+server-derived user_id
+product linked
+SUBMITTED
 ```
 
 ---
 
-# 105. No Intake Mutation Regression
+# 97. Staff/Admin Regression
 
-Capture before/after values for:
-
-```text
-product_id
-quantity
-name
-phone
-email
-dimensions
-material
-color
-message
-user_id
-request_reference
-```
-
-Status transition must not alter any.
-
----
-
-# 106. No Commerce Effects Test
-
-After each representative transition:
+They remain:
 
 ```text
-Orders unchanged
-Payments unchanged
-ProductStock unchanged
-Cart unchanged
+403
 ```
+
+for REQ-001.
+
+Product eligibility must not make Staff/Admin submission possible.
 
 ---
 
-# 107. No Quote Test
+# 98. Invalid Bearer Regression
 
-Assert no:
+Still:
 
 ```text
-price
-quoted_price
-currency
+401 INVALID_AUTHENTICATION
 ```
 
-persistence appears.
+not anonymous fallback.
 
 ---
 
-# 108. No Notifications Test
+# 99. IN_STOCK API Test
 
-If notification tables exist:
-
-transition itself should not create notifications unless pre-existing approved infrastructure already does.
-
-Group R owns that.
-
----
-
-# 109. Error Mapping Tests
-
-If an internal/gated API seam exists, test:
+With route enabled in-process:
 
 ```text
-invalid enum → 422 INVALID_VALUE
-invalid type → 422 INVALID_TYPE
-invalid transition → 409 canonical conflict
+valid public IN_STOCK product_id
+→ 409 PRODUCT_NOT_REQUESTABLE
+field: product_id
 ```
+
+Assert no Request row.
 
 ---
 
-# 110. Preserve Public Vocabulary
+# 100. Hidden Product API Tests
 
-Errors must use:
+For each:
 
 ```text
-request_status
+inactive
+unpublished
+soft-deleted
+inactive category
 ```
 
-not internal DB implementation terminology.
+assert the chosen canonical public not-found response.
+
+Do not expose which hidden state caused rejection.
 
 ---
 
-# 111. No Schema Migration
+# 101. Unknown Product API Test
+
+Well-formed but nonexistent:
+
+```text
+prod_...
+```
+
+→ same not-found family as other non-public Product cases.
+
+---
+
+# 102. Product Type Error Does Not Mutate Anything
+
+On `PRODUCT_NOT_REQUESTABLE`:
+
+```text
+no Request
+no Cart
+no Order
+no Payment
+no Inventory mutation
+```
+
+---
+
+# 103. OpenAPI Error Enum Test
+
+Add/extend a contract regression that asserts:
+
+```text
+PRODUCT_NOT_REQUESTABLE
+```
+
+is present in the frozen global error enum if reconciliation is required.
+
+---
+
+# 104. Backend Error Registry Test
+
+Assert:
+
+```text
+ApiErrorCode::PRODUCT_NOT_REQUESTABLE
+```
+
+or equivalent is valid and serializes exactly.
+
+---
+
+# 105. HTTP Status
+
+Frozen Request contract selects:
+
+```text
+PRODUCT_NOT_REQUESTABLE → 409
+```
+
+Do not map it to:
+
+```text
+422 PRODUCT_NOT_PURCHASABLE
+```
+
+---
+
+# 106. Client Correction Semantics
+
+`409 PRODUCT_NOT_REQUESTABLE` means:
+
+```text
+this visible Product does not belong in the made-to-order Request workflow
+```
+
+The client should use normal purchase flow instead.
+
+Do not return internal routing advice in error details.
+
+---
+
+# 107. Not-Found Semantics
+
+Hidden/missing Product should not tell the anonymous caller:
+
+```text
+this product exists but is unpublished
+```
+
+Keep safe public behavior.
+
+---
+
+# 108. Existing Product Visibility Tests
+
+Run Group E public catalog regressions.
+
+At minimum the tests proving:
+
+```text
+active + published + active category visible
+inactive hidden
+unpublished hidden
+soft-deleted hidden
+inactive category hidden
+```
+
+Do not alter Group E semantics.
+
+---
+
+# 109. Existing MADE_TO_ORDER Catalog Test
+
+Run tests proving MADE_TO_ORDER remains:
+
+```text
+availability = available
+stock_indicator = MADE_TO_ORDER
+```
+
+without inventory dependency.
+
+---
+
+# 110. Cart Regression
+
+Run relevant Group F admission tests proving:
+
+```text
+MADE_TO_ORDER → PRODUCT_NOT_PURCHASABLE
+```
+
+Phase 10.4 must not accidentally make MADE_TO_ORDER Cart-purchasable.
+
+---
+
+# 111. Checkout Regression
+
+Run the relevant Checkout Product eligibility test for MADE_TO_ORDER rejection if touched shared Product logic.
+
+Keep:
+
+```text
+Requestable
+≠
+Checkout purchasable
+```
+
+---
+
+# 112. Product Scope Reuse Regression
+
+If modifying a shared Product scope/query:
+
+run all CAT-001/CAT-002 tests.
+
+Do not change public catalog ordering/filter behavior.
+
+---
+
+# 113. Phase 10.1 Regression
+
+Run creation/resource tests.
+
+---
+
+# 114. Phase 10.2 Regression
+
+Run:
+
+```text
+FurnitureRequestValidationApiTest
+```
+
+All 102+ validation cases remain green.
+
+---
+
+# 115. Phase 10.3 Regression
+
+Run Request lifecycle tests.
+
+Product integration must not alter status behavior.
+
+---
+
+# 116. No Product Revalidation During Status Changes
+
+Add a regression if necessary:
+
+```text
+create linked MTO request
+unpublish Product
+transition Request → IN_REVIEW
+→ success
+```
+
+This permanently protects historical independence.
+
+---
+
+# 117. Resource Historical Behavior
+
+Do not make later Request serialization throw because Product becomes non-public.
+
+If the current relationship/resource directly assumes a live public Product, identify the issue.
+
+Do not solve unrelated later retrieval behavior prematurely unless needed to avoid a clear 500.
+
+---
+
+# 118. Soft-Deleted Relationship Caution
+
+If Product soft deletion means the relation becomes `null` under ordinary Eloquent relationship loading:
+
+do not automatically change it to `withTrashed()` in Phase 10.4 unless the frozen Request representation/history requires it and tests justify it.
+
+Record the future retrieval concern for 10.7/10.8 if appropriate.
+
+---
+
+# 119. Product Summary Is Context, Not Authority
+
+The linked Product summary is convenience context.
+
+The Request's intake specifications/contact remain authoritative historical request data.
+
+---
+
+# 120. Do Not Auto-Copy Product Name Into Notes
+
+No hidden transformations like:
+
+```text
+notes = "Request for {product.name}"
+```
+
+---
+
+# 121. Do Not Auto-Fill Quantity
+
+Linked Product still does not imply:
+
+```text
+quantity = 1
+```
+
+Omitted quantity remains null.
+
+---
+
+# 122. Do Not Auto-Fill Dimensions
+
+Do not derive Product Variant dimensions into the request.
+
+Request dimensions are explicit customer intent.
+
+---
+
+# 123. Do Not Auto-Fill Material/Color
+
+Same.
+
+---
+
+# 124. No Variant Selection
+
+Do not add `variant_id` to REQ-001.
+
+That is a contract change.
+
+---
+
+# 125. No Product Slug Field
+
+Do not add:
+
+```text
+product_slug
+```
+
+to input.
+
+The embedded resource may contain slug, but input remains `product_id`.
+
+---
+
+# 126. No Product Type Field
+
+Client must not submit:
+
+```text
+product_type
+```
+
+as authority.
+
+Backend derives it from Product.
+
+---
+
+# 127. Tampering Test
+
+A request body containing:
+
+```json
+{
+  "product_id": "prod_...",
+  "product_type": "MADE_TO_ORDER"
+}
+```
+
+must reject unknown:
+
+```text
+product_type
+```
+
+through Phase 10.2.
+
+Do not trust the client assertion.
+
+---
+
+# 128. No Availability Field
+
+Reject client:
+
+```text
+availability
+stock_indicator
+```
+
+if supplied.
+
+They are not REQ-001 fields.
+
+---
+
+# 129. Domain Resolver Query Efficiency
+
+One linked request should require a bounded Product query.
+
+Do not load:
+
+```text
+variants
+stocks
+images
+recommendations
+materials
+```
+
+for eligibility.
+
+Only load what is needed:
+
+```text
+Product
+Category/public-visibility relation if required
+```
+
+---
+
+# 130. Resource Load Separately If Needed
+
+After creation, load only the fields/relation needed for:
+
+```text
+product {id,name,slug}
+```
+
+Do not reuse a huge catalog-detail eager-load graph.
+
+---
+
+# 131. Request Creation Transaction
+
+If the current creation service already uses a transaction for:
+
+```text
+reference generation
+Request persistence
+```
+
+integrate Product eligibility without creating nested independent commits.
+
+---
+
+# 132. Eligibility Timing
+
+Domain eligibility should happen close enough to persistence that a Request is not knowingly linked to an invalid Product state.
+
+Do not validate in middleware far away from creation.
+
+---
+
+# 133. No Product Lock by Default
+
+Because Request intake does not reserve/purchase the Product, a normal visibility read is sufficient unless current active Product mutation introduces a proven race.
+
+Do not turn low-concurrency intake into heavyweight transactional locking without evidence.
+
+---
+
+# 134. Error Logging
+
+Do not log full Request contact because Product lookup failed.
+
+Safe context might include:
+
+```text
+request_id
+opaque product identifier
+error code
+```
+
+only if current logging policy permits.
+
+---
+
+# 135. No Sensitive Catalog Internals in Error
+
+Do not include:
+
+```text
+is_active=false
+is_published=false
+category inactive
+deleted_at
+```
+
+in `details`.
+
+---
+
+# 136. Rate Limiting
+
+Keep:
+
+```text
+throttle:anonymous-submit
+```
+
+unchanged.
+
+Product lookup failures still consume request submission rate budget when route is test-enabled/public later.
+
+Do not create a product-probing bypass.
+
+---
+
+# 137. Route Middleware
+
+Preserve:
+
+```text
+api
+→ clerk.optional
+→ customer-submission
+→ requests.enabled
+→ throttle:anonymous-submit
+```
+
+unless the current actual ordering differs for a documented reason.
+
+Do not reorder in 10.4.
+
+---
+
+# 138. Route Remains Gated
+
+At Phase 10.4 completion:
+
+```text
+POST /api/v1/requests
+```
+
+should still normally be:
+
+```text
+STUB/GATED
+```
+
+because Phase 10.6 must implement frozen attachment support before public activation.
+
+---
+
+# 139. Why 10.6 Still Blocks Activation
+
+The frozen REQ-001 contract supports:
+
+```text
+multipart/form-data
+optional single attachment
+```
+
+A public endpoint that only supports JSON while advertising the frozen multipart contract would remain incomplete.
+
+Therefore do not activate early.
+
+---
+
+# 140. Phase 10.5 Independence
+
+General Enquiries are a different domain.
+
+Do not reuse `RequestableProductResolver` blindly for Enquiries because Enquiries may reference any public Product under their own contract.
+
+Phase 10.5 should implement its own appropriate Product association rule.
+
+---
+
+# 141. Do Not Generalize Resolver Too Far
+
+Avoid a generic:
+
+```text
+PublicProductBusinessRuleEngine
+```
+
+just to serve future Enquiries.
+
+Implement the smallest Request-specific eligibility service while reusing the shared public visibility scope.
+
+---
+
+# 142. Schema
 
 Expected:
 
@@ -1880,9 +2126,11 @@ Expected:
 Schema: NONE
 ```
 
+No migration.
+
 ---
 
-# 112. No Dependency Change
+# 143. Dependencies
 
 Expected:
 
@@ -1892,7 +2140,7 @@ Dependencies: NONE
 
 ---
 
-# 113. No Frontend
+# 144. Frontend
 
 Expected:
 
@@ -1902,158 +2150,71 @@ Frontend: NONE
 
 ---
 
-# 114. OpenAPI
+# 145. OpenAPI
 
-Expected:
+Expected outcome:
 
 ```text
 UNCHANGED
 ```
 
-The lifecycle already exists in the frozen contract.
+except, if confirmed necessary:
 
-Do not alter REQ-006 schema just because only the state-machine portion is implemented now.
+```text
+add already-frozen PRODUCT_NOT_REQUESTABLE
+to the global error-code enum
+```
+
+Classify that exact change as:
+
+```text
+contract consistency correction
+```
+
+not a new endpoint or behavior.
 
 ---
 
-# 115. REQ-001 Route
+# 146. Documentation
 
-Must remain:
+Add the next backend ADR if current practice continues.
+
+Likely:
 
 ```text
-STUB/GATED
+ADR/BACKEND-046 — Product-Linked Furniture Request Eligibility
 ```
 
-for the existing 10.4/10.6 reasons.
+but inspect the current latest ADR number after BACKEND-045.
 
-Phase 10.3 does not affect creation-route activation.
+Do not assume.
 
 ---
 
-# 116. REQ-006 Route
-
-Report exact state after implementation.
-
-Expected:
-
-```text
-STUB/GATED / operationally not public-ready
-```
-
-until Phase 10.7 completes authorization, staff representation, internal-note handling, and operational management.
-
----
-
-# 117. Code Quality
-
-Maintain:
-
-```text
-cognitive complexity <= 15
-```
-
-for touched/created functions.
-
-Keep:
-
-```text
-<= 3 returns where practical
-```
-
----
-
-# 118. Avoid Magic Strings
-
-Use:
-
-```text
-RequestStatus::SUBMITTED
-RequestStatus::IN_REVIEW
-RequestStatus::CLOSED
-```
-
-not repeated string literals.
-
----
-
-# 119. Avoid Generic State Machine Framework
-
-Do not install or build a generalized workflow engine.
-
-Three states do not justify one.
-
-Use a small explicit transition matrix.
-
----
-
-# 120. No Event Sourcing
-
-Do not introduce:
-
-```text
-event store
-CQRS
-sagas
-workflow engine
-```
-
-for Request status.
-
----
-
-# 121. No Request History Table
-
-Again:
-
-```text
-no new status_history table
-```
-
-unless already explicitly present and approved.
-
----
-
-# 122. Documentation
-
-Add the next backend ADR if current repository practice continues one ADR per phase.
-
-Likely topic:
-
-```text
-Furniture Request Status Lifecycle
-```
-
-Inspect the latest ADR number after:
-
-```text
-ADR/BACKEND-044
-```
-
-Do not assume the next number without checking.
-
----
-
-# 123. ADR Content
+# 147. ADR Content
 
 Record:
 
 ```text
-CLOSED enum
-allowed transition matrix
-direct SUBMITTED→CLOSED
-CLOSED terminal
-same-status idempotent no-op
-no reopen
-row-lock/concurrency strategy
-original intake immutability
-no Request→Order side effects
-REQ-006 full API deferred to 10.7
-no status-history schema
+product_id remains optional/nullable
+custom request path requires no Product
+linked Product uses existing public visibility authority
+public visibility = active + published + not deleted + active Category
+Product must be MADE_TO_ORDER
+public IN_STOCK → 409 PRODUCT_NOT_REQUESTABLE
+hidden/missing Product → canonical public not-found
+MADE_TO_ORDER requestability independent of inventory/Variants
+no price snapshot
+no product_details snapshot
+historical Request not invalidated by later Product changes
+no Cart/Order/Payment/inventory effects
+route remains gated for Phase 10.6
+PRODUCT_NOT_REQUESTABLE enum reconciliation if needed
 ```
 
 ---
 
-# 124. Group J Tracking
+# 148. Group J Tracking
 
 After PASS:
 
@@ -2061,8 +2222,8 @@ After PASS:
 10.1 PASS
 10.2 PASS
 10.3 PASS
-10.4 READY
-10.5 NOT STARTED
+10.4 PASS
+10.5 READY
 10.6 NOT STARTED
 10.7 NOT STARTED
 10.8 NOT STARTED
@@ -2070,32 +2231,26 @@ After PASS:
 
 ---
 
-# 125. Why 10.4 Is Next
+# 149. Phase 10.5 Readiness
 
-Phase 10.4 will close the remaining domain gap on REQ-001:
+Phase 10.5 — General Enquiries may proceed after 10.4.
 
-```text
-product_id supplied
-→ Product exists
-→ active
-→ published
-→ publicly visible
-→ MADE_TO_ORDER
-```
-
-It must reuse the existing Request creation workflow.
-
-Do not build a second workflow there.
+Do not automatically start it.
 
 ---
 
-# 126. Focused Verification Commands
+# 150. Focused Verification
 
-Run focused lifecycle tests first, then full suite:
+Run focused tests such as:
 
 ```bash
-php artisan test --filter=RequestStatus
+php artisan test --filter=RequestableProduct
 php artisan test --filter=FurnitureRequest
+```
+
+then:
+
+```bash
 php artisan test
 vendor/bin/phpstan analyse
 vendor/bin/pint --test
@@ -2104,37 +2259,42 @@ git diff --check
 php artisan route:list
 ```
 
-If MariaDB concurrency test added:
-
-run it against:
-
-```text
-furnitureapp_test_disposable
-```
-
-using the repository's destructive-test guard.
+Verify OpenAPI parsing.
 
 ---
 
-# 127. OpenAPI Verification
+# 151. Catalog Regressions
 
-Verify:
+Run relevant Product/Catalog tests explicitly.
 
-```text
-docs/api/openapi.yaml
-```
-
-still parses.
-
-No externally observable contract change is expected.
+Report them separately from Furniture Request tests.
 
 ---
 
-# 128. Completion Report
+# 152. Cart/Checkout Regressions
 
-Return the following.
+If any shared Product visibility/type helper was touched, run:
 
-## Phase 10.3 status
+```text
+Cart Product admission regressions
+Checkout Product eligibility regressions
+```
+
+to prove:
+
+```text
+MADE_TO_ORDER
+→ requestable
+→ not Cart/Checkout purchasable
+```
+
+---
+
+# 153. Completion Report
+
+Return:
+
+## Phase 10.4 status
 
 ```text
 PASS
@@ -2148,146 +2308,175 @@ BLOCKED
 
 ---
 
-## Status enum
-
-Report exact enum/class and values:
-
-```text
-SUBMITTED
-IN_REVIEW
-CLOSED
-```
-
----
-
-## State machine
+## Product resolver
 
 Report exact class/service.
 
 ---
 
-## Transition matrix
+## Public visibility authority
 
-Report:
+Report exact reused Product scope/service and rules:
 
 ```text
-SUBMITTED → IN_REVIEW   allowed
-SUBMITTED → CLOSED      allowed
-IN_REVIEW → CLOSED      allowed
-
-IN_REVIEW → SUBMITTED   rejected
-CLOSED → SUBMITTED      rejected
-CLOSED → IN_REVIEW      rejected
-
-same-state              idempotent no-op
+active
+published
+not soft-deleted
+active Category
 ```
 
 ---
 
-## Persistence service
-
-Report exact class and transaction ownership.
-
----
-
-## Locking
+## Custom request
 
 Report:
 
 ```text
-FurnitureRequest row locked FOR UPDATE
-current state re-read inside transaction
+product_id omitted → valid
+product_id null → valid
+Product lookup → none
 ```
-
-or actual implementation.
 
 ---
 
-## Idempotence
+## Linked request
 
 Report:
 
 ```text
-same status
-→ success/no-op
-→ no duplicate business effect
+public MADE_TO_ORDER → allowed
 ```
-
-and whether `updated_at` changes.
 
 ---
 
-## Invalid transition
+## IN_STOCK behavior
 
 Report exact:
 
 ```text
-HTTP/error code mapping
+409 PRODUCT_NOT_REQUESTABLE
+field: product_id
 ```
-
-where tested.
 
 ---
 
-## Request creation
+## Missing/non-public behavior
+
+Report exact code/status selected for:
+
+```text
+unknown ID
+inactive Product
+unpublished Product
+soft-deleted Product
+inactive Category
+```
+
+Confirm these do not leak hidden Product state.
+
+---
+
+## Inventory
 
 Confirm:
 
 ```text
-new Request → SUBMITTED
-client cannot set request_status in REQ-001
+ProductStock queries required for eligibility = NO
+reservation = NONE
+quantity mutation = NONE
+allocation = NONE
 ```
 
 ---
 
-## Intake immutability
+## Variants
 
-Confirm status changes do not mutate:
+Confirm:
 
 ```text
-ownership
-contact
-product link
-quantity
-dimensions
-material
-color
-notes
-reference
+variant required = NO
 ```
 
 ---
 
-## Staff notes
+## Price
 
-State:
+Confirm:
 
 ```text
-NOT IMPLEMENTED IN 10.3
-Phase 10.7
+price snapshot = NONE
+quote = NONE
 ```
 
 ---
 
-## REQ-006
+## Persistence
 
-State exact route status:
+Confirm:
 
 ```text
-ACTIVE
+FurnitureRequest.product_id
+= resolved internal Product FK
 ```
 
-or:
+for linked Requests.
+
+---
+
+## Product resource
+
+Confirm embedded fields remain:
 
 ```text
+id
+name
+slug
+```
+
+only.
+
+---
+
+## Historical behavior
+
+Confirm later Product state changes do not retroactively invalidate Request lifecycle.
+
+---
+
+## Error registry
+
+Report whether:
+
+```text
+PRODUCT_NOT_REQUESTABLE
+```
+
+already existed or was added.
+
+---
+
+## OpenAPI reconciliation
+
+Report whether the global enum required correction.
+
+If changed, classify:
+
+```text
+pre-existing frozen-contract consistency correction
+```
+
+---
+
+## Route
+
+Report:
+
+```text
+POST /api/v1/requests
 STUB/GATED
 ```
 
-Expected before 10.7:
-
-```text
-STUB/GATED
-```
+and Phase 10.6 as remaining activation prerequisite.
 
 ---
 
@@ -2307,15 +2496,7 @@ NONE
 
 ---
 
-## Inventory
-
-```text
-NONE
-```
-
----
-
-## Notifications
+## Inventory effects
 
 ```text
 NONE
@@ -2353,53 +2534,28 @@ NONE
 
 ---
 
-## OpenAPI
-
-Expected:
-
-```text
-UNCHANGED
-```
-
----
-
 ## Tests
 
 Report:
 
 ```text
-transition matrix tests
-persistence tests
-idempotent no-op tests
-terminal-state tests
-immutability tests
-race/concurrency tests
-10.1 creation regression
-10.2 validation regression
+resolver matrix
+custom request
+anonymous linked MTO
+CUSTOMER linked MTO
+IN_STOCK rejection
+hidden Product cases
+inactive Category
+zero-stock MTO
+resource summary
+historical independence
+10.1 regression
+10.2 regression
+10.3 regression
+catalog regressions
+Cart/Checkout regressions if shared code touched
 full suite
 ```
-
----
-
-## MariaDB
-
-If executed, report:
-
-```text
-engine/version
-test class
-race scenarios
-iterations
-result
-```
-
-If not:
-
-```text
-NOT EXECUTED
-```
-
-with exact reason.
 
 ---
 
@@ -2426,9 +2582,9 @@ Return:
 ```text
 10.1 PASS
 10.2 PASS
-10.3 PASS/BLOCKED
-10.4 READY/BLOCKED
-10.5 NOT STARTED
+10.3 PASS
+10.4 PASS/BLOCKED
+10.5 READY/BLOCKED
 10.6 NOT STARTED
 10.7 NOT STARTED
 10.8 NOT STARTED
@@ -2436,43 +2592,50 @@ Return:
 
 ---
 
-# 129. Definition of Done
+# 154. Definition of Done
 
-Phase 10.3 is complete when:
+Phase 10.4 is complete when:
 
-- Request status uses one CLOSED domain enum;
-- only SUBMITTED, IN_REVIEW, CLOSED exist;
-- new Requests still default to SUBMITTED;
-- client cannot choose status during creation;
-- transition logic is centralized;
-- SUBMITTED→IN_REVIEW works;
-- SUBMITTED→CLOSED works;
-- IN_REVIEW→CLOSED works;
-- IN_REVIEW→SUBMITTED fails;
-- CLOSED→SUBMITTED fails;
-- CLOSED→IN_REVIEW fails;
-- CLOSED remains terminal;
-- same-state assignment is idempotent no-op;
-- no new arbitrary statuses are introduced;
-- invalid enum and invalid transition remain different failure classes;
-- transition evaluation occurs against current locked DB state;
-- concurrent stale staff writes cannot reopen or overwrite CLOSED;
-- status update modifies only status/timestamp;
-- original intake data remains immutable;
-- ownership remains immutable;
-- no Order is created;
-- no Payment is created;
-- no inventory changes;
-- no quote is created;
-- no Request→Order conversion exists;
-- no Request-specific status-history table is invented;
-- no notification workflow is added;
-- no frontend changes occur;
-- REQ-001 remains gated for 10.4/10.6;
-- full REQ-006 operational API remains deferred to 10.7;
+- `product_id` remains optional;
+- `product_id=null` remains valid;
+- custom requests do not query Product unnecessarily;
+- supplied opaque Product ID is resolved server-side;
+- numeric DB IDs are not accepted;
+- Product slug is not accepted as `product_id`;
+- the existing public Product visibility authority is reused;
+- active Product is required;
+- published Product is required;
+- soft-deleted Product is rejected;
+- active Category is required;
+- hidden Product states are not disclosed to anonymous callers;
+- Product type is derived server-side;
+- public MADE_TO_ORDER Product is accepted;
+- public IN_STOCK Product is rejected with `PRODUCT_NOT_REQUESTABLE`;
+- the error uses HTTP 409 according to the frozen Request contract;
+- MADE_TO_ORDER requestability does not depend on ProductStock;
+- no Variant is required;
+- zero-stock MADE_TO_ORDER remains requestable;
+- no price is locked;
+- no quote is produced;
+- no `product_details` snapshot is invented;
+- linked Request persists the correct Product FK;
+- created resource exposes only safe `{id,name,slug}` Product summary;
+- Product eligibility occurs after schema validation;
+- malformed Product IDs do not hit the database;
+- valid-looking missing Products use canonical public not-found behavior;
+- Product eligibility failure creates no FurnitureRequest;
+- Product eligibility failure creates no Order;
+- Product eligibility failure creates no Payment;
+- Product eligibility failure changes no inventory;
+- successful Request still begins SUBMITTED;
+- later Product changes do not prevent Request status lifecycle;
+- MADE_TO_ORDER remains prohibited from Cart/Checkout;
+- `PRODUCT_NOT_REQUESTABLE` is aligned across backend registry and frozen API documentation;
 - no schema migration is added;
 - no dependency is added;
-- full test suite remains green;
+- no frontend work occurs;
+- REQ-001 remains gated until attachment support is complete;
+- full regression suite remains green;
 - PHPStan reports zero errors;
 - Pint passes;
 - Composer audit is clean;
@@ -2480,63 +2643,58 @@ Phase 10.3 is complete when:
 
 ---
 
-# 130. Out of Scope
+# 155. Out of Scope
 
 Do not implement:
 
 ```text
-Phase 10.4 product-linked eligibility
-Phase 10.5 enquiries
-Phase 10.6 attachments
-Phase 10.7 staff/admin request management
+Phase 10.5 General Enquiries
+Phase 10.6 attachment handling
+Phase 10.7 staff/admin Request management
 Phase 10.8 Group J closure tests
 
-staff request list
-staff request detail
-staff_internal_notes mutation
-request filtering/search
-customer request history API
+Product management CRUD
+Product publication UI
+Variant selection
+inventory reservation
+price quotation
 Request→Order conversion
-quotations
-pricing
-inventory
+Cart
+Checkout
 ClickPesa
 payments
+delivery
 notifications
 frontend
 ```
 
 ---
 
-# 131. STOP Condition
+# 156. STOP Condition
 
-STOP when the repository has one authoritative lifecycle:
+STOP when the Request domain can make this authoritative decision:
 
 ```text
-SUBMITTED
-  ├──→ IN_REVIEW ───→ CLOSED
-  └─────────────────→ CLOSED
+product_id null/omitted
+→ custom Request allowed
+
+product_id supplied
+→ resolve through current public Product visibility
+    ├── missing/non-public → canonical not-found
+    ├── public IN_STOCK → 409 PRODUCT_NOT_REQUESTABLE
+    └── public MADE_TO_ORDER → linked Request allowed
 ```
 
 with:
 
 ```text
-same-state → idempotent no-op
-backward transition → conflict
-CLOSED → terminal
+no stock dependency
+no Variant dependency
+no price commitment
+no commerce side effects
 ```
 
-and the transition is:
-
-```text
-transactional
-row-locked
-race-safe
-intake-immutable
-commerce-side-effect-free
-```
-
-Do not continue automatically to Phase 10.4.
+Do not continue automatically to Phase 10.5.
 
 DO NOT COMMIT, STAGE OR PUSH.
 
@@ -2549,15 +2707,13 @@ The project owner handles all Git operations.
 10.1 PASS — Furniture Request API foundation (ADR/BACKEND-043)
 10.2 PASS — Request validation (ADR/BACKEND-044)
 10.3 PASS — Request status lifecycle (ADR/BACKEND-045)
-10.4 READY — Product-linked requests
-10.5 NOT STARTED — General enquiries
+10.4 PASS — Product-linked requests (ADR/BACKEND-046)
+10.5 READY — General enquiries
 10.6 NOT STARTED — Attachment handling
 10.7 NOT STARTED — Staff/admin request management
 10.8 NOT STARTED — Request/enquiry tests
 ```
 
-Group J is **not** complete. The status lifecycle is authoritative, but the
-public `POST /api/v1/requests` route remains **STUB/GATED** until Phase 10.4
-(linked-product eligibility) and Phase 10.6 (attachments), and the operational
-`PATCH /api/v1/requests/{request}` (REQ-006) remains **STUB/GATED** until
-Phase 10.7.
+Group J is **not** complete. The public `POST /api/v1/requests` route remains
+**STUB/GATED** (`config('requests.route_enabled') === false`) until Phase 10.6
+attachment support is implemented.

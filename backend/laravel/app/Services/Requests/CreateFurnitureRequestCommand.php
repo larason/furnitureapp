@@ -9,7 +9,9 @@ use App\Models\User;
  *
  * Carries only public/intake fields plus the server-resolved actor. It never
  * carries client authority over ownership, reference, status, staff notes, or
- * commerce fields; those are derived inside the creation service.
+ * commerce fields; those are derived inside the creation service. `productId`
+ * is the validated opaque public reference (`prod_...`) resolved to a Product
+ * by the creation service.
  */
 final readonly class CreateFurnitureRequestCommand
 {
@@ -18,7 +20,7 @@ final readonly class CreateFurnitureRequestCommand
      */
     public function __construct(
         public ?User $actor,
-        public ?int $productId,
+        public ?string $productId,
         public ?int $quantity,
         public string $name,
         public ?string $phone,

@@ -378,6 +378,7 @@ components:
           - RESOURCE_NOT_FOUND
           - PRODUCT_NOT_FOUND
           - PRODUCT_NOT_PURCHASABLE
+          - PRODUCT_NOT_REQUESTABLE
           - PRODUCT_UNAVAILABLE
           - INVALID_PRODUCT_VARIANT
           - CART_NOT_FOUND
