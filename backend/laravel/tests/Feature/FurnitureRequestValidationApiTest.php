@@ -350,6 +350,28 @@ class FurnitureRequestValidationApiTest extends TestCase
         $this->assertSame($product->id, FurnitureRequest::query()->sole()->product_id);
     }
 
+    public function test_missing_product_reference_is_rejected_without_a_server_error(): void
+    {
+        $response = $this->submit([...self::BASE, 'product_id' => ProductIdentifier::encodeId(999999)])
+            ->assertStatus(404);
+
+        $response->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+        $response->assertJsonPath('errors.0.field', 'product_id');
+        $this->assertDatabaseCount('furniture_requests', 0);
+    }
+
+    public function test_soft_deleted_product_reference_is_rejected(): void
+    {
+        $product = Product::factory()->madeToOrder()->create();
+        $product->delete();
+
+        $this->submit([...self::BASE, 'product_id' => ProductIdentifier::encode($product)])
+            ->assertStatus(404)
+            ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+
+        $this->assertDatabaseCount('furniture_requests', 0);
+    }
+
     public function test_authenticated_customer_gets_no_contact_fallback(): void
     {
         $customer = User::factory()->customer()->create([
