@@ -20,14 +20,18 @@ final class IdempotencyService
     /**
      * @param  array<string, mixed>  $intent
      * @param  Closure(): array<string, mixed>  $operation
+     * @param  (Closure(): void)|null  $precondition  Runs after a completed
+     *                                                replay/conflict is resolved but before the key is
+     *                                                claimed, so a branch that is guaranteed to fail
+     *                                                writes no idempotency row.
      */
-    public function execute(User $actor, string $action, string $key, array $intent, Closure $operation, int $successStatus = 200): IdempotentOutcome
+    public function execute(User $actor, string $action, string $key, array $intent, Closure $operation, int $successStatus = 200, ?Closure $precondition = null): IdempotentOutcome
     {
         $keyHash = hash('sha256', $key);
         $fingerprint = hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR));
 
         try {
-            return ConcurrentTransaction::run(fn (): IdempotentOutcome => $this->run($actor, $action, $keyHash, $fingerprint, $operation, $successStatus));
+            return ConcurrentTransaction::run(fn (): IdempotentOutcome => $this->run($actor, $action, $keyHash, $fingerprint, $operation, $successStatus, $precondition));
         } catch (IdempotencyClaimConflict) {
             return $this->existingOutcome($actor, $action, $keyHash, $fingerprint);
         }
@@ -35,8 +39,9 @@ final class IdempotencyService
 
     /**
      * @param  Closure(): array<string, mixed>  $operation
+     * @param  (Closure(): void)|null  $precondition
      */
-    private function run(User $actor, string $action, string $keyHash, string $fingerprint, Closure $operation, int $successStatus): IdempotentOutcome
+    private function run(User $actor, string $action, string $keyHash, string $fingerprint, Closure $operation, int $successStatus, ?Closure $precondition): IdempotentOutcome
     {
         $existing = $this->find($actor, $action, $keyHash);
 
@@ -47,6 +52,10 @@ final class IdempotencyService
 
         if ($existing !== null) {
             return $this->outcomeFrom($existing, $fingerprint);
+        }
+
+        if ($precondition !== null) {
+            $precondition();
         }
 
         $record = $this->claim($actor, $action, $keyHash, $fingerprint);

@@ -124,7 +124,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // ---------------------------------------------------------------------
     // CHECKOUT — authenticated customer only
     // ---------------------------------------------------------------------
-    Route::middleware(['clerk.auth', 'throttle:checkout'])->post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
+    Route::middleware(['clerk.auth', 'customer-cart', 'checkout.enabled', 'throttle:checkout'])->post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
 
     // ---------------------------------------------------------------------
     // CATALOG WRITES — STAFF/ADMIN (Staff only where products.manage allows)

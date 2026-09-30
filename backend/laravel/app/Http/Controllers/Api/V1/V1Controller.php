@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Support\NotImplementedResponse;
 use Illuminate\Http\JsonResponse;
 
 abstract class V1Controller extends Controller
@@ -16,6 +17,6 @@ abstract class V1Controller extends Controller
      */
     protected function notImplemented(): JsonResponse
     {
-        return response()->json(['status' => 'not_implemented'], 501);
+        return NotImplementedResponse::make();
     }
 }

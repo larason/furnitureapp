@@ -54,7 +54,6 @@ final class CheckoutTransaction
     public function execute(CheckoutCommand $command): IdempotentOutcome
     {
         $this->assertCustomer($command->customer);
-        $this->assertFulfillmentSupported($command);
 
         $intent = [
             'fulfillment_type' => $command->fulfillmentType->value,
@@ -68,6 +67,9 @@ final class CheckoutTransaction
             $intent,
             fn (): array => $this->perform($command),
             self::SUCCESS_STATUS,
+            // Resolved after a completed replay/conflict but before the key is
+            // claimed, so an unsupported branch writes no idempotency row.
+            fn () => $this->assertFulfillmentSupported($command),
         );
     }
 
@@ -262,9 +264,7 @@ final class CheckoutTransaction
     private function assertFulfillmentSupported(CheckoutCommand $command): void
     {
         if ($command->fulfillmentType !== FulfillmentType::PICKUP) {
-            throw new DeliveryCheckoutUnsupportedException(
-                'DELIVERY checkout persistence is blocked pending the billing snapshot model.',
-            );
+            throw new DeliveryCheckoutUnsupportedException;
         }
     }
 }
