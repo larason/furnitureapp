@@ -27,4 +27,15 @@ class OpenApiRequestContractTest extends TestCase
         $this->assertContains('PRODUCT_NOT_REQUESTABLE', $enum);
         $this->assertContains('PRODUCT_NOT_PURCHASABLE', $enum);
     }
+
+    public function test_req_001_operation_documents_product_linking_rejections(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        $responses = $document['paths']['/requests']['post']['responses'];
+
+        foreach (['201', '404', '409', '422', '429'] as $status) {
+            $this->assertArrayHasKey($status, $responses, "REQ-001 must document {$status}.");
+        }
+    }
 }
