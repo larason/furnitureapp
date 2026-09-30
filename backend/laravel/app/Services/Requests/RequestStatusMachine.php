@@ -16,12 +16,12 @@ final class RequestStatusMachine
     public static function decide(RequestStatus $current, RequestStatus $target): RequestStatusTransitionOutcome
     {
         if ($current === $target) {
-            return RequestStatusTransitionOutcome::IDEMPOTENT;
+            return RequestStatusTransitionOutcome::Idempotent;
         }
 
         return in_array($target, self::allowedTargets($current), true)
-            ? RequestStatusTransitionOutcome::ALLOWED
-            : RequestStatusTransitionOutcome::FORBIDDEN;
+            ? RequestStatusTransitionOutcome::Allowed
+            : RequestStatusTransitionOutcome::Forbidden;
     }
 
     /** @return list<RequestStatus> */

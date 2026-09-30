@@ -16,15 +16,15 @@ class RequestStatusMachineTest extends TestCase
     public static function transitions(): array
     {
         return [
-            'submitted -> submitted' => [RequestStatus::SUBMITTED, RequestStatus::SUBMITTED, RequestStatusTransitionOutcome::IDEMPOTENT],
-            'submitted -> in_review' => [RequestStatus::SUBMITTED, RequestStatus::IN_REVIEW, RequestStatusTransitionOutcome::ALLOWED],
-            'submitted -> closed' => [RequestStatus::SUBMITTED, RequestStatus::CLOSED, RequestStatusTransitionOutcome::ALLOWED],
-            'in_review -> submitted' => [RequestStatus::IN_REVIEW, RequestStatus::SUBMITTED, RequestStatusTransitionOutcome::FORBIDDEN],
-            'in_review -> in_review' => [RequestStatus::IN_REVIEW, RequestStatus::IN_REVIEW, RequestStatusTransitionOutcome::IDEMPOTENT],
-            'in_review -> closed' => [RequestStatus::IN_REVIEW, RequestStatus::CLOSED, RequestStatusTransitionOutcome::ALLOWED],
-            'closed -> submitted' => [RequestStatus::CLOSED, RequestStatus::SUBMITTED, RequestStatusTransitionOutcome::FORBIDDEN],
-            'closed -> in_review' => [RequestStatus::CLOSED, RequestStatus::IN_REVIEW, RequestStatusTransitionOutcome::FORBIDDEN],
-            'closed -> closed' => [RequestStatus::CLOSED, RequestStatus::CLOSED, RequestStatusTransitionOutcome::IDEMPOTENT],
+            'submitted -> submitted' => [RequestStatus::SUBMITTED, RequestStatus::SUBMITTED, RequestStatusTransitionOutcome::Idempotent],
+            'submitted -> in_review' => [RequestStatus::SUBMITTED, RequestStatus::IN_REVIEW, RequestStatusTransitionOutcome::Allowed],
+            'submitted -> closed' => [RequestStatus::SUBMITTED, RequestStatus::CLOSED, RequestStatusTransitionOutcome::Allowed],
+            'in_review -> submitted' => [RequestStatus::IN_REVIEW, RequestStatus::SUBMITTED, RequestStatusTransitionOutcome::Forbidden],
+            'in_review -> in_review' => [RequestStatus::IN_REVIEW, RequestStatus::IN_REVIEW, RequestStatusTransitionOutcome::Idempotent],
+            'in_review -> closed' => [RequestStatus::IN_REVIEW, RequestStatus::CLOSED, RequestStatusTransitionOutcome::Allowed],
+            'closed -> submitted' => [RequestStatus::CLOSED, RequestStatus::SUBMITTED, RequestStatusTransitionOutcome::Forbidden],
+            'closed -> in_review' => [RequestStatus::CLOSED, RequestStatus::IN_REVIEW, RequestStatusTransitionOutcome::Forbidden],
+            'closed -> closed' => [RequestStatus::CLOSED, RequestStatus::CLOSED, RequestStatusTransitionOutcome::Idempotent],
         ];
     }
 

@@ -7,7 +7,7 @@ namespace App\Services\Requests;
  */
 enum RequestStatusTransitionOutcome: string
 {
-    case ALLOWED = 'ALLOWED';
-    case IDEMPOTENT = 'IDEMPOTENT';
-    case FORBIDDEN = 'FORBIDDEN';
+    case Allowed = 'ALLOWED';
+    case Idempotent = 'IDEMPOTENT';
+    case Forbidden = 'FORBIDDEN';
 }

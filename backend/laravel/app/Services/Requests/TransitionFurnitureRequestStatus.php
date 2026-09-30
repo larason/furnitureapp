@@ -25,11 +25,11 @@ final class TransitionFurnitureRequestStatus
 
             $outcome = RequestStatusMachine::decide($locked->request_status, $target);
 
-            if ($outcome === RequestStatusTransitionOutcome::IDEMPOTENT) {
+            if ($outcome === RequestStatusTransitionOutcome::Idempotent) {
                 return $locked;
             }
 
-            if ($outcome === RequestStatusTransitionOutcome::FORBIDDEN) {
+            if ($outcome === RequestStatusTransitionOutcome::Forbidden) {
                 throw new InvalidRequestStatusTransition($locked->request_status, $target);
             }
 
