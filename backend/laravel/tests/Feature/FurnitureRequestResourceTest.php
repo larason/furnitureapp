@@ -99,4 +99,29 @@ class FurnitureRequestResourceTest extends TestCase
             'slug' => 'oak-sofa',
         ], $data['product']);
     }
+
+    public function test_partial_dimensions_are_expanded_with_null_members(): void
+    {
+        $request = FurnitureRequest::factory()->create([
+            'dimensions' => ['unit' => 'cm', 'length' => 220],
+        ]);
+
+        $data = (new FurnitureRequestResource($request))->resolve();
+
+        $this->assertSame([
+            'length' => 220,
+            'width' => null,
+            'height' => null,
+            'unit' => 'cm',
+        ], $data['dimensions']);
+    }
+
+    public function test_absent_dimensions_remain_null(): void
+    {
+        $request = FurnitureRequest::factory()->create(['dimensions' => null]);
+
+        $data = (new FurnitureRequestResource($request))->resolve();
+
+        $this->assertNull($data['dimensions']);
+    }
 }

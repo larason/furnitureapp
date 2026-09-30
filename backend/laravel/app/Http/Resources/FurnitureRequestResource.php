@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\FurnitureRequest;
 use App\Support\FurnitureRequestIdentifier;
 use App\Support\ProductIdentifier;
+use App\Support\RequestField;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -32,7 +33,7 @@ class FurnitureRequestResource extends JsonResource
             'name' => $furnitureRequest->name,
             'phone' => $furnitureRequest->phone,
             'email' => $furnitureRequest->email,
-            'dimensions' => $furnitureRequest->dimensions,
+            'dimensions' => $this->dimensions($furnitureRequest),
             'material' => $furnitureRequest->material,
             'color' => $furnitureRequest->color,
             'notes' => $furnitureRequest->message,
@@ -40,6 +41,28 @@ class FurnitureRequestResource extends JsonResource
             'attachments' => [],
             'created_at' => $furnitureRequest->created_at->toISOString(),
             'updated_at' => $furnitureRequest->updated_at->toISOString(),
+        ];
+    }
+
+    /**
+     * Expands stored (possibly partial) dimensions to the canonical frozen
+     * customer shape, with absent measurements returned as `null`.
+     *
+     * @return array{length: int|float|null, width: int|float|null, height: int|float|null, unit: string}|null
+     */
+    private function dimensions(FurnitureRequest $furnitureRequest): ?array
+    {
+        $dimensions = $furnitureRequest->dimensions;
+
+        if ($dimensions === null) {
+            return null;
+        }
+
+        return [
+            RequestField::LENGTH => $dimensions[RequestField::LENGTH] ?? null,
+            RequestField::WIDTH => $dimensions[RequestField::WIDTH] ?? null,
+            RequestField::HEIGHT => $dimensions[RequestField::HEIGHT] ?? null,
+            RequestField::UNIT => (string) ($dimensions[RequestField::UNIT] ?? RequestField::UNIT_CM),
         ];
     }
 

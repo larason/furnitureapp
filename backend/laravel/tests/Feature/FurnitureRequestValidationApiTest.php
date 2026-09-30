@@ -307,6 +307,21 @@ class FurnitureRequestValidationApiTest extends TestCase
         $this->assertSame(220.5, $dimensions['length']);
     }
 
+    public function test_partial_dimensions_are_returned_with_the_canonical_shape(): void
+    {
+        $response = $this->submit([...self::BASE, 'dimensions' => ['length' => 220, 'unit' => 'cm']])
+            ->assertStatus(201);
+
+        $this->assertSame(
+            ['length', 'width', 'height', 'unit'],
+            array_keys($response->json('data.dimensions')),
+        );
+        $response->assertJsonPath('data.dimensions.length', 220)
+            ->assertJsonPath('data.dimensions.width', null)
+            ->assertJsonPath('data.dimensions.height', null)
+            ->assertJsonPath('data.dimensions.unit', 'cm');
+    }
+
     /** @return list<array{0: mixed, 1: int, 2: string|null}> */
     public static function productIdProvider(): array
     {
