@@ -1,0 +1,336 @@
+<?php
+
+namespace App\Http\Requests;
+
+use App\Exceptions\Api\ApiException;
+use App\Models\FurnitureRequest;
+use App\Services\Requests\FurnitureRequestInput;
+use App\Support\ApiErrorCode;
+use App\Support\PhoneNumber;
+use App\Support\ProductIdentifier;
+use App\Support\RequestField;
+use Illuminate\Foundation\Http\FormRequest;
+use LogicException;
+
+/**
+ * Single authoritative REQ-001 schema/normalization boundary.
+ *
+ * Validation is explicit instead of Laravel-rule driven because the frozen
+ * contract needs JSON-number semantics, strict scalar typing, nested
+ * dimension key checks, and exact error codes the framework's rule-name
+ * heuristics cannot express. Phase 10.2 validates shape only; Product
+ * existence/active/published/MADE_TO_ORDER eligibility stays Phase 10.4.
+ */
+final class CreateFurnitureRequestRequest extends FormRequest
+{
+    private const ALLOWED_FIELDS = [
+        'product_id',
+        'quantity',
+        'name',
+        'phone',
+        'email',
+        'dimensions',
+        'material',
+        'color',
+        'notes',
+    ];
+
+    private const MEASUREMENT_FIELDS = [
+        RequestField::LENGTH,
+        RequestField::WIDTH,
+        RequestField::HEIGHT,
+    ];
+
+    private const DIMENSION_FIELDS = [
+        RequestField::LENGTH,
+        RequestField::WIDTH,
+        RequestField::HEIGHT,
+        RequestField::UNIT,
+    ];
+
+    private ?FurnitureRequestInput $normalizedInput = null;
+
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        return [];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $input = $this->getInputSource()->all();
+
+        $this->rejectUnknownFields($input);
+
+        $this->normalizedInput = new FurnitureRequestInput(
+            productId: self::normalizeProductId($input),
+            quantity: self::normalizeQuantity($input),
+            name: self::normalizeName($input),
+            phone: self::normalizePhone($input),
+            email: self::normalizeEmail($input),
+            dimensions: self::normalizeDimensions($input),
+            material: self::normalizeOptionalText($input, 'material', FurnitureRequest::MAX_MATERIAL),
+            color: self::normalizeOptionalText($input, 'color', FurnitureRequest::MAX_COLOR),
+            notes: self::normalizeOptionalText($input, 'notes', FurnitureRequest::MAX_MESSAGE),
+        );
+
+        self::assertContactChannel($this->normalizedInput);
+    }
+
+    public function normalizedInput(): FurnitureRequestInput
+    {
+        return $this->normalizedInput ?? throw new LogicException('REQ-001 input was not normalized.');
+    }
+
+    /** @param array<string, mixed> $input */
+    private function rejectUnknownFields(array $input): void
+    {
+        $unknown = array_diff(array_keys($input), self::ALLOWED_FIELDS);
+
+        if ($unknown !== []) {
+            $field = (string) reset($unknown);
+
+            throw self::error(ApiErrorCode::INVALID_VALUE, $field, 'The request contains an unsupported field.');
+        }
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizeProductId(array $input): ?string
+    {
+        $value = $input['product_id'] ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'product_id', 'The product_id field must be a string.');
+        }
+
+        if (ProductIdentifier::decode($value) === null) {
+            throw self::error(ApiErrorCode::INVALID_FORMAT, 'product_id', 'The product_id field must be a valid product reference.');
+        }
+
+        return $value;
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizeQuantity(array $input): ?int
+    {
+        $value = $input['quantity'] ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_int($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'quantity', 'The quantity field must be an integer.');
+        }
+
+        if ($value < 1 || $value > FurnitureRequest::MAX_QUANTITY) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'quantity', 'The quantity field must be between 1 and '.FurnitureRequest::MAX_QUANTITY.'.');
+        }
+
+        return $value;
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizeName(array $input): string
+    {
+        $value = $input['name'] ?? null;
+
+        if ($value === null) {
+            throw self::error(ApiErrorCode::MISSING_REQUIRED_FIELD, 'name', 'The name field is required.');
+        }
+
+        if (! is_string($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'name', 'The name field must be a string.');
+        }
+
+        $name = trim(preg_replace('/\s+/u', ' ', trim($value)) ?? $value);
+
+        if ($name === '') {
+            throw self::error(ApiErrorCode::MISSING_REQUIRED_FIELD, 'name', 'The name field is required.');
+        }
+
+        if (mb_strlen($name) > FurnitureRequest::MAX_NAME) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'name', 'The name field must not be greater than '.FurnitureRequest::MAX_NAME.' characters.');
+        }
+
+        return $name;
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizePhone(array $input): ?string
+    {
+        $value = $input['phone'] ?? null;
+
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'phone', 'The phone field must be a string.');
+        }
+
+        $phone = trim($value);
+
+        if (mb_strlen($phone) > PhoneNumber::MAX_LENGTH) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'phone', 'The phone field must not be greater than '.PhoneNumber::MAX_LENGTH.' characters.');
+        }
+
+        if (! PhoneNumber::isWellFormed($phone)) {
+            throw self::error(ApiErrorCode::INVALID_FORMAT, 'phone', 'The phone field format is invalid.');
+        }
+
+        return $phone;
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizeEmail(array $input): ?string
+    {
+        $value = $input['email'] ?? null;
+
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'email', 'The email field must be a string.');
+        }
+
+        $email = mb_strtolower(trim($value));
+
+        if (mb_strlen($email) > FurnitureRequest::MAX_EMAIL) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'email', 'The email field must not be greater than '.FurnitureRequest::MAX_EMAIL.' characters.');
+        }
+
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            throw self::error(ApiErrorCode::INVALID_FORMAT, 'email', 'The email field format is invalid.');
+        }
+
+        return $email;
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizeOptionalText(array $input, string $field, int $maxLength): ?string
+    {
+        $value = $input[$field] ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, $field, "The {$field} field must be a string.");
+        }
+
+        $text = trim($value);
+
+        if ($text === '') {
+            return null;
+        }
+
+        if (mb_strlen($text) > $maxLength) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, $field, "The {$field} field must not be greater than {$maxLength} characters.");
+        }
+
+        return $text;
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function normalizeDimensions(array $input): ?array
+    {
+        $value = $input['dimensions'] ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_array($value) || array_is_list($value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'dimensions', 'The dimensions field must be an object.');
+        }
+
+        self::assertDimensionKeys($value);
+
+        $normalized = [RequestField::UNIT => self::normalizeDimensionUnit($value)];
+
+        foreach (self::MEASUREMENT_FIELDS as $field) {
+            $dimension = $value[$field] ?? null;
+
+            if ($dimension === null) {
+                continue;
+            }
+
+            $normalized[$field] = self::normalizeDimensionValue($field, $dimension);
+        }
+
+        if (count($normalized) === 1) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'dimensions', 'The dimensions field must include at least one measurement.');
+        }
+
+        return $normalized;
+    }
+
+    /** @param array<string, mixed> $value */
+    private static function assertDimensionKeys(array $value): void
+    {
+        $unknown = array_diff(array_keys($value), self::DIMENSION_FIELDS);
+
+        if ($unknown !== []) {
+            $key = (string) reset($unknown);
+
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'dimensions.'.$key, "The dimensions.{$key} field is not supported.");
+        }
+    }
+
+    /** @param array<string, mixed> $value */
+    private static function normalizeDimensionUnit(array $value): string
+    {
+        $unit = $value[RequestField::UNIT] ?? null;
+
+        if ($unit === null) {
+            throw self::error(ApiErrorCode::MISSING_REQUIRED_FIELD, 'dimensions.unit', 'The dimensions.unit field is required.');
+        }
+
+        if (! is_string($unit)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'dimensions.unit', 'The dimensions.unit field must be a string.');
+        }
+
+        if ($unit !== RequestField::UNIT_CM) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'dimensions.unit', 'The dimensions.unit field must be cm.');
+        }
+
+        return $unit;
+    }
+
+    private static function normalizeDimensionValue(string $field, mixed $value): int|float
+    {
+        if ((! is_int($value) && ! is_float($value)) || ! is_finite((float) $value)) {
+            throw self::error(ApiErrorCode::INVALID_TYPE, 'dimensions.'.$field, "The dimensions.{$field} field must be a number.");
+        }
+
+        if ($value <= 0 || $value > RequestField::MAX_DIMENSION) {
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'dimensions.'.$field, "The dimensions.{$field} field must be a positive number up to ".RequestField::MAX_DIMENSION.'.');
+        }
+
+        return $value;
+    }
+
+    private static function assertContactChannel(FurnitureRequestInput $input): void
+    {
+        if ($input->phone === null && $input->email === null) {
+            throw self::error(ApiErrorCode::MISSING_REQUIRED_FIELD, 'phone', 'At least one of phone or email is required.');
+        }
+    }
+
+    private static function error(ApiErrorCode $code, string $field, string $message): ApiException
+    {
+        return new ApiException($code, $message, 422, $field);
+    }
+}

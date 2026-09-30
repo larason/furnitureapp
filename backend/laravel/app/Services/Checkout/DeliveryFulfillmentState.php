@@ -7,15 +7,12 @@ use App\Support\AddressField;
 use App\Support\DeliveryFeeStatus;
 use App\Support\FulfillmentType;
 use App\Support\OrderStatus;
+use App\Support\PhoneNumber;
 use DomainException;
 
 final readonly class DeliveryFulfillmentState
 {
     private const MAX_RECIPIENT_NAME = 255;
-
-    private const MAX_PHONE = 30;
-
-    private const PHONE_PATTERN = '/^\+?[0-9][0-9 ().-]{6,29}$/';
 
     private function __construct(
         private array $deliveryAddress,
@@ -156,9 +153,9 @@ final readonly class DeliveryFulfillmentState
 
     private static function normalizePhone(mixed $value): string
     {
-        $phone = self::normalizeRequiredString('phone', $value, self::MAX_PHONE);
+        $phone = self::normalizeRequiredString('phone', $value, PhoneNumber::MAX_LENGTH);
 
-        if (preg_match(self::PHONE_PATTERN, $phone) !== 1) {
+        if (! PhoneNumber::isWellFormed($phone)) {
             throw new DomainException('Delivery address phone is invalid.');
         }
 
