@@ -180,7 +180,7 @@ class FurnitureRequestCreationApiTest extends TestCase
             'name' => 'Asha',
             'phone' => '+255700000001',
             'product_id' => 'not-a-product',
-        ])->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_VALUE');
+        ])->assertStatus(422)->assertJsonPath('errors.0.code', 'INVALID_FORMAT');
     }
 
     public function test_linked_product_is_persisted_and_projected_as_a_summary(): void

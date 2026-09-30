@@ -100,8 +100,21 @@ final class RequestField
             throw new DomainException('Dimensions unit must be cm.');
         }
 
+        $hasMeasurement = false;
+
         foreach ([self::LENGTH, self::WIDTH, self::HEIGHT] as $key) {
-            self::assertPositiveDimension($key, $dimensions[$key] ?? null);
+            $value = $dimensions[$key] ?? null;
+
+            if ($value === null) {
+                continue;
+            }
+
+            self::assertPositiveDimension($key, $value);
+            $hasMeasurement = true;
+        }
+
+        if (! $hasMeasurement) {
+            throw new DomainException('Dimensions require at least one measurement.');
         }
     }
 

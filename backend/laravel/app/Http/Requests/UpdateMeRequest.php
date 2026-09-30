@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -19,7 +20,7 @@ final class UpdateMeRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'string', 'min:1', 'max:120'],
-            'phone' => ['sometimes', 'nullable', 'string', 'max:30', 'regex:/^\+?[0-9][0-9 ().-]{6,29}$/'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:'.PhoneNumber::MAX_LENGTH, 'regex:'.PhoneNumber::PATTERN],
         ];
     }
 
