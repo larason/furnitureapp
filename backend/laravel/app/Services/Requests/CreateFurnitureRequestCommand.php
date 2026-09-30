@@ -14,7 +14,7 @@ use App\Models\User;
 final readonly class CreateFurnitureRequestCommand
 {
     /**
-     * @param  array{length: int|float, width: int|float, height: int|float, unit: string}|null  $dimensions
+     * @param  array{length?: int|float, width?: int|float, height?: int|float, unit: string}|null  $dimensions
      */
     public function __construct(
         public ?User $actor,
