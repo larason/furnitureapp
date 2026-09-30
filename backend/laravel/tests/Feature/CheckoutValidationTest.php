@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Exceptions\DeliveryCheckoutUnsupportedException;
 use App\Models\CartItem;
+use App\Models\IdempotencyKey;
 use App\Models\Order;
 use App\Models\OrderItemInventoryAllocation;
 use App\Models\OrderStatusHistory;
@@ -78,6 +78,21 @@ class CheckoutValidationTest extends TestCase
             ->assertStatus(501);
 
         $this->assertSame(0, Order::query()->count());
+    }
+
+    public function test_gated_route_returns_the_stub_beyond_the_checkout_throttle_budget(): void
+    {
+        config(['checkout.route_enabled' => false]);
+        $customer = $this->cartCustomer();
+
+        RateLimiter::clear($this->checkoutKey($customer));
+        $headers = $this->authenticateAs($customer);
+
+        // The gate runs before throttle:checkout, so repeated requests never
+        // exhaust the 5/min budget and never return 429.
+        foreach (range(1, 8) as $_) {
+            $this->withHeaders($headers)->postJson(self::URL, [])->assertStatus(501);
+        }
     }
 
     public function test_anonymous_checkout_is_rejected_before_validation(): void
@@ -315,21 +330,17 @@ class CheckoutValidationTest extends TestCase
         $cart = $this->activeCartFor($customer);
         $this->itemFor($cart, $product, $variant, 1);
 
-        $this->withoutExceptionHandling();
-
-        try {
-            $this->attempt($customer, [
-                'fulfillment_type' => 'DELIVERY',
-                'delivery_address' => ['recipient_name' => 'Asha', 'phone' => '+255700000001', 'address_line' => 'Street', 'city' => 'Dar es Salaam'],
-            ]);
-            $this->fail('Expected the DELIVERY persistence blocker.');
-        } catch (DeliveryCheckoutUnsupportedException) {
-            // expected
-        }
+        $this->attempt($customer, [
+            'fulfillment_type' => 'DELIVERY',
+            'delivery_address' => ['recipient_name' => 'Asha', 'phone' => '+255700000001', 'address_line' => 'Street', 'city' => 'Dar es Salaam'],
+        ])->assertStatus(422)->assertJsonPath('errors.0.code', 'BUSINESS_RULE_VIOLATION');
 
         $this->assertSame(0, Order::query()->count());
         $this->assertSame(1, CartItem::query()->where('cart_id', $cart->id)->count());
         $this->assertSame(0, $variant->fresh()->stocks->first()->reserved_quantity);
+
+        // The blocker is decided before the idempotency key is claimed.
+        $this->assertSame(0, IdempotencyKey::query()->count());
     }
 
     public function test_query_parameters_cannot_supply_business_input(): void
@@ -348,6 +359,22 @@ class CheckoutValidationTest extends TestCase
             ->assertJsonPath('errors.0.field', 'fulfillment_type');
 
         $this->assertSame(0, Order::query()->count());
+    }
+
+    public function test_non_business_query_parameters_do_not_block_a_valid_checkout(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10);
+        $customer = $this->cartCustomer();
+        $cart = $this->activeCartFor($customer);
+        $this->itemFor($cart, $product, $variant, 1);
+
+        RateLimiter::clear($this->checkoutKey($customer));
+
+        $this->withHeaders($this->authenticateAs($customer) + ['Idempotency-Key' => (string) Str::uuid()])
+            ->postJson(self::URL.'?utm_source=email&cb=123', ['fulfillment_type' => 'PICKUP'])
+            ->assertStatus(201);
+
+        $this->assertSame(1, Order::query()->count());
     }
 
     public function test_empty_property_name_does_not_bypass_the_allow_list(): void

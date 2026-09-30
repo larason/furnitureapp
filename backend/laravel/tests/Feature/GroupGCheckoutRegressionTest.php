@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Exceptions\DeliveryCheckoutUnsupportedException;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderItemInventoryAllocation;
@@ -147,15 +146,11 @@ class GroupGCheckoutRegressionTest extends TestCase
 
         $address = ['recipient_name' => 'Asha', 'phone' => '+255700000001', 'address_line' => 'Street', 'city' => 'Dar es Salaam'];
 
-        // canonical city is accepted by validation (reaches the persistence blocker)
-        $this->withoutExceptionHandling();
-        try {
-            $this->checkout($customer, ['fulfillment_type' => 'DELIVERY', 'delivery_address' => $address]);
-            $this->fail('Expected the DELIVERY persistence blocker.');
-        } catch (DeliveryCheckoutUnsupportedException) {
-            // expected: valid DELIVERY normalization succeeded
-        }
-        $this->withExceptionHandling();
+        // canonical city is accepted by validation and reaches the persistence
+        // blocker, which is contract-mapped (never a generic 500).
+        $this->checkout($customer, ['fulfillment_type' => 'DELIVERY', 'delivery_address' => $address])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.0.code', 'BUSINESS_RULE_VIOLATION');
 
         // region substitute and city+region are rejected
         foreach ([

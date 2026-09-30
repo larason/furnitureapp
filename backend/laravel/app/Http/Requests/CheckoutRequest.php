@@ -13,11 +13,13 @@ use Illuminate\Validation\Rule;
 
 /**
  * CHK-001 request boundary: strict transport/shape validation only. Input is
- * JSON-body only; any query parameter is rejected so business values cannot be
- * supplied outside the documented allow-list. It owns no Cart/Product/Variant/
- * stock/pricing queries; those are decided inside the Phase 7.7 transaction.
- * Branch and delivery-domain checks reuse the existing Phase 7.2/7.4
- * normalization authority and map to canonical codes.
+ * JSON-body only; a query parameter that collides with the body allow-list is
+ * rejected so business values cannot be supplied outside the documented JSON
+ * body. Unrelated query parameters (analytics/cache-buster tags) are ignored as
+ * the frozen contract documents no query rule for CHK-001. It owns no
+ * Cart/Product/Variant/stock/pricing queries; those are decided inside the
+ * Phase 7.7 transaction. Branch and delivery-domain checks reuse the existing
+ * Phase 7.2/7.4 normalization authority and map to canonical codes.
  */
 final class CheckoutRequest extends FormRequest
 {
@@ -39,13 +41,15 @@ final class CheckoutRequest extends FormRequest
     {
         $this->idempotencyKey = IdempotencyKeyHeader::require($this);
 
-        $queryParameter = array_key_first($this->query->all());
+        $collidingQueryParameter = array_intersect(array_keys($this->query->all()), self::TOP_LEVEL_FIELDS);
 
-        if ($queryParameter !== null) {
-            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'Checkout accepts a JSON body only.', 422, (string) $queryParameter);
+        if ($collidingQueryParameter !== []) {
+            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'Checkout accepts a JSON body only.', 422, (string) reset($collidingQueryParameter));
         }
 
-        $unknown = array_diff(array_keys($this->all()), self::TOP_LEVEL_FIELDS);
+        // Body-only keys: a JSON request's input source is the decoded body
+        // (query parameters are not part of the frozen CHK-001 contract).
+        $unknown = array_diff(array_keys($this->getInputSource()->all()), self::TOP_LEVEL_FIELDS);
 
         if ($unknown !== []) {
             $field = (string) reset($unknown);

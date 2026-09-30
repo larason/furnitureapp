@@ -347,12 +347,13 @@ class CheckoutTransactionTest extends TestCase
         $this->itemFor($cart, $product, $variant, 2);
 
         try {
-            DB::transaction(fn () => $this->checkout()->execute(CheckoutCommand::delivery($customer, ['city' => 'Dar es Salaam'], 'k')));
+            $this->checkout()->execute(CheckoutCommand::delivery($customer, ['city' => 'Dar es Salaam'], 'k'));
             $this->fail('Expected DELIVERY checkout to hit the persistence blocker.');
         } catch (DeliveryCheckoutUnsupportedException) {
             // expected
         }
 
+        // The guard is a pre-claim precondition, so no idempotency row is written.
         $this->assertSame(0, Order::query()->count());
         $this->assertSame(0, IdempotencyKey::query()->count());
         $this->assertSame(1, $cart->fresh()->items()->count());
