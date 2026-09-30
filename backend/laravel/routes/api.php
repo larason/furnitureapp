@@ -73,7 +73,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
         Route::post('/email/verify/resend', [AuthController::class, 'resendEmailVerification'])->name('auth.email.resend');
     });
 
-    Route::middleware(['clerk.optional', 'throttle:anonymous-submit'])->post('/requests', [RequestController::class, 'store'])->name('requests.store');
+    Route::middleware(['clerk.optional', 'customer-submission', 'requests.enabled', 'throttle:anonymous-submit'])->post('/requests', [RequestController::class, 'store'])->name('requests.store');
     Route::middleware(['clerk.optional', 'throttle:anonymous-submit'])->post('/enquiries', [EnquiryController::class, 'store'])->name('enquiries.store');
 
     // ---------------------------------------------------------------------

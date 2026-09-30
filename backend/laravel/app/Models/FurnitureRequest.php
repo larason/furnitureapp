@@ -31,6 +31,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $staff_internal_notes
  * @property Carbon $created_at
  * @property Carbon $updated_at
+ * @property-read User|null $user
+ * @property-read Product|null $product
  */
 #[Fillable([
     'user_id',
