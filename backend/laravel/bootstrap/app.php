@@ -11,6 +11,7 @@ use App\Http\Middleware\CustomerCartAccess;
 use App\Http\Middleware\CustomerSubmissionAccess;
 use App\Http\Middleware\EnforceApiRequestLimits;
 use App\Http\Middleware\EnsureCheckoutEnabled;
+use App\Http\Middleware\EnsureEnquiriesEnabled;
 use App\Http\Middleware\EnsureFurnitureRequestsEnabled;
 use App\Http\Middleware\OperationalAccess;
 use App\Http\Middleware\RequirePermission;
@@ -59,6 +60,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'customer-submission' => CustomerSubmissionAccess::class,
             'checkout.enabled' => EnsureCheckoutEnabled::class,
             'requests.enabled' => EnsureFurnitureRequestsEnabled::class,
+            'enquiries.enabled' => EnsureEnquiriesEnabled::class,
             'guest-cart-mutation' => ValidateGuestCartMutation::class,
             'operational' => OperationalAccess::class,
             'admin' => AdministrativeAccess::class,

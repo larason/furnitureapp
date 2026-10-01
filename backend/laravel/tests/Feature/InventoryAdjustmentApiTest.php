@@ -2,8 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
-use App\Authentication\ClerkTokenVerifier;
 use App\Models\AuditEvent;
 use App\Models\Category;
 use App\Models\IdempotencyKey;
@@ -24,10 +22,12 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
+use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
 class InventoryAdjustmentApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -406,19 +406,6 @@ class InventoryAdjustmentApiTest extends TestCase
     private function createAdmin(): User
     {
         return User::factory()->admin()->create(['clerk_user_id' => 'admin_1']);
-    }
-
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 
     /**

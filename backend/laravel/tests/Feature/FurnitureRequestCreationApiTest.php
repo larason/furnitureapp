@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\Clerk\ClerkAuthenticationFailure;
 use App\Authentication\ClerkTokenVerifier;
 use App\Models\FurnitureRequest;
@@ -11,10 +10,12 @@ use App\Models\User;
 use App\Support\ProductIdentifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter;
+use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
 class FurnitureRequestCreationApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
     use RefreshDatabase;
 
     private const URL = '/api/v1/requests';
@@ -210,19 +211,5 @@ class FurnitureRequestCreationApiTest extends TestCase
             ->assertJsonPath('status', 'not_implemented');
 
         $this->assertDatabaseCount('furniture_requests', 0);
-    }
-
-    /** @return array<string, string> */
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            (string) $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 }

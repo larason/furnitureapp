@@ -378,6 +378,7 @@ components:
           - RESOURCE_NOT_FOUND
           - PRODUCT_NOT_FOUND
           - PRODUCT_NOT_PURCHASABLE
+          - PRODUCT_NOT_REQUESTABLE
           - PRODUCT_UNAVAILABLE
           - INVALID_PRODUCT_VARIANT
           - CART_NOT_FOUND
@@ -1514,6 +1515,11 @@ components:
           - DELIVERY
           - OTHER
           description: CLOSED, nullable
+        product_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
         product:
           anyOf:
           - type: object
@@ -1525,6 +1531,11 @@ components:
               slug:
                 type: string
           - type: 'null'
+          readOnly: true
+        order_id:
+          type:
+          - string
+          - 'null'
           readOnly: true
         order:
           anyOf:
@@ -1550,15 +1561,20 @@ components:
     CreateEnquiryRequest:
       type: object
       required:
-      - name
       - subject
       - message
       properties:
         name:
-          type: string
+          type:
+          - string
+          - 'null'
+          description: Required for anonymous; optional/derived from the account for an authenticated customer
         email:
-          type: string
+          type:
+          - string
+          - 'null'
           format: email
+          description: Anonymous requires at least one of phone/email; optional/derived for an authenticated customer
         subject:
           type: string
         message:
@@ -1581,12 +1597,12 @@ components:
           - string
           - 'null'
           maxLength: 30
-          description: At least one of phone/email required for anonymous
+          description: Anonymous requires at least one of phone/email; optional/derived for an authenticated customer
         order_id:
           type:
           - string
           - 'null'
-          description: Optional nullable, must be owned if supplied
+          description: Anonymous submission must omit; authenticated customers may reference an order they own
       additionalProperties: false
     Attachment:
       type: object
@@ -3439,6 +3455,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/MadeToOrderRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':
@@ -3659,6 +3679,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Enquiry'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':

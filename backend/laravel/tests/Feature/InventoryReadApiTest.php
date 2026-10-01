@@ -2,8 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
-use App\Authentication\ClerkTokenVerifier;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductStock;
@@ -18,10 +16,12 @@ use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
+use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
 class InventoryReadApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
     use RefreshDatabase;
 
     private const INDEX = '/api/v1/inventory';
@@ -360,19 +360,6 @@ class InventoryReadApiTest extends TestCase
     private function createStaff(): User
     {
         return User::factory()->staff()->create(['clerk_user_id' => 'staff_1']);
-    }
-
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 
     private function assertSameCanonicalizeEqual(array $expected, array $actual): void

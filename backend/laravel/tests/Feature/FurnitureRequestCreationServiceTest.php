@@ -12,6 +12,7 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Services\Requests\CreateFurnitureRequest;
 use App\Services\Requests\CreateFurnitureRequestCommand;
+use App\Support\ProductIdentifier;
 use App\Support\RequestStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -141,7 +142,7 @@ class FurnitureRequestCreationServiceTest extends TestCase
     ): FurnitureRequest {
         return app(CreateFurnitureRequest::class)->create(new CreateFurnitureRequestCommand(
             actor: $actor,
-            productId: $productId,
+            productId: $productId === null ? null : ProductIdentifier::encodeId($productId),
             quantity: $quantity,
             name: $name,
             phone: $phone,

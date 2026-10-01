@@ -219,6 +219,19 @@ class FurnitureRequestStatusTransitionTest extends TestCase
         $this->assertSame(RequestStatus::SUBMITTED, $request->request_status);
     }
 
+    public function test_status_transition_does_not_revalidate_live_product_visibility(): void
+    {
+        $product = Product::factory()->madeToOrder()->create();
+        $request = FurnitureRequest::factory()->forProduct($product)->create();
+
+        $product->forceFill(['is_published' => false])->save();
+        $this->assertFalse($product->fresh()->is_published);
+
+        $result = $this->service()->transition($request, RequestStatus::IN_REVIEW);
+
+        $this->assertSame(RequestStatus::IN_REVIEW, $result->request_status);
+    }
+
     private function service(): TransitionFurnitureRequestStatus
     {
         return app(TransitionFurnitureRequestStatus::class);

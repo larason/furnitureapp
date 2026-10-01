@@ -2,8 +2,6 @@
 
 namespace Tests\Concerns;
 
-use App\Authentication\AuthenticatedClerkIdentity;
-use App\Authentication\ClerkTokenVerifier;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Category;
@@ -13,26 +11,15 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Support\CartStatus;
 use App\Support\ProductType;
+use Tests\Support\AuthenticatesApiUser;
 
 trait CartTestSupport
 {
+    use AuthenticatesApiUser;
+
     protected function cartCustomer(string $clerkUserId = 'customer_cart'): User
     {
         return User::factory()->customer()->create(['clerk_user_id' => $clerkUserId]);
-    }
-
-    /** @return array<string, string> */
-    protected function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 
     /** @return array{0: Product, 1: ProductVariant} */

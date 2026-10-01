@@ -48,6 +48,8 @@ final class CreateFurnitureRequestRequest extends FormRequest
         RequestField::UNIT,
     ];
 
+    private const CHARACTERS_SUFFIX = ' characters.';
+
     private ?FurnitureRequestInput $normalizedInput = null;
 
     public function authorize(): bool
@@ -159,7 +161,7 @@ final class CreateFurnitureRequestRequest extends FormRequest
         }
 
         if (mb_strlen($name) > FurnitureRequest::MAX_NAME) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'name', 'The name field must not be greater than '.FurnitureRequest::MAX_NAME.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'name', 'The name field must not be greater than '.FurnitureRequest::MAX_NAME.self::CHARACTERS_SUFFIX);
         }
 
         return $name;
@@ -181,7 +183,7 @@ final class CreateFurnitureRequestRequest extends FormRequest
         $phone = trim($value);
 
         if (mb_strlen($phone) > PhoneNumber::MAX_LENGTH) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'phone', 'The phone field must not be greater than '.PhoneNumber::MAX_LENGTH.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'phone', 'The phone field must not be greater than '.PhoneNumber::MAX_LENGTH.self::CHARACTERS_SUFFIX);
         }
 
         if (! PhoneNumber::isWellFormed($phone)) {
@@ -207,7 +209,7 @@ final class CreateFurnitureRequestRequest extends FormRequest
         $email = mb_strtolower(trim($value));
 
         if (mb_strlen($email) > FurnitureRequest::MAX_EMAIL) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'email', 'The email field must not be greater than '.FurnitureRequest::MAX_EMAIL.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'email', 'The email field must not be greater than '.FurnitureRequest::MAX_EMAIL.self::CHARACTERS_SUFFIX);
         }
 
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
