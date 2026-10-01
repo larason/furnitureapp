@@ -275,6 +275,23 @@ class EnquiryValidationApiTest extends TestCase
         $this->assertDatabaseCount('enquiries', 0);
     }
 
+    public function test_over_long_derived_profile_name_is_rejected_not_a_server_error(): void
+    {
+        $customer = User::factory()->customer()->create([
+            'clerk_user_id' => 'enq_long_name',
+            'name' => str_repeat('N', 130),
+            'email' => 'long@example.com',
+            'phone' => '+255700000123',
+        ]);
+
+        $this->submit(
+            ['subject' => 'Delivery question', 'message' => 'Do you deliver furniture to Dodoma?'],
+            $this->authenticateAs($customer),
+        )->assertStatus(422)->assertJsonPath('errors.0.code', 'MISSING_REQUIRED_FIELD');
+
+        $this->assertDatabaseCount('enquiries', 0);
+    }
+
     public function test_product_association_accepts_any_public_product_type(): void
     {
         $inStock = Product::factory()->inStock()->create(['name' => 'Ready Sofa', 'slug' => 'ready-sofa']);

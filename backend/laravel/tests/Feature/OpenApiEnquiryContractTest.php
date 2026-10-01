@@ -41,6 +41,6 @@ class OpenApiEnquiryContractTest extends TestCase
         $request = $document['components']['schemas']['CreateEnquiryRequest'];
 
         $this->assertFalse($request['additionalProperties']);
-        $this->assertSame(['name', 'subject', 'message'], $request['required']);
+        $this->assertSame(['subject', 'message'], $request['required']);
     }
 }

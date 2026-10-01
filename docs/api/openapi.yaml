@@ -1561,15 +1561,20 @@ components:
     CreateEnquiryRequest:
       type: object
       required:
-      - name
       - subject
       - message
       properties:
         name:
-          type: string
+          type:
+          - string
+          - 'null'
+          description: Required for anonymous; optional/derived from the account for an authenticated customer
         email:
-          type: string
+          type:
+          - string
+          - 'null'
           format: email
+          description: Anonymous requires at least one of phone/email; optional/derived for an authenticated customer
         subject:
           type: string
         message:
@@ -1592,12 +1597,12 @@ components:
           - string
           - 'null'
           maxLength: 30
-          description: At least one of phone/email required for anonymous
+          description: Anonymous requires at least one of phone/email; optional/derived for an authenticated customer
         order_id:
           type:
           - string
           - 'null'
-          description: Optional nullable, must be owned if supplied
+          description: Anonymous submission must omit; authenticated customers may reference an order they own
       additionalProperties: false
     Attachment:
       type: object

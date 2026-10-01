@@ -39,9 +39,13 @@ final class EnquiryContactSnapshotFactory
 
     private static function usableName(?string $value): ?string
     {
-        $name = trim($value ?? '');
+        $name = trim((string) preg_replace('/\s+/u', ' ', trim($value ?? '')));
 
-        return $name === '' ? null : trim((string) preg_replace('/\s+/u', ' ', $name));
+        if ($name === '' || mb_strlen($name) > Enquiry::MAX_NAME) {
+            return null;
+        }
+
+        return $name;
     }
 
     private static function usablePhone(?string $value): ?string
