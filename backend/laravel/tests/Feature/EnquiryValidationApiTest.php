@@ -18,6 +18,7 @@ use App\Support\OrderIdentifier;
 use App\Support\ProductIdentifier;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\AuthenticatesApiUser;
 use Tests\Support\SubmitsApiRequests;
@@ -29,14 +30,17 @@ class EnquiryValidationApiTest extends TestCase
     use RefreshDatabase;
     use SubmitsApiRequests;
 
-    private const URL = '/api/v1/enquiries';
-
     private const BASE = [
         'name' => 'Asha Mwangi',
         'phone' => '+255700000001',
         'subject' => 'Delivery question',
         'message' => 'Do you deliver furniture to Dodoma?',
     ];
+
+    protected function endpoint(): string
+    {
+        return '/api/v1/enquiries';
+    }
 
     protected function setUp(): void
     {
@@ -375,8 +379,9 @@ class EnquiryValidationApiTest extends TestCase
     {
         $customer = User::factory()->customer()->create(['clerk_user_id' => 'enq_foreign']);
         $foreign = Order::factory()->create();
+        $unknown = 'ord_'.strtolower((string) Str::ulid());
 
-        foreach ([OrderIdentifier::encode($foreign), OrderIdentifier::encode(Order::factory()->create())] as $identifier) {
+        foreach ([OrderIdentifier::encode($foreign), $unknown] as $identifier) {
             $this->submit([...self::BASE, 'order_id' => $identifier], $this->authenticateAs($customer))
                 ->assertStatus(404)
                 ->assertJsonPath('errors.0.code', 'ORDER_NOT_FOUND')

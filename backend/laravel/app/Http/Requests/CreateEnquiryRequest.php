@@ -39,6 +39,8 @@ final class CreateEnquiryRequest extends FormRequest
 
     private const MESSAGE_MIN = 10;
 
+    private const CHARACTERS_SUFFIX = ' characters.';
+
     private ?EnquiryInput $normalizedInput = null;
 
     public function authorize(): bool
@@ -109,7 +111,7 @@ final class CreateEnquiryRequest extends FormRequest
         }
 
         if (mb_strlen($name) > Enquiry::MAX_NAME) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'name', 'The name field must not be greater than '.Enquiry::MAX_NAME.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'name', 'The name field must not be greater than '.Enquiry::MAX_NAME.self::CHARACTERS_SUFFIX);
         }
 
         return $name;
@@ -131,7 +133,7 @@ final class CreateEnquiryRequest extends FormRequest
         $phone = trim($value);
 
         if (mb_strlen($phone) > PhoneNumber::MAX_LENGTH) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'phone', 'The phone field must not be greater than '.PhoneNumber::MAX_LENGTH.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'phone', 'The phone field must not be greater than '.PhoneNumber::MAX_LENGTH.self::CHARACTERS_SUFFIX);
         }
 
         if (! PhoneNumber::isWellFormed($phone)) {
@@ -157,7 +159,7 @@ final class CreateEnquiryRequest extends FormRequest
         $email = mb_strtolower(trim($value));
 
         if (mb_strlen($email) > Enquiry::MAX_EMAIL) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'email', 'The email field must not be greater than '.Enquiry::MAX_EMAIL.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'email', 'The email field must not be greater than '.Enquiry::MAX_EMAIL.self::CHARACTERS_SUFFIX);
         }
 
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
@@ -187,7 +189,7 @@ final class CreateEnquiryRequest extends FormRequest
         }
 
         if (mb_strlen($subject) < self::SUBJECT_MIN || mb_strlen($subject) > Enquiry::MAX_SUBJECT) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'subject', 'The subject field must be between '.self::SUBJECT_MIN.' and '.Enquiry::MAX_SUBJECT.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'subject', 'The subject field must be between '.self::SUBJECT_MIN.' and '.Enquiry::MAX_SUBJECT.self::CHARACTERS_SUFFIX);
         }
 
         return $subject;
@@ -213,7 +215,7 @@ final class CreateEnquiryRequest extends FormRequest
         }
 
         if (mb_strlen($message) < self::MESSAGE_MIN || mb_strlen($message) > Enquiry::MAX_MESSAGE) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'message', 'The message field must be between '.self::MESSAGE_MIN.' and '.Enquiry::MAX_MESSAGE.' characters.');
+            throw self::error(ApiErrorCode::INVALID_VALUE, 'message', 'The message field must be between '.self::MESSAGE_MIN.' and '.Enquiry::MAX_MESSAGE.self::CHARACTERS_SUFFIX);
         }
 
         return $message;

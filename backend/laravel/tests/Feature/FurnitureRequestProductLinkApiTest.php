@@ -23,12 +23,15 @@ class FurnitureRequestProductLinkApiTest extends TestCase
     use RefreshDatabase;
     use SubmitsApiRequests;
 
-    private const URL = '/api/v1/requests';
-
     private const BASE = [
         'name' => 'Asha Mwangi',
         'phone' => '+255700000001',
     ];
+
+    protected function endpoint(): string
+    {
+        return '/api/v1/requests';
+    }
 
     protected function setUp(): void
     {
