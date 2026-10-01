@@ -2,8 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
-use App\Authentication\ClerkTokenVerifier;
 use App\Models\AuditEvent;
 use App\Models\IdempotencyKey;
 use App\Models\Order;
@@ -14,10 +12,12 @@ use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
 class DeliveryFeeApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -172,20 +172,6 @@ class DeliveryFeeApiTest extends TestCase
     private function createStaff(): User
     {
         return User::factory()->staff()->create(['clerk_user_id' => 'fee_staff_'.Str::random(8)]);
-    }
-
-    /** @return array<string, string> */
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 
     /** @return array{delivery_fee: array{amount: int, currency: string}} */

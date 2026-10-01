@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\Clerk\ClerkAuthenticationFailure;
 use App\Authentication\ClerkTokenVerifier;
 use App\Models\Cart;
@@ -19,14 +18,16 @@ use App\Support\OrderIdentifier;
 use App\Support\ProductIdentifier;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\AuthenticatesApiUser;
+use Tests\Support\SubmitsApiRequests;
 use Tests\TestCase;
 
 class EnquiryValidationApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
     use RefreshDatabase;
+    use SubmitsApiRequests;
 
     private const URL = '/api/v1/enquiries';
 
@@ -484,14 +485,6 @@ class EnquiryValidationApiTest extends TestCase
         $this->assertSame(1, $stock->fresh()->reserved_quantity);
     }
 
-    private function submit(array $payload, array $headers = []): TestResponse
-    {
-        RateLimiter::clear('ip:127.0.0.1');
-        RateLimiter::clear(md5('anonymous-submit'.'ip:127.0.0.1'));
-
-        return $this->withHeaders($headers)->postJson(self::URL, $payload);
-    }
-
     private function customerProfileUser(string $clerkUserId): User
     {
         return User::factory()->customer()->create([
@@ -500,19 +493,5 @@ class EnquiryValidationApiTest extends TestCase
             'email' => 'profile@example.com',
             'phone' => '+255700000777',
         ]);
-    }
-
-    /** @return array<string, string> */
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            (string) $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 }

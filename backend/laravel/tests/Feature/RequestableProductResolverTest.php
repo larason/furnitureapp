@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Exceptions\Api\ApiException;
 use App\Exceptions\ProductNotRequestable;
-use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\ProductVariant;
@@ -15,10 +14,12 @@ use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ProvidesNonPublicProducts;
 use Tests\TestCase;
 
 class RequestableProductResolverTest extends TestCase
 {
+    use ProvidesNonPublicProducts;
     use RefreshDatabase;
 
     public function test_null_identifier_resolves_to_null_without_a_product_query(): void
@@ -52,22 +53,6 @@ class RequestableProductResolverTest extends TestCase
             $this->assertSame(409, $exception->status());
             $this->assertSame('product_id', $exception->field());
         }
-    }
-
-    /** @return array<string, array{0: Closure(): Product}> */
-    public static function nonPublicProductProvider(): array
-    {
-        return [
-            'inactive' => [fn (): Product => Product::factory()->madeToOrder()->inactive()->create()],
-            'unpublished' => [fn (): Product => Product::factory()->madeToOrder()->draft()->create()],
-            'soft deleted' => [fn (): Product => tap(
-                Product::factory()->madeToOrder()->create(),
-                fn (Product $product) => $product->delete(),
-            )],
-            'inactive category' => [fn (): Product => Product::factory()->madeToOrder()->create([
-                'category_id' => Category::factory()->inactive()->create()->id,
-            ])],
-        ];
     }
 
     #[DataProvider('nonPublicProductProvider')]

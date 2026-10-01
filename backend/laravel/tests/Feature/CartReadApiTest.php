@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\Clerk\ClerkAuthenticationFailure;
 use App\Authentication\ClerkTokenVerifier;
 use App\Models\Cart;
@@ -23,10 +22,12 @@ use App\Support\ProductType;
 use App\Support\VariantIdentifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
 class CartReadApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
     use RefreshDatabase;
 
     private const CART_URL = '/api/v1/me/cart';
@@ -455,19 +456,6 @@ class CartReadApiTest extends TestCase
     private function customer(): User
     {
         return User::factory()->customer()->create(['clerk_user_id' => 'customer_cart']);
-    }
-
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 
     /** @return array{0: Product, 1: ProductVariant} */

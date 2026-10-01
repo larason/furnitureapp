@@ -2,9 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Authentication\AuthenticatedClerkIdentity;
-use App\Authentication\ClerkTokenVerifier;
-use App\Models\Category;
 use App\Models\FurnitureRequest;
 use App\Models\Order;
 use App\Models\Payment;
@@ -13,14 +10,18 @@ use App\Models\User;
 use App\Support\ProductIdentifier;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\AuthenticatesApiUser;
+use Tests\Support\ProvidesNonPublicProducts;
+use Tests\Support\SubmitsApiRequests;
 use Tests\TestCase;
 
 class FurnitureRequestProductLinkApiTest extends TestCase
 {
+    use AuthenticatesApiUser;
+    use ProvidesNonPublicProducts;
     use RefreshDatabase;
+    use SubmitsApiRequests;
 
     private const URL = '/api/v1/requests';
 
@@ -85,22 +86,6 @@ class FurnitureRequestProductLinkApiTest extends TestCase
         $this->assertSame(0, Payment::query()->count());
     }
 
-    /** @return array<string, array{0: Closure(): Product}> */
-    public static function nonPublicProductProvider(): array
-    {
-        return [
-            'inactive product' => [fn (): Product => Product::factory()->madeToOrder()->inactive()->create()],
-            'unpublished product' => [fn (): Product => Product::factory()->madeToOrder()->draft()->create()],
-            'soft deleted product' => [fn (): Product => tap(
-                Product::factory()->madeToOrder()->create(),
-                fn (Product $product) => $product->delete(),
-            )],
-            'inactive category' => [fn (): Product => Product::factory()->madeToOrder()->create([
-                'category_id' => Category::factory()->inactive()->create()->id,
-            ])],
-        ];
-    }
-
     #[DataProvider('nonPublicProductProvider')]
     public function test_non_public_products_are_reported_as_not_found(Closure $factory): void
     {
@@ -129,26 +114,5 @@ class FurnitureRequestProductLinkApiTest extends TestCase
             ->assertStatus(201)
             ->assertJsonPath('data.product_id', null)
             ->assertJsonPath('data.product', null);
-    }
-
-    private function submit(array $payload, array $headers = []): TestResponse
-    {
-        RateLimiter::clear('ip:127.0.0.1');
-
-        return $this->withHeaders($headers)->postJson(self::URL, $payload);
-    }
-
-    /** @return array<string, string> */
-    private function authenticateAs(User $user): array
-    {
-        $verifier = $this->mock(ClerkTokenVerifier::class);
-        $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            (string) $user->clerk_user_id,
-            'sess_test',
-            'https://clerk.example.test',
-        ));
-        $this->app->instance(ClerkTokenVerifier::class, $verifier);
-
-        return ['Authorization' => 'Bearer session-token'];
     }
 }
