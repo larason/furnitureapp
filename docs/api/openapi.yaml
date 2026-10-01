@@ -1515,6 +1515,11 @@ components:
           - DELIVERY
           - OTHER
           description: CLOSED, nullable
+        product_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
         product:
           anyOf:
           - type: object
@@ -1526,6 +1531,11 @@ components:
               slug:
                 type: string
           - type: 'null'
+          readOnly: true
+        order_id:
+          type:
+          - string
+          - 'null'
           readOnly: true
         order:
           anyOf:
@@ -3664,6 +3674,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Enquiry'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':

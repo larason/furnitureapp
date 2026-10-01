@@ -1,1555 +1,1701 @@
-# Phase 10.4 — Product-Linked Furniture Requests
+# Phase 10.5 — General Enquiries
 
 ## 1. Objective
 
-Implement the authoritative **domain eligibility boundary for `product_id` on REQ-001**:
+Implement the Version 1 **General Enquiry domain and ENQ-001 creation pipeline**:
 
 ```http
-POST /api/v1/requests
+POST /api/v1/enquiries
 ```
 
-Phase 10.4 answers one business question:
+Operation:
 
 ```text
-If product_id is supplied,
-is that Product currently eligible to be referenced by a Furniture Request?
+ENQ-001
 ```
 
-The frozen V1 rule is:
+The purpose is to support private general-business communication such as:
 
 ```text
-product_id omitted/null
-→ valid custom furniture request
-
-product_id supplied
-→ Product must exist
-→ Product must be publicly visible
-→ Product must be MADE_TO_ORDER
-→ otherwise reject
+"Do you deliver to Dodoma?"
+"What are your opening hours?"
+"Can I ask about this sofa?"
+"I have a question about my Order."
 ```
 
-Do not create a second Furniture Request creation workflow.
-
-Integrate the product-domain validation into the existing:
+This phase must keep General Enquiries completely separate from:
 
 ```text
-CreateFurnitureRequestRequest
-→ FurnitureRequestInput
-→ CreateFurnitureRequestCommand
-→ CreateFurnitureRequest
+Furniture Requests
+Orders
+Payments
+Inventory
+Checkout
 ```
 
-pipeline.
+Do not merge Request and Enquiry concepts.
 
 ---
 
-# 2. Current Group J Baseline
+# 2. Current Group J State
 
-Treat the current repository state as:
+Treat the current state as:
 
 ```text
-10.1 PASS — Furniture Request API foundation
+10.1 PASS — Furniture Request API
 10.2 PASS — Request validation
 10.3 PASS — Request status lifecycle
-10.4 CURRENT — Product-linked requests
-10.5 NOT STARTED — General enquiries
-10.6 NOT STARTED — Attachments
-10.7 NOT STARTED — Staff/Admin request management
-10.8 NOT STARTED — Request/enquiry closure tests
+10.4 PASS — Product-linked Requests
+10.5 CURRENT — General Enquiries
+10.6 NOT STARTED — Attachment handling
+10.7 NOT STARTED — Staff/Admin Request management
+10.8 NOT STARTED — Request/Enquiry tests
 ```
 
-REQ-001 remains publicly gated.
+Phase 10.5 owns the General Enquiry intake foundation.
 
-Do not activate it automatically in this phase because Phase 10.6 attachment support is still outstanding.
+Do not implement the whole Enquiry operational subsystem prematurely.
 
 ---
 
-# 3. Existing REQ-001 Architecture
+# 3. Existing Enquiry Persistence
 
-Reuse:
-
-```text
-Validator:
-App\Http\Requests\CreateFurnitureRequestRequest
-
-Normalized input:
-App\Services\Requests\FurnitureRequestInput
-
-Command:
-App\Services\Requests\CreateFurnitureRequestCommand
-
-Creation service:
-App\Services\Requests\CreateFurnitureRequest
-
-Resource:
-App\Http\Resources\FurnitureRequestResource
-```
-
-Do not replace any of these.
-
----
-
-# 4. Validation Layering
-
-Preserve the project's validation model:
-
-```text
-Transport
-→ Schema
-→ Optional Authentication
-→ Authorization
-→ Domain
-→ Persistence
-```
-
-Phase 10.2 already owns schema validation.
-
-Phase 10.4 now implements the Product **domain** check.
-
-Therefore:
-
-```text
-CreateFurnitureRequestRequest
-```
-
-should continue validating only:
-
-```text
-product_id optional
-product_id nullable
-product_id string
-product_id opaque prod_... format
-```
-
-It must not become the Product database/business-query authority.
-
----
-
-# 5. Domain Rule
-
-The frozen rule for a supplied `product_id` is:
-
-```text
-exists
-AND is_active = true
-AND is_published = true
-AND not soft-deleted
-AND parent Category is active
-AND product_type = MADE_TO_ORDER
-```
-
-Only then may the Request link to it.
-
----
-
-# 6. Reuse Public Catalog Visibility
-
-Do not invent another definition of:
-
-```text
-publicly visible Product
-```
-
-Group E already defines public visibility as:
-
-```text
-Product.is_active = true
-Product.is_published = true
-Product.deleted_at IS NULL
-Category.is_active = true
-```
-
-Reuse the existing Product/catalog scope/query authority if one exists.
-
-Possible examples:
+Inspect and reuse the existing:
 
 ```php
-Product::publiclyVisible()
-PublicProductQuery
-CatalogProductQuery
+App\Models\Enquiry
 ```
 
-Use actual repository naming.
+and existing:
+
+```text
+enquiries
+```
+
+table from the Group C schema.
+
+Do not create a second Enquiry table.
+
+Do not modify historical migrations unless a real schema defect is found.
+
+Expected:
+
+```text
+Schema changes = NONE
+```
 
 ---
 
-# 7. No Duplicate Visibility Logic
+# 4. Existing Enquiry Schema
 
-Do not write a second ad-hoc chain such as:
+The current persistence model already contains the Enquiry domain established earlier.
 
-```php
-Product::where('is_active', true)
-    ->where('is_published', true)
-    ...
-```
-
-if an authoritative visibility scope/service already exists.
-
-The Request domain should consume the same truth as CAT-001/CAT-002.
-
----
-
-# 8. Category Activity Matters
-
-A Product that is itself:
+Inspect the exact implementation, expected broadly:
 
 ```text
-active
-published
-not deleted
-```
-
-but belongs to an inactive Category is not publicly requestable.
-
-Reject it exactly as a non-public Product.
-
----
-
-# 9. Soft-Deleted Product
-
-A soft-deleted Product must not be requestable.
-
-Do not use:
-
-```php
-withTrashed()
-```
-
-for REQ-001 product eligibility.
-
-Operational inventory reads may intentionally see archived Products; public Request intake must not.
-
----
-
-# 10. Product Type
-
-The Product must be:
-
-```text
-MADE_TO_ORDER
-```
-
-Use the existing closed enum:
-
-```text
-ProductType::MADE_TO_ORDER
-```
-
-or repository equivalent.
-
-Do not compare arbitrary strings where an enum already exists.
-
----
-
-# 11. IN_STOCK Product
-
-A currently public:
-
-```text
-IN_STOCK
-```
-
-Product supplied to REQ-001 must be rejected.
-
-Frozen business error:
-
-```text
-409 PRODUCT_NOT_REQUESTABLE
-```
-
-This is intentionally different from:
-
-```text
-PRODUCT_NOT_PURCHASABLE
-```
-
-used by Cart/Checkout.
-
-Do not reuse the Checkout error code.
-
----
-
-# 12. Why the Error Is Different
-
-These represent opposite domain mistakes:
-
-```text
-MADE_TO_ORDER → Cart
-= PRODUCT_NOT_PURCHASABLE
-
-IN_STOCK → Furniture Request product link
-= PRODUCT_NOT_REQUESTABLE
-```
-
-Keep those semantics distinct.
-
----
-
-# 13. MADE_TO_ORDER Inventory Is Irrelevant
-
-A requestable MADE_TO_ORDER Product does **not** require:
-
-```text
-stock row
-positive quantity
-active Variant with stock
-warehouse allocation
-available_quantity > 0
-```
-
-Group E already defines MADE_TO_ORDER catalog availability independently from inventory.
-
-Therefore do not query ProductStock for Request eligibility.
-
----
-
-# 14. No Variant Requirement
-
-REQ-001 links:
-
-```text
-Product
-```
-
-not:
-
-```text
-ProductVariant
-```
-
-Do not require:
-
-```text
-variant_id
-SKU
-variant availability
-```
-
-for Furniture Requests.
-
----
-
-# 15. No Product Price Requirement
-
-A linked Product may have a catalog price/starting estimate, but Request creation does not price-lock anything.
-
-Do not copy Product price into:
-
-```text
-FurnitureRequest
-```
-
-and do not return an authoritative quote.
-
----
-
-# 16. No Product Snapshot Invention
-
-The existing schema contains:
-
-```text
-product_details
-```
-
-but it is not part of the frozen REQ-001 contract and Phase 10.1 deliberately kept it non-public.
-
-Do not suddenly use it as:
-
-```text
-product snapshot
-price snapshot
-name snapshot
-```
-
-without a separately approved contract/schema decision.
-
-Phase 10.4 should persist the valid:
-
-```text
+id
+user_id
 product_id
+order_id
+enquiry_reference
+name
+email
+phone
+subject
+message
+category
+enquiry_status
+staff_internal_notes
+created_at
+updated_at
 ```
 
-relationship only.
+Use actual repository fields as authority.
+
+Do not expose persistence columns automatically as the API.
 
 ---
 
-# 17. Historical Rule
+# 5. Enquiry Is Not Furniture Request
 
-The Request must preserve the originally submitted:
+This separation is mandatory.
+
+Furniture Request intent:
 
 ```text
-product_id
+"Can you make/build/customize this furniture?"
 ```
 
-relationship.
+General Enquiry intent:
 
-Do not silently relink it if Product data later changes.
+```text
+"I want information / help / clarification."
+```
 
-Do not mutate the Request based on later catalog changes.
+Do not automatically convert:
+
+```text
+Enquiry → FurnitureRequest
+FurnitureRequest → Enquiry
+```
+
+Do not share persistence rows.
+
+Do not infer intent from free text.
 
 ---
 
-# 18. Custom Request Remains Valid
+# 6. Enquiry Is Not Order
 
-These remain valid:
+ENQ-001 must never:
 
-```json
-{
-  "name": "Asha",
-  "phone": "+255700000001",
-  "notes": "Can you make a custom bookshelf?"
-}
+```text
+create Order
+create OrderItem
+reserve stock
+consume stock
+create Payment
+create quote
+create invoice
+set delivery fee
+initiate ClickPesa
 ```
 
-and:
-
-```json
-{
-  "product_id": null,
-  "name": "Asha",
-  "phone": "+255700000001"
-}
-```
-
-Do not make `product_id` required.
+An Enquiry may reference an existing Order as context, but that is only a relationship.
 
 ---
 
-# 19. Omitted vs Null
+# 7. Canonical Endpoint
 
-Both:
+Implement:
+
+```http
+POST /api/v1/enquiries
+```
+
+Do not introduce aliases such as:
 
 ```text
-product_id omitted
+/contact
+/contact-us
+/messages
+/support
+/questions
 ```
 
-and:
+The frozen V1 resource is:
 
 ```text
-product_id = null
-```
-
-must continue through the custom-request path without a Product database lookup.
-
----
-
-# 20. Avoid Pointless Query
-
-For:
-
-```text
-productId === null
-```
-
-do not query `products`.
-
-Proceed directly with creation.
-
----
-
-# 21. Introduce Focused Domain Resolver
-
-Create or reuse a focused service/value boundary.
-
-Recommended concept:
-
-```php
-App\Services\Requests\RequestableProductResolver
-```
-
-or:
-
-```php
-ResolveRequestableProduct
-```
-
-Use repository naming conventions.
-
-Its job:
-
-```text
-input:
-opaque product_id|null
-
-output:
-Product|null
-
-rules:
-null → null
-valid ID + public MADE_TO_ORDER → Product
-non-public/not found → not-found error
-public IN_STOCK → PRODUCT_NOT_REQUESTABLE
+/enquiries
 ```
 
 ---
 
-# 22. Keep Creation Service Focused
+# 8. Actor Model
 
-`CreateFurnitureRequest` should coordinate:
-
-```text
-trusted command
-→ resolve optional requestable Product
-→ persist FurnitureRequest
-```
-
-Do not turn it into a large catalog-query implementation.
-
----
-
-# 23. Suggested Composition
-
-Conceptually:
-
-```text
-CreateFurnitureRequestCommand
-            │
-            ├── productId null
-            │      ↓
-            │    no Product
-            │
-            └── productId supplied
-                   ↓
-            RequestableProductResolver
-                   ↓
-             Product domain check
-                   ↓
-             CreateFurnitureRequest
-```
-
----
-
-# 24. Pass Internal Product Identity Safely
-
-Phase 10.2 already validates the public opaque:
-
-```text
-prod_...
-```
-
-format.
-
-Phase 10.4 must resolve that identifier through the existing:
-
-```text
-ProductIdentifier
-```
-
-or equivalent Product ID decoder.
-
-Do not manually strip prefixes in multiple places.
-
----
-
-# 25. Never Accept Numeric Product DB ID Publicly
-
-This stays invalid:
-
-```json
-{
-  "product_id": 42
-}
-```
-
-Phase 10.2 should already reject it.
-
-Phase 10.4 must not add a hidden numeric-ID fallback.
-
----
-
-# 26. Do Not Accept Slug in REQ-001
-
-CAT-002 may resolve Product by:
-
-```text
-slug
-or opaque id
-```
-
-but REQ-001 `product_id` specifically means the machine identifier.
-
-Do not reinterpret arbitrary strings/slugs as Product references.
-
----
-
-# 27. Product Resolution Privacy
-
-REQ-001 is public.
-
-Do not expose internal publication/activity distinctions unnecessarily.
-
-An anonymous user should not be able to probe:
-
-```text
-draft Product
-inactive Product
-soft-deleted Product
-Product under inactive Category
-```
-
-and receive different sensitive state details.
-
----
-
-# 28. Non-Public Product Mapping
-
-Preferred domain behavior:
-
-```text
-unknown product_id
-inactive Product
-unpublished Product
-soft-deleted Product
-inactive Category
-```
-
-all resolve as:
-
-```text
-Product not publicly available / not found
-```
-
-Use the repository's canonical:
-
-```text
-PRODUCT_NOT_FOUND
-```
-
-or:
-
-```text
-RESOURCE_NOT_FOUND
-```
-
-mapping consistently.
-
----
-
-# 29. Determine Exact Not-Found Code
-
-Before implementation, inspect:
-
-```text
-ApiErrorCode
-Product public lookup behavior
-CAT-002 not-found mapping
-api-contract.md §15
-REQ-001 tests/conventions
-```
-
-Choose the existing canonical public Product-not-found response.
-
-Do not invent a Request-specific not-found code.
-
----
-
-# 30. Avoid `INVALID_REQUEST` for Invisible Product If Existing Not-Found Exists
-
-The contract documents several historical possibilities for Product missing/inactive behavior.
-
-Phase 10.4 must make the implementation deterministic.
-
-Prefer existing Product public-resolution semantics rather than creating another interpretation.
-
-Document the selected mapping.
-
----
-
-# 31. Public IN_STOCK Is Different
-
-A Product that **is publicly visible** but has:
-
-```text
-product_type = IN_STOCK
-```
-
-must not be hidden as "not found."
-
-The client referenced a real visible Product but used the wrong business workflow.
-
-Return:
-
-```text
-409 PRODUCT_NOT_REQUESTABLE
-```
-
----
-
-# 32. Correct Evaluation Order
-
-Conceptually:
-
-```text
-1. decode product_id
-2. resolve Product through public visibility authority
-3. if not found → canonical Product not-found
-4. inspect product_type
-5. if not MADE_TO_ORDER → PRODUCT_NOT_REQUESTABLE
-6. return eligible Product
-```
-
----
-
-# 33. Do Not Inspect Type Before Visibility
-
-Avoid allowing users to distinguish hidden Product types.
-
-Visibility should be established before returning a business-type error.
-
----
-
-# 34. `PRODUCT_NOT_REQUESTABLE` Registry Check
-
-Phase 10.2 identified an important contract inconsistency:
-
-The frozen REQ contract explicitly uses:
-
-```text
-PRODUCT_NOT_REQUESTABLE
-```
-
-but the global surfaced OpenAPI error-code enum must be checked because it may not currently contain it.
-
-Phase 10.4 owns this reconciliation.
-
----
-
-# 35. If `ApiErrorCode` Lacks It
-
-Add:
-
-```text
-PRODUCT_NOT_REQUESTABLE
-```
-
-to the backend closed error registry.
-
-This is **not a new business contract**.
-
-It is implementation of the already-approved frozen REQ-001 contract.
-
----
-
-# 36. If OpenAPI Error Enum Lacks It
-
-Add:
-
-```text
-PRODUCT_NOT_REQUESTABLE
-```
-
-to the existing global error-code enum in:
-
-```text
-docs/api/openapi.yaml
-```
-
-provided the normative contract already defines the code.
-
-Classify this as:
-
-```text
-frozen-contract consistency correction
-```
-
-not API expansion.
-
----
-
-# 37. Documentation Alignment
-
-After correction, ensure these agree:
-
-```text
-api-contract.md
-api-conventions.md
-business-rules.md
-openapi.yaml
-ApiErrorCode
-implementation
-tests
-```
-
-Do not leave the API docs and implementation with different CLOSED code sets.
-
----
-
-# 38. No Other OpenAPI Changes
-
-Do not change:
-
-```text
-REQ-001 fields
-requiredness
-status codes
-product_id nullability
-request response shape
-```
-
-Only reconcile an already-approved missing error enum entry if confirmed.
-
----
-
-# 39. Error Exception
-
-Introduce/reuse a focused exception such as:
-
-```php
-ProductNotRequestable
-```
-
-extending the project's API/domain exception hierarchy.
-
-It should map to:
-
-```text
-HTTP 409
-code PRODUCT_NOT_REQUESTABLE
-field product_id
-```
-
----
-
-# 40. Safe Error Message
-
-Use a stable human-readable message.
-
-Do not leak:
-
-```text
-product internal state
-category state
-database id
-publication timestamps
-```
-
----
-
-# 41. Product Not Found Exception
-
-Reuse established Product-not-found behavior.
-
-Do not create:
-
-```text
-FurnitureRequestProductNotFound
-```
-
-unless the repository architecture requires one.
-
----
-
-# 42. Domain Service Not HTTP-Aware
-
-The resolver/service should not receive:
-
-```php
-Illuminate\Http\Request
-```
-
-It should receive:
-
-```text
-string product ID
-```
-
-or a typed identifier/value.
-
----
-
-# 43. Domain Service Not Actor-Aware
-
-Eligibility is the same for:
+ENQ-001 allows:
 
 ```text
 Anonymous
 CUSTOMER
 ```
 
-Do not make requestability depend on actor identity.
-
----
-
-# 44. Staff/Admin Irrelevant
-
-REQ-001 already rejects Staff/Admin in the middleware boundary.
-
-Do not add role branches to Product eligibility.
-
----
-
-# 45. Product Relationship Persistence
-
-After eligibility passes:
+It does not allow customer-style submission by:
 
 ```text
-FurnitureRequest.product_id
+STAFF
+ADMIN
 ```
 
-must store the resolved Product's internal FK.
+Staff/Admin use later operational Enquiry endpoints.
 
-Do not persist the opaque public string directly if the schema uses numeric FK.
-
----
-
-# 46. Trust the Resolved Product
-
-Prefer passing/resolving:
+Follow the same optional-auth safety principles used in REQ-001:
 
 ```text
-Product model
-```
-
-to the persistence boundary rather than decoding the identifier twice.
-
-Avoid TOCTOU-like mismatched lookups.
-
----
-
-# 47. Low-Concurrency Domain
-
-Request intake is low-concurrency.
-
-No Product row lock is normally required merely to create the relation.
-
-Do not add:
-
-```text
-FOR UPDATE
-```
-
-to public Product resolution unless there is a current writer that makes it necessary.
-
----
-
-# 48. Current Product Mutation Reality
-
-Inspect whether Product publication/type management endpoints are active or still stubs.
-
-If no concurrent public Product mutation workflow currently exists:
-
-do not invent speculative Product locking.
-
-Record the assumption.
-
----
-
-# 49. If Product Can Change Concurrently
-
-If repository already has active admin Product mutation capable of changing:
-
-```text
-is_active
-is_published
-product_type
-category_id
-```
-
-between validation and Request persistence:
-
-define a minimal consistency strategy.
-
-Do not guess.
-
-Prefer a transaction-time domain recheck if required.
-
----
-
-# 50. Do Not Over-Lock Category Graph
-
-No category-tree lock is needed for Request creation.
-
-Only current public visibility matters.
-
----
-
-# 51. MADE_TO_ORDER Availability
-
-For a public MADE_TO_ORDER Product:
-
-```text
-availability = available
-stock_indicator = MADE_TO_ORDER
-```
-
-regardless of stock.
-
-Do not require stock.
-
----
-
-# 52. Zero Stock Is Still Requestable
-
-Test explicitly:
-
-```text
-public MADE_TO_ORDER
-no ProductStock rows
-→ requestable
+no bearer → anonymous
+valid CUSTOMER bearer → authenticated Customer
+invalid bearer → reject, never downgrade
+STAFF → reject
+ADMIN → reject
 ```
 
 ---
 
-# 53. Reserved Stock Is Irrelevant
+# 9. Authentication Middleware
 
-Test:
+Reuse:
 
 ```text
-public MADE_TO_ORDER
-reserved quantities arbitrary
-→ requestable
+clerk.optional
 ```
 
-if ProductStock rows exist.
+or the current canonical optional-auth middleware.
 
-No stock reads should be necessary.
+Do not implement another token parser.
 
 ---
 
-# 54. Variant State Is Irrelevant
+# 10. Staff/Admin Submission Guard
 
-A MADE_TO_ORDER Product must not become unrequestable simply because it has:
+Reuse the customer-submission actor middleware if semantically appropriate.
+
+If the current:
 
 ```text
-no variants
-inactive variant
-zero-stock variant
+customer-submission
 ```
 
-unless another frozen Product-domain invariant explicitly requires variants for public Product visibility.
+middleware is generic enough to protect both REQ-001 and ENQ-001, reuse it.
 
-Use the established catalog authority.
+Do not duplicate role checks unnecessarily.
+
+If its naming/behavior is Request-specific, introduce the smallest reusable actor boundary rather than copy-paste authorization.
 
 ---
 
-# 55. Category Visibility Test
+# 11. Critical Contact Difference From Requests
 
-Test:
+Furniture Requests require explicit contact even for authenticated Customers.
+
+Enquiries are different.
+
+### Anonymous
+
+Must provide:
 
 ```text
-MADE_TO_ORDER
-product active
-published
-category inactive
-→ not publicly requestable
+name
+AND
+phone OR email
 ```
 
----
+### Authenticated CUSTOMER
 
-# 56. Product Inactive Test
+May omit:
 
 ```text
-MADE_TO_ORDER
-is_active = false
-→ not found/non-public
+name
+phone
+email
 ```
 
+because trusted account/profile data may be used to derive missing contact fields.
+
+This distinction is frozen.
+
+Do not reuse `CreateFurnitureRequestRequest` contact rules wholesale.
+
 ---
 
-# 57. Product Unpublished Test
+# 12. Authenticated Contact Derivation
+
+For authenticated Customer:
 
 ```text
-MADE_TO_ORDER
-is_published = false
-→ not found/non-public
+explicit body value if supplied
+otherwise trusted local profile/account value
 ```
 
+Use trusted server-side sources.
+
+Do not trust body ownership.
+
 ---
 
-# 58. Soft-Deleted Test
+# 13. Contact Snapshot Principle
+
+Even when values are derived:
+
+persist a historical Enquiry contact snapshot.
+
+Later changes to:
 
 ```text
-MADE_TO_ORDER
-soft deleted
-→ not found/non-public
+Customer profile name
+phone
+email
+Clerk identity
 ```
 
+must not rewrite the old Enquiry.
+
 ---
 
-# 59. IN_STOCK Test
+# 14. Contact Precedence
+
+Use deterministic precedence:
 
 ```text
-public IN_STOCK
-→ 409 PRODUCT_NOT_REQUESTABLE
-→ no Request persisted
+explicit valid submitted contact
+→ preferred
+
+otherwise trusted authenticated profile/account fallback
 ```
 
-Mandatory regression.
+Do not overwrite a deliberately supplied valid contact with profile data.
 
 ---
 
-# 60. Public MADE_TO_ORDER Test
+# 15. Email Source
+
+Inspect the current local identity model carefully.
+
+Email may be Clerk-owned rather than Laravel profile-owned.
+
+Use the existing trusted authenticated identity projection already available to the backend.
+
+Do not perform a live Clerk API call during Enquiry creation unless current architecture already requires one.
+
+Prefer locally available trusted identity context.
+
+---
+
+# 16. Missing Authenticated Contact
+
+Authenticated Customer must still end with:
 
 ```text
-public MADE_TO_ORDER
-→ 201 internally when route enabled in test
-→ product_id persisted
-→ Product summary returned
+name present
+AND
+at least one reachable phone/email
 ```
 
-assuming no attachment is required.
+after supplied + derived values are combined.
+
+If no valid reachable contact exists, reject.
+
+Do not create an unreachable Enquiry.
 
 ---
 
-# 61. Custom Request Test
+# 17. Anonymous Contact
+
+Anonymous has no fallback.
+
+Require body:
 
 ```text
-product_id omitted
-→ valid
-→ product_id null
-→ product null
-```
-
----
-
-# 62. Explicit Null Test
-
-```text
-product_id = null
-→ same custom-request semantics
-```
-
----
-
-# 63. No Product Query Test for Null
-
-Where reasonable, verify the resolver does not query Product for null input.
-
-Do not make this a brittle SQL-count test if architecture makes it awkward.
-
----
-
-# 64. Product Resource Summary
-
-The Phase 10.1 resource already returns:
-
-```text
-product:
-{
-  id,
-  name,
-  slug
-}
-```
-
-for linked requests.
-
-Preserve that exact safe summary.
-
----
-
-# 65. No Product Price in Request Resource
-
-Do not expand the embedded summary with:
-
-```text
-price
-availability
-stock
-description
-variants
-```
-
-unless already frozen.
-
----
-
-# 66. No Internal Product Fields
-
-Never expose:
-
-```text
-is_active
-is_published
-deleted_at
-category_id
-numeric product id
-inventory values
-```
-
-through `FurnitureRequestResource`.
-
----
-
-# 67. Eager Loading
-
-For a created linked Request, ensure the Product relation is available without accidental N+1 behavior.
-
-One created resource does not justify complex collection optimization.
-
-Use a simple bounded load.
-
----
-
-# 68. Later Retrieval Compatibility
-
-Do not design Phase 10.4 so later REQ-002/003/004/005 must rerun "is Product still public?" merely to display historical Request data.
-
-Eligibility is an **intake-time** rule.
-
-Historical Request retrieval should not disappear because Product is later unpublished.
-
----
-
-# 69. Important Historical Principle
-
-Once the Request was validly created:
-
-```text
-later Product deactivation
-later unpublish
-later Category deactivation
-```
-
-must not invalidate/delete the historical Request.
-
-Do not cascade business state from Product into past Request validity.
-
----
-
-# 70. Product Deletion FK
-
-Inspect the existing FurnitureRequest→Product FK delete policy.
-
-Do not change it in Phase 10.4 unless there is a genuine schema-contract defect.
-
-Expected:
-
-```text
-Schema changes NONE
+name
+phone and/or email
 ```
 
 ---
 
-# 71. No Request Rewrite on Catalog Change
+# 18. ENQ-001 Request Allow-List
 
-Do not schedule background updates to historical requests when Product changes.
-
----
-
-# 72. Product Type Later Changes
-
-If a Product later changes from:
+Accept exactly:
 
 ```text
-MADE_TO_ORDER → IN_STOCK
+name
+phone
+email
+subject
+message
+category
+product_id
+order_id
 ```
 
-an already-created Request remains historical intake.
+for JSON Enquiry creation.
 
-Do not invalidate it retroactively.
-
----
-
-# 73. New Request Uses Current Type
-
-A **new** Request after such a change must use current Product state and therefore reject the now-IN_STOCK Product.
+Attachment is handled later in Phase 10.6.
 
 ---
 
-# 74. Catalog Price Later Changes
+# 19. Strict Unknown-Field Rejection
 
-No effect on the Request.
+Reject unknown fields.
 
----
-
-# 75. No Price Snapshot
-
-Again, no price snapshot should be persisted.
-
-Request is not a quote.
-
----
-
-# 76. No Cart Interaction
-
-Product-linked Request creation must not:
+Examples:
 
 ```text
-create Cart
-add CartItem
-remove CartItem
-merge Cart
-```
-
----
-
-# 77. No Checkout Interaction
-
-No CHK-001 call.
-
----
-
-# 78. No Order
-
-No Order/OrderItem.
-
----
-
-# 79. No Inventory Reservation
-
-No:
-
-```text
-InventoryAllocator
-reserved_quantity
-allocation rows
-```
-
----
-
-# 80. No Payment
-
-No Payment row.
-
-No ClickPesa call.
-
----
-
-# 81. No Delivery
-
-No delivery fee or fulfillment choice.
-
----
-
-# 82. No Quote
-
-No:
-
-```text
+user_id
+enquiry_status
+staff_internal_notes
+request_id
+request_status
+dimensions
+material
+color
+quantity
+order_status
+payment_status
+delivery_fee
 quoted_price
-estimated_total
-starting_total
+price
+created_at
+updated_at
 ```
 
-as Request authority.
+Do not silently strip them.
 
 ---
 
-# 83. Creation Status
+# 20. Requests-Specific Fields Are Invalid
 
-Linked Requests still begin:
+Explicitly reject:
 
 ```text
-SUBMITTED
+dimensions
+material
+color
+quantity
+notes
 ```
 
-Phase 10.3 remains unchanged.
+as Enquiry fields.
 
----
-
-# 84. Lifecycle Independence
-
-Product eligibility is checked only at creation.
-
-Lifecycle transitions:
+Enquiries use:
 
 ```text
-SUBMITTED
-IN_REVIEW
-CLOSED
+subject
+message
 ```
 
-must not revalidate Product public visibility.
+Do not blur domain boundaries.
 
 ---
 
-# 85. Example
+# 21. `subject`
+
+Required for every actor.
+
+Rules:
+
+```text
+string
+trimmed
+plain text
+minimum 5
+maximum 200
+```
+
+Do not derive it.
+
+---
+
+# 22. Subject Wrong Type
+
+Reject:
+
+```text
+number
+boolean
+array
+object
+null
+```
+
+with:
+
+```text
+422 INVALID_TYPE
+field: subject
+```
+
+where appropriate.
+
+---
+
+# 23. Subject Missing / Blank
+
+Use:
+
+```text
+422 MISSING_REQUIRED_FIELD
+field: subject
+```
+
+for absent or normalized blank required subject according to existing API conventions.
+
+---
+
+# 24. Subject Too Short / Long
+
+Correct type but outside:
+
+```text
+5..200
+```
+
+→:
+
+```text
+422 INVALID_VALUE
+field: subject
+```
+
+Do not truncate.
+
+---
+
+# 25. `message`
+
+Required for all Enquiries.
+
+Rules:
+
+```text
+string
+trimmed outer whitespace where appropriate
+plain text
+minimum 10
+maximum 5000
+Unicode-safe
+meaningful newlines preserved
+```
+
+---
+
+# 26. Plain Text Only
+
+Message is not interpreted as:
+
+```text
+HTML
+Markdown
+template
+SQL
+code
+filesystem path
+```
+
+Do not render/sanitize it destructively in the backend.
+
+Store as untrusted plain text.
+
+Frontend escaping protects rendering.
+
+---
+
+# 27. Do Not Strip Ordinary Markup-Like Characters
+
+Input such as:
+
+```text
+"<table>"
+"5 > 3"
+"&"
+```
+
+is legitimate plain text.
+
+Do not destructively rewrite content simply because it resembles markup.
+
+---
+
+# 28. Message Missing / Blank
+
+Return canonical required-field error.
+
+---
+
+# 29. Message Wrong Type
+
+Use:
+
+```text
+INVALID_TYPE
+```
+
+---
+
+# 30. Message Length
 
 Valid:
 
 ```text
-Day 1:
-Product public MADE_TO_ORDER
-Request created SUBMITTED
-
-Day 2:
-Product unpublished
-
-Day 3:
-Staff transitions Request → IN_REVIEW
+10..5000
 ```
 
-The transition must remain valid.
-
-Do not couple Phase 10.3 to live catalog state.
-
----
-
-# 86. Validation Failure Side Effects
-
-If linked Product fails domain validation:
+Reject outside range with:
 
 ```text
-FurnitureRequest inserts = 0
-Order inserts = 0
-Payment inserts = 0
-Inventory mutations = 0
+INVALID_VALUE
 ```
 
 ---
 
-# 87. Contact Validation Still Runs
+# 31. `category`
 
-Do not bypass Phase 10.2 merely because Product is eligible.
+Optional and nullable.
 
-A request with valid Product but invalid:
+Use existing:
 
-```text
-name
-phone/email
-quantity
-dimensions
+```php
+App\Support\EnquiryCategory
 ```
 
-must still fail normal schema validation.
+from the Group C reconciliation.
 
----
-
-# 88. Validation Ordering
-
-Preserve:
+Closed values:
 
 ```text
-schema first
-then Product domain lookup
-```
-
-Do not query Product for a body already invalid at schema level.
-
----
-
-# 89. Avoid Enumeration Through Malformed IDs
-
-Malformed:
-
-```text
-product_id
-```
-
-must fail Phase 10.2:
-
-```text
-422 INVALID_FORMAT
-```
-
-without querying Product.
-
----
-
-# 90. Valid-Looking Unknown ID
-
-A well-formed opaque ID that resolves to no public Product reaches domain resolution and returns canonical not-found.
-
----
-
-# 91. Product Eligibility Component Tests
-
-Create a focused unit/feature suite, e.g.:
-
-```text
-RequestableProductResolverTest
-```
-
-Use actual repository naming.
-
----
-
-# 92. Resolver Test Matrix
-
-At minimum:
-
-```text
-null                         → null/allowed
-public MADE_TO_ORDER         → allowed
-public IN_STOCK              → PRODUCT_NOT_REQUESTABLE
-inactive MADE_TO_ORDER       → not found/non-public
-unpublished MADE_TO_ORDER    → not found/non-public
-soft-deleted MADE_TO_ORDER   → not found/non-public
-inactive-category MTO        → not found/non-public
-unknown opaque Product ID    → not found
+GENERAL
+PRODUCT
+DELIVERY
+OTHER
 ```
 
 ---
 
-# 93. No Inventory Dependency Test
+# 32. Category Exactness
 
-Create a public MADE_TO_ORDER Product with:
+Reject:
 
 ```text
-zero stock rows
+general
+Product
+SHIPPING
+PAYMENT
+ORDER
+SUPPORT
 ```
 
-It must still resolve successfully.
+No aliases.
 
 ---
 
-# 94. Request API Integration Test
+# 33. Category Wrong Type
 
-With the gated route enabled in-process:
-
-```text
-public MADE_TO_ORDER
-+ valid REQ-001 body
-→ 201
-```
-
-Assert:
+Use:
 
 ```text
-FurnitureRequest.product_id = correct internal Product FK
-resource product.id = original opaque Product ID
-resource product.name correct
-resource product.slug correct
+INVALID_TYPE
 ```
 
 ---
 
-# 95. Anonymous Linked Request
+# 34. Unknown Category
 
-Test anonymous + public MADE_TO_ORDER.
-
-Expected:
+Use:
 
 ```text
-201
-user_id null
-product linked
-SUBMITTED
+INVALID_VALUE
+field: category
 ```
 
 ---
 
-# 96. CUSTOMER Linked Request
+# 35. Product Association
 
-Test authenticated CUSTOMER.
+`product_id` is optional/nullable.
 
-Expected:
+Unlike Furniture Requests, Enquiries may reference:
 
 ```text
-201
-server-derived user_id
-product linked
-SUBMITTED
+IN_STOCK
+or
+MADE_TO_ORDER
+```
+
+as long as the Product is currently public.
+
+Do not reuse the `RequestableProductResolver` because it deliberately rejects `IN_STOCK`.
+
+---
+
+# 36. Reuse Public Product Visibility Authority
+
+Use:
+
+```php
+Product::query()->public()
+```
+
+or current authoritative public scope from Phase 10.4/Group E.
+
+Product must be:
+
+```text
+active
+published
+not soft-deleted
+active Category
 ```
 
 ---
 
-# 97. Staff/Admin Regression
+# 37. Enquiry Product Resolver
 
-They remain:
+Introduce a separate focused component, e.g.:
+
+```php
+App\Services\Enquiries\PublicEnquiryProductResolver
+```
+
+or equivalent.
+
+Do not generalize `RequestableProductResolver` into a giant polymorphic business engine unless very small refactoring cleanly exposes a shared public-visibility lookup.
+
+---
+
+# 38. Product Type Is Irrelevant for Enquiries
+
+Both:
+
+```text
+IN_STOCK
+MADE_TO_ORDER
+```
+
+are valid Enquiry context.
+
+Do not return:
+
+```text
+PRODUCT_NOT_REQUESTABLE
+```
+
+for Enquiries.
+
+---
+
+# 39. Product ID Shape
+
+Validate:
+
+```text
+optional
+nullable
+strict string
+prod_... opaque format
+```
+
+using existing ProductIdentifier logic.
+
+No numeric ID fallback.
+
+No slug fallback.
+
+---
+
+# 40. Product Missing / Hidden
+
+For:
+
+```text
+unknown
+inactive
+unpublished
+soft-deleted
+inactive Category
+```
+
+use one safe public-not-found mapping.
+
+Prefer the same established mapping already used by public Product lookup:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+or current canonical Product-not-found code.
+
+Do not leak hidden state.
+
+---
+
+# 41. No Inventory Dependency
+
+Enquiry Product association requires no:
+
+```text
+ProductStock
+Variant
+available quantity
+reservation
+warehouse
+```
+
+---
+
+# 42. `order_id`
+
+Optional/nullable.
+
+This is not an Order creation field.
+
+It means:
+
+```text
+"This enquiry concerns this existing Order."
+```
+
+---
+
+# 43. Order ID Shape
+
+Validate:
+
+```text
+optional
+nullable
+strict string
+ord_... opaque identifier
+```
+
+using existing:
+
+```text
+OrderIdentifier
+```
+
+or current identifier service.
+
+No numeric DB ID.
+
+---
+
+# 44. Anonymous `order_id`
+
+Anonymous ENQ-001 must not be able to reference arbitrary Orders.
+
+Without a separately approved server-issued scoped Order-access token:
+
+```text
+anonymous + order_id supplied
+→ 422 INVALID_VALUE
+field: order_id
+```
+
+Do not attempt ownership by:
+
+```text
+email
+phone
+order reference knowledge
+```
+
+---
+
+# 45. No Scoped Order Token Yet
+
+If no scoped anonymous order-access mechanism exists in the repository:
+
+do not invent one in Phase 10.5.
+
+The correct V1 behavior is:
+
+```text
+anonymous order_id → reject
+```
+
+---
+
+# 46. Authenticated Order Association
+
+Authenticated Customer may supply `order_id` only if the Order belongs to them.
+
+Ownership is authoritative.
+
+---
+
+# 47. Order Ownership Resolver
+
+Introduce/reuse a focused ownership-safe resolver.
+
+Possible:
+
+```php
+OwnedOrderResolver
+```
+
+or:
+
+```php
+EnquiryOrderResolver
+```
+
+Use existing Order ownership query patterns where available.
+
+---
+
+# 48. Ownership Failure Must Be Masked
+
+Customer A supplying Customer B's `order_id`:
+
+```text
+404
+```
+
+not:
 
 ```text
 403
 ```
 
-for REQ-001.
-
-Product eligibility must not make Staff/Admin submission possible.
+Do not reveal cross-customer Order existence.
 
 ---
 
-# 98. Invalid Bearer Regression
+# 49. Unknown Order
+
+Unknown and not-owned should return the same masked response family.
+
+Use current:
+
+```text
+ORDER_NOT_FOUND
+RESOURCE_NOT_FOUND
+```
+
+according to the established registry.
+
+Do not introduce a different response for ownership failure.
+
+---
+
+# 50. Order Reference Is Not Accepted
+
+Input remains:
+
+```text
+order_id
+```
+
+not:
+
+```text
+order_reference
+```
+
+unless the frozen contract explicitly supports both.
+
+Do not add alias parsing.
+
+---
+
+# 51. Product + Order Together
+
+Both may be supplied.
+
+Example:
+
+```text
+"I have a question about the sofa on Order OD-..."
+```
+
+Do not force one or the other.
+
+---
+
+# 52. Neither Product Nor Order Required
+
+General Enquiry:
+
+```text
+product_id = null
+order_id = null
+```
+
+is valid.
+
+---
+
+# 53. Association Does Not Mutate Linked Resources
+
+Enquiry creation must never modify:
+
+```text
+Product
+Order
+Order status
+Order totals
+Payment
+Inventory
+Delivery
+```
+
+---
+
+# 54. Enquiry Ownership
+
+Authenticated Customer:
+
+```text
+Enquiry.user_id = authenticated local User
+```
+
+Anonymous:
+
+```text
+Enquiry.user_id = null
+```
+
+Never accept:
+
+```text
+user_id
+```
+
+from body.
+
+---
+
+# 55. Initial Enquiry Status
+
+Every new Enquiry begins:
+
+```text
+OPEN
+```
+
+Use existing closed enum/support type.
+
+Do not accept `enquiry_status` from client.
+
+---
+
+# 56. Status Values
+
+Frozen Enquiry status is:
+
+```text
+OPEN
+CLOSED
+```
+
+Do not add:
+
+```text
+SUBMITTED
+IN_REVIEW
+ASSIGNED
+WAITING_FOR_CUSTOMER
+RESOLVED
+ESCALATED
+```
+
+---
+
+# 57. No Lifecycle Work Beyond Creation
+
+Phase 10.5 should ensure:
+
+```text
+new Enquiry → OPEN
+```
+
+Do not implement the complete ENQ-006 close/reopen operational API unless Group J roadmap/current docs explicitly assign it here.
+
+Keep operational staff management for later Group J work.
+
+---
+
+# 58. Reopen Ambiguity
+
+The frozen docs state reopen is only valid if explicitly approved.
+
+Do not make a new business decision in 10.5.
+
+If no approved reopen behavior exists in current repository decisions:
+
+```text
+do not implement reopen
+```
+
+Record it as deferred/closed-terminal behavior for later operational phase.
+
+---
+
+# 59. Enquiry Reference
+
+Inspect the schema.
+
+If Enquiry has:
+
+```text
+enquiry_reference
+```
+
+use existing `ReferenceGenerator`.
+
+Do not invent format.
+
+Verify current approved prefix/length before implementation.
+
+If it is already established, reuse exactly.
+
+---
+
+# 60. Opaque Enquiry ID
+
+Use existing:
+
+```text
+enq_...
+```
+
+identifier convention.
+
+Never expose numeric DB id.
+
+---
+
+# 61. Enquiry Creation Command
+
+Introduce a typed immutable command such as:
+
+```php
+App\Services\Enquiries\CreateEnquiryCommand
+```
+
+Fields conceptually:
+
+```text
+actor
+name
+phone
+email
+subject
+message
+category
+productId
+orderId
+```
+
+or preferably resolved Product/Order references where architecture supports it.
+
+---
+
+# 62. Normalized Enquiry Input
+
+Introduce a readonly value object if helpful:
+
+```php
+EnquiryInput
+```
+
+mirroring the successful Request pattern.
+
+Avoid passing arbitrary arrays through multiple layers.
+
+---
+
+# 63. Creation Service
+
+Create:
+
+```php
+App\Services\Enquiries\CreateEnquiry
+```
+
+or repository-consistent equivalent.
+
+Responsibilities:
+
+```text
+derive contact for authenticated Customer
+resolve Product context
+resolve/authorize Order context
+generate reference if applicable
+persist Enquiry
+set OPEN
+return created aggregate
+```
+
+---
+
+# 64. Keep Service Focused
+
+Do not put raw HTTP validation in `CreateEnquiry`.
+
+Schema validation belongs to the request boundary.
+
+Domain association/ownership checks belong to focused resolvers/services.
+
+---
+
+# 65. Dedicated FormRequest
+
+Create:
+
+```php
+App\Http\Requests\CreateEnquiryRequest
+```
+
+or equivalent.
+
+It should own:
+
+```text
+strict top-level allow-list
+type validation
+basic normalization
+anonymous/auth-aware contact contract where actor context is needed
+subject/message validation
+category validation
+opaque Product/Order ID shape
+```
+
+---
+
+# 66. Validation Architecture
+
+Because REQ-001 already uses explicit validation for strict JSON typing/exact codes, consider following the same approach where it keeps behavior consistent.
+
+Do not mechanically use Laravel rule strings if they cause:
+
+```text
+numeric string coercion
+ambiguous error codes
+unknown-field leakage
+```
+
+---
+
+# 67. FormRequest and Actor Context
+
+Enquiry contact requiredness depends on authenticated actor.
+
+That means validation may need access to the resolved optional-auth Customer.
+
+Keep that dependency narrow.
+
+Do not query Clerk directly from the FormRequest.
+
+---
+
+# 68. Validation Ordering
+
+Preferred effective ordering:
+
+```text
+security middleware
+→ optional authentication
+→ actor classification
+→ schema validation
+→ trusted-contact derivation
+→ domain associations
+→ persistence
+```
+
+---
+
+# 69. Explicit Contact Snapshot Builder
+
+Strongly consider one focused service/value object:
+
+```php
+EnquiryContactSnapshotFactory
+```
+
+or equivalent.
+
+Input:
+
+```text
+actor|null
+submitted name/phone/email
+trusted profile/account context
+```
+
+Output:
+
+```text
+normalized name
+normalized phone|null
+normalized email|null
+```
+
+---
+
+# 70. Do Not Reuse Furniture Request Contact Logic Blindly
+
+The contact contracts differ.
+
+You may reuse lower-level primitives:
+
+```text
+PhoneNumber
+name normalization
+email normalization
+```
+
+but not Furniture Request requiredness logic.
+
+---
+
+# 71. Anonymous Name
+
+Required.
+
+Rules:
+
+```text
+string
+trimmed
+internal whitespace normalized
+max 120
+non-empty
+```
+
+---
+
+# 72. Authenticated Name
+
+Optional in body.
+
+If supplied:
+
+```text
+validate + normalize
+```
+
+If omitted:
+
+```text
+derive from trusted profile/account
+```
+
+If neither submitted nor derivable:
+
+reject.
+
+---
+
+# 73. Anonymous Phone/Email
+
+At least one required.
+
+Both may be supplied.
+
+---
+
+# 74. Authenticated Phone/Email
+
+Either may be:
+
+```text
+submitted
+derived
+```
+
+At least one reachable channel must exist in the final contact snapshot.
+
+---
+
+# 75. Supplied Invalid Contact Must Still Fail
+
+Example:
+
+Authenticated Customer has valid stored email but supplies:
+
+```text
+email = "bad-email"
+```
+
+Do not silently ignore it and fall back.
+
+Supplied data must itself validate.
+
+---
+
+# 76. Phone
+
+Reuse:
+
+```php
+App\Support\PhoneNumber
+```
+
+introduced/reused in Phase 10.2.
+
+Do not add a second normalizer.
+
+---
+
+# 77. Email
+
+Rules:
+
+```text
+trim
+lowercase
+max 255
+valid format
+```
+
+---
+
+# 78. Subject/Message Are Historical
+
+Once Enquiry is created:
+
+```text
+subject
+message
+```
+
+are immutable customer-intake history.
+
+Do not create a generic edit endpoint.
+
+---
+
+# 79. Category Is Historical
+
+Likewise preserve submitted:
+
+```text
+category
+```
+
+unless later operational contract explicitly allows staff recategorization.
+
+Current frozen text treats customer submission fields as historical.
+
+Do not invent mutable triage category behavior.
+
+---
+
+# 80. Product/Order Links Are Historical Context
+
+Do not silently relink later.
+
+---
+
+# 81. Later Product Changes
+
+After Enquiry creation:
+
+```text
+Product unpublished
+Product renamed
+Product type changes
+```
+
+must not invalidate the Enquiry.
+
+Do not re-run public Product eligibility during later Enquiry status operations.
+
+---
+
+# 82. Later Order Changes
+
+After creation:
+
+```text
+Order status changes
+Order cancelled
+Order completed
+```
+
+do not remove the historical Enquiry relationship.
+
+---
+
+# 83. Enquiry Resource
+
+Create:
+
+```php
+App\Http\Resources\EnquiryResource
+```
+
+or reuse existing if already present.
+
+Never return:
+
+```php
+$enquiry->toArray()
+```
+
+---
+
+# 84. Created/Customer Representation
+
+Expose the frozen customer-safe fields:
+
+```text
+id
+name
+email
+phone
+subject
+message
+category
+product_id
+product
+order_id
+order
+enquiry_status
+attachments
+created_at
+updated_at
+```
+
+Use exact current OpenAPI/resource definition.
+
+---
+
+# 85. Product Summary
+
+When linked:
+
+```text
+{id, name, slug}
+```
+
+only.
+
+---
+
+# 86. Order Summary
+
+When linked:
+
+```text
+{id, order_reference, status}
+```
+
+only.
+
+Do not expose:
+
+```text
+totals
+payment details
+delivery address
+customer id
+billing address
+```
+
+through the Enquiry resource.
+
+---
+
+# 87. Attachments
+
+Until Phase 10.6:
+
+```text
+attachments = []
+```
+
+in the resource if that matches current Request staging architecture.
+
+Do not implement file storage here.
+
+---
+
+# 88. Staff Internal Notes
+
+Never expose:
+
+```text
+staff_internal_notes
+```
+
+in ENQ-001 response.
+
+---
+
+# 89. Internal Ownership
+
+Do not expose numeric:
+
+```text
+user_id
+product_id internal FK
+order_id internal FK
+```
+
+Public IDs must be opaque.
+
+---
+
+# 90. Cache-Control
+
+Enquiry contains private communication.
+
+Use:
+
+```text
+Cache-Control: private, no-store
+```
+
+and existing:
+
+```text
+Vary: Authorization
+```
+
+where appropriate.
+
+Never public-cache.
+
+---
+
+# 91. No SEO Exposure
+
+Do not embed Enquiry content in public catalog resources.
+
+---
+
+# 92. Public Route Gating
+
+Like REQ-001, ENQ-001 should remain gated until attachment support is completed if the frozen endpoint promises inline multipart attachment capability.
+
+Recommended Phase 10.5 outcome:
+
+```text
+ENQ-001 implementation complete for JSON/no attachment
+route STUB/GATED
+```
+
+until Phase 10.6.
+
+---
+
+# 93. Enquiry Feature Gate
+
+Introduce/reuse a feature gate consistent with Requests.
+
+Possible:
+
+```php
+EnsureEnquiriesEnabled
+```
+
+and:
+
+```php
+config('enquiries.route_enabled')
+```
+
+if current routes already expect this.
+
+Do not invent environment-driven partial production activation unless approved.
+
+---
+
+# 94. Route Middleware
+
+Expected conceptual order:
+
+```text
+api
+→ clerk.optional
+→ customer-submission
+→ enquiries.enabled
+→ throttle:anonymous-submit
+```
+
+Use actual repository conventions.
+
+---
+
+# 95. Anonymous Submission Limiter
+
+Reuse the public anonymous submission limiter if designed for both Request and Enquiry intake.
+
+Do not create arbitrary new rate thresholds without contract/security basis.
+
+---
+
+# 96. Invalid Bearer
 
 Still:
 
@@ -1557,664 +1703,1212 @@ Still:
 401 INVALID_AUTHENTICATION
 ```
 
-not anonymous fallback.
+Never downgrade.
 
 ---
 
-# 99. IN_STOCK API Test
+# 97. Staff/Admin
 
-With route enabled in-process:
+Still:
 
 ```text
-valid public IN_STOCK product_id
-→ 409 PRODUCT_NOT_REQUESTABLE
-field: product_id
+403 FORBIDDEN
 ```
 
-Assert no Request row.
+for ENQ-001.
 
 ---
 
-# 100. Hidden Product API Tests
+# 98. No Idempotency-Key
 
-For each:
+ENQ-001 is not inherently idempotent.
+
+Do not require:
 
 ```text
-inactive
-unpublished
-soft-deleted
-inactive category
+Idempotency-Key
 ```
 
-assert the chosen canonical public not-found response.
-
-Do not expose which hidden state caused rejection.
+Duplicate submission may create two Enquiries.
 
 ---
 
-# 101. Unknown Product API Test
+# 99. No Content-Based Deduplication
 
-Well-formed but nonexistent:
+Never create a uniqueness rule such as:
 
 ```text
-prod_...
+email + message
+phone + subject
+user + subject + day
 ```
 
-→ same not-found family as other non-public Product cases.
+Repeated legitimate questions are possible.
 
 ---
 
-# 102. Product Type Error Does Not Mutate Anything
+# 100. Creation Status
 
-On `PRODUCT_NOT_REQUESTABLE`:
+Persist:
 
 ```text
-no Request
-no Cart
-no Order
-no Payment
-no Inventory mutation
+OPEN
 ```
 
+server-side.
+
 ---
 
-# 103. OpenAPI Error Enum Test
+# 101. No Staff Lifecycle Endpoint Yet
 
-Add/extend a contract regression that asserts:
+Do not implement full:
 
 ```text
-PRODUCT_NOT_REQUESTABLE
+ENQ-004
+ENQ-005
+ENQ-006
 ```
 
-is present in the frozen global error enum if reconciliation is required.
+unless the roadmap/current phase explicitly requires them.
+
+Phase 10.5 is the General Enquiry domain foundation/intake.
+
+Operational queues belong with later staff-management work/10.8 closure as appropriate.
 
 ---
 
-# 104. Backend Error Registry Test
+# 102. No Customer Retrieval Yet
 
-Assert:
+Do not automatically implement:
 
 ```text
-ApiErrorCode::PRODUCT_NOT_REQUESTABLE
+GET /me/enquiries
+GET /me/enquiries/{enquiry}
 ```
 
-or equivalent is valid and serializes exactly.
+unless current Group J plan explicitly assigns them to 10.5.
+
+Keep phase scope focused on creation/domain.
 
 ---
 
-# 105. HTTP Status
+# 103. Order Ownership Query
 
-Frozen Request contract selects:
+Reuse existing ownership semantics from Order endpoints.
+
+Do not write:
 
 ```text
-PRODUCT_NOT_REQUESTABLE → 409
+Order::find(id)
+then compare loosely
 ```
 
-Do not map it to:
+if an ownership-safe query helper exists.
+
+---
+
+# 104. Order IDOR Protection
+
+Mandatory:
 
 ```text
-422 PRODUCT_NOT_PURCHASABLE
+Customer A → Customer B order_id
+→ 404 masked
 ```
 
+Do not return 403.
+
+Do not expose Order existence.
+
 ---
 
-# 106. Client Correction Semantics
+# 105. Anonymous Order Probe Protection
 
-`409 PRODUCT_NOT_REQUESTABLE` means:
+Anonymous + any non-null order ID:
 
 ```text
-this visible Product does not belong in the made-to-order Request workflow
+422 INVALID_VALUE
+field: order_id
 ```
 
-The client should use normal purchase flow instead.
+unless future scoped token infrastructure exists.
 
-Do not return internal routing advice in error details.
+Do not perform Order lookup first if it would permit probing.
 
 ---
 
-# 107. Not-Found Semantics
+# 106. Product Visibility Probe Protection
 
-Hidden/missing Product should not tell the anonymous caller:
+Malformed Product ID:
 
 ```text
-this product exists but is unpublished
+422 INVALID_FORMAT
 ```
 
-Keep safe public behavior.
+without Product query.
 
----
-
-# 108. Existing Product Visibility Tests
-
-Run Group E public catalog regressions.
-
-At minimum the tests proving:
+Valid-looking hidden/missing Product:
 
 ```text
-active + published + active category visible
-inactive hidden
-unpublished hidden
-soft-deleted hidden
-inactive category hidden
+canonical 404
 ```
 
-Do not alter Group E semantics.
+without hidden-state detail.
 
 ---
 
-# 109. Existing MADE_TO_ORDER Catalog Test
+# 107. Product Association Any Type
 
-Run tests proving MADE_TO_ORDER remains:
+Tests must prove:
 
 ```text
-availability = available
-stock_indicator = MADE_TO_ORDER
+public IN_STOCK → valid
+public MADE_TO_ORDER → valid
 ```
 
-without inventory dependency.
+This is a major regression guard against accidental reuse of Request eligibility.
 
 ---
 
-# 110. Cart Regression
+# 108. Product Zero Stock
 
-Run relevant Group F admission tests proving:
+Still valid Enquiry context.
+
+No stock requirement.
+
+---
+
+# 109. Order Association Does Not Require Active Commerce
+
+A Customer may enquire about an existing owned Order regardless of normal workflow state unless the frozen contract says otherwise.
+
+Do not restrict to:
 
 ```text
-MADE_TO_ORDER → PRODUCT_NOT_PURCHASABLE
+PENDING_PAYMENT
+ACTIVE
+open orders
 ```
 
-Phase 10.4 must not accidentally make MADE_TO_ORDER Cart-purchasable.
+without contract support.
 
 ---
 
-# 111. Checkout Regression
+# 110. Order Ownership, Not Order Status
 
-Run the relevant Checkout Product eligibility test for MADE_TO_ORDER rejection if touched shared Product logic.
-
-Keep:
+The primary domain check is:
 
 ```text
-Requestable
-≠
-Checkout purchasable
+exists + owned
 ```
 
----
-
-# 112. Product Scope Reuse Regression
-
-If modifying a shared Product scope/query:
-
-run all CAT-001/CAT-002 tests.
-
-Do not change public catalog ordering/filter behavior.
-
----
-
-# 113. Phase 10.1 Regression
-
-Run creation/resource tests.
-
----
-
-# 114. Phase 10.2 Regression
-
-Run:
+not:
 
 ```text
-FurnitureRequestValidationApiTest
-```
-
-All 102+ validation cases remain green.
-
----
-
-# 115. Phase 10.3 Regression
-
-Run Request lifecycle tests.
-
-Product integration must not alter status behavior.
-
----
-
-# 116. No Product Revalidation During Status Changes
-
-Add a regression if necessary:
-
-```text
-create linked MTO request
-unpublish Product
-transition Request → IN_REVIEW
-→ success
-```
-
-This permanently protects historical independence.
-
----
-
-# 117. Resource Historical Behavior
-
-Do not make later Request serialization throw because Product becomes non-public.
-
-If the current relationship/resource directly assumes a live public Product, identify the issue.
-
-Do not solve unrelated later retrieval behavior prematurely unless needed to avoid a clear 500.
-
----
-
-# 118. Soft-Deleted Relationship Caution
-
-If Product soft deletion means the relation becomes `null` under ordinary Eloquent relationship loading:
-
-do not automatically change it to `withTrashed()` in Phase 10.4 unless the frozen Request representation/history requires it and tests justify it.
-
-Record the future retrieval concern for 10.7/10.8 if appropriate.
-
----
-
-# 119. Product Summary Is Context, Not Authority
-
-The linked Product summary is convenience context.
-
-The Request's intake specifications/contact remain authoritative historical request data.
-
----
-
-# 120. Do Not Auto-Copy Product Name Into Notes
-
-No hidden transformations like:
-
-```text
-notes = "Request for {product.name}"
+currently editable
+currently payable
 ```
 
 ---
 
-# 121. Do Not Auto-Fill Quantity
+# 111. No Order Mutation
 
-Linked Product still does not imply:
+Association must not:
 
 ```text
-quantity = 1
+change order status
+create status history
+cancel order
+reopen order
+set staff notes
 ```
 
-Omitted quantity remains null.
+---
+
+# 112. No Notification Yet
+
+Although the frozen Notification contract identifies:
+
+```text
+NEW_ENQUIRY
+```
+
+for staff, Group R owns notification implementation.
+
+Do not create Notification rows in Phase 10.5 unless current roadmap explicitly moved that scope.
 
 ---
 
-# 122. Do Not Auto-Fill Dimensions
+# 113. No Email
 
-Do not derive Product Variant dimensions into the request.
+Do not send emails.
 
-Request dimensions are explicit customer intent.
-
----
-
-# 123. Do Not Auto-Fill Material/Color
-
-Same.
+Group R.
 
 ---
 
-# 124. No Variant Selection
+# 114. No Queue
 
-Do not add `variant_id` to REQ-001.
-
-That is a contract change.
+Do not introduce async queues just for Enquiry intake.
 
 ---
 
-# 125. No Product Slug Field
+# 115. No CAPTCHA
+
+Continue rate limiting.
+
+CAPTCHA remains deferred unless abuse warrants it.
+
+---
+
+# 116. Schema/API Validation
+
+Strict input allow-list:
+
+```text
+name
+phone
+email
+subject
+message
+category
+product_id
+order_id
+```
+
+Attachment deferred.
+
+---
+
+# 117. Server-Controlled Rejections
+
+Reject:
+
+```text
+user_id
+enquiry_status
+staff_internal_notes
+enquiry_reference
+id
+created_at
+updated_at
+```
+
+---
+
+# 118. Commerce Tampering
+
+Reject:
+
+```text
+order_status
+payment
+payment_status
+payment_id
+delivery_fee
+subtotal
+total
+price
+currency
+```
+
+---
+
+# 119. Request-Domain Tampering
+
+Reject:
+
+```text
+request_id
+request_status
+dimensions
+material
+color
+quantity
+notes
+```
+
+---
+
+# 120. Validation Error Mapping
+
+Use existing canonical envelope.
+
+Typical:
+
+```text
+MISSING_REQUIRED_FIELD
+INVALID_TYPE
+INVALID_FORMAT
+INVALID_VALUE
+RESOURCE_NOT_FOUND
+```
+
+Do not create generic `VALIDATION_ERROR`.
+
+---
+
+# 121. Anonymous Missing Name
+
+```text
+422 MISSING_REQUIRED_FIELD
+field: name
+```
+
+---
+
+# 122. Anonymous Missing Contact
+
+Use deterministic field mapping according to frozen contract, preferably:
+
+```text
+field: phone
+```
+
+if that is current convention.
+
+---
+
+# 123. Authenticated Contact Resolution Failure
+
+If after supplied + derived data there is no reachable contact:
+
+return deterministic validation/domain error.
+
+Document exact mapping.
+
+---
+
+# 124. Subject Errors
+
+Use public field:
+
+```text
+subject
+```
+
+---
+
+# 125. Message Errors
+
+Use:
+
+```text
+message
+```
+
+---
+
+# 126. Category Errors
+
+Use:
+
+```text
+category
+```
+
+---
+
+# 127. Product Errors
+
+Use:
+
+```text
+product_id
+```
+
+---
+
+# 128. Order Errors
+
+Use:
+
+```text
+order_id
+```
+
+---
+
+# 129. `INVALID_ENQUIRY`
+
+The frozen contract recognizes an Enquiry-specific business error family.
+
+Do not use it as a catch-all for ordinary schema validation.
+
+Use it only where current normative contract actually calls for Enquiry-specific invalid state/business rules.
+
+---
+
+# 130. Error Registry Review
+
+Before implementing, inspect:
+
+```text
+ApiErrorCode
+openapi global error enum
+api-contract §15.15
+§27.19
+```
+
+If an already-frozen Enquiry error code is missing, reconcile it exactly as Phase 10.4 did with `PRODUCT_NOT_REQUESTABLE`.
+
+Do not invent new codes unnecessarily.
+
+---
+
+# 131. Plain-Text Safety Test
+
+Persist input containing:
+
+```text
+<script>alert(1)</script>
+```
+
+as literal text if within limits.
+
+Do not execute, interpret, or transform it into behavior.
+
+The backend should treat it as text.
+
+---
+
+# 132. Subject Newlines
+
+Inspect frozen semantics.
+
+If subject is intended as one short triage line, normalize/reject newlines consistently.
+
+Do not guess.
+
+Use current docs/OpenAPI tests if available.
+
+---
+
+# 133. Message Newlines
+
+Preserve meaningful newlines.
+
+---
+
+# 134. Unicode
+
+Preserve valid Unicode in:
+
+```text
+name
+subject
+message
+```
+
+---
+
+# 135. Contact Snapshot Independence
+
+Authenticated Customer:
+
+```text
+create Enquiry
+change profile
+```
+
+Stored Enquiry contact must remain unchanged.
+
+---
+
+# 136. Explicit Contact Overrides Profile
+
+Customer has:
+
+```text
+profile phone = A
+```
+
+submits:
+
+```text
+phone = B
+```
+
+Persist:
+
+```text
+B
+```
+
+assuming valid.
+
+---
+
+# 137. Partial Derived Contact
+
+Example:
+
+```text
+submitted name
+profile email
+no submitted phone/email
+```
+
+Final snapshot may use submitted name + derived email.
+
+Test mixed-source contact.
+
+---
+
+# 138. Invalid Supplied + Valid Derived
+
+Example:
+
+```text
+submitted invalid email
+valid profile email
+```
+
+Reject the invalid submission.
+
+Do not silently overwrite it with profile email.
+
+---
+
+# 139. Product + Order Resource Loading
+
+Load only safe summaries needed for the created response.
+
+Avoid N+1-style over-fetch.
+
+One creation response does not require catalog detail graphs.
+
+---
+
+# 140. Historical Product Relationship
+
+Do not make later Enquiry serialization dependent on Product still being public.
+
+Eligibility is checked at creation.
+
+---
+
+# 141. Historical Order Relationship
+
+Do not make Enquiry history disappear if Order status later changes.
+
+---
+
+# 142. Product Hard Delete Policy
+
+Inspect the schema's FK behavior.
+
+Earlier schema decisions indicate Enquiry/Product relationships may use `SET NULL` on hard deletion.
+
+Do not change that in 10.5 unless a genuine contract issue exists.
+
+---
+
+# 143. Order Deletion Policy
+
+Inspect existing FK policy.
+
+Do not redesign.
+
+---
+
+# 144. No Snapshot Columns Added
 
 Do not add:
 
 ```text
-product_slug
+product_details
+order_details
 ```
 
-to input.
+just to preserve related labels.
 
-The embedded resource may contain slug, but input remains `product_id`.
+Use existing schema/contracts.
 
 ---
 
-# 126. No Product Type Field
+# 145. No Price Snapshot
 
-Client must not submit:
+Even product-linked Enquiry does not snapshot price.
+
+---
+
+# 146. No Payment Snapshot
+
+Order-linked Enquiry does not snapshot payment.
+
+---
+
+# 147. No Delivery Snapshot
+
+Order-linked Enquiry does not expose or duplicate addresses.
+
+---
+
+# 148. Resource Privacy
+
+Anonymous submitter receives the creation response but gains no future retrieval capability merely from knowing `enq_...`.
+
+Do not make ID into a bearer credential.
+
+---
+
+# 149. No Anonymous GET
+
+Do not add public:
 
 ```text
-product_type
+GET /enquiries/{id}
 ```
-
-as authority.
-
-Backend derives it from Product.
 
 ---
 
-# 127. Tampering Test
+# 150. Tests — Creation Service
 
-A request body containing:
-
-```json
-{
-  "product_id": "prod_...",
-  "product_type": "MADE_TO_ORDER"
-}
-```
-
-must reject unknown:
+Add focused:
 
 ```text
-product_type
+EnquiryCreationServiceTest
 ```
 
-through Phase 10.2.
+or equivalent.
 
-Do not trust the client assertion.
-
----
-
-# 128. No Availability Field
-
-Reject client:
+Test:
 
 ```text
-availability
-stock_indicator
+anonymous ownership null
+CUSTOMER ownership derived
+OPEN default
+reference/id generation
+contact snapshot
+no commerce side effects
 ```
-
-if supplied.
-
-They are not REQ-001 fields.
 
 ---
 
-# 129. Domain Resolver Query Efficiency
+# 151. Tests — Validation
 
-One linked request should require a bounded Product query.
-
-Do not load:
+Add:
 
 ```text
-variants
-stocks
-images
-recommendations
-materials
+EnquiryValidationApiTest
 ```
 
-for eligibility.
+Cover strict types/allow-list/bounds.
 
-Only load what is needed:
+---
+
+# 152. Tests — Anonymous Contact Matrix
+
+At minimum:
 
 ```text
-Product
-Category/public-visibility relation if required
+name + phone → valid
+name + email → valid
+name + phone + email → valid
+missing name → invalid
+name + no channel → invalid
+invalid supplied phone → invalid
+invalid supplied email → invalid
 ```
 
 ---
 
-# 130. Resource Load Separately If Needed
+# 153. Tests — Authenticated Contact Matrix
 
-After creation, load only the fields/relation needed for:
+At minimum:
 
 ```text
-product {id,name,slug}
+all submitted → submitted snapshot
+none submitted + trusted profile/account complete → derived
+name only + derived email → valid
+email only + derived name → valid
+invalid supplied email + valid derived email → still invalid
+no reachable submitted/derived contact → invalid
 ```
-
-Do not reuse a huge catalog-detail eager-load graph.
 
 ---
 
-# 131. Request Creation Transaction
-
-If the current creation service already uses a transaction for:
+# 154. Tests — Subject
 
 ```text
-reference generation
-Request persistence
+4 chars invalid
+5 valid
+200 valid
+201 invalid
+wrong type invalid
+blank invalid
 ```
 
-integrate Product eligibility without creating nested independent commits.
-
 ---
 
-# 132. Eligibility Timing
-
-Domain eligibility should happen close enough to persistence that a Request is not knowingly linked to an invalid Product state.
-
-Do not validate in middleware far away from creation.
-
----
-
-# 133. No Product Lock by Default
-
-Because Request intake does not reserve/purchase the Product, a normal visibility read is sufficient unless current active Product mutation introduces a proven race.
-
-Do not turn low-concurrency intake into heavyweight transactional locking without evidence.
-
----
-
-# 134. Error Logging
-
-Do not log full Request contact because Product lookup failed.
-
-Safe context might include:
+# 155. Tests — Message
 
 ```text
-request_id
-opaque product identifier
-error code
+9 invalid
+10 valid
+5000 valid
+5001 invalid
+wrong type invalid
+blank invalid
+newline preservation
+markup-like plain text safe
 ```
-
-only if current logging policy permits.
 
 ---
 
-# 135. No Sensitive Catalog Internals in Error
-
-Do not include:
+# 156. Tests — Category
 
 ```text
-is_active=false
-is_published=false
-category inactive
-deleted_at
+omitted → null
+null → null
+GENERAL → valid
+PRODUCT → valid
+DELIVERY → valid
+OTHER → valid
+lowercase → invalid
+unknown → invalid
+wrong type → invalid
 ```
-
-in `details`.
 
 ---
 
-# 136. Rate Limiting
-
-Keep:
+# 157. Tests — Product
 
 ```text
-throttle:anonymous-submit
+omitted → valid
+null → valid
+public IN_STOCK → valid
+public MADE_TO_ORDER → valid
+unknown → 404
+inactive → masked 404
+unpublished → masked 404
+soft-deleted → masked 404
+inactive Category → masked 404
 ```
-
-unchanged.
-
-Product lookup failures still consume request submission rate budget when route is test-enabled/public later.
-
-Do not create a product-probing bypass.
 
 ---
 
-# 137. Route Middleware
-
-Preserve:
+# 158. Tests — Anonymous Order
 
 ```text
-api
-→ clerk.optional
-→ customer-submission
-→ requests.enabled
-→ throttle:anonymous-submit
+order_id omitted → valid
+order_id null → valid
+non-null order_id → 422 INVALID_VALUE
 ```
 
-unless the current actual ordering differs for a documented reason.
-
-Do not reorder in 10.4.
+No Order lookup/ownership inference should be used to authorize anonymous.
 
 ---
 
-# 138. Route Remains Gated
-
-At Phase 10.4 completion:
+# 159. Tests — Customer Order
 
 ```text
-POST /api/v1/requests
+owned Order → valid
+other Customer's Order → masked 404
+unknown Order → same masked 404 family
 ```
 
-should still normally be:
+---
+
+# 160. Tests — Both Associations
 
 ```text
-STUB/GATED
+valid public Product + owned Order
+→ valid
 ```
-
-because Phase 10.6 must implement frozen attachment support before public activation.
 
 ---
 
-# 139. Why 10.6 Still Blocks Activation
+# 161. Tests — No Associations
 
-The frozen REQ-001 contract supports:
+General Enquiry with neither:
 
 ```text
-multipart/form-data
-optional single attachment
+product_id
+order_id
 ```
 
-A public endpoint that only supports JSON while advertising the frozen multipart contract would remain incomplete.
-
-Therefore do not activate early.
+→ valid.
 
 ---
 
-# 140. Phase 10.5 Independence
+# 162. Tests — Resource
 
-General Enquiries are a different domain.
-
-Do not reuse `RequestableProductResolver` blindly for Enquiries because Enquiries may reference any public Product under their own contract.
-
-Phase 10.5 should implement its own appropriate Product association rule.
-
----
-
-# 141. Do Not Generalize Resolver Too Far
-
-Avoid a generic:
+Assert exact:
 
 ```text
-PublicProductBusinessRuleEngine
+id
+name
+email
+phone
+subject
+message
+category
+product_id
+product
+order_id
+order
+enquiry_status
+attachments
+created_at
+updated_at
 ```
 
-just to serve future Enquiries.
-
-Implement the smallest Request-specific eligibility service while reusing the shared public visibility scope.
+No internal fields.
 
 ---
 
-# 142. Schema
+# 163. Tests — Product Summary
+
+Exactly:
+
+```text
+id
+name
+slug
+```
+
+---
+
+# 164. Tests — Order Summary
+
+Exactly:
+
+```text
+id
+order_reference
+status
+```
+
+---
+
+# 165. Tests — Hidden Fields
+
+Response omits:
+
+```text
+user_id
+staff_internal_notes
+numeric IDs
+payment
+totals
+delivery_address
+billing_address
+```
+
+---
+
+# 166. Tests — No Side Effects
+
+After valid Enquiry:
+
+```text
+Order count unchanged
+Payment count unchanged
+ProductStock unchanged
+Cart unchanged
+FurnitureRequest count unchanged
+```
+
+---
+
+# 167. Tests — Request Separation
+
+Creating an Enquiry must not create/update:
+
+```text
+FurnitureRequest
+```
+
+---
+
+# 168. Tests — Duplicate Submission
+
+Two identical valid ENQ-001 submissions create:
+
+```text
+two Enquiries
+```
+
+No deduplication.
+
+---
+
+# 169. Tests — Auth Boundaries
+
+```text
+anonymous → allowed
+CUSTOMER → allowed
+invalid bearer → 401
+STAFF → 403
+ADMIN → 403
+```
+
+---
+
+# 170. Tests — Route Gating
+
+If ENQ-001 is gated:
+
+assert:
+
+```text
+default route → NotImplementedResponse
+in-process enabled → real controller
+```
+
+following current Request feature-gate pattern.
+
+---
+
+# 171. Tests — Cache Headers
+
+Created response:
+
+```text
+private, no-store
+```
+
+plus `Vary: Authorization` where applicable.
+
+---
+
+# 172. Tests — Rate Limiting
+
+Verify the public submission limiter remains attached.
+
+Do not exhaustively retest middleware internals already covered globally.
+
+---
+
+# 173. Tests — Error Privacy
+
+Hidden Product and foreign Order failures must not expose internal state/owner.
+
+---
+
+# 174. Existing Request Regressions
+
+Run:
+
+```text
+FurnitureRequest*
+RequestStatus*
+RequestableProductResolver*
+```
+
+General Enquiry work must not regress Request behavior.
+
+---
+
+# 175. Product Regressions
+
+If public Product scope reused but not modified:
+
+run relevant Product visibility tests.
+
+If modified:
+
+run full Group E catalog regression.
+
+---
+
+# 176. Order Regressions
+
+If reusing/changing Order ownership helpers:
+
+run:
+
+```text
+customer Order detail/list ownership tests
+404 masking tests
+```
+
+Do not weaken IDOR protections.
+
+---
+
+# 177. Phone Regression
+
+Because Enquiry uses shared `PhoneNumber`:
+
+run:
+
+```text
+Request phone validation
+DeliveryFulfillmentState
+UpdateMeRequest
+```
+
+where appropriate.
+
+---
+
+# 178. Schema Regressions
+
+Run:
+
+```text
+EnquirySchemaTest
+SchemaIntegrityTest
+```
+
+or actual equivalents.
+
+---
+
+# 179. Status Enum
+
+Reuse existing:
+
+```text
+EnquiryStatus
+```
+
+or repository equivalent.
+
+Do not introduce duplicate enum.
+
+---
+
+# 180. Category Enum
+
+Reuse:
+
+```text
+EnquiryCategory
+```
+
+from Group C.
+
+---
+
+# 181. Reference Generator
+
+If Enquiry reference generation is already centralized, reuse:
+
+```text
+ReferenceGenerator
+```
+
+Do not use Faker/random in production.
+
+---
+
+# 182. Identifier
+
+Reuse/create the canonical:
+
+```text
+EnquiryIdentifier
+```
+
+only if not already present.
+
+Follow existing opaque-ID pattern.
+
+---
+
+# 183. No Schema Change
 
 Expected:
 
 ```text
-Schema: NONE
+NONE
 ```
-
-No migration.
 
 ---
 
-# 143. Dependencies
+# 184. No New External Dependency
 
 Expected:
 
 ```text
-Dependencies: NONE
+NONE
 ```
 
 ---
 
-# 144. Frontend
+# 185. Frontend
 
 Expected:
 
 ```text
-Frontend: NONE
+NONE
 ```
 
 ---
 
-# 145. OpenAPI
+# 186. OpenAPI
 
-Expected outcome:
+Expected:
 
 ```text
 UNCHANGED
 ```
 
-except, if confirmed necessary:
+except for a strictly confirmed pre-existing frozen-error-enum omission.
 
-```text
-add already-frozen PRODUCT_NOT_REQUESTABLE
-to the global error-code enum
-```
-
-Classify that exact change as:
-
-```text
-contract consistency correction
-```
-
-not a new endpoint or behavior.
+Do not redesign ENQ-001.
 
 ---
 
-# 146. Documentation
+# 187. Attachment Contract
 
-Add the next backend ADR if current practice continues.
+Do not remove:
+
+```text
+multipart/form-data
+attachment
+```
+
+from the frozen API simply because Phase 10.6 has not implemented it yet.
+
+Keep the route gated.
+
+---
+
+# 188. Documentation
+
+Add the next backend ADR if repository practice continues.
 
 Likely:
 
 ```text
-ADR/BACKEND-046 — Product-Linked Furniture Request Eligibility
+ADR/BACKEND-047 — General Enquiry Intake Boundary
 ```
 
-but inspect the current latest ADR number after BACKEND-045.
-
-Do not assume.
+but inspect the actual next ADR number first.
 
 ---
 
-# 147. ADR Content
+# 189. ADR Content
 
 Record:
 
 ```text
-product_id remains optional/nullable
-custom request path requires no Product
-linked Product uses existing public visibility authority
-public visibility = active + published + not deleted + active Category
-Product must be MADE_TO_ORDER
-public IN_STOCK → 409 PRODUCT_NOT_REQUESTABLE
-hidden/missing Product → canonical public not-found
-MADE_TO_ORDER requestability independent of inventory/Variants
-no price snapshot
-no product_details snapshot
-historical Request not invalidated by later Product changes
-no Cart/Order/Payment/inventory effects
-route remains gated for Phase 10.6
-PRODUCT_NOT_REQUESTABLE enum reconciliation if needed
+Enquiry distinct from Request
+anonymous + CUSTOMER creation
+authenticated contact derivation
+explicit contact overrides trusted fallback
+historical contact snapshot
+subject/message plain-text constraints
+category CLOSED enum
+optional any-public-Product association
+optional owned-Order association
+anonymous order_id rejected
+OPEN default
+no idempotency requirement
+no content deduplication
+no Order/Payment/Inventory side effects
+private resource serialization
+route gated pending Phase 10.6
 ```
 
 ---
 
-# 148. Group J Tracking
+# 190. Group J Tracking
 
 After PASS:
 
@@ -2223,32 +2917,36 @@ After PASS:
 10.2 PASS
 10.3 PASS
 10.4 PASS
-10.5 READY
-10.6 NOT STARTED
+10.5 PASS
+10.6 READY
 10.7 NOT STARTED
 10.8 NOT STARTED
 ```
 
 ---
 
-# 149. Phase 10.5 Readiness
+# 191. Phase 10.6 Readiness
 
-Phase 10.5 — General Enquiries may proceed after 10.4.
+After 10.5, Phase 10.6 should be able to build one shared secure attachment architecture for:
 
-Do not automatically start it.
+```text
+Furniture Requests
+General Enquiries
+```
+
+without changing either intake service's domain semantics.
 
 ---
 
-# 150. Focused Verification
+# 192. Verification Commands
 
-Run focused tests such as:
+Run focused tests first:
 
 ```bash
-php artisan test --filter=RequestableProduct
-php artisan test --filter=FurnitureRequest
+php artisan test --filter=Enquiry
 ```
 
-then:
+Then:
 
 ```bash
 php artisan test
@@ -2259,42 +2957,15 @@ git diff --check
 php artisan route:list
 ```
 
-Verify OpenAPI parsing.
+Validate OpenAPI parsing.
 
 ---
 
-# 151. Catalog Regressions
-
-Run relevant Product/Catalog tests explicitly.
-
-Report them separately from Furniture Request tests.
-
----
-
-# 152. Cart/Checkout Regressions
-
-If any shared Product visibility/type helper was touched, run:
-
-```text
-Cart Product admission regressions
-Checkout Product eligibility regressions
-```
-
-to prove:
-
-```text
-MADE_TO_ORDER
-→ requestable
-→ not Cart/Checkout purchasable
-```
-
----
-
-# 153. Completion Report
+# 193. Completion Report
 
 Return:
 
-## Phase 10.4 status
+## Phase 10.5 status
 
 ```text
 PASS
@@ -2306,187 +2977,162 @@ or:
 BLOCKED
 ```
 
----
-
-## Product resolver
-
-Report exact class/service.
-
----
-
-## Public visibility authority
-
-Report exact reused Product scope/service and rules:
+## Endpoint
 
 ```text
-active
-published
-not soft-deleted
-active Category
+ENQ-001
+POST /api/v1/enquiries
 ```
-
----
-
-## Custom request
-
-Report:
-
-```text
-product_id omitted → valid
-product_id null → valid
-Product lookup → none
-```
-
----
-
-## Linked request
-
-Report:
-
-```text
-public MADE_TO_ORDER → allowed
-```
-
----
-
-## IN_STOCK behavior
-
-Report exact:
-
-```text
-409 PRODUCT_NOT_REQUESTABLE
-field: product_id
-```
-
----
-
-## Missing/non-public behavior
-
-Report exact code/status selected for:
-
-```text
-unknown ID
-inactive Product
-unpublished Product
-soft-deleted Product
-inactive Category
-```
-
-Confirm these do not leak hidden Product state.
-
----
-
-## Inventory
-
-Confirm:
-
-```text
-ProductStock queries required for eligibility = NO
-reservation = NONE
-quantity mutation = NONE
-allocation = NONE
-```
-
----
-
-## Variants
-
-Confirm:
-
-```text
-variant required = NO
-```
-
----
-
-## Price
-
-Confirm:
-
-```text
-price snapshot = NONE
-quote = NONE
-```
-
----
-
-## Persistence
-
-Confirm:
-
-```text
-FurnitureRequest.product_id
-= resolved internal Product FK
-```
-
-for linked Requests.
-
----
-
-## Product resource
-
-Confirm embedded fields remain:
-
-```text
-id
-name
-slug
-```
-
-only.
-
----
-
-## Historical behavior
-
-Confirm later Product state changes do not retroactively invalidate Request lifecycle.
-
----
-
-## Error registry
-
-Report whether:
-
-```text
-PRODUCT_NOT_REQUESTABLE
-```
-
-already existed or was added.
-
----
-
-## OpenAPI reconciliation
-
-Report whether the global enum required correction.
-
-If changed, classify:
-
-```text
-pre-existing frozen-contract consistency correction
-```
-
----
 
 ## Route
 
 Report:
 
 ```text
-POST /api/v1/requests
+name
+middleware
+controller
+ACTIVE or STUB/GATED
+```
+
+Expected before 10.6:
+
+```text
 STUB/GATED
 ```
 
-and Phase 10.6 as remaining activation prerequisite.
+## Actor model
 
----
+```text
+Anonymous allowed
+CUSTOMER allowed
+invalid bearer rejected
+STAFF rejected
+ADMIN rejected
+```
+
+## Request validator
+
+Report exact class.
+
+## Input object
+
+Report exact normalized input/VO if used.
+
+## Command
+
+Report exact command.
+
+## Creation service
+
+Report exact service.
+
+## Contact
+
+Report separately:
+
+```text
+Anonymous:
+name explicit
+phone/email explicit
+
+CUSTOMER:
+name/phone/email optional submitted
+missing fields derived from trusted profile/account
+explicit valid submitted values win
+at least one final reachable contact required
+```
+
+## Subject
+
+Report:
+
+```text
+5..200
+plain text
+```
+
+## Message
+
+Report:
+
+```text
+10..5000
+plain text
+newlines preserved
+```
+
+## Category
+
+Report:
+
+```text
+GENERAL
+PRODUCT
+DELIVERY
+OTHER
+nullable
+```
+
+## Product association
+
+Report:
+
+```text
+any public Product type
+IN_STOCK allowed
+MADE_TO_ORDER allowed
+hidden/missing masked
+```
+
+## Order association
+
+Report:
+
+```text
+anonymous non-null order_id rejected
+CUSTOMER owned Order allowed
+foreign/unknown Order 404 masked
+```
+
+## Ownership
+
+Report:
+
+```text
+anonymous user_id=null
+CUSTOMER user_id server-derived
+```
+
+## Initial status
+
+```text
+OPEN
+```
+
+## Resource
+
+Report exact serializer fields.
+
+## Attachments
+
+```text
+NOT IMPLEMENTED
+Phase 10.6
+```
+
+## Request relationship
+
+```text
+NO Enquiry↔FurnitureRequest conversion
+```
 
 ## Orders
 
 ```text
-NONE
+created = NONE
+mutated = NONE
 ```
-
----
 
 ## Payments
 
@@ -2494,15 +3140,31 @@ NONE
 NONE
 ```
 
----
-
-## Inventory effects
+## Inventory
 
 ```text
 NONE
 ```
 
----
+## Price / Quote
+
+```text
+NONE
+```
+
+## Idempotency
+
+```text
+not required
+duplicate valid submissions allowed
+```
+
+## Notifications
+
+```text
+NONE
+Group R
+```
 
 ## Schema
 
@@ -2512,8 +3174,6 @@ Expected:
 NONE
 ```
 
----
-
 ## Dependencies
 
 Expected:
@@ -2521,8 +3181,6 @@ Expected:
 ```text
 NONE
 ```
-
----
 
 ## Frontend
 
@@ -2532,32 +3190,39 @@ Expected:
 NONE
 ```
 
----
+## OpenAPI
+
+Expected:
+
+```text
+UNCHANGED
+```
+
+or exact approved consistency correction.
 
 ## Tests
 
 Report:
 
 ```text
-resolver matrix
-custom request
-anonymous linked MTO
-CUSTOMER linked MTO
-IN_STOCK rejection
-hidden Product cases
-inactive Category
-zero-stock MTO
-resource summary
-historical independence
-10.1 regression
-10.2 regression
-10.3 regression
-catalog regressions
-Cart/Checkout regressions if shared code touched
+anonymous contact matrix
+authenticated contact derivation matrix
+subject bounds
+message bounds/plain-text safety
+category enum
+Product association both Product types
+Product visibility masking
+anonymous order rejection
+Order ownership/IDOR masking
+product+order combination
+no association path
+ownership
+resource exposure
+duplicate submissions
+zero commerce effects
+Request regressions
 full suite
 ```
-
----
 
 ## Quality
 
@@ -2573,8 +3238,6 @@ route:list
 OpenAPI parse
 ```
 
----
-
 ## Group J status
 
 Return:
@@ -2583,118 +3246,137 @@ Return:
 10.1 PASS
 10.2 PASS
 10.3 PASS
-10.4 PASS/BLOCKED
-10.5 READY/BLOCKED
-10.6 NOT STARTED
+10.4 PASS
+10.5 PASS/BLOCKED
+10.6 READY/BLOCKED
 10.7 NOT STARTED
 10.8 NOT STARTED
 ```
 
 ---
 
-# 154. Definition of Done
+# 194. Definition of Done
 
-Phase 10.4 is complete when:
+Phase 10.5 is complete when:
 
-- `product_id` remains optional;
-- `product_id=null` remains valid;
-- custom requests do not query Product unnecessarily;
-- supplied opaque Product ID is resolved server-side;
-- numeric DB IDs are not accepted;
-- Product slug is not accepted as `product_id`;
-- the existing public Product visibility authority is reused;
-- active Product is required;
-- published Product is required;
-- soft-deleted Product is rejected;
-- active Category is required;
-- hidden Product states are not disclosed to anonymous callers;
-- Product type is derived server-side;
-- public MADE_TO_ORDER Product is accepted;
-- public IN_STOCK Product is rejected with `PRODUCT_NOT_REQUESTABLE`;
-- the error uses HTTP 409 according to the frozen Request contract;
-- MADE_TO_ORDER requestability does not depend on ProductStock;
-- no Variant is required;
-- zero-stock MADE_TO_ORDER remains requestable;
-- no price is locked;
-- no quote is produced;
-- no `product_details` snapshot is invented;
-- linked Request persists the correct Product FK;
-- created resource exposes only safe `{id,name,slug}` Product summary;
-- Product eligibility occurs after schema validation;
-- malformed Product IDs do not hit the database;
-- valid-looking missing Products use canonical public not-found behavior;
-- Product eligibility failure creates no FurnitureRequest;
-- Product eligibility failure creates no Order;
-- Product eligibility failure creates no Payment;
-- Product eligibility failure changes no inventory;
-- successful Request still begins SUBMITTED;
-- later Product changes do not prevent Request status lifecycle;
-- MADE_TO_ORDER remains prohibited from Cart/Checkout;
-- `PRODUCT_NOT_REQUESTABLE` is aligned across backend registry and frozen API documentation;
+- General Enquiry is implemented as a distinct domain from Furniture Request;
+- ENQ-001 has one canonical creation path;
+- Anonymous may create Enquiry;
+- authenticated CUSTOMER may create Enquiry;
+- STAFF/ADMIN cannot create customer Enquiries through ENQ-001;
+- invalid bearer never downgrades to anonymous;
+- anonymous name is required;
+- anonymous phone/email at least one is required;
+- authenticated Customer contact may be derived;
+- explicit valid submitted contact takes precedence over fallback;
+- invalid supplied optional contact is rejected rather than ignored;
+- final authenticated contact snapshot remains reachable;
+- contact snapshot is historical;
+- subject is required, 5..200;
+- message is required, 10..5000;
+- subject/message are plain text;
+- category is nullable CLOSED GENERAL/PRODUCT/DELIVERY/OTHER;
+- Product association is optional;
+- any public Product type is accepted;
+- Product visibility reuses existing public scope;
+- hidden/missing Product is safely masked;
+- no stock/Variant requirement exists;
+- Order association is optional;
+- anonymous non-null order_id is rejected;
+- authenticated Customer may reference only owned Order;
+- cross-customer Order ID is 404 masked;
+- knowing order ID is not authorization;
+- Product and Order may both be supplied;
+- neither Product nor Order is required;
+- ownership user_id is server-derived;
+- new Enquiry begins OPEN;
+- client cannot set enquiry_status;
+- client cannot set staff_internal_notes;
+- original subject/message/contact/category/product/order context is immutable intake;
+- explicit resource serialization is used;
+- staff_internal_notes is hidden;
+- no Order is created;
+- no Order is mutated;
+- no Payment is created;
+- no inventory changes occur;
+- no quote is created;
+- no Enquiry↔Request conversion exists;
+- no Idempotency-Key is required;
+- duplicate submissions are allowed;
+- no content-based uniqueness is introduced;
+- response is private/no-store;
+- route remains gated pending attachment support;
 - no schema migration is added;
-- no dependency is added;
+- no new dependency is added;
 - no frontend work occurs;
-- REQ-001 remains gated until attachment support is complete;
-- full regression suite remains green;
-- PHPStan reports zero errors;
+- regression suite remains green;
+- PHPStan has zero errors;
 - Pint passes;
 - Composer audit is clean;
-- diff check passes.
+- `git diff --check` passes.
 
 ---
 
-# 155. Out of Scope
+# 195. Out of Scope
 
 Do not implement:
 
 ```text
-Phase 10.5 General Enquiries
-Phase 10.6 attachment handling
+Phase 10.6 attachment storage/security
 Phase 10.7 staff/admin Request management
-Phase 10.8 Group J closure tests
+Phase 10.8 Group J closure testing
 
-Product management CRUD
-Product publication UI
-Variant selection
-inventory reservation
-price quotation
-Request→Order conversion
-Cart
-Checkout
+full staff Enquiry queue
+customer Enquiry history/list APIs
+ENQ-006 operational close/reopen unless already assigned by current roadmap
+staff_internal_notes mutation
+Request↔Enquiry conversion
+Enquiry→Order conversion
+pricing/quotation
+inventory
+payment
 ClickPesa
-payments
 delivery
 notifications
+email
 frontend
 ```
 
 ---
 
-# 156. STOP Condition
+# 196. STOP Condition
 
-STOP when the Request domain can make this authoritative decision:
-
-```text
-product_id null/omitted
-→ custom Request allowed
-
-product_id supplied
-→ resolve through current public Product visibility
-    ├── missing/non-public → canonical not-found
-    ├── public IN_STOCK → 409 PRODUCT_NOT_REQUESTABLE
-    └── public MADE_TO_ORDER → linked Request allowed
-```
-
-with:
+STOP when the backend can correctly model:
 
 ```text
-no stock dependency
-no Variant dependency
-no price commitment
-no commerce side effects
+Anonymous/CUSTOMER
+→ valid contact snapshot
+→ subject + message
+→ optional category
+→ optional any-public Product
+→ optional owned Order
+→ OPEN Enquiry
+→ explicit private resource
 ```
 
-Do not continue automatically to Phase 10.5.
+while preserving:
+
+```text
+Enquiry ≠ FurnitureRequest
+Enquiry ≠ Order
+Enquiry ≠ Payment
+Enquiry ≠ Inventory operation
+```
+
+and:
+
+```text
+attachments → Phase 10.6
+operational management → later phase
+public route → remains gated until frozen attachment support exists
+```
+
+Do not continue automatically to Phase 10.6.
 
 DO NOT COMMIT, STAGE OR PUSH.
 
@@ -2708,12 +3390,13 @@ The project owner handles all Git operations.
 10.2 PASS — Request validation (ADR/BACKEND-044)
 10.3 PASS — Request status lifecycle (ADR/BACKEND-045)
 10.4 PASS — Product-linked requests (ADR/BACKEND-046)
-10.5 READY — General enquiries
-10.6 NOT STARTED — Attachment handling
+10.5 PASS — General enquiries (ADR/BACKEND-047)
+10.6 READY — Attachment handling
 10.7 NOT STARTED — Staff/admin request management
 10.8 NOT STARTED — Request/enquiry tests
 ```
 
-Group J is **not** complete. The public `POST /api/v1/requests` route remains
-**STUB/GATED** (`config('requests.route_enabled') === false`) until Phase 10.6
-attachment support is implemented.
+Group J is **not** complete. The public `POST /api/v1/requests` and
+`POST /api/v1/enquiries` routes remain **STUB/GATED**
+(`config('requests.route_enabled')` / `config('enquiries.route_enabled')` both
+`false`) until Phase 10.6 attachment support is implemented.
