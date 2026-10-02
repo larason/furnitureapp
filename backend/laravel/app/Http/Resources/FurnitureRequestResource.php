@@ -38,7 +38,7 @@ class FurnitureRequestResource extends JsonResource
             'color' => $furnitureRequest->color,
             'notes' => $furnitureRequest->message,
             'request_status' => $furnitureRequest->request_status->value,
-            'attachments' => [],
+            'attachments' => AttachmentResource::collection($furnitureRequest->attachments)->resolve(),
             'created_at' => $furnitureRequest->created_at->toISOString(),
             'updated_at' => $furnitureRequest->updated_at->toISOString(),
         ];

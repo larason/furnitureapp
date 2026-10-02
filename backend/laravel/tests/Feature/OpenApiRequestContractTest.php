@@ -38,4 +38,24 @@ class OpenApiRequestContractTest extends TestCase
             $this->assertArrayHasKey($status, $responses, "REQ-001 must document {$status}.");
         }
     }
+
+    public function test_req_001_multipart_documents_bracket_encoded_dimensions(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        $properties = $document['components']['schemas']['CreateRequestMultipartRequest']['properties'];
+
+        foreach (['dimensions[length]', 'dimensions[width]', 'dimensions[height]', 'dimensions[unit]'] as $field) {
+            $this->assertArrayHasKey($field, $properties, "REQ-001 multipart must document {$field}.");
+        }
+
+        $this->assertArrayNotHasKey('dimensions', $properties);
+
+        foreach (['dimensions[length]', 'dimensions[width]', 'dimensions[height]'] as $measurement) {
+            $this->assertSame(['number', 'null'], $properties[$measurement]['type']);
+        }
+
+        $this->assertSame('string', $properties['dimensions[unit]']['type']);
+        $this->assertSame(['cm'], $properties['dimensions[unit]']['enum']);
+    }
 }

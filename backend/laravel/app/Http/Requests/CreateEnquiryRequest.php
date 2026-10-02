@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Exceptions\Api\ApiException;
 use App\Models\Enquiry;
+use App\Services\Attachments\AttachmentValidator;
+use App\Services\Attachments\ValidatedAttachment;
 use App\Services\Enquiries\EnquiryInput;
 use App\Support\ApiErrorCode;
 use App\Support\EnquiryCategory;
@@ -43,6 +45,8 @@ final class CreateEnquiryRequest extends FormRequest
 
     private ?EnquiryInput $normalizedInput = null;
 
+    private ?ValidatedAttachment $attachment = null;
+
     public function authorize(): bool
     {
         return true;
@@ -58,7 +62,10 @@ final class CreateEnquiryRequest extends FormRequest
     {
         $input = $this->getInputSource()->all();
 
+        $this->rejectUnknownFileFields();
+        $this->rejectMultipartAttachmentField($input);
         self::rejectUnknownFields($input);
+        $this->attachment = $this->attachmentFrom($this->file('attachment'));
 
         $name = self::normalizeOptionalName($input);
         $phone = self::normalizeOptionalPhone($input);
@@ -77,6 +84,51 @@ final class CreateEnquiryRequest extends FormRequest
     public function normalizedInput(): EnquiryInput
     {
         return $this->normalizedInput ?? throw new LogicException('ENQ-001 input was not normalized.');
+    }
+
+    public function validatedAttachment(): ?ValidatedAttachment
+    {
+        return $this->attachment;
+    }
+
+    private function attachmentFrom(mixed $file): ?ValidatedAttachment
+    {
+        if ($file === null || $file === []) {
+            return null;
+        }
+
+        if (is_array($file)) {
+            throw self::error(ApiErrorCode::INVALID_ATTACHMENT, 'attachment', 'Only one attachment is allowed.');
+        }
+
+        return app(AttachmentValidator::class)->validate($file);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function rejectMultipartAttachmentField(array $input): void
+    {
+        $contentType = strtolower((string) $this->headers->get('CONTENT_TYPE'));
+
+        if (str_starts_with($contentType, 'multipart/form-data') && array_key_exists('attachment', $input)) {
+            throw self::error(ApiErrorCode::INVALID_ATTACHMENT, 'attachment', 'Only one attachment is allowed.');
+        }
+    }
+
+    /**
+     * Uploaded files are not part of `getInputSource()->all()`; reject every
+     * top-level file key except the contracted `attachment`.
+     */
+    private function rejectUnknownFileFields(): void
+    {
+        $unknown = array_diff(array_keys($this->allFiles()), ['attachment']);
+
+        if ($unknown !== []) {
+            $field = (string) reset($unknown);
+
+            throw self::error(ApiErrorCode::INVALID_VALUE, $field, 'The request contains an unsupported file field.');
+        }
     }
 
     /** @param array<string, mixed> $input */

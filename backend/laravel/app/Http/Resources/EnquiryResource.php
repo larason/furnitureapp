@@ -39,7 +39,7 @@ class EnquiryResource extends JsonResource
             'order_id' => $this->orderIdentifier($enquiry),
             'order' => $this->orderSummary($enquiry),
             'enquiry_status' => $enquiry->enquiry_status->value,
-            'attachments' => [],
+            'attachments' => AttachmentResource::collection($enquiry->attachments)->resolve(),
             'created_at' => $enquiry->created_at->toISOString(),
             'updated_at' => $enquiry->updated_at->toISOString(),
         ];

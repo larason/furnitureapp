@@ -1474,6 +1474,75 @@ components:
           - 'null'
           maxLength: 5000
       additionalProperties: false
+    CreateRequestMultipartRequest:
+      type: object
+      required:
+      - name
+      properties:
+        attachment:
+          type: string
+          format: binary
+          description: Optional single inline attachment (5 MiB max; image/jpeg, image/png, image/webp, application/pdf)
+        product_id:
+          type:
+          - string
+          - 'null'
+        quantity:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 100
+          description: Optional 1..100; multipart integer string is decoded to an integer
+        name:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+          maxLength: 30
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+          maxLength: 255
+        "dimensions[length]":
+          type:
+          - number
+          - 'null'
+          description: Optional dimensions measurement; multipart numeric strings are decoded to numbers
+        "dimensions[width]":
+          type:
+          - number
+          - 'null'
+          description: Optional dimensions measurement; multipart numeric strings are decoded to numbers
+        "dimensions[height]":
+          type:
+          - number
+          - 'null'
+          description: Optional dimensions measurement; multipart numeric strings are decoded to numbers
+        "dimensions[unit]":
+          type: string
+          enum:
+          - cm
+          description: Required when any dimensions[length|width|height] is supplied; value must be cm
+        material:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        color:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 5000
+      additionalProperties: false
     Enquiry:
       type: object
       required:
@@ -1604,22 +1673,79 @@ components:
           - 'null'
           description: Anonymous submission must omit; authenticated customers may reference an order they own
       additionalProperties: false
+    CreateEnquiryMultipartRequest:
+      type: object
+      required:
+      - subject
+      - message
+      properties:
+        attachment:
+          type: string
+          format: binary
+          description: Optional single inline attachment (5 MiB max; image/jpeg, image/png, image/webp, application/pdf)
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+        phone:
+          type:
+          - string
+          - 'null'
+          maxLength: 30
+        subject:
+          type: string
+        message:
+          type: string
+        category:
+          type:
+          - string
+          - 'null'
+          enum:
+          - GENERAL
+          - PRODUCT
+          - DELIVERY
+          - OTHER
+        product_id:
+          type:
+          - string
+          - 'null'
+        order_id:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
     Attachment:
       type: object
       required:
       - id
-      - url
       - filename
       properties:
         id:
           type: string
           readOnly: true
-        url:
-          type: string
-          format: uri
-          readOnly: true
         filename:
           type: string
+          description: Sanitized display filename
+        content_type:
+          type: string
+          readOnly: true
+          description: Server-detected content type (never the client-declared value)
+        size:
+          type: integer
+          readOnly: true
+          description: Size in bytes (maximum 5 MiB)
+        url:
+          type:
+          - string
+          - 'null'
+          format: uri
+          readOnly: true
+          description: Private access URL; null while private download delivery is not implemented
     Notification:
       type: object
       required:
@@ -3443,6 +3569,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateRequestMultipartRequest'
       responses:
         '201':
           description: Created
@@ -3691,6 +3820,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateEnquiryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateEnquiryMultipartRequest'
     get:
       operationId: ENQ-004
       tags:

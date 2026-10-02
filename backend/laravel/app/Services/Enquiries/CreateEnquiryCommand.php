@@ -3,6 +3,7 @@
 namespace App\Services\Enquiries;
 
 use App\Models\User;
+use App\Services\Attachments\ValidatedAttachment;
 use App\Support\EnquiryCategory;
 
 /**
@@ -21,5 +22,6 @@ final readonly class CreateEnquiryCommand
         public ?EnquiryCategory $category,
         public ?string $productId,
         public ?string $orderId,
+        public ?ValidatedAttachment $attachment = null,
     ) {}
 }

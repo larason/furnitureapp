@@ -27,9 +27,10 @@ class RequestController extends V1Controller
             material: $input->material,
             color: $input->color,
             notes: $input->notes,
+            attachment: $request->validatedAttachment(),
         ));
 
-        $furnitureRequest->loadMissing('product');
+        $furnitureRequest->loadMissing(['product', 'attachments']);
 
         return (new FurnitureRequestResource($furnitureRequest))
             ->response()

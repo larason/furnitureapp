@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Exceptions\Api\ApiException;
 use App\Models\FurnitureRequest;
+use App\Services\Attachments\AttachmentValidator;
+use App\Services\Attachments\ValidatedAttachment;
 use App\Services\Requests\FurnitureRequestInput;
 use App\Support\ApiErrorCode;
 use App\Support\PhoneNumber;
@@ -52,6 +54,8 @@ final class CreateFurnitureRequestRequest extends FormRequest
 
     private ?FurnitureRequestInput $normalizedInput = null;
 
+    private ?ValidatedAttachment $attachment = null;
+
     public function authorize(): bool
     {
         return true;
@@ -65,9 +69,12 @@ final class CreateFurnitureRequestRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $input = $this->getInputSource()->all();
+        $input = $this->rawInput();
 
+        $this->rejectUnknownFileFields();
+        $this->rejectMultipartAttachmentField($input);
         $this->rejectUnknownFields($input);
+        $this->attachment = $this->attachmentFrom($this->file('attachment'));
 
         $this->normalizedInput = new FurnitureRequestInput(
             productId: self::normalizeProductId($input),
@@ -87,6 +94,101 @@ final class CreateFurnitureRequestRequest extends FormRequest
     public function normalizedInput(): FurnitureRequestInput
     {
         return $this->normalizedInput ?? throw new LogicException('REQ-001 input was not normalized.');
+    }
+
+    public function validatedAttachment(): ?ValidatedAttachment
+    {
+        return $this->attachment;
+    }
+
+    /** @return array<string, mixed> */
+    private function rawInput(): array
+    {
+        $input = $this->getInputSource()->all();
+
+        if (! $this->isMultipart()) {
+            return $input;
+        }
+
+        if (isset($input['quantity']) && is_string($input['quantity']) && preg_match('/^-?\d+$/', $input['quantity']) === 1) {
+            $input['quantity'] = (int) $input['quantity'];
+        }
+
+        if (isset($input['dimensions']) && is_array($input['dimensions'])) {
+            $input['dimensions'] = self::decodeMultipartDimensions($input['dimensions']);
+        }
+
+        return $input;
+    }
+
+    /**
+     * Multipart fields arrive as strings; the documented structured encoding is
+     * `dimensions[length|width|height|unit]`. Only numeric measurement strings
+     * are decoded (to int/float); anything else is left for the strict validator
+     * to reject.
+     *
+     * @param  array<string, mixed>  $dimensions
+     * @return array<string, mixed>
+     */
+    private static function decodeMultipartDimensions(array $dimensions): array
+    {
+        foreach (self::MEASUREMENT_FIELDS as $key) {
+            if (isset($dimensions[$key]) && is_string($dimensions[$key]) && is_numeric($dimensions[$key])) {
+                $dimensions[$key] = preg_match('/^[+-]?\d+$/', $dimensions[$key]) === 1
+                    ? (int) $dimensions[$key]
+                    : (float) $dimensions[$key];
+            }
+        }
+
+        return $dimensions;
+    }
+
+    private function isMultipart(): bool
+    {
+        return str_starts_with(strtolower((string) $this->headers->get('CONTENT_TYPE')), 'multipart/form-data');
+    }
+
+    /**
+     * Laravel keeps uploaded files out of `getInputSource()->all()`, so the
+     * scalar allow-list cannot see them. Reject every top-level uploaded file
+     * key except the contracted `attachment` instead of silently discarding it.
+     */
+    private function rejectUnknownFileFields(): void
+    {
+        $unknown = array_diff(array_keys($this->allFiles()), ['attachment']);
+
+        if ($unknown !== []) {
+            $field = (string) reset($unknown);
+
+            throw self::error(ApiErrorCode::INVALID_VALUE, $field, 'The request contains an unsupported file field.');
+        }
+    }
+
+    /**
+     * A multipart `attachment` value in the scalar fields (rather than a single
+     * uploaded file, which Laravel exposes via `allFiles()`) is a text field or
+     * a multiple-file array; both are invalid in V1.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private function rejectMultipartAttachmentField(array $input): void
+    {
+        if ($this->isMultipart() && array_key_exists('attachment', $input)) {
+            throw self::error(ApiErrorCode::INVALID_ATTACHMENT, 'attachment', 'Only one attachment is allowed.');
+        }
+    }
+
+    private function attachmentFrom(mixed $file): ?ValidatedAttachment
+    {
+        if ($file === null || $file === []) {
+            return null;
+        }
+
+        if (is_array($file)) {
+            throw self::error(ApiErrorCode::INVALID_ATTACHMENT, 'attachment', 'Only one attachment is allowed.');
+        }
+
+        return app(AttachmentValidator::class)->validate($file);
     }
 
     /** @param array<string, mixed> $input */

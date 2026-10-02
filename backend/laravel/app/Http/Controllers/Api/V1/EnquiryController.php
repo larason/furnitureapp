@@ -26,9 +26,10 @@ class EnquiryController extends V1Controller
             category: $input->category,
             productId: $input->productId,
             orderId: $input->orderId,
+            attachment: $request->validatedAttachment(),
         ));
 
-        $enquiry->loadMissing(['product', 'order']);
+        $enquiry->loadMissing(['product', 'order', 'attachments']);
 
         return (new EnquiryResource($enquiry))
             ->response()
