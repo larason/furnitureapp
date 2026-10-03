@@ -90,7 +90,17 @@ class RequestController extends V1Controller
         UpdateFurnitureRequestOperationalFields $updater,
     ): JsonResponse {
         $furnitureRequest = $this->findOperationalRequest($request);
-        $updated = $updater->update($furnitureRequest, $input->normalizedInput());
+        $actor = $input->user();
+        if (! $actor instanceof User) {
+            throw new ApiException(ApiErrorCode::INVALID_AUTHENTICATION, 'Authentication is required.', 401);
+        }
+
+        $updated = $updater->update(
+            $furnitureRequest,
+            $input->normalizedInput(),
+            $actor,
+            $input->attributes->get('request_id'),
+        );
         $updated->load([
             'product' => static fn ($product) => $product->withTrashed(),
             'attachments',

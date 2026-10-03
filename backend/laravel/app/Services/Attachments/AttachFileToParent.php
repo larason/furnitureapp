@@ -8,6 +8,7 @@ use App\Models\AttachmentCleanupTask;
 use App\Models\Enquiry;
 use App\Models\FurnitureRequest;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -54,6 +55,28 @@ final class AttachFileToParent
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+    }
+
+    public function recoverCleanup(string $disk, string $key): void
+    {
+        try {
+            $this->storage->deleteOrFail($disk, $key);
+
+            return;
+        } catch (Throwable $deleteFailure) {
+            try {
+                $this->queueCleanup($disk, $key);
+
+                return;
+            } catch (Throwable $recoveryFailure) {
+                Log::critical('attachment.cleanup_recovery_required', [
+                    'disk' => $disk,
+                    'storage_key_hash' => hash('sha256', $key),
+                    'delete_exception' => $deleteFailure::class,
+                    'recovery_exception' => $recoveryFailure::class,
+                ]);
+            }
+        }
     }
 
     /** @param array<string, mixed> $parent */

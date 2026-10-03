@@ -9,4 +9,6 @@ enum AuditResourceType: string
 {
     case INVENTORY = 'inventory';
     case ORDER = 'order';
+    case REQUEST = 'request';
+    case ENQUIRY = 'enquiry';
 }

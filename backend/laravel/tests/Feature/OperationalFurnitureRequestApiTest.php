@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditEvent;
 use App\Models\FurnitureRequest;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\AuditRecorder;
 use App\Support\FurnitureRequestIdentifier;
 use App\Support\PermissionName;
 use App\Support\ProductIdentifier;
@@ -72,6 +74,70 @@ final class OperationalFurnitureRequestApiTest extends TestCase
 
         $this->assertSame(RequestStatus::IN_REVIEW, $request->fresh()->request_status);
         $this->assertSame('Called customer.', $request->fresh()->staff_internal_notes);
+    }
+
+    public function test_status_change_creates_a_durable_audit_event(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_audit_1']);
+        $headers = $this->authenticateAs($staff) + ['X-Request-Id' => '8f8f3e72-3f6c-4e4f-99ce-42e9e87b2251'];
+
+        $this->withHeaders($headers)->patchJson($this->url($request), [
+            'request_status' => 'IN_REVIEW',
+        ])->assertOk();
+
+        $event = AuditEvent::query()->sole();
+        $this->assertSame($staff->id, $event->actor_id);
+        $this->assertSame('STAFF', $event->actor_role);
+        $this->assertSame('REQUEST_STATUS_CHANGED', $event->action);
+        $this->assertSame('request', $event->resource_type);
+        $this->assertSame(FurnitureRequestIdentifier::encode($request), $event->resource_id);
+        $this->assertSame('SUBMITTED', $event->previous_state['request_status']);
+        $this->assertSame('IN_REVIEW', $event->resulting_state['request_status']);
+        $this->assertSame($headers['X-Request-Id'], $event->request_id);
+    }
+
+    public function test_same_status_update_does_not_create_a_transition_audit_event(): void
+    {
+        $request = FurnitureRequest::factory()->inReview()->create();
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_audit_2']));
+
+        $this->withHeaders($headers)->patchJson($this->url($request), [
+            'request_status' => 'IN_REVIEW',
+        ])->assertOk();
+
+        $this->assertSame(0, AuditEvent::query()->count());
+    }
+
+    public function test_direct_close_creates_a_durable_audit_event(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_audit_4']);
+        $headers = $this->authenticateAs($staff);
+
+        $this->withHeaders($headers)->patchJson($this->url($request), [
+            'request_status' => 'CLOSED',
+        ])->assertOk();
+
+        $event = AuditEvent::query()->sole();
+        $this->assertSame('SUBMITTED', $event->previous_state['request_status']);
+        $this->assertSame('CLOSED', $event->resulting_state['request_status']);
+    }
+
+    public function test_audit_failure_rolls_back_request_status_change(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $this->mock(AuditRecorder::class, function ($mock): void {
+            $mock->shouldReceive('record')->andThrow(new \RuntimeException('audit unavailable'));
+        });
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_audit_3']));
+
+        $this->withHeaders($headers)->patchJson($this->url($request), [
+            'request_status' => 'IN_REVIEW',
+        ])->assertStatus(500);
+
+        $this->assertSame(RequestStatus::SUBMITTED, $request->fresh()->request_status);
+        $this->assertSame(0, AuditEvent::query()->count());
     }
 
     public function test_invalid_status_does_not_commit_new_internal_notes(): void

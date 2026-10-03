@@ -66,6 +66,7 @@ final class CreateEnquiry
                     Log::warning('attachment.cleanup_task_persist_failed', [
                         'exception' => $cleanupTaskFailure::class,
                     ]);
+                    $this->attachments->recoverCleanup($exception->storageDisk, $exception->storageKey);
                 }
             }
 
