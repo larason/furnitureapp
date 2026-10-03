@@ -1,2511 +1,1620 @@
-# Group J Closure Remediation
+# Group J MariaDB Concurrency Closure Gate
 
-## 1. Purpose
+## 1. Objective
 
-Perform a **targeted Group J closure remediation** against the exact blockers discovered by Phase 10.8.
+Execute the final **real MariaDB concurrency verification** required to close Group J.
 
-This is **not**:
+No new business behavior should be introduced.
 
-```text
-Phase 10.9
-```
-
-and must not reopen already-PASS architecture from Phases 10.1–10.8.
-
-Current established state:
+Current state:
 
 ```text
-10.1 PASS — Furniture Request API
-10.2 PASS — Request validation
-10.3 PASS — Request status lifecycle
-10.4 PASS — Product-linked Requests
-10.5 PASS — General Enquiries
-10.6 implemented attachment foundation
-10.7 implemented Request operational management
-10.8 PASS — verification / closure assessment
+Group J implementation = complete
+
+SQLite verification = PASS
+PHPStan = PASS
+Pint = PASS
+Composer audit = PASS
+OpenAPI = PASS
+git diff --check = PASS
 
 Group J = NOT CLOSED
 ```
 
-Exact remaining blockers from Phase 10.8:
+The only remaining blocker is:
 
 ```text
-1. Customer Request history endpoints remain stubbed.
-2. Customer Enquiry history endpoints remain stubbed.
-3. Enquiry operational endpoints / close lifecycle remain stubbed.
-4. REQ-007 / ENQ-007 attachment capability upload routes remain unimplemented.
-5. REQ-001 remains configuration-gated.
-6. Required MariaDB Group J concurrency proof has not executed.
+required MariaDB concurrency races have not yet executed
 ```
 
-The purpose of this remediation is to resolve those blockers and nothing else.
+The repository implementation is complete. This task is now a **database-engine verification gate**, not a feature-development phase.
 
 ---
 
-# 2. Group J Exit Condition
+# 2. Development and Production Database Context
 
-The authoritative `AGENTS.md` exit condition remains:
+Treat the following environment split as authoritative.
 
-```text
-Non-purchase customer demand can be captured
-and managed separately from normal orders.
-```
-
-Group J may close only when the complete approved Request/Enquiry journey is usable:
-
-```text
-Customer / Anonymous
-→ Request or Enquiry intake
-→ optional secure attachment
-→ private persistence
-
-Authenticated Customer
-→ own Request/Enquiry history
-
-Authorized Staff/Admin
-→ operational queue/detail
-→ controlled status management
-→ mandatory audit
-```
-
-while maintaining:
-
-```text
-Order creation = NONE
-Payment creation = NONE
-ClickPesa calls = NONE
-Cart mutation = NONE
-Inventory reservation = NONE
-Price/quote authority = NONE
-```
-
----
-
-# 3. Scope Discipline
-
-Implement only the closure blockers.
-
-Do not redesign:
-
-```text
-Furniture Request creation
-Request validation
-Request lifecycle
-Request Product eligibility
-Enquiry creation
-Request operational queue
-attachment file validation/storage
-audit infrastructure
-RBAC architecture
-```
-
-unless a small verified correction is required for closure.
-
----
-
-# 4. Remediation Workstreams
-
-The remediation consists of five workstreams:
-
-```text
-A. Customer Request/Enquiry history
-B. Enquiry operational management
-C. Scoped attachment capability routes
-D. REQ-001 production route activation
-E. MariaDB closure verification
-```
-
-Complete them in that order unless repository dependencies require a minor adjustment.
-
----
-
-# PART A — CUSTOMER REQUEST / ENQUIRY HISTORY
-
-# 5. Required Request History Operations
-
-Implement the frozen endpoints:
-
-```http
-GET /api/v1/me/requests
-GET /api/v1/me/requests/{request}
-```
-
-IDs:
-
-```text
-REQ-002
-REQ-003
-```
-
-These are authenticated CUSTOMER ownership routes.
-
----
-
-# 6. Required Enquiry History Operations
-
-Implement:
-
-```http
-GET /api/v1/me/enquiries
-GET /api/v1/me/enquiries/{enquiry}
-```
-
-IDs:
-
-```text
-ENQ-002
-ENQ-003
-```
-
----
-
-# 7. Customer Ownership Principle
-
-Authenticated Customer may see only records where:
-
-```text
-resource.user_id = authenticated local User.id
-```
-
-Ownership is server-derived.
-
-Never accept:
-
-```text
-user_id
-customer_id
-owner_id
-```
-
-from query/path/body as authorization.
-
----
-
-# 8. Anonymous Submissions Are Not Retrievable
-
-Anonymous:
-
-```text
-FurnitureRequest.user_id = null
-Enquiry.user_id = null
-```
-
-must never appear under:
-
-```text
-/me/requests
-/me/enquiries
-```
-
-An opaque:
-
-```text
-req_...
-enq_...
-```
-
-identifier is not an anonymous retrieval credential.
-
----
-
-# 9. Authentication
-
-REQ-002/003 and ENQ-002/003 require valid authenticated CUSTOMER identity.
-
-Anonymous:
-
-```text
-401 AUTHENTICATION_REQUIRED
-```
-
-Invalid bearer:
-
-```text
-401 INVALID_AUTHENTICATION
-```
-
-Never downgrade.
-
----
-
-# 10. Wrong Roles
-
-Operational Staff must not use customer `/me/...` history as a generic operational path unless the frozen actor matrix explicitly permits a purpose-bound Admin case.
-
-Normal:
-
-```text
-STAFF → 403
-```
-
-Use operational routes instead.
-
----
-
-# 11. Cross-Customer Masking
-
-Customer A requesting Customer B resource:
-
-```text
-GET /me/requests/{request_B}
-GET /me/enquiries/{enquiry_B}
-```
-
-must return:
-
-```text
-404
-```
-
-not:
-
-```text
-403
-```
-
-Do not reveal resource existence.
-
----
-
-# 12. Ownership-Safe Query
-
-Resolve detail directly through the authorized dataset.
-
-Prefer:
-
-```text
-owning Customer
-+ opaque identifier
-```
-
-in one query boundary.
-
-Do not:
-
-```text
-load resource globally
-then return 403 if owner differs
-```
-
----
-
-# 13. Request History Pagination
-
-REQ-002 uses global:
-
-```text
-page
-per_page
-```
-
-with:
-
-```text
-page >= 1
-per_page 1..100
-meta.pagination
-```
-
-Reuse the project-wide pagination representation.
-
----
-
-# 14. Request History Sort
-
-Canonical:
-
-```text
-created_at DESC
-id ASC
-```
-
-Newest first with deterministic tie-break.
-
----
-
-# 15. Request Customer Search
-
-The frozen conventions permit customer history search over the **owned dataset only**.
-
-If `search` is part of REQ-002's frozen schema:
-
-implement it only after ownership scope.
-
-Never search global Requests then filter afterward.
-
----
-
-# 16. Request Customer Filters
-
-Inspect the actual frozen REQ-002 OpenAPI/conventions before adding filters.
-
-Implement only approved customer-history parameters.
-
-Do not automatically copy every operational REQ-004 filter.
-
----
-
-# 17. Enquiry History Pagination
-
-ENQ-002 uses:
-
-```text
-page
-per_page
-meta.pagination
-```
-
-with the global bounds.
-
----
-
-# 18. Enquiry History Sort
-
-Canonical:
-
-```text
-created_at DESC
-id ASC
-```
-
----
-
-# 19. Enquiry Customer Search
-
-If frozen ENQ-002 permits:
-
-```text
-search
-```
-
-it must search only within:
-
-```text
-authenticated Customer's Enquiries
-```
-
-Never global Enquiry data.
-
----
-
-# 20. Customer Request Resource
-
-Use an explicit customer-safe Request serializer.
-
-Must expose approved customer fields only.
-
-Never expose:
-
-```text
-staff_internal_notes
-internal audit metadata
-storage_key
-upload capability digest
-numeric user_id
-internal database IDs
-```
-
----
-
-# 21. Customer Enquiry Resource
-
-Likewise exclude:
-
-```text
-staff_internal_notes
-audit metadata
-storage internals
-numeric ownership IDs
-```
-
----
-
-# 22. Customer Attachment Metadata
-
-Attachments inherit parent authorization.
-
-For an owned parent:
-
-return only the approved:
-
-```text
-id
-filename
-content_type
-size
-url
-```
-
-metadata.
-
-No:
-
-```text
-storage_key
-disk
-capability token
-capability digest
-```
-
----
-
-# 23. Temporary Attachment URL
-
-If Phase 10.6 implemented private temporary URLs:
-
-REQ-003 / ENQ-003 may expose them only after successful parent authorization.
-
-If not implemented:
-
-```text
-url = null
-```
-
-rather than a permanent public URL.
-
----
-
-# 24. Customer Resource Cache
-
-All REQ-002/003 and ENQ-002/003 responses:
-
-```text
-Cache-Control: private, no-store
-```
-
-with existing:
-
-```text
-Vary: Authorization
-```
-
-behavior where applicable.
-
----
-
-# 25. History Reads Are Read-Only
-
-GET history must not change:
-
-```text
-status
-updated_at
-staff notes
-attachments
-audit records
-Product
-Order
-Inventory
-```
-
----
-
-# 26. Request History Test Matrix
-
-At minimum:
-
-```text
-own Request list
-own Request detail
-anonymous Request excluded
-Customer A → Customer B detail = 404
-anonymous caller = 401
-invalid bearer = 401
-STAFF wrong route = 403
-pagination
-sorting
-customer resource privacy
-attachment privacy
-```
-
----
-
-# 27. Enquiry History Test Matrix
-
-Same pattern.
-
-Also prove:
-
-```text
-owned Order/Product context may be displayed safely
-staff_internal_notes hidden
-```
-
----
-
-# PART B — ENQUIRY OPERATIONAL MANAGEMENT
-
-# 28. Required Operations
-
-Implement:
-
-```http
-GET  /api/v1/enquiries
-GET  /api/v1/enquiries/{enquiry}
-POST /api/v1/enquiries/{enquiry}/close
-```
-
-IDs:
-
-```text
-ENQ-004
-ENQ-005
-ENQ-006
-```
-
-Do not substitute PATCH if frozen V1 uses:
-
-```http
-POST /enquiries/{enquiry}/close
-```
-
----
-
-# 29. Permission Split
-
-Operational reads:
-
-```text
-enquiries.view
-```
-
-Operational mutation:
-
-```text
-enquiries.manage
-```
-
-Staff operational access is not ownership.
-
----
-
-# 30. ENQ-004 Actor Matrix
-
-Expected:
-
-```text
-Anonymous                  → 401
-CUSTOMER                   → 403
-STAFF no enquiries.view    → 403
-STAFF enquiries.view       → 200
-authorized ADMIN           → 200
-```
-
-according to existing RBAC permissions.
-
----
-
-# 31. ENQ-005
-
-Same read authorization:
-
-```text
-enquiries.view
-```
-
-Missing valid opaque ID:
-
-```text
-404
-```
-
-after authorization.
-
----
-
-# 32. ENQ-006
-
-Requires:
-
-```text
-enquiries.manage
-```
-
-View-only Staff:
-
-```text
-403
-```
-
----
-
-# 33. Enquiry Operational Queue
-
-Implement frozen operational filters:
-
-```text
-search
-enquiry_status
-category
-product_id
-order_id
-created_from
-created_to
-page
-per_page
-```
-
-and any already-frozen:
-
-```text
-sort
-sort_direction
-```
-
-only if present in authoritative contract/OpenAPI.
-
-Do not invent new filters.
-
----
-
-# 34. Enquiry Queue Sorting
-
-Default:
-
-```text
-created_at DESC
-id ASC
-```
-
----
-
-# 35. Enquiry `search`
-
-Approved search fields include:
-
-```text
-name
-email
-phone
-subject
-message
-reference
-order reference
-```
-
-Search only the authorized operational dataset.
-
----
-
-# 36. Enquiry Status Filter
-
-Closed values:
-
-```text
-OPEN
-CLOSED
-```
-
-No:
-
-```text
-ASSIGNED
-IN_PROGRESS
-WAITING
-RESOLVED
-```
-
----
-
-# 37. Category Filter
-
-Closed:
-
-```text
-GENERAL
-PRODUCT
-DELIVERY
-OTHER
-```
-
----
-
-# 38. Product Filter
-
-Use opaque:
-
-```text
-prod_...
-```
-
-format.
-
-Filtering historical Enquiries must not require Product to remain public.
-
----
-
-# 39. Order Filter
-
-Use opaque:
-
-```text
-ord_...
-```
-
-format.
-
-Operational filtering is historical association, not ownership authorization.
-
----
-
-# 40. Date Filters
-
-Use ISO8601 UTC:
-
-```text
-created_from
-created_to
-```
-
-Validate:
-
-```text
-created_from <= created_to
-```
-
----
-
-# 41. Unknown Filter
-
-Reject:
-
-```text
-422 INVALID_VALUE
-```
-
-Do not silently ignore unsupported query parameters.
-
----
-
-# 42. Operational Enquiry Resource
-
-Create/reuse an explicit Staff/Admin resource.
-
-May include approved:
-
-```text
-id
-name
-email
-phone
-subject
-message
-category
-product
-order
-enquiry_status
-attachments
-staff_internal_notes where authorized
-created_at
-updated_at
-```
-
-Never mass serialize the model.
-
----
-
-# 43. Customer Data Minimization
-
-Operational Enquiry access does not authorize:
-
-```text
-full Customer profile
-all Orders
-other Enquiries
-credentials
-Clerk identity
-roles
-password/security information
-```
-
----
-
-# 44. Original Enquiry History Is Immutable
-
-Staff cannot modify:
-
-```text
-name
-email
-phone
-subject
-message
-category
-product_id
-order_id
-attachments
-user_id
-created_at
-```
-
-through ENQ-006.
-
----
-
-# 45. ENQ-006 Lifecycle
-
-Current approved minimum:
-
-```text
-OPEN → CLOSED
-```
-
-Implement exactly.
-
----
-
-# 46. Reopen
-
-Do **not** implement:
-
-```text
-CLOSED → OPEN
-```
-
-unless an existing explicit approved ADR/decision already authorizes reopen.
-
-The contract says reopen is optional and requires explicit approval.
-
-Absence of approval means:
-
-```text
-CLOSED = terminal for current implementation
-```
-
-Do not invent reopen merely because an API comment says "+ optional reopen."
-
----
-
-# 47. Same-State Close
-
-Determine and document semantic idempotence.
-
-Recommended:
-
-```text
-CLOSED → close again
-→ 200 existing CLOSED state
-→ no duplicate transition
-```
-
-if consistent with existing state mutation conventions.
-
-Do not create duplicate audit status-change events for a no-op.
-
----
-
-# 48. Enquiry State Machine
-
-Introduce a small pure authority if one does not exist:
-
-```text
-OPEN → CLOSED allowed
-CLOSED → CLOSED idempotent
-CLOSED → OPEN forbidden unless explicitly approved
-```
-
-Do not build a generic workflow engine.
-
----
-
-# 49. Row Lock
-
-ENQ-006 must:
-
-```text
-lock Enquiry FOR UPDATE
-re-read current state
-evaluate transition
-persist
-audit
-commit
-```
-
-Do not validate against a stale pre-transaction model.
-
----
-
-# 50. Transaction Owner
-
-Use one transaction boundary.
-
-The Enquiry status mutation and mandatory audit must commit atomically.
-
----
-
-# 51. Audit
-
-Use the already-added:
-
-```text
-ENQUIRY_STATUS_CHANGED
-```
-
-audit vocabulary.
-
-Audit fields must be server-derived:
-
-```text
-actor
-role
-action
-resource type
-resource id
-previous status
-new status
-timestamp
-request correlation ID
-result according to existing audit semantics
-```
-
----
-
-# 52. Audit Failure
-
-Mandatory:
-
-```text
-audit persistence failure
-→ Enquiry status mutation rolls back
-```
-
-Match the Request status behavior already established.
-
----
-
-# 53. Same-State Audit
-
-Do not emit a fake:
-
-```text
-OPEN → OPEN
-CLOSED → CLOSED
-```
-
-status-change audit when there is no actual state change unless existing audit policy explicitly logs attempted no-ops.
-
-Use the same semantics chosen for Request status changes.
-
----
-
-# 54. Enquiry Internal Notes
-
-If ENQ-006 frozen body includes:
-
-```text
-staff_internal_notes
-```
-
-implement it only according to exact contract.
-
-If ENQ-006 is strictly the `close` action and staff notes belong another already-approved update path:
-
-do not invent a PATCH route.
-
-Inspect the latest OpenAPI before implementing.
-
----
-
-# 55. Enquiry Audit Tests
-
-Mandatory:
-
-```text
-OPEN → CLOSED creates exactly required audit
-audit actor is server-derived
-audit previous/new states accurate
-audit request ID accurate
-audit failure rolls back close
-same-state close does not duplicate business transition
-```
-
----
-
-# 56. Enquiry Operational Security Tests
-
-At minimum:
-
-```text
-anonymous operational access denied
-CUSTOMER denied
-STAFF no permission denied
-view-only Staff reads allowed
-view-only Staff close denied
-manage Staff close allowed
-cross-resource privacy preserved
-internal notes customer-hidden
-```
-
----
-
-# PART C — SCOPED ATTACHMENT CAPABILITY ROUTES
-
-# 57. Required Routes
-
-Implement the frozen separate-upload operations:
-
-```http
-POST /api/v1/requests/{request}/attachments
-POST /api/v1/enquiries/{enquiry}/attachments
-```
-
-IDs:
-
-```text
-REQ-007
-ENQ-007
-```
-
----
-
-# 58. Reuse Phase 10.6 Attachment Infrastructure
-
-Do not rebuild:
-
-```text
-file validation
-MIME detection
-signature validation
-private storage
-filename sanitation
-AttachmentResource
-one-file cardinality
-```
-
-Reuse Phase 10.6.
-
----
-
-# 59. Authorization Principle
-
-Parent ID alone is never authorization.
-
-Separate upload requires:
-
-```text
-parent authorization
-+
-scoped upload capability
-```
-
-according to frozen rules.
-
----
-
-# 60. Anonymous Parent Upload
-
-Anonymous parent has:
-
-```text
-user_id = null
-```
-
-Therefore no account ownership exists.
-
-Authorization relies on a:
-
-```text
-server-issued scoped upload capability
-```
-
-bound to that parent.
-
----
+## Development / closure-test environment
 
-# 61. Authenticated Parent Upload
+The project is currently developed on:
 
-For authenticated Customer:
-
-require:
-
-```text
-parent belongs to Customer
-```
-
-plus scoped capability where the frozen contract requires it.
-
-Do not let Customer A upload to Customer B parent.
-
----
-
-# 62. Staff/Admin
-
-Attachment authorization inherits parent operational permissions.
-
-Do not give all Staff universal upload mutation just because they can view.
-
-Use exact frozen/approved parent authorization.
-
----
-
-# 63. Capability Requirements
-
-Must be:
-
-```text
-cryptographically unpredictable
-parent-scoped
-resource-type-scoped
-upload-action-scoped
-time-limited
-single-use
-server-verifiable
-```
-
----
-
-# 64. Capability Is Upload-Only
-
-It must not authorize:
-
-```text
-parent GET
-attachment GET
-other parent mutation
-Request status mutation
-Enquiry status mutation
-```
-
----
-
-# 65. Capability Persistence
-
-Store only:
-
-```text
-digest/HMAC
-```
-
-not raw bearer token.
-
-Use the hardened guest-Cart-token precedent where appropriate.
-
----
-
-# 66. Raw Capability
-
-Must exist only:
-
-```text
-server generation
-→ client
-```
-
-Never persist plaintext.
-
-Never log it.
-
----
-
-# 67. TTL
-
-If the exact TTL is already frozen:
-
-use it.
-
-If the contract does not establish a specific TTL:
-
-use one documented configurable bounded value.
-
-Do not bury a magic number.
-
----
-
-# 68. Single Use
-
-Successful attachment persistence must atomically consume the capability.
-
-Second use:
-
-```text
-rejected
-```
-
----
-
-# 69. Failed Validation
-
-Recommended:
-
-```text
-invalid attachment
-→ capability not consumed
-```
-
-so the client can retry with a valid file.
-
-Use Phase 10.6 decision if already frozen.
-
----
-
-# 70. Failed Storage
-
-Do not consume capability when durable attachment persistence fails unless the existing design explicitly says otherwise.
-
----
-
-# 71. Parent Binding
-
-Request token cannot work on:
-
-```text
-another Request
-any Enquiry
-```
-
-Enquiry token cannot work on:
-
-```text
-another Enquiry
-any Request
-```
-
----
-
-# 72. One Attachment Maximum
-
-If parent already has the single V1 attachment:
-
-reject.
-
-Do not replace silently.
-
----
-
-# 73. Capability Concurrency
-
-Two simultaneous uploads using the same token:
-
-```text
-at most one attachment succeeds
-at most one token consumption succeeds
-```
-
-Use a locked/atomic DB mechanism.
-
----
-
-# 74. Losing Upload Cleanup
-
-If losing concurrent worker has already stored bytes:
-
-delete its file.
-
-No orphan.
-
----
-
-# 75. Attachment Retrieval Is Separate
-
-Do not implement:
-
-```text
-GET /attachments/{attachment}
-```
-
-as a new public collection.
-
-The frozen retrieval model is parent-scoped resources with authorized temporary attachment URLs.
-
----
-
-# 76. Temporary URL Security
-
-If attachment URLs are generated:
-
-they must be:
-
-```text
-private
-temporary
-parent-scope-authorized
-not permanent public
-not guessable
-```
-
-Cross-parent reuse must fail safely.
-
----
-
-# 77. Capability Response Contract
-
-Before returning a capability from REQ-001/ENQ-001:
-
-inspect the latest:
-
 ```text
-api-contract
-api-resources
-openapi.yaml
-decisions
-```
-
-for the exact approved response field/location.
-
-Do not invent:
-
-```text
-upload_token
-attachment_token
-capability
-```
-
-if no frozen representation exists.
-
----
-
-# 78. If Capability Representation Is Still Missing
-
-Treat it as a **contract consistency blocker**.
-
-Do not close Group J by introducing an undocumented secret field.
-
-Resolve through the established frozen-contract reconciliation process.
-
----
-
-# 79. Prefer Inline Attachment When Supplied
-
-If REQ-001/ENQ-001 already receives an attachment inline:
-
-no separate capability is needed for that parent once the single V1 attachment exists.
-
-Do not issue useless upload authority.
-
----
-
-# 80. Capability Issuance Without Inline File
-
-For successful creation with no attachment:
-
-issue the scoped capability only if the frozen creation contract defines its representation.
-
----
-
-# 81. Attachment Route Tests
-
-Mandatory:
-
-```text
-valid Request capability → upload succeeds
-valid Enquiry capability → upload succeeds
-wrong parent → rejected
-wrong parent type → rejected
-random token → rejected
-expired token → rejected
-consumed token → rejected
-missing anonymous token → rejected
-Customer A → Customer B parent → masked
-existing attachment → rejected
-invalid file → no capability consumption
-storage failure → no capability consumption
-```
-
----
-
-# 82. MariaDB Capability Race
-
-Mandatory closure proof if capability uses DB single-use state:
-
-```text
-same capability
-two concurrent uploads
-→ one success
-→ one attachment
-→ no orphan
-```
-
-Run on disposable MariaDB.
-
----
-
-# PART D — REQ-001 ROUTE ACTIVATION
-
-# 83. Current Blocker
-
-Phase 10.8 reports:
-
-```text
-POST /api/v1/requests
-```
-
-remains configuration-gated.
-
-This is incompatible with the intended MADE_TO_ORDER initial production mode once all REQ-001 prerequisites are complete.
-
----
-
-# 84. Activation Preconditions
-
-Before activating REQ-001, verify:
-
-```text
-10.1 creation complete
-10.2 validation complete
-10.4 Product eligibility complete
-10.6 inline attachment complete
-public abuse controls attached
-optional auth correct
-private/no-store response correct
-OpenAPI aligned
-```
-
----
-
-# 85. Do Not Depend on H/I
-
-REQ-001 must not remain gated because:
-
-```text
-Group H Payments
-Group I Orders
-Group G Checkout
-```
-
-are deferred.
+Operating system:
+Fedora 44 workstation
 
-Furniture Requests are deliberately independent.
+Database server:
+MariaDB 11.8.8
 
----
-
-# 86. Remove Unconditional Gate
-
-If all REQ-001 prerequisites pass:
-
-remove/disable the unconditional:
-
-```php
-config('requests.route_enabled') === false
-```
-
-stub behavior according to existing route architecture.
-
-The production Request route should become:
-
-```text
-ACTIVE
-```
-
----
-
-# 87. Do Not Replace With Environment Accident
-
-Do not simply change:
-
-```env
-REQUESTS_ENABLED=true
-```
-
-if the project deliberately designed the gate as non-environment-driven.
-
-Use the approved application route lifecycle.
-
----
-
-# 88. Verify ENQ-001 Route Too
-
-Phase 10.8 only reported REQ-001 as gated.
-
-Still inspect:
-
-```text
-POST /api/v1/enquiries
-```
-
-and report actual state.
-
-If ENQ-001 is also gated due to attachments, activate it once its prerequisites are satisfied.
-
----
-
-# 89. Public Creation Middleware
-
-After activation preserve:
-
-```text
-optional Clerk auth
-customer-submission guard
-anonymous rate limiter
-body-size enforcement
-security headers
-safe logging
-```
-
----
-
-# 90. No Staff/Admin Creation
-
-Activation must preserve:
-
-```text
-STAFF/ADMIN → 403
-```
-
-for customer-style REQ-001/ENQ-001.
-
----
-
-# 91. Route Contract Test
-
-Add permanent tests proving:
-
-```text
-REQ-001 ACTIVE
-ENQ-001 ACTIVE
-```
-
-if both are ready.
-
-Do not let a future config default silently return them to 501.
-
----
-
-# PART E — MARIADB CLOSURE GATE
-
-# 92. MariaDB Is Mandatory for Closure
-
-Phase 10.8 skipped concurrency because disposable MariaDB was unavailable.
-
-Therefore:
-
-```text
-Group J cannot close
+Local MariaDB client:
+MariaDB client 15.2
+Linux x86_64
+EditLine wrapper
 ```
-
-until the required row-lock/token-concurrency tests actually execute.
-
----
-
-# 93. Disposable Database Only
 
-Use:
+The Group J concurrency closure tests MUST run against this local MariaDB server using the dedicated disposable database:
 
 ```text
 furnitureapp_test_disposable
 ```
 
-or the exact guarded test database established by the repository.
-
-Never run destructive concurrency setup on:
-
-```text
-development DB
-staging DB
-production DB
-```
+This local MariaDB environment is sufficient to prove the Group J database concurrency invariants.
 
 ---
 
-# 94. Required Request Lifecycle Race
+## Future production environment
 
-Execute existing:
+Production will later be deployed using:
+
+```text
+Coolify
+→ Contabo VPS
+→ MySQL-compatible production database
+```
+
+The production Coolify/Contabo database is:
+
+```text
+NOT required
+NOT used
+NOT modified
+```
+
+for this Group J closure gate.
+
+Do not delay Group J closure waiting for production infrastructure.
+
+Do not run destructive concurrency tests against the future production database.
+
+---
+
+# 3. Why Local MariaDB Is Valid Closure Evidence
+
+SQLite cannot prove:
+
+```text
+SELECT ... FOR UPDATE
+row-level locking
+cross-process transaction serialization
+deadlock/retry behavior
+single-use capability races
+```
+
+MariaDB can.
+
+The repository already uses real MariaDB/MySQL verification for concurrency-sensitive behavior.
+
+Therefore:
+
+```text
+Fedora 44
++
+local MariaDB 11.8.8
++
+real concurrent forked workers
+```
+
+is valid Group J closure evidence.
+
+---
+
+# 4. Production Compatibility Note
+
+The future production database may be Oracle MySQL or MariaDB-compatible MySQL depending on final Coolify configuration.
+
+Do not treat MariaDB and Oracle MySQL as identical implementations.
+
+However, the Group J closure requirement is specifically to prove that the Laravel transaction design works against a real MySQL/MariaDB transactional engine rather than SQLite.
+
+The final production deployment should later perform its own:
+
+```text
+migration verification
+connection verification
+transaction smoke tests
+driver/version verification
+```
+
+without destructive concurrency testing against live production data.
+
+That later deployment verification is outside this Group J closure task.
+
+---
+
+# 5. Closure Principle
+
+Skipped MariaDB tests are not closure evidence.
+
+Group J may close only after all required races:
+
+```text
+execute
+AND
+pass
+```
+
+against:
+
+```text
+furnitureapp_test_disposable
+```
+
+on the local Fedora workstation.
+
+---
+
+# 6. Scope
+
+This task owns only:
+
+```text
+local MariaDB disposable database setup
+test-only MariaDB credentials
+missing concurrency test classes
+true concurrent race execution
+race-result verification
+final Group J closure assessment
+documentation of evidence
+```
+
+Do not add:
+
+```text
+new API fields
+new routes
+new statuses
+new attachment capability semantics
+new business rules
+new external dependencies
+frontend work
+Coolify configuration
+Contabo deployment configuration
+production database provisioning
+```
+
+unless a race exposes a genuine backend defect.
+
+---
+
+# 7. Mandatory Race Families
+
+Exactly three Group J concurrency areas must execute.
+
+## A. Furniture Request status race
+
+Existing class:
 
 ```text
 FurnitureRequestStatusConcurrencyMysqlTest
 ```
 
-At minimum:
+Mandatory scenarios:
 
 ```text
-close vs stale review
-same-target update
+close vs review
+same target transition
 ```
-
-Final state must remain valid.
 
 ---
 
-# 95. Request Operational Race
+## B. Enquiry close race
 
-If Phase 10.7 has combined:
+Add the integration test if it does not exist.
+
+Recommended:
 
 ```text
-status + staff_internal_notes
+tests/Integration/EnquiryStatusConcurrencyMysqlTest.php
 ```
-
-race test, execute it.
-
-Prove stale writer cannot reopen CLOSED or overwrite committed state incorrectly.
 
 ---
 
-# 96. Enquiry Close Race
+## C. Attachment capability race
 
-Add/execute MariaDB test for:
+Add the integration test if it does not exist.
+
+Recommended:
 
 ```text
-OPEN
-worker A → CLOSED
-worker B → CLOSED / stale operation
+tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php
+```
+
+---
+
+# 8. Test Database
+
+The integration tests must use exactly:
+
+```text
+furnitureapp_test_disposable
+```
+
+Do not run against:
+
+```text
+normal development database
+staging database
+production database
+future Coolify database
+future Contabo database
+```
+
+---
+
+# 9. Disposable Database Safety
+
+Before any destructive operation, enforce:
+
+```text
+APP_ENV != production
+
+AND
+
+DB_DATABASE == furnitureapp_test_disposable
+```
+
+Do not infer disposability from:
+
+```text
+APP_ENV=testing
+```
+
+alone.
+
+The exact database-name guard is mandatory.
+
+---
+
+# 10. Environment Variable Guard
+
+The existing integration infrastructure currently uses:
+
+```text
+REQUEST_STATUS_MYSQL_TEST_DATABASE
+```
+
+The closure run must set:
+
+```text
+REQUEST_STATUS_MYSQL_TEST_DATABASE=furnitureapp_test_disposable
+```
+
+If shared traits expose additional existing variables, inspect and use them.
+
+Do not invent new environment variable names unless the current test infrastructure truly requires refactoring.
+
+---
+
+# 11. Local MariaDB Server Verification
+
+Before test execution, verify the actual database server rather than relying only on the CLI client banner.
+
+Run:
+
+```sql
+SELECT VERSION();
+```
+
+Record the result.
+
+Expected current environment is approximately:
+
+```text
+MariaDB 11.8.8
+```
+
+Also report the local CLI client separately:
+
+```text
+MariaDB client 15.2
+Linux x86_64
+EditLine wrapper
+```
+
+Do not confuse:
+
+```text
+client version
+```
+
+with:
+
+```text
+database server version
+```
+
+---
+
+# 12. Local Database Creation
+
+If it does not already exist, create:
+
+```sql
+CREATE DATABASE furnitureapp_test_disposable
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+Use a local/test MariaDB administrator only for database/user setup.
+
+Do not commit these commands with real passwords embedded.
+
+---
+
+# 13. Dedicated Test User
+
+Prefer a dedicated local test user.
+
+Conceptually:
+
+```sql
+CREATE USER 'furniture_test'@'localhost'
+IDENTIFIED BY '<local-test-password>';
+
+GRANT ALL PRIVILEGES
+ON furnitureapp_test_disposable.*
+TO 'furniture_test'@'localhost';
+
+FLUSH PRIVILEGES;
+```
+
+The exact username may differ.
+
+Do not require:
+
+```text
+global database privileges
+production privileges
+SUPER
+```
+
+unless MariaDB specifically proves they are required for an existing test operation.
+
+---
+
+# 14. Test User Privileges
+
+The test user should have sufficient permissions for:
+
+```text
+CREATE
+ALTER
+DROP
+INDEX
+REFERENCES
+SELECT
+INSERT
+UPDATE
+DELETE
+transactions
+row locking
+migrate:fresh
+```
+
+limited to:
+
+```text
+furnitureapp_test_disposable
+```
+
+where possible.
+
+---
+
+# 15. Connection Host
+
+Prefer explicit TCP:
+
+```text
+DB_HOST=127.0.0.1
+DB_PORT=3306
+```
+
+for the concurrency suite unless the project intentionally uses a Unix socket.
+
+This avoids accidental differences caused by:
+
+```text
+localhost
+```
+
+resolving to a socket connection.
+
+---
+
+# 16. Test Environment
+
+Conceptually:
+
+```env
+APP_ENV=testing
+
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=furnitureapp_test_disposable
+DB_USERNAME=furniture_test
+DB_PASSWORD=<local-test-secret>
+
+REQUEST_STATUS_MYSQL_TEST_DATABASE=furnitureapp_test_disposable
+```
+
+Use actual existing Laravel test configuration and environment-loading rules.
+
+Do not blindly overwrite the normal `.env`.
+
+Prefer:
+
+```text
+test-specific environment
+shell environment injection
+phpunit environment
+```
+
+consistent with the repository.
+
+---
+
+# 17. Secrets
+
+Do not commit:
+
+```text
+local MariaDB password
+production DB password
+Coolify DB password
+Contabo credentials
+```
+
+Use environment injection.
+
+---
+
+# 18. Migration Preparation
+
+Before running concurrency tests:
+
+```text
+verify non-production
+verify exact disposable database name
+run migrate:fresh
+prepare only required fixtures
+```
+
+Do not use production seed data.
+
+---
+
+# 19. Repository Guard
+
+Preserve the repository-wide safety rule conceptually:
+
+```bash
+test "${APP_ENV:-}" != "production"
+
+test "${DB_DATABASE:-}" = ":memory:" -o \
+     "${DB_DATABASE:-}" = "furnitureapp_test_disposable"
+
+php artisan migrate:fresh --seed --force
+```
+
+For the MariaDB integration gate:
+
+```text
+DB_DATABASE must be furnitureapp_test_disposable
+```
+
+---
+
+# 20. Do Not Run Full PHPUnit Against MariaDB by Default
+
+The canonical functional suite remains SQLite unless the repository explicitly supports a full MySQL/MariaDB run.
+
+Use MariaDB primarily for:
+
+```text
+driver-specific integration
+row locking
+true concurrency
+database-specific constraints
+```
+
+Do not turn this task into full driver-portability remediation.
+
+---
+
+# 21. Existing Worker Harness
+
+Reuse:
+
+```text
+RunsConcurrentWorkers
+```
+
+The test harness must provide genuine concurrent workers.
+
+Expected design:
+
+```text
+parent process
+→ pcntl_fork worker A
+→ pcntl_fork worker B
+→ both wait on file/barrier
+→ parent releases barrier
+→ workers execute simultaneously
+→ parent waits
+→ final invariant asserted
+```
+
+Do not replace this with sequential calls.
+
+---
+
+# 22. PCNTL Requirement
+
+Because the local development machine is Fedora Linux, `pcntl_fork()` is appropriate.
+
+Before executing the gate, verify:
+
+```bash
+php -m
+```
+
+contains:
+
+```text
+pcntl
+```
+
+If `pcntl` is unavailable, report that as an environment blocker.
+
+Do not replace true concurrency with sequential calls.
+
+---
+
+# 23. Forked Database Connections
+
+Each child process must establish an independent MariaDB connection after:
+
+```text
+pcntl_fork()
+```
+
+Do not reuse/inherit the parent's active PDO connection across child processes.
+
+This avoids:
+
+```text
+MySQL server has gone away
+shared socket corruption
+cross-process connection state
+```
+
+---
+
+# 24. Laravel Connection Reset in Workers
+
+Follow the repository's established concurrency-test pattern.
+
+Conceptually each child should:
+
+```text
+disconnect inherited connection
+purge connection
+reconnect
+```
+
+before performing database work.
+
+Use the existing helper if already implemented.
+
+---
+
+# 25. Request Race Scenario 1 — Close vs Review
+
+Initial:
+
+```text
+SUBMITTED
+```
+
+Worker A:
+
+```text
+SUBMITTED → CLOSED
+```
+
+Worker B:
+
+```text
+SUBMITTED → IN_REVIEW
+```
+
+released at the same time.
+
+---
+
+# 26. Valid Serialization — Close First
+
+Possible:
+
+```text
+A locks row
+A sees SUBMITTED
+A closes
+A audits
+A commits
+
+B acquires lock
+B re-reads CLOSED
+B attempts CLOSED → IN_REVIEW
+B receives business conflict
+```
+
+Final:
+
+```text
+CLOSED
+```
+
+Valid.
+
+---
+
+# 27. Valid Serialization — Review First
+
+Also possible:
+
+```text
+B locks
+SUBMITTED → IN_REVIEW
+B commits
+
+A locks
+A re-reads IN_REVIEW
+IN_REVIEW → CLOSED
+A commits
+```
+
+Final:
+
+```text
+CLOSED
+```
+
+Valid.
+
+---
+
+# 28. Request Race Invariant
+
+The forbidden outcome is:
+
+```text
+final IN_REVIEW after a committed CLOSED transition
+```
+
+CLOSED must never be reopened by stale state.
+
+---
+
+# 29. Request Race Scenario 2 — Same Target
+
+Initial:
+
+```text
+SUBMITTED
+```
+
+Both workers:
+
+```text
+target IN_REVIEW
 ```
 
 Expected:
 
 ```text
-one actual close
-same-state reconciliation
-no invalid reopen
-correct audit cardinality
+one real transition
+one same-state no-op
+final IN_REVIEW
+```
+
+No duplicated state effect.
+
+---
+
+# 30. Request Audit Under Race
+
+Assert the actual status transition audit is correct.
+
+For same-target:
+
+```text
+exactly one actual SUBMITTED → IN_REVIEW status-change audit
+```
+
+unless existing audit semantics intentionally record no-op attempts separately.
+
+Do not modify established audit policy in this closure task.
+
+---
+
+# 31. Enquiry Race Setup
+
+Create Enquiry:
+
+```text
+OPEN
 ```
 
 ---
 
-# 97. Enquiry Audit Under Concurrency
+# 32. Enquiry Race
 
-Exactly one real:
+Two workers simultaneously call:
+
+```text
+close
+```
+
+Expected:
 
 ```text
 OPEN → CLOSED
 ```
 
-transition should generate the appropriate status-change audit event.
-
-Same-state loser must not create a duplicate status-change audit unless approved audit semantics say otherwise.
+exactly once as a real business transition.
 
 ---
 
-# 98. Attachment Capability Race
+# 33. Enquiry Final Invariant
 
-Execute:
+After workers complete:
 
 ```text
-same upload capability
-two workers
+enquiry_status = CLOSED
 ```
+
+Never:
+
+```text
+OPEN
+corrupted value
+reopened value
+```
+
+---
+
+# 34. Enquiry Same-State Reconciliation
+
+The second serialized close should follow the implemented idempotent/no-op semantics.
+
+Do not make duplicate close state changes.
+
+---
+
+# 35. Enquiry Audit
+
+Mandatory:
+
+```text
+one real ENQUIRY_STATUS_CHANGED event
+previous = OPEN
+new = CLOSED
+```
+
+for the true state change.
+
+Audit must be associated with the committed transaction.
+
+---
+
+# 36. Audit Rollback
+
+If audit persistence fails during a status transition:
+
+```text
+status mutation rolls back
+```
+
+Preserve the already-tested functional invariant.
+
+---
+
+# 37. Attachment Capability Race Setup
+
+Create:
+
+```text
+Request or Enquiry
+without inline attachment
+```
+
+so creation returns:
+
+```text
+X-Upload-Token
+```
+
+---
+
+# 38. Capability Rules Already Frozen
+
+Do not change:
+
+```text
+hashed capability storage
+parent binding
+resource-type binding
+action binding
+expiry
+single-use behavior
+X-Upload-Token header
+```
+
+---
+
+# 39. Capability Race
+
+Two workers concurrently submit:
+
+```text
+same raw X-Upload-Token
+same parent
+two valid attachment uploads
+```
+
+at the same barrier release.
+
+---
+
+# 40. Capability Race Invariant
+
+Final DB state:
+
+```text
+attachments for parent = 1
+```
+
+Never:
+
+```text
+2
+```
+
+---
+
+# 41. Capability Consumption
+
+Final capability state must show:
+
+```text
+consumed exactly once
+```
+
+No later reuse possible.
+
+---
+
+# 42. Loser Outcome
+
+The losing worker must receive the approved authorization/conflict outcome.
+
+Do not invent a new error solely for the test.
+
+The primary invariant:
+
+```text
+no second attachment
+```
+
+---
+
+# 43. No Orphan File
+
+If both workers successfully write bytes before one loses the DB race:
+
+the losing worker's file must be removed.
+
+Final durable storage:
+
+```text
+one live attachment file
+```
+
+---
+
+# 44. Cleanup Failure
+
+If cleanup itself fails, preserve:
+
+```text
+AttachmentCleanupRecoveryRequired
+```
+
+behavior.
+
+Do not suppress it merely so the race looks successful.
+
+---
+
+# 45. Private Test Storage
+
+Concurrency tests must use:
+
+```text
+local private test storage
+```
+
+or existing fake/test storage appropriate for cross-process behavior.
+
+Do not touch production object storage.
+
+---
+
+# 46. Cross-Process Storage Caveat
+
+If:
+
+```text
+Storage::fake()
+```
+
+cannot safely represent shared storage across forked workers, use a dedicated temporary local filesystem disk for this integration test.
+
+The test must observe actual files from both child processes.
+
+Do not rely on process-local in-memory fake state.
+
+---
+
+# 47. Temporary Test Directory
+
+Use a uniquely scoped test directory under a test-only path.
+
+Clean it after each scenario.
+
+Never point at:
+
+```text
+public uploads
+production attachment directory
+```
+
+---
+
+# 48. Race Iterations
+
+Use repeated iterations.
+
+Recommended consistent minimum:
+
+```text
+10
+```
+
+per race scenario.
+
+Do not reduce iterations to make flaky behavior disappear.
+
+---
+
+# 49. Request Iterations
 
 Expected:
 
 ```text
-one attachment
-one token consumption
-zero orphan objects
+10 close-vs-review
+10 same-target
 ```
+
+unless the existing Request test already defines an approved count.
 
 ---
 
-# 99. MariaDB Version Reporting
+# 50. Enquiry Iterations
 
-Report:
+Expected:
 
 ```text
-engine
-version
-test database
-test classes
-scenarios
-iterations
-assertions
-result
+10 concurrent close races
 ```
 
 ---
 
-# 100. SQLite vs MariaDB
+# 51. Capability Iterations
 
-State clearly:
+Expected:
 
 ```text
-SQLite
-→ functional validation
-→ ownership
-→ serialization
-→ rollback
-→ audit semantics
-
-MariaDB
-→ FOR UPDATE proof
-→ concurrent lifecycle serialization
-→ capability single-use proof
+10 same-capability races
 ```
-
-Do not claim SQLite proves row locks.
 
 ---
 
-# PART F — CUSTOMER HISTORY DETAILED REQUIREMENTS
+# 52. Worker Exit Behavior
 
-# 101. REQ-002 Resource Privacy
+Workers must exit predictably.
 
-Customer Request list/detail must never include:
+Expected business conflicts should be handled as expected outcomes, not process crashes.
+
+Parent process must assert worker exit codes.
+
+---
+
+# 53. Parent Final-State Verification
+
+After both workers terminate, assert:
 
 ```text
-staff_internal_notes
-audit events
-internal storage information
-raw user_id
+database row state
+audit records
+capability state
+attachment count
+storage file count
 ```
 
----
-
-# 102. ENQ-002 Resource Privacy
-
-Same.
+Do not treat process exit alone as proof.
 
 ---
 
-# 103. Own Collection Dataset
+# 54. True Concurrency Requirement
 
-Customer history query must begin from:
+The workers must overlap around the concurrency-sensitive section.
+
+Do not release worker B only after worker A completes.
+
+The file barrier or equivalent synchronization must ensure meaningful overlap.
+
+---
+
+# 55. MariaDB Transaction Engine
+
+Verify relevant tables use a transactional engine such as:
 
 ```text
-where user_id = authenticated User.id
+InnoDB
 ```
 
-before:
+if current schema/configuration allows checking this safely.
+
+Do not run a concurrency proof against a non-transactional storage engine.
+
+---
+
+# 56. Isolation Level
+
+Record the actual MariaDB transaction isolation level if practical:
+
+```sql
+SELECT @@transaction_isolation;
+```
+
+or MariaDB-compatible equivalent.
+
+Do not alter isolation level solely to make tests pass unless the application explicitly configures it.
+
+Test the environment as the application will normally use it.
+
+---
+
+# 57. Server Identity Evidence
+
+Record at least:
+
+```sql
+SELECT VERSION();
+SELECT DATABASE();
+```
+
+Optionally record:
+
+```sql
+SELECT @@transaction_isolation;
+```
+
+Do not log credentials.
+
+---
+
+# 58. Expected Environment Report
+
+Final evidence should resemble:
 
 ```text
-search
-filters
-pagination
+Host OS:
+Fedora 44
+
+Database server:
+MariaDB 11.8.8
+
+Client:
+MariaDB client 15.2
+Linux x86_64
+EditLine wrapper
+
+Database:
+furnitureapp_test_disposable
+
+Connection:
+local test-only
+
+Production database touched:
+NO
 ```
 
----
-
-# 104. Pagination Cannot Leak Counts
-
-`meta.pagination.total` must count only own records.
+Use actual observed server output.
 
 ---
 
-# 105. Search Cannot Leak
+# 59. Existing Disposable DB Reuse
 
-Search must not return/count records from another Customer.
-
----
-
-# 106. Anonymous Historical Records
-
-Never attach anonymous records to Customer solely because:
+If:
 
 ```text
-email matches
-phone matches
-name matches
+furnitureapp_test_disposable
 ```
 
-No retroactive identity linking.
+already exists, it may be reused only after verifying it is the intended disposable test DB.
 
----
-
-# 107. No Email Linking
-
-Especially do not perform:
+Run:
 
 ```text
-anonymous Request.email == authenticated Customer.email
-→ treat as owned
+migrate:fresh
 ```
 
-Ownership is only:
+under the safety guards.
+
+---
+
+# 60. Database Teardown
+
+After testing, either:
 
 ```text
-user_id
+drop furnitureapp_test_disposable
 ```
 
----
+or leave the explicitly disposable DB empty/available according to existing repository practice.
 
-# 108. No Guest Claim Endpoint
-
-Do not invent a claim/adopt endpoint during remediation.
+Do not leave test data in the normal development DB.
 
 ---
 
-# 109. Detail Identifier
+# 61. Do Not Destroy Local MariaDB Instance
 
-Use opaque:
+Only the disposable database is disposable.
+
+Do not:
 
 ```text
-req_...
-enq_...
+drop other databases
+remove MariaDB installation
+reset root account
 ```
 
-No numeric fallback.
-
 ---
 
-# 110. Invalid Identifier
+# 62. No Production Infrastructure Work
 
-Use the project's deterministic identifier error mapping.
-
-Do not query using malformed numeric/raw strings.
-
----
-
-# PART G — ENQUIRY OPERATIONAL DETAILS
-
-# 111. ENQ-004 Pagination
-
-Use global:
+Do not configure:
 
 ```text
-page/per_page
+Coolify
+Contabo firewall
+production MySQL
+production backups
+production database users
+production secrets
 ```
 
-with max 100.
+during this gate.
+
+Those belong to deployment/operations phases.
 
 ---
 
-# 112. ENQ-004 Query Object
+# 63. If Future Production Uses Oracle MySQL
 
-Create a normalized immutable query DTO/value if useful.
-
-Do not pass raw query arrays into deep services.
-
----
-
-# 113. Query Service
-
-Use focused:
+Document that local closure was proven on:
 
 ```text
-ListOperationalEnquiries
+MariaDB 11.8.8
 ```
 
-or repository equivalent.
-
-Do not put full filter logic in controller.
-
----
-
-# 114. Operational Detail
-
-ENQ-005 must expose only handling context.
-
-Do not embed whole Customer account.
-
----
-
-# 115. Order Context
-
-Safe order summary only.
-
-Do not expose:
+and future deployment uses:
 
 ```text
-billing address
-payment secret
-full payment provider payload
-unrelated Order data
+MySQL <actual version>
 ```
 
----
+once known.
 
-# 116. Product Context
-
-Safe Product summary only.
-
-No stock internals.
+Do not claim exact engine equivalence.
 
 ---
 
-# 117. Enquiry Internal Notes
+# 64. Future Deployment Verification
 
-Customer representation:
+Later production deployment should verify:
 
 ```text
-never
+Laravel migrations run successfully
+supported DB version
+indexes/FKs present
+transactional engine
+connection charset/collation
+application health
 ```
 
-Operational representation:
-
-according to approved permissions.
-
----
-
-# 118. Staff Cannot Mutate Customer History
-
-ENQ-006 must not change:
+but must not run:
 
 ```text
-subject
-message
-contact
-category
-product_id
-order_id
+migrate:fresh
+forked destructive race tests
 ```
+
+against production.
 
 ---
 
-# 119. No Enquiry→Order Conversion
+# 65. Existing MySQL/MariaDB Compatibility
 
-Closing an Enquiry:
+Do not modify production code merely because MariaDB differs internally from Oracle MySQL unless a test exposes a real defect.
+
+---
+
+# 66. Expected Schema Change
 
 ```text
-does not create Order
-does not reserve stock
-does not create Payment
+NONE
+```
+
+The implementation is already complete.
+
+---
+
+# 67. Expected Dependency Change
+
+```text
+NONE
 ```
 
 ---
 
-# 120. No Enquiry→Request Conversion
+# 68. Frontend
 
-None.
-
----
-
-# PART H — MANDATORY AUDIT COMPLETION
-
-# 121. Existing Request Audit
-
-Preserve the Phase 10.8 Request audit implementation.
-
-Do not rewrite unless necessary for reuse.
+```text
+NONE
+```
 
 ---
 
-# 122. Audit Vocabulary
+# 69. OpenAPI
+
+```text
+UNCHANGED
+```
+
+The concurrency gate does not change HTTP contracts.
+
+---
+
+# 70. Route State Regression
+
+Reconfirm:
+
+```text
+REQ-001 ACTIVE
+ENQ-001 ACTIVE
+REQ-007 ACTIVE
+ENQ-007 ACTIVE
+```
+
+No route change is expected.
+
+---
+
+# 71. Attachment Contract Regression
+
+Keep:
+
+```text
+creation without inline attachment
+→ X-Upload-Token response header
+```
+
+and:
+
+```text
+creation with inline attachment
+→ no X-Upload-Token
+```
+
+---
+
+# 72. JSON Resource Regression
+
+Never reintroduce:
+
+```text
+upload_token
+```
+
+into Request/Enquiry JSON.
+
+---
+
+# 73. No Raw Capability Persistence
+
+Verify again during race setup:
+
+```text
+raw token absent from DB
+```
+
+Only hashed/digested capability data may persist.
+
+---
+
+# 74. No Raw Capability Logging
+
+Do not dump raw tokens for race debugging.
+
+If debug correlation is needed, use:
+
+```text
+capability record ID
+parent ID
+hash prefix only if safe and existing policy permits
+```
+
+Never raw secret.
+
+---
+
+# 75. If Request Race Fails
+
+Investigate only:
+
+```text
+FOR UPDATE
+transaction boundary
+current-state re-read
+ConcurrentTransaction retry
+status/audit atomicity
+```
+
+Do not alter lifecycle semantics.
+
+---
+
+# 76. If Enquiry Race Fails
+
+Investigate:
+
+```text
+row locking
+current-state re-read
+close idempotence
+audit transaction
+```
+
+Do not invent another Enquiry state.
+
+---
+
+# 77. If Capability Race Fails
+
+Investigate:
+
+```text
+capability lookup/lock
+atomic consumption
+one-attachment unique guard
+transaction ordering
+storage compensation
+```
+
+Do not weaken single-use security.
+
+---
+
+# 78. Transient Database Failures
 
 Reuse:
 
 ```text
-REQUEST_STATUS_CHANGED
-ENQUIRY_STATUS_CHANGED
+ConcurrentTransaction
 ```
 
-Do not add duplicate synonyms.
+and its approved bounded retry policy.
+
+Do not create a separate MariaDB-only retry service.
 
 ---
 
-# 123. Server-Derived Actor
+# 79. Business Conflicts
 
-Client can never submit:
+Do not retry:
 
 ```text
-actor_id
-actor_role
-audit_timestamp
-request_id
-previous_status
-new_status
+CLOSED → IN_REVIEW
+expired capability
+consumed capability
+wrong-parent capability
 ```
 
----
-
-# 124. Correlation ID
-
-Use the repository request correlation ID.
-
-Do not generate a second unrelated identifier merely for audit.
+These are business/security outcomes, not transient DB failures.
 
 ---
 
-# 125. Audit Transaction Semantics
+# 80. Deadlocks / Lock Waits
 
-Status mutation + audit:
+Existing transient handling should cover approved cases such as:
 
 ```text
-one business transaction
+40001
+1205
+1213
+MariaDB transient record-change errors where already supported
 ```
 
-Audit failure must not leave status committed.
+Do not introduce unlimited retry loops.
 
 ---
 
-# 126. No Secrets in Audit
+# 81. Missing Test Classes
 
-Never audit:
+If absent, create:
 
 ```text
-bearer tokens
-upload capability
-storage credentials
-passwords
-full attachment content
+tests/Integration/EnquiryStatusConcurrencyMysqlTest.php
+tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php
 ```
 
----
-
-# PART I — ATTACHMENT DOWNLOAD PRIVACY
-
-# 127. Parent-Scoped Read
-
-Attachment retrieval remains through authorized parent representation / temporary URL.
-
-No public attachment index.
+Do not create new feature behavior to support them.
 
 ---
 
-# 128. Cross-Customer Attachment
+# 82. Test Support Reuse
 
-Customer A must not obtain a usable private URL for Customer B attachment.
-
----
-
-# 129. Cross-Resource Signed URL
-
-A signed/private capability tied to one parent/attachment must not authorize another.
-
----
-
-# 130. Permanent Public URLs
-
-Forbidden.
-
----
-
-# PART J — ROUTE CLOSURE MATRIX
-
-# 131. Request Routes
-
-At remediation completion report:
+Reuse:
 
 ```text
-REQ-001 POST /requests
-REQ-002 GET /me/requests
-REQ-003 GET /me/requests/{request}
-REQ-004 GET /requests
-REQ-005 GET /requests/{request}
-REQ-006 PATCH /requests/{request}
-REQ-007 POST /requests/{request}/attachments
+UsesDisposableMysqlDatabase
+RunsConcurrentWorkers
 ```
 
-Each must be:
-
-```text
-ACTIVE
-```
-
-unless the frozen contract has an explicit approved exception.
+and existing test-fixture helpers.
 
 ---
 
-# 132. Enquiry Routes
+# 83. Generic Trait Refactoring
 
-Likewise:
+If `UsesDisposableMysqlDatabase` or related support is artificially tied to Request status tests, refactor minimally so all three Group J tests can reuse it.
 
-```text
-ENQ-001 POST /enquiries
-ENQ-002 GET /me/enquiries
-ENQ-003 GET /me/enquiries/{enquiry}
-ENQ-004 GET /enquiries
-ENQ-005 GET /enquiries/{enquiry}
-ENQ-006 POST /enquiries/{enquiry}/close
-ENQ-007 POST /enquiries/{enquiry}/attachments
-```
+Do not duplicate destructive database guards.
 
 ---
 
-# 133. No Required Stub
+# 84. Do Not Change Existing Request Race Semantics
 
-If any required Group J endpoint remains:
+Preserve the already-existing Request integration test behavior unless a real defect is discovered.
 
-```text
-501
-STUB
-unconditionally gated
-MISSING
+---
+
+# 85. MariaDB Test Commands
+
+Use actual repository paths.
+
+Conceptually:
+
+```bash
+php artisan test \
+  tests/Integration/FurnitureRequestStatusConcurrencyMysqlTest.php
 ```
 
 then:
 
-```text
-Group J = NOT CLOSED
+```bash
+php artisan test \
+  tests/Integration/EnquiryStatusConcurrencyMysqlTest.php
 ```
 
----
+then:
 
-# PART K — OPENAPI / CONTRACT RECONCILIATION
-
-# 134. Verify All Operations
-
-Ensure OpenAPI represents:
-
-```text
-REQ-001..007
-ENQ-001..007
+```bash
+php artisan test \
+  tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php
 ```
 
-correctly.
+with the test MariaDB environment supplied.
 
 ---
 
-# 135. Customer History
+# 86. Optional Combined Command
 
-Verify:
+If useful:
 
-```text
-REQ-002/003
-ENQ-002/003
+```bash
+php artisan test tests/Integration
 ```
 
-ownership/security descriptions and private resources.
+only if that directory contains safe integration tests intended for the disposable MariaDB environment.
+
+Inspect first.
+
+Do not inadvertently execute unrelated destructive tests.
 
 ---
 
-# 136. Enquiry Operations
+# 87. Full SQLite Regression
 
-Verify:
-
-```text
-ENQ-004/005/006
-```
-
-permissions, filters, lifecycle, errors.
-
----
-
-# 137. Attachment Capability
-
-Verify exact representation of the scoped upload token.
-
-If OpenAPI still lacks an approved place to return it:
-
-do not invent one silently.
-
-Resolve the consistency gap before Group J closure.
-
----
-
-# 138. Error Codes
-
-Every emitted Group J error must exist in:
-
-```text
-ApiErrorCode
-OpenAPI error enum
-normative docs
-```
-
----
-
-# 139. No New Contract
-
-Do not use remediation to add new:
-
-```text
-status
-field
-filter
-endpoint
-role
-Product type
-attachment behavior
-```
-
-unless it is already frozen but missing from implementation/documentation.
-
----
-
-# PART L — REGRESSION TESTS
-
-# 140. Request Regression
-
-Run all:
-
-```text
-FurnitureRequest*
-RequestStatus*
-RequestableProductResolver*
-OperationalFurnitureRequest*
-Attachment*
-```
-
-as applicable.
-
----
-
-# 141. Enquiry Regression
-
-Run complete:
-
-```text
-Enquiry*
-```
-
-suite.
-
----
-
-# 142. Customer History Tests
-
-Add focused:
-
-```text
-CustomerFurnitureRequestHistoryApiTest
-CustomerEnquiryHistoryApiTest
-```
-
-or repository-consistent equivalents.
-
----
-
-# 143. Enquiry Operational Tests
-
-Add focused:
-
-```text
-OperationalEnquiryListApiTest
-OperationalEnquiryDetailApiTest
-OperationalEnquiryCloseApiTest
-```
-
-or equivalents.
-
----
-
-# 144. Attachment Capability Tests
-
-Add focused:
-
-```text
-RequestAttachmentCapabilityApiTest
-EnquiryAttachmentCapabilityApiTest
-```
-
-or a shared suite where clearer.
-
----
-
-# 145. Closure Regression Test
-
-Consider one high-level:
-
-```text
-GroupJClosureRegressionTest
-```
-
-covering only cross-domain invariants:
-
-```text
-MADE_TO_ORDER Request flow
-Enquiry flow
-customer ownership
-staff operations
-no Order/Payment/Inventory effects
-```
-
-Do not duplicate all specialized tests.
-
----
-
-# PART M — END-TO-END CLOSURE FLOWS
-
-# 146. Authenticated Furniture Request Flow
-
-Prove:
-
-```text
-CUSTOMER
-→ POST /requests
-→ 201 SUBMITTED
-→ GET /me/requests
-→ sees own
-→ GET /me/requests/{id}
-→ sees own detail
-→ Staff GET /requests
-→ Staff GET detail
-→ Staff IN_REVIEW
-→ Staff CLOSED
-→ audit events correct
-```
-
-No Order.
-
----
-
-# 147. Anonymous Furniture Request Flow
-
-Prove:
-
-```text
-Anonymous
-→ POST /requests
-→ 201
-→ cannot GET /me/requests
-→ Staff operationally handles it
-```
-
----
-
-# 148. Attachment Request Flow
-
-If no inline attachment:
-
-```text
-creation
-→ scoped upload capability
-→ REQ-007
-→ one private attachment
-```
-
-according to frozen response contract.
-
----
-
-# 149. Authenticated Enquiry Flow
-
-Prove:
-
-```text
-CUSTOMER
-→ POST /enquiries
-→ OPEN
-→ GET /me/enquiries
-→ own detail
-→ Staff operational queue
-→ Staff detail
-→ close
-→ CLOSED
-→ audit
-```
-
----
-
-# 150. Anonymous Enquiry Flow
-
-Prove:
-
-```text
-Anonymous create
-→ OPEN
-→ no anonymous retrieval
-→ Staff can handle
-→ close
-```
-
----
-
-# 151. Enquiry Attachment Flow
-
-Same scoped upload behavior.
-
----
-
-# PART N — ZERO COMMERCE SIDE EFFECTS
-
-# 152. Furniture Request
-
-Across create/read/manage/attachment:
-
-```text
-Orders unchanged
-Payments unchanged
-ProductStock unchanged
-reserved_quantity unchanged
-Cart unchanged
-```
-
----
-
-# 153. Enquiry
-
-Same.
-
----
-
-# 154. Status Close
-
-Request/Enquiry status transitions create no commerce resources.
-
----
-
-# 155. Attachments
-
-Uploading attachment creates no commerce resources.
-
----
-
-# PART O — SECURITY REGRESSION
-
-# 156. Invalid Bearer
-
-All Group J authenticated/optional-auth paths maintain:
-
-```text
-invalid bearer → no anonymous downgrade
-```
-
----
-
-# 157. Suspended Account
-
-Preserve existing active-account restrictions.
-
----
-
-# 158. Mixed Roles
-
-Preserve hardening against invalid mixed-role actors.
-
----
-
-# 159. Rate Limits
-
-REQ-001/ENQ-001 retain public submission throttles.
-
-REQ-007/ENQ-007 should have suitable upload throttling using existing infrastructure.
-
-Do not leave upload capability route as an unthrottled abuse surface.
-
----
-
-# 160. Body Limit
-
-Attachment routes retain global body ceiling compatible with valid 5 MiB upload + overhead.
-
----
-
-# 161. Safe Logging
-
-No:
-
-```text
-raw capability
-bearer
-full message/notes
-private file bytes
-storage key
-```
-
-in ordinary logs.
-
----
-
-# PART P — QUALITY / VERIFICATION
-
-# 162. Focused Tests
-
-Run closure-focused suites first.
-
----
-
-# 163. Full PHPUnit
-
-Run:
+After MariaDB tests pass, run:
 
 ```bash
 php artisan test
 ```
 
-Report:
+using the repository's canonical SQLite test configuration.
+
+Do not accidentally leave the environment pointed to MariaDB for the canonical suite unless intentional.
+
+---
+
+# 88. Environment Reset
+
+After MariaDB integration tests:
+
+restore the normal test environment before full SQLite suite.
+
+Avoid accidentally running:
 
 ```text
-total
-passed
-failed
-skipped
-assertions
+full canonical tests
 ```
 
+against:
+
+```text
+furnitureapp_test_disposable
+```
+
+if the suite assumes SQLite.
+
 ---
 
-# 164. MariaDB
+# 89. PHPStan
 
-Run all required Group J integration tests with actual execution.
-
-Skipped concurrency is not closure proof.
-
----
-
-# 165. PHPStan
+Run:
 
 ```bash
 vendor/bin/phpstan analyse
 ```
 
-Required:
+Expected:
 
 ```text
 0 errors
@@ -2513,7 +1622,9 @@ Required:
 
 ---
 
-# 166. Pint
+# 90. Pint
+
+Run:
 
 ```bash
 vendor/bin/pint --test
@@ -2521,17 +1632,19 @@ vendor/bin/pint --test
 
 ---
 
-# 167. Composer Audit
+# 91. Composer Audit
+
+Run:
 
 ```bash
 composer audit
 ```
 
-Must be clean or exact advisory reported.
-
 ---
 
-# 168. Diff Check
+# 92. Diff Check
+
+Run:
 
 ```bash
 git diff --check
@@ -2539,114 +1652,237 @@ git diff --check
 
 ---
 
-# 169. Route List
+# 93. Route Verification
+
+Run:
 
 ```bash
 php artisan route:list
 ```
 
-Build final REQ/ENQ route-state matrix.
+Confirm Group J route activation remains intact.
 
 ---
 
-# 170. OpenAPI Parse
+# 94. OpenAPI Parse
 
-Validate:
+Run the existing OpenAPI contract/parser tests.
+
+No API changes expected.
+
+---
+
+# 95. Documentation
+
+Update:
 
 ```text
-docs/api/openapi.yaml
+phases/group-J-phases.md
+docs/decisions.md
+```
+
+with actual executed evidence.
+
+---
+
+# 96. Do Not Record Intended Results
+
+Only record:
+
+```text
+executed
+iterations
+assertions
+actual server version
+actual pass/failure
+```
+
+Do not document a race as PASS merely because the code appears correct.
+
+---
+
+# 97. Group J Closure Record
+
+If all gates pass, update the existing closure/remediation ADR rather than creating redundant documentation unless repository convention requires a new ADR.
+
+---
+
+# 98. Final Database Evidence
+
+Include:
+
+```text
+server version
+client version
+database name
+OS
+driver
+test classes
+race scenarios
+iterations
+results
 ```
 
 ---
 
-# 171. Migration Verification
+# 99. Request Race Completion Report
 
-If capability persistence requires a new migration:
-
-run normal fresh migration/schema tests.
-
-Do not modify historical migrations.
-
----
-
-# 172. MariaDB Constraint Verification
-
-If capability schema uses:
+Report:
 
 ```text
-unique guards
-CHECK
-row locks
-```
+class:
+FurnitureRequestStatusConcurrencyMysqlTest
 
-verify on MariaDB, not only SQLite.
+scenarios:
+- close vs review
+- same-target transition
+
+iterations:
+...
+
+assertions:
+...
+
+result:
+PASS / FAIL
+
+final invariants:
+...
+```
 
 ---
 
-# PART Q — DOCUMENTATION
+# 100. Enquiry Race Completion Report
 
-# 173. Closure ADR
-
-Add the next available backend ADR.
-
-Concept:
+Report:
 
 ```text
-Group J Closure Remediation and Final Verification
+class:
+EnquiryStatusConcurrencyMysqlTest
+
+scenario:
+concurrent close
+
+iterations:
+...
+
+audit events:
+...
+
+result:
+PASS / FAIL
 ```
-
-Inspect actual ADR numbering.
-
-Do not assume it.
 
 ---
 
-# 174. ADR Content
+# 101. Attachment Race Completion Report
+
+Report:
+
+```text
+class:
+AttachmentCapabilityConcurrencyMysqlTest
+
+scenario:
+two workers / one capability
+
+iterations:
+...
+
+winner count:
+...
+
+loser behavior:
+...
+
+final attachment count:
+...
+
+capability consumed:
+...
+
+orphan files:
+...
+
+result:
+PASS / FAIL
+```
+
+---
+
+# 102. Local Database Report
+
+Report:
+
+```text
+Host OS:
+Fedora 44
+
+DB server:
+<SELECT VERSION()>
+
+DB client:
+MariaDB client 15.2
+
+Database:
+furnitureapp_test_disposable
+
+Production DB touched:
+NO
+```
+
+---
+
+# 103. Production Note
 
 Record:
 
 ```text
-customer Request history
-customer Enquiry history
-Enquiry operational routes
-Enquiry OPEN→CLOSED lifecycle
-Enquiry status audit
-scoped attachment capability
-single-use concurrency
-REQ-001 activation
-ENQ-001 activation state
-MariaDB execution
-final route matrix
-Group J closure decision
+Future deployment:
+Coolify on Contabo VPS
+
+Production DB:
+MySQL-compatible service, exact engine/version to be confirmed during deployment
+
+Not used for Group J concurrency closure
+```
+
+Do not block Group J on production infrastructure availability.
+
+---
+
+# 104. Full Suite Report
+
+Report the fresh post-concurrency canonical result:
+
+```text
+tests:
+passed:
+failed:
+skipped:
+assertions:
 ```
 
 ---
 
-# 175. Update Group J Tracking
+# 105. Quality Report
 
-Do not add:
-
-```text
-10.9
-```
-
-unless the project owner explicitly wants the roadmap changed.
-
-Instead append:
+Report:
 
 ```text
-Group J Closure Remediation
+PHPStan:
+Pint:
+Composer audit:
+git diff --check:
+route:list:
+OpenAPI:
 ```
-
-or repository-consistent closure record.
 
 ---
 
-# 176. Preserve Phase Results
+# 106. Expected Final Group J Matrix
 
-Do not rewrite prior PASS phases as if they were incomplete.
-
-Record:
+If every race passes and existing functional tests remain green:
 
 ```text
 10.1 PASS
@@ -2654,565 +1890,250 @@ Record:
 10.3 PASS
 10.4 PASS
 10.5 PASS
-10.6 PASS or exact state after remediation
+10.6 PASS
 10.7 PASS
 10.8 PASS
-Closure Remediation PASS/BLOCKED
+
+Group J Closure Remediation PASS
+Group J MariaDB Concurrency Closure Gate PASS
+
+Group J CLOSED
 ```
 
 ---
 
-# PART R — FINAL CLOSURE DECISION
+# 107. If MariaDB Connection Fails
 
-# 177. Group J Can Close Only If
-
-All must be true:
+If local MariaDB remains inaccessible:
 
 ```text
-REQ-001 ACTIVE
-REQ-002 ACTIVE
-REQ-003 ACTIVE
-REQ-004 ACTIVE
-REQ-005 ACTIVE
-REQ-006 ACTIVE
-REQ-007 ACTIVE
-
-ENQ-001 ACTIVE
-ENQ-002 ACTIVE
-ENQ-003 ACTIVE
-ENQ-004 ACTIVE
-ENQ-005 ACTIVE
-ENQ-006 ACTIVE
-ENQ-007 ACTIVE
+MariaDB Concurrency Closure Gate = BLOCKED
+Group J = NOT CLOSED
 ```
 
-and:
+Report the concrete cause:
 
 ```text
-Request audit PASS
-Enquiry audit PASS
-customer ownership PASS
-IDOR masking PASS
-attachment capability PASS
-private storage PASS
-no public URLs PASS
-MariaDB concurrency PASS
-OpenAPI aligned
-full regression PASS
+authentication failure
+server unavailable
+database missing
+pcntl unavailable
+permission denied
+test guard mismatch
 ```
+
+Do not call it an implementation failure unless production code is actually defective.
 
 ---
 
-# 178. Request End-to-End Closure
+# 108. If One Race Fails
 
-Must prove:
+Then:
 
 ```text
-capture
-→ own customer history
-→ operational handling
-→ controlled lifecycle
-→ audit
+Gate = FAIL
+Group J = NOT CLOSED
 ```
+
+Report:
+
+```text
+race
+iteration
+expected invariant
+actual invariant
+DB error if safe
+suspected transaction boundary
+```
+
+Do not automatically broaden scope beyond the discovered defect.
 
 ---
 
-# 179. Enquiry End-to-End Closure
+# 109. Definition of Done
 
-Must prove:
+This closure gate is complete only when:
 
-```text
-capture
-→ own customer history
-→ operational handling
-→ controlled close
-→ audit
-```
-
----
-
-# 180. Attachment Closure
-
-Must prove:
-
-```text
-inline optional upload
-+
-separate scoped upload
-+
-private authorized retrieval metadata
-+
-single-use capability
-```
-
-according to frozen V1.
-
----
-
-# 181. Commerce Separation
-
-Must still prove:
-
-```text
-Group J creates no Order
-Group J creates no Payment
-Group J reserves no inventory
-Group J mutates no Cart
-Group J creates no authoritative quote
-```
+- Fedora 44 local environment is used;
+- actual MariaDB server version is verified;
+- local MariaDB client version is recorded separately;
+- `furnitureapp_test_disposable` exists and is verified;
+- production database is untouched;
+- destructive guards pass;
+- forked workers use independent DB connections;
+- Request status races execute;
+- CLOSED cannot be reopened;
+- same-target Request race remains idempotent;
+- Enquiry close race executes;
+- final Enquiry state is CLOSED;
+- exactly one real Enquiry close occurs;
+- Enquiry audit remains correct under race;
+- attachment capability race executes;
+- one token produces at most one attachment;
+- capability is consumed exactly once;
+- losing upload creates no surviving orphan;
+- raw token remains secret;
+- all required race iterations complete;
+- no required MariaDB test is skipped;
+- canonical SQLite suite remains green;
+- PHPStan passes;
+- Pint passes;
+- Composer audit passes;
+- diff check passes;
+- routes remain active;
+- OpenAPI remains aligned;
+- evidence is documented;
+- no Coolify/Contabo production infrastructure is touched.
 
 ---
 
-# 182. Phase H/I Status
+# 110. STOP Condition
 
-Do not resume:
+STOP only when the final result is one of:
 
 ```text
-Group H
-Group I
+MariaDB concurrency closure gate PASS.
+All required Group J races executed on furnitureapp_test_disposable.
+Group J CLOSED.
 ```
 
-during remediation.
-
-They remain deliberately deferred.
-
----
-
-# 183. Next Group
-
-If and only if Group J closes:
-
-report:
+or:
 
 ```text
-Group K — READY
+MariaDB concurrency closure gate BLOCKED/FAILED.
+Group J NOT CLOSED.
+
+Exact reason:
+...
 ```
 
 Do not begin Group K automatically.
 
----
+Do not configure production Coolify/Contabo infrastructure as part of this task.
 
-# PART S — COMPLETION REPORT
+DO NOT COMMIT, STAGE OR PUSH.
 
-Return the following exact categories.
-
-## Closure Remediation Status
-
-```text
-PASS
-```
-
-or:
-
-```text
-BLOCKED
-```
+The project owner handles all Git operations.
 
 ---
 
-## Group J Status
+# 111. EXECUTED CLOSURE EVIDENCE
 
-Separately:
+Recorded from the actual local run. Nothing below is an intended result.
+
+## Database / engine
 
 ```text
-CLOSED
+Host OS:                  Linux (Fedora-class workstation)
+DB server (SELECT VERSION()): 11.8.8-MariaDB
+DB client:                mariadb from 11.8.8-MariaDB, client 15.2 for Linux (x86_64) using EditLine wrapper
+Database:                 furnitureapp_test_disposable (utf8mb4 / utf8mb4_unicode_ci)
+Connection:               127.0.0.1:3306, dedicated local user scoped to this database only
+Transaction isolation:    REPEATABLE-READ
+Default storage engine:   InnoDB
+Relevant tables:          furniture_requests, enquiries, audit_events, attachments,
+                          attachment_upload_capabilities -> ALL InnoDB
+Production database touched: NO
 ```
 
-or:
+Dedicated least-privilege test user granted privileges on `furnitureapp_test_disposable.*` only.
+
+## Race A — Furniture Request status (`FurnitureRequestStatusConcurrencyMysqlTest`)
 
 ```text
-NOT CLOSED
+scenarios:   close vs review; same-target transition
+iterations:  10 per scenario
+result:      PASS
 ```
 
----
-
-## Request Routes
-
-Report all:
+## Race B — Enquiry close (`EnquiryStatusConcurrencyMysqlTest`, NEW)
 
 ```text
-REQ-001
-REQ-002
-REQ-003
-REQ-004
-REQ-005
-REQ-006
-REQ-007
+scenario:    two workers concurrently close one OPEN enquiry
+iterations:  10
+assertions:  90
+result:      PASS
+final state: enquiry_status = CLOSED
+audit:       exactly one ENQUIRY_STATUS_CHANGED, previous OPEN -> new CLOSED
 ```
 
-with:
+## Race C — Attachment capability (`AttachmentCapabilityConcurrencyMysqlTest`, NEW)
 
 ```text
-ACTIVE / STUB / GATED / MISSING
+scenarios:   (1) two workers share one X-Upload-Token
+             (2) two authenticated workers without a token
+iterations:  10 per scenario
+assertions:  200
+result:      PASS
+
+Scenario 1: one winner creates the attachment; the loser receives
+            INVALID_AUTHENTICATION (capability consumed exactly once).
+Scenario 2: one winner creates the attachment; the loser receives
+            CONFLICT via the locked parent existence check.
+
+Invariants held every iteration:
+  attachments for parent = 1
+  capability rows per race = 1, used_at set (consumed once)
+  stored files = 1 per race (no surviving orphan)
+  raw capability never persisted (keyed HMAC digest only)
 ```
 
----
-
-## Enquiry Routes
-
-Report:
+## Combined race run
 
 ```text
-ENQ-001..ENQ-007
+php artisan test \
+  tests/Integration/FurnitureRequestStatusConcurrencyMysqlTest.php \
+  tests/Integration/EnquiryStatusConcurrencyMysqlTest.php \
+  tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php
+
+tests: 5   passed: 5   assertions: 410   result: PASS
 ```
 
-same way.
+No required MariaDB test was skipped.
 
----
-
-## Customer History
-
-Report:
+## Canonical SQLite regression (MariaDB env unset)
 
 ```text
-Request own list/detail
-Enquiry own list/detail
-cross-customer 404
-anonymous exclusion
-pagination
-sorting
-search if approved
-private/no-store
+tests: 1540   passed: 1539   skipped: 1   assertions: 6033   result: PASS
 ```
 
----
+The single skip is the pre-existing, intentional
+`Tests\Feature\ConcurrentJitProvisioningTest` skip ("MySQL concurrency
+integration tests are disabled in the canonical suite"); it is not a Group J
+gate and not a MariaDB result.
 
-## Enquiry Operations
-
-Report:
+## Quality gates
 
 ```text
-list
-detail
-close
-permission model
-filters
-sort
-internal notes
-OPEN→CLOSED
-reopen policy
+PHPStan:          0 errors
+Pint:             PASS
+Composer audit:   PASS (no advisories)
+git diff --check: clean
+route:list:       REQ-001/002/003/004/005/006/007 and ENQ-001..007 active
+OpenAPI:          aligned (covered by canonical suite)
 ```
 
----
-
-## Audit
-
-Report:
+## Closure decision
 
 ```text
-REQUEST_STATUS_CHANGED
-ENQUIRY_STATUS_CHANGED
-transactional rollback
-actor
-role
-previous/new
-resource
-timestamp
-request_id
-```
-
----
-
-## Attachments
-
-Report:
-
-```text
-REQ-007
-ENQ-007
-capability generation
-scope
-TTL
-digest storage
-single-use
-failed-upload consumption behavior
-concurrency
-orphan cleanup
-URL privacy
-```
-
----
-
-## Route Activation
-
-Report actual state of:
-
-```text
-POST /api/v1/requests
-POST /api/v1/enquiries
-```
-
-and any removed gate.
-
----
-
-## MariaDB
-
-Report:
-
-```text
-engine/version
-database
-test classes
-race scenarios
-iterations
-assertions
-result
-```
-
----
-
-## Security
-
-Report:
-
-```text
-IDOR
-permission matrix
-invalid bearer
-suspended actor
-rate limits
-body limit
-cache privacy
-logging privacy
-attachment capability security
-```
-
----
-
-## Commerce Side Effects
-
-Confirm:
-
-```text
-Orders = NONE
-Payments = NONE
-Inventory = NONE
-Cart = NONE
-Quotes = NONE
-ClickPesa = NONE
-```
-
----
-
-## Schema
-
-Report exact migration(s), if capability persistence required them.
-
-Do not claim NONE if a new table/columns were created.
-
----
-
-## Dependencies
-
-Report exact changes.
-
-Expected:
-
-```text
-NONE
-```
-
-unless unavoidable and justified.
-
----
-
-## Frontend
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-## OpenAPI
-
-Report:
-
-```text
-aligned
-```
-
-plus any frozen-contract reconciliation.
-
----
-
-## Tests
-
-Report:
-
-```text
-customer history tests
-Enquiry operational tests
-audit tests
-attachment capability tests
-security tests
-MariaDB concurrency
-full suite totals
-assertions
-```
-
----
-
-## Quality
-
-Report:
-
-```text
-PHPUnit
-PHPStan
-Pint
-composer audit
-git diff --check
-route:list
-OpenAPI parse
-```
-
----
-
-## Group J Final Matrix
-
-Return:
-
-```text
+MariaDB concurrency closure gate: PASS
+All required Group J races executed on furnitureapp_test_disposable:
 10.1 PASS
 10.2 PASS
 10.3 PASS
 10.4 PASS
 10.5 PASS
-10.6 PASS/BLOCKED
+10.6 PASS
 10.7 PASS
 10.8 PASS
-Closure Remediation PASS/BLOCKED
 
-Group J CLOSED / NOT CLOSED
+Group J Closure Remediation: PASS
+Group J MariaDB Concurrency Closure Gate: PASS
+Group J: CLOSED
+
+Remaining blockers: NONE
 ```
 
----
-
-## Remaining Blockers
-
-If not closed, list exact blockers individually.
-
-Do not write:
-
-```text
-more work needed
-```
-
----
-
-# 184. Definition of Done
-
-The Group J Closure Remediation is complete when:
-
-- REQ-002 own Request list is implemented;
-- REQ-003 own Request detail is implemented;
-- Customer A cannot read Customer B Request;
-- anonymous Requests are not retroactively claimed;
-- ENQ-002 own Enquiry list is implemented;
-- ENQ-003 own Enquiry detail is implemented;
-- Customer A cannot read Customer B Enquiry;
-- customer history is private/no-store;
-- customer resources hide staff internal notes;
-- ENQ-004 operational list is implemented;
-- ENQ-005 operational detail is implemented;
-- ENQ-006 OPEN→CLOSED is implemented;
-- Enquiry reopen is not invented without explicit approval;
-- enquiries.view controls reads;
-- enquiries.manage controls close;
-- Enquiry original customer content remains immutable;
-- Enquiry close is row-locked/concurrency-safe;
-- Enquiry close audit is mandatory and transactional;
-- Request status audit remains transactional;
-- REQ-007 separate upload is implemented;
-- ENQ-007 separate upload is implemented;
-- parent ID alone cannot authorize upload;
-- anonymous upload uses scoped capability;
-- capability is random;
-- capability is resource-scoped;
-- capability is parent-scoped;
-- capability is time-limited;
-- capability is single-use;
-- raw capability is not persisted;
-- raw capability is not logged;
-- capability consumption is race-safe;
-- failed validation does not incorrectly consume capability;
-- losing concurrent upload leaves no orphan file;
-- one attachment per parent remains enforced;
-- storage remains private;
-- permanent public attachment URLs do not exist;
-- REQ-001 is activated once prerequisites are complete;
-- ENQ-001 activation state is verified and corrected if similarly gated;
-- no required Group J route remains 501/stub/gated;
-- Request MariaDB concurrency executes successfully;
-- Enquiry MariaDB concurrency executes successfully;
-- attachment capability MariaDB race executes successfully;
-- Group J audit requirements are satisfied;
-- ownership/IDOR tests pass;
-- all Group J APIs remain separate from Orders/Payments/Inventory;
-- OpenAPI matches implementation;
-- full suite passes;
-- PHPStan has zero errors;
-- Pint passes;
-- Composer audit is clean;
-- `git diff --check` passes;
-- Group J closure is decided from evidence rather than prior phase labels.
-
----
-
-# 185. STOP Condition
-
-STOP only when you can provide an evidence-backed result:
-
-```text
-Group J Closure Remediation:
-PASS / BLOCKED
-
-Customer Request history:
-PASS / BLOCKED
-
-Customer Enquiry history:
-PASS / BLOCKED
-
-Enquiry operational management:
-PASS / BLOCKED
-
-Request audit:
-PASS / BLOCKED
-
-Enquiry audit:
-PASS / BLOCKED
-
-REQ-007:
-PASS / BLOCKED
-
-ENQ-007:
-PASS / BLOCKED
-
-REQ-001:
-ACTIVE / GATED
-
-ENQ-001:
-ACTIVE / GATED
-
-MariaDB concurrency:
-PASS / BLOCKED
-
-Group J:
-CLOSED / NOT CLOSED
-
-Remaining blockers:
-1. ...
-2. ...
-```
-
-Do not begin Group K.
-
-Do not resume Groups H or I.
-
-DO NOT COMMIT, STAGE OR PUSH.
-
-The project owner handles all Git operations.
+Production note: future deployment will use Coolify on a Contabo VPS with a
+MySQL-compatible service whose exact engine/version is confirmed during
+deployment. That infrastructure was not touched for this closure gate.

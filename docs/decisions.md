@@ -2665,3 +2665,19 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Compatibility:** Frozen V1 contract consistency correction; no new business capability. The existing token semantics, header, upload operations, private attachment boundary, and one-attachment limit are unchanged.
 
 **Status:** Accepted | **Date:** 2026-10-03 | **Affected:** `backend/laravel/app/Services/Attachments/*`, Request/Enquiry creation and upload controllers/resources, `docs/api/openapi.yaml`, `docs/decisions.md`
+
+### ADR/BACKEND-050 — Group J MariaDB Concurrency Closure Gate (Executed)
+
+**Decision:** Group J is closed on real MySQL/MariaDB transactional evidence, not on SQLite alone. Three concurrency families were executed with true forked workers (`pcntl_fork` + file barrier) against a dedicated disposable database.
+
+- **Engine evidence:** local MariaDB `11.8.8-MariaDB` (client `15.2`), database `furnitureapp_test_disposable` (`utf8mb4_unicode_ci`), isolation `REPEATABLE-READ`, all relevant tables `InnoDB`. A dedicated local test user limited to that database was used. The future production Coolify/Contabo database was neither required nor touched.
+- **Race A — Request status:** `FurnitureRequestStatusConcurrencyMysqlTest`; close-vs-review and same-target, 10 iterations each; `CLOSED` can never be reopened and same-target is applied once.
+- **Race B — Enquiry close (new):** `EnquiryStatusConcurrencyMysqlTest`; 10 concurrent closes, 90 assertions; final state `CLOSED` with exactly one real `OPEN → CLOSED` `ENQUIRY_STATUS_CHANGED` audit.
+- **Race C — Attachment capability (new):** `AttachmentCapabilityConcurrencyMysqlTest`; 10 iterations each of same-token and authenticated-no-token races, 200 assertions; one attachment, capability consumed exactly once, no surviving orphan file.
+- **Independent worker connections:** each forked worker purges and re-establishes its own MariaDB connection before the barrier release.
+- **No schema, dependency, route, OpenAPI, or business-behavior change** was required; the gate is verification only.
+- **Closed:** `Group J CLOSED`. Combined race run `5 passed / 410 assertions`; canonical SQLite suite `1539 passed, 1 skipped` (the skip is the pre-existing intentional `ConcurrentJitProvisioningTest` MySQL-disabled skip); PHPStan `0 errors`; Pint, Composer audit, and `git diff --check` clean.
+
+**Reason:** `SELECT ... FOR UPDATE`, row locking, and single-use capability races cannot be proven on SQLite; real MySQL/MariaDB execution was the last Group J closure blocker.
+
+**Status:** Accepted and executed | **Date:** 2026-10-03 | **Affected:** `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `backend/laravel/tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php`, `phases/group-J-phases.md`, `docs/decisions.md`
