@@ -75,6 +75,41 @@ class SecurityRequestBoundaryTest extends TestCase
         );
     }
 
+    public function test_cors_preflight_allows_the_upload_token_header(): void
+    {
+        config(['cors.allowed_origins' => [self::ALLOWED_ORIGIN]]);
+
+        $response = $this->call('OPTIONS', '/api/v1/requests/req_1/attachments', server: [
+            'HTTP_ORIGIN' => self::ALLOWED_ORIGIN,
+            'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+            'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'x-upload-token',
+        ]);
+
+        $response->assertNoContent();
+        $this->assertStringContainsString(
+            'x-upload-token',
+            strtolower((string) $response->headers->get('Access-Control-Allow-Headers')),
+        );
+    }
+
+    public function test_cross_origin_response_exposes_the_upload_token_header(): void
+    {
+        config(['cors.allowed_origins' => [self::ALLOWED_ORIGIN]]);
+        Route::middleware('api')->post(
+            '/api/v1/__test__/expose-upload-token',
+            fn () => response()->json(['ok' => true], 201)->header('X-Upload-Token', 'secret'),
+        );
+
+        $response = $this->withHeaders(['Origin' => self::ALLOWED_ORIGIN])
+            ->postJson('/api/v1/__test__/expose-upload-token');
+
+        $response->assertCreated();
+        $this->assertStringContainsString(
+            'x-upload-token',
+            strtolower((string) $response->headers->get('Access-Control-Expose-Headers')),
+        );
+    }
+
     public function test_rate_limited_cross_origin_response_is_readable(): void
     {
         config([

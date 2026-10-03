@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\AttachmentCleanupRequired;
 use App\Services\Attachments\AttachmentStorage;
 use App\Services\Attachments\ValidatedAttachment;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -68,7 +69,26 @@ class AttachmentStorageTest extends TestCase
         $this->fail('Expected a safe storage exception.');
     }
 
-    public function test_a_cleanup_delete_returning_false_is_logged(): void
+    public function test_a_failed_compensation_delete_surfaces_cleanup_required_with_the_key(): void
+    {
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('writeStream')->once()->andReturn(false);
+        $disk->shouldReceive('delete')->once()->andReturn(false);
+        Storage::set('attachments', $disk);
+
+        try {
+            $this->storage()->store($this->attachment(), 'attachments/requests');
+        } catch (AttachmentCleanupRequired $exception) {
+            $this->assertSame('attachments', $exception->storageDisk);
+            $this->assertMatchesRegularExpression('#^attachments/requests/[0-9a-z]+\.png$#', $exception->storageKey);
+
+            return;
+        }
+
+        $this->fail('Expected AttachmentCleanupRequired to retain the generated key.');
+    }
+
+    public function test_a_failed_cleanup_delete_is_logged_and_surfaces_cleanup_required(): void
     {
         Log::shouldReceive('warning')
             ->once()
@@ -78,7 +98,16 @@ class AttachmentStorageTest extends TestCase
         $disk->shouldReceive('delete')->once()->andReturn(false);
         Storage::set('attachments', $disk);
 
-        $this->storage()->delete('attachments', 'attachments/requests/orphan.png');
+        try {
+            $this->storage()->delete('attachments', 'attachments/requests/orphan.png');
+        } catch (AttachmentCleanupRequired $exception) {
+            $this->assertSame('attachments', $exception->storageDisk);
+            $this->assertSame('attachments/requests/orphan.png', $exception->storageKey);
+
+            return;
+        }
+
+        $this->fail('Expected a failed cleanup delete to surface AttachmentCleanupRequired.');
     }
 
     public function test_a_successful_cleanup_delete_reports_no_failure(): void

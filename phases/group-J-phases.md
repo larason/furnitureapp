@@ -18,7 +18,7 @@ Composer audit = PASS
 OpenAPI = PASS
 git diff --check = PASS
 
-Group J = NOT CLOSED
+Group J = NOW CLOSED
 ```
 
 The only remaining blocker is:
