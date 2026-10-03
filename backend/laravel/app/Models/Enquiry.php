@@ -2,20 +2,18 @@
 
 namespace App\Models;
 
-use App\Services\Attachments\AttachFileToParent;
+use App\Models\Builders\AttachmentParentBuilder;
 use App\Support\EnquiryCategory;
 use App\Support\EnquiryStatus;
 use App\Support\ReferenceGenerator;
 use Database\Factories\EnquiryFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
@@ -83,8 +81,10 @@ class Enquiry extends Model
 
     protected $table = self::TABLE;
 
-    /** @var Collection<int, Attachment>|null */
-    private ?Collection $attachmentsForCleanup = null;
+    public function newEloquentBuilder($query): AttachmentParentBuilder
+    {
+        return new AttachmentParentBuilder($query);
+    }
 
     protected static function booted(): void
     {
@@ -92,23 +92,6 @@ class Enquiry extends Model
             $enquiry->ensureServerDefaults();
             $enquiry->normalizeFields();
             $enquiry->assertValid();
-        });
-
-        static::deleting(function (Enquiry $enquiry): void {
-            $attachments = $enquiry->attachments()->get();
-            $enquiry->attachmentsForCleanup = $attachments;
-        });
-
-        static::deleted(function (Enquiry $enquiry): void {
-            $attachments = $enquiry->attachmentsForCleanup;
-            $enquiry->attachmentsForCleanup = null;
-            $files = app(AttachFileToParent::class);
-
-            DB::afterCommit(function () use ($files, $attachments): void {
-                foreach ($attachments as $attachment) {
-                    $files->delete($attachment);
-                }
-            });
         });
     }
 

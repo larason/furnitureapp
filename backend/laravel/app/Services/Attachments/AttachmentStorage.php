@@ -64,6 +64,17 @@ final class AttachmentStorage
         }
     }
 
+    public function deleteOrFail(?string $disk, ?string $key): void
+    {
+        if ($key === null || $key === '') {
+            return;
+        }
+
+        if (Storage::disk($disk ?? $this->diskName())->delete($key) === false) {
+            throw new \RuntimeException('Attachment cleanup failed.');
+        }
+    }
+
     private function disk(): Filesystem
     {
         return Storage::disk($this->diskName());

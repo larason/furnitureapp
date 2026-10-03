@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Support\RoleName;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -33,7 +34,11 @@ final class OperationalAccess
     {
         $user = $request->user();
 
-        if (! $user?->hasAnyRole([RoleName::STAFF->value, RoleName::ADMIN->value]) || $user->account_state !== self::ACTIVE_ACCOUNT_STATE) {
+        if ($user === null) {
+            throw new AuthenticationException;
+        }
+
+        if (! $user->hasAnyRole([RoleName::STAFF->value, RoleName::ADMIN->value]) || $user->account_state !== self::ACTIVE_ACCOUNT_STATE) {
             throw new AuthorizationException('The requested operational operation is not available.');
         }
 

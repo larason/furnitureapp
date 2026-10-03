@@ -1414,6 +1414,16 @@ components:
           - 'null'
           readOnly: true
           description: Null for anonymous, derived from auth
+    OperationalFurnitureRequest:
+      allOf:
+      - $ref: '#/components/schemas/MadeToOrderRequest'
+      - type: object
+        properties:
+          staff_internal_notes:
+            type:
+            - string
+            - 'null'
+            description: Included only for actors authorized with requests.manage.
     CreateRequestRequest:
       type: object
       required:
@@ -3610,6 +3620,36 @@ paths:
       summary: List operational requests
       security:
       - bearerAuth: []
+      parameters:
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 100
+        description: Search name, email, phone, request reference, or linked product.
+      - name: request_status
+        in: query
+        schema:
+          $ref: '#/components/schemas/RequestStatus'
+      - name: product_id
+        in: query
+        schema:
+          type: string
+        description: Opaque product identifier.
+      - name: created_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Inclusive ISO8601 UTC lower bound.
+      - name: created_to
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Inclusive ISO8601 UTC upper bound.
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -3624,7 +3664,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/MadeToOrderRequest'
+                       $ref: '#/components/schemas/OperationalFurnitureRequest'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
         '403':
@@ -3653,7 +3693,7 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/MadeToOrderRequest'
+                     $ref: '#/components/schemas/OperationalFurnitureRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
@@ -3680,7 +3720,7 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/MadeToOrderRequest'
+                     $ref: '#/components/schemas/OperationalFurnitureRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
