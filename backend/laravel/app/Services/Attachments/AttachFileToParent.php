@@ -2,9 +2,12 @@
 
 namespace App\Services\Attachments;
 
+use App\Exceptions\AttachmentCleanupRequired;
 use App\Models\Attachment;
+use App\Models\AttachmentCleanupTask;
 use App\Models\Enquiry;
 use App\Models\FurnitureRequest;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
@@ -29,7 +32,28 @@ final class AttachFileToParent
 
     public function delete(Attachment $attachment): void
     {
-        $this->storage->delete($attachment->storage_disk, $attachment->storage_key);
+        try {
+            $this->storage->deleteOrFail($attachment->storage_disk, $attachment->storage_key);
+        } catch (Throwable $exception) {
+            $this->queueCleanup($attachment->storage_disk, $attachment->storage_key);
+
+            throw $exception;
+        }
+    }
+
+    public function queueCleanup(string $disk, string $key): void
+    {
+        $now = now();
+
+        AttachmentCleanupTask::query()->insertOrIgnore([
+            'storage_disk' => $disk,
+            'storage_key' => $key,
+            'attempts' => 0,
+            'last_error' => null,
+            'available_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 
     /** @param array<string, mixed> $parent */
@@ -48,7 +72,15 @@ final class AttachFileToParent
                 'size' => $file->size,
             ]);
         } catch (Throwable $exception) {
-            $this->storage->delete($disk, $key);
+            try {
+                $this->storage->deleteOrFail($disk, $key);
+            } catch (Throwable $cleanupFailure) {
+                if (DB::transactionLevel() === 0) {
+                    $this->queueCleanup($disk, $key);
+                }
+
+                throw new AttachmentCleanupRequired($disk, $key, $exception, $cleanupFailure);
+            }
 
             throw $exception;
         }

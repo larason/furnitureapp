@@ -84,7 +84,7 @@ class FurnitureRequest extends Model
 
     protected $table = self::TABLE;
 
-    public function newEloquentBuilder($query): AttachmentParentBuilder
+    public function newEloquentBuilder(mixed $query): AttachmentParentBuilder
     {
         return new AttachmentParentBuilder($query);
     }

@@ -150,11 +150,14 @@ final class ListOperationalFurnitureRequestsRequest extends FormRequest
             throw $this->error(ApiErrorCode::INVALID_TYPE, $field, "The {$field} parameter must be a string.");
         }
 
-        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value) !== 1) {
+        if (preg_match('/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?Z$/', $value, $matches) !== 1) {
             throw $this->error(ApiErrorCode::INVALID_FORMAT, $field, "The {$field} parameter must be ISO8601 UTC.");
         }
 
-        $date = CarbonImmutable::createFromFormat('!Y-m-d\TH:i:s\Z', $value, 'UTC');
+        $hasFraction = isset($matches[2]);
+        $normalized = $matches[1].($hasFraction ? '.'.str_pad($matches[2], 6, '0') : '').'Z';
+        $format = $hasFraction ? '!Y-m-d\TH:i:s.u\Z' : '!Y-m-d\TH:i:s\Z';
+        $date = CarbonImmutable::createFromFormat($format, $normalized, 'UTC');
         $errors = CarbonImmutable::getLastErrors();
 
         if ($date === null || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {

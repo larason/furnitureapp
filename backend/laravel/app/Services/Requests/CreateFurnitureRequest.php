@@ -2,6 +2,7 @@
 
 namespace App\Services\Requests;
 
+use App\Exceptions\AttachmentCleanupRequired;
 use App\Models\Attachment;
 use App\Models\FurnitureRequest;
 use App\Models\Product;
@@ -51,6 +52,16 @@ final class CreateFurnitureRequest
                 return $request;
             });
         } catch (Throwable $exception) {
+            if ($exception instanceof AttachmentCleanupRequired) {
+                try {
+                    $this->attachments->queueCleanup($exception->storageDisk, $exception->storageKey);
+                } catch (Throwable $cleanupTaskFailure) {
+                    Log::warning('attachment.cleanup_task_persist_failed', [
+                        'exception' => $cleanupTaskFailure::class,
+                    ]);
+                }
+            }
+
             if ($storedAttachment instanceof Attachment) {
                 try {
                     $this->attachments->delete($storedAttachment);

@@ -10,7 +10,6 @@ use App\Models\FurnitureRequest;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -32,14 +31,14 @@ final class AttachmentParentBuilder extends Builder
 {
     private const ATTACHMENT_BATCH_SIZE = 500;
 
-    public function __construct(QueryBuilder $query)
+    public function __construct(mixed $query)
     {
         parent::__construct($query);
 
         $this->onDelete(fn (): int => $this->deleteWithAttachmentCleanup());
     }
 
-    public function forceDelete()
+    public function forceDelete(): int
     {
         return $this->deleteWithAttachmentCleanup();
     }

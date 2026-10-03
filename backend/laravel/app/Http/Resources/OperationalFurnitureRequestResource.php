@@ -13,7 +13,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @property-read FurnitureRequest $resource */
 final class OperationalFurnitureRequestResource extends JsonResource
 {
-    public function __construct($resource, private readonly bool $includeInternalNotes = true)
+    public function __construct(mixed $resource, private readonly bool $includeInternalNotes = true)
     {
         parent::__construct($resource);
     }
