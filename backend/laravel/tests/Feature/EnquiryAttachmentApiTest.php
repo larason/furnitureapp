@@ -43,6 +43,7 @@ class EnquiryAttachmentApiTest extends TestCase
     public function test_multipart_creation_with_a_valid_attachment(): void
     {
         $response = $this->multipart(self::FIELDS, $this->pdfUpload('question.pdf'))->assertStatus(201);
+        $this->assertNull($response->headers->get('X-Upload-Token'));
 
         $attachment = $response->json('data.attachments.0');
 

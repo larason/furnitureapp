@@ -4,12 +4,18 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Api\ApiException;
 use App\Http\Requests\CreateFurnitureRequestRequest;
+use App\Http\Requests\ListCustomerHistoryRequest;
 use App\Http\Requests\ListOperationalFurnitureRequestsRequest;
 use App\Http\Requests\UpdateFurnitureRequestRequest;
+use App\Http\Requests\UploadAttachmentRequest;
+use App\Http\Resources\AttachmentResource;
+use App\Http\Resources\CustomerFurnitureRequestSummaryResource;
 use App\Http\Resources\FurnitureRequestResource;
 use App\Http\Resources\OperationalFurnitureRequestResource;
 use App\Models\FurnitureRequest;
 use App\Models\User;
+use App\Services\Attachments\UploadAttachment;
+use App\Services\Attachments\UploadCapabilityService;
 use App\Services\Requests\CreateFurnitureRequest;
 use App\Services\Requests\CreateFurnitureRequestCommand;
 use App\Services\Requests\ListOperationalFurnitureRequests;
@@ -23,8 +29,11 @@ use Illuminate\Pagination\LengthAwarePaginator;
 
 class RequestController extends V1Controller
 {
-    public function store(CreateFurnitureRequestRequest $request, CreateFurnitureRequest $creator): JsonResponse
-    {
+    public function store(
+        CreateFurnitureRequestRequest $request,
+        CreateFurnitureRequest $creator,
+        UploadCapabilityService $capabilities,
+    ): JsonResponse {
         $input = $request->normalizedInput();
         $actor = $request->user();
 
@@ -43,24 +52,58 @@ class RequestController extends V1Controller
         ));
 
         $furnitureRequest->loadMissing(['product', 'attachments']);
+        $headers = [
+            'Cache-Control' => 'private, no-store',
+            'Vary' => 'Authorization',
+        ];
+
+        if ($request->validatedAttachment() === null) {
+            $headers['X-Upload-Token'] = $capabilities->issueForRequest((int) $furnitureRequest->getKey());
+        }
 
         return (new FurnitureRequestResource($furnitureRequest))
             ->response()
             ->setStatusCode(201)
-            ->withHeaders([
-                'Cache-Control' => 'private, no-store',
-                'Vary' => 'Authorization',
-            ]);
+            ->withHeaders($headers);
     }
 
-    public function meIndex(): JsonResponse
+    public function meIndex(ListCustomerHistoryRequest $request): JsonResponse
     {
-        return $this->notImplemented();
+        $user = $this->customerActor($request);
+        $pagination = $request->pagination();
+        $paginator = FurnitureRequest::query()
+            ->where('user_id', $user->getKey())
+            ->with(['product', 'attachments'])
+            ->orderByDesc('created_at')
+            ->orderBy('id')
+            ->paginate($pagination['per_page'], ['*'], 'page', $pagination['page']);
+
+        $resources = $paginator->getCollection()
+            ->map(fn (FurnitureRequest $item): array => (new CustomerFurnitureRequestSummaryResource($item))->resolve($request))
+            ->all();
+
+        return $this->customerCollectionResponse($resources, $paginator);
     }
 
-    public function meShow(): JsonResponse
+    public function meShow(HttpRequest $request, string $identifier): JsonResponse
     {
-        return $this->notImplemented();
+        $user = $this->customerActor($request);
+        $id = FurnitureRequestIdentifier::decode($identifier);
+        $furnitureRequest = $id === null
+            ? null
+            : FurnitureRequest::query()
+                ->whereKey($id)
+                ->where('user_id', $user->getKey())
+                ->with(['product', 'attachments'])
+                ->first();
+
+        if ($furnitureRequest === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
+        }
+
+        return (new FurnitureRequestResource($furnitureRequest))
+            ->response()
+            ->withHeaders($this->privateHeaders());
     }
 
     public function index(
@@ -92,7 +135,7 @@ class RequestController extends V1Controller
         $furnitureRequest = $this->findOperationalRequest($request);
         $actor = $input->user();
         if (! $actor instanceof User) {
-            throw new ApiException(ApiErrorCode::INVALID_AUTHENTICATION, 'Authentication is required.', 401);
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
         }
 
         $updated = $updater->update(
@@ -109,9 +152,19 @@ class RequestController extends V1Controller
         return $this->resourceResponse($updated, true, $input);
     }
 
-    public function storeAttachment(): JsonResponse
-    {
-        return $this->notImplemented();
+    public function storeAttachment(
+        UploadAttachmentRequest $request,
+        string $identifier,
+        UploadAttachment $uploader,
+    ): JsonResponse {
+        $furnitureRequest = $this->findAttachmentRequest($identifier);
+        $token = $this->authorizeAttachment($request, $furnitureRequest);
+        $attachment = $uploader->forRequest($furnitureRequest, $request->validatedAttachment(), $token);
+
+        return (new AttachmentResource($attachment))
+            ->response()
+            ->setStatusCode(201)
+            ->withHeaders($this->privateHeaders());
     }
 
     private function findOperationalRequest(string $identifier): FurnitureRequest
@@ -133,6 +186,46 @@ class RequestController extends V1Controller
         $user = $request->user();
 
         return $user instanceof User && $user->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value);
+    }
+
+    private function findAttachmentRequest(string $identifier): FurnitureRequest
+    {
+        $id = FurnitureRequestIdentifier::decode($identifier);
+        $furnitureRequest = $id === null ? null : FurnitureRequest::query()->whereKey($id)->first();
+
+        if ($furnitureRequest === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
+        }
+
+        return $furnitureRequest;
+    }
+
+    private function authorizeAttachment(UploadAttachmentRequest $request, FurnitureRequest $furnitureRequest): ?string
+    {
+        $actor = $request->user();
+
+        if (! $actor instanceof User) {
+            $token = $request->header('X-Upload-Token');
+            if ($token === null || $token === '') {
+                throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication or an upload capability is required.', 401);
+            }
+
+            return $token;
+        }
+
+        if ($actor->hasRole('CUSTOMER')) {
+            if ((int) $furnitureRequest->user_id !== (int) $actor->getKey()) {
+                throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
+            }
+
+            return null;
+        }
+
+        if (! $actor->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value)) {
+            throw new ApiException(ApiErrorCode::FORBIDDEN, 'The authenticated actor cannot upload request attachments.', 403);
+        }
+
+        return null;
     }
 
     private function resourceResponse(FurnitureRequest $furnitureRequest, bool $includeInternalNotes, HttpRequest $request): JsonResponse
@@ -173,5 +266,41 @@ class RequestController extends V1Controller
             'Cache-Control' => 'private, no-store',
             'Vary' => 'Authorization',
         ];
+    }
+
+    private function customerActor(HttpRequest $request): User
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
+        }
+
+        if (! $user->hasRole('CUSTOMER')) {
+            throw new ApiException(ApiErrorCode::FORBIDDEN, 'The authenticated actor cannot access customer history.', 403);
+        }
+
+        return $user;
+    }
+
+    /** @param array<int, array<string, mixed>> $resources */
+    private function customerCollectionResponse(array $resources, LengthAwarePaginator $paginator): JsonResponse
+    {
+        $lastPage = max(1, $paginator->lastPage());
+        $currentPage = $paginator->currentPage();
+
+        return response()->json([
+            'data' => $resources,
+            'meta' => [
+                'pagination' => [
+                    'current_page' => $currentPage,
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $lastPage,
+                    'has_next' => $currentPage < $lastPage,
+                    'has_previous' => $currentPage > 1,
+                ],
+            ],
+        ])->withHeaders($this->privateHeaders());
     }
 }

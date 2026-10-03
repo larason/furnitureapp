@@ -145,7 +145,7 @@ class SecurityRequestBoundaryTest extends TestCase
         foreach (['/api/v1/requests', '/api/v1/enquiries'] as $path) {
             $this->withHeaders(['Content-Type' => 'multipart/form-data; boundary=----test'])
                 ->post($path, ['name' => 'x'])
-                ->assertStatus(501);
+                ->assertStatus(422);
         }
     }
 

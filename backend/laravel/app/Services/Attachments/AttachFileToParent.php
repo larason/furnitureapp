@@ -2,6 +2,7 @@
 
 namespace App\Services\Attachments;
 
+use App\Exceptions\AttachmentCleanupRecoveryRequired;
 use App\Exceptions\AttachmentCleanupRequired;
 use App\Models\Attachment;
 use App\Models\AttachmentCleanupTask;
@@ -36,7 +37,11 @@ final class AttachFileToParent
         try {
             $this->storage->deleteOrFail($attachment->storage_disk, $attachment->storage_key);
         } catch (Throwable $exception) {
-            $this->queueCleanup($attachment->storage_disk, $attachment->storage_key);
+            try {
+                $this->queueCleanup($attachment->storage_disk, $attachment->storage_key);
+            } catch (Throwable $queueFailure) {
+                $this->recoverCleanup($attachment->storage_disk, $attachment->storage_key);
+            }
 
             throw $exception;
         }
@@ -75,6 +80,8 @@ final class AttachFileToParent
                     'delete_exception' => $deleteFailure::class,
                     'recovery_exception' => $recoveryFailure::class,
                 ]);
+
+                throw new AttachmentCleanupRecoveryRequired($disk, $key, $recoveryFailure);
             }
         }
     }

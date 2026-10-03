@@ -14,6 +14,7 @@ use App\Http\Middleware\EnsureCheckoutEnabled;
 use App\Http\Middleware\EnsureEnquiriesEnabled;
 use App\Http\Middleware\EnsureFurnitureRequestsEnabled;
 use App\Http\Middleware\OperationalAccess;
+use App\Http\Middleware\RequireAttachmentUploadCredential;
 use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\StaffOrAdminAccess;
 use App\Http\Middleware\ValidateApiRequestLimits;
@@ -67,6 +68,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => AdministrativeAccess::class,
             'permission' => RequirePermission::class,
             'staff-or-admin' => StaffOrAdminAccess::class,
+            'attachment.credential' => RequireAttachmentUploadCredential::class,
         ]);
 
         $middleware->priority([

@@ -109,11 +109,11 @@ class ApiRoutingSmokeTest extends TestCase
         $this->postJson('/api/v1/auth/login')->assertStatus(410);
         $this->postJson('/api/v1/auth/password/forgot')->assertStatus(410);
         $this->postJson('/api/v1/auth/password/reset')->assertStatus(410);
-        $this->postJson(self::API_REQUESTS)->assertStatus(501);
-        $this->postJson(self::API_ENQUIRIES)->assertStatus(501);
+        $this->postJson(self::API_REQUESTS)->assertStatus(422);
+        $this->postJson(self::API_ENQUIRIES)->assertStatus(422);
     }
 
-    public function test_attachment_stubs_require_authentication_until_upload_scope_is_implemented(): void
+    public function test_attachment_uploads_require_a_bearer_or_scoped_capability(): void
     {
         $this->postJson('/api/v1/requests/REQ-1/attachments')->assertUnauthorized();
         $this->postJson('/api/v1/enquiries/ENQ-1/attachments')->assertUnauthorized();
@@ -128,7 +128,7 @@ class ApiRoutingSmokeTest extends TestCase
             $this->withHeaders([
                 'Authorization' => self::BEARER_TOKEN,
                 'Content-Type' => 'multipart/form-data; boundary=----test',
-            ])->post($path, ['name' => 'x'])->assertStatus(501);
+            ])->post($path, ['name' => 'x'])->assertStatus(422);
         }
     }
 
@@ -140,8 +140,8 @@ class ApiRoutingSmokeTest extends TestCase
             ->andReturn(new AuthenticatedClerkIdentity('user_123', 'sess_123', 'https://clerk.example.test'));
         $this->app->instance(ClerkTokenVerifier::class, $verifier);
 
-        $this->postJson(self::API_REQUESTS)->assertStatus(501);
-        $this->postJson(self::API_REQUESTS, [], ['Authorization' => self::BEARER_TOKEN])->assertStatus(501);
+        $this->postJson(self::API_REQUESTS)->assertStatus(422);
+        $this->postJson(self::API_REQUESTS, [], ['Authorization' => self::BEARER_TOKEN])->assertStatus(422);
         $this->assertTrue($user->exists);
     }
 

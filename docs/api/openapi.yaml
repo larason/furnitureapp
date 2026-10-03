@@ -3594,6 +3594,11 @@ paths:
       responses:
         '201':
           description: Created
+          headers:
+            X-Upload-Token:
+              description: Returned only when no inline attachment was supplied; single-use, time-limited capability for the parent attachment upload.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -3850,6 +3855,11 @@ paths:
       responses:
         '201':
           description: Created
+          headers:
+            X-Upload-Token:
+              description: Returned only when no inline attachment was supplied; single-use, time-limited capability for the parent attachment upload.
+              schema:
+                type: string
           content:
             application/json:
               schema:

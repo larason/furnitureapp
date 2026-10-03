@@ -2650,3 +2650,18 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Delivers the preferred inline private-attachment path with one shared, secure architecture and honest, non-invented reporting of the frozen separate-upload capability representation gap.
 
 **Status:** PASS (inline attachments) / BLOCKED (separate-upload capability contract) / public creation routes GATED | **Date:** 2026-09-30 | **Affected:** `backend/laravel` (`app/Models/Attachment.php`, `app/Support/{AttachmentIdentifier,ApiErrorCode}.php`, `app/Services/Attachments/*`, `app/Http/Resources/AttachmentResource.php`, `app/Http/{Requests,Resources,Controllers}` Request/Enquiry attachment wiring, `config/{attachments.php,filesystems.php}`, `.env.example`, `database/migrations/2026_09_30_100000_create_attachments_table.php`, `database/factories/AttachmentFactory.php`, `tests/Feature/Attachment*`, `tests/Feature/FurnitureRequestAttachmentApiTest.php`, `tests/Feature/EnquiryAttachmentApiTest.php`, `tests/Feature/OpenApiAttachmentContractTest.php`, `tests/Support/CreatesAttachmentFiles.php`), `docs/api/openapi.yaml`, `docs/decisions.md`, `phases/group-J-phases.md`
+
+### ADR/BACKEND-049 — Attachment Capability Response Header Reconciliation (Group J)
+
+**Decision:** The existing V1 `REQ-007`/`ENQ-007` upload capability remains a server-issued, parent-scoped, action-scoped, time-limited, single-use capability presented through the existing `X-Upload-Token` request header. This decision only resolves the previously unspecified issuance representation: a successful `REQ-001` or `ENQ-001` response without an inline attachment returns the raw capability in the `X-Upload-Token` response header. The JSON Request/Enquiry resources never contain the raw token.
+
+- Creation with an inline attachment issues no capability because V1 permits one attachment per parent.
+- Creation without an inline attachment issues one capability scoped to the exact parent type and parent id.
+- The raw token is cryptographically unpredictable, never persisted, and never logged; the database stores only its keyed digest/HMAC representation.
+- Separate upload requires parent authorization plus the scoped capability for anonymous parents; authenticated Customers additionally require ownership. Staff/Admin use their operational attachment permission.
+- Successful persistence consumes the capability atomically. Validation or storage failure before successful persistence does not consume it. Expired, consumed, wrong-parent, and wrong-parent-type capabilities are rejected.
+- `X-Upload-Token` is upload-only and never authorizes parent reads, attachment reads, status changes, or cross-parent access.
+
+**Compatibility:** Frozen V1 contract consistency correction; no new business capability. The existing token semantics, header, upload operations, private attachment boundary, and one-attachment limit are unchanged.
+
+**Status:** Accepted | **Date:** 2026-10-03 | **Affected:** `backend/laravel/app/Services/Attachments/*`, Request/Enquiry creation and upload controllers/resources, `docs/api/openapi.yaml`, `docs/decisions.md`

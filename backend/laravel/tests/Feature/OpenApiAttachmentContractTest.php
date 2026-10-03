@@ -8,9 +8,8 @@ use Tests\TestCase;
 
 /**
  * Phase 10.6 frozen-contract guard: multipart creation is represented, the
- * Attachment resource exposes the approved metadata, and attachment error
- * codes are registered. It also documents the confirmed upload-capability
- * representation gap (no creation-response token field).
+ * Attachment resource exposes the approved metadata, attachment error codes
+ * are registered, and creation responses expose the scoped upload capability.
  */
 class OpenApiAttachmentContractTest extends TestCase
 {
@@ -79,7 +78,7 @@ class OpenApiAttachmentContractTest extends TestCase
         }
     }
 
-    public function test_creation_response_defines_no_upload_capability_field(): void
+    public function test_creation_response_defines_the_upload_capability_header(): void
     {
         $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
@@ -87,12 +86,25 @@ class OpenApiAttachmentContractTest extends TestCase
             $properties = $document['components']['schemas'][$schema]['properties'];
 
             $this->assertArrayNotHasKey('upload_token', $properties);
-            $this->assertArrayNotHasKey('uploadToken', $properties);
-            $this->assertArrayNotHasKey('attachment_upload_token', $properties);
+        }
+
+        foreach ([['/requests', 'post'], ['/enquiries', 'post']] as [$path, $method]) {
+            $headers = $document['paths'][$path][$method]['responses']['201']['headers'];
+            $this->assertSame('string', $headers['X-Upload-Token']['schema']['type']);
         }
 
         // The separate-upload operations exist and reference the X-Upload-Token capability.
         $this->assertArrayHasKey('/requests/{request}/attachments', $document['paths']);
         $this->assertArrayHasKey('/enquiries/{enquiry}/attachments', $document['paths']);
+    }
+
+    public function test_catalog_creation_responses_do_not_advertise_an_attachment_capability(): void
+    {
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
+
+        foreach ([['/products', 'post'], ['/products/{product}/variants', 'post']] as [$path, $method]) {
+            $headers = $document['paths'][$path][$method]['responses']['201']['headers'] ?? [];
+            $this->assertArrayNotHasKey('X-Upload-Token', $headers);
+        }
     }
 }
