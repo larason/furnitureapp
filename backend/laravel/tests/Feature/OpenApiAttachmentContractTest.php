@@ -14,9 +14,11 @@ use Tests\TestCase;
  */
 class OpenApiAttachmentContractTest extends TestCase
 {
+    private const OPENAPI_PATH = '../../docs/api/openapi.yaml';
+
     public function test_request_and_enquiry_creation_document_multipart_attachment(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         $request = $document['paths']['/requests']['post']['requestBody']['content'];
         $enquiry = $document['paths']['/enquiries']['post']['requestBody']['content'];
@@ -37,7 +39,7 @@ class OpenApiAttachmentContractTest extends TestCase
 
     public function test_attachment_resource_exposes_only_approved_metadata(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         $attachment = $document['components']['schemas']['Attachment'];
 
@@ -55,7 +57,7 @@ class OpenApiAttachmentContractTest extends TestCase
         $this->assertSame('ATTACHMENT_TOO_LARGE', ApiErrorCode::ATTACHMENT_TOO_LARGE->value);
         $this->assertSame('UNSUPPORTED_ATTACHMENT_TYPE', ApiErrorCode::UNSUPPORTED_ATTACHMENT_TYPE->value);
 
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
         $enum = $document['components']['schemas']['ErrorItem']['properties']['code']['enum'];
 
         foreach (['INVALID_ATTACHMENT', 'ATTACHMENT_TOO_LARGE', 'UNSUPPORTED_ATTACHMENT_TYPE'] as $code) {
@@ -63,9 +65,23 @@ class OpenApiAttachmentContractTest extends TestCase
         }
     }
 
+    public function test_creation_operations_document_the_oversize_upload_response(): void
+    {
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
+
+        $this->assertArrayHasKey('PayloadTooLarge', $document['components']['responses']);
+
+        foreach ([['/requests', 'post'], ['/enquiries', 'post']] as [$path, $method]) {
+            $responses = $document['paths'][$path][$method]['responses'];
+
+            $this->assertArrayHasKey('413', $responses, "{$path} {$method} must document 413.");
+            $this->assertSame('#/components/responses/PayloadTooLarge', $responses['413']['$ref']);
+        }
+    }
+
     public function test_creation_response_defines_no_upload_capability_field(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         foreach (['MadeToOrderRequest', 'Enquiry'] as $schema) {
             $properties = $document['components']['schemas'][$schema]['properties'];

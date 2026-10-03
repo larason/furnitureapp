@@ -7,13 +7,18 @@ use App\Models\Enquiry;
 use App\Models\FurnitureRequest;
 use DomainException;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 use Tests\TestCase;
+
+final class AttachmentDeleteRollbackException extends RuntimeException {}
 
 class AttachmentSchemaTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseMigrations;
 
     public function test_table_exists_with_expected_columns(): void
     {
@@ -105,5 +110,70 @@ class AttachmentSchemaTest extends TestCase
 
         $this->assertNull(Attachment::find($requestAttachment->id));
         $this->assertNull(Attachment::find($enquiryAttachment->id));
+    }
+
+    public function test_deleting_parent_removes_stored_attachment_files(): void
+    {
+        Storage::fake('attachments');
+
+        $request = FurnitureRequest::factory()->create();
+        $enquiry = Enquiry::factory()->create();
+        $requestAttachment = Attachment::factory()->create(['furniture_request_id' => $request->id]);
+        $enquiryAttachment = Attachment::factory()->create(['furniture_request_id' => null, 'enquiry_id' => $enquiry->id]);
+
+        Storage::disk('attachments')->put($requestAttachment->storage_key, 'request');
+        Storage::disk('attachments')->put($enquiryAttachment->storage_key, 'enquiry');
+
+        $request->delete();
+        $enquiry->delete();
+
+        Storage::disk('attachments')->assertMissing($requestAttachment->storage_key);
+        Storage::disk('attachments')->assertMissing($enquiryAttachment->storage_key);
+    }
+
+    public function test_rolled_back_request_delete_keeps_the_stored_attachment_file(): void
+    {
+        Storage::fake('attachments');
+
+        $request = FurnitureRequest::factory()->create();
+        $attachment = Attachment::factory()->create(['furniture_request_id' => $request->id]);
+        Storage::disk('attachments')->put($attachment->storage_key, 'request');
+
+        try {
+            DB::transaction(function () use ($request): void {
+                $request->delete();
+
+                throw new AttachmentDeleteRollbackException('force rollback');
+            });
+        } catch (AttachmentDeleteRollbackException) {
+            // Expected: the transaction rolled back.
+        }
+
+        Storage::disk('attachments')->assertExists($attachment->storage_key);
+        $this->assertNotNull(Attachment::find($attachment->id));
+        $this->assertNotNull(FurnitureRequest::find($request->id));
+    }
+
+    public function test_rolled_back_enquiry_delete_keeps_the_stored_attachment_file(): void
+    {
+        Storage::fake('attachments');
+
+        $enquiry = Enquiry::factory()->create();
+        $attachment = Attachment::factory()->create(['furniture_request_id' => null, 'enquiry_id' => $enquiry->id]);
+        Storage::disk('attachments')->put($attachment->storage_key, 'enquiry');
+
+        try {
+            DB::transaction(function () use ($enquiry): void {
+                $enquiry->delete();
+
+                throw new AttachmentDeleteRollbackException('force rollback');
+            });
+        } catch (AttachmentDeleteRollbackException) {
+            // Expected: the transaction rolled back.
+        }
+
+        Storage::disk('attachments')->assertExists($attachment->storage_key);
+        $this->assertNotNull(Attachment::find($attachment->id));
+        $this->assertNotNull(Enquiry::find($enquiry->id));
     }
 }

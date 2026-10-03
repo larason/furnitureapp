@@ -1,2311 +1,2262 @@
-# Phase 10.6 — Attachment Handling
+# Phase 10.7 — Staff/Admin Furniture Request Management
 
 ## 1. Objective
 
-Implement the Version 1 private attachment subsystem shared by:
+Implement the complete Version 1 **operational Furniture Request management API** for authorized Staff/Admin.
 
-```text
-Furniture Requests
-General Enquiries
-```
-
-Supported surfaces:
+Operations:
 
 ```http
-POST /api/v1/requests
-POST /api/v1/enquiries
+GET   /api/v1/requests
+GET   /api/v1/requests/{request}
+PATCH /api/v1/requests/{request}
 ```
 
-with preferred inline:
+Operation IDs:
 
 ```text
-multipart/form-data
-field: attachment
+REQ-004 — List operational Furniture Requests
+REQ-005 — View operational Furniture Request
+REQ-006 — Update controlled operational fields
 ```
 
-and prepare the frozen separate-upload operations:
-
-```http
-POST /api/v1/requests/{request}/attachments
-POST /api/v1/enquiries/{enquiry}/attachments
-```
-
-identified as:
+Phase 10.7 must connect the already-completed Request foundations:
 
 ```text
-REQ-007
-ENQ-007
+10.1 creation
+10.2 validation
+10.3 lifecycle/state machine
+10.4 product eligibility
+10.6 attachments
 ```
 
-The subsystem must provide:
+into a safe Staff/Admin operational workflow.
+
+The operational flow should become:
 
 ```text
-secure validation
-private storage
-safe metadata persistence
-parent-scoped authorization
-opaque attachment identity
-safe serialization
-failure cleanup
-anonymous upload-capability protection
+Staff/Admin
+    ↓
+requests.view
+    ↓
+GET /requests
+    ↓
+filtered operational queue
+    ↓
+GET /requests/{request}
+    ↓
+private operational detail
+    ↓
+requests.manage
+    ↓
+PATCH /requests/{request}
+    ↓
+request_status and/or staff_internal_notes only
 ```
 
-Do not implement two different attachment architectures.
+Do not turn this phase into generic customer-account administration.
 
 ---
 
-# 2. Current Group J State
+# 2. Current Group J Baseline
 
 Treat the current state as:
 
 ```text
 10.1 PASS — Furniture Request API
 10.2 PASS — Request validation
-10.3 PASS — Request lifecycle
+10.3 PASS — Request status lifecycle
 10.4 PASS — Product-linked Requests
 10.5 PASS — General Enquiries
-10.6 CURRENT — Attachment handling
-10.7 NOT STARTED — Staff/Admin request management
-10.8 NOT STARTED — Request/Enquiry tests
+10.6 PASS/BLOCKED — inspect actual latest result
+10.7 CURRENT — Staff/Admin Request management
+10.8 NOT STARTED — Group J verification/closure
 ```
 
-Before implementation, verify the actual Phase 10.5 repository result rather than assuming undocumented classes or route state.
+Before implementation:
+
+inspect the actual Phase 10.6 result.
+
+Do not assume:
+
+```text
+attachments
+REQ-001 route activation
+REQ-007 activation
+```
+
+unless the repository actually confirms them.
 
 ---
 
-# 3. Why This Phase Matters
+# 3. Scope
 
-REQ-001 and ENQ-001 are currently intentionally gated because the frozen Version 1 creation contract supports optional attachments.
-
-Phase 10.6 should close that final creation-contract gap.
-
-After successful 10.6, assess whether:
+Phase 10.7 owns:
 
 ```text
-POST /api/v1/requests
-POST /api/v1/enquiries
+REQ-004 operational collection
+REQ-005 operational detail
+REQ-006 controlled mutation
+requests.view authorization
+requests.manage authorization
+Staff/Admin operational Request resource
+staff_internal_notes validation/persistence
+queue filtering
+search
+pagination
+deterministic sorting
+not-found behavior
+field-level privacy
+status lifecycle integration
+private caching
+operational Request tests
+route activation for REQ-004/005/006
 ```
-
-can finally be activated safely.
-
-Do not activate automatically until every prerequisite is verified.
 
 ---
 
-# 4. Frozen V1 Attachment Contract
+# 4. Out of Scope
 
-V1 supports:
-
-```text
-0 or 1 attachment on creation
-```
-
-Multiple attachments are deferred.
-
-Maximum size:
+Do not implement:
 
 ```text
-5 MiB
+customer Request retrieval unless already assigned elsewhere
+General Enquiry staff management
+Request→Order conversion
+quoting
+pricing
+production workflow
+manufacturing
+payments
+ClickPesa
+inventory reservation
+notifications
+email
+chat
+frontend
 ```
 
-Accepted content types:
-
-```text
-image/jpeg
-image/png
-image/webp
-application/pdf
-```
-
-The backend must not trust:
-
-```text
-client Content-Type
-filename extension
-browser MIME
-```
-
-alone.
-
-Actual file content/signature must be validated.
+Phase 10.7 is Furniture Request operational management only.
 
 ---
 
-# 5. Preferred Transport
+# 5. Core Authorization Model
 
-Preferred V1 creation flow:
+Use separate permissions:
 
 ```text
-multipart/form-data
+requests.view
+requests.manage
+```
+
+These permissions are not interchangeable.
+
+---
+
+# 6. `requests.view`
+
+Allows:
+
+```text
+REQ-004 GET /requests
+REQ-005 GET /requests/{request}
+```
+
+It does not imply:
+
+```text
+status mutation
+internal-note mutation
+customer account mutation
+Request ownership
+```
+
+---
+
+# 7. `requests.manage`
+
+Allows:
+
+```text
+REQ-006 PATCH /requests/{request}
+```
+
+for the specific approved operational fields.
+
+Do not infer:
+
+```text
+requests.manage
+→ customer account administration
+```
+
+---
+
+# 8. Staff Is Operational, Not Owner
+
+A Staff member viewing a Request does not become:
+
+```text
+Request owner
+Customer proxy
+Customer account controller
+```
+
+Do not write authorization such as:
+
+```php
+$request->user_id === $staff->id
+```
+
+for Staff access.
+
+Operational authorization is permission-based.
+
+---
+
+# 9. Customer Ownership Remains Separate
+
+Customer ownership paths, where implemented, remain:
+
+```text
+/me/requests
+/me/requests/{request}
+```
+
+Do not make operational `/requests` act as a disguised customer route.
+
+---
+
+# 10. Anonymous Access
+
+Anonymous:
+
+```text
+GET /requests
+GET /requests/{request}
+PATCH /requests/{request}
+```
+
+must never gain operational access.
+
+Expected:
+
+```text
+401 AUTHENTICATION_REQUIRED
+```
+
+---
+
+# 11. CUSTOMER Access
+
+CUSTOMER:
+
+```text
+GET /requests
+GET /requests/{request}
+PATCH /requests/{request}
+```
+
+must not use operational routes.
+
+Expected:
+
+```text
+403 FORBIDDEN
+```
+
+Do not redirect to `/me/requests`.
+
+---
+
+# 12. STAFF Access
+
+STAFF with:
+
+```text
+requests.view
+```
+
+may:
+
+```text
+REQ-004
+REQ-005
+```
+
+STAFF without:
+
+```text
+requests.manage
+```
+
+may not:
+
+```text
+REQ-006
+```
+
+---
+
+# 13. ADMIN Access
+
+ADMIN may perform operational Request functions only according to the existing approved RBAC model.
+
+Do not bypass policies merely because:
+
+```text
+role == ADMIN
+```
+
+unless current authorization architecture explicitly grants Admin through role-derived permissions.
+
+Reuse the established permission system.
+
+---
+
+# 14. Explicit Permission Checks
+
+Prefer existing policy/middleware architecture.
+
+Examples conceptually:
+
+```text
+permission:requests.view
+permission:requests.manage
+```
+
+or the repository's authorization service/policy.
+
+Do not manually duplicate RBAC queries in controller methods.
+
+---
+
+# 15. Route Surface
+
+Canonical routes remain:
+
+```http
+GET   /api/v1/requests
+GET   /api/v1/requests/{request}
+PATCH /api/v1/requests/{request}
+```
+
+Do not add aliases:
+
+```text
+/staff/requests
+/admin/requests
+/request-management
+/backoffice/requests
+```
+
+The actor/permission determines behavior, not duplicate URLs.
+
+---
+
+# 16. REQ-004 — Operational Collection
+
+Implement:
+
+```http
+GET /api/v1/requests
+```
+
+Purpose:
+
+```text
+authorized operational queue
+```
+
+Return:
+
+```json
+{
+  "data": [...],
+  "meta": {
+    "pagination": { ... }
+  }
+}
+```
+
+---
+
+# 17. REQ-004 Authentication
+
+Requires bearer authentication.
+
+No optional auth.
+
+---
+
+# 18. REQ-004 Authorization
+
+Requires:
+
+```text
+requests.view
+```
+
+Anonymous:
+
+```text
+401
+```
+
+CUSTOMER:
+
+```text
+403
+```
+
+STAFF without permission:
+
+```text
+403
+```
+
+authorized STAFF/ADMIN:
+
+```text
+200
+```
+
+---
+
+# 19. REQ-004 Pagination
+
+Reuse global:
+
+```text
+page
+per_page
+```
+
+Rules:
+
+```text
+page >= 1
+per_page 1..100
+```
+
+Use the exact repository global pagination semantics.
+
+Do not invent Request-specific pagination.
+
+---
+
+# 20. Default Pagination
+
+Use the established global default.
+
+Do not create a special Request default unless the frozen contract already says so.
+
+---
+
+# 21. Pagination Metadata
+
+Use canonical:
+
+```text
+meta.pagination
+```
+
+Do not create:
+
+```text
+pagination
+paging
+page_info
+```
+
+parallel formats.
+
+---
+
+# 22. Deterministic Queue Sorting
+
+Operational Request queue ordering:
+
+```text
+created_at DESC
+id ASC
+```
+
+Newest first.
+
+The secondary:
+
+```text
+id ASC
+```
+
+must make equal timestamps deterministic.
+
+---
+
+# 23. No Arbitrary Sort Yet
+
+The normative Request conventions define deterministic newest-first sorting.
+
+Do not add arbitrary:
+
+```text
+sort=name
+sort=status
+sort=email
+```
+
+unless the actual frozen REQ-004 contract explicitly contains such parameters.
+
+---
+
+# 24. Filter Allow-List
+
+REQ-004 supports exactly the approved operational filters:
+
+```text
+search
+request_status
+product_id
+created_from
+created_to
+page
+per_page
+```
+
+Do not add:
+
+```text
+user_id
+customer_id
+email_exact
+phone_exact
+staff_internal_notes
+quantity
+material
+color
+order_id
+```
+
+as query filters unless already frozen.
+
+---
+
+# 25. Unknown Query Parameters
+
+Unknown filter/query parameters must be rejected:
+
+```text
+422 INVALID_VALUE
+```
+
+with the offending parameter.
+
+Do not silently ignore unsupported filters.
+
+---
+
+# 26. `search`
+
+Optional string.
+
+Searches approved Request operational fields:
+
+```text
+name
+email
+phone
+request reference
+linked product
+```
+
+Use exact repository interpretation of "product" from frozen conventions.
+
+Prefer a bounded string length consistent with other search endpoints.
+
+Do not invent full-text infrastructure.
+
+---
+
+# 27. Search Normalization
+
+Trim.
+
+Empty search should either:
+
+```text
+normalize to absent
+```
+
+or follow the existing global collection convention.
+
+Do not run:
+
+```sql
+LIKE '%%'
+```
+
+unnecessarily.
+
+---
+
+# 28. Search Privacy
+
+Search operates only across the already-authorized operational Request dataset.
+
+Do not expand into:
+
+```text
+global customer search
+all user profiles
+orders
+payments
+```
+
+---
+
+# 29. Search Must Not Become Customer-Account Lookup
+
+A Staff member searching a phone/email may find Requests containing that historical Request contact.
+
+It must not produce unrelated:
+
+```text
+User profile
+customer account
+orders
+credentials
+roles
+```
+
+---
+
+# 30. Search Fields
+
+Keep search tied to Request intake:
+
+```text
+request name
+request email
+request phone
+request reference
+linked Product context
+```
+
+Do not search:
+
+```text
+password
+Clerk identity data
+private unrelated records
+```
+
+---
+
+# 31. `request_status` Filter
+
+Optional.
+
+Exact CLOSED values:
+
+```text
+SUBMITTED
+IN_REVIEW
+CLOSED
+```
+
+Wrong type:
+
+```text
+INVALID_TYPE
+```
+
+Unknown value:
+
+```text
+INVALID_VALUE
+```
+
+Do not accept lowercase aliases.
+
+---
+
+# 32. `product_id` Filter
+
+Optional.
+
+Validate opaque:
+
+```text
+prod_...
+```
+
+format.
+
+No numeric database ID.
+
+No slug alias unless contract explicitly says so.
+
+---
+
+# 33. Product Filter Semantics
+
+Filtering by a valid Product ID should filter historical Request association.
+
+Do not require the Product to remain:
+
+```text
+public
+active
+published
+MADE_TO_ORDER
+```
+
+at query time.
+
+A Request created validly in the past must remain operationally visible even if Product later changes.
+
+---
+
+# 34. Unknown Product Filter
+
+Decide using the frozen collection/filter convention.
+
+Prefer:
+
+```text
+empty collection
+```
+
+for a syntactically valid but unused Product ID unless current contract says filter references must resolve.
+
+Do not leak hidden catalog state.
+
+---
+
+# 35. `created_from`
+
+Optional.
+
+Require ISO8601 UTC `Z` format according to frozen convention.
+
+Example:
+
+```text
+2026-10-01T00:00:00Z
+```
+
+---
+
+# 36. `created_to`
+
+Same.
+
+---
+
+# 37. Date Range Validation
+
+If both supplied:
+
+```text
+created_from <= created_to
+```
+
+Otherwise:
+
+```text
+422 INVALID_VALUE
+```
+
+Use deterministic field mapping.
+
+---
+
+# 38. Date Boundary Semantics
+
+Define inclusivity consistently.
+
+Recommended based on normal collection filtering:
+
+```text
+created_at >= created_from
+created_at <= created_to
+```
+
+but verify repository conventions.
+
+Do not invent inconsistent range semantics.
+
+---
+
+# 39. Query Object
+
+Introduce one normalized query value/DTO such as:
+
+```php
+OperationalRequestQuery
+```
+
+containing:
+
+```text
+search
+requestStatus
+productId
+createdFrom
+createdTo
+page
+perPage
+```
+
+Do not pass raw Request query arrays deep into repository/service code.
+
+---
+
+# 40. Collection Query Service
+
+Create/reuse focused query service:
+
+```php
+ListOperationalFurnitureRequests
+```
+
+or repository-consistent equivalent.
+
+Responsibilities:
+
+```text
+apply authorized query
+apply allow-listed filters
+apply deterministic sort
+paginate
+load safe required relations
+```
+
+---
+
+# 41. Do Not Put Query Logic in Controller
+
+Controller should not contain long chains such as:
+
+```php
+if ($request->has(...)) {
+    $query->...
+}
+```
+
+Keep it thin.
+
+---
+
+# 42. Query Efficiency
+
+Eager-load only what the operational resource needs:
+
+```text
+Product summary
+Attachment metadata
+```
+
+and any approved owner identifier representation.
+
+Avoid N+1.
+
+Do not eager-load:
+
+```text
+Orders
+Payments
+Cart
+Product variants
+inventory
+```
+
+unless needed by the resource.
+
+---
+
+# 43. Index Awareness
+
+Use existing indexes where possible.
+
+Do not add speculative indexes immediately.
+
+If the new operational query clearly lacks required indexes:
+
+document actual EXPLAIN/test evidence before proposing a migration.
+
+Expected Phase 10.7:
+
+```text
+Schema changes NONE
+```
+
+unless evidence proves otherwise.
+
+---
+
+# 44. REQ-004 Resource
+
+Operational collection must use an explicit allow-listed Resource.
+
+Do not:
+
+```php
+return FurnitureRequest::paginate();
+```
+
+with raw model serialization.
+
+---
+
+# 45. Collection Representation
+
+Use the frozen operational representation.
+
+If the same:
+
+```text
+MadeToOrderRequest
+```
+
+resource schema is used for both list/detail, preserve it.
+
+Do not silently create a reduced incompatible list shape unless contract allows.
+
+---
+
+# 46. Staff Operational Fields
+
+Operational Staff representation may include:
+
+```text
+id
+product
+quantity
+name
+phone
+email
+dimensions
+material
+color
+notes
+request_status
+staff_internal_notes
+user_id
+attachments
+created_at
+updated_at
+```
+
+according to frozen resource rules.
+
+Use actual OpenAPI/resource definition as final authority.
+
+---
+
+# 47. `staff_internal_notes`
+
+This is operationally visible to authorized Staff/Admin.
+
+It is never visible in:
+
+```text
+customer Request representation
+anonymous creation response
+public catalog
+```
+
+---
+
+# 48. `user_id`
+
+Staff operational representation may include opaque:
+
+```text
+user_...
+```
+
+or null.
+
+Never expose numeric DB User ID.
+
+---
+
+# 49. Anonymous Request
+
+Operational Request detail for an anonymous request correctly shows:
+
+```text
+user_id = null
+```
+
+with the historical contact snapshot.
+
+Do not create fake User ownership.
+
+---
+
+# 50. Product Summary
+
+Keep:
+
+```text
+{id, name, slug}
+```
+
+where linked.
+
+Do not expose inventory or pricing solely because Staff sees the Request.
+
+---
+
+# 51. Historical Product
+
+Operational Request must remain viewable even if linked Product is later:
+
+```text
+unpublished
+inactive
+type-changed
+```
+
+Do not run 10.4 requestability validation on read.
+
+---
+
+# 52. Soft-Deleted Product Relationship
+
+Inspect the actual relationship behavior.
+
+Do not make a Request detail 500 because Product was archived.
+
+If current relation intentionally becomes null:
+
+resource must handle it.
+
+If the contract expects historical product context and existing schema cannot provide it after hard/soft deletion:
+
+report rather than inventing a snapshot.
+
+---
+
+# 53. Attachment Metadata
+
+Staff operational detail may include authorized attachment metadata.
+
+Use the completed Phase 10.6:
+
+```text
+AttachmentResource
+```
+
+or actual shared resource.
+
+Never expose:
+
+```text
+storage_key
+disk
+capability digest/token
+private filesystem path
+```
+
+---
+
+# 54. Attachment URL
+
+Only expose:
+
+```text
+temporary/private authorized URL
+```
+
+if Phase 10.6 implemented it.
+
+Otherwise:
+
+```text
+url = null
+```
+
+Do not generate permanent public URLs in 10.7.
+
+---
+
+# 55. REQ-005 — Operational Detail
+
+Implement:
+
+```http
+GET /api/v1/requests/{request}
+```
+
+---
+
+# 56. REQ-005 Authorization
+
+Requires:
+
+```text
+requests.view
+```
+
+No ownership requirement for Staff.
+
+---
+
+# 57. REQ-005 Path Identifier
+
+Use opaque:
+
+```text
+req_...
+```
+
+identifier resolution.
+
+No numeric fallback.
+
+No request_reference alias unless contract explicitly allows it.
+
+---
+
+# 58. Invalid Opaque ID
+
+Use canonical:
+
+```text
+INVALID_FORMAT
+```
+
+or route-resolution behavior consistent with other operational endpoints.
+
+Do not query using malformed raw values.
+
+---
+
+# 59. Missing Request
+
+Authorized operational actor requesting a nonexistent Request:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+or exact canonical Request-not-found code.
+
+Do not leak database IDs.
+
+---
+
+# 60. Customer on Operational Detail
+
+CUSTOMER:
+
+```text
+403
+```
+
+not owner-based success.
+
+Customer must use own canonical `/me/...` resource if implemented.
+
+---
+
+# 61. Operational Detail Privacy
+
+Staff sees only what is needed to handle the Request.
+
+Do not expose:
+
+```text
+password
+credential data
+Clerk tokens
+customer roles
+other Orders
+payment data
+billing data
+unrelated profile fields
+```
+
+---
+
+# 62. REQ-006 — Operational Mutation
+
+Implement:
+
+```http
+PATCH /api/v1/requests/{request}
+```
+
+Purpose:
+
+```text
+controlled operational Request update
+```
+
+Allowed mutable fields:
+
+```text
+request_status
+staff_internal_notes
+```
+
+Nothing else.
+
+---
+
+# 63. REQ-006 Authorization
+
+Requires:
+
+```text
+requests.manage
+```
+
+`requests.view` alone is insufficient.
+
+---
+
+# 64. View vs Manage Regression
+
+Explicitly test:
+
+```text
+STAFF with requests.view only
+→ GET collection 200
+→ GET detail 200
+→ PATCH 403
+```
+
+and:
+
+```text
+STAFF with requests.manage
+→ PATCH permitted
+```
+
+according to RBAC assignment.
+
+---
+
+# 65. REQ-006 Request Allow-List
+
+Exactly:
+
+```text
+request_status
+staff_internal_notes
+```
+
+Reject all other fields.
+
+---
+
+# 66. Original Intake Is Immutable
+
+Reject attempts to modify:
+
+```text
+product_id
+quantity
+name
+phone
+email
+dimensions
+material
+color
+notes
+attachment
+user_id
+request_reference
+created_at
+```
+
+---
+
+# 67. Commerce Fields Rejected
+
+Reject:
+
+```text
+order_id
+payment_id
+payment_status
+delivery_fee
+price
+quoted_price
+currency
+```
+
+No future workflow may be smuggled through generic PATCH.
+
+---
+
+# 68. Unknown Field
+
+Any other field:
+
+```text
+422 INVALID_VALUE
+```
+
+with exact offending public field name.
+
+---
+
+# 69. Empty PATCH
+
+Determine frozen behavior.
+
+Prefer rejecting:
+
+```json
+{}
+```
+
+because it performs no operational action.
+
+Use canonical:
+
+```text
+MISSING_REQUIRED_FIELD
+or INVALID_VALUE
+```
+
+according to existing mutation conventions.
+
+Do not invent behavior without checking.
+
+---
+
+# 70. `request_status`
+
+Optional within PATCH if notes alone may be updated.
+
+If supplied:
+
+```text
+string
+SUBMITTED|IN_REVIEW|CLOSED
+```
+
+exact case.
+
+---
+
+# 71. Status Wrong Type
+
+Examples:
+
+```json
+{"request_status": 1}
+{"request_status": true}
+```
+
+→:
+
+```text
+422 INVALID_TYPE
+```
+
+---
+
+# 72. Status Unknown Value
+
+Example:
+
+```json
+{"request_status":"APPROVED"}
+```
+
+→:
+
+```text
+422 INVALID_VALUE
+```
+
+---
+
+# 73. Status Transition Authority
+
+Do not implement transition rules again in the controller.
+
+Reuse:
+
+```php
+App\Services\Requests\TransitionFurnitureRequestStatus
+```
+
+from Phase 10.3.
+
+---
+
+# 74. Valid Lifecycle
+
+Preserve:
+
+```text
+SUBMITTED → IN_REVIEW
+SUBMITTED → CLOSED
+IN_REVIEW → CLOSED
+```
+
+---
+
+# 75. Invalid Lifecycle
+
+Reject:
+
+```text
+IN_REVIEW → SUBMITTED
+CLOSED → SUBMITTED
+CLOSED → IN_REVIEW
 ```
 
 with:
 
 ```text
-attachment
+409 CONFLICT
+field: request_status
 ```
 
-included directly in:
-
-```text
-REQ-001
-ENQ-001
-```
-
-Example conceptual Request:
-
-```text
-product_id = prod_...
-name = Asha Mwangi
-phone = +255...
-notes = Please make something similar
-attachment = furniture-reference.jpg
-```
-
-Example conceptual Enquiry:
-
-```text
-name = Asha Mwangi
-email = asha@example.com
-subject = Question about this product
-message = ...
-product_id = prod_...
-attachment = screenshot.png
-```
+using existing Phase 10.3 exception mapping.
 
 ---
 
-# 6. JSON Creation Must Continue Working
+# 76. Same-State Status
 
-Attachment remains optional.
-
-These existing calls must continue to work:
-
-```http
-Content-Type: application/json
-```
-
-for:
+Same target:
 
 ```text
-REQ-001
-ENQ-001
+SUBMITTED → SUBMITTED
+IN_REVIEW → IN_REVIEW
+CLOSED → CLOSED
 ```
 
-Do not make multipart mandatory merely because attachment support exists.
+remains an idempotent no-op.
+
+Do not return conflict.
 
 ---
 
-# 7. Creation Transport Matrix
+# 77. Same-State Timestamp
 
-Support:
+Preserve Phase 10.3 behavior:
 
 ```text
-JSON without attachment
-→ valid
-
-multipart without attachment
-→ valid if otherwise contract-compliant
-
-multipart with one attachment
-→ valid
-
-JSON with "attachment": "base64..."
-→ invalid
-
-multipart with multiple attachment parts
-→ invalid
+no UPDATE
+updated_at unchanged
 ```
 
-Do not introduce base64 attachment transport.
+when only same-state status is supplied and no notes change.
 
 ---
 
-# 8. One Shared Attachment Architecture
+# 78. `staff_internal_notes`
 
-Do not create:
+Operational only.
 
-```text
-RequestAttachmentService
-EnquiryAttachmentService
-```
-
-with duplicated validation/storage logic.
-
-Prefer shared infrastructure with parent-specific authorization.
-
-Possible architecture:
+May be:
 
 ```text
-AttachmentValidator
-AttachmentStorage
-AttachmentMetadata
-AttachmentResource
-AttachmentUploadCapability
+string
+null
 ```
 
-with small Request/Enquiry adapters where needed.
+according to frozen OpenAPI.
 
 ---
 
-# 9. Parent Types
+# 79. Notes Validation
 
-The attachment subsystem must support exactly the approved V1 parent domains:
+Inspect existing approved bounds.
 
-```text
-FURNITURE_REQUEST
-ENQUIRY
-```
+If the frozen contract does not establish a numeric maximum:
 
-Do not generalize immediately to:
+do not invent an arbitrary business limit.
 
-```text
-Order
-Product
-User
-Payment
-Notification
-```
-
-unless existing schema already has a safe generic attachment design.
+However enforce any technical DB column bound before persistence.
 
 ---
 
-# 10. First Task — Inspect Persistence
+# 80. Internal Notes Plain Text
 
-Before writing migrations, inspect the repository for:
+Treat as private untrusted text.
+
+Do not interpret:
 
 ```text
-attachments
-request_attachments
-enquiry_attachments
-Attachment model
-RequestAttachment model
-EnquiryAttachment model
-storage metadata
+HTML
+Markdown
+commands
+SQL
 ```
 
-Do not assume attachment persistence already exists.
+Store as text.
+
+Render safely on clients.
 
 ---
 
-# 11. If Attachment Persistence Already Exists
+# 81. Empty Internal Notes
 
-Reuse it when it satisfies:
+Decide consistently.
+
+Prefer:
 
 ```text
-parent relationship
-private storage key
-sanitized filename
-validated content type
-size bytes
-opaque identity
-timestamps
-authorization boundary
+blank/whitespace-only → null
 ```
 
-Do not replace it unnecessarily.
+if current nullable-text conventions use that pattern.
+
+Document.
 
 ---
 
-# 12. If No Attachment Persistence Exists
+# 82. Customer Notes vs Staff Notes
 
-This phase is allowed to introduce the smallest deliberate schema required by the frozen V1 attachment contract.
-
-Do not fake attachments by storing them in:
+Keep separate:
 
 ```text
-FurnitureRequest.product_details
-FurnitureRequest.message
-Enquiry.message
+notes
+→ original customer intake
+```
+
+versus:
+
+```text
 staff_internal_notes
-JSON metadata blobs unrelated to files
+→ operational staff-only notes
 ```
 
-A real attachment needs real metadata persistence.
+Never overwrite customer notes when staff writes internal notes.
 
 ---
 
-# 13. Preferred Persistence Shape
+# 83. No Combined `notes` Alias
 
-If no existing schema exists, prefer one shared table rather than parallel Request/Enquiry tables.
-
-Conceptually:
+REQ-006 must not accept:
 
 ```text
-attachments
+notes
 ```
 
-with fields equivalent to:
+as staff notes.
 
-```text
-id
-parent_type
-parent_id
-storage_disk
-storage_key
-filename
-content_type
-size
-created_at
-updated_at
-```
-
-However, do not blindly introduce a Laravel polymorphic relation if that conflicts with existing repository schema conventions.
-
-Inspect first.
+That field is immutable customer history.
 
 ---
 
-# 14. Strong FK Preference
+# 84. Internal Notes Mutation Service
 
-The repository has emphasized referential integrity.
-
-If a generic polymorphic table would lose database FK enforcement, consider whether two nullable parent FKs with an XOR constraint is more appropriate:
-
-```text
-furniture_request_id nullable
-enquiry_id nullable
-```
-
-with invariant:
-
-```text
-exactly one parent is non-null
-```
-
-and `CASCADE`/approved delete behavior.
-
-Choose based on existing schema conventions.
-
-Do not sacrifice integrity merely for framework convenience.
-
----
-
-# 15. Schema Decision Must Be Explicit
-
-If a migration is necessary, document:
-
-```text
-why attachment persistence was absent
-why the chosen parent model is appropriate
-delete behavior
-uniqueness/cardinality
-private storage semantics
-```
-
-This is a legitimate Phase 10.6 schema addition, not a silent patch to an old migration.
-
----
-
-# 16. Never Edit Historical Migration
-
-If adding persistence now:
-
-```text
-create a new forward migration
-```
-
-Do not modify Phase 3.x historical migrations.
-
----
-
-# 17. V1 Cardinality
-
-On creation:
-
-```text
-maximum one attachment per Request
-maximum one attachment per Enquiry
-```
-
-Separate upload must also respect the V1 cardinality.
-
-Do not allow:
-
-```text
-inline attachment
-+
-later second attachment
-```
-
-to produce two files on the same parent if the frozen V1 contract says one.
-
----
-
-# 18. Database Cardinality Enforcement
-
-Where practical, enforce one-per-parent structurally.
-
-Examples depending on schema design:
-
-```text
-UNIQUE(furniture_request_id)
-UNIQUE(enquiry_id)
-```
-
-for non-null parent columns.
-
-Do not rely only on controller checks if DB enforcement is straightforward.
-
----
-
-# 19. Delete Policy
-
-An Attachment is subordinate private data belonging to the parent.
-
-If parent is hard-deleted under an approved path, attachment metadata should normally be deleted with it.
-
-Use:
-
-```text
-CASCADE
-```
-
-where consistent with repository retention policy.
-
-Do not guess—inspect current Request/Enquiry retention rules.
-
----
-
-# 20. File Storage and DB Delete Are Different
-
-Deleting attachment metadata does not automatically delete an object from the filesystem/object store.
-
-If deletion workflows exist, account for physical file cleanup.
-
-Do not implement a broad retention/deletion system beyond current scope.
-
----
-
-# 21. Private Laravel Disk
-
-Use Laravel:
+Create a focused service if useful:
 
 ```php
-Storage::disk(...)
+UpdateFurnitureRequestOperationalFields
 ```
 
-behind a dedicated configured private disk.
-
-Example configuration concept:
+It should coordinate:
 
 ```text
-ATTACHMENTS_DISK
+status transition
+staff_internal_notes
+transaction
 ```
 
-Do not hard-code:
-
-```text
-s3
-r2
-local
-cloudinary
-```
-
-inside services.
+without duplicating the Phase 10.3 state machine.
 
 ---
 
-# 22. Default Test/Local Disk
+# 85. Atomic Combined Update
 
-Tests should use:
+If a PATCH contains both:
+
+```text
+request_status
+staff_internal_notes
+```
+
+they should commit atomically.
+
+Example:
+
+```text
+status transition valid
+notes valid
+→ both persist
+
+status transition invalid
+→ neither persists
+```
+
+Do not persist notes before discovering the status conflict.
+
+---
+
+# 86. Transaction Owner
+
+Use one transaction owner for REQ-006.
+
+Do not nest independent transactions between:
+
+```text
+status service
+notes service
+```
+
+in a way that allows partial persistence.
+
+---
+
+# 87. Phase 10.3 Integration Challenge
+
+`TransitionFurnitureRequestStatus` already owns a transaction.
+
+If combined REQ-006 requires status + notes atomically:
+
+refactor carefully so the state-machine decision can participate in one outer transaction.
+
+Possible safe options:
+
+```text
+A. operational update service owns one transaction and uses a non-transactional locked transition primitive
+B. existing transition service detects/joins an outer transaction if current architecture supports it
+```
+
+Do not introduce nested independent commit boundaries.
+
+---
+
+# 88. Preserve Phase 10.3 Public Service Semantics
+
+Any refactor must preserve:
+
+```text
+row lock
+locked-state re-read
+bounded transient retry
+same-state no-op
+409 on invalid transition
+```
+
+Run all Phase 10.3 tests.
+
+---
+
+# 89. Locking
+
+REQ-006 should lock the FurnitureRequest row:
+
+```text
+FOR UPDATE
+```
+
+before evaluating current status and mutating operational fields.
+
+---
+
+# 90. Notes-Only Update
+
+Notes-only PATCH still needs safe row-level persistence.
+
+No elaborate concurrency system required beyond normal transaction/lock if used consistently.
+
+---
+
+# 91. Concurrent Status Updates
+
+Preserve proven behavior:
+
+```text
+close vs review
+same target
+```
+
+No reopening.
+
+---
+
+# 92. Concurrent Notes Updates
+
+Last serialized authorized write may win unless the frozen contract defines optimistic locking/versioning.
+
+Do not invent ETags/version columns.
+
+---
+
+# 93. Status + Notes Race
+
+If two Staff update simultaneously:
+
+each transaction should evaluate current locked status.
+
+No stale status transition may overwrite CLOSED.
+
+Notes should correspond to the transaction that actually committed.
+
+---
+
+# 94. Business Conflict Is Not Retryable
+
+Do not retry:
+
+```text
+CLOSED → IN_REVIEW
+```
+
+because it is not transient.
+
+---
+
+# 95. Transient DB Conflicts
+
+Reuse:
 
 ```php
-Storage::fake(...)
+ConcurrentTransaction
 ```
 
-or equivalent private test disk.
+for bounded retry.
 
-Local development may use a private local disk.
-
-Production provider can later be:
-
-```text
-S3-compatible
-R2
-private object storage
-```
-
-without changing domain services.
+Do not build another retry framework.
 
 ---
 
-# 23. Storage Must Not Be Public
+# 96. No Idempotency-Key
 
-Do not write to:
+REQ-006 is semantically idempotent for same status.
 
-```text
-public/
-storage/app/public
-public disk with permanent URL
-```
+Do not require an Idempotency-Key unless frozen contract says so.
 
-for private customer attachments.
-
-The default visibility must be:
-
-```text
-private
-```
+Internal-note changes are ordinary operational updates.
 
 ---
 
-# 24. Never Expose Storage Key
+# 97. Operational Update Result
 
-Internal:
-
-```text
-storage_key
-```
-
-must never appear in:
+Return:
 
 ```text
-REQ-001 response
-ENQ-001 response
-customer views
-staff views
-logs
-error details
+200
 ```
+
+with updated Request resource.
 
 ---
 
-# 25. Storage Key Generation
+# 98. Representation After Update
 
-Generate server-side unpredictable keys.
+Return the operational Staff representation.
 
-Do not derive storage key directly from:
+It may include:
 
 ```text
-original filename
+staff_internal_notes
+```
+
+because caller has `requests.manage`.
+
+---
+
+# 99. No Raw Model Serialization
+
+Never:
+
+```php
+return $requestModel;
+```
+
+Use explicit resource.
+
+---
+
+# 100. Resource Split
+
+If customer and staff representations differ, use either:
+
+```text
+FurnitureRequestResource with actor-aware safe projection
+```
+
+or separate:
+
+```text
+FurnitureRequestCustomerResource
+FurnitureRequestOperationalResource
+```
+
+Prefer whichever matches repository conventions.
+
+Do not use one resource that accidentally exposes internal notes to customers.
+
+---
+
+# 101. Strong Preference — Separate Operational Resource
+
+A dedicated:
+
+```php
+OperationalFurnitureRequestResource
+```
+
+is often safer because:
+
+```text
+customer output
+staff output
+```
+
+have materially different private fields.
+
+But reuse existing design if already safely actor-aware.
+
+---
+
+# 102. Staff Internal Notes Exposure
+
+Only actor with legitimate operational authorization should receive them.
+
+Do not assume:
+
+```text
+every authenticated user
+```
+
+may see them.
+
+---
+
+# 103. `requests.view` and Internal Notes
+
+The resource contract says Staff operational detail includes internal notes where authorized.
+
+Verify whether:
+
+```text
+requests.view
+```
+
+alone is enough to see `staff_internal_notes`, or whether notes require:
+
+```text
+requests.manage
+```
+
+specifically.
+
+The resource text references:
+
+```text
+staff_internal_notes — STAFF (`requests.manage` where authorized)
+```
+
+Therefore implement the strictest contract-consistent field gating:
+
+```text
+requests.view only
+→ operational Request detail
+→ internal notes hidden/null unless current contract clearly grants visibility
+
+requests.manage
+→ internal notes visible
+```
+
+Do not overexpose.
+
+---
+
+# 104. Important Contract Ambiguity Check
+
+The prose says:
+
+```text
+Staff sees ... internal notes where authorized
+```
+
+and the field table says:
+
+```text
+staff_internal_notes — STAFF (`requests.manage` where authorized)
+```
+
+Verify OpenAPI representation cannot express permission-dependent omission/nullability ambiguously.
+
+If necessary:
+
+document the field-level rule without changing the externally frozen field name.
+
+---
+
+# 105. Admin Internal Notes
+
+Authorized Admin may view/manage internal notes according to permissions.
+
+Do not expose them merely because role string is ADMIN if current RBAC permission is absent.
+
+---
+
+# 106. Contact Privacy
+
+Operational Request contains:
+
+```text
+name
+phone
 email
-customer name
-request reference
-enquiry reference
 ```
 
-Use random/opaque storage identifiers.
+because Staff needs them to follow up.
 
-Possible structure:
+Do not expose unrelated Customer profile fields.
 
-```text
-attachments/requests/<random>
-attachments/enquiries/<random>
-```
-
-but never rely on path secrecy as authorization.
-
----
-
-# 26. Original Filename Is Untrusted
-
-Treat uploaded filename as untrusted display metadata.
-
-Never use it directly as filesystem path.
-
----
-
-# 27. Filename Sanitization
-
-Produce a safe display filename.
-
-Requirements:
-
-```text
-strip directory components
-remove control characters
-remove NUL
-normalize unsafe separators
-bound length
-avoid traversal components
-preserve sensible extension only when compatible
-```
-
-Examples that must not become storage paths:
-
-```text
-../../secret.pdf
-..\..\secret.pdf
-foo/bar.jpg
-NUL-containing values
-```
-
----
-
-# 28. Do Not Trust Extension
-
-This:
-
-```text
-invoice.jpg
-```
-
-may actually contain a PDF or arbitrary bytes.
-
-Validation authority comes from detected content.
-
----
-
-# 29. Size Limit
-
-Maximum:
-
-```text
-5 MiB
-```
-
-Interpret precisely as:
-
-```text
-5 * 1024 * 1024 bytes
-```
-
-unless existing contract code defines otherwise.
-
-Avoid ambiguous decimal 5,000,000 unless frozen code already establishes that interpretation.
-
-Document exact byte boundary.
-
----
-
-# 30. Size Boundary Tests
-
-Test:
-
-```text
-5 MiB - 1 → accepted if type valid
-5 MiB     → accepted
-5 MiB + 1 → rejected
-```
-
----
-
-# 31. Oversize Error
-
-Use:
-
-```text
-ATTACHMENT_TOO_LARGE
-```
-
-with the frozen HTTP status.
-
-The contract currently identifies the attachment errors as:
-
-```text
-INVALID_ATTACHMENT
-ATTACHMENT_TOO_LARGE
-UNSUPPORTED_ATTACHMENT_TYPE
-```
-
-Verify exact registry/status mappings before implementation.
-
----
-
-# 32. Body Limit Interaction
-
-The repository also has a global request body ceiling.
-
-Because multipart overhead adds bytes, ensure the global ingress/app limit is large enough to permit a valid 5 MiB file plus multipart fields.
-
-Do not accidentally make:
-
-```text
-attachment max = 5 MiB
-global body max = 5 MiB
-```
-
-because valid uploads would fail due to multipart overhead.
-
----
-
-# 33. Existing Global Ceiling
-
-Earlier security hardening established a broader request ceiling.
-
-Verify it remains compatible.
-
-Do not weaken the global security ceiling unnecessarily.
-
----
-
-# 34. Allowed Content Types
-
-Exactly:
-
-```text
-image/jpeg
-image/png
-image/webp
-application/pdf
-```
-
-No:
-
-```text
-image/gif
-image/svg+xml
-text/plain
-application/zip
-application/msword
-application/vnd.*
-video/*
-audio/*
-```
-
----
-
-# 35. Why SVG Is Rejected
-
-Do not add SVG merely because it is an image.
-
-SVG can contain active/script-like content and is not in the frozen allow-list.
-
----
-
-# 36. MIME Detection
-
-Use server-side detection based on file contents.
-
-Prefer PHP/Laravel facilities backed by:
-
-```text
-finfo
-```
-
-or equivalent reliable server-side detector.
-
-Do not trust:
-
-```php
-$uploadedFile->getClientMimeType()
-```
-
-as security authority.
-
----
-
-# 37. Signature Validation
-
-In addition to MIME detection, validate actual file signature/magic.
-
-At minimum:
-
-```text
-JPEG
-PNG
-WebP
-PDF
-```
-
-must match their expected content signatures.
-
----
-
-# 38. JPEG Signature
-
-Validate using actual file content / trusted image decoder or signature detection.
-
-Do not only check:
-
-```text
-.jpg extension
-```
-
----
-
-# 39. PNG Signature
-
-Validate PNG magic bytes.
-
----
-
-# 40. WebP Signature
-
-Validate RIFF/WEBP structure sufficiently to distinguish it from arbitrary RIFF content.
-
----
-
-# 41. PDF Signature
-
-Validate that the content is a PDF using server-side type/signature detection.
-
-Do not implement a fake rule that merely checks filename `.pdf`.
-
----
-
-# 42. MIME/Signature Agreement
-
-If:
-
-```text
-client MIME = image/jpeg
-server detected = application/pdf
-```
-
-the server-detected content is authoritative.
-
-Do not silently store with the client-supplied type.
-
----
-
-# 43. Stored Content Type
-
-Persist the validated server-detected MIME:
-
-```text
-content_type
-```
-
-not the client-declared MIME.
-
----
-
-# 44. Unsupported Type
-
-Use:
-
-```text
-UNSUPPORTED_ATTACHMENT_TYPE
-```
-
-for well-formed uploads whose actual content type is outside the allow-list.
-
----
-
-# 45. Invalid/Corrupted File
-
-Use:
-
-```text
-INVALID_ATTACHMENT
-```
-
-for:
-
-```text
-unreadable temp file
-signature mismatch
-truncated/corrupt structure where detected
-upload transport error
-```
-
-according to existing error conventions.
-
----
-
-# 46. Upload Transport Errors
-
-Handle PHP upload errors explicitly.
-
-Do not treat:
-
-```text
-UPLOAD_ERR_PARTIAL
-UPLOAD_ERR_NO_TMP_DIR
-UPLOAD_ERR_CANT_WRITE
-```
-
-as valid files.
-
-Return safe API errors.
-
-Do not expose raw PHP temp paths.
-
----
-
-# 47. Empty File
-
-Reject a zero-byte attachment as:
-
-```text
-INVALID_ATTACHMENT
-```
-
-unless the frozen contract says otherwise.
-
-A zero-byte JPEG/PDF is not valid.
-
----
-
-# 48. File Name vs Content Type
-
-Sanitized display filename extension should be coherent with validated content where feasible.
-
-Do not rename content merely to make a dangerous upload appear valid.
-
----
-
-# 49. Malware Scanning
-
-The global contract says malware/security scanning should be considered where appropriate.
-
-Do not invent an external antivirus dependency in Phase 10.6 unless one is already approved.
-
-Record:
-
-```text
-signature/type validation implemented
-malware scanner integration deferred
-```
-
-if no scanning provider exists.
-
-Do not falsely claim malware scanning.
-
----
-
-# 50. No Image Re-encoding Requirement
-
-Do not:
-
-```text
-resize
-compress
-strip EXIF
-convert format
-generate thumbnails
-```
-
-unless explicitly required.
-
-This phase is secure intake/storage, not media processing.
-
----
-
-# 51. Metadata Privacy
-
-Potential EXIF inside an uploaded image remains part of the private file.
-
-Do not expose it via API.
-
-If future privacy requirements call for EXIF stripping, handle separately.
-
----
-
-# 52. Attachment Model
-
-If persistence is introduced, create one explicit model such as:
-
-```php
-App\Models\Attachment
-```
-
-or the repository-consistent equivalent.
-
-Avoid mass serialization.
-
----
-
-# 53. Opaque Attachment Identifier
-
-Public ID:
-
-```text
-att_...
-```
-
-Reuse the existing opaque-ID convention.
-
-Never expose numeric DB ID.
-
----
-
-# 54. Attachment Identifier
-
-Introduce/reuse:
-
-```php
-AttachmentIdentifier
-```
-
-following:
-
-```text
-ProductIdentifier
-OrderIdentifier
-FurnitureRequestIdentifier
-EnquiryIdentifier
-```
-
-patterns.
-
----
-
-# 55. Attachment Resource
-
-Create one shared:
-
-```php
-AttachmentResource
-```
-
-or equivalent.
-
-Customer-safe metadata:
-
-```text
-id
-filename
-content_type
-size
-url
-```
-
-according to frozen resource definitions.
-
----
-
-# 56. `url`
-
-The resource contract allows:
-
-```text
-url: string|null
-```
-
-but requires private access.
-
-If secure temporary-download URLs are not implemented in this phase:
-
-```text
-url = null
-```
-
-is preferable to exposing a public storage URL.
-
-Do not fake a permanent URL.
-
----
-
-# 57. No Direct `Storage::url()`
-
-Do not expose:
-
-```php
-Storage::url($storageKey)
-```
-
-if that yields a durable/public URL.
-
----
-
-# 58. Download URLs
-
-If the selected Laravel disk safely supports temporary signed URLs and the project already has an authorization-safe download design, you may use them.
-
-Otherwise keep:
-
-```text
-url = null
-```
-
-and defer file retrieval endpoint/signing.
-
-Do not expand scope merely to avoid null.
-
----
-
-# 59. Parent Resource Integration
-
-Replace Phase 10.1/10.5 placeholder:
-
-```json
-"attachments": []
-```
-
-with actual attachment metadata when present.
-
-For no attachment:
-
-```json
-"attachments": []
-```
-
-remains.
-
----
-
-# 60. Never Embed File Bytes
-
-Do not return:
-
-```text
-base64
-binary body
-data URI
-```
-
-inside Request/Enquiry JSON resources.
-
----
-
-# 61. Inline Request Creation
-
-Extend:
-
-```text
-REQ-001
-```
-
-to accept multipart form data containing existing fields plus:
-
-```text
-attachment
-```
-
----
-
-# 62. Inline Enquiry Creation
-
-Likewise extend:
-
-```text
-ENQ-001
-```
-
-to multipart with:
-
-```text
-attachment
-```
-
----
-
-# 63. Multipart Scalar Semantics
-
-Important: multipart form fields arrive as strings.
-
-The existing strict JSON Request validation intentionally distinguishes:
-
-```text
-integer 2
-```
-
-from:
-
-```text
-string "2"
-```
-
-For multipart, there is no native JSON scalar typing.
-
-Do not accidentally make the multipart contract impossible.
-
----
-
-# 64. Explicit Multipart Normalization
-
-Define transport-aware parsing.
-
-For fields whose schema has a non-string type:
-
-Furniture Request:
-
-```text
-quantity
-dimensions
-product_id nullable semantics
-```
-
-must be decoded according to the frozen multipart contract.
-
-Do not reuse raw multipart PHP strings blindly.
-
----
-
-# 65. Do Not Weaken JSON Strictness
-
-JSON:
-
-```json
-{"quantity":"2"}
-```
-
-must remain invalid.
-
-Multipart:
-
-```text
-quantity=2
-```
-
-may be intentionally parsed into integer 2 because multipart has string transport semantics.
-
-Transport-specific decoding is acceptable.
-
-Document it.
-
----
-
-# 66. Structured `dimensions`
-
-Define the canonical multipart representation.
-
-Inspect OpenAPI first.
-
-Possible forms:
-
-```text
-dimensions[length]
-dimensions[width]
-dimensions[height]
-dimensions[unit]
-```
-
-or a JSON-encoded multipart field if frozen OpenAPI says so.
-
-Do not invent both aliases.
-
-Use exactly the documented encoding.
-
----
-
-# 67. Enquiry Multipart Fields
-
-Subject/message/category/product_id/order_id/contact are naturally string fields.
-
-Apply the same validation/domain semantics after transport decoding.
-
----
-
-# 68. Multipart Unknown Fields
-
-Unknown fields must still be rejected.
-
-Multipart must not become a bypass for the strict JSON allow-list.
-
----
-
-# 69. Multiple Attachment Parts
-
-Reject:
-
-```text
-attachment[]
-multiple attachment values
-```
-
-V1 creation supports one.
-
----
-
-# 70. Inline Atomic Business Requirement
-
-If an inline attachment fails validation/storage:
-
-```text
-Request/Enquiry creation must fail
-```
-
-and no valid-looking parent may remain committed without its requested file.
-
-Conversely, if parent persistence fails:
-
-```text
-attachment must not remain as an intended live orphan
-```
-
----
-
-# 71. Database vs Filesystem Atomicity
-
-Filesystem/object storage cannot participate in the SQL transaction.
-
-Design explicit compensation.
-
-Do not claim true distributed atomicity.
-
----
-
-# 72. Recommended Inline Persistence Strategy
-
-A practical low-concurrency flow:
-
-```text
-1. validate all scalar fields
-2. validate file fully
-3. resolve Product/Order domain rules
-4. generate random private storage key
-5. enter creation transaction
-6. create parent
-7. store file
-8. create attachment metadata
-9. commit
-10. on any DB/service failure after file write → delete stored file
-```
-
-If storage write fails:
-
-```text
-throw
-→ DB transaction rolls back
-```
-
-If later DB work fails:
-
-```text
-rollback DB
-→ compensating Storage::delete(key)
-```
-
----
-
-# 73. Cleanup Must Be Best-Effort Safe
-
-Compensating file deletion failure must be logged safely for operational cleanup.
-
-Do not expose storage paths in client response.
-
----
-
-# 74. Do Not Swallow Creation Failure
-
-If client submitted an attachment and it could not be safely stored:
-
-```text
-do not create a success response with attachment silently missing
-```
-
-Fail the entire creation request.
-
----
-
-# 75. Database Commit / Storage Timing
-
-Keep the design simple and explicit.
-
-Do not build:
-
-```text
-distributed transaction manager
-two-phase commit
-saga framework
-```
-
-for one ≤5 MiB private upload.
-
----
-
-# 76. Storage Failure Error
-
-Use a safe internal failure:
-
-```text
-INTERNAL_SERVER_ERROR
-```
-
-or approved attachment-storage error if one already exists.
-
-Do not reveal:
-
-```text
-bucket
-disk path
-credentials
-SDK exception body
-```
-
----
-
-# 77. Separate Upload Purpose
-
-REQ-007 / ENQ-007 support an after-creation attachment flow.
-
-This exists especially for:
-
-```text
-anonymous parent creation
-retrying attachment separately
-```
-
-but must not turn the opaque parent ID into authorization.
-
----
-
-# 78. Separate Upload Routes
-
-Frozen routes:
-
-```http
-POST /api/v1/requests/{request}/attachments
-POST /api/v1/enquiries/{enquiry}/attachments
-```
-
-Content:
-
-```text
-multipart/form-data
-attachment
-```
-
----
-
-# 79. Separate Upload Requires Capability
-
-For anonymous parent:
-
-```text
-parent ID alone is insufficient
-```
-
-Require:
-
-```text
-server-issued scoped upload capability/token
-```
-
----
-
-# 80. Capability Properties
-
-The token must be:
-
-```text
-cryptographically unpredictable
-scoped to one parent
-scoped to attachment upload action
-single-use
-time-limited
-server-verifiable
-not derived from parent ID
-```
-
----
-
-# 81. Capability Is Not Ownership
-
-Do not treat the upload token as:
-
-```text
-login
-general Request retrieval credential
-general Enquiry retrieval credential
-staff credential
-```
-
-It grants only the specific approved upload operation.
-
----
-
-# 82. Capability Scope
-
-A Request upload token must not work on:
-
-```text
-another Request
-an Enquiry
-```
-
-An Enquiry token must not work on:
-
-```text
-another Enquiry
-a Request
-```
-
----
-
-# 83. Token Lifetime
-
-Use a bounded short lifetime.
-
-Do not invent a random duration without checking frozen docs/decisions.
-
-If no exact TTL is frozen:
-
-choose a conservative documented value and record it in the ADR/config.
-
-Prefer configuration constant rather than magic number.
-
----
-
-# 84. Single Use
-
-After successful separate upload:
-
-```text
-token becomes unusable
-```
-
-A retry using the same consumed token must not create another attachment.
-
----
-
-# 85. Failed Upload and Token Consumption
-
-Do not consume the token merely because:
-
-```text
-file validation failed
-storage temporarily failed
-```
-
-unless contract explicitly requires that.
-
-Preferred:
-
-```text
-consume atomically only on successful attachment persistence
-```
-
-so the user may correct/retry.
-
----
-
-# 86. Token Persistence
-
-If true single-use enforcement requires persisted state, introduce the minimum secure mechanism.
-
-Options may include:
-
-```text
-hashed capability digest on parent
-dedicated upload_capabilities table
-```
-
-Do not store bearer tokens in plaintext.
-
----
-
-# 87. Token Hashing
-
-Store only a secure digest/HMAC of the capability if persistence is required.
-
-Follow the guest Cart token precedent:
-
-```text
-raw capability → client only
-digest → database
-```
-
----
-
-# 88. Do Not Log Raw Capability
-
-Never log:
-
-```text
-attachment upload token
-```
-
----
-
-# 89. Creation Response Capability
-
-The frozen contract says the separate-upload capability is returned from successful creation.
-
-If the client submitted no attachment and separate upload remains permitted:
-
-the creation response may need the scoped token.
-
-Verify exact OpenAPI/resource shape before modifying response.
-
----
-
-# 90. Contract Gap Check
-
-If the frozen prose requires an upload token but the frozen OpenAPI/resource does not define where that token appears:
-
-do not silently invent a response field.
-
-Classify as a contract consistency gap.
-
-Reconcile using the established post-freeze process.
-
-This is an important Phase 10.6 verification point.
-
----
-
-# 91. Do Not Leak Capability in Normal Resource Forever
-
-An upload capability is transient security material.
-
-It should not become a permanent:
-
-```text
-RequestResource
-EnquiryResource
-```
-
-field returned on every GET.
-
-If approved, expose it only in the relevant creation response metadata/field.
-
----
-
-# 92. Authenticated Customer Separate Upload
-
-For authenticated parent:
-
-require:
-
-```text
-authenticated CUSTOMER
-owns parent
-```
-
-and, if the frozen contract requires the same capability, enforce it.
-
-Do not let authentication bypass a required scoped token without verifying the contract.
-
----
-
-# 93. Frozen Wording
-
-The frozen docs describe separate upload as:
-
-```text
-scoped token + parent ownership
-```
-
-Therefore default implementation should enforce both where applicable.
-
-For anonymous:
-
-```text
-token supplies scoped capability
-```
-
-since no account ownership can exist.
-
----
-
-# 94. Staff/Admin Separate Upload
-
-Do not automatically grant staff arbitrary customer attachment upload merely because staff can view the parent.
-
-The frozen attachment rules say authorization inherits parent semantics, but staff operational mutation boundaries should be checked against Phase 10.7.
-
-Do not broaden staff mutation power accidentally.
-
----
-
-# 95. Customer A vs Customer B
-
-Customer A must never upload to Customer B's:
-
-```text
-Request
-Enquiry
-```
-
-even with a guessed opaque parent ID.
-
-Use 404 masking where ownership rules require.
-
----
-
-# 96. Anonymous Parent Retrieval
-
-Do not create public GET attachment APIs for anonymous users.
-
-Anonymous upload capability does not imply retrieval.
-
 ---
-
-# 97. Attachment Download
-
-If not already frozen and implemented:
-
-do not add:
-
-```text
-GET /attachments/{attachment}
-```
-
-merely because storage exists.
-
-Phase 10.6 can safely return:
-
-```text
-url = null
-```
-
-until private download delivery is designed.
-
----
-
-# 98. Inline Upload Does Not Need Separate Capability
-
-When the attachment is included atomically in the original:
-
-```text
-REQ-001
-ENQ-001
-```
-
-no after-creation upload capability is needed for that file.
-
-Do not issue unnecessary reusable tokens after the one allowed attachment already exists.
-
----
-
-# 99. One Attachment Already Present
-
-Separate upload to a parent that already has its V1 attachment:
-
-reject deterministically.
-
-Use an existing canonical conflict/invalid-value error if defined.
-
-Do not overwrite the original attachment silently.
-
----
-
-# 100. No Replacement Semantics
-
-V1 does not define:
-
-```text
-replace attachment
-delete attachment
-edit attachment
-```
-
-Do not invent these.
-
----
-
-# 101. No Multi-File Semantics
-
-Do not allow repeated separate uploads.
-
-One parent → max one attachment.
-
----
-
-# 102. Attachment Validation Service
-
-Introduce one focused component such as:
-
-```php
-App\Services\Attachments\AttachmentValidator
-```
-
-or repository-consistent equivalent.
-
-Input:
-
-```text
-UploadedFile
-```
-
-Output concept:
-
-```text
-ValidatedAttachment
-```
-
-containing only trusted derived metadata:
-
-```text
-temporary file reference
-sanitized filename
-validated content type
-size
-```
-
----
-
-# 103. Immutable Validated Attachment
-
-Prefer a readonly value object:
-
-```php
-ValidatedAttachment
-```
-
-so downstream storage never rereads untrusted client MIME/name.
-
----
-
-# 104. Attachment Storage Service
-
-Introduce:
-
-```php
-AttachmentStorage
-```
-
-or equivalent.
-
-Responsibilities:
-
-```text
-generate key
-store privately
-delete on compensation
-optionally create temporary URL if approved
-```
-
-No authorization inside storage layer.
-
----
-
-# 105. Attachment Creation Service
-
-Introduce a focused application service for parent attachment persistence.
-
-Possible:
-
-```php
-CreateParentAttachment
-```
-
-or separate thin adapters:
-
-```text
-CreateFurnitureRequestAttachment
-CreateEnquiryAttachment
-```
-
-that share validator/storage internals.
-
-Avoid duplicate storage/security logic.
-
----
-
-# 106. Parent-Type Abstraction
-
-If using a common parent adapter, keep it explicit.
-
-Do not make arbitrary Eloquent models attachable.
-
-Approved parent set remains closed.
-
----
-
-# 107. Security Validation Before Storage
-
-Do not store first and validate later.
-
-File must pass:
-
-```text
-upload integrity
-size
-detected type
-signature
-filename normalization
-```
-
-before becoming a live attachment.
-
----
-
-# 108. Temporary PHP Upload
-
-Reading the PHP temporary upload for validation is fine.
-
-Do not move into durable storage before validation.
-
----
-
-# 109. Streaming
-
-Avoid reading the whole 5 MiB file into memory unnecessarily.
-
-Use streams/server-side file inspection where practical.
-
-Do not base64 encode internally.
-
----
-
-# 110. Hashing
-
-A content hash may be useful operational metadata, but it is not required by the frozen contract.
-
-Do not introduce deduplication semantics from a hash.
-
-If storing a hash helps integrity, document it as internal only.
-
----
-
-# 111. No File Deduplication
-
-Two users uploading identical PDFs/images may create separate attachment records.
-
-Do not use content hash as hard uniqueness.
-
----
-
-# 112. No User-Supplied Storage Filename
-
-Never let client choose:
-
-```text
-storage_key
-path
-disk
-bucket
-```
-
-Reject those fields.
-
----
-
-# 113. Multipart Server-Controlled Field Rejection
 
-Multipart must retain all Phase 10.2/10.5 strict protections.
+# 107. User Context
 
-A multipart Request must still reject:
+Operational resource may include:
 
 ```text
 user_id
-request_status
+```
+
+opaque, where authenticated submission exists.
+
+Do not automatically embed:
+
+```text
+full User object
+roles
+account state
+Clerk ID
+```
+
+---
+
+# 108. No Customer Account Mutation
+
+Phase 10.7 must never allow Staff to:
+
+```text
+change customer name
+change customer email
+change customer phone/profile
+change role
+disable account
+change password
+restrict browsing
+restrict ordering
+```
+
+The historical Request contact snapshot may be read, not used as an account-edit route.
+
+---
+
+# 109. Request Contact Snapshot Is Immutable
+
+REQ-006 cannot modify:
+
+```text
+name
+phone
+email
+```
+
+even if Staff says customer called with an update.
+
+Version 1 preserves original intake.
+
+New operational information belongs in:
+
+```text
 staff_internal_notes
-message alias
-style
-product_details
+```
+
+not rewriting the customer's submission.
+
+---
+
+# 110. Product Link Is Immutable
+
+REQ-006 cannot change:
+
+```text
+product_id
+```
+
+---
+
+# 111. Quantity Immutable
+
+Cannot change.
+
+---
+
+# 112. Dimensions Immutable
+
+Cannot change.
+
+---
+
+# 113. Material / Color Immutable
+
+Cannot change.
+
+---
+
+# 114. Attachments
+
+Do not replace/delete attachments via REQ-006.
+
+Attachment mutation is governed by REQ-007/Phase 10.6.
+
+---
+
+# 115. No Request-to-Order Conversion
+
+REQ-006 must not accept:
+
+```text
+create_order
 order_id
-price
+convert_to_order
+approved
+quoted_price
 ```
-
-as applicable.
-
-Multipart Enquiry must similarly reject server-controlled and Request-specific fields.
 
 ---
 
-# 114. File Field Is the Only New Creation Field
+# 116. No Quote
 
-For this phase, the only new transport field on REQ-001/ENQ-001 is:
+Do not add:
 
 ```text
-attachment
+quoted_price
+quote_status
+estimated_price
 ```
 
-Do not expand the business body.
+to operational Request update.
 
 ---
 
-# 115. Request Attachment Validation
+# 117. No Production Statuses
 
-REQ-001 + attachment must still enforce all completed:
+Do not add:
 
 ```text
-10.2 validation
-10.4 MADE_TO_ORDER Product eligibility
+APPROVED
+QUOTED
+PRODUCING
+READY
+REJECTED
+CONTACTED
 ```
 
-Attachment support must not bypass them.
-
----
-
-# 116. Enquiry Attachment Validation
-
-ENQ-001 + attachment must still enforce all completed:
+The frozen lifecycle remains:
 
 ```text
-10.5 contact
-subject/message
-category
-Product association
-Order ownership
+SUBMITTED
+IN_REVIEW
+CLOSED
 ```
 
 ---
 
-# 117. Validation Ordering
+# 118. REQ-004 Search Reference
 
-Conceptually:
+Search must use the actual Request reference field internally if the contract says reference search.
+
+Do not expose the internal `request_reference` if the public resource intentionally excludes it unless frozen operational resource includes it.
+
+Searchability does not imply field exposure.
+
+---
+
+# 119. Request Reference Privacy
+
+A Staff queue may search by internal/business reference.
+
+That does not turn it into customer/public authentication material.
+
+---
+
+# 120. Filters Apply Before Pagination
+
+Correct order:
 
 ```text
-Transport
-→ Auth/actor
-→ scalar schema
-→ file transport validation
-→ file security validation
-→ domain validation
-→ parent + attachment persistence
+authorized dataset
+→ filters
+→ deterministic sort
+→ pagination
 ```
 
-Do not run expensive durable storage when scalar input is already invalid.
+Do not paginate first.
 
 ---
 
-# 118. MIME Detection Is Potentially Expensive
+# 121. Search + Filters Combine
 
-But at 5 MiB maximum, full security inspection is acceptable.
+Filters should combine via AND unless current conventions say otherwise.
 
-Still avoid redundant file reads.
-
----
-
-# 119. Error Code Registry
-
-Verify these exist consistently in:
+Example:
 
 ```text
-ApiErrorCode
-OpenAPI global error enum
-api-contract
-api-conventions
+search="Asha"
+request_status=SUBMITTED
 ```
 
-Expected:
-
-```text
-INVALID_ATTACHMENT
-ATTACHMENT_TOO_LARGE
-UNSUPPORTED_ATTACHMENT_TYPE
-```
-
-If already frozen but absent in registry/OpenAPI:
-
-reconcile as a contract consistency correction.
-
-Do not invent renamed codes.
+→ SUBMITTED Requests matching search.
 
 ---
 
-# 120. Error Status Codes
+# 122. Filter Validation Before Query
 
-Use the exact frozen statuses.
-
-The current contract indicates:
-
-```text
-invalid/type issues → 422
-too large → 413
-```
-
-Verify before implementation.
-
-Do not map everything to 422 automatically.
+Invalid query parameter should fail before expensive DB search.
 
 ---
 
-# 121. Field Path
+# 123. Search Query Escaping
 
-Attachment errors should identify:
+Treat search as data.
 
-```text
-attachment
-```
+Use parameter binding.
 
-where the canonical error format supports field.
+Do not interpolate into raw SQL.
+
+Escape wildcard behavior according to current search implementation.
 
 ---
 
-# 122. No Raw Exception Leakage
+# 124. SQL Injection
 
-Never return:
+No raw concatenation from:
 
 ```text
-finfo error
-filesystem path
-bucket
-AWS error body
-driver exception
-PHP temp path
+search
+product_id
+dates
+status
 ```
 
 ---
 
-# 123. Logging
+# 125. Pagination Privacy
 
-Safe logs may contain:
+`total` should count the authorized/filtered Request dataset only.
 
-```text
-request_id
-error code
-validated content type where appropriate
-size
-parent type
-```
-
-Do not log:
-
-```text
-raw file
-private file contents
-upload token
-Authorization bearer
-full customer submission
-storage credentials
-```
+Do not expose counts from unrelated domains.
 
 ---
 
-# 124. Storage Failure Logs
+# 126. Caching
 
-Storage exception text may contain provider/internal information.
+REQ-004/005/006 responses are private.
 
-Sanitize according to existing security logging policy.
-
----
-
-# 125. Private Response
-
-REQ-001/ENQ-001 responses with attachment metadata remain:
+Use:
 
 ```text
 Cache-Control: private, no-store
+```
+
+No CDN caching.
+
+---
+
+# 127. `Vary`
+
+Use existing:
+
+```text
 Vary: Authorization
 ```
 
-where applicable.
+protected-response convention where applicable.
 
 ---
 
-# 126. No CDN Public Cache
+# 128. Security Headers
 
-Never mark attachment-bearing parent responses:
+Preserve global hardened response headers.
+
+---
+
+# 129. Logging
+
+Do not dump:
 
 ```text
-public
-s-maxage
+full notes
+phone
+email
+attachment URLs
+Authorization header
+staff internal notes
 ```
 
----
+into routine request logs.
 
-# 127. Attachment Resource Exposure
-
-Authorized metadata:
+Use:
 
 ```text
-id
-filename
-content_type
-size
-url|null
+request_id
+actor id/opaque operational identifier where permitted
+operation
+request opaque id
+status transition
+result
 ```
 
-No:
+according to safe logging policy.
+
+---
+
+# 130. Auditability
+
+The contract identifies future/operational auditability:
 
 ```text
-storage_key
-disk
-bucket
-etag
-internal path
-capability digest
-database parent FK
+actor
+action
+resource
+target
+timestamp
+result
 ```
 
----
+Inspect whether a generic audit infrastructure already exists.
 
-# 128. Anonymous Creation Response
+If yes:
 
-Anonymous creation may receive attachment metadata for the file it just submitted.
+reuse it for REQ-006.
 
-This does not grant later retrieval.
+If no:
 
----
+do not invent a full audit-log subsystem unless Group J contract requires immediate persistence.
 
-# 129. Attachment Relationship
-
-Parent resource:
-
-```text
-attachments: []
-```
-
-or:
-
-```text
-attachments: [
-  {
-    id: "att_...",
-    filename: "...",
-    content_type: "...",
-    size: ...,
-    url: null
-  }
-]
-```
-
-Max length:
-
-```text
-0..1
-```
-
-in V1.
+Document the gap/decision.
 
 ---
 
-# 130. Resource Ordering
+# 131. Do Not Use Internal Notes as Audit Log
 
-With max one file this is trivial.
+`staff_internal_notes` is editable operational content.
 
-Do not create attachment ordering infrastructure.
-
----
-
-# 131. Historical Attachment Metadata
-
-Once stored, preserve:
-
-```text
-validated filename
-validated content type
-size
-parent association
-```
-
-as historical intake metadata.
-
-Do not rewrite because original local file name later changes.
+It is not a trustworthy audit trail.
 
 ---
 
-# 132. Parent Lifecycle Independence
-
-Changing Request status:
-
-```text
-SUBMITTED → IN_REVIEW → CLOSED
-```
-
-must not delete/change attachment.
-
----
-
-# 133. Enquiry Lifecycle Independence
-
-Closing Enquiry must not delete/change attachment.
-
----
-
-# 134. Product Changes
-
-Product changes do not affect attachment.
-
----
-
-# 135. Order Changes
-
-Order changes do not affect Enquiry attachment.
-
----
-
-# 136. No Commerce Side Effects
-
-Attachment upload must not:
-
-```text
-create Order
-create Payment
-reserve inventory
-change stock
-change Cart
-create quote
-```
-
----
-
-# 137. No Notifications
+# 132. No Notifications Yet
 
 Do not create:
 
 ```text
 NEW_MADE_TO_ORDER_REQUEST
-NEW_ENQUIRY
 ```
 
 notifications here.
@@ -2314,782 +2265,1384 @@ Group R owns notifications.
 
 ---
 
-# 138. No Email
+# 133. No Customer Status Notifications
 
-None.
-
----
-
-# 139. No Image AI/Transformation
-
-No.
-
----
-
-# 140. No Antivirus Service Dependency Unless Approved
-
-Expected external dependency change:
+Changing:
 
 ```text
-NONE
+SUBMITTED → IN_REVIEW
+CLOSED
 ```
 
-unless actual reliable content-signature verification cannot be implemented using existing PHP/Laravel capabilities.
-
-If dependency becomes necessary:
-
-stop and justify before adding one.
+must not automatically send email/SMS/push in this phase.
 
 ---
 
-# 141. Inline Creation Atomicity Tests
+# 134. REQ-004 Query Request Class
 
-Mandatory Request scenarios:
+Create a dedicated normalized query validator such as:
 
-```text
-valid parent + valid file → both exist
-invalid parent + valid file → neither persists
-valid parent + invalid file → neither persists
-storage failure → parent rolls back
-DB failure after file write → stored file cleaned
+```php
+ListOperationalFurnitureRequestsRequest
 ```
 
----
+or equivalent.
 
-# 142. Inline Enquiry Atomicity Tests
-
-Same matrix.
+Do not reuse creation FormRequest.
 
 ---
 
-# 143. Request File Type Tests
+# 135. REQ-006 Request Class
 
-At minimum:
+Create:
+
+```php
+UpdateFurnitureRequestRequest
+```
+
+or equivalent.
+
+Exact allow-list:
 
 ```text
-real JPEG → accepted
-real PNG → accepted
-real WebP → accepted
-real PDF → accepted
+request_status
+staff_internal_notes
 ```
 
 ---
 
-# 144. Unsupported Type Tests
+# 136. Strict Types
 
-Examples:
+Do not accept:
 
 ```text
-GIF
-SVG
-TXT
-ZIP
+request_status = 1
+staff_internal_notes = []
+```
+
+via coercion.
+
+---
+
+# 137. `staff_internal_notes` Null
+
+Explicit:
+
+```json
+{
+  "staff_internal_notes": null
+}
+```
+
+should clear notes if frozen contract permits null.
+
+The OpenAPI does permit string|null.
+
+Therefore support clearing.
+
+---
+
+# 138. Notes-Only Update
+
+Valid:
+
+```json
+{
+  "staff_internal_notes": "Called customer; awaiting measurements."
+}
+```
+
+---
+
+# 139. Status-Only Update
+
+Valid:
+
+```json
+{
+  "request_status": "IN_REVIEW"
+}
+```
+
+---
+
+# 140. Combined Update
+
+Valid:
+
+```json
+{
+  "request_status": "IN_REVIEW",
+  "staff_internal_notes": "Called customer."
+}
+```
+
+Atomic.
+
+---
+
+# 141. Same Status + New Notes
+
+Example:
+
+```text
+current IN_REVIEW
+target IN_REVIEW
+new internal notes
+```
+
+Status portion is idempotent no-op.
+
+Notes still update.
+
+`updated_at` changes because notes changed.
+
+---
+
+# 142. Same Status + Same Notes
+
+If both values identical:
+
+prefer no DB UPDATE.
+
+Do not touch `updated_at` merely for identical replay if practical.
+
+Document behavior.
+
+---
+
+# 143. Notes Change + Invalid Status
+
+Must roll back notes.
+
+Example:
+
+```text
+current CLOSED
+target IN_REVIEW
+notes changed
+```
+
+Response:
+
+```text
+409 CONFLICT
+```
+
+Persisted notes:
+
+```text
+unchanged
+```
+
+---
+
+# 144. Update Service Design
+
+Create one orchestration service such as:
+
+```php
+UpdateFurnitureRequestOperationalFields
+```
+
+Responsibilities:
+
+```text
+lock Request
+read current state
+validate status transition via RequestStatusMachine
+apply allowed status if needed
+apply internal notes if changed
+persist once
+return locked/current Request
+```
+
+---
+
+# 145. Reuse Pure State Machine
+
+Call:
+
+```php
+RequestStatusMachine
+```
+
+inside the locked transaction.
+
+Do not invoke a second independent transaction if it breaks combined atomicity.
+
+---
+
+# 146. Refactor Phase 10.3 Carefully
+
+If needed, extract the locked transition decision/application portion into a small internal component reused by:
+
+```text
+TransitionFurnitureRequestStatus
+UpdateFurnitureRequestOperationalFields
+```
+
+Do not duplicate the matrix.
+
+---
+
+# 147. Backward Compatibility
+
+Existing:
+
+```php
+TransitionFurnitureRequestStatus
+```
+
+tests/API must remain valid.
+
+---
+
+# 148. No Nested Commit
+
+Do not call a transaction-owning service inside another transaction if the inner layer can commit separately.
+
+One REQ-006 outer transaction.
+
+---
+
+# 149. Request Row Only
+
+Do not lock:
+
+```text
+User
+Product
+Attachment
+Order
+Inventory
+```
+
+for operational field update.
+
+---
+
+# 150. Not-Found Resolution
+
+Resolve opaque Request ID before/inside service safely.
+
+Authorized operational endpoint missing target:
+
+```text
+404
+```
+
+---
+
+# 151. Authorization Before Sensitive Data Fetch
+
+Do not load full Request private data, then discover actor lacks:
+
+```text
+requests.view
+```
+
+if middleware/policy can reject earlier.
+
+---
+
+# 152. Policy
+
+Consider:
+
+```text
+FurnitureRequestPolicy
+```
+
+with operational methods:
+
+```text
+viewOperational
+manageOperational
+```
+
+if current project architecture uses policies.
+
+Do not create policy architecture just for this domain if permissions are already middleware-based.
+
+---
+
+# 153. Route Activation
+
+REQ-004/005/006 were previously stubbed/gated.
+
+Phase 10.7 should activate them once:
+
+```text
+authorization
+query validation
+resources
+mutation service
+privacy
+tests
+```
+
+are complete.
+
+Do not leave them stubbed merely from inertia.
+
+---
+
+# 154. Activation Does Not Depend on Group H/I
+
+Furniture Request operations are independent of:
+
+```text
+Checkout
+Payment
+Order Management
+```
+
+No reason to gate them on deferred transactional commerce.
+
+---
+
+# 155. Activation Does Depend on Attachment Privacy
+
+If REQ-005 returns attachment metadata/URLs:
+
+ensure Phase 10.6 authorization/privacy is complete.
+
+If 10.6 remains blocked:
+
+do not expose an unsafe attachment representation.
+
+Possible safe fallback only if frozen contract permits:
+
+```text
+attachments metadata without URL
+```
+
+Do not hide blocker silently.
+
+---
+
+# 156. Customer Request Routes
+
+Do not activate or implement:
+
+```text
+REQ-002
+REQ-003
+```
+
+unless already implemented by another phase or 10.8 expects them.
+
+Phase 10.7 is operational Staff/Admin management.
+
+---
+
+# 157. General Enquiry Operational Routes
+
+Do not implement:
+
+```text
+ENQ-004
+ENQ-005
+ENQ-006
+```
+
+in this phase unless Group J roadmap explicitly includes them under 10.7.
+
+The user asked specifically for Staff/Admin **request management**.
+
+Keep domain scope disciplined.
+
+---
+
+# 158. OpenAPI REQ-004 Review
+
+The normative conventions define filters:
+
+```text
+search
+request_status
+product_id
+created_from
+created_to
+page
+per_page
+```
+
+Verify `openapi.yaml` lists them.
+
+---
+
+# 159. Potential OpenAPI Gap
+
+If OpenAPI currently omits the frozen REQ-004 filter parameters:
+
+do not drop implementation support.
+
+Instead:
+
+```text
+add the already-frozen filter parameters
+```
+
+as a contract consistency correction.
+
+Document explicitly:
+
+```text
+not new V1 behavior
+alignment with api-conventions §26.13
+```
+
+---
+
+# 160. Do Not Add Undocumented Filters
+
+Only reconcile parameters already defined normatively.
+
+---
+
+# 161. OpenAPI REQ-006
+
+Verify body already contains:
+
+```text
+request_status
+staff_internal_notes
+additionalProperties:false
+```
+
+Preserve.
+
+---
+
+# 162. Response Resource Contract
+
+Verify REQ-004/005/006 response schemas align with actual operational resource.
+
+If OpenAPI uses one generic:
+
+```text
+MadeToOrderRequest
+```
+
+but field-level permissions differ:
+
+do not silently expose more to customers.
+
+Operational field-level authorization remains mandatory.
+
+---
+
+# 163. Error Responses
+
+REQ-004:
+
+```text
+401
+403
+422 for query validation
+```
+
+plus current canonical failures.
+
+REQ-005:
+
+```text
+401
+403
+404
+```
+
+REQ-006:
+
+```text
+401
+403
+404
+422
+409
+```
+
+as applicable.
+
+---
+
+# 164. Invalid Transition
+
+Keep:
+
+```text
+409 CONFLICT
+field=request_status
+```
+
+from 10.3.
+
+Do not change to 422.
+
+---
+
+# 165. Query Validation Errors
+
+Use:
+
+```text
+MISSING_REQUIRED_FIELD
+INVALID_TYPE
+INVALID_FORMAT
+INVALID_VALUE
+```
+
+according to existing conventions.
+
+---
+
+# 166. Date Format Error
+
+Malformed:
+
+```text
+created_from
+created_to
 ```
 
 →:
 
 ```text
-UNSUPPORTED_ATTACHMENT_TYPE
+INVALID_FORMAT
 ```
 
 ---
 
-# 145. Spoofed Extension Tests
-
-Examples:
+# 167. Invalid Date Range
 
 ```text
-PDF bytes named photo.jpg
-text bytes named photo.png
+created_from > created_to
 ```
 
-Server detection must win.
-
----
-
-# 146. Spoofed Client MIME Tests
-
-Examples:
+→:
 
 ```text
-text bytes
-client MIME image/jpeg
+INVALID_VALUE
 ```
 
-must fail.
-
 ---
 
-# 147. Signature Mismatch Test
+# 168. Unknown Query Param
 
-A file with a claimed/extension type but invalid magic must fail safely.
-
----
-
-# 148. Corrupt/Partial Upload Test
-
-Must fail:
+→:
 
 ```text
-INVALID_ATTACHMENT
+INVALID_VALUE
 ```
 
-and create no parent/metadata/file.
+with field.
 
 ---
 
-# 149. Zero Byte Test
+# 169. Permission Failure
 
-Reject.
+→:
+
+```text
+403 FORBIDDEN
+```
+
+Do not mask Staff permission failure as 404 when accessing the operational route itself.
 
 ---
 
-# 150. Filename Traversal Tests
+# 170. Missing Resource
+
+Once actor is operationally authorized:
+
+nonexistent Request:
+
+```text
+404
+```
+
+---
+
+# 171. Customer Attack Scenario
+
+Customer tries:
+
+```text
+GET /requests
+GET /requests/req_other
+PATCH /requests/req_...
+```
+
+All:
+
+```text
+403
+```
+
+after authentication.
+
+No private operational data leakage.
+
+---
+
+# 172. Anonymous Attack Scenario
+
+No bearer:
+
+```text
+401
+```
+
+---
+
+# 173. Staff View-Only Attack Scenario
+
+Staff has:
+
+```text
+requests.view
+```
+
+tries PATCH:
+
+```text
+403
+```
+
+---
+
+# 174. Staff Manage Without View
+
+Inspect current RBAC graph.
+
+If:
+
+```text
+requests.manage
+```
+
+does not imply `requests.view` at permission level:
+
+decide based on frozen RBAC design whether manage should independently authorize returned operational resource.
+
+Do not invent permission hierarchy silently.
+
+Prefer current seeded permission model.
+
+---
+
+# 175. Admin Data Minimization
+
+Admin should not receive:
+
+```text
+all customer-account details
+```
+
+just because Admin is highest role.
+
+Return the same operational Request representation unless a specifically approved Admin representation exists.
+
+---
+
+# 176. Request Resource Tests
+
+Test Staff resource includes operational fields.
+
+Test customer resource does not include:
+
+```text
+staff_internal_notes
+```
+
+---
+
+# 177. Collection Test — Default
+
+Create Requests with varying timestamps/statuses.
+
+Assert:
+
+```text
+created_at DESC
+id ASC tie-break
+```
+
+---
+
+# 178. Collection Test — Pagination
 
 Test:
 
 ```text
-../../avatar.jpg
-..\..\avatar.jpg
-foo/bar.jpg
-control chars
-```
-
-The stored/display name must be safe.
-
----
-
-# 151. Filename Unicode
-
-Reasonable Unicode display filename may be preserved safely.
-
-Do not corrupt legitimate customer filenames unnecessarily.
-
----
-
-# 152. Long Filename
-
-Bound/sanitize according to the chosen metadata column and filesystem-safe policy.
-
-Do not let giant filenames cause persistence failure after file storage.
-
-Validate before durable storage.
-
----
-
-# 153. Multiple Files Test
-
-Reject two attachments on creation.
-
----
-
-# 154. Existing Attachment Separate Upload Test
-
-Parent already has one:
-
-```text
-REQ-007/ENQ-007
-→ deterministic conflict
-```
-
-No replacement.
-
----
-
-# 155. Capability Token Tests
-
-Mandatory if separate upload implemented:
-
-```text
-valid token correct parent → allowed
-wrong parent → rejected
-wrong parent type → rejected
-expired → rejected
-consumed → rejected
-random token → rejected
-missing token anonymous → rejected
+page
+per_page
+meta.pagination
 ```
 
 ---
 
-# 156. Raw Token Persistence Test
+# 179. Pagination Bounds
 
-Assert raw capability is not stored.
-
----
-
-# 157. Token Logging Test
-
-Assert raw capability does not appear in logs where feasible.
-
----
-
-# 158. Failed Validation Token Retry
-
-Invalid file attempt should not consume token if chosen contract semantics follow the recommended successful-consumption rule.
-
-Then valid retry succeeds.
-
----
-
-# 159. Concurrent Separate Upload
-
-Two concurrent uploads using same single-use token must not both succeed.
-
-At most:
+Test:
 
 ```text
-one attachment
-one token consumption
+page=0 invalid
+per_page=0 invalid
+per_page=101 invalid
 ```
 
 ---
 
-# 160. Concurrency Mechanism
+# 180. Search Tests
 
-Use transaction + locked capability/parent metadata where required.
-
-Do not rely on:
+Cover at least:
 
 ```text
-check token used=false
-then later mark used=true
+name
+email
+phone
+request reference
+product
 ```
 
-without locking/atomic update.
+per frozen contract.
 
 ---
 
-# 161. MariaDB Concurrency
+# 181. Search Case Behavior
 
-If the capability uses database state:
+Use repository's established case-insensitive search convention if applicable.
 
-add a MariaDB integration race test for:
+Do not create DB-driver-divergent behavior knowingly.
+
+---
+
+# 182. Status Filter Test
+
+Each:
 
 ```text
-same capability
-two concurrent uploads
-```
-
-provided existing disposable concurrency harness makes it practical.
-
----
-
-# 162. DB Unique Guard
-
-The one-attachment-per-parent DB constraint should provide an additional final guard.
-
----
-
-# 163. File Cleanup Under Losing Race
-
-If two concurrent workers both write files before one loses the DB race:
-
-the losing worker must delete its stored file.
-
-No permanent orphan.
-
----
-
-# 164. Authenticated Ownership Tests
-
-Customer A cannot separately upload to Customer B's parent.
-
-Use masked not-found behavior.
-
----
-
-# 165. Staff/Admin Tests
-
-Only implement/test staff upload authority if frozen operational permissions clearly permit it in current Phase 10.6 scope.
-
-Do not broaden 10.7 prematurely.
-
----
-
-# 166. Anonymous No-Retrieval Regression
-
-Even with upload token:
-
-```text
-GET parent
-GET attachment
-```
-
-must not automatically become public.
-
----
-
-# 167. Route Activation Assessment — Requests
-
-After inline multipart works, verify:
-
-```text
-10.1 creation PASS
-10.2 validation PASS
-10.3 lifecycle PASS
-10.4 product eligibility PASS
-10.6 attachments PASS
-```
-
-If all externally required REQ-001 creation behavior is complete:
-
-assess activation of:
-
-```text
-POST /api/v1/requests
+SUBMITTED
+IN_REVIEW
+CLOSED
 ```
 
 ---
 
-# 168. Request Route Activation
+# 183. Product Filter Test
 
-If no other REQ-001 blocker remains:
+Linked Requests for A/B.
 
-this phase may remove/enable:
+Filter A returns only A.
 
-```text
-requests.enabled
-```
+Custom requests excluded when filtering by Product.
 
-gate according to the project's explicit route-feature strategy.
+---
 
-Do not leave the route gated merely from inertia.
+# 184. Date Filter Tests
 
-But do not activate if:
+Cover:
 
 ```text
-upload capability response contract unresolved
-multipart encoding unresolved
-security validation incomplete
+created_from only
+created_to only
+both
+boundary timestamp
+invalid range
+malformed value
 ```
 
 ---
 
-# 169. Route Activation Assessment — Enquiries
+# 185. Combined Filter Test
 
-Likewise assess:
+Example:
 
 ```text
-POST /api/v1/enquiries
+search=Asha
+request_status=IN_REVIEW
+product_id=prod_...
 ```
 
-after Phase 10.5 + attachment completion.
-
-Do not activate if an Enquiry-specific creation-contract gap remains.
+All conditions enforced.
 
 ---
 
-# 170. No Environment-Driven Secret Activation
+# 186. Unknown Filter Test
 
-The Request gate was deliberately not environment-driven.
-
-Do not casually turn these APIs on/off with ad-hoc `.env` flags.
-
-Use the approved architecture.
-
----
-
-# 171. Separate Upload Route Activation
-
-REQ-007/ENQ-007 may remain gated if the scoped capability contract cannot yet be reconciled safely.
-
-However, the frozen contract explicitly includes them.
-
-Report their precise readiness separately from inline creation.
-
-Do not claim full attachment PASS if separate upload is required and missing.
-
----
-
-# 172. Important Contract Consistency Check
-
-The prose says:
+Example:
 
 ```text
-separate upload token returned on REQ-001/ENQ-001 creation
+?user_id=...
 ```
 
-Verify whether:
+must reject.
 
-```text
-openapi.yaml
-api-resources.md
-```
-
-define the creation-response token field.
-
-If not, this is a concrete frozen-contract representation gap.
-
-Do not guess a JSON field name.
+Do not let Staff enumerate by user IDs unless contract says so.
 
 ---
 
-# 173. If Token Response Gap Exists
+# 187. Query SQL Safety Test
 
-Classify:
-
-```text
-BLOCKER / contract consistency gap
-```
-
-for REQ-007/ENQ-007 activation.
-
-Possible Phase 10.6 outcome:
+Use search strings with:
 
 ```text
-inline attachment support PASS
-separate-upload capability BLOCKED
-public creation route activation decision based on whether separate upload is required for contract completeness
+%
+_
+'
+"
 ```
 
-Do not conceal this.
+and confirm safe behavior/no SQL failure.
 
 ---
 
-# 174. Do Not Invent `upload_token`
+# 188. Operational Detail Test
 
-Unless already supported by frozen docs/OpenAPI or formally reconciled.
-
----
-
-# 175. Attachment Error Enum Reconciliation
-
-Same principle.
-
-If frozen attachment codes are absent from OpenAPI/backend enum:
-
-add only the already-frozen codes and document as a consistency correction.
-
----
-
-# 176. OpenAPI Multipart Review
-
-Verify both:
+Authorized Staff:
 
 ```text
-REQ-001
-ENQ-001
-```
-
-currently define multipart/form-data correctly.
-
-Ensure the schema represents:
-
-```text
-attachment:
-  type: string
-  format: binary
-```
-
-or equivalent frozen representation.
-
-Do not invent an incompatible multipart shape.
-
----
-
-# 177. OpenAPI Separate Upload Review
-
-Verify:
-
-```text
-REQ-007
-ENQ-007
-```
-
-paths, security/capability representation, file field, response.
-
-Report any gap.
-
----
-
-# 178. Resource Contract Review
-
-Verify Attachment resource field set remains:
-
-```text
-id
-filename
-content_type
-size
-url
-```
-
-Do not add storage internals.
-
----
-
-# 179. Migration Tests
-
-If schema added:
-
-extend:
-
-```text
-MigrationRebuildTest
-SchemaIntegrityTest
+200
 ```
 
 with:
 
 ```text
-table presence
-FKs
-delete policy
-parent XOR if applicable
-one-per-parent uniqueness
+contact
+specifications
+status
+product context
+attachments
+authorized notes
+timestamps
 ```
 
 ---
 
-# 180. SQLite
+# 189. Anonymous Request Detail
 
-Canonical suite must prove:
+Operational Staff can view anonymous Request:
 
 ```text
-validation
-metadata persistence
-resource serialization
-rollback/cleanup behavior
-ownership rules
+user_id null
+contact preserved
 ```
 
 ---
 
-# 181. MariaDB
+# 190. Authenticated Request Detail
 
-If schema/concurrency behavior depends on:
+Operational Staff sees opaque user context only.
+
+No full account expansion.
+
+---
+
+# 191. Missing Detail
+
+Authorized Staff:
 
 ```text
-unique nullable FKs
-CHECK/XOR
-row locking
-single-use token race
+404
 ```
-
-run the relevant integration tests against disposable MariaDB.
-
-Do not rely only on SQLite for lock proof.
 
 ---
 
-# 182. Storage Fake Tests
+# 192. Invalid ID
+
+Use canonical invalid format/not-found behavior.
+
+---
+
+# 193. Update Status Test
+
+```text
+SUBMITTED → IN_REVIEW
+```
+
+200.
+
+---
+
+# 194. Direct Close Test
+
+```text
+SUBMITTED → CLOSED
+```
+
+200.
+
+---
+
+# 195. Review Close Test
+
+```text
+IN_REVIEW → CLOSED
+```
+
+200.
+
+---
+
+# 196. Invalid Backward Test
+
+```text
+IN_REVIEW → SUBMITTED
+```
+
+409.
+
+---
+
+# 197. Terminal Test
+
+```text
+CLOSED → IN_REVIEW
+```
+
+409.
+
+---
+
+# 198. Same-State Test
+
+Same status:
+
+```text
+200
+```
+
+no unwanted update.
+
+---
+
+# 199. Notes Test
+
+Staff sets internal note.
+
+Persisted.
+
+---
+
+# 200. Clear Notes Test
+
+Set:
+
+```json
+{"staff_internal_notes": null}
+```
+
+Clears notes.
+
+---
+
+# 201. Customer Notes Preservation Test
+
+Before:
+
+```text
+notes = original customer content
+```
+
+After Staff internal-note update:
+
+```text
+notes unchanged
+staff_internal_notes updated
+```
+
+---
+
+# 202. Combined Status + Notes Test
+
+Both persist atomically on valid transition.
+
+---
+
+# 203. Combined Rollback Test
+
+Invalid transition + new notes:
+
+```text
+409
+status unchanged
+notes unchanged
+```
+
+---
+
+# 204. Immutable Field Tampering Matrix
+
+Use table-driven PATCH cases for:
+
+```text
+product_id
+quantity
+name
+phone
+email
+dimensions
+material
+color
+notes
+user_id
+request_reference
+created_at
+attachment
+order_id
+payment_status
+quoted_price
+```
+
+All rejected.
+
+---
+
+# 205. Permission Matrix Tests
+
+Mandatory:
+
+```text
+anonymous
+CUSTOMER
+STAFF no permission
+STAFF view only
+STAFF manage
+ADMIN
+```
+
+for:
+
+```text
+REQ-004
+REQ-005
+REQ-006
+```
+
+---
+
+# 206. Role + Permission, Not Role Alone
+
+Create Staff fixtures with missing permissions to prove permission checks are real.
+
+---
+
+# 207. Mixed-Role Regression
+
+If repository guards mixed roles as invalid:
+
+test that same hardening remains.
+
+Do not let mixed-role actor bypass operational permission boundaries.
+
+---
+
+# 208. Suspended Staff
+
+If account-state middleware rejects suspended/inactive Staff:
+
+ensure operational Request routes preserve that behavior.
+
+---
+
+# 209. Attachment Exposure Test
+
+Operational resource never exposes:
+
+```text
+storage_key
+disk
+upload capability
+```
+
+---
+
+# 210. Private Cache Test
+
+REQ-004/005/006:
+
+```text
+Cache-Control: private, no-store
+```
+
+---
+
+# 211. No Side Effects — Read
+
+REQ-004/005 must not mutate:
+
+```text
+Request status
+updated_at
+internal notes
+attachments
+```
+
+---
+
+# 212. No Commerce Side Effects — Update
+
+REQ-006 must not:
+
+```text
+create Order
+create Payment
+reserve inventory
+mutate ProductStock
+change Cart
+create quote
+```
+
+---
+
+# 213. No Notification Side Effect
+
+No notification rows from REQ-006 in Phase 10.7 unless pre-existing explicitly approved event integration exists.
+
+Group R remains owner.
+
+---
+
+# 214. Concurrency Tests
+
+Reuse Phase 10.3 MariaDB status concurrency suite.
+
+Add operational combined-update races where useful.
+
+---
+
+# 215. Required Combined Race
+
+Recommended:
+
+Initial:
+
+```text
+IN_REVIEW
+notes = A
+```
+
+Worker 1:
+
+```text
+CLOSED + notes B
+```
+
+Worker 2 stale:
+
+```text
+IN_REVIEW + notes C
+```
+
+Expected:
+
+```text
+final CLOSED
+stale reopen rejected
+no overwrite from losing transaction
+```
+
+---
+
+# 216. Same-Status Notes Race
+
+No need to over-specify winner beyond serialized consistency unless contract defines it.
+
+Ensure no invalid state.
+
+---
+
+# 217. MariaDB
 
 Use:
 
-```php
-Storage::fake(...)
+```text
+furnitureapp_test_disposable
 ```
 
-for normal unit/feature tests.
+only.
 
-Assert:
+Never destructive test on app DB.
+
+---
+
+# 218. SQLite
+
+Use canonical suite for:
 
 ```text
-expected object exists after success
-object absent after failure
+validation
+authorization
+filtering
+serialization
+atomic rollback
 ```
 
 ---
 
-# 183. Cleanup Tests
+# 219. MariaDB Proof
 
-Inject failure:
+Use MariaDB for:
 
 ```text
-after storage
-before attachment metadata commit
+row-lock race
+combined status/notes transaction
 ```
 
-and assert:
+if added.
+
+---
+
+# 220. REQ-004 Performance Sanity
+
+If dataset test infrastructure exists, inspect query count.
+
+Avoid obvious N+1.
+
+Do not chase premature micro-optimization.
+
+---
+
+# 221. Query Complexity
+
+Keep filter builder straightforward.
+
+Do not create dynamic SQL DSL.
+
+---
+
+# 222. No Full-Text Search Engine
+
+No Elasticsearch/Meilisearch/etc.
+
+SQL search is sufficient for V1.
+
+---
+
+# 223. No Export
+
+Do not add CSV/Excel export.
+
+---
+
+# 224. No Bulk Update
+
+Do not add:
 
 ```text
-no parent if atomic inline creation expected
-no attachment row
-no stored orphan
+bulk close
+bulk assign
+bulk delete
 ```
 
 ---
 
-# 184. Do Not Over-Test Framework Internals
+# 225. No Assignment Feature
 
-Focus on domain/security behavior.
-
-Do not assert implementation-specific temp filenames.
-
----
-
-# 185. Request Regression
-
-Run all:
+No:
 
 ```text
-FurnitureRequest*
-RequestStatus*
-RequestableProductResolver*
+assigned_staff_id
 ```
 
-Attachment support must not weaken strict validation.
+unless already in frozen schema/contract.
+
+Do not invent ticketing/CRM workflow.
 
 ---
 
-# 186. Enquiry Regression
+# 226. No Deletion
 
-Run all Phase 10.5 Enquiry tests.
-
-Multipart support must preserve contact/order/product authorization.
-
----
-
-# 187. Security Regression
-
-Run:
+Do not add:
 
 ```text
-body size
-anonymous submission throttle
-optional auth
-invalid bearer
-safe logging
-security headers
+DELETE /requests/{request}
 ```
 
-where route/middleware changes touch them.
+V1 preserves intake history.
 
 ---
 
-# 188. Request Body Ceiling Regression
+# 227. No Editing Customer Submission
 
-Ensure valid 5 MiB file + form overhead can pass the application limit.
-
-Also ensure clearly oversized bodies fail early.
-
----
-
-# 189. Content-Type Boundary
-
-Test:
+Again, operational handling is:
 
 ```text
-multipart/form-data → supported
-application/json → supported
-application/x-www-form-urlencoded → rejected if not frozen
+status
+internal notes
 ```
 
-Do not widen transport accidentally.
+only.
 
 ---
 
-# 190. Dependency Audit
+# 228. No Order Creation
 
-No new dependency expected.
-
-If file signature handling uses built-in:
+Even closing:
 
 ```text
-finfo
-getimagesize
-stream reads
+CLOSED
 ```
 
-document that.
-
----
-
-# 191. Storage Provider
-
-Report:
+does not mean:
 
 ```text
-Laravel filesystem private disk abstraction
+Order created
 ```
 
-not a provider-specific integration.
+---
 
-Do not add Cloudinary merely because the CampusBite project used it.
+# 229. No Price/Quote
+
+Staff internal note may contain informal communication, but backend does not expose authoritative quoted-price fields.
 
 ---
 
-# 192. Production Configuration
+# 230. Documentation ADR
 
-Document required:
-
-```text
-private attachment disk configured
-credentials available outside repo
-no public ACL
-```
-
-Do not commit credentials.
-
----
-
-# 193. Fail-Closed Production Config
-
-If production attachment disk is missing/misconfigured:
-
-application should fail safely.
-
-Do not fall back to public disk silently.
-
----
-
-# 194. Storage Health
-
-Do not build a complex health-check endpoint just for attachments.
-
-Existing deployment checks/documentation are sufficient unless architecture already has startup validation.
-
----
-
-# 195. Documentation ADR
-
-Add the next available backend ADR.
+Add next available backend ADR if current pattern continues.
 
 Likely concept:
 
 ```text
-Private Request/Enquiry Attachment Architecture
+Staff/Admin Furniture Request Operational Management
 ```
 
-Inspect current latest ADR after BACKEND-046/Phase 10.5.
+Inspect latest number first.
 
-Do not guess numbering.
+Do not guess.
 
 ---
 
-# 196. ADR Must Record
+# 231. ADR Should Record
 
 At minimum:
 
 ```text
-shared Request/Enquiry subsystem
-0 or 1 file V1
-5 MiB exact byte limit
-allowed MIME types
-server-detected content authority
-signature validation
-filename sanitization
-private Laravel disk
-storage key hidden
-Attachment resource shape
-url=null or temporary-only policy
-inline multipart atomicity/compensation
-schema choice if added
-parent authorization inheritance
-scoped separate-upload capability design
-single-use/time-limited semantics
-token digest storage if applicable
-route activation decision
-contract inconsistencies discovered
-malware scanning status
+REQ-004/005/006 activated
+requests.view vs requests.manage
+Staff operational ≠ ownership
+operational queue filters
+deterministic sorting
+private resource
+staff_internal_notes field-level access
+original intake immutability
+Phase 10.3 state-machine reuse
+combined atomic update design
+row locking/concurrency
+no Request→Order side effects
+no customer-account mutation
+OpenAPI filter reconciliation if required
 ```
 
 ---
 
-# 197. Update Group J Tracking
+# 232. Group J Tracking
 
-If fully successful:
+After successful Phase 10.7:
 
 ```text
 10.1 PASS
@@ -3097,27 +3650,181 @@ If fully successful:
 10.3 PASS
 10.4 PASS
 10.5 PASS
-10.6 PASS
-10.7 READY
-10.8 NOT STARTED
+10.6 PASS/BLOCKED according to actual result
+10.7 PASS
+10.8 READY
 ```
 
-If separate upload contract remains blocked:
-
-state that precisely rather than marking unconditional PASS.
+Do not mark Group J closed yet.
 
 ---
 
-# 198. Verification Commands
+# 233. Phase 10.8 Readiness
 
-Run focused attachment tests first.
+Phase 10.8 should become the final:
 
-Then:
+```text
+Request/Enquiry integration
+security
+contract
+regression
+Group J closure
+```
+
+phase.
+
+Do not start it automatically.
+
+---
+
+# 234. OpenAPI Verification
+
+Verify:
+
+```text
+REQ-004
+REQ-005
+REQ-006
+```
+
+against implementation.
+
+---
+
+# 235. Expected OpenAPI Change
+
+Ideally:
+
+```text
+NONE
+```
+
+except an already-frozen contract consistency correction for omitted REQ-004 filters if confirmed.
+
+---
+
+# 236. Schema
+
+Expected:
+
+```text
+NONE
+```
+
+No new Request-management columns.
+
+---
+
+# 237. Dependencies
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 238. Frontend
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 239. Focused Test Files
+
+Possible:
+
+```text
+OperationalFurnitureRequestListApiTest
+OperationalFurnitureRequestDetailApiTest
+OperationalFurnitureRequestUpdateApiTest
+FurnitureRequestOperationalConcurrencyMysqlTest
+```
+
+Use repository naming conventions.
+
+---
+
+# 240. Regression Suites
+
+Run:
+
+```text
+FurnitureRequest*
+RequestStatus*
+RequestableProductResolver*
+Attachment*
+```
+
+as relevant.
+
+---
+
+# 241. Auth/RBAC Regressions
+
+Run current:
+
+```text
+permission tests
+Clerk auth tests
+active-account middleware tests
+role-boundary tests
+```
+
+---
+
+# 242. Resource Privacy Regressions
+
+Ensure Phase 10.7 does not expose internal notes through existing creation/customer resource.
+
+---
+
+# 243. Product Regression
+
+Operational reads must not use live requestability as access authority.
+
+Test:
+
+```text
+linked MTO request created
+Product later unpublished
+staff detail still works
+```
+
+---
+
+# 244. Status Regression
+
+Run complete:
+
+```text
+RequestStatusMachineTest
+FurnitureRequestStatusTransitionTest
+FurnitureRequestStatusConcurrencyMysqlTest
+```
+
+---
+
+# 245. Attachment Regression
+
+If 10.6 implemented attachment metadata:
+
+run attachment authorization/privacy tests.
+
+---
+
+# 246. Full Verification Commands
+
+Run:
 
 ```bash
-php artisan test --filter=Attachment
+php artisan test --filter=OperationalFurnitureRequest
 php artisan test --filter=FurnitureRequest
-php artisan test --filter=Enquiry
 php artisan test
 
 vendor/bin/phpstan analyse
@@ -3127,45 +3834,29 @@ git diff --check
 php artisan route:list
 ```
 
-Validate:
-
-```text
-docs/api/openapi.yaml
-```
-
-parses.
-
-If migration added:
-
-```bash
-php artisan migrate:fresh --env=testing
-```
-
-through the project's normal test harness.
-
-Do not run destructive commands against non-disposable databases.
+Validate OpenAPI parse.
 
 ---
 
-# 199. MariaDB Verification
+# 247. Route Verification
 
-If new schema/constraint/capability concurrency exists, use:
+Report exact:
 
 ```text
-furnitureapp_test_disposable
+GET /api/v1/requests
+GET /api/v1/requests/{request}
+PATCH /api/v1/requests/{request}
 ```
 
-only.
-
-Report engine/version and exact integration tests.
+route names, middleware, permissions, controller actions, and ACTIVE/STUB state.
 
 ---
 
-# 200. Completion Report — Phase Status
+# 248. Completion Report — Phase Status
 
 Return:
 
-## Phase 10.6 status
+## Phase 10.7 status
 
 ```text
 PASS
@@ -3177,236 +3868,177 @@ or:
 BLOCKED
 ```
 
-If partial:
-
-```text
-PASS — inline attachments
-BLOCKED — separate-upload capability contract
-```
-
-only if that distinction accurately reflects the frozen contract.
-
 ---
 
-# 201. Completion Report — Persistence
+# 249. Completion Report — Routes
 
 Report:
 
 ```text
-existing attachment schema reused
+REQ-004 GET /requests
+REQ-005 GET /requests/{request}
+REQ-006 PATCH /requests/{request}
 ```
 
-or:
-
-```text
-new migration added
-```
-
-and exact table/model.
+and ACTIVE/STUB state.
 
 ---
 
-# 202. Completion Report — Parent Model
-
-Report how attachment parent integrity is implemented.
-
-Example:
-
-```text
-Request FK
-Enquiry FK
-XOR parent constraint
-max-one-per-parent unique guards
-```
-
-or actual architecture.
-
----
-
-# 203. Completion Report — Storage
+# 250. Completion Report — Permissions
 
 Report:
 
 ```text
-disk configuration key
-private visibility
-key generation
-provider abstraction
-```
-
-Do not report secrets.
-
----
-
-# 204. Completion Report — Validation
-
-Report exact:
-
-```text
-max bytes
-allowed types
-server MIME detection
-signature validation
-zero-byte behavior
-filename sanitization
+REQ-004 → requests.view
+REQ-005 → requests.view
+REQ-006 → requests.manage
 ```
 
 ---
 
-# 205. Completion Report — Resource
+# 251. Completion Report — Actor Matrix
 
 Report:
 
 ```text
-id
-filename
-content_type
-size
-url
+Anonymous
+CUSTOMER
+STAFF no permission
+STAFF requests.view
+STAFF requests.manage
+ADMIN
 ```
 
-and confirm hidden:
+for each operation.
+
+---
+
+# 252. Completion Report — Queue Filters
+
+Report exact implementation for:
 
 ```text
-storage_key
-disk
-capability digest
-numeric id
+search
+request_status
+product_id
+created_from
+created_to
+page
+per_page
 ```
 
 ---
 
-# 206. Completion Report — Inline Request
+# 253. Completion Report — Sort
 
 Report:
 
 ```text
-REQ-001 JSON path
-REQ-001 multipart path
-attachment optional
-atomic creation behavior
+created_at DESC
+id ASC
 ```
 
 ---
 
-# 207. Completion Report — Inline Enquiry
+# 254. Completion Report — Operational Resource
 
-Same.
+List exact exposed fields.
 
----
-
-# 208. Completion Report — Separate Upload
-
-Report exact state for:
+State exact rules for:
 
 ```text
-REQ-007
-ENQ-007
+staff_internal_notes
+user_id
+attachments
+product
 ```
 
 ---
 
-# 209. Completion Report — Capability
+# 255. Completion Report — Update Allow-List
+
+Exactly:
+
+```text
+request_status
+staff_internal_notes
+```
+
+---
+
+# 256. Completion Report — Lifecycle
 
 Report:
 
 ```text
-generation
-scope
-TTL
-single-use behavior
-digest persistence
-consumption timing
+state machine reused
+same-state behavior
+invalid transition behavior
+row locking
 ```
-
-if implemented.
 
 ---
 
-# 210. Completion Report — Authorization
+# 257. Completion Report — Notes
 
 Report:
 
 ```text
-anonymous inline
-CUSTOMER inline
-customer-own separate upload
-cross-customer rejection
-anonymous token behavior
-staff/admin behavior
+string/null
+normalization/bounds
+customer notes unaffected
+clear semantics
 ```
 
 ---
 
-# 211. Completion Report — Atomicity
+# 258. Completion Report — Atomicity
 
-Report failure points tested:
+Report combined:
 
 ```text
-invalid scalar
-invalid file
-storage failure
-DB failure after storage
-concurrent upload race
+status + staff_internal_notes
 ```
 
-and whether orphans remain.
+transaction behavior.
 
 ---
 
-# 212. Completion Report — Route State
+# 259. Completion Report — Immutability
 
-Report:
-
-```text
-POST /api/v1/requests
-POST /api/v1/enquiries
-POST /api/v1/requests/{request}/attachments
-POST /api/v1/enquiries/{enquiry}/attachments
-```
-
-as:
+Confirm Request intake remains immutable:
 
 ```text
-ACTIVE
-STUB/GATED
+product
+quantity
+contact
+dimensions
+material
+color
+notes
+ownership
+reference
+attachments
 ```
 
-individually.
+except through their explicitly separate attachment workflow.
 
 ---
 
-# 213. Completion Report — Attachment URLs
+# 260. Completion Report — Customer Account Boundary
 
-State:
+Confirm Staff management cannot modify:
 
 ```text
-permanent public URL = NO
-temporary URL = YES/NO
-resource url = value/null
+customer profile
+role
+credentials
+account status
 ```
 
 ---
 
-# 214. Completion Report — Malware Scanning
-
-State honestly:
-
-```text
-implemented
-```
-
-or:
-
-```text
-not implemented / deferred
-```
-
-Do not call signature validation malware scanning.
-
----
-
-# 215. Completion Report — Commerce Side Effects
+# 261. Completion Report — Side Effects
 
 Confirm:
 
@@ -3415,91 +4047,95 @@ Orders = NONE
 Payments = NONE
 Inventory = NONE
 Cart = NONE
-Price/quote = NONE
+Quote = NONE
+Notifications = NONE
 ```
 
 ---
 
-# 216. Completion Report — Schema
+# 262. Completion Report — OpenAPI
 
-Report exact.
-
-Unlike prior Group J phases, Phase 10.6 may legitimately need:
-
-```text
-NEW MIGRATION
-```
-
-if attachment metadata was not previously modeled.
-
-Do not force `NONE` if real persistence is required.
-
----
-
-# 217. Completion Report — Dependencies
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 218. Completion Report — Frontend
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 219. Completion Report — OpenAPI
-
-Report:
+State:
 
 ```text
 UNCHANGED
 ```
 
-or exact frozen-contract reconciliation for:
+or exact filter consistency correction.
+
+---
+
+# 263. Completion Report — Schema
+
+Expected:
 
 ```text
-attachment errors
-multipart encoding
-upload capability response
+NONE
 ```
 
 ---
 
-# 220. Completion Report — Tests
+# 264. Completion Report — Dependencies
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 265. Completion Report — Frontend
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 266. Completion Report — MariaDB
+
+If operational race test executed:
+
+report:
+
+```text
+engine/version
+class
+scenario
+iterations
+result
+```
+
+---
+
+# 267. Completion Report — Tests
 
 Report:
 
 ```text
-file validation tests
-signature spoof tests
-size boundaries
-filename safety
-inline Request upload
-inline Enquiry upload
-rollback/orphan cleanup
-resource privacy
-ownership
-capability token
-single-use race
-schema tests
-Request regressions
-Enquiry regressions
+permission matrix
+queue pagination
+filters
+search
+sorting
+detail privacy
+status updates
+internal notes
+combined atomic rollback
+immutability
+IDOR/role attacks
+historical Product independence
+attachments
+10.1–10.6 regressions
 full suite
-MariaDB if applicable
 ```
 
 ---
 
-# 221. Completion Report — Quality
+# 268. Completion Report — Quality
 
 Report:
 
@@ -3515,7 +4151,7 @@ OpenAPI parse
 
 ---
 
-# 222. Completion Report — Group J
+# 269. Completion Report — Group J
 
 Return:
 
@@ -3526,170 +4162,150 @@ Return:
 10.4 PASS
 10.5 PASS
 10.6 PASS/BLOCKED
-10.7 READY/BLOCKED
-10.8 NOT STARTED
+10.7 PASS/BLOCKED
+10.8 READY/BLOCKED
 ```
 
 ---
 
-# 223. Definition of Done
+# 270. Definition of Done
 
-Phase 10.6 is complete when:
+Phase 10.7 is complete when:
 
-- Request and Enquiry attachments use one security/storage architecture;
-- attachment is optional;
-- no more than one attachment is allowed per parent in V1;
-- JSON creation without attachment still works;
-- inline multipart creation works;
-- multipart cannot bypass scalar validation;
-- file maximum is enforced at 5 MiB;
-- JPEG is accepted only when actual content is valid JPEG;
-- PNG is accepted only when actual content is valid PNG;
-- WebP is accepted only when actual content is valid WebP;
-- PDF is accepted only when actual content is valid PDF;
-- GIF/SVG/TXT/ZIP and other unsupported types are rejected;
-- client MIME is not trusted;
-- extension is not trusted;
-- server-detected content type is persisted;
-- invalid/corrupt/zero-byte files are rejected;
-- filename traversal is neutralized;
-- storage filenames/keys are server-generated;
-- storage is private;
-- permanent public URLs are not exposed;
-- storage keys are not serialized;
-- attachment has opaque `att_...` ID;
-- Attachment resource exposes only approved metadata;
-- parent resources expose `attachments` metadata;
-- inline parent + attachment creation has explicit failure compensation;
-- failed creation does not leave intended live orphan files;
-- failed file storage does not leave a parent falsely reported as successful;
-- Product/Order/contact validation still occurs;
-- Request attachment does not alter Request commerce semantics;
-- Enquiry attachment does not alter Enquiry semantics;
-- Request/Enquiry lifecycle changes do not destroy attachments;
-- attachment creates no Order;
-- attachment creates no Payment;
-- attachment changes no inventory;
-- attachment creates no quote;
-- separate upload does not use parent ID alone as authorization;
-- anonymous separate upload requires a scoped capability;
-- capability is random, scoped, time-limited, and single-use;
-- raw capability is not stored or logged;
-- token consumption is concurrency-safe;
-- customer cannot upload to another customer's parent;
-- anonymous capability does not grant retrieval;
-- second V1 attachment cannot be added;
-- no replacement/delete semantics are invented;
-- attachment error codes match frozen contract;
-- any OpenAPI inconsistency is explicitly reconciled;
-- migration is forward-only if needed;
-- no hard-coded storage provider is introduced;
-- no credentials are committed;
+- REQ-004 operational collection is implemented;
+- REQ-005 operational detail is implemented;
+- REQ-006 controlled update is implemented;
+- operational routes require authentication;
+- anonymous actors are rejected;
+- CUSTOMER cannot use operational routes;
+- `requests.view` governs operational reads;
+- `requests.manage` governs operational mutation;
+- view-only Staff cannot PATCH;
+- Staff operational access is not treated as ownership;
+- Admin access remains permission-governed;
+- operational queue uses global pagination;
+- queue sorting is `created_at DESC, id ASC`;
+- `search` is implemented against approved Request fields;
+- `request_status` filter is CLOSED;
+- `product_id` filter uses opaque ID;
+- created date filters use ISO8601 UTC;
+- unknown filters are rejected;
+- filters apply before pagination;
+- operational search does not become unrestricted customer search;
+- resource is explicitly serialized;
+- customer contact is exposed only as Request operational data;
+- numeric DB user ID is not exposed;
+- Product summary remains safe;
+- archived/unpublished Product does not erase historical Request;
+- attachment storage internals are not exposed;
+- internal notes are properly permission-scoped;
+- REQ-006 accepts only `request_status` and `staff_internal_notes`;
+- all original customer intake fields remain immutable;
+- request reference remains immutable;
+- ownership remains immutable;
+- lifecycle uses Phase 10.3 state machine;
+- direct close remains valid;
+- CLOSED remains terminal;
+- same-status remains idempotent;
+- invalid transition remains 409;
+- notes-only updates work;
+- status-only updates work;
+- combined updates are atomic;
+- invalid status rolls back note changes;
+- same status + changed notes updates only notes;
+- same status + same notes can be no-op;
+- Request row is current-state locked for mutation;
+- transient DB conflicts use existing bounded retry;
+- business conflicts are not retried;
+- no Request→Order conversion exists;
+- no quote exists;
+- no Payment is created;
+- no Inventory mutation occurs;
+- no Cart mutation occurs;
+- no Notification is created;
+- Staff cannot mutate customer profile/account;
+- Staff cannot change customer roles/credentials;
+- operational responses are `private, no-store`;
+- OpenAPI is aligned with frozen REQ-004/005/006 behavior;
+- no schema migration is added;
+- no dependency is added;
 - no frontend work occurs;
-- full regression suite passes;
-- PHPStan reports zero errors;
+- full regressions pass;
+- PHPStan has zero errors;
 - Pint passes;
 - Composer audit is clean;
 - diff check passes.
 
 ---
 
-# 224. Out of Scope
+# 271. Out of Scope
 
 Do not implement:
 
 ```text
-multiple attachments
-attachment replacement
-attachment deletion
-public attachment browsing
-permanent download URLs
-image resizing
-thumbnail generation
-image compression
-EXIF processing
-OCR
-file-to-PDF conversion
-Cloudinary-specific integration
-S3-specific domain coupling
-malware service integration unless separately approved
-Product media upload
-Order attachments
-chat/message threads
+Phase 10.8 Group J closure
+General Enquiry Staff/Admin management
+customer Request history unless already separately approved
+Request deletion
+bulk Request mutation
+assignment to Staff
+CRM/ticketing
+CONTACTED status
+quotation workflow
+Request→Order conversion
+production scheduling
+payment
+ClickPesa
+inventory
 notifications
 email
+chat
 frontend
-ClickPesa
-Payments
-Order workflow
 ```
 
 ---
 
-# 225. STOP Condition
+# 272. STOP Condition
 
-STOP when the backend can safely perform:
+STOP when authorized operations satisfy:
 
 ```text
-REQ-001 / ENQ-001
-        ↓
-JSON or multipart transport
-        ↓
-existing scalar/domain validation
-        ↓
-optional attachment
-        ↓
-5 MiB/type/signature/name validation
-        ↓
-private storage
-        ↓
-attachment metadata
-        ↓
-parent-scoped private resource
+requests.view
+    ↓
+GET /requests
+GET /requests/{request}
+    ↓
+private operational representation
 ```
 
-and, where the frozen separate-upload contract is fully representable:
+and:
 
 ```text
-REQ-007 / ENQ-007
-        ↓
-parent authorization
-+
-scoped single-use upload capability
-        ↓
-one validated private attachment
+requests.manage
+    ↓
+PATCH /requests/{request}
+    ↓
+{
+  request_status?,
+  staff_internal_notes?
+}
+    ↓
+one locked atomic Request update
 ```
 
 with:
 
 ```text
-no permanent public URL
-no storage-key leak
-no cross-parent access
-no commerce side effects
+original customer intake immutable
+customer account untouched
+Request ≠ Order
+Request ≠ Payment
+Request ≠ Quote
+Request ≠ Inventory operation
 ```
 
-Do not continue automatically to Phase 10.7.
+Do not continue automatically to Phase 10.8.
 
 DO NOT COMMIT, STAGE OR PUSH.
 
 The project owner handles all Git operations.
----
-
-# Group J Tracking
-
-```text
-10.1 PASS — Furniture Request API foundation (ADR/BACKEND-043)
-10.2 PASS — Request validation (ADR/BACKEND-044)
-10.3 PASS — Request status lifecycle (ADR/BACKEND-045)
-10.4 PASS — Product-linked requests (ADR/BACKEND-046)
-10.5 PASS — General enquiries (ADR/BACKEND-047)
-10.6 PASS — Inline private attachments (ADR/BACKEND-048)
-        BLOCKED — separate-upload capability (REQ-007/ENQ-007): frozen prose requires a creation-response
-        scoped upload token, but no token field is defined in openapi.yaml or api-resources.md
-10.7 NOT STARTED — Staff/admin request management
-10.8 NOT STARTED — Request/enquiry tests
-```
-
-Route state remains **STUB/GATED** for `POST /api/v1/requests`, `POST /api/v1/enquiries`,
-`POST /api/v1/requests/{request}/attachments`, and `POST /api/v1/enquiries/{enquiry}/attachments`.

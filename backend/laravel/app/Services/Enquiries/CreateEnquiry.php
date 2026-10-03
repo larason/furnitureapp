@@ -7,6 +7,7 @@ use App\Models\Enquiry;
 use App\Services\Attachments\AttachFileToParent;
 use App\Support\EnquiryStatus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -58,7 +59,13 @@ final class CreateEnquiry
             });
         } catch (Throwable $exception) {
             if ($storedAttachment instanceof Attachment) {
-                $this->attachments->delete($storedAttachment);
+                try {
+                    $this->attachments->delete($storedAttachment);
+                } catch (Throwable $cleanup) {
+                    Log::warning('attachment.cleanup_failed', [
+                        'exception' => $cleanup::class,
+                    ]);
+                }
             }
 
             throw $exception;

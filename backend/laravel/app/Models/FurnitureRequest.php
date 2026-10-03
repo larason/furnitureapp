@@ -2,16 +2,19 @@
 
 namespace App\Models;
 
+use App\Services\Attachments\AttachFileToParent;
 use App\Support\RequestField;
 use App\Support\RequestStatus;
 use Database\Factories\FurnitureRequestFactory;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
@@ -83,11 +86,31 @@ class FurnitureRequest extends Model
 
     protected $table = self::TABLE;
 
+    /** @var Collection<int, Attachment>|null */
+    private ?Collection $attachmentsForCleanup = null;
+
     protected static function booted(): void
     {
         static::saving(function (FurnitureRequest $request): void {
             $request->normalizeFields();
             $request->assertValid();
+        });
+
+        static::deleting(function (FurnitureRequest $request): void {
+            $attachments = $request->attachments()->get();
+            $request->attachmentsForCleanup = $attachments;
+        });
+
+        static::deleted(function (FurnitureRequest $request): void {
+            $attachments = $request->attachmentsForCleanup;
+            $request->attachmentsForCleanup = null;
+            $files = app(AttachFileToParent::class);
+
+            DB::afterCommit(function () use ($files, $attachments): void {
+                foreach ($attachments as $attachment) {
+                    $files->delete($attachment);
+                }
+            });
         });
     }
 
@@ -142,6 +165,7 @@ class FurnitureRequest extends Model
         return $this->belongsTo(Product::class);
     }
 
+    /** @return HasMany<Attachment, $this> */
     public function attachments(): HasMany
     {
         return $this->hasMany(Attachment::class);
