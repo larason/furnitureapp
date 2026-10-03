@@ -11,6 +11,7 @@ use App\Services\Attachments\UploadCapabilityService;
 use App\Support\EnquiryIdentifier;
 use App\Support\FurnitureRequestIdentifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\AuthenticatesApiUser;
 use Tests\Support\CreatesAttachmentFiles;
@@ -162,6 +163,33 @@ final class ScopedAttachmentUploadApiTest extends TestCase
         $this->withHeaders(['X-Upload-Token' => $token, 'Content-Type' => self::MULTIPART_CONTENT_TYPE])
             ->post(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::ATTACHMENTS_PATH, ['attachment' => $this->pngUpload('reference.png')])
             ->assertUnauthorized();
+    }
+
+    public function test_failed_capability_issuance_rolls_back_request_creation(): void
+    {
+        Schema::drop('attachment_upload_capabilities');
+
+        $this->postJson('/api/v1/requests', [
+            'name' => 'Asha Mwangi',
+            'phone' => '+255700000001',
+            'notes' => 'Please make something similar',
+        ])->assertStatus(500);
+
+        $this->assertDatabaseCount('furniture_requests', 0);
+    }
+
+    public function test_failed_capability_issuance_rolls_back_enquiry_creation(): void
+    {
+        Schema::drop('attachment_upload_capabilities');
+
+        $this->postJson('/api/v1/enquiries', [
+            'name' => 'Asha Mwangi',
+            'phone' => '+255700000001',
+            'subject' => 'Custom dining table',
+            'message' => 'I need a custom dining table for six people.',
+        ])->assertStatus(500);
+
+        $this->assertDatabaseCount('enquiries', 0);
     }
 
     public function test_capability_is_persisted_as_an_application_keyed_digest(): void

@@ -26,6 +26,7 @@ use App\Support\PermissionName;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 
 class RequestController extends V1Controller
 {
@@ -36,8 +37,7 @@ class RequestController extends V1Controller
     ): JsonResponse {
         $input = $request->normalizedInput();
         $actor = $request->user();
-
-        $furnitureRequest = $creator->create(new CreateFurnitureRequestCommand(
+        $command = new CreateFurnitureRequestCommand(
             actor: $actor instanceof User ? $actor : null,
             productId: $input->productId,
             quantity: $input->quantity,
@@ -49,7 +49,18 @@ class RequestController extends V1Controller
             color: $input->color,
             notes: $input->notes,
             attachment: $request->validatedAttachment(),
-        ));
+        );
+
+        // Capability issuance shares the creation transaction so a failure can
+        // never strand a committed request without its upload capability.
+        [$furnitureRequest, $uploadToken] = DB::transaction(function () use ($request, $creator, $capabilities, $command): array {
+            $furnitureRequest = $creator->create($command);
+            $uploadToken = $request->validatedAttachment() === null
+                ? $capabilities->issueForRequest((int) $furnitureRequest->getKey())
+                : null;
+
+            return [$furnitureRequest, $uploadToken];
+        });
 
         $furnitureRequest->loadMissing(['product', 'attachments']);
         $headers = [
@@ -57,8 +68,8 @@ class RequestController extends V1Controller
             'Vary' => 'Authorization',
         ];
 
-        if ($request->validatedAttachment() === null) {
-            $headers['X-Upload-Token'] = $capabilities->issueForRequest((int) $furnitureRequest->getKey());
+        if ($uploadToken !== null) {
+            $headers['X-Upload-Token'] = $uploadToken;
         }
 
         return (new FurnitureRequestResource($furnitureRequest))

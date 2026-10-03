@@ -18,13 +18,13 @@ Composer audit = PASS
 OpenAPI = PASS
 git diff --check = PASS
 
-Group J = NOW CLOSED
+Group J = CLOSED
 ```
 
-The only remaining blocker is:
+There is no remaining blocker.
 
 ```text
-required MariaDB concurrency races have not yet executed
+required MariaDB concurrency races have been executed
 ```
 
 The repository implementation is complete. This task is now a **database-engine verification gate**, not a feature-development phase.

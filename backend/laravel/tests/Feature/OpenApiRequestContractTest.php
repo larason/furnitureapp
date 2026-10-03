@@ -39,6 +39,34 @@ class OpenApiRequestContractTest extends TestCase
         }
     }
 
+    public function test_request_creation_requires_at_least_one_contact_method(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        foreach (['CreateRequestRequest', 'CreateRequestMultipartRequest'] as $schema) {
+            $anyOf = $document['components']['schemas'][$schema]['anyOf'];
+            $this->assertSame(
+                [['required' => ['phone']], ['required' => ['email']]],
+                $anyOf,
+                "{$schema} must require at least one of phone or email.",
+            );
+        }
+    }
+
+    public function test_req_002_collection_uses_the_lighter_customer_summary(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        $items = $document['paths']['/me/requests']['get']['responses']['200']['content']['application/json']['schema']['properties']['data']['items'];
+        $this->assertSame('#/components/schemas/CustomerFurnitureRequestSummary', $items['$ref']);
+
+        $summary = $document['components']['schemas']['CustomerFurnitureRequestSummary'];
+
+        foreach (['id', 'product_id', 'quantity', 'request_status', 'created_at'] as $field) {
+            $this->assertArrayHasKey($field, $summary['properties'], "REQ-002 summary must expose {$field}.");
+        }
+    }
+
     public function test_req_001_multipart_documents_bracket_encoded_dimensions(): void
     {
         $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));

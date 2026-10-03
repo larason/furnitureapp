@@ -34,6 +34,67 @@ class OpenApiEnquiryContractTest extends TestCase
         }
     }
 
+    public function test_enq_002_collection_uses_the_lighter_customer_summary(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        $items = $document['paths']['/me/enquiries']['get']['responses']['200']['content']['application/json']['schema']['properties']['data']['items'];
+        $this->assertSame('#/components/schemas/CustomerEnquirySummary', $items['$ref']);
+
+        $summary = $document['components']['schemas']['CustomerEnquirySummary'];
+
+        foreach (['id', 'subject', 'enquiry_status', 'created_at'] as $field) {
+            $this->assertArrayHasKey($field, $summary['properties'], "ENQ-002 summary must expose {$field}.");
+        }
+    }
+
+    public function test_operational_enquiry_responses_use_the_operational_schema(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        $collectionItems = $document['paths']['/enquiries']['get']['responses']['200']['content']['application/json']['schema']['properties']['data']['items'];
+        $this->assertSame('#/components/schemas/OperationalEnquiry', $collectionItems['$ref']);
+
+        foreach ([['/enquiries/{enquiry}', 'get'], ['/enquiries/{enquiry}/close', 'post']] as [$path, $method]) {
+            $data = $document['paths'][$path][$method]['responses']['200']['content']['application/json']['schema']['properties']['data'];
+            $this->assertSame('#/components/schemas/OperationalEnquiry', $data['$ref'], "{$method} {$path} must use OperationalEnquiry.");
+        }
+
+        $operational = $document['components']['schemas']['OperationalEnquiry']['allOf'][1]['properties'];
+        $this->assertArrayHasKey('staff_internal_notes', $operational);
+        $this->assertArrayHasKey('user_id', $operational);
+        $this->assertSame('#/components/schemas/Enquiry', $document['components']['schemas']['OperationalEnquiry']['allOf'][0]['$ref']);
+    }
+
+    public function test_enquiry_multipart_documents_the_anonymous_contact_requirement(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        $schema = $document['components']['schemas']['CreateEnquiryMultipartRequest'];
+
+        // Anonymous-only requirements stay actor-conditional: authenticated
+        // customers may omit name/contact because the server derives them.
+        $this->assertSame(['subject', 'message'], $schema['required']);
+
+        foreach (['name', 'email', 'phone'] as $field) {
+            $this->assertStringContainsStringIgnoringCase(
+                'anonymous',
+                $schema['properties'][$field]['description'],
+                "{$field} must document the anonymous requirement.",
+            );
+        }
+    }
+
+    public function test_nullable_enquiry_category_enums_include_null(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        foreach (['Enquiry', 'CustomerEnquirySummary', 'CreateEnquiryRequest', 'CreateEnquiryMultipartRequest'] as $schema) {
+            $enum = $document['components']['schemas'][$schema]['properties']['category']['enum'];
+            $this->assertContains(null, $enum, "{$schema}.category enum must allow a null category.");
+        }
+    }
+
     public function test_create_enquiry_request_is_a_strict_allow_list(): void
     {
         $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));

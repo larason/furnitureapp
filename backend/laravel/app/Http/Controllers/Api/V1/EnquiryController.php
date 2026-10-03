@@ -24,6 +24,7 @@ use App\Support\EnquiryIdentifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 
 class EnquiryController extends V1Controller
 {
@@ -34,8 +35,7 @@ class EnquiryController extends V1Controller
     ): JsonResponse {
         $input = $request->normalizedInput();
         $actor = $request->user();
-
-        $enquiry = $creator->create(new CreateEnquiryCommand(
+        $command = new CreateEnquiryCommand(
             actor: $actor instanceof User ? $actor : null,
             name: $input->name,
             phone: $input->phone,
@@ -46,7 +46,18 @@ class EnquiryController extends V1Controller
             productId: $input->productId,
             orderId: $input->orderId,
             attachment: $request->validatedAttachment(),
-        ));
+        );
+
+        // Capability issuance shares the creation transaction so a failure can
+        // never strand a committed enquiry without its upload capability.
+        [$enquiry, $uploadToken] = DB::transaction(function () use ($request, $creator, $capabilities, $command): array {
+            $enquiry = $creator->create($command);
+            $uploadToken = $request->validatedAttachment() === null
+                ? $capabilities->issueForEnquiry((int) $enquiry->getKey())
+                : null;
+
+            return [$enquiry, $uploadToken];
+        });
 
         $enquiry->loadMissing(['product', 'order', 'attachments']);
         $headers = [
@@ -54,8 +65,8 @@ class EnquiryController extends V1Controller
             'Vary' => 'Authorization',
         ];
 
-        if ($request->validatedAttachment() === null) {
-            $headers['X-Upload-Token'] = $capabilities->issueForEnquiry((int) $enquiry->getKey());
+        if ($uploadToken !== null) {
+            $headers['X-Upload-Token'] = $uploadToken;
         }
 
         return (new EnquiryResource($enquiry))

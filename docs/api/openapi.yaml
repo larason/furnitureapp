@@ -1414,6 +1414,33 @@ components:
           - 'null'
           readOnly: true
           description: Null for anonymous, derived from auth
+    CustomerFurnitureRequestSummary:
+      type: object
+      required:
+      - id
+      - request_status
+      properties:
+        id:
+          type: string
+          readOnly: true
+        product_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        quantity:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        request_status:
+          $ref: '#/components/schemas/RequestStatus'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      additionalProperties: false
+      description: Lighter ownership-scoped summary returned by the REQ-002 collection (api-contract.md §26.20).
     OperationalFurnitureRequest:
       allOf:
       - $ref: '#/components/schemas/MadeToOrderRequest'
@@ -1493,6 +1520,12 @@ components:
           - 'null'
           maxLength: 5000
       additionalProperties: false
+      anyOf:
+      - required:
+        - phone
+      - required:
+        - email
+      description: At least one contact method (phone or email) is required for both anonymous and authenticated submissions.
     CreateRequestMultipartRequest:
       type: object
       required:
@@ -1562,6 +1595,12 @@ components:
           - 'null'
           maxLength: 5000
       additionalProperties: false
+      anyOf:
+      - required:
+        - phone
+      - required:
+        - email
+      description: At least one contact method (phone or email) is required for both anonymous and authenticated submissions.
     Enquiry:
       type: object
       required:
@@ -1602,6 +1641,7 @@ components:
           - PRODUCT
           - DELIVERY
           - OTHER
+          - null
           description: CLOSED, nullable
         product_id:
           type:
@@ -1646,6 +1686,57 @@ components:
           type: string
           format: date-time
           readOnly: true
+    OperationalEnquiry:
+      allOf:
+      - $ref: '#/components/schemas/Enquiry'
+      - type: object
+        properties:
+          staff_internal_notes:
+            type:
+            - string
+            - 'null'
+            description: Included only for actors authorized with enquiries.manage; null otherwise.
+          user_id:
+            type:
+            - string
+            - 'null'
+            readOnly: true
+            description: Null for anonymous, derived from auth.
+    CustomerEnquirySummary:
+      type: object
+      required:
+      - id
+      - subject
+      - enquiry_status
+      properties:
+        id:
+          type: string
+          readOnly: true
+        subject:
+          type: string
+        category:
+          type:
+          - string
+          - 'null'
+          enum:
+          - GENERAL
+          - PRODUCT
+          - DELIVERY
+          - OTHER
+          - null
+        product_id:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        enquiry_status:
+          $ref: '#/components/schemas/EnquiryStatus'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      additionalProperties: false
+      description: Lighter ownership-scoped summary returned by the ENQ-002 collection (api-contract.md §27.20).
     CreateEnquiryRequest:
       type: object
       required:
@@ -1676,6 +1767,7 @@ components:
           - PRODUCT
           - DELIVERY
           - OTHER
+          - null
         product_id:
           type:
           - string
@@ -1706,16 +1798,19 @@ components:
           type:
           - string
           - 'null'
+          description: Required for anonymous; optional/derived from the account for an authenticated customer
         email:
           type:
           - string
           - 'null'
           format: email
+          description: Anonymous requires at least one of phone/email; optional/derived for an authenticated customer
         phone:
           type:
           - string
           - 'null'
           maxLength: 30
+          description: Anonymous requires at least one of phone/email; optional/derived for an authenticated customer
         subject:
           type: string
         message:
@@ -1729,6 +1824,7 @@ components:
           - PRODUCT
           - DELIVERY
           - OTHER
+          - null
         product_id:
           type:
           - string
@@ -1737,6 +1833,7 @@ components:
           type:
           - string
           - 'null'
+          description: Anonymous submission must omit; authenticated customers may reference an order they own
       additionalProperties: false
     Attachment:
       type: object
@@ -3816,7 +3913,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/MadeToOrderRequest'
+                      $ref: '#/components/schemas/CustomerFurnitureRequestSummary'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
   /me/requests/{request}:
@@ -3907,7 +4004,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Enquiry'
+                      $ref: '#/components/schemas/OperationalEnquiry'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
         '403':
@@ -3936,7 +4033,7 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/Enquiry'
+                    $ref: '#/components/schemas/OperationalEnquiry'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
@@ -3964,7 +4061,7 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/Enquiry'
+                    $ref: '#/components/schemas/OperationalEnquiry'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
@@ -4041,7 +4138,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Enquiry'
+                      $ref: '#/components/schemas/CustomerEnquirySummary'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
   /me/enquiries/{enquiry}:

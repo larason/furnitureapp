@@ -4,6 +4,7 @@ namespace App\Services\Attachments;
 
 use App\Exceptions\AttachmentCleanupRecoveryRequired;
 use App\Exceptions\AttachmentCleanupRequired;
+use App\Jobs\ProcessAttachmentCleanupTasks;
 use App\Models\Attachment;
 use App\Models\AttachmentCleanupTask;
 use App\Models\Enquiry;
@@ -60,6 +61,12 @@ final class AttachFileToParent
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+
+        // Dispatch once the task row is durably committed so orphaned files are
+        // reclaimed without requiring an unrelated parent delete or manual run.
+        DB::afterCommit(static function (): void {
+            ProcessAttachmentCleanupTasks::dispatch();
+        });
     }
 
     public function recoverCleanup(string $disk, string $key): void
