@@ -114,62 +114,6 @@ furnitureapp/
 
 ---
 
-## Detailed Directory & File Breakdown
-
-### 1. Backend (`/backend/laravel`)
-Contains the Laravel REST API backend powering both the web and mobile frontends:
-
-- **`app/Authorization/`**: Centralized policy enforcement (`Authorization.php`) ensuring actors only execute permitted actions.
-- **`app/Exceptions/Api/`**: Consistent JSON error formatting conforming to the API contract (`ApiException.php`, `ApiExceptionRenderer.php`).
-- **`app/Http/Controllers/Api/V1/`**: Resource endpoints for authentication, catalog, cart, checkout, orders, inventory, payments, enquiries, and administration.
-- **`app/Http/Middleware/`**: Handles JSON request validation (`ValidateJsonBody.php`), correlation IDs (`AssignRequestId.php`), operational role checks (`OperationalAccess.php`), and administrative authorization (`AdministrativeAccess.php`).
-- **`app/Models/`**: Core Eloquent entities:
-  - `User`, `CustomerProfile`, `StaffProfile`: User identity and profiles.
-  - `Category`, `Product`, `ProductVariant`, `ProductImage`, `ProductStock`: Catalog and inventory.
-  - `Cart`, `CartItem`: Shopping cart state.
-  - `Order`, `OrderItem`, `OrderStatusHistory`: Order lifecycle and tracking.
-  - `Payment`, `PaymentWebhookEvent`: Payment processing and idempotent webhook logs.
-  - `Delivery`: Fulfilment details (pickup or delivery).
-  - `FurnitureRequest`: Custom made-to-order requests.
-  - `Enquiry`: General customer enquiries.
-  - `Notification`: In-app and system notifications.
-- **`app/Support/`**: Strongly typed PHP enums and utilities (`OrderStatus`, `PaymentStatus`, `FulfillmentType`, `ApiErrorCode`, `ReferenceGenerator`, etc.).
-- **`database/migrations/`**: Authoritative migrations defining relational tables, foreign key constraints, and integrity check constraints.
-- **`tests/`**: Feature tests (`tests/Feature/`) verifying API endpoints, auth, and error contracts; Unit tests (`tests/Unit/`) verifying domain logic.
-
-### 2. Frontend (`/frontend`)
-Contains customer-facing and internal frontends along with shared design tokens:
-
-- **`frontend/web/`**: Next.js (App Router) + Material UI (MUI) client website and administration panel.
-- **`frontend/app/`**: Flutter (Material 3) cross-platform mobile application.
-- **`frontend/design-system/`**: Single source of truth for visual tokens:
-  - `DESIGN.md`: Specification document for typography (Futura Condensed display, sans-serif body), monochrome/neutral color palette, pill buttons, and flat cards.
-  - `tokens.css` & `design-tokens.json`: Compiled CSS variables and JSON tokens consumable by MUI and Flutter.
-  - `USAGE.md`: Instructions for consuming tokens and avoiding arbitrary styling values.
-- **`frontend/AGENTS.md`**: Frontend-specific development rules enforcing design token compliance and component reuse.
-
-### 3. Documentation (`/docs`)
-Authoritative documentation governing system design and behavior:
-
-- **`docs/api/`**:
-  - `api-contract.md`: Comprehensive API contract defining all `/api/v1` routes, status codes, query parameters, request bodies, and role access.
-  - `api-conventions.md`: Standards for error responses, pagination, date-time formats (ISO 8601 UTC), sorting, and idempotency.
-  - `api-resources.md`: Exact serialization schemas for every exposed API resource.
-  - `api-examples.md`: Verified request and response JSON payloads.
-  - `openapi.yaml`: OpenAPI 3.0 specification for API tooling and client generation.
-- **`docs/domain/business-rules.md`**: Domain logic constraints including cart calculations, inventory reservation, order state transitions, and payment webhooks.
-- **`docs/decisions.md`**: Architecture Decision Records (ADRs) tracking architectural and schema choices.
-- **`docs/VISION.md`**: Foundational vision and business goals.
-
-### 4. Roadmap & Development Records (`/phases`)
-Detailed documentation of the phased implementation approach (Phase Group A: API Contract, Phase Group B: Design & Quality Baseline, Phase Group C: Data Modeling & Schema Implementation).
-
-### 5. Root Meta & Planning Files
-- **`AGENTS.md`**: Master system guidelines, rules of engagement, architectural invariants, and the dependency-first development roadmap.
-- **`future.md`**: Future feature wishlist, promotional campaign concepts, and deferred improvements.
-
----
-
 ## Development Workflows
 
 ### Backend Quality Commands (Laravel)
@@ -196,10 +140,3 @@ To inspect or serve design system assets:
 ```bash
 pnpm tools-dev run web
 ```
-
-# Delivery fee
-
-For delivery orders, Checkout creates a pending order and shows the
-provisional subtotal while the delivery fee is pending. After staff or admin
-sets the location-based fee, Checkout shows the final total. Payment can
-proceed only after the fee is finalized.
