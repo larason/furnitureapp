@@ -88,26 +88,19 @@ final class CartItemResource extends JsonResource
     }
 
     /**
-     * Embedded `ProductSummary`: `price` is the product's catalog price
-     * (cheapest active variant), independent of this line's variant `unit_price`.
+     * Embedded `ProductSummary`: `price` is the product's base/display price,
+     * independent of this line's variant `unit_price`.
      *
      * @return array<string, mixed>
      */
     private function productSummary(Product $product): array
     {
-        $cheapestActive = $product->variants
-            ->where('is_active', true)
-            ->sortBy('price_amount')
-            ->first();
-
         return [
             'id' => ProductIdentifier::encode($product),
             'name' => $product->name,
             'slug' => $product->slug,
             'product_type' => $product->product_type->value,
-            'price' => $cheapestActive === null
-                ? null
-                : $this->money((int) $cheapestActive->price_amount, $cheapestActive->price_currency),
+            'price' => $this->money((int) $product->price_amount, $product->price_currency),
             'primary_image' => $product->primaryImage === null ? null : [
                 'id' => ProductImageIdentifier::encode($product->primaryImage),
                 'url' => app(ProductImageStorage::class)->publicUrl($product->primaryImage->file_path),

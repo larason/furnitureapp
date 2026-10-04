@@ -12,6 +12,7 @@ use App\Support\ProductIdentifier;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
@@ -19,6 +20,10 @@ class ProductManagementApiTest extends TestCase
 {
     use AuthenticatesApiUser;
     use RefreshDatabase;
+
+    private const SECOND_PRODUCT_NAME = 'Second Product';
+
+    private const PRODUCTS_URL = '/api/v1/products';
 
     protected function setUp(): void
     {
@@ -31,7 +36,7 @@ class ProductManagementApiTest extends TestCase
         $category = Category::factory()->create(['is_active' => true]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_manager']));
 
-        $response = $this->withHeaders($headers)->postJson('/api/v1/products', [
+        $response = $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, [
             'name' => 'Made to Order Oak Desk',
             'slug' => 'made-to-order-oak-desk',
             'description' => 'Built to your measurements.',
@@ -49,7 +54,7 @@ class ProductManagementApiTest extends TestCase
         $this->assertSame(125000000, $product->price_amount);
         $this->assertSame('TZS', $product->price_currency);
         $this->assertSame(0, ProductVariant::query()->where('product_id', $product->id)->count());
-        $this->getJson('/api/v1/products/'.ProductIdentifier::encode($product))
+        $this->getJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($product))
             ->assertOk()
             ->assertJsonPath('data.price.amount', 125000000);
     }
@@ -61,7 +66,7 @@ class ProductManagementApiTest extends TestCase
         $secondVariant = ProductVariant::factory()->create(['product_id' => $product->id, 'price_amount' => 150]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_updater']));
 
-        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($product), [
+        $this->withHeaders($headers)->patchJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($product), [
             'price' => ['amount' => 120, 'currency' => 'TZS'],
             'is_published' => false,
         ])->assertOk()
@@ -78,7 +83,7 @@ class ProductManagementApiTest extends TestCase
         $product = Product::factory()->create(['price_amount' => 100]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'empty_price_rejector']));
 
-        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($product), [
+        $this->withHeaders($headers)->patchJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($product), [
             'price' => [],
         ])->assertUnprocessable();
 
@@ -98,13 +103,13 @@ class ProductManagementApiTest extends TestCase
             'category_id' => CategoryIdentifier::encode($category),
         ];
 
-        $this->withHeaders($headers)->postJson('/api/v1/products', $payload)
+        $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, $payload)
             ->assertUnprocessable()
             ->assertJsonPath('errors.0.code', 'BUSINESS_RULE_VIOLATION')
             ->assertJsonPath('errors.0.field', 'is_published');
 
         $draft = Product::factory()->create(['category_id' => $category->id, 'product_type' => 'IN_STOCK', 'is_published' => false]);
-        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($draft), ['is_published' => true])
+        $this->withHeaders($headers)->patchJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($draft), ['is_published' => true])
             ->assertUnprocessable()
             ->assertJsonPath('errors.0.code', 'BUSINESS_RULE_VIOLATION');
 
@@ -117,7 +122,7 @@ class ProductManagementApiTest extends TestCase
         $category = Category::factory()->create(['is_active' => true]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'root_category_rejector']));
 
-        $this->withHeaders($headers)->postJson('/api/v1/products', [
+        $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, [
             'name' => 'Root Category Product',
             'slug' => 'root-category-product',
             'product_type' => 'MADE_TO_ORDER',
@@ -126,7 +131,7 @@ class ProductManagementApiTest extends TestCase
         ])->assertNotFound()->assertJsonPath('errors.0.field', 'category_id');
 
         $product = Product::factory()->create(['category_id' => $category->id]);
-        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($product), [
+        $this->withHeaders($headers)->patchJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($product), [
             'category_id' => CategoryIdentifier::encode($root),
         ])->assertNotFound()->assertJsonPath('errors.0.field', 'category_id');
 
@@ -189,7 +194,7 @@ class ProductManagementApiTest extends TestCase
     public function test_operational_product_search_treats_like_wildcards_as_literal_characters(): void
     {
         Product::factory()->create(['slug' => 'first-product', 'name' => 'First Product']);
-        Product::factory()->create(['slug' => 'second-product', 'name' => 'Second Product']);
+        Product::factory()->create(['slug' => 'second-product', 'name' => self::SECOND_PRODUCT_NAME]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_search_reader']));
 
         $this->withHeaders($headers)->getJson('/api/v1/admin/products?search=%25')
@@ -215,7 +220,7 @@ class ProductManagementApiTest extends TestCase
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_viewer']));
 
         $this->withHeaders($headers)->getJson('/api/v1/admin/products/'.$product->slug)->assertOk();
-        $this->withHeaders($headers)->patchJson('/api/v1/products/'.$product->slug, ['name' => 'Changed'])->assertForbidden();
+        $this->withHeaders($headers)->patchJson(self::PRODUCTS_URL.'/'.$product->slug, ['name' => 'Changed'])->assertForbidden();
     }
 
     public function test_product_management_rejects_untrusted_payloads_and_inactive_categories(): void
@@ -230,11 +235,11 @@ class ProductManagementApiTest extends TestCase
             'category_id' => 'cat_'.base_convert((string) $category->id, 10, 36),
         ];
 
-        $this->withHeaders($headers)->postJson('/api/v1/products', [...$payload, 'variants' => []])
+        $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, [...$payload, 'variants' => []])
             ->assertUnprocessable();
-        $this->withHeaders($headers)->postJson('/api/v1/products', $payload)
+        $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, $payload)
             ->assertNotFound();
-        $this->withHeaders($headers)->postJson('/api/v1/products', [...$payload, 'price' => ['amount' => '100', 'currency' => 'TZS']])
+        $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, [...$payload, 'price' => ['amount' => '100', 'currency' => 'TZS']])
             ->assertUnprocessable();
         $this->assertDatabaseMissing('products', ['slug' => 'invalid-product']);
     }
@@ -242,17 +247,17 @@ class ProductManagementApiTest extends TestCase
     public function test_product_management_reports_slug_collisions_without_persisting_partial_update(): void
     {
         $product = Product::factory()->create(['slug' => 'first-product', 'name' => 'First Product']);
-        $other = Product::factory()->create(['slug' => 'second-product', 'name' => 'Second Product']);
+        $other = Product::factory()->create(['slug' => 'second-product', 'name' => self::SECOND_PRODUCT_NAME]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_slug_manager']));
 
-        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($other), [
+        $this->withHeaders($headers)->patchJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($other), [
             'name' => 'Changed Product',
             'slug' => $product->slug,
         ])->assertStatus(409)
             ->assertJsonPath('errors.0.code', 'CONFLICT')
             ->assertJsonPath('errors.0.field', 'slug');
 
-        $this->assertSame('Second Product', $other->fresh()->name);
+        $this->assertSame(self::SECOND_PRODUCT_NAME, $other->fresh()->name);
     }
 
     public function test_product_management_rejects_a_slug_held_by_a_soft_deleted_product(): void
@@ -262,7 +267,7 @@ class ProductManagementApiTest extends TestCase
         $category = Category::factory()->create(['is_active' => true]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'soft_deleted_slug_manager']));
 
-        $this->withHeaders($headers)->postJson('/api/v1/products', [
+        $this->withHeaders($headers)->postJson(self::PRODUCTS_URL, [
             'name' => 'Replacement Product',
             'slug' => 'retired-product',
             'product_type' => 'MADE_TO_ORDER',
@@ -278,6 +283,15 @@ class ProductManagementApiTest extends TestCase
         $product = Product::factory()->create();
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_deleter']));
 
-        $this->withHeaders($headers)->deleteJson('/api/v1/products/'.ProductIdentifier::encode($product))->assertMethodNotAllowed();
+        $this->withHeaders($headers)->deleteJson(self::PRODUCTS_URL.'/'.ProductIdentifier::encode($product))->assertMethodNotAllowed();
+    }
+
+    public function test_product_slug_openapi_patterns_match_the_domain_invariant(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+
+        foreach (['ProductCreateRequest', 'ProductUpdateRequest'] as $schema) {
+            $this->assertSame('^[a-z0-9]+(?:-[a-z0-9]+)*$', $document['components']['schemas'][$schema]['properties']['slug']['pattern']);
+        }
     }
 }
