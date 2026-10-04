@@ -1,0 +1,194 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\User;
+use App\Support\PermissionName;
+use App\Support\ProductIdentifier;
+use Database\Seeders\RbacSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
+use Tests\Support\AuthenticatesApiUser;
+use Tests\TestCase;
+
+class ProductManagementApiTest extends TestCase
+{
+    use AuthenticatesApiUser;
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->seed(RbacSeeder::class);
+    }
+
+    public function test_manage_staff_creates_variantless_product_with_persisted_base_price(): void
+    {
+        $category = Category::factory()->create(['is_active' => true]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_manager']));
+
+        $response = $this->withHeaders($headers)->postJson('/api/v1/products', [
+            'name' => 'Made to Order Oak Desk',
+            'slug' => 'made-to-order-oak-desk',
+            'description' => 'Built to your measurements.',
+            'product_type' => 'MADE_TO_ORDER',
+            'price' => ['amount' => 125000000, 'currency' => 'TZS'],
+            'category_id' => 'cat_'.base_convert((string) $category->id, 10, 36),
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.price.amount', 125000000)
+            ->assertJsonPath('data.price.currency', 'TZS')
+            ->assertJsonPath('data.product_type', 'MADE_TO_ORDER');
+
+        $product = Product::query()->where('slug', 'made-to-order-oak-desk')->sole();
+        $this->assertSame(125000000, $product->price_amount);
+        $this->assertSame('TZS', $product->price_currency);
+        $this->assertSame(0, ProductVariant::query()->where('product_id', $product->id)->count());
+        $this->getJson('/api/v1/products/'.ProductIdentifier::encode($product))
+            ->assertOk()
+            ->assertJsonPath('data.price.amount', 125000000);
+    }
+
+    public function test_product_update_changes_only_product_base_price(): void
+    {
+        $product = Product::factory()->create(['price_amount' => 100]);
+        $firstVariant = ProductVariant::factory()->create(['product_id' => $product->id, 'price_amount' => 100]);
+        $secondVariant = ProductVariant::factory()->create(['product_id' => $product->id, 'price_amount' => 150]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_updater']));
+
+        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($product), [
+            'price' => ['amount' => 120, 'currency' => 'TZS'],
+            'is_published' => false,
+        ])->assertOk()
+            ->assertJsonPath('data.price.amount', 120)
+            ->assertJsonPath('data.is_published', false);
+
+        $this->assertSame(120, $product->fresh()->price_amount);
+        $this->assertSame(100, $firstVariant->fresh()->price_amount);
+        $this->assertSame(150, $secondVariant->fresh()->price_amount);
+    }
+
+    public function test_product_update_rejects_an_empty_price(): void
+    {
+        $product = Product::factory()->create(['price_amount' => 100]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'empty_price_rejector']));
+
+        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($product), [
+            'price' => [],
+        ])->assertUnprocessable();
+
+        $this->assertSame(100, $product->fresh()->price_amount);
+    }
+
+    public function test_operational_reads_include_drafts_with_private_cache_headers(): void
+    {
+        $draft = Product::factory()->draft()->create(['slug' => 'operational-draft', 'price_amount' => 400]);
+        $variant = ProductVariant::factory()->create(['product_id' => $draft->id, 'price_amount' => 600, 'cost_price_amount' => 200, 'cost_price_currency' => 'TZS']);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_reader']));
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products')
+            ->assertOk()
+            ->assertHeaderContains('Cache-Control', 'private')
+            ->assertHeaderContains('Cache-Control', 'no-store')
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($draft))
+            ->assertJsonPath('data.0.price.amount', 400)
+            ->assertJsonPath('data.0.is_published', false)
+            ->assertJsonMissingPath('data.0.variants.0.cost_price_amount');
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products/'.$draft->slug)
+            ->assertOk()
+            ->assertJsonPath('data.variants.0.price.amount', 600)
+            ->assertJsonPath('data.inventory.quantity', 0);
+
+        $this->assertSame($variant->id, $draft->fresh()->variants->sole()->id);
+    }
+
+    public function test_operational_product_listing_reports_each_unknown_query_parameter(): void
+    {
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_query_validator']));
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products?unexpected_filter=oak&unsupported_sort=oldest')
+            ->assertUnprocessable()
+            ->assertJsonCount(2, 'errors')
+            ->assertJsonPath('errors.0.field', 'unexpected_filter')
+            ->assertJsonPath('errors.1.field', 'unsupported_sort');
+    }
+
+    public function test_operational_read_permission_does_not_grant_product_mutation(): void
+    {
+        $product = Product::factory()->draft()->create();
+        Role::findByName('STAFF')->revokePermissionTo(PermissionName::PRODUCTS_MANAGE->value);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_viewer']));
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products/'.$product->slug)->assertOk();
+        $this->withHeaders($headers)->patchJson('/api/v1/products/'.$product->slug, ['name' => 'Changed'])->assertForbidden();
+    }
+
+    public function test_product_management_rejects_untrusted_payloads_and_inactive_categories(): void
+    {
+        $category = Category::factory()->create(['is_active' => false]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_validator']));
+        $payload = [
+            'name' => 'Invalid Product',
+            'slug' => 'invalid-product',
+            'product_type' => 'MADE_TO_ORDER',
+            'price' => ['amount' => 100, 'currency' => 'TZS'],
+            'category_id' => 'cat_'.base_convert((string) $category->id, 10, 36),
+        ];
+
+        $this->withHeaders($headers)->postJson('/api/v1/products', [...$payload, 'variants' => []])
+            ->assertUnprocessable();
+        $this->withHeaders($headers)->postJson('/api/v1/products', $payload)
+            ->assertNotFound();
+        $this->withHeaders($headers)->postJson('/api/v1/products', [...$payload, 'price' => ['amount' => '100', 'currency' => 'TZS']])
+            ->assertUnprocessable();
+        $this->assertDatabaseMissing('products', ['slug' => 'invalid-product']);
+    }
+
+    public function test_product_management_reports_slug_collisions_without_persisting_partial_update(): void
+    {
+        $product = Product::factory()->create(['slug' => 'first-product', 'name' => 'First Product']);
+        $other = Product::factory()->create(['slug' => 'second-product', 'name' => 'Second Product']);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_slug_manager']));
+
+        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($other), [
+            'name' => 'Changed Product',
+            'slug' => $product->slug,
+        ])->assertStatus(409)
+            ->assertJsonPath('errors.0.code', 'CONFLICT')
+            ->assertJsonPath('errors.0.field', 'slug');
+
+        $this->assertSame('Second Product', $other->fresh()->name);
+    }
+
+    public function test_product_management_rejects_a_slug_held_by_a_soft_deleted_product(): void
+    {
+        $deleted = Product::factory()->create(['slug' => 'retired-product']);
+        $deleted->delete();
+        $category = Category::factory()->create(['is_active' => true]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'soft_deleted_slug_manager']));
+
+        $this->withHeaders($headers)->postJson('/api/v1/products', [
+            'name' => 'Replacement Product',
+            'slug' => 'retired-product',
+            'product_type' => 'MADE_TO_ORDER',
+            'price' => ['amount' => 100, 'currency' => 'TZS'],
+            'category_id' => 'cat_'.base_convert((string) $category->id, 10, 36),
+        ])->assertStatus(409)
+            ->assertJsonPath('errors.0.code', 'CONFLICT')
+            ->assertJsonPath('errors.0.field', 'slug');
+    }
+
+    public function test_product_delete_route_does_not_exist(): void
+    {
+        $product = Product::factory()->create();
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_deleter']));
+
+        $this->withHeaders($headers)->deleteJson('/api/v1/products/'.ProductIdentifier::encode($product))->assertMethodNotAllowed();
+    }
+}

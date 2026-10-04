@@ -2715,3 +2715,19 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** The first Admin needs an explicit bootstrap-of-trust mechanism without turning any public API, normal Clerk sign-in, or Staff approval workflow into a privilege-escalation path.
 
 **Status:** Accepted and implemented in Phase 11.2 | **Date:** 2026-10-04 | **Affected:** `backend/laravel/app/Authentication/BootstrapInitialAdmin.php`, `backend/laravel/app/Console/Commands/BootstrapInitialAdminCommand.php`, `backend/laravel/tests/Feature/InitialAdminBootstrapTest.php`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
+### ADR/GROUP-K-PRODUCT-BASE-PRICE — Product Base Price Persistence Reconciliation
+
+**Decision:** The frozen V1 `Product.price` field is persisted directly on `products.price_amount` and `products.price_currency` as the Product base/display price. `product_variants.price_amount` and `product_variants.price_currency` remain the independent, variant-specific price for each SKU.
+
+- CAT-007 and CAT-008 keep their existing Product-only request shapes. No `initial_variant` object is added, CAT-007 creates no synthetic/default Variant, and CAT-010 remains the separate Variant creation boundary.
+- Product base price is required, stored as non-negative integer minor units with `TZS` currency, and is the source for CAT-001, CAT-002, CAT-013, and CAT-014 Product `price` responses. CAT-005/006 and embedded Variant representations retain Variant price as their source.
+- Existing Products are preflighted before the migration. Each selected legacy source is its lowest-priced active Variant, tied by Variant id, and must have a non-negative amount with `TZS` currency. A Product without an active Variant or with an invalid selected price aborts before adding the columns; zero is never fabricated.
+- The migration rollback is intentionally blocked while any Product exists. Product base price can be independent of every Variant price, so dropping it would be irreversible; an empty catalog is the only lossless rollback state.
+- Product and Variant prices no longer synchronize. Updating one does not mutate the other. For MADE_TO_ORDER, Product price is informational/starting-at only, not a quote, checkout price, or payment commitment.
+
+**Reason:** The frozen API requires non-null Product price input and output, while the former schema could only persist a Variant price and could not create a valid Variant from CAT-007. This internal persistence reconciliation preserves the public contract and the separate Variant resource boundary.
+
+**Status:** Accepted and implemented in Phase 11.3 Part A | **Date:** 2026-10-04 | **Affected:** `backend/laravel/database/migrations/2026_10_04_130000_add_base_price_to_products_table.php`, `backend/laravel/app/Models/Product.php`, `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Resources/ProductSummaryResource.php`, `docs/decisions.md`, `phases/group-K-phases.md`

@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\Storage;
  * @property-read string $name
  * @property-read string $slug
  * @property-read ProductType $product_type
- * @property-read int|null $summary_price_amount
- * @property-read string|null $summary_price_currency
+ * @property-read int $price_amount
+ * @property-read string $price_currency
  * @property-read Category $category
  * @property-read ProductImage|null $primaryImage
  */
@@ -34,9 +34,9 @@ class ProductSummaryResource extends JsonResource
             'name' => $this->name,
             'slug' => $this->slug,
             'product_type' => $this->product_type->value,
-            'price' => $this->summary_price_amount === null ? null : [
-                'amount' => (int) $this->summary_price_amount,
-                'currency' => $this->summary_price_currency,
+            'price' => [
+                'amount' => $this->price_amount,
+                'currency' => $this->price_currency,
             ],
             'category' => [
                 'id' => CategoryIdentifier::encode($this->category),

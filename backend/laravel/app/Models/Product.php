@@ -28,8 +28,8 @@ use Illuminate\Support\Carbon;
  * @property bool $is_active
  * @property bool $is_published
  * @property bool $is_featured
- * @property-read int|null $summary_price_amount
- * @property-read string|null $summary_price_currency
+ * @property int $price_amount
+ * @property string $price_currency
  * @property-read int|null $summary_available_quantity
  * @property-read int|null $summary_has_available_stock
  * @property-read int|null $variants_exists
@@ -52,6 +52,8 @@ use Illuminate\Support\Carbon;
     'room_type',
     'assembly_required',
     'primary_material',
+    'price_amount',
+    'price_currency',
     'is_active',
     'is_featured',
 ])]
@@ -126,6 +128,7 @@ class Product extends Model
             'is_published' => 'boolean',
             'product_type' => ProductType::class,
             'is_featured' => 'boolean',
+            'price_amount' => 'integer',
         ];
     }
 }
