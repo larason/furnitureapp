@@ -88,6 +88,7 @@ class ProductManagementApiTest extends TestCase
     {
         $draft = Product::factory()->draft()->create(['slug' => 'operational-draft', 'price_amount' => 400]);
         $variant = ProductVariant::factory()->create(['product_id' => $draft->id, 'price_amount' => 600, 'cost_price_amount' => 200, 'cost_price_currency' => 'TZS']);
+        ProductVariant::factory()->inactive()->create(['product_id' => $draft->id, 'price_amount' => 700]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_reader']));
 
         $this->withHeaders($headers)->getJson('/api/v1/admin/products')
@@ -103,9 +104,33 @@ class ProductManagementApiTest extends TestCase
         $this->withHeaders($headers)->getJson('/api/v1/admin/products/'.$draft->slug)
             ->assertOk()
             ->assertJsonPath('data.variants.0.price.amount', 600)
+            ->assertJsonCount(1, 'data.variants')
             ->assertJsonPath('data.inventory.quantity', 0);
 
-        $this->assertSame($variant->id, $draft->fresh()->variants->sole()->id);
+        $this->assertSame($variant->id, $draft->fresh()->variants()->where('is_active', true)->sole()->id);
+    }
+
+    public function test_operational_product_listing_filters_by_publication_state(): void
+    {
+        Product::factory()->create(['slug' => 'published-product', 'is_published' => true]);
+        $draft = Product::factory()->draft()->create(['slug' => 'draft-product']);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_filter_reader']));
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products?is_published=false')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($draft));
+    }
+
+    public function test_operational_product_search_treats_like_wildcards_as_literal_characters(): void
+    {
+        Product::factory()->create(['slug' => 'first-product', 'name' => 'First Product']);
+        Product::factory()->create(['slug' => 'second-product', 'name' => 'Second Product']);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_search_reader']));
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products?search=%25')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 0);
     }
 
     public function test_operational_product_listing_reports_each_unknown_query_parameter(): void

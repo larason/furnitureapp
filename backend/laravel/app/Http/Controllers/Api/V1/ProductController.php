@@ -16,11 +16,14 @@ use App\Queries\ProductCatalogQuery;
 use App\Services\Products\CreateProduct;
 use App\Services\Products\UpdateProduct;
 use App\Support\ApiErrorCode;
+use App\Support\CategoryIdentifier;
 use App\Support\ProductIdentifier;
+use App\Support\ProductType;
 use App\Support\VariantIdentifier;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends V1Controller
 {
@@ -101,7 +104,7 @@ class ProductController extends V1Controller
         $validated = $request->validated();
         $page = (int) ($validated['page'] ?? 1);
         $perPage = (int) ($validated['per_page'] ?? 20);
-        $paginator = $this->operationalProducts()->paginate($perPage, ['*'], 'page', $page);
+        $paginator = $this->operationalProducts($validated)->paginate($perPage, ['*'], 'page', $page);
         $products = $paginator->getCollection()->map(fn (Product $product) => $this->prepareOperationalProduct($product));
         $lastPage = max(1, $paginator->lastPage());
         $currentPage = min($paginator->currentPage(), $lastPage);
@@ -177,12 +180,46 @@ class ProductController extends V1Controller
     }
 
     /** @return Builder<Product> */
-    private function operationalProducts(): Builder
+    private function operationalProducts(array $filters = []): Builder
     {
-        return Product::query()
+        $query = Product::query()
             ->with($this->operationalRelations())
             ->orderByDesc('created_at')
             ->orderBy('id');
+
+        if (isset($filters['search'])) {
+            $search = '%'.$this->escapeLike(trim((string) $filters['search'])).'%';
+            $escape = $this->likeEscapeClause();
+            $query->where(fn (Builder $product) => $product
+                ->whereRaw("name LIKE ? {$escape}", [$search])
+                ->orWhereRaw("description LIKE ? {$escape}", [$search]));
+        }
+
+        if (isset($filters['category'])) {
+            $categoryId = CategoryIdentifier::decode((string) $filters['category']);
+            $query->whereHas('category', fn (Builder $category) => $category->where($categoryId === null ? 'slug' : 'id', $categoryId ?? $filters['category']));
+        }
+
+        foreach (['product_type', 'is_active', 'is_published'] as $field) {
+            if (isset($filters[$field])) {
+                $query->where($field, $filters[$field]);
+            }
+        }
+
+        if (isset($filters['availability'])) {
+            $hasStock = fn (Builder $variant) => $variant->where('is_active', true)
+                ->whereHas('stocks', fn (Builder $stock) => $stock->whereRaw('(quantity - reserved_quantity) > 0'));
+            $query->when(
+                $filters['availability'] === 'available',
+                fn (Builder $available) => $available->where(function (Builder $product): void {
+                    $product->where('product_type', ProductType::MADE_TO_ORDER->value)
+                        ->orWhereHas('variants', fn (Builder $variant) => $variant->where('is_active', true)->whereHas('stocks', fn (Builder $stock) => $stock->whereRaw('(quantity - reserved_quantity) > 0')));
+                }),
+                fn (Builder $unavailable) => $unavailable->where('product_type', ProductType::IN_STOCK->value)->whereDoesntHave('variants', $hasStock),
+            );
+        }
+
+        return $query;
     }
 
     private function resolveOperationalProduct(string $identifier): Product
@@ -217,8 +254,18 @@ class ProductController extends V1Controller
             'category:id,name,slug,description',
             'primaryImage:id,product_id,file_path,alt_text,sort_order,is_primary',
             'images:id,product_id,file_path,alt_text,sort_order,is_primary',
-            'variants' => fn ($variant) => $variant->with('stocks:id,product_variant_id,quantity,reserved_quantity'),
+            'variants' => fn ($variant) => $variant->where('is_active', true)->with('stocks:id,product_variant_id,quantity,reserved_quantity'),
         ];
+    }
+
+    private function likeEscapeClause(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite' ? "ESCAPE '\\'" : "ESCAPE '\\\\'";
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return addcslashes($value, '\\%_');
     }
 
     private function canViewInventory(Request $request): bool

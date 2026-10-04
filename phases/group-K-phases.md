@@ -1,393 +1,1153 @@
-# Phase 11.4 — Category CRUD
+# Phase 11.5 — Product Image Management
 
 ## 1. Objective
 
-Implement the Version 1 administrative Category management backend for authorized Staff/Admin.
-
-## Implementation Status
-
-Phase 11.4 is complete. The existing `2026_09_19_120000_add_public_fields_to_categories_table.php` migration persists nullable `categories.description` and `categories.image_url`, and CAT-011/CAT-012 implement the frozen request/response contract without exposing hierarchy controls.
-
-CAT-011 creates an active direct child of `furnitures-root`, assigns `SpaceType::HYBRID`, and appends after the highest direct-child `display_order` (starting at `1` for an empty sibling set) inside a transaction that locks the root row. CAT-012 resolves opaque IDs or slugs including inactive categories, updates only `name`, `slug`, `description`, and `image`, and rejects mutation of the system-owned root. The approved reconciliation is recorded in `phases/group-K-phases-reconcile.md` and ADR/API-CAT-006 below.
-
-Phase 11.4 executes in two ordered parts:
+Implement Version 1 Product image upload and public delivery using:
 
 ```text
-Part A — Category persistence reconciliation
-Part B — CAT-011 / CAT-012 implementation
+Cloudflare R2
++
+Cloudflare custom-domain CDN delivery
 ```
 
-Do not begin Part B until Part A is complete, documented, migrated, and tested.
+The business owner manually optimizes Product images before upload.
+
+Laravel must perform:
+
+```text
+authentication
+authorization
+security validation
+safe object-key generation
+R2 upload
+database persistence
+public CDN URL projection
+failure compensation
+```
+
+Laravel must NOT perform:
+
+```text
+resizing
+compression
+format conversion
+thumbnail generation
+WebP conversion
+AVIF conversion
+image optimization
+Cloudflare Images transformations
+```
+
+Cloudflare Images is NOT part of this architecture.
 
 ---
 
-# PART A — CATEGORY PERSISTENCE RECONCILIATION
+# 2. Final Media Architecture
 
-## 2. Confirmed Contract/Persistence Gap
-
-The frozen V1 Category management contract accepts:
+Use:
 
 ```text
-name
-slug
-description
-image
+Admin
+  ↓
+manually optimized image
+  ↓
+Laravel API
+  ├── authenticate
+  ├── authorize
+  ├── validate actual file
+  └── generate object key
+  ↓
+Cloudflare R2
+  ↓
+R2 custom domain
+  ↓
+Cloudflare CDN/cache
+  ↓
+Next.js / Flutter
 ```
 
-for:
+Example public delivery:
 
 ```text
-CAT-011 POST /api/v1/categories
-CAT-012 PATCH /api/v1/categories/{category}
+https://assets.example.com/products/prod_xxx/img_xxx.webp
 ```
 
-`CategoryCreateRequest` requires:
+The exact domain will be supplied later by the project owner through `.env`.
+
+---
+
+# 3. Existing Persistence Architecture
+
+Preserve the established:
 
 ```text
-name
-slug
+product_images
 ```
 
-and permits nullable:
+architecture.
+
+The authoritative storage reference remains:
 
 ```text
-description
-image
+file_path
 ```
 
-The public Category contract also exposes:
+It stores an internal object-storage key, not a CDN URL.
+
+Example:
 
 ```text
-CAT-003 summary:
+products/prod_01ABC/img_01XYZ.webp
+```
+
+Do NOT persist:
+
+```text
+https://assets.example.com/products/prod_01ABC/img_01XYZ.webp
+```
+
+as the authoritative database value.
+
+The existing design deliberately separates Product images from Products and ProductVariants and keeps storage/CDN provider details out of the database.
+
+---
+
+# 4. Existing Product Image Fields
+
+Preserve the current schema:
+
+```text
 id
-name
-slug
-image
-
-CAT-004 detail:
-id
-name
-slug
-description
-image
-created_at
-```
-
-However, the current Category persistence model was originally designed around:
-
-```text
-id
-parent_id
-name
-slug
-space_type
-display_order
-is_active
+product_id
+product_variant_id
+file_path
+alt_text
+sort_order
+is_primary
 timestamps
 ```
 
-and therefore does not directly persist the frozen:
+Do not add speculative metadata columns such as:
 
 ```text
-description
-image
+mime_type
+filesize
+width_px
+height_px
+checksum
+blurhash
+dominant_color
+status
+is_visible
+is_published
 ```
 
-fields.
-
-This must be reconciled before CAT-011/012 are implemented.
+The existing Product-image ADR explicitly excluded those columns.
 
 ---
 
-# 3. Reconciliation Principle
+# 5. Existing Domain Invariants
 
-Preserve the frozen API.
-
-Do NOT remove:
+Preserve:
 
 ```text
-description
-image
+ProductImage belongs to exactly one Product
+optional ProductVariant association
+variant must belong to same Product
+stable ordering by sort_order ASC, id ASC
+at most one primary image per Product
 ```
 
-from:
-
-```text
-CategoryCreateRequest
-CategoryUpdateRequest
-CAT-003
-CAT-004
-```
-
-Do NOT make them new external concepts.
-
-They are already part of V1.
-
-Instead, reconcile persistence so the existing frozen contract can be implemented.
+Do not weaken existing application or database primary-image enforcement.
 
 ---
 
-# 4. Approved Persistence Direction
+# PART A — CAT-009 CONTRACT RECONCILIATION
 
-Add Category-level persistence for:
-
-```text
-description
-image
-```
-
-using the smallest schema change consistent with existing naming conventions.
-
-Conceptually:
-
-```text
-categories.description
-categories.image_url
-```
-
-or equivalent repository-consistent names.
-
-Do not guess column names without first inspecting existing Product/media/category conventions.
-
----
-
-# 5. Description Persistence
-
-Recommended characteristics:
-
-```text
-nullable
-text/string appropriate for max 1000 API chars
-plain content
-no HTML authority
-```
-
-Do not add rich-text semantics.
-
----
-
-# 6. Image Persistence
-
-The frozen Category contract currently accepts:
-
-```text
-image: string|null
-format: uri
-```
-
-and returns an image object conceptually:
-
-```json
-{
-  "image": {
-    "url": "https://..."
-  }
-}
-```
-
-Therefore persist only the canonical image URL/reference needed for this V1 contract.
-
-Do not create a full Category-media subsystem.
-
----
-
-# 7. Category Image Is Not Product Media
-
-Phase 11.5 concerns Product image management.
-
-Category image in CAT-011/012 is already part of the frozen Category contract.
-
-Do not incorrectly defer Category `image` to 11.5.
-
----
-
-# 8. No Category Attachment Model
-
-Do not create:
-
-```text
-category_images table
-attachments relationship
-media gallery
-multiple category images
-```
-
-V1 requires one nullable Category image.
-
----
-
-# 9. Existing Seeded Categories
-
-Existing taxonomy contains 76 seeded categories.
-
-Migration must preserve them.
-
-Backfill:
-
-```text
-description = null
-image = null
-```
-
-unless existing deterministic source data already supplies values.
-
-Do not invent descriptions or image URLs in migration code.
-
----
-
-# 10. Existing Public API Compatibility
-
-If CAT-003/004 currently synthesize null images/descriptions:
-
-after migration, preserve the same response shape.
-
-No API shape change.
-
----
-
-# 11. Category Factory
-
-Update CategoryFactory to support:
-
-```text
-description
-image
-```
-
-without requiring them.
-
-Defaults may remain null.
-
-Do not make factory-created categories depend on remote URLs unless explicitly requested by a test state.
-
----
-
-# 12. Category Seeder
-
-Do not rewrite taxonomy structure.
-
-Existing:
-
-```text
-1 root
-6 room categories
-16 grouping categories
-53 type categories
-```
-
-must remain intact.
-
-If current seed definitions contain no descriptions/images:
-
-leave them null.
-
----
-
-# 13. Migration Safety
-
-Add a new migration.
-
-Do not modify Phase 3.3 historical migration.
-
-Verify on:
-
-```text
-SQLite canonical tests
-MariaDB 11.8.8 disposable database
-```
-
----
-
-# 14. Reconciliation ADR
-
-Add a decision record explaining:
-
-```text
-Frozen CAT-011/012 and CAT-003/004 already include description/image.
-Original Category schema omitted persistence for them.
-Phase 11.4 adds Category description/image persistence without changing external V1 behavior.
-Hierarchy, space_type, display_order, is_active, and recommendation graph remain unchanged.
-```
-
----
-
-# 15. Reconciliation Exit Gate
-
-Do not continue to Category API implementation until:
-
-- migration exists;
-- current taxonomy survives;
-- Category model/factory updated;
-- public CAT-003/004 still pass;
-- description/image serialize correctly;
-- no hierarchy/recommendation behavior changed;
-- OpenAPI shape remains unchanged.
-
-If not:
-
-```text
-Phase 11.4 BLOCKED
-```
-
-with exact reason.
-
----
-
-# PART B — CATEGORY CRUD IMPLEMENTATION
-
-## 16. Canonical Endpoints
+## 6. Frozen Endpoint
 
 Implement:
 
 ```http
-POST /api/v1/categories
-PATCH /api/v1/categories/{category}
+POST /api/v1/products/{product}/images
 ```
 
-Endpoint IDs:
+Endpoint:
 
 ```text
-CAT-011
-CAT-012
+CAT-009
 ```
 
-Do not add:
-
-```text
-/admin/categories
-/staff/categories
-/backoffice/categories
-```
-
-The frozen canonical paths are unprefixed operational catalog paths.
-
----
-
-# 17. Product Permission Reuse
-
-Both endpoints require:
+Authorization:
 
 ```text
 products.manage
 ```
 
-for authorized Staff/Admin.
-
-Do not introduce:
+Actors:
 
 ```text
-categories.manage
+STAFF
+ADMIN
 ```
 
-in Phase 11.4.
+subject to explicit permission.
 
-The frozen V1 catalog management model uses `products.manage`.
+The catalog contract defines CAT-009 as the single Product image mutation endpoint in V1.
 
 ---
 
-# 18. Actor Matrix
+# 7. Frozen Request Shape
 
-Expected:
+The current OpenAPI request is:
+
+```text
+multipart/form-data
+```
+
+with one field:
+
+```text
+image
+```
+
+binary.
+
+Do not expand the request to:
+
+```text
+alt_text
+sort_order
+is_primary
+variant_id
+file_path
+url
+filename
+```
+
+in this phase.
+
+Preserve the external CAT-009 request shape.
+
+---
+
+# 8. Confirmed OpenAPI Response Error
+
+Current CAT-009 OpenAPI incorrectly defines:
+
+```text
+201.data → Attachment
+```
+
+This is inconsistent with the Product Image domain.
+
+Correct it to:
+
+```text
+201.data → ProductImage
+```
+
+This is a frozen-contract consistency correction.
+
+It is NOT a new API concept.
+
+CAT-009 creates:
+
+```text
+ProductImage
+```
+
+not:
+
+```text
+Request/Enquiry Attachment
+```
+
+---
+
+# 9. ProductImage Response
+
+Return:
+
+```json
+{
+  "data": {
+    "id": "img_...",
+    "url": "https://assets.example.com/products/prod_.../img_....webp",
+    "alt_text": "Walnut Dining Table",
+    "sort_order": 1,
+    "is_primary": true
+  }
+}
+```
+
+according to the existing ProductImage schema.
+
+Never expose:
+
+```text
+file_path
+R2 bucket
+R2 endpoint
+access key
+secret
+internal filesystem disk
+```
+
+---
+
+# 10. Server-Controlled Image Metadata
+
+Because CAT-009 accepts only the file, define the following V1 server rules:
+
+```text
+product_variant_id = null
+
+alt_text = current Product name
+
+sort_order = append after existing Product images
+
+is_primary = true when Product currently has no primary image
+             false otherwise
+```
+
+These values are server-derived.
+
+This repairs legacy Products that have image rows but no primary image. CAT-009
+does not replace an existing primary image.
+
+---
+
+# 11. Product-Wide Images Only Through CAT-009
+
+CAT-009 does not accept a Variant identifier.
+
+Therefore:
+
+```text
+product_variant_id = null
+```
+
+for CAT-009-created images.
+
+Do not guess Variant association from:
+
+```text
+filename
+Product state
+SKU
+image content
+```
+
+Variant-specific image management requires a future explicit contract if needed.
+
+---
+
+# 12. Alt Text Rule
+
+For V1:
+
+```text
+alt_text = Product.name
+```
+
+at upload time.
+
+Example:
+
+```text
+Product.name = "Solid Walnut Dining Table"
+
+alt_text =
+"Solid Walnut Dining Table"
+```
+
+Do not generate:
+
+```text
+AI descriptions
+computer vision captions
+filename-derived descriptions
+```
+
+---
+
+# 13. Alt Text Is a Snapshot
+
+If Product.name later changes:
+
+do NOT automatically rewrite existing ProductImage.alt_text.
+
+The upload captures the Product's current name.
+
+A future explicit image metadata editing operation can address manual alt-text management if needed.
+
+Do not invent one in V1.
+
+---
+
+# 14. Sort Order Rule
+
+For each Product:
+
+```text
+next sort_order =
+MAX(existing sort_order) + 1
+```
+
+V1 public representation treats image positions as 1-indexed.
+
+For a Product with zero images:
+
+```text
+sort_order = 1
+```
+
+---
+
+# 15. Primary Image Rule
+
+If Product has no existing images:
+
+```text
+new image is_primary = true
+```
+
+Otherwise:
+
+```text
+new image is_primary = false
+```
+
+Therefore every Product with at least one CAT-009-created image naturally obtains a primary image.
+
+---
+
+# 16. No Client Primary Control
+
+CAT-009 must reject or structurally exclude:
+
+```text
+is_primary
+```
+
+from the multipart input.
+
+Do not permit the caller to bypass the database primary-image invariant.
+
+---
+
+# 17. Concurrent First Uploads
+
+Two simultaneous uploads to an imageless Product must not both become primary.
+
+Use database transaction + locking.
+
+The existing unique primary guard remains the final database defense.
+
+---
+
+# 18. Concurrent Ordering
+
+Two simultaneous Product uploads must not receive the same server-assigned sort position through an unsafe:
+
+```text
+read MAX
+→ race
+→ insert
+```
+
+sequence.
+
+Serialize metadata allocation appropriately.
+
+Prefer locking the Product row before inspecting its image set.
+
+Conceptually:
+
+```text
+BEGIN
+
+lock Product FOR UPDATE
+
+read current Product images
+
+next_sort =
+    max(sort_order) + 1
+
+is_primary =
+    images.count == 0
+
+persist ProductImage metadata
+
+COMMIT
+```
+
+Coordinate this with R2 object upload/compensation as specified later.
+
+---
+
+# PART B — CLOUDFLARE R2 STORAGE
+
+## 19. Storage Decision
+
+Use Cloudflare R2 exclusively for public Product image bytes in deployed environments.
+
+Do NOT introduce:
+
+```text
+Cloudinary
+Cloudflare Images
+local VPS production uploads
+MySQL BLOB storage
+AWS S3 production bucket
+```
+
+as alternate production behavior in this phase.
+
+---
+
+# 20. Laravel Storage Abstraction
+
+Use Laravel's filesystem abstraction.
+
+Define a dedicated disk:
+
+```text
+r2
+```
+
+in:
+
+```text
+config/filesystems.php
+```
+
+Do not scatter raw Cloudflare/S3 client construction across controllers or services.
+
+---
+
+# 21. Storage Boundary
+
+Prefer a focused application abstraction such as:
+
+```text
+ProductImageStorage
+```
+
+or:
+
+```text
+AssetStorage
+```
+
+with responsibilities conceptually:
+
+```text
+put()
+delete()
+exists()
+publicUrl()
+```
+
+The exact class naming should follow existing repository conventions.
+
+---
+
+# 22. Do Not Build an Image Processor
+
+Do NOT create:
+
+```text
+ImageProcessor
+ImageOptimizer
+ImageResizer
+ThumbnailGenerator
+WebpConverter
+AvifConverter
+ImageTransformationJob
+```
+
+The project owner manually optimizes uploaded assets.
+
+---
+
+# 23. R2 Uses S3-Compatible Storage
+
+Configure Laravel R2 through the S3-compatible filesystem driver.
+
+Inspect existing Composer dependencies.
+
+If the Laravel AWS S3 Flysystem adapter is already installed:
+
+reuse it.
+
+If absent, add only the standard Laravel-compatible dependency required for S3-compatible storage.
+
+Do not add Cloudflare-specific SDKs unless actually required.
+
+---
+
+# 24. R2 Environment Configuration
+
+The agent MAY edit:
+
+```text
+backend/laravel/.env
+backend/laravel/.env.example
+```
+
+as necessary.
+
+The project owner explicitly authorizes `.env` editing for this phase.
+
+---
+
+# 25. Secrets Rule
+
+The agent must NEVER invent or paste real R2 credentials.
+
+The agent must create empty/placeholding entries so the project owner can enter them manually.
+
+Example `.env` configuration:
+
+```text
+PRODUCT_IMAGE_DISK=r2
+
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+R2_ENDPOINT=
+R2_REGION=auto
+
+R2_PUBLIC_BASE_URL=
+```
+
+If Laravel configuration requires a different exact set of keys, use the smallest correct set.
+
+---
+
+# 26. `.env.example`
+
+Add documentation-safe placeholders:
+
+```text
+PRODUCT_IMAGE_DISK=r2
+
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_REGION=auto
+R2_PUBLIC_BASE_URL=https://assets.example.com
+```
+
+Never put:
+
+```text
+actual account token
+actual secret key
+actual production bucket credentials
+```
+
+in `.env.example`.
+
+---
+
+# 27. `.env`
+
+The agent may add the exact same keys to `.env`.
+
+Leave credential values blank unless they already legitimately exist locally.
+
+The user will populate:
+
+```text
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET
+R2_ENDPOINT
+R2_PUBLIC_BASE_URL
+```
+
+manually.
+
+---
+
+# 28. Never Print Secrets
+
+Completion reports and tests must not echo:
+
+```text
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+API token
+credential values
+```
+
+Logs must not contain them.
+
+---
+
+# 29. R2 Endpoint
+
+`R2_ENDPOINT` is the S3-compatible API endpoint used by Laravel to write/delete objects.
+
+It is NOT the public storefront asset URL.
+
+Keep these concepts separate:
+
+```text
+R2_ENDPOINT
+→ authenticated storage API
+
+R2_PUBLIC_BASE_URL
+→ public custom CDN domain
+```
+
+---
+
+# 30. Custom Domain
+
+`R2_PUBLIC_BASE_URL` represents the Cloudflare custom domain attached to the R2 bucket.
+
+Example:
+
+```text
+https://assets.example.com
+```
+
+Do not hard-code a production domain in PHP.
+
+---
+
+# 31. Public URL Projection
+
+Given:
+
+```text
+file_path =
+products/prod_ABC/img_XYZ.webp
+```
+
+and:
+
+```text
+R2_PUBLIC_BASE_URL =
+https://assets.example.com
+```
+
+serialize:
+
+```text
+https://assets.example.com/products/prod_ABC/img_XYZ.webp
+```
+
+---
+
+# 32. Do Not Persist Public URL
+
+Only persist:
+
+```text
+file_path
+```
+
+The URL is derived at serialization/runtime.
+
+This preserves provider/domain portability.
+
+---
+
+# 33. Public URL Service
+
+Centralize URL construction.
+
+Do not write:
+
+```php
+config('...') . '/' . $image->file_path
+```
+
+independently in multiple resources.
+
+Use one storage/public URL service.
+
+---
+
+# 34. URL Misconfiguration
+
+In production-like environments:
+
+if:
+
+```text
+R2_PUBLIC_BASE_URL
+```
+
+is missing while Product images need serialization:
+
+fail clearly/configurationally rather than emitting malformed URLs.
+
+Do not silently return the R2 S3 API endpoint as a storefront image URL.
+
+---
+
+# 35. R2 Bucket Exposure
+
+The public browser/mobile path is:
+
+```text
+custom domain
+→ Cloudflare CDN
+→ R2 object
+```
+
+Do not generate signed download URLs for ordinary public Product images.
+
+These are storefront assets.
+
+---
+
+# 36. Object ACLs
+
+Do not depend on S3 per-object ACL semantics to expose images.
+
+The R2 bucket/custom-domain configuration owns public delivery.
+
+Laravel writes the object.
+
+Cloudflare custom-domain configuration exposes/cache-serves it.
+
+---
+
+# PART C — OBJECT KEY STRATEGY
+
+## 37. Server-Generated Object Keys
+
+Never derive the storage path directly from the uploaded client filename.
+
+Use opaque server-controlled image identifiers.
+
+Conceptually:
+
+```text
+products/{product-public-id}/{image-public-id}.{extension}
+```
+
+Example:
+
+```text
+products/prod_01ABC/img_01XYZ.webp
+```
+
+---
+
+# 38. No Numeric Internal IDs in Public Paths
+
+Prefer opaque API Product/Image identifiers over database integer IDs.
+
+Do not leak:
+
+```text
+/products/24/17.webp
+```
+
+if the repository already has public Product/Image identifiers.
+
+---
+
+# 39. Extension
+
+Extension must come from server-detected image type.
+
+Example:
+
+```text
+image/jpeg → jpg
+image/png  → png
+image/webp → webp
+```
+
+Never trust the client's filename extension.
+
+---
+
+# 40. Filename Is Not Authority
+
+This:
+
+```text
+beautiful-sofa.webp
+```
+
+may be supplied by the browser,
+
+but object path must remain server-generated.
+
+Do not allow:
+
+```text
+../../
+slashes
+backslashes
+NUL
+URL traversal
+```
+
+to influence R2 keys.
+
+---
+
+# PART D — FILE VALIDATION
+
+## 41. Manual Optimization Does Not Replace Validation
+
+The business owner manually optimizes the image.
+
+Laravel must still treat every upload as untrusted input.
+
+---
+
+# 42. Allowed Product Image Types
+
+For V1 allow:
+
+```text
+image/jpeg
+image/png
+image/webp
+```
+
+Do not accept:
+
+```text
+PDF
+SVG
+GIF
+BMP
+TIFF
+ICO
+AVIF
+```
+
+in V1 unless an existing frozen Product-image contract explicitly requires them.
+
+---
+
+# 43. Why No SVG
+
+SVG is executable/XML-like content and creates an unnecessary security surface.
+
+Furniture photography does not require it.
+
+---
+
+# 44. Why No AVIF Initially
+
+Do not introduce AVIF handling complexity merely because it exists.
+
+The owner can manually optimize to:
+
+```text
+WebP
+JPEG
+PNG
+```
+
+which is sufficient for this small-business V1.
+
+AVIF can be added deliberately later.
+
+---
+
+# 45. MIME Validation
+
+Do not trust:
+
+```text
+UploadedFile::getClientMimeType()
+```
+
+as authority.
+
+Use server-side content detection.
+
+---
+
+# 46. File Signature Validation
+
+Validate actual signatures.
+
+At minimum:
+
+```text
+JPEG
+FF D8 FF
+
+PNG
+89 50 4E 47 0D 0A 1A 0A
+
+WebP
+RIFF .... WEBP
+```
+
+Reject MIME/signature mismatch.
+
+Reuse/refactor the proven attachment validation concepts from Group J where sensible, but do not couple public Product images to private Request/Enquiry Attachment persistence.
+
+---
+
+# 47. Image Validity
+
+Where platform support permits, ensure the payload is a structurally valid image rather than only matching a few magic bytes.
+
+This is validation only.
+
+Do not:
+
+```text
+resize
+decode/re-encode
+compress
+strip metadata
+transform
+```
+
+the file.
+
+### Location Metadata Rejection
+
+Before storing a Product image, inspect supported embedded metadata and reject
+an image containing GPS/location data. At minimum, JPEG EXIF GPS metadata must
+be detected and rejected. Apply the same rule to other accepted formats when
+they carry EXIF metadata.
+
+Do not rely on manual optimization to remove location metadata. Do not strip,
+re-encode, or otherwise transform accepted bytes: this is a reject-before-store
+validation rule. If an image advertises metadata that the configured runtime
+cannot safely inspect, reject it rather than publishing an unchecked location
+payload.
+
+Add fixtures proving a location-bearing JPEG is rejected, a non-location image
+is accepted, and accepted images retain their original bytes.
+
+---
+
+# 48. Maximum File Size
+
+Use a configurable limit:
+
+```text
+PRODUCT_IMAGE_MAX_BYTES
+```
+
+Default:
+
+```text
+5 MiB
+```
+
+because assets are manually optimized.
+
+Example:
+
+```text
+PRODUCT_IMAGE_MAX_BYTES=5242880
+```
+
+Document this as the V1 operational upload limit.
+
+---
+
+# 49. Empty File
+
+Reject:
+
+```text
+0-byte
+unreadable
+partial upload
+```
+
+files.
+
+---
+
+# 50. Single File
+
+CAT-009 uploads exactly one image per request.
+
+Reject arrays/multiple-file payloads.
+
+---
+
+# 51. Strict Multipart Shape
+
+Allow only:
+
+```text
+image
+```
+
+Do not silently ignore multipart fields such as:
+
+```text
+alt_text
+sort_order
+is_primary
+variant_id
+product_variant_id
+url
+file_path
+```
+
+---
+
+# 52. Validation Side Effects
+
+Invalid image:
+
+```text
+must not create ProductImage row
+must not write R2 object
+```
+
+---
+
+# PART E — AUTHORIZATION AND PRODUCT RESOLUTION
+
+## 53. Authentication
+
+Anonymous:
+
+```text
+401
+```
+
+Customer:
+
+```text
+403
+```
+
+---
+
+# 54. Permission
+
+Require:
+
+```text
+products.manage
+```
+
+Do not authorize merely from role.
+
+---
+
+# 55. Permission Matrix
+
+Test:
 
 ```text
 Anonymous
@@ -402,1256 +1162,1096 @@ STAFF without products.manage
 STAFF with products.manage
 → allowed
 
-ADMIN without permission
+ADMIN missing products.manage
 → denied
 
 ADMIN with products.manage
 → allowed
 ```
 
-Use actual PermissionCatalog.
-
 ---
 
-# 19. No Role-Only Authorization
+# 56. Product Resolver
 
-Do not authorize solely because:
+Use the canonical operational Product resolver introduced/used during Phase 11.3.
+
+CAT-009 must be able to attach images to Products managed operationally.
+
+Do not accidentally use a public-only Product scope that hides:
 
 ```text
-role = ADMIN
+inactive
+unpublished
 ```
 
-Permission remains explicit.
+Products from authorized management.
 
 ---
 
-# 20. CAT-011 — Create Category
+# 57. Unknown Product
 
-Implement:
+Return canonical:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+or the currently established Product operational not-found mapping.
+
+No SQL/internal disclosure.
+
+---
+
+# PART F — UPLOAD + DATABASE CONSISTENCY
+
+## 58. Distributed Atomicity Reality
+
+R2 and MySQL cannot participate in one database transaction.
+
+Use explicit compensation.
+
+Do not pretend a DB transaction can roll back an R2 object.
+
+---
+
+# 59. Preferred Upload Sequence
+
+Use:
+
+```text
+1. validate/auth/authz/Product
+2. generate ProductImage identifier and object key
+3. upload object to R2
+4. transactionally allocate metadata + persist ProductImage
+5. return ProductImage
+```
+
+If database persistence fails after upload:
+
+delete the just-written R2 object.
+
+---
+
+# 60. Why Upload Before DB Commit
+
+Do not commit a ProductImage row before confirming that its required public object exists.
+
+The successful API invariant should be:
+
+```text
+committed ProductImage
+→ corresponding R2 object exists
+```
+
+---
+
+# 61. R2 Upload Failure
+
+If R2 `put()` fails:
+
+```text
+no ProductImage row
+request fails
+```
+
+Do not persist a broken image URL.
+
+---
+
+# 62. DB Failure After R2 Upload
+
+Attempt compensating:
+
+```text
+R2 delete(file_path)
+```
+
+then fail request.
+
+---
+
+# 63. Cleanup Failure
+
+If:
+
+```text
+DB persistence fails
+AND
+R2 cleanup also fails
+```
+
+do NOT pretend cleanup succeeded.
+
+Use the project's existing recoverable-storage-failure pattern where appropriate.
+
+Log:
+
+```text
+request/correlation id
+safe object key
+operation
+```
+
+but never credentials.
+
+Provide enough deterministic information for orphan recovery.
+
+---
+
+# 64. No Silent Orphans
+
+The implementation should make an R2 orphan observable/recoverable.
+
+Do not silently swallow failed cleanup.
+
+---
+
+# 65. Transaction Boundary
+
+Within the DB transaction:
+
+```text
+lock Product
+allocate sort order
+determine primary state
+persist ProductImage
+```
+
+Use bounded deadlock/transient retry conventions already established by the repository where appropriate.
+
+---
+
+# 66. First-Image Concurrency
+
+Under concurrent first uploads:
+
+successful committed state must have:
+
+```text
+exactly one primary image
+unique/stable image rows
+deterministic sort orders
+```
+
+---
+
+# PART G — CDN/CACHE BEHAVIOR
+
+## 67. Immutable Object Keys
+
+Never overwrite an existing Product image object in place.
+
+Every upload receives a new object key.
+
+This makes Cloudflare edge caching safe.
+
+---
+
+# 68. Avoid CDN Cache Invalidation
+
+Because CAT-009 is add-only:
+
+```text
+new image
+→ new URL
+```
+
+No CDN purge should be necessary.
+
+Do not add Cloudflare Cache Purge API integration.
+
+---
+
+# 69. Cache Headers
+
+Where Laravel controls object metadata during upload, use public long-lived caching suitable for immutable content.
+
+Conceptually:
+
+```text
+Cache-Control:
+public, max-age=31536000, immutable
+```
+
+provided it is compatible with the R2 adapter and project conventions.
+
+Because object keys are immutable, this is safe.
+
+---
+
+# 70. Content Type
+
+Set object Content-Type from server-detected type:
+
+```text
+image/jpeg
+image/png
+image/webp
+```
+
+Do not use the client-declared MIME blindly.
+
+---
+
+# 71. CDN Is Delivery Infrastructure
+
+Do not proxy Product image bytes through Laravel for public storefront reads.
+
+Clients should load:
+
+```text
+https://assets.example.com/...
+```
+
+directly.
+
+---
+
+# PART H — PUBLIC CATALOG INTEGRATION
+
+## 72. CAT-002
+
+Existing:
+
+```text
+GET /api/v1/products/{product}
+```
+
+must embed uploaded images.
+
+Ordering:
+
+```text
+sort_order ASC
+id ASC
+```
+
+---
+
+# 73. CAT-001
+
+Product summaries should continue using:
+
+```text
+primary_image
+```
+
+from the Product's actual primary ProductImage.
+
+---
+
+# 74. First Upload Effect
+
+For an image-less Product:
+
+```text
+CAT-009 upload succeeds
+```
+
+then:
+
+```text
+CAT-001 primary_image
+```
+
+should become that uploaded image.
+
+---
+
+# 75. Subsequent Upload Effect
+
+Additional images:
+
+```text
+is_primary = false
+```
+
+therefore must not unexpectedly change Product card imagery.
+
+---
+
+# 76. Image URL
+
+All CAT-001/CAT-002 Product image URLs must use:
+
+```text
+R2_PUBLIC_BASE_URL
+```
+
+not:
+
+```text
+R2_ENDPOINT
+```
+
+---
+
+# 77. Public File Path Secrecy
+
+`file_path` remains absent from Product APIs.
+
+It may internally resemble a public CDN path but remains persistence/storage metadata and is not an API field.
+
+---
+
+# PART I — NO DELETE/EDIT/REORDER API IN V1
+
+## 78. CAT-009 Is Add-Only
+
+The frozen V1 API contains:
+
+```text
+POST /products/{product}/images
+```
+
+but no Product-image:
+
+```text
+PATCH
+DELETE
+reorder
+set-primary
+```
+
+endpoint.
+
+Do not invent them.
+
+---
+
+# 79. No Product Image GET Endpoint
+
+Do not add:
 
 ```http
-POST /api/v1/categories
+GET /api/v1/products/{product}/images
 ```
 
-Expected response:
-
-```text
-201 Created
-```
-
-using the existing Category representation required by the frozen endpoint.
+The frozen contract explicitly rejected it because CAT-002 embeds images.
 
 ---
 
-# 21. CAT-011 Frozen Input
+# 80. No Image DELETE Endpoint
 
-Allow exactly:
+Do not add:
 
-```text
-name
-slug
-description
-image
+```http
+DELETE /api/v1/products/{product}/images/{image}
 ```
 
-No hierarchy controls are part of the frozen CAT-011 request.
+in Phase 11.5.
+
+Record deletion as an operational limitation/future contract requirement.
 
 ---
 
-# 22. Required Create Fields
-
-Required:
-
-```text
-name
-slug
-```
-
-Optional:
-
-```text
-description
-image
-```
-
----
-
-# 23. Unknown Fields
-
-Reject unknown fields.
-
-Examples that must NOT be accepted through CAT-011:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-products
-children
-recommendations
-relation_type
-priority
-created_at
-updated_at
-```
-
-unless a later formal contract reconciliation explicitly adds them.
-
----
-
-# 24. Important Hierarchy Boundary
-
-The Category schema internally supports:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-```
-
-but the frozen CategoryCreateRequest does NOT expose those fields.
-
-Therefore CAT-011 must not silently turn into taxonomy-structure management.
-
----
-
-# 25. Creation Placement Problem
-
-Because CAT-011 does not accept:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-```
-
-the implementation must determine how newly created Categories are placed.
-
-Inspect existing frozen docs/decisions for an already-approved rule.
-
-Do NOT guess.
-
----
-
-# 26. If No Placement Rule Exists
-
-If no authoritative rule defines how CAT-011 chooses:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-```
-
-STOP the implementation at this sub-point.
-
-Report:
-
-```text
-CAT-011 hierarchy placement gap
-```
-
-Do not invent:
-
-```text
-parent = Furnitures Root
-space_type = hybrid
-display_order = 0
-is_active = true
-```
-
-without a contract decision.
-
----
-
-# 27. Smallest Safe Reconciliation If Required
-
-If the contract is silent, prefer a formal consistency correction over hidden defaults.
-
-The correction must preserve the external API if possible.
-
-For example, if the business intent is clearly:
-
-```text
-CAT-011 creates top-level storefront categories beneath Furnitures Root
-```
-
-that rule may be documented as server-controlled behavior.
-
-But only do this if repository evidence supports it.
-
-Otherwise STOP and ask for contract decision.
-
----
-
-# 28. Do Not Expand Request Shape Automatically
+# 81. No Reorder Endpoint
 
 Do not add:
 
 ```text
-parent_id
-space_type
-display_order
-is_active
+/images/reorder
 ```
-
-to CategoryCreateRequest merely because the schema has them.
-
-That changes the frozen strict request contract.
 
 ---
 
-# 29. Category Hierarchy Remains Server-Controlled
-
-Unless a later API explicitly supports reparenting:
-
-```text
-parent_id
-```
-
-remains server-controlled.
-
----
-
-# 30. No Hierarchy Management Endpoint
+# 82. No Set-Primary Endpoint
 
 Do not add:
 
-```http
-POST /categories/{category}/move
-PATCH /categories/{category}/parent
-POST /categories/{category}/reparent
+```text
+/images/{image}/primary
 ```
-
-in 11.4.
 
 ---
 
-# 31. No Recommendation Management
+# 83. No Alt-Text Update Endpoint
 
-Do not expose:
+Do not add an image-metadata PATCH endpoint.
+
+---
+
+# 84. Existing Database Deletion Semantics
+
+Do not redesign ProductImage FK behavior.
+
+Existing:
 
 ```text
-category_recommendations
-relation_type
-priority
+Product hard delete
+→ image DB rows cascade
+
+Variant delete
+→ product_variant_id SET NULL
 ```
 
-through CAT-011/012.
+remain persistence semantics.
 
-The recommendation graph already exists as durable configuration but has no frozen management endpoint.
+Do NOT automatically infer that database cascade means R2 objects are automatically deleted.
 
 ---
 
-# 32. Existing Recommendation Graph
+# 85. Product Deletion and External Object Cleanup
 
-Preserve:
+Because V1 has no Product DELETE API, do not build broad R2 cleanup around Product deletion in this phase.
+
+Document that external-object lifecycle must be handled deliberately if Product hard deletion becomes an operational API later.
+
+---
+
+# PART J — R2 CONFIGURATION IMPLEMENTATION
+
+## 86. `config/filesystems.php`
+
+Add a dedicated disk conceptually:
+
+```php
+'r2' => [
+    'driver' => 's3',
+    'key' => env('R2_ACCESS_KEY_ID'),
+    'secret' => env('R2_SECRET_ACCESS_KEY'),
+    'region' => env('R2_REGION', 'auto'),
+    'bucket' => env('R2_BUCKET'),
+    'endpoint' => env('R2_ENDPOINT'),
+    'use_path_style_endpoint' => false,
+    'throw' => true,
+],
+```
+
+Adapt exact options to the installed Laravel/Flysystem version.
+
+Do not blindly paste obsolete config.
+
+---
+
+# 87. Application Config
+
+Prefer a dedicated config file such as:
 
 ```text
-COMPLEMENTARY
-PAIR_WITH
-COMPLETE_THE_LOOK
-ALTERNATIVE
+config/product_images.php
 ```
 
-relationships unchanged.
-
-Category create/update must not mutate graph edges.
-
----
-
-# 33. `name`
-
-Validate:
+containing conceptually:
 
 ```text
-string
-trimmed
-non-empty
-max 120
+disk
+max_bytes
+public_base_url
+allowed_types
 ```
 
-Use existing text-normalization conventions.
-
----
-
-# 34. `slug`
-
-Frozen OpenAPI pattern is:
+Example environment bindings:
 
 ```text
-^[a-z0-9-]+$
+PRODUCT_IMAGE_DISK=r2
+PRODUCT_IMAGE_MAX_BYTES=5242880
+R2_PUBLIC_BASE_URL=
 ```
 
-but the Category model already enforces stronger canonical kebab-case:
+Do not call `env()` directly from domain/services.
+
+---
+
+# 88. Config Cache Compatibility
+
+All runtime code must consume:
 
 ```text
-^[a-z0-9]+(?:-[a-z0-9]+)*$
+config(...)
 ```
 
-which rejects:
+not direct `env(...)`.
+
+This must work under:
+
+```bash
+php artisan config:cache
+```
+
+---
+
+# 89. Local/Test Storage
+
+Tests must not require actual Cloudflare credentials.
+
+Use:
+
+```php
+Storage::fake(...)
+```
+
+or an injected fake storage implementation.
+
+Do not call real R2 in the normal PHPUnit suite.
+
+---
+
+# 90. Optional R2 Smoke Test
+
+If the project owner has populated actual credentials locally, an explicit/manual storage smoke test may verify:
 
 ```text
-leading hyphen
-trailing hyphen
-consecutive hyphens
-spaces
-underscores
-uppercase
+write
+exists
+delete
 ```
 
-This is a contract-validation consistency issue.
+against the configured test/development R2 bucket.
+
+Do not make this required for canonical unit/feature tests.
+
+Do not delete unknown existing R2 objects.
+
+Use a uniquely generated test key.
+
+Clean it up afterward.
 
 ---
 
-# 35. Slug Validation Authority
+# 91. No Production Destructive Test
 
-Preserve the established canonical Category slug invariant from the schema/domain.
+Never run a bucket purge.
 
-Do not weaken the model to accept malformed slugs just because OpenAPI regex is broader.
+Never enumerate-and-delete bucket contents.
 
-Instead reconcile OpenAPI/documentation only if necessary through frozen-contract consistency correction.
+Never modify unrelated R2 objects.
 
 ---
 
-# 36. Category Slug Examples
+# PART K — IMPLEMENTATION STRUCTURE
 
-Accept:
+## 92. Controller
+
+Keep CAT-009 controller thin:
 
 ```text
-living-room
-office-chairs
-tv-stands-showcases
-```
-
-Reject:
-
-```text
-Living-Room
-living_room
--living-room
-living-room-
-living--room
-```
-
----
-
-# 37. Slug Unique
-
-Global uniqueness remains mandatory.
-
-Duplicate slug must return canonical API validation/conflict behavior.
-
-Never expose DB exception details.
-
----
-
-# 38. Description
-
-Rules:
-
-```text
-string|null
-max 1000
-```
-
-Decide blank normalization consistently.
-
-If project convention maps blank optional text to null:
-
-use it.
-
-Otherwise preserve explicit empty string semantics only if frozen.
-
----
-
-# 39. Category Image Input
-
-Rules:
-
-```text
-string|null
-valid URI
-```
-
-No binary upload through CAT-011/012.
-
----
-
-# 40. Category Image Security
-
-Validate URI structurally.
-
-Do not:
-
-```text
-fetch remote URL
-proxy remote file
-download image
-perform SSRF request
-```
-
-during Category mutation.
-
-Store only validated URI/reference.
-
----
-
-# 41. Allowed URI Schemes
-
-Inspect existing URI validation conventions.
-
-Prefer:
-
-```text
-https
-```
-
-if frozen security policy already requires it.
-
-Do not allow arbitrary:
-
-```text
-file:
-javascript:
-data:
-ftp:
-```
-
-without explicit contract support.
-
----
-
-# 42. CAT-012 — Update Category
-
-Implement:
-
-```http
-PATCH /api/v1/categories/{category}
-```
-
-Expected:
-
-```text
-200
-```
-
----
-
-# 43. CAT-012 Frozen Allow-List
-
-All optional:
-
-```text
-name
-slug
-description
-image
-```
-
-Nothing else.
-
----
-
-# 44. Partial Update
-
-PATCH must modify only supplied fields.
-
-No full-replacement semantics.
-
----
-
-# 45. Atomicity
-
-If update contains:
-
-```text
-name
-slug
-description
-image
-```
-
-and one fails validation:
-
-no field is persisted.
-
----
-
-# 46. Same-Value PATCH
-
-Prefer no unnecessary persistence if repository conventions support it.
-
----
-
-# 47. Category Identifier
-
-Use the canonical Category path resolver.
-
-Frozen public Category detail supports:
-
-```text
-slug
-or opaque category id
-```
-
-Preserve the same resolution semantics for CAT-012 unless contract states otherwise.
-
----
-
-# 48. Opaque Identifier
-
-Never expose raw numeric DB ID.
-
-Use existing CategoryIdentifier.
-
----
-
-# 49. Public Category Reads
-
-Phase 11.4 must not redesign:
-
-```text
-CAT-003
-CAT-004
-```
-
-They are already implemented in Group E.
-
----
-
-# 50. CAT-003 Scope
-
-Preserve:
-
-```text
-active storefront categories
-direct children of Furnitures Root
-```
-
-only.
-
-Do not make newly created categories public merely because they exist unless their internal placement/state satisfies CAT-003 rules.
-
----
-
-# 51. CAT-004 Scope
-
-Preserve existing:
-
-```text
-active Category only
-```
-
-public behavior.
-
-Inactive/non-public Category still returns public 404 as already defined.
-
----
-
-# 52. No Operational Category Read Endpoint
-
-Frozen V1 does not define:
-
-```text
-GET /admin/categories
-GET /admin/categories/{category}
-```
-
-Do not add them.
-
-This means Category management write UX will later rely on the existing public Category reads and/or known identifiers unless a future contract explicitly adds operational reads.
-
-Do not expand surface here.
-
----
-
-# 53. Important Operational Limitation
-
-Because no CAT-013/014 equivalent exists for Categories:
-
-inactive Categories may not be directly retrievable through a dedicated Admin read API.
-
-Do not solve this by inventing endpoints during 11.4.
-
-Record it as a V1 operational limitation if relevant.
-
----
-
-# 54. `is_active` Not Client-Writable
-
-Although Category schema has:
-
-```text
-is_active
-```
-
-CAT-011/012 do not expose it.
-
-Reject client input:
-
-```json
-{"is_active": false}
-```
-
----
-
-# 55. Activation Management
-
-Do not add category activation/deactivation behavior unless a frozen contract explicitly defines it.
-
-If current Category management cannot alter `is_active`, record that limitation.
-
----
-
-# 56. `display_order` Not Client-Writable
-
-Reject:
-
-```text
-display_order
-```
-
-through CAT-011/012.
-
----
-
-# 57. `space_type` Not Client-Writable
-
-Reject:
-
-```text
-space_type
-```
-
-through CAT-011/012.
-
----
-
-# 58. `parent_id` Not Client-Writable
-
-Reject:
-
-```text
-parent_id
-```
-
-through CAT-011/012.
-
----
-
-# 59. Existing No-Cycle Logic
-
-Do not weaken or remove:
-
-```text
-Category::changeParent()
-```
-
-or its no-cycle/concurrency protections.
-
-Even though CAT-011/012 do not currently expose hierarchy mutation, the domain invariant remains authoritative.
-
----
-
-# 60. Existing Root
-
-Preserve:
-
-```text
-Furnitures Root
-```
-
-as structural taxonomy root.
-
-Do not allow CAT-011/012 to accidentally rename or structurally corrupt it unless the frozen contract explicitly permits editing that exact Category.
-
----
-
-# 61. Root Mutation Safety
-
-Consider protecting structural root fields through domain rules if current architecture treats root as system-owned.
-
-Inspect existing decisions.
-
-Do not invent root immutability without evidence.
-
----
-
-# 62. Existing Products
-
-Changing Category:
-
-```text
-name
-slug
-description
-image
-```
-
-must not change Product `category_id`.
-
-Products remain linked to the same Category row.
-
----
-
-# 63. Category Slug Update Effects
-
-Products referencing Category continue to work because FK uses internal ID.
-
-Product public embedded Category summary should immediately reflect updated:
-
-```text
-name
-slug
-description
-```
-
-where included.
-
----
-
-# 64. Product Filter Effects
-
-`GET /products?category={category}` must continue resolving Category by canonical slug/id after slug update according to current Group E resolver behavior.
-
-Old slug history/redirect is not part of V1 unless already implemented.
-
----
-
-# 65. No Product Reassignment
-
-Category update must not bulk move Products.
-
----
-
-# 66. No Product Deletion
-
-Category update must not delete Products.
-
----
-
-# 67. No Inventory Effects
-
-No stock behavior belongs here.
-
----
-
-# 68. No Request Effects
-
-Existing FurnitureRequests stay unchanged.
-
----
-
-# 69. No Enquiry Effects
-
-Existing Enquiries stay unchanged.
-
----
-
-# 70. Category Delete
-
-There is no frozen:
-
-```http
-DELETE /api/v1/categories/{category}
-```
-
-Do not add one.
-
----
-
-# 71. Existing FK Delete Behavior
-
-Internal Category deletion behavior remains:
-
-```text
-parent delete → child parent_id SET NULL
-product category FK RESTRICT
-recommendation edges cascade
-```
-
-but none of this becomes an API operation in 11.4.
-
----
-
-# 72. Controller
-
-Keep thin:
-
-```text
-authenticate
-authorize
-validate
-DTO
+authenticated actor
+authorization
+FormRequest
+Product resolver
 service
-resource
+ProductImageResource
 ```
 
 ---
 
-# 73. Create Service
+# 93. Request
+
+Use a focused request such as:
+
+```text
+CreateProductImageRequest
+```
+
+Responsibilities:
+
+```text
+multipart structure
+exact image field
+size
+server MIME/signature validation integration
+unknown-field rejection
+```
+
+---
+
+# 94. Service
 
 Prefer:
 
 ```text
-CreateCategory
-```
-
-or repository-consistent equivalent.
-
-It should handle:
-
-```text
-validated request
-server-controlled placement/defaults if already approved
-slug uniqueness
-description/image persistence
-```
-
----
-
-# 74. Update Service
-
-Prefer:
-
-```text
-UpdateCategory
-```
-
-for:
-
-```text
-name
-slug
-description
-image
-```
-
-only.
-
----
-
-# 75. FormRequests
-
-Use:
-
-```text
-CreateCategoryRequest
-UpdateCategoryRequest
-```
-
-or equivalent.
-
-Unknown-field rejection mandatory.
-
----
-
-# 76. DTOs
-
-Use strict input objects.
-
-Do not pass generic arrays deep into domain services.
-
----
-
-# 77. Never Use `$request->all()`
-
-Use:
-
-```text
-validated()
-```
-
-plus explicit mapping.
-
----
-
-# 78. Category Resource
-
-Reuse the existing public Category resource for CAT-011/012 response only if it exactly matches frozen mutation response requirements.
-
-Do not mass serialize the model.
-
----
-
-# 79. Description Exposure
-
-CAT-004 should expose description.
-
-CAT-003 summary should remain lean according to frozen representation.
-
-Do not add description to CAT-003 if contract omits it.
-
----
-
-# 80. Image Representation
-
-Input:
-
-```text
-image = URI string|null
-```
-
-Response:
-
-```json
-"image": {
-  "url": "..."
-}
+CreateProductImage
 ```
 
 or:
 
-```json
-"image": null
+```text
+ProductImageService::create()
 ```
 
-according to frozen resource.
-
-Do not return raw internal column names.
-
----
-
-# 81. Cache Invalidation
-
-Category mutations affect public navigation/catalog.
-
-Reuse existing application cache invalidation infrastructure if available.
-
-Do not build production CDN tooling here.
-
----
-
-# 82. Public Cache Safety
-
-CAT-003/004 remain public cacheable.
-
-CAT-011/012 are non-cacheable mutations.
-
----
-
-# 83. Audit
-
-Privileged catalog changes are conceptually audit candidates.
-
-Inspect current closed AuditAction vocabulary.
-
-If no Category-specific safe action exists:
-
-do not invent audit enum values silently.
-
-Record the gap for later formal audit reconciliation.
-
----
-
-# 84. Phase 11.13 Gap
-
-Do not touch:
+Responsibilities:
 
 ```text
-ADM-007
-audit.view
+generate image identifier
+generate object key
+store R2 object
+lock Product
+derive metadata
+persist ProductImage
+compensate storage failure
 ```
-
-in this phase.
 
 ---
 
-# 85. No Recommendation API
+# 95. Storage Adapter
 
-Do not add:
+Prefer:
 
 ```text
-POST /categories/{category}/recommendations
-DELETE /categories/{category}/recommendations/{target}
+ProductImageStorage
 ```
 
----
+wrapping Laravel Storage.
 
-# 86. No Hierarchy API
-
-Do not add:
+Controller/service should not directly know:
 
 ```text
-move
-reparent
-reorder
-activate
-deactivate
+Cloudflare credentials
+bucket endpoint syntax
+CDN hostname construction internals
 ```
-
-routes.
 
 ---
 
-# 87. Create Validation Tests
+# 96. Resource
 
-Mandatory:
+Use:
 
 ```text
-valid create
-name required
-slug required
-name max 120
-slug canonical kebab-case
-slug global uniqueness
-description nullable
-description max 1000
-image nullable
-image valid URI
-unknown fields rejected
-parent_id rejected
-space_type rejected
-display_order rejected
-is_active rejected
-recommendations rejected
-server fields rejected
+ProductImageResource
 ```
 
----
-
-# 88. Update Validation Tests
-
-Mandatory:
+with exactly:
 
 ```text
-partial name
-partial slug
-partial description
-clear description to null
-partial image
-clear image to null
-duplicate slug
-malformed slug
-invalid URI
-unknown fields
-hierarchy fields rejected
-atomic failure
+id
+url
+alt_text
+sort_order
+is_primary
 ```
 
 ---
 
-# 89. Authorization Tests
+# 97. Identifier
 
-Test:
+Reuse the established ProductImage opaque identifier format:
+
+```text
+img_...
+```
+
+Do not expose numeric DB IDs.
+
+---
+
+# 98. No `$request->all()`
+
+Use validated/explicit input.
+
+CAT-009 has only:
+
+```text
+image
+```
+
+---
+
+# PART L — SECURITY TESTS
+
+## 99. File Validation Tests
+
+Cover:
+
+```text
+valid JPEG
+valid PNG
+valid WebP
+zero bytes
+oversize
+fake JPEG extension
+fake PNG extension
+fake WebP extension
+MIME/signature mismatch
+PDF
+SVG
+GIF
+multiple files
+non-file text image field
+unknown multipart fields
+```
+
+---
+
+# 100. Path Safety Tests
+
+Prove uploaded filename cannot influence:
+
+```text
+directory traversal
+object prefix
+Product identifier
+Image identifier
+```
+
+---
+
+# 101. Authorization Tests
+
+Cover full matrix:
 
 ```text
 Anonymous
-CUSTOMER
-STAFF no permission
-STAFF products.manage
-ADMIN with permission
-ADMIN missing permission
+Customer
+Staff without permission
+Staff products.manage
+Admin without permission
+Admin products.manage
 ```
 
 ---
 
-# 90. Persistence Reconciliation Tests
+# 102. Operational Product Tests
 
-Mandatory:
+Verify upload works to authorized:
 
 ```text
-description persists
-image persists
-existing seeded categories migrate with nulls safely
-factory works without description/image
-public detail returns persisted description/image
-summary returns image and omits detail-only fields
+published Product
+unpublished Product
+inactive Product
+```
+
+where Phase 11.3 operational management semantics permit them.
+
+---
+
+# PART M — STORAGE FAILURE TESTS
+
+## 103. Successful Upload
+
+Assert:
+
+```text
+R2 fake contains object
+ProductImage row exists
+file_path matches object
+response URL uses CDN base
 ```
 
 ---
 
-# 91. Hierarchy Regression Tests
+# 104. Storage Failure
 
-Run existing:
+When storage write throws:
 
 ```text
-CategoryHierarchyTest
-CategoryConcurrentReparentTest
+no ProductImage
+no partial DB state
+canonical server/external error
 ```
 
-or current equivalents.
-
-Phase 11.4 must not destabilize hierarchy.
+Do not leak R2 error internals.
 
 ---
 
-# 92. Recommendation Regression Tests
+# 105. DB Failure After Storage
 
-Run existing:
+Force ProductImage persistence failure.
+
+Assert:
 
 ```text
-CategoryRecommendationTest
-CategorySeedTest
+uploaded object deleted
+no ProductImage committed
 ```
-
-No edge changes expected.
 
 ---
 
-# 93. Taxonomy Seed Regression
+# 106. Cleanup Failure
 
-Expected seeded structure remains:
+Force:
 
 ```text
-76 categories
-20 recommendation mappings
+DB failure
++
+R2 delete failure
 ```
 
-unless current repository counts have intentionally changed since that ADR.
+Assert:
 
-Use actual current test expectations.
+```text
+failure observable
+safe recovery information retained/logged
+secret values not logged
+```
 
-Do not hardcode stale counts if runtime differs.
+Reuse established cleanup-recovery patterns where practical.
 
 ---
 
-# 94. Slug Concurrency
+# PART N — IMAGE DOMAIN TESTS
 
-Two simultaneous creates with the same slug:
+## 107. First Image
+
+For imageless Product:
 
 ```text
-at most one succeeds
+sort_order = 1
+is_primary = true
+alt_text = Product.name
+product_variant_id = null
 ```
-
-DB unique constraint remains final guard.
-
-Loser must receive canonical API error rather than raw SQL exception.
 
 ---
 
-# 95. MariaDB Validation
+# 108. Second Image
 
-Because schema changes in Part A:
-
-run disposable MariaDB:
+Expected:
 
 ```text
-migrate:fresh --seed --force
+sort_order = 2
+is_primary = false
 ```
 
-against:
+---
+
+# 109. Existing Gaps in Sort Order
+
+If existing images have:
+
+```text
+1
+3
+7
+```
+
+new image:
+
+```text
+8
+```
+
+Use:
+
+```text
+MAX + 1
+```
+
+not:
+
+```text
+COUNT + 1
+```
+
+---
+
+# 110. Existing Primary
+
+If Product already has a primary:
+
+new upload cannot replace it.
+
+---
+
+# 111. Product Name Change
+
+Existing image alt text remains unchanged.
+
+New subsequent upload uses the Product's current name.
+
+---
+
+# 112. Concurrency Test
+
+Use the established disposable MariaDB concurrency infrastructure to prove:
+
+```text
+two simultaneous uploads
+→ distinct sort_order
+→ max one primary
+→ no DB invariant break
+```
+
+This is important because SQLite cannot prove actual InnoDB `FOR UPDATE` behavior.
+
+Use:
 
 ```text
 furnitureapp_test_disposable
 ```
 
+only.
+
+---
+
+# PART O — PUBLIC CATALOG REGRESSION
+
+## 113. Product Detail
+
 Verify:
 
 ```text
-new columns
-constraints
-seed integrity
-slug uniqueness
+CAT-002.images[]
 ```
 
----
-
-# 96. No Production DB
-
-Do not touch Coolify/Contabo production DB.
+contains uploaded ProductImage.
 
 ---
 
-# 97. OpenAPI
+# 114. Product Summary
 
-Expected:
+Verify:
 
 ```text
-unchanged
+CAT-001.primary_image
 ```
 
-unless the stronger canonical slug regex is documented as an approved consistency correction.
+uses uploaded primary.
 
 ---
 
-# 98. Slug Regex Reconciliation
+# 115. CDN URL Test
 
-The machine-readable schema currently permits more strings than the domain does.
-
-If correcting OpenAPI:
-
-change only the regex/documentation to match the already-existing domain invariant.
-
-Classify this as:
+With:
 
 ```text
-frozen-contract consistency correction
+R2_PUBLIC_BASE_URL=https://assets.example.test
 ```
 
-not new behavior.
-
-Do not weaken runtime validation.
-
----
-
-# 99. Schema Changes Expected
-
-Only:
+and:
 
 ```text
-Category description persistence
-Category image persistence
+file_path=products/prod_123/img_456.webp
 ```
 
-plus necessary indexes/constraints if already justified.
-
-No hierarchy redesign.
-
----
-
-# 100. Dependencies
-
-Expected:
+expect:
 
 ```text
-NONE
+https://assets.example.test/products/prod_123/img_456.webp
 ```
 
 ---
 
-# 101. Frontend
+# 116. Endpoint Regression
 
-Expected:
+Assert no accidental:
 
 ```text
-NONE
+GET /products/{product}/images
+PATCH /products/{product}/images/{image}
+DELETE /products/{product}/images/{image}
 ```
 
----
-
-# 102. Product Media
-
-Do not implement Phase 11.5.
+routes exist.
 
 ---
 
-# 103. Inventory
+# PART P — OPENAPI RECONCILIATION
 
-Do not implement Phase 11.6.
+## 117. CAT-009 201 Response
 
----
-
-# 104. Deferred Commerce
-
-Do not activate:
+Change:
 
 ```text
-11.7
-11.11
-11.12
-Group H
-Group I
+Attachment
+```
+
+to:
+
+```text
+ProductImage
 ```
 
 ---
 
-# 105. Documentation
+# 118. Request Schema
+
+Preserve:
+
+```text
+multipart/form-data
+image: binary
+```
+
+---
+
+# 119. Strict Multipart Contract
+
+If OpenAPI currently lacks:
+
+```text
+required: [image]
+additionalProperties: false
+```
+
+reconcile it to match the intended already-required CAT-009 upload semantics if runtime is implementing those rules.
+
+Classify this as a consistency hardening correction.
+
+Do not add new client fields.
+
+---
+
+# 120. ProductImage Representation
+
+Ensure OpenAPI remains aligned with:
+
+```text
+id
+url
+alt_text
+sort_order
+is_primary
+```
+
+---
+
+# PART Q — DOCUMENTATION
+
+## 121. ADR
+
+Add a new accepted ADR conceptually:
+
+```text
+Phase 11.5 Product Image Storage and R2 Delivery
+```
+
+Use the next repository-consistent ADR identifier.
+
+---
+
+# 122. ADR Must Record
+
+At minimum:
+
+```text
+Cloudflare R2 stores Product image bytes.
+
+Cloudflare custom-domain CDN serves public image URLs.
+
+Cloudflare Images is not used.
+
+Laravel does not resize, optimize, compress, or convert images.
+
+Images are manually optimized before upload.
+
+MySQL stores only ProductImage metadata/internal file_path.
+
+file_path is provider-neutral.
+
+public URL is derived from R2_PUBLIC_BASE_URL.
+
+CAT-009 remains single-image multipart upload.
+
+CAT-009 creates product-wide images only.
+
+alt_text is server-derived from Product.name.
+
+sort_order appends with MAX + 1.
+
+first image becomes primary.
+
+subsequent images are non-primary.
+
+CAT-009 OpenAPI Attachment response was a stale reference and is corrected to ProductImage.
+
+No Product-image DELETE/reorder/set-primary/edit endpoint exists in V1.
+```
+
+---
+
+# 123. Update Phase Documentation
 
 Update:
 
@@ -1660,294 +2260,487 @@ phases/group-K-phases.md
 docs/decisions.md
 ```
 
-and Category schema/resource docs where the old persistence description is now stale.
+and relevant API docs/OpenAPI.
 
 ---
 
-# 106. Historical ADR Preservation
+# PART R — QUALITY AND VERIFICATION
 
-Do not delete:
+## 124. Focused Tests
+
+Run:
 
 ```text
-ADR/BACKEND-009
+ProductImage schema
+Product image CAT-009
+Product image validation
+Product image authorization
+Product image storage
+Product image compensation
+Product image public URL
+Product image primary invariant
+Product image ordering
+Product image concurrency
+Product catalog summary/detail
+Operational Product regression
+RBAC
+OpenAPI
 ```
-
-Add a later reconciliation ADR that supersedes only the statement that Categories persist no description/image.
-
-Preserve the original hierarchy decision history.
 
 ---
 
-# 107. Completion Report — Status
+# 125. Full Suite
+
+Run:
+
+```bash
+php artisan test
+```
+
+Expected:
+
+```text
+all existing tests green
+```
+
+apart from already-known intentional skips.
+
+---
+
+# 126. Static Analysis
+
+Run:
+
+```bash
+vendor/bin/phpstan analyse
+```
+
+---
+
+# 127. Formatting
+
+Run:
+
+```bash
+vendor/bin/pint --test
+```
+
+---
+
+# 128. Dependency Audit
+
+Run:
+
+```bash
+composer audit
+```
+
+---
+
+# 129. Diff Validation
+
+Run:
+
+```bash
+git diff --check
+```
+
+---
+
+# 130. Route Verification
+
+Run:
+
+```bash
+php artisan route:list --path=api --except-vendor
+```
+
+Confirm:
+
+```text
+CAT-009 active
+```
+
+and no invented Product-image management routes.
+
+---
+
+# 131. Config Verification
+
+Run appropriate config tests, including:
+
+```bash
+php artisan config:clear
+php artisan config:cache
+```
+
+if consistent with repository workflow.
+
+Confirm R2 config remains available through cached config.
+
+Do not expose secrets in command output.
+
+---
+
+# 132. MariaDB Concurrency Gate
+
+Run Product-image allocation concurrency tests on:
+
+```text
+furnitureapp_test_disposable
+```
+
+using the established forked-worker approach.
+
+Prove:
+
+```text
+unique deterministic append positions
+max one primary
+no deadlock leak
+no DB corruption
+```
+
+---
+
+# PART S — COMPLETION REPORT
+
+## 133. Phase Status
 
 Return:
 
-## Phase 11.4 Status
-
 ```text
+Phase 11.5 Status
 PASS
 ```
 
 or:
 
 ```text
+Phase 11.5 Status
 BLOCKED
 ```
 
 ---
 
-# 108. Completion Report — Persistence Reconciliation
+# 134. Storage Report
 
 Report:
 
 ```text
-Previous schema:
-Frozen Category API:
-New columns:
-Existing-row migration behavior:
-Public API compatibility:
-OpenAPI changed:
+Storage provider:
+Cloudflare R2
+
+Laravel disk:
+<actual disk>
+
+Public delivery:
+Cloudflare custom-domain CDN
+
+Cloudflare Images:
+NOT USED
+
+Server-side optimization:
+NONE
+
+Server-side resizing:
+NONE
+
+Server-side conversion:
+NONE
 ```
 
 ---
 
-# 109. Completion Report — CAT-011
+# 135. Environment Report
+
+Report only key names:
+
+```text
+PRODUCT_IMAGE_DISK
+PRODUCT_IMAGE_MAX_BYTES
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET
+R2_ENDPOINT
+R2_REGION
+R2_PUBLIC_BASE_URL
+```
+
+Never report credential values.
+
+---
+
+# 136. Credential Status
+
+Report:
+
+```text
+.env placeholders prepared: YES/NO
+.env.example documented: YES/NO
+Real credentials committed: NO
+```
+
+---
+
+# 137. CAT-009 Report
 
 Report:
 
 ```text
 route:
 authorization:
-required fields:
-optional fields:
-server-controlled placement behavior:
-response:
+request content type:
+accepted field:
+allowed MIME types:
+max size:
+response resource:
 ```
 
 ---
 
-# 110. Completion Report — CAT-012
+# 138. Server-Derived Metadata Report
 
 Report:
 
 ```text
-route:
-authorization:
-allow-list:
-identifier resolution:
-atomicity:
-response:
+product_variant_id:
+null
+
+alt_text:
+Product.name snapshot
+
+sort_order:
+MAX + 1, first = 1
+
+is_primary:
+true only for first Product image
 ```
 
 ---
 
-# 111. Completion Report — Hierarchy Placement
+# 139. Object-Key Report
 
-Mandatory.
+Report exact key convention.
 
-Report exactly how CAT-011 determines:
+Example:
 
 ```text
-parent_id
-space_type
-display_order
-is_active
+products/{product-public-id}/{image-public-id}.{detected-extension}
 ```
 
-If there was no frozen rule and implementation had to stop:
-
-report that as the blocker.
-
-Do not omit this section.
-
----
-
-# 112. Completion Report — Rejected Administrative Fields
-
-Confirm CAT-011/012 reject:
+Confirm:
 
 ```text
-parent_id
-space_type
-display_order
-is_active
-recommendations
-products
+client filename controls key: NO
+numeric DB IDs exposed: NO
 ```
-
-unless a formal reconciliation approved otherwise.
 
 ---
 
-# 113. Completion Report — Delete
+# 140. CDN URL Report
 
 Report:
 
 ```text
-Category DELETE endpoint: NONE
+DB stores CDN URL:
+NO
+
+DB stores file_path:
+YES
+
+Public URL derived from:
+R2_PUBLIC_BASE_URL + file_path
 ```
 
 ---
 
-# 114. Completion Report — Recommendation Graph
+# 141. OpenAPI Reconciliation Report
 
 Report:
 
 ```text
-Recommendation management endpoints: NONE
-Recommendation rows modified by CAT-011/012: NO
+CAT-009 old response:
+Attachment
+
+CAT-009 new response:
+ProductImage
+
+Request shape expanded:
+NO
 ```
 
 ---
 
-# 115. Completion Report — Public Reads
+# 142. Side-Effect Report
 
-Report CAT-003/004 regression results.
-
----
-
-# 116. Completion Report — Schema
-
-Report exact new Category columns.
-
----
-
-# 117. Completion Report — OpenAPI
-
-Expected:
+Confirm:
 
 ```text
-unchanged
+Product pricing mutated: NO
+Variants mutated: NO
+Inventory mutated: NO
+Cart mutated: NO
+Request mutated: NO
+Enquiry mutated: NO
 ```
-
-or exact slug-regex consistency correction.
 
 ---
 
-# 118. Completion Report — Tests
+# 143. Route Surface Report
 
-Report focused:
+Confirm:
 
 ```text
-Category persistence
-Category create API
-Category update API
-Authorization
-Public Category reads
-Slug uniqueness
-Hierarchy regression
-Concurrent reparent regression
-Recommendation regression
-Seed regression
+POST Product image: YES
+
+GET Product images endpoint: NO
+PATCH Product image: NO
+DELETE Product image: NO
+reorder endpoint: NO
+set-primary endpoint: NO
 ```
 
 ---
 
-# 119. Completion Report — Quality
+# 144. Failure-Safety Report
+
+Report results for:
+
+```text
+R2 upload failure
+DB failure after R2 upload
+R2 compensation delete
+cleanup-delete failure handling
+```
+
+---
+
+# 145. Validation Report
 
 Report:
 
 ```text
-PHPUnit
-MariaDB migration
-OpenAPI
-PHPStan
-Pint
-Composer audit
-git diff --check
-route:list
+JPEG:
+PNG:
+WebP:
+oversize:
+zero-byte:
+fake extension:
+signature mismatch:
+PDF:
+SVG:
+unknown multipart field:
 ```
 
 ---
 
-# 120. Next Phase
+# 146. Verification Report
 
-If PASS:
+Report:
 
 ```text
-Phase 11.5 — Image management READY
+focused tests:
+MariaDB concurrency:
+full PHPUnit:
+PHPStan:
+Pint:
+Composer audit:
+git diff --check:
+route:list:
+config cache:
 ```
-
-Do not begin automatically.
 
 ---
 
-# 121. Definition of Done
+# 147. Definition of Done
 
-Phase 11.4 is complete only when:
+Phase 11.5 is complete only when:
 
-- Category `description` persistence is reconciled;
-- Category `image` persistence is reconciled;
-- frozen CAT-003/004 response shapes remain valid;
-- CAT-011 is implemented;
-- CAT-012 is implemented;
-- `products.manage` is enforced;
-- Anonymous is denied;
-- Customer is denied;
-- unauthorized Staff/Admin are denied;
-- CAT-011 accepts only the frozen allow-list;
-- CAT-012 accepts only the frozen allow-list;
-- unknown fields are rejected;
-- slug uniqueness is enforced;
-- canonical kebab-case invariant remains intact;
-- nullable description works;
-- nullable image works;
-- image URI is never fetched server-side;
-- no Product behavior is pulled into Category mutation;
-- no hierarchy mutation API is invented;
-- no recommendation-management API is invented;
-- no Category DELETE endpoint is invented;
-- existing no-cycle protections remain intact;
-- existing concurrent reparent protections remain intact;
-- existing recommendation graph remains intact;
-- taxonomy seed remains deterministic;
-- Product filtering by Category continues working;
-- Category updates do not mutate Product ownership;
-- OpenAPI remains aligned;
-- MariaDB migration verification passes;
+- CAT-009 is implemented;
+- CAT-009 requires `products.manage`;
+- CAT-009 accepts exactly one `image`;
+- response is ProductImage, not Attachment;
+- R2 is configured through Laravel Storage;
+- `.env` has empty/manual credential slots;
+- `.env.example` documents safe placeholders;
+- no credential is committed;
+- R2 S3 endpoint and public CDN domain are separate;
+- image bytes are stored in R2;
+- public delivery uses the custom domain;
+- Cloudflare Images is not used;
+- Laravel performs no optimization;
+- Laravel performs no resize;
+- Laravel performs no conversion;
+- only JPEG/PNG/WebP are accepted;
+- actual content/signature is validated;
+- client filename cannot control object path;
+- object key is server generated;
+- DB stores only internal `file_path`;
+- public `url` derives from `R2_PUBLIC_BASE_URL`;
+- first image becomes primary;
+- subsequent images remain non-primary;
+- sort order appends deterministically;
+- Product name becomes alt-text snapshot;
+- concurrent uploads preserve primary/order invariants;
+- R2 failure leaves no ProductImage row;
+- DB failure compensates R2 upload;
+- cleanup failure is observable/recoverable;
+- CAT-001 primary image works;
+- CAT-002 gallery works;
+- no GET image collection endpoint is added;
+- no Product image PATCH is added;
+- no Product image DELETE is added;
+- no reorder endpoint is added;
+- no set-primary endpoint is added;
 - full regression is green.
 
 ---
 
-# 122. STOP Condition
+# 148. STOP Condition
 
-STOP when the backend can prove:
+STOP when the repository can prove:
 
 ```text
-authorized Staff/Admin
-→ CAT-011 create Category
-→ CAT-012 update Category
-→ frozen description/image contract persists correctly
-→ CAT-003/CAT-004 reflect approved public values
+manually optimized Product image
+        ↓
+CAT-009
+        ↓
+auth + products.manage
+        ↓
+server-side file security validation
+        ↓
+safe immutable object key
+        ↓
+Cloudflare R2
+        ↓
+ProductImage.file_path
+        ↓
+R2_PUBLIC_BASE_URL
+        ↓
+Cloudflare custom-domain CDN URL
+        ↓
+CAT-001 / CAT-002
 ```
 
-while preserving:
+with:
 
 ```text
-existing taxonomy hierarchy
-no-cycle protection
-recommendation graph
-products.manage authorization
-no Category DELETE API
-no hierarchy/recommendation management API
+Cloudflare Images = NOT USED
+Laravel processing = NOT USED
+MySQL image BLOB = NOT USED
+VPS image storage = NOT USED
 ```
 
 and report:
 
 ```text
-Phase 11.4 PASS
+Phase 11.5 PASS
 
-Phase 11.5 — Image management READY
+Phase 11.6 — Inventory management READY
 ```
 
-If CAT-011 has no authoritative server-side rule for its internal hierarchy fields:
-
-```text
-Phase 11.4 BLOCKED
-Reason: CAT-011 hierarchy placement contract gap
-```
-
-Do not invent the rule.
+Do not begin Phase 11.6 automatically.
 
 DO NOT COMMIT, STAGE OR PUSH.
 

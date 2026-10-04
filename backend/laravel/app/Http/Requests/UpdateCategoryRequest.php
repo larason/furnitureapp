@@ -30,7 +30,7 @@ final class UpdateCategoryRequest extends FormRequest
             'name' => ['sometimes', 'string', 'min:1', 'max:120'],
             'slug' => ['sometimes', 'string', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
-            'image' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
+            'image' => ['sometimes', 'nullable', 'string', 'url', 'max:255'],
         ];
     }
 

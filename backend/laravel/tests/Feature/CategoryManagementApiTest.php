@@ -110,6 +110,17 @@ class CategoryManagementApiTest extends TestCase
         $this->assertDatabaseMissing('categories', ['slug' => 'outdoor--living']);
     }
 
+    public function test_category_mutations_reject_image_urls_that_exceed_storage_length(): void
+    {
+        $root = $this->createRoot();
+        $category = Category::factory()->create(['parent_id' => $root->id, 'slug' => 'existing-category']);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'category_image_validator']));
+        $image = 'https://cdn.example.test/'.str_repeat('a', 256);
+
+        $this->withHeaders($headers)->postJson('/api/v1/categories', $this->createPayload(image: $image))->assertUnprocessable();
+        $this->withHeaders($headers)->patchJson('/api/v1/categories/'.$category->slug, ['image' => $image])->assertUnprocessable();
+    }
+
     public function test_update_resolves_inactive_categories_by_opaque_id_and_updates_content_only(): void
     {
         $root = $this->createRoot();
