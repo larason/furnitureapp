@@ -2698,3 +2698,20 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** The request-first launch needs a clear, secure operational boundary without activating deferred commerce or creating parallel APIs. Recording the audit discrepancy prevents documentation from treating a conceptual permission as current runtime behavior.
 
 **Status:** Accepted | **Date:** 2026-10-04 | **Affected:** `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
+### ADR/GROUP-K-ADMIN-AUTH — Admin Authentication and Initial Trust Bootstrap
+
+**Decision:** Clerk remains the sole credential, verification, and session authority for Admins. Laravel uses the existing `users.clerk_user_id` projection, CLOSED `ADMIN` role, active local account state, and explicit `PermissionCatalog` permissions for administrative authorization. There is no Laravel Admin password, login, registration, session, or HTTP bootstrap endpoint.
+
+- The initial Admin is created only by `php artisan admin:bootstrap <verified-clerk-user-id> --confirm` in a trusted deployment environment. It resolves the exact Clerk subject through the existing gateway, requires a verified Clerk snapshot, and never uses email alone as authority.
+- The bootstrap transaction locks the seeded `ADMIN` role before checking assignment, preventing two concurrent initial identities from succeeding. It reuses the canonical `LocalUserProvisioner` for an unmapped identity, replaces an existing target's role with only `ADMIN`, creates the standard Staff profile projection, and sets local account state to `ACTIVE`.
+- A retry for the same sole Admin is a no-op. A different identity is rejected once any Admin exists. The command is not an additional-Admin workflow; additional Admins remain controlled deployment assignment until a separate frozen-contract decision defines a dedicated operation.
+- Public signup remains `CUSTOMER` only. Clerk metadata, domains, frontend state, request bodies, and `ADM-003`/`ADM-004` Staff onboarding cannot create or approve an Admin.
+- The closed audit vocabulary has no deployment/system bootstrap action or resource type. No fake human actor or out-of-vocabulary event is written; operators record bootstrap in the approved deployment/operations record until a later audit-contract decision exists.
+- The `ADM-007` / `audit.view` inconsistency remains isolated to Phase 11.13.
+
+**Reason:** The first Admin needs an explicit bootstrap-of-trust mechanism without turning any public API, normal Clerk sign-in, or Staff approval workflow into a privilege-escalation path.
+
+**Status:** Accepted and implemented in Phase 11.2 | **Date:** 2026-10-04 | **Affected:** `backend/laravel/app/Authentication/BootstrapInitialAdmin.php`, `backend/laravel/app/Console/Commands/BootstrapInitialAdminCommand.php`, `backend/laravel/tests/Feature/InitialAdminBootstrapTest.php`, `phases/group-K-phases.md`, `docs/decisions.md`
