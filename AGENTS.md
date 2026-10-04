@@ -1047,12 +1047,12 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 ### Phase 11.4 — Category CRUD
 ### Phase 11.5 — Image management
 ### Phase 11.6 — Inventory management
-### Phase 11.7 — Order management
+### *Phase 11.7 — Order management-DEFERRED — Group I*
 ### Phase 11.8 — Customer management
 ### Phase 11.9 — Request management
 ### Phase 11.10 — Enquiry management
-### Phase 11.11 — Payment visibility
-### Phase 11.12 — Delivery management
+### *11.11 Payment visibility-DEFERRED — Group H*
+### *11.12 Delivery management-DEFERRED — Groups G/I transactional flow*
 ### Phase 11.13 — Audit visibility
 
 **Exit condition:** Staff can operate the business without using the database directly.

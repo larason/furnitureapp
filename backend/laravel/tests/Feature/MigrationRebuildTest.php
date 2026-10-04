@@ -39,6 +39,7 @@ class MigrationRebuildTest extends TestCase
             'deliveries',
             'furniture_requests',
             'enquiries',
+            'attachments',
             'notifications',
         ];
     }
@@ -130,6 +131,8 @@ class MigrationRebuildTest extends TestCase
             ['enquiries', 'user_id', 'users', 'id', 'set null'],
             ['enquiries', 'product_id', 'products', 'id', 'set null'],
             ['enquiries', 'order_id', 'orders', 'id', 'restrict'],
+            ['attachments', 'furniture_request_id', 'furniture_requests', 'id', 'cascade'],
+            ['attachments', 'enquiry_id', 'enquiries', 'id', 'cascade'],
             ['notifications', 'recipient_user_id', 'users', 'id', 'restrict'],
         ];
     }

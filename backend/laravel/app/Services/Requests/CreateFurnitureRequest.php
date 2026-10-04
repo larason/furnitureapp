@@ -4,10 +4,12 @@ namespace App\Services\Requests;
 
 use App\Models\FurnitureRequest;
 use App\Models\Product;
+use App\Services\Attachments\AttachFileToParent;
 use App\Support\ReferenceGenerator;
 use App\Support\RequestStatus;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Authoritative REQ-001 creation service.
@@ -15,8 +17,10 @@ use Illuminate\Support\Facades\DB;
  * Derives ownership from the resolved actor, resolves the optional linked
  * Product through the shared public visibility authority, generates the
  * server reference, maps the public `notes` field to the persistence `message`
- * column, and persists the Request as `SUBMITTED`. It creates no Order,
- * Payment, or inventory effect and commits no price/quote.
+ * column, optionally stores the inline private attachment, and persists the
+ * Request as `SUBMITTED`. It creates no Order, Payment, or inventory effect and
+ * commits no price/quote. When an attachment file was written but the creation
+ * transaction fails, the file is compensatorily deleted.
  */
 final class CreateFurnitureRequest
 {
@@ -24,13 +28,30 @@ final class CreateFurnitureRequest
 
     private const MAX_REFERENCE_ATTEMPTS = 3;
 
-    public function __construct(private readonly RequestableProductResolver $products) {}
+    public function __construct(
+        private readonly RequestableProductResolver $products,
+        private readonly AttachFileToParent $attachments,
+    ) {}
 
     public function create(CreateFurnitureRequestCommand $command): FurnitureRequest
     {
         $product = $this->products->resolve($command->productId);
+        $storedAttachment = null;
 
-        return DB::transaction(fn (): FurnitureRequest => $this->persist($command, $product));
+        try {
+            return DB::transaction(function () use ($command, $product, &$storedAttachment): FurnitureRequest {
+                $request = $this->persist($command, $product);
+
+                if ($command->attachment !== null) {
+                    $storedAttachment = $this->attachments->attachRequest($request, $command->attachment);
+                }
+
+                return $request;
+            });
+        } catch (Throwable $exception) {
+            $this->attachments->recoverFailedCreation($exception, $storedAttachment);
+            throw $exception;
+        }
     }
 
     private function persist(CreateFurnitureRequestCommand $command, ?Product $product): FurnitureRequest

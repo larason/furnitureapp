@@ -193,12 +193,9 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     });
 
     // --------------------------------------------------------------------
-    // SCOPED ATTACHMENT UPLOADS — bearerAuth OR scoped X-Upload-Token
-    // (uploadToken security alternative). Not public and not bearer-mandatory.
-    // Token binding/verification is implemented in the attachment phase
-    // (Group J / 10.6); routes remain stub-only until then.
+    // SCOPED ATTACHMENT UPLOADS — bearerAuth OR scoped X-Upload-Token.
     // --------------------------------------------------------------------
-    Route::middleware(['clerk.auth', 'throttle:upload'])->group(function (): void {
+    Route::middleware(['clerk.optional', 'attachment.credential', 'throttle:upload'])->group(function (): void {
         Route::post('/requests/{request}/attachments', [RequestController::class, 'storeAttachment'])->name('requests.attachments.store');
         Route::post('/enquiries/{enquiry}/attachments', [EnquiryController::class, 'storeAttachment'])->name('enquiries.attachments.store');
     });

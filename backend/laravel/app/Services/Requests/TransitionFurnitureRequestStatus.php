@@ -2,7 +2,6 @@
 
 namespace App\Services\Requests;
 
-use App\Exceptions\InvalidRequestStatusTransition;
 use App\Models\FurnitureRequest;
 use App\Support\ConcurrentTransaction;
 use App\Support\RequestStatus;
@@ -18,22 +17,19 @@ use App\Support\RequestStatus;
  */
 final class TransitionFurnitureRequestStatus
 {
+    public function __construct(private readonly ApplyFurnitureRequestStatusTransition $statusTransition) {}
+
     public function transition(FurnitureRequest $request, RequestStatus $target): FurnitureRequest
     {
         return ConcurrentTransaction::run(function () use ($request, $target): FurnitureRequest {
             $locked = FurnitureRequest::query()->whereKey($request->getKey())->lockForUpdate()->firstOrFail();
 
-            $outcome = RequestStatusMachine::decide($locked->request_status, $target);
+            $this->statusTransition->apply($locked, $target);
 
-            if ($outcome === RequestStatusTransitionOutcome::Idempotent) {
+            if (! $locked->isDirty()) {
                 return $locked;
             }
 
-            if ($outcome === RequestStatusTransitionOutcome::Forbidden) {
-                throw new InvalidRequestStatusTransition($locked->request_status, $target);
-            }
-
-            $locked->request_status = $target;
             $locked->save();
 
             return $locked;

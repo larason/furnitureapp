@@ -26,9 +26,9 @@ final class ConcurrentTransaction
      * @param  Closure(): T  $callback
      * @return T
      */
-    public static function run(Closure $callback): mixed
+    public static function run(Closure $callback, bool $forceTransaction = false): mixed
     {
-        if (DB::transactionLevel() > 0) {
+        if (! $forceTransaction && DB::transactionLevel() > 0) {
             return $callback();
         }
 

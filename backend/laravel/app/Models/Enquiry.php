@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Builders\AttachmentParentBuilder;
 use App\Support\EnquiryCategory;
 use App\Support\EnquiryStatus;
 use App\Support\ReferenceGenerator;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -79,6 +81,11 @@ class Enquiry extends Model
 
     protected $table = self::TABLE;
 
+    public function newEloquentBuilder(mixed $query): AttachmentParentBuilder
+    {
+        return new AttachmentParentBuilder($query);
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Enquiry $enquiry): void {
@@ -134,6 +141,12 @@ class Enquiry extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /** @return HasMany<Attachment, $this> */
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(Attachment::class);
     }
 
     protected function casts(): array

@@ -3,6 +3,7 @@
 namespace App\Services\Requests;
 
 use App\Models\User;
+use App\Services\Attachments\ValidatedAttachment;
 
 /**
  * Immutable, trusted creation command for a Made-to-Order Furniture Request.
@@ -29,5 +30,6 @@ final readonly class CreateFurnitureRequestCommand
         public ?string $material,
         public ?string $color,
         public ?string $notes,
+        public ?ValidatedAttachment $attachment = null,
     ) {}
 }
