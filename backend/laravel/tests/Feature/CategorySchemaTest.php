@@ -22,6 +22,21 @@ class CategorySchemaTest extends TestCase
         $this->assertTrue(Schema::hasTable('category_recommendations'));
     }
 
+    public function test_public_fields_are_nullable_and_persisted(): void
+    {
+        $withoutPublicFields = Category::factory()->create();
+        $withPublicFields = Category::factory()->create([
+            'description' => 'Furniture for focused workspaces.',
+            'image_url' => 'https://cdn.example.test/categories/workspace.jpg',
+        ]);
+
+        $this->assertTrue(Schema::hasColumns('categories', ['description', 'image_url']));
+        $this->assertNull($withoutPublicFields->description);
+        $this->assertNull($withoutPublicFields->image_url);
+        $this->assertSame('Furniture for focused workspaces.', $withPublicFields->fresh()->description);
+        $this->assertSame('https://cdn.example.test/categories/workspace.jpg', $withPublicFields->fresh()->image_url);
+    }
+
     public function test_root_category_supports_null_parent_id(): void
     {
         $root = $this->createCategory(['slug' => 'root']);

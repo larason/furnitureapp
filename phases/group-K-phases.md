@@ -1,811 +1,393 @@
-# Phase 11.3 — Product CRUD
+# Phase 11.4 — Category CRUD
 
 ## 1. Objective
 
-Implement Version 1 administrative Product management for authorized Staff/Admin.
+Implement the Version 1 administrative Category management backend for authorized Staff/Admin.
 
-Before implementing Product CRUD, first resolve the confirmed frozen-contract/runtime inconsistency around Product pricing.
+## Implementation Status
 
-The phase therefore executes in two ordered parts:
+Phase 11.4 is complete. The existing `2026_09_19_120000_add_public_fields_to_categories_table.php` migration persists nullable `categories.description` and `categories.image_url`, and CAT-011/CAT-012 implement the frozen request/response contract without exposing hierarchy controls.
+
+CAT-011 creates an active direct child of `furnitures-root`, assigns `SpaceType::HYBRID`, and appends after the highest direct-child `display_order` (starting at `1` for an empty sibling set) inside a transaction that locks the root row. CAT-012 resolves opaque IDs or slugs including inactive categories, updates only `name`, `slug`, `description`, and `image`, and rejects mutation of the system-owned root. The approved reconciliation is recorded in `phases/group-K-phases-reconcile.md` and ADR/API-CAT-006 below.
+
+Phase 11.4 executes in two ordered parts:
 
 ```text
-Part A — Product price persistence reconciliation
-Part B — Product operational CRUD implementation
+Part A — Category persistence reconciliation
+Part B — CAT-011 / CAT-012 implementation
 ```
 
-Do not begin Part B until Part A is complete, documented, migrated, tested, and verified.
+Do not begin Part B until Part A is complete, documented, migrated, and tested.
 
 ---
 
-# PART A — PRODUCT PRICE PERSISTENCE RECONCILIATION
+# PART A — CATEGORY PERSISTENCE RECONCILIATION
 
-## 2. Confirmed Contract/Runtime Gap
+## 2. Confirmed Contract/Persistence Gap
 
-The frozen V1 API requires Product-level price input and output:
-
-```text
-CAT-007 ProductCreateRequest
-→ price REQUIRED
-
-CAT-008 ProductUpdateRequest
-→ price mutable
-
-CAT-001/CAT-002
-→ Product.price REQUIRED and non-null
-
-CAT-013/CAT-014
-→ operational Product price
-```
-
-But current persistence places price only on:
+The frozen V1 Category management contract accepts:
 
 ```text
-product_variants
+name
+slug
+description
+image
 ```
 
-and the Product table has no Product-level price columns.
-
-Creating a Variant also requires:
+for:
 
 ```text
-sku
-name / variant_name
+CAT-011 POST /api/v1/categories
+CAT-012 PATCH /api/v1/categories/{category}
 ```
 
-which CAT-007 does not accept.
+`CategoryCreateRequest` requires:
 
-There is no approved rule that CAT-007 silently creates a synthetic/default Variant.
+```text
+name
+slug
+```
 
-Therefore Phase 11.3 must first reconcile persistence with the frozen external API.
+and permits nullable:
+
+```text
+description
+image
+```
+
+The public Category contract also exposes:
+
+```text
+CAT-003 summary:
+id
+name
+slug
+image
+
+CAT-004 detail:
+id
+name
+slug
+description
+image
+created_at
+```
+
+However, the current Category persistence model was originally designed around:
+
+```text
+id
+parent_id
+name
+slug
+space_type
+display_order
+is_active
+timestamps
+```
+
+and therefore does not directly persist the frozen:
+
+```text
+description
+image
+```
+
+fields.
+
+This must be reconciled before CAT-011/012 are implemented.
 
 ---
 
-# 3. Chosen Reconciliation
+# 3. Reconciliation Principle
 
-Adopt the following authoritative reconciliation:
+Preserve the frozen API.
+
+Do NOT remove:
 
 ```text
-Product owns the V1 base/display price.
-
-ProductVariant owns variant-specific price.
+description
+image
 ```
+
+from:
+
+```text
+CategoryCreateRequest
+CategoryUpdateRequest
+CAT-003
+CAT-004
+```
+
+Do NOT make them new external concepts.
+
+They are already part of V1.
+
+Instead, reconcile persistence so the existing frozen contract can be implemented.
+
+---
+
+# 4. Approved Persistence Direction
+
+Add Category-level persistence for:
+
+```text
+description
+image
+```
+
+using the smallest schema change consistent with existing naming conventions.
 
 Conceptually:
 
 ```text
-Product
-├── base/display price
-│
-└── ProductVariants
-    ├── sku
-    ├── name
-    ├── attributes
-    ├── dimensions
-    └── variant-specific price
+categories.description
+categories.image_url
 ```
 
-Do NOT change CAT-007 into Product+Variant creation.
+or equivalent repository-consistent names.
 
-Do NOT introduce an `initial_variant` request object.
-
-Do NOT automatically create hidden/default Variants.
-
-Do NOT remove `price` from Product create/update.
+Do not guess column names without first inspecting existing Product/media/category conventions.
 
 ---
 
-# 4. Why This Reconciliation Is Required
+# 5. Description Persistence
 
-The frozen HTTP contract already presents:
-
-```text
-product.price
-```
-
-as a first-class Product field.
-
-Changing the API instead of persistence would create larger V1 compatibility problems.
-
-Therefore preserve:
+Recommended characteristics:
 
 ```text
-ProductCreateRequest
-ProductUpdateRequest
-Product public representation
-Product operational representation
-CAT-010 variant separation
+nullable
+text/string appropriate for max 1000 API chars
+plain content
+no HTML authority
 ```
 
-and reconcile the internal persistence model underneath them.
+Do not add rich-text semantics.
 
 ---
 
-# 5. New Product Price Persistence
+# 6. Image Persistence
 
-Add Product-level base price persistence.
-
-Use repository naming conventions, conceptually:
+The frozen Category contract currently accepts:
 
 ```text
-products.price_amount
-products.price_currency
+image: string|null
+format: uri
 ```
 
-or:
-
-```text
-products.base_price_amount
-products.base_price_currency
-```
-
-Choose the exact names only after reviewing existing schema naming conventions.
-
-Prefer the smallest naming that matches existing money-column conventions.
-
----
-
-# 6. Money Storage Rules
-
-Product base price must follow global money rules:
-
-```text
-integer minor units
-currency = TZS
-no float
-no decimal money
-no formatted strings
-```
-
-Example:
-
-```text
-1,250,000 TZS
-→ amount = 125000000
-currency = TZS
-```
-
----
-
-# 7. Database Constraints
-
-Add a new migration.
-
-Do not edit historical migrations.
-
-The Product price columns must enforce:
-
-```text
-amount >= 0
-currency valid
-amount/currency present together
-```
-
-Because frozen V1 requires Product.price non-null, new Products must always have Product price.
-
-For existing rows, use a safe migration/backfill strategy.
-
----
-
-# 8. Existing Product Backfill
-
-Existing Products already have Variants.
-
-Backfill each Product's Product-level price from its existing canonical public price source.
-
-Before migration logic, inspect current Group E projection and determine how Product.price is currently derived.
-
-Possible existing rule may be:
-
-```text
-default active Variant price
-```
-
-or another already-documented rule.
-
-Use the actual existing projection.
-
-Do not invent:
-
-```text
-minimum variant price
-average variant price
-first DB row
-latest variant
-```
-
-unless that is already the established rule.
-
----
-
-# 9. Backfill Must Be Deterministic
-
-Every existing Product must resolve to exactly one base price.
-
-If an existing Product cannot be mapped safely:
-
-STOP.
-
-Report:
-
-```text
-Product price migration blocker
-Product: <opaque/reference-safe identifier>
-Reason: no deterministic existing canonical price source
-```
-
-Do not assign zero merely to satisfy NOT NULL.
-
----
-
-# 10. Migration Atomicity
-
-The migration must not leave:
-
-```text
-some Products with Product-level price
-some without
-```
-
-if frozen schema requires price.
-
-Use a safe staged migration if required:
-
-```text
-1. add nullable columns
-2. deterministic backfill
-3. verify no nulls
-4. add non-null/constraints
-```
-
-Implement using repository migration conventions.
-
----
-
-# 11. No Variant Mutation During Backfill
-
-Do not modify existing Variant prices.
-
-The reconciliation creates a Product-level base/display price source.
-
-It does not rewrite historical Variant pricing.
-
----
-
-# 12. Product Price Meaning
-
-Define:
-
-```text
-Product.price
-= Product base/display price
-```
-
-This price is always present.
-
----
-
-# 13. MADE_TO_ORDER Semantics
-
-For:
-
-```text
-product_type = MADE_TO_ORDER
-```
-
-Product base price means:
-
-```text
-display price
-starting-at price
-informational catalog price
-SEO/display amount
-```
-
-It is NOT:
-
-```text
-quote
-checkout price
-payment amount
-price commitment
-```
-
-MADE_TO_ORDER remains excluded from ordinary Cart/Checkout.
-
----
-
-# 14. IN_STOCK Semantics
-
-For:
-
-```text
-product_type = IN_STOCK
-```
-
-Product base price is the Product-level catalog/display price.
-
-Where a selected ProductVariant exists:
-
-```text
-variant.price
-```
-
-remains the authoritative variant-specific purchase price.
-
-Do not remove Variant price.
-
----
-
-# 15. Product vs Variant Price
-
-The architecture becomes:
-
-```text
-Product.price
-→ base/display/catalog price
-
-ProductVariant.price
-→ price for that exact SKU/variant
-```
-
-This is not duplicate authority over the same semantic.
-
-They represent two different pricing levels.
-
----
-
-# 16. Multi-Variant Products
-
-Do not derive Product.price dynamically from Variants after reconciliation.
-
-Once Product owns persisted base price:
-
-```text
-Product.price
-```
-
-is explicit Product state.
-
-Variants may:
-
-```text
-equal Product.price
-or
-override Product.price
-```
-
-depending on variant configuration.
-
----
-
-# 17. Product Price Independence
-
-Changing one Variant price must NOT silently rewrite:
-
-```text
-Product.price
-```
-
-Changing Product.price must NOT automatically rewrite every Variant price.
-
-These are separate explicit fields after reconciliation.
-
----
-
-# 18. Public Product Projection
-
-Refactor CAT-001/CAT-002 Product price projection to read from the new Product base price.
-
-Do not keep a hidden second dynamic fallback indefinitely.
-
-After migration:
-
-```text
-Product.price
-→ products base price columns
-```
-
----
-
-# 19. Variant Projection
-
-CAT-005/CAT-006 and embedded Variant summaries continue reading:
-
-```text
-ProductVariant.price
-```
-
-unchanged.
-
----
-
-# 20. No Synthetic Variant
-
-CAT-007 must NOT create a Variant just because Product price exists.
-
-A Product may exist before variants are added.
-
----
-
-# 21. CAT-010 Remains Separate
-
-Variant creation remains:
-
-```http
-POST /api/v1/products/{product}/variants
-```
-
-CAT-010.
-
-This preserves the frozen resource boundary:
-
-```text
-CAT-007 = Product creation
-CAT-010 = Variant creation
-```
-
----
-
-# 22. Variantless Product
-
-A Product may therefore exist with:
-
-```text
-Product.price present
-variants = []
-```
-
-This must be a valid Product persistence state unless existing domain invariants explicitly forbid it.
-
-Do not invent a mandatory Variant solely for price storage.
-
----
-
-# 23. Variantless MADE_TO_ORDER Product
-
-Valid.
-
-Example:
-
-```text
-Product
-type = MADE_TO_ORDER
-price = starting-at amount
-variants = []
-```
-
-This works naturally for the current request-first production mode.
-
----
-
-# 24. Variantless IN_STOCK Product
-
-Persistence may be valid.
-
-Its availability remains governed by Group E inventory/variant rules.
-
-Do not fabricate stock or Variant rows.
-
-If no active purchasable Variant/stock exists:
-
-```text
-availability = unavailable
-```
-
-according to existing catalog logic.
-
----
-
-# 25. Cart/Checkout Pricing
-
-Do not redesign Cart or Checkout.
-
-Preserve existing rule:
-
-```text
-selected Variant exists
-→ variant-specific price remains authoritative
-```
-
-If existing transactional behavior supports variantless IN_STOCK Products, verify how it obtains price.
-
-If that path is currently undefined because transactional commerce is deferred:
-
-document it as a Group G/I follow-up rather than inventing Checkout behavior in 11.3.
-
----
-
-# 26. Current Request-Only Production Safety
-
-The current production release publishes:
-
-```text
-MADE_TO_ORDER
-```
-
-Products.
-
-Therefore this reconciliation is immediately useful without requiring transactional commerce.
-
----
-
-# 27. Schema Migration Tests
-
-Test:
-
-```text
-price columns exist
-integer amount
-TZS currency
-non-negative constraint
-non-null after migration
-amount/currency consistency
-existing Products correctly backfilled
-```
-
----
-
-# 28. Product Model
-
-Update Product model with explicit price fields/casts/value mapping.
-
-Do not expose raw DB column details directly to API resources.
-
----
-
-# 29. Money Value Object
-
-Reuse existing Money infrastructure.
-
-Do not create Product-specific money logic.
-
----
-
-# 30. Product Factory
-
-Update ProductFactory so every generated Product has a valid Product base price.
-
-Do not make ProductFactory silently create Variants unless explicit test state requires them.
-
----
-
-# 31. Seed Data
-
-Update seeders only as required by the new Product price persistence.
-
-Preserve deterministic demo/reference data.
-
-Do not alter production-safe seeding policy.
-
----
-
-# 32. Existing Product/Variant Factory Relationships
-
-Keep:
-
-```text
-Product factory
-≠ automatically Variant factory
-```
-
-unless an explicit test state such as:
-
-```text
-withVariants()
-```
-
-already exists.
-
----
-
-# 33. Backward API Compatibility
-
-The reconciliation must preserve exactly:
+and returns an image object conceptually:
 
 ```json
-"price": {
-  "amount": 125000000,
-  "currency": "TZS"
+{
+  "image": {
+    "url": "https://..."
+  }
 }
 ```
 
-No HTTP request or response shape change.
+Therefore persist only the canonical image URL/reference needed for this V1 contract.
+
+Do not create a full Category-media subsystem.
 
 ---
 
-# 34. OpenAPI
+# 7. Category Image Is Not Product Media
 
-Expected:
+Phase 11.5 concerns Product image management.
+
+Category image in CAT-011/012 is already part of the frozen Category contract.
+
+Do not incorrectly defer Category `image` to 11.5.
+
+---
+
+# 8. No Category Attachment Model
+
+Do not create:
 
 ```text
-UNCHANGED
+category_images table
+attachments relationship
+media gallery
+multiple category images
 ```
 
-No `initial_variant`.
-
-No nullable Product price.
-
-No new required request fields.
+V1 requires one nullable Category image.
 
 ---
 
-# 35. Documentation Reconciliation
+# 9. Existing Seeded Categories
 
-Update documentation explaining the revised internal architecture.
+Existing taxonomy contains 76 seeded categories.
 
-Record explicitly:
+Migration must preserve them.
+
+Backfill:
 
 ```text
-Previous schema design made ProductVariant the sole pricing persistence boundary.
-
-Frozen V1 API independently requires a non-null Product-level price.
-
-Phase 11.3 reconciles this by persisting Product base/display price while retaining Variant-specific pricing.
-
-This is a persistence reconciliation preserving the frozen external contract.
+description = null
+image = null
 ```
+
+unless existing deterministic source data already supplies values.
+
+Do not invent descriptions or image URLs in migration code.
 
 ---
 
-# 36. ADR
+# 10. Existing Public API Compatibility
 
-Add a specific ADR before Product CRUD implementation.
+If CAT-003/004 currently synthesize null images/descriptions:
 
-Conceptual title:
+after migration, preserve the same response shape.
+
+No API shape change.
+
+---
+
+# 11. Category Factory
+
+Update CategoryFactory to support:
 
 ```text
-Product Base Price Persistence Reconciliation
+description
+image
 ```
 
-Use next repository-consistent ADR identifier.
+without requiring them.
+
+Defaults may remain null.
+
+Do not make factory-created categories depend on remote URLs unless explicitly requested by a test state.
 
 ---
 
-# 37. ADR Must State
+# 12. Category Seeder
 
-At minimum:
+Do not rewrite taxonomy structure.
+
+Existing:
 
 ```text
-Product.price remains frozen API field.
-Product base price is now persisted on Product.
-Variant price remains variant-specific.
-No synthetic default Variant.
-No initial_variant request field.
-CAT-007 remains Product-only creation.
-CAT-010 remains Variant creation.
-MADE_TO_ORDER Product price is informational/starting-at.
-No Product API compatibility break.
-Existing Product rows are deterministically backfilled.
+1 root
+6 room categories
+16 grouping categories
+53 type categories
+```
+
+must remain intact.
+
+If current seed definitions contain no descriptions/images:
+
+leave them null.
+
+---
+
+# 13. Migration Safety
+
+Add a new migration.
+
+Do not modify Phase 3.3 historical migration.
+
+Verify on:
+
+```text
+SQLite canonical tests
+MariaDB 11.8.8 disposable database
 ```
 
 ---
 
-# 38. Price Reconciliation Exit Gate
+# 14. Reconciliation ADR
 
-Do NOT continue to CAT-007 implementation until:
+Add a decision record explaining:
+
+```text
+Frozen CAT-011/012 and CAT-003/004 already include description/image.
+Original Category schema omitted persistence for them.
+Phase 11.4 adds Category description/image persistence without changing external V1 behavior.
+Hierarchy, space_type, display_order, is_active, and recommendation graph remain unchanged.
+```
+
+---
+
+# 15. Reconciliation Exit Gate
+
+Do not continue to Category API implementation until:
 
 - migration exists;
-- existing Product rows backfill safely;
-- Product model updated;
-- public Product price reads from Product storage;
-- Variant price remains unchanged;
-- factories/seeds updated;
-- schema tests pass;
-- CAT-001/CAT-002 regression tests pass;
-- no API shape changed.
+- current taxonomy survives;
+- Category model/factory updated;
+- public CAT-003/004 still pass;
+- description/image serialize correctly;
+- no hierarchy/recommendation behavior changed;
+- OpenAPI shape remains unchanged.
 
-If this gate fails:
+If not:
 
 ```text
-Phase 11.3 BLOCKED
+Phase 11.4 BLOCKED
 ```
 
-with the exact reason.
+with exact reason.
 
 ---
 
-# PART B — PRODUCT CRUD IMPLEMENTATION
+# PART B — CATEGORY CRUD IMPLEMENTATION
 
-# 39. Scope
+## 16. Canonical Endpoints
 
-After Part A passes, implement:
-
-```text
-CAT-007 POST  /api/v1/products
-CAT-008 PATCH /api/v1/products/{product}
-CAT-013 GET   /api/v1/admin/products
-CAT-014 GET   /api/v1/admin/products/{product}
-```
-
----
-
-# 40. No Product DELETE
-
-Despite the roadmap label "Product CRUD", frozen V1 contains no:
+Implement:
 
 ```http
-DELETE /api/v1/products/{product}
+POST /api/v1/categories
+PATCH /api/v1/categories/{category}
 ```
 
-Do not add one.
+Endpoint IDs:
+
+```text
+CAT-011
+CAT-012
+```
+
+Do not add:
+
+```text
+/admin/categories
+/staff/categories
+/backoffice/categories
+```
+
+The frozen canonical paths are unprefixed operational catalog paths.
 
 ---
 
-# 41. Existing Soft Delete
+# 17. Product Permission Reuse
 
-Product soft-delete support remains persistence infrastructure only.
-
-Do not expose it through a new API.
-
----
-
-# 42. Product Visibility Controls
-
-Admin hides Products using existing:
-
-```text
-is_active
-is_published
-```
-
-semantics.
-
-Do not invent:
-
-```text
-ARCHIVED
-DRAFT
-LIVE
-```
-
-Product states.
-
----
-
-# 43. Actor Model
-
-Allowed:
-
-```text
-STAFF
-ADMIN
-```
-
-with permissions.
-
-Denied:
-
-```text
-Anonymous
-CUSTOMER
-```
-
----
-
-# 44. Authorization
-
-Mutation:
+Both endpoints require:
 
 ```text
 products.manage
 ```
 
-Operational read:
+for authorized Staff/Admin.
+
+Do not introduce:
 
 ```text
-products.view
-or products.manage
+categories.manage
 ```
 
-according to current PermissionCatalog/frozen CAT-013/014 rules.
+in Phase 11.4.
 
-Verify exact runtime implementation.
+The frozen V1 catalog management model uses `products.manage`.
 
 ---
 
-# 45. Authorization Matrix
+# 18. Actor Matrix
 
-Required:
+Expected:
 
 ```text
 Anonymous
@@ -814,455 +396,442 @@ Anonymous
 CUSTOMER
 → 403
 
-STAFF without products permission
+STAFF without products.manage
 → 403
 
-STAFF products.view
-→ CAT-013/014 allowed
-→ CAT-007/008 denied
+STAFF with products.manage
+→ allowed
 
-STAFF products.manage
-→ CAT-007/008/013/014 allowed as contracted
+ADMIN without permission
+→ denied
 
-ADMIN
-→ explicit permission still required
+ADMIN with products.manage
+→ allowed
 ```
+
+Use actual PermissionCatalog.
 
 ---
 
-# 46. No Role-Only Bypass
+# 19. No Role-Only Authorization
 
-Do not authorize solely via:
+Do not authorize solely because:
 
 ```text
-role == ADMIN
+role = ADMIN
 ```
 
-Permissions remain explicit.
+Permission remains explicit.
 
 ---
 
-# 47. Operational vs Public Product
-
-Preserve:
-
-```text
-Public Product
-≠
-Operational Product
-```
-
-Public:
-
-```text
-CAT-001
-CAT-002
-```
-
-Operational:
-
-```text
-CAT-013
-CAT-014
-```
-
----
-
-# 48. CAT-013 Operational List
+# 20. CAT-011 — Create Category
 
 Implement:
 
 ```http
-GET /api/v1/admin/products
+POST /api/v1/categories
 ```
 
-with:
+Expected response:
 
 ```text
-private/no-store
-pagination
-operational Product representation
+201 Created
 ```
+
+using the existing Category representation required by the frozen endpoint.
 
 ---
 
-# 49. CAT-013 Pagination
+# 21. CAT-011 Frozen Input
 
-Reuse:
+Allow exactly:
 
 ```text
-page
-per_page
-meta.pagination
-```
-
-with global limits.
-
----
-
-# 50. CAT-013 Filters
-
-Do not invent filters.
-
-If CAT-013 currently freezes only:
-
-```text
-page
-per_page
-```
-
-implement only those.
-
-Do not automatically inherit CAT-001 filters.
-
----
-
-# 51. CAT-013 Sorting
-
-Use existing frozen/default deterministic ordering.
-
-Do not add arbitrary Admin sort parameters unless defined.
-
----
-
-# 52. Operational Visibility
-
-Operational list/detail must expose Products unavailable to public storefront where approved, such as:
-
-```text
-unpublished
-inactive
-```
-
-Do not reuse public scope blindly.
-
----
-
-# 53. Soft-Deleted Product Visibility
-
-Inspect contract.
-
-If archival Products are not explicitly part of CAT-013/014:
-
-do not automatically use:
-
-```text
-withTrashed()
-```
-
-Record any ambiguity rather than inventing behavior.
-
----
-
-# 54. CAT-014 Operational Detail
-
-Implement:
-
-```http
-GET /api/v1/admin/products/{product}
-```
-
-using canonical Product identifier resolution.
-
----
-
-# 55. Product Identifier
-
-Preserve:
-
-```text
-prod_...
-or slug
-```
-
-where frozen.
-
-Never expose/use numeric DB ID externally.
-
----
-
-# 56. Operational Product Resource
-
-Use explicit serializer/resource.
-
-Include only frozen fields, conceptually:
-
-```text
-id
 name
 slug
 description
-product_type
-price
-category
+image
+```
+
+No hierarchy controls are part of the frozen CAT-011 request.
+
+---
+
+# 22. Required Create Fields
+
+Required:
+
+```text
+name
+slug
+```
+
+Optional:
+
+```text
+description
+image
+```
+
+---
+
+# 23. Unknown Fields
+
+Reject unknown fields.
+
+Examples that must NOT be accepted through CAT-011:
+
+```text
+parent_id
+space_type
+display_order
 is_active
-is_published
-images
-variants
-approved inventory summary
+products
+children
+recommendations
+relation_type
+priority
 created_at
 updated_at
 ```
 
-Use actual `OperationalProduct` OpenAPI schema as authority.
+unless a later formal contract reconciliation explicitly adds them.
 
 ---
 
-# 57. Sensitive Data
+# 24. Important Hierarchy Boundary
 
-Do not leak:
+The Category schema internally supports:
 
 ```text
-cost price
-supplier internals
-raw warehouse internals
-database IDs
-staff secrets
+parent_id
+space_type
+display_order
+is_active
 ```
 
-unless explicitly frozen.
+but the frozen CategoryCreateRequest does NOT expose those fields.
+
+Therefore CAT-011 must not silently turn into taxonomy-structure management.
 
 ---
 
-# 58. CAT-007 Create Product
+# 25. Creation Placement Problem
 
-Implement:
+Because CAT-011 does not accept:
+
+```text
+parent_id
+space_type
+display_order
+is_active
+```
+
+the implementation must determine how newly created Categories are placed.
+
+Inspect existing frozen docs/decisions for an already-approved rule.
+
+Do NOT guess.
+
+---
+
+# 26. If No Placement Rule Exists
+
+If no authoritative rule defines how CAT-011 chooses:
+
+```text
+parent_id
+space_type
+display_order
+is_active
+```
+
+STOP the implementation at this sub-point.
+
+Report:
+
+```text
+CAT-011 hierarchy placement gap
+```
+
+Do not invent:
+
+```text
+parent = Furnitures Root
+space_type = hybrid
+display_order = 0
+is_active = true
+```
+
+without a contract decision.
+
+---
+
+# 27. Smallest Safe Reconciliation If Required
+
+If the contract is silent, prefer a formal consistency correction over hidden defaults.
+
+The correction must preserve the external API if possible.
+
+For example, if the business intent is clearly:
+
+```text
+CAT-011 creates top-level storefront categories beneath Furnitures Root
+```
+
+that rule may be documented as server-controlled behavior.
+
+But only do this if repository evidence supports it.
+
+Otherwise STOP and ask for contract decision.
+
+---
+
+# 28. Do Not Expand Request Shape Automatically
+
+Do not add:
+
+```text
+parent_id
+space_type
+display_order
+is_active
+```
+
+to CategoryCreateRequest merely because the schema has them.
+
+That changes the frozen strict request contract.
+
+---
+
+# 29. Category Hierarchy Remains Server-Controlled
+
+Unless a later API explicitly supports reparenting:
+
+```text
+parent_id
+```
+
+remains server-controlled.
+
+---
+
+# 30. No Hierarchy Management Endpoint
+
+Do not add:
 
 ```http
-POST /api/v1/products
+POST /categories/{category}/move
+PATCH /categories/{category}/parent
+POST /categories/{category}/reparent
 ```
 
-Expected:
+in 11.4.
+
+---
+
+# 31. No Recommendation Management
+
+Do not expose:
 
 ```text
-201
+category_recommendations
+relation_type
+priority
 ```
+
+through CAT-011/012.
+
+The recommendation graph already exists as durable configuration but has no frozen management endpoint.
 
 ---
 
-# 59. Create Allow-List
+# 32. Existing Recommendation Graph
 
-Exactly:
+Preserve:
 
 ```text
-name
-slug
-description
-product_type
-price
-category_id
-is_active
-is_published
+COMPLEMENTARY
+PAIR_WITH
+COMPLETE_THE_LOOK
+ALTERNATIVE
 ```
 
----
+relationships unchanged.
 
-# 60. Required Create Fields
-
-```text
-name
-slug
-product_type
-price
-category_id
-```
+Category create/update must not mutate graph edges.
 
 ---
 
-# 61. Optional Fields
-
-```text
-description
-is_active
-is_published
-```
-
-Use frozen defaults only.
-
----
-
-# 62. No Variant Object
-
-Reject:
-
-```text
-initial_variant
-variants
-sku
-variant_name
-variant_price
-```
-
-in ProductCreateRequest.
-
----
-
-# 63. Unknown Fields
-
-Reject with canonical 422.
-
-Do not silently ignore.
-
----
-
-# 64. Server-Controlled Fields
-
-Reject:
-
-```text
-id
-availability
-stock_indicator
-reserved_quantity
-available_quantity
-created_at
-updated_at
-```
-
----
-
-# 65. `name`
+# 33. `name`
 
 Validate:
 
 ```text
-strict string
+string
 trimmed
 non-empty
-max 200
+max 120
 ```
+
+Use existing text-normalization conventions.
 
 ---
 
-# 66. `slug`
+# 34. `slug`
 
-Validate:
+Frozen OpenAPI pattern is:
 
 ```text
-lowercase
-kebab-case
+^[a-z0-9-]+$
+```
+
+but the Category model already enforces stronger canonical kebab-case:
+
+```text
 ^[a-z0-9]+(?:-[a-z0-9]+)*$
-globally unique
 ```
 
----
-
-# 67. Slug Collision
-
-Translate DB uniqueness conflicts into canonical API errors.
-
-Never leak SQL exceptions.
-
----
-
-# 68. `product_type`
-
-CLOSED enum:
+which rejects:
 
 ```text
-IN_STOCK
-MADE_TO_ORDER
+leading hyphen
+trailing hyphen
+consecutive hyphens
+spaces
+underscores
+uppercase
 ```
 
-Strict case.
+This is a contract-validation consistency issue.
 
 ---
 
-# 69. Price Input
+# 35. Slug Validation Authority
 
-Now map directly to Product base price persistence.
+Preserve the established canonical Category slug invariant from the schema/domain.
 
-Example:
+Do not weaken the model to accept malformed slugs just because OpenAPI regex is broader.
 
-```json
-{
-  "price": {
-    "amount": 125000000,
-    "currency": "TZS"
-  }
-}
-```
-
-No Variant creation is needed.
+Instead reconcile OpenAPI/documentation only if necessary through frozen-contract consistency correction.
 
 ---
 
-# 70. Price Validation
+# 36. Category Slug Examples
+
+Accept:
 
 ```text
-amount integer
-amount >= 0
-currency exactly TZS
+living-room
+office-chairs
+tv-stands-showcases
 ```
 
----
-
-# 71. Category Resolution
-
-Resolve canonical:
+Reject:
 
 ```text
-category id or slug
+Living-Room
+living_room
+-living-room
+living-room-
+living--room
 ```
 
-according to frozen contract.
+---
 
-No numeric DB IDs.
+# 37. Slug Unique
+
+Global uniqueness remains mandatory.
+
+Duplicate slug must return canonical API validation/conflict behavior.
+
+Never expose DB exception details.
 
 ---
 
-# 72. Category Must Exist
+# 38. Description
 
-Unknown Category → canonical not-found/validation error.
+Rules:
 
----
+```text
+string|null
+max 1000
+```
 
-# 73. Category Must Be Active
+Decide blank normalization consistently.
 
-Product creation/update may target only an active Category unless frozen operational rules explicitly say otherwise.
+If project convention maps blank optional text to null:
 
----
+use it.
 
-# 74. Category Persistence
-
-Persist internal FK only.
-
-Do not duplicate Category snapshots.
-
----
-
-# 75. `is_active`
-
-Strict boolean.
+Otherwise preserve explicit empty string semantics only if frozen.
 
 ---
 
-# 76. `is_published`
+# 39. Category Image Input
 
-Strict boolean.
+Rules:
 
----
+```text
+string|null
+valid URI
+```
 
-# 77. Create Transaction
-
-Persist Product fields and Product base price atomically.
-
-No related Variant creation.
-
----
-
-# 78. CAT-007 Response
-
-Return operational Product representation.
+No binary upload through CAT-011/012.
 
 ---
 
-# 79. CAT-008 Update Product
+# 40. Category Image Security
+
+Validate URI structurally.
+
+Do not:
+
+```text
+fetch remote URL
+proxy remote file
+download image
+perform SSRF request
+```
+
+during Category mutation.
+
+Store only validated URI/reference.
+
+---
+
+# 41. Allowed URI Schemes
+
+Inspect existing URI validation conventions.
+
+Prefer:
+
+```text
+https
+```
+
+if frozen security policy already requires it.
+
+Do not allow arbitrary:
+
+```text
+file:
+javascript:
+data:
+ftp:
+```
+
+without explicit contract support.
+
+---
+
+# 42. CAT-012 — Update Category
 
 Implement:
 
 ```http
-PATCH /api/v1/products/{product}
+PATCH /api/v1/categories/{category}
 ```
 
 Expected:
@@ -1273,434 +842,351 @@ Expected:
 
 ---
 
-# 80. Frozen PATCH Allow-List
+# 43. CAT-012 Frozen Allow-List
 
-Current machine-readable contract indicates optional:
+All optional:
 
 ```text
 name
 slug
 description
-product_type
-price
-category_id
-is_active
-is_published
+image
 ```
 
-Verify before coding.
+Nothing else.
 
 ---
 
-# 81. Documentation Discrepancy
+# 44. Partial Update
 
-Older `api-resources.md` prose may list a narrower update set.
+PATCH must modify only supplied fields.
 
-Reconcile stale prose against:
-
-```text
-OpenAPI
-latest security conventions
-post-freeze decisions
-```
-
-before implementation.
-
-Do not silently choose.
+No full-replacement semantics.
 
 ---
 
-# 82. Update Price
+# 45. Atomicity
 
-CAT-008:
+If update contains:
 
 ```text
-price
+name
+slug
+description
+image
 ```
 
-updates only Product base/display price.
+and one fails validation:
 
-It must not modify ProductVariant prices.
+no field is persisted.
 
 ---
 
-# 83. Variant Price Independence Test
+# 46. Same-Value PATCH
 
-Example:
-
-```text
-Product.price = 100
-Variant A = 100
-Variant B = 150
-
-PATCH Product.price = 120
-```
-
-Expected:
-
-```text
-Product.price = 120
-Variant A = 100
-Variant B = 150
-```
-
-unless an explicit future operation changes variants.
+Prefer no unnecessary persistence if repository conventions support it.
 
 ---
 
-# 84. Multiple Field Atomicity
+# 47. Category Identifier
 
-If PATCH contains:
+Use the canonical Category path resolver.
+
+Frozen public Category detail supports:
 
 ```text
 slug
-category_id
-price
-product_type
+or opaque category id
 ```
 
-validate everything first.
-
-One transaction.
-
-No partial update.
+Preserve the same resolution semantics for CAT-012 unless contract states otherwise.
 
 ---
 
-# 85. Same-Value PATCH
+# 48. Opaque Identifier
 
-Prefer no unnecessary writes where repository conventions support it.
+Never expose raw numeric DB ID.
 
----
-
-# 86. Product Type Change
-
-Support only if current frozen ProductUpdateRequest includes `product_type`.
+Use existing CategoryIdentifier.
 
 ---
 
-# 87. IN_STOCK → MADE_TO_ORDER
+# 49. Public Category Reads
 
-Derived consequences:
+Phase 11.4 must not redesign:
 
 ```text
-new Cart admission prohibited
-new Request linkage permitted if public
-stock_indicator = MADE_TO_ORDER
+CAT-003
+CAT-004
 ```
 
-Do not mutate existing Cart/Request history.
+They are already implemented in Group E.
 
 ---
 
-# 88. MADE_TO_ORDER → IN_STOCK
+# 50. CAT-003 Scope
 
-Do not create:
+Preserve:
 
 ```text
-Variant
-Inventory
-Stock
+active storefront categories
+direct children of Furnitures Root
 ```
 
-automatically.
+only.
 
-If no stock exists:
+Do not make newly created categories public merely because they exist unless their internal placement/state satisfies CAT-003 rules.
+
+---
+
+# 51. CAT-004 Scope
+
+Preserve existing:
 
 ```text
-availability = unavailable
+active Category only
 ```
 
-according to existing Group E semantics.
+public behavior.
+
+Inactive/non-public Category still returns public 404 as already defined.
 
 ---
 
-# 89. Public Visibility
+# 52. No Operational Category Read Endpoint
 
-`is_active=false` or `is_published=false` must remove Product from public catalog.
-
-Operational reads remain available as contracted.
-
----
-
-# 90. Product Price Public Projection
-
-After CAT-007:
+Frozen V1 does not define:
 
 ```text
-CAT-007 input price
-=
-CAT-013/014 operational Product.price
-=
-CAT-001/002 public Product.price
+GET /admin/categories
+GET /admin/categories/{category}
 ```
+
+Do not add them.
+
+This means Category management write UX will later rely on the existing public Category reads and/or known identifiers unless a future contract explicitly adds operational reads.
+
+Do not expand surface here.
 
 ---
 
-# 91. Product Price Update Projection
+# 53. Important Operational Limitation
 
-After CAT-008 price mutation:
+Because no CAT-013/014 equivalent exists for Categories:
+
+inactive Categories may not be directly retrievable through a dedicated Admin read API.
+
+Do not solve this by inventing endpoints during 11.4.
+
+Record it as a V1 operational limitation if relevant.
+
+---
+
+# 54. `is_active` Not Client-Writable
+
+Although Category schema has:
 
 ```text
-CAT-013/014
-CAT-001/002
+is_active
 ```
 
-must both show the updated Product base price.
+CAT-011/012 do not expose it.
 
----
+Reject client input:
 
-# 92. Variant Projection Regression
-
-CAT-005/006 must continue returning each Variant's own price.
-
----
-
-# 93. No Variant Auto-Synchronization
-
-Do not run:
-
-```text
-UPDATE product_variants SET price = product.price
-```
-
-during Product mutation.
-
----
-
-# 94. Images Out of Scope
-
-Phase 11.5 owns:
-
-```text
-CAT-009
-```
-
-Reject Product create/update fields:
-
-```text
-images
-image
-image_url
-primary_image
-media
+```json
+{"is_active": false}
 ```
 
 ---
 
-# 95. Variants Out of Product Payload
+# 55. Activation Management
 
-Reject nested variants in CAT-007/CAT-008.
+Do not add category activation/deactivation behavior unless a frozen contract explicitly defines it.
 
----
-
-# 96. CAT-010 Ownership
-
-CAT-010 remains a separate frozen endpoint.
-
-Record its Group K owner explicitly.
-
-Because Phase 11.3 now establishes Product CRUD and Variant price separation, if `group-K-phases.md` does not assign CAT-010 elsewhere, classify CAT-010 as:
-
-```text
-Product/Variant management follow-up
-```
-
-but do not silently implement it unless Phase 11.3's documented scope explicitly includes it.
+If current Category management cannot alter `is_active`, record that limitation.
 
 ---
 
-# 97. Inventory Out of Scope
-
-Phase 11.6 owns inventory management.
+# 56. `display_order` Not Client-Writable
 
 Reject:
 
 ```text
-quantity
-reserved_quantity
-available_quantity
-warehouse_location
-stock
+display_order
 ```
 
----
-
-# 98. No Inventory Creation
-
-Creating Product does not create ProductStock.
+through CAT-011/012.
 
 ---
 
-# 99. No Inventory Mutation
+# 57. `space_type` Not Client-Writable
 
-Updating Product does not adjust stock.
-
----
-
-# 100. No Cart Mutation
-
-Product mutation never directly updates Cart.
-
----
-
-# 101. No Request Mutation
-
-Product mutation never rewrites FurnitureRequest.
-
----
-
-# 102. No Enquiry Mutation
-
-Product mutation never rewrites Enquiry.
-
----
-
-# 103. No Order Mutation
-
-Product mutation never rewrites historical OrderItem snapshots.
-
----
-
-# 104. MADE_TO_ORDER Current Production Regression
-
-A Product created:
+Reject:
 
 ```text
-product_type = MADE_TO_ORDER
-is_active = true
-is_published = true
+space_type
 ```
 
-must be:
-
-```text
-publicly discoverable
-requestable
-non-purchasable through Cart
-price displayed as informational/starting-at
-```
+through CAT-011/012.
 
 ---
 
-# 105. IN_STOCK Without Variant/Stock
+# 58. `parent_id` Not Client-Writable
 
-If valid persistence allows it:
+Reject:
 
 ```text
-public active/published Product
-price visible
-availability unavailable
+parent_id
 ```
 
-until variant/inventory configuration makes it purchasable.
-
-Do not fake availability.
+through CAT-011/012.
 
 ---
 
-# 106. Operational Cache
+# 59. Existing No-Cycle Logic
 
-CAT-013/014:
+Do not weaken or remove:
 
 ```text
-Cache-Control: private, no-store
+Category::changeParent()
 ```
+
+or its no-cycle/concurrency protections.
+
+Even though CAT-011/012 do not currently expose hierarchy mutation, the domain invariant remains authoritative.
 
 ---
 
-# 107. Public Cache
+# 60. Existing Root
 
-CAT-001/002 remain public-safe.
+Preserve:
 
-Product mutations should invoke any existing application cache invalidation infrastructure.
+```text
+Furnitures Root
+```
 
-Do not introduce production CDN integrations here.
+as structural taxonomy root.
+
+Do not allow CAT-011/012 to accidentally rename or structurally corrupt it unless the frozen contract explicitly permits editing that exact Category.
 
 ---
 
-# 108. Audit
+# 61. Root Mutation Safety
 
-Privileged Product mutations are conceptually auditable.
+Consider protecting structural root fields through domain rules if current architecture treats root as system-owned.
 
-Inspect current AuditAction closed enum.
+Inspect existing decisions.
 
-If an exact Product mutation action already exists:
-
-use it as required.
-
-If not:
-
-do not add new AuditAction values silently.
-
-Document the frozen audit vocabulary gap for later reconciliation.
+Do not invent root immutability without evidence.
 
 ---
 
-# 109. ADM-007 Gap
+# 62. Existing Products
 
-Do not touch:
+Changing Category:
 
 ```text
-audit.view
-ADM-007
+name
+slug
+description
+image
 ```
 
-That remains Phase 11.13.
+must not change Product `category_id`.
+
+Products remain linked to the same Category row.
 
 ---
 
-# 110. Product Create Service
+# 63. Category Slug Update Effects
 
-Prefer a focused service/action such as:
+Products referencing Category continue to work because FK uses internal ID.
 
-```text
-CreateProduct
-```
-
-Responsibilities:
+Product public embedded Category summary should immediately reflect updated:
 
 ```text
-validated input
-canonical Category resolution
-Product base price mapping
-persistence
-response model
+name
+slug
+description
 ```
 
-No image/inventory/variant management.
+where included.
 
 ---
 
-# 111. Product Update Service
+# 64. Product Filter Effects
 
-Prefer:
+`GET /products?category={category}` must continue resolving Category by canonical slug/id after slug update according to current Group E resolver behavior.
 
-```text
-UpdateProduct
-```
-
-Responsibilities:
-
-```text
-operational Product resolution
-validated partial input
-Category resolution
-base price update
-Product state update
-atomic persistence
-```
+Old slug history/redirect is not part of V1 unless already implemented.
 
 ---
 
-# 112. Controller
+# 65. No Product Reassignment
 
-Thin:
+Category update must not bulk move Products.
+
+---
+
+# 66. No Product Deletion
+
+Category update must not delete Products.
+
+---
+
+# 67. No Inventory Effects
+
+No stock behavior belongs here.
+
+---
+
+# 68. No Request Effects
+
+Existing FurnitureRequests stay unchanged.
+
+---
+
+# 69. No Enquiry Effects
+
+Existing Enquiries stay unchanged.
+
+---
+
+# 70. Category Delete
+
+There is no frozen:
+
+```http
+DELETE /api/v1/categories/{category}
+```
+
+Do not add one.
+
+---
+
+# 71. Existing FK Delete Behavior
+
+Internal Category deletion behavior remains:
+
+```text
+parent delete → child parent_id SET NULL
+product category FK RESTRICT
+recommendation edges cascade
+```
+
+but none of this becomes an API operation in 11.4.
+
+---
+
+# 72. Controller
+
+Keep thin:
 
 ```text
 authenticate
 authorize
-FormRequest
+validate
 DTO
 service
 resource
@@ -1708,132 +1194,256 @@ resource
 
 ---
 
-# 113. Input DTOs
+# 73. Create Service
 
-Use explicit:
+Prefer:
 
 ```text
-CreateProductInput
-UpdateProductInput
+CreateCategory
 ```
 
-or repository equivalent.
+or repository-consistent equivalent.
+
+It should handle:
+
+```text
+validated request
+server-controlled placement/defaults if already approved
+slug uniqueness
+description/image persistence
+```
 
 ---
 
-# 114. Never Use `$request->all()`
+# 74. Update Service
 
-Use only:
+Prefer:
+
+```text
+UpdateCategory
+```
+
+for:
+
+```text
+name
+slug
+description
+image
+```
+
+only.
+
+---
+
+# 75. FormRequests
+
+Use:
+
+```text
+CreateCategoryRequest
+UpdateCategoryRequest
+```
+
+or equivalent.
+
+Unknown-field rejection mandatory.
+
+---
+
+# 76. DTOs
+
+Use strict input objects.
+
+Do not pass generic arrays deep into domain services.
+
+---
+
+# 77. Never Use `$request->all()`
+
+Use:
 
 ```text
 validated()
 ```
 
-and explicit allow-list.
+plus explicit mapping.
 
 ---
 
-# 115. Operational Product Query
+# 78. Category Resource
 
-Use dedicated operational query logic.
+Reuse the existing public Category resource for CAT-011/012 response only if it exactly matches frozen mutation response requirements.
 
-Do not use public Product scope.
+Do not mass serialize the model.
 
 ---
 
-# 116. Eager Loading
+# 79. Description Exposure
 
-Avoid N+1 for:
+CAT-004 should expose description.
+
+CAT-003 summary should remain lean according to frozen representation.
+
+Do not add description to CAT-003 if contract omits it.
+
+---
+
+# 80. Image Representation
+
+Input:
 
 ```text
-category
-images
-variants
-inventory summaries
+image = URI string|null
 ```
 
-where operational resource includes them.
+Response:
+
+```json
+"image": {
+  "url": "..."
+}
+```
+
+or:
+
+```json
+"image": null
+```
+
+according to frozen resource.
+
+Do not return raw internal column names.
 
 ---
 
-# 117. Product DELETE Regression
+# 81. Cache Invalidation
 
-Assert:
+Category mutations affect public navigation/catalog.
 
-```http
-DELETE /api/v1/products/{product}
-```
+Reuse existing application cache invalidation infrastructure if available.
 
-does not exist.
+Do not build production CDN tooling here.
 
 ---
 
-# 118. Create Tests
+# 82. Public Cache Safety
 
-Cover:
+CAT-003/004 remain public cacheable.
+
+CAT-011/012 are non-cacheable mutations.
+
+---
+
+# 83. Audit
+
+Privileged catalog changes are conceptually audit candidates.
+
+Inspect current closed AuditAction vocabulary.
+
+If no Category-specific safe action exists:
+
+do not invent audit enum values silently.
+
+Record the gap for later formal audit reconciliation.
+
+---
+
+# 84. Phase 11.13 Gap
+
+Do not touch:
 
 ```text
-valid MADE_TO_ORDER
-valid IN_STOCK
-required fields
-Product price persistence
-price strictness
-category exists/active
-slug unique
-closed enum
-strict booleans
+ADM-007
+audit.view
+```
+
+in this phase.
+
+---
+
+# 85. No Recommendation API
+
+Do not add:
+
+```text
+POST /categories/{category}/recommendations
+DELETE /categories/{category}/recommendations/{target}
+```
+
+---
+
+# 86. No Hierarchy API
+
+Do not add:
+
+```text
+move
+reparent
+reorder
+activate
+deactivate
+```
+
+routes.
+
+---
+
+# 87. Create Validation Tests
+
+Mandatory:
+
+```text
+valid create
+name required
+slug required
+name max 120
+slug canonical kebab-case
+slug global uniqueness
+description nullable
+description max 1000
+image nullable
+image valid URI
+unknown fields rejected
+parent_id rejected
+space_type rejected
+display_order rejected
+is_active rejected
+recommendations rejected
+server fields rejected
+```
+
+---
+
+# 88. Update Validation Tests
+
+Mandatory:
+
+```text
+partial name
+partial slug
+partial description
+clear description to null
+partial image
+clear image to null
+duplicate slug
+malformed slug
+invalid URI
 unknown fields
-server-controlled fields
-nested variants rejected
-image fields rejected
-inventory fields rejected
+hierarchy fields rejected
+atomic failure
 ```
 
 ---
 
-# 119. Update Tests
+# 89. Authorization Tests
 
-Cover:
-
-```text
-partial field changes
-Product price update
-Variant prices unchanged
-slug collision
-category validation
-product_type change
-visibility flags
-unknown fields
-atomic multi-field failure
-```
-
----
-
-# 120. Operational Read Tests
-
-Cover:
-
-```text
-pagination
-private cache
-draft visibility
-inactive visibility
-explicit operational resource
-no sensitive leaks
-opaque identifiers
-```
-
----
-
-# 121. Authorization Tests
-
-Cover:
+Test:
 
 ```text
 Anonymous
 CUSTOMER
-STAFF without permission
-STAFF products.view
+STAFF no permission
 STAFF products.manage
 ADMIN with permission
 ADMIN missing permission
@@ -1841,112 +1451,114 @@ ADMIN missing permission
 
 ---
 
-# 122. Price Reconciliation Tests
+# 90. Persistence Reconciliation Tests
 
-Mandatory regression:
+Mandatory:
 
 ```text
-Product base price stored on Product
-Variant price remains on Variant
-Product public price reads Product price
-Variant public price reads Variant price
-Product update doesn't modify Variants
-Variant update doesn't implicitly modify Product
+description persists
+image persists
+existing seeded categories migrate with nulls safely
+factory works without description/image
+public detail returns persisted description/image
+summary returns image and omits detail-only fields
 ```
 
 ---
 
-# 123. Existing Product Migration Tests
+# 91. Hierarchy Regression Tests
 
-For migrated seed/existing Products:
+Run existing:
 
-assert Product base price equals the previously canonical Product public price.
+```text
+CategoryHierarchyTest
+CategoryConcurrentReparentTest
+```
+
+or current equivalents.
+
+Phase 11.4 must not destabilize hierarchy.
 
 ---
 
-# 124. Factory Tests
+# 92. Recommendation Regression Tests
 
-ProductFactory must produce a valid Product without requiring Variant creation.
+Run existing:
+
+```text
+CategoryRecommendationTest
+CategorySeedTest
+```
+
+No edge changes expected.
 
 ---
 
-# 125. MADE_TO_ORDER Tests
+# 93. Taxonomy Seed Regression
+
+Expected seeded structure remains:
+
+```text
+76 categories
+20 recommendation mappings
+```
+
+unless current repository counts have intentionally changed since that ADR.
+
+Use actual current test expectations.
+
+Do not hardcode stale counts if runtime differs.
+
+---
+
+# 94. Slug Concurrency
+
+Two simultaneous creates with the same slug:
+
+```text
+at most one succeeds
+```
+
+DB unique constraint remains final guard.
+
+Loser must receive canonical API error rather than raw SQL exception.
+
+---
+
+# 95. MariaDB Validation
+
+Because schema changes in Part A:
+
+run disposable MariaDB:
+
+```text
+migrate:fresh --seed --force
+```
+
+against:
+
+```text
+furnitureapp_test_disposable
+```
 
 Verify:
 
 ```text
-Product.price persisted
-requestable
-cart rejection
-no inventory dependency
+new columns
+constraints
+seed integrity
+slug uniqueness
 ```
 
 ---
 
-# 126. Cross-Domain Tests
+# 96. No Production DB
 
-Run relevant:
-
-```text
-Catalog
-Cart
-FurnitureRequest
-Enquiry
-Inventory
-Variant
-```
-
-regressions.
+Do not touch Coolify/Contabo production DB.
 
 ---
 
-# 127. MariaDB Migration Verification
-
-Because the schema changes, verify the migration on the local MariaDB development environment.
-
-Use a disposable/test database only.
-
-Run at minimum:
-
-```text
-migrate:fresh
-migration rollback/reset where repository practice requires
-schema constraints
-backfill verification
-```
-
-Do not touch production.
-
----
-
-# 128. SQLite Verification
-
-Canonical test suite remains required.
-
----
-
-# 129. Migration Portability
-
-Remember current environment:
-
-```text
-development: MariaDB 11.8.8
-future production: MySQL-compatible environment
-```
-
-Use portable migration constructs where practical.
-
-Avoid MySQL-only SQL if Laravel schema builder can express the rule.
-
----
-
-# 130. No Historical Migration Modification
-
-Add new migration only.
-
----
-
-# 131. OpenAPI
+# 97. OpenAPI
 
 Expected:
 
@@ -1954,32 +1566,46 @@ Expected:
 unchanged
 ```
 
-because HTTP contract remains frozen.
+unless the stronger canonical slug regex is documented as an approved consistency correction.
 
 ---
 
-# 132. API Documentation
+# 98. Slug Regex Reconciliation
 
-Only explanatory persistence reconciliation may change.
+The machine-readable schema currently permits more strings than the domain does.
 
-Do not change request/response schema.
+If correcting OpenAPI:
 
----
+change only the regex/documentation to match the already-existing domain invariant.
 
-# 133. Schema Changes
-
-Expected and explicitly approved for this reconciliation:
+Classify this as:
 
 ```text
-Product base price amount
-Product base price currency
+frozen-contract consistency correction
 ```
 
-Nothing more unless required for safe constraints.
+not new behavior.
+
+Do not weaken runtime validation.
 
 ---
 
-# 134. Dependencies
+# 99. Schema Changes Expected
+
+Only:
+
+```text
+Category description persistence
+Category image persistence
+```
+
+plus necessary indexes/constraints if already justified.
+
+No hierarchy redesign.
+
+---
+
+# 100. Dependencies
 
 Expected:
 
@@ -1989,7 +1615,7 @@ NONE
 
 ---
 
-# 135. Frontend
+# 101. Frontend
 
 Expected:
 
@@ -1999,45 +1625,33 @@ NONE
 
 ---
 
-# 136. Category CRUD
+# 102. Product Media
 
-Do not implement CAT-011/012.
-
-Phase 11.4 owns Category CRUD.
+Do not implement Phase 11.5.
 
 ---
 
-# 137. Image Management
+# 103. Inventory
 
-Do not implement CAT-009.
-
-Phase 11.5 owns Product images.
+Do not implement Phase 11.6.
 
 ---
 
-# 138. Inventory Management
-
-Do not implement INV-* mutation work.
-
-Phase 11.6 owns Inventory management.
-
----
-
-# 139. Deferred Commerce
+# 104. Deferred Commerce
 
 Do not activate:
 
 ```text
-Group H
-Group I
 11.7
 11.11
 11.12
+Group H
+Group I
 ```
 
 ---
 
-# 140. Documentation
+# 105. Documentation
 
 Update:
 
@@ -2046,43 +1660,29 @@ phases/group-K-phases.md
 docs/decisions.md
 ```
 
-and any Product schema/API architecture documentation whose statement:
-
-```text
-Products carry no price
-```
-
-has become stale.
-
-Do not leave contradictory documentation.
+and Category schema/resource docs where the old persistence description is now stale.
 
 ---
 
-# 141. Historical Decision Reconciliation
+# 106. Historical ADR Preservation
 
-Do not delete the old Variant-pricing ADR.
-
-Instead add a new accepted ADR that explicitly supersedes only the statement:
+Do not delete:
 
 ```text
-Product has no persisted price
+ADR/BACKEND-009
 ```
 
-while retaining:
+Add a later reconciliation ADR that supersedes only the statement that Categories persist no description/image.
 
-```text
-Variant has variant-specific price
-```
-
-This preserves decision history.
+Preserve the original hierarchy decision history.
 
 ---
 
-# 142. Completion Report — Phase Status
+# 107. Completion Report — Status
 
 Return:
 
-## Phase 11.3 Status
+## Phase 11.4 Status
 
 ```text
 PASS
@@ -2096,187 +1696,160 @@ BLOCKED
 
 ---
 
-# 143. Completion Report — Reconciliation
+# 108. Completion Report — Persistence Reconciliation
 
 Report:
 
 ```text
-Previous conflict:
-Frozen API:
-Previous persistence:
-Chosen reconciliation:
-Migration:
-Backfill rule:
-Backfill count:
-Null Product prices after migration:
+Previous schema:
+Frozen Category API:
+New columns:
+Existing-row migration behavior:
+Public API compatibility:
 OpenAPI changed:
 ```
 
-Expected:
-
-```text
-OpenAPI changed: NO
-```
-
 ---
 
-# 144. Completion Report — Product Price Authority
+# 109. Completion Report — CAT-011
 
 Report:
 
 ```text
-Product base price storage:
-Variant price storage:
-CAT-001 Product price source:
-CAT-002 Product price source:
-CAT-013 Product price source:
-CAT-014 Product price source:
-CAT-005/006 Variant price source:
+route:
+authorization:
+required fields:
+optional fields:
+server-controlled placement behavior:
+response:
 ```
 
 ---
 
-# 145. Completion Report — Existing Data
+# 110. Completion Report — CAT-012
 
 Report:
 
 ```text
-Products migrated:
-Backfill source used:
-Ambiguous Products:
-Migration result:
+route:
+authorization:
+allow-list:
+identifier resolution:
+atomicity:
+response:
 ```
 
 ---
 
-# 146. Completion Report — Endpoints
+# 111. Completion Report — Hierarchy Placement
+
+Mandatory.
+
+Report exactly how CAT-011 determines:
+
+```text
+parent_id
+space_type
+display_order
+is_active
+```
+
+If there was no frozen rule and implementation had to stop:
+
+report that as the blocker.
+
+Do not omit this section.
+
+---
+
+# 112. Completion Report — Rejected Administrative Fields
+
+Confirm CAT-011/012 reject:
+
+```text
+parent_id
+space_type
+display_order
+is_active
+recommendations
+products
+```
+
+unless a formal reconciliation approved otherwise.
+
+---
+
+# 113. Completion Report — Delete
 
 Report:
 
 ```text
-CAT-007 ACTIVE/STUB
-CAT-008 ACTIVE/STUB
-CAT-013 ACTIVE/STUB
-CAT-014 ACTIVE/STUB
+Category DELETE endpoint: NONE
 ```
 
 ---
 
-# 147. Completion Report — Delete
-
-Report exactly:
-
-```text
-Product DELETE endpoint: NONE
-```
-
----
-
-# 148. Completion Report — Variants
+# 114. Completion Report — Recommendation Graph
 
 Report:
 
 ```text
-Synthetic default Variant: NO
-initial_variant field: NO
-CAT-010 changed: NO
-Variant prices rewritten by Product CRUD: NO
+Recommendation management endpoints: NONE
+Recommendation rows modified by CAT-011/012: NO
 ```
 
 ---
 
-# 149. Completion Report — Images
+# 115. Completion Report — Public Reads
 
-```text
-CAT-009 untouched
-Phase 11.5
-```
+Report CAT-003/004 regression results.
 
 ---
 
-# 150. Completion Report — Inventory
+# 116. Completion Report — Schema
 
-```text
-Inventory mutation untouched
-Phase 11.6
-```
+Report exact new Category columns.
 
 ---
 
-# 151. Completion Report — Authorization
-
-Report exact runtime:
-
-```text
-products.view
-products.manage
-```
-
-matrix.
-
----
-
-# 152. Completion Report — Schema
-
-Report the exact new Product price columns and constraints.
-
----
-
-# 153. Completion Report — API Compatibility
+# 117. Completion Report — OpenAPI
 
 Expected:
 
 ```text
-CAT-007 request shape: unchanged
-CAT-008 request shape: unchanged
-Product response shape: unchanged
-Variant response shape: unchanged
-OpenAPI: unchanged
+unchanged
 ```
+
+or exact slug-regex consistency correction.
 
 ---
 
-# 154. Completion Report — Side Effects
+# 118. Completion Report — Tests
 
-Confirm no direct mutation to:
-
-```text
-Cart
-Order
-Payment
-Inventory quantity
-FurnitureRequest
-Enquiry
-```
-
----
-
-# 155. Completion Report — Tests
-
-Report focused suites:
+Report focused:
 
 ```text
-Product price migration
-Product CRUD
-Operational Product reads
+Category persistence
+Category create API
+Category update API
 Authorization
-Public catalog projection
-Variant price independence
-Cart regression
-Request regression
-Enquiry regression
-Migration rebuild
+Public Category reads
+Slug uniqueness
+Hierarchy regression
+Concurrent reparent regression
+Recommendation regression
+Seed regression
 ```
 
 ---
 
-# 156. Completion Report — Quality
+# 119. Completion Report — Quality
 
 Report:
 
 ```text
 PHPUnit
-MariaDB migration verification
+MariaDB migration
 OpenAPI
 PHPStan
 Pint
@@ -2287,104 +1860,95 @@ route:list
 
 ---
 
-# 157. Definition of Done
+# 120. Next Phase
 
-Phase 11.3 is complete only when:
+If PASS:
 
-- frozen Product.price API semantics remain unchanged;
-- Product base/display price is persisted directly on Product;
-- Variant price remains persisted on ProductVariant;
-- no synthetic Variant is created;
-- no `initial_variant` field is introduced;
-- CAT-010 remains separate;
-- existing Products are deterministically backfilled;
-- no Product has missing base price after migration;
-- Product public projection reads Product base price;
-- Variant projection reads Variant-specific price;
-- Product price update does not modify Variants;
-- Variant price remains independent;
-- MADE_TO_ORDER Product price remains informational;
-- no Product DELETE endpoint exists;
-- CAT-007 is implemented;
-- CAT-008 is implemented;
-- CAT-013 is implemented;
-- CAT-014 is implemented;
-- Product create/update allow-lists remain frozen;
-- unknown fields are rejected;
-- Category validation is preserved;
-- Product type enum remains CLOSED;
-- operational/public representation separation is preserved;
-- images remain Phase 11.5;
-- inventory remains Phase 11.6;
-- deferred commerce remains deferred;
-- migration works on SQLite test environment and local MariaDB;
-- OpenAPI remains unchanged;
-- full regression remains green.
+```text
+Phase 11.5 — Image management READY
+```
+
+Do not begin automatically.
 
 ---
 
-# 158. STOP Condition
+# 121. Definition of Done
 
-STOP when the repository can prove:
+Phase 11.4 is complete only when:
+
+- Category `description` persistence is reconciled;
+- Category `image` persistence is reconciled;
+- frozen CAT-003/004 response shapes remain valid;
+- CAT-011 is implemented;
+- CAT-012 is implemented;
+- `products.manage` is enforced;
+- Anonymous is denied;
+- Customer is denied;
+- unauthorized Staff/Admin are denied;
+- CAT-011 accepts only the frozen allow-list;
+- CAT-012 accepts only the frozen allow-list;
+- unknown fields are rejected;
+- slug uniqueness is enforced;
+- canonical kebab-case invariant remains intact;
+- nullable description works;
+- nullable image works;
+- image URI is never fetched server-side;
+- no Product behavior is pulled into Category mutation;
+- no hierarchy mutation API is invented;
+- no recommendation-management API is invented;
+- no Category DELETE endpoint is invented;
+- existing no-cycle protections remain intact;
+- existing concurrent reparent protections remain intact;
+- existing recommendation graph remains intact;
+- taxonomy seed remains deterministic;
+- Product filtering by Category continues working;
+- Category updates do not mutate Product ownership;
+- OpenAPI remains aligned;
+- MariaDB migration verification passes;
+- full regression is green.
+
+---
+
+# 122. STOP Condition
+
+STOP when the backend can prove:
 
 ```text
-Frozen HTTP contract
-        ↓
-ProductCreateRequest.price
-        ↓
-Product base price persistence
-        ↓
-CAT-001/002/013/014 Product.price
+authorized Staff/Admin
+→ CAT-011 create Category
+→ CAT-012 update Category
+→ frozen description/image contract persists correctly
+→ CAT-003/CAT-004 reflect approved public values
 ```
 
-while separately proving:
+while preserving:
 
 ```text
-CAT-010
-        ↓
-ProductVariant
-        ↓
-Variant-specific price
-        ↓
-CAT-005/006 Variant.price
-```
-
-with:
-
-```text
-no synthetic Variant
-no initial_variant
-no duplicate semantic price source
-no Product DELETE API
+existing taxonomy hierarchy
+no-cycle protection
+recommendation graph
+products.manage authorization
+no Category DELETE API
+no hierarchy/recommendation management API
 ```
 
 and report:
 
 ```text
-Phase 11.3 PASS
+Phase 11.4 PASS
 
-Phase 11.4 — Category CRUD READY
+Phase 11.5 — Image management READY
 ```
 
-Do not begin Phase 11.4 automatically.
+If CAT-011 has no authoritative server-side rule for its internal hierarchy fields:
+
+```text
+Phase 11.4 BLOCKED
+Reason: CAT-011 hierarchy placement contract gap
+```
+
+Do not invent the rule.
 
 DO NOT COMMIT, STAGE OR PUSH.
 
 The project owner handles all Git operations.
-
----
-
-## Phase 11.3 Outcome — 2026-10-04
-
-**Status:** PASS
-
-- Reconciled frozen Product price semantics with persistence through `products.price_amount` and `products.price_currency`. The columns are non-null, non-negative integer minor units, and constrained to `TZS`.
-- Previous conflict: CAT-001/CAT-002 derived Product price from the lowest active Variant while CAT-007/CAT-008 required Product-level price input. Product now owns the base/display price; Variant price remains SKU-specific.
-- Migration preflights every existing Product's canonical active Variant price (`price_amount ASC`, `id ASC`), requiring a non-negative amount and `TZS` currency before adding columns. It aborts for an unmappable or invalid Product. Development and disposable MariaDB preflights had zero unmappable Products; the SQLite migration regression verifies the backfill path.
-- Migration rollback is lossless-only: it is blocked before any schema change while Products exist, because Product base price may be independent of Variant prices. Empty catalog rollback remains supported.
-- CAT-007, CAT-008, CAT-013, and CAT-014 are active. Product write responses and operational reads use an explicit operational resource with private/no-store caching. CAT-013 supports frozen `page`/`per_page` pagination and deterministic `created_at DESC, id ASC` ordering.
-- Authorization: `products.manage` is required for CAT-007/008. CAT-013/014 allow `products.view` or `products.manage` for active Staff/Admin accounts. No role-only bypass exists.
-- CAT-001/002/013/014 read Product base price. CAT-005/006 and embedded Variant summaries still read Variant price. Product and Variant price updates do not synchronize.
-- Product DELETE endpoint: NONE. Synthetic default Variant: NO. `initial_variant` field: NO. CAT-010 changed: NO. CAT-009 and inventory mutation remain deferred to Phases 11.5 and 11.6.
-- No direct mutation was added for Cart, Order, Payment, inventory quantity, FurnitureRequest, or Enquiry. OpenAPI request/response schemas remain unchanged.
-- Verification: SQLite feature suite `1584 passed, 1 skipped`; PHPStan clean; Pint clean; Composer audit clean; `git diff --check` clean; disposable MariaDB `migrate:fresh --seed --force` completed successfully against `furnitureapp_test_disposable` only.

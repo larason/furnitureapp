@@ -1855,6 +1855,32 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/GROUP-K-CATEGORY-PUBLIC-FIELDS — Phase 11.4 Category Persistence Reconciliation
+
+**Decision:** Preserve the frozen CAT-003/CAT-004 and CAT-011/CAT-012 `description` and `image` fields by using the existing additive Category public-fields migration (`2026_09_19_120000_add_public_fields_to_categories_table.php`). It persists nullable plain-text `categories.description` and nullable `categories.image_url`; API resources map `image_url` to the existing `image: {url}` representation. Existing taxonomy rows remain null for both fields, and no descriptions or URLs are invented.
+
+- **Compatibility:** This records the already-applied persistence reconciliation without changing the frozen external Category representation or OpenAPI shape. CAT-003 remains summary-only (`image`, no description); CAT-004 continues to expose `description` and `image`.
+- **Scope:** `parent_id`, `space_type`, `display_order`, `is_active`, the hierarchy safeguards, and the recommendation graph are unchanged. This supersedes only ADR/BACKEND-009's original Category field inventory and mass-assignment statement as they relate to `description` and `image_url`; its hierarchy decision history remains intact.
+- **Operational boundary:** CAT-011 placement is not defined by the frozen contract. No Category mutation endpoint is implemented until a server-controlled rule for the required internal placement fields is approved.
+
+**Reason:** The V1 Category contract already exposed these fields, while the original taxonomy schema did not. The additive columns reconcile persistence without expanding the external API or introducing a Category-media subsystem.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`database/migrations/2026_09_19_120000_add_public_fields_to_categories_table.php`, `app/Models/Category.php`, `app/Http/Resources/{CategorySummaryResource,CategoryDetailResource}.php`, `database/factories/CategoryFactory.php`, `tests/Feature/{CategorySchemaTest,CategorySeedTest,CategoryReadApiTest}.php`), `docs/decisions.md`
+
+### ADR/API-CAT-006 — CAT-011 server-controlled category placement
+
+**Context:** The frozen CAT-011 external request deliberately permits only `name`, `slug`, `description`, and `image`; it contains no hierarchy or lifecycle controls. CAT-011 therefore required an implementation-level reconciliation for the persisted `parent_id`, `space_type`, `display_order`, and `is_active` fields before Category CRUD could be enabled.
+
+**Decision:** CAT-011 resolves the canonical `furnitures-root` row by slug inside a database transaction and locks it `FOR UPDATE`. It creates an active direct child with `space_type = hybrid` and `display_order = MAX(root direct children.display_order) + 1`; an empty direct-child set starts at `1`, matching the seed convention. A missing root returns the canonical `RESOURCE_NOT_FOUND` failure. The service never creates a replacement root or a category with a null parent. The database unique slug constraint remains the final race authority and duplicate slug violations map to canonical `409 CONFLICT`, field `slug`.
+
+CAT-012 resolves canonical category opaque IDs or slugs operationally, including inactive categories, but mutates only `name`, `slug`, `description`, and `image_url`. It does not reparent, reorder, change activation or `space_type`, or modify recommendation relations. `furnitures-root` is system-owned and cannot be changed through CAT-012; this uses the existing `403 FORBIDDEN` code. Category write responses are private and non-cacheable.
+
+**Compatibility:** Frozen V1 implementation/consistency reconciliation. CAT-011/CAT-012 paths, authorization, request fields, response fields, and exposed hierarchy surface are unchanged. The Category OpenAPI slug pattern is corrected from `^[a-z0-9-]+$` to the established domain invariant `^[a-z0-9]+(?:-[a-z0-9]+)*$`; this rejects no newly valid server input and documents the pre-existing model constraint.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`app/Http/{Controllers/Api/V1/CategoryController,Requests/{StoreCategoryRequest,UpdateCategoryRequest}}.php`, `app/Services/Categories/*`, `tests/Feature/CategoryManagementApiTest.php`, `tests/Integration/CategoryCreationConcurrencyMysqlTest.php`), `docs/api/openapi.yaml`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
 
 ### ADR/BACKEND-010 — Phase 3.5 Product Variants Schema
 

@@ -106,6 +106,16 @@ class CategorySeedTest extends TestCase
         $this->assertCount(53, $types);
     }
 
+    public function test_seeded_categories_leave_public_fields_null(): void
+    {
+        $this->seed(CategorySeeder::class);
+
+        $this->assertSame(0, Category::query()
+            ->whereNotNull('description')
+            ->orWhereNotNull('image_url')
+            ->count());
+    }
+
     public function test_each_child_points_to_intended_parent(): void
     {
         $this->seed(CategorySeeder::class);

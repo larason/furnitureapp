@@ -13,7 +13,13 @@ class CategoryReadApiTest extends TestCase
     public function test_collection_is_public_paginated_and_excludes_structural_root_and_descendants(): void
     {
         $root = Category::factory()->create(['name' => 'Furnitures Root', 'slug' => 'furnitures-root', 'parent_id' => null]);
-        $first = Category::factory()->create(['parent_id' => $root->id, 'display_order' => 1, 'name' => 'Living Room', 'slug' => 'living-room']);
+        $first = Category::factory()->create([
+            'parent_id' => $root->id,
+            'display_order' => 1,
+            'name' => 'Living Room',
+            'slug' => 'living-room',
+            'image_url' => 'https://cdn.example.test/categories/living-room.jpg',
+        ]);
         Category::factory()->create(['parent_id' => $root->id, 'display_order' => 2, 'name' => 'Bedroom', 'slug' => 'bedroom']);
         Category::factory()->create(['parent_id' => $first->id, 'name' => 'Sofas', 'slug' => 'sofas']);
         Category::factory()->inactive()->create(['parent_id' => $root->id, 'name' => 'Hidden', 'slug' => 'hidden']);
@@ -29,6 +35,9 @@ class CategoryReadApiTest extends TestCase
             ->assertJsonPath('meta.pagination.total', 2)
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.name', 'Living Room')
+            ->assertJsonPath('data.0.image.url', 'https://cdn.example.test/categories/living-room.jpg')
+            ->assertJsonMissingPath('data.0.description')
+            ->assertJsonMissingPath('data.0.created_at')
             ->assertJsonMissing(['name' => 'Furnitures Root'])
             ->assertJsonMissing(['name' => 'Sofas'])
             ->assertJsonMissing(['name' => 'Hidden']);
