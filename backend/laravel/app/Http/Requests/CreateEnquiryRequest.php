@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Exceptions\Api\ApiException;
+use App\Http\Requests\Concerns\CreatesStaticApiValidationError;
 use App\Models\Enquiry;
 use App\Services\Attachments\AttachmentValidator;
 use App\Services\Attachments\ValidatedAttachment;
@@ -10,7 +10,6 @@ use App\Services\Enquiries\EnquiryInput;
 use App\Support\ApiErrorCode;
 use App\Support\EnquiryCategory;
 use App\Support\OrderIdentifier;
-use App\Support\PhoneNumber;
 use App\Support\ProductIdentifier;
 use Illuminate\Foundation\Http\FormRequest;
 use LogicException;
@@ -26,6 +25,8 @@ use LogicException;
  */
 final class CreateEnquiryRequest extends FormRequest
 {
+    use CreatesStaticApiValidationError;
+
     private const ALLOWED_FIELDS = [
         'name',
         'phone',
@@ -172,27 +173,7 @@ final class CreateEnquiryRequest extends FormRequest
     /** @param array<string, mixed> $input */
     private static function normalizeOptionalPhone(array $input): ?string
     {
-        $value = $input['phone'] ?? null;
-
-        if ($value === null || (is_string($value) && trim($value) === '')) {
-            return null;
-        }
-
-        if (! is_string($value)) {
-            throw self::error(ApiErrorCode::INVALID_TYPE, 'phone', 'The phone field must be a string.');
-        }
-
-        $phone = trim($value);
-
-        if (mb_strlen($phone) > PhoneNumber::MAX_LENGTH) {
-            throw self::error(ApiErrorCode::INVALID_VALUE, 'phone', 'The phone field must not be greater than '.PhoneNumber::MAX_LENGTH.self::CHARACTERS_SUFFIX);
-        }
-
-        if (! PhoneNumber::isWellFormed($phone)) {
-            throw self::error(ApiErrorCode::INVALID_FORMAT, 'phone', 'The phone field format is invalid.');
-        }
-
-        return $phone;
+        return FurnitureRequestInputNormalizer::normalizePhone($input);
     }
 
     /** @param array<string, mixed> $input */
@@ -352,10 +333,5 @@ final class CreateEnquiryRequest extends FormRequest
         if ($orderId !== null) {
             throw self::error(ApiErrorCode::INVALID_VALUE, 'order_id', 'An anonymous enquiry cannot reference an order.');
         }
-    }
-
-    private static function error(ApiErrorCode $code, string $field, string $message): ApiException
-    {
-        return new ApiException($code, $message, 422, $field);
     }
 }

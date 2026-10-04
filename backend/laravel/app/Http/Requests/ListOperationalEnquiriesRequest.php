@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
-use App\Exceptions\Api\ApiException;
+use App\Http\Requests\Concerns\CreatesApiValidationError;
+use App\Http\Requests\Concerns\ParsesIso8601UtcQueryDate;
+use App\Http\Requests\Concerns\ParsesPositiveQueryInteger;
 use App\Services\Enquiries\OperationalEnquiryQuery;
 use App\Support\ApiErrorCode;
 use App\Support\EnquiryCategory;
@@ -14,6 +16,10 @@ use Illuminate\Foundation\Http\FormRequest;
 
 final class ListOperationalEnquiriesRequest extends FormRequest
 {
+    use CreatesApiValidationError;
+    use ParsesIso8601UtcQueryDate;
+    use ParsesPositiveQueryInteger;
+
     private const ALLOWED_FIELDS = [
         'search', 'enquiry_status', 'category', 'product_id', 'order_id',
         'created_from', 'created_to', 'page', 'per_page',
@@ -51,8 +57,8 @@ final class ListOperationalEnquiriesRequest extends FormRequest
             orderPublicId: $this->orderPublicId($input),
             createdFrom: $createdFrom,
             createdTo: $createdTo,
-            page: $this->pageInteger($input, 'page', 1),
-            perPage: $this->pageInteger($input, 'per_page', 20, 100),
+            page: $this->optionalPositiveQueryInteger($input, 'page', 1),
+            perPage: $this->optionalPositiveQueryInteger($input, 'per_page', 20, 100),
         );
     }
 
@@ -145,45 +151,10 @@ final class ListOperationalEnquiriesRequest extends FormRequest
         }
 
         $value = $input[$field];
-        if (! is_string($value) || preg_match('/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?Z$/', $value, $matches) !== 1) {
+        if (! is_string($value)) {
             throw $this->error(ApiErrorCode::INVALID_FORMAT, $field, "The {$field} parameter must be ISO8601 UTC.");
         }
 
-        $hasFraction = isset($matches[2]);
-        $normalized = $matches[1].($hasFraction ? '.'.str_pad($matches[2], 6, '0') : '').'Z';
-        $format = $hasFraction ? '!Y-m-d\\TH:i:s.u\\Z' : '!Y-m-d\\TH:i:s\\Z';
-        $date = CarbonImmutable::createFromFormat($format, $normalized, 'UTC');
-        $errors = CarbonImmutable::getLastErrors();
-
-        if ($date === null || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
-            throw $this->error(ApiErrorCode::INVALID_FORMAT, $field, "The {$field} parameter must be ISO8601 UTC.");
-        }
-
-        return $date;
-    }
-
-    /** @param array<string, mixed> $input */
-    private function pageInteger(array $input, string $field, int $default, int $maximum = PHP_INT_MAX): int
-    {
-        if (! array_key_exists($field, $input)) {
-            return $default;
-        }
-
-        $value = $input[$field];
-        if (! is_string($value) || preg_match('/^\d{1,9}$/', $value) !== 1) {
-            throw $this->error(ApiErrorCode::INVALID_TYPE, $field, "The {$field} parameter must be an integer.");
-        }
-
-        $integer = (int) $value;
-        if ($integer < 1 || $integer > $maximum) {
-            throw $this->error(ApiErrorCode::INVALID_VALUE, $field, "The {$field} parameter is outside the allowed range.");
-        }
-
-        return $integer;
-    }
-
-    private function error(ApiErrorCode $code, string $field, string $message): ApiException
-    {
-        return new ApiException($code, $message, 422, $field);
+        return $this->parseIso8601UtcQueryDate($value, $field);
     }
 }

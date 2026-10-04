@@ -2,12 +2,16 @@
 
 namespace App\Http\Requests;
 
-use App\Exceptions\Api\ApiException;
+use App\Http\Requests\Concerns\CreatesApiValidationError;
+use App\Http\Requests\Concerns\ParsesPositiveQueryInteger;
 use App\Support\ApiErrorCode;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class ListCustomerHistoryRequest extends FormRequest
 {
+    use CreatesApiValidationError;
+    use ParsesPositiveQueryInteger;
+
     private const DEFAULT_PER_PAGE = 20;
 
     public function authorize(): bool
@@ -42,20 +46,6 @@ final class ListCustomerHistoryRequest extends FormRequest
             return $default;
         }
 
-        if (! is_string($value) || preg_match('/^\d{1,9}$/', $value) !== 1) {
-            throw $this->error(ApiErrorCode::INVALID_TYPE, $field, "The {$field} parameter must be an integer.");
-        }
-
-        $integer = (int) $value;
-        if ($integer < 1 || $integer > $maximum) {
-            throw $this->error(ApiErrorCode::INVALID_VALUE, $field, "The {$field} parameter is outside the allowed range.");
-        }
-
-        return $integer;
-    }
-
-    private function error(ApiErrorCode $code, string $field, string $message): ApiException
-    {
-        return new ApiException($code, $message, 422, $field);
+        return $this->parsePositiveQueryInteger($value, $field, $maximum);
     }
 }

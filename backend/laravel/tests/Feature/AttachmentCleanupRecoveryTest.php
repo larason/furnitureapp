@@ -62,4 +62,17 @@ final class AttachmentCleanupRecoveryTest extends TestCase
 
         app(AttachFileToParent::class)->delete($attachment);
     }
+
+    public function test_failed_creation_surfaces_persistent_recovery_failure_when_attachment_cleanup_fails(): void
+    {
+        $attachment = Attachment::factory()->create();
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('delete')->twice()->andReturn(false);
+        Storage::set('attachments', $disk);
+        Schema::drop('attachment_cleanup_tasks');
+
+        $this->expectException(AttachmentCleanupRecoveryRequired::class);
+
+        app(AttachFileToParent::class)->recoverFailedCreation(new \RuntimeException('creation failed'), $attachment);
+    }
 }

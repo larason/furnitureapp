@@ -2,8 +2,6 @@
 
 namespace App\Services\Requests;
 
-use App\Exceptions\AttachmentCleanupRequired;
-use App\Models\Attachment;
 use App\Models\FurnitureRequest;
 use App\Models\Product;
 use App\Services\Attachments\AttachFileToParent;
@@ -11,7 +9,6 @@ use App\Support\ReferenceGenerator;
 use App\Support\RequestStatus;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -52,27 +49,7 @@ final class CreateFurnitureRequest
                 return $request;
             });
         } catch (Throwable $exception) {
-            if ($exception instanceof AttachmentCleanupRequired) {
-                try {
-                    $this->attachments->queueCleanup($exception->storageDisk, $exception->storageKey);
-                } catch (Throwable $cleanupTaskFailure) {
-                    Log::warning('attachment.cleanup_task_persist_failed', [
-                        'exception' => $cleanupTaskFailure::class,
-                    ]);
-                    $this->attachments->recoverCleanup($exception->storageDisk, $exception->storageKey);
-                }
-            }
-
-            if ($storedAttachment instanceof Attachment) {
-                try {
-                    $this->attachments->delete($storedAttachment);
-                } catch (Throwable $cleanup) {
-                    Log::warning('attachment.cleanup_failed', [
-                        'exception' => $cleanup::class,
-                    ]);
-                }
-            }
-
+            $this->attachments->recoverFailedCreation($exception, $storedAttachment);
             throw $exception;
         }
     }

@@ -48,6 +48,32 @@ final class AttachFileToParent
         }
     }
 
+    public function recoverFailedCreation(Throwable $exception, ?Attachment $storedAttachment): void
+    {
+        if ($exception instanceof AttachmentCleanupRequired) {
+            try {
+                $this->queueCleanup($exception->storageDisk, $exception->storageKey);
+            } catch (Throwable $cleanupTaskFailure) {
+                Log::warning('attachment.cleanup_task_persist_failed', [
+                    'exception' => $cleanupTaskFailure::class,
+                ]);
+                $this->recoverCleanup($exception->storageDisk, $exception->storageKey);
+            }
+        }
+
+        if ($storedAttachment instanceof Attachment) {
+            try {
+                $this->delete($storedAttachment);
+            } catch (AttachmentCleanupRecoveryRequired $exception) {
+                throw $exception;
+            } catch (Throwable $cleanup) {
+                Log::warning('attachment.cleanup_failed', [
+                    'exception' => $cleanup::class,
+                ]);
+            }
+        }
+    }
+
     public function queueCleanup(string $disk, string $key): void
     {
         $now = now();

@@ -2073,7 +2073,7 @@ Scenario 2: one winner creates the attachment; the loser receives
 
 Invariants held every iteration:
   attachments for parent = 1
-  capability rows per race = 1, used_at set (consumed once)
+  capability rows per race = 0 after successful consumption
   stored files = 1 per race (no surviving orphan)
   raw capability never persisted (keyed HMAC digest only)
 ```

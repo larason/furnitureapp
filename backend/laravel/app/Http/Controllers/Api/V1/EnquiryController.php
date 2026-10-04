@@ -30,6 +30,8 @@ class EnquiryController extends V1Controller
 {
     private const ENQUIRY_NOT_FOUND_MESSAGE = 'The requested enquiry was not found.';
 
+    private const ATTACHMENT_CREDENTIAL_REQUIRED_MESSAGE = 'Authentication or an upload capability is required.';
+
     public function store(
         CreateEnquiryRequest $request,
         CreateEnquiry $creator,
@@ -167,9 +169,13 @@ class EnquiryController extends V1Controller
         UploadAttachmentRequest $request,
         string $identifier,
         UploadAttachment $uploader,
+        UploadCapabilityService $capabilities,
     ): JsonResponse {
+        $token = $this->anonymousAttachmentToken($request, $identifier, $capabilities);
         $enquiry = $this->findOperationalEnquiry($identifier);
-        $token = $this->authorizeAttachment($request, $enquiry);
+        if ($token === null) {
+            $this->authorizeAttachment($request, $enquiry);
+        }
         $attachment = $uploader->forEnquiry($enquiry, $request->validatedAttachment(), $token);
 
         return (new AttachmentResource($attachment))
@@ -241,17 +247,30 @@ class EnquiryController extends V1Controller
         return $user instanceof User && $user->checkPermissionTo('enquiries.manage');
     }
 
-    private function authorizeAttachment(UploadAttachmentRequest $request, Enquiry $enquiry): ?string
+    private function anonymousAttachmentToken(
+        UploadAttachmentRequest $request,
+        string $identifier,
+        UploadCapabilityService $capabilities,
+    ): ?string {
+        if ($request->user() instanceof User) {
+            return null;
+        }
+
+        $token = $request->header('X-Upload-Token');
+        $enquiryId = EnquiryIdentifier::decode($identifier);
+        if ($token === null || $token === '' || $enquiryId === null || ! $capabilities->hasAvailableForEnquiry($token, $enquiryId)) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, self::ATTACHMENT_CREDENTIAL_REQUIRED_MESSAGE, 401);
+        }
+
+        return $token;
+    }
+
+    private function authorizeAttachment(UploadAttachmentRequest $request, Enquiry $enquiry): void
     {
         $actor = $request->user();
 
         if (! $actor instanceof User) {
-            $token = $request->header('X-Upload-Token');
-            if ($token === null || $token === '') {
-                throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication or an upload capability is required.', 401);
-            }
-
-            return $token;
+            throw new \LogicException('Anonymous attachment uploads require a validated capability.');
         }
 
         if ($actor->hasRole('CUSTOMER')) {
@@ -259,13 +278,12 @@ class EnquiryController extends V1Controller
                 throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ENQUIRY_NOT_FOUND_MESSAGE, 404);
             }
 
-            return null;
+            return;
         }
 
         if (! $actor->checkPermissionTo('enquiries.manage')) {
             throw new ApiException(ApiErrorCode::FORBIDDEN, 'The authenticated actor cannot upload enquiry attachments.', 403);
         }
 
-        return null;
     }
 }

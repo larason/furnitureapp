@@ -32,6 +32,8 @@ class RequestController extends V1Controller
 {
     private const REQUEST_NOT_FOUND_MESSAGE = 'The requested furniture request was not found.';
 
+    private const ATTACHMENT_CREDENTIAL_REQUIRED_MESSAGE = 'Authentication or an upload capability is required.';
+
     public function store(
         CreateFurnitureRequestRequest $request,
         CreateFurnitureRequest $creator,
@@ -175,9 +177,13 @@ class RequestController extends V1Controller
         UploadAttachmentRequest $request,
         string $identifier,
         UploadAttachment $uploader,
+        UploadCapabilityService $capabilities,
     ): JsonResponse {
+        $token = $this->anonymousAttachmentToken($request, $identifier, $capabilities);
         $furnitureRequest = $this->findRequestOrFail($identifier);
-        $token = $this->authorizeAttachment($request, $furnitureRequest);
+        if ($token === null) {
+            $this->authorizeAttachment($request, $furnitureRequest);
+        }
         $attachment = $uploader->forRequest($furnitureRequest, $request->validatedAttachment(), $token);
 
         return (new AttachmentResource($attachment))
@@ -207,17 +213,30 @@ class RequestController extends V1Controller
         return $user instanceof User && $user->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value);
     }
 
-    private function authorizeAttachment(UploadAttachmentRequest $request, FurnitureRequest $furnitureRequest): ?string
+    private function anonymousAttachmentToken(
+        UploadAttachmentRequest $request,
+        string $identifier,
+        UploadCapabilityService $capabilities,
+    ): ?string {
+        if ($request->user() instanceof User) {
+            return null;
+        }
+
+        $token = $request->header('X-Upload-Token');
+        $requestId = FurnitureRequestIdentifier::decode($identifier);
+        if ($token === null || $token === '' || $requestId === null || ! $capabilities->hasAvailableForRequest($token, $requestId)) {
+            throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, self::ATTACHMENT_CREDENTIAL_REQUIRED_MESSAGE, 401);
+        }
+
+        return $token;
+    }
+
+    private function authorizeAttachment(UploadAttachmentRequest $request, FurnitureRequest $furnitureRequest): void
     {
         $actor = $request->user();
 
         if (! $actor instanceof User) {
-            $token = $request->header('X-Upload-Token');
-            if ($token === null || $token === '') {
-                throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication or an upload capability is required.', 401);
-            }
-
-            return $token;
+            throw new \LogicException('Anonymous attachment uploads require a validated capability.');
         }
 
         if ($actor->hasRole('CUSTOMER')) {
@@ -225,14 +244,13 @@ class RequestController extends V1Controller
                 throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::REQUEST_NOT_FOUND_MESSAGE, 404);
             }
 
-            return null;
+            return;
         }
 
         if (! $actor->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value)) {
             throw new ApiException(ApiErrorCode::FORBIDDEN, 'The authenticated actor cannot upload request attachments.', 403);
         }
 
-        return null;
     }
 
     private function resourceResponse(FurnitureRequest $furnitureRequest, bool $includeInternalNotes): JsonResponse

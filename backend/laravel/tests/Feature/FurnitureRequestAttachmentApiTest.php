@@ -13,15 +13,16 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Testing\TestResponse;
 use Mockery;
 use Tests\Support\CreatesAttachmentFiles;
+use Tests\Support\SubmitsAttachmentCreation;
 use Tests\TestCase;
 
 class FurnitureRequestAttachmentApiTest extends TestCase
 {
     use CreatesAttachmentFiles;
     use RefreshDatabase;
+    use SubmitsAttachmentCreation;
 
     private const URL = '/api/v1/requests';
 
@@ -203,27 +204,5 @@ class FurnitureRequestAttachmentApiTest extends TestCase
         $this->assertDatabaseCount('furniture_requests', 0);
         $this->assertDatabaseCount('attachments', 0);
         $this->assertSame([], Storage::disk('attachments')->allFiles());
-    }
-
-    /** @param array<string, mixed> $fields */
-    private function multipart(array $fields, mixed $attachment = null): TestResponse
-    {
-        RateLimiter::for('anonymous-submit', static fn (): Limit => Limit::none());
-
-        $payload = $fields;
-
-        if ($attachment !== null) {
-            $payload['attachment'] = $attachment;
-        }
-
-        return $this->post(self::URL, $payload, ['Content-Type' => 'multipart/form-data; boundary=----test']);
-    }
-
-    private function failingDisk(): void
-    {
-        $disk = Mockery::mock(Filesystem::class);
-        $disk->shouldReceive('writeStream')->once()->andReturn(false);
-        $disk->shouldReceive('delete')->once();
-        Storage::set('attachments', $disk);
     }
 }

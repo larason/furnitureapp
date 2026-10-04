@@ -86,6 +86,60 @@ final class ScopedAttachmentUploadApiTest extends TestCase
             ->assertJsonPath('data.content_type', 'image/png');
     }
 
+    public function test_anonymous_request_upload_without_a_credential_does_not_reveal_identifier_existence(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $headers = ['Content-Type' => self::MULTIPART_CONTENT_TYPE];
+
+        foreach ([FurnitureRequestIdentifier::encode($request), FurnitureRequestIdentifier::encodeId(999999)] as $identifier) {
+            $this->withHeaders($headers)
+                ->post(self::REQUESTS_PATH.$identifier.self::ATTACHMENTS_PATH, ['attachment' => $this->pngUpload('reference.png')])
+                ->assertUnauthorized();
+        }
+    }
+
+    public function test_anonymous_enquiry_upload_without_a_credential_does_not_reveal_identifier_existence(): void
+    {
+        $enquiry = Enquiry::factory()->create();
+        $headers = ['Content-Type' => self::MULTIPART_CONTENT_TYPE];
+
+        foreach ([EnquiryIdentifier::encode($enquiry), EnquiryIdentifier::encodeId(999999)] as $identifier) {
+            $this->withHeaders($headers)
+                ->post(self::ENQUIRIES_PATH.$identifier.self::ATTACHMENTS_PATH, ['attachment' => $this->pngUpload('reference.png')])
+                ->assertUnauthorized();
+        }
+    }
+
+    public function test_anonymous_request_upload_with_an_invalid_credential_does_not_reveal_identifier_existence(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $headers = [
+            'X-Upload-Token' => 'uat_invalid',
+            'Content-Type' => self::MULTIPART_CONTENT_TYPE,
+        ];
+
+        foreach ([FurnitureRequestIdentifier::encode($request), FurnitureRequestIdentifier::encodeId(999999)] as $identifier) {
+            $this->withHeaders($headers)
+                ->post(self::REQUESTS_PATH.$identifier.self::ATTACHMENTS_PATH, ['attachment' => $this->pngUpload('reference.png')])
+                ->assertUnauthorized();
+        }
+    }
+
+    public function test_anonymous_enquiry_upload_with_an_invalid_credential_does_not_reveal_identifier_existence(): void
+    {
+        $enquiry = Enquiry::factory()->create();
+        $headers = [
+            'X-Upload-Token' => 'uat_invalid',
+            'Content-Type' => self::MULTIPART_CONTENT_TYPE,
+        ];
+
+        foreach ([EnquiryIdentifier::encode($enquiry), EnquiryIdentifier::encodeId(999999)] as $identifier) {
+            $this->withHeaders($headers)
+                ->post(self::ENQUIRIES_PATH.$identifier.self::ATTACHMENTS_PATH, ['attachment' => $this->pngUpload('reference.png')])
+                ->assertUnauthorized();
+        }
+    }
+
     public function test_authenticated_customer_can_upload_only_to_owned_request(): void
     {
         $owner = User::factory()->customer()->create(['clerk_user_id' => 'upload_owner']);

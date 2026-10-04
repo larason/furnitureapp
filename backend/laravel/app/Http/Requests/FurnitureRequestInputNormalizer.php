@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Exceptions\Api\ApiException;
+use App\Http\Requests\Concerns\CreatesStaticApiValidationError;
 use App\Models\FurnitureRequest;
 use App\Services\Requests\FurnitureRequestInput;
 use App\Support\ApiErrorCode;
@@ -21,6 +21,8 @@ use App\Support\RequestField;
  */
 final class FurnitureRequestInputNormalizer
 {
+    use CreatesStaticApiValidationError;
+
     private const MEASUREMENT_FIELDS = [
         RequestField::LENGTH,
         RequestField::WIDTH,
@@ -286,10 +288,5 @@ final class FurnitureRequestInputNormalizer
         }
 
         return $value;
-    }
-
-    private static function error(ApiErrorCode $code, string $field, string $message): ApiException
-    {
-        return new ApiException($code, $message, 422, $field);
     }
 }

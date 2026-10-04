@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Exceptions\Api\ApiException;
+use App\Http\Requests\Concerns\CreatesStaticApiValidationError;
 use App\Models\FurnitureRequest;
 use App\Services\Attachments\AttachmentValidator;
 use App\Services\Attachments\ValidatedAttachment;
@@ -22,6 +22,8 @@ use LogicException;
  */
 final class CreateFurnitureRequestRequest extends FormRequest
 {
+    use CreatesStaticApiValidationError;
+
     private const ALLOWED_FIELDS = [
         'product_id',
         'quantity',
@@ -161,10 +163,5 @@ final class CreateFurnitureRequestRequest extends FormRequest
 
             throw self::error(ApiErrorCode::INVALID_VALUE, $field, 'The request contains an unsupported field.');
         }
-    }
-
-    private static function error(ApiErrorCode $code, string $field, string $message): ApiException
-    {
-        return new ApiException($code, $message, 422, $field);
     }
 }

@@ -2,13 +2,10 @@
 
 namespace App\Services\Enquiries;
 
-use App\Exceptions\AttachmentCleanupRequired;
-use App\Models\Attachment;
 use App\Models\Enquiry;
 use App\Services\Attachments\AttachFileToParent;
 use App\Support\EnquiryStatus;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -59,32 +56,8 @@ final class CreateEnquiry
                 return $enquiry;
             });
         } catch (Throwable $exception) {
-            $this->recoverAttachmentFailure($exception, $storedAttachment);
+            $this->attachments->recoverFailedCreation($exception, $storedAttachment);
             throw $exception;
-        }
-    }
-
-    private function recoverAttachmentFailure(Throwable $exception, ?Attachment $storedAttachment): void
-    {
-        if ($exception instanceof AttachmentCleanupRequired) {
-            try {
-                $this->attachments->queueCleanup($exception->storageDisk, $exception->storageKey);
-            } catch (Throwable $cleanupTaskFailure) {
-                Log::warning('attachment.cleanup_task_persist_failed', [
-                    'exception' => $cleanupTaskFailure::class,
-                ]);
-                $this->attachments->recoverCleanup($exception->storageDisk, $exception->storageKey);
-            }
-        }
-
-        if ($storedAttachment instanceof Attachment) {
-            try {
-                $this->attachments->delete($storedAttachment);
-            } catch (Throwable $cleanup) {
-                Log::warning('attachment.cleanup_failed', [
-                    'exception' => $cleanup::class,
-                ]);
-            }
         }
     }
 }
