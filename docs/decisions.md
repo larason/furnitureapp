@@ -2681,3 +2681,20 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** `SELECT ... FOR UPDATE`, row locking, and single-use capability races cannot be proven on SQLite; real MySQL/MariaDB execution was the last Group J closure blocker.
 
 **Status:** Accepted and executed | **Date:** 2026-10-03 | **Affected:** `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `backend/laravel/tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php`, `phases/group-J-phases.md`, `docs/decisions.md`
+
+---
+
+### ADR/GROUP-K-INFO-ARCH — Admin Information Architecture and Current-Scope Deferrals
+
+**Decision:** Group K is a backend operational architecture for the request-first production release. It reuses canonical V1 resources rather than adding Admin navigation aliases: catalog and inventory reuse Group E; Furniture Requests and Enquiries reuse Group J; customer visibility uses `ADM-008/009`; Staff lifecycle uses `ADM-001..006`; Audit visibility, if reconciled and exposed, uses `ADM-007`. `CUSTOMER`, `STAFF`, and `ADMIN` remain the only roles, and Admin authority remains explicit seeded permissions rather than a wildcard.
+
+- Staff operate only approved business resources; they do not own, administer, impersonate, restrict, or access credentials for customer accounts.
+- Customer and Staff management remain separate. Customer visibility is Admin-only and purpose-limited; Staff lifecycle is Admin-only through explicit actions.
+- Product merchandising and inventory remain separate capabilities. Requests and Enquiries remain separate private workflows with no duplicate services, tables, statuses, or `/admin` aliases.
+- Orders (11.7), payments (11.11), and delivery operations (11.12) are formally deferred until Group I, Group H, and the transactional Group G/I lifecycle are respectively reactivated. The frozen contracts remain preserved.
+- Group K current scope closes only after the non-deferred phases complete while those three dependencies remain explicitly deferred.
+- `ADM-007` is recorded as a frozen-contract/runtime consistency gap: docs reference `audit.view`, while the current permission catalog does not contain it and the Admin-only route/controller is a placeholder. No contract, RBAC, route, or runtime change is made by this ADR; Phase 11.13 must reconcile the gap before exposing audit reads.
+
+**Reason:** The request-first launch needs a clear, secure operational boundary without activating deferred commerce or creating parallel APIs. Recording the audit discrepancy prevents documentation from treating a conceptual permission as current runtime behavior.
+
+**Status:** Accepted | **Date:** 2026-10-04 | **Affected:** `phases/group-K-phases.md`, `docs/decisions.md`
