@@ -87,7 +87,9 @@ class ProductManagementApiTest extends TestCase
     public function test_operational_reads_include_drafts_with_private_cache_headers(): void
     {
         $draft = Product::factory()->draft()->create(['slug' => 'operational-draft', 'price_amount' => 400]);
-        $variant = ProductVariant::factory()->create(['product_id' => $draft->id, 'price_amount' => 600, 'cost_price_amount' => 200, 'cost_price_currency' => 'TZS']);
+        ProductVariant::factory()->create(['product_id' => $draft->id, 'sku' => 'SECOND', 'display_order' => 2, 'price_amount' => 600, 'cost_price_amount' => 200, 'cost_price_currency' => 'TZS']);
+        ProductVariant::factory()->create(['product_id' => $draft->id, 'sku' => 'FIRST', 'display_order' => 1, 'price_amount' => 600]);
+        ProductVariant::factory()->create(['product_id' => $draft->id, 'sku' => 'TIED', 'display_order' => 1]);
         ProductVariant::factory()->inactive()->create(['product_id' => $draft->id, 'price_amount' => 700]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_reader']));
 
@@ -104,10 +106,11 @@ class ProductManagementApiTest extends TestCase
         $this->withHeaders($headers)->getJson('/api/v1/admin/products/'.$draft->slug)
             ->assertOk()
             ->assertJsonPath('data.variants.0.price.amount', 600)
-            ->assertJsonCount(1, 'data.variants')
+            ->assertJsonPath('data.variants.0.sku', 'FIRST')
+            ->assertJsonPath('data.variants.1.sku', 'TIED')
+            ->assertJsonPath('data.variants.2.sku', 'SECOND')
+            ->assertJsonCount(3, 'data.variants')
             ->assertJsonPath('data.inventory.quantity', 0);
-
-        $this->assertSame($variant->id, $draft->fresh()->variants()->where('is_active', true)->sole()->id);
     }
 
     public function test_operational_product_listing_filters_by_publication_state(): void

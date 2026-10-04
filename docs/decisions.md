@@ -4,6 +4,16 @@
 
 ---
 
+### ADR/CAT-009 — Product Image Storage and R2 Delivery
+
+**Decision:** CAT-009 accepts exactly one JPEG, PNG, or WebP image and stores unmodified bytes in Cloudflare R2 using immutable server-generated keys. Public URLs are derived from `R2_PUBLIC_BASE_URL`; MySQL retains only provider-neutral `file_path` and ProductImage metadata. The first image without an existing primary becomes primary, with product-name alt text and `MAX(sort_order) + 1`; CAT-009 creates product-wide images only.
+
+**Security:** Server-side MIME, magic-byte, structural-image, and JPEG EXIF GPS validation occurs before storage. Cloudflare Images and Laravel resizing, compression, conversion, or metadata stripping are not used. There are no V1 delete, reorder, set-primary, or image-metadata endpoints.
+
+**Status:** Accepted and implemented in Phase 11.5
+
+---
+
 ### ADR/GROUP-H-AND-I-DEFER
 
 **Decision:** Initial Production Commerce Mode — Request Only. The first production release publishes only MADE_TO_ORDER products. Normal Cart→Checkout→Payment→Order purchasing remains disabled until business registration, payment-provider onboarding, and the deferred Groups G/H/I prerequisites are completed. Customers express purchase intent through the Made-to-Order Request flow. This is a deployment-scope decision, not removal of the frozen V1 commerce contracts.

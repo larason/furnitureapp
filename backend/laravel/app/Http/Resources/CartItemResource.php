@@ -8,13 +8,14 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Cart\CartItemEligibility;
 use App\Services\Cart\CartItemValidationResult;
+use App\Services\ProductImages\ProductImageStorage;
 use App\Support\ApiErrorCode;
 use App\Support\CartItemIdentifier;
 use App\Support\ProductIdentifier;
+use App\Support\ProductImageIdentifier;
 use App\Support\VariantIdentifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property-read CartItem $resource
@@ -108,8 +109,8 @@ final class CartItemResource extends JsonResource
                 ? null
                 : $this->money((int) $cheapestActive->price_amount, $cheapestActive->price_currency),
             'primary_image' => $product->primaryImage === null ? null : [
-                'id' => $product->primaryImage->id,
-                'url' => Storage::disk(config('filesystems.default'))->url($product->primaryImage->file_path),
+                'id' => ProductImageIdentifier::encode($product->primaryImage),
+                'url' => app(ProductImageStorage::class)->publicUrl($product->primaryImage->file_path),
                 'alt_text' => $product->primaryImage->alt_text,
             ],
         ];

@@ -1,5 +1,7 @@
 # Phase 11.5 — Product Image Management
 
+**Status:** Implemented 2026-10-04. CAT-009 uses Cloudflare R2 through Laravel Storage, derives URLs from `R2_PUBLIC_BASE_URL`, and accepts one validated JPEG/PNG/WebP image without server-side transformation.
+
 ## 1. Objective
 
 Implement Version 1 Product image upload and public delivery using:

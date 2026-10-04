@@ -5,13 +5,14 @@ namespace App\Http\Resources;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Services\ProductImages\ProductImageStorage;
 use App\Support\CatalogAvailability;
 use App\Support\CategoryIdentifier;
 use App\Support\ProductIdentifier;
+use App\Support\ProductImageIdentifier;
 use App\Support\ProductType;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property-read Product $resource
@@ -44,8 +45,8 @@ class ProductSummaryResource extends JsonResource
                 'name' => $this->category->name,
             ],
             'primary_image' => $this->whenLoaded('primaryImage', fn () => $this->primaryImage === null ? null : [
-                'id' => $this->primaryImage->id,
-                'url' => Storage::disk(config('filesystems.default'))->url($this->primaryImage->file_path),
+                'id' => ProductImageIdentifier::encode($this->primaryImage),
+                'url' => app(ProductImageStorage::class)->publicUrl($this->primaryImage->file_path),
                 'alt_text' => $this->primaryImage->alt_text,
             ]),
             'availability' => $availability['availability'],

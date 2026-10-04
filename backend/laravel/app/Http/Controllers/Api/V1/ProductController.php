@@ -3,16 +3,19 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Api\ApiException;
+use App\Http\Requests\CreateProductImageRequest;
 use App\Http\Requests\OperationalProductIndexRequest;
 use App\Http\Requests\ProductIndexRequest;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Http\Resources\OperationalProductResource;
 use App\Http\Resources\ProductDetailResource;
+use App\Http\Resources\ProductImageResource;
 use App\Http\Resources\ProductSummaryResource;
 use App\Http\Resources\ProductVariantResource;
 use App\Models\Product;
 use App\Queries\ProductCatalogQuery;
+use App\Services\ProductImages\CreateProductImage;
 use App\Services\Products\CreateProduct;
 use App\Services\Products\UpdateProduct;
 use App\Support\ApiErrorCode;
@@ -94,9 +97,11 @@ class ProductController extends V1Controller
             ->withHeaders($this->privateHeaders());
     }
 
-    public function storeImage(): JsonResponse
+    public function storeImage(CreateProductImageRequest $request, string $product, CreateProductImage $creator): JsonResponse
     {
-        return $this->notImplemented();
+        $image = $creator->create($this->resolveOperationalProduct($product), $request->validatedImage());
+
+        return (new ProductImageResource($image))->response()->setStatusCode(201)->withHeaders($this->privateHeaders());
     }
 
     public function adminIndex(OperationalProductIndexRequest $request): JsonResponse
@@ -254,7 +259,7 @@ class ProductController extends V1Controller
             'category:id,name,slug,description',
             'primaryImage:id,product_id,file_path,alt_text,sort_order,is_primary',
             'images:id,product_id,file_path,alt_text,sort_order,is_primary',
-            'variants' => fn ($variant) => $variant->where('is_active', true)->with('stocks:id,product_variant_id,quantity,reserved_quantity'),
+            'variants' => fn ($variant) => $variant->where('is_active', true)->orderBy('display_order')->orderBy('id')->with('stocks:id,product_variant_id,quantity,reserved_quantity'),
         ];
     }
 
