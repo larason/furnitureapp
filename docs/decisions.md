@@ -4,6 +4,16 @@
 
 ---
 
+### ADR/CAT-009 — Product Image Storage and R2 Delivery
+
+**Decision:** CAT-009 accepts exactly one JPEG, PNG, or WebP image and stores unmodified bytes in Cloudflare R2 using immutable server-generated keys. Public URLs are derived from `R2_PUBLIC_BASE_URL`; MySQL retains only provider-neutral `file_path` and ProductImage metadata. The first image without an existing primary becomes primary, with product-name alt text and `MAX(sort_order) + 1`; CAT-009 creates product-wide images only.
+
+**Security:** Server-side MIME, magic-byte, structural-image, and JPEG EXIF GPS validation occurs before storage. Cloudflare Images and Laravel resizing, compression, conversion, or metadata stripping are not used. There are no V1 delete, reorder, set-primary, or image-metadata endpoints.
+
+**Status:** Accepted and implemented in Phase 11.5
+
+---
+
 ### ADR/GROUP-H-AND-I-DEFER
 
 **Decision:** Initial Production Commerce Mode — Request Only. The first production release publishes only MADE_TO_ORDER products. Normal Cart→Checkout→Payment→Order purchasing remains disabled until business registration, payment-provider onboarding, and the deferred Groups G/H/I prerequisites are completed. Customers express purchase intent through the Made-to-Order Request flow. This is a deployment-scope decision, not removal of the frozen V1 commerce contracts.
@@ -1855,6 +1865,32 @@ Payment must operate on the **final authoritative amount stored by the Order**; 
 
 ---
 
+### ADR/GROUP-K-CATEGORY-PUBLIC-FIELDS — Phase 11.4 Category Persistence Reconciliation
+
+**Decision:** Preserve the frozen CAT-003/CAT-004 and CAT-011/CAT-012 `description` and `image` fields by using the existing additive Category public-fields migration (`2026_09_19_120000_add_public_fields_to_categories_table.php`). It persists nullable plain-text `categories.description` and nullable `categories.image_url`; API resources map `image_url` to the existing `image: {url}` representation. Existing taxonomy rows remain null for both fields, and no descriptions or URLs are invented.
+
+- **Compatibility:** This records the already-applied persistence reconciliation without changing the frozen external Category representation or OpenAPI shape. CAT-003 remains summary-only (`image`, no description); CAT-004 continues to expose `description` and `image`.
+- **Scope:** `parent_id`, `space_type`, `display_order`, `is_active`, the hierarchy safeguards, and the recommendation graph are unchanged. This supersedes only ADR/BACKEND-009's original Category field inventory and mass-assignment statement as they relate to `description` and `image_url`; its hierarchy decision history remains intact.
+- **Operational boundary:** CAT-011 placement is not defined by the frozen contract. No Category mutation endpoint is implemented until a server-controlled rule for the required internal placement fields is approved.
+
+**Reason:** The V1 Category contract already exposed these fields, while the original taxonomy schema did not. The additive columns reconcile persistence without expanding the external API or introducing a Category-media subsystem.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`database/migrations/2026_09_19_120000_add_public_fields_to_categories_table.php`, `app/Models/Category.php`, `app/Http/Resources/{CategorySummaryResource,CategoryDetailResource}.php`, `database/factories/CategoryFactory.php`, `tests/Feature/{CategorySchemaTest,CategorySeedTest,CategoryReadApiTest}.php`), `docs/decisions.md`
+
+### ADR/API-CAT-006 — CAT-011 server-controlled category placement
+
+**Context:** The frozen CAT-011 external request deliberately permits only `name`, `slug`, `description`, and `image`; it contains no hierarchy or lifecycle controls. CAT-011 therefore required an implementation-level reconciliation for the persisted `parent_id`, `space_type`, `display_order`, and `is_active` fields before Category CRUD could be enabled.
+
+**Decision:** CAT-011 resolves the canonical `furnitures-root` row by slug inside a database transaction and locks it `FOR UPDATE`. It creates an active direct child with `space_type = hybrid` and `display_order = MAX(root direct children.display_order) + 1`; an empty direct-child set starts at `1`, matching the seed convention. A missing root returns the canonical `RESOURCE_NOT_FOUND` failure. The service never creates a replacement root or a category with a null parent. The database unique slug constraint remains the final race authority and duplicate slug violations map to canonical `409 CONFLICT`, field `slug`.
+
+CAT-012 resolves canonical category opaque IDs or slugs operationally, including inactive categories, but mutates only `name`, `slug`, `description`, and `image_url`. It does not reparent, reorder, change activation or `space_type`, or modify recommendation relations. `furnitures-root` is system-owned and cannot be changed through CAT-012; this uses the existing `403 FORBIDDEN` code. Category write responses are private and non-cacheable.
+
+**Compatibility:** Frozen V1 implementation/consistency reconciliation. CAT-011/CAT-012 paths, authorization, request fields, response fields, and exposed hierarchy surface are unchanged. The Category OpenAPI slug pattern is corrected from `^[a-z0-9-]+$` to the established domain invariant `^[a-z0-9]+(?:-[a-z0-9]+)*$`; this rejects no newly valid server input and documents the pre-existing model constraint.
+
+**Status:** Accepted | **Affected:** `backend/laravel` (`app/Http/{Controllers/Api/V1/CategoryController,Requests/{StoreCategoryRequest,UpdateCategoryRequest}}.php`, `app/Services/Categories/*`, `tests/Feature/CategoryManagementApiTest.php`, `tests/Integration/CategoryCreationConcurrencyMysqlTest.php`), `docs/api/openapi.yaml`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
 
 ### ADR/BACKEND-010 — Phase 3.5 Product Variants Schema
 
@@ -2681,3 +2717,53 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** `SELECT ... FOR UPDATE`, row locking, and single-use capability races cannot be proven on SQLite; real MySQL/MariaDB execution was the last Group J closure blocker.
 
 **Status:** Accepted and executed | **Date:** 2026-10-03 | **Affected:** `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `backend/laravel/tests/Integration/AttachmentCapabilityConcurrencyMysqlTest.php`, `phases/group-J-phases.md`, `docs/decisions.md`
+
+---
+
+### ADR/GROUP-K-INFO-ARCH — Admin Information Architecture and Current-Scope Deferrals
+
+**Decision:** Group K is a backend operational architecture for the request-first production release. It reuses canonical V1 resources rather than adding Admin navigation aliases: catalog and inventory reuse Group E; Furniture Requests and Enquiries reuse Group J; customer visibility uses `ADM-008/009`; Staff lifecycle uses `ADM-001..006`; Audit visibility, if reconciled and exposed, uses `ADM-007`. `CUSTOMER`, `STAFF`, and `ADMIN` remain the only roles, and Admin authority remains explicit seeded permissions rather than a wildcard.
+
+- Staff operate only approved business resources; they do not own, administer, impersonate, restrict, or access credentials for customer accounts.
+- Customer and Staff management remain separate. Customer visibility is Admin-only and purpose-limited; Staff lifecycle is Admin-only through explicit actions.
+- Product merchandising and inventory remain separate capabilities. Requests and Enquiries remain separate private workflows with no duplicate services, tables, statuses, or `/admin` aliases.
+- Orders (11.7), payments (11.11), and delivery operations (11.12) are formally deferred until Group I, Group H, and the transactional Group G/I lifecycle are respectively reactivated. The frozen contracts remain preserved.
+- Group K current scope closes only after the non-deferred phases complete while those three dependencies remain explicitly deferred.
+- `ADM-007` is recorded as a frozen-contract/runtime consistency gap: docs reference `audit.view`, while the current permission catalog does not contain it and the Admin-only route/controller is a placeholder. No contract, RBAC, route, or runtime change is made by this ADR; Phase 11.13 must reconcile the gap before exposing audit reads.
+
+**Reason:** The request-first launch needs a clear, secure operational boundary without activating deferred commerce or creating parallel APIs. Recording the audit discrepancy prevents documentation from treating a conceptual permission as current runtime behavior.
+
+**Status:** Accepted | **Date:** 2026-10-04 | **Affected:** `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
+### ADR/GROUP-K-ADMIN-AUTH — Admin Authentication and Initial Trust Bootstrap
+
+**Decision:** Clerk remains the sole credential, verification, and session authority for Admins. Laravel uses the existing `users.clerk_user_id` projection, CLOSED `ADMIN` role, active local account state, and explicit `PermissionCatalog` permissions for administrative authorization. There is no Laravel Admin password, login, registration, session, or HTTP bootstrap endpoint.
+
+- The initial Admin is created only by `php artisan admin:bootstrap <verified-clerk-user-id> --confirm` in a trusted deployment environment. It resolves the exact Clerk subject through the existing gateway, requires a verified Clerk snapshot, and never uses email alone as authority.
+- The bootstrap transaction locks the seeded `ADMIN` role before checking assignment, preventing two concurrent initial identities from succeeding. It reuses the canonical `LocalUserProvisioner` for an unmapped identity, replaces an existing target's role with only `ADMIN`, creates the standard Staff profile projection, and sets local account state to `ACTIVE`.
+- A retry for the same sole Admin is a no-op. A different identity is rejected once any Admin exists. The command is not an additional-Admin workflow; additional Admins remain controlled deployment assignment until a separate frozen-contract decision defines a dedicated operation.
+- Public signup remains `CUSTOMER` only. Clerk metadata, domains, frontend state, request bodies, and `ADM-003`/`ADM-004` Staff onboarding cannot create or approve an Admin.
+- The closed audit vocabulary has no deployment/system bootstrap action or resource type. No fake human actor or out-of-vocabulary event is written; operators record bootstrap in the approved deployment/operations record until a later audit-contract decision exists.
+- The `ADM-007` / `audit.view` inconsistency remains isolated to Phase 11.13.
+
+**Reason:** The first Admin needs an explicit bootstrap-of-trust mechanism without turning any public API, normal Clerk sign-in, or Staff approval workflow into a privilege-escalation path.
+
+**Status:** Accepted and implemented in Phase 11.2 | **Date:** 2026-10-04 | **Affected:** `backend/laravel/app/Authentication/BootstrapInitialAdmin.php`, `backend/laravel/app/Console/Commands/BootstrapInitialAdminCommand.php`, `backend/laravel/tests/Feature/InitialAdminBootstrapTest.php`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
+### ADR/GROUP-K-PRODUCT-BASE-PRICE — Product Base Price Persistence Reconciliation
+
+**Decision:** The frozen V1 `Product.price` field is persisted directly on `products.price_amount` and `products.price_currency` as the Product base/display price. `product_variants.price_amount` and `product_variants.price_currency` remain the independent, variant-specific price for each SKU.
+
+- CAT-007 and CAT-008 keep their existing Product-only request shapes. No `initial_variant` object is added, CAT-007 creates no synthetic/default Variant, and CAT-010 remains the separate Variant creation boundary.
+- Product base price is required, stored as non-negative integer minor units with `TZS` currency, and is the source for CAT-001, CAT-002, CAT-013, and CAT-014 Product `price` responses. CAT-005/006 and embedded Variant representations retain Variant price as their source.
+- Existing Products are preflighted before the migration. Each selected legacy source is its lowest-priced active Variant, tied by Variant id, and must have a non-negative amount with `TZS` currency. A Product without an active Variant or with an invalid selected price aborts before adding the columns; zero is never fabricated.
+- The migration rollback is intentionally blocked while any Product exists. Product base price can be independent of every Variant price, so dropping it would be irreversible; an empty catalog is the only lossless rollback state.
+- Product and Variant prices no longer synchronize. Updating one does not mutate the other. For MADE_TO_ORDER, Product price is informational/starting-at only, not a quote, checkout price, or payment commitment.
+
+**Reason:** The frozen API requires non-null Product price input and output, while the former schema could only persist a Variant price and could not create a valid Variant from CAT-007. This internal persistence reconciliation preserves the public contract and the separate Variant resource boundary.
+
+**Status:** Accepted and implemented in Phase 11.3 Part A | **Date:** 2026-10-04 | **Affected:** `backend/laravel/database/migrations/2026_10_04_130000_add_base_price_to_products_table.php`, `backend/laravel/app/Models/Product.php`, `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Resources/ProductSummaryResource.php`, `docs/decisions.md`, `phases/group-K-phases.md`

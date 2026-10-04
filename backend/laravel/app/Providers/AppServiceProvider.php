@@ -9,6 +9,7 @@ use App\Authentication\Clerk\OfficialClerkTokenVerifier;
 use App\Authentication\Clerk\OfficialClerkUserGateway;
 use App\Authentication\ClerkTokenVerifier;
 use App\Services\Cart\GuestCartTransport;
+use App\Services\ProductImages\ProductImageStorage;
 use App\Support\ProductionConfiguration;
 use Clerk\Backend\ClerkBackend;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -38,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         ProductionConfiguration::validate();
+        $this->validateProductImageConfiguration();
         $this->configureTrustedProxies();
 
         RateLimiter::for('public-read', fn (Request $request) => Limit::perMinute(100)->by($request->ip()));
@@ -74,6 +76,13 @@ class AppServiceProvider extends ServiceProvider
         TrustProxies::withHeaders(
             Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO | Request::HEADER_X_FORWARDED_PORT,
         );
+    }
+
+    private function validateProductImageConfiguration(): void
+    {
+        if (! $this->app->environment(['local', 'testing'])) {
+            app(ProductImageStorage::class)->validatePublicBaseUrl();
+        }
     }
 
     private function userKey(Request $request): string

@@ -10,19 +10,26 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class RequirePermission
 {
-    public function handle(Request $request, Closure $next, string $permission): Response
+    public function handle(Request $request, Closure $next, string ...$permissions): Response
     {
         $user = $request->user();
 
-        if (! $this->isAllowedPermission($permission) || $user === null || ! $user->checkPermissionTo($permission)) {
+        if ($user === null || ! $this->hasAllowedPermission($user, $permissions)) {
             throw new AuthorizationException('The requested permission is not available.');
         }
 
         return $next($request);
     }
 
-    private function isAllowedPermission(string $permission): bool
+    /** @param list<string> $permissions */
+    private function hasAllowedPermission(object $user, array $permissions): bool
     {
-        return PermissionName::tryFrom($permission) !== null;
+        foreach ($permissions as $permission) {
+            if (PermissionName::tryFrom($permission) !== null && $user->checkPermissionTo($permission)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

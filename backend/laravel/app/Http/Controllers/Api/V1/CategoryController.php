@@ -3,9 +3,14 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Api\ApiException;
+use App\Http\Requests\StoreCategoryRequest;
+use App\Http\Requests\UpdateCategoryRequest;
 use App\Http\Resources\CategoryDetailResource;
 use App\Http\Resources\CategorySummaryResource;
 use App\Models\Category;
+use App\Services\Categories\CreateCategory;
+use App\Services\Categories\OperationalCategoryResolver;
+use App\Services\Categories\UpdateCategory;
 use App\Support\ApiErrorCode;
 use App\Support\CategoryIdentifier;
 use Illuminate\Http\JsonResponse;
@@ -57,14 +62,19 @@ class CategoryController extends V1Controller
             ->header('CDN-Cache-Control', 'public, max-age=600');
     }
 
-    public function store(): JsonResponse
+    public function store(StoreCategoryRequest $request, CreateCategory $creator): JsonResponse
     {
-        return $this->notImplemented();
+        return (new CategoryDetailResource($creator->create($request->categoryInput())))
+            ->response()
+            ->setStatusCode(201)
+            ->withHeaders($this->privateHeaders());
     }
 
-    public function update(): JsonResponse
+    public function update(UpdateCategoryRequest $request, string $category, OperationalCategoryResolver $resolver, UpdateCategory $updater): JsonResponse
     {
-        return $this->notImplemented();
+        return (new CategoryDetailResource($updater->update($resolver->resolve($category), $request->categoryInput())))
+            ->response()
+            ->withHeaders($this->privateHeaders());
     }
 
     private function collectionResponse(LengthAwarePaginator $paginator, int $page, int $perPage): JsonResponse
@@ -88,5 +98,11 @@ class CategoryController extends V1Controller
             'Cache-Control' => 'public, max-age=300, s-maxage=600',
             'CDN-Cache-Control' => 'public, max-age=600',
         ]);
+    }
+
+    /** @return array<string, string> */
+    private function privateHeaders(): array
+    {
+        return ['Cache-Control' => 'private, no-store', 'Vary' => 'Authorization'];
     }
 }

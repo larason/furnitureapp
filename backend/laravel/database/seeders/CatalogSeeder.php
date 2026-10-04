@@ -42,6 +42,8 @@ class CatalogSeeder extends Seeder
                 'assembly_required' => 'partial',
                 'primary_material' => 'Fabric',
                 'short_description' => 'A comfortable grey fabric 3-seater for modern living rooms.',
+                'price_amount' => 125000000,
+                'price_currency' => 'TZS',
                 'is_active' => true,
                 'is_featured' => true,
             ]
@@ -142,6 +144,8 @@ class CatalogSeeder extends Seeder
                 'assembly_required' => 'full',
                 'primary_material' => 'Oak',
                 'short_description' => 'A solid oak six-seater dining table.',
+                'price_amount' => 89000000,
+                'price_currency' => 'TZS',
                 'is_active' => true,
                 'is_featured' => false,
             ]
@@ -194,6 +198,8 @@ class CatalogSeeder extends Seeder
                 'assembly_required' => 'none',
                 'primary_material' => 'Leather',
                 'short_description' => 'A discontinued vintage leather armchair kept for history.',
+                'price_amount' => 45000000,
+                'price_currency' => 'TZS',
                 'is_active' => false,
                 'is_featured' => false,
             ]

@@ -29,6 +29,7 @@ class ValidateJsonBody
         'api.enquiries.store',
         'api.requests.attachments.store',
         'api.enquiries.attachments.store',
+        'api.products.images.store',
     ];
 
     public function handle(Request $request, Closure $next): Response

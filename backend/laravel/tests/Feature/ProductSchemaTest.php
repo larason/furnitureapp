@@ -22,6 +22,7 @@ class ProductSchemaTest extends TestCase
     public function test_products_table_exist_after_migration(): void
     {
         $this->assertTrue(Schema::hasTable('products'));
+        $this->assertTrue(Schema::hasColumns('products', ['price_amount', 'price_currency']));
     }
 
     public function test_product_belongs_to_a_category(): void
@@ -49,6 +50,8 @@ class ProductSchemaTest extends TestCase
             'category_id' => 999999,
             'name' => 'Orphan Product',
             'slug' => 'orphan-product',
+            'price_amount' => 100,
+            'price_currency' => 'TZS',
         ]);
     }
 
@@ -122,6 +125,8 @@ class ProductSchemaTest extends TestCase
             'category_id' => $category->id,
             'name' => 'Defaulted Product',
             'slug' => 'defaulted-product',
+            'price_amount' => 100,
+            'price_currency' => 'TZS',
         ])->fresh();
         $this->assertSame(AssemblyRequired::NONE, $defaulted->assembly_required);
     }
@@ -135,6 +140,8 @@ class ProductSchemaTest extends TestCase
             'category_id' => $category->id,
             'name' => 'Invalid Assembly Product',
             'slug' => 'invalid-assembly-product',
+            'price_amount' => 100,
+            'price_currency' => 'TZS',
             'assembly_required' => 'banana',
         ]);
     }
@@ -208,6 +215,8 @@ class ProductSchemaTest extends TestCase
             'category_id' => $category->id,
             'name' => 'Bare Product',
             'slug' => 'bare-product',
+            'price_amount' => 100,
+            'price_currency' => 'TZS',
         ]);
 
         $this->assertDatabaseHas('products', [
@@ -221,6 +230,31 @@ class ProductSchemaTest extends TestCase
         $this->assertTrue(! Schema::hasColumn('products', 'variant_sku'));
         $this->assertTrue(! Schema::hasColumn('products', 'stock'));
         $this->assertTrue(! Schema::hasColumn('products', 'image_url'));
+    }
+
+    public function test_product_base_price_rejects_missing_or_invalid_values_at_database_level(): void
+    {
+        $category = $this->createCategory(['slug' => 'priced-products']);
+        $payload = [
+            'category_id' => $category->id,
+            'name' => 'Invalid Product Price',
+            'slug' => 'invalid-product-price',
+            'price_amount' => 100,
+            'price_currency' => 'TZS',
+        ];
+
+        foreach ([
+            ['price_amount' => null],
+            ['price_amount' => -1],
+            ['price_currency' => 'USD'],
+        ] as $invalidValues) {
+            try {
+                DB::table('products')->insert([...$payload, ...$invalidValues]);
+                $this->fail('Invalid Product base price must be rejected by the database.');
+            } catch (QueryException) {
+                $this->assertDatabaseMissing('products', ['slug' => $payload['slug']]);
+            }
+        }
     }
 
     public function test_publication_controls_are_not_mass_assignable(): void

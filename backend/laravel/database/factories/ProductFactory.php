@@ -34,6 +34,8 @@ class ProductFactory extends Factory
             'room_type' => null,
             'assembly_required' => AssemblyRequired::NONE,
             'primary_material' => null,
+            'price_amount' => fake()->numberBetween(100000, 100000000),
+            'price_currency' => 'TZS',
             'is_active' => true,
             'product_type' => ProductType::IN_STOCK,
             'is_published' => true,

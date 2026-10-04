@@ -8,13 +8,14 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Cart\CartItemEligibility;
 use App\Services\Cart\CartItemValidationResult;
+use App\Services\ProductImages\ProductImageStorage;
 use App\Support\ApiErrorCode;
 use App\Support\CartItemIdentifier;
 use App\Support\ProductIdentifier;
+use App\Support\ProductImageIdentifier;
 use App\Support\VariantIdentifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property-read CartItem $resource
@@ -87,29 +88,22 @@ final class CartItemResource extends JsonResource
     }
 
     /**
-     * Embedded `ProductSummary`: `price` is the product's catalog price
-     * (cheapest active variant), independent of this line's variant `unit_price`.
+     * Embedded `ProductSummary`: `price` is the product's base/display price,
+     * independent of this line's variant `unit_price`.
      *
      * @return array<string, mixed>
      */
     private function productSummary(Product $product): array
     {
-        $cheapestActive = $product->variants
-            ->where('is_active', true)
-            ->sortBy('price_amount')
-            ->first();
-
         return [
             'id' => ProductIdentifier::encode($product),
             'name' => $product->name,
             'slug' => $product->slug,
             'product_type' => $product->product_type->value,
-            'price' => $cheapestActive === null
-                ? null
-                : $this->money((int) $cheapestActive->price_amount, $cheapestActive->price_currency),
+            'price' => $this->money((int) $product->price_amount, $product->price_currency),
             'primary_image' => $product->primaryImage === null ? null : [
-                'id' => $product->primaryImage->id,
-                'url' => Storage::disk(config('filesystems.default'))->url($product->primaryImage->file_path),
+                'id' => ProductImageIdentifier::encode($product->primaryImage),
+                'url' => app(ProductImageStorage::class)->publicUrl($product->primaryImage->file_path),
                 'alt_text' => $product->primaryImage->alt_text,
             ],
         ];

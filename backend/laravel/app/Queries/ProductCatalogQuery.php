@@ -4,7 +4,6 @@ namespace App\Queries;
 
 use App\Models\Product;
 use App\Models\ProductStock;
-use App\Models\ProductVariant;
 use App\Support\CategoryIdentifier;
 use App\Support\ProductType;
 use Illuminate\Database\Eloquent\Builder;
@@ -32,21 +31,8 @@ final class ProductCatalogQuery
     public function addSummaryAggregates(Builder $query): Builder
     {
         return $query
-            ->selectSub($this->minimumPriceSubquery(), 'summary_price_amount')
-            ->selectSub($this->minimumPriceSubquery('price_currency'), 'summary_price_currency')
             ->selectSub($this->availableStockScalar(), 'summary_has_available_stock')
             ->selectSub($this->availableQuantityScalar(), 'summary_available_quantity');
-    }
-
-    private function minimumPriceSubquery(string $column = 'price_amount'): Builder
-    {
-        return ProductVariant::query()
-            ->select('product_variants.'.$column)
-            ->whereColumn('product_variants.product_id', 'products.id')
-            ->where('product_variants.is_active', true)
-            ->orderBy('product_variants.price_amount')
-            ->orderBy('product_variants.id')
-            ->limit(1);
     }
 
     private function availableStockScalar(): Builder
@@ -104,11 +90,7 @@ final class ProductCatalogQuery
 
         foreach (['min_price' => '>=', 'max_price' => '<='] as $field => $operator) {
             if (isset($filters[$field])) {
-                $minimumPrice = $this->minimumPriceSubquery();
-                $query->whereRaw(
-                    '('.$minimumPrice->toSql().') '.$operator.' ?',
-                    [...$minimumPrice->getBindings(), $filters[$field]],
-                );
+                $query->where('products.price_amount', $operator, $filters[$field]);
             }
         }
     }
@@ -172,7 +154,7 @@ final class ProductCatalogQuery
         $direction = $filters['sort_direction'] ?? ($sort === 'created_at' ? 'desc' : 'asc');
 
         if ($sort === 'price') {
-            $query->orderBy($this->minimumPriceSubquery(), $direction);
+            $query->orderBy('products.price_amount', $direction);
         } else {
             $query->orderBy('products.'.$sort, $direction);
         }

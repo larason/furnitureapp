@@ -203,20 +203,22 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     // --------------------------------------------------------------------
     // ADMIN — Admin-only staff lifecycle, user visibility, audit logs
     // --------------------------------------------------------------------
-    Route::middleware(['clerk.auth', 'admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {
-        Route::middleware('permission:products.manage')->group(function () use ($products, $productPath): void {
+    Route::middleware(['clerk.auth', 'staff-or-admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {
+        Route::middleware('permission:products.view,products.manage')->group(function () use ($products, $productPath): void {
             Route::get($products, [ProductController::class, 'adminIndex'])->middleware('throttle:authenticated-read')->name('products.index');
             Route::get($products.$productPath, [ProductController::class, 'adminShow'])->middleware('throttle:authenticated-read')->name('products.show');
         });
-        Route::middleware('permission:staff.manage')->group(function (): void {
-            Route::get('/staff', [AdminController::class, 'staffIndex'])->middleware('throttle:authenticated-read')->name('staff.index');
-            Route::post('/staff', [AdminController::class, 'staffStore'])->middleware('throttle:admin-staff')->name('staff.store');
-            Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->middleware('throttle:authenticated-read')->name('staff.show');
+        Route::middleware('admin')->group(function (): void {
+            Route::middleware('permission:staff.manage')->group(function (): void {
+                Route::get('/staff', [AdminController::class, 'staffIndex'])->middleware('throttle:authenticated-read')->name('staff.index');
+                Route::post('/staff', [AdminController::class, 'staffStore'])->middleware('throttle:admin-staff')->name('staff.store');
+                Route::get('/staff/{user}', [AdminController::class, 'staffShow'])->middleware('throttle:authenticated-read')->name('staff.show');
+            });
+            Route::middleware(['permission:staff.approve', 'throttle:admin-staff'])->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
+            Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
+            Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
+            Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->middleware('throttle:authenticated-read')->name('audit-logs.index');
         });
-        Route::middleware(['permission:staff.approve', 'throttle:admin-staff'])->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
-        Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
-        Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
-        Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->middleware('throttle:authenticated-read')->name('audit-logs.index');
     });
 
     // --------------------------------------------------------------------

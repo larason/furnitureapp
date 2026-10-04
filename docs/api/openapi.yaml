@@ -2105,7 +2105,7 @@ components:
           maxLength: 200
         slug:
           type: string
-          pattern: ^[a-z0-9-]+$
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
           description: URL-safe kebab-case
         description:
           type: string
@@ -2132,7 +2132,7 @@ components:
           maxLength: 200
         slug:
           type: string
-          pattern: ^[a-z0-9-]+$
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
         description:
           type: string
           maxLength: 5000
@@ -2158,7 +2158,7 @@ components:
           maxLength: 120
         slug:
           type: string
-          pattern: ^[a-z0-9-]+$
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
         description:
           type:
           - string
@@ -2178,7 +2178,7 @@ components:
           maxLength: 120
         slug:
           type: string
-          pattern: ^[a-z0-9-]+$
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
         description:
           type:
           - string
@@ -2686,6 +2686,9 @@ paths:
           multipart/form-data:
             schema:
               type: object
+              required:
+              - image
+              additionalProperties: false
               properties:
                 image:
                   type: string
@@ -2701,7 +2704,7 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/Attachment'
+                    $ref: '#/components/schemas/ProductImage'
   /categories:
     get:
       operationId: CAT-003

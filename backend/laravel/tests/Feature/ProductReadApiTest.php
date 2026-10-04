@@ -29,7 +29,7 @@ class ProductReadApiTest extends TestCase
     public function test_public_collection_returns_allow_listed_paginated_products(): void
     {
         $category = Category::factory()->create(['is_active' => true]);
-        $product = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Table', 'slug' => 'oak-table']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Table', 'slug' => 'oak-table', 'price_amount' => 125000000]);
         $variant = ProductVariant::factory()->create(['product_id' => $product->id, 'price_amount' => 125000000]);
         ProductStock::factory()->forVariant($variant)->create(['quantity' => 5, 'reserved_quantity' => 1]);
         ProductImage::factory()->for($product)->asPrimary()->create(['file_path' => 'products/oak.webp']);
@@ -49,6 +49,20 @@ class ProductReadApiTest extends TestCase
             ->assertJsonMissingPath('data.0.primary_image.file_path')
             ->assertJsonPath('data.0.stock_indicator', 'LOW_STOCK')
             ->assertJsonStructure(['data' => [['id', 'name', 'slug', 'product_type', 'price', 'category', 'primary_image', 'availability', 'stock_indicator']], 'meta' => ['pagination']]);
+    }
+
+    public function test_request_only_mode_hides_legacy_in_stock_products_from_public_reads(): void
+    {
+        config(['commerce.request_only' => true]);
+        $category = Category::factory()->create(['is_active' => true]);
+        $inStock = Product::factory()->create(['category_id' => $category->id, 'slug' => 'legacy-in-stock', 'product_type' => 'IN_STOCK']);
+        $madeToOrder = Product::factory()->create(['category_id' => $category->id, 'slug' => 'made-to-order', 'product_type' => 'MADE_TO_ORDER']);
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($madeToOrder));
+        $this->getJson('/api/v1/products/'.$inStock->slug)->assertNotFound();
     }
 
     public function test_detail_resolves_by_slug_and_opaque_id_with_ordered_active_variants(): void
@@ -192,11 +206,11 @@ class ProductReadApiTest extends TestCase
             ->assertJsonStructure(['errors', 'meta' => ['request_id']]);
     }
 
-    public function test_price_filters_and_sorting_use_each_products_minimum_active_variant_price(): void
+    public function test_price_filters_and_sorting_use_each_products_base_price(): void
     {
         $category = Category::factory()->create();
-        $expensive = Product::factory()->create(['category_id' => $category->id, 'name' => 'Expensive', 'slug' => 'expensive']);
-        $cheap = Product::factory()->create(['category_id' => $category->id, 'name' => 'Cheap', 'slug' => 'cheap']);
+        $expensive = Product::factory()->create(['category_id' => $category->id, 'name' => 'Expensive', 'slug' => 'expensive', 'price_amount' => 50]);
+        $cheap = Product::factory()->create(['category_id' => $category->id, 'name' => 'Cheap', 'slug' => 'cheap', 'price_amount' => 100]);
         ProductVariant::factory()->create(['product_id' => $expensive->id, 'price_amount' => 50]);
         ProductVariant::factory()->create(['product_id' => $expensive->id, 'price_amount' => 300]);
         ProductVariant::factory()->create(['product_id' => $cheap->id, 'price_amount' => 100]);
@@ -279,12 +293,12 @@ class ProductReadApiTest extends TestCase
     {
         $category = Category::factory()->create(['slug' => 'dining-room']);
         $otherCategory = Category::factory()->create(['slug' => 'living-room']);
-        $matching = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Dining Table', 'slug' => 'matching-table']);
+        $matching = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Dining Table', 'slug' => 'matching-table', 'price_amount' => 100]);
         ProductVariant::factory()->create(['product_id' => $matching->id, 'price_amount' => 100, 'sku' => 'OAK-ONE']);
         ProductVariant::factory()->create(['product_id' => $matching->id, 'price_amount' => 200, 'sku' => 'OAK-TWO']);
         $wrongCategory = Product::factory()->create(['category_id' => $otherCategory->id, 'name' => 'Oak Lounge Table', 'slug' => 'wrong-category']);
         ProductVariant::factory()->create(['product_id' => $wrongCategory->id, 'price_amount' => 100]);
-        $wrongPrice = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Sideboard', 'slug' => 'wrong-price']);
+        $wrongPrice = Product::factory()->create(['category_id' => $category->id, 'name' => 'Oak Sideboard', 'slug' => 'wrong-price', 'price_amount' => 500]);
         ProductVariant::factory()->create(['product_id' => $wrongPrice->id, 'price_amount' => 500]);
 
         $this->getJson('/api/v1/products?search=oak&category=dining-room&min_price=100&max_price=200')
@@ -457,11 +471,11 @@ class ProductReadApiTest extends TestCase
             ->assertJsonPath('data.1.id', ProductIdentifier::encode($second));
     }
 
-    public function test_price_sorting_uses_the_same_derived_active_variant_price_as_the_response(): void
+    public function test_price_sorting_uses_the_same_persisted_base_price_as_the_response(): void
     {
         $category = Category::factory()->create();
-        $expensive = Product::factory()->create(['category_id' => $category->id, 'slug' => 'expensive-price']);
-        $cheap = Product::factory()->create(['category_id' => $category->id, 'slug' => 'cheap-price']);
+        $expensive = Product::factory()->create(['category_id' => $category->id, 'slug' => 'expensive-price', 'price_amount' => 200]);
+        $cheap = Product::factory()->create(['category_id' => $category->id, 'slug' => 'cheap-price', 'price_amount' => 100]);
         ProductVariant::factory()->create(['product_id' => $expensive->id, 'price_amount' => 300]);
         ProductVariant::factory()->create(['product_id' => $expensive->id, 'price_amount' => 200]);
         ProductVariant::factory()->create(['product_id' => $cheap->id, 'price_amount' => 100]);

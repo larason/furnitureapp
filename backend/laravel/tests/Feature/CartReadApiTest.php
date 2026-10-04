@@ -270,6 +270,33 @@ class CartReadApiTest extends TestCase
         $this->assertSame(1, $stock->fresh()->reserved_quantity);
     }
 
+    public function test_embedded_product_summary_uses_the_product_base_price_not_variant_price(): void
+    {
+        [$product, $variant] = $this->stockedProduct(quantity: 10, price: 4000);
+        $product->update(['price_amount' => 9000, 'price_currency' => 'TZS']);
+        $user = $this->customer();
+        $cart = Cart::factory()->customerOwned()->create(['user_id' => $user->id, 'status' => CartStatus::ACTIVE]);
+        CartItem::factory()->create([
+            'cart_id' => $cart->id,
+            'product_id' => $product->id,
+            'variant_id' => $variant->id,
+            'quantity' => 1,
+        ]);
+
+        $this->withHeaders($this->authenticateAs($user))->getJson(self::CART_URL)
+            ->assertOk()
+            ->assertJsonPath('data.items.0.product.price.amount', 9000)
+            ->assertJsonPath('data.items.0.product.price.currency', 'TZS')
+            ->assertJsonPath('data.items.0.unit_price.amount', 4000);
+
+        $variant->update(['is_active' => false]);
+
+        $this->withHeaders($this->authenticateAs($user))->getJson(self::CART_URL)
+            ->assertOk()
+            ->assertJsonPath('data.items.0.product.price.amount', 9000)
+            ->assertJsonPath('data.items.0.unit_price', null);
+    }
+
     public function test_items_count_counts_distinct_lines_not_quantities(): void
     {
         [$product, $variantA] = $this->stockedProduct(quantity: 10);
