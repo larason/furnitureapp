@@ -19,6 +19,10 @@ final class OperationalEnquiryApiTest extends TestCase
     use AuthenticatesApiUser;
     use RefreshDatabase;
 
+    private const ENQUIRIES_PATH = '/api/v1/enquiries/';
+
+    private const CLOSE_ACTION = '/close';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -38,7 +42,7 @@ final class OperationalEnquiryApiTest extends TestCase
             ->assertJsonPath('data.0.id', EnquiryIdentifier::encode($enquiry))
             ->assertJsonPath('data.0.staff_internal_notes', null);
 
-        $this->withHeaders($headers)->getJson('/api/v1/enquiries/'.EnquiryIdentifier::encode($enquiry))
+        $this->withHeaders($headers)->getJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry))
             ->assertOk()
             ->assertJsonPath('data.staff_internal_notes', null);
     }
@@ -49,7 +53,7 @@ final class OperationalEnquiryApiTest extends TestCase
         $staff = User::factory()->staff()->create(['clerk_user_id' => 'enquiry_staff_2']);
         $headers = $this->authenticateAs($staff) + ['X-Request-Id' => '8f8f3e72-3f6c-4e4f-99ce-42e9e87b2252'];
 
-        $this->withHeaders($headers)->postJson('/api/v1/enquiries/'.EnquiryIdentifier::encode($enquiry).'/close')
+        $this->withHeaders($headers)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION)
             ->assertOk()
             ->assertJsonPath('data.enquiry_status', 'CLOSED')
             ->assertJsonPath('data.staff_internal_notes', null);
@@ -70,7 +74,7 @@ final class OperationalEnquiryApiTest extends TestCase
         Role::findByName('STAFF')->revokePermissionTo(PermissionName::ENQUIRIES_MANAGE->value);
         $headers = $this->authenticateAs($staff);
 
-        $this->withHeaders($headers)->postJson('/api/v1/enquiries/'.EnquiryIdentifier::encode($open).'/close')
+        $this->withHeaders($headers)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($open).self::CLOSE_ACTION)
             ->assertForbidden();
 
         Role::findByName('STAFF')->givePermissionTo(PermissionName::ENQUIRIES_MANAGE->value);
@@ -78,7 +82,7 @@ final class OperationalEnquiryApiTest extends TestCase
         $managerHeaders = $this->authenticateAs($manager);
         $closed = Enquiry::factory()->closed()->create();
 
-        $this->withHeaders($managerHeaders)->postJson('/api/v1/enquiries/'.EnquiryIdentifier::encode($closed).'/close')
+        $this->withHeaders($managerHeaders)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($closed).self::CLOSE_ACTION)
             ->assertOk();
 
         $this->assertSame(0, AuditEvent::query()->count());
@@ -92,7 +96,7 @@ final class OperationalEnquiryApiTest extends TestCase
         });
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'enquiry_staff_5']));
 
-        $this->withHeaders($headers)->postJson('/api/v1/enquiries/'.EnquiryIdentifier::encode($enquiry).'/close')
+        $this->withHeaders($headers)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION)
             ->assertStatus(500);
 
         $this->assertSame('OPEN', $enquiry->fresh()->enquiry_status->value);

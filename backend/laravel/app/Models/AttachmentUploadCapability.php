@@ -19,6 +19,10 @@ use Illuminate\Support\Carbon;
 #[Fillable(['parent_type', 'parent_id', 'token_hash', 'expires_at', 'used_at'])]
 final class AttachmentUploadCapability extends Model
 {
+    public const FURNITURE_REQUEST_PARENT_TYPE = 'furniture_request';
+
+    public const ENQUIRY_PARENT_TYPE = 'enquiry';
+
     protected $table = 'attachment_upload_capabilities';
 
     protected function casts(): array

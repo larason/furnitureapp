@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exceptions\AttachmentCleanupRequired;
+use App\Exceptions\AttachmentStorageException;
 use App\Services\Attachments\AttachmentStorage;
 use App\Services\Attachments\ValidatedAttachment;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -14,6 +15,8 @@ use Tests\TestCase;
 
 class AttachmentStorageTest extends TestCase
 {
+    private const REQUEST_DIRECTORY = 'attachments/requests';
+
     private ?string $tempPath = null;
 
     protected function tearDown(): void
@@ -32,9 +35,9 @@ class AttachmentStorageTest extends TestCase
         $disk->shouldNotReceive('delete');
         Storage::set('attachments', $disk);
 
-        $key = $this->storage()->store($this->attachment(), 'attachments/requests');
+        $key = $this->storage()->store($this->attachment(), self::REQUEST_DIRECTORY);
 
-        $this->assertMatchesRegularExpression('#^attachments/requests/[0-9a-z]+\.png$#', $key);
+        $this->assertMatchesRegularExpression('#^'.self::REQUEST_DIRECTORY.'/[0-9a-z]+\.png$#', $key);
     }
 
     public function test_a_failed_write_that_returns_false_compensates_and_throws(): void
@@ -44,10 +47,21 @@ class AttachmentStorageTest extends TestCase
         $disk->shouldReceive('delete')->once();
         Storage::set('attachments', $disk);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(AttachmentStorageException::class);
         $this->expectExceptionMessage('Unable to store the uploaded attachment.');
 
         $this->storage()->store($this->attachment(), 'attachments/enquiries');
+    }
+
+    public function test_an_unreadable_source_throws_the_dedicated_exception(): void
+    {
+        $attachment = $this->attachment();
+        unlink($attachment->path);
+
+        $this->expectException(AttachmentStorageException::class);
+        $this->expectExceptionMessage('Unable to read the uploaded attachment.');
+
+        $this->storage()->store($attachment, self::REQUEST_DIRECTORY);
     }
 
     public function test_a_thrown_write_failure_compensates_and_throws_safely(): void
@@ -58,8 +72,8 @@ class AttachmentStorageTest extends TestCase
         Storage::set('attachments', $disk);
 
         try {
-            $this->storage()->store($this->attachment(), 'attachments/requests');
-        } catch (RuntimeException $exception) {
+            $this->storage()->store($this->attachment(), self::REQUEST_DIRECTORY);
+        } catch (AttachmentStorageException $exception) {
             $this->assertSame('Unable to store the uploaded attachment.', $exception->getMessage());
             $this->assertStringNotContainsString('/srv/secret', $exception->getMessage());
 
@@ -77,10 +91,10 @@ class AttachmentStorageTest extends TestCase
         Storage::set('attachments', $disk);
 
         try {
-            $this->storage()->store($this->attachment(), 'attachments/requests');
+            $this->storage()->store($this->attachment(), self::REQUEST_DIRECTORY);
         } catch (AttachmentCleanupRequired $exception) {
             $this->assertSame('attachments', $exception->storageDisk);
-            $this->assertMatchesRegularExpression('#^attachments/requests/[0-9a-z]+\.png$#', $exception->storageKey);
+            $this->assertMatchesRegularExpression('#^'.self::REQUEST_DIRECTORY.'/[0-9a-z]+\.png$#', $exception->storageKey);
 
             return;
         }
@@ -99,10 +113,10 @@ class AttachmentStorageTest extends TestCase
         Storage::set('attachments', $disk);
 
         try {
-            $this->storage()->delete('attachments', 'attachments/requests/orphan.png');
+            $this->storage()->delete('attachments', self::REQUEST_DIRECTORY.'/orphan.png');
         } catch (AttachmentCleanupRequired $exception) {
             $this->assertSame('attachments', $exception->storageDisk);
-            $this->assertSame('attachments/requests/orphan.png', $exception->storageKey);
+            $this->assertSame(self::REQUEST_DIRECTORY.'/orphan.png', $exception->storageKey);
 
             return;
         }
@@ -118,7 +132,7 @@ class AttachmentStorageTest extends TestCase
         $disk->shouldReceive('delete')->once()->andReturn(true);
         Storage::set('attachments', $disk);
 
-        $this->storage()->delete('attachments', 'attachments/requests/gone.png');
+        $this->storage()->delete('attachments', self::REQUEST_DIRECTORY.'/gone.png');
     }
 
     private function storage(): AttachmentStorage

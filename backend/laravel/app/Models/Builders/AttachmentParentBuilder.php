@@ -5,6 +5,7 @@ namespace App\Models\Builders;
 use App\Jobs\ProcessAttachmentCleanupTasks;
 use App\Models\Attachment;
 use App\Models\AttachmentCleanupTask;
+use App\Models\AttachmentUploadCapability;
 use App\Models\Enquiry;
 use App\Models\FurnitureRequest;
 use Illuminate\Database\Eloquent\Builder;
@@ -52,6 +53,7 @@ final class AttachmentParentBuilder extends Builder
             $keyName = $model->getKeyName();
             $qualifiedKeyName = $model->getQualifiedKeyName();
             $foreignKey = $this->attachmentForeignKey($model);
+            $capabilityParentType = $this->capabilityParentType($model);
             $parents = clone $this;
 
             $parents
@@ -59,8 +61,12 @@ final class AttachmentParentBuilder extends Builder
                 ->lockForUpdate()
                 ->chunkById(
                     self::ATTACHMENT_BATCH_SIZE,
-                    function (Collection $parents) use (&$deleted, &$hasCleanupTasks, $foreignKey): void {
+                    function (Collection $parents) use (&$deleted, &$hasCleanupTasks, $capabilityParentType, $foreignKey): void {
                         $parentIds = $parents->modelKeys();
+                        AttachmentUploadCapability::query()
+                            ->where('parent_type', $capabilityParentType)
+                            ->whereIn('parent_id', $parentIds)
+                            ->delete();
                         $attachments = Attachment::query()
                             ->whereIn($foreignKey, $parentIds)
                             ->get(['storage_disk', 'storage_key']);
@@ -112,6 +118,15 @@ final class AttachmentParentBuilder extends Builder
         return match (true) {
             $model instanceof Enquiry => 'enquiry_id',
             $model instanceof FurnitureRequest => 'furniture_request_id',
+            default => throw new \LogicException('Attachment cleanup is not supported for this model.'),
+        };
+    }
+
+    private function capabilityParentType(Model $model): string
+    {
+        return match (true) {
+            $model instanceof Enquiry => AttachmentUploadCapability::ENQUIRY_PARENT_TYPE,
+            $model instanceof FurnitureRequest => AttachmentUploadCapability::FURNITURE_REQUEST_PARENT_TYPE,
             default => throw new \LogicException('Attachment cleanup is not supported for this model.'),
         };
     }

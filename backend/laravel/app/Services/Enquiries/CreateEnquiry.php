@@ -59,28 +59,32 @@ final class CreateEnquiry
                 return $enquiry;
             });
         } catch (Throwable $exception) {
-            if ($exception instanceof AttachmentCleanupRequired) {
-                try {
-                    $this->attachments->queueCleanup($exception->storageDisk, $exception->storageKey);
-                } catch (Throwable $cleanupTaskFailure) {
-                    Log::warning('attachment.cleanup_task_persist_failed', [
-                        'exception' => $cleanupTaskFailure::class,
-                    ]);
-                    $this->attachments->recoverCleanup($exception->storageDisk, $exception->storageKey);
-                }
-            }
-
-            if ($storedAttachment instanceof Attachment) {
-                try {
-                    $this->attachments->delete($storedAttachment);
-                } catch (Throwable $cleanup) {
-                    Log::warning('attachment.cleanup_failed', [
-                        'exception' => $cleanup::class,
-                    ]);
-                }
-            }
-
+            $this->recoverAttachmentFailure($exception, $storedAttachment);
             throw $exception;
+        }
+    }
+
+    private function recoverAttachmentFailure(Throwable $exception, ?Attachment $storedAttachment): void
+    {
+        if ($exception instanceof AttachmentCleanupRequired) {
+            try {
+                $this->attachments->queueCleanup($exception->storageDisk, $exception->storageKey);
+            } catch (Throwable $cleanupTaskFailure) {
+                Log::warning('attachment.cleanup_task_persist_failed', [
+                    'exception' => $cleanupTaskFailure::class,
+                ]);
+                $this->attachments->recoverCleanup($exception->storageDisk, $exception->storageKey);
+            }
+        }
+
+        if ($storedAttachment instanceof Attachment) {
+            try {
+                $this->attachments->delete($storedAttachment);
+            } catch (Throwable $cleanup) {
+                Log::warning('attachment.cleanup_failed', [
+                    'exception' => $cleanup::class,
+                ]);
+            }
         }
     }
 }

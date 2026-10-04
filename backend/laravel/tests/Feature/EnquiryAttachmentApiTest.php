@@ -8,6 +8,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Mockery;
@@ -56,6 +57,20 @@ class EnquiryAttachmentApiTest extends TestCase
         $this->assertSame($stored->enquiry_id, Enquiry::query()->sole()->id);
         $this->assertNull($stored->furniture_request_id);
         Storage::disk($stored->storage_disk)->assertExists($stored->storage_key);
+    }
+
+    public function test_cleanup_task_survives_when_inline_attachment_mapping_and_delete_fail(): void
+    {
+        Schema::drop('attachments');
+
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('writeStream')->once()->andReturn(true);
+        $disk->shouldReceive('delete')->andReturn(false);
+        Storage::set('attachments', $disk);
+
+        $this->multipart(self::FIELDS, $this->pdfUpload('question.pdf'))->assertStatus(500);
+
+        $this->assertDatabaseCount('attachment_cleanup_tasks', 1);
     }
 
     public function test_unsupported_attachment_type_persists_nothing(): void

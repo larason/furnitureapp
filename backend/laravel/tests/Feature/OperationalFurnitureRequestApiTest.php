@@ -25,6 +25,8 @@ final class OperationalFurnitureRequestApiTest extends TestCase
 
     private const INDEX = '/api/v1/requests';
 
+    private const STAFF_NOTE = 'Called customer.';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -65,15 +67,15 @@ final class OperationalFurnitureRequestApiTest extends TestCase
 
         $this->withHeaders($headers)->patchJson($this->url($request), [
             'request_status' => 'IN_REVIEW',
-            'staff_internal_notes' => 'Called customer.',
+            'staff_internal_notes' => self::STAFF_NOTE,
         ])
             ->assertOk()
             ->assertJsonPath('data.request_status', 'IN_REVIEW')
-            ->assertJsonPath('data.staff_internal_notes', 'Called customer.')
+            ->assertJsonPath('data.staff_internal_notes', self::STAFF_NOTE)
             ->assertJsonPath('data.notes', 'Customer notes');
 
         $this->assertSame(RequestStatus::IN_REVIEW, $request->fresh()->request_status);
-        $this->assertSame('Called customer.', $request->fresh()->staff_internal_notes);
+        $this->assertSame(self::STAFF_NOTE, $request->fresh()->staff_internal_notes);
     }
 
     public function test_status_change_creates_a_durable_audit_event(): void

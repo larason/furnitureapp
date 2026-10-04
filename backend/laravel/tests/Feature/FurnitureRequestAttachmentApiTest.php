@@ -11,6 +11,7 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Mockery;
@@ -131,6 +132,22 @@ class FurnitureRequestAttachmentApiTest extends TestCase
 
         $this->assertDatabaseCount('furniture_requests', 0);
         $this->assertDatabaseCount('attachments', 0);
+    }
+
+    public function test_cleanup_task_survives_when_inline_attachment_mapping_and_delete_fail(): void
+    {
+        Schema::drop('attachments');
+
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('writeStream')->once()->andReturn(true);
+        $disk->shouldReceive('delete')->andReturn(false);
+        Storage::set('attachments', $disk);
+
+        $this->multipart(self::FIELDS, $this->pngUpload('reference.png'))->assertStatus(500);
+
+        // The orphaned file must retain a durable cleanup task even though the
+        // failed creation request is rolled back.
+        $this->assertDatabaseCount('attachment_cleanup_tasks', 1);
     }
 
     public function test_attachment_creation_has_no_commerce_side_effects(): void

@@ -17,6 +17,10 @@ final class CustomerHistoryApiTest extends TestCase
     use AuthenticatesApiUser;
     use RefreshDatabase;
 
+    private const REQUESTS_PATH = '/api/v1/me/requests';
+
+    private const ENQUIRIES_PATH = '/api/v1/me/enquiries';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -33,7 +37,7 @@ final class CustomerHistoryApiTest extends TestCase
 
         $headers = $this->authenticateAs($customer);
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/requests?per_page=1')
+        $this->withHeaders($headers)->getJson(self::REQUESTS_PATH.'?per_page=1')
             ->assertOk()
             ->assertHeaderContains('Cache-Control', 'private')
             ->assertHeaderContains('Cache-Control', 'no-store')
@@ -42,12 +46,12 @@ final class CustomerHistoryApiTest extends TestCase
             ->assertJsonMissingPath('data.0.staff_internal_notes')
             ->assertJsonMissingPath('data.0.user_id');
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/requests/'.FurnitureRequestIdentifier::encode($owned))
+        $this->withHeaders($headers)->getJson(self::REQUESTS_PATH.'/'.FurnitureRequestIdentifier::encode($owned))
             ->assertOk()
             ->assertJsonPath('data.id', FurnitureRequestIdentifier::encode($owned))
             ->assertJsonMissingPath('data.staff_internal_notes');
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/requests/'.FurnitureRequestIdentifier::encode($foreign))
+        $this->withHeaders($headers)->getJson(self::REQUESTS_PATH.'/'.FurnitureRequestIdentifier::encode($foreign))
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
     }
@@ -62,19 +66,19 @@ final class CustomerHistoryApiTest extends TestCase
 
         $headers = $this->authenticateAs($customer);
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/enquiries')
+        $this->withHeaders($headers)->getJson(self::ENQUIRIES_PATH)
             ->assertOk()
             ->assertJsonPath('meta.pagination.total', 1)
             ->assertJsonPath('data.0.id', EnquiryIdentifier::encode($owned))
             ->assertJsonMissingPath('data.0.staff_internal_notes')
             ->assertJsonMissingPath('data.0.user_id');
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/enquiries/'.EnquiryIdentifier::encode($owned))
+        $this->withHeaders($headers)->getJson(self::ENQUIRIES_PATH.'/'.EnquiryIdentifier::encode($owned))
             ->assertOk()
             ->assertJsonPath('data.id', EnquiryIdentifier::encode($owned))
             ->assertJsonMissingPath('data.staff_internal_notes');
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/enquiries/'.EnquiryIdentifier::encode($foreign))
+        $this->withHeaders($headers)->getJson(self::ENQUIRIES_PATH.'/'.EnquiryIdentifier::encode($foreign))
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
     }
@@ -84,15 +88,15 @@ final class CustomerHistoryApiTest extends TestCase
         $request = FurnitureRequest::factory()->create();
         $enquiry = Enquiry::factory()->create();
 
-        $this->getJson('/api/v1/me/requests')->assertUnauthorized();
-        $this->getJson('/api/v1/me/enquiries')->assertUnauthorized();
+        $this->getJson(self::REQUESTS_PATH)->assertUnauthorized();
+        $this->getJson(self::ENQUIRIES_PATH)->assertUnauthorized();
 
         $staff = User::factory()->staff()->create(['clerk_user_id' => 'history_staff_1']);
         $headers = $this->authenticateAs($staff);
 
-        $this->withHeaders($headers)->getJson('/api/v1/me/requests')->assertForbidden();
-        $this->withHeaders($headers)->getJson('/api/v1/me/enquiries')->assertForbidden();
-        $this->withHeaders($headers)->getJson('/api/v1/me/requests/'.FurnitureRequestIdentifier::encode($request))->assertForbidden();
-        $this->withHeaders($headers)->getJson('/api/v1/me/enquiries/'.EnquiryIdentifier::encode($enquiry))->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::REQUESTS_PATH)->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::ENQUIRIES_PATH)->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::REQUESTS_PATH.'/'.FurnitureRequestIdentifier::encode($request))->assertForbidden();
+        $this->withHeaders($headers)->getJson(self::ENQUIRIES_PATH.'/'.EnquiryIdentifier::encode($enquiry))->assertForbidden();
     }
 }

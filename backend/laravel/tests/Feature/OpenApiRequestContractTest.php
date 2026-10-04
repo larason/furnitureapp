@@ -13,6 +13,8 @@ use Tests\TestCase;
  */
 class OpenApiRequestContractTest extends TestCase
 {
+    private const OPENAPI_PATH = '../../docs/api/openapi.yaml';
+
     public function test_product_not_requestable_is_registered_in_the_backend_error_registry(): void
     {
         $this->assertSame('PRODUCT_NOT_REQUESTABLE', ApiErrorCode::PRODUCT_NOT_REQUESTABLE->value);
@@ -20,7 +22,7 @@ class OpenApiRequestContractTest extends TestCase
 
     public function test_product_not_requestable_is_present_in_the_openapi_error_enum(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         $enum = $document['components']['schemas']['ErrorItem']['properties']['code']['enum'];
 
@@ -30,7 +32,7 @@ class OpenApiRequestContractTest extends TestCase
 
     public function test_req_001_operation_documents_product_linking_rejections(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         $responses = $document['paths']['/requests']['post']['responses'];
 
@@ -41,7 +43,7 @@ class OpenApiRequestContractTest extends TestCase
 
     public function test_request_creation_requires_at_least_one_contact_method(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         foreach (['CreateRequestRequest', 'CreateRequestMultipartRequest'] as $schema) {
             $anyOf = $document['components']['schemas'][$schema]['anyOf'];
@@ -55,7 +57,7 @@ class OpenApiRequestContractTest extends TestCase
 
     public function test_req_002_collection_uses_the_lighter_customer_summary(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         $items = $document['paths']['/me/requests']['get']['responses']['200']['content']['application/json']['schema']['properties']['data']['items'];
         $this->assertSame('#/components/schemas/CustomerFurnitureRequestSummary', $items['$ref']);
@@ -69,7 +71,7 @@ class OpenApiRequestContractTest extends TestCase
 
     public function test_req_001_multipart_documents_bracket_encoded_dimensions(): void
     {
-        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
 
         $properties = $document['components']['schemas']['CreateRequestMultipartRequest']['properties'];
 

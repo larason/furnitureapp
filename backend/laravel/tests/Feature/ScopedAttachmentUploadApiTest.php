@@ -27,6 +27,10 @@ final class ScopedAttachmentUploadApiTest extends TestCase
 
     private const ATTACHMENTS_PATH = '/attachments';
 
+    private const CONTACT_NAME = 'Asha Mwangi';
+
+    private const CONTACT_PHONE = '+255700000001';
+
     use AuthenticatesApiUser;
     use CreatesAttachmentFiles;
     use RefreshDatabase;
@@ -41,8 +45,8 @@ final class ScopedAttachmentUploadApiTest extends TestCase
     public function test_anonymous_request_upload_uses_creation_capability_once(): void
     {
         $created = $this->postJson('/api/v1/requests', [
-            'name' => 'Asha Mwangi',
-            'phone' => '+255700000001',
+            'name' => self::CONTACT_NAME,
+            'phone' => self::CONTACT_PHONE,
             'notes' => 'Please make something similar',
         ])->assertCreated();
 
@@ -57,6 +61,8 @@ final class ScopedAttachmentUploadApiTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.filename', 'reference.png');
 
+        $this->assertDatabaseCount('attachment_upload_capabilities', 0);
+
         $this->withHeaders($headers)
             ->post(self::REQUESTS_PATH.$identifier.self::ATTACHMENTS_PATH, ['attachment' => $this->pngUpload('second.png')])
             ->assertUnauthorized();
@@ -65,8 +71,8 @@ final class ScopedAttachmentUploadApiTest extends TestCase
     public function test_anonymous_enquiry_upload_uses_creation_capability(): void
     {
         $created = $this->postJson('/api/v1/enquiries', [
-            'name' => 'Asha Mwangi',
-            'phone' => '+255700000001',
+            'name' => self::CONTACT_NAME,
+            'phone' => self::CONTACT_PHONE,
             'subject' => 'Custom dining table',
             'message' => 'I need a custom dining table for six people.',
         ])->assertCreated();
@@ -170,8 +176,8 @@ final class ScopedAttachmentUploadApiTest extends TestCase
         Schema::drop('attachment_upload_capabilities');
 
         $this->postJson('/api/v1/requests', [
-            'name' => 'Asha Mwangi',
-            'phone' => '+255700000001',
+            'name' => self::CONTACT_NAME,
+            'phone' => self::CONTACT_PHONE,
             'notes' => 'Please make something similar',
         ])->assertStatus(500);
 
@@ -183,8 +189,8 @@ final class ScopedAttachmentUploadApiTest extends TestCase
         Schema::drop('attachment_upload_capabilities');
 
         $this->postJson('/api/v1/enquiries', [
-            'name' => 'Asha Mwangi',
-            'phone' => '+255700000001',
+            'name' => self::CONTACT_NAME,
+            'phone' => self::CONTACT_PHONE,
             'subject' => 'Custom dining table',
             'message' => 'I need a custom dining table for six people.',
         ])->assertStatus(500);

@@ -3,6 +3,7 @@
 namespace App\Services\Attachments;
 
 use App\Exceptions\AttachmentCleanupRequired;
+use App\Exceptions\AttachmentStorageException;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -20,10 +21,10 @@ final class AttachmentStorage
     public function store(ValidatedAttachment $file, string $directory): string
     {
         $key = $directory.'/'.strtolower((string) Str::ulid()).'.'.$file->extension;
-        $stream = fopen($file->path, 'rb');
+        $stream = @fopen($file->path, 'rb');
 
         if ($stream === false) {
-            throw new \RuntimeException('Unable to read the uploaded attachment.');
+            throw AttachmentStorageException::unreadable();
         }
 
         try {
@@ -31,7 +32,7 @@ final class AttachmentStorage
         } catch (Throwable $exception) {
             $this->discardOrQueue($key, $exception);
 
-            throw new \RuntimeException('Unable to store the uploaded attachment.', 0, $exception);
+            throw AttachmentStorageException::notStored($exception);
         } finally {
             if (is_resource($stream)) {
                 fclose($stream);
@@ -39,7 +40,7 @@ final class AttachmentStorage
         }
 
         if ($written === false) {
-            $failure = new \RuntimeException('Unable to store the uploaded attachment.');
+            $failure = AttachmentStorageException::notStored();
             $this->discardOrQueue($key, $failure);
 
             throw $failure;
@@ -89,7 +90,7 @@ final class AttachmentStorage
         }
 
         if (Storage::disk($disk ?? $this->diskName())->delete($key) === false) {
-            throw new \RuntimeException('Attachment cleanup failed.');
+            throw AttachmentStorageException::cleanupFailed();
         }
     }
 

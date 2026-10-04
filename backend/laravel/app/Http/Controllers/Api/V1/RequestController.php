@@ -30,6 +30,8 @@ use Illuminate\Support\Facades\DB;
 
 class RequestController extends V1Controller
 {
+    private const REQUEST_NOT_FOUND_MESSAGE = 'The requested furniture request was not found.';
+
     public function store(
         CreateFurnitureRequestRequest $request,
         CreateFurnitureRequest $creator,
@@ -51,16 +53,22 @@ class RequestController extends V1Controller
             attachment: $request->validatedAttachment(),
         );
 
-        // Capability issuance shares the creation transaction so a failure can
-        // never strand a committed request without its upload capability.
-        [$furnitureRequest, $uploadToken] = DB::transaction(function () use ($request, $creator, $capabilities, $command): array {
+        if ($request->validatedAttachment() !== null) {
+            // The creation service owns its transaction and attachment
+            // compensation; an outer transaction would roll back a queued
+            // cleanup task when an inline attachment cannot be persisted.
             $furnitureRequest = $creator->create($command);
-            $uploadToken = $request->validatedAttachment() === null
-                ? $capabilities->issueForRequest((int) $furnitureRequest->getKey())
-                : null;
+            $uploadToken = null;
+        } else {
+            // Issuance shares the creation transaction so a failure can never
+            // strand a committed request without its upload capability.
+            [$furnitureRequest, $uploadToken] = DB::transaction(function () use ($creator, $capabilities, $command): array {
+                $furnitureRequest = $creator->create($command);
+                $uploadToken = $capabilities->issueForRequest((int) $furnitureRequest->getKey());
 
-            return [$furnitureRequest, $uploadToken];
-        });
+                return [$furnitureRequest, $uploadToken];
+            });
+        }
 
         $furnitureRequest->loadMissing(['product', 'attachments']);
         $headers = [
@@ -109,7 +117,7 @@ class RequestController extends V1Controller
                 ->first();
 
         if ($furnitureRequest === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::REQUEST_NOT_FOUND_MESSAGE, 404);
         }
 
         return (new FurnitureRequestResource($furnitureRequest))
@@ -129,13 +137,13 @@ class RequestController extends V1Controller
 
     public function show(HttpRequest $httpRequest, string $request): JsonResponse
     {
-        $furnitureRequest = $this->findOperationalRequest($request);
+        $furnitureRequest = $this->findRequestOrFail($request);
         $furnitureRequest->load([
             'product' => static fn ($product) => $product->withTrashed(),
             'attachments',
         ]);
 
-        return $this->resourceResponse($furnitureRequest, $this->canManage($httpRequest), $httpRequest);
+        return $this->resourceResponse($furnitureRequest, $this->canManage($httpRequest));
     }
 
     public function update(
@@ -143,7 +151,7 @@ class RequestController extends V1Controller
         string $request,
         UpdateFurnitureRequestOperationalFields $updater,
     ): JsonResponse {
-        $furnitureRequest = $this->findOperationalRequest($request);
+        $furnitureRequest = $this->findRequestOrFail($request);
         $actor = $input->user();
         if (! $actor instanceof User) {
             throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
@@ -160,7 +168,7 @@ class RequestController extends V1Controller
             'attachments',
         ]);
 
-        return $this->resourceResponse($updated, true, $input);
+        return $this->resourceResponse($updated, true);
     }
 
     public function storeAttachment(
@@ -168,7 +176,7 @@ class RequestController extends V1Controller
         string $identifier,
         UploadAttachment $uploader,
     ): JsonResponse {
-        $furnitureRequest = $this->findAttachmentRequest($identifier);
+        $furnitureRequest = $this->findRequestOrFail($identifier);
         $token = $this->authorizeAttachment($request, $furnitureRequest);
         $attachment = $uploader->forRequest($furnitureRequest, $request->validatedAttachment(), $token);
 
@@ -178,7 +186,7 @@ class RequestController extends V1Controller
             ->withHeaders($this->privateHeaders());
     }
 
-    private function findOperationalRequest(string $identifier): FurnitureRequest
+    private function findRequestOrFail(string $identifier): FurnitureRequest
     {
         $id = FurnitureRequestIdentifier::decode($identifier);
         $furnitureRequest = $id === null
@@ -186,7 +194,7 @@ class RequestController extends V1Controller
             : FurnitureRequest::query()->whereKey($id)->first();
 
         if ($furnitureRequest === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::REQUEST_NOT_FOUND_MESSAGE, 404);
         }
 
         return $furnitureRequest;
@@ -197,18 +205,6 @@ class RequestController extends V1Controller
         $user = $request->user();
 
         return $user instanceof User && $user->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value);
-    }
-
-    private function findAttachmentRequest(string $identifier): FurnitureRequest
-    {
-        $id = FurnitureRequestIdentifier::decode($identifier);
-        $furnitureRequest = $id === null ? null : FurnitureRequest::query()->whereKey($id)->first();
-
-        if ($furnitureRequest === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
-        }
-
-        return $furnitureRequest;
     }
 
     private function authorizeAttachment(UploadAttachmentRequest $request, FurnitureRequest $furnitureRequest): ?string
@@ -226,7 +222,7 @@ class RequestController extends V1Controller
 
         if ($actor->hasRole('CUSTOMER')) {
             if ((int) $furnitureRequest->user_id !== (int) $actor->getKey()) {
-                throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested furniture request was not found.', 404);
+                throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::REQUEST_NOT_FOUND_MESSAGE, 404);
             }
 
             return null;
@@ -239,7 +235,7 @@ class RequestController extends V1Controller
         return null;
     }
 
-    private function resourceResponse(FurnitureRequest $furnitureRequest, bool $includeInternalNotes, HttpRequest $request): JsonResponse
+    private function resourceResponse(FurnitureRequest $furnitureRequest, bool $includeInternalNotes): JsonResponse
     {
         return (new OperationalFurnitureRequestResource($furnitureRequest, $includeInternalNotes))
             ->response()

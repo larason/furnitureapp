@@ -42,7 +42,7 @@ class AttachmentCapabilityConcurrencyMysqlTest extends TestCase
         return 'ATTACHMENT_CAPABILITY_MYSQL_TEST_DATABASE';
     }
 
-    public function test_same_capability_produces_one_attachment_and_consumes_once(): void
+    public function test_same_capability_produces_one_attachment_and_is_removed_once_consumed(): void
     {
         $this->withSharedAttachmentDisk(function (string $disk, string $sourceDir): void {
             for ($iteration = 0; $iteration < self::RACES; $iteration++) {
@@ -58,9 +58,8 @@ class AttachmentCapabilityConcurrencyMysqlTest extends TestCase
                 $this->assertSame(1, count(array_filter($results, fn (string $r): bool => $r === 'created')), "iteration {$iteration}");
                 $this->assertSame(1, count(array_filter($results, fn (string $r): bool => $r === 'rejected:INVALID_AUTHENTICATION')), "iteration {$iteration}");
 
-                $capability = AttachmentUploadCapability::query()->where('parent_id', $request->id)->sole();
-                $this->assertNotNull($capability->used_at, "iteration {$iteration}");
-                $this->assertSame($iteration + 1, AttachmentUploadCapability::query()->count(), "iteration {$iteration}");
+                $this->assertSame(0, AttachmentUploadCapability::query()->where('parent_id', $request->id)->count(), "iteration {$iteration}");
+                $this->assertSame(0, AttachmentUploadCapability::query()->count(), "iteration {$iteration}");
 
                 $attachment = Attachment::query()->where('furniture_request_id', $request->id)->sole();
                 $this->assertSame((int) $request->id, (int) $attachment->furniture_request_id, "iteration {$iteration}");

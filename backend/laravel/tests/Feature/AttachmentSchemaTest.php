@@ -227,6 +227,13 @@ class AttachmentSchemaTest extends TestCase
         $this->assertSame(0, AttachmentCleanupTask::query()->count());
     }
 
+    public function test_attachment_cleanup_command_is_scheduled_as_a_retry_safety_net(): void
+    {
+        $this->artisan('schedule:list')
+            ->expectsOutputToContain('attachments:cleanup')
+            ->assertSuccessful();
+    }
+
     public function test_rolled_back_request_delete_keeps_the_stored_attachment_file(): void
     {
         Storage::fake('attachments');

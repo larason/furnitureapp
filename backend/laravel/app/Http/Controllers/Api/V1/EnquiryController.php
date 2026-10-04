@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\DB;
 
 class EnquiryController extends V1Controller
 {
+    private const ENQUIRY_NOT_FOUND_MESSAGE = 'The requested enquiry was not found.';
+
     public function store(
         CreateEnquiryRequest $request,
         CreateEnquiry $creator,
@@ -48,16 +50,22 @@ class EnquiryController extends V1Controller
             attachment: $request->validatedAttachment(),
         );
 
-        // Capability issuance shares the creation transaction so a failure can
-        // never strand a committed enquiry without its upload capability.
-        [$enquiry, $uploadToken] = DB::transaction(function () use ($request, $creator, $capabilities, $command): array {
+        if ($request->validatedAttachment() !== null) {
+            // The creation service owns its transaction and attachment
+            // compensation; an outer transaction would roll back a queued
+            // cleanup task when an inline attachment cannot be persisted.
             $enquiry = $creator->create($command);
-            $uploadToken = $request->validatedAttachment() === null
-                ? $capabilities->issueForEnquiry((int) $enquiry->getKey())
-                : null;
+            $uploadToken = null;
+        } else {
+            // Issuance shares the creation transaction so a failure can never
+            // strand a committed enquiry without its upload capability.
+            [$enquiry, $uploadToken] = DB::transaction(function () use ($creator, $capabilities, $command): array {
+                $enquiry = $creator->create($command);
+                $uploadToken = $capabilities->issueForEnquiry((int) $enquiry->getKey());
 
-            return [$enquiry, $uploadToken];
-        });
+                return [$enquiry, $uploadToken];
+            });
+        }
 
         $enquiry->loadMissing(['product', 'order', 'attachments']);
         $headers = [
@@ -105,7 +113,7 @@ class EnquiryController extends V1Controller
                 ->first();
 
         if ($enquiry === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested enquiry was not found.', 404);
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ENQUIRY_NOT_FOUND_MESSAGE, 404);
         }
 
         return (new EnquiryResource($enquiry))->response()->withHeaders($this->privateHeaders());
@@ -220,7 +228,7 @@ class EnquiryController extends V1Controller
         $enquiry = $id === null ? null : Enquiry::query()->whereKey($id)->first();
 
         if ($enquiry === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested enquiry was not found.', 404);
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ENQUIRY_NOT_FOUND_MESSAGE, 404);
         }
 
         return $enquiry;
@@ -239,7 +247,7 @@ class EnquiryController extends V1Controller
         $enquiry = $id === null ? null : Enquiry::query()->whereKey($id)->first();
 
         if ($enquiry === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested enquiry was not found.', 404);
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ENQUIRY_NOT_FOUND_MESSAGE, 404);
         }
 
         return $enquiry;
@@ -260,7 +268,7 @@ class EnquiryController extends V1Controller
 
         if ($actor->hasRole('CUSTOMER')) {
             if ((int) $enquiry->user_id !== (int) $actor->getKey()) {
-                throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested enquiry was not found.', 404);
+                throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ENQUIRY_NOT_FOUND_MESSAGE, 404);
             }
 
             return null;
