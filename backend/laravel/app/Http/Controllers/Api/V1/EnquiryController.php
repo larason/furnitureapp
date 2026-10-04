@@ -168,7 +168,7 @@ class EnquiryController extends V1Controller
         string $identifier,
         UploadAttachment $uploader,
     ): JsonResponse {
-        $enquiry = $this->findAttachmentEnquiry($identifier);
+        $enquiry = $this->findOperationalEnquiry($identifier);
         $token = $this->authorizeAttachment($request, $enquiry);
         $attachment = $uploader->forEnquiry($enquiry, $request->validatedAttachment(), $token);
 
@@ -239,18 +239,6 @@ class EnquiryController extends V1Controller
         $user = $request->user();
 
         return $user instanceof User && $user->checkPermissionTo('enquiries.manage');
-    }
-
-    private function findAttachmentEnquiry(string $identifier): Enquiry
-    {
-        $id = EnquiryIdentifier::decode($identifier);
-        $enquiry = $id === null ? null : Enquiry::query()->whereKey($id)->first();
-
-        if ($enquiry === null) {
-            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ENQUIRY_NOT_FOUND_MESSAGE, 404);
-        }
-
-        return $enquiry;
     }
 
     private function authorizeAttachment(UploadAttachmentRequest $request, Enquiry $enquiry): ?string
