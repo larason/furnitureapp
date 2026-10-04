@@ -10,6 +10,7 @@ final class CreateProduct
 {
     public function __construct(
         private readonly OperationalProductCategoryResolver $categories,
+        private readonly RequestOnlyProductPublication $publication,
         private readonly ProductSlugAvailability $slugs,
     ) {}
 
@@ -17,6 +18,7 @@ final class CreateProduct
     {
         try {
             return DB::transaction(function () use ($input): Product {
+                $this->publication->assertAllowed($input->productType, $input->isPublished);
                 $category = $this->categories->resolveActive($input->categoryIdentifier);
                 $this->slugs->assertAvailable($input->slug);
                 $product = new Product;

@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Support\CategoryIdentifier;
 use App\Support\PermissionName;
 use App\Support\ProductIdentifier;
 use Database\Seeders\RbacSeeder;
@@ -84,6 +85,54 @@ class ProductManagementApiTest extends TestCase
         $this->assertSame(100, $product->fresh()->price_amount);
     }
 
+    public function test_request_only_mode_blocks_in_stock_publication_on_create_and_update(): void
+    {
+        config(['commerce.request_only' => true]);
+        $category = Category::factory()->create(['is_active' => true]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'request_only_manager']));
+        $payload = [
+            'name' => 'Available Chair',
+            'slug' => 'available-chair',
+            'product_type' => 'IN_STOCK',
+            'price' => ['amount' => 100, 'currency' => 'TZS'],
+            'category_id' => CategoryIdentifier::encode($category),
+        ];
+
+        $this->withHeaders($headers)->postJson('/api/v1/products', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'BUSINESS_RULE_VIOLATION')
+            ->assertJsonPath('errors.0.field', 'is_published');
+
+        $draft = Product::factory()->create(['category_id' => $category->id, 'product_type' => 'IN_STOCK', 'is_published' => false]);
+        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($draft), ['is_published' => true])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'BUSINESS_RULE_VIOLATION');
+
+        $this->assertFalse($draft->fresh()->is_published);
+    }
+
+    public function test_product_management_rejects_the_structural_root_category(): void
+    {
+        $root = Category::factory()->create(['slug' => 'furnitures-root', 'parent_id' => null, 'is_active' => true]);
+        $category = Category::factory()->create(['is_active' => true]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'root_category_rejector']));
+
+        $this->withHeaders($headers)->postJson('/api/v1/products', [
+            'name' => 'Root Category Product',
+            'slug' => 'root-category-product',
+            'product_type' => 'MADE_TO_ORDER',
+            'price' => ['amount' => 100, 'currency' => 'TZS'],
+            'category_id' => 'furnitures-root',
+        ])->assertNotFound()->assertJsonPath('errors.0.field', 'category_id');
+
+        $product = Product::factory()->create(['category_id' => $category->id]);
+        $this->withHeaders($headers)->patchJson('/api/v1/products/'.ProductIdentifier::encode($product), [
+            'category_id' => CategoryIdentifier::encode($root),
+        ])->assertNotFound()->assertJsonPath('errors.0.field', 'category_id');
+
+        $this->assertSame($category->id, $product->fresh()->category_id);
+    }
+
     public function test_operational_reads_include_drafts_with_private_cache_headers(): void
     {
         $draft = Product::factory()->draft()->create(['slug' => 'operational-draft', 'price_amount' => 400]);
@@ -123,6 +172,18 @@ class ProductManagementApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('meta.pagination.total', 1)
             ->assertJsonPath('data.0.id', ProductIdentifier::encode($draft));
+    }
+
+    public function test_operational_product_listing_accepts_numeric_pagination_query_strings(): void
+    {
+        Product::factory()->count(2)->create();
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'product_pagination_reader']));
+
+        $this->withHeaders($headers)->getJson('/api/v1/admin/products?page=2&per_page=1')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.current_page', 2)
+            ->assertJsonPath('meta.pagination.per_page', 1)
+            ->assertJsonPath('meta.pagination.total', 2);
     }
 
     public function test_operational_product_search_treats_like_wildcards_as_literal_characters(): void

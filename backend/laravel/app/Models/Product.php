@@ -117,6 +117,7 @@ class Product extends Model
         return $query->where('products.is_active', true)
             ->where('products.is_published', true)
             ->whereNull('products.deleted_at')
+            ->when(config('commerce.request_only'), fn (Builder $product) => $product->where('products.product_type', ProductType::MADE_TO_ORDER))
             ->whereHas('category', fn (Builder $category) => $category->where('is_active', true));
     }
 

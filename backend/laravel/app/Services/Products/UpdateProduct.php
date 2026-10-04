@@ -11,6 +11,7 @@ final class UpdateProduct
 {
     public function __construct(
         private readonly OperationalProductCategoryResolver $categories,
+        private readonly RequestOnlyProductPublication $publication,
         private readonly ProductSlugAvailability $slugs,
     ) {}
 
@@ -30,6 +31,7 @@ final class UpdateProduct
                 }
 
                 $lockedProduct->forceFill($attributes);
+                $this->publication->assertAllowed($lockedProduct->product_type, $lockedProduct->is_published);
 
                 if ($lockedProduct->isDirty()) {
                     $lockedProduct->save();

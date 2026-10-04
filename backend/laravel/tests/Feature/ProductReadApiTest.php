@@ -51,6 +51,20 @@ class ProductReadApiTest extends TestCase
             ->assertJsonStructure(['data' => [['id', 'name', 'slug', 'product_type', 'price', 'category', 'primary_image', 'availability', 'stock_indicator']], 'meta' => ['pagination']]);
     }
 
+    public function test_request_only_mode_hides_legacy_in_stock_products_from_public_reads(): void
+    {
+        config(['commerce.request_only' => true]);
+        $category = Category::factory()->create(['is_active' => true]);
+        $inStock = Product::factory()->create(['category_id' => $category->id, 'slug' => 'legacy-in-stock', 'product_type' => 'IN_STOCK']);
+        $madeToOrder = Product::factory()->create(['category_id' => $category->id, 'slug' => 'made-to-order', 'product_type' => 'MADE_TO_ORDER']);
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.id', ProductIdentifier::encode($madeToOrder));
+        $this->getJson('/api/v1/products/'.$inStock->slug)->assertNotFound();
+    }
+
     public function test_detail_resolves_by_slug_and_opaque_id_with_ordered_active_variants(): void
     {
         $category = Category::factory()->create();

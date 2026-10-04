@@ -39,8 +39,8 @@ final class OperationalProductIndexRequest extends FormRequest
             'is_active' => ['sometimes', $this->strictBoolean()],
             'is_published' => ['sometimes', $this->strictBoolean()],
             'availability' => ['sometimes', 'in:available,unavailable'],
-            'page' => ['sometimes', 'integer:strict', 'min:1'],
-            'per_page' => ['sometimes', 'integer:strict', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ];
     }
 
