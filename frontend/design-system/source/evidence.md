@@ -7,11 +7,11 @@ It does not claim a fresh crawl of the original upstream brand repository or web
 
 ## Included Fixture Files
 
-- design-system/furniture/DESIGN.md
-- design-system/furniture/tokens.css
-- design-system/furniture/components.html
+- design-system/DESIGN.md
+- design-system/tokens.css
+- design-system/components.html
 
 ## Token Contract
 
-`source/token-contract.report.json` maps every TOKEN_SCHEMA binding back to the committed `tokens.css` declaration line.
-`design-tokens.json` and `tailwind-v4.css` are derived outputs and should be regenerated from the report and token stylesheet rather than edited by hand.
+Phase 12.2 established `tokens.css` as the canonical shared-token authority. `source/tokens.source.json` and `source/token-contract.report.json` record the reconciliation and required contract families; they are audit records, not competing token authorities.
+`design-tokens.json` and `tailwind-v4.css` are synchronized derived representations and must agree with `tokens.css` in the same change.

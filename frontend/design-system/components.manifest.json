@@ -7,7 +7,7 @@
   },
   "fixture": {
     "title": "Furniture Design System — reference components",
-    "description": "Reference fixture for the furniture design system. Monochromatic UI (black / white / grey only), massive uppercase Futura Condensed display type at 96px / 0.90 line-height, pill-shaped buttons (30px radius), zero card shadows.",
+    "description": "Reference fixture for SL Furnitures: warm canvas, white product surfaces, Young Serif editorial display type, controlled pill actions, and flat elevation.",
     "styleBlockCount": 1,
     "selectorCount": 56,
     "classCount": 29,

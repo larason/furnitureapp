@@ -1,32 +1,47 @@
-# Furniture Design System Usage
+# SL Furnitures Design System Usage
 
-Design System 2.0 package guide for OpenDesign agents and reviewers.
+## Authority And Read Order
 
-## Read Order
+1. Read this file, then `DESIGN.md`.
+2. Read `tokens.css`, the sole canonical token authority.
+3. Use `design-tokens.json` for framework-neutral inspection and future MUI/Flutter mappings.
+4. Treat `tailwind-v4.css` as a synchronized export only. Tailwind is not authorized for `frontend/web`.
+5. Inspect previews for a visual sanity check. The existing component fixture is reference material, not a source of token authority.
 
-1. Read this file first to understand the package contract.
-2. Read `DESIGN.md` for visual intent, constraints, and anti-patterns.
-3. Paste `tokens.css` into the first artifact `<style>` block before writing component CSS.
-4. Use `components.manifest.json` for the compact component inventory; open `components.html` when exact selectors or states matter.
-5. Inspect `preview/` pages when a visual sanity check is useful.
+`source/` preserves provenance and audit records from the bundled fixture. It is not a second hand-maintained token authority. A token change starts in `tokens.css`, then updates `design-tokens.json` and `tailwind-v4.css` in the same change. Framework mappings are deferred to Phase 12.3.
 
-## Design Highlights
+## Token Layers
 
-- Monochromatic UI (black/white/grey) that lets product photography be the only color source
-- Massive uppercase display typography (96px, line-height 0.90) that punches through hero images
-- Full-bleed photography with no border radius — imagery fills every available edge
-- Pill-shaped buttons (30px radius) as the primary interactive element
+- Primitive tokens hold raw reusable values such as `--color-neutral-950`, `--color-warm-100`, and `--space-4`.
+- Semantic tokens assign product meaning, such as `--surface-canvas`, `--text-primary`, and `--action-primary`.
+- Component-specific tokens are not created until a stable repeated component behavior cannot use a global semantic token.
 
-## Do
+Important reconciliation:
 
-- Preserve the schema token names exactly so cross-brand switching stays reliable.
-- Use `--accent` for primary actions, links, focus states, and one clear focal element.
-- Reuse component groups from `components.manifest.json` before inventing new controls.
-- Treat `source/` files as audit evidence for the bundled fixture backfill.
+| Previous role | Furniture role | Primitive | Decision |
+| --- | --- | --- | --- |
+| White universal page background | `--surface-paper`; canvas is `--surface-canvas` | `#FFFFFF`; `#FCF4ED` | White retained for product and form surfaces; ivory becomes the default canvas. |
+| Charcoal foreground and CTA | `--text-primary`, `--action-primary` | `#111111` | Preserved for legibility and primary actions. |
+| Monochrome-only accent | `--accent-brand`, `--accent-material` | `#321E0F` | Added as controlled editorial/material emphasis, never a universal UI color. |
+| Condensed uppercase display face | `--font-display` | Young Serif | Replaced by an editorial display serif; utility UI remains sans-serif. |
 
-## Avoid
+## Rules
 
-- Avoid raw hex values outside the copied `:root` token block.
-- Avoid redefining Tailwind or design-token values independently of `tokens.css`.
-- Avoid claiming original upstream source evidence; this package is based on the curated bundled fixture.
-- Avoid adding new component recipes that are not represented in `components.html` or `DESIGN.md`.
+Use an approved token for colors, font families, font sizes, line heights, letter spacing, spacing, radii, shadows, breakpoints, durations, easing curves, z-index, and media ratios whenever one applies. Do not place raw values in application components.
+
+If no token expresses a real requirement:
+
+1. Do not hard-code it locally.
+2. Decide whether the requirement is reusable.
+3. Add or revise the canonical token in `tokens.css`.
+4. Synchronize the JSON and Tailwind representations.
+5. Document its purpose in `DESIGN.md` or this file.
+6. Consume the new token only after that review.
+
+Do not introduce gradients without authority, glass effects, blurred translucent cards, decorative blobs, random accent colors, random rounded cards, excess shadows, generic feature-card grids, dashboard styling, unapproved emoji or illustrations, or one-off CTA variants.
+
+## Accessibility Checks
+
+Approved core pairings meet their intended WCAG use: primary text on canvas and paper, secondary text on canvas, inverse text on inverse surface, and white text on the charcoal primary action. The focus ring uses `--action-focus` and remains distinct on canvas, paper, and inverse contexts. Functional status requires text, iconography, or another non-color cue alongside color.
+
+The official logo keeps its own asset background. Present it unchanged on compatible light surfaces; do not infer transparency or recolor it.

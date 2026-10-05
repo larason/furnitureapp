@@ -4,6 +4,18 @@
 
 ---
 
+### ADR/DESIGN-001 — Furniture Token Authority and Brand Translation
+
+**Decision:** Retain the previous Nike-derived system's structural discipline while establishing SL Furnitures as architectural, warm, and editorial. The official `designs/brandlogo.png` is the identity authority. Furniture character comes from the semantic warm-ivory canvas, controlled deep-brown editorial/material accent, Young Serif display typography, photography, and restrained composition. Charcoal `#111111` remains primary text/action and white `#FFFFFF` remains paper/product surface.
+
+`frontend/design-system/tokens.css` is the sole canonical shared-token authority. `design-tokens.json` and `tailwind-v4.css` are synchronized framework-neutral representations; future MUI and Flutter themes consume mappings rather than defining the brand. Components may not introduce an ad-hoc design value when an approved token applies.
+
+**Reason:** This preserves valuable visual structure without carrying over sporty typography or monochrome-only constraints, avoids competing token authorities, and keeps the shared language portable across web and mobile.
+
+**Status:** Accepted and implemented in Phases 12.1-12.2
+
+---
+
 ### ADR/CAT-009 — Product Image Storage and R2 Delivery
 
 **Decision:** CAT-009 accepts exactly one JPEG, PNG, or WebP image and stores unmodified bytes in Cloudflare R2 using immutable server-generated keys. Public URLs are derived from `R2_PUBLIC_BASE_URL`; MySQL retains only provider-neutral `file_path` and ProductImage metadata. The first image without an existing primary becomes primary, with product-name alt text and `MAX(sort_order) + 1`; CAT-009 creates product-wide images only.
