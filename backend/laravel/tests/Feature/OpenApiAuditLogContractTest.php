@@ -16,7 +16,9 @@ class OpenApiAuditLogContractTest extends TestCase
         $this->assertSame(['get'], array_keys($document['paths']['/admin/audit-logs']));
         $this->assertSame('ADM-007', $operation['operationId']);
         $this->assertSame(['actor', 'action', 'resource_type', 'resource_id', 'created_from', 'created_to', 'page', 'per_page'], array_map(
-            fn (array $parameter): string => $parameter['name'] ?? ($parameter['$ref'] === '#/components/parameters/Page' ? 'page' : 'per_page'),
+            fn (array $parameter): string => array_key_exists('$ref', $parameter)
+                ? $document['components']['parameters'][str_replace('#/components/parameters/', '', $parameter['$ref'])]['name']
+                : $parameter['name'],
             $operation['parameters'],
         ));
         $this->assertSame(['id', 'actor_id', 'actor_role', 'action', 'resource_type', 'resource_id', 'timestamp', 'previous_state', 'resulting_state', 'request_id'], $schema['required']);
