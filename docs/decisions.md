@@ -2794,3 +2794,18 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Historical “List users” wording was broader than Group K's authority boundary. Customer account visibility needs a minimal Admin-only support surface without granting Staff account administration or exposing privileged identities.
 
 **Status:** Accepted and implemented in Phase 11.8 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/app/Http/Controllers/Api/V1/AdminController.php`, `backend/laravel/app/Http/{Requests,Resources}`, `backend/laravel/app/Support/UserIdentifier.php`, `backend/laravel/tests/Feature/CustomerAdministrationTest.php`, `docs/api/*`, `docs/domain/business-rules.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/BACKEND-053 — Group K Request Management Reuse and Closure
+
+**Decision:** Phase 11.9 reuses the Group J canonical Request workflow: `REQ-004`/`REQ-005` operational reads require `requests.view`; `REQ-006` controlled updates require `requests.manage`. No `/admin/requests` aliases or replacement Request API are introduced.
+
+- Request intake remains immutable. REQ-006 accepts only `request_status` and `staff_internal_notes`; it never creates or changes Orders, payments, delivery records, stock, reservations, quotations, or a Staff ownership/assignment model.
+- The CLOSED `SUBMITTED → IN_REVIEW → CLOSED` state machine, same-state idempotency, terminal `CLOSED`, locked current-state update, and transactional audit behavior remain authoritative.
+- Operational reads retain historical contact/product snapshots and private attachment metadata. Customer reads remain ownership-scoped and never expose `staff_internal_notes`.
+- The OpenAPI REQ-004/006 runtime response set and non-empty PATCH body requirement are reconciled. REQ-007’s canonical multipart field is `attachment`, matching runtime validation.
+
+**Reason:** Group K requires verified operational readiness, not a second Admin workflow. Reusing the Group J surface prevents contract drift and preserves the request-first release boundary.
+
+**Status:** Accepted and verified in Phase 11.9 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalFurnitureRequestApiTest,OpenApiRequestContractTest}.php`, `backend/laravel/tests/Integration/FurnitureRequestStatusConcurrencyMysqlTest.php`, `docs/api/openapi.yaml`, `docs/decisions.md`, `phases/group-K-phases.md`

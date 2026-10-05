@@ -3821,6 +3821,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       description: Requires STAFF/ADMIN requests.view
   /requests/{request}:
     get:
@@ -3877,20 +3881,27 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                request_status:
-                  $ref: '#/components/schemas/RequestStatus'
-                staff_internal_notes:
-                  type:
-                  - string
-                  - 'null'
-              additionalProperties: false
+              schema:
+                type: object
+                minProperties: 1
+                properties:
+                  request_status:
+                    $ref: '#/components/schemas/RequestStatus'
+                  staff_internal_notes:
+                    type:
+                    - string
+                    - 'null'
+                additionalProperties: false
   /requests/{request}/attachments:
     post:
       operationId: REQ-007
@@ -3910,11 +3921,11 @@ paths:
             schema:
               type: object
               properties:
-                file:
+                attachment:
                   type: string
                   format: binary
               required:
-              - file
+              - attachment
       responses:
         '201':
           description: Created

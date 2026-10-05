@@ -1,60 +1,70 @@
-# Phase 11.8 — Customer Management
+# Phase 11.9 — Request Management
 
 ## Objective
 
-Implement **Group K / Phase 11.8 — Customer Management** as the secure, purpose-limited Admin visibility surface for Customer accounts.
+Complete **Group K / Phase 11.9 — Request Management** by promoting the already-implemented Group J Made-to-Order operational Request workflow into the verified canonical backend surface that Staff/Admin will use to manage customer furniture Requests.
 
-The canonical V1 endpoints are:
+This is primarily:
 
 ```text
-ADM-008
-GET /api/v1/users
-
-ADM-009
-GET /api/v1/users/{user}
+reuse
+→ contract verification
+→ operational hardening
+→ privacy/security regression
+→ concurrency/audit verification
+→ documentation closure
 ```
 
-Authorization:
+Do NOT build a second Admin Request API.
+
+The canonical V1 operational endpoints remain:
 
 ```text
-ADMINISTRATIVE
-users.manage_authorized
+REQ-004
+GET /api/v1/requests
+
+REQ-005
+GET /api/v1/requests/{request}
+
+REQ-006
+PATCH /api/v1/requests/{request}
 ```
 
-This phase is intentionally **read-only**.
-
-“Customer Management” in Group K does NOT mean that Admin or Staff may arbitrarily mutate, disable, impersonate, block, delete, or alter Customer credentials.
-
-The goal is:
+Related Request endpoints remain:
 
 ```text
-Admin
-→ securely find Customers
-→ inspect the minimum Customer account information needed for business administration
+REQ-001
+POST /api/v1/requests
+
+REQ-002
+GET /api/v1/me/requests
+
+REQ-003
+GET /api/v1/me/requests/{request}
+
+REQ-007
+POST /api/v1/requests/{request}/attachments
 ```
 
-while preserving:
+Phase 11.9 must inspect and reuse the existing Group J implementation before changing production code.
+
+If a requirement is already fully implemented and permanently tested:
 
 ```text
-Customer ownership
-Staff operational boundaries
-Clerk credential authority
-data minimization
-no impersonation
-no arbitrary account restriction
+verify it
+do not rewrite it
+do not duplicate it
 ```
 
 ---
 
-# 1. First Action — Read Repository Authorities
+# 1. First Action — Inspect Existing Group J Implementation
 
-Before editing code, inspect the current repository and determine the exact existing state.
-
-At minimum inspect:
+Before making changes, inspect at minimum:
 
 ```text
 AGENTS.md
-
+phases/group-J-phases.md
 phases/group-K-phases.md
 
 docs/api/api-contract.md
@@ -66,49 +76,48 @@ docs/decisions.md
 
 routes/api.php
 
-User model
-CustomerProfile model
-StaffProfile model
+RequestController
+FurnitureRequest model
+RequestStatus
+RequestStatusMachine
+RequestStatusTransitionOutcome
+TransitionFurnitureRequestStatus
 
-current USER-001 / USER-002 implementation
-current ADM-001..006 implementation/stubs
-current ADM-008 / ADM-009 route/controller stubs
+operational Request query/service
+Request FormRequests
+Request Resources
+
+AuditRecorder
+AuditAction
+AuditResourceType
+
+Request attachment services/resources
+Attachment authorization/capability services
 
 PermissionName
 PermissionCatalog
 Authorization
 
-current User/Profile resources
-Clerk/local user projection
-LocalUserProvisioner
-relevant middleware/policies
-
-existing Admin/Staff tests
-existing User/Profile tests
-RBAC tests
+existing REQ-001..007 tests
+Request concurrency MariaDB tests
+Group J closure tests
 ```
 
-Do not assume the roadmap wording alone defines the wire contract.
+Determine precisely what Phase 10.7/10.8 and Group J closure already implemented.
 
-Reconcile implementation against the frozen V1 authorities.
+Do not create replacements for working production code.
 
 ---
 
 # 2. Mandatory Git Workflow Skill
 
-The project owner now explicitly authorizes the coding agent to perform Git operations for this and subsequent work **only through the repository's approved Git workflow**.
+The project owner authorizes Git operations.
 
-Before performing ANY Git operation, locate and read the root project skill:
+Before any Git operation, locate and read the root project skill:
 
 ```text
 git-workflow-and-versioning
 ```
-
-Use the actual skill file/instructions present at the project root.
-
-Do not guess its commands.
-
-Do not substitute your own Git workflow.
 
 The skill is authoritative for:
 
@@ -118,525 +127,243 @@ status checks
 staging
 commits
 commit format
+push
 versioning
 tags
-push behavior
 cleanup
-pre-commit verification
 ```
 
-If the skill conflicts with generic agent Git habits:
+Do not substitute generic Git habits.
+
+Do not perform Git actions before reading the skill.
+
+Never commit:
 
 ```text
-git-workflow-and-versioning
-wins.
+.env
+credentials
+R2 secrets
+Clerk secrets
+database credentials
+tokens
+generated secret material
 ```
 
-## Git safety
+Never discard unrelated owner changes.
 
-Never:
+If unrelated working-tree modifications exist:
 
 ```text
-force-push
-reset --hard
-discard unrelated owner changes
-rewrite unrelated commits
-delete owner branches
-commit secrets
-commit .env
+preserve them
+do not stage them accidentally
 ```
 
-unless the root skill explicitly authorizes the specific action and it is appropriate to the current task.
-
-Before touching Git, preserve existing uncommitted owner work.
-
-If unrelated modifications already exist, do not absorb or overwrite them.
-
-All Git actions performed must be included in the completion report.
+Include all Git actions in the completion report.
 
 ---
 
-# 3. Group K Boundary
+# 3. Group K Architecture Boundary
 
-Group K already established:
+Group K reuses Group J Request APIs.
 
-```text
-Customer visibility
-→ ADM-008 / ADM-009
-
-Staff lifecycle
-→ ADM-001..006
-```
-
-Do not merge these domains.
-
-Therefore Phase 11.8 must NOT convert:
+Therefore use:
 
 ```text
-GET /api/v1/users
+GET   /api/v1/requests
+GET   /api/v1/requests/{request}
+PATCH /api/v1/requests/{request}
 ```
-
-into a replacement Staff-management surface.
-
-Staff management remains:
-
-```text
-/api/v1/admin/staff
-```
-
-under its own permissions and lifecycle.
-
----
-
-# 4. Resolve the ADM-008/009 Scope Correctly
-
-The historical endpoint catalogue calls ADM-008:
-
-```text
-List users
-```
-
-while the later Group K architecture explicitly assigns:
-
-```text
-customer visibility → ADM-008/009
-staff lifecycle → ADM-001..006
-```
-
-For Phase 11.8, reconcile this without changing the frozen paths or endpoint IDs.
-
-The intended Group K interpretation is:
-
-```text
-ADM-008 / ADM-009
-= authorized Admin visibility into CUSTOMER accounts
-```
-
-not a second Staff/Admin directory.
-
-Therefore:
-
-```text
-ADM-008
-GET /api/v1/users
-→ CUSTOMER accounts only
-
-ADM-009
-GET /api/v1/users/{user}
-→ CUSTOMER account only
-```
-
-Do not return Staff or Admin identities through this customer-management surface.
-
-Staff/Admin identities remain governed by their own administration/self-service boundaries.
-
-Record this reconciliation clearly in:
-
-```text
-docs/decisions.md
-phases/group-K-phases.md
-```
-
-Do not rename the frozen endpoints.
-
-Do not create:
-
-```text
-/api/v1/customers
-/api/v1/admin/customers
-```
-
-aliases.
-
----
-
-# 5. Read-Only Phase
-
-Phase 11.8 introduces no Customer mutation endpoint.
-
-Canonical surface:
-
-```text
-GET /api/v1/users
-GET /api/v1/users/{user}
-```
-
-ONLY.
 
 Do NOT add:
 
 ```text
-POST   /api/v1/users
-PATCH  /api/v1/users/{user}
-PUT    /api/v1/users/{user}
-DELETE /api/v1/users/{user}
-
-POST /api/v1/users/{user}/suspend
-POST /api/v1/users/{user}/activate
-POST /api/v1/users/{user}/block
-POST /api/v1/users/{user}/ban
-POST /api/v1/users/{user}/impersonate
-POST /api/v1/users/{user}/reset-password
-POST /api/v1/users/{user}/change-role
+/api/v1/admin/requests
+/api/v1/admin/requests/{request}
+/api/v1/staff/requests
+/api/v1/request-management/*
 ```
 
-There is no frozen V1 contract for these operations.
+No aliases.
 
-Do not invent one.
+The eventual Admin/Staff frontend must consume the canonical Request resources.
 
 ---
 
-# 6. Authorization
+# 4. Request Is Not an Order
 
-Both endpoints require:
+This invariant is mandatory.
 
-```text
-authentication
-+
-users.manage_authorized
-```
+A Furniture Request is a business lead for a Made-to-Order item.
 
-Expected:
+It is NOT:
 
 ```text
-ADMIN with users.manage_authorized
-→ allowed
-
-STAFF
-→ forbidden
-
-CUSTOMER
-→ forbidden
-
-anonymous
-→ authentication required
-```
-
-Do NOT rely merely on:
-
-```php
-$user->role === 'ADMIN'
-```
-
-Use the existing central permission infrastructure.
-
-`users.manage_authorized` is explicit Admin authority.
-
-No wildcard permission.
-
-No role hierarchy shortcut.
-
----
-
-# 7. STAFF Must Not Browse Customers
-
-This invariant is critical.
-
-Staff operational access to Customers occurs only through the business resources needed for their jobs, such as:
-
-```text
-Request
-Enquiry
 Order
+Quote
+Invoice
+Payment
+Reservation
+Production job
+Delivery
 ```
 
-where those resources expose the minimum contact data necessary.
-
-Staff must NOT gain:
+Phase 11.9 must not introduce:
 
 ```text
-GET /api/v1/users
-GET /api/v1/users/{user}
+request → order conversion
+quoted_price
+price approval
+payment initiation
+stock reservation
+production scheduling
+delivery creation
 ```
 
-access merely because they can process Requests or Enquiries.
+A status update or internal note must never create or mutate:
 
-Test this explicitly.
+```text
+orders
+order_items
+payments
+product_stocks
+reserved_quantity
+inventory allocations
+deliveries
+```
+
+Any future Request-to-Order workflow requires separate approval.
 
 ---
 
-# 8. Customer Self-Service Remains `/me`
+# 5. Existing Request Status Lifecycle
 
-Do not weaken:
-
-```text
-GET /api/v1/me
-PATCH /api/v1/me
-```
-
-Those remain the sole self-service identity boundary.
-
-A Customer must not use ADM-009 to retrieve themselves or another Customer.
-
-A Staff member must not use ADM-009 as an alternate `/me`.
-
-Admin customer visibility is separate from self-service.
-
-Do not add:
+Preserve the CLOSED enum exactly:
 
 ```text
-/me?user_id=...
-/me?as_user=...
+SUBMITTED
+IN_REVIEW
+CLOSED
 ```
 
-or similar identity substitution.
+No additional status values.
+
+Do NOT add:
+
+```text
+CONTACTED
+QUOTED
+APPROVED
+REJECTED
+PRODUCING
+READY
+COMPLETED
+CANCELLED
+```
+
+The valid state graph remains:
+
+```text
+SUBMITTED → IN_REVIEW
+SUBMITTED → CLOSED
+IN_REVIEW → CLOSED
+```
+
+And:
+
+```text
+CLOSED
+→ terminal
+```
+
+Same-state assignment remains idempotent.
 
 ---
 
-# 9. Resource Identity
+# 6. Forbidden Status Transitions
 
-Use the existing opaque User identifier:
-
-```text
-user_...
-```
-
-for ADM-009.
-
-Do not expose or accept raw database primary keys as the public identifier.
-
-Do not resolve administrative user detail using:
+The following remain invalid:
 
 ```text
-email
-Clerk subject
-phone
-numeric DB ID
+IN_REVIEW → SUBMITTED
+
+CLOSED → SUBMITTED
+
+CLOSED → IN_REVIEW
 ```
 
-in the URI.
-
-Canonical detail lookup is:
+A valid enum value used in an invalid transition must remain:
 
 ```text
-/users/{user}
+409 CONFLICT
+field: request_status
 ```
 
-with the project's opaque User identity.
+An unknown enum value remains:
+
+```text
+422 INVALID_VALUE
+field: request_status
+```
+
+Do not collapse schema validation and business-state conflicts.
 
 ---
 
-# 10. Customer Administrative Representation
+# 7. REQ-004 — Operational Request Queue
 
-Create or reuse a dedicated administrative Customer/User resource if required.
-
-Do NOT blindly reuse the Eloquent User model serialization.
-
-The response must be explicit and allow-listed.
-
-The safe administrative Customer representation should remain limited to already-approved User/Profile fields such as:
+Canonical endpoint:
 
 ```text
-id
-role
-name
-email
-phone
-email_verified
-created_at
-updated_at
+GET /api/v1/requests
 ```
 
-where those fields exist in the frozen contract/current implementation.
-
-Because this Phase is CUSTOMER-only:
+Authorization:
 
 ```text
-role = CUSTOMER
+requests.view
 ```
 
-for every returned ADM-008/009 Customer.
+Expected actors:
 
-Do not add speculative business fields.
+```text
+STAFF with requests.view
+ADMIN with requests.view
+```
+
+Denied:
+
+```text
+anonymous
+CUSTOMER
+authenticated actor without requests.view
+```
+
+Do not use ownership as the Staff authorization model.
+
+Staff operational access is:
+
+```text
+business-purpose access
+```
+
+not:
+
+```text
+Staff owns Request
+```
 
 ---
 
-# 11. Never Serialize Secrets
+# 8. REQ-004 Pagination
 
-Even Admin must NEVER receive:
-
-```text
-clerk_user_id
-password
-password_hash
-password digest
-authentication token
-refresh token
-session token
-reset token
-verification token
-provider secret
-API credential
-Clerk secret
-security answer
-raw permission assignments
-internal RBAC pivot rows
-payment credentials
-database IDs
-```
-
-Admin authorization is not permission to expose authentication internals.
-
-This must have regression coverage.
-
----
-
-# 12. Clerk Boundary
-
-Clerk remains credential and identity-verification authority.
-
-Laravel remains local business projection/RBAC authority.
-
-ADM-008/009 must NOT call Clerk per row to construct collection results.
-
-Avoid:
-
-```text
-N Customer rows
-→ N Clerk API requests
-```
-
-The local User projection must be sufficient for normal administrative list/detail.
-
-If some frozen response field is derived from a synchronized Clerk snapshot, use the existing local snapshot.
-
-Do not turn ADM-008 into a remote Clerk directory proxy.
-
----
-
-# 13. No Credential Management
-
-Phase 11.8 does not allow Admin to:
-
-```text
-change Customer password
-reset Customer password
-change Customer Clerk subject
-view Customer Clerk session
-revoke Customer session
-change Customer verified email
-mark Customer email verified
-```
-
-Credential/security operations belong to Clerk or separately approved security workflows.
-
-Do not implement them here.
-
----
-
-# 14. No Customer Suspension or Blocking
-
-The frozen V1 business rules deliberately prohibit generic:
-
-```text
-Staff → block Customer
-```
-
-and no approved Customer account restriction workflow exists in Phase 11.8.
-
-Therefore do NOT add Customer:
-
-```text
-suspended
-blocked
-banned
-disabled
-ordering_disabled
-browse_disabled
-```
-
-mutation behavior.
-
-Do not reuse Staff suspension (`ADM-005`) for Customers.
-
-Staff lifecycle state and Customer ownership are separate domains.
-
----
-
-# 15. No Impersonation
-
-Absolutely no:
-
-```text
-Login as Customer
-Act as Customer
-Generate Customer token
-Switch identity
-Assume Customer session
-```
-
-functionality.
-
-Do not issue authentication credentials from ADM-008/009.
-
-Admin visibility is read-only.
-
----
-
-# 16. No Customer Role Changes
-
-ADM-008/009 are reads.
-
-Do not add any role-changing behavior.
-
-Customer role must not be promoted to:
-
-```text
-STAFF
-ADMIN
-```
-
-through this phase.
-
-Staff provisioning/approval remains the dedicated Staff lifecycle.
-
-Do not implement:
-
-```text
-PATCH /users/{user} {"role":"STAFF"}
-```
-
-or equivalent.
-
----
-
-# 17. ADM-008 — Customer Collection
-
-Implement/complete:
-
-```text
-GET /api/v1/users
-```
-
-as a paginated Admin-only Customer collection.
-
-Every row must satisfy:
-
-```text
-effective role = CUSTOMER
-```
-
-Do not list:
-
-```text
-STAFF
-ADMIN
-```
-
-through this endpoint.
-
----
-
-# 18. Pagination
-
-ADM-008 must follow standard V1 collection conventions.
-
-Use:
+Preserve:
 
 ```text
 page
 per_page
 ```
+
+with existing V1 pagination behavior.
 
 Maximum:
 
@@ -644,7 +371,7 @@ Maximum:
 100
 ```
 
-Response:
+Use the canonical:
 
 ```json
 {
@@ -662,869 +389,1506 @@ Response:
 }
 ```
 
-Use existing project helpers/resources where available.
-
-Do not invent:
-
-```text
-pageSize
-page_size
-limit
-offset
-cursor
-```
-
-aliases.
+Do not create Request-specific pagination fields.
 
 ---
 
-# 19. Deterministic Ordering
+# 9. REQ-004 Filter Allow-List
 
-ADM-008 must have stable deterministic pagination.
+Preserve the frozen operational filter set:
 
-Inspect current conventions and existing collection patterns.
+```text
+search
+request_status
+product_id
+created_from
+created_to
+page
+per_page
+```
 
-Unless an already-frozen ADM-008 sort is explicitly documented, use a simple server-controlled deterministic order consistent with existing User collection conventions, for example:
+No undocumented filter may be accepted.
+
+Unknown query fields must be rejected according to existing strict-query conventions.
+
+Do not silently ignore:
+
+```text
+status
+customer_id
+email
+phone
+product_type
+sort
+order
+closed
+assigned_to
+priority
+```
+
+aliases unless already frozen.
+
+---
+
+# 10. Search Semantics
+
+Preserve the existing operational search contract across approved fields:
+
+```text
+name
+email
+phone
+request reference
+product
+```
+
+Use existing implementation behavior exactly.
+
+Do not broaden search to internal fields.
+
+Do not search:
+
+```text
+staff_internal_notes
+raw DB IDs
+Clerk IDs
+attachment storage keys
+audit metadata
+```
+
+unless an already-frozen contract explicitly says otherwise.
+
+Search must run only against the authorized operational dataset.
+
+---
+
+# 11. Status Filter
+
+`request_status` accepts only:
+
+```text
+SUBMITTED
+IN_REVIEW
+CLOSED
+```
+
+Unknown values:
+
+```text
+422 INVALID_VALUE
+```
+
+Do not accept lowercase aliases unless the existing frozen contract explicitly normalizes them.
+
+Do not implement partial matching.
+
+---
+
+# 12. Product Filter
+
+`product_id` must use the existing frozen Product identifier rules.
+
+Do not silently interpret:
+
+```text
+Product name
+SKU
+Variant ID
+raw DB ID
+```
+
+as `product_id`.
+
+Preserve nullable/unlinked custom Requests.
+
+A Request with:
+
+```text
+product_id = null
+```
+
+is valid and must remain visible operationally.
+
+---
+
+# 13. Date Filters
+
+Preserve:
+
+```text
+created_from
+created_to
+```
+
+as ISO8601 UTC according to the existing API conventions.
+
+Validate strictly.
+
+If:
+
+```text
+created_from > created_to
+```
+
+apply existing cross-field validation rather than silently swapping values.
+
+Do not introduce local-time ambiguity.
+
+---
+
+# 14. Deterministic Ordering
+
+Operational Request queue remains:
 
 ```text
 created_at DESC
 id ASC
 ```
 
-Do not expose arbitrary SQL sort fields.
+or the exact equivalent already implemented by Group J.
 
-Do not add a generic `sort` API unless already frozen.
+Do not add arbitrary sorting.
 
-Document whichever existing canonical order is used.
+Do not let pagination drift.
 
 ---
 
-# 20. Search / Filter Contract — Do Not Invent Broad Query Surface
+# 15. REQ-005 — Operational Request Detail
 
-Inspect OpenAPI and the current ADM-008 stub before implementing filters.
-
-Only implement query parameters already supported by the frozen V1 contract.
-
-Do not casually introduce:
+Canonical:
 
 ```text
+GET /api/v1/requests/{request}
+```
+
+Authorization:
+
+```text
+requests.view
+```
+
+Resolve only by the canonical opaque Request identifier:
+
+```text
+req_...
+```
+
+Do not use:
+
+```text
+request_reference
+email
+phone
+numeric DB ID
+```
+
+as URI alternatives.
+
+Unknown resource:
+
+```text
+canonical 404
+```
+
+No database existence details.
+
+---
+
+# 16. Operational Request Representation
+
+Preserve the operational representation.
+
+Expected approved fields include:
+
+```text
+id
+product
+quantity
+
+name
+phone
+email
+
+dimensions
+material
+color
+notes
+
+request_status
+staff_internal_notes
+
+user_id
+attachments
+
+created_at
+updated_at
+```
+
+Use exact repository schema/field naming.
+
+Do not serialize the Eloquent model wholesale.
+
+---
+
+# 17. Product Summary
+
+For linked Requests, Product representation remains a safe summary such as:
+
+```text
+id
+name
+slug
+```
+
+according to existing Group J behavior.
+
+Do not embed:
+
+```text
+full Product
+Variants
+stock
+reserved_quantity
+cost
+internal flags
+```
+
+into Request detail.
+
+The Request must remain valid historical data even if the Product later becomes:
+
+```text
+inactive
+unpublished
+soft-deleted
+```
+
+Do not hide or invalidate the Request because current catalog visibility changed.
+
+---
+
+# 18. Intake Data Is Historical and Immutable
+
+Original Customer/Anonymous intake must not be editable through REQ-006.
+
+Preserve:
+
+```text
+product_id
+quantity
+name
+phone
+email
+dimensions
+material
+color
+notes
+user_id
+request reference
+attachments
+created_at
+```
+
+as historical submission state except where an already-approved attachment workflow adds the one allowed attachment.
+
+REQ-006 must not allow Staff/Admin to rewrite customer history.
+
+---
+
+# 19. Contact Snapshot Preservation
+
+Request contact fields are historical snapshots.
+
+A later change to:
+
+```text
+Customer name
+Customer phone
+Customer email
+```
+
+must NOT rewrite old Requests.
+
+Do not dynamically serialize current User profile values in place of the stored Request contact snapshot.
+
+Authenticated and anonymous Requests must remain self-contained.
+
+---
+
+# 20. `staff_internal_notes`
+
+Operational internal notes are distinct from customer `notes`.
+
+Customer-visible:
+
+```text
+notes
+```
+
+Operational-only:
+
+```text
+staff_internal_notes
+```
+
+Never expose `staff_internal_notes` through:
+
+```text
+REQ-002
+REQ-003
+customer /me Request resources
+anonymous flows
+```
+
+Staff/Admin operational resources may expose it where authorized.
+
+---
+
+# 21. Internal Notes Are Not Customer Intake
+
+Do not merge:
+
+```text
+notes
+staff_internal_notes
+```
+
+Do not overwrite customer notes.
+
+Do not rename customer notes as internal notes.
+
+Do not use one DB column ambiguously for both.
+
+Preserve the established Group J storage mapping.
+
+---
+
+# 22. REQ-006 — Controlled Operational Update
+
+Canonical:
+
+```text
+PATCH /api/v1/requests/{request}
+```
+
+Authorization:
+
+```text
+requests.manage
+```
+
+Accepted writable fields remain only:
+
+```text
+request_status
+staff_internal_notes
+```
+
+according to the existing frozen contract.
+
+No generic Request mutation.
+
+---
+
+# 23. Strict REQ-006 Body
+
+Reject attempts to write:
+
+```text
+product_id
+quantity
+name
+phone
+email
+dimensions
+material
+color
+notes
+user_id
+request_reference
+attachments
+created_at
+updated_at
+
+order_id
+payment_status
+quoted_price
+price
+delivery_fee
+```
+
+Unknown fields must be rejected.
+
+Use:
+
+```text
+FormRequest
+validated()
+```
+
+only.
+
+Never:
+
+```php
+$request->all()
+```
+
+---
+
+# 24. Partial Update Semantics
+
+Inspect and preserve the already-implemented REQ-006 rules for:
+
+```text
+status-only
+internal-note-only
+status + internal-note
+```
+
+Do not guess.
+
+If both are currently valid:
+
+```text
+PATCH
+{
+  "request_status": "IN_REVIEW",
+  "staff_internal_notes": "..."
+}
+```
+
+must be handled atomically according to the existing implementation.
+
+If the repository has a narrower frozen shape, preserve it.
+
+Do not broaden the API merely for convenience.
+
+---
+
+# 25. Atomic Status + Note Mutation
+
+Where REQ-006 permits both fields in the same request:
+
+```text
+request_status
+staff_internal_notes
+```
+
+they must commit atomically.
+
+If status transition fails:
+
+```text
+internal note must not partially persist
+```
+
+If audit persistence fails:
+
+```text
+status/note changes must roll back
+```
+
+Use the existing Group J transaction boundary.
+
+---
+
+# 26. Same-State Idempotency
+
+Same-status update:
+
+```text
+current = IN_REVIEW
+target = IN_REVIEW
+```
+
+remains a business no-op.
+
+Do not:
+
+```text
+rewrite status
+touch updated_at merely for status
+create duplicate status audit
+```
+
+unless another actual mutable field, such as internal notes, legitimately changes in the same request.
+
+Test status no-op separately from note mutation.
+
+---
+
+# 27. CLOSED Is Terminal
+
+After:
+
+```text
+request_status = CLOSED
+```
+
+REQ-006 must never reopen it.
+
+Do not add a reopen action.
+
+Do not allow internal notes to implicitly reopen or change status.
+
+A CLOSED Request may remain readable operationally.
+
+Inspect current contract before deciding whether internal notes may still be edited on CLOSED Requests; preserve the frozen behavior.
+
+Do not invent a restriction or permission that is not present.
+
+---
+
+# 28. Audit Requirements
+
+Preserve the Group J durable audit design.
+
+Real Request state changes must remain auditable.
+
+Use existing audit enum/action names.
+
+Do not invent new audit types unnecessarily.
+
+At minimum prove the existing system records:
+
+```text
+actor
+actor role
+Request resource
+previous state
+resulting state
+timestamp
+request/correlation ID
+```
+
+where established.
+
+Actor identity must be server-derived.
+
+Never accept:
+
+```text
+actor_id
+performed_by
+staff_id
 role
-account_state
-has_orders
-total_spend
-last_order_at
-city
-verified
-registration_source
-staff_status
+timestamp
 ```
 
-filters.
-
-Because Phase 11.8 itself already scopes ADM-008 to Customers, a `role` filter is unnecessary.
-
-If the frozen OpenAPI currently defines no Customer-search parameter:
-
-```text
-do not invent one merely for Admin convenience
-```
-
-and use pagination-only collection.
-
-If an already-frozen search parameter exists, implement it exactly.
-
-Unknown query parameters must follow the project's strict validation convention rather than being silently ignored.
+from REQ-006 input.
 
 ---
 
-# 21. Search Privacy, If Already Frozen
+# 29. Audit Atomicity
 
-If repository inspection proves ADM-008 already has an approved search field, constrain it to the documented fields only.
+Audit persistence and Request mutation must remain transactionally consistent.
 
-Do not build broad:
-
-```text
-LIKE %input%
-```
-
-across unrelated columns.
-
-Do not search:
+If audit write fails:
 
 ```text
-Clerk IDs
-internal IDs
-tokens
-permissions
-security fields
+Request mutation rolls back
 ```
 
-Normalize and escape search values using existing query-building conventions.
+Same-state status no-op:
 
-Do not introduce enumeration-prone public behavior; the endpoint is Admin-only.
+```text
+must not create duplicate status-transition audit
+```
+
+Concurrent losing transition:
+
+```text
+must not create false audit event
+```
+
+Audit count must reflect committed business effects only.
 
 ---
 
-# 22. ADM-009 — Customer Detail
+# 30. Request History / Audit Boundary
 
-Implement/complete:
-
-```text
-GET /api/v1/users/{user}
-```
-
-Requirements:
+Do NOT create a new:
 
 ```text
-authenticated
-users.manage_authorized
-opaque user_... resolution
-Customer target only
-private response
+request_status_history
+request_history
+request_events
 ```
 
-A target that is not a Customer must not become visible through this customer-management endpoint.
+table just for Phase 11.9.
 
-Do not redirect to Staff management.
+Group J already chose the existing audit infrastructure.
 
-Do not return an Admin/Staff User representation.
+Phase 11.13 owns general Audit visibility.
 
-Use safe not-found masking consistent with the existing administrative contract.
+Do not expose audit history through REQ-005 unless already frozen.
 
 ---
 
-# 23. Non-Customer Target Behavior
+# 31. Concurrency Authority
 
-Because Group K separates:
-
-```text
-Customer visibility
-from
-Staff lifecycle
-```
-
-ADM-009 must not expose Staff/Admin identities.
-
-For:
+Preserve:
 
 ```text
-/user/{staff-id}
-/user/{admin-id}
+ConcurrentTransaction
++
+lockForUpdate()
 ```
 
-through ADM-009, return the canonical not-found behavior rather than leaking that the principal exists but has another privileged role.
+around authoritative Request state mutation.
 
-Prefer:
+Do not replace with:
+
+```text
+Redis lock
+distributed lock
+optimistic lock_version
+queue serialization
+table lock
+```
+
+MariaDB/MySQL remains concurrency authority for the real race behavior.
+
+---
+
+# 32. Status Race — Current Locked State
+
+Never decide transition validity from a stale controller-loaded Request instance.
+
+Correct sequence:
+
+```text
+begin transaction
+→ reload Request
+→ lockForUpdate
+→ read current status
+→ evaluate RequestStatusMachine
+→ apply allowed mutation
+→ audit
+→ commit
+```
+
+This prevents:
+
+```text
+Staff A reads SUBMITTED
+Staff B closes
+Staff A later writes IN_REVIEW from stale state
+```
+
+from reopening CLOSED.
+
+---
+
+# 33. Existing MariaDB Request Race Gate
+
+Reuse the existing Group J MariaDB concurrency suite.
+
+At minimum preserve proof for:
+
+```text
+close vs IN_REVIEW race
+same-target concurrent transition
+terminal CLOSED cannot reopen
+exactly one real state-change audit where appropriate
+```
+
+Do not duplicate equivalent tests unnecessarily.
+
+If existing tests already prove these properties:
+
+```text
+run them
+reference them in completion report
+```
+
+---
+
+# 34. Internal-Note Concurrency
+
+Inspect whether Group J already tests:
+
+```text
+status update + internal-note update
+```
+
+under concurrency.
+
+If not, add only the minimum meaningful regression.
+
+The key rule:
+
+```text
+status transition invariants may never be violated
+```
+
+Do not invent a complex collaborative-note merge model.
+
+Last-write behavior for internal notes is acceptable only if already consistent with the existing contract and transaction design.
+
+---
+
+# 35. Request Attachments
+
+REQ-007 remains the canonical attachment flow.
+
+Phase 11.9 must not create:
+
+```text
+GET /requests/{request}/attachments
+DELETE /requests/{request}/attachments/{attachment}
+PATCH /requests/{request}/attachments/{attachment}
+```
+
+unless already frozen.
+
+Operational Request representation may expose safe attachment metadata.
+
+Never expose:
+
+```text
+storage key
+filesystem path
+R2/S3 credential
+capability digest
+raw upload token
+internal bucket
+```
+
+---
+
+# 36. Attachment Privacy
+
+Request attachments are private to the parent Request.
+
+Operational Staff/Admin access follows parent Request authorization.
+
+Do not convert them to public media.
+
+Do not use the Product-image R2/CDN public-delivery design for Request attachments.
+
+The Request attachment privacy model remains separate.
+
+---
+
+# 37. Attachment Metadata
+
+Operational metadata may include the already-approved fields:
+
+```text
+id
+filename
+content_type
+size
+```
+
+and only an already-approved safe temporary/private `url` if current implementation provides one.
+
+Do not expose internal storage paths.
+
+---
+
+# 38. Customer Request Boundary
+
+Preserve:
+
+```text
+GET /api/v1/me/requests
+GET /api/v1/me/requests/{request}
+```
+
+as Customer-owned Request reads.
+
+Customer A must never read Customer B's Request.
+
+Cross-customer access remains masked:
 
 ```text
 404 RESOURCE_NOT_FOUND
 ```
 
-or the existing canonical equivalent.
-
-Do not return:
+Customer resources must not expose:
 
 ```text
-403 "That user is Staff"
-```
-
-because that unnecessarily reveals role/existence information.
-
-Use existing error registry wording.
-
----
-
-# 24. Do Not Join Customer History Into the User Resource
-
-ADM-008/009 must remain lightweight account visibility.
-
-Do not embed:
-
-```text
-orders[]
-cart
-requests[]
-enquiries[]
-notifications[]
-payments[]
-saved_addresses[]
-delivery_addresses[]
-reviews[]
-```
-
-Customer business resources have their own APIs and authorization.
-
-This also avoids:
-
-```text
-N+1
-huge payloads
-cross-domain leakage
+staff_internal_notes
+audit internals
+operational permissions
 ```
 
 ---
 
-# 25. Do Not Calculate CRM Metrics
+# 39. Anonymous Request Boundary
 
-Do not add speculative fields such as:
+Anonymous Request creation remains supported.
+
+Anonymous Requests:
 
 ```text
-total_orders
-total_spent
-average_order_value
-lifetime_value
-last_purchase
-conversion_rate
-request_count
-enquiry_count
-risk_score
-customer_segment
+user_id = null
 ```
 
-unless already frozen elsewhere.
+They are visible in the operational queue.
 
-Phase 11.8 is not a CRM analytics phase.
+Do not require a User relationship for REQ-004/005.
+
+Do not create Customer accounts from anonymous Request data.
+
+Do not allow anonymous general retrieval by Request ID.
 
 ---
 
-# 26. Customer Profile Nullability
+# 40. Product-Linked vs Custom Requests
 
-Preserve the current signup/profile reality:
-
-```text
-name may be null
-phone may be null
-email required
-```
-
-because customer signup is email/password only and phone belongs to later profile/contact flows.
-
-Do not make ADM-008/009 fail because:
+Both remain valid:
 
 ```text
-name == null
-phone == null
+product_id = MADE_TO_ORDER Product
 ```
 
-Serialize the frozen nullable representation correctly.
+and:
+
+```text
+product_id = null
+```
+
+A custom Request must not be omitted from the operational queue.
+
+Do not force product linkage during Request management.
 
 ---
 
-# 27. Email Verification
+# 41. Historical Product Changes
 
-If `email_verified` is part of the existing User/Profile representation, it is:
+A linked Product being later:
 
 ```text
-server-controlled
-read-only
+renamed
+unpublished
+deactivated
+soft-deleted
 ```
 
-ADM-008/009 may display it if the contract permits.
+must not erase the Request or make it operationally inaccessible.
 
-Do not allow Admin to modify it in Phase 11.8.
+Preserve historical Request visibility.
 
-Do not query Clerk live for every collection row merely to refresh it.
+Do not re-run creation-time requestability rules during operational viewing.
+
+Creation-time product validation and historical operational read are different concerns.
 
 ---
 
-# 28. Account State
+# 42. No Revalidation of Intake on Management
 
-Inspect the current User model and frozen Admin/User resource before exposing any account-state field.
-
-Do not invent a Customer account-state contract.
-
-If a local state exists primarily for:
+REQ-006 must not re-run creation rules such as:
 
 ```text
-Staff/Admin lifecycle
+current Product must still be published
+current Product must still be MADE_TO_ORDER
 ```
 
-do not automatically expose or mutate it for Customers.
+before allowing legitimate status management.
 
-Only serialize fields explicitly approved for ADM-008/009.
+The Request already exists as history.
+
+Operational management evaluates:
+
+```text
+authorization
+current Request state
+update fields
+```
+
+not whether the original Product would still be requestable today.
 
 ---
 
-# 29. Query Efficiency
+# 43. Private Caching
 
-ADM-008 must not introduce N+1 behavior.
+REQ-004/005/006 responses contain private contact information.
 
-If role membership is stored using Spatie RBAC tables:
-
-```text
-filter Customers efficiently at query level
-```
-
-rather than:
-
-```text
-load all users
-→ call hasRole() once per row
-→ filter in PHP
-```
-
-Pagination must occur **after authorized Customer scoping**, not before.
-
-Conceptually:
-
-```text
-User query
-→ constrain effective role = CUSTOMER
-→ authorized dataset
-→ deterministic order
-→ paginate
-→ resource serialization
-```
-
-Do not paginate all Users then remove Staff/Admin from the result.
-
-That would produce incorrect totals/pages.
-
----
-
-# 30. Effective Single-Role Invariant
-
-V1 ordinary Users are intended to have one effective CLOSED role.
-
-Phase 11.8 must use the existing role model rather than adding a `users.role` column.
-
-Do not denormalize RBAC merely to simplify ADM-008.
-
-If malformed historical data gives a User multiple roles, follow existing role-invariant handling.
-
-Do not silently classify an Admin/Customer multi-role account as a normal Customer.
-
-Add a defensive regression if relevant to existing domain rules.
-
----
-
-# 31. Private Caching
-
-ADM-008 and ADM-009 contain private personal information.
-
-Responses must be:
+Preserve:
 
 ```http
 Cache-Control: private, no-store
 Vary: Authorization
 ```
 
-Do not place these responses behind public catalog caching.
+and any existing Cookie variation required by the authentication model.
 
-Do not make them CDN-cacheable.
+Never public-cache Request operational data.
 
 ---
 
-# 32. Data Minimization
+# 44. PII Minimization
 
-Admin receives only what is required by the approved administrative User representation.
+REQ-004/005 may expose the Request contact snapshot because it is operationally required.
 
-Admin access is not justification for returning every User column.
+Do not expand exposure to unrelated Customer-profile information.
 
-The serialization boundary must remain explicit.
+Do NOT join or serialize:
 
-Prefer a dedicated resource such as the repository's existing administrative User representation.
-
-Do not return:
-
-```php
-return User::all();
+```text
+Customer credentials
+Clerk ID
+permissions
+full account history
+orders
+payments
+saved addresses
+security state
 ```
 
-or:
+through Request resources.
 
-```php
-return $user->toArray();
+---
+
+# 45. Permission Separation
+
+Verify:
+
+```text
+requests.view
+→ REQ-004
+→ REQ-005
+
+requests.manage
+→ REQ-006
 ```
 
-if that can expose unreviewed fields.
+An actor with:
+
+```text
+requests.view
+```
+
+but without:
+
+```text
+requests.manage
+```
+
+must not mutate Requests.
+
+Do not assume every Staff user automatically has both in controller code.
+
+Use centralized authorization.
 
 ---
 
-# 33. No Write Audit Requirement From Reads
+# 46. Admin Authorization
 
-ADM-008/009 are read-only.
+Admin access remains explicit through seeded permissions.
 
-Do not create an `audit_event` for every routine Customer list/detail read unless the existing frozen contract explicitly requires read-access auditing.
+Do not hard-code an Admin bypass.
 
-Do not expand the audit enum merely for this phase.
+Avoid:
 
-Phase 11.13 owns Audit visibility.
+```php
+if ($user->hasRole('ADMIN')) {
+    allowEverything();
+}
+```
 
-Normal infrastructure/security access logs are separate from domain mutation audit.
+Use:
+
+```text
+PermissionCatalog
+Authorization
+requests.view
+requests.manage
+```
+
+as established.
 
 ---
 
-# 34. ADM-007 Boundary
+# 47. No Assignment/Ownership System
+
+Do NOT add:
+
+```text
+assigned_staff_id
+assignee
+team
+queue_owner
+claimed_by
+```
+
+in Phase 11.9.
+
+Staff operational access is shared permission-based handling.
+
+A Request is not owned by a Staff user.
+
+If Request assignment is desired later, it requires its own contract/schema decision.
+
+---
+
+# 48. No Priority System
+
+Do NOT add:
+
+```text
+priority
+urgent
+severity
+SLA
+due_at
+```
+
+No such V1 workflow is frozen.
+
+---
+
+# 49. No Quote System
+
+Internal notes must not become a hidden quotation API.
+
+Do not add:
+
+```text
+quoted_price
+quote_currency
+quote_status
+quote_expiry
+deposit
+```
+
+A future quotation domain is separate.
+
+---
+
+# 50. No Communications System
 
 Do not implement:
 
 ```text
-GET /api/v1/admin/audit-logs
+chat
+email reply
+SMS
+WhatsApp
+push
+customer message thread
 ```
 
-during Phase 11.8.
+inside Request management.
 
-The known:
+Phase 11.9 manages Request state and internal notes only.
 
-```text
-audit.view
-```
-
-reconciliation remains owned by Phase 11.13.
-
-Do not use Phase 11.8 as a reason to resolve ADM-007 early.
+Group R owns external communication delivery where applicable.
 
 ---
 
-# 35. Staff Lifecycle Boundary
+# 51. Required REQ-004 Authorization Tests
 
-Do not refactor or broaden:
-
-```text
-ADM-001
-ADM-002
-ADM-003
-ADM-004
-ADM-005
-ADM-006
-```
-
-except where a narrowly required regression fix is uncovered.
-
-Customer management must not alter:
-
-```text
-Staff approval
-Staff suspension
-Staff reactivation
-Admin bootstrap
-```
-
-semantics.
-
----
-
-# 36. Current Request-First Production Boundary
-
-The release remains request-first.
-
-Phase 11.8 must not reactivate:
-
-```text
-checkout
-orders
-payments
-delivery
-```
-
-Customer visibility is useful for:
-
-```text
-Customer account identification
-Request/Enquiry administration
-support context
-```
-
-without turning transactional commerce back on.
-
----
-
-# 37. Required Authorization Tests
-
-Add/retain permanent tests proving:
+Ensure permanent coverage:
 
 ```text
 anonymous
-GET /users
-→ 401
-
-anonymous
-GET /users/{customer}
+GET /requests
 → 401
 
 Customer
-GET /users
+GET /requests
 → 403
 
-Customer
-GET /users/{customer}
-→ 403
-
-Staff
-GET /users
-→ 403
-
-Staff
-GET /users/{customer}
-→ 403
-
-Admin with users.manage_authorized
-GET /users
+Staff with requests.view
 → 200
 
-Admin with users.manage_authorized
-GET /users/{customer}
+Admin with requests.view
 → 200
-```
 
-Also prove:
-
-```text
-authenticated Admin missing users.manage_authorized
+authenticated actor without requests.view
 → 403
 ```
 
-if the test infrastructure allows constructing that permission state.
-
 ---
 
-# 38. Required Customer-Only Scope Tests
-
-Create:
-
-```text
-Customer A
-Customer B
-Staff
-Admin
-```
-
-Then assert ADM-008 returns:
-
-```text
-Customer A
-Customer B
-```
-
-and excludes:
-
-```text
-Staff
-Admin
-```
-
-Pagination totals must count only Customers.
-
-This is essential.
-
----
-
-# 39. Required Detail Masking Tests
-
-Prove:
-
-```text
-GET /users/{customer}
-→ 200
-```
-
-but:
-
-```text
-GET /users/{staff}
-→ 404
-
-GET /users/{admin}
-→ 404
-
-GET /users/{unknown}
-→ 404
-```
-
-using canonical error envelopes.
-
-Do not leak target role through different error messages.
-
----
-
-# 40. Required Serialization Tests
-
-Assert the permitted Customer response includes only approved fields.
-
-Explicitly verify absence of:
-
-```text
-clerk_user_id
-password
-password_hash
-remember_token
-permissions
-tokens
-sessions
-role pivot internals
-security metadata
-internal DB IDs
-```
-
-Do not rely only on snapshot inspection.
-
-Use explicit negative assertions for sensitive fields.
-
----
-
-# 41. Nullable Profile Tests
-
-Create a Customer with:
-
-```text
-name = null
-phone = null
-```
-
-and prove:
-
-```text
-ADM-008
-ADM-009
-```
-
-serialize the Customer successfully.
-
-Do not manufacture placeholder values like:
-
-```text
-Unknown
-N/A
--
-```
-
-at the backend contract layer.
-
----
-
-# 42. Pagination Tests
+# 52. Required REQ-005 Authorization Tests
 
 Cover:
 
 ```text
-default page
-explicit page
-per_page
-maximum per_page
-invalid page
-invalid per_page
-stable deterministic ordering
-Customer-only totals
-has_next
-has_previous
+anonymous → 401
+Customer → 403
+Staff with requests.view → 200
+Admin with requests.view → 200
+unknown req_... → 404
+malformed identifier → canonical validation/not-found behavior
 ```
 
-Unknown query parameters should follow the existing strict-query validation convention.
+Do not expose DB IDs.
 
 ---
 
-# 43. N+1 / Query-Scaling Regression
+# 53. Required REQ-006 Authorization Tests
 
-Because ADM-008 may need RBAC role filtering, add a query-scaling regression where practical.
-
-Prove increasing Customer count does not create one role/profile query per Customer.
-
-The intended shape is bounded query growth.
-
-Do not over-optimize prematurely, but prevent an obvious:
+Cover:
 
 ```text
-foreach user
-→ hasRole()
+anonymous → 401
+Customer → 403
+Staff with requests.view only → 403
+Staff with requests.manage → allowed
+Admin with requests.manage → allowed
 ```
 
-N+1 collection implementation.
+Do not permit mutation merely because the actor can view.
 
 ---
 
-# 44. `/me` Regression Tests
+# 54. Required Filter Tests
 
-Ensure existing:
+REQ-004 must cover:
 
 ```text
-GET /me
-PATCH /me
+search by name
+search by email
+search by phone
+search by request reference
+search by product
+
+request_status
+product_id
+created_from
+created_to
+
+combined filters
+pagination after filtering
+deterministic ordering
 ```
 
-semantics remain unchanged.
-
-Test that introducing ADM-008/009 does not make:
+Also test:
 
 ```text
-Customer → another User
-Staff → Customer User
+custom request product_id = null remains discoverable
 ```
 
-possible through self-service.
+where relevant.
 
-No:
+---
+
+# 55. Strict Query Tests
+
+Reject unknown query fields such as:
 
 ```text
+status
+customer_id
+sortBy
+pageSize
+assigned_to
+priority
+```
+
+according to existing strict conventions.
+
+Do not silently ignore them.
+
+---
+
+# 56. Required Representation Tests
+
+Operational Request detail must assert:
+
+```text
+opaque Request ID
+safe Product summary or null
+quantity
+contact snapshot
+dimensions
+material
+color
+customer notes
+request_status
+staff_internal_notes
+opaque user_id or null
+safe attachment metadata
+created_at
+updated_at
+```
+
+and absence of:
+
+```text
+raw DB IDs
+Clerk IDs
+storage paths
+capability digests
+credentials
+permissions
+payment fields
+inventory internals
+```
+
+---
+
+# 57. Required Customer Privacy Tests
+
+Prove Customer Request response does NOT contain:
+
+```text
+staff_internal_notes
+internal audit
+operational metadata not approved for Customer
+```
+
+even after Staff has populated internal notes.
+
+This regression is mandatory.
+
+---
+
+# 58. Required Intake-Immutability Tests
+
+Attempt REQ-006 with:
+
+```text
+name
+phone
+email
+quantity
+dimensions
+material
+color
+notes
+product_id
 user_id
-as_user
-account_id
+request_reference
 ```
 
-selector should be accepted on `/me`.
+and prove rejection.
+
+Original values must remain unchanged.
 
 ---
 
-# 45. Clerk Regression
+# 59. Required Status Matrix Tests
 
-Ensure ADM-008 collection does not require one Clerk call per Customer.
-
-If the current test architecture can fake/spy on the Clerk gateway, assert:
+Permanent tests must prove the full matrix:
 
 ```text
-ADM-008 normal list
-→ zero per-row Clerk network resolutions
+SUBMITTED → SUBMITTED
+idempotent
+
+SUBMITTED → IN_REVIEW
+allowed
+
+SUBMITTED → CLOSED
+allowed
+
+IN_REVIEW → SUBMITTED
+409
+
+IN_REVIEW → IN_REVIEW
+idempotent
+
+IN_REVIEW → CLOSED
+allowed
+
+CLOSED → SUBMITTED
+409
+
+CLOSED → IN_REVIEW
+409
+
+CLOSED → CLOSED
+idempotent
 ```
 
-Use local authoritative projections.
-
-Do not modify JIT provisioning behavior merely for this phase.
+Do not weaken the existing unit test.
 
 ---
 
-# 46. Route Surface Regression
+# 60. Required No-Side-Effect Tests
 
-Canonical routes:
-
-```text
-GET /api/v1/users
-GET /api/v1/users/{user}
-```
-
-must exist.
-
-Ensure these do NOT appear:
+REQ-006 must prove zero creation/mutation of:
 
 ```text
-POST   /api/v1/users
-PATCH  /api/v1/users/{user}
-PUT    /api/v1/users/{user}
-DELETE /api/v1/users/{user}
-
-GET /api/v1/admin/users
-GET /api/v1/admin/customers
-GET /api/v1/customers
-
-POST /api/v1/users/{user}/block
-POST /api/v1/users/{user}/suspend
-POST /api/v1/users/{user}/impersonate
-POST /api/v1/users/{user}/role
+Order
+OrderItem
+Payment
+Delivery
+ProductStock
+reserved_quantity
+inventory allocation
+quote
 ```
 
-No aliases.
+after:
+
+```text
+IN_REVIEW
+CLOSED
+internal-note update
+```
+
+This protects the request-first release boundary.
 
 ---
 
-# 47. OpenAPI
+# 61. Required Audit Tests
 
-Inspect and complete the frozen definitions for:
+Prove:
 
 ```text
-ADM-008
-ADM-009
+real status transition
+→ correct audit event
+
+same-state status
+→ no duplicate transition audit
+
+actor/role server-derived
+
+previous state correct
+resulting state correct
+resource ID correct
+request correlation ID correct
+
+audit failure
+→ mutation rollback
 ```
 
-Ensure OpenAPI agrees with runtime for:
+Where internal-note changes are already audited by Group J, preserve and verify that behavior.
+
+Do not invent audit behavior that contradicts the existing implementation.
+
+---
+
+# 62. Required Concurrency Tests
+
+Run the existing MariaDB Request concurrency suite against:
+
+```text
+furnitureapp_test_disposable
+```
+
+with established safety guards.
+
+Prove:
+
+```text
+close-vs-review race
+same-target race
+CLOSED remains terminal
+no stale overwrite
+audit reflects committed transition only
+```
+
+SQLite is not sufficient proof of `FOR UPDATE`.
+
+---
+
+# 63. No New MariaDB Harness
+
+Reuse the existing:
+
+```text
+RunsConcurrentWorkers
+```
+
+or current repository equivalent.
+
+Do not introduce another concurrency framework.
+
+Do not run destructive concurrency tests against:
+
+```text
+furnitureapp
+staging
+production
+```
+
+---
+
+# 64. Group J Regression Suite
+
+Run all relevant existing Group J Request suites.
+
+At minimum cover:
+
+```text
+creation
+validation
+product-linked requestability
+status lifecycle
+attachments
+operational Request API
+audit
+MariaDB concurrency
+customer history/ownership
+```
+
+Phase 11.9 must not regress earlier Group J closure.
+
+---
+
+# 65. OpenAPI
+
+Verify REQ-004/005/006 OpenAPI agrees with runtime for:
 
 ```text
 paths
 methods
 security
-ADMIN actor
-users.manage_authorized purpose
+permissions
+filters
 pagination
-query parameters
-response envelope
-User/Customer administrative resource
-opaque user identifier
+Request operational resource
+strict REQ-006 body
+request_status enum
+staff_internal_notes
 401
 403
 404
-private semantics where documented
+409
+422
+private caching where documented
 ```
 
-Do not add write schemas.
+Do not add new operational routes.
 
-If ADM-008/009 are still marked:
-
-```text
-PROPOSED
-```
-
-and Phase 11.8 successfully completes the frozen implementation/reconciliation, mark them:
-
-```text
-APPROVED
-```
-
-consistently across authoritative documentation.
+These endpoints are already APPROVED; preserve that status.
 
 ---
 
-# 48. Document the Customer-Only Reconciliation
+# 66. Documentation
 
-Add an ADR documenting why the frozen `/users` endpoints are Customer-scoped in Group K.
-
-Suggested decision:
+Update:
 
 ```text
-ADR/GROUP-K-CUSTOMER-VISIBILITY
+phases/group-K-phases.md
+docs/decisions.md
 ```
 
-or next repository-consistent ADR identifier.
+to record Phase 11.9 verification/closure.
 
-Record:
+If a new ADR is needed, use the repository's next consistent identifier.
+
+Suggested subject:
 
 ```text
-ADM-008/009 remain canonical /users paths.
-
-Group K assigns them to Customer account visibility.
-
-Only CUSTOMER targets are visible.
-
-Staff/Admin identities remain under their own
-self-service / staff-lifecycle boundaries.
-
-ADM-008/009 are read-only.
-
-No Customer suspension, blocking, impersonation,
-credential management, role mutation, or deletion is added.
+Group K Request Management Reuse / Closure
 ```
 
-This is a reconciliation of ambiguous historical wording, not a new endpoint family.
+Record that:
+
+```text
+Group K reuses Group J REQ-004/005/006.
+No /admin request aliases are introduced.
+No Request-to-Order conversion is introduced.
+Request intake remains immutable.
+Internal notes remain operational-only.
+Existing state-machine and MariaDB locking remain authoritative.
+```
+
+Do not rewrite historical Group J ADRs unnecessarily.
 
 ---
 
-# 49. Code Structure
-
-Use established project patterns.
-
-Likely structure may include, depending on current repository:
-
-```text
-AdminUserController or UserAdministrationController
-ListCustomersRequest
-CustomerAdministrativeResource
-CustomerAdministrativeQuery
-```
-
-but do NOT create these mechanically if existing abstractions already fit.
-
-Prefer:
-
-```text
-thin controller
-query/service for authorized collection
-explicit API Resource
-central permission check
-strict query validation
-```
-
-Avoid business logic in controllers.
-
----
-
-# 50. Database / Schema
+# 67. Schema
 
 Expected:
 
@@ -1535,21 +1899,19 @@ schema changes = NONE
 Do not add:
 
 ```text
-customer_status
-is_blocked
-is_banned
-customer_role
-customer_notes
-CRM tables
+request assignment
+priority
+status history table
+quote table
+CRM table
+workflow table
 ```
 
-No migration should be necessary.
-
-If implementation appears to require schema expansion, stop that expansion and report the mismatch rather than inventing new state.
+If a schema change appears necessary, stop and report the genuine mismatch before inventing a model.
 
 ---
 
-# 51. Dependencies
+# 68. Dependencies
 
 Expected:
 
@@ -1560,216 +1922,165 @@ new dependencies = NONE
 Do not add:
 
 ```text
+workflow engine
+state-machine package
 CRM package
-admin package
+queue package
 search engine
-Elasticsearch
-Meilisearch
-Scout
 ```
 
-for this phase.
+for Phase 11.9.
 
-Existing Laravel/Eloquent/RBAC capabilities are sufficient.
+Existing Laravel/domain infrastructure is sufficient.
 
 ---
 
-# 52. Security Review
+# 69. Code Quality
 
-Explicitly verify:
+Follow project standards:
 
 ```text
-IDOR resistance
-Customer/Staff denial
-opaque identifier use
-Customer-only scoping
-no credential exposure
-no Clerk subject exposure
-no unrestricted User model serialization
-private caching
-strict query allow-list
-no SQL injection through search/sort
-pagination over authorized scope
-no role enumeration through ADM-009
+thin controller
+strict FormRequest
+validated() only
+explicit resource serialization
+central permission checks
+domain state machine
+transaction/service boundary
+enums/constants
+cognitive complexity <= 15
+<= 3 returns where practical
 ```
+
+Do not refactor unrelated Group J code.
 
 ---
 
-# 53. Verification
+# 70. Verification Commands
 
-Run the repository's canonical equivalent of:
+Run the repository's canonical equivalents of:
 
 ```bash
 cd backend/laravel
 
 php artisan test
-
 ./vendor/bin/phpstan analyse
 ./vendor/bin/pint --test
 composer audit
-
 php artisan route:list
-
 git diff --check
 ```
 
 Also run focused:
 
 ```text
-ADM-008 tests
-ADM-009 tests
-User/Profile tests
-RBAC tests
-Admin Staff lifecycle regression
-Clerk/local-projection regression
-OpenAPI/route contract regression
-```
-
-No MariaDB concurrency gate is required merely for read-only Customer visibility unless repository behavior introduces DB-lock-sensitive semantics—which it should not.
-
----
-
-# 54. Git Operations
-
-After implementation and all required verification pass, use the root:
-
-```text
-git-workflow-and-versioning
-```
-
-skill for every Git action.
-
-The project owner explicitly authorizes the agent to perform the Git operations permitted by that skill.
-
-Do not perform Git actions before reading it.
-
-Follow its exact workflow for:
-
-```text
-status inspection
-branch handling
-staging
-commit creation
-version updates if applicable
-push if applicable
-```
-
-Do not invent a commit message convention outside the skill.
-
-Do not commit:
-
-```text
-.env
-credentials
-R2 secrets
-Clerk secrets
-database credentials
-generated secret material
-```
-
-If the skill says a certain operation requires owner confirmation, obey the skill.
-
-The user's general Git authorization does not override explicit safety gates inside the skill.
-
----
-
-# 55. Out of Scope
-
-Do NOT implement:
-
-```text
-Phase 11.9 Request Management
-Phase 11.10 Enquiry Management
-Phase 11.13 Audit Visibility
-
-Phase 11.7 Orders
-Phase 11.11 Payments
-Phase 11.12 Delivery
-```
-
-11.7/11.11/11.12 remain deferred.
-
-Also exclude:
-
-```text
-Customer mutation
-Customer deletion
-Customer suspension
-Customer blocking
-Customer banning
-Customer impersonation
-role mutation
-credential reset
-email change
-verification override
-session revocation
-marketing segmentation
-CRM
-analytics
-customer notes
-saved addresses
-support ticketing
-bulk export
-CSV export
-frontend Admin screens
+Request operational API tests
+Request authorization tests
+Request filter/search tests
+Request privacy tests
+Request state-machine tests
+Request audit tests
+Request attachment regressions
+Group J Request tests
+MariaDB Request concurrency tests
+OpenAPI route/contract regression
 ```
 
 ---
 
-# 56. Completion Report
+# 71. Git Operations
+
+After implementation and all required verification pass:
+
+1. read the root `git-workflow-and-versioning` skill;
+2. follow it exactly;
+3. stage only Phase 11.9-related files;
+4. use its required commit/versioning conventions;
+5. push only if the skill permits/requests it under the current workflow.
+
+Do not stage unrelated changes.
+
+Do not bypass skill-required checks.
+
+The project owner's Git permission does not override safety restrictions in the skill.
+
+---
+
+# 72. Completion Report
 
 Return:
 
 ```text
-Phase 11.8 status:
+Phase 11.9 status:
 PASS / BLOCKED
 
-ADM-008:
-PASS / BLOCKED
-
-ADM-009:
-PASS / BLOCKED
-
-ADM-008 CUSTOMER-only:
+Existing Group J implementation reused:
 YES / NO
 
-ADM-009 CUSTOMER-only:
+REQ-004:
+PASS / BLOCKED
+
+REQ-005:
+PASS / BLOCKED
+
+REQ-006:
+PASS / BLOCKED
+
+Canonical routes only:
+PASS / FAIL
+
+Admin/Staff Request aliases added:
+NO
+
+requests.view:
+PASS / FAIL
+
+requests.manage:
+PASS / FAIL
+
+Customer operational queue access:
+REJECTED / FAIL
+
+Customer internal-note exposure:
+NO / FAIL
+
+Anonymous operational read:
+REJECTED / FAIL
+
+Intake immutability:
+PASS / FAIL
+
+Request status enum unchanged:
 YES / NO
 
-Staff/Admin identities excluded from ADM-008:
+CLOSED terminal:
 PASS / FAIL
 
-Staff/Admin target masking on ADM-009:
+Same-state idempotency:
 PASS / FAIL
 
-users.manage_authorized enforced:
+Internal notes separation:
 PASS / FAIL
 
-Staff customer browsing:
-REJECTED / FAIL
+Audit atomicity:
+PASS / FAIL
 
-Customer customer-directory access:
-REJECTED / FAIL
-
-Customer mutation endpoints added:
+Request-to-Order behavior added:
 NO
 
-Customer suspension/blocking:
+Inventory reservation added:
 NO
 
-Impersonation:
+Payment/quote behavior added:
 NO
 
-Credential management:
-NO
+Attachment privacy:
+PASS / FAIL
 
-Role mutation:
-NO
+Historical Product visibility:
+PASS / FAIL
 
-Secret/Clerk ID exposure:
-NO
-
-Private/no-store responses:
+REQ-004 filters:
 PASS / FAIL
 
 Pagination:
@@ -1778,17 +2089,11 @@ PASS / FAIL
 Deterministic ordering:
 PASS / FAIL
 
-N+1 regression:
+MariaDB close-vs-review:
 PASS / FAIL
 
-ADM-008/009 OpenAPI status:
-APPROVED / BLOCKED
-
-Schema changes:
-NONE / <explain>
-
-Dependency changes:
-NONE / <explain>
+MariaDB same-target transition:
+PASS / FAIL
 
 Full PHPUnit:
 <x> passed, <y> skipped
@@ -1811,6 +2116,12 @@ PASS / FAIL
 git diff --check:
 PASS / FAIL
 
+Schema changes:
+NONE / <explain>
+
+Dependency changes:
+NONE / <explain>
+
 Git workflow skill read:
 YES / NO
 
@@ -1821,9 +2132,9 @@ Commit:
 <hash/message or NONE>
 
 Push:
-<result or NONE according to skill>
+<result or NONE>
 
-Phase 11.9:
+Phase 11.10:
 READY / BLOCKED
 ```
 
@@ -1832,51 +2143,53 @@ Also list:
 ```text
 files changed
 tests added/changed
-documentation reconciliations
-genuine defects found
+genuine defects fixed
+documentation changes
 security findings
 ```
 
 ---
 
-# 57. STOP Condition
+# 73. STOP Condition
 
-Phase 11.8 is PASS only when:
+Phase 11.9 is PASS only when:
 
-- ADM-008 and ADM-009 are implemented and canonical;
-- both require `users.manage_authorized`;
-- only Admin can use them;
-- ADM-008 exposes Customers only;
-- ADM-009 resolves Customers only;
-- Staff/Admin targets are masked through ADM-009;
-- Customer and Staff cannot browse Customer accounts;
-- approved fields only are serialized;
-- credentials, Clerk subject, permissions and secrets are never exposed;
-- pagination is correct over the authorized Customer dataset;
-- `/me` ownership remains unchanged;
-- no Customer mutation/control surface is introduced;
-- OpenAPI and docs agree with runtime;
+- REQ-004/005/006 remain the canonical operational Request surface;
+- Group J implementation is reused rather than duplicated;
+- `requests.view` and `requests.manage` remain separated;
+- customer intake remains immutable;
+- `staff_internal_notes` never leaks to Customer responses;
+- Request status stays CLOSED to `SUBMITTED/IN_REVIEW/CLOSED`;
+- `CLOSED` remains terminal;
+- state transitions use current locked database state;
+- audit remains transactionally consistent;
+- Request attachments remain private;
+- anonymous Requests remain manageable operationally without requiring a User;
+- historical linked Requests remain visible after Product visibility changes;
+- no Request-to-Order, inventory, payment, quote, assignment, priority or CRM behavior is introduced;
+- MariaDB concurrency gates pass;
 - full backend verification passes;
-- Git operations, if performed, followed the root `git-workflow-and-versioning` skill.
+- Git operations follow the root `git-workflow-and-versioning` skill.
 
 Then report:
 
 ```text
-Phase 11.8 — PASS
-Phase 11.9 — READY
+Phase 11.9 — PASS
+Phase 11.10 — READY
 ```
 
-Do not begin Phase 11.9 automatically.
+Do not begin Phase 11.10 automatically.
 
 **Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
 ---
 
-## Phase 11.8 Completion Record
+## Phase 11.9 Completion Record
 
 **Status:** Implemented pending final verification.
 
-- `ADM-008` and `ADM-009` are canonical, Admin-only, permission-gated Customer visibility reads.
-- Customer-only SQL scoping excludes Staff/Admin identities and masks non-Customer detail targets with `404 RESOURCE_NOT_FOUND`.
-- The administrative response is allow-listed, opaque-identifier based, paginated, deterministic, private/no-store, and uses local projections only.
-- No schema or dependency changes; no Customer mutation, restriction, credential, impersonation, role, or CRM capability was added.
+- Reused canonical Group J `REQ-004`, `REQ-005`, and `REQ-006`; no Admin or Staff Request aliases were added.
+- Preserved immutable Request intake, operational-only internal notes, existing state machine, private caching, and request-first boundary.
+- Added operational authorization/filter/identifier/no-commerce-side-effect regressions and audited MariaDB race verification.
+- Reconciled OpenAPI runtime responses, strict non-empty REQ-006 body, and the REQ-007 `attachment` multipart field.
+- No schema or dependency changes; no Request-to-Order conversion, quote, payment, stock/reservation, assignment, priority, or communications capability was added.
