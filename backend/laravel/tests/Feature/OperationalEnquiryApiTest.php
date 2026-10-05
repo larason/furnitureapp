@@ -112,6 +112,22 @@ final class OperationalEnquiryApiTest extends TestCase
         $this->assertSame(EnquiryCategory::GENERAL, $enquiry->fresh()->category);
     }
 
+    public function test_close_rejects_query_parameters_and_does_not_read_notes_from_them(): void
+    {
+        $enquiry = Enquiry::factory()->create();
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'enquiry_staff_query']));
+
+        $this->withHeaders($headers)->postJson(
+            self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION.'?staff_internal_notes=query-note',
+        )
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE')
+            ->assertJsonPath('errors.0.field', 'staff_internal_notes');
+
+        $this->assertSame('OPEN', $enquiry->fresh()->enquiry_status->value);
+        $this->assertNull($enquiry->fresh()->staff_internal_notes);
+    }
+
     public function test_view_only_staff_cannot_close_and_closed_close_is_idempotent(): void
     {
         $open = Enquiry::factory()->create();

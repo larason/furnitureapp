@@ -25,16 +25,12 @@ final class CloseEnquiryRequest extends FormRequest
 
     public function hasStaffInternalNotes(): bool
     {
-        return array_key_exists(self::STAFF_NOTES_FIELD, $this->all());
+        return array_key_exists(self::STAFF_NOTES_FIELD, $this->bodyInput());
     }
 
     public function staffInternalNotes(): ?string
     {
-        $input = $this->all();
-        $unknown = array_diff(array_keys($input), self::ALLOWED_FIELDS);
-        if ($unknown !== []) {
-            throw $this->error((string) reset($unknown), 'The request field is not supported.');
-        }
+        $input = $this->bodyInput();
 
         if (! $this->hasStaffInternalNotes()) {
             return null;
@@ -59,6 +55,23 @@ final class CloseEnquiryRequest extends FormRequest
         }
 
         return $notes;
+    }
+
+    /** @return array<string, mixed> */
+    private function bodyInput(): array
+    {
+        $query = $this->query();
+        if ($query !== []) {
+            throw $this->error((string) array_key_first($query), 'Query parameters are not supported.');
+        }
+
+        $input = array_replace($this->request->all(), $this->allFiles());
+        $unknown = array_diff(array_keys($input), self::ALLOWED_FIELDS);
+        if ($unknown !== []) {
+            throw $this->error((string) reset($unknown), 'The request field is not supported.');
+        }
+
+        return $input;
     }
 
     private function error(string $field, string $message): ApiException
