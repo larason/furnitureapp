@@ -1,1249 +1,1771 @@
-# Phase 11.4 — Category CRUD — Approved Placement Reconciliation
+# Phase 11.10 — Enquiry Management — Remaining Closure Work
 
-## 1. Current Status
+## Objective
 
-Phase 11.4 was correctly BLOCKED after completing the Category persistence reconciliation.
-
-Confirmed:
+Finish the remaining Phase 11.10 work and close:
 
 ```text
-categories.description
-categories.image_url
+Phase 11.10 — Enquiry Management
 ```
 
-already exist through:
+The first enforcement slice is already complete and must be preserved:
 
 ```text
-2026_09_19_120000_add_public_fields_to_categories_table.php
+CloseEnquiryRequest exists.
+
+POST /api/v1/enquiries/{enquiry}/close
+accepts only optional staff_internal_notes.
+
+Unknown fields are rejected.
+
+Immutable intake fields are rejected.
+
+The note and CLOSED status persist atomically
+inside the existing locked transaction.
+
+Focused Enquiry tests:
+15 passed / 92 assertions
+
+Full backend:
+1641 passed / 1 skipped
+
+Pint:
+PASS
+
+git diff --check:
+PASS
 ```
 
-and the persistence/public-read regression is green.
+Do **not** reimplement or redesign that work.
 
-The remaining blocker is the absence of a frozen CAT-011 rule for server-controlled:
+The remaining Phase 11.10 closure gates are:
 
 ```text
-parent_id
-space_type
-display_order
-is_active
+1. OpenAPI/docs reconciliation
+2. Expanded operational filtering tests
+3. Expanded authorization tests
+4. Explicit no-commerce-side-effect regression
+5. MariaDB concurrency verification
+6. Full verification
+7. Phase documentation / ADR closure
+8. Git workflow staging + commit
 ```
 
-This document resolves that gap.
+The target is:
 
-After recording and implementing this reconciliation, continue the remaining Phase 11.4 CAT-011/CAT-012 work.
+```text
+Phase 11.10 — PASS
+Phase 11.13 — READY
+```
+
+Do not begin Phase 11.13.
 
 ---
 
-# 2. Approved V1 Consistency Reconciliation
+# 1. Read Current State Before Editing
 
-CAT-011 retains its frozen external request:
+Inspect the current implementation rather than relying on earlier phase instructions.
 
-```json
-{
-  "name": "...",
-  "slug": "...",
-  "description": null,
-  "image": null
-}
-```
-
-Do NOT add:
+At minimum inspect:
 
 ```text
-parent_id
-space_type
-display_order
-is_active
+AGENTS.md
+phases/group-J-phases.md
+phases/group-K-phases.md
+
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/api/openapi.yaml
+docs/domain/business-rules.md
+docs/decisions.md
+
+routes/api.php
+
+EnquiryController
+CloseEnquiryRequest
+
+Enquiry model
+EnquiryStatus
+
+Enquiry operational query/service
+close/update transaction service
+
+EnquiryResource
+operational Enquiry resource
+
+AuditRecorder
+AuditAction
+AuditResourceType
+
+PermissionName
+PermissionCatalog
+Authorization
+
+EnquiryStatusConcurrencyMysqlTest
+
+existing ENQ-004 tests
+existing ENQ-005 tests
+existing ENQ-006 tests
+existing Group J Enquiry tests
+existing OpenAPI Enquiry tests
 ```
 
-to `CategoryCreateRequest`.
+Determine exactly what is already implemented.
 
-Instead, they are server-controlled according to the following authoritative V1 rule.
+Do not duplicate existing passing coverage without reason.
 
 ---
 
-# 3. CAT-011 Placement Rule
+# 2. Preserve the Already-Completed Close Contract
 
-Every Category created through:
+The current Phase 11.10 close behavior is now:
 
 ```http
-POST /api/v1/categories
+POST /api/v1/enquiries/{enquiry}/close
 ```
 
-is created as an:
-
-```text
-active direct child of the structural Furnitures Root
-```
-
-For CAT-011:
-
-```text
-parent_id
-= internal id of canonical Furnitures Root
-
-space_type
-= hybrid
-
-display_order
-= current highest display_order among direct children
-  of Furnitures Root + 1
-
-is_active
-= true
-```
-
-This rule applies only to CAT-011 V1 creation.
-
----
-
-# 4. Why This Rule Is Chosen
-
-The existing taxonomy defines:
-
-```text
-Furnitures Root
-→ level-1 storefront categories
-→ deeper grouping/category descendants
-```
-
-CAT-003 publicly lists:
-
-```text
-active direct children of Furnitures Root
-```
-
-Therefore placing CAT-011-created Categories at this level gives the otherwise hierarchy-free create endpoint a deterministic and useful meaning.
-
----
-
-# 5. `space_type = hybrid`
-
-This is now an explicit V1 decision.
-
-`SpaceType` remains CLOSED:
-
-```text
-home
-office
-hybrid
-```
-
-Because CAT-011 does not accept usage context, the server must not guess:
-
-```text
-home
-```
-
-or:
-
-```text
-office
-```
-
-from a Category name.
-
-Use:
-
-```text
-hybrid
-```
-
-as the neutral V1 server-controlled value for dynamically created root-level storefront Categories.
-
-Do not infer `space_type` from words such as:
-
-```text
-office
-bedroom
-living
-desk
-outdoor
-```
-
----
-
-# 6. Seeded Taxonomy Is Unchanged
-
-This reconciliation does NOT change existing seeded `space_type` assignments.
-
-The current seed remains authoritative:
-
-```text
-Furnitures Root = hybrid
-
-existing level-1 seeded categories
-= their explicitly documented space_type
-
-existing descendants
-= existing documented inheritance
-```
-
-Only new CAT-011-created Categories receive the new:
-
-```text
-space_type = hybrid
-```
-
-rule.
-
----
-
-# 7. No Retroactive Normalization
-
-Do not rewrite existing categories to `hybrid`.
-
-Do not alter CategorySeeder mappings.
-
-Do not alter the 76-category canonical taxonomy merely to align it with CAT-011 defaults.
-
----
-
-# 8. Parent Resolution
-
-Resolve the structural root using the canonical root identity already established by the repository.
-
-Expected canonical slug:
-
-```text
-furnitures-root
-```
-
-Do not use a hard-coded numeric database ID.
-
-Prefer a dedicated resolver/constant if one already exists.
-
----
-
-# 9. Root Missing
-
-If `Furnitures Root` does not exist:
-
-CAT-011 must fail safely.
-
-Do not create another root automatically.
-
-Do not create the new Category with:
-
-```text
-parent_id = null
-```
-
-A missing structural root is an application/reference-data integrity problem.
-
----
-
-# 10. Root Ambiguity
-
-There must be exactly one canonical structural root.
-
-The global unique slug already protects duplicate:
-
-```text
-furnitures-root
-```
-
-entries.
-
-Do not search by display name alone.
-
----
-
-# 11. `is_active = true`
-
-CAT-011-created Categories are active immediately.
-
-Reason:
-
-V1 has no Category activation endpoint.
-
-Creating them inactive would create Categories that CAT-011 can create but V1 cannot subsequently activate.
-
-Therefore:
-
-```text
-CAT-011 create
-→ active storefront Category
-```
-
-is the approved V1 behavior.
-
----
-
-# 12. Public Visibility Consequence
-
-Because the Category is:
-
-```text
-parent = Furnitures Root
-is_active = true
-```
-
-it becomes eligible for CAT-003 public navigation immediately after successful creation.
-
-This is intentional.
-
----
-
-# 13. `display_order`
-
-New CAT-011 Categories append after existing direct children.
-
-Compute:
-
-```text
-max(display_order for direct children of Furnitures Root) + 1
-```
-
-Do not accept `display_order` from the client.
-
----
-
-# 14. Empty Sibling Set
-
-If the root somehow has no children:
-
-start with the repository's canonical first ordering value.
-
-Inspect existing seed convention.
-
-Expected conceptually:
-
-```text
-0 or 1
-```
-
-depending on actual existing taxonomy convention.
-
-Use the established convention; do not mix indexing styles.
-
----
-
-# 15. Concurrency-Safe Append
-
-Two concurrent CAT-011 requests must not independently calculate the same append position through an unsafe read-before-write sequence.
-
-Serialize allocation by locking the canonical root row inside the create transaction before calculating:
-
-```text
-MAX(display_order)
-```
-
-for its children.
-
-Conceptually:
-
-```text
-BEGIN
-
-lock Furnitures Root FOR UPDATE
-
-maxOrder = children MAX(display_order)
-nextOrder = maxOrder + 1
-
-insert Category(
-    parent_id = root.id,
-    display_order = nextOrder,
-    space_type = hybrid,
-    is_active = true
-)
-
-COMMIT
-```
-
-Use repository transaction conventions.
-
----
-
-# 16. Sibling Ordering
-
-After concurrent successful creates:
-
-```text
-display_order
-```
-
-must remain deterministic.
-
-Do not depend on timestamp race ordering.
-
----
-
-# 17. Slug Collision Concurrency
-
-Global slug uniqueness remains independent.
-
-If two requests concurrently use the same slug:
-
-```text
-at most one succeeds
-```
-
-and the loser receives the canonical validation/conflict response.
-
-No SQL exception leakage.
-
----
-
-# 18. CAT-011 Is Not General Hierarchy Creation
-
-The approved endpoint semantics are specifically:
-
-```text
-Create a new top-level storefront Category beneath Furnitures Root.
-```
-
-It is NOT:
-
-```text
-create an arbitrary node anywhere in taxonomy
-```
-
-Do not extend it beyond that in V1.
-
----
-
-# 19. CAT-012 Remains Content-Only
-
-CAT-012 continues to accept only:
-
-```text
-name
-slug
-description
-image
-```
-
-It may NOT mutate:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-```
-
----
-
-# 20. No Reparenting Through CAT-012
-
-Reject:
+Request body:
 
 ```json
 {
-  "parent_id": "cat_..."
+  "staff_internal_notes": "Optional internal note"
 }
 ```
 
-with canonical unknown/server-controlled-field validation.
+`staff_internal_notes` is optional.
 
-Existing internal:
+No other request-body fields are accepted.
+
+Unknown fields must return canonical:
 
 ```text
-Category::changeParent()
+422 INVALID_VALUE
 ```
 
-remains domain infrastructure, not a V1 HTTP capability.
+Do NOT reintroduce:
+
+```text
+enquiry_status
+subject
+message
+name
+email
+phone
+category
+product_id
+order_id
+user_id
+attachment
+created_at
+updated_at
+```
+
+into the ENQ-006 request body.
+
+The route itself is the controlled action:
+
+```text
+POST .../close
+→ target status is server-controlled CLOSED
+```
+
+The client does not choose the target status.
 
 ---
 
-# 21. No Reordering Through CAT-012
+# 3. Resolve Reopen Policy Definitively
 
-Reject:
+This is a required closure decision.
+
+Older documentation contains ambiguous wording such as:
 
 ```text
-display_order
+optional reopen
+CLOSED → OPEN if approved
 ```
 
-No administrative drag-and-drop taxonomy ordering API is added in V1.
+The implemented API surface is currently:
+
+```text
+POST /api/v1/enquiries/{enquiry}/close
+```
+
+and the current strict request accepts only:
+
+```text
+staff_internal_notes
+```
+
+Therefore inspect the actual implementation and tests.
+
+Unless existing production code already contains a separately approved, callable, tested reopen operation:
+
+```text
+V1 Phase 11.10 policy =
+OPEN → CLOSED
+CLOSED remains CLOSED
+```
+
+Do NOT invent:
+
+```text
+POST /enquiries/{enquiry}/reopen
+PATCH /enquiries/{enquiry}
+{"enquiry_status":"OPEN"}
+```
+
+merely to satisfy stale wording.
+
+If no approved reopen runtime exists, explicitly reconcile docs to say:
+
+```text
+ENQ-006 is close-only in current V1.
+
+OPEN → CLOSED is the only state-changing transition.
+
+Repeated close against CLOSED is idempotent.
+
+No public/operational reopen action exists in V1.
+```
+
+Record the reconciliation in the ADR.
 
 ---
 
-# 22. No Activation Mutation
+# 4. OpenAPI — ENQ-006
 
-Reject:
+Update OpenAPI so ENQ-006 matches runtime exactly.
 
-```text
-is_active
-```
-
-CAT-011 creates active Categories.
-
-CAT-012 does not activate/deactivate Categories.
-
-If lifecycle controls are needed later, they require a dedicated contract decision.
-
----
-
-# 23. No Space-Type Mutation
-
-Reject:
+Canonical operation:
 
 ```text
-space_type
+POST /api/v1/enquiries/{enquiry}/close
 ```
 
-CAT-011 dynamically created Categories remain:
+Security:
 
 ```text
-hybrid
+authenticated
+OPERATIONAL
+enquiries.manage
 ```
 
-for V1.
-
-Changing their semantic usage classification requires a future explicit management contract.
-
----
-
-# 24. Existing Seeded Categories
-
-CAT-012 may update allowed content fields on an existing Category where the current resolver/authorization permits it.
-
-It must not alter the existing Category's:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-```
-
----
-
-# 25. Structural Root Protection
-
-The structural:
-
-```text
-Furnitures Root
-```
-
-is system/reference taxonomy infrastructure.
-
-CAT-011 never creates it.
-
-For CAT-012, inspect existing repository policy.
-
-If no frozen requirement permits editing the root:
-
-protect the structural root from ordinary CAT-012 mutation.
-
-Do not allow an accidental API request to rename the root slug and thereby break CAT-011 placement and CAT-003 navigation.
-
----
-
-# 26. Recommended Root Mutation Rule
-
-Adopt the following consistency rule unless an existing stronger rule already exists:
-
-```text
-Furnitures Root is system-owned and not mutable through CAT-012.
-```
-
-Attempted CAT-012 mutation of the canonical root should be rejected with the closest existing canonical authorization/business response.
-
-Do NOT add a new error code unless required.
-
-This protects the server-controlled structural anchor CAT-011 depends upon.
-
----
-
-# 27. Description/Image Persistence
-
-Keep the already completed persistence reconciliation.
-
-CAT-011/012 may write:
-
-```text
-description
-image
-```
-
-into the existing:
-
-```text
-categories.description
-categories.image_url
-```
-
-mapping.
-
-Do not add another migration for these fields.
-
----
-
-# 28. Image Semantics
-
-Input:
-
-```text
-image: URI string|null
-```
-
-Persistence:
-
-```text
-image_url
-```
-
-Response:
+Request body must represent:
 
 ```json
 {
-  "image": {
-    "url": "..."
-  }
+  "staff_internal_notes": "Optional internal note"
 }
 ```
 
-or:
+Requirements:
 
-```json
-{
-  "image": null
-}
+```text
+staff_internal_notes:
+optional
+nullable only if runtime permits null
+bounded exactly according to current implementation
+plain operational text
 ```
 
-according to frozen Category representation.
+Schema must use:
 
-No binary upload.
+```text
+additionalProperties: false
+```
 
-No remote fetch.
+Do NOT include:
 
-No SSRF.
+```text
+enquiry_status
+```
+
+as a client-controlled field.
+
+If no body is required when closing without notes, OpenAPI must allow:
+
+```text
+{}
+```
+
+or an omitted body, exactly matching runtime.
+
+Do not invent required fields.
 
 ---
 
-# 29. CAT-011 Implementation
+# 5. ENQ-006 OpenAPI Errors
 
-Now implement:
+Ensure OpenAPI documents the real existing error surface.
 
-```http
-POST /api/v1/categories
-```
-
-Authorization:
+At minimum verify correct use of:
 
 ```text
-products.manage
+401 AUTHENTICATION_REQUIRED
+403 FORBIDDEN
+404 ENQUIRY_NOT_FOUND / RESOURCE_NOT_FOUND
+422 INVALID_VALUE / schema validation
 ```
 
-Actors:
+If the implementation can produce a state conflict, document the existing canonical:
 
 ```text
-STAFF
-ADMIN
+409
 ```
 
-subject to permission.
+only if runtime actually does so.
 
-Response:
+Do not add error codes merely for documentation completeness.
 
-```text
-201 Created
-```
+Use only the CLOSED existing error registry.
 
 ---
 
-# 30. CAT-011 Request Allow-List
-
-Exactly:
-
-```text
-name
-slug
-description
-image
-```
-
-Required:
-
-```text
-name
-slug
-```
-
-Optional nullable:
-
-```text
-description
-image
-```
-
----
-
-# 31. CAT-011 Server-Derived Fields
-
-Always derive:
-
-```text
-parent_id
-space_type
-display_order
-is_active
-```
-
-from the approved placement rule.
-
-Client cannot override them.
-
----
-
-# 32. CAT-012 Implementation
-
-Implement:
-
-```http
-PATCH /api/v1/categories/{category}
-```
-
-Authorization:
-
-```text
-products.manage
-```
-
-Allowed fields:
-
-```text
-name
-slug
-description
-image
-```
-
-No other mutation.
-
----
-
-# 33. Canonical Category Slug
-
-Continue using the established domain invariant:
-
-```text
-^[a-z0-9]+(?:-[a-z0-9]+)*$
-```
-
-Do not weaken it to the broader current OpenAPI regex.
-
----
-
-# 34. OpenAPI Slug Consistency Correction
-
-The OpenAPI regex:
-
-```text
-^[a-z0-9-]+$
-```
-
-permits values the established domain rejects.
-
-Correct it to the canonical kebab-case rule:
-
-```text
-^[a-z0-9]+(?:-[a-z0-9]+)*$
-```
-
-for Category create/update schemas if necessary.
-
-Classify this explicitly as:
-
-```text
-frozen-contract consistency correction
-```
-
-because it documents an already-established server invariant rather than introducing new runtime behavior.
-
----
-
-# 35. Do Not Change Product Slug Contract Accidentally
-
-If Product and Category schemas use different named regex definitions:
-
-change only Category validation documentation unless Product already has the same established stronger invariant.
-
-Do not broaden this correction unnecessarily.
-
----
-
-# 36. Authorization Tests
+# 6. OpenAPI — ENQ-004
 
 Verify:
 
 ```text
-anonymous → 401
-CUSTOMER → 403
-STAFF missing products.manage → 403
-STAFF products.manage → allowed
-ADMIN missing permission → denied
-ADMIN products.manage → allowed
+GET /api/v1/enquiries
 ```
 
----
+against actual runtime.
 
-# 37. CAT-011 Placement Tests
-
-Mandatory assertions:
+Authorization:
 
 ```text
-parent = Furnitures Root
-space_type = hybrid
-is_active = true
-display_order = previous max + 1
+enquiries.view
 ```
 
----
+Check the exact supported query allow-list.
 
-# 38. Public Visibility Test
-
-After CAT-011:
+Expected current operational query surface should be reconciled against runtime and docs, including where implemented:
 
 ```text
-GET /api/v1/categories
+search
+enquiry_status
+category
+product_id
+order_id
+created_from
+created_to
+page
+per_page
 ```
 
-must include the new Category according to CAT-003 pagination/navigation semantics.
-
----
-
-# 39. Public Detail Test
-
-After CAT-011:
+If runtime already supports approved:
 
 ```text
-GET /api/v1/categories/{new-slug}
+sort
+sort_direction
 ```
 
-must return the new active Category.
+document/test them.
 
----
-
-# 40. Concurrent Append Test
-
-Add a MariaDB concurrency test if necessary to prove:
+If it does not:
 
 ```text
-two simultaneous CAT-011 creates
-→ both valid unique categories survive
-→ distinct deterministic display_order positions
-→ same parent
-→ hierarchy remains valid
+do not add them merely because stale documentation mentions them
 ```
 
-Reuse the established:
+Runtime and approved implementation should win over stale prose.
+
+Unknown query fields must return canonical 422 behavior.
+
+---
+
+# 7. OpenAPI — ENQ-005
+
+Verify:
 
 ```text
-RunsConcurrentWorkers
-UsesDisposableMysqlDatabase
+GET /api/v1/enquiries/{enquiry}
 ```
 
-infrastructure where appropriate.
-
----
-
-# 41. Concurrent Duplicate Slug
-
-Also protect:
+documents:
 
 ```text
-two simultaneous CAT-011 requests
-same slug
-→ one success maximum
+authentication
+enquiries.view
+opaque enq_... identifier
+operational Enquiry representation
+401
+403
+404
+private/no-store response
 ```
 
-The unique DB constraint remains final authority.
+Do not expose internal database keys.
 
 ---
 
-# 42. Hierarchy Regression
+# 8. OpenAPI — ENQ-007 Regression
 
-Existing:
+Verify the already-established attachment contract remains:
 
 ```text
-no-cycle
-concurrent reparent
-taxonomy structure
+POST /api/v1/enquiries/{enquiry}/attachments
+Content-Type: multipart/form-data
+
+field:
+attachment
 ```
 
-tests must remain green.
-
-CAT-011 itself does not invoke general reparenting.
-
----
-
-# 43. Recommendation Regression
-
-CAT-011/CAT-012 must not modify:
+Do not allow OpenAPI to drift back to:
 
 ```text
-category_recommendations
+file
+upload
+document
 ```
 
-Existing recommendation tests remain green.
-
----
-
-# 44. Seed Regression
-
-Existing CategorySeeder must remain deterministic.
-
-CAT-011 behavior must not alter seeding rules.
-
----
-
-# 45. No Category Delete
-
-Do not add:
-
-```http
-DELETE /api/v1/categories/{category}
-```
-
----
-
-# 46. No New Category Read Surface
-
-Do not add:
+The canonical field is:
 
 ```text
-/admin/categories
-/staff/categories
+attachment
 ```
 
+This is a regression check, not an attachment redesign.
+
 ---
 
-# 47. No Hierarchy Management Surface
+# 9. Operational Filter Test Expansion
 
-Do not add:
+Add focused permanent ENQ-004 coverage for all **actually supported frozen filters**.
+
+At minimum, where implemented, prove:
 
 ```text
-reparent
-move
-reorder
-activate
-deactivate
+search by name
+search by email
+search by phone
+search by subject
+search by message
+search by enquiry reference
+
+enquiry_status = OPEN
+enquiry_status = CLOSED
+
+category
+
+product_id
+
+order_id
+
+created_from
+
+created_to
 ```
 
-endpoints.
-
----
-
-# 48. No Recommendation Management Surface
-
-Do not add recommendation mutation APIs.
-
----
-
-# 49. Audit
-
-If existing closed audit vocabulary does not contain Category mutation actions:
-
-do not invent them here.
-
-Record the same catalog-audit gap for later reconciliation.
-
-Do not touch the ADM-007 / `audit.view` Phase 11.13 issue.
-
----
-
-# 50. Documentation
-
-Update:
+Also test meaningful combinations, for example:
 
 ```text
-phases/group-K-phases.md
-docs/decisions.md
+OPEN + category
+product_id + date range
+search + CLOSED
 ```
 
-with this exact placement decision.
-
-The ADR must record that this was a post-freeze consistency resolution required because CAT-011's external schema intentionally contains no hierarchy fields.
+Do not test undocumented aliases.
 
 ---
 
-# 51. ADR Decision
+# 10. Search by Order Reference
 
-Record conceptually:
+If the existing operational search contract supports Order reference, add a regression proving:
 
 ```text
-CAT-011 Server-Controlled Category Placement
+search=<order_reference>
 ```
 
-with:
+finds only Enquiries associated with that Order.
+
+The search must not expose arbitrary Order information.
+
+Only Enquiries matching the authorized operational dataset should be returned.
+
+---
+
+# 11. Filter Pagination Correctness
+
+Filtering must happen before pagination.
+
+Create enough Enquiries to prove:
 
 ```text
-parent = Furnitures Root
-space_type = hybrid
-display_order = append
-is_active = true
+filter
+→ authorized matching dataset
+→ deterministic order
+→ paginate
+```
+
+not:
+
+```text
+paginate everything
+→ filter current page
+```
+
+Verify:
+
+```text
+total
+last_page
+has_next
+has_previous
+```
+
+reflect the filtered result set.
+
+---
+
+# 12. Deterministic Ordering
+
+Confirm ENQ-004 default ordering remains:
+
+```text
+created_at DESC
+id ASC
+```
+
+or the existing equivalent.
+
+Add a tie-condition regression where practical.
+
+Do not rely on natural DB order.
+
+---
+
+# 13. Strict Query Validation
+
+Explicitly reject unknown query parameters.
+
+Cover examples such as:
+
+```text
+status
+customer_id
+assigned_to
+priority
+pageSize
+sortBy
+is_closed
+```
+
+Expected:
+
+```text
+422
+canonical INVALID_VALUE-style error
+```
+
+according to existing API conventions.
+
+Do not silently ignore them.
+
+---
+
+# 14. Filter Enum Validation
+
+Verify:
+
+```text
+enquiry_status
+```
+
+accepts only:
+
+```text
+OPEN
+CLOSED
 ```
 
 and:
 
 ```text
-CAT-012 remains content-only
+category
+```
+
+accepts only the currently CLOSED values:
+
+```text
+GENERAL
+PRODUCT
+DELIVERY
+OTHER
+```
+
+Unknown values:
+
+```text
+422
+```
+
+No lowercase aliases unless existing runtime explicitly normalizes them.
+
+---
+
+# 15. Filter Identifier Validation
+
+Verify malformed:
+
+```text
+product_id
+order_id
+```
+
+are rejected through the existing opaque identifier validation.
+
+Do not allow raw numeric IDs.
+
+Do not allow Variant IDs as Product IDs.
+
+Do not leak resource existence unnecessarily.
+
+---
+
+# 16. Date Validation
+
+Verify strict behavior for:
+
+```text
+created_from
+created_to
+```
+
+including:
+
+```text
+valid ISO8601 UTC
+invalid format
+created_from > created_to
+```
+
+Use current canonical validation errors.
+
+Do not silently swap the interval.
+
+---
+
+# 17. Expanded ENQ-004 Authorization Tests
+
+Permanent coverage must prove:
+
+```text
+Anonymous
+GET /api/v1/enquiries
+→ 401
+
+Customer
+→ 403
+
+Staff with enquiries.view
+→ 200
+
+Admin with enquiries.view
+→ 200
+
+authenticated Staff without enquiries.view
+→ 403
+```
+
+Use actual PermissionCatalog behavior.
+
+Do not hard-code roles in the controller.
+
+---
+
+# 18. Expanded ENQ-005 Authorization Tests
+
+Prove:
+
+```text
+Anonymous
+→ 401
+
+Customer
+→ 403
+
+Staff with enquiries.view
+→ 200
+
+Admin with enquiries.view
+→ 200
+
+Staff without enquiries.view
+→ 403
+
+unknown Enquiry
+→ canonical 404
+
+malformed opaque identifier
+→ canonical behavior
 ```
 
 ---
 
-# 52. Compatibility Classification
+# 19. Expanded ENQ-006 Authorization Tests
 
-Classify this as:
-
-```text
-frozen V1 implementation/consistency reconciliation
-```
-
-not a new external capability.
-
-Why:
+Prove:
 
 ```text
-request schema unchanged
-response schema unchanged
-endpoint unchanged
-authorization unchanged
+Anonymous
+→ 401
+
+Customer
+→ 403
+
+Staff with enquiries.view only
+→ 403
+
+Staff with enquiries.manage
+→ allowed
+
+Admin with enquiries.manage
+→ allowed
 ```
 
-Only previously-unspecified server-controlled persistence semantics are now defined.
+If the permission model assigns view alongside manage by default, construct a permission-specific regression where practical so the controller/service itself does not rely merely on role identity.
 
 ---
 
-# 53. OpenAPI Changes
+# 20. No Admin Bypass
 
-Allowed only for the Category slug-regex consistency correction.
+Verify ENQ-004/005/006 use central authorization.
 
-Expected otherwise:
+Do not introduce:
+
+```php
+if ($user->hasRole('ADMIN')) {
+    return true;
+}
+```
+
+as a blanket bypass.
+
+Admin authority remains explicit through:
 
 ```text
-request/response shapes unchanged
+PermissionCatalog
+Authorization
+enquiries.view
+enquiries.manage
 ```
 
 ---
 
-# 54. Schema Changes
+# 21. No-Commerce-Side-Effect Regression
 
-Expected for the continuation:
+Add an explicit regression for ENQ-006.
+
+Before closing an Enquiry, record counts/current state for relevant commerce/domain resources.
+
+After:
 
 ```text
-NONE
+POST /api/v1/enquiries/{enquiry}/close
 ```
 
-The existing description/image migration already solved persistence.
+assert no unintended creation/mutation of:
+
+```text
+FurnitureRequest
+
+Order
+OrderItem
+
+Payment
+
+Delivery
+
+ProductStock
+reserved_quantity
+
+order-item inventory allocations
+
+Cart
+
+quote/quoted_price state
+```
+
+where these models/tables exist.
+
+At minimum prove that closing an Enquiry:
+
+```text
+does not create Request
+does not create Order
+does not create Payment
+does not reserve inventory
+does not alter ProductStock
+```
+
+Use narrow assertions consistent with current schema.
 
 ---
 
-# 55. Dependencies
+# 22. Order Association Is Read-Only
+
+For an Enquiry linked to an Order:
+
+1. snapshot relevant Order state;
+2. close the Enquiry;
+3. prove Order state remains unchanged.
+
+Do not modify:
+
+```text
+order status
+delivery fee
+payment status
+tracking
+totals
+```
+
+through ENQ-006.
+
+---
+
+# 23. Product Association Is Read-Only
+
+For an Enquiry linked to a Product:
+
+1. snapshot Product state;
+2. close Enquiry;
+3. prove Product remains unchanged.
+
+Do not modify:
+
+```text
+product type
+active state
+published state
+price
+variant
+inventory
+```
+
+---
+
+# 24. Request/Enquiry Separation Regression
+
+Create:
+
+```text
+one Furniture Request
+one General Enquiry
+```
+
+Operate on the Enquiry.
+
+Assert the Furniture Request remains unchanged.
+
+No automatic linking/conversion.
+
+No shared status mutation.
+
+No cross-resource notes.
+
+---
+
+# 25. Immutable Intake Regression
+
+The first enforcement slice already added some tests.
+
+Complete the matrix so ENQ-006 rejects all immutable intake fields.
+
+At minimum cover:
+
+```text
+name
+email
+phone
+subject
+message
+category
+product_id
+order_id
+user_id
+enquiry_status
+attachment
+created_at
+updated_at
+```
 
 Expected:
 
 ```text
-NONE
+422
 ```
+
+and verify persisted Enquiry intake is unchanged.
 
 ---
 
-# 56. Frontend
+# 26. Internal Note Privacy Regression
 
-Expected:
+Create authenticated Customer Enquiry.
+
+Close it as Staff/Admin with:
 
 ```text
-NONE
+staff_internal_notes
 ```
 
----
-
-# 57. Verification
-
-Run:
-
-```bash
-php artisan test
-vendor/bin/phpstan analyse
-vendor/bin/pint --test
-composer audit
-git diff --check
-php artisan route:list --path=api --except-vendor
-```
-
-Run the OpenAPI tests/parser.
-
-Run relevant focused suites:
+Then retrieve it through:
 
 ```text
-Category create
-Category update
-Category public reads
-Category hierarchy
-Category concurrent hierarchy
-Category recommendations
-Category seed
-Catalog/Product category filtering
-RBAC/authorization
+GET /api/v1/me/enquiries
+GET /api/v1/me/enquiries/{enquiry}
 ```
+
+Assert:
+
+```text
+staff_internal_notes
+```
+
+does NOT appear.
+
+Also prove anonymous creation response never exposes it.
 
 ---
 
-# 58. MariaDB Verification
+# 27. Operational Note Visibility
 
-Use:
+Retrieve the same Enquiry through:
+
+```text
+ENQ-005
+```
+
+with an authorized operational actor.
+
+Verify:
+
+```text
+staff_internal_notes
+```
+
+is present according to the approved Staff resource.
+
+This proves actor-specific serialization rather than globally hiding/removing the field.
+
+---
+
+# 28. Contact Snapshot Regression
+
+For authenticated Customer:
+
+1. create Enquiry;
+2. alter Customer profile name/phone where existing self-service permits;
+3. retrieve operational Enquiry;
+4. verify stored Enquiry contact remains the historical snapshot.
+
+Do not substitute current User profile values dynamically.
+
+---
+
+# 29. Historical Product Visibility Regression
+
+Where supported by existing test fixtures:
+
+1. create Product-linked Enquiry;
+2. later make Product inactive/unpublished/soft-deleted;
+3. retrieve operational Enquiry.
+
+The Enquiry must remain visible.
+
+Do not re-run public Product eligibility during ENQ-004/005.
+
+Preserve safe historical Product context according to current implementation.
+
+---
+
+# 30. Historical Order Association Regression
+
+Where existing schema/test helpers permit:
+
+1. create valid Customer-owned Order association;
+2. create linked Enquiry;
+3. later change the Order workflow state;
+4. ensure Enquiry remains retrievable operationally.
+
+The Enquiry association does not disappear because Order state changed.
+
+Do not add transactional Order behavior.
+
+---
+
+# 31. MariaDB Concurrency — Mandatory Closure Gate
+
+Run the existing:
+
+```text
+EnquiryStatusConcurrencyMysqlTest
+```
+
+against:
 
 ```text
 furnitureapp_test_disposable
 ```
 
-for any real concurrency proof.
+Use only the existing guarded disposable database workflow.
 
-Production database must remain untouched.
+Do not use SQLite as concurrency proof.
 
----
-
-# 59. Completion Report — Placement
-
-Report explicitly:
+Do not run against:
 
 ```text
-parent_id:
-Furnitures Root
-
-space_type:
-hybrid
-
-display_order:
-append after highest direct child
-
-is_active:
-true
+furnitureapp
+production
+staging
 ```
 
 ---
 
-# 60. Completion Report — CAT-011
+# 32. Concurrent Close Requirements
 
-Report:
+The MariaDB test must exercise the actual audited ENQ-006 business path.
+
+Use true concurrent workers as already established by Group J.
+
+Expected under repeated simultaneous close:
 
 ```text
-route:
-status:
-authorization:
-request fields:
-server-derived fields:
-public visibility:
+initial:
+OPEN
+
+worker A:
+close
+
+worker B:
+close
+```
+
+Final:
+
+```text
+CLOSED
+```
+
+Exactly:
+
+```text
+one real OPEN → CLOSED transition
+```
+
+must occur.
+
+No stale update.
+
+No duplicate business transition.
+
+---
+
+# 33. Concurrent Close Audit Requirement
+
+Under the same race:
+
+```text
+exactly one ENQUIRY_STATUS_CHANGED
+```
+
+or the current canonical equivalent must represent the real:
+
+```text
+OPEN → CLOSED
+```
+
+transition.
+
+The idempotent concurrent loser/replay must not create a second real transition audit.
+
+Use DB assertions, not logs alone.
+
+---
+
+# 34. Concurrent Internal Note Behavior
+
+Because ENQ-006 now permits optional:
+
+```text
+staff_internal_notes
+```
+
+inspect current transaction semantics.
+
+Do not invent a note-merge algorithm.
+
+At minimum ensure:
+
+```text
+concurrent close never violates status correctness
+```
+
+and the final note value follows deterministic/current transaction behavior.
+
+If both workers submit notes, document actual last-lock-holder/transaction behavior if relevant.
+
+The closure gate is primarily:
+
+```text
+status correctness
+audit correctness
+atomic note+status persistence
+```
+
+not collaborative note merging.
+
+---
+
+# 35. Audit Rollback Regression
+
+If not already permanently covered:
+
+force AuditRecorder failure using the established test approach.
+
+Then call ENQ-006.
+
+Assert:
+
+```text
+status remains OPEN
+staff_internal_notes unchanged
+```
+
+The close must not commit without its mandatory audit.
+
+Do not weaken audit atomicity.
+
+---
+
+# 36. Same-State Replay Audit Regression
+
+For a CLOSED Enquiry:
+
+call:
+
+```text
+POST /enquiries/{enquiry}/close
+```
+
+again.
+
+Prove:
+
+```text
+no second real status-transition audit
+```
+
+If notes are supplied on the replay, preserve whatever currently approved semantics exist for note changes, but do not fabricate a second:
+
+```text
+OPEN → CLOSED
+```
+
+event.
+
+---
+
+# 37. Private Cache Headers
+
+Verify:
+
+```text
+ENQ-004
+ENQ-005
+ENQ-006 response
+```
+
+use the existing private semantics.
+
+Expected:
+
+```http
+Cache-Control: private, no-store
+Vary: Authorization
+```
+
+plus Cookie where the middleware convention requires it.
+
+Enquiry PII must never be public cached.
+
+---
+
+# 38. Attachment Regression
+
+Do not redesign attachment handling.
+
+Only ensure Phase 11.10 does not regress:
+
+```text
+0 or 1 attachment
+private parent-scoped storage
+safe metadata only
+X-Upload-Token behavior
+attachment multipart field
+```
+
+Operational resources must not expose:
+
+```text
+storage_disk
+storage_key
+capability HMAC/digest
+raw X-Upload-Token
+filesystem path
 ```
 
 ---
 
-# 61. Completion Report — CAT-012
+# 39. No New Routes
 
-Report:
+After changes, verify canonical Enquiry route surface remains unchanged.
+
+Allowed relevant routes:
 
 ```text
-route:
-status:
-authorization:
-mutable fields:
-server-controlled fields:
-root protection:
+POST /api/v1/enquiries
+GET  /api/v1/me/enquiries
+GET  /api/v1/me/enquiries/{enquiry}
+
+GET  /api/v1/enquiries
+GET  /api/v1/enquiries/{enquiry}
+POST /api/v1/enquiries/{enquiry}/close
+
+POST /api/v1/enquiries/{enquiry}/attachments
+```
+
+Do not add:
+
+```text
+/admin/enquiries
+/staff/enquiries
+/enquiries/{enquiry}/reopen
+PATCH /enquiries/{enquiry}
+DELETE /enquiries/{enquiry}
+```
+
+unless such route already existed as a frozen approved contract—which must be proven before keeping it.
+
+---
+
+# 40. Docs Reconciliation — Reopen
+
+Search:
+
+```text
+reopen
+CLOSED→OPEN
+optional reopen
+```
+
+in:
+
+```text
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/domain/business-rules.md
+docs/api/openapi.yaml
+docs/decisions.md
+```
+
+If actual V1 runtime is close-only, update stale wording consistently.
+
+Preferred final documentation:
+
+```text
+EnquiryStatus:
+OPEN | CLOSED
+
+ENQ-006:
+POST /enquiries/{enquiry}/close
+
+OPEN → CLOSED
+
+Repeated close is idempotent.
+
+CLOSED is terminal through the current V1 API.
+
+No reopen operation is exposed.
+```
+
+Do not alter historical ADR text where doing so would falsify history; add a superseding reconciliation where appropriate.
+
+---
+
+# 41. Docs Reconciliation — ENQ-006 Request Shape
+
+Document clearly:
+
+```text
+ENQ-006 body allow-list:
+staff_internal_notes only
+```
+
+No:
+
+```text
+enquiry_status
+```
+
+client input.
+
+Explain:
+
+```text
+the action route determines CLOSED status server-side
+```
+
+This prevents future generic-status mutation drift.
+
+---
+
+# 42. Docs Reconciliation — Filter Surface
+
+Ensure all authoritative docs agree on the actual ENQ-004 filter allow-list.
+
+Remove stale filters only if runtime/approved contract establishes they are not part of current V1.
+
+Do not casually delete frozen functionality.
+
+Reconcile based on:
+
+```text
+runtime
+existing tests
+accepted ADRs
+OpenAPI
+```
+
+and document any true consistency correction.
+
+---
+
+# 43. Phase ADR
+
+Add the next repository-consistent ADR, likely following:
+
+```text
+ADR/BACKEND-052
+```
+
+with the next valid identifier.
+
+Suggested subject:
+
+```text
+Phase 11.10 Enquiry Management Closure
+```
+
+Record:
+
+```text
+Group K reuses Group J ENQ-004/005/006.
+
+ENQ-006 is an explicit close action, not generic status mutation.
+
+staff_internal_notes is the only optional client field for close.
+
+Original Enquiry intake remains immutable.
+
+Request and Enquiry remain separate domains.
+
+No Order/Payment/Inventory/Quote side effects.
+
+Operational reads remain private.
+
+MariaDB concurrent close proves exactly one real transition/audit.
+
+No Admin/Staff alias routes were added.
+
+Actual reopen policy is explicitly reconciled.
 ```
 
 ---
 
-# 62. Completion Report — Contract
+# 44. Phase Documentation
 
-Report:
+Update:
 
 ```text
-Category request shape changed: NO
-Category response shape changed: NO
-Hierarchy fields exposed to client: NO
+phases/group-K-phases.md
 ```
 
-and any Category-slug OpenAPI regex correction separately.
+with actual evidence.
+
+Do not mark PASS before all gates below pass.
+
+Record focused and full test counts.
+
+Record MariaDB evidence separately from SQLite/PHPUnit.
 
 ---
 
-# 63. Completion Report — Non-Goals
+# 45. Expected Production-Code Scope
 
-Confirm:
+This closure slice should mostly be:
 
 ```text
-Category DELETE: NONE
-Hierarchy management endpoints: NONE
-Recommendation management endpoints: NONE
-Admin Category read aliases: NONE
+tests
+OpenAPI
+documentation
+possibly small query/auth defect fixes
+```
+
+Large new production code is a warning sign.
+
+Do not refactor working Group J Enquiry architecture unnecessarily.
+
+---
+
+# 46. Schema and Dependency Gate
+
+Expected:
+
+```text
+schema changes = NONE
+dependency changes = NONE
+```
+
+Do not add migrations.
+
+Do not add Composer packages.
+
+If either appears necessary:
+
+```text
+STOP that expansion
+report the actual blocker
+```
+
+rather than inventing new infrastructure.
+
+---
+
+# 47. Focused Verification
+
+Run all focused Enquiry/Group J suites relevant to:
+
+```text
+ENQ-001 creation
+ENQ-002/003 ownership
+ENQ-004 operational list/filter/search
+ENQ-005 detail
+ENQ-006 close
+ENQ-007 attachments
+privacy
+authorization
+audit
+OpenAPI
+```
+
+Record:
+
+```text
+tests passed
+assertions
 ```
 
 ---
 
-# 64. Phase 11.4 Final State
+# 48. MariaDB Verification
 
-If all verification passes:
+Run:
 
 ```text
-Phase 11.4 PASS
-Phase 11.5 — Image management READY
+EnquiryStatusConcurrencyMysqlTest
+```
+
+against:
+
+```text
+furnitureapp_test_disposable
+```
+
+Record:
+
+```text
+tests
+iterations
+assertions
+DB engine evidence if current test reports it
+```
+
+Do not claim MariaDB PASS if the test was skipped.
+
+---
+
+# 49. Full Verification
+
+Run canonical repository commands:
+
+```bash
+cd backend/laravel
+
+php artisan test
+./vendor/bin/phpstan analyse
+./vendor/bin/pint --test
+composer audit
+php artisan route:list
+git diff --check
+```
+
+All must pass.
+
+If OpenAPI has a dedicated contract suite, run it explicitly.
+
+---
+
+# 50. Git Workflow
+
+After all closure gates pass:
+
+1. locate/read root `git-workflow-and-versioning`;
+2. inspect status;
+3. preserve unrelated owner changes;
+4. stage only Phase 11.10 files;
+5. follow the skill's commit-message/versioning requirements;
+6. commit;
+7. push only if the skill allows/requires it.
+
+Do not invent Git conventions outside the skill.
+
+Do not bypass any verification required by the skill.
+
+---
+
+# 51. Completion Report
+
+Return this exact information:
+
+```text
+Phase 11.10 status:
+PASS / BLOCKED
+
+Existing Group J implementation reused:
+YES / NO
+
+First enforcement slice preserved:
+PASS / FAIL
+
+ENQ-004:
+PASS / BLOCKED
+
+ENQ-005:
+PASS / BLOCKED
+
+ENQ-006:
+PASS / BLOCKED
+
+Canonical routes only:
+PASS / FAIL
+
+Admin/Staff Enquiry aliases added:
+NO
+
+Reopen policy:
+<CLOSED terminal / existing approved reopen>
+
+Reopen route added:
+NO
+
+ENQ-006 client-controlled enquiry_status:
+NO
+
+ENQ-006 allowed body:
+staff_internal_notes only
+
+Unknown close fields rejected:
+PASS / FAIL
+
+Immutable intake:
+PASS / FAIL
+
+Atomic close + internal note:
+PASS / FAIL
+
+enquiries.view:
+PASS / FAIL
+
+enquiries.manage:
+PASS / FAIL
+
+Customer operational access:
+REJECTED / FAIL
+
+Anonymous operational read:
+REJECTED / FAIL
+
+Customer internal-note exposure:
+NO / FAIL
+
+Operational internal-note visibility:
+PASS / FAIL
+
+ENQ-004 filters:
+PASS / FAIL
+
+Strict unknown-query rejection:
+PASS / FAIL
+
+Pagination:
+PASS / FAIL
+
+Deterministic ordering:
+PASS / FAIL
+
+Contact snapshot preservation:
+PASS / FAIL
+
+Request/Enquiry separation:
+PASS / FAIL
+
+Order side effects:
+NONE / FAIL
+
+Payment side effects:
+NONE / FAIL
+
+Inventory side effects:
+NONE / FAIL
+
+Request side effects:
+NONE / FAIL
+
+Quote behavior:
+NONE
+
+Attachment privacy:
+PASS / FAIL
+
+Private/no-store:
+PASS / FAIL
+
+Audit atomicity:
+PASS / FAIL
+
+Repeated close audit idempotency:
+PASS / FAIL
+
+MariaDB concurrent close:
+PASS / FAIL
+
+Exactly one real OPEN→CLOSED transition:
+PASS / FAIL
+
+Exactly one real transition audit:
+PASS / FAIL
+
+OpenAPI:
+PASS / FAIL
+
+Docs reconciliation:
+PASS / FAIL
+
+Schema changes:
+NONE / <explain>
+
+Dependency changes:
+NONE / <explain>
+
+Focused tests:
+<x> passed, <assertions>
+
+MariaDB tests:
+<x> passed, <assertions>
+
+Full PHPUnit:
+<x> passed, <y> skipped
+
+PHPStan:
+PASS / FAIL
+
+Pint:
+PASS / FAIL
+
+Composer audit:
+PASS / FAIL
+
+Route surface:
+PASS / FAIL
+
+git diff --check:
+PASS / FAIL
+
+Git workflow skill read:
+YES / NO
+
+Git operations performed:
+<exact actions>
+
+Commit:
+<hash + message>
+
+Push:
+<result or NONE according to skill>
+
+Phase 11.13:
+READY / BLOCKED
+```
+
+Also list:
+
+```text
+files changed
+tests added/changed
+genuine defects fixed
+documentation reconciliations
+security findings
 ```
 
 ---
 
-# 65. Definition of Done
+# 52. Final Closure Gate
 
-Phase 11.4 is complete when:
+Phase 11.10 may be declared **PASS** only when all of the following are true:
 
-- existing description/image persistence reconciliation remains green;
-- CAT-011 is active;
-- CAT-012 is active;
-- CAT-011 creates a direct child of Furnitures Root;
-- new CAT-011 Category uses `space_type=hybrid`;
-- new CAT-011 Category is active;
-- new CAT-011 Category appends deterministically after current root children;
-- concurrent creates cannot corrupt sibling ordering;
-- client cannot override hierarchy fields;
-- CAT-012 changes content only;
-- CAT-012 cannot reparent;
-- CAT-012 cannot reorder;
-- CAT-012 cannot activate/deactivate;
-- CAT-012 cannot change space type;
-- structural root cannot be accidentally corrupted through ordinary Category management;
-- canonical Category slug validation remains enforced;
-- public CAT-003 reflects successful new Category;
-- public CAT-004 reflects successful create/update;
-- Product category filtering remains functional;
-- existing hierarchy remains acyclic;
-- recommendation graph remains unchanged;
-- CategorySeeder remains deterministic;
-- no Category DELETE endpoint is added;
-- no hierarchy management endpoint is added;
-- no recommendation management endpoint is added;
-- full suite is green.
+- ENQ-004/005/006 remain canonical;
+- no Admin/Staff aliases were added;
+- ENQ-006 is strict and only accepts optional `staff_internal_notes`;
+- target `CLOSED` status is server-controlled;
+- Customer intake remains immutable;
+- Customer responses never expose internal notes;
+- operational filters/search are fully regression-tested;
+- `enquiries.view` and `enquiries.manage` remain distinct;
+- Enquiry remains separate from Furniture Request;
+- closing an Enquiry creates no Order, Payment, inventory reservation, Request, Delivery, or quote;
+- attachment privacy remains intact;
+- actual reopen policy is explicitly resolved;
+- OpenAPI matches runtime;
+- authoritative docs agree with runtime;
+- MariaDB concurrent-close verification passes;
+- concurrent closes create exactly one real `OPEN → CLOSED` transition;
+- exactly one real transition audit is committed;
+- full PHPUnit passes;
+- PHPStan passes;
+- Pint passes;
+- Composer audit passes;
+- route surface passes;
+- `git diff --check` passes;
+- Phase documentation/ADR is complete;
+- Git operations follow `git-workflow-and-versioning`.
 
----
-
-# 66. STOP Condition
-
-STOP only when the agent can report:
+Only then report:
 
 ```text
-Phase 11.4 PASS
+Phase 11.10 — PASS
 
-CAT-011 ACTIVE
-CAT-012 ACTIVE
+Phase 11.7 — DEFERRED
+Phase 11.11 — DEFERRED
+Phase 11.12 — DEFERRED
 
-CAT-011 placement:
-parent = Furnitures Root
-space_type = hybrid
-display_order = append
-is_active = true
-
-No external hierarchy fields added.
-No Category DELETE added.
-No recommendation/hierarchy management API added.
-
-Phase 11.5 — Image management READY
+Phase 11.13 — READY
 ```
 
-Do not begin Phase 11.5 automatically.
+Do not begin Phase 11.13 automatically.
 
-DO NOT COMMIT, STAGE OR PUSH.
-
-The project owner handles all Git operations.
+**Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
