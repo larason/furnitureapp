@@ -2,7 +2,22 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Exceptions\Api\ApiException;
+use App\Http\Requests\ListAuditLogsRequest;
+use App\Http\Requests\ListCustomersRequest;
+use App\Http\Resources\AdministrativeCustomerResource;
+use App\Http\Resources\AuditLogResource;
+use App\Models\User;
+use App\Services\AuditLogs\ListAuditLogs;
+use App\Services\AuditRecorder;
+use App\Support\ApiErrorCode;
+use App\Support\AuditAction;
+use App\Support\AuditResourceType;
+use App\Support\RoleName;
+use App\Support\UserIdentifier;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class AdminController extends V1Controller
 {
@@ -36,18 +51,94 @@ class AdminController extends V1Controller
         return $this->notImplemented();
     }
 
-    public function userIndex(): JsonResponse
+    public function userIndex(ListCustomersRequest $request, AuditRecorder $audit): JsonResponse
     {
-        return $this->notImplemented();
+        $pagination = $request->pagination();
+        $paginator = $this->customers()
+            ->orderByDesc('users.created_at')
+            ->orderBy('users.id')
+            ->paginate($pagination['per_page'], ['*'], 'page', $pagination['page']);
+
+        $audit->record(
+            $request->user(),
+            AuditAction::CUSTOMER_LIST_VIEWED,
+            AuditResourceType::USER,
+            'customer_collection',
+            null,
+            ['result' => 'SUCCESS', 'returned_count' => $paginator->count()],
+            $request->attributes->get('request_id'),
+        );
+
+        $lastPage = max(1, $paginator->lastPage());
+        $currentPage = min($paginator->currentPage(), $lastPage);
+
+        return response()->json([
+            'data' => AdministrativeCustomerResource::collection($paginator->getCollection())->resolve(),
+            'meta' => ['pagination' => [
+                'current_page' => $currentPage,
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $lastPage,
+                'has_next' => $currentPage < $lastPage,
+                'has_previous' => $currentPage > 1,
+            ]],
+        ])->withHeaders($this->privateHeaders());
     }
 
-    public function userShow(): JsonResponse
+    public function userShow(string $user, Request $request, AuditRecorder $audit): JsonResponse
     {
-        return $this->notImplemented();
+        $id = UserIdentifier::decode($user);
+        $customer = $id === null ? null : $this->customers()->whereKey($id)->first();
+
+        if ($customer === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested customer was not found.', 404);
+        }
+
+        $audit->record(
+            $request->user(),
+            AuditAction::CUSTOMER_VIEWED,
+            AuditResourceType::USER,
+            (string) UserIdentifier::encodeId((int) $customer->getKey()),
+            null,
+            ['result' => 'SUCCESS'],
+            $request->attributes->get('request_id'),
+        );
+
+        return (new AdministrativeCustomerResource($customer))->response()->withHeaders($this->privateHeaders());
     }
 
-    public function auditLogIndex(): JsonResponse
+    public function auditLogIndex(ListAuditLogsRequest $request, ListAuditLogs $auditLogs): JsonResponse
     {
-        return $this->notImplemented();
+        $paginator = $auditLogs->paginate($request->normalizedQuery());
+
+        $lastPage = max(1, $paginator->lastPage());
+        $currentPage = min($paginator->currentPage(), $lastPage);
+
+        return response()->json([
+            'data' => AuditLogResource::collection($paginator->getCollection())->resolve(),
+            'meta' => ['pagination' => [
+                'current_page' => $currentPage,
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $lastPage,
+                'has_next' => $currentPage < $lastPage,
+                'has_previous' => $currentPage > 1,
+            ]],
+        ])->withHeaders($this->privateHeaders());
+    }
+
+    private function customers(): Builder
+    {
+        return User::query()
+            ->whereHas('roles', fn (Builder $query): Builder => $query->where('name', RoleName::CUSTOMER->value))
+            ->whereDoesntHave('roles', fn (Builder $query): Builder => $query->where('name', '!=', RoleName::CUSTOMER->value));
+    }
+
+    private function privateHeaders(): array
+    {
+        return [
+            'Cache-Control' => 'private, no-store',
+            'Vary' => 'Authorization',
+        ];
     }
 }

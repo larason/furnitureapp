@@ -104,4 +104,35 @@ class OpenApiEnquiryContractTest extends TestCase
         $this->assertFalse($request['additionalProperties']);
         $this->assertSame(['subject', 'message'], $request['required']);
     }
+
+    public function test_operational_enquiry_contract_matches_the_close_only_runtime_surface(): void
+    {
+        $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
+        $paths = $document['paths'];
+
+        $list = $paths['/enquiries']['get'];
+        $parameters = array_map(
+            static fn (array $parameter): string => $parameter['name'] ?? explode('/', $parameter['$ref'])[3],
+            $list['parameters'],
+        );
+        $this->assertSame(['search', 'enquiry_status', 'category', 'product_id', 'order_id', 'created_from', 'created_to', 'Page', 'PerPage'], $parameters);
+        $this->assertArrayHasKey('422', $list['responses']);
+
+        $close = $paths['/enquiries/{enquiry}/close']['post'];
+        $this->assertFalse($close['requestBody']['required']);
+        $this->assertSame('#/components/schemas/CloseEnquiryRequest', $close['requestBody']['content']['application/json']['schema']['$ref']);
+        foreach (['401', '403', '404', '422'] as $status) {
+            $this->assertArrayHasKey($status, $close['responses'], "ENQ-006 must document {$status}.");
+        }
+
+        $closeRequest = $document['components']['schemas']['CloseEnquiryRequest'];
+        $this->assertFalse($closeRequest['additionalProperties']);
+        $this->assertSame(['staff_internal_notes'], array_keys($closeRequest['properties']));
+        $this->assertSame(5000, $closeRequest['properties']['staff_internal_notes']['maxLength']);
+
+        $attachment = $paths['/enquiries/{enquiry}/attachments']['post']['requestBody']['content']['multipart/form-data']['schema'];
+        $this->assertSame(['attachment'], $attachment['required']);
+        $this->assertArrayHasKey('attachment', $attachment['properties']);
+        $this->assertArrayNotHasKey('file', $attachment['properties']);
+    }
 }

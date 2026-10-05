@@ -767,6 +767,50 @@ components:
           type: string
           format: date-time
           readOnly: true
+    AdministrativeCustomer:
+      type: object
+      required:
+      - id
+      - role
+      - name
+      - email
+      - phone
+      - email_verified
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+          description: Stable opaque Customer resource ID (`user_...`)
+        role:
+          type: string
+          enum:
+          - CUSTOMER
+          readOnly: true
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+          format: email
+          readOnly: true
+        phone:
+          type:
+          - string
+          - 'null'
+        email_verified:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     UpdateMeRequest:
       type: object
       properties:
@@ -1252,6 +1296,7 @@ components:
       - quantity
       - reserved_quantity
       - available_quantity
+      - updated_at
       properties:
         id:
           type: string
@@ -1835,6 +1880,17 @@ components:
           - 'null'
           description: Anonymous submission must omit; authenticated customers may reference an order they own
       additionalProperties: false
+    CloseEnquiryRequest:
+      type: object
+      properties:
+        staff_internal_notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 5000
+          description: Optional plain-text operational note. Omit to preserve the existing note; send null or a whitespace-only string to clear it; send a non-blank string to replace it.
+      additionalProperties: false
+      description: ENQ-006 is a controlled close action. The server sets CLOSED; enquiry_status and original intake fields are not accepted.
     Attachment:
       type: object
       required:
@@ -1975,15 +2031,22 @@ components:
       - resource_type
       - resource_id
       - timestamp
+      - previous_state
+      - resulting_state
+      - request_id
       properties:
         id:
           type: string
           readOnly: true
         actor_id:
-          type: string
+          type:
+          - string
+          - 'null'
           readOnly: true
         actor_role:
-          $ref: '#/components/schemas/Role'
+          type:
+          - string
+          - 'null'
           readOnly: true
         action:
           type: string
@@ -1997,28 +2060,22 @@ components:
           readOnly: true
         previous_state:
           type:
-          - string
+          - object
           - 'null'
           readOnly: true
-          description: Previous state
+          description: Structured historical snapshot. Fields are allowlisted by action/resource_type; unknown and sensitive fields are omitted.
         resulting_state:
           type:
-          - string
+          - object
           - 'null'
           readOnly: true
-          description: Resulting state
+          description: Structured historical snapshot. Fields are allowlisted by action/resource_type; unknown and sensitive fields are omitted.
         request_id:
           type:
           - string
           - 'null'
           readOnly: true
           description: Request correlation id
-        details:
-          type:
-          - object
-          - 'null'
-          readOnly: true
-          description: Structured details, nullable
     MessageResponse:
       type: object
       required:
@@ -3776,6 +3833,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       description: Requires STAFF/ADMIN requests.view
   /requests/{request}:
     get:
@@ -3832,20 +3893,27 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                request_status:
-                  $ref: '#/components/schemas/RequestStatus'
-                staff_internal_notes:
-                  type:
-                  - string
-                  - 'null'
-              additionalProperties: false
+              schema:
+                type: object
+                minProperties: 1
+                properties:
+                  request_status:
+                    $ref: '#/components/schemas/RequestStatus'
+                  staff_internal_notes:
+                    type:
+                    - string
+                    - 'null'
+                additionalProperties: false
   /requests/{request}/attachments:
     post:
       operationId: REQ-007
@@ -3865,11 +3933,11 @@ paths:
             schema:
               type: object
               properties:
-                file:
+                attachment:
                   type: string
                   format: binary
               required:
-              - file
+              - attachment
       responses:
         '201':
           description: Created
@@ -3993,6 +4061,46 @@ paths:
       summary: List operational enquiries
       security:
       - bearerAuth: []
+      parameters:
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 100
+        description: Searches name, email, phone, subject, message, enquiry reference, and associated order reference.
+      - name: enquiry_status
+        in: query
+        schema:
+          $ref: '#/components/schemas/EnquiryStatus'
+      - name: category
+        in: query
+        schema:
+          type: string
+          enum: [GENERAL, PRODUCT, DELIVERY, OTHER]
+      - name: product_id
+        in: query
+        schema:
+          type: string
+          pattern: '^prod_[0-9a-z]+$'
+      - name: order_id
+        in: query
+        schema:
+          type: string
+          pattern: '^ord_[0-9a-z]+$'
+      - name: created_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: ISO8601 UTC timestamp, inclusive.
+      - name: created_to
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: ISO8601 UTC timestamp, inclusive and not earlier than created_from.
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -4014,7 +4122,9 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
-      description: Requires STAFF/ADMIN enquiries.view
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      description: Requires STAFF/ADMIN enquiries.view. Response is private, no-store and varies by Authorization. Only the documented query parameters are accepted.
   /enquiries/{enquiry}:
     get:
       operationId: ENQ-005
@@ -4043,6 +4153,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+      description: Requires STAFF/ADMIN enquiries.view and an opaque enq_... identifier. Response is private, no-store and varies by Authorization.
   /enquiries/{enquiry}/close:
     post:
       operationId: ENQ-006
@@ -4053,6 +4164,12 @@ paths:
       - bearerAuth: []
       parameters:
       - $ref: '#/components/parameters/EnquiryPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseEnquiryRequest'
       responses:
         '200':
           description: OK
@@ -4069,8 +4186,11 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+      description: Requires STAFF/ADMIN enquiries.manage. OPEN transitions to CLOSED server-side; repeated close is idempotent. Response is private, no-store and varies by Authorization.
   /enquiries/{enquiry}/attachments:
     post:
       operationId: ENQ-007
@@ -4090,11 +4210,11 @@ paths:
             schema:
               type: object
               properties:
-                file:
+                attachment:
                   type: string
                   format: binary
               required:
-              - file
+              - attachment
       responses:
         '201':
           description: Created
@@ -4414,6 +4534,40 @@ paths:
       summary: List audit logs
       security:
       - bearerAuth: []
+      parameters:
+      - name: actor
+        in: query
+        schema:
+          type: string
+        description: Opaque User identifier.
+      - name: action
+        in: query
+        schema:
+          type: string
+          enum: [INVENTORY_ADJUSTED, DELIVERY_FEE_FINALIZED, REQUEST_STATUS_CHANGED, ENQUIRY_STATUS_CHANGED, CUSTOMER_LIST_VIEWED, CUSTOMER_VIEWED]
+      - name: resource_type
+        in: query
+        schema:
+          type: string
+          enum: [inventory, order, request, enquiry, user]
+      - name: resource_id
+        in: query
+        schema:
+          type: string
+      - name: created_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Inclusive ISO8601 UTC occurrence timestamp.
+      - name: created_to
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Inclusive ISO8601 UTC occurrence timestamp.
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -4435,15 +4589,25 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
-      description: Requires ADMIN audit.view
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      description: Requires ADMIN audit.view. Read-only, private/no-store collection ordered by timestamp descending then audit event id descending. Only actor, action, resource_type, resource_id, created_from, created_to, page, and per_page are accepted.
   /users:
     get:
       operationId: ADM-008
       tags:
       - Admin
-      summary: List users
+      summary: List Customers for authorized administration
+      description: CUSTOMER accounts only. Requires ADMIN users.manage_authorized. Private, read-only, and not a Staff/Admin directory.
       security:
       - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -4458,19 +4622,24 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/User'
+                      $ref: '#/components/schemas/AdministrativeCustomer'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /users/{user}:
     get:
       operationId: ADM-009
       tags:
       - Admin
-      summary: Get user
+      summary: Get Customer detail for authorized administration
+      description: CUSTOMER target only. Staff and Admin targets use masked RESOURCE_NOT_FOUND responses. Requires ADMIN users.manage_authorized and is private and read-only.
       security:
       - bearerAuth: []
       parameters:
@@ -4486,13 +4655,15 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/User'
+                    $ref: '#/components/schemas/AdministrativeCustomer'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /admin/products:
     get:
       operationId: CAT-013

@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Exceptions\Api\ApiException;
+use App\Models\AuditEvent;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -129,6 +130,7 @@ class InventoryConcurrencyMysqlTest extends TestCase
 
         for ($iteration = 0; $iteration < self::ITERATIONS; $iteration++) {
             $stock->refresh()->update(['quantity' => 10, 'reserved_quantity' => 0]);
+            AuditEvent::query()->delete();
 
             $codes = $this->runChildren(
                 fn (): int => $this->attemptAdjust($stock->id, 5, (string) Str::uuid(), $actor->id),
@@ -136,7 +138,35 @@ class InventoryConcurrencyMysqlTest extends TestCase
             );
 
             $this->assertSame([self::RESULT_SUCCESS, self::RESULT_SUCCESS], $codes, "iteration {$iteration}");
-            $this->assertSame(12, $stock->fresh()->quantity);
+            $fresh = $stock->fresh();
+            $this->assertSame(12, $fresh->quantity);
+            $this->assertSame(0, $fresh->reserved_quantity);
+            $this->assertSame(2, AuditEvent::query()->count(), "iteration {$iteration}");
+        }
+    }
+
+    public function test_concurrent_negative_adjustments_allow_only_one_when_the_combined_delta_is_invalid(): void
+    {
+        $variant = $this->variant();
+        $stock = $this->stock($variant, 'main', 10);
+        $actor = User::factory()->staff()->create(['clerk_user_id' => 'staff_negative_race']);
+
+        for ($iteration = 0; $iteration < self::ITERATIONS; $iteration++) {
+            $stock->refresh()->update(['quantity' => 10, 'reserved_quantity' => 0]);
+            AuditEvent::query()->delete();
+
+            $codes = $this->runChildren(
+                fn (): int => $this->attemptAdjust($stock->id, -7, (string) Str::uuid(), $actor->id),
+                fn (): int => $this->attemptAdjust($stock->id, -7, (string) Str::uuid(), $actor->id),
+            );
+
+            sort($codes);
+            $fresh = $stock->fresh();
+
+            $this->assertSame([self::RESULT_SUCCESS, self::RESULT_FAILURE], $codes, "iteration {$iteration}");
+            $this->assertSame(3, $fresh->quantity);
+            $this->assertSame(0, $fresh->reserved_quantity);
+            $this->assertSame(1, AuditEvent::query()->count(), "iteration {$iteration}");
         }
     }
 
@@ -149,6 +179,7 @@ class InventoryConcurrencyMysqlTest extends TestCase
         for ($iteration = 0; $iteration < self::ITERATIONS; $iteration++) {
             $stock->refresh()->update(['quantity' => 5, 'reserved_quantity' => 0]);
             OrderItemInventoryAllocation::query()->delete();
+            AuditEvent::query()->delete();
 
             [, $item] = $this->orderWithItem($variant, 5);
 
@@ -165,6 +196,8 @@ class InventoryConcurrencyMysqlTest extends TestCase
             );
             $this->assertInvariant($fresh);
             $this->assertFalse($fresh->quantity === 3 && $fresh->reserved_quantity === 5, "iteration {$iteration}");
+            $this->assertContains([$fresh->quantity, $fresh->reserved_quantity], [[5, 5], [3, 0]], "iteration {$iteration}");
+            $this->assertSame($fresh->quantity === 3 ? 1 : 0, AuditEvent::query()->count(), "iteration {$iteration}");
         }
     }
 
@@ -176,6 +209,7 @@ class InventoryConcurrencyMysqlTest extends TestCase
 
         for ($iteration = 0; $iteration < self::ITERATIONS; $iteration++) {
             $stock->refresh()->update(['quantity' => 10, 'reserved_quantity' => 0]);
+            AuditEvent::query()->delete();
             $key = (string) Str::uuid();
 
             $codes = $this->runChildren(
@@ -185,6 +219,7 @@ class InventoryConcurrencyMysqlTest extends TestCase
 
             $this->assertSame([self::RESULT_SUCCESS, self::RESULT_SUCCESS], $codes, "iteration {$iteration}");
             $this->assertSame(14, $stock->fresh()->quantity, "iteration {$iteration}");
+            $this->assertSame(1, AuditEvent::query()->count(), "iteration {$iteration}");
         }
 
         $this->assertSame(self::ITERATIONS, DB::table('idempotency_keys')->where('action', InventoryAdjustmentService::ACTION)->count());

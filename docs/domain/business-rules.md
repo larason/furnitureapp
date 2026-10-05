@@ -31,9 +31,9 @@ The computer system is always the final authority on what is allowed, what costs
 
 | # | Business rule | Ref |
 |---|---|---|
-| 1 | The stock number shown to customers is informative only. The system makes the real, final stock check. | INV-001 |
-| 2 | Available stock can never go below zero. | INV-002 |
-| 3 | If two customers try to buy the last item at the same time, only one can succeed. The system never sells more than it has. | INV-003 |
+| 1 | The stock number shown to customers is informative only. The system makes the real, final stock check. | Catalog availability / checkout validation |
+| 2 | Available stock can never go below zero. | Inventory invariants |
+| 3 | If two customers try to buy the last item at the same time, only one can succeed. The system never sells more than it has. | Inventory concurrency |
 | 4 | Adding something to a cart does **not** put it aside or reserve it for you. | INV-004 |
 | 5 | An item may become unavailable after a customer has looked at it; the final decision is made when they check out. | INV-005 |
 | 6 | The system tracks stock as units held, units reserved, and units available to sell. | INV-006 |
@@ -196,7 +196,7 @@ Validation: layered `Transport → Schema (name required, phone/email at least o
 | 3 | An enquiry is **private communication, not an order** — it does not create an Order, does not reserve stock, does not charge payment, does not guarantee product availability/completion. No `order_id`/`payment_*`/`delivery_fee` from client. | ENQ-003 |
 | 4 | **Enquiries and made-to-order requests are two different things and never merged** — Request asks "Can you make this furniture?" with dimensions/material/color; Enquiry asks general business information. No automatic `Request ↔ Enquiry` conversion. | ENQ-004 |
 | 5 | An enquiry may optionally refer to a **public Product** (`product_id` nullable — when supplied must be existing, `is_active:true` + `is_published:true` public product, any `product_type` allowed for enquiry context) and/or to an **Order** (`order_id` nullable — `order_id` without an order remains `null`; when supplied, anonymous `order_id` must be rejected with `422 INVALID_VALUE` `field: order_id` unless presenting a server-issued scoped order-access token; authenticated customers may reference only Orders they own (ownership-validated via `ENQ-007`); knowing an `order_id` is not authorization). Both may be `null`/omitted for general contact. | ENQ-005, ENQ-006 |
-| 6 | In Version 1, enquiries are private communications for the business to handle — status `OPEN` (default, needs attention) → `CLOSED` (handled, via `ENQ-006` `POST /enquiries/{enquiry}/close`). Customer never sets `enquiry_status`; reopen `CLOSED→OPEN` only if explicitly approved. `ASSIGNED`/`IN_PROGRESS` etc. not in V1. | ENQ-007 |
+| 6 | In Version 1, enquiries are private communications for the business to handle — status `OPEN` (default, needs attention) → `CLOSED` (handled, via `ENQ-006` `POST /enquiries/{enquiry}/close`). Customer never sets `enquiry_status`; `CLOSED` is terminal and no reopen operation exists in V1. `ASSIGNED`/`IN_PROGRESS` etc. are not in V1. | ENQ-007 |
 | 7 | Enquiry status is **CLOSED enum `OPEN`/`CLOSED`** (`UPPER_SNAKE_CASE`). Minimal small-business queue, not a full support workflow. | ENQ-007 |
 | 8 | Authenticated enquiries belong to the submitting customer (`Enquiry.user_id = authenticated principal` server-derived). Anonymous enquiries have `user_id=null` and require explicit contact snapshot (self-contained record, future profile change does not mutate past enquiry). Contact snapshot is historical; `subject`/`message` are **immutable history** after creation. | ENQ-008 |
 | 9 | Customers see only own enquiries via `GET /me/enquiries`; staff see operational queue via `GET /enquiries` (`enquiries.view`); anonymous retrieval via `GET /enquiries/{id}` is **not supported** without explicit secure mechanism — predictable `id` is not bearer credential (per ADR/API-ENQ-006). Attachments inherit parent authorization (private to parent, scoped token for separate `POST /enquiries/{enquiry}/attachments` `ENQ-007`, no permanent public URLs); attachments **optional** (`0` or `1` on creation, preferred `multipart/form-data` inline on `ENQ-001`). Message treated as untrusted plain text (XSS-safe, no code execution, frontend escapes). Historical original message preserved; internal notes `staff_internal_notes` separated and never customer-visible. | ENQ-009, ATTACH-001 |
@@ -219,6 +219,7 @@ Validation: layered `Transport → Schema (name required anonymous / optional de
 | 2 | Every sensitive action must be protected and only allowed for authorized actors. Backend authorization is authoritative. | AUTHZ-002 |
 | 3 | Stock, prices, delivery charges, cancellation timing, and payment confirmation are decided by the system, never by client claim. Server-controlled fields (`id`, `created_at`, `updated_at`, `order_reference`, `status`, `payment_status`, `inventory quantities`, `final totals`, `status_history`) are never client-settable. | SEC-001 |
 | 4 | Customer-visible totals and order status cannot be changed from the app or website. | AUTHZ-004 |
+| 5 | Authorized Admin may view limited CUSTOMER account records through `ADM-008/009` only. Staff and Customers cannot browse Customer accounts; Staff/Admin targets are not visible there. These reads never grant credential management, impersonation, suspension, blocking, deletion, or role mutation authority. | AUTHZ-ADMIN-002 |
 
 ## 13. Notifications and Emails (Phase 1.27 — Approved V1)
 

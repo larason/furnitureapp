@@ -2318,6 +2318,18 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 ---
 
+### ADR/BACKEND-051 — Phase 11.6 Inventory Management Reconciliation
+
+**Decision:** Phase 11.6 reuses the canonical Group E Inventory API without Admin aliases, duplicate controllers, schema changes, or commerce activation. `INV-001..003` are accepted as the Staff/Admin operational inventory surface: reads require `inventory.view`; controlled quantity adjustment requires `inventory.manage`, durable idempotency, and atomic audit persistence.
+
+- **Regression hardening:** Added operational visibility coverage for inactive Variants and inactive/unpublished Products, deterministic collection ordering, no fabricated zero-stock rows, exact detail representation, strict adjustment input coverage, authorization on idempotent replay, audit request correlation/state snapshots, and reservation-preserving adjustments.
+- **Concurrency:** Disposable MariaDB verification passes for reservation of the last unit, independent adjustments, negative-adjustment serialization, adjustment-vs-reservation, and same-key idempotency. The invariant assertion now correctly enforces `0 <= reserved_quantity <= quantity`.
+- **Contract reconciliation:** `INV-001..003` are marked `APPROVED`; OpenAPI now requires `Inventory.updated_at`; business-rule reference labels no longer reuse endpoint IDs.
+
+**Status:** Accepted | **Affected:** `backend/laravel/tests/{Feature/InventoryReadApiTest.php,Feature/InventoryAdjustmentApiTest.php,Integration/InventoryConcurrencyMysqlTest.php}`, `docs/api/{api-contract.md,api-resources.md,openapi.yaml}`, `docs/domain/business-rules.md`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
 ### ADR/BACKEND-031 — Phase 6.1 Cart Model Review
 
 **Decision:** The existing Group C `carts`/`cart_items` persistence model is fit for the frozen V1 Cart contract (`CART-001..005`) without schema redesign. Phase 6.1 reviewed the model, reconciled two small contract mismatches, and deferred all API/workflow implementation to later Group F phases.
@@ -2737,6 +2749,21 @@ The current `orders` schema has no `billing_address` column and the repository h
 
 ---
 
+### ADR/BACKEND-053 — Audit Visibility and `audit.view` Reconciliation
+
+**Decision:** Activate frozen ADM-007 as the only audit-read API: `GET /api/v1/admin/audit-logs`. It requires an authenticated active `ADMIN` and the explicit, seeded `audit.view` permission. `CUSTOMER` and `STAFF` never receive the permission; no wildcard or additional role is introduced.
+
+- Existing append-only `audit_events` and `AuditRecorder` remain authoritative. No audit mutation, detail route, alternate path, reverse identifier decoder, schema change, or dependency is added.
+- The collection accepts only `actor`, `action`, `resource_type`, `resource_id`, `created_from`, `created_to`, `page`, and `per_page`; results use inclusive occurrence-time bounds and deterministic `occurred_at DESC, id DESC` ordering.
+- Serialization derives `audit_<lowercase base36(audit_events.id)>` without persistence and never exposes the numeric event ID. Actor is the recorded opaque `UserIdentifier` plus recorded `actor_role`; resource IDs and `request_id` are historical display values without live expansion or filtering.
+- State snapshots stay structured JSON. Exact action/resource allow-lists preserve the legitimate inventory location/quantities/reason, delivery-fee totals, or request/enquiry status while discarding unknown, future, and sensitive keys.
+
+**Reason:** Administrative audit visibility is operationally useful but must not turn immutable history into an arbitrary data browser or leak credentials, PII, implementation IDs, or future writer fields.
+
+**Status:** Accepted and implemented in Phase 11.13 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/app/{Http,Services,Support}`, `backend/laravel/routes/api.php`, `backend/laravel/tests/Feature/AuditLogApiTest.php`, `docs/api/*`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
 ### ADR/GROUP-K-ADMIN-AUTH — Admin Authentication and Initial Trust Bootstrap
 
 **Decision:** Clerk remains the sole credential, verification, and session authority for Admins. Laravel uses the existing `users.clerk_user_id` projection, CLOSED `ADMIN` role, active local account state, and explicit `PermissionCatalog` permissions for administrative authorization. There is no Laravel Admin password, login, registration, session, or HTTP bootstrap endpoint.
@@ -2767,3 +2794,48 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** The frozen API requires non-null Product price input and output, while the former schema could only persist a Variant price and could not create a valid Variant from CAT-007. This internal persistence reconciliation preserves the public contract and the separate Variant resource boundary.
 
 **Status:** Accepted and implemented in Phase 11.3 Part A | **Date:** 2026-10-04 | **Affected:** `backend/laravel/database/migrations/2026_10_04_130000_add_base_price_to_products_table.php`, `backend/laravel/app/Models/Product.php`, `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Resources/ProductSummaryResource.php`, `docs/decisions.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/BACKEND-052 — Customer-Only Administrative Visibility
+
+**Decision:** `ADM-008` (`GET /api/v1/users`) and `ADM-009` (`GET /api/v1/users/{user}`) remain the frozen canonical paths for administrative Customer visibility. Both require an authenticated `ADMIN` with the explicit `users.manage_authorized` permission, are read-only, and use the local Laravel User projection without per-row Clerk API calls.
+
+- Both endpoints expose only effective single-role `CUSTOMER` accounts. Staff and Admin identities are excluded from the collection and return masked `404 RESOURCE_NOT_FOUND` through `ADM-009`.
+- The administrative representation is explicitly allow-listed to `id`, `role`, `name`, `email`, `phone`, `email_verified`, `created_at`, and `updated_at`. It uses opaque `user_...` identifiers and never exposes Clerk subjects, credentials, tokens, permissions, role pivots, account state, or Customer history.
+- The collection accepts only `page` and `per_page`, orders `created_at DESC, id ASC`, paginates after Customer authorization scope, and responds with `Cache-Control: private, no-store` and `Vary: Authorization`.
+- This reconciliation does not create Customer mutation, suspension, blocking, impersonation, credential management, role change, deletion, Staff directory, CRM, or endpoint aliases. Staff lifecycle remains under `/api/v1/admin/staff`.
+
+**Reason:** Historical “List users” wording was broader than Group K's authority boundary. Customer account visibility needs a minimal Admin-only support surface without granting Staff account administration or exposing privileged identities.
+
+**Status:** Accepted and implemented in Phase 11.8 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/app/Http/Controllers/Api/V1/AdminController.php`, `backend/laravel/app/Http/{Requests,Resources}`, `backend/laravel/app/Support/UserIdentifier.php`, `backend/laravel/tests/Feature/CustomerAdministrationTest.php`, `docs/api/*`, `docs/domain/business-rules.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/BACKEND-055 — Group K Request Management Reuse and Closure
+
+**Decision:** Phase 11.9 reuses the Group J canonical Request workflow: `REQ-004`/`REQ-005` operational reads require `requests.view`; `REQ-006` controlled updates require `requests.manage`. No `/admin/requests` aliases or replacement Request API are introduced.
+
+- Request intake remains immutable. REQ-006 accepts only `request_status` and `staff_internal_notes`; it never creates or changes Orders, payments, delivery records, stock, reservations, quotations, or a Staff ownership/assignment model.
+- The CLOSED `SUBMITTED → IN_REVIEW → CLOSED` state machine, same-state idempotency, terminal `CLOSED`, locked current-state update, and transactional audit behavior remain authoritative.
+- Operational reads retain historical contact/product snapshots and private attachment metadata. Customer reads remain ownership-scoped and never expose `staff_internal_notes`.
+- The OpenAPI REQ-004/006 runtime response set and non-empty PATCH body requirement are reconciled. REQ-007’s canonical multipart field is `attachment`, matching runtime validation.
+
+**Reason:** Group K requires verified operational readiness, not a second Admin workflow. Reusing the Group J surface prevents contract drift and preserves the request-first release boundary.
+
+**Status:** Accepted and verified in Phase 11.9 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalFurnitureRequestApiTest,OpenApiRequestContractTest}.php`, `backend/laravel/tests/Integration/FurnitureRequestStatusConcurrencyMysqlTest.php`, `docs/api/openapi.yaml`, `docs/decisions.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/BACKEND-054 — Group K Enquiry Management Reuse and Closure
+
+**Decision:** Phase 11.10 reuses Group J's canonical `ENQ-004` operational list, `ENQ-005` operational detail, and `ENQ-006` controlled close endpoints. No `/admin/enquiries`, `/staff/enquiries`, generic update, delete, or reopen aliases are introduced.
+
+- ENQ-006 is a close action, not generic status mutation. Its only optional client field is `staff_internal_notes`; the action sets `CLOSED` server-side. Original intake is immutable, repeated close is idempotent, and `CLOSED` is terminal through the current V1 API.
+- Enquiry and Furniture Request remain separate domains. Closing an Enquiry creates or mutates no Request, Order, Payment, Delivery, Cart, quote, Product, or inventory reservation. Product and Order associations are read-only historical context.
+- `enquiries.view` remains distinct from `enquiries.manage`. Operational reads and close responses are private (`Cache-Control: private, no-store`, `Vary: Authorization`); customer and anonymous responses never expose `staff_internal_notes`.
+- ENQ-004's frozen filter allow-list is `search`, `enquiry_status`, `category`, `product_id`, `order_id`, `created_from`, `created_to`, `page`, and `per_page`. ENQ-007 remains multipart with the canonical `attachment` field.
+
+**Reason:** Reusing the tested Group J surface avoids a second operational API and keeps the frozen request-first, privacy, and authorization boundaries intact. Documentation now follows the implemented close-only state machine rather than historical optional-reopen wording.
+
+**Status:** Accepted and verified in Phase 11.10 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalEnquiryApiTest,OpenApiEnquiryContractTest}.php`, `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `docs/api/{api-contract.md,api-conventions.md,api-resources.md,openapi.yaml}`, `docs/domain/business-rules.md`, `docs/decisions.md`, `phases/group-K-phases.md`

@@ -785,8 +785,7 @@ Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; c
 
 ### 27.7 Enquiry Status — Minimal CLOSED `OPEN`/`CLOSED`
 
-- V1 defines minimal `enquiry_status` CLOSED `OPEN` (default at creation, needs attention) → `CLOSED` (handled). Customer never sets status. Staff `ENQ-006` (`POST /enquiries/{enquiry}/close` + optional `reopen`) validates transition; `OPEN→CLOSED` is sufficient if staff only need boolean. Adding `ASSIGNED`/`IN_PROGRESS` etc. requires explicit justification.
-- `CLOSED` may be terminal; `CLOSED→OPEN` reopen only if approved business needs it.
+- V1 defines minimal `enquiry_status` CLOSED `OPEN` (default at creation, needs attention) → `CLOSED` (handled). Customer never sets status. ENQ-006 is `POST /enquiries/{enquiry}/close`; it sets `CLOSED` server-side. `CLOSED` is terminal and no reopen action exists in V1. Adding `ASSIGNED`/`IN_PROGRESS` etc. requires explicit justification.
 
 ### 27.8 Privacy — Private Communication, Not Public Catalog
 
@@ -803,7 +802,7 @@ Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; c
 ### 27.10 Operational Handling vs Ownership
 
 - Staff `enquiries.view` is **operational access**, not ownership. `Staff → owns Enquiry` is false. Admin broader but still `authorized + auditability + data minimization`.
-- `ENQ-006` may write only `enquiry_status` (controlled) and `staff_internal_notes`; customer-provided fields remain immutable; original enquiry preserved.
+- ENQ-006 accepts only optional `staff_internal_notes`; the action route controls `enquiry_status=CLOSED`. Customer-provided fields remain immutable; original enquiry preserved.
 - Future `Enquiry → Order` boundary outside V1 — `ENQ-006` must not silently create Order/payment.
 
 ### 27.11 Caching, Pagination, Filtering, Sorting — Global Reuse
@@ -821,7 +820,7 @@ Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; c
 ### 27.13 Idempotency & Duplicate Handling
 
 - `POST /enquiries` is **not inherently idempotent** — duplicate tap may create two enquiries. Duplicate submission risk is documented as operational noise; explicit idempotency mechanism deferred. Do not block similar `email+message` as duplicate via DB unique constraint.
-- `ENQ-006` close/reopen is designed idempotent (same close replays); concurrency race `Staff A close + Staff B close` handled as state transition concurrency (`409 CONFLICT`).
+- ENQ-006 close is idempotent (same close replays); a concurrent close race commits one real `OPEN→CLOSED` transition/audit and does not produce a second transition audit.
 
 ### 27.14 Validation Hierarchy Applied to Enquiry
 
@@ -969,7 +968,7 @@ Cross-field: `order_id` supplied → validated ownership; conditional: `phone`/`
 
 ### 30.8 Audit Conventions
 
-- Every privileged state change creates audit event (`actor_id/role/action/resource_type/resource_id/previous_state/resulting_state/timestamp/request_id`) — server-derived actor, no secrets, no client-provided actor. At minimum `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes`. Audit read `GET /admin/audit-logs` (if exposed) is read-only, filtered `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`, `meta.pagination`; no `PATCH/DELETE` audit via ordinary API.
+- Every privileged state change creates audit event (`actor_id/role/action/resource_type/resource_id/previous_state/resulting_state/timestamp/request_id`) — server-derived actor, no secrets, no client-provided actor. At minimum `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes`. Successful ADM-008/009 customer reads also record `CUSTOMER_LIST_VIEWED`/`CUSTOMER_VIEWED` without contact data. Active ADM-007 is Admin-only with explicit `audit.view`; it is a private, no-store, collection-only read with strict `actor/action/resource_type/resource_id/created_from/created_to/page/per_page` filters and no `PATCH`/`DELETE` audit API. It orders by `occurred_at DESC, id DESC`; `created_from`/`created_to` are inclusive occurrence-time bounds. Audit IDs are derived only in serialization (`audit_<base36(event id)>`), never persisted or reverse-decoded. `previous_state`/`resulting_state` remain JSON objects and are allowlisted per action/resource: inventory adjustments expose `quantity`, `reserved_quantity`, `available_quantity`, `warehouse_location`, `quantity_delta`, `reason`; delivery-fee finalization exposes `delivery_fee_status`, `delivery_fee_amount`, `total_amount`; request/enquiry transitions expose their respective status only; customer-read events expose only `result` and list `returned_count`. Unknown/future/sensitive snapshot keys are discarded.
 
 ## 31. Cross-Domain Review — Global Conventions Verified (Phase 1.30)
 

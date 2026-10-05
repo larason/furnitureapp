@@ -34,4 +34,5 @@ enum PermissionName: string
     case STAFF_MANAGE = 'staff.manage';
 
     case USERS_MANAGE_AUTHORIZED = 'users.manage_authorized';
+    case AUDIT_VIEW = 'audit.view';
 }

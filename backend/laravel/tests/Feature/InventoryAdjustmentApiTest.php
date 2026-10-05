@@ -131,6 +131,19 @@ class InventoryAdjustmentApiTest extends TestCase
             ->assertJsonPath('errors.0.field', 'reason');
     }
 
+    public function test_missing_reason_is_rejected(): void
+    {
+        $stock = ProductStock::factory()->create(['quantity' => 10, 'reserved_quantity' => 0]);
+        $headers = $this->authenticateAs($this->createStaff());
+
+        $this->withHeaders($headers + ['Idempotency-Key' => (string) Str::uuid()])
+            ->postJson($this->url($stock), ['quantity_delta' => 5])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'MISSING_REQUIRED_FIELD')
+            ->assertJsonPath('errors.0.field', 'reason');
+        $this->assertSame(10, $stock->fresh()->quantity);
+    }
+
     public function test_zero_and_malformed_deltas_are_rejected(): void
     {
         $stock = ProductStock::factory()->create(['quantity' => 10, 'reserved_quantity' => 0]);
@@ -223,6 +236,7 @@ class InventoryAdjustmentApiTest extends TestCase
         foreach ([
             'quantity', 'available_quantity', 'reserved_quantity',
             'product_id', 'variant_id', 'warehouse_location', 'actor_id',
+            'product_variant_id', 'staff_id', 'performed_by', 'user_id',
         ] as $field) {
             $this->withHeaders($headers + ['Idempotency-Key' => (string) Str::uuid()])
                 ->postJson($this->url($stock), $this->payload(5) + [$field => 999])
@@ -270,6 +284,30 @@ class InventoryAdjustmentApiTest extends TestCase
         $this->assertSame(1, IdempotencyKey::query()->count());
     }
 
+    public function test_idempotent_replay_is_forbidden_after_inventory_manage_permission_is_revoked(): void
+    {
+        $stock = ProductStock::factory()->create(['quantity' => 10, 'reserved_quantity' => 2]);
+        $staff = $this->createStaff();
+        $headers = $this->authenticateAs($staff);
+        $key = (string) Str::uuid();
+
+        $this->withHeaders($headers + ['Idempotency-Key' => $key])
+            ->postJson($this->url($stock), $this->payload(5, 'STOCK_RECEIPT'))
+            ->assertOk()
+            ->assertJsonPath('data.quantity', 15);
+
+        Role::findByName(RoleName::STAFF->value)->revokePermissionTo(PermissionName::INVENTORY_MANAGE->value);
+
+        $this->withHeaders($headers + ['Idempotency-Key' => $key])
+            ->postJson($this->url($stock), $this->payload(5, 'STOCK_RECEIPT'))
+            ->assertForbidden();
+
+        $fresh = $stock->fresh();
+        $this->assertSame(15, $fresh->quantity);
+        $this->assertSame(2, $fresh->reserved_quantity);
+        $this->assertSame(1, AuditEvent::query()->count());
+    }
+
     public function test_same_key_with_different_intent_conflicts(): void
     {
         $stock = ProductStock::factory()->create(['quantity' => 10, 'reserved_quantity' => 0]);
@@ -308,14 +346,21 @@ class InventoryAdjustmentApiTest extends TestCase
         $this->assertSame(20, $first->fresh()->quantity);
     }
 
-    public function test_audit_event_is_written_with_server_derived_actor_and_state(): void
+    public function test_audit_event_is_written_with_server_derived_actor_state_and_request_correlation(): void
     {
         $stock = ProductStock::factory()->create(['quantity' => 10, 'reserved_quantity' => 2]);
         $staff = $this->createStaff();
+        $requestId = (string) Str::uuid();
+        $headers = $this->authenticateAs($staff);
 
-        $this->adjust($this->authenticateAs($staff), $stock, 5, 'STOCK_RECEIPT')->assertOk();
+        $response = $this->withHeaders($headers + [
+            'Idempotency-Key' => (string) Str::uuid(),
+            'X-Request-Id' => $requestId,
+        ])->postJson($this->url($stock), $this->payload(5, 'STOCK_RECEIPT'))->assertOk();
 
         $event = AuditEvent::query()->sole();
+        $this->assertSame($requestId, $response->headers->get('X-Request-Id'));
+        $this->assertSame($requestId, $event->request_id);
         $this->assertSame($staff->id, $event->actor_id);
         $this->assertSame('STAFF', $event->actor_role);
         $this->assertSame('INVENTORY_ADJUSTED', $event->action);
@@ -325,6 +370,33 @@ class InventoryAdjustmentApiTest extends TestCase
         $this->assertSame(15, $event->resulting_state['quantity']);
         $this->assertSame(5, $event->resulting_state['quantity_delta']);
         $this->assertSame('STOCK_RECEIPT', $event->resulting_state['reason']);
+        $this->assertSame([
+            'quantity', 'reserved_quantity', 'available_quantity', 'warehouse_location', 'quantity_delta', 'reason',
+        ], array_keys($event->previous_state));
+        $this->assertSame([
+            'quantity', 'reserved_quantity', 'available_quantity', 'warehouse_location', 'quantity_delta', 'reason',
+        ], array_keys($event->resulting_state));
+        $this->assertSame(2, $event->previous_state['reserved_quantity']);
+        $this->assertSame(8, $event->previous_state['available_quantity']);
+        $this->assertSame(2, $event->resulting_state['reserved_quantity']);
+        $this->assertSame(13, $event->resulting_state['available_quantity']);
+    }
+
+    public function test_adjustment_succeeds_for_inactive_variant_and_inactive_unpublished_product(): void
+    {
+        $product = Product::factory()->inactive()->draft()->create();
+        $variant = ProductVariant::factory()->inactive()->create(['product_id' => $product->id]);
+        $stock = ProductStock::factory()->forVariant($variant)->create(['quantity' => 10, 'reserved_quantity' => 4]);
+
+        $this->adjust($this->authenticateAs($this->createStaff()), $stock, -3, 'CORRECTION')
+            ->assertOk()
+            ->assertJsonPath('data.quantity', 7)
+            ->assertJsonPath('data.reserved_quantity', 4)
+            ->assertJsonPath('data.available_quantity', 3);
+
+        $fresh = $stock->fresh();
+        $this->assertSame(7, $fresh->quantity);
+        $this->assertSame(4, $fresh->reserved_quantity);
     }
 
     public function test_audit_actor_immutability_prevents_actor_deletion(): void

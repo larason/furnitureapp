@@ -14,6 +14,7 @@ use App\Support\RequestStatus;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
@@ -58,6 +59,23 @@ final class OperationalFurnitureRequestApiTest extends TestCase
         $this->withHeaders($headers)->getJson(self::INDEX)->assertOk();
         $this->withHeaders($headers)->getJson($this->url($request))->assertOk();
         $this->withHeaders($headers)->patchJson($this->url($request), ['staff_internal_notes' => 'No'])->assertForbidden();
+    }
+
+    public function test_admin_can_manage_requests_and_actor_without_view_permission_is_denied(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $adminHeaders = $this->authenticateAs(User::factory()->admin()->create(['clerk_user_id' => 'admin_requests']));
+
+        $this->withHeaders($adminHeaders)->getJson(self::INDEX)->assertOk();
+        $this->withHeaders($adminHeaders)->getJson($this->url($request))->assertOk();
+        $this->withHeaders($adminHeaders)->patchJson($this->url($request), ['staff_internal_notes' => self::STAFF_NOTE])->assertOk();
+
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_without_request_view']);
+        Role::findByName('STAFF')->revokePermissionTo(PermissionName::REQUESTS_VIEW->value);
+        $headers = $this->authenticateAs($staff);
+
+        $this->withHeaders($headers)->getJson(self::INDEX)->assertForbidden();
+        $this->withHeaders($headers)->getJson($this->url($request))->assertForbidden();
     }
 
     public function test_staff_with_manage_permission_can_update_status_and_internal_notes_atomically(): void
@@ -187,6 +205,17 @@ final class OperationalFurnitureRequestApiTest extends TestCase
         }
     }
 
+    public function test_operational_detail_masks_unknown_and_non_opaque_identifiers(): void
+    {
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_request_identifiers']));
+
+        foreach (['req_unknown', '123'] as $identifier) {
+            $this->withHeaders($headers)->getJson(self::INDEX.'/'.$identifier)
+                ->assertNotFound()
+                ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+        }
+    }
+
     public function test_operational_collection_filters_searches_sorts_and_paginates(): void
     {
         $product = Product::factory()->madeToOrder()->create(['name' => 'Oak Desk', 'slug' => 'oak-desk']);
@@ -215,6 +244,51 @@ final class OperationalFurnitureRequestApiTest extends TestCase
 
         $this->assertSame($newer->id, FurnitureRequestIdentifier::decode($response->json('data.0.id')));
         $this->assertNotSame($older->id, $newer->id);
+    }
+
+    public function test_operational_collection_searches_contact_reference_product_and_date_filters(): void
+    {
+        $product = Product::factory()->madeToOrder()->create(['name' => 'Custom Oak Table']);
+        $matching = FurnitureRequest::factory()->forProduct($product)->create([
+            'name' => 'Amara',
+            'email' => 'amara@example.com',
+            'phone' => '+255700000101',
+            'created_at' => Carbon::parse('2026-02-02 12:00:00'),
+        ]);
+        FurnitureRequest::factory()->create(['created_at' => Carbon::parse('2026-02-03 12:00:00')]);
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_request_filters']));
+
+        foreach (['Amara', 'amara@example.com', '+255700000101', $matching->request_reference, 'Custom Oak Table'] as $search) {
+            $this->withHeaders($headers)->getJson(self::INDEX.'?search='.urlencode($search))
+                ->assertOk()
+                ->assertJsonPath('data.0.id', FurnitureRequestIdentifier::encode($matching));
+        }
+
+        $this->withHeaders($headers)->getJson(self::INDEX.'?created_from=2026-02-02T00:00:00Z&created_to=2026-02-02T23:59:59Z')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.id', FurnitureRequestIdentifier::encode($matching));
+    }
+
+    public function test_operational_updates_do_not_create_commerce_records(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_request_no_commerce']));
+        $before = [
+            'orders' => DB::table('orders')->count(),
+            'order_items' => DB::table('order_items')->count(),
+            'payments' => DB::table('payments')->count(),
+            'deliveries' => DB::table('deliveries')->count(),
+            'product_stocks' => DB::table('product_stocks')->count(),
+        ];
+
+        $this->withHeaders($headers)->patchJson($this->url($request), ['request_status' => 'IN_REVIEW'])->assertOk();
+        $this->withHeaders($headers)->patchJson($this->url($request), ['staff_internal_notes' => self::STAFF_NOTE])->assertOk();
+        $this->withHeaders($headers)->patchJson($this->url($request), ['request_status' => 'CLOSED'])->assertOk();
+
+        foreach ($before as $table => $count) {
+            $this->assertSame($count, DB::table($table)->count(), "{$table} must not change through REQ-006.");
+        }
     }
 
     public function test_oversized_pagination_values_are_rejected_before_integer_cast(): void

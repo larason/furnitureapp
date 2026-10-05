@@ -116,6 +116,44 @@ class InventoryReadApiTest extends TestCase
         ]);
     }
 
+    public function test_collection_orders_by_updated_at_descending_then_id_ascending(): void
+    {
+        $older = ProductStock::factory()->create();
+        $firstAtSameTime = ProductStock::factory()->create();
+        $secondAtSameTime = ProductStock::factory()->create();
+        DB::table('product_stocks')->where('id', $older->id)->update(['updated_at' => '2099-01-01 00:00:00']);
+        DB::table('product_stocks')->where('id', $firstAtSameTime->id)->update(['updated_at' => '2099-01-02 00:00:00']);
+        DB::table('product_stocks')->where('id', $secondAtSameTime->id)->update(['updated_at' => '2099-01-02 00:00:00']);
+        $headers = $this->authenticateAs($this->createStaff());
+
+        $response = $this->withHeaders($headers)->getJson(self::INDEX)->assertOk();
+
+        $this->assertSame(
+            [
+                InventoryIdentifier::encode($firstAtSameTime),
+                InventoryIdentifier::encode($secondAtSameTime),
+                InventoryIdentifier::encode($older),
+            ],
+            array_column($response->json('data'), 'id'),
+        );
+    }
+
+    public function test_variant_without_stock_does_not_produce_a_fabricated_zero_stock_row(): void
+    {
+        $stock = ProductStock::factory()->create();
+        $variantWithoutStock = ProductVariant::factory()->create();
+        $headers = $this->authenticateAs($this->createStaff());
+
+        $this->withHeaders($headers)->getJson(self::INDEX)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', InventoryIdentifier::encode($stock));
+        $this->withHeaders($headers)->getJson(self::INDEX.'?variant='.VariantIdentifier::encode($variantWithoutStock))
+            ->assertOk()
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.pagination.total', 0);
+    }
+
     public function test_pagination_contract_and_empty_beyond_last_page(): void
     {
         ProductStock::factory()->count(5)->create();
@@ -218,13 +256,19 @@ class InventoryReadApiTest extends TestCase
         $other = ProductStock::factory()->create();
         $headers = $this->authenticateAs($this->createStaff());
 
-        $this->withHeaders($headers)->getJson(self::INDEX.'/'.InventoryIdentifier::encode($stock))
+        $response = $this->withHeaders($headers)->getJson(self::INDEX.'/'.InventoryIdentifier::encode($stock))
             ->assertOk()
+            ->assertHeaderContains('Vary', 'Authorization')
             ->assertJsonPath('data.id', InventoryIdentifier::encode($stock))
             ->assertJsonPath('data.quantity', 5)
             ->assertJsonPath('data.reserved_quantity', 5)
             ->assertJsonPath('data.available_quantity', 0)
             ->assertJsonMissing(['id' => InventoryIdentifier::encode($other)]);
+
+        $this->assertSame([
+            'id', 'product_id', 'variant_id', 'warehouse_location',
+            'quantity', 'reserved_quantity', 'available_quantity', 'updated_at',
+        ], array_keys($response->json('data')));
     }
 
     public function test_unknown_or_cross_resource_identifier_is_not_found(): void
@@ -298,6 +342,21 @@ class InventoryReadApiTest extends TestCase
         $this->withHeaders($headers)->getJson(self::INDEX.'/'.InventoryIdentifier::encode($stock))
             ->assertOk()
             ->assertJsonPath('data.product_id', ProductIdentifier::encode($hidden));
+    }
+
+    public function test_inactive_variant_stock_remains_operationally_visible_in_list_and_detail(): void
+    {
+        $variant = ProductVariant::factory()->inactive()->create();
+        $stock = ProductStock::factory()->forVariant($variant)->create();
+        $headers = $this->authenticateAs($this->createStaff());
+
+        $this->withHeaders($headers)->getJson(self::INDEX.'?variant='.VariantIdentifier::encode($variant))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', InventoryIdentifier::encode($stock));
+        $this->withHeaders($headers)->getJson(self::INDEX.'/'.InventoryIdentifier::encode($stock))
+            ->assertOk()
+            ->assertJsonPath('data.variant_id', VariantIdentifier::encode($variant));
     }
 
     public function test_inventory_responses_are_private_and_do_not_mutate_stock(): void

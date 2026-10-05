@@ -88,4 +88,29 @@ class OpenApiRequestContractTest extends TestCase
         $this->assertSame('string', $properties['dimensions[unit]']['type']);
         $this->assertSame(['cm'], $properties['dimensions[unit]']['enum']);
     }
+
+    public function test_operational_request_operations_match_runtime_validation_and_attachment_fields(): void
+    {
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
+        $list = $document['paths']['/requests']['get'];
+        $update = $document['paths']['/requests/{request}']['patch'];
+        $upload = $document['paths']['/requests/{request}/attachments']['post'];
+
+        foreach (['401', '403', '422', '429'] as $status) {
+            $this->assertArrayHasKey($status, $list['responses'], "REQ-004 must document {$status}.");
+        }
+
+        foreach (['401', '403', '404', '409', '422', '429'] as $status) {
+            $this->assertArrayHasKey($status, $update['responses'], "REQ-006 must document {$status}.");
+        }
+
+        $schema = $update['requestBody']['content']['application/json']['schema'];
+        $this->assertSame(1, $schema['minProperties']);
+        $this->assertFalse($schema['additionalProperties']);
+
+        $uploadSchema = $upload['requestBody']['content']['multipart/form-data']['schema'];
+        $this->assertSame(['attachment'], $uploadSchema['required']);
+        $this->assertArrayHasKey('attachment', $uploadSchema['properties']);
+        $this->assertArrayNotHasKey('file', $uploadSchema['properties']);
+    }
 }

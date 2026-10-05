@@ -385,7 +385,7 @@ Original customer-provided `product_id`, `quantity`, `dimensions`, `material`, `
 
 ## 6. Enquiry (`/enquiries`, `/me/enquiries`) — Approved V1 (Phase 1.26)
 
-**Conceptual paths:** `POST /api/v1/enquiries` (`ENQ-001` public anonymous allowed), `GET /api/v1/me/enquiries` (`ENQ-002` own), `GET /api/v1/me/enquiries/{enquiry}` (`ENQ-003` own), `GET /api/v1/enquiries` (`ENQ-004` staff operational), `GET /api/v1/enquiries/{enquiry}` (`ENQ-005` staff operational), `POST /api/v1/enquiries/{enquiry}/close` (+ optional `reopen`) (`ENQ-006` staff limited), `POST /api/v1/enquiries/{enquiry}/attachments` (`ENQ-007` scoped).
+**Conceptual paths:** `POST /api/v1/enquiries` (`ENQ-001` public anonymous allowed), `GET /api/v1/me/enquiries` (`ENQ-002` own), `GET /api/v1/me/enquiries/{enquiry}` (`ENQ-003` own), `GET /api/v1/enquiries` (`ENQ-004` staff operational), `GET /api/v1/enquiries/{enquiry}` (`ENQ-005` staff operational), `POST /api/v1/enquiries/{enquiry}/close` (`ENQ-006` staff limited), `POST /api/v1/enquiries/{enquiry}/attachments` (`ENQ-007` scoped).
 *Note:* Canonical resource is `/enquiries` (not `/contacts`/`/messages`/`/support`); anonymous creation is `PUBLIC` but anonymous retrieval is **not** automatically public (requires scoped token via `ENQ-007`).
 
 ### 6.1 Enquiry Detail Representation — Customer View (`ENQ-001` response, `ENQ-003`)
@@ -436,7 +436,7 @@ Original customer-provided `product_id`, `quantity`, `dimensions`, `material`, `
 | `category` | enum \| null | STAFF | yes | Same `GENERAL`/`PRODUCT`/`DELIVERY`/`OTHER` CLOSED |
 | `product` | `{id, name, slug}` \| null | STAFF | yes | Full linked product context where `product_id` present |
 | `order` | `{id, order_reference, status}` \| null | STAFF | yes | Full linked order context where `order_id` present and authorized |
-| `enquiry_status` | enum `OPEN`,`CLOSED` CLOSED | STAFF | no | CLOSED; staff transition `OPEN→CLOSED` (and `CLOSED→OPEN` if reopen approved) via `ENQ-006` |
+| `enquiry_status` | enum `OPEN`,`CLOSED` CLOSED | STAFF | no | Server-controlled `OPEN→CLOSED` via `ENQ-006`; `CLOSED` is terminal |
 | `staff_internal_notes` | string \| null | STAFF (`enquiries.manage` where authorized) | yes | Separated from `message`; never customer-visible |
 | `user_id` | string \| null | STAFF | yes | `null` for anonymous; `user_...` when authenticated — derived, never client-supplied |
 | `attachments` | `[{id, filename, content_type, size}]` | STAFF | no | Private to parent |
@@ -456,7 +456,7 @@ Original customer-provided `product_id`, `quantity`, `dimensions`, `material`, `
 
 ### 6.5 Enquiry Status & History (Minimal V1)
 
-Statuses `OPEN` (default), `CLOSED` are **CLOSED** (`UPPER_SNAKE_CASE`). Transitions `OPEN→CLOSED`; `CLOSED→OPEN` (reopen) only if explicitly approved, otherwise `CLOSED` terminal. `ASSIGNED`/`IN_PROGRESS`/`WAITING_FOR_CUSTOMER`/`ESCALATED`/`RESOLVED`/`SUBMITTED` not in V1. Staff `ENQ-006` validates transition; customer cannot set `enquiry_status`. Original submission fields are immutable; `staff_internal_notes` is operational only. Staff response initially via ordinary business contact process (email/phone), not in-app thread (Group R deferred).
+Statuses `OPEN` (default), `CLOSED` are **CLOSED** (`UPPER_SNAKE_CASE`). `OPEN→CLOSED` is the only state-changing transition; `CLOSED` is terminal and no reopen operation is exposed in V1. `ASSIGNED`/`IN_PROGRESS`/`WAITING_FOR_CUSTOMER`/`ESCALATED`/`RESOLVED`/`SUBMITTED` not in V1. Staff `ENQ-006` validates the controlled close; customer cannot set `enquiry_status`. Original submission fields are immutable; `staff_internal_notes` is operational only. Staff response initially via ordinary business contact process (email/phone), not in-app thread (Group R deferred).
 
 ### 6.6 Representations by Actor (Field-Level Exposure)
 
@@ -666,7 +666,7 @@ CLOSED enum; do not create per-product variants (`SOFA_SHIPPED`). Adding type wi
 - **Request update (`REQ-006` Staff only):** `PATCH /requests/{request}` — mutable only `request_status` (`SUBMITTED`→`IN_REVIEW`→`CLOSED` CLOSED, terminal `CLOSED`) + `staff_internal_notes`. Not mutable: `product_id`, `quantity`, `dimensions`, `material`, `color`, `notes`, `user_id`, `contact snapshot`, `order_id`. Validation: status transition validated against current state; arbitrary status text rejected; internal notes separated.
 - **Request attachment (`REQ-007`):** `POST /requests/{request}/attachments` `multipart/form-data` — preferred inline on `REQ-001`; separate POST requires scoped server-issued upload token (single-use/time-limited) + parent ownership; validates same file rules. Private to parent; no permanent public URLs.
 - **Enquiry create (`ENQ-001` — Approved V1 Phase 1.26):** `name` (required anonymous, optional/derived authenticated), `phone`/`email` (at least one for anonymous, optional/derived authenticated), `subject` required 5–200, `message` required plain text 10–5000, optional CLOSED `category` (`GENERAL`/`PRODUCT`/`DELIVERY`/`OTHER`), optional `product_id` (any public product, `null`/omitted = general enquiry), optional `order_id` (when supplied by authenticated customer must be owned — ownership-validated, `null`/omitted otherwise), optional `attachment` via `multipart/form-data` field `attachment` (preferred inline, 0 or 1, `<=5MB`, `image/jpeg|png|webp|application/pdf` signature-verified). **Not accepted:** `user_id`, `enquiry_status`, `staff_internal_notes`, `payment_*`/`delivery_fee`/`order_status`, `created_at`. **Validation:** Schema: `name` trimmed 120, `phone` normalized 30, `email` lowercased 255, `subject` 5–200 plain text, `message` 10–5000 plain text (no Markdown/HTML, no script execution, escapes on render), `category` CLOSED when supplied, `product_id` validated public exists when supplied, `order_id` ownership-validated when supplied (another customer's order → `ENQUIRY_NOT_FOUND` 404 masked), attachment same file rules as Request. Domain: `product_id` optional — when supplied `exists && active && is_published && publicly visible`; `order_id` optional — when supplied by customer `exists && owned`. Auth Optional; `user_id` derived server-side (`null` anonymous, `authenticated principal` when customer). Authorization: PUBLIC create. Concurrency Low; idempotency not required in V1.
-- **Enquiry update (`ENQ-006` Staff only):** `POST /enquiries/{enquiry}/close` (+ optional `reopen`) — mutable only `enquiry_status` (`OPEN`→`CLOSED`, `CLOSED`→`OPEN` if reopen approved, CLOSED enum) + `staff_internal_notes`. Not mutable: `subject`, `message`, `contact snapshot`, `category`, `product_id`, `order_id`, `user_id`, `payment_*`. Validation: status transition validated against current `enquiry_status`; arbitrary status rejected; internal notes separated; original submission immutable.
+- **Enquiry close (`ENQ-006` Staff only):** `POST /enquiries/{enquiry}/close` accepts only optional `staff_internal_notes`; the route sets `CLOSED` server-side. `OPEN→CLOSED` is the only transition and repeated close is idempotent. Not mutable: `subject`, `message`, `contact snapshot`, `category`, `product_id`, `order_id`, `user_id`, `payment_*`. Unknown fields, including `enquiry_status`, are rejected; original submission remains immutable.
 - **Enquiry attachment (`ENQ-007`):** `POST /enquiries/{enquiry}/attachments` `multipart/form-data` — preferred inline on `ENQ-001`; separate POST requires scoped server-issued upload token (single-use/time-limited) + parent ownership; validates same file rules (`size/type/signature`). Private to parent; no permanent public URLs; same architecture as `REQ-007`.
 - **Validation common:** Unknown fields rejected, `request_status`/`enquiry_status` SERVER-GENERATE never client-settable, authorization contextual (own vs operational), failure atomicity. `subject`/`message` treated as untrusted plain-text (XSS-safe, no HTML/Markdown in V1).
 
@@ -787,7 +787,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Data | Customer `GET /me` | Staff `GET /me` (own) | Staff operational view of Customer (via `Order`/`Request`/`Enquiry`) | Admin `GET /me` or `GET /users/{user}` where authorized |
 |---|---|---|---|---|
 | `id`, `name`, `email`, `phone`, `role`, `email_verified`, `created_at/updated_at` | **Own** | **Own** (same fields: `id`, `role:STAFF`, `name`, `email`, `phone`, `email_verified`) | **Operational only** — customer contact/order snapshot (`recipient_name`, `phone`, `delivery_address`) relevant to `Order` fulfillment, not unrestricted profile browse | **Own** plus authorized `GET /users/{user}` where `users.manage_authorized` (Phase 1.29) |
-| `STAFF/ADMIN → another Customer profile via /me` | No | **No** | No | Only via `ADM-005/006` authorized endpoint, not self-service |
+| `STAFF/ADMIN → another Customer profile via /me` | No | **No** | No | Only via `ADM-008/009` authorized endpoint, not self-service |
 | `role` management | No | No | No | Authorized separate (`staff.approve`/`staff.manage`) |
 
 Self-service `PATCH /me` is **own only** for all roles; Staff cannot edit Customer profile through `/me` and cannot restrict customer browsing/ordering.
@@ -817,6 +817,22 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 - **Privacy:** `GET /me` is `PRIVATE` — `Cache-Control: private, no-store` (not CDN, not public catalog cache). `PATCH /me` is non-cacheable mutation. Customer must not see `internal staff notes`/`internal flags`; Staff must not see Admin-only fields via operational view; Admin still does not see credentials.
 - **Validation (schema → domain → authz):** `name → valid string/length` (trimmed, collapses whitespace), `phone → approved format` (normalized, max 30, not auto `phone_verified:true`), `email → valid format` (lowercased) but change via security workflow. Do not perform business authorization through field validation. `INVALID_VALUE`/`INVALID_FORMAT`/`MISSING_REQUIRED_FIELD` per `api-contract.md §15`.
 - **Cross-references:** Validation `api-contract.md §29.6/§29.13`; authorization `api-contract.md §29.12`; error codes `AUTHENTICATION_REQUIRED` (401), `INVALID_VALUE` (422 for immutable fields), `FORBIDDEN` (403) where appropriate; business-rules `business-rules.md §14`.
+
+### 8.6 Administrative Customer Representation (`ADM-008` / `ADM-009`)
+
+`GET /api/v1/users` and `GET /api/v1/users/{user}` are ADMIN-only, read-only Customer visibility endpoints requiring `users.manage_authorized`. They return only effective single-role `CUSTOMER` accounts; Staff/Admin identities are excluded from collections and masked as `404 RESOURCE_NOT_FOUND` for detail lookups.
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `user_...` | Authorized Admin | no | Stable opaque identifier; raw database IDs and Clerk subjects are never accepted or returned |
+| `role` | literal `CUSTOMER` | Authorized Admin | no | Customer-only endpoint scope |
+| `name` | string \| null | Authorized Admin | yes | Email/password signup may not provide a name |
+| `email` | string | Authorized Admin | no | Local Clerk-synchronized contact snapshot; no live Clerk lookup per row |
+| `phone` | string \| null | Authorized Admin | yes | Profile contact data; no placeholder is manufactured |
+| `email_verified` | boolean | Authorized Admin | no | Read-only local verification snapshot |
+| `created_at` / `updated_at` | ISO8601 `Z` | Authorized Admin | no | Server-generated timestamps |
+
+Responses are `Cache-Control: private, no-store` with `Vary: Authorization`, use `page`/`per_page` only, and order `created_at DESC, id ASC`. They never serialize credentials, Clerk IDs, permissions, RBAC pivots, tokens, sessions, account state, Customer history, or CRM metrics. No Customer write, role/security change, suspension, blocking, credential management, or impersonation endpoint exists.
 
 ## 10. Staff/Admin Operational Resources — Privileged Boundaries (Phase 1.29)
 
@@ -928,7 +944,7 @@ One `ProductStock` row is one Inventory resource: one Variant at one `warehouse_
 | Aspect | Contract |
 |---|---|
 | **Owner** | System |
-| **Privileged readers** | `ADMIN` `audit.view` where approved — `GET /admin/audit-logs` (`ADM-007`) read-only, filters `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`/`no-store`, `meta.pagination`; otherwise `internal-only V1` with no read endpoint |
+| **Privileged readers** | `ADMIN` with explicit `audit.view` — `GET /admin/audit-logs` (`ADM-007`) read-only, strict filters `actor/action/resource_type/resource_id/created_from/created_to/page/per_page`, `PRIVATE`/`no-store`, `meta.pagination` |
 | **Privileged writers** | **None via ordinary API** — audit events generated server-side from privileged actions; no `PATCH/DELETE /audit-logs` |
 | **Customer visibility** | **None** |
 | **Audit creation mandatory** | All `staff approval/suspend/reactivate`, `role changes`, `delivery-fee changes`, `inventory adjustments`, `order transitions`, `request/enquiry status changes`, `privileged catalog changes` produce event (`actor_id/role/action/resource_type/resource_id/previous_state/resulting_state/timestamp/request_id`) |
@@ -1063,7 +1079,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | **Notification** | No | **Own** (customer notifications, holder-scoped via `/me`) | **Operational own**, recipient-scoped (operational: new order/request/payment event) | **Admin limited own**, recipient-scoped (administrative as needed) | `NOT-001`, `NOT-002` | `GET /me/notifications` (NOT-001) own per actor (Customer own / Staff `OPERATIONAL` own / Admin `ADMIN` limited own), paginated, holder-scoped; `PATCH /me/notifications/{notification}` (NOT-002) read/unread only (content immutable), same actor distinction |
 | **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..008`, `USER-001..002`, `ADM-008/009` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only, canonical `PATCH /api/v1/me`; legacy `/me/profile` retired), `POST /auth/change-password` (AUTH-008, canonical; legacy `POST /me/password` `USER-003` **RETIRED**) own; `GET /users` (ADM-008), `GET /users/{user}` (ADM-009) Admin `users.manage_authorized` only |
 | **Staff / Roles** | No | No | No | **Manage** | `ADM-001..007` | `GET /admin/staff` (ADM-001), `GET /admin/staff/{user}` (ADM-002), `POST /admin/staff` (ADM-003 invite/create, not `POST {password}` generic), `POST /admin/staff/{user}/approve` (ADM-004), `POST /admin/staff/{user}/suspend` (ADM-005), `POST /admin/staff/{user}/reactivate` (ADM-006) — all Admin `staff.manage`/`staff.approve` (audited, no self-approval, `Idempotency-Key` Required for approve/suspend/reactivate, Critical concurrency), plus `GET /admin/audit-logs` (ADM-007) read-only where approved |
-| **Audit Log** | No | No | No | **Read (optional)** | `ADM-007` | `GET /admin/audit-logs` Admin `audit.view` where approved — read-only, filters `actor/action/resource_type/resource_id/created_from/to`, `PRIVATE`/`no-store`, `meta.pagination`; `PATCH/DELETE /audit-logs` prohibited; creation audit mandatory even if read is internal-only |
+| **Audit Log** | No | No | No | **Read** | `ADM-007` | `GET /admin/audit-logs` requires Admin `audit.view`; read-only with strict filters `actor/action/resource_type/resource_id/created_from/created_to/page/per_page`, `PRIVATE`/`no-store`, and `meta.pagination`; audit ID is serialization-only `audit_<base36(event id)>`; `PATCH/DELETE` and detail routes are absent; creation audit remains mandatory |
 | **Operational Product** (distinct from Public) | No | No | **Read/Manage** (operational) | **Manage** | `CAT-007..012` + `INV-002` | Operational product view: includes `is_active/is_published`, `internal inventory quantity/reserved/available` where authorized, `operational metadata` — never via public `GET /products` (public remains `PUBLIC` cacheable; operational is `PRIVATE`) |
 | **Operational Order** | No | No | **Operational** | **Operational/Admin** | `ORD-005..014` | Staff/Admin operational order queue/detail + controlled actions (`accept/process/ready-for-pickup/ship/deliver/complete/delivery-fee`) — financial `delivery_fee` via `ORD-014` `POST .../delivery-fee` (`Idempotency-Key` Required, Critical); fulfillment branch validated |
 
@@ -1071,7 +1087,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 
 Additional notes:
 
-- **Coverage:** `PAY-001/002`/`WEBHOOK-001` are `PROPOSED*` placeholders owned by Group H; all other V1 endpoints are **current `PROPOSED`**, target `APPROVED` after Phase 1.21 (see `api-contract.md §19.15`). No `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` (MVP discipline, §88). No `/my-orders` duplicate of `/me/orders`, no `/categories/{category}/products` duplicate (canonical `GET /products?category=`), no `/products/{product}/images` or `/availability` separate endpoints (embedded in `GET /products/{product}`).
+- **Coverage:** Endpoint status is authoritative in `api-contract.md §19`; `INV-001..003` are **APPROVED** operational inventory endpoints, while `PAY-001/002`/`WEBHOOK-001` remain `PROPOSED*` Group H placeholders. No `wishlist`/`reviews`/`coupons`/`saved addresses`/`loyalty`/`driver tracking` (MVP discipline, §88). No `/my-orders` duplicate of `/me/orders`, no `/categories/{category}/products` duplicate (canonical `GET /products?category=`), no `/products/{product}/images` or `/availability` separate endpoints (embedded in `GET /products/{product}`).
 - **Security review:** All endpoints respect `PUBLIC` vs `CUSTOMER` vs `OPERATIONAL` vs `ADMIN`; anonymous cannot reach private data; `Customer A → B` IDOR blocked via `owns` + 404 masking; `Customer→Staff/Admin`, `Staff→Admin`, `role tampering`, `user_id` swapping all denied per `api-contract.md §18`; `products.manage` ≠ `inventory.manage` distinct; `staff cannot block customer` etc. verified.
 - **Business workflows:** `Anonymous browse CAT-001..004` → `Customer register/login AUTH-001/002 → cart CART-001..004 → checkout CHK-001 → payment PAY-001 → order ORD-001..004 → tracking ORD-003 → cancellation ORD-004 (20-min)` → `Staff ORD-005..013` (inc. `ORD-013` `DELIVERED/READY_FOR_PICKUP→COMPLETED`) + tracking `ORD-012`; `Request REQ-001 → REQ-007 → own REQ-002/003 → staff REQ-004..006`; `Admin ADM-001..004` approvals — all workflows endpoint-complete per `api-contract.md §19.11`.
 
