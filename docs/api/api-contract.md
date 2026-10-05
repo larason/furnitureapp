@@ -1203,7 +1203,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `ENQ-003` | GET | `/api/v1/me/enquiries/{enquiry}` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` owns enquiry | Get own enquiry detail | APPROVED |
 | `ENQ-004` | GET | `/api/v1/enquiries` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | List operational enquiries | APPROVED |
 | `ENQ-005` | GET | `/api/v1/enquiries/{enquiry}` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.view` | Get operational enquiry | APPROVED |
-| `ENQ-006` | POST | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.manage` | Close enquiry `OPEN→CLOSED` (reopen `CLOSED→OPEN` optional) | APPROVED |
+| `ENQ-006` | POST | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Yes | `OPERATIONAL` `enquiries.manage` | Close enquiry `OPEN→CLOSED`; `CLOSED` is terminal | APPROVED |
 | `ENQ-007` | POST | `/api/v1/enquiries/{enquiry}/attachments` | Enquiry | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** — server-issued upload token (from `ENQ-001` response, single-use/time-limited) + parent ownership; same token model as `REQ-007` | Upload enquiry attachment — **preferred: multipart on `ENQ-001` creation**; separate `POST` only with scoped token, private to parent | APPROVED |
 | `NOT-001` | GET | `/api/v1/me/notifications` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own — **Customer**: own (customer notifications); **Staff**: `OPERATIONAL` own, recipient-scoped (operational notifications: new order/request/payment event); **Admin**: `ADMIN` limited own, recipient-scoped (administrative notifications as needed) | List own notifications (holder-scoped via `/me`, paginated) | APPROVED |
 | `NOT-002` | PATCH | `/api/v1/me/notifications/{notification}` | Notification | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own (read/unread only) — **Customer**: own; **Staff**: `OPERATIONAL` own, recipient-scoped; **Admin**: `ADMIN` limited own, recipient-scoped | Mark notification read/unread (only `read`/`unread` mutable; content immutable) | APPROVED |
@@ -3488,7 +3488,7 @@ Within `v1`, do not change without compatibility review: `field type`, `field me
 
 ### 27.1 Enquiry Endpoint Inventory (Authoritative — aligned with Phase 1.19 `§19.1`)
 
-Enquiry endpoints `ENQ-001`..`ENQ-005` are **`APPROVED`** (complete V1 Enquiry contract — finalized in Phase 1.26). `ENQ-006` (staff close/reopen) and `ENQ-007` (attachment upload) are **`APPROVED`** where documented. This supersedes the provisional `PROPOSED` label in `§19.1` for the Enquiry domain; `§19.15` remains `PROPOSED` only for domains not yet finalized. Clients may consume `ENQ-001`..`ENQ-007` as authoritative.
+Enquiry endpoints `ENQ-001`..`ENQ-005` are **`APPROVED`** (complete V1 Enquiry contract — finalized in Phase 1.26). `ENQ-006` (staff close) and `ENQ-007` (attachment upload) are **`APPROVED`** where documented. This supersedes the provisional `PROPOSED` label in `§19.1` for the Enquiry domain; `§19.15` remains `PROPOSED` only for domains not yet finalized. Clients may consume `ENQ-001`..`ENQ-007` as authoritative.
 
 | ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
 |---|---|---|---|---|---|---|---|---|
@@ -3497,7 +3497,7 @@ Enquiry endpoints `ENQ-001`..`ENQ-005` are **`APPROVED`** (complete V1 Enquiry c
 | `ENQ-003` | `GET` | `/api/v1/me/enquiries/{enquiry}` | Customer | Required | `AUTHENTICATED_OWNER` owns enquiry (404 masked) | Get own enquiry detail | — | — |
 | `ENQ-004` | `GET` | `/api/v1/enquiries` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | List operational enquiries (staff queue) | — | — |
 | `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | Get operational enquiry detail | — | — |
-| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` (+ optional `reopen`) | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Close / reopen enquiry (controlled state `OPEN→CLOSED`→`OPEN` where approved) | Designed idempotent | Low/Medium (race `Staff A close + Staff B close`) |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Close enquiry (controlled state `OPEN→CLOSED`; terminal `CLOSED`) | Same close is idempotent | Low/Medium (race `Staff A close + Staff B close`) |
 | `ENQ-007` | `POST` | `/api/v1/enquiries/{enquiry}/attachments` | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** | **Scoped upload token** + parent ownership; predictable ID alone insufficient | Upload enquiry attachment — preferred is inline multipart on `ENQ-001`; separate `POST` only with scoped token, private to parent | — | — |
 
 `*` `ENQ-007` anonymous path requires server-issued upload token returned on `ENQ-001` creation (single-use/time-limited); see §27.8.
@@ -3620,7 +3620,7 @@ OPEN → CLOSED
 | `CLOSED` | Staff has handled / closed enquiry | Staff/Admin via `ENQ-006` | `POST /enquiries/{enquiry}/close` |
 
 - **CLOSED enum:** Only `OPEN`, `CLOSED` are valid (`UPPER_SNAKE_CASE`, CLOSED). Do not invent `ASSIGNED`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `ESCALATED`, `RESOLVED`, `SUBMITTED` for enquiry (that belongs to Request). `OPEN`/`CLOSED` is sufficient if staff only need `needs attention` boolean.
-- **Reopen (optional):** `POST /enquiries/{enquiry}/reopen` (`ENQ-006` variant) may transition `CLOSED→OPEN` for authorized Staff/Admin if business actually needs reopening; in V1 **optional** — if not approved, `CLOSED` is terminal and `OPEN → CLOSED` is the only transition.
+- **Terminal state:** `CLOSED` is terminal through the current V1 API. No reopen operation is exposed; `OPEN → CLOSED` is the only state-changing transition.
 - **Customer cannot set status:** `{"enquiry_status":"CLOSED"}` from customer/anonymous on creation or via `PATCH` is rejected `422` (`field: enquiry_status`). Status changes only via controlled `ENQ-006` staff action (see also §27.10).
 - **Not a second state machine:** Do not use `SUBMITTED`/`IN_REVIEW` (Request) for enquiry — each domain keeps its own minimal state.
 
@@ -3629,25 +3629,23 @@ OPEN → CLOSED
 | Current | Action | Actor | Next | Code if invalid |
 |---|---|---|---|---|
 | `OPEN` | Close | Staff/Admin (`enquiries.manage`) | `CLOSED` | — |
-| `CLOSED` | Reopen (if approved) | Authorized Staff/Admin | `OPEN` | `409 CONFLICT` / `INVALID_ENQUIRY` if not approved |
-
-If reopen not approved, table is simply `OPEN → CLOSED`.
+| `CLOSED` | Close again | Staff/Admin (`enquiries.manage`) | `CLOSED` | Idempotent response; no second transition audit |
 
 ### 27.10 Staff Operational Handling — ENQ-006 (Controlled)
 
 - **Staff view/read:** `ENQ-004`/`ENQ-005` see contact (`name`, `email`, `phone`), `subject`, `message`, optional `product`/`order` reference with validated product info and order summary, `attachments` (metadata), `enquiry_status`, `timestamps` — operational, not ownership.
-- **Staff mutation:** `POST /api/v1/enquiries/{enquiry}/close` (ENQ-006) and optional `reopen` may update only operational fields:
+- **Staff mutation:** `POST /api/v1/enquiries/{enquiry}/close` (ENQ-006) is the only state-changing operation and may update only operational fields:
 
   | Field | Staff writable? | Customer writable? | Notes |
   |---|---|---|---|
-  | `enquiry_status` | Limited (`OPEN→CLOSED`, optional `CLOSED→OPEN` if approved) — controlled actions | No | Via `POST /close`/`reopen`, not generic `PATCH {status}` |
+  | `enquiry_status` | Server-controlled `OPEN→CLOSED` only | No | The `/close` action sets `CLOSED`; no generic `PATCH` or reopen action exists |
   | `staff_internal_notes` | Yes where authorized | No | Separated from customer `message`; never exposed to customer |
   | `message` / `subject` / contact snapshot | No (preserve history) | No (submitted is immutable) | Original enquiry preserved |
   | `product_id` / `order_id` | Read | Read | Validated references preserved |
   | `user_id` / `ownership` | No | No | Never change |
   | `payment_*` / `order_status` | No | No | Enquiry cannot modify order/payment |
 
-- `PATCH` with arbitrary `status` beyond CLOSED enum → `422 INVALID_VALUE`. Prefer `POST /enquiries/{enquiry}/close` over `PATCH {status:"CLOSED"}` for explicit business action if staff closing represents a distinct operation.
+- `ENQ-006` accepts only optional `staff_internal_notes`; `enquiry_status` is not a client field. The `/close` action sets `CLOSED` server-side and rejects arbitrary fields with `422 INVALID_VALUE`.
 - Original submission immutable: staff edits must not silently destroy historical `customer said: "Do you deliver to Dodoma?"`.
 - Internal notes are separate representation — `internal_notes` must not appear in customer response (`ENQ-002`/`ENQ-003`).
 - No messaging thread in V1: Staff response can initially occur through ordinary business contact process (email/phone), not in-app conversation (`Phase Group R` deferred). Do not implement chat.
@@ -3677,23 +3675,23 @@ If reopen not approved, table is simply `OPEN → CLOSED`.
 ### 27.14 Staff/Admin Retrieval & Access Levels
 
 - `ENQ-004 GET /api/v1/enquiries` and `ENQ-005 GET /api/v1/enquiries/{enquiry}` are `OPERATIONAL` `enquiries.view` — paginated, filtered, newest-first. Staff sees contact, product/order context, attachments, internal notes where authorized. Admin broader but still `authorized + auditability + data minimization`.
-- **Staff queue filtering (allow-list):** `search` (name/email/phone/subject/message/reference, order ref), `enquiry_status` CLOSED (`OPEN`/`CLOSED`), `category` CLOSED where used, `product_id`, `order_id`, `created_from`/`created_to` ISO8601 `Z`, `sort`/`sort_direction`, `page`/`per_page`. Unknown filter → `422`. Search constrained to authorized Staff dataset, not global customer database search.
+- **Staff queue filtering (allow-list):** `search` (name/email/phone/subject/message/enquiry reference/order reference), `enquiry_status` CLOSED (`OPEN`/`CLOSED`), `category` CLOSED, `product_id`, `order_id`, `created_from`/`created_to` ISO8601 `Z`, `page`/`per_page`. Unknown filter → `422`. Search constrained to authorized Staff dataset, not global customer database search.
 - Staff cannot use enquiry access to: `change customer role`, `change customer password`, `block customer`, `restrict browsing`, `restrict ordering` — explicit authorization boundary.
 - Admin has legitimate higher authorization (audit `actor/action/resource/target/timestamp/result`) but still data-minimized; no blanket exposure of unrelated account data.
 
 ### 27.15 Privacy, Caching, Abuse & Idempotency
 
-- **Private data:** Enquiry contact (`name`, `phone`, `email`), subject/message, product/order association, attachments are `PRIVATE` — never exposed via public Catalog, never indexed for SEO. Classification: `Catalog → PUBLIC`, `Enquiry → PRIVATE` (`CUSTOMER-PRIVATE` own, `STAFF-OPERATIONAL` authorized, `ADMINISTRATIVE` authorized, `INTERNAL` private). `Cache-Control: private, no-store` for `ENQ-002/003` (own) and `ENQ-004/005` operational. Not CDN public.
+- **Private data:** Enquiry contact (`name`, `phone`, `email`), subject/message, product/order association, attachments are `PRIVATE` — never exposed via public Catalog, never indexed for SEO. Classification: `Catalog → PUBLIC`, `Enquiry → PRIVATE` (`CUSTOMER-PRIVATE` own, `STAFF-OPERATIONAL` authorized, `ADMINISTRATIVE` authorized, `INTERNAL` private). `Cache-Control: private, no-store` for `ENQ-002/003` (own) and `ENQ-004/005/006` operational. Not CDN public.
 - **Field-level exposure:** Customer view excludes `staff_internal_notes`, `internal_tags`; staff view includes as authorized; anonymous creation response excludes internal fields. No `password`/`hash`/`tokens`/`secrets` ever.
 - **Abuse surface:** Anonymous `POST /enquiries` is public mutation → `RATE-LIMIT CANDIDATE` (high priority). Later implementation considers `per-IP throttling, spam prevention, request-size limits, attachment limits` — identified, not implemented. CAPTCHA deferred unless rate-limit insufficient.
 - **Idempotency:** `POST /enquiries` is **not inherently idempotent** — duplicate submit after timeout may create two enquiries. Duplicate enquiry risk is operational noise, not hard uniqueness constraint on `email+message` (legitimate repeated enquiries can occur). Future `Idempotency-Key` optional; do not use `email+message` uniqueness as idempotency. Attachment retries can duplicate files — upload/idempotency strategy accounts for that later.
 - **Message safety:** Treat `message`/`subject` as untrusted input — not interpreted as code/HTML/SQL/file-path/query syntax; backend validates and stores safely; frontend escapes. HTML/Markdown **plain text only** in V1 (not Markdown/HTML) — reduces attack surface and complexity.
-- **Concurrency:** Enquiry intake low concurrency; operational `POST .../close` race `Staff A close + Staff B close` treated as state-transition concurrency (`409 CONFLICT`).
+- **Concurrency:** Enquiry intake is low concurrency; concurrent operational closes use a locked transition. One real `OPEN→CLOSED` audit is committed and same-state close replays are idempotent.
 
 ### 27.16 Query, Pagination, Filter, Search, Sorting — Global Conventions
 
 - **Collection pagination:** `ENQ-002` (customer) and `ENQ-004` (staff) use `page`/`per_page` (1–100) → `meta.pagination` per `§4` / `api-conventions.md §11`.
-- **Staff filters (allow-list, §27.14):** `search`, `enquiry_status` CLOSED (`OPEN`/`CLOSED`), `category` CLOSED where used, `product`/`order` references, `created_from`/`created_to` ISO8601 `Z`, `sort` / `sort_direction`, `page`/`per_page`. Unknown filter → `422`.
+- **Staff filters (allow-list, §27.14):** `search`, `enquiry_status` CLOSED (`OPEN`/`CLOSED`), `category` CLOSED, `product_id`, `order_id`, `created_from`/`created_to` ISO8601 `Z`, `page`/`per_page`. Unknown filter → `422`.
 - **Customer filters:** implicitly scoped to own; `search` limited to own dataset.
 - **Sorting:** `created_at DESC, id ASC` (newest first) default for both staff queue and customer history; `id ASC` tie-breaker; no DB natural order.
 - **No enquiry-specific pagination format** — global reuse (`meta.pagination`).
@@ -3843,7 +3841,7 @@ Only add codes with actual utility per `§15.15`; `INVALID_ENQUIRY` is enquiry-s
 | `order_id` | Input (optional, discouraged anonymous) | Input (optional) | Read | Validate + ownership check |
 | `attachment` | Input (multipart, optional) | Input (optional) | Read | Validate size/type/signature |
 | `user_id` | No | No (derived) | No | Derive (`authenticated` or `null`) |
-| `enquiry_status` | No | No | Controlled (`OPEN→CLOSED`, optional reopen) | Server-generated `OPEN` default, CLOSED enum |
+| `enquiry_status` | No | No | Server-controlled `OPEN→CLOSED` through ENQ-006; `CLOSED` terminal | Server-generated `OPEN` default, CLOSED enum |
 | `staff_internal_notes` | No | No | Staff/Admin writable | Server/store |
 | `order_id` link to payment/delivery_fee | No | No | No | Server later only via Order domain, not enquiry |
 | `created_at` / `updated_at` | No | No | No | Server-generated ISO8601 `Z` |
@@ -4520,7 +4518,7 @@ Enquiries (`ENQ-*`, `§27`) separate from Requests/Orders.
 |---|---|---|---|---|---|---|
 | `ENQ-004` | `GET` | `/api/v1/enquiries` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | List enquiries (paginated, filtered `enquiry_status` CLOSED, `category` CLOSED, `product_id`/`order_id`/`search` allow-list) |
 | `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | View enquiry |
-| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` (+ optional `reopen`) | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Controlled close `OPEN→CLOSED` (+ optional reopen `CLOSED→OPEN`) |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Controlled close `OPEN→CLOSED`; `CLOSED` terminal |
 
 - Original `message` immutable; customer content separated from `staff_internal_notes`.
 - No `enquiry → order` automatic conversion.
@@ -4661,7 +4659,7 @@ Existing IDs remain **retired never recycled**. Phase 1.29 adds/confirms:
 | `REQ-006` | `PATCH` | `/api/v1/requests/{request}` | Request | Staff, Admin | Required | `OPERATIONAL` `requests.manage` | Update operational request state | Designed idempotent | Low/Medium | **APPROVED** |
 | `ENQ-004` | `GET` | `/api/v1/enquiries` | Enquiry | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | List enquiries (operational) | — | — | **APPROVED** (Phase 1.26) |
 | `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Required | `OPERATIONAL` `enquiries.view` | Get enquiry (operational) | — | — | **APPROVED** |
-| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Close/reopen enquiry | Designed idempotent | Low/Medium | **APPROVED** |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Enquiry | Staff, Admin | Required | `OPERATIONAL` `enquiries.manage` | Close enquiry | Same close idempotent | Low/Medium | **APPROVED** |
 | `ADM-001` | `GET` | `/api/v1/admin/staff` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` | List Staff | — | — | **PROPOSED** |
 | `ADM-002` | `GET` | `/api/v1/admin/staff/{user}` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` | Get Staff detail | — | — | **PROPOSED** |
 | `ADM-003` | `POST` | `/api/v1/admin/staff` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` | Invite/create Staff (see §30.13.1) | — | Low | **PROPOSED** |
@@ -5248,7 +5246,7 @@ For every inconsistency in `§31.26`, authoritative documentation was updated: `
 | `ENQ-003` | `GET` | `/api/v1/me/enquiries/{enquiry}` | Customer | Get own enquiry |
 | `ENQ-004` | `GET` | `/api/v1/enquiries` | Staff, Admin | List enquiries |
 | `ENQ-005` | `GET` | `/api/v1/enquiries/{enquiry}` | Staff, Admin | Get enquiry |
-| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Staff, Admin | Close/reopen enquiry |
+| `ENQ-006` | `POST` | `/api/v1/enquiries/{enquiry}/close` | Staff, Admin | Close enquiry |
 | `ENQ-007` | `POST` | `/api/v1/enquiries/{enquiry}/attachments` | Anonymous*, Customer, Staff, Admin | Upload enquiry attachment |
 | `NOT-001` | `GET` | `/api/v1/me/notifications` | Customer, Staff, Admin | List own notifications |
 | `NOT-002` | `PATCH` | `/api/v1/me/notifications/{notification}` | Customer, Staff, Admin | Mark read/unread |

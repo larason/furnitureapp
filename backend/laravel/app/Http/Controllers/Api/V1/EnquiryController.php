@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Api\ApiException;
+use App\Http\Requests\CloseEnquiryRequest;
 use App\Http\Requests\CreateEnquiryRequest;
 use App\Http\Requests\ListCustomerHistoryRequest;
 use App\Http\Requests\ListOperationalEnquiriesRequest;
@@ -146,14 +147,20 @@ class EnquiryController extends V1Controller
             ->withHeaders($this->privateHeaders());
     }
 
-    public function close(HttpRequest $request, string $identifier, CloseEnquiry $closer): JsonResponse
+    public function close(CloseEnquiryRequest $request, string $identifier, CloseEnquiry $closer): JsonResponse
     {
         $actor = $request->user();
         if (! $actor instanceof User) {
             throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
         }
 
-        $updated = $closer->close($this->findOperationalEnquiry($identifier), $actor, $request->attributes->get('request_id'));
+        $updated = $closer->close(
+            $this->findOperationalEnquiry($identifier),
+            $actor,
+            $request->attributes->get('request_id'),
+            $request->hasStaffInternalNotes(),
+            $request->staffInternalNotes(),
+        );
         $updated->load([
             'product' => static fn ($product) => $product->withTrashed(),
             'order',

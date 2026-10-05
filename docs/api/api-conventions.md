@@ -785,8 +785,7 @@ Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; c
 
 ### 27.7 Enquiry Status — Minimal CLOSED `OPEN`/`CLOSED`
 
-- V1 defines minimal `enquiry_status` CLOSED `OPEN` (default at creation, needs attention) → `CLOSED` (handled). Customer never sets status. Staff `ENQ-006` (`POST /enquiries/{enquiry}/close` + optional `reopen`) validates transition; `OPEN→CLOSED` is sufficient if staff only need boolean. Adding `ASSIGNED`/`IN_PROGRESS` etc. requires explicit justification.
-- `CLOSED` may be terminal; `CLOSED→OPEN` reopen only if approved business needs it.
+- V1 defines minimal `enquiry_status` CLOSED `OPEN` (default at creation, needs attention) → `CLOSED` (handled). Customer never sets status. ENQ-006 is `POST /enquiries/{enquiry}/close`; it sets `CLOSED` server-side. `CLOSED` is terminal and no reopen action exists in V1. Adding `ASSIGNED`/`IN_PROGRESS` etc. requires explicit justification.
 
 ### 27.8 Privacy — Private Communication, Not Public Catalog
 
@@ -803,7 +802,7 @@ Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; c
 ### 27.10 Operational Handling vs Ownership
 
 - Staff `enquiries.view` is **operational access**, not ownership. `Staff → owns Enquiry` is false. Admin broader but still `authorized + auditability + data minimization`.
-- `ENQ-006` may write only `enquiry_status` (controlled) and `staff_internal_notes`; customer-provided fields remain immutable; original enquiry preserved.
+- ENQ-006 accepts only optional `staff_internal_notes`; the action route controls `enquiry_status=CLOSED`. Customer-provided fields remain immutable; original enquiry preserved.
 - Future `Enquiry → Order` boundary outside V1 — `ENQ-006` must not silently create Order/payment.
 
 ### 27.11 Caching, Pagination, Filtering, Sorting — Global Reuse
@@ -821,7 +820,7 @@ Cross-field: `product_id` supplied → `product_type` must be `MADE_TO_ORDER`; c
 ### 27.13 Idempotency & Duplicate Handling
 
 - `POST /enquiries` is **not inherently idempotent** — duplicate tap may create two enquiries. Duplicate submission risk is documented as operational noise; explicit idempotency mechanism deferred. Do not block similar `email+message` as duplicate via DB unique constraint.
-- `ENQ-006` close/reopen is designed idempotent (same close replays); concurrency race `Staff A close + Staff B close` handled as state transition concurrency (`409 CONFLICT`).
+- ENQ-006 close is idempotent (same close replays); a concurrent close race commits one real `OPEN→CLOSED` transition/audit and does not produce a second transition audit.
 
 ### 27.14 Validation Hierarchy Applied to Enquiry
 

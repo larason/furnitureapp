@@ -2809,3 +2809,18 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Group K requires verified operational readiness, not a second Admin workflow. Reusing the Group J surface prevents contract drift and preserves the request-first release boundary.
 
 **Status:** Accepted and verified in Phase 11.9 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalFurnitureRequestApiTest,OpenApiRequestContractTest}.php`, `backend/laravel/tests/Integration/FurnitureRequestStatusConcurrencyMysqlTest.php`, `docs/api/openapi.yaml`, `docs/decisions.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/BACKEND-054 — Group K Enquiry Management Reuse and Closure
+
+**Decision:** Phase 11.10 reuses Group J's canonical `ENQ-004` operational list, `ENQ-005` operational detail, and `ENQ-006` controlled close endpoints. No `/admin/enquiries`, `/staff/enquiries`, generic update, delete, or reopen aliases are introduced.
+
+- ENQ-006 is a close action, not generic status mutation. Its only optional client field is `staff_internal_notes`; the action sets `CLOSED` server-side. Original intake is immutable, repeated close is idempotent, and `CLOSED` is terminal through the current V1 API.
+- Enquiry and Furniture Request remain separate domains. Closing an Enquiry creates or mutates no Request, Order, Payment, Delivery, Cart, quote, Product, or inventory reservation. Product and Order associations are read-only historical context.
+- `enquiries.view` remains distinct from `enquiries.manage`. Operational reads and close responses are private (`Cache-Control: private, no-store`, `Vary: Authorization`); customer and anonymous responses never expose `staff_internal_notes`.
+- ENQ-004's frozen filter allow-list is `search`, `enquiry_status`, `category`, `product_id`, `order_id`, `created_from`, `created_to`, `page`, and `per_page`. ENQ-007 remains multipart with the canonical `attachment` field.
+
+**Reason:** Reusing the tested Group J surface avoids a second operational API and keeps the frozen request-first, privacy, and authorization boundaries intact. Documentation now follows the implemented close-only state machine rather than historical optional-reopen wording.
+
+**Status:** Accepted and verified in Phase 11.10 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalEnquiryApiTest,OpenApiEnquiryContractTest}.php`, `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `docs/api/{api-contract.md,api-conventions.md,api-resources.md,openapi.yaml}`, `docs/domain/business-rules.md`, `docs/decisions.md`, `phases/group-K-phases.md`

@@ -1880,6 +1880,17 @@ components:
           - 'null'
           description: Anonymous submission must omit; authenticated customers may reference an order they own
       additionalProperties: false
+    CloseEnquiryRequest:
+      type: object
+      properties:
+        staff_internal_notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 5000
+          description: Optional plain-text operational note. Omit or send null to leave/clear the note according to the current close action semantics.
+      additionalProperties: false
+      description: ENQ-006 is a controlled close action. The server sets CLOSED; enquiry_status and original intake fields are not accepted.
     Attachment:
       type: object
       required:
@@ -4049,6 +4060,46 @@ paths:
       summary: List operational enquiries
       security:
       - bearerAuth: []
+      parameters:
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 100
+        description: Searches name, email, phone, subject, message, enquiry reference, and associated order reference.
+      - name: enquiry_status
+        in: query
+        schema:
+          $ref: '#/components/schemas/EnquiryStatus'
+      - name: category
+        in: query
+        schema:
+          type: string
+          enum: [GENERAL, PRODUCT, DELIVERY, OTHER]
+      - name: product_id
+        in: query
+        schema:
+          type: string
+          pattern: '^prod_[0-9a-z]+$'
+      - name: order_id
+        in: query
+        schema:
+          type: string
+          pattern: '^ord_[0-9a-z]+$'
+      - name: created_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: ISO8601 UTC timestamp, inclusive.
+      - name: created_to
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: ISO8601 UTC timestamp, inclusive and not earlier than created_from.
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -4070,7 +4121,9 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
-      description: Requires STAFF/ADMIN enquiries.view
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      description: Requires STAFF/ADMIN enquiries.view. Response is private, no-store and varies by Authorization. Only the documented query parameters are accepted.
   /enquiries/{enquiry}:
     get:
       operationId: ENQ-005
@@ -4099,6 +4152,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+      description: Requires STAFF/ADMIN enquiries.view and an opaque enq_... identifier. Response is private, no-store and varies by Authorization.
   /enquiries/{enquiry}/close:
     post:
       operationId: ENQ-006
@@ -4109,6 +4163,12 @@ paths:
       - bearerAuth: []
       parameters:
       - $ref: '#/components/parameters/EnquiryPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseEnquiryRequest'
       responses:
         '200':
           description: OK
@@ -4125,8 +4185,11 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+      description: Requires STAFF/ADMIN enquiries.manage. OPEN transitions to CLOSED server-side; repeated close is idempotent. Response is private, no-store and varies by Authorization.
   /enquiries/{enquiry}/attachments:
     post:
       operationId: ENQ-007
@@ -4146,11 +4209,11 @@ paths:
             schema:
               type: object
               properties:
-                file:
+                attachment:
                   type: string
                   format: binary
               required:
-              - file
+              - attachment
       responses:
         '201':
           description: Created

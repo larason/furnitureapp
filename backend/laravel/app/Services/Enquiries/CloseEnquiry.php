@@ -15,28 +15,35 @@ final class CloseEnquiry
 {
     public function __construct(private readonly AuditRecorder $audit) {}
 
-    public function close(Enquiry $enquiry, User $actor, ?string $requestId): Enquiry
+    public function close(Enquiry $enquiry, User $actor, ?string $requestId, bool $notesProvided = false, ?string $notes = null): Enquiry
     {
-        return ConcurrentTransaction::run(function () use ($enquiry, $actor, $requestId): Enquiry {
+        return ConcurrentTransaction::run(function () use ($enquiry, $actor, $requestId, $notesProvided, $notes): Enquiry {
             $locked = Enquiry::query()->whereKey($enquiry->getKey())->lockForUpdate()->firstOrFail();
             $previousStatus = $locked->enquiry_status;
 
-            if ($previousStatus === EnquiryStatus::CLOSED) {
-                return $locked;
+            if ($notesProvided && $locked->staff_internal_notes !== $notes) {
+                $locked->staff_internal_notes = $notes;
             }
 
-            $locked->enquiry_status = EnquiryStatus::CLOSED;
-            $locked->save();
+            if ($previousStatus !== EnquiryStatus::CLOSED) {
+                $locked->enquiry_status = EnquiryStatus::CLOSED;
+            }
 
-            $this->audit->record(
-                $actor,
-                AuditAction::ENQUIRY_STATUS_CHANGED,
-                AuditResourceType::ENQUIRY,
-                EnquiryIdentifier::encode($locked),
-                ['enquiry_status' => $previousStatus->value],
-                ['enquiry_status' => $locked->enquiry_status->value],
-                $requestId,
-            );
+            if ($locked->isDirty()) {
+                $locked->save();
+            }
+
+            if ($previousStatus !== EnquiryStatus::CLOSED) {
+                $this->audit->record(
+                    $actor,
+                    AuditAction::ENQUIRY_STATUS_CHANGED,
+                    AuditResourceType::ENQUIRY,
+                    EnquiryIdentifier::encode($locked),
+                    ['enquiry_status' => $previousStatus->value],
+                    ['enquiry_status' => $locked->enquiry_status->value],
+                    $requestId,
+                );
+            }
 
             return $locked;
         }, true);
