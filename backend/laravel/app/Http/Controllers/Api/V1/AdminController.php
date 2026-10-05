@@ -69,15 +69,18 @@ class AdminController extends V1Controller
             $request->attributes->get('request_id'),
         );
 
+        $lastPage = max(1, $paginator->lastPage());
+        $currentPage = min($paginator->currentPage(), $lastPage);
+
         return response()->json([
             'data' => AdministrativeCustomerResource::collection($paginator->getCollection())->resolve(),
             'meta' => ['pagination' => [
-                'current_page' => $paginator->currentPage(),
+                'current_page' => $currentPage,
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
-                'last_page' => max(1, $paginator->lastPage()),
-                'has_next' => $paginator->hasMorePages(),
-                'has_previous' => $paginator->currentPage() > 1,
+                'last_page' => $lastPage,
+                'has_next' => $currentPage < $lastPage,
+                'has_previous' => $currentPage > 1,
             ]],
         ])->withHeaders($this->privateHeaders());
     }
@@ -108,15 +111,18 @@ class AdminController extends V1Controller
     {
         $paginator = $auditLogs->paginate($request->normalizedQuery());
 
+        $lastPage = max(1, $paginator->lastPage());
+        $currentPage = min($paginator->currentPage(), $lastPage);
+
         return response()->json([
             'data' => AuditLogResource::collection($paginator->getCollection())->resolve(),
             'meta' => ['pagination' => [
-                'current_page' => $paginator->currentPage(),
+                'current_page' => $currentPage,
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
-                'last_page' => max(1, $paginator->lastPage()),
-                'has_next' => $paginator->hasMorePages(),
-                'has_previous' => $paginator->currentPage() > 1,
+                'last_page' => $lastPage,
+                'has_next' => $currentPage < $lastPage,
+                'has_previous' => $currentPage > 1,
             ]],
         ])->withHeaders($this->privateHeaders());
     }

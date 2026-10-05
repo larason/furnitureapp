@@ -1032,6 +1032,7 @@ Potentially:
 staff.approve
 staff.manage
 users.manage_authorized
+audit.view
 products.manage
 inventory.manage
 orders.manage
@@ -3855,7 +3856,7 @@ Only add codes with actual utility per `§15.15`; `INVALID_ENQUIRY` is enquiry-s
 | View own Enquiry (`ENQ-003`) | No (no anonymous retrieval) | **Yes** (404 masked if not own) | No | Authorized |
 | List operational Enquiries (`ENQ-004`) | No | No | **Yes** (`enquiries.view`, private, filter `OPEN` etc.) | **Yes** |
 | View operational Enquiry (`ENQ-005`) | No | No | **Yes** (`enquiries.view`) | **Yes** |
-| Close / Reopen enquiry (`ENQ-006`) | No | No | **Yes** (`enquiries.manage` + valid state) | **Yes** (same, audited) |
+| Close enquiry (`ENQ-006`) | No | No | **Yes** (`enquiries.manage` + valid state) | **Yes** (same, audited) |
 | Upload attachment (`ENQ-007`) | **Scoped** token only | According to parent (`owns` + scoped) | According to parent | According to parent |
 | Manage customer account (enquiry context) | No | Own only | No (staff cannot change ownership/credentials) | Authorized only |
 
@@ -4673,7 +4674,7 @@ Existing IDs remain **retired never recycled**. Phase 1.29 adds/confirms:
 
 ### 30.22 Resource Updates (extend `api-resources.md`)
 
-See `api-resources.md §10` (Staff/Admin Operational Resources). At minimum distinguish `Public Catalog Resource` (customer `GET /products`), `Operational Product Resource` (staff `GET /inventory` + `CAT-007..012` operational fields), `Inventory Resource` (staff `INV-*`), `Order Operational Resource` (staff `ORD-005/006` + actions), `Made-to-Order Request Operational Resource` (staff `REQ-004/005/006`), `General Enquiry Operational Resource` (staff `ENQ-004/005/006`), `Notification Operational Resource` (staff queue), `User/Staff Resource` (admin `ADM-001..006`), `Audit Resource` (only if exposed `ADM-007`). For every resource document `owner`, `privileged readers`, `privileged writers`, `customer visibility` (not exposed), `immutable fields` (e.g., order history), `server-controlled fields`, `state machine` where applicable, `audit requirements`.
+See `api-resources.md §10` (Staff/Admin Operational Resources). At minimum distinguish `Public Catalog Resource` (customer `GET /products`), `Operational Product Resource` (staff `GET /inventory` + `CAT-007..012` operational fields), `Inventory Resource` (staff `INV-*`), `Order Operational Resource` (staff `ORD-005/006` + actions), `Made-to-Order Request Operational Resource` (staff `REQ-004/005/006`), `General Enquiry Operational Resource` (staff `ENQ-004/005/006`), `Notification Operational Resource` (staff queue), `User/Staff Resource` (admin `ADM-001..006`), `Audit Resource` (`ADM-007`). For every resource document `owner`, `privileged readers`, `privileged writers`, `customer visibility` (not exposed), `immutable fields` (e.g., order history), `server-controlled fields`, `state machine` where applicable, `audit requirements`.
 
 ### 30.23 Cross-Domain Checks — Staff/Admin Consistency
 
@@ -4879,7 +4880,7 @@ Canonical self-context remains `GET /api/v1/me` (`USER-001`) and `PATCH /api/v1/
 | **Profile** | User | `Own` (`GET/PATCH /me`) | `Own` (`GET/PATCH /me`) — not browse-as-customer | `Own` (`GET/PATCH /me`) + `ADM-008/009` `ADMIN`-only for `GET /users` |
 | **Inventory** | Business | **No** (sees `availability`/`stock_indicator` only) | `Operational` (`INV-001/002` view, `INV-003` adjust `inventory.manage`) | `Administrative` |
 | **Catalog** | Business | `Public read` (`CAT-001..006`, `availability` only) | `Operational` (`CAT-013/014` read + `CAT-007..012` manage where approved) | `Administrative` |
-| **Audit** | Business | **No** | **Normally no** | `Read-only if exposed` (`ADM-007` `audit.view`, otherwise internal-only per `§30.16.1`) |
+| **Audit** | Business | **No** | **Normally no** | `Read-only` (`ADM-007` explicit `audit.view`, private/no-store per `§30.16.1`) |
 
 Matches `phases/phase-1.30.md §9` table and prior contracts; no contradiction.
 
@@ -5048,7 +5049,7 @@ No invented `SOFA_SHIPPED` type; `PAYMENT_*` deferred to Group H.
 
 Deterministic mapping (no `409`/`422` both for same condition): `INSUFFICIENT_STOCK` → `422` when valid request exceeds available stock (correct the request), `409` when transaction race/stale depletes stock (retry after refresh); `INVALID_ORDER_TRANSITION` → `422 BUSINESS_RULE_VIOLATION` when business-rule invalid (wrong fulfillment branch, PICKUP→SHIPPED), `409 CONFLICT`/`ORDER_STATE_CONFLICT` when stale state (already transitioned); `ORDER_NOT_CANCELLABLE` → `422` when outside 20-min window/ineligible state, `409` when race (`cancel` vs `Staff accept`). Client retry vs correct-request is unambiguous.
 
-- **Enum closure:** All `actor role`, `fulfillment_type PICKUP|DELIVERY`, `product_type IN_STOCK|MADE_TO_ORDER`, `order_status` 9 values, `payment_status`, `notification type` `ORDER_*`/`NEW_*`, `request_status SUBMITTED|IN_REVIEW|CLOSED`, `enquiry_status OPEN|CLOSED`, `inventory reason` 5 values, `audit action` if exposed, `category` where defined are **CLOSED** (`UPPER_SNAKE_CASE` except `availability` `available|unavailable` lower) — no `OTHER`/`CUSTOM`/`EXTENSIBLE` without explicit versioning.
+- **Enum closure:** All `actor role`, `fulfillment_type PICKUP|DELIVERY`, `product_type IN_STOCK|MADE_TO_ORDER`, `order_status` 9 values, `payment_status`, `notification type` `ORDER_*`/`NEW_*`, `request_status SUBMITTED|IN_REVIEW|CLOSED`, `enquiry_status OPEN|CLOSED`, `inventory reason` 5 values, `audit action` CLOSED, `category` where defined are **CLOSED** (`UPPER_SNAKE_CASE` except `availability` `available|unavailable` lower) — no `OTHER`/`CUSTOM`/`EXTENSIBLE` without explicit versioning.
 - **Nullability:** `delivery_address` conditionally required (`DELIVERY` required, `PICKUP` `null`), `delivery_fee` nullable (`null` `PENDING`, `{amount,currency}` `FINALIZED`, `{amount:0}` for `PICKUP`), `payment_state` nullable (`null` while `PENDING_PAYMENT` before `PAY-001`), `order cancellation data` server-generated, `request product_id` nullable, `enquiry order_id` nullable, `attachment` optional `0 or 1`, `notification read_at` nullable (`null` unread) — explicit per `§3`/`§24`/`§26`/`§27`/`§28`.
 - **Date/time:** All `created_at`, `cancellation deadline` (server `created_at` + 20 min), `payment occurred_at`, `fulfillment occurred_at`, `notification read_at`, `request/enquiry created_at`, `staff approval occurred_at`, `audit timestamp` are `ISO8601 Z` (`§3.4`).
 - **Currency/money:** `TZS` `1 TZS = 100` minor units `{amount:int,currency:"TZS"}` universally for `Cart` `unit_price`/`line_total`/`subtotal`, `Checkout`/`Order` `subtotal`/`delivery_fee`/`total`, `Payment` `amount`; precision integer, no float per `§3.8`/`§4`.
@@ -5100,7 +5101,7 @@ No domain uses different convention for same condition; `INV-003` no longer `whe
 | Approve Staff (`POST /admin/staff/{user}/approve`) | **No** | **No** | **Yes** (`staff.approve` audited) |
 | Change roles (`role: CUSTOMER→STAFF`) | **No** | **No** | **Admin-only** controlled (`staff_state` vs `role` separation) |
 | Customer account restriction | **No** | **No** (explicit `403`) | **Not automatically** (explicit contract only) |
-| Read audit log (`GET /admin/audit-logs`) | **No** | **Normally no** | **Yes**, if exposed (`audit.view`) |
+| Read audit log (`GET /admin/audit-logs`) | **No** | **Normally no** | **Yes** (`audit.view`) |
 | Payment gateway administration | **No** | **No** | **No** (Group H / explicit contract) |
 
 **Threat review → contract rule:**
@@ -5283,7 +5284,7 @@ For every inconsistency in `§31.26`, authoritative documentation was updated: `
 | **Notification** (`NOT-*`) | `Own` (`NOT-001/002`) | `Operational own` (`NOT-001` filtered) | `Admin limited own` |
 | **User/Profile** (`USER-*`, `ADM-008/009`) | `Own` (`GET/PATCH /me`) | `Own` (`GET/PATCH /me`) | `Own` + `ADM-008/009` `users.manage_authorized` |
 | **Staff** (`ADM-001..006`) | No | No | `Manage` (`staff.manage`/`staff.approve` audited) |
-| **Audit** (`ADM-007`) | No | Normally no | `Read-only` (`audit.view` if exposed) |
+| **Audit** (`ADM-007`) | No | Normally no | `Read-only` (`audit.view`) |
 
 #### C. State Transition Matrix (State → Action → Next → Actor → Conditions)
 
@@ -5426,7 +5427,7 @@ This section references the canonical examples: `docs/api/api-examples.md:3` (pu
 | Modify order status directly (`PATCH {status}`) | No (422, must use `POST /orders/{order}/ship` etc.) | No (422) | No (422) |
 | Adjust inventory (`INV-003-adjust`) | No (401+403) | Yes (20/min, audited) | Yes |
 | Read another user's notifications (`NOT-002` A→B) | No (404 masked) | No (404 masked) | According to approved scope (own only, operational queue separate) |
-| Read audit logs (`ADM-007`) | No | Normally no (403) | Yes if exposed (PRIVATE, paginated) |
+| Read audit logs (`ADM-007`) | No | Normally no (403) | Yes (PRIVATE, paginated) |
 
 *Subject to operational scope explicitly approved. All tests must enforce `401` for unauthenticated, `404` masked for private ownership, `403` for insufficient role, `409` for state/idempotency conflicts.*
 

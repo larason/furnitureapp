@@ -2812,7 +2812,7 @@ The current `orders` schema has no `billing_address` column and the repository h
 
 ---
 
-### ADR/BACKEND-053 — Group K Request Management Reuse and Closure
+### ADR/BACKEND-055 — Group K Request Management Reuse and Closure
 
 **Decision:** Phase 11.9 reuses the Group J canonical Request workflow: `REQ-004`/`REQ-005` operational reads require `requests.view`; `REQ-006` controlled updates require `requests.manage`. No `/admin/requests` aliases or replacement Request API are introduced.
 
