@@ -1225,13 +1225,13 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `ADM-005` | POST | `/api/v1/admin/staff/{user}/suspend` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` + audit | Suspend staff (`ACTIVE→SUSPENDED`) | PROPOSED |
 | `ADM-006` | POST | `/api/v1/admin/staff/{user}/reactivate` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` + audit | Reactivate staff (`SUSPENDED→ACTIVE`) | PROPOSED |
 | `ADM-007` | GET | `/api/v1/admin/audit-logs` | Audit | Admin | Yes | `ADMINISTRATIVE` `audit.view` | List audit logs | PROPOSED |
-| `ADM-008` | GET | `/api/v1/users` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | List users (authorized admin) | PROPOSED |
-| `ADM-009` | GET | `/api/v1/users/{user}` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | Get user detail (authorized) | PROPOSED |
+| `ADM-008` | GET | `/api/v1/users` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | List CUSTOMER accounts only (authorized admin, paginated) | **APPROVED** (Phase 11.8) |
+| `ADM-009` | GET | `/api/v1/users/{user}` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | Get CUSTOMER account only; Staff/Admin targets are 404-masked | **APPROVED** (Phase 11.8) |
 | `PAY-001` | POST | `/api/v1/payments` | Payment | Customer | Yes | `AUTHENTICATED_OWNER` own order | Initiate payment (generic placeholder, Group H) | PROPOSED* |
 | `PAY-002` | GET | `/api/v1/payments/{payment}` | Payment | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own / `OPERATIONAL` / `ADMIN` limited | Get payment status (generic) | PROPOSED* |
 | `WEBHOOK-001` | POST | `/api/v1/webhooks/payment/{provider}` | Payment | System/Webhook | Signature | `SYSTEM` service auth (Group H) | Payment provider callback (Group H) | PROPOSED* |
 
-> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). `INV-001..003`, `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, and `NOT-001/002` are **`APPROVED`** as marked per row; `AUTH-001..008` are **`RETIRED`**. Other non-payment, non-retired endpoints remain **current `PROPOSED`**.
+> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). `INV-001..003`, `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002`, and `ADM-008/009` are **`APPROVED`** as marked per row; `AUTH-001..008` are **`RETIRED`**. Other non-payment, non-retired endpoints remain **current `PROPOSED`**.
 
 ### 19.2 Endpoint Detail Template & Per-Endpoint Contract Summary
 

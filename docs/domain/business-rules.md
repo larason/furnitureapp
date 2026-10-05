@@ -219,6 +219,7 @@ Validation: layered `Transport → Schema (name required anonymous / optional de
 | 2 | Every sensitive action must be protected and only allowed for authorized actors. Backend authorization is authoritative. | AUTHZ-002 |
 | 3 | Stock, prices, delivery charges, cancellation timing, and payment confirmation are decided by the system, never by client claim. Server-controlled fields (`id`, `created_at`, `updated_at`, `order_reference`, `status`, `payment_status`, `inventory quantities`, `final totals`, `status_history`) are never client-settable. | SEC-001 |
 | 4 | Customer-visible totals and order status cannot be changed from the app or website. | AUTHZ-004 |
+| 5 | Authorized Admin may view limited CUSTOMER account records through `ADM-008/009` only. Staff and Customers cannot browse Customer accounts; Staff/Admin targets are not visible there. These reads never grant credential management, impersonation, suspension, blocking, deletion, or role mutation authority. | AUTHZ-ADMIN-002 |
 
 ## 13. Notifications and Emails (Phase 1.27 — Approved V1)
 

@@ -2779,3 +2779,18 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** The frozen API requires non-null Product price input and output, while the former schema could only persist a Variant price and could not create a valid Variant from CAT-007. This internal persistence reconciliation preserves the public contract and the separate Variant resource boundary.
 
 **Status:** Accepted and implemented in Phase 11.3 Part A | **Date:** 2026-10-04 | **Affected:** `backend/laravel/database/migrations/2026_10_04_130000_add_base_price_to_products_table.php`, `backend/laravel/app/Models/Product.php`, `backend/laravel/app/Queries/ProductCatalogQuery.php`, `backend/laravel/app/Http/Resources/ProductSummaryResource.php`, `docs/decisions.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/BACKEND-052 — Customer-Only Administrative Visibility
+
+**Decision:** `ADM-008` (`GET /api/v1/users`) and `ADM-009` (`GET /api/v1/users/{user}`) remain the frozen canonical paths for administrative Customer visibility. Both require an authenticated `ADMIN` with the explicit `users.manage_authorized` permission, are read-only, and use the local Laravel User projection without per-row Clerk API calls.
+
+- Both endpoints expose only effective single-role `CUSTOMER` accounts. Staff and Admin identities are excluded from the collection and return masked `404 RESOURCE_NOT_FOUND` through `ADM-009`.
+- The administrative representation is explicitly allow-listed to `id`, `role`, `name`, `email`, `phone`, `email_verified`, `created_at`, and `updated_at`. It uses opaque `user_...` identifiers and never exposes Clerk subjects, credentials, tokens, permissions, role pivots, account state, or Customer history.
+- The collection accepts only `page` and `per_page`, orders `created_at DESC, id ASC`, paginates after Customer authorization scope, and responds with `Cache-Control: private, no-store` and `Vary: Authorization`.
+- This reconciliation does not create Customer mutation, suspension, blocking, impersonation, credential management, role change, deletion, Staff directory, CRM, or endpoint aliases. Staff lifecycle remains under `/api/v1/admin/staff`.
+
+**Reason:** Historical “List users” wording was broader than Group K's authority boundary. Customer account visibility needs a minimal Admin-only support surface without granting Staff account administration or exposing privileged identities.
+
+**Status:** Accepted and implemented in Phase 11.8 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/app/Http/Controllers/Api/V1/AdminController.php`, `backend/laravel/app/Http/{Requests,Resources}`, `backend/laravel/app/Support/UserIdentifier.php`, `backend/laravel/tests/Feature/CustomerAdministrationTest.php`, `docs/api/*`, `docs/domain/business-rules.md`, `phases/group-K-phases.md`

@@ -767,6 +767,50 @@ components:
           type: string
           format: date-time
           readOnly: true
+    AdministrativeCustomer:
+      type: object
+      required:
+      - id
+      - role
+      - name
+      - email
+      - phone
+      - email_verified
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+          description: Stable opaque Customer resource ID (`user_...`)
+        role:
+          type: string
+          enum:
+          - CUSTOMER
+          readOnly: true
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+          format: email
+          readOnly: true
+        phone:
+          type:
+          - string
+          - 'null'
+        email_verified:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     UpdateMeRequest:
       type: object
       properties:
@@ -4442,9 +4486,13 @@ paths:
       operationId: ADM-008
       tags:
       - Admin
-      summary: List users
+      summary: List Customers for authorized administration
+      description: CUSTOMER accounts only. Requires ADMIN users.manage_authorized. Private, read-only, and not a Staff/Admin directory.
       security:
       - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -4459,19 +4507,24 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/User'
+                      $ref: '#/components/schemas/AdministrativeCustomer'
                   meta:
                     $ref: '#/components/schemas/CollectionMeta'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /users/{user}:
     get:
       operationId: ADM-009
       tags:
       - Admin
-      summary: Get user
+      summary: Get Customer detail for authorized administration
+      description: CUSTOMER target only. Staff and Admin targets use masked RESOURCE_NOT_FOUND responses. Requires ADMIN users.manage_authorized and is private and read-only.
       security:
       - bearerAuth: []
       parameters:
@@ -4487,13 +4540,15 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/User'
+                    $ref: '#/components/schemas/AdministrativeCustomer'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /admin/products:
     get:
       operationId: CAT-013

@@ -787,7 +787,7 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | Data | Customer `GET /me` | Staff `GET /me` (own) | Staff operational view of Customer (via `Order`/`Request`/`Enquiry`) | Admin `GET /me` or `GET /users/{user}` where authorized |
 |---|---|---|---|---|
 | `id`, `name`, `email`, `phone`, `role`, `email_verified`, `created_at/updated_at` | **Own** | **Own** (same fields: `id`, `role:STAFF`, `name`, `email`, `phone`, `email_verified`) | **Operational only** — customer contact/order snapshot (`recipient_name`, `phone`, `delivery_address`) relevant to `Order` fulfillment, not unrestricted profile browse | **Own** plus authorized `GET /users/{user}` where `users.manage_authorized` (Phase 1.29) |
-| `STAFF/ADMIN → another Customer profile via /me` | No | **No** | No | Only via `ADM-005/006` authorized endpoint, not self-service |
+| `STAFF/ADMIN → another Customer profile via /me` | No | **No** | No | Only via `ADM-008/009` authorized endpoint, not self-service |
 | `role` management | No | No | No | Authorized separate (`staff.approve`/`staff.manage`) |
 
 Self-service `PATCH /me` is **own only** for all roles; Staff cannot edit Customer profile through `/me` and cannot restrict customer browsing/ordering.
@@ -817,6 +817,22 @@ Mass-assignment must be prevented — only allow-listed fields may be updated; u
 - **Privacy:** `GET /me` is `PRIVATE` — `Cache-Control: private, no-store` (not CDN, not public catalog cache). `PATCH /me` is non-cacheable mutation. Customer must not see `internal staff notes`/`internal flags`; Staff must not see Admin-only fields via operational view; Admin still does not see credentials.
 - **Validation (schema → domain → authz):** `name → valid string/length` (trimmed, collapses whitespace), `phone → approved format` (normalized, max 30, not auto `phone_verified:true`), `email → valid format` (lowercased) but change via security workflow. Do not perform business authorization through field validation. `INVALID_VALUE`/`INVALID_FORMAT`/`MISSING_REQUIRED_FIELD` per `api-contract.md §15`.
 - **Cross-references:** Validation `api-contract.md §29.6/§29.13`; authorization `api-contract.md §29.12`; error codes `AUTHENTICATION_REQUIRED` (401), `INVALID_VALUE` (422 for immutable fields), `FORBIDDEN` (403) where appropriate; business-rules `business-rules.md §14`.
+
+### 8.6 Administrative Customer Representation (`ADM-008` / `ADM-009`)
+
+`GET /api/v1/users` and `GET /api/v1/users/{user}` are ADMIN-only, read-only Customer visibility endpoints requiring `users.manage_authorized`. They return only effective single-role `CUSTOMER` accounts; Staff/Admin identities are excluded from collections and masked as `404 RESOURCE_NOT_FOUND` for detail lookups.
+
+| Field | Type | Exposure | Nullable | Notes |
+|---|---|---|---|---|
+| `id` | string opaque `user_...` | Authorized Admin | no | Stable opaque identifier; raw database IDs and Clerk subjects are never accepted or returned |
+| `role` | literal `CUSTOMER` | Authorized Admin | no | Customer-only endpoint scope |
+| `name` | string \| null | Authorized Admin | yes | Email/password signup may not provide a name |
+| `email` | string | Authorized Admin | no | Local Clerk-synchronized contact snapshot; no live Clerk lookup per row |
+| `phone` | string \| null | Authorized Admin | yes | Profile contact data; no placeholder is manufactured |
+| `email_verified` | boolean | Authorized Admin | no | Read-only local verification snapshot |
+| `created_at` / `updated_at` | ISO8601 `Z` | Authorized Admin | no | Server-generated timestamps |
+
+Responses are `Cache-Control: private, no-store` with `Vary: Authorization`, use `page`/`per_page` only, and order `created_at DESC, id ASC`. They never serialize credentials, Clerk IDs, permissions, RBAC pivots, tokens, sessions, account state, Customer history, or CRM metrics. No Customer write, role/security change, suspension, blocking, credential management, or impersonation endpoint exists.
 
 ## 10. Staff/Admin Operational Resources — Privileged Boundaries (Phase 1.29)
 
