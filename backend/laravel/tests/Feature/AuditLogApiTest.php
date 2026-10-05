@@ -166,7 +166,7 @@ class AuditLogApiTest extends TestCase
         $this->withHeaders($staffHeaders)->patchJson('/api/v1/requests/'.FurnitureRequestIdentifier::encode($request), [
             'request_status' => 'IN_REVIEW',
         ])->assertOk();
-        $this->withHeaders($staffHeaders)->postJson('/api/v1/enquiries/'.EnquiryIdentifier::encode($enquiry).'/close')
+        $this->withHeaders($staffHeaders)->post('/api/v1/enquiries/'.EnquiryIdentifier::encode($enquiry).'/close')
             ->assertOk();
         $this->withHeaders($staffHeaders)->getJson(self::PATH)->assertForbidden();
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Exceptions\Api\ApiException;
+use App\Http\Middleware\EnforceApiRequestLimits;
 use App\Models\Enquiry;
 use App\Support\ApiErrorCode;
 use Illuminate\Foundation\Http\FormRequest;
@@ -65,6 +66,8 @@ final class CloseEnquiryRequest extends FormRequest
             throw $this->error((string) array_key_first($query), 'Query parameters are not supported.');
         }
 
+        $this->assertJsonObject();
+
         $input = array_replace($this->request->all(), $this->allFiles());
         $unknown = array_diff(array_keys($input), self::ALLOWED_FIELDS);
         if ($unknown !== []) {
@@ -72,6 +75,14 @@ final class CloseEnquiryRequest extends FormRequest
         }
 
         return $input;
+    }
+
+    private function assertJsonObject(): void
+    {
+        $content = $this->attributes->get(EnforceApiRequestLimits::JSON_BODY_ATTRIBUTE);
+        if ($content !== null && $content !== '' && ! is_object(json_decode((string) $content))) {
+            throw new ApiException(ApiErrorCode::INVALID_TYPE, 'The request body must be a JSON object.', 422);
+        }
     }
 
     private function error(string $field, string $message): ApiException

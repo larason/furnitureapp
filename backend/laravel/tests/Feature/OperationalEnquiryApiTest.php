@@ -128,6 +128,22 @@ final class OperationalEnquiryApiTest extends TestCase
         $this->assertNull($enquiry->fresh()->staff_internal_notes);
     }
 
+    public function test_close_rejects_non_object_json_bodies(): void
+    {
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'enquiry_staff_json_root']));
+
+        foreach (['123', '"note"', '[]'] as $body) {
+            $enquiry = Enquiry::factory()->create();
+
+            $this->withHeaders($headers)
+                ->call('POST', self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION, [], [], [], ['CONTENT_TYPE' => 'application/json'], $body)
+                ->assertUnprocessable()
+                ->assertJsonPath('errors.0.code', 'INVALID_TYPE');
+
+            $this->assertSame('OPEN', $enquiry->fresh()->enquiry_status->value);
+        }
+    }
+
     public function test_view_only_staff_cannot_close_and_closed_close_is_idempotent(): void
     {
         $open = Enquiry::factory()->create();
@@ -135,7 +151,7 @@ final class OperationalEnquiryApiTest extends TestCase
         Role::findByName('STAFF')->revokePermissionTo(PermissionName::ENQUIRIES_MANAGE->value);
         $headers = $this->authenticateAs($staff);
 
-        $this->withHeaders($headers)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($open).self::CLOSE_ACTION)
+        $this->withHeaders($headers)->post(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($open).self::CLOSE_ACTION)
             ->assertForbidden();
 
         Role::findByName('STAFF')->givePermissionTo(PermissionName::ENQUIRIES_MANAGE->value);
@@ -143,7 +159,7 @@ final class OperationalEnquiryApiTest extends TestCase
         $managerHeaders = $this->authenticateAs($manager);
         $closed = Enquiry::factory()->closed()->create();
 
-        $this->withHeaders($managerHeaders)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($closed).self::CLOSE_ACTION)
+        $this->withHeaders($managerHeaders)->post(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($closed).self::CLOSE_ACTION)
             ->assertOk();
 
         $this->assertSame(0, AuditEvent::query()->count());
@@ -157,7 +173,7 @@ final class OperationalEnquiryApiTest extends TestCase
         });
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'enquiry_staff_5']));
 
-        $this->withHeaders($headers)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION)
+        $this->withHeaders($headers)->post(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION)
             ->assertStatus(500);
 
         $this->assertSame('OPEN', $enquiry->fresh()->enquiry_status->value);
@@ -188,7 +204,7 @@ final class OperationalEnquiryApiTest extends TestCase
         $adminHeaders = $this->authenticateAs(User::factory()->admin()->create(['clerk_user_id' => 'enquiry_admin_permissions']));
         $this->withHeaders($adminHeaders)->getJson('/api/v1/enquiries')->assertOk();
         $this->withHeaders($adminHeaders)->getJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry))->assertOk();
-        $this->withHeaders($adminHeaders)->postJson(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION)->assertOk();
+        $this->withHeaders($adminHeaders)->post(self::ENQUIRIES_PATH.EnquiryIdentifier::encode($enquiry).self::CLOSE_ACTION)->assertOk();
 
         Role::findByName('STAFF')->revokePermissionTo(PermissionName::ENQUIRIES_VIEW->value);
         $unprivilegedStaffHeaders = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'enquiry_no_view_staff']));
