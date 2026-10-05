@@ -144,6 +144,22 @@ final class OperationalEnquiryApiTest extends TestCase
         }
     }
 
+    public function test_close_validates_payload_before_resolving_an_unknown_enquiry(): void
+    {
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'enquiry_staff_validation_order']));
+        $unknown = self::ENQUIRIES_PATH.'enq_z'.self::CLOSE_ACTION;
+
+        $this->withHeaders($headers)->postJson($unknown, ['subject' => 'tampered'])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE')
+            ->assertJsonPath('errors.0.field', 'subject');
+
+        $this->withHeaders($headers)->postJson($unknown.'?staff_internal_notes=query-note')
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'INVALID_VALUE')
+            ->assertJsonPath('errors.0.field', 'staff_internal_notes');
+    }
+
     public function test_view_only_staff_cannot_close_and_closed_close_is_idempotent(): void
     {
         $open = Enquiry::factory()->create();

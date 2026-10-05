@@ -154,12 +154,15 @@ class EnquiryController extends V1Controller
             throw new ApiException(ApiErrorCode::AUTHENTICATION_REQUIRED, 'Authentication is required.', 401);
         }
 
+        $notesProvided = $request->hasStaffInternalNotes();
+        $notes = $request->staffInternalNotes();
+
         $updated = $closer->close(
             $this->findOperationalEnquiry($identifier),
             $actor,
             $request->attributes->get('request_id'),
-            $request->hasStaffInternalNotes(),
-            $request->staffInternalNotes(),
+            $notesProvided,
+            $notes,
         );
         $updated->load([
             'product' => static fn ($product) => $product->withTrashed(),
