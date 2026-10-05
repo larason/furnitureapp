@@ -2318,6 +2318,18 @@ The migration remains unchanged and intentionally does not embed `ALGORITHM=INPL
 
 ---
 
+### ADR/BACKEND-051 — Phase 11.6 Inventory Management Reconciliation
+
+**Decision:** Phase 11.6 reuses the canonical Group E Inventory API without Admin aliases, duplicate controllers, schema changes, or commerce activation. `INV-001..003` are accepted as the Staff/Admin operational inventory surface: reads require `inventory.view`; controlled quantity adjustment requires `inventory.manage`, durable idempotency, and atomic audit persistence.
+
+- **Regression hardening:** Added operational visibility coverage for inactive Variants and inactive/unpublished Products, deterministic collection ordering, no fabricated zero-stock rows, exact detail representation, strict adjustment input coverage, authorization on idempotent replay, audit request correlation/state snapshots, and reservation-preserving adjustments.
+- **Concurrency:** Disposable MariaDB verification passes for reservation of the last unit, independent adjustments, negative-adjustment serialization, adjustment-vs-reservation, and same-key idempotency. The invariant assertion now correctly enforces `0 <= reserved_quantity <= quantity`.
+- **Contract reconciliation:** `INV-001..003` are marked `APPROVED`; OpenAPI now requires `Inventory.updated_at`; business-rule reference labels no longer reuse endpoint IDs.
+
+**Status:** Accepted | **Affected:** `backend/laravel/tests/{Feature/InventoryReadApiTest.php,Feature/InventoryAdjustmentApiTest.php,Integration/InventoryConcurrencyMysqlTest.php}`, `docs/api/{api-contract.md,api-resources.md,openapi.yaml}`, `docs/domain/business-rules.md`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
 ### ADR/BACKEND-031 — Phase 6.1 Cart Model Review
 
 **Decision:** The existing Group C `carts`/`cart_items` persistence model is fit for the frozen V1 Cart contract (`CART-001..005`) without schema redesign. Phase 6.1 reviewed the model, reconciled two small contract mismatches, and deferred all API/workflow implementation to later Group F phases.

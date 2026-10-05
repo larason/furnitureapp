@@ -31,9 +31,9 @@ The computer system is always the final authority on what is allowed, what costs
 
 | # | Business rule | Ref |
 |---|---|---|
-| 1 | The stock number shown to customers is informative only. The system makes the real, final stock check. | INV-001 |
-| 2 | Available stock can never go below zero. | INV-002 |
-| 3 | If two customers try to buy the last item at the same time, only one can succeed. The system never sells more than it has. | INV-003 |
+| 1 | The stock number shown to customers is informative only. The system makes the real, final stock check. | Catalog availability / checkout validation |
+| 2 | Available stock can never go below zero. | Inventory invariants |
+| 3 | If two customers try to buy the last item at the same time, only one can succeed. The system never sells more than it has. | Inventory concurrency |
 | 4 | Adding something to a cart does **not** put it aside or reserve it for you. | INV-004 |
 | 5 | An item may become unavailable after a customer has looked at it; the final decision is made when they check out. | INV-005 |
 | 6 | The system tracks stock as units held, units reserved, and units available to sell. | INV-006 |

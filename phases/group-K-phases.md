@@ -1,2749 +1,1899 @@
-# Phase 11.5 — Product Image Management
+# Phase 11.6 — Inventory Management
 
-**Status:** Implemented 2026-10-04. CAT-009 uses Cloudflare R2 through Laravel Storage, derives URLs from `R2_PUBLIC_BASE_URL`, and accepts one validated JPEG/PNG/WebP image without server-side transformation.
+## Objective
 
-## 1. Objective
+Complete **Group K / Phase 11.6 — Inventory Management** by making the already-established Group E inventory capabilities fully usable and verified as the canonical Staff/Admin operational inventory surface.
 
-Implement Version 1 Product image upload and public delivery using:
+This is primarily a:
 
 ```text
-Cloudflare R2
+reuse
+→ contract reconciliation
+→ authorization verification
+→ operational hardening
+→ regression/concurrency verification
+```
+
+phase.
+
+Do **not** create a parallel Admin inventory API.
+
+The canonical V1 inventory endpoints remain:
+
+```text
+INV-001
+GET /api/v1/inventory
+
+INV-002
+GET /api/v1/inventory/{inventory}
+
+INV-003
+POST /api/v1/inventory/{inventory}/adjust
+```
+
+Phase 11.6 must inspect the current implementation first and reuse it.
+
+If Group E already fully implements a requirement below, do not rewrite it merely because this is Group K.
+
+Instead:
+
+1. verify it;
+2. add missing regression coverage if necessary;
+3. reconcile stale documentation/status;
+4. fix only genuine contract/runtime gaps.
+
+---
+
+# 1. Architectural Boundary
+
+Group K already decided that Admin operations reuse canonical domain APIs rather than creating UI/navigation-specific aliases.
+
+Therefore:
+
+```text
+DO use:
+GET  /api/v1/inventory
+GET  /api/v1/inventory/{inventory}
+POST /api/v1/inventory/{inventory}/adjust
+```
+
+Do NOT add:
+
+```text
+/api/v1/admin/inventory
+/api/v1/admin/inventory/{inventory}
+/api/v1/admin/inventory/{inventory}/adjust
+/api/v1/staff/inventory
+/api/v1/products/{product}/inventory
+/api/v1/variants/{variant}/inventory
+```
+
+Do not create duplicate controllers/services/resources merely for Group K.
+
+The eventual Admin frontend must consume the canonical Inventory API.
+
+---
+
+# 2. Current Production-Scope Boundary
+
+The initial production release remains **request-first**.
+
+Only `MADE_TO_ORDER` products are intended for the initial live storefront, while:
+
+```text
+Cart
+Checkout
+Payments
+Paid-order processing
+Delivery commerce lifecycle
+```
+
+remain deferred/inactive for production.
+
+Phase 11.6 does **not** reactivate transactional commerce.
+
+Completing Inventory Management means the backend operational capability is correct and ready.
+
+It does NOT mean:
+
+```text
+enable checkout
+publish IN_STOCK products
+activate payment
+activate order processing
+activate delivery
+```
+
+Do not change the request-first launch decision.
+
+---
+
+# 3. Existing Inventory Authority
+
+Preserve the existing domain model.
+
+Inventory is represented by:
+
+```text
+ProductStock
+```
+
+with one row representing:
+
+```text
+one ProductVariant
 +
-Cloudflare custom-domain CDN delivery
+one warehouse_location
 ```
 
-The business owner manually optimizes Product images before upload.
-
-Laravel must perform:
+Authoritative persisted fields include:
 
 ```text
-authentication
-authorization
-security validation
-safe object-key generation
-R2 upload
-database persistence
-public CDN URL projection
-failure compensation
-```
-
-Laravel must NOT perform:
-
-```text
-resizing
-compression
-format conversion
-thumbnail generation
-WebP conversion
-AVIF conversion
-image optimization
-Cloudflare Images transformations
-```
-
-Cloudflare Images is NOT part of this architecture.
-
----
-
-# 2. Final Media Architecture
-
-Use:
-
-```text
-Admin
-  ↓
-manually optimized image
-  ↓
-Laravel API
-  ├── authenticate
-  ├── authorize
-  ├── validate actual file
-  └── generate object key
-  ↓
-Cloudflare R2
-  ↓
-R2 custom domain
-  ↓
-Cloudflare CDN/cache
-  ↓
-Next.js / Flutter
-```
-
-Example public delivery:
-
-```text
-https://assets.example.com/products/prod_xxx/img_xxx.webp
-```
-
-The exact domain will be supplied later by the project owner through `.env`.
-
----
-
-# 3. Existing Persistence Architecture
-
-Preserve the established:
-
-```text
-product_images
-```
-
-architecture.
-
-The authoritative storage reference remains:
-
-```text
-file_path
-```
-
-It stores an internal object-storage key, not a CDN URL.
-
-Example:
-
-```text
-products/prod_01ABC/img_01XYZ.webp
-```
-
-Do NOT persist:
-
-```text
-https://assets.example.com/products/prod_01ABC/img_01XYZ.webp
-```
-
-as the authoritative database value.
-
-The existing design deliberately separates Product images from Products and ProductVariants and keeps storage/CDN provider details out of the database.
-
----
-
-# 4. Existing Product Image Fields
-
-Preserve the current schema:
-
-```text
-id
-product_id
 product_variant_id
-file_path
-alt_text
-sort_order
-is_primary
-timestamps
+warehouse_location
+quantity
+reserved_quantity
 ```
 
-Do not add speculative metadata columns such as:
+The same:
 
 ```text
-mime_type
-filesize
-width_px
-height_px
-checksum
-blurhash
-dominant_color
-status
-is_visible
-is_published
+product_variant_id + warehouse_location
 ```
 
-The existing Product-image ADR explicitly excluded those columns.
+pair must remain unique.
+
+Do not move inventory onto:
+
+```text
+products
+product_variants
+```
+
+and do not introduce duplicate quantity columns there.
 
 ---
 
-# 5. Existing Domain Invariants
+# 4. Quantity Semantics
 
-Preserve:
+Preserve the existing semantics exactly.
 
 ```text
-ProductImage belongs to exactly one Product
-optional ProductVariant association
-variant must belong to same Product
-stable ordering by sort_order ASC, id ASC
-at most one primary image per Product
+quantity
+= physical units owned at this location
+
+reserved_quantity
+= physical units currently reserved and unavailable to another allocation
+
+available_quantity
+= quantity - reserved_quantity
 ```
 
-Do not weaken existing application or database primary-image enforcement.
+`available_quantity` is derived.
+
+Do NOT persist it.
+
+The invariant remains:
+
+```text
+0 <= reserved_quantity <= quantity
+```
+
+No operation may violate this invariant.
 
 ---
 
-# PART A — CAT-009 CONTRACT RECONCILIATION
+# 5. Warehouse / Location Model
 
-## 6. Frozen Endpoint
-
-Implement:
-
-```http
-POST /api/v1/products/{product}/images
-```
-
-Endpoint:
+V1 intentionally uses:
 
 ```text
-CAT-009
+warehouse_location
+```
+
+as a bounded stable machine-friendly string.
+
+Examples may include:
+
+```text
+main
+dar-es-salaam
+arusha-store
+```
+
+Do NOT introduce during Phase 11.6:
+
+```text
+warehouses table
+warehouse addresses
+warehouse contacts
+regions
+delivery zones
+stock transfer subsystem
+warehouse CRUD
+```
+
+Those require separate product/business decisions.
+
+Phase 11.6 works with existing `ProductStock` rows.
+
+---
+
+# 6. INV-001 — Operational Inventory Collection
+
+Verify and, only if necessary, complete:
+
+```text
+GET /api/v1/inventory
 ```
 
 Authorization:
 
 ```text
-products.manage
+authentication required
+permission: inventory.view
 ```
 
-Actors:
+Expected actors:
 
 ```text
-STAFF
-ADMIN
+STAFF with inventory.view
+ADMIN with inventory.view
 ```
 
-subject to explicit permission.
+Customer and anonymous access must fail.
 
-The catalog contract defines CAT-009 as the single Product image mutation endpoint in V1.
+Do not infer access merely from role name.
 
----
+Use the existing centralized authorization/permission infrastructure.
 
-# 7. Frozen Request Shape
+## Representation
 
-The current OpenAPI request is:
-
-```text
-multipart/form-data
-```
-
-with one field:
-
-```text
-image
-```
-
-binary.
-
-Do not expand the request to:
-
-```text
-alt_text
-sort_order
-is_primary
-variant_id
-file_path
-url
-filename
-```
-
-in this phase.
-
-Preserve the external CAT-009 request shape.
-
----
-
-# 8. Confirmed OpenAPI Response Error
-
-Current CAT-009 OpenAPI incorrectly defines:
-
-```text
-201.data → Attachment
-```
-
-This is inconsistent with the Product Image domain.
-
-Correct it to:
-
-```text
-201.data → ProductImage
-```
-
-This is a frozen-contract consistency correction.
-
-It is NOT a new API concept.
-
-CAT-009 creates:
-
-```text
-ProductImage
-```
-
-not:
-
-```text
-Request/Enquiry Attachment
-```
-
----
-
-# 9. ProductImage Response
-
-Return:
+Each collection item must use the canonical Inventory resource:
 
 ```json
 {
-  "data": {
-    "id": "img_...",
-    "url": "https://assets.example.com/products/prod_.../img_....webp",
-    "alt_text": "Walnut Dining Table",
-    "sort_order": 1,
-    "is_primary": true
-  }
+  "id": "inv_...",
+  "product_id": "prod_...",
+  "variant_id": "var_...",
+  "warehouse_location": "main",
+  "quantity": 10,
+  "reserved_quantity": 2,
+  "available_quantity": 8,
+  "updated_at": "..."
 }
 ```
 
-according to the existing ProductImage schema.
+Do not expose raw database IDs.
 
-Never expose:
-
-```text
-file_path
-R2 bucket
-R2 endpoint
-access key
-secret
-internal filesystem disk
-```
-
----
-
-# 10. Server-Controlled Image Metadata
-
-Because CAT-009 accepts only the file, define the following V1 server rules:
+Do not expose:
 
 ```text
-product_variant_id = null
-
-alt_text = current Product name
-
-sort_order = append after existing Product images
-
-is_primary = true when Product currently has no primary image
-             false otherwise
-```
-
-These values are server-derived.
-
-This repairs legacy Products that have image rows but no primary image. CAT-009
-does not replace an existing primary image.
-
----
-
-# 11. Product-Wide Images Only Through CAT-009
-
-CAT-009 does not accept a Variant identifier.
-
-Therefore:
-
-```text
-product_variant_id = null
-```
-
-for CAT-009-created images.
-
-Do not guess Variant association from:
-
-```text
-filename
-Product state
-SKU
-image content
-```
-
-Variant-specific image management requires a future explicit contract if needed.
-
----
-
-# 12. Alt Text Rule
-
-For V1:
-
-```text
-alt_text = Product.name
-```
-
-at upload time.
-
-Example:
-
-```text
-Product.name = "Solid Walnut Dining Table"
-
-alt_text =
-"Solid Walnut Dining Table"
-```
-
-Do not generate:
-
-```text
-AI descriptions
-computer vision captions
-filename-derived descriptions
-```
-
----
-
-# 13. Alt Text Is a Snapshot
-
-If Product.name later changes:
-
-do NOT automatically rewrite existing ProductImage.alt_text.
-
-The upload captures the Product's current name.
-
-A future explicit image metadata editing operation can address manual alt-text management if needed.
-
-Do not invent one in V1.
-
----
-
-# 14. Sort Order Rule
-
-For each Product:
-
-```text
-next sort_order =
-MAX(existing sort_order) + 1
-```
-
-V1 public representation treats image positions as 1-indexed.
-
-For a Product with zero images:
-
-```text
-sort_order = 1
-```
-
----
-
-# 15. Primary Image Rule
-
-If Product has no existing images:
-
-```text
-new image is_primary = true
-```
-
-Otherwise:
-
-```text
-new image is_primary = false
-```
-
-Therefore every Product with at least one CAT-009-created image naturally obtains a primary image.
-
----
-
-# 16. No Client Primary Control
-
-CAT-009 must reject or structurally exclude:
-
-```text
-is_primary
-```
-
-from the multipart input.
-
-Do not permit the caller to bypass the database primary-image invariant.
-
----
-
-# 17. Concurrent First Uploads
-
-Two simultaneous uploads to an imageless Product must not both become primary.
-
-Use database transaction + locking.
-
-The existing unique primary guard remains the final database defense.
-
----
-
-# 18. Concurrent Ordering
-
-Two simultaneous Product uploads must not receive the same server-assigned sort position through an unsafe:
-
-```text
-read MAX
-→ race
-→ insert
-```
-
-sequence.
-
-Serialize metadata allocation appropriately.
-
-Prefer locking the Product row before inspecting its image set.
-
-Conceptually:
-
-```text
-BEGIN
-
-lock Product FOR UPDATE
-
-read current Product images
-
-next_sort =
-    max(sort_order) + 1
-
-is_primary =
-    images.count == 0
-
-persist ProductImage metadata
-
-COMMIT
-```
-
-Coordinate this with R2 object upload/compensation as specified later.
-
----
-
-# PART B — CLOUDFLARE R2 STORAGE
-
-## 19. Storage Decision
-
-Use Cloudflare R2 exclusively for public Product image bytes in deployed environments.
-
-Do NOT introduce:
-
-```text
-Cloudinary
-Cloudflare Images
-local VPS production uploads
-MySQL BLOB storage
-AWS S3 production bucket
-```
-
-as alternate production behavior in this phase.
-
----
-
-# 20. Laravel Storage Abstraction
-
-Use Laravel's filesystem abstraction.
-
-Define a dedicated disk:
-
-```text
-r2
-```
-
-in:
-
-```text
-config/filesystems.php
-```
-
-Do not scatter raw Cloudflare/S3 client construction across controllers or services.
-
----
-
-# 21. Storage Boundary
-
-Prefer a focused application abstraction such as:
-
-```text
-ProductImageStorage
-```
-
-or:
-
-```text
-AssetStorage
-```
-
-with responsibilities conceptually:
-
-```text
-put()
-delete()
-exists()
-publicUrl()
-```
-
-The exact class naming should follow existing repository conventions.
-
----
-
-# 22. Do Not Build an Image Processor
-
-Do NOT create:
-
-```text
-ImageProcessor
-ImageOptimizer
-ImageResizer
-ThumbnailGenerator
-WebpConverter
-AvifConverter
-ImageTransformationJob
-```
-
-The project owner manually optimizes uploaded assets.
-
----
-
-# 23. R2 Uses S3-Compatible Storage
-
-Configure Laravel R2 through the S3-compatible filesystem driver.
-
-Inspect existing Composer dependencies.
-
-If the Laravel AWS S3 Flysystem adapter is already installed:
-
-reuse it.
-
-If absent, add only the standard Laravel-compatible dependency required for S3-compatible storage.
-
-Do not add Cloudflare-specific SDKs unless actually required.
-
----
-
-# 24. R2 Environment Configuration
-
-The agent MAY edit:
-
-```text
-backend/laravel/.env
-backend/laravel/.env.example
-```
-
-as necessary.
-
-The project owner explicitly authorizes `.env` editing for this phase.
-
----
-
-# 25. Secrets Rule
-
-The agent must NEVER invent or paste real R2 credentials.
-
-The agent must create empty/placeholding entries so the project owner can enter them manually.
-
-Example `.env` configuration:
-
-```text
-PRODUCT_IMAGE_DISK=r2
-
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET=
-R2_ENDPOINT=
-R2_REGION=auto
-
-R2_PUBLIC_BASE_URL=
-```
-
-If Laravel configuration requires a different exact set of keys, use the smallest correct set.
-
----
-
-# 26. `.env.example`
-
-Add documentation-safe placeholders:
-
-```text
-PRODUCT_IMAGE_DISK=r2
-
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET=
-R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-R2_REGION=auto
-R2_PUBLIC_BASE_URL=https://assets.example.com
-```
-
-Never put:
-
-```text
-actual account token
-actual secret key
-actual production bucket credentials
-```
-
-in `.env.example`.
-
----
-
-# 27. `.env`
-
-The agent may add the exact same keys to `.env`.
-
-Leave credential values blank unless they already legitimately exist locally.
-
-The user will populate:
-
-```text
-R2_ACCESS_KEY_ID
-R2_SECRET_ACCESS_KEY
-R2_BUCKET
-R2_ENDPOINT
-R2_PUBLIC_BASE_URL
-```
-
-manually.
-
----
-
-# 28. Never Print Secrets
-
-Completion reports and tests must not echo:
-
-```text
-R2_ACCESS_KEY_ID
-R2_SECRET_ACCESS_KEY
-API token
-credential values
-```
-
-Logs must not contain them.
-
----
-
-# 29. R2 Endpoint
-
-`R2_ENDPOINT` is the S3-compatible API endpoint used by Laravel to write/delete objects.
-
-It is NOT the public storefront asset URL.
-
-Keep these concepts separate:
-
-```text
-R2_ENDPOINT
-→ authenticated storage API
-
-R2_PUBLIC_BASE_URL
-→ public custom CDN domain
-```
-
----
-
-# 30. Custom Domain
-
-`R2_PUBLIC_BASE_URL` represents the Cloudflare custom domain attached to the R2 bucket.
-
-Example:
-
-```text
-https://assets.example.com
-```
-
-Do not hard-code a production domain in PHP.
-
----
-
-# 31. Public URL Projection
-
-Given:
-
-```text
-file_path =
-products/prod_ABC/img_XYZ.webp
-```
-
-and:
-
-```text
-R2_PUBLIC_BASE_URL =
-https://assets.example.com
-```
-
-serialize:
-
-```text
-https://assets.example.com/products/prod_ABC/img_XYZ.webp
-```
-
----
-
-# 32. Do Not Persist Public URL
-
-Only persist:
-
-```text
-file_path
-```
-
-The URL is derived at serialization/runtime.
-
-This preserves provider/domain portability.
-
----
-
-# 33. Public URL Service
-
-Centralize URL construction.
-
-Do not write:
-
-```php
-config('...') . '/' . $image->file_path
-```
-
-independently in multiple resources.
-
-Use one storage/public URL service.
-
----
-
-# 34. URL Misconfiguration
-
-In production-like environments:
-
-if:
-
-```text
-R2_PUBLIC_BASE_URL
-```
-
-is missing while Product images need serialization:
-
-fail clearly/configurationally rather than emitting malformed URLs.
-
-Do not silently return the R2 S3 API endpoint as a storefront image URL.
-
----
-
-# 35. R2 Bucket Exposure
-
-The public browser/mobile path is:
-
-```text
-custom domain
-→ Cloudflare CDN
-→ R2 object
-```
-
-Do not generate signed download URLs for ordinary public Product images.
-
-These are storefront assets.
-
----
-
-# 36. Object ACLs
-
-Do not depend on S3 per-object ACL semantics to expose images.
-
-The R2 bucket/custom-domain configuration owns public delivery.
-
-Laravel writes the object.
-
-Cloudflare custom-domain configuration exposes/cache-serves it.
-
----
-
-# PART C — OBJECT KEY STRATEGY
-
-## 37. Server-Generated Object Keys
-
-Never derive the storage path directly from the uploaded client filename.
-
-Use opaque server-controlled image identifiers.
-
-Conceptually:
-
-```text
-products/{product-public-id}/{image-public-id}.{extension}
-```
-
-Example:
-
-```text
-products/prod_01ABC/img_01XYZ.webp
-```
-
----
-
-# 38. No Numeric Internal IDs in Public Paths
-
-Prefer opaque API Product/Image identifiers over database integer IDs.
-
-Do not leak:
-
-```text
-/products/24/17.webp
-```
-
-if the repository already has public Product/Image identifiers.
-
----
-
-# 39. Extension
-
-Extension must come from server-detected image type.
-
-Example:
-
-```text
-image/jpeg → jpg
-image/png  → png
-image/webp → webp
-```
-
-Never trust the client's filename extension.
-
----
-
-# 40. Filename Is Not Authority
-
-This:
-
-```text
-beautiful-sofa.webp
-```
-
-may be supplied by the browser,
-
-but object path must remain server-generated.
-
-Do not allow:
-
-```text
-../../
-slashes
-backslashes
-NUL
-URL traversal
-```
-
-to influence R2 keys.
-
----
-
-# PART D — FILE VALIDATION
-
-## 41. Manual Optimization Does Not Replace Validation
-
-The business owner manually optimizes the image.
-
-Laravel must still treat every upload as untrusted input.
-
----
-
-# 42. Allowed Product Image Types
-
-For V1 allow:
-
-```text
-image/jpeg
-image/png
-image/webp
-```
-
-Do not accept:
-
-```text
-PDF
-SVG
-GIF
-BMP
-TIFF
-ICO
-AVIF
-```
-
-in V1 unless an existing frozen Product-image contract explicitly requires them.
-
----
-
-# 43. Why No SVG
-
-SVG is executable/XML-like content and creates an unnecessary security surface.
-
-Furniture photography does not require it.
-
----
-
-# 44. Why No AVIF Initially
-
-Do not introduce AVIF handling complexity merely because it exists.
-
-The owner can manually optimize to:
-
-```text
-WebP
-JPEG
-PNG
-```
-
-which is sufficient for this small-business V1.
-
-AVIF can be added deliberately later.
-
----
-
-# 45. MIME Validation
-
-Do not trust:
-
-```text
-UploadedFile::getClientMimeType()
-```
-
-as authority.
-
-Use server-side content detection.
-
----
-
-# 46. File Signature Validation
-
-Validate actual signatures.
-
-At minimum:
-
-```text
-JPEG
-FF D8 FF
-
-PNG
-89 50 4E 47 0D 0A 1A 0A
-
-WebP
-RIFF .... WEBP
-```
-
-Reject MIME/signature mismatch.
-
-Reuse/refactor the proven attachment validation concepts from Group J where sensible, but do not couple public Product images to private Request/Enquiry Attachment persistence.
-
----
-
-# 47. Image Validity
-
-Where platform support permits, ensure the payload is a structurally valid image rather than only matching a few magic bytes.
-
-This is validation only.
-
-Do not:
-
-```text
-resize
-decode/re-encode
-compress
-strip metadata
-transform
-```
-
-the file.
-
-### Location Metadata Rejection
-
-Before storing a Product image, inspect supported embedded metadata and reject
-an image containing GPS/location data. At minimum, JPEG EXIF GPS metadata must
-be detected and rejected. Apply the same rule to other accepted formats when
-they carry EXIF metadata.
-
-Do not rely on manual optimization to remove location metadata. Do not strip,
-re-encode, or otherwise transform accepted bytes: this is a reject-before-store
-validation rule. If an image advertises metadata that the configured runtime
-cannot safely inspect, reject it rather than publishing an unchecked location
-payload.
-
-Add fixtures proving a location-bearing JPEG is rejected, a non-location image
-is accepted, and accepted images retain their original bytes.
-
----
-
-# 48. Maximum File Size
-
-Use a configurable limit:
-
-```text
-PRODUCT_IMAGE_MAX_BYTES
-```
-
-Default:
-
-```text
-5 MiB
-```
-
-because assets are manually optimized.
-
-Example:
-
-```text
-PRODUCT_IMAGE_MAX_BYTES=5242880
-```
-
-Document this as the V1 operational upload limit.
-
----
-
-# 49. Empty File
-
-Reject:
-
-```text
-0-byte
-unreadable
-partial upload
-```
-
-files.
-
----
-
-# 50. Single File
-
-CAT-009 uploads exactly one image per request.
-
-Reject arrays/multiple-file payloads.
-
----
-
-# 51. Strict Multipart Shape
-
-Allow only:
-
-```text
-image
-```
-
-Do not silently ignore multipart fields such as:
-
-```text
-alt_text
-sort_order
-is_primary
-variant_id
 product_variant_id
-url
-file_path
+internal foreign keys
+lock/version internals
+reservation allocation rows
 ```
+
+## Collection behavior
+
+The endpoint lists persisted `ProductStock` rows.
+
+Do NOT fabricate zero-stock rows for Products or Variants with no `ProductStock`.
+
+Do NOT aggregate multiple locations into one Inventory resource.
+
+One row remains one Inventory resource.
+
+## Filters
+
+Preserve the frozen filters:
+
+```text
+product
+variant
+warehouse_location
+page
+per_page
+```
+
+Canonical behavior:
+
+```text
+product
+→ accepted existing contract forms only
+
+variant
+→ opaque var_... identifier as already frozen
+
+warehouse_location
+→ exact match
+```
+
+Unknown query parameters/operators must continue to be rejected according to the API validation convention.
+
+Pagination:
+
+```text
+default per_page = existing frozen value
+maximum = 100
+```
+
+Ordering remains deterministic:
+
+```text
+updated_at DESC
+id ASC
+```
+
+Do not invent arbitrary sort fields.
 
 ---
 
-# 52. Validation Side Effects
+# 7. Operational Visibility Is Not Public Catalog Visibility
 
-Invalid image:
+Inventory operations serve reconciliation and administration.
 
-```text
-must not create ProductImage row
-must not write R2 object
-```
-
----
-
-# PART E — AUTHORIZATION AND PRODUCT RESOLUTION
-
-## 53. Authentication
-
-Anonymous:
-
-```text
-401
-```
-
-Customer:
-
-```text
-403
-```
-
----
-
-# 54. Permission
-
-Require:
-
-```text
-products.manage
-```
-
-Do not authorize merely from role.
-
----
-
-# 55. Permission Matrix
-
-Test:
-
-```text
-Anonymous
-→ 401
-
-CUSTOMER
-→ 403
-
-STAFF without products.manage
-→ 403
-
-STAFF with products.manage
-→ allowed
-
-ADMIN missing products.manage
-→ denied
-
-ADMIN with products.manage
-→ allowed
-```
-
----
-
-# 56. Product Resolver
-
-Use the canonical operational Product resolver introduced/used during Phase 11.3.
-
-CAT-009 must be able to attach images to Products managed operationally.
-
-Do not accidentally use a public-only Product scope that hides:
+Therefore operational Inventory reads must continue to include legitimate stock rows even when their related catalog objects are:
 
 ```text
 inactive
 unpublished
+soft-deleted Product
+inactive Variant
+zero stock
 ```
 
-Products from authorized management.
+Do NOT apply the public Product query scope to INV-001 or INV-002.
+
+A Product becoming unavailable publicly must not make its Inventory record impossible for Staff/Admin to reconcile.
+
+This distinction must have regression coverage.
 
 ---
 
-# 57. Unknown Product
+# 8. INV-002 — Inventory Detail
 
-Return canonical:
+Verify and, only if necessary, complete:
 
 ```text
-404 RESOURCE_NOT_FOUND
+GET /api/v1/inventory/{inventory}
 ```
 
-or the currently established Product operational not-found mapping.
-
-No SQL/internal disclosure.
-
----
-
-# PART F — UPLOAD + DATABASE CONSISTENCY
-
-## 58. Distributed Atomicity Reality
-
-R2 and MySQL cannot participate in one database transaction.
-
-Use explicit compensation.
-
-Do not pretend a DB transaction can roll back an R2 object.
-
----
-
-# 59. Preferred Upload Sequence
-
-Use:
+Authorization:
 
 ```text
-1. validate/auth/authz/Product
-2. generate ProductImage identifier and object key
-3. upload object to R2
-4. transactionally allocate metadata + persist ProductImage
-5. return ProductImage
+inventory.view
 ```
 
-If database persistence fails after upload:
-
-delete the just-written R2 object.
-
----
-
-# 60. Why Upload Before DB Commit
-
-Do not commit a ProductImage row before confirming that its required public object exists.
-
-The successful API invariant should be:
+Resolve the Inventory resource through its canonical opaque:
 
 ```text
-committed ProductImage
-→ corresponding R2 object exists
+inv_...
 ```
 
----
+identifier.
 
-# 61. R2 Upload Failure
-
-If R2 `put()` fails:
+Do not resolve inventory detail by:
 
 ```text
-no ProductImage row
-request fails
+Product slug
+Product ID
+Variant SKU
+warehouse_location
 ```
 
-Do not persist a broken image URL.
+Those are not alternate V1 resource identifiers.
+
+Unknown/malformed resources must use the existing canonical validation/not-found behavior.
+
+Do not leak raw IDs.
 
 ---
 
-# 62. DB Failure After R2 Upload
+# 9. INV-003 — Controlled Inventory Adjustment
 
-Attempt compensating:
+The sole V1 stock quantity mutation endpoint remains:
 
 ```text
-R2 delete(file_path)
+POST /api/v1/inventory/{inventory}/adjust
 ```
 
-then fail request.
-
----
-
-# 63. Cleanup Failure
-
-If:
+Permission:
 
 ```text
-DB persistence fails
-AND
-R2 cleanup also fails
+inventory.manage
 ```
 
-do NOT pretend cleanup succeeded.
-
-Use the project's existing recoverable-storage-failure pattern where appropriate.
-
-Log:
+Do NOT add:
 
 ```text
-request/correlation id
-safe object key
-operation
+PATCH /inventory/{inventory}
+PUT /inventory/{inventory}
+PATCH { "quantity": 999 }
 ```
 
-but never credentials.
-
-Provide enough deterministic information for orphan recovery.
+Inventory is modified by an explicit auditable business action, not arbitrary state replacement.
 
 ---
 
-# 64. No Silent Orphans
+# 10. Strict Request Body
 
-The implementation should make an R2 orphan observable/recoverable.
+The accepted JSON body remains exactly:
 
-Do not silently swallow failed cleanup.
+```json
+{
+  "quantity_delta": 5,
+  "reason": "STOCK_RECEIPT"
+}
+```
 
----
-
-# 65. Transaction Boundary
-
-Within the DB transaction:
+Allowed properties:
 
 ```text
-lock Product
-allocate sort order
-determine primary state
-persist ProductImage
+quantity_delta
+reason
 ```
 
-Use bounded deadlock/transient retry conventions already established by the repository where appropriate.
+Unknown fields must be rejected.
 
----
-
-# 66. First-Image Concurrency
-
-Under concurrent first uploads:
-
-successful committed state must have:
+Explicitly reject attempts to submit:
 
 ```text
-exactly one primary image
-unique/stable image rows
-deterministic sort orders
+quantity
+reserved_quantity
+available_quantity
+product_id
+variant_id
+warehouse_location
+product_variant_id
+actor_id
+staff_id
+performed_by
+user_id
 ```
 
----
-
-# PART G — CDN/CACHE BEHAVIOR
-
-## 67. Immutable Object Keys
-
-Never overwrite an existing Product image object in place.
-
-Every upload receives a new object key.
-
-This makes Cloudflare edge caching safe.
-
----
-
-# 68. Avoid CDN Cache Invalidation
-
-Because CAT-009 is add-only:
-
-```text
-new image
-→ new URL
-```
-
-No CDN purge should be necessary.
-
-Do not add Cloudflare Cache Purge API integration.
-
----
-
-# 69. Cache Headers
-
-Where Laravel controls object metadata during upload, use public long-lived caching suitable for immutable content.
-
-Conceptually:
-
-```text
-Cache-Control:
-public, max-age=31536000, immutable
-```
-
-provided it is compatible with the R2 adapter and project conventions.
-
-Because object keys are immutable, this is safe.
-
----
-
-# 70. Content Type
-
-Set object Content-Type from server-detected type:
-
-```text
-image/jpeg
-image/png
-image/webp
-```
-
-Do not use the client-declared MIME blindly.
-
----
-
-# 71. CDN Is Delivery Infrastructure
-
-Do not proxy Product image bytes through Laravel for public storefront reads.
-
-Clients should load:
-
-```text
-https://assets.example.com/...
-```
-
-directly.
-
----
-
-# PART H — PUBLIC CATALOG INTEGRATION
-
-## 72. CAT-002
-
-Existing:
-
-```text
-GET /api/v1/products/{product}
-```
-
-must embed uploaded images.
-
-Ordering:
-
-```text
-sort_order ASC
-id ASC
-```
-
----
-
-# 73. CAT-001
-
-Product summaries should continue using:
-
-```text
-primary_image
-```
-
-from the Product's actual primary ProductImage.
-
----
-
-# 74. First Upload Effect
-
-For an image-less Product:
-
-```text
-CAT-009 upload succeeds
-```
-
-then:
-
-```text
-CAT-001 primary_image
-```
-
-should become that uploaded image.
-
----
-
-# 75. Subsequent Upload Effect
-
-Additional images:
-
-```text
-is_primary = false
-```
-
-therefore must not unexpectedly change Product card imagery.
-
----
-
-# 76. Image URL
-
-All CAT-001/CAT-002 Product image URLs must use:
-
-```text
-R2_PUBLIC_BASE_URL
-```
-
-not:
-
-```text
-R2_ENDPOINT
-```
-
----
-
-# 77. Public File Path Secrecy
-
-`file_path` remains absent from Product APIs.
-
-It may internally resemble a public CDN path but remains persistence/storage metadata and is not an API field.
-
----
-
-# PART I — NO DELETE/EDIT/REORDER API IN V1
-
-## 78. CAT-009 Is Add-Only
-
-The frozen V1 API contains:
-
-```text
-POST /products/{product}/images
-```
-
-but no Product-image:
-
-```text
-PATCH
-DELETE
-reorder
-set-primary
-```
-
-endpoint.
-
-Do not invent them.
-
----
-
-# 79. No Product Image GET Endpoint
-
-Do not add:
-
-```http
-GET /api/v1/products/{product}/images
-```
-
-The frozen contract explicitly rejected it because CAT-002 embeds images.
-
----
-
-# 80. No Image DELETE Endpoint
-
-Do not add:
-
-```http
-DELETE /api/v1/products/{product}/images/{image}
-```
-
-in Phase 11.5.
-
-Record deletion as an operational limitation/future contract requirement.
-
----
-
-# 81. No Reorder Endpoint
-
-Do not add:
-
-```text
-/images/reorder
-```
-
----
-
-# 82. No Set-Primary Endpoint
-
-Do not add:
-
-```text
-/images/{image}/primary
-```
-
----
-
-# 83. No Alt-Text Update Endpoint
-
-Do not add an image-metadata PATCH endpoint.
-
----
-
-# 84. Existing Database Deletion Semantics
-
-Do not redesign ProductImage FK behavior.
-
-Existing:
-
-```text
-Product hard delete
-→ image DB rows cascade
-
-Variant delete
-→ product_variant_id SET NULL
-```
-
-remain persistence semantics.
-
-Do NOT automatically infer that database cascade means R2 objects are automatically deleted.
-
----
-
-# 85. Product Deletion and External Object Cleanup
-
-Because V1 has no Product DELETE API, do not build broad R2 cleanup around Product deletion in this phase.
-
-Document that external-object lifecycle must be handled deliberately if Product hard deletion becomes an operational API later.
-
----
-
-# PART J — R2 CONFIGURATION IMPLEMENTATION
-
-## 86. `config/filesystems.php`
-
-Add a dedicated disk conceptually:
+Do not use:
 
 ```php
-'r2' => [
-    'driver' => 's3',
-    'key' => env('R2_ACCESS_KEY_ID'),
-    'secret' => env('R2_SECRET_ACCESS_KEY'),
-    'region' => env('R2_REGION', 'auto'),
-    'bucket' => env('R2_BUCKET'),
-    'endpoint' => env('R2_ENDPOINT'),
-    'use_path_style_endpoint' => false,
-    'throw' => true,
-],
+$request->all()
 ```
 
-Adapt exact options to the installed Laravel/Flysystem version.
-
-Do not blindly paste obsolete config.
-
----
-
-# 87. Application Config
-
-Prefer a dedicated config file such as:
+Use the existing:
 
 ```text
-config/product_images.php
-```
-
-containing conceptually:
-
-```text
-disk
-max_bytes
-public_base_url
-allowed_types
-```
-
-Example environment bindings:
-
-```text
-PRODUCT_IMAGE_DISK=r2
-PRODUCT_IMAGE_MAX_BYTES=5242880
-R2_PUBLIC_BASE_URL=
-```
-
-Do not call `env()` directly from domain/services.
-
----
-
-# 88. Config Cache Compatibility
-
-All runtime code must consume:
-
-```text
-config(...)
-```
-
-not direct `env(...)`.
-
-This must work under:
-
-```bash
-php artisan config:cache
-```
-
----
-
-# 89. Local/Test Storage
-
-Tests must not require actual Cloudflare credentials.
-
-Use:
-
-```php
-Storage::fake(...)
-```
-
-or an injected fake storage implementation.
-
-Do not call real R2 in the normal PHPUnit suite.
-
----
-
-# 90. Optional R2 Smoke Test
-
-If the project owner has populated actual credentials locally, an explicit/manual storage smoke test may verify:
-
-```text
-write
-exists
-delete
-```
-
-against the configured test/development R2 bucket.
-
-Do not make this required for canonical unit/feature tests.
-
-Do not delete unknown existing R2 objects.
-
-Use a uniquely generated test key.
-
-Clean it up afterward.
-
----
-
-# 91. No Production Destructive Test
-
-Never run a bucket purge.
-
-Never enumerate-and-delete bucket contents.
-
-Never modify unrelated R2 objects.
-
----
-
-# PART K — IMPLEMENTATION STRUCTURE
-
-## 92. Controller
-
-Keep CAT-009 controller thin:
-
-```text
-authenticated actor
-authorization
 FormRequest
-Product resolver
-service
-ProductImageResource
+validated input
+DTO/command/service boundary
 ```
+
+pattern.
 
 ---
 
-# 93. Request
+# 11. quantity_delta Rules
 
-Use a focused request such as:
-
-```text
-CreateProductImageRequest
-```
-
-Responsibilities:
+`quantity_delta` must be:
 
 ```text
-multipart structure
-exact image field
-size
-server MIME/signature validation integration
-unknown-field rejection
+strict integer
+non-zero
 ```
+
+The server calculates:
+
+```text
+new_quantity = current_quantity + quantity_delta
+```
+
+inside the authoritative locked transaction.
+
+The client must never submit `new_quantity`.
+
+Mandatory invariants:
+
+```text
+new_quantity >= 0
+
+new_quantity >= reserved_quantity
+```
+
+Do not clamp invalid values.
+
+Example:
+
+```text
+quantity = 10
+reserved_quantity = 4
+delta = -7
+
+new_quantity = 3
+```
+
+must be rejected because:
+
+```text
+3 < reserved_quantity 4
+```
+
+even though it is not negative.
 
 ---
 
-# 94. Service
+# 12. CLOSED Adjustment Reasons
 
-Prefer:
-
-```text
-CreateProductImage
-```
-
-or:
+Preserve the CLOSED reason enum:
 
 ```text
-ProductImageService::create()
+STOCK_RECEIPT
+CORRECTION
+DAMAGE
+RETURN
+AUDIT_ADJUSTMENT
 ```
 
-Responsibilities:
+Do not add aliases or new reasons.
+
+Direction rules remain:
 
 ```text
-generate image identifier
-generate object key
-store R2 object
-lock Product
-derive metadata
-persist ProductImage
-compensate storage failure
+STOCK_RECEIPT
+→ quantity_delta > 0
+
+RETURN
+→ quantity_delta > 0
+
+DAMAGE
+→ quantity_delta < 0
+
+CORRECTION
+→ either sign, but non-zero
+
+AUDIT_ADJUSTMENT
+→ either sign, but non-zero
 ```
+
+Examples that must fail:
+
+```text
+DAMAGE +5
+STOCK_RECEIPT -5
+RETURN -2
+quantity_delta 0
+```
+
+Never silently reverse or normalize the client's intended direction.
+
+Unknown reason:
+
+```text
+422 INVALID_VALUE
+field: reason
+```
+
+Use existing canonical errors.
+
+Do not invent a new error family.
 
 ---
 
-# 95. Storage Adapter
+# 13. Existing-Resource-Only Rule
 
-Prefer:
+INV-003 adjusts an existing Inventory resource.
 
-```text
-ProductImageStorage
-```
-
-wrapping Laravel Storage.
-
-Controller/service should not directly know:
+It must NOT:
 
 ```text
-Cloudflare credentials
-bucket endpoint syntax
-CDN hostname construction internals
+create ProductStock
+upsert missing ProductStock
+create warehouse_location
+reassign Variant
+reassign Product
+change warehouse_location
+publish Product
+activate Product
+activate Variant
+delete zero-stock ProductStock
 ```
+
+A missing stock row remains missing.
+
+Do not interpret adjustment as inventory creation.
+
+If future business requirements need creating a new Variant/location stock record, that must be a separately approved API contract.
 
 ---
 
-# 96. Resource
+# 14. Reserved Quantity Must Never Be Directly Adjusted
 
-Use:
-
-```text
-ProductImageResource
-```
-
-with exactly:
+INV-003 changes:
 
 ```text
-id
-url
-alt_text
-sort_order
-is_primary
-```
-
----
-
-# 97. Identifier
-
-Reuse the established ProductImage opaque identifier format:
-
-```text
-img_...
-```
-
-Do not expose numeric DB IDs.
-
----
-
-# 98. No `$request->all()`
-
-Use validated/explicit input.
-
-CAT-009 has only:
-
-```text
-image
-```
-
----
-
-# PART L — SECURITY TESTS
-
-## 99. File Validation Tests
-
-Cover:
-
-```text
-valid JPEG
-valid PNG
-valid WebP
-zero bytes
-oversize
-fake JPEG extension
-fake PNG extension
-fake WebP extension
-MIME/signature mismatch
-PDF
-SVG
-GIF
-multiple files
-non-file text image field
-unknown multipart fields
-```
-
----
-
-# 100. Path Safety Tests
-
-Prove uploaded filename cannot influence:
-
-```text
-directory traversal
-object prefix
-Product identifier
-Image identifier
-```
-
----
-
-# 101. Authorization Tests
-
-Cover full matrix:
-
-```text
-Anonymous
-Customer
-Staff without permission
-Staff products.manage
-Admin without permission
-Admin products.manage
-```
-
----
-
-# 102. Operational Product Tests
-
-Verify upload works to authorized:
-
-```text
-published Product
-unpublished Product
-inactive Product
-```
-
-where Phase 11.3 operational management semantics permit them.
-
----
-
-# PART M — STORAGE FAILURE TESTS
-
-## 103. Successful Upload
-
-Assert:
-
-```text
-R2 fake contains object
-ProductImage row exists
-file_path matches object
-response URL uses CDN base
-```
-
----
-
-# 104. Storage Failure
-
-When storage write throws:
-
-```text
-no ProductImage
-no partial DB state
-canonical server/external error
-```
-
-Do not leak R2 error internals.
-
----
-
-# 105. DB Failure After Storage
-
-Force ProductImage persistence failure.
-
-Assert:
-
-```text
-uploaded object deleted
-no ProductImage committed
-```
-
----
-
-# 106. Cleanup Failure
-
-Force:
-
-```text
-DB failure
-+
-R2 delete failure
-```
-
-Assert:
-
-```text
-failure observable
-safe recovery information retained/logged
-secret values not logged
-```
-
-Reuse established cleanup-recovery patterns where practical.
-
----
-
-# PART N — IMAGE DOMAIN TESTS
-
-## 107. First Image
-
-For imageless Product:
-
-```text
-sort_order = 1
-is_primary = true
-alt_text = Product.name
-product_variant_id = null
-```
-
----
-
-# 108. Second Image
-
-Expected:
-
-```text
-sort_order = 2
-is_primary = false
-```
-
----
-
-# 109. Existing Gaps in Sort Order
-
-If existing images have:
-
-```text
-1
-3
-7
-```
-
-new image:
-
-```text
-8
-```
-
-Use:
-
-```text
-MAX + 1
-```
-
-not:
-
-```text
-COUNT + 1
-```
-
----
-
-# 110. Existing Primary
-
-If Product already has a primary:
-
-new upload cannot replace it.
-
----
-
-# 111. Product Name Change
-
-Existing image alt text remains unchanged.
-
-New subsequent upload uses the Product's current name.
-
----
-
-# 112. Concurrency Test
-
-Use the established disposable MariaDB concurrency infrastructure to prove:
-
-```text
-two simultaneous uploads
-→ distinct sort_order
-→ max one primary
-→ no DB invariant break
-```
-
-This is important because SQLite cannot prove actual InnoDB `FOR UPDATE` behavior.
-
-Use:
-
-```text
-furnitureapp_test_disposable
+quantity
 ```
 
 only.
 
----
-
-# PART O — PUBLIC CATALOG REGRESSION
-
-## 113. Product Detail
-
-Verify:
+It must NOT directly mutate:
 
 ```text
-CAT-002.images[]
+reserved_quantity
 ```
 
-contains uploaded ProductImage.
+Reservation state belongs to the inventory reservation lifecycle.
 
----
-
-# 114. Product Summary
-
-Verify:
+After quantity adjustment:
 
 ```text
-CAT-001.primary_image
+available_quantity =
+new_quantity - existing_reserved_quantity
 ```
 
-uses uploaded primary.
+No persisted availability recalculation field should be introduced.
 
 ---
 
-# 115. CDN URL Test
+# 15. Idempotency-Key Is Mandatory
 
-With:
+Preserve the existing INV-003 idempotency contract.
 
-```text
-R2_PUBLIC_BASE_URL=https://assets.example.test
+Header:
+
+```http
+Idempotency-Key: <opaque UUID>
 ```
 
-and:
+Required.
+
+Missing:
 
 ```text
-file_path=products/prod_123/img_456.webp
+422 MISSING_REQUIRED_FIELD
+field: Idempotency-Key
 ```
 
-expect:
+Malformed:
 
 ```text
-https://assets.example.test/products/prod_123/img_456.webp
+422 INVALID_FORMAT
+field: Idempotency-Key
 ```
+
+Preserve the existing durable identity/action/key scoping.
+
+Conceptually:
+
+```text
+authenticated actor
++
+endpoint/action
++
+Idempotency-Key
+```
+
+Retention remains the existing contract value.
+
+Do not weaken or remove durable idempotency.
 
 ---
 
-# 116. Endpoint Regression
+# 16. Idempotent Replay Semantics
 
-Assert no accidental:
+The intent fingerprint must continue to include the authoritative business intent, including:
 
 ```text
-GET /products/{product}/images
-PATCH /products/{product}/images/{image}
-DELETE /products/{product}/images/{image}
+inventory resource
+quantity_delta
+reason
 ```
 
-routes exist.
+Same actor + same scoped key + same intent:
+
+```text
+return original successful 200 representation
+do NOT apply quantity_delta again
+do NOT write another audit event
+```
+
+Same scoped key + different intent:
+
+```text
+409 DUPLICATE_OPERATION
+```
+
+Same raw key used by a different actor remains a separate actor scope according to the existing infrastructure.
+
+Do not allow idempotency to bypass current authentication or authorization.
+
+Authorization must still be evaluated on retry.
 
 ---
 
-# PART P — OPENAPI RECONCILIATION
+# 17. Audit Is Mandatory
 
-## 117. CAT-009 201 Response
-
-Change:
+Every successful stock adjustment must produce the existing durable:
 
 ```text
-Attachment
+INVENTORY_ADJUSTED
 ```
 
-to:
+audit event.
+
+Preserve at least the existing authoritative information:
 
 ```text
-ProductImage
+actor_id
+actor_role
+action
+resource_type
+resource_id
+previous_state
+resulting_state
+occurred_at
+request_id
 ```
+
+The adjustment reason must remain represented wherever the existing audit design records it.
+
+Actor identity and role must be server-derived.
+
+Never trust:
+
+```text
+actor_id
+role
+performed_by
+staff_id
+```
+
+from the request.
+
+Audit and stock mutation belong to the same transaction.
+
+If audit persistence fails:
+
+```text
+inventory quantity change must roll back
+```
+
+Do not allow unaudited successful adjustments.
 
 ---
 
-# 118. Request Schema
+# 18. Concurrency — Preserve Group E Authority
+
+Do not replace the established concurrency design.
+
+MariaDB/MySQL InnoDB remains the production concurrency authority.
+
+Every Inventory mutation must use:
+
+```text
+DB transaction
++
+SELECT ... FOR UPDATE / lockForUpdate()
+```
+
+on the authoritative `ProductStock`.
+
+Do NOT introduce:
+
+```text
+Redis locks
+distributed locks
+table locks
+global mutex
+queue serialization
+lock_version column
+optimistic replacement logic
+```
+
+unless an existing frozen contract explicitly requires it.
+
+---
+
+# 19. Independent Concurrent Adjustments
+
+Two independent INV-003 requests using different Idempotency Keys must serialize correctly.
+
+Example:
+
+```text
+initial quantity = 100
+
+request A: +10
+request B: +10
+```
+
+Valid final result:
+
+```text
+120
+```
+
+Both operations should succeed after serialization.
+
+Do NOT generate a spurious 409 merely because another legitimate adjustment committed first.
+
+The locked current value is authoritative.
+
+---
+
+# 20. Negative Adjustment vs Active Reservation
+
+The system must prevent a quantity adjustment from reducing physical stock beneath already-reserved stock.
+
+Example:
+
+```text
+quantity = 10
+reserved_quantity = 8
+
+adjustment = -3
+```
+
+would produce:
+
+```text
+new_quantity = 7
+```
+
+and must fail because:
+
+```text
+7 < 8
+```
+
+This decision must be made against the **locked current row**.
+
+Not against a stale pre-transaction value.
+
+---
+
+# 21. Adjustment vs Reservation Race
+
+Preserve the Group E locking relationship between:
+
+```text
+InventoryAdjustmentService
+and
+InventoryAllocator
+```
+
+An adjustment and reservation racing on the same ProductStock row must not both validate stale state.
+
+The final persisted state must always satisfy:
+
+```text
+reserved_quantity <= quantity
+```
+
+Do not modify or weaken the checkout-facing allocator merely because checkout is currently deferred from production.
+
+Its concurrency correctness remains part of the domain.
+
+---
+
+# 22. Reservation/Release/Consume Remain Internal
+
+Do NOT expose:
+
+```text
+POST /inventory/reserve
+POST /inventory/release
+POST /inventory/consume
+```
+
+These are internal commerce primitives.
+
+Cart must still not reserve inventory.
+
+Phase 11.6 exposes operational stock management only.
+
+---
+
+# 23. Multi-Location Semantics
+
+A Variant may have multiple ProductStock rows.
+
+Example:
+
+```text
+Variant VAR-A
+
+main             5
+dar-es-salaam    7
+arusha-store     2
+```
+
+INV-001 returns three separate Inventory resources.
+
+INV-003 adjusts one target Inventory row.
+
+Do NOT automatically spread an operational adjustment across locations.
+
+Do NOT aggregate location rows during adjustment.
+
+The existing checkout reservation allocator may distribute reservations across locations according to its existing deterministic rules, but that is not INV-003 behavior.
+
+---
+
+# 24. Public Catalog Regression
+
+Inventory mutation must continue to feed catalog availability through the existing derived queries.
+
+Do NOT write fields such as:
+
+```text
+products.available_quantity
+products.stock_indicator
+products.availability
+```
+
+Successful stock changes should naturally alter public derived availability where applicable.
 
 Preserve:
 
 ```text
-multipart/form-data
-image: binary
+public catalog
+→ coarse availability only
 ```
 
----
-
-# 119. Strict Multipart Contract
-
-If OpenAPI currently lacks:
+Customers must never receive:
 
 ```text
-required: [image]
-additionalProperties: false
+quantity
+reserved_quantity
+per-location stock
+internal Inventory IDs
 ```
 
-reconcile it to match the intended already-required CAT-009 upload semantics if runtime is implementing those rules.
-
-Classify this as a consistency hardening correction.
-
-Do not add new client fields.
+unless a separately frozen public contract explicitly permits it.
 
 ---
 
-# 120. ProductImage Representation
+# 25. MADE_TO_ORDER Boundary
 
-Ensure OpenAPI remains aligned with:
+Inventory records must not accidentally make a:
 
 ```text
-id
-url
-alt_text
-sort_order
-is_primary
+MADE_TO_ORDER
 ```
 
----
+Product purchasable.
 
-# PART Q — DOCUMENTATION
+The product type remains authoritative.
 
-## 121. ADR
-
-Add a new accepted ADR conceptually:
+Even if a MADE_TO_ORDER Variant happens to have ProductStock rows due to historical/test data:
 
 ```text
-Phase 11.5 Product Image Storage and R2 Delivery
+MADE_TO_ORDER
 ```
 
-Use the next repository-consistent ADR identifier.
+must remain request-only according to existing catalog/cart business rules.
+
+Do not alter that behavior in Phase 11.6.
 
 ---
 
-# 122. ADR Must Record
+# 26. Staff vs Admin Authorization
 
-At minimum:
+Do not hard-code:
+
+```php
+if ($user->role === 'ADMIN')
+```
+
+as the inventory authorization model.
+
+Use existing permission authority:
 
 ```text
-Cloudflare R2 stores Product image bytes.
-
-Cloudflare custom-domain CDN serves public image URLs.
-
-Cloudflare Images is not used.
-
-Laravel does not resize, optimize, compress, or convert images.
-
-Images are manually optimized before upload.
-
-MySQL stores only ProductImage metadata/internal file_path.
-
-file_path is provider-neutral.
-
-public URL is derived from R2_PUBLIC_BASE_URL.
-
-CAT-009 remains single-image multipart upload.
-
-CAT-009 creates product-wide images only.
-
-alt_text is server-derived from Product.name.
-
-sort_order appends with MAX + 1.
-
-first image becomes primary.
-
-subsequent images are non-primary.
-
-CAT-009 OpenAPI Attachment response was a stale reference and is corrected to ProductImage.
-
-No Product-image DELETE/reorder/set-primary/edit endpoint exists in V1.
+inventory.view
+inventory.manage
 ```
+
+Expected separation:
+
+```text
+inventory.view
+→ INV-001
+→ INV-002
+
+inventory.manage
+→ INV-003
+```
+
+A Staff user may access only capabilities assigned by the existing PermissionCatalog.
+
+Admin receives explicit permissions, not wildcard authority.
+
+CUSTOMER must have neither operational inventory permission.
+
+Test permission separation explicitly.
 
 ---
 
-# 123. Update Phase Documentation
+# 27. Cache and Data Sensitivity
 
-Update:
+INV-001, INV-002 and successful INV-003 responses are operational/private.
+
+Preserve:
+
+```http
+Cache-Control: private, no-store
+Vary: Authorization
+```
+
+Do not CDN/public-cache Inventory resources.
+
+Do not expose stock operations through public catalog caching behavior.
+
+---
+
+# 28. API Resource
+
+Reuse the existing canonical `InventoryResource`.
+
+Expected shape:
+
+```json
+{
+  "id": "inv_...",
+  "product_id": "prod_...",
+  "variant_id": "var_...",
+  "warehouse_location": "main",
+  "quantity": 12,
+  "reserved_quantity": 3,
+  "available_quantity": 9,
+  "updated_at": "..."
+}
+```
+
+Do not add speculative fields such as:
+
+```text
+warehouse_name
+low_stock_threshold
+stock_value
+cost_price
+supplier
+reorder_level
+last_adjusted_by
+created_at
+product_variant_id
+internal numeric IDs
+```
+
+unless already part of the frozen V1 schema.
+
+---
+
+# 29. No Stock Ledger Expansion
+
+Phase 11.6 must not invent a general stock-movement/ledger subsystem.
+
+Existing:
+
+```text
+audit_events
+```
+
+remain the authoritative audit mechanism for INV-003.
+
+Do not add:
+
+```text
+stock_movements
+inventory_transactions
+inventory_history
+inventory_snapshots
+inventory_transfers
+```
+
+unless the current repository already contains an approved frozen model requiring use.
+
+Do not confuse Audit visibility in Phase 11.13 with a new Inventory ledger.
+
+---
+
+# 30. No Destructive Inventory Operations
+
+Do NOT add:
+
+```text
+DELETE /inventory/{inventory}
+```
+
+or generic inventory deletion.
+
+Zero stock remains:
+
+```text
+quantity = 0
+```
+
+on an existing stock row.
+
+Do not delete the row automatically.
+
+---
+
+# 31. Inspect Before Editing
+
+Before implementation, inspect at minimum:
+
+```text
+routes/api.php
+
+InventoryController
+AdjustInventoryRequest
+InventoryResource
+InventoryAdjustmentService
+IdempotencyService
+AuditRecorder
+
+ProductStock
+ProductVariant
+Product
+
+InventoryAdjustmentReason
+PermissionName
+PermissionCatalog
+ApiErrorCode
+
+InventoryAllocator
+
+existing Inventory feature tests
+existing MariaDB concurrency tests
+
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/api/openapi.yaml
+docs/domain/business-rules.md
+docs/decisions.md
+phases/group-K-phases.md
+```
+
+Determine what Phase 5.8–5.10 already implemented.
+
+Do not duplicate working code.
+
+---
+
+# 32. Contract Status Reconciliation
+
+The historical documentation may still label:
+
+```text
+INV-001
+INV-002
+INV-003
+```
+
+as `PROPOSED` even though Group E subsequently implemented and closed the behavior.
+
+Inspect all authoritative docs.
+
+If runtime and approved Group E closure prove these endpoints are implemented and accepted, reconcile stale documentation status consistently.
+
+Do not alter endpoint IDs, methods, paths, body shape, or semantics merely to change status wording.
+
+Record Phase 11.6 completion in:
 
 ```text
 phases/group-K-phases.md
 docs/decisions.md
 ```
 
-and relevant API docs/OpenAPI.
+using the project's established ADR style.
 
 ---
 
-# PART R — QUALITY AND VERIFICATION
+# 33. Required INV-001 Tests
 
-## 124. Focused Tests
+Ensure permanent tests cover at least:
 
-Run:
+### Authorization
 
 ```text
-ProductImage schema
-Product image CAT-009
-Product image validation
-Product image authorization
-Product image storage
-Product image compensation
-Product image public URL
-Product image primary invariant
-Product image ordering
-Product image concurrency
-Product catalog summary/detail
-Operational Product regression
-RBAC
-OpenAPI
+anonymous → rejected
+Customer → rejected
+
+Staff with inventory.view → allowed
+Admin with inventory.view → allowed
+
+authenticated actor without inventory.view → 403
 ```
 
----
+### Representation
 
-# 125. Full Suite
-
-Run:
-
-```bash
-php artisan test
-```
-
-Expected:
+Verify:
 
 ```text
-all existing tests green
+opaque inventory ID
+opaque Product ID
+opaque Variant ID
+warehouse_location
+quantity
+reserved_quantity
+derived available_quantity
+updated_at
 ```
 
-apart from already-known intentional skips.
+and no internal ID leakage.
 
----
+### Collection
 
-# 126. Static Analysis
-
-Run:
-
-```bash
-vendor/bin/phpstan analyse
-```
-
----
-
-# 127. Formatting
-
-Run:
-
-```bash
-vendor/bin/pint --test
-```
-
----
-
-# 128. Dependency Audit
-
-Run:
-
-```bash
-composer audit
-```
-
----
-
-# 129. Diff Validation
-
-Run:
-
-```bash
-git diff --check
-```
-
----
-
-# 130. Route Verification
-
-Run:
-
-```bash
-php artisan route:list --path=api --except-vendor
-```
-
-Confirm:
+Verify:
 
 ```text
-CAT-009 active
+pagination
+product filter
+variant filter
+warehouse_location filter
+unknown query rejection
+deterministic ordering
+zero-stock row visible
+multiple locations remain separate
 ```
 
-and no invented Product-image management routes.
+### Operational visibility
+
+Verify rows remain visible for:
+
+```text
+unpublished Product
+inactive Product
+soft-deleted Product
+inactive Variant
+```
+
+where existing relational behavior permits reconciliation.
 
 ---
 
-# 131. Config Verification
+# 34. Required INV-002 Tests
 
-Run appropriate config tests, including:
+Cover:
 
-```bash
-php artisan config:clear
-php artisan config:cache
+```text
+authorized detail retrieval
+opaque inv_... resolution
+unknown Inventory → canonical 404
+malformed identifier behavior
+Customer forbidden
+Staff/Admin permission enforcement
+private/no-store headers
+no internal FK leakage
 ```
 
-if consistent with repository workflow.
-
-Confirm R2 config remains available through cached config.
-
-Do not expose secrets in command output.
+Also verify detail remains operationally accessible for non-public catalog state.
 
 ---
 
-# 132. MariaDB Concurrency Gate
+# 35. Required INV-003 Validation Tests
 
-Run Product-image allocation concurrency tests on:
+Cover at least:
+
+```text
++STOCK_RECEIPT → success
++RETURN → success
+-DAMAGE → success
++CORRECTION → success
+-CORRECTION → success
++AUDIT_ADJUSTMENT → success
+-AUDIT_ADJUSTMENT → success
+```
+
+Reject:
+
+```text
+0 delta
+DAMAGE positive
+STOCK_RECEIPT negative
+RETURN negative
+unknown reason
+fraction
+numeric string if strict integer contract rejects it
+null
+missing quantity_delta
+missing reason
+unknown body field
+absolute quantity field
+reserved_quantity field
+warehouse_location field
+actor identity field
+```
+
+---
+
+# 36. Required Quantity Invariant Tests
+
+Cover:
+
+```text
+quantity cannot become negative
+
+quantity cannot become less than reserved_quantity
+
+successful adjustment preserves reserved_quantity
+
+available_quantity is recalculated from current state
+
+zero resulting quantity allowed only when reserved_quantity == 0
+
+inactive/unpublished Product stock remains adjustable operationally
+```
+
+---
+
+# 37. Required Idempotency Tests
+
+Cover:
+
+```text
+missing Idempotency-Key
+malformed Idempotency-Key
+
+same key + same intent
+→ one delta only
+→ one audit only
+→ same successful result replayed
+
+same key + changed quantity_delta
+→ 409 DUPLICATE_OPERATION
+
+same key + changed reason
+→ 409 DUPLICATE_OPERATION
+
+same raw key + different authenticated actor
+→ independently scoped according to existing contract
+```
+
+Also verify authorization is not bypassed by replay.
+
+---
+
+# 38. Required Audit Tests
+
+Prove:
+
+```text
+successful adjustment creates exactly one INVENTORY_ADJUSTED audit
+
+actor is server-derived
+
+previous state correct
+
+resulting state correct
+
+resource identity correct
+
+request/correlation identity preserved
+
+audit failure rolls back stock mutation
+
+idempotent replay does not create second audit
+```
+
+Do not weaken append-only audit behavior.
+
+---
+
+# 39. MariaDB Concurrency Gate
+
+SQLite is not acceptable proof of inventory concurrency.
+
+Use the existing disposable database:
 
 ```text
 furnitureapp_test_disposable
 ```
 
-using the established forked-worker approach.
+and the established forked-worker MariaDB concurrency infrastructure.
 
-Prove:
+Maintain exact non-production/disposable-DB safety guards.
+
+Do not point destructive concurrency tests at:
 
 ```text
-unique deterministic append positions
-max one primary
-no deadlock leak
-no DB corruption
+furnitureapp
+production
+staging
 ```
 
 ---
 
-# PART S — COMPLETION REPORT
+# 40. MariaDB Race — Independent Adjustments
 
-## 133. Phase Status
-
-Return:
-
-```text
-Phase 11.5 Status
-PASS
-```
-
-or:
-
-```text
-Phase 11.5 Status
-BLOCKED
-```
-
----
-
-# 134. Storage Report
-
-Report:
-
-```text
-Storage provider:
-Cloudflare R2
-
-Laravel disk:
-<actual disk>
-
-Public delivery:
-Cloudflare custom-domain CDN
-
-Cloudflare Images:
-NOT USED
-
-Server-side optimization:
-NONE
-
-Server-side resizing:
-NONE
-
-Server-side conversion:
-NONE
-```
-
----
-
-# 135. Environment Report
-
-Report only key names:
-
-```text
-PRODUCT_IMAGE_DISK
-PRODUCT_IMAGE_MAX_BYTES
-R2_ACCESS_KEY_ID
-R2_SECRET_ACCESS_KEY
-R2_BUCKET
-R2_ENDPOINT
-R2_REGION
-R2_PUBLIC_BASE_URL
-```
-
-Never report credential values.
-
----
-
-# 136. Credential Status
-
-Report:
-
-```text
-.env placeholders prepared: YES/NO
-.env.example documented: YES/NO
-Real credentials committed: NO
-```
-
----
-
-# 137. CAT-009 Report
-
-Report:
-
-```text
-route:
-authorization:
-request content type:
-accepted field:
-allowed MIME types:
-max size:
-response resource:
-```
-
----
-
-# 138. Server-Derived Metadata Report
-
-Report:
-
-```text
-product_variant_id:
-null
-
-alt_text:
-Product.name snapshot
-
-sort_order:
-MAX + 1, first = 1
-
-is_primary:
-true only for first Product image
-```
-
----
-
-# 139. Object-Key Report
-
-Report exact key convention.
+Run repeated barrier-synchronized concurrent requests against the same Inventory row.
 
 Example:
 
 ```text
-products/{product-public-id}/{image-public-id}.{detected-extension}
+initial quantity = 100
+
+worker A:
++10
+unique Idempotency-Key A
+
+worker B:
++20
+unique Idempotency-Key B
 ```
 
-Confirm:
+Assert:
 
 ```text
-client filename controls key: NO
-numeric DB IDs exposed: NO
+both succeed
+final quantity = 130
+reserved_quantity unchanged
+two audit events
+no lost update
 ```
+
+Repeat enough iterations to make race failures observable.
 
 ---
 
-# 140. CDN URL Report
+# 41. MariaDB Race — Negative Adjustment vs Negative Adjustment
 
-Report:
+Example:
 
 ```text
-DB stores CDN URL:
+quantity = 10
+reserved = 0
+
+worker A = -7
+worker B = -7
+```
+
+Both must not independently validate `10 - 7`.
+
+Valid end behavior must reflect serialization.
+
+For example:
+
+```text
+first succeeds → 3
+second sees locked current 3
+second rejects because 3 - 7 < 0
+```
+
+Final state:
+
+```text
+quantity = 3
+```
+
+not:
+
+```text
+-4
+```
+
+and not a lost update.
+
+Assert audit count matches successful mutations only.
+
+---
+
+# 42. MariaDB Race — Adjustment vs Reservation
+
+Reuse the existing `InventoryAllocator` concurrency path.
+
+Construct a deterministic race where:
+
+```text
+quantity = N
+reserved_quantity = existing value
+```
+
+and:
+
+```text
+worker A attempts negative physical-stock adjustment
+worker B attempts reservation
+```
+
+Prove the row lock serializes authoritative validation.
+
+Final invariant must always be:
+
+```text
+0 <= reserved_quantity <= quantity
+```
+
+No oversell.
+
+No stale validation.
+
+No database constraint error should become the normal business-control mechanism.
+
+The application should reject invalid state before persistence after obtaining the lock.
+
+---
+
+# 43. MariaDB Race — Same Idempotency Key
+
+Where not already permanently covered by existing Group E integration tests, prove:
+
+```text
+same actor
+same INV-003 endpoint
+same Idempotency-Key
+same intent
+```
+
+under actual simultaneous execution causes:
+
+```text
+exactly one quantity mutation
+exactly one audit event
+both callers receive the same business outcome
+```
+
+Do not rely only on sequential replay testing.
+
+If this precise race is already permanently covered and passing, reuse that test rather than duplicating it.
+
+---
+
+# 44. Preserve Existing Group E Regression Gates
+
+Do not remove or weaken existing tests covering:
+
+```text
+last-unit race
+adjust-vs-adjust
+adjust-vs-reserve
+same-key idempotency
+reserved_quantity invariants
+catalog derived availability
+public inventory-field non-leakage
+```
+
+Phase 11.6 should add only missing Group K operational coverage.
+
+---
+
+# 45. OpenAPI Verification
+
+Inspect the V1 OpenAPI definition for:
+
+```text
+INV-001
+INV-002
+INV-003
+```
+
+Verify it agrees with runtime for:
+
+```text
+methods
+paths
+security
+permissions/descriptions
+query filters
+pagination
+InventoryResource
+Idempotency-Key
+AdjustInventory request body
+CLOSED adjustment reasons
+success status
+error statuses
+additionalProperties: false
+```
+
+Correct genuine stale documentation/runtime consistency errors.
+
+Do not broaden V1.
+
+---
+
+# 46. Route Surface Regression
+
+Explicitly prove canonical routes exist:
+
+```text
+GET  /api/v1/inventory
+GET  /api/v1/inventory/{inventory}
+POST /api/v1/inventory/{inventory}/adjust
+```
+
+and rejected/nonexistent surfaces remain absent:
+
+```text
+PATCH  /api/v1/inventory/{inventory}
+PUT    /api/v1/inventory/{inventory}
+DELETE /api/v1/inventory/{inventory}
+
+POST /api/v1/inventory/reserve
+POST /api/v1/inventory/release
+POST /api/v1/inventory/consume
+
+GET  /api/v1/admin/inventory
+POST /api/v1/admin/inventory/{inventory}/adjust
+```
+
+Do not add redirects or compatibility aliases.
+
+---
+
+# 47. Code Quality
+
+Follow current project standards:
+
+```text
+thin controllers
+FormRequest validation
+validated() only
+DTO/command/service boundaries where established
+central authorization
+explicit resources
+domain enums/constants
+short transactions
+no external calls inside DB locks
+cognitive complexity <= 15
+<= 3 returns per function where practical
+PHPStan clean
+Pint clean
+```
+
+Do not refactor unrelated Group E code merely for style.
+
+---
+
+# 48. No New Dependencies by Default
+
+Phase 11.6 should require no new Composer/package dependency.
+
+If you believe a dependency is required:
+
+STOP before adding it unless repository evidence proves the existing implementation cannot satisfy the frozen contract without it.
+
+Do not introduce Redis or distributed locking infrastructure.
+
+---
+
+# 49. Out of Scope
+
+Do NOT implement:
+
+```text
+Phase 11.7 Order Management
+
+Phase 11.8 Customer Management
+
+Phase 11.9 Request Management
+
+Phase 11.10 Enquiry Management
+
+Phase 11.11 Payment Visibility
+
+Phase 11.12 Delivery Management
+
+Phase 11.13 Audit Visibility
+
+frontend Admin screens
+Next.js inventory UI
+Flutter inventory UI
+
+warehouse CRUD
+stock transfers
+supplier management
+purchase orders
+reorder points
+automatic restocking
+inventory forecasting
+inventory valuation
+cost accounting
+barcode management
+stock ledger/history endpoint
+bulk stock import
+CSV import/export
+inventory deletion
+public raw stock counts
+checkout activation
+payment activation
+order activation
+```
+
+Audit events required by INV-003 remain internal persistence; do not expose ADM-007 in this phase.
+
+---
+
+# 50. Verification Commands
+
+Run the repository's canonical equivalents of:
+
+```bash
+cd backend/laravel
+
+php artisan test
+./vendor/bin/phpstan analyse
+./vendor/bin/pint --test
+composer audit
+git diff --check
+php artisan route:list
+```
+
+Also run:
+
+```text
+focused Inventory API tests
+Group E inventory regression tests
+RBAC tests
+catalog availability regression tests
+idempotency/audit tests
+```
+
+Then run the real MariaDB concurrency suite against only:
+
+```text
+furnitureapp_test_disposable
+```
+
+using the existing safety guards.
+
+If the MariaDB gate is not executed successfully, do not claim concurrency closure from SQLite alone.
+
+---
+
+# 51. Completion Report
+
+Return a concise evidence-based report containing:
+
+```text
+Phase 11.6 status:
+PASS / BLOCKED
+
+Existing Group E inventory implementation reused:
+YES / NO
+
+INV-001:
+PASS / BLOCKED
+
+INV-002:
+PASS / BLOCKED
+
+INV-003:
+PASS / BLOCKED
+
+Canonical routes only:
+PASS / FAIL
+
+Admin inventory aliases added:
 NO
 
-DB stores file_path:
-YES
+inventory.view authorization:
+PASS / FAIL
 
-Public URL derived from:
-R2_PUBLIC_BASE_URL + file_path
-```
+inventory.manage authorization:
+PASS / FAIL
 
----
+Customer raw inventory access:
+REJECTED / FAIL
 
-# 141. OpenAPI Reconciliation Report
+Adjustment reasons preserved:
+YES / NO
 
-Report:
+Idempotency:
+PASS / FAIL
 
-```text
-CAT-009 old response:
-Attachment
+Audit atomicity:
+PASS / FAIL
 
-CAT-009 new response:
-ProductImage
-
-Request shape expanded:
+reserved_quantity direct mutation:
 NO
-```
 
----
+available_quantity persisted:
+NO
 
-# 142. Side-Effect Report
+Legacy/public catalog visibility separation:
+PASS / FAIL
 
-Confirm:
+MariaDB adjust-vs-adjust:
+PASS / FAIL
 
-```text
-Product pricing mutated: NO
-Variants mutated: NO
-Inventory mutated: NO
-Cart mutated: NO
-Request mutated: NO
-Enquiry mutated: NO
-```
+MariaDB negative-adjust race:
+PASS / FAIL
 
----
+MariaDB adjust-vs-reserve:
+PASS / FAIL
 
-# 143. Route Surface Report
+MariaDB same-key race:
+PASS / FAIL / ALREADY COVERED
 
-Confirm:
+Full PHPUnit:
+<x> passed, <y> skipped
 
-```text
-POST Product image: YES
-
-GET Product images endpoint: NO
-PATCH Product image: NO
-DELETE Product image: NO
-reorder endpoint: NO
-set-primary endpoint: NO
-```
-
----
-
-# 144. Failure-Safety Report
-
-Report results for:
-
-```text
-R2 upload failure
-DB failure after R2 upload
-R2 compensation delete
-cleanup-delete failure handling
-```
-
----
-
-# 145. Validation Report
-
-Report:
-
-```text
-JPEG:
-PNG:
-WebP:
-oversize:
-zero-byte:
-fake extension:
-signature mismatch:
-PDF:
-SVG:
-unknown multipart field:
-```
-
----
-
-# 146. Verification Report
-
-Report:
-
-```text
-focused tests:
-MariaDB concurrency:
-full PHPUnit:
 PHPStan:
+PASS / FAIL
+
 Pint:
+PASS / FAIL
+
 Composer audit:
+PASS / FAIL
+
+OpenAPI:
+PASS / FAIL
+
 git diff --check:
-route:list:
-config cache:
+PASS / FAIL
+
+Phase 11.7:
+DEFERRED
+
+Phase 11.8:
+READY / BLOCKED
 ```
+
+List:
+
+```text
+files changed
+genuine gaps found
+contract/documentation reconciliations
+tests added/changed
+schema changes
+dependency changes
+```
+
+Expected:
+
+```text
+schema changes = NONE
+dependency changes = NONE
+```
+
+unless a pre-existing genuine defect proves otherwise.
 
 ---
 
-# 147. Definition of Done
+# 52. STOP Condition
 
-Phase 11.5 is complete only when:
+Phase 11.6 is PASS only when:
 
-- CAT-009 is implemented;
-- CAT-009 requires `products.manage`;
-- CAT-009 accepts exactly one `image`;
-- response is ProductImage, not Attachment;
-- R2 is configured through Laravel Storage;
-- `.env` has empty/manual credential slots;
-- `.env.example` documents safe placeholders;
-- no credential is committed;
-- R2 S3 endpoint and public CDN domain are separate;
-- image bytes are stored in R2;
-- public delivery uses the custom domain;
-- Cloudflare Images is not used;
-- Laravel performs no optimization;
-- Laravel performs no resize;
-- Laravel performs no conversion;
-- only JPEG/PNG/WebP are accepted;
-- actual content/signature is validated;
-- client filename cannot control object path;
-- object key is server generated;
-- DB stores only internal `file_path`;
-- public `url` derives from `R2_PUBLIC_BASE_URL`;
-- first image becomes primary;
-- subsequent images remain non-primary;
-- sort order appends deterministically;
-- Product name becomes alt-text snapshot;
-- concurrent uploads preserve primary/order invariants;
-- R2 failure leaves no ProductImage row;
-- DB failure compensates R2 upload;
-- cleanup failure is observable/recoverable;
-- CAT-001 primary image works;
-- CAT-002 gallery works;
-- no GET image collection endpoint is added;
-- no Product image PATCH is added;
-- no Product image DELETE is added;
-- no reorder endpoint is added;
-- no set-primary endpoint is added;
-- full regression is green.
+- INV-001/002 canonical operational reads are working;
+- `inventory.view` is enforced;
+- INV-003 remains the sole stock-adjustment operation;
+- `inventory.manage` is enforced;
+- strict delta/reason validation holds;
+- reserved stock cannot be invalidated by adjustment;
+- durable idempotency remains correct;
+- every successful adjustment remains atomically audited;
+- public users cannot access raw inventory;
+- operational inventory remains visible independently of public catalog visibility;
+- MariaDB concurrency tests prove serialization and invariants;
+- no Admin inventory alias was introduced;
+- no transaction-commerce phase was reactivated;
+- full backend verification passes.
+
+At that point:
+
+```text
+Phase 11.6 — PASS
+Phase 11.7 — DEFERRED
+Phase 11.8 — READY
+```
+
+Do not begin Phase 11.8 automatically.
 
 ---
 
-# 148. STOP Condition
+## Phase 11.6 Completion (2026-10-05)
 
-STOP when the repository can prove:
+**Status:** PASS
 
-```text
-manually optimized Product image
-        ↓
-CAT-009
-        ↓
-auth + products.manage
-        ↓
-server-side file security validation
-        ↓
-safe immutable object key
-        ↓
-Cloudflare R2
-        ↓
-ProductImage.file_path
-        ↓
-R2_PUBLIC_BASE_URL
-        ↓
-Cloudflare custom-domain CDN URL
-        ↓
-CAT-001 / CAT-002
-```
+- Reused the existing Group E `INV-001`, `INV-002`, and `INV-003` implementation; no Admin aliases, schema changes, dependencies, or transactional-commerce activation were added.
+- `inventory.view` and `inventory.manage` permission separation, private operational representation, idempotency, audit atomicity, and public-catalog separation are covered by permanent Feature tests.
+- Disposable MariaDB (`furnitureapp_test_disposable`) concurrency verification passed: last-unit reservation, independent adjustments, negative-adjustment serialization, adjustment-vs-reservation, and same-key idempotency.
+- Contract status is reconciled: `INV-001..003` are APPROVED; OpenAPI requires `Inventory.updated_at`.
+- Phase 11.7 remains DEFERRED. Phase 11.8 is READY.
 
-with:
-
-```text
-Cloudflare Images = NOT USED
-Laravel processing = NOT USED
-MySQL image BLOB = NOT USED
-VPS image storage = NOT USED
-```
-
-and report:
-
-```text
-Phase 11.5 PASS
-
-Phase 11.6 — Inventory management READY
-```
-
-Do not begin Phase 11.6 automatically.
-
-DO NOT COMMIT, STAGE OR PUSH.
-
-The project owner handles all Git operations.
+**DO NOT COMMIT, STAGE OR PUSH.**
+**The project owner handles all Git operations.**
