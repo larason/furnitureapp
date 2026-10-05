@@ -4544,12 +4544,12 @@ paths:
         in: query
         schema:
           type: string
-          enum: [INVENTORY_ADJUSTED, DELIVERY_FEE_FINALIZED, REQUEST_STATUS_CHANGED, ENQUIRY_STATUS_CHANGED]
+          enum: [INVENTORY_ADJUSTED, DELIVERY_FEE_FINALIZED, REQUEST_STATUS_CHANGED, ENQUIRY_STATUS_CHANGED, CUSTOMER_LIST_VIEWED, CUSTOMER_VIEWED]
       - name: resource_type
         in: query
         schema:
           type: string
-          enum: [inventory, order, request, enquiry]
+          enum: [inventory, order, request, enquiry, user]
       - name: resource_id
         in: query
         schema:

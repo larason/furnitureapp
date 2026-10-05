@@ -11,4 +11,5 @@ enum AuditResourceType: string
     case ORDER = 'order';
     case REQUEST = 'request';
     case ENQUIRY = 'enquiry';
+    case USER = 'user';
 }

@@ -22,6 +22,8 @@ final class AuditLogResource extends JsonResource
         ],
         AuditAction::REQUEST_STATUS_CHANGED->value.':'.AuditResourceType::REQUEST->value => ['request_status'],
         AuditAction::ENQUIRY_STATUS_CHANGED->value.':'.AuditResourceType::ENQUIRY->value => ['enquiry_status'],
+        AuditAction::CUSTOMER_LIST_VIEWED->value.':'.AuditResourceType::USER->value => ['result', 'returned_count'],
+        AuditAction::CUSTOMER_VIEWED->value.':'.AuditResourceType::USER->value => ['result'],
     ];
 
     public function toArray(Request $request): array

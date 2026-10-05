@@ -9,11 +9,15 @@ use App\Http\Resources\AdministrativeCustomerResource;
 use App\Http\Resources\AuditLogResource;
 use App\Models\User;
 use App\Services\AuditLogs\ListAuditLogs;
+use App\Services\AuditRecorder;
 use App\Support\ApiErrorCode;
+use App\Support\AuditAction;
+use App\Support\AuditResourceType;
 use App\Support\RoleName;
 use App\Support\UserIdentifier;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class AdminController extends V1Controller
 {
@@ -47,13 +51,23 @@ class AdminController extends V1Controller
         return $this->notImplemented();
     }
 
-    public function userIndex(ListCustomersRequest $request): JsonResponse
+    public function userIndex(ListCustomersRequest $request, AuditRecorder $audit): JsonResponse
     {
         $pagination = $request->pagination();
         $paginator = $this->customers()
             ->orderByDesc('users.created_at')
             ->orderBy('users.id')
             ->paginate($pagination['per_page'], ['*'], 'page', $pagination['page']);
+
+        $audit->record(
+            $request->user(),
+            AuditAction::CUSTOMER_LIST_VIEWED,
+            AuditResourceType::USER,
+            'customer_collection',
+            null,
+            ['result' => 'SUCCESS', 'returned_count' => $paginator->count()],
+            $request->attributes->get('request_id'),
+        );
 
         return response()->json([
             'data' => AdministrativeCustomerResource::collection($paginator->getCollection())->resolve(),
@@ -68,7 +82,7 @@ class AdminController extends V1Controller
         ])->withHeaders($this->privateHeaders());
     }
 
-    public function userShow(string $user): JsonResponse
+    public function userShow(string $user, Request $request, AuditRecorder $audit): JsonResponse
     {
         $id = UserIdentifier::decode($user);
         $customer = $id === null ? null : $this->customers()->whereKey($id)->first();
@@ -76,6 +90,16 @@ class AdminController extends V1Controller
         if ($customer === null) {
             throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested customer was not found.', 404);
         }
+
+        $audit->record(
+            $request->user(),
+            AuditAction::CUSTOMER_VIEWED,
+            AuditResourceType::USER,
+            (string) UserIdentifier::encodeId((int) $customer->getKey()),
+            null,
+            ['result' => 'SUCCESS'],
+            $request->attributes->get('request_id'),
+        );
 
         return (new AdministrativeCustomerResource($customer))->response()->withHeaders($this->privateHeaders());
     }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Authentication\AuthenticatedClerkIdentity;
 use App\Authentication\ClerkTokenVerifier;
+use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\PermissionName;
 use App\Support\UserIdentifier;
@@ -73,6 +74,29 @@ class CustomerAdministrationTest extends TestCase
             ->getJson('/api/v1/users/user_unknown')
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+
+        $event = AuditEvent::query()->sole();
+        $this->assertSame($admin->id, $event->actor_id);
+        $this->assertSame('CUSTOMER_VIEWED', $event->action);
+        $this->assertSame('user', $event->resource_type);
+        $this->assertSame(UserIdentifier::encodeId($customer->id), $event->resource_id);
+        $this->assertSame(['result' => 'SUCCESS'], $event->resulting_state);
+    }
+
+    public function test_admin_customer_list_records_only_successful_collection_access(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $admin = User::factory()->admin()->create(['clerk_user_id' => 'admin_audit']);
+        User::factory()->count(2)->customer()->create();
+
+        $this->asUser($admin)->getJson('/api/v1/users?per_page=1')->assertOk();
+
+        $event = AuditEvent::query()->sole();
+        $this->assertSame($admin->id, $event->actor_id);
+        $this->assertSame('CUSTOMER_LIST_VIEWED', $event->action);
+        $this->assertSame('user', $event->resource_type);
+        $this->assertSame('customer_collection', $event->resource_id);
+        $this->assertSame(['result' => 'SUCCESS', 'returned_count' => 1], $event->resulting_state);
     }
 
     public function test_customer_staff_and_unpermitted_admin_cannot_browse_customers(): void
