@@ -1888,7 +1888,7 @@ components:
           - string
           - 'null'
           maxLength: 5000
-          description: Optional plain-text operational note. Omit or send null to leave/clear the note according to the current close action semantics.
+          description: Optional plain-text operational note. Omit to preserve the existing note; send null or a whitespace-only string to clear it; send a non-blank string to replace it.
       additionalProperties: false
       description: ENQ-006 is a controlled close action. The server sets CLOSED; enquiry_status and original intake fields are not accepted.
     Attachment:
