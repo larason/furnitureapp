@@ -2031,15 +2031,22 @@ components:
       - resource_type
       - resource_id
       - timestamp
+      - previous_state
+      - resulting_state
+      - request_id
       properties:
         id:
           type: string
           readOnly: true
         actor_id:
-          type: string
+          type:
+          - string
+          - 'null'
           readOnly: true
         actor_role:
-          $ref: '#/components/schemas/Role'
+          type:
+          - string
+          - 'null'
           readOnly: true
         action:
           type: string
@@ -2053,28 +2060,22 @@ components:
           readOnly: true
         previous_state:
           type:
-          - string
+          - object
           - 'null'
           readOnly: true
-          description: Previous state
+          description: Structured historical snapshot. Fields are allowlisted by action/resource_type; unknown and sensitive fields are omitted.
         resulting_state:
           type:
-          - string
+          - object
           - 'null'
           readOnly: true
-          description: Resulting state
+          description: Structured historical snapshot. Fields are allowlisted by action/resource_type; unknown and sensitive fields are omitted.
         request_id:
           type:
           - string
           - 'null'
           readOnly: true
           description: Request correlation id
-        details:
-          type:
-          - object
-          - 'null'
-          readOnly: true
-          description: Structured details, nullable
     MessageResponse:
       type: object
       required:
@@ -4533,6 +4534,40 @@ paths:
       summary: List audit logs
       security:
       - bearerAuth: []
+      parameters:
+      - name: actor
+        in: query
+        schema:
+          type: string
+        description: Opaque User identifier.
+      - name: action
+        in: query
+        schema:
+          type: string
+          enum: [INVENTORY_ADJUSTED, DELIVERY_FEE_FINALIZED, REQUEST_STATUS_CHANGED, ENQUIRY_STATUS_CHANGED]
+      - name: resource_type
+        in: query
+        schema:
+          type: string
+          enum: [inventory, order, request, enquiry]
+      - name: resource_id
+        in: query
+        schema:
+          type: string
+      - name: created_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Inclusive ISO8601 UTC occurrence timestamp.
+      - name: created_to
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Inclusive ISO8601 UTC occurrence timestamp.
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK
@@ -4554,7 +4589,13 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
-      description: Requires ADMIN audit.view
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      description: Requires ADMIN audit.view. Read-only, private/no-store collection ordered by timestamp descending then audit event id descending. Only actor, action, resource_type, resource_id, created_from, created_to, page, and per_page are accepted.
   /users:
     get:
       operationId: ADM-008

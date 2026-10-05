@@ -2749,6 +2749,21 @@ The current `orders` schema has no `billing_address` column and the repository h
 
 ---
 
+### ADR/BACKEND-053 — Audit Visibility and `audit.view` Reconciliation
+
+**Decision:** Activate frozen ADM-007 as the only audit-read API: `GET /api/v1/admin/audit-logs`. It requires an authenticated active `ADMIN` and the explicit, seeded `audit.view` permission. `CUSTOMER` and `STAFF` never receive the permission; no wildcard or additional role is introduced.
+
+- Existing append-only `audit_events` and `AuditRecorder` remain authoritative. No audit mutation, detail route, alternate path, reverse identifier decoder, schema change, or dependency is added.
+- The collection accepts only `actor`, `action`, `resource_type`, `resource_id`, `created_from`, `created_to`, `page`, and `per_page`; results use inclusive occurrence-time bounds and deterministic `occurred_at DESC, id DESC` ordering.
+- Serialization derives `audit_<lowercase base36(audit_events.id)>` without persistence and never exposes the numeric event ID. Actor is the recorded opaque `UserIdentifier` plus recorded `actor_role`; resource IDs and `request_id` are historical display values without live expansion or filtering.
+- State snapshots stay structured JSON. Exact action/resource allow-lists preserve the legitimate inventory location/quantities/reason, delivery-fee totals, or request/enquiry status while discarding unknown, future, and sensitive keys.
+
+**Reason:** Administrative audit visibility is operationally useful but must not turn immutable history into an arbitrary data browser or leak credentials, PII, implementation IDs, or future writer fields.
+
+**Status:** Accepted and implemented in Phase 11.13 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/app/{Http,Services,Support}`, `backend/laravel/routes/api.php`, `backend/laravel/tests/Feature/AuditLogApiTest.php`, `docs/api/*`, `phases/group-K-phases.md`, `docs/decisions.md`
+
+---
+
 ### ADR/GROUP-K-ADMIN-AUTH — Admin Authentication and Initial Trust Bootstrap
 
 **Decision:** Clerk remains the sole credential, verification, and session authority for Admins. Laravel uses the existing `users.clerk_user_id` projection, CLOSED `ADMIN` role, active local account state, and explicit `PermissionCatalog` permissions for administrative authorization. There is no Laravel Admin password, login, registration, session, or HTTP bootstrap endpoint.

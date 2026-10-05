@@ -1,62 +1,71 @@
-# Phase 11.10 — Enquiry Management
+# Phase 11.13 — Audit Visibility
 
 ## Objective
 
-Complete **Group K / Phase 11.10 — Enquiry Management** by reusing and hardening the already-implemented Group J operational Enquiry workflow.
+Implement and close **Group K / Phase 11.13 — Audit Visibility** by exposing the existing append-only audit infrastructure through the frozen V1 administrative read endpoint:
 
-Canonical V1 operational endpoints remain:
+```text id="e3pgrk"
+ADM-007
 
-```text
-ENQ-004
-GET /api/v1/enquiries
-
-ENQ-005
-GET /api/v1/enquiries/{enquiry}
-
-ENQ-006
-POST /api/v1/enquiries/{enquiry}/close
+GET /api/v1/admin/audit-logs
 ```
 
-Related Enquiry endpoints remain:
+This phase resolves the known Group K contract/runtime gap:
 
-```text
-ENQ-001
-POST /api/v1/enquiries
+```text id="d02evs"
+Frozen API contract
+→ ADM-007 exists
+→ requires audit.view
 
-ENQ-002
-GET /api/v1/me/enquiries
-
-ENQ-003
-GET /api/v1/me/enquiries/{enquiry}
-
-ENQ-007
-POST /api/v1/enquiries/{enquiry}/attachments
+Current runtime before Phase 11.13
+→ audit_events already exist
+→ AuditRecorder already writes events
+→ ADM-007 is placeholder/stub
+→ PermissionCatalog lacks audit.view
 ```
 
-This phase must not create a second Admin-specific Enquiry API.
+Phase 11.13 must therefore:
 
-The task is:
+```text id="x6kom2"
+add explicit audit.view RBAC capability
+→ Admin only
 
-```text
-reuse
-→ inspect actual runtime contract
-→ harden authorization/filtering/privacy
-→ verify immutable history
-→ verify audited close behavior
-→ verify concurrency
-→ reconcile OpenAPI/docs
+activate ADM-007
+→ read-only
+
+build explicit safe Audit resource
+→ no secrets/internal leakage
+
+implement strict filtering/pagination
+→ frozen allow-list only
+
+preserve append-only audit integrity
+→ zero mutation endpoints
+
+verify historical audit producers
+→ inventory, request, enquiry, staff/catalog where implemented
+
+reconcile OpenAPI/docs
+→ runtime truth
+
+close Group K
 ```
+
+Do NOT redesign the audit-writing architecture.
 
 ---
 
-# 1. First Action — Inspect Existing Group J Enquiry Implementation
+# 1. Read Repository Authorities First
 
-Before editing code, inspect at minimum:
+Before editing anything, inspect the current repository.
 
-```text
+At minimum inspect:
+
+```text id="7b1j1m"
 AGENTS.md
-phases/group-J-phases.md
+
 phases/group-K-phases.md
+phases/group-J-phases.md
 
 docs/api/api-contract.md
 docs/api/api-resources.md
@@ -67,298 +76,683 @@ docs/decisions.md
 
 routes/api.php
 
-EnquiryController
-Enquiry model
-EnquiryStatus
-operational Enquiry query/service
-ENQ-006 close service
-Enquiry FormRequests
-Enquiry Resources
-
+AuditEvent model
 AuditRecorder
+
 AuditAction
 AuditResourceType
 
-Enquiry attachment services/resources
-attachment capability services
-
 PermissionName
 PermissionCatalog
+RbacSeeder
+
 Authorization
 
-existing ENQ-001..007 tests
-EnquiryStatusConcurrencyMysqlTest
-Group J closure tests
-OpenAPI Enquiry contract tests
+AdminController / Audit controller placeholder
+ADM-007 route placeholder
+
+existing audit migrations
+existing audit tests
+inventory audit tests
+request audit tests
+enquiry audit tests
+staff lifecycle audit tests
+catalog audit tests
+OpenAPI Admin tests
+RBAC tests
 ```
 
-Determine the actual implemented behavior.
+Do not assume the audit vocabulary from old documentation.
 
-Do not assume old conceptual wording such as:
+Read the actual current:
 
-```text
-optional reopen
+```text id="s7kzkj"
+AuditAction
+AuditResourceType
 ```
 
-is implemented.
-
-Runtime + accepted Group J decisions are authoritative.
+enums/constants and use them as the runtime CLOSED authority unless a genuine contract mismatch is discovered.
 
 ---
 
 # 2. Mandatory Git Workflow Skill
 
-Git operations are authorized.
+The project owner authorizes Git operations.
 
-Before ANY Git command, locate and read the root project skill:
+Before any Git command, locate and read:
 
-```text
-.agents/skills/git-workflow-and-versioning
+```text id="88n7pr"
+git-workflow-and-versioning
 ```
 
-Follow it exactly for:
+from the project root.
 
-```text
-branch handling
-status inspection
+The skill is authoritative for:
+
+```text id="x2uz9m"
+branching
+status checks
 staging
-commit format
+commit messages
 versioning
-push
 tags
+push behavior
 cleanup
 ```
 
-Do not substitute your own workflow.
+Do not substitute generic Git practices.
 
 Never commit:
 
-```text
+```text id="a2yaeg"
 .env
-credentials
-Cloudflare secrets
+database credentials
 Clerk secrets
-database secrets
+Cloudflare secrets
 tokens
+private keys
 ```
 
-Preserve unrelated owner changes.
+Preserve unrelated owner modifications.
 
-Stage only Phase 11.10-related files.
+Stage only Phase 11.13-related files.
 
-Report every Git action at completion.
+Include all Git operations in the completion report.
 
 ---
 
-# 3. Canonical Route Boundary
+# 3. Architectural Boundary
 
-Use only:
+Phase 11.13 exposes audit **reads only**.
 
-```text
-GET  /api/v1/enquiries
-GET  /api/v1/enquiries/{enquiry}
-POST /api/v1/enquiries/{enquiry}/close
+Canonical endpoint:
+
+```text id="t6szf4"
+GET /api/v1/admin/audit-logs
 ```
 
 Do NOT add:
 
-```text
-/api/v1/admin/enquiries
-/api/v1/admin/enquiries/{enquiry}
-/api/v1/staff/enquiries
-/api/v1/support/*
+```text id="i2beu2"
+POST   /api/v1/admin/audit-logs
+PATCH  /api/v1/admin/audit-logs/{audit}
+PUT    /api/v1/admin/audit-logs/{audit}
+DELETE /api/v1/admin/audit-logs/{audit}
+
+GET /api/v1/audit-logs
+GET /api/v1/staff/audit-logs
+GET /api/v1/audits
 ```
 
 No aliases.
 
-The future Admin/Staff frontend consumes the canonical Enquiry domain API.
+Audit events are system-generated historical records.
 
 ---
 
-# 4. Enquiry Is a Separate Domain
+# 4. Audit Is Append-Only
 
-An Enquiry is private general communication.
+The existing:
 
-It is NOT:
-
-```text
-Furniture Request
-Order
-Payment
-Quote
-Inventory operation
-Support chat thread
-CRM ticket
+```text id="e01hkm"
+audit_events
 ```
 
-Preserve the fundamental distinction:
+table is append-only business history.
 
-```text
-Request
-→ "Can you make this furniture?"
+Phase 11.13 must not introduce ordinary API mutation of an existing audit record.
 
-Enquiry
-→ "I have a general/product/order/business question."
+No Admin may:
+
+```text id="5zq2ig"
+edit actor
+edit action
+edit resource
+edit state snapshot
+edit timestamp
+delete audit event
+rewrite request_id
 ```
 
-Do NOT introduce:
-
-```text
-Enquiry → Request conversion
-Enquiry → Order conversion
-Enquiry → Payment
-quote generation
-inventory reservation
-production workflow
-```
+Admin visibility is not audit ownership.
 
 ---
 
-# 5. Current Request-First Release Boundary
+# 5. Preserve Existing Audit Writers
 
-The project remains request-first.
+Do not rewrite existing business workflows merely to implement ADM-007.
 
-Phase 11.10 does not reactivate:
+Existing producers such as:
 
-```text
-checkout
-payments
-order lifecycle
-delivery operations
+```text id="xc6n0u"
+InventoryAdjustmentService
+Request management
+Enquiry close
+Staff lifecycle
+privileged catalog operations
 ```
 
-An Enquiry may reference an existing Order historically/contextually where already supported, but Enquiry management must not mutate that Order.
+where currently audited must continue to use the existing:
+
+```text id="pzo3dq"
+AuditRecorder
+```
+
+and existing transactional semantics.
+
+Do not create a second audit pipeline.
 
 ---
 
-# 6. Existing Enquiry Status Enum
+# 6. Resolve `audit.view`
 
-Preserve the CLOSED enum:
+Add the explicit runtime permission:
 
-```text
-OPEN
-CLOSED
+```text id="r60hj4"
+audit.view
+```
+
+to the established permission enum/catalog.
+
+Use the same naming architecture as existing:
+
+```text id="6hg9as"
+inventory.view
+inventory.manage
+requests.view
+requests.manage
+enquiries.view
+enquiries.manage
 ```
 
 Do NOT add:
 
-```text
-ASSIGNED
-IN_PROGRESS
-WAITING_FOR_CUSTOMER
-ESCALATED
-RESOLVED
-ARCHIVED
-CANCELLED
+```text id="nh8p71"
+audit.manage
+audit.delete
+audit.edit
+audit.*
 ```
 
-New Enquiries default to:
+Phase 11.13 needs one read capability:
 
-```text
-OPEN
+```text id="od3nmo"
+audit.view
 ```
 
 ---
 
-# 7. Reopen Ambiguity — Inspect, Do Not Invent
+# 7. Role Matrix
 
-Historical contract text contains:
+Expected V1 assignment:
 
-```text
-CLOSED → OPEN
-optional if explicitly approved
-```
-
-However Group J's executed concurrency closure proves only:
-
-```text
-OPEN → CLOSED
-```
-
-and concurrent close idempotency/audit.
-
-Therefore:
-
-1. inspect the implemented ENQ-006 runtime;
-2. inspect its tests;
-3. inspect the accepted Group J decisions;
-4. preserve actual approved behavior.
-
-Do NOT implement reopen merely because an older document says:
-
-```text
-optional reopen
-```
-
-If reopen is not currently implemented:
-
-```text
-CLOSED remains terminal for the current runtime surface
-```
-
-and Phase 11.10 must not add a reopen endpoint/action.
-
-If reopen is already implemented and permanently tested, preserve it exactly.
-
-Document the resolved behavior explicitly.
-
----
-
-# 8. ENQ-004 — Operational Enquiry Queue
-
-Canonical:
-
-```text
-GET /api/v1/enquiries
-```
-
-Authorization:
-
-```text
-enquiries.view
-```
-
-Expected actors:
-
-```text
-STAFF with enquiries.view
-ADMIN with enquiries.view
-```
-
-Denied:
-
-```text
-anonymous
+```text id="rf0f61"
 CUSTOMER
-authenticated actor without enquiries.view
+→ no audit.view
+
+STAFF
+→ no audit.view
+
+ADMIN
+→ audit.view
 ```
 
-Staff operational access is purpose-bound.
+The Admin role must receive it explicitly through:
 
-Staff does not own the Enquiry.
+```text id="fjdu98"
+PermissionCatalog
+RbacSeeder
+```
+
+No wildcard.
+
+Do not infer permission from role at request time.
 
 ---
 
-# 9. Pagination
+# 8. Permission Catalog Remains Single Authority
 
 Preserve:
 
-```text
+```text id="5xgmg2"
+PermissionName
+PermissionCatalog
+RbacSeeder
+Authorization
+```
+
+as the centralized RBAC chain.
+
+Do NOT scatter:
+
+```php id="ytjyah"
+if ($user->role === 'ADMIN')
+```
+
+authorization checks.
+
+ADM-007 must require:
+
+```text id="qerdh0"
+audit.view
+```
+
+through the standard authorization mechanism.
+
+---
+
+# 9. Existing Installations / Seed Reconciliation
+
+Adding a new permission enum/catalog entry must work safely for:
+
+```text id="wywb6h"
+fresh DB
+existing development DB
+test DB
+repeat seeding
+```
+
+Inspect how existing RBAC reconciliation is performed.
+
+Ensure:
+
+```text id="gq0yuv"
+RbacSeeder
+```
+
+remains:
+
+```text id="hdss7w"
+idempotent
+deterministic
+```
+
+Re-running it must:
+
+```text id="78qmzj"
+create audit.view if absent
+assign audit.view to ADMIN
+not duplicate permissions
+not remove legitimate role state unexpectedly
+```
+
+Follow the existing seeding model.
+
+Do not add manual SQL instructions as the normal solution.
+
+---
+
+# 10. Do Not Change CLOSED Roles
+
+Roles remain exactly:
+
+```text id="x1cnma"
+CUSTOMER
+STAFF
+ADMIN
+```
+
+Do not add:
+
+```text id="s7mib8"
+AUDITOR
+SUPERADMIN
+SECURITY_ADMIN
+MANAGER
+```
+
+Phase 11.13 does not justify another role.
+
+---
+
+# 11. ADM-007 Authorization
+
+Canonical:
+
+```text id="2xzqp9"
+GET /api/v1/admin/audit-logs
+```
+
+Requirements:
+
+```text id="4zcxti"
+authentication required
++
+audit.view
+```
+
+Expected:
+
+```text id="5lzjct"
+Anonymous
+→ 401
+
+CUSTOMER
+→ 403
+
+STAFF
+→ 403
+
+ADMIN with audit.view
+→ 200
+
+authenticated Admin-like test identity without audit.view
+→ 403
+```
+
+No role-only bypass.
+
+---
+
+# 12. Read-Only Controller
+
+Use a thin controller.
+
+Conceptually:
+
+```text id="b3q4wc"
+request validation
+→ authorization
+→ authorized audit query
+→ deterministic ordering
+→ pagination
+→ AuditResource
+```
+
+Do not put filtering/query complexity directly into a large controller.
+
+Reuse established query-service patterns where appropriate.
+
+---
+
+# 13. Strict Query Allow-List
+
+The frozen ADM-007 filter allow-list is:
+
+```text id="v8fwks"
+actor
+action
+resource_type
+resource_id
+created_from
+created_to
 page
 per_page
 ```
 
-with existing V1 semantics.
+Do not accept undocumented fields.
+
+Reject:
+
+```text id="h5mqvv"
+actor_id
+actor_role
+role
+user
+event
+type
+resource
+request_id
+correlation_id
+date
+from
+to
+sort
+sort_direction
+pageSize
+limit
+```
+
+unless one of those is actually the frozen canonical field after repository reconciliation.
+
+The contract explicitly names:
+
+```text id="h1kmu8"
+actor
+action
+resource_type
+resource_id
+created_from
+created_to
+```
+
+so do not casually rename them.
+
+---
+
+# 14. `actor` Filter Semantics — Inspect Before Implementing
+
+The contract says:
+
+```text id="lez3bg"
+actor
+```
+
+not `actor_id`.
+
+Inspect:
+
+```text id="6ig9e9"
+api-contract
+OpenAPI
+existing placeholder request
+historical phase docs
+```
+
+and determine the intended frozen wire representation.
+
+Prefer the existing opaque User API identity if that is already established.
+
+Do NOT accept:
+
+```text id="18yiwx"
+numeric database ID
+Clerk subject
+email
+```
+
+as undocumented actor selectors.
+
+If the frozen contract is genuinely ambiguous, record a narrow consistency reconciliation rather than silently guessing.
+
+The resolved API must never expose raw DB identity.
+
+---
+
+# 15. `action` Filter
+
+Filter against the existing CLOSED runtime audit action vocabulary.
+
+Inspect:
+
+```text id="hz2a6y"
+AuditAction
+```
+
+and use those exact values.
+
+Do NOT hard-code a second list in the controller if the enum can be reused.
+
+Unknown action:
+
+```text id="vty3ic"
+422 INVALID_VALUE
+field: action
+```
+
+or existing canonical query-validation equivalent.
+
+Do not silently return an empty result for malformed/unknown enum input.
+
+---
+
+# 16. `resource_type` Filter
+
+Filter using the existing:
+
+```text id="hbb7d4"
+AuditResourceType
+```
+
+CLOSED vocabulary.
+
+Do not invent resource types merely for display.
+
+Unknown resource type:
+
+```text id="n7ti8s"
+422
+```
+
+using canonical error behavior.
+
+---
+
+# 17. `resource_id` Filter
+
+The audit table stores the resource identity snapshot used by existing AuditRecorder.
+
+Inspect whether the stored value is:
+
+```text id="kxn0tz"
+opaque public ID
+canonical resource reference
+other server-produced stable identifier
+```
+
+Do not transform historical records unnecessarily.
+
+ADM-007 filtering must match the existing stored semantic.
+
+Do not expose a numeric DB key if the audit record already uses public IDs.
+
+If historical events legitimately contain resource IDs of different opaque prefixes:
+
+```text id="u0ow7z"
+inv_...
+req_...
+enq_...
+prod_...
+...
+```
+
+the API may filter the stored resource identifier exactly.
+
+Do not attempt a live lookup before filtering unless the existing contract requires one.
+
+---
+
+# 18. Historical Resource Independence
+
+Audit visibility must not depend on the current business resource still existing.
+
+Example:
+
+```text id="n6ltvx"
+AuditEvent
+resource_type = product
+resource_id = prod_ABC
+```
+
+must remain visible even if that Product later becomes:
+
+```text id="it5g3a"
+inactive
+soft-deleted
+otherwise unavailable
+```
+
+Do not join audit visibility to live resource authorization/visibility unless strictly necessary.
+
+Audit is historical evidence.
+
+---
+
+# 19. Actor Historical Integrity
+
+The audit schema deliberately preserves actor attribution.
+
+Existing design uses restrictive deletion semantics so actor history cannot silently disappear.
+
+Do not replace audit actor identity with:
+
+```text id="dn0cyu"
+current Clerk lookup
+current email
+current role inferred today
+```
+
+Use the recorded audit snapshot.
+
+An actor's current role may differ from:
+
+```text id="aq3wwy"
+actor_role
+```
+
+recorded at event time.
+
+The historical audit role must win.
+
+---
+
+# 20. Date Filters
+
+Support:
+
+```text id="178ob6"
+created_from
+created_to
+```
+
+using the API's canonical ISO8601 UTC format.
+
+Validate:
+
+```text id="7ljqy4"
+valid timestamp
+invalid timestamp
+created_from <= created_to
+```
+
+Do not silently swap invalid ranges.
+
+Use the audit event's authoritative occurrence timestamp.
+
+Inspect whether persistence field is:
+
+```text id="7wdvfd"
+occurred_at
+```
+
+while API representation uses:
+
+```text id="sdg4qc"
+timestamp
+```
+
+and preserve the existing contract mapping.
+
+---
+
+# 21. Pagination
+
+Use standard V1 pagination:
+
+```text id="0cgww1"
+page
+per_page
+```
 
 Maximum:
 
-```text
+```text id="hng69n"
 100
 ```
 
-Use the standard:
+Return:
 
-```json
+```json id="nltbtb"
 {
   "data": [],
   "meta": {
@@ -374,1426 +768,1400 @@ Use the standard:
 }
 ```
 
-No Enquiry-specific pagination format.
+Do not invent cursor pagination.
 
 ---
 
-# 10. ENQ-004 Filter Allow-List
+# 22. Deterministic Ordering
 
-Preserve the established operational filter set.
+Audit history should be newest-first operationally.
 
-Inspect runtime/OpenAPI, but expected approved filters include:
+Inspect any frozen ordering.
 
-```text
-search
-enquiry_status
-category
-product_id
-order_id
+If not otherwise specified, use:
+
+```text id="ffg7p1"
+occurred_at DESC
+id DESC or stable deterministic ID tie-breaker
+```
+
+consistent with the actual audit schema.
+
+Do not rely on DB natural order.
+
+Document the selected existing/reconciled behavior.
+
+Do not expose arbitrary client sort controls unless already frozen.
+
+---
+
+# 23. Audit Resource — Explicit Serialization
+
+Create/reuse an explicit:
+
+```text id="rtq778"
+AuditResource
+AuditLogResource
+```
+
+according to repository naming conventions.
+
+Do NOT return:
+
+```php id="kkyspm"
+AuditEvent::paginate()
+```
+
+directly.
+
+Do NOT use unrestricted:
+
+```php id="l6by7v"
+$model->toArray()
+```
+
+for the API response.
+
+---
+
+# 24. Canonical Audit Representation
+
+Reconcile the existing OpenAPI `AuditLog` with actual stored fields.
+
+The frozen conceptual fields are:
+
+```text id="0bn4as"
+id
+actor_id
+actor_role
+action
+resource_type
+resource_id
+previous_state
+resulting_state
+timestamp
+request_id / correlation_id where available
+```
+
+Use the exact approved wire field naming.
+
+Do not expose DB implementation names such as:
+
+```text id="r5kfe3"
+occurred_at
+```
+
+if the contract deliberately exposes:
+
+```text id="rq8hlr"
+timestamp
+```
+
+unless repository reconciliation establishes otherwise.
+
+---
+
+# 25. Audit ID Must Be Opaque
+
+Inspect how `audit_events.id` currently works.
+
+The API contract requires:
+
+```text id="ogdbjj"
+id: string
+```
+
+Do not leak an auto-increment database ID if that is considered internal by project conventions.
+
+If an opaque Audit identifier already exists, use it.
+
+If the table only has a numeric primary key and no public identifier, do NOT automatically add a migration just to invent an ID.
+
+First inspect the current frozen OpenAPI and historical implementation intention.
+
+If there is a genuine unresolved incompatibility:
+
+```text id="5us5mw"
+STOP expanding schema
+document the blocker/reconciliation
+```
+
+rather than inventing speculative audit identifiers.
+
+Prefer reuse of an existing safe encoded identifier utility if the project already has one appropriate for the Audit resource.
+
+---
+
+# 26. State Snapshot Representation — Inspect Runtime
+
+Audit records persist:
+
+```text id="kkboqd"
+previous_state
+resulting_state
+```
+
+Inspect actual DB/model casts.
+
+Do not assume these are plain strings.
+
+They may contain structured JSON/state snapshots from:
+
+```text id="tfm3w7"
+inventory
+request
+enquiry
+staff lifecycle
+catalog operations
+```
+
+The current OpenAPI may contain stale string typing.
+
+The agent must reconcile:
+
+```text id="6jmdta"
+database reality
+AuditRecorder API
+existing events
+frozen conceptual contract
+OpenAPI
+```
+
+before finalizing serialization.
+
+Do NOT stringify structured state solely to satisfy stale schema if doing so loses information.
+
+Do NOT broaden the public response to arbitrary sensitive JSON without reviewing what existing writers store.
+
+---
+
+# 27. State Snapshot Data-Minimization Review
+
+This is a mandatory security review.
+
+Enumerate all currently supported:
+
+```text id="oxxvno"
+AuditAction × AuditResourceType
+```
+
+writers.
+
+For each, inspect what is stored in:
+
+```text id="s8e7li"
+previous_state
+resulting_state
+```
+
+Ensure ADM-007 will not expose secrets such as:
+
+```text id="tkg742"
+password/hash
+Clerk subject
+access token
+refresh token
+API secret
+R2 credential
+attachment capability token/digest
+payment provider secret
+webhook signature
+database credential
+```
+
+Also review unnecessary PII.
+
+Do not assume "Admin" means arbitrary secret disclosure is safe.
+
+---
+
+# 28. Do Not Silently Destroy Audit Evidence
+
+If existing state snapshots contain legitimate business values such as:
+
+```text id="g865ux"
+inventory quantities
+status values
+catalog flags
+internal operational notes where intentionally audited
+```
+
+do not silently remove them without contract justification.
+
+The objective is:
+
+```text id="csmhml"
+historical usefulness
++
+secret minimization
+```
+
+not blanket redaction.
+
+Document any field-level serialization decision.
+
+---
+
+# 29. Request ID / Correlation ID
+
+Audit events may store:
+
+```text id="e1n5bx"
+request_id
+```
+
+for correlation.
+
+If the frozen resource exposes it, return the existing request/correlation identifier.
+
+It is not:
+
+```text id="fvnufy"
+User ID
+Order ID
+secret token
+```
+
+Do not allow filtering by it unless the contract already permits that.
+
+The frozen filter allow-list does NOT currently list request_id.
+
+---
+
+# 30. No Live Actor PII Expansion
+
+Do NOT join every Audit event to User and expose:
+
+```text id="90evp4"
+email
+phone
+name
+Clerk ID
+current permissions
+```
+
+unless explicitly frozen.
+
+Canonical audit actor identity is:
+
+```text id="6oxkf9"
+actor_id
+actor_role
+```
+
+Keep ADM-007 lightweight and historically stable.
+
+---
+
+# 31. No Live Resource Expansion
+
+Do NOT expand:
+
+```text id="996w6u"
+resource_id
+```
+
+into live:
+
+```text id="db64og"
+Product
+Request
+Enquiry
+Inventory
+Staff
+Order
+```
+
+objects.
+
+Audit log is history, not a polymorphic API browser.
+
+This also avoids N+1 queries.
+
+---
+
+# 32. Query Performance / N+1
+
+ADM-007 must be efficient.
+
+The normal collection should query:
+
+```text id="tl6zvt"
+audit_events
+```
+
+with indexed/existing columns and paginate.
+
+Do not produce:
+
+```text id="jnq4bu"
+one User query per event
+one Product query per event
+one Request query per event
+```
+
+Add a query-scaling regression where practical.
+
+---
+
+# 33. Do Not Add Speculative Audit Indexes Immediately
+
+Inspect current migration/indexes.
+
+If filters on:
+
+```text id="5cmtnz"
+actor
+action
+resource_type
+resource_id
+occurred_at
+```
+
+lack useful indexes, measure/review first.
+
+Phase 11.13 may add a narrowly justified forward migration only if necessary for the frozen read surface and consistent with project schema practices.
+
+However expected default is:
+
+```text id="nss4ud"
+schema changes = NONE
+```
+
+Do not add speculative indexes merely because filters exist.
+
+If a schema change is required, document exactly why.
+
+---
+
+# 34. Private Caching
+
+ADM-007 is private administrative data.
+
+Return:
+
+```http id="ihozyj"
+Cache-Control: private, no-store
+Vary: Authorization
+```
+
+plus Cookie variation where current middleware conventions require it.
+
+Never CDN-cache audit logs.
+
+---
+
+# 35. No Audit Logging of Audit Reads by Default
+
+Do NOT automatically create a new `AUDIT_LOG_VIEWED` event for every:
+
+```text id="5j6k35"
+GET /admin/audit-logs
+```
+
+unless the existing contract explicitly requires it.
+
+Otherwise:
+
+```text id="fjy8os"
+reading audit log
+→ creates audit event
+→ reading audit log
+→ creates audit event
+```
+
+causes recursive/noisy history growth.
+
+HTTP/security access logs are separate.
+
+Do not expand `AuditAction` solely for reads.
+
+---
+
+# 36. Preserve Mutation Audit Atomicity
+
+Phase 11.13 must not weaken existing rule:
+
+```text id="u1mf4f"
+business mutation
++
+required audit write
+=
+same transaction
+```
+
+Existing audited flows must still roll back if mandatory audit persistence fails.
+
+ADM-007 is read-only and must not interfere with that.
+
+---
+
+# 37. Inventory Audit Regression
+
+Create or reuse a successful:
+
+```text id="g1w5w9"
+INV-003
+```
+
+adjustment.
+
+Then query ADM-007.
+
+Prove the audit event is visible with correct:
+
+```text id="pc3glh"
+actor
+actor_role
+action
+resource_type
+resource_id
+previous_state
+resulting_state
+timestamp
+request_id where applicable
+```
+
+Do not reimplement inventory audit creation.
+
+---
+
+# 38. Request Audit Regression
+
+Perform a real:
+
+```text id="ewyuf0"
+REQ-006
+```
+
+status transition.
+
+Verify its event appears through ADM-007.
+
+Prove:
+
+```text id="6b4bwd"
+REQUEST_STATUS_CHANGED
+```
+
+or actual current enum value is filterable through `action`.
+
+Do not use made-up event names; inspect `AuditAction`.
+
+---
+
+# 39. Enquiry Audit Regression
+
+Perform:
+
+```text id="8cjvmg"
+OPEN → CLOSED
+```
+
+through ENQ-006.
+
+Verify:
+
+```text id="o2sbst"
+ENQUIRY_STATUS_CHANGED
+```
+
+or current canonical action appears through ADM-007.
+
+Repeated idempotent close must not create duplicate transition history.
+
+---
+
+# 40. Other Existing Audit Producers
+
+Inspect current repository for all:
+
+```text id="kul0eu"
+AuditRecorder
+```
+
+call sites.
+
+Add targeted visibility regressions for important already-implemented domains, especially where Group K depends on them, such as:
+
+```text id="g0vx1j"
+privileged Product mutation
+Category mutation
+Staff lifecycle
+Inventory adjustment
+Request status
+Enquiry status
+```
+
+Do not create fake producers just to fill the audit screen.
+
+Test what actually exists.
+
+---
+
+# 41. Staff Lifecycle Audit Boundary
+
+If:
+
+```text id="dr4htz"
+ADM-004 approve
+ADM-005 suspend
+ADM-006 reactivate
+```
+
+are currently implemented and audited, verify these events are visible.
+
+Do NOT change Staff lifecycle behavior in 11.13.
+
+If an action is still stubbed/not implemented, do not pull it forward simply to populate ADM-007.
+
+---
+
+# 42. Admin Bootstrap Boundary
+
+Initial Admin bootstrap intentionally did not emit a normal audit event because the closed audit vocabulary lacked a truthful bootstrap/system action.
+
+Preserve that decision.
+
+Do NOT fabricate:
+
+```text id="sbhgbu"
+STAFF_APPROVED
+USER_ROLE_CHANGED
+```
+
+for the initial Admin bootstrap.
+
+Do not add a fake human actor.
+
+Phase 11.13 visibility does not retroactively rewrite bootstrap history.
+
+---
+
+# 43. Strict Filter Tests
+
+Add permanent tests for:
+
+```text id="ekxbpu"
+actor
+action
+resource_type
+resource_id
 created_from
 created_to
 page
 per_page
 ```
 
-Historical docs also mention `sort`/`sort_direction`; only preserve them if they are already frozen and implemented.
+including useful combinations:
 
-Do not invent new filters.
+```text id="hmw76f"
+actor + action
+resource_type + resource_id
+action + date window
+actor + resource_type + date window
+```
 
-Reject unknown query fields.
+Pagination totals must reflect the filtered dataset.
 
-Do not silently accept:
+---
 
-```text
-status
-customer_id
-email
-phone
-assigned_to
-priority
-resolved
+# 44. Unknown Query Rejection
+
+Explicitly reject:
+
+```text id="z5rd31"
+actor_id
+role
+request_id
+event
+resource
+from
+to
+sort
 pageSize
-sortBy
+limit
+include
 ```
 
-aliases.
+unless repository reconciliation establishes a listed field as canonical.
+
+Do not silently ignore unknown query keys.
 
 ---
 
-# 11. Search Semantics
+# 45. Enum Filter Tests
 
-Preserve approved search coverage across fields such as:
+For:
 
-```text
-name
+```text id="gh3dgp"
+action
+resource_type
+```
+
+test:
+
+```text id="xyh1av"
+every representative valid enum
+unknown enum
+wrong type
+empty string
+```
+
+Use strict validation.
+
+Do not allow arbitrary strings that can only return empty results.
+
+---
+
+# 46. Actor Filter Security
+
+Verify actor filter cannot be used with:
+
+```text id="ja607a"
+raw numeric user ID
+Clerk subject
 email
-phone
-subject
-message
-enquiry reference
-order reference
 ```
 
-according to the current implementation.
+unless explicitly frozen.
 
-Do not search:
+Use safe opaque identity.
 
-```text
-staff_internal_notes
-Clerk IDs
-raw DB IDs
-permissions
-attachment storage keys
-audit internals
-```
-
-unless already frozen.
-
-Search must run over the authorized operational dataset.
+Do not reveal whether an unknown Clerk identity exists.
 
 ---
 
-# 12. Enquiry Status Filter
+# 47. Date Window Tests
 
-`enquiry_status` accepts only:
+Cover:
 
-```text
-OPEN
-CLOSED
+```text id="u5bfbl"
+from only
+to only
+both
+exact boundary
+invalid date
+from > to
 ```
 
-Unknown values:
+Define inclusive/exclusive boundaries according to current project convention and document them.
 
-```text
-422 INVALID_VALUE
-```
-
-Do not introduce aliases.
+Do not guess inconsistent behavior between test and docs.
 
 ---
 
-# 13. Category Filter
+# 48. Pagination Tests
 
-Preserve CLOSED category values where currently supported:
+Cover:
 
-```text
-GENERAL
-PRODUCT
-DELIVERY
-OTHER
+```text id="tdtrpk"
+default page
+page 2
+custom per_page
+max 100
+per_page > 100
+page 0
+negative page
+non-integer page
 ```
 
-Do not invent:
-
-```text
-SUPPORT
-PAYMENT
-CUSTOM
-COMPLAINT
-```
-
-without contract approval.
-
-Unknown category must fail validation.
+Use canonical validation errors.
 
 ---
 
-# 14. Product Filter
+# 49. Ordering Tests
 
-`product_id` must follow existing opaque Product identifier rules.
+Create events with controlled timestamps/tie conditions.
 
-Do not accept:
+Prove deterministic newest-first behavior.
 
-```text
-Product name
-slug unless contract allows it
-Variant ID
-SKU
-raw DB ID
-```
-
-as undocumented alternatives.
-
-General Enquiries with:
-
-```text
-product_id = null
-```
-
-must remain fully operationally visible.
+Pagination must not duplicate/skip events due to unstable ordering.
 
 ---
 
-# 15. Order Filter
+# 50. Empty Result Behavior
 
-`order_id` filter is operational context only.
+Valid filters with zero matches return:
 
-Use the existing frozen Order identifier representation.
+```json id="7e05fu"
+{
+  "data": [],
+  "meta": {
+    "pagination": {
+      "...": "..."
+    }
+  }
+}
+```
 
-Do not use the Enquiry API to expose unrestricted Order data.
+not:
 
-Do not interpret Order association as permission to mutate the Order.
+```text id="p9ml4o"
+404
+```
+
+A valid empty collection is not an error.
 
 ---
 
-# 16. Date Filters
+# 51. Read-Only Route Regression
 
-Preserve:
+Explicitly prove these remain nonexistent:
 
-```text
-created_from
-created_to
+```text id="k9lv8v"
+POST /api/v1/admin/audit-logs
+PATCH /api/v1/admin/audit-logs/{id}
+PUT /api/v1/admin/audit-logs/{id}
+DELETE /api/v1/admin/audit-logs/{id}
 ```
 
-as ISO8601 UTC.
-
-Validate strictly.
-
-If:
-
-```text
-created_from > created_to
-```
-
-use existing cross-field validation.
-
-Do not silently reorder dates.
+No compatibility aliases.
 
 ---
 
-# 17. Deterministic Ordering
+# 52. Customer/Staff Isolation
 
-Default operational ordering remains:
+Test:
 
-```text
-created_at DESC
-id ASC
+```text id="fc0tgf"
+CUSTOMER
+→ cannot read any audit logs
+
+STAFF
+→ cannot read any audit logs
 ```
 
-or the exact existing implementation.
+Even if Staff created the audited business event.
 
-Always retain deterministic tie-breaking.
+Example:
 
-Do not rely on database natural order.
+```text id="f53mby"
+Staff performs inventory adjustment
+→ event exists
+
+same Staff calls ADM-007
+→ 403
+```
+
+Creating an event does not grant visibility into audit history.
 
 ---
 
-# 18. ENQ-005 — Operational Detail
+# 53. Admin Permission Revocation Test
 
-Canonical:
+Where practical:
 
-```text
-GET /api/v1/enquiries/{enquiry}
-```
-
-Authorization:
-
-```text
-enquiries.view
-```
-
-Resolve using canonical opaque:
-
-```text
-enq_...
-```
-
-identifier only.
-
-Do not resolve by:
-
-```text
-email
-phone
-subject
-order reference
-numeric DB ID
-```
-
-in the URI.
-
-Unknown resource:
-
-```text
-canonical 404
-```
-
----
-
-# 19. Operational Enquiry Representation
-
-Preserve explicit allow-listed operational fields.
-
-Expected approved data includes:
-
-```text
-id
-
-name
-email
-phone
-
-subject
-message
-category
-
-product
-order
-
-enquiry_status
-staff_internal_notes
-
-user_id
-attachments
-
-created_at
-updated_at
-```
-
-Use exact existing field names.
-
-Do not serialize the Eloquent model wholesale.
-
----
-
-# 20. Historical Contact Snapshot
-
-Contact fields:
-
-```text
-name
-email
-phone
-```
-
-are historical Enquiry snapshots.
-
-A later Customer profile change must NOT rewrite the Enquiry.
-
-Do not dynamically substitute current profile data during serialization.
-
----
-
-# 21. Immutable Subject and Message
-
-Customer-submitted:
-
-```text
-subject
-message
-```
-
-are immutable historical truth.
-
-Staff/Admin must not edit or "correct" them.
-
-Do not add:
-
-```text
-PATCH /enquiries/{enquiry}
-```
-
-for arbitrary content mutation.
-
-Preserve plain-text semantics.
-
----
-
-# 22. Plain-Text Safety
-
-Subject/message remain untrusted plain text.
-
-Do not:
-
-```text
-interpret HTML
-render Markdown server-side
-execute templates
-sanitize into different historical content
-```
-
-Store and return according to existing plain-text contract.
-
-Frontend escaping remains required downstream.
-
----
-
-# 23. Product Context Is Historical
-
-If an Enquiry links to a Product, later Product changes must not destroy the Enquiry.
-
-Operational Enquiry management must not require the linked Product to still be:
-
-```text
-active
-published
-public
-```
-
-Creation-time eligibility and historical read are separate concerns.
-
-Do not re-run creation eligibility on ENQ-004/005/006.
-
----
-
-# 24. Order Context Is Historical / Read-Only
-
-If an Enquiry references an Order:
-
-```text
-order
-```
-
-may expose only the safe approved summary such as:
-
-```text
-id
-order_reference
-status
-```
-
-according to existing resources.
-
-Do not expose:
-
-```text
-payment secrets
-full delivery data
-full Order internals
-inventory allocations
-```
-
-through the Enquiry resource.
-
-Do not mutate Order state from ENQ-006.
-
----
-
-# 25. `staff_internal_notes`
-
-Preserve separation:
-
-```text
-message
-→ customer historical communication
-
-staff_internal_notes
-→ internal operational notes
-```
-
-Never expose `staff_internal_notes` via:
-
-```text
-ENQ-001
-ENQ-002
-ENQ-003
-```
-
-Customer cannot read internal notes.
-
-Anonymous creation response cannot read internal notes.
-
----
-
-# 26. ENQ-006 — Controlled Close Action
-
-Canonical:
-
-```text
-POST /api/v1/enquiries/{enquiry}/close
-```
-
-Authorization:
-
-```text
-enquiries.manage
-```
-
-Do NOT replace with:
-
-```text
-PATCH /api/v1/enquiries/{enquiry}
-```
-
-unless the current frozen runtime already uses an internal body contract behind ENQ-006.
-
-No generic mutation endpoint.
-
----
-
-# 27. ENQ-006 Writable Fields
-
-Inspect actual implemented FormRequest/service.
-
-Preserve only the already-approved operational fields, expected to be:
-
-```text
-enquiry_status
-staff_internal_notes
-```
-
-or the narrower close-action equivalent already implemented.
-
-Do not broaden.
-
-Reject attempts to write:
-
-```text
-name
-email
-phone
-subject
-message
-category
-product_id
-order_id
-user_id
-attachments
-created_at
-updated_at
-```
-
----
-
-# 28. Close Semantics
-
-If current runtime is close-only:
-
-```text
-OPEN → CLOSED
-```
-
-is the only real status transition.
-
-Same close replay should follow existing idempotent behavior.
-
-Do not add `OPEN` body values to a `/close` action unless already implemented.
-
-Do not invent:
-
-```text
-/reopen
-```
-
-route.
-
----
-
-# 29. Same-State Idempotency
-
-Concurrent or repeated close requests must not create duplicate business effects.
+1. create Admin;
+2. verify `audit.view`;
+3. remove permission in test setup;
+4. call ADM-007.
 
 Expected:
 
-```text
-OPEN → CLOSED
-→ one real transition
-
-CLOSED → close again
-→ idempotent existing result
+```text id="gb15tp"
+403
 ```
 
-according to established Group J behavior.
-
-Do not create duplicate audit records.
+This proves the endpoint checks permission, not merely role.
 
 ---
 
-# 30. Internal Notes + Close Atomicity
+# 54. State Snapshot Security Tests
 
-Where ENQ-006 supports internal notes alongside close:
+Create representative events whose state payloads exercise existing domains.
 
-```text
-status
-+
-staff_internal_notes
-```
+Assert response never contains known sensitive keys such as:
 
-must commit atomically.
-
-If close fails:
-
-```text
-notes must not partially persist
-```
-
-If audit write fails:
-
-```text
-status/notes must roll back
-```
-
-Preserve existing transaction semantics.
-
----
-
-# 31. Audit Requirements
-
-Preserve Group J audit behavior.
-
-Real Enquiry status changes must generate the existing:
-
-```text
-ENQUIRY_STATUS_CHANGED
-```
-
-or current canonical action.
-
-Audit should retain server-derived:
-
-```text
-actor_id
-actor_role
-resource
-previous state
-resulting state
-timestamp
-request/correlation ID
-```
-
-Never accept actor metadata from client input.
-
----
-
-# 32. Audit Idempotency
-
-A repeated same-state close must not produce multiple real transition audits.
-
-The Group J MariaDB closure already established:
-
-```text
-10 concurrent closes
-→ final CLOSED
-→ exactly one OPEN → CLOSED audit
-```
-
-Preserve this property.
-
----
-
-# 33. Audit Atomicity
-
-Audit persistence belongs to the business transaction.
-
-If audit fails:
-
-```text
-Enquiry mutation rolls back
-```
-
-Do not permit unaudited successful state change.
-
-Do not expose general audit browsing here.
-
-Phase 11.13 owns ADM-007.
-
----
-
-# 34. Concurrency Authority
-
-Preserve the established:
-
-```text
-DB transaction
-+
-lockForUpdate
-+
-ConcurrentTransaction/bounded retry
-```
-
-pattern.
-
-Do not replace with:
-
-```text
-Redis locks
-distributed mutex
-queue serialization
-lock_version
-table locks
-```
-
-MariaDB/InnoDB remains concurrency authority.
-
----
-
-# 35. Existing MariaDB Close Race
-
-Run the existing:
-
-```text
-EnquiryStatusConcurrencyMysqlTest
-```
-
-against:
-
-```text
-furnitureapp_test_disposable
-```
-
-using existing guards.
-
-Preserve proof that concurrent closes result in:
-
-```text
-one real OPEN → CLOSED transition
-final CLOSED state
-one real audit
-no stale overwrite
-```
-
-SQLite is not sufficient concurrency evidence.
-
----
-
-# 36. Enquiry Attachments
-
-ENQ-007 remains the canonical separate attachment flow.
-
-Do not add:
-
-```text
-GET /enquiries/{enquiry}/attachments
-DELETE /enquiries/{enquiry}/attachments/{attachment}
-PATCH /enquiries/{enquiry}/attachments/{attachment}
-```
-
-unless already frozen.
-
-Operational detail may expose safe metadata only.
-
----
-
-# 37. Attachment Privacy
-
-Attachments remain private to the parent Enquiry.
-
-Do NOT use the public Product-image CDN model.
-
-Never expose:
-
-```text
-storage_disk
+```text id="5spzfk"
+password
+password_hash
+clerk_user_id
+token
+access_token
+refresh_token
+secret
+api_key
 storage_key
-filesystem path
-R2 credentials
-capability digest
-raw upload token
+capability_token
+capability_digest
 ```
+
+Use recursive response inspection where appropriate.
+
+Do not add fake sensitive values to production logic.
 
 ---
 
-# 38. Safe Attachment Metadata
+# 55. Error Disclosure
 
-Operational metadata may include:
+ADM-007 errors must not reveal:
 
-```text
-id
-filename
-content_type
-size
+```text id="bxvpqd"
+SQL
+table names
+file paths
+PHP class names
+stack traces
+permission implementation
+raw database IDs
 ```
 
-and only an already-approved temporary/private URL if current implementation supports it.
+Use canonical error envelopes with:
 
-No permanent public URLs.
+```text id="ju2a6z"
+meta.request_id
+```
+
+where existing error conventions require it.
 
 ---
 
-# 39. Customer Ownership Boundary
+# 56. OpenAPI — ADM-007
 
-Preserve:
+Implement/reconcile the actual OpenAPI operation for:
 
-```text
-GET /api/v1/me/enquiries
-GET /api/v1/me/enquiries/{enquiry}
+```text id="ez74ca"
+GET /api/v1/admin/audit-logs
 ```
 
-as Customer-owned retrieval.
-
-Customer A → Customer B:
-
-```text
-404 masked
-```
-
-Customer resources must never include:
-
-```text
-staff_internal_notes
-audit internals
-operational permissions
-```
-
----
-
-# 40. Anonymous Boundary
-
-Anonymous Enquiry creation remains allowed.
-
-Anonymous:
-
-```text
-user_id = null
-```
-
-must remain visible in the operational queue.
-
-Do not require a Customer account.
-
-Do not auto-link an old anonymous Enquiry to a Customer merely because the email later matches.
-
-Email is contact, not authentication.
-
----
-
-# 41. Anonymous Retrieval Remains Unsupported
-
-Do NOT create anonymous:
-
-```text
-GET /enquiries/{id}
-```
-
-access.
-
-Knowing:
-
-```text
-enq_...
-email
-phone
-```
-
-is not authorization.
-
-Upload capability is upload-only.
-
-It must not become a read/status token.
-
----
-
-# 42. Product Association Boundary
-
-At creation, an Enquiry may reference any qualifying public Product, regardless of product type.
-
-Do not incorrectly apply the Request rule:
-
-```text
-MADE_TO_ORDER only
-```
-
-to Enquiries.
-
-Request and Enquiry product semantics differ intentionally.
-
----
-
-# 43. Order Association Boundary
-
-Authenticated Customer may reference only an Order they own according to existing ENQ-001 rules.
-
-Anonymous Order linking remains rejected unless an explicit scoped mechanism exists.
-
-Phase 11.10 must not weaken this.
-
-Operational staff read of an already-linked Order does not imply unrestricted Order browsing outside normal Order authorization.
-
----
-
-# 44. No Enquiry → Request Conversion
-
-Do not add:
-
-```text
-POST /enquiries/{enquiry}/convert-to-request
-request_id
-converted_request_id
-```
-
-or equivalent.
-
-The domains remain separate.
-
----
-
-# 45. No Enquiry → Order Conversion
-
-Do not add:
-
-```text
-POST /enquiries/{enquiry}/create-order
-```
-
-or automatic Order creation.
-
-No Payment.
-
-No inventory reservation.
-
-No delivery workflow.
-
----
-
-# 46. No Messaging Thread
-
-Do NOT implement:
-
-```text
-replies
-messages[]
-chat
-conversation
-email send
-SMS
-WhatsApp
-push
-customer-response thread
-```
-
-Phase 11.10 is not a support-ticketing system.
-
-External communication remains separate/future.
-
----
-
-# 47. No Assignment Workflow
-
-Do not add:
-
-```text
-assigned_staff_id
-assignee
-owner
-team
-queue_owner
-```
-
-Staff operational handling remains permission-based.
-
----
-
-# 48. No Priority / SLA
-
-Do not add:
-
-```text
-priority
-urgent
-severity
-SLA
-due_at
-escalated
-```
-
-No such V1 contract exists.
-
----
-
-# 49. Permission Separation
-
-Verify:
-
-```text
-enquiries.view
-→ ENQ-004
-→ ENQ-005
-
-enquiries.manage
-→ ENQ-006
-```
-
-An actor with only:
-
-```text
-enquiries.view
-```
-
-must not close an Enquiry.
-
-Use central authorization.
-
-Do not hard-code role bypasses.
-
----
-
-# 50. Admin Access
-
-Admin remains explicit-permission based.
-
-Do not implement:
-
-```php
-if ADMIN => bypass all policies
-```
-
-Use:
-
-```text
-PermissionCatalog
-Authorization
-enquiries.view
-enquiries.manage
-```
-
----
-
-# 51. Private Caching
-
-Operational Enquiry responses contain PII.
-
-Preserve:
-
-```http
-Cache-Control: private, no-store
-Vary: Authorization
-```
-
-plus existing Cookie variation where needed.
-
-Never CDN-cache Enquiries publicly.
-
----
-
-# 52. Required ENQ-004 Authorization Tests
-
-Cover:
-
-```text
-anonymous → 401
-Customer → 403
-
-Staff with enquiries.view → 200
-Admin with enquiries.view → 200
-
-authenticated actor without enquiries.view → 403
-```
-
----
-
-# 53. Required ENQ-005 Authorization Tests
-
-Cover:
-
-```text
-anonymous → 401
-Customer → 403
-Staff with enquiries.view → 200
-Admin with enquiries.view → 200
-unknown enq_... → 404
-malformed identifier → canonical behavior
-```
-
----
-
-# 54. Required ENQ-006 Authorization Tests
-
-Cover:
-
-```text
-anonymous → 401
-Customer → 403
-
-Staff with enquiries.view only → 403
-
-Staff with enquiries.manage → allowed
-Admin with enquiries.manage → allowed
-```
-
-Do not permit mutation merely because actor can view.
-
----
-
-# 55. Required Filter Tests
-
-ENQ-004 must cover the actual implemented frozen filters, including as applicable:
-
-```text
-search
-enquiry_status
-category
-product_id
-order_id
-created_from
-created_to
+Ensure it documents:
+
+```text id="21stza"
+operationId = ADM-007
+authentication required
+Admin / audit.view
+query filter allow-list
 pagination
-```
-
-If `sort`/`sort_direction` are currently frozen and implemented, cover them too.
-
-Do not add them just because an older doc mentions them.
-
-Test combined filters.
-
----
-
-# 56. Search Coverage
-
-Where currently supported, verify search matches:
-
-```text
-name
-email
-phone
-subject
-message
-enquiry reference
-order reference
-```
-
-and remains deterministic/paginated.
-
-Do not leak unrelated User data.
-
----
-
-# 57. Strict Query Tests
-
-Reject unknown query fields such as:
-
-```text
-status
-customer_id
-assigned_to
-priority
-pageSize
-sortBy
-```
-
-according to current strict-query rules.
-
----
-
-# 58. Required Representation Tests
-
-Operational detail must verify approved safe fields and absence of:
-
-```text
-raw DB IDs
-Clerk IDs
-credentials
-permissions
-storage keys
-capability digests
-payment secrets
-full Order internals
-```
-
-Use explicit negative assertions.
-
----
-
-# 59. Customer Internal-Note Privacy Test
-
-Create Enquiry.
-
-Add Staff internal notes through the operational path.
-
-Then fetch through:
-
-```text
-ENQ-002 / ENQ-003
-```
-
-and prove:
-
-```text
-staff_internal_notes
-```
-
-is absent.
-
-Mandatory regression.
-
----
-
-# 60. Intake Immutability Tests
-
-Attempt to mutate:
-
-```text
-name
-email
-phone
-subject
-message
-category
-product_id
-order_id
-user_id
-```
-
-through ENQ-006 or any unintended route.
-
-Prove rejection.
-
-Original submission must remain unchanged.
-
----
-
-# 61. No-Side-Effect Tests
-
-Closing/updating internal notes must produce zero:
-
-```text
-Request
-Order
-OrderItem
-Payment
-Delivery
-ProductStock
-reserved_quantity
-quote
-```
-
-creation/mutation.
-
-This protects domain separation.
-
----
-
-# 62. Status Behavior Tests
-
-At minimum prove:
-
-```text
-OPEN → CLOSED
-allowed
-
-CLOSED → close again
-existing idempotent behavior
-```
-
-If runtime supports reopen, test its exact approved behavior.
-
-If runtime does NOT support reopen:
-
-```text
-do not add it
-```
-
-and document CLOSED terminal for current implementation.
-
----
-
-# 63. MariaDB Concurrency Gate
-
-Run real MariaDB concurrency tests against only:
-
-```text
-furnitureapp_test_disposable
-```
-
-Reuse existing forked-worker infrastructure.
-
-Prove:
-
-```text
-simultaneous close
-→ one committed transition
-→ one audit
-→ final CLOSED
-```
-
-Do not claim concurrency closure from SQLite alone.
-
----
-
-# 64. Group J Regression Suite
-
-Run relevant Group J Enquiry suites covering:
-
-```text
-ENQ-001 creation
-validation
-contact rules
-product association
-Order ownership/masking
-customer ownership
-attachments
-operational read
-operational close
-audit
-MariaDB concurrency
-```
-
-Phase 11.10 must not regress Group J closure.
-
----
-
-# 65. OpenAPI
-
-Verify ENQ-004/005/006 agree with runtime for:
-
-```text
-paths
-methods
-security
-filters
-pagination
-operational resource
-status enum
-close body if any
-staff_internal_notes if applicable
+AuditLog resource
+200 collection response
 401
 403
-404
-409
 422
-private response semantics
+429 if actual middleware applies
+500
+private caching where represented
 ```
 
-Also verify ENQ-007 remains:
-
-```text
-multipart/form-data
-field = attachment
-```
-
-because Phase 11.9 already corrected the equivalent REQ-007 mismatch and Enquiry must remain consistent.
-
-Do not broaden the API.
+Do not invent mutation operations.
 
 ---
 
-# 66. Reopen Documentation Reconciliation
+# 57. OpenAPI AuditLog Schema
 
-This is a specific Phase 11.10 review requirement.
+Reconcile the existing schema with actual runtime.
 
-Search all authoritative docs for:
+Current frozen conceptual schema includes:
 
-```text
-reopen
-CLOSED→OPEN
-optional reopen
+```text id="dkn9s8"
+id
+actor_id
+actor_role
+action
+resource_type
+resource_id
+timestamp
+previous_state
+resulting_state
 ```
 
-Compare against current runtime.
+and potentially:
 
-If reopen is not implemented, reconcile misleading wording so the documentation does not falsely advertise a capability.
-
-Do not silently add implementation to satisfy stale prose.
-
-Prefer:
-
-```text
-runtime-approved behavior
-→ docs corrected
+```text id="8m3o4i"
+request_id
 ```
 
-over:
+where established.
 
-```text
-ambiguous old docs
-→ new functionality invented
+Audit state types must match real serialized data.
+
+Do not leave OpenAPI saying:
+
+```text id="d5bay8"
+previous_state: string
 ```
 
-Record the decision.
+if runtime actually returns structured JSON.
+
+Likewise do not change runtime to a lossy string merely to satisfy stale OpenAPI.
+
+Reconcile deliberately.
 
 ---
 
-# 67. Documentation
+# 58. API Contract Status
+
+After successful implementation, change ADM-007 from:
+
+```text id="sk6bpx"
+PROPOSED / optional / placeholder
+```
+
+to the repository-consistent:
+
+```text id="kimqkx"
+APPROVED
+```
+
+where authoritative status tables are maintained.
+
+Remove stale statements saying:
+
+```text id="vt8c5t"
+no audit.view exists
+ADM-007 remains internal-only
+ADM-007 is a stub
+```
+
+by superseding/reconciling them appropriately.
+
+Do not rewrite historical ADR facts as though they never occurred.
+
+---
+
+# 59. Documentation Reconciliation
 
 Update:
 
-```text
-phases/group-K-phases.md
+```text id="jhqdes"
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/api-conventions.md
+docs/api/openapi.yaml
 docs/decisions.md
+phases/group-K-phases.md
 ```
 
-Record that Group K reuses Group J:
+as necessary.
 
-```text
-ENQ-004
-ENQ-005
-ENQ-006
+Final policy should be unambiguous:
+
+```text id="lqj5qm"
+ADM-007 is active V1.
+
+Admin only.
+
+Requires audit.view.
+
+Read-only.
+
+Strict filter allow-list.
+
+Private/no-store.
+
+Append-only source.
+
+No PATCH/DELETE.
+
+Audit creation remains mandatory for audited business mutations.
 ```
-
-and no `/admin/enquiries` aliases exist.
-
-Document:
-
-```text
-Enquiry and Request remain separate.
-Enquiry intake is immutable.
-Internal notes remain private.
-No Order/Payment/Inventory side effects.
-Actual reopen policy explicitly resolved.
-```
-
-Use next repository-consistent ADR identifier.
 
 ---
 
-# 68. Schema
+# 60. New ADR
+
+Add the next repository-consistent ADR, following the latest existing identifier.
+
+Suggested subject:
+
+```text id="eo4h8q"
+Phase 11.13 Audit Visibility and audit.view Reconciliation
+```
+
+Record:
+
+```text id="1bg62s"
+audit.view added to PermissionName/PermissionCatalog
+
+ADMIN receives audit.view explicitly
+
+CUSTOMER/STAFF do not
+
+ADM-007 activated
+
+existing audit_events/AuditRecorder reused
+
+read-only filter/pagination surface
+
+no audit mutation endpoint
+
+no wildcard permission
+
+no live User/resource expansion
+
+state snapshot exposure reviewed for secrets
+
+Admin bootstrap historical exception preserved
+
+Group K audit consistency gap closed
+```
+
+---
+
+# 61. Schema
 
 Expected:
 
-```text
+```text id="hlp6bg"
 schema changes = NONE
 ```
 
-Do not add:
+Audit table already exists.
 
-```text
-ticket tables
-conversation tables
-assignment columns
-priority columns
-enquiry history table
-CRM tables
+Do not create a second:
+
+```text id="qms6b9"
+audit_logs
+admin_audit_logs
+activity_logs
 ```
 
-If a genuine schema mismatch appears, report it before inventing new state.
+table.
+
+Do not migrate from audit_events to another package.
+
+If a genuine identifier/index incompatibility requires schema work:
+
+```text id="glzt26"
+report and justify it explicitly
+```
+
+before expanding scope.
 
 ---
 
-# 69. Dependencies
+# 62. Dependencies
 
 Expected:
 
-```text
-new dependencies = NONE
+```text id="rnysf5"
+dependency changes = NONE
 ```
 
 Do not add:
 
-```text
-support desk package
-workflow engine
-CRM package
-search engine
-queue package
+```text id="tlwki7"
+spatie activitylog
+audit package
+logging SaaS SDK
+Elasticsearch
+Meilisearch
+```
+
+The project already has the required audit persistence.
+
+---
+
+# 63. No External Logging Integration
+
+Phase 11.13 does NOT integrate:
+
+```text id="27ouhy"
+Datadog
+Sentry audit
+CloudWatch
+ELK
+Loki
+SIEM
+```
+
+Operational observability and domain audit are separate concerns.
+
+ADM-007 reads the authoritative local audit_events domain history.
+
+---
+
+# 64. No Audit Export Yet
+
+Do not add:
+
+```text id="umnk9p"
+CSV export
+PDF export
+bulk download
+email export
+external archival
+```
+
+unless frozen elsewhere.
+
+Phase 11.13 is paginated API visibility only.
+
+---
+
+# 65. No Full-Text Audit Search
+
+Do not add generic:
+
+```text id="fof17r"
+search
+q
+text
+```
+
+over state snapshots.
+
+The frozen contract uses structured filters only.
+
+This limits data exposure and query complexity.
+
+---
+
+# 66. No Audit Retention/Delete Policy
+
+Do not introduce automatic:
+
+```text id="we11pv"
+retention cleanup
+purge
+archive
+GDPR delete
+TTL
+```
+
+during Phase 11.13.
+
+Those require a separate legal/operations decision.
+
+Preserve current records.
+
+---
+
+# 67. No Audit Editing Through Database Model Helpers
+
+Review `AuditEvent` model for mass-assignment and mutation exposure.
+
+Do not add normal:
+
+```text id="ij0y2h"
+update()
+delete()
+```
+
+service paths for the API.
+
+If model-level immutability protections already exist, preserve them.
+
+Do not perform large unrelated model refactors.
+
+---
+
+# 68. Required RBAC Tests
+
+Update permanent RBAC coverage to prove:
+
+```text id="7yum4q"
+PermissionName includes audit.view
+
+PermissionCatalog:
+CUSTOMER → no audit.view
+STAFF → no audit.view
+ADMIN → audit.view
+
+wildcard still disabled
+
+seeding is deterministic/idempotent
+```
+
+Update any canonical permission-count assertions deliberately.
+
+Do not merely change expected count without proving matrix correctness.
+
+---
+
+# 69. Required ADM-007 Authorization Tests
+
+At minimum:
+
+```text id="td6g67"
+anonymous → 401
+Customer → 403
+Staff → 403
+Admin with audit.view → 200
+Admin without audit.view → 403
+```
+
+Also verify private cache headers on 200.
+
+---
+
+# 70. Required Resource Tests
+
+Assert each Audit row uses explicit approved fields.
+
+Explicitly assert absence of:
+
+```text id="neddo8"
+raw user numeric ID
+Clerk ID
+password/hash
+tokens
+permission pivots
+database internals
+storage secrets
 ```
 
 ---
 
-# 70. Code Quality
+# 71. Required Filter Tests
+
+Cover all canonical filters:
+
+```text id="xoazur"
+actor
+action
+resource_type
+resource_id
+created_from
+created_to
+```
+
+plus:
+
+```text id="o2wb33"
+combined filters
+empty valid result
+strict unknown filters
+pagination after filtering
+```
+
+---
+
+# 72. Required Cross-Domain Visibility Tests
+
+At minimum expose through ADM-007 events generated from currently implemented:
+
+```text id="46otym"
+Inventory adjustment
+
+Request status transition
+
+Enquiry close
+```
+
+If current Staff/catalog mutations already emit audits, include representative tests for those as well.
+
+Do not fabricate missing audit producers.
+
+---
+
+# 73. Required Historical Snapshot Test
+
+Create event.
+
+Then alter current live business resource state.
+
+Fetch audit event.
+
+Assert:
+
+```text id="r7nr0g"
+actor_role
+previous_state
+resulting_state
+resource_id
+timestamp
+```
+
+remain historical snapshots and are not recomputed from live state.
+
+---
+
+# 74. Required Immutability Route Tests
+
+Assert:
+
+```text id="rl73k4"
+POST
+PATCH
+PUT
+DELETE
+```
+
+on audit log collection/detail are absent or method-not-allowed according to router behavior.
+
+Do not implement Audit detail endpoint unless already frozen.
+
+ADM-007 is collection-only.
+
+---
+
+# 75. Concurrency Requirements
+
+ADM-007 itself is read-only and does not require a new special MariaDB race harness.
+
+However, run existing relevant audited concurrency tests to prove the visibility implementation did not regress:
+
+```text id="cvpj78"
+Inventory concurrency audit
+Request status concurrency audit
+Enquiry close concurrency audit
+```
+
+especially:
+
+```text id="xw7rfc"
+exactly one business transition
+→ exactly one real audit event
+```
+
+Do not create a new concurrency framework for audit reads.
+
+---
+
+# 76. Database Choice for Phase Tests
+
+Normal ADM-007 feature tests may use the standard test database.
+
+Real MariaDB is required only for previously established concurrency claims involving row locking.
+
+Use:
+
+```text id="qj8z5d"
+furnitureapp_test_disposable
+```
+
+for those existing concurrency suites.
+
+Never production/staging DB.
+
+---
+
+# 77. Code Quality
 
 Follow project standards:
 
-```text
+```text id="ngz2tq"
 thin controllers
-strict FormRequests
+
+strict FormRequest/query validation
+
 validated() only
-explicit resources
-central authorization
-service/domain boundaries
-short transactions
-enums/constants
+
+central Authorization
+
+explicit API Resources
+
+closed enums/constants
+
+no raw SQL unless established/necessary
+
 cognitive complexity <= 15
+
 <= 3 returns where practical
+
+no secret logging
 ```
 
-Do not refactor unrelated Group J code.
+Do not introduce a generic repository framework solely for ADM-007.
 
 ---
 
-# 71. Verification
+# 78. Verification Commands
 
 Run canonical equivalents:
 
-```bash
+```bash id="rsu08h"
 cd backend/laravel
 
 php artisan test
@@ -1806,118 +2174,180 @@ git diff --check
 
 Also run focused:
 
-```text
-Enquiry operational API tests
-Enquiry authorization tests
-Enquiry filter/search tests
-Enquiry privacy tests
-Enquiry attachment regressions
+```text id="o4i8c4"
+ADM-007 feature tests
+RBAC tests
+AuditResource tests
+Audit filtering tests
+OpenAPI Admin/Audit tests
+Inventory audit tests
+Request audit tests
 Enquiry audit tests
-Group J Enquiry suites
-MariaDB Enquiry concurrency test
-OpenAPI Enquiry contract tests
+relevant Staff/catalog audit tests
+existing MariaDB audited concurrency tests
 ```
 
 ---
 
-# 72. Git Operations
+# 79. Group K Closure Review
 
-After all verification passes:
+After Phase 11.13 passes, inspect the Group K roadmap and explicitly record:
 
-1. read root `git-workflow-and-versioning` in .agents/skills;
-2. follow it exactly;
-3. stage only Phase 11.10 work;
-4. commit according to skill conventions;
-5. push only if permitted by that workflow.
+```text id="lv2qtn"
+11.1 Admin information architecture
+COMPLETE
 
-Do not stage unrelated changes.
+11.2 Admin authentication
+COMPLETE
+
+11.3 Product CRUD
+COMPLETE
+
+11.4 Category CRUD
+COMPLETE
+
+11.5 Image management
+COMPLETE
+
+11.6 Inventory management
+COMPLETE
+
+11.7 Order management
+DEFERRED
+
+11.8 Customer management
+COMPLETE
+
+11.9 Request management
+COMPLETE
+
+11.10 Enquiry management
+COMPLETE
+
+11.11 Payment visibility
+DEFERRED
+
+11.12 Delivery management
+DEFERRED
+
+11.13 Audit visibility
+COMPLETE
+```
+
+Do not accidentally mark the deferred transactional phases complete.
 
 ---
 
-# 73. Completion Report
+# 80. Group K Exit Criterion
+
+Current request-first release policy allows Group K to close while:
+
+```text id="o4l3y0"
+11.7
+11.11
+11.12
+```
+
+remain explicitly deferred.
+
+The Group K exit criterion is satisfied when Staff/Admin can operate all **currently active request-first business workflows** without direct DB access.
+
+Audit visibility should be the final non-deferred Group K closure item.
+
+---
+
+# 81. Git Operations
+
+After all implementation and verification passes:
+
+1. read `git-workflow-and-versioning`;
+2. inspect repository status;
+3. stage only Phase 11.13 files;
+4. follow required commit/version rules;
+5. commit;
+6. push only if the skill permits/requires it.
+
+Do not stage unrelated files.
+
+Do not bypass skill-required verification.
+
+---
+
+# 82. Completion Report
 
 Return:
 
-```text
-Phase 11.10 status:
+```text id="qejtna"
+Phase 11.13 status:
 PASS / BLOCKED
 
-Existing Group J implementation reused:
+Known audit.view gap resolved:
 YES / NO
 
-ENQ-004:
+ADM-007:
 PASS / BLOCKED
 
-ENQ-005:
-PASS / BLOCKED
+Canonical route:
+GET /api/v1/admin/audit-logs
 
-ENQ-006:
-PASS / BLOCKED
-
-Canonical routes only:
-PASS / FAIL
-
-Admin/Staff Enquiry aliases added:
+Additional audit routes added:
 NO
 
-enquiries.view:
-PASS / FAIL
+audit.view added:
+YES / NO
 
-enquiries.manage:
-PASS / FAIL
-
-Customer operational queue access:
-REJECTED / FAIL
-
-Anonymous operational read:
-REJECTED / FAIL
-
-Customer internal-note exposure:
-NO / FAIL
-
-Subject/message immutability:
-PASS / FAIL
-
-Contact snapshot preservation:
-PASS / FAIL
-
-Request/Enquiry separation:
-PASS / FAIL
-
-Enquiry-to-Order behavior added:
+CUSTOMER audit.view:
 NO
 
-Enquiry-to-Request behavior added:
+STAFF audit.view:
 NO
 
-Inventory/payment/quote behavior added:
+ADMIN audit.view:
+YES
+
+Wildcard permission:
 NO
 
-Attachment privacy:
+Permission seeding:
 PASS / FAIL
 
-Product association behavior:
+Admin without audit.view:
+403 / FAIL
+
+Anonymous:
+401 / FAIL
+
+Customer:
+403 / FAIL
+
+Staff:
+403 / FAIL
+
+Read-only:
 PASS / FAIL
 
-Order association behavior:
+Audit mutation endpoints:
+NONE
+
+Filter allow-list:
 PASS / FAIL
 
-Reopen policy resolved:
-<CLOSED terminal / reopen already implemented>
-
-Reopen endpoint added:
-NO unless already frozen/current
-
-Audit atomicity:
+actor filter:
 PASS / FAIL
 
-Concurrent close:
+action filter:
 PASS / FAIL
 
-Exactly-one real close audit:
+resource_type filter:
 PASS / FAIL
 
-ENQ-004 filters:
+resource_id filter:
+PASS / FAIL
+
+date filters:
+PASS / FAIL
+
+Unknown query rejection:
 PASS / FAIL
 
 Pagination:
@@ -1926,11 +2356,62 @@ PASS / FAIL
 Deterministic ordering:
 PASS / FAIL
 
-Full PHPUnit:
-<x> passed, <y> skipped
+Explicit AuditResource:
+YES / NO
 
-MariaDB Enquiry concurrency:
+Sensitive-field review:
+PASS / FAIL
+
+Secret exposure:
+NONE / FAIL
+
+N+1:
+PASS / FAIL
+
+Historical actor snapshot:
+PASS / FAIL
+
+Historical state snapshot:
+PASS / FAIL
+
+Inventory audit visibility:
+PASS / FAIL
+
+Request audit visibility:
+PASS / FAIL
+
+Enquiry audit visibility:
+PASS / FAIL
+
+Other implemented audit producers:
+<list>
+
+Private/no-store:
+PASS / FAIL
+
+OpenAPI:
+PASS / FAIL
+
+ADM-007 status:
+APPROVED / BLOCKED
+
+Docs reconciliation:
+PASS / FAIL
+
+Schema changes:
+NONE / <explain>
+
+Dependency changes:
+NONE / <explain>
+
+Focused tests:
 <x> passed, <assertions>
+
+MariaDB audited concurrency:
+<x> passed, <assertions>
+
+Full PHPUnit:
+<x> passed, <y> skipped, <assertions>
 
 PHPStan:
 PASS / FAIL
@@ -1944,17 +2425,8 @@ PASS / FAIL
 Route surface:
 PASS / FAIL
 
-OpenAPI:
-PASS / FAIL
-
 git diff --check:
 PASS / FAIL
-
-Schema changes:
-NONE / <explain>
-
-Dependency changes:
-NONE / <explain>
 
 Git workflow skill read:
 YES / NO
@@ -1963,70 +2435,79 @@ Git operations performed:
 <exact actions>
 
 Commit:
-<hash/message or NONE>
+<hash + message>
 
 Push:
 <result or NONE>
 
-Phase 11.13:
-READY / BLOCKED
+Group K:
+CLOSED / BLOCKED
 ```
 
 Also list:
 
-```text
+```text id="fmsw3b"
 files changed
 tests added/changed
-genuine defects fixed
+RBAC changes
 documentation reconciliations
+genuine defects fixed
 security findings
 ```
 
 ---
 
-# 74. STOP Condition
+# 83. STOP Condition
 
-Phase 11.10 is PASS only when:
+Phase 11.13 may be declared PASS only when:
 
-- ENQ-004/005/006 remain canonical;
-- Group J implementation is reused;
-- `enquiries.view` and `enquiries.manage` remain separated;
-- Enquiry subject/message/contact remain immutable history;
-- `staff_internal_notes` never leaks to Customers;
-- Enquiry remains distinct from Request;
-- no Enquiry-to-Request or Enquiry-to-Order workflow is added;
-- no Payment, inventory, quote, messaging-thread, assignment, priority, or CRM behavior is introduced;
-- private attachments remain parent-scoped;
-- Customer ownership and anonymous-read boundaries remain intact;
-- the actual reopen policy is explicitly reconciled;
-- MariaDB concurrent-close evidence passes;
-- exactly one real audited `OPEN → CLOSED` occurs under concurrent close;
-- full backend verification passes;
-- Git operations follow the root `git-workflow-and-versioning` skill.
+- `audit.view` is a real centralized runtime permission;
+- only Admin receives `audit.view`;
+- ADM-007 is active and canonical;
+- Customer and Staff cannot read audit history;
+- an Admin lacking `audit.view` is denied;
+- the endpoint is strictly read-only;
+- no audit mutation routes exist;
+- filters are strict and match the frozen allow-list;
+- pagination and deterministic ordering work;
+- audit events use explicit safe serialization;
+- actor identity/role remain historical snapshots;
+- resource history does not depend on the live resource still existing;
+- state snapshots have been reviewed for secret/PII exposure;
+- no credentials/tokens/secrets leak;
+- existing audit writers remain authoritative;
+- existing transactional audit atomicity is preserved;
+- representative Inventory, Request and Enquiry events are visible;
+- existing MariaDB concurrency/audit guarantees remain passing;
+- OpenAPI matches runtime;
+- stale `audit.view`/stub/internal-only documentation is reconciled;
+- no second audit table/package is added;
+- full test suite passes;
+- PHPStan passes;
+- Pint passes;
+- Composer audit passes;
+- route surface passes;
+- `git diff --check` passes;
+- Git operations follow `git-workflow-and-versioning`.
 
-Then report:
+Then record:
 
-```text
-Phase 11.10 — PASS
-Phase 11.13 — READY
+```text id="mm23pn"
+Phase 11.13 — PASS
+
+Group K — CLOSED
+
+Phase 11.7 — DEFERRED
+Phase 11.11 — DEFERRED
+Phase 11.12 — DEFERRED
 ```
 
-Do not begin Phase 11.13 automatically.
+Do not start Group H, Group I, or any deferred transactional-commerce phase automatically.
 
 **Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
 ---
 
-## Phase 11.10 Closure Record — 2026-10-05
+## Phase Record — 2026-10-05
 
-**Status:** PASS. Group K reuses the Group J canonical `ENQ-004`, `ENQ-005`, and `ENQ-006` routes; no Admin/Staff aliases, reopen route, generic enquiry mutation, schema change, or dependency change was introduced.
-
-- **Close contract:** `POST /api/v1/enquiries/{enquiry}/close` is close-only. It accepts optional `staff_internal_notes` only, sets `CLOSED` server-side, rejects unknown and immutable intake fields, and preserves idempotent repeat-close/audit semantics. `CLOSED` is terminal in current V1.
-- **Security and privacy:** `enquiries.view` governs operational list/detail and `enquiries.manage` governs close. Customer and anonymous callers cannot access operational endpoints; customer representations omit internal notes. ENQ-004/005/006 use `Cache-Control: private, no-store` and `Vary: Authorization`.
-- **Domain isolation:** Regression coverage confirms close has no Request, Order, OrderItem, Payment, Delivery, ProductStock, product, or inventory-reservation side effect. Enquiry product/order links remain read-only historical context.
-- **OpenAPI/docs:** ENQ-004 documents the implemented filter allow-list (`search`, `enquiry_status`, `category`, `product_id`, `order_id`, `created_from`, `created_to`, `page`, `per_page`); ENQ-005/006 document private operational access; ENQ-006 documents its strict optional-note body; ENQ-007 retains multipart field `attachment`.
-- **Focused PHP:** `152 passed (678 assertions)` across Enquiry schema, validation, resources, creation, attachment, operational, and OpenAPI suites.
-- **MariaDB concurrency:** `1 passed (90 assertions)` against guarded `furnitureapp_test_disposable`; ten concurrent-close iterations each ended `CLOSED` with exactly one `OPEN→CLOSED` audit.
-- **Full verification:** `1647 passed, 1 skipped (6713 assertions)`; PHPStan passed; Pint formatted dirty PHP successfully; Composer audit found no advisories; the Enquiry route surface remained the seven canonical routes; `git diff --check` passed.
-
-**Phase 11.13:** READY. Do not begin it automatically.
+**Phase 11.13: PASS.** ADM-007 is active only at `GET /api/v1/admin/audit-logs`, requires explicit Admin `audit.view`, and has no detail or mutation routes. The collection uses strict filters, private/no-store caching, deterministic ordering, serialization-only derived audit IDs, and action/resource snapshot allow-lists. No schema or dependency change was required. Group K is closed; 11.7, 11.11, and 11.12 remain deferred.

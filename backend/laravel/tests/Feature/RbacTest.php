@@ -71,8 +71,8 @@ class RbacTest extends TestCase
         sort($expected);
 
         $this->assertSame($expected, $names);
-        $this->assertCount(19, $names);
-        $this->assertCount(19, array_unique($names));
+        $this->assertCount(20, $names);
+        $this->assertCount(20, array_unique($names));
     }
 
     public function test_wildcard_permission_is_not_enabled(): void
@@ -111,6 +111,7 @@ class RbacTest extends TestCase
         $this->assertFalse($user->checkPermissionTo(PermissionName::STAFF_APPROVE->value));
         $this->assertFalse($user->checkPermissionTo(PermissionName::STAFF_MANAGE->value));
         $this->assertFalse($user->checkPermissionTo(PermissionName::USERS_MANAGE_AUTHORIZED->value));
+        $this->assertFalse($user->checkPermissionTo(PermissionName::AUDIT_VIEW->value));
     }
 
     public function test_admin_without_staff_approval_permission_is_denied(): void
@@ -269,7 +270,7 @@ class RbacTest extends TestCase
         $expectedMappings = count(PermissionCatalog::forRole(RoleName::STAFF)) + count(PermissionCatalog::forRole(RoleName::ADMIN));
 
         $this->assertCount(3, DB::table('roles')->get());
-        $this->assertCount(19, DB::table('permissions')->get());
+        $this->assertCount(20, DB::table('permissions')->get());
         $this->assertCount($expectedMappings, DB::table('role_has_permissions')->get());
     }
 

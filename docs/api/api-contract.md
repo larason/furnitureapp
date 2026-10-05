@@ -1224,7 +1224,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `ADM-004` | POST | `/api/v1/admin/staff/{user}/approve` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.approve` + audit | Approve staff | PROPOSED |
 | `ADM-005` | POST | `/api/v1/admin/staff/{user}/suspend` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` + audit | Suspend staff (`ACTIVE→SUSPENDED`) | PROPOSED |
 | `ADM-006` | POST | `/api/v1/admin/staff/{user}/reactivate` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` + audit | Reactivate staff (`SUSPENDED→ACTIVE`) | PROPOSED |
-| `ADM-007` | GET | `/api/v1/admin/audit-logs` | Audit | Admin | Yes | `ADMINISTRATIVE` `audit.view` | List audit logs | PROPOSED |
+| `ADM-007` | GET | `/api/v1/admin/audit-logs` | Audit | Admin | Yes | `ADMINISTRATIVE` `audit.view` | List audit logs | APPROVED |
 | `ADM-008` | GET | `/api/v1/users` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | List CUSTOMER accounts only (authorized admin, paginated) | **APPROVED** (Phase 11.8) |
 | `ADM-009` | GET | `/api/v1/users/{user}` | User | Admin | Yes | `ADMINISTRATIVE` `users.manage_authorized` | Get CUSTOMER account only; Staff/Admin targets are 404-masked | **APPROVED** (Phase 11.8) |
 | `PAY-001` | POST | `/api/v1/payments` | Payment | Customer | Yes | `AUTHENTICATED_OWNER` own order | Initiate payment (generic placeholder, Group H) | PROPOSED* |
@@ -4589,7 +4589,7 @@ Privileged actions that change operational/administrative state **must** produce
 
 #### 30.16.1 Audit read API (read-only)
 
-Conceptual: `GET /api/v1/admin/audit-logs` (`ADMIN` only, `ADMINISTRATIVE` `audit.view` where approved). Filters allow-list: `actor`, `action`, `resource_type`, `resource_id`, `created_from/created_to`. `PRIVATE`/`no-store`; pagination per `§4`. No `PATCH/DELETE /audit-logs` via ordinary API. If V1 decides audit history is internal-only, omit read endpoint and record `audit internal-only V1` in `decisions.md` — **creation of audit events remains mandatory regardless**.
+`GET /api/v1/admin/audit-logs` is active V1 (`ADMIN` only, explicit `ADMINISTRATIVE` `audit.view`). Filters allow-list: `actor`, `action`, `resource_type`, `resource_id`, `created_from/created_to`, `page`, `per_page`; `actor` is an opaque `UserIdentifier`, action/resource type are CLOSED runtime enum values, and date bounds are inclusive ISO8601 UTC occurrence timestamps. The private, no-store collection is newest-first (`timestamp DESC`, event-id DESC), with no client sort. Audit `id` is derived only at serialization as `audit_<base36(audit_events.id)>`; numeric database IDs are never serialized and there is no audit detail route or decoder. `previous_state` and `resulting_state` are structured action/resource allowlisted snapshots, never stringified. No audit mutations or request-id filter exist; creation remains mandatory for audited business mutations.
 
 ### 30.17 Concurrency Requirements
 
@@ -4666,7 +4666,7 @@ Existing IDs remain **retired never recycled**. Phase 1.29 adds/confirms:
 | `ADM-004` | `POST` | `/api/v1/admin/staff/{user}/approve` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.approve` + audit, no self-approval | Approve Staff | **Required** | **Critical** | **PROPOSED** |
 | `ADM-005` | `POST` | `/api/v1/admin/staff/{user}/suspend` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` + audit | Suspend/deactivate Staff | **Required** | **Critical** | **PROPOSED** |
 | `ADM-006` | `POST` | `/api/v1/admin/staff/{user}/reactivate` | Staff | Admin | Required | `ADMINISTRATIVE` `staff.manage` + audit | Reactivate Staff | **Required** | **Critical** | **PROPOSED** |
-| `ADM-007` | `GET` | `/api/v1/admin/audit-logs` | Audit | Admin | Required | `ADMINISTRATIVE` `audit.view` where approved | List audit logs (read-only, filters `actor/action/resource_type/resource_id/created_from/to`) | — | — | **PROPOSED** (or internal-only per §30.16.1) |
+| `ADM-007` | `GET` | `/api/v1/admin/audit-logs` | Audit | Admin | Required | `ADMINISTRATIVE` `audit.view` | List audit logs (read-only, strict filters `actor/action/resource_type/resource_id/created_from/created_to/page/per_page`) | — | — | **APPROVED** |
 
 - No endpoint exists only implicitly; each record documents `Endpoint ID, Method, Path, Domain, Resource, Purpose, Allowed actor(s), Authentication requirement, Authorization rule, Request body, Query parameters, Response shape, Possible errors, Idempotency behavior, Concurrency behavior, Business-state constraints, Audit requirement, Notification/event side effects`.
 - `ADM-003` replaces legacy `INVITATION`/generic naming — canonical is `POST /admin/staff` invite.

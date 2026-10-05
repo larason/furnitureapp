@@ -217,7 +217,7 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
             Route::middleware(['permission:staff.approve', 'throttle:admin-staff'])->post('/staff/{user}/approve', [AdminController::class, 'staffApprove'])->name('staff.approve');
             Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/suspend', [AdminController::class, 'staffSuspend'])->name('staff.suspend');
             Route::middleware(['permission:staff.manage', 'throttle:admin-staff'])->post('/staff/{user}/reactivate', [AdminController::class, 'staffReactivate'])->name('staff.reactivate');
-            Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->middleware('throttle:authenticated-read')->name('audit-logs.index');
+            Route::get('/audit-logs', [AdminController::class, 'auditLogIndex'])->middleware(['permission:audit.view', 'throttle:authenticated-read'])->name('audit-logs.index');
         });
     });
 

@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Api\ApiException;
+use App\Http\Requests\ListAuditLogsRequest;
 use App\Http\Requests\ListCustomersRequest;
 use App\Http\Resources\AdministrativeCustomerResource;
+use App\Http\Resources\AuditLogResource;
 use App\Models\User;
+use App\Services\AuditLogs\ListAuditLogs;
 use App\Support\ApiErrorCode;
 use App\Support\RoleName;
 use App\Support\UserIdentifier;
@@ -77,9 +80,21 @@ class AdminController extends V1Controller
         return (new AdministrativeCustomerResource($customer))->response()->withHeaders($this->privateHeaders());
     }
 
-    public function auditLogIndex(): JsonResponse
+    public function auditLogIndex(ListAuditLogsRequest $request, ListAuditLogs $auditLogs): JsonResponse
     {
-        return $this->notImplemented();
+        $paginator = $auditLogs->paginate($request->normalizedQuery());
+
+        return response()->json([
+            'data' => AuditLogResource::collection($paginator->getCollection())->resolve(),
+            'meta' => ['pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => max(1, $paginator->lastPage()),
+                'has_next' => $paginator->hasMorePages(),
+                'has_previous' => $paginator->currentPage() > 1,
+            ]],
+        ])->withHeaders($this->privateHeaders());
     }
 
     private function customers(): Builder

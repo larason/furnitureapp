@@ -30,6 +30,7 @@ class PermissionCatalog
             PermissionName::STAFF_APPROVE,
             PermissionName::STAFF_MANAGE,
             PermissionName::USERS_MANAGE_AUTHORIZED,
+            PermissionName::AUDIT_VIEW,
         ];
     }
 
