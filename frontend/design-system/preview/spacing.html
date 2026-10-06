@@ -18,7 +18,7 @@
        .layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-4); margin-top: var(--space-7); }
        .layers article { min-height: 72px; padding: var(--space-4); border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: var(--text-sm); }
        .layers .raised { box-shadow: var(--elev-raised); }
-       .focus-demo { margin-top: var(--space-7); padding: var(--space-4); border-radius: var(--radius-sm); background: var(--surface-paper); box-shadow: var(--focus-ring); color: var(--fg); font-size: var(--text-sm); }
+       .focus-demo { margin-top: var(--space-7); padding: var(--space-4); border: 0; border-radius: var(--radius-sm); background: var(--surface-paper); box-shadow: var(--focus-ring); color: var(--fg); font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
 
     </style>
   </head>
@@ -43,7 +43,7 @@
         <article>Flat surface<br />--elev-flat</article>
         <article class="raised">True layer<br />--elev-raised</article>
       </section>
-      <p class="focus-demo" tabindex="0">Keyboard focus remains visible through --focus-ring.</p>
+      <button class="focus-demo" type="button">Keyboard focus remains visible through --focus-ring.</button>
 
     </main>
   </body>
