@@ -18,6 +18,10 @@ MUI maps canvas to `background.default`, paper to `background.paper`, charcoal a
 
 Use only `@mui/icons-material` for UI icons. Icons inherit semantic theme colors and use standard MUI sizes. Decorative icons are hidden from assistive technology; meaningful icon-only controls require accessible labels and tooltips. Do not substitute emoji, other icon libraries, or arbitrary custom SVG icons, and do not mix outlined and filled variants without an intentional reason.
 
+## Flutter Material 3 Contract
+
+`flutter-material3.md` defines the future Flutter mapping. Flutter consumes `design-tokens.json` through a static semantic adapter in Phase 16.2; it does not parse `tokens.css` or load token JSON at runtime. Material 3 maps the shared brand rather than generating it from a seed or device colors. No Flutter application code, package, or font asset belongs to this design-system phase.
+
 ## Token Layers
 
 - Primitive tokens hold raw reusable values such as `--color-neutral-950`, `--color-warm-100`, and `--space-4`.

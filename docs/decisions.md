@@ -26,6 +26,16 @@
 
 ---
 
+### ADR/DESIGN-003 — Flutter Material 3 Consumes Shared Furniture Tokens
+
+**Decision:** Future Flutter `ThemeData` will consume a narrow static semantic adapter derived from or verified against `frontend/design-system/design-tokens.json`; `tokens.css` remains the sole canonical token authority. Flutter does not parse CSS or load token JSON at runtime. Material 3 provides framework behavior, not brand generation: Phase 16.2 will explicitly map approved semantics into `ColorScheme`, `TextTheme`, component themes, and only the small ThemeExtensions that standard Material roles cannot represent.
+
+**Consequences:** Charcoal remains `ColorScheme.primary`; brown stays a controlled brand accent rather than an automatic secondary color; warm canvas, paper, editorial, and inverse surfaces retain separate meanings. `ColorScheme.fromSeed`, dynamic system colors, a dark theme, Flutter application code, dependencies, and font assets are out of scope until later approved work. Young Serif remains display typography, the approved utility family remains UI typography, and built-in Material Icons are the default Flutter icon family.
+
+**Status:** Accepted as the Phase 12.4 mapping contract; implementation deferred to Phase 16.2
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.

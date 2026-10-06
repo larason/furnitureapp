@@ -1,106 +1,163 @@
-# Phase 12.3 — MUI Theme Implementation
+# Phase 12.4 — Flutter Material 3 Theme Structure
 
 ## Objective
 
-Implement the **Next.js + Material UI theme bridge** for SL Furnitures.
+Define the **Flutter Material 3 theme architecture and token-mapping contract** for SL Furnitures without implementing the Flutter application yet.
 
-The goal is:
+The purpose of this phase is to make future:
+
+```text
+Phase 16.1 — Flutter project setup
+Phase 16.2 — Theme / Material 3
+```
+
+mechanical rather than interpretive.
+
+The dependency direction must be:
 
 ```text
 frontend/design-system/tokens.css
             ↓
-      MUI theme adapter
+ synchronized portable representation
             ↓
-Material UI components
+frontend/design-system/design-tokens.json
+            ↓
+Flutter Material 3 mapping contract
+            ↓
+future ThemeData / ColorScheme / TextTheme
 ```
 
-NOT:
-
-```text
-MUI theme
-↓
-new independent colors / spacing / typography
-```
-
-This phase must make the design system consumable by `frontend/web` while preserving:
-
-- token authority;
-- semantic color roles;
-- typography hierarchy;
-- spacing/radius/elevation/motion scales;
-- accessibility;
-- SSR/App Router compatibility.
-
-Do not begin application component/page design.
+Do NOT create a second Flutter-specific brand system.
 
 ---
 
-## 1. Active Scope
+# 1. Active Scope
 
 Implement only:
 
 ```text
-Phase 12.3 — MUI Theme Implementation
+Phase 12.4 — Flutter Material 3 Theme Structure
+```
+
+This phase defines:
+
+```text
+token consumption
+ColorScheme mapping
+TextTheme mapping
+spacing model
+shape/radius mapping
+elevation model
+motion mapping
+focus/accessibility expectations
+responsive principles
+Flutter theme file architecture for later implementation
 ```
 
 Do NOT begin:
 
 ```text
-12.4 — Global CSS / font loading
-12.5 — Layout primitives
-12.6 — UI primitives
-12.7 — Commerce primitives
-12.8 — Navigation/header/footer
-12.9 — Catalog components
-12.10 — Product detail components
-12.11 — Request/enquiry components
-12.12 — Pages
+Flutter application initialization
+Flutter package installation
+ThemeData implementation
+MaterialApp
+routing
+navigation
+networking
+Clerk integration
+screens
+widgets
+catalog
+cart
+request/enquiry UI
 ```
 
-The theme should make those phases possible without forcing them to reinterpret tokens.
+Those belong to Groups P and Q.
 
 ---
 
-## 2. Read Authorities Before Editing
+# 2. Read Authorities First
 
-Inspect first:
+Before editing, inspect:
 
 ```text
-frontend/design-system/DESIGN.md
-frontend/design-system/tokens.css
-frontend/design-system/design-tokens.json
-frontend/design-system/USAGE.md
-frontend/design-system/manifest.json
-
-frontend/AGENTS.md
 AGENTS.md
 
-frontend/web/package.json
-frontend/web/tsconfig.json
-frontend/web/next.config.*
-frontend/web/app/*
-frontend/web/src/*              # if present
-frontend/web/styles/*           # if present
+frontend/AGENTS.md
+
+frontend/design-system/
+├── DESIGN.md
+├── USAGE.md
+├── tokens.css
+├── design-tokens.json
+├── manifest.json
+├── source/
+└── preview/
+
+phases/group-L-phases.md
+docs/decisions.md
 ```
 
-Also inspect the installed versions of:
+Also inspect:
 
 ```text
-next
-react
-@mui/material
-@mui/material-nextjs
-@emotion/react
-@emotion/styled
+frontend/app/
 ```
 
-Do not assume package versions from generic MUI documentation.
+only to determine whether a Flutter project already exists.
+
+Do not modify it merely because it exists.
 
 ---
 
-## 3. Mandatory Git Workflow
+# 3. Group Boundary Is Mandatory
 
-Before any Git action, read the root:
+The master roadmap separates:
+
+```text
+Group L
+→ shared design-system foundation
+
+Group P
+→ Flutter application foundation
+```
+
+Therefore Phase 12.4 must NOT prematurely perform Group P work.
+
+If:
+
+```text
+frontend/app/
+```
+
+is empty or not yet initialized:
+
+```text
+leave it that way.
+```
+
+If a Flutter scaffold already exists:
+
+```text
+do not start modifying application/theme files
+unless a tiny validation-only fixture is already part of design-system tooling.
+```
+
+Primary outputs belong under:
+
+```text
+frontend/design-system/
+phases/
+docs/
+```
+
+not the Flutter app.
+
+---
+
+# 4. Git Workflow
+
+Before any Git command, locate and read the root:
 
 ```text
 git-workflow-and-versioning
@@ -112,210 +169,161 @@ Git operations are authorized only through that skill.
 
 Preserve unrelated owner changes.
 
-Stage only Phase 12.3 files.
+Never commit:
 
-Do not commit secrets or generated local configuration.
+```text
+.env
+tokens
+credentials
+local SDK configuration
+generated secret files
+```
+
+Stage only Phase 12.4 work.
 
 ---
 
-## 4. Token Authority Is Frozen
+# 5. Existing Design Authority
 
-The design contract states:
-
-```text
-tokens.css
-= canonical token authority
-```
-
-and:
+Preserve the established brand system:
 
 ```text
-design-tokens.json
-tailwind-v4.css
-= synchronized derived representations
+Architectural
+Warm
+Editorial
+Crafted
+Calm
+Accessible
 ```
 
-MUI must **consume**, not redefine, this design contract.
+The interface remains a quiet frame around furniture imagery and product information.
 
-Do not duplicate raw values such as:
+Do NOT create a Flutter-native visual identity that drifts from the website.
 
-```ts
-'#FCF4ED'
-'#321E0F'
-'#111111'
-'#FFFFFF'
+The website and app should share:
+
+```text
+visual language
+semantic colors
+typographic hierarchy
+spacing rhythm
+shape philosophy
+elevation philosophy
+interaction principles
 ```
 
-inside dozens of MUI files.
-
-A single controlled mapping layer may reference the approved design-system representation, but that layer must not become a second token authority.
+but they do NOT need identical layouts.
 
 ---
 
-## 5. Determine the Correct Consumption Strategy
+# 6. Token Authority
 
-Before implementation, inspect whether `frontend/web` can directly import:
+The canonical design token authority remains:
 
 ```text
 frontend/design-system/tokens.css
 ```
 
-through the repository/package/build configuration.
+Flutter must NOT become another authority.
 
-Prefer the simplest maintainable dependency direction.
-
-Acceptable architecture:
+For Flutter consumption, use:
 
 ```text
-tokens.css
-    ↓
-web global token availability
-    ↓
-MUI semantic mappings use var(--...)
+frontend/design-system/design-tokens.json
 ```
 
-or, where MUI requires concrete token values for theme calculations:
+as the portable synchronized representation.
+
+Do not make Flutter parse CSS.
+
+Do not duplicate all canonical token values manually into documentation.
+
+Do not create:
 
 ```text
-canonical tokens.css
+flutter-tokens.json
+mobile-colors.json
+app-theme-tokens.json
+```
+
+unless the current design-system generation pipeline explicitly requires such an artifact.
+
+---
+
+# 7. Future Flutter Mapping
+
+Define the future mapping architecture:
+
+```text
+design-tokens.json
         ↓
-synchronized design-tokens.json
+Flutter token adapter
         ↓
-typed MUI mapping
+Material 3
+├── ColorScheme
+├── TextTheme
+├── ThemeData
+├── component themes
+└── extensions only where justified
 ```
 
-because `design-tokens.json` is a derived synchronized representation of the same canonical contract.
+The Flutter adapter must consume semantics.
 
-Do not manually duplicate the values.
-
-Document which strategy is used.
+It must not invent brand values.
 
 ---
 
-## 6. Do Not Parse CSS at Runtime
+# 8. Material 3 Is the Framework, Not the Brand Authority
 
-Do not implement:
+Material 3 should provide:
 
 ```text
-fetch tokens.css
-parse CSS variables
-build theme dynamically in browser
+component behavior
+accessibility foundations
+platform conventions
+theme APIs
+state systems
 ```
 
-Do not add runtime token parsing.
+It must NOT override the brand contract.
 
-Theme construction should be static/build-time friendly.
+Dependency:
+
+```text
+SL Furnitures design system
+        ↓
+Material 3 mapping
+```
+
+NOT:
+
+```text
+Material 3 defaults
+        ↓
+SL Furnitures design
+```
 
 ---
 
-## 7. Do Not Introduce a New Theme Library
+# 9. Material 3 Must Be Enabled Later
 
-Use existing MUI capabilities.
+Document that the future Flutter implementation must use:
 
-Do not add:
-
-```text
-styled-components
-Chakra
-Tailwind runtime
-Theme UI
-Emotion replacement
-design-token runtime package
+```dart
+useMaterial3: true
 ```
 
-unless already required by the installed MUI setup.
+Do not implement it now.
 
-Expected dependency changes:
-
-```text
-Dependencies:
-Install only the official MUI packages required by the current Next.js/App Router setup if they are not already present.
-
-Expected candidates:
-@mui/material
-@emotion/react
-@emotion/styled
-@mui/material-nextjs
-
-use available nextjs and materialui skills.
-
-Do not install anything else unless repository evidence requires it.
-```
-
-unless the web scaffold genuinely lacks required official MUI App Router integration.
+Do not design against Material 2 assumptions.
 
 ---
 
-# Theme Architecture
+# 10. ColorScheme Mapping
 
-## 8. Create a Narrow Theme Module
+Define how canonical semantic colors map conceptually into Material 3.
 
-Use repository conventions, for example:
-
-```text
-frontend/web/
-└── theme/
-    ├── theme.ts
-    ├── palette.ts          # only if separation is justified
-    ├── typography.ts       # only if justified
-    └── mui.d.ts            # only if type augmentation needed
-```
-
-or the existing project structure.
-
-Do not create numerous tiny theme files without need.
-
-The theme should remain understandable from one obvious entry point.
-
----
-
-## 9. One Canonical Theme Entry Point
-
-There must be one application-facing import, conceptually:
-
-```ts
-import { theme } from '@/theme';
-```
-
-Avoid multiple themes such as:
-
-```text
-storefrontTheme
-productTheme
-homeTheme
-furnitureTheme
-marketingTheme
-```
-
-There is one SL Furnitures design system.
-
-Component variants may exist later.
-
----
-
-## 10. No Dark Theme in Phase 12.3
-
-The current brand contract is light-oriented.
-
-Do not invent:
-
-```text
-dark mode
-system mode
-night theme
-```
-
-unless already approved elsewhere.
-
-The dark `--surface-inverse` token is for intentional inverse sections, not a second global theme.
-
----
-
-# Palette Mapping
-
-## 11. Map Semantic Design Tokens to MUI
-
-The approved semantic roles include:
+At minimum reconcile:
 
 ```text
 --surface-canvas
@@ -326,41 +334,25 @@ The approved semantic roles include:
 --text-primary
 --text-secondary
 
---accent-brand
 --action-primary
+--accent-brand
+
+functional colors
+focus colors
+border/outline colors
 ```
 
-Map them to MUI semantics deliberately.
-
-Conceptually:
+into appropriate future:
 
 ```text
-palette.background.default
-→ surface.canvas
-
-palette.background.paper
-→ surface.paper
-
-palette.text.primary
-→ text.primary
-
-palette.text.secondary
-→ text.secondary
-
-palette.primary.main
-→ action.primary
-
-brand-specific semantic access
-→ accent.brand
-→ surface.editorial
-→ surface.inverse
+ColorScheme
 ```
 
-Do not force every design-system token into a built-in MUI palette slot if the meaning does not fit.
+roles.
 
 ---
 
-## 12. Primary Is Charcoal
+# 11. Primary Color
 
 Preserve:
 
@@ -369,186 +361,321 @@ primary action
 → #111111
 ```
 
-Do NOT set:
+Future Material 3:
 
 ```text
-palette.primary.main
+ColorScheme.primary
+```
+
+should represent the primary action semantics unless a Material-specific conflict is documented.
+
+Do NOT make the logo brown the primary interaction color.
+
+---
+
+# 12. Brand Accent
+
+Preserve:
+
+```text
+--accent-brand
 → #321E0F
 ```
 
-merely because brown is the brand accent.
+as a restrained furniture/brand accent.
 
-The contract explicitly says primary actions remain charcoal. DESIGN
+Do NOT automatically map it to:
+
+```text
+ColorScheme.secondary
+```
+
+without considering semantic correctness.
+
+If Material's built-in slots do not cleanly represent the accent, document a future:
+
+```text
+ThemeExtension
+```
+
+strategy.
+
+Do not misuse functional roles just to access the color.
 
 ---
 
-## 13. Brand Accent Must Remain Separately Addressable
+# 13. Warm Canvas
 
-The theme must provide a typed way to consume:
-
-```text
-accent.brand
-```
-
-without abusing:
+The canonical warm canvas:
 
 ```text
-primary
-secondary
-warning
+--surface-canvas
+→ #FCF4ED
 ```
 
-If MUI module augmentation is the cleanest existing-project-compatible solution, use it narrowly.
+should influence the future root/background surface.
 
-For example conceptually:
+Document the intended Material role.
 
-```ts
-theme.palette.brand.accent
-theme.palette.surface.editorial
-theme.palette.surface.inverse
+Likely candidates include:
+
+```text
+surface
+surfaceContainerLowest
 ```
 
-Exact names should follow current repository conventions.
+depending on Flutter's installed Material 3 API at implementation time.
 
-Do not over-augment MUI with dozens of custom fields.
+Do NOT freeze an API member that may differ by future Flutter version without noting version verification.
 
 ---
 
-## 14. Functional Colors
+# 14. Paper Surface
 
-Inspect current tokens for:
+Canonical:
 
 ```text
-success
-warning
+--surface-paper
+→ #FFFFFF
+```
+
+represents:
+
+```text
+product surfaces
+forms
+clean contrast areas
+```
+
+Document its Material 3 role separately from canvas.
+
+Do not collapse:
+
+```text
+canvas
+paper
+editorial
+```
+
+into one surface just because Material has default tonal surfaces.
+
+---
+
+# 15. Editorial Surface
+
+Canonical:
+
+```text
+--surface-editorial
+→ #F4E9DF
+```
+
+must remain available for editorial/storytelling compositions.
+
+If standard ColorScheme roles cannot represent this semantic cleanly:
+
+```text
+use a narrow ThemeExtension later
+```
+
+rather than abusing:
+
+```text
+errorContainer
+tertiaryContainer
+```
+
+or another unrelated Material role.
+
+---
+
+# 16. Inverse Surface
+
+Canonical:
+
+```text
+--surface-inverse
+→ #111111
+```
+
+may map to Material inverse/high-contrast roles where semantically appropriate.
+
+Do not interpret this as dark mode.
+
+No global Flutter dark theme is approved in this phase.
+
+---
+
+# 17. Functional Colors
+
+Preserve canonical semantic meaning for:
+
+```text
 error
-info
+warning
+success
+information
 focus
 ```
 
-Map them faithfully where appropriate.
+where defined.
 
-Do not derive functional colors from the brown brand accent.
-
-Do not invent functional colors if canonical tokens already exist.
-
----
-
-## 15. Divider and Border Mapping
-
-Map existing semantic border tokens into:
+Material 3 has built-in:
 
 ```text
-palette.divider
+error
+onError
+errorContainer
+onErrorContainer
 ```
 
-and any typed semantic border access needed later.
+but does not necessarily have direct standard roles for every application semantic.
 
-Do not hard-code gray borders in MUI component overrides.
+Document which roles:
+
+```text
+map directly
+need ThemeExtension
+remain component-semantic
+```
+
+Do not force all functional statuses into Material's primary/secondary/tertiary scheme.
 
 ---
 
-# Typography
+# 18. Do Not Generate a ColorScheme From a Seed
 
-## 16. Preserve Two-Family Architecture
+Do NOT approve:
 
-Theme typography must distinguish:
+```dart
+ColorScheme.fromSeed(...)
+```
+
+as the canonical brand generation mechanism.
+
+The palette is already approved.
+
+Seed generation would create new tonal colors that could drift from:
 
 ```text
-Display
-→ var(--font-display)
+#111111
+#FFFFFF
+#FCF4ED
+#F4E9DF
+#321E0F
+```
+
+Use explicit semantic mapping in future Phase 16.2.
+
+---
+
+# 19. No Automatic Dynamic Color
+
+Do not introduce:
+
+```text
+Android dynamic color
+Material You wallpaper colors
+platform-generated theme palette
+```
+
+for the brand baseline.
+
+User wallpaper/device colors must not replace the SL Furnitures identity.
+
+A future opt-in decision could revisit this separately.
+
+---
+
+# 20. Typography Architecture
+
+Preserve:
+
+```text
+DISPLAY
 → Young Serif
 
-UI
-→ var(--font-ui)
+UTILITY/UI
 → existing Helvetica Now utility stack
 ```
 
-The design contract explicitly requires this distinction. DESIGN
+Young Serif is intended for brand/editorial moments, while the utility sans remains responsible for navigation, controls, forms, pricing, metadata, specifications, and dense interfaces.
 
 ---
 
-## 17. Do Not Load Fonts Yet
+# 21. Flutter Font Constraint
 
-Phase 12.4 owns font loading.
+Do NOT install font packages yet.
 
-Do not:
+Do NOT:
 
 ```text
-import next/font
-add Google Fonts
-add @font-face
-download font files
-modify document head for fonts
+download Young Serif
+add pubspec font assets
+use google_fonts package
 ```
 
-during 12.3.
+during Phase 12.4.
 
-Theme references may use:
+Actual font loading belongs to:
 
-```css
-var(--font-display)
-var(--font-ui)
+```text
+Phase 16.2
 ```
 
-with canonical fallbacks already defined by the token system.
+after the Flutter application exists.
+
+Phase 12.4 defines the semantic mapping only.
 
 ---
 
-## 18. Default UI Font
+# 22. Future TextTheme Mapping
 
-MUI's default typography family should resolve to:
-
-```text
---font-ui
-```
-
-not Young Serif.
-
-This ensures default:
+Define which Material typography roles should use:
 
 ```text
-Button
-TextField
-Select
-Menu
-Chip
-Breadcrumb
-price
-form controls
+display family
 ```
 
-remain precise and scannable.
+versus:
+
+```text
+UI family
+```
+
+Conceptually:
+
+```text
+displayLarge
+displayMedium
+headlineLarge
+headlineMedium
+selected titleLarge
+→ Young Serif where brand hierarchy requires it
+```
+
+and:
+
+```text
+bodyLarge
+bodyMedium
+bodySmall
+labelLarge
+labelMedium
+labelSmall
+buttons / controls
+→ utility sans
+```
+
+Do not map blindly.
+
+Use the canonical typography role definitions from `DESIGN.md`.
 
 ---
 
-## 19. Heading Family Mapping
+# 23. Preserve Canonical Type Scale
 
-Map major typography variants deliberately.
-
-A reasonable target is:
-
-```text
-display / h1 / h2 / selected h3
-→ display family
-
-body1 / body2
-subtitle
-button
-caption
-overline / labels
-→ UI family
-```
-
-But inspect `DESIGN.md` and current tokens before assigning variants.
-
-Do not automatically make every `h1`–`h6` Young Serif if that contradicts established roles.
-
----
-
-## 20. Preserve Canonical Type Scale
-
-The approved scale is:
+The current canonical scale remains:
 
 ```text
 12
@@ -558,809 +685,766 @@ The approved scale is:
 24
 32
 48
-96 px
+96
 ```
 
-Do not invent intermediate sizes.
+Do not allow Material 3 defaults to introduce an independent Flutter type scale.
 
-Do not let MUI defaults introduce:
+Map Flutter text roles to approved values.
+
+Do not create mobile-specific:
 
 ```text
-34
-36
-40
-56
-60
+15
+17
+18
+22
+28
 ```
 
-unless the design system already maps them intentionally.
-
-Every MUI typography variant must map to canonical design tokens.
+values unless a later user-tested accessibility requirement justifies a token-contract change.
 
 ---
 
-## 21. Avoid Uppercase Button Defaults
+# 24. System Text Scaling
 
-MUI historically tends toward uppercase button conventions depending on theme/version.
+Future Flutter UI must respect user text scaling.
 
-Furniture brand copy should remain editorial and calm.
-
-Set button typography so it does not automatically produce aggressive uppercase styling unless the token contract explicitly calls for it.
-
-Do not hard-code labels themselves.
-
----
-
-## 22. Letter Spacing and Line Height
-
-Map existing canonical typography tokens.
-
-Do not invent custom:
+Do not disable:
 
 ```text
-letterSpacing: '-0.037em'
-lineHeight: 0.91
+MediaQuery text scaling
+system font scaling
+accessibility text size
 ```
 
-for a visually dramatic serif.
+merely to preserve layouts.
 
-The design contract explicitly rejects aggressive tracking/compressed leading for Young Serif. DESIGN
+The future implementation must tolerate larger text.
+
+Phase 12.4 should document this constraint.
 
 ---
 
-# Spacing / Shape / Elevation
+# 25. Spacing
 
-## 23. Preserve Spacing Scale
+Preserve the canonical spacing scale.
 
-MUI spacing must consume or map to the approved spacing system.
+Future Flutter widgets should consume a typed token adapter rather than scatter:
 
-Do not leave MUI's default spacing system in place if it conflicts with the canonical design-system scale.
+```dart
+EdgeInsets.all(17)
+SizedBox(height: 23)
+```
 
-Do not create a separate MUI-only spacing scale.
+throughout the app.
 
-The intended dependency is:
+Conceptual future mapping:
 
 ```text
-canonical spacing tokens
-→ theme spacing
+space token
+→ Dart constant/value
+→ padding/gap
 ```
+
+Do not implement those Dart constants yet.
 
 ---
 
-## 24. Do Not Encourage Numeric Magic Values
+# 26. No Material Default Spacing Authority
 
-Later code should not need:
+Material component defaults may be retained where they do not conflict with the design system.
 
-```tsx
-sx={{ mt: 7.25 }}
-```
-
-to match the design.
-
-Ensure theme spacing supports the canonical token scale cleanly.
-
-Where MUI's numeric multiplier API cannot faithfully preserve the current design-system scale, expose/use a token mapping rather than distorting the canonical scale.
-
----
-
-## 25. Border Radius
-
-Map MUI:
+But when application-level spacing is intentional:
 
 ```text
-shape.borderRadius
+canonical token wins.
 ```
 
-to the existing canonical default/small-container radius as appropriate.
+Do not redefine the shared spacing system to accommodate default widget padding.
 
-Do not flatten the entire radius scale into one value conceptually.
+---
 
-Additional semantic radii may remain available through tokens for:
+# 27. Shape
+
+Preserve current shape philosophy:
 
 ```text
 sharp media
-form control
-container
-pill
+small form radius
+controlled container radius
+pill only where function justifies it
 ```
 
-where already defined.
+The brand explicitly rejects bubble UI and excessive rounding.
 
-The theme should not make every MUI surface rounded.
+Future Flutter component themes should map to canonical radius tokens.
 
 ---
 
-## 26. Elevation
+# 28. Material 3 Default Shape Reconciliation
 
-MUI's default 25-shadow elevation array often conflicts with highly restrained design systems.
-
-Inspect the canonical shadow/elevation tokens.
-
-Map or neutralize MUI elevation behavior so components do not spontaneously render material-style heavy shadows inconsistent with the brand.
-
-Preserve meaningful elevation for:
+Document that future Phase 16.2 must inspect Material 3 defaults for:
 
 ```text
-Menu
-Popover
+ButtonStyle
+InputDecorationTheme
+CardTheme
+DialogTheme
+BottomSheetTheme
+ChipTheme
+NavigationBarTheme
+```
+
+and override them only where necessary to respect canonical shape tokens.
+
+Do not allow Material 3's default rounded aesthetic to silently make the Flutter app more rounded than the website.
+
+---
+
+# 29. Elevation
+
+Preserve the brand principle:
+
+```text
+flat surfaces first
+elevation only for true layers
+```
+
+Future Flutter:
+
+```text
+Card
+Material
 Dialog
+Menu
+BottomSheet
 Drawer
 ```
 
-and true layers.
+must not automatically create decorative shadow-heavy interfaces.
 
-Do not remove necessary separation/focus.
+Map approved elevation tokens.
 
 ---
 
-# Motion
+# 30. True-Layer Elevation
 
-## 27. Motion Mapping
+Elevation remains appropriate for:
 
-Use existing canonical:
+```text
+dialogs
+menus
+drawers
+bottom sheets
+floating overlays
+```
+
+where layering needs visual communication.
+
+Do not globally set every elevation to zero without examining accessibility/separation.
+
+---
+
+# 31. Motion
+
+Map canonical:
 
 ```text
 duration
 easing
 ```
 
-tokens where MUI theme transitions permit.
+semantics to future Flutter animations.
 
-Do not create a MUI-specific motion language.
-
-Furniture motion remains quiet and functional. DESIGN
-
----
-
-## 28. Reduced Motion
-
-Do not solve reduced-motion behavior globally in this phase unless the theme architecture already has a clean supported mechanism.
-
-Ensure nothing introduced by the theme prevents Phase 12.4/12.13 from respecting:
-
-```text
-prefers-reduced-motion
-```
-
----
-
-# Breakpoints / Layout
-
-## 29. Preserve Existing Breakpoints
-
-Map MUI breakpoint values to canonical design-system breakpoints.
-
-Do NOT accept MUI's default breakpoints merely for convenience if they differ.
-
-The design system is authority.
-
----
-
-## 30. Do Not Implement Containers Yet
-
-Do not create:
-
-```text
-PageContainer
-Section
-ContentGrid
-ResponsiveShell
-```
-
-during 12.3.
-
-Phase 12.5 owns layout primitives.
-
-Theme may expose breakpoint/container values that later primitives consume.
-
----
-
-# Z-Index
-
-## 31. Map Existing Z-Index Tokens
-
-If canonical tokens already define layer order, map MUI:
-
-```text
-mobileStepper
-fab
-speedDial
-appBar
-drawer
-modal
-snackbar
-tooltip
-```
-
-only where necessary to preserve the design-system contract.
-
-Do not invent a giant z-index scale.
-
----
-
-# MUI Component Defaults
-
-## 32. Component Overrides Must Stay Foundational
-
-Phase 12.3 may set **global MUI behavioral defaults** necessary to stop framework defaults from violating the design system.
-
-It must NOT design final product components.
-
-Appropriate foundational overrides may include:
-
-```text
-MuiButton
-MuiIconButton
-MuiLink
-MuiPaper
-MuiCard
-MuiTextField / MuiInputBase
-MuiOutlinedInput
-MuiDialog
-MuiDrawer
-MuiMenu / MuiPopover
-MuiTooltip
-MuiChip
-MuiDivider
-```
-
-but only where MUI defaults conflict with foundational tokens.
-
-Do not create commerce-specific variants yet.
-
----
-
-## 33. Button Foundation
-
-Base MUI buttons should respect:
-
-```text
-UI font
-canonical radius
-canonical typography
-no automatic uppercase
-focus visibility
-minimum accessible hit area
-canonical motion
-```
-
-Primary action styling should remain charcoal.
-
-Do not yet create:
-
-```text
-AddToCartButton
-RequestPieceButton
-HeroCTA
-```
-
----
-
-## 34. Paper / Card Defaults
-
-MUI `Paper` must not introduce heavy elevation or a foreign background.
-
-Default surfaces should align with:
-
-```text
-surface.paper
-```
-
-Do not style all `Card` components as floating rounded cards.
-
-The brand explicitly rejects card-heavy and excessively rounded UI. DESIGN
-
----
-
-## 35. Inputs
-
-Inputs should consume canonical:
-
-```text
-text
-surface
-border
-radius
-focus
-spacing
-```
-
-tokens.
-
-Do not redesign form components beyond foundational consistency.
-
-Phase 12.6 owns reusable UI primitives.
-
----
-
-## 36. Focus Treatment
-
-MUI components must have visibly accessible focus states.
-
-Do not globally disable:
-
-```css
-outline
-```
-
-Do not rely solely on color changes too subtle to see.
-
-Map to canonical focus tokens.
-
----
-
-## 37. Links
-
-Base links should use intentional token-driven states:
-
-```text
-default
-hover
-focus
-visited if approved
-```
-
-Do not add decorative brown underlines everywhere solely for branding.
-
----
-
-# App Router / SSR Integration
-
-## 38. Use the Official MUI Next.js Integration for Installed Versions
-
-Inspect installed:
-
-```text
-Next.js
-MUI
-@mui/material-nextjs
-```
-
-versions.
-
-Use the official App Router integration corresponding exactly to those versions.
-
-Potential constructs may include:
-
-```text
-AppRouterCacheProvider
-ThemeProvider
-```
-
-but do not copy a version-specific example blindly.
-
-Use the integration compatible with the repository's installed dependency versions.
-
----
-
-## 39. Avoid Styling Hydration Mismatches
-
-The theme setup must be safe for:
-
-```text
-Next.js App Router
-SSR
-streaming
-React Server Components
-```
-
-Avoid client-only theme initialization purely because it is simpler.
-
-Public SEO content must remain server-renderable according to project rules.
-
----
-
-## 40. Provider Boundary
-
-Create the smallest required client boundary for MUI context.
-
-For example, if ThemeProvider requires a client module:
-
-```text
-app/providers.tsx
-```
-
-may be a Client Component while:
-
-```text
-app/layout.tsx
-```
-
-remains a Server Component.
-
-Do not convert the entire root layout or application into:
-
-```text
-'use client'
-```
-
-without necessity.
-
----
-
-## 41. Do Not Add Clerk Yet
-
-Authentication frontend implementation is outside this phase.
-
-Do not combine:
-
-```text
-ClerkProvider
-ThemeProvider
-API auth
-```
-
-unless Clerk is already scaffolded and theme integration genuinely must compose with it.
-
-Phase 12.3 is design-system infrastructure only.
-
----
-
-# CSS Baseline Boundary
-
-## 42. Use CssBaseline Only as Theme Infrastructure
-
-MUI `CssBaseline` may be wired if it is necessary for the canonical MUI foundation.
-
-But do NOT implement the full branded global stylesheet yet.
-
-Phase 12.4 owns:
-
-```text
-font loading
-global CSS
-root body behavior
-font face
-global resets beyond foundational MUI setup
-```
-
-Keep 12.3 scoped.
-
----
-
-## 43. Do Not Override Canonical CSS Variables in CssBaseline
-
-Never use:
-
-```ts
-styleOverrides: {
-  ':root': {
-    '--surface-canvas': '#...',
-  }
-}
-```
-
-to redefine design-system tokens.
-
-The theme consumes tokens.
-
-It does not own them.
-
----
-
-# Theme Typing
-
-## 44. Type Custom Semantic Additions
-
-If custom semantic palette groups are exposed, TypeScript must understand them.
-
-Do not use:
-
-```ts
-(theme as any).brand
-```
-
-or widespread casts.
-
-Use narrow MUI module augmentation where justified.
-
----
-
-## 45. Avoid Huge Theme Augmentation
-
-Do not reproduce all 110 design tokens as:
-
-```ts
-theme.foo.bar.baz
-```
-
-if components can already consume CSS variables cleanly.
-
-Expose only framework-semantic mappings necessary for MUI.
-
-Canonical token access can remain CSS-variable based where appropriate.
-
----
-
-# Theme API Rules
-
-## 46. Theme Must Not Expose Raw Brand Decisions Twice
+Do not invent a Flutter-only animation vocabulary.
 
 Avoid:
 
-```ts
-theme.palette.brandBrown
-theme.palette.logoBrown
-theme.custom.deepBrown
-theme.colors.brown
-```
-
-all referring to:
-
 ```text
---accent-brand
+springy cards
+bounce
+large hover-like scaling
+decorative page transitions
 ```
 
-One semantic mapping only.
+Motion should remain quiet and purposeful.
 
 ---
 
-## 47. Theme Consumers Use Semantics
+# 32. Reduced Motion
 
-Later code should prefer:
+Document that future Flutter animation implementation must respect platform/user accessibility preferences where supported.
 
-```text
-theme.palette.text.primary
-theme.palette.background.default
-theme.palette.primary.main
-theme.palette.brand.accent
-```
-
-or canonical CSS variables.
-
-Do not encourage:
-
-```tsx
-color="#321E0F"
-```
-
-or:
-
-```tsx
-color="brown.900"
-```
-
-without semantic intent.
+Do not create motion that is essential to understanding state.
 
 ---
 
-# Testing
+# 33. Component Theme Architecture
 
-## 48. Theme Unit / Contract Tests
+Define which future Material 3 component themes are likely to be centralized.
 
-Add lightweight tests appropriate to the current frontend tooling.
-
-At minimum verify mappings for:
+Examples:
 
 ```text
-background.default
-→ surface.canvas
+AppBarTheme
+FilledButtonThemeData
+OutlinedButtonThemeData
+TextButtonThemeData
+IconButtonThemeData
+InputDecorationTheme
+CardThemeData / CardTheme depending installed Flutter API
+DialogTheme
+BottomSheetThemeData
+NavigationBarThemeData
+DividerThemeData
+ChipThemeData
+SnackBarThemeData
+```
 
-background.paper
-→ surface.paper
+These names must be verified against the installed Flutter SDK during Phase 16.2.
 
-text.primary
-→ text.primary token
+Do not implement them now.
 
-text.secondary
-→ text.secondary token
+---
 
-primary.main
-→ action.primary
+# 34. Avoid Huge ThemeData File
 
+Define future architecture so ThemeData does not become a thousand-line monolith.
+
+Recommended conceptual structure:
+
+```text
+theme/
+├── app_theme.dart
+├── app_color_scheme.dart
+├── app_typography.dart
+├── app_theme_extensions.dart
+└── component_themes/
+```
+
+ONLY as a future guideline.
+
+The Phase 16.2 agent should use the smallest structure warranted by actual complexity.
+
+Do not create these files yet unless a non-app design-system Dart package already exists and is intentionally part of the repository.
+
+---
+
+# 35. ThemeExtension Policy
+
+Flutter's:
+
+```dart
+ThemeExtension
+```
+
+should be used only for canonical semantics that Material 3 cannot represent cleanly.
+
+Likely candidates may include:
+
+```text
+editorial surface
 brand accent
-→ accent.brand
-
-display font
-→ font-display
-
-UI font
-→ font-ui
+custom status semantics
 ```
 
-Tests should verify contract mapping, not implementation trivia.
+Do NOT create a ThemeExtension mirroring all 110 tokens.
+
+Standard Material theme APIs should be used where semantics fit.
 
 ---
 
-## 49. No Raw Brand Hex Regression
+# 36. Icons
 
-Add a narrow regression where practical ensuring the MUI theme source does not become a second raw color source.
-
-Acceptable exceptions:
+The web icon policy is:
 
 ```text
-framework-required fallback
-test fixture
-documented compatibility value
+@mui/icons-material only
 ```
 
-Otherwise theme mappings should resolve through canonical design-system representations.
+Do NOT incorrectly apply that package to Flutter.
 
----
-
-## 50. Typography Regression
-
-Verify:
+For Flutter, default future icon source should be:
 
 ```text
-body/default UI
-→ utility font
-
-buttons
-→ utility font
-
-display heading variants
-→ Young Serif token
+Material Icons
 ```
 
-No accidental universal Young Serif.
+provided by Flutter/Material, unless the project owner later approves another icon system.
 
----
-
-## 51. Breakpoint Regression
-
-Verify MUI breakpoints equal canonical design-system breakpoints.
-
-Do not test generic MUI defaults.
-
----
-
-## 52. Spacing Regression
-
-Verify theme spacing maps to canonical scale or adapter behavior.
-
-No silent MUI default spacing drift.
-
----
-
-## 53. Radius Regression
-
-Verify default MUI shape is based on the canonical radius system.
-
----
-
-## 54. SSR Smoke Test
-
-Build/render at least a minimal App Router page with the theme provider.
-
-Prove:
+Maintain conceptual consistency:
 
 ```text
-no hydration warning
-no Emotion style-order warning
-no runtime theme error
+Web
+→ Material UI Icons
+
+Flutter
+→ Material Icons
 ```
 
-Do not turn this into page design.
-
-A minimal existing root page is enough.
+No Font Awesome, Lucide, custom icon packs, emoji-as-icons, or mixed libraries by default.
 
 ---
 
-# Design-System Non-Regression
+# 37. Icon Semantics
 
-## 55. Do Not Modify Canonical Tokens Without a Genuine Defect
+Both platforms should aim for equivalent meanings, not necessarily identical glyphs.
 
-Phase 12.3 should mostly modify:
+Example:
 
 ```text
-frontend/web/*
+search
+favorite
+menu
+close
+arrow back
+shopping cart
+account
+filter
 ```
 
-If the theme exposes a genuine inconsistency in the token contract:
+Use the closest native Material-family icon appropriate to each platform.
 
-STOP and reconcile it explicitly rather than silently modifying canonical tokens.
+Do not force the exact web SVG into Flutter.
 
-Any design-system token change requires:
+---
+
+# 38. Accessibility
+
+Document Flutter-specific baseline requirements:
 
 ```text
-source authority update
-derived artifact synchronization
-documentation
-validation
+Semantic widgets where needed
+tooltips/labels for icon-only controls
+logical traversal
+minimum interactive target sizes
+screen-reader meaningful labels
+contrast compliance
+text scaling
+not color-only states
+reduced-motion consideration
 ```
 
-Do not patch only `tokens.css`.
+Accessibility remains a brand requirement.
 
 ---
 
-## 56. Preserve Brand Contract
+# 39. Touch Targets
 
-Verify theme behavior against these principles:
+Future Flutter controls must respect platform accessibility target sizing.
 
-- architectural, warm, editorial;
-- UI is a quiet frame around furniture;
-- charcoal/white remain anchors;
-- brown is restrained;
-- photography carries most color;
-- Young Serif is display personality;
-- UI sans provides precision;
-- minimal decorative chrome;
-- accessibility is non-negotiable.
+Do not shrink icon buttons merely to imitate desktop website proportions.
 
-These principles are explicitly established in `DESIGN.md`. DESIGN
+Shared visual language does not mean identical control dimensions.
 
 ---
 
-# Files / Expected Scope
+# 40. Responsive Mobile Composition
 
-## 57. Likely Files
+The Flutter app is not a compressed website.
 
-Depending on current frontend structure, expected files may include:
+Document:
 
 ```text
-frontend/web/theme/*
-frontend/web/app/providers.*
-frontend/web/app/layout.*
-frontend/web/package.json        # only if required
-frontend/web/tsconfig.json       # only if alias needed
-frontend/web/tests/*             # or current test location
-
-phases/group-L-phases.md
-docs/decisions.md                # if implementation ADR warranted
+shared tokens
++
+mobile-native composition
 ```
 
-Do not mechanically create all of them.
+The project's frontend architecture already requires the website and app to share a visual language without requiring identical layouts.
 
-Follow current structure.
+Future Flutter layouts may use:
+
+```text
+bottom navigation
+mobile app bars
+modal bottom sheets
+native scrolling compositions
+```
+
+where appropriate.
 
 ---
 
-## 58. Do Not Touch
+# 41. Platform Adaptation
 
-Do not modify:
+Permit platform-appropriate behavior for:
 
 ```text
-backend/*
-docs/api/*
-database
-Laravel
-Flutter app
-public catalog components
-homepage components
-product cards
-request forms
 navigation
-footer
+safe areas
+keyboard handling
+system overlays
+scrolling
+back navigation
+dialogs
 ```
 
-unless a narrow repository build requirement demands a non-functional import adjustment.
+without changing the brand semantics.
+
+Design tokens are not a command to make Flutter behave like a browser.
 
 ---
 
-# Documentation
+# 42. Surface Hierarchy Across Platforms
 
-## 59. Record Theme Mapping
-
-Document, preferably in existing design-system usage docs or frontend architecture docs:
+Document expected parity:
 
 ```text
-canonical tokens.css
-↓
-MUI theme adapter
-↓
-ThemeProvider
+Web surface.canvas
+↔ Flutter app background/canvas semantic
+
+Web surface.paper
+↔ Flutter paper/product surface
+
+Web surface.editorial
+↔ Flutter editorial/story surface
+
+Web surface.inverse
+↔ Flutter inverse section
 ```
 
-Explain:
+Exact framework properties may differ.
+
+Meaning must not.
+
+---
+
+# 43. Primary Action Parity
+
+Across platforms:
 
 ```text
-which token artifact MUI consumes
-where the theme lives
-how to access brand semantic values
-what is forbidden
+primary action
+→ charcoal
+```
+
+Do not allow:
+
+```text
+web primary = charcoal
+Flutter primary = brown/blue/default Material purple
+```
+
+This is a cross-platform contract.
+
+---
+
+# 44. Typography Parity
+
+Across platforms:
+
+```text
+brand display
+→ Young Serif
+
+UI
+→ approved utility sans/fallback strategy
+```
+
+If the exact web utility font cannot be distributed/licensed/loaded appropriately in Flutter later:
+
+STOP and document that issue.
+
+Do not silently substitute an unrelated font in Phase 12.4.
+
+The actual implementation decision belongs to Phase 16.2.
+
+---
+
+# 45. Font Licensing / Availability Boundary
+
+Do not copy font files from the web or system into the Flutter repository.
+
+Do not bundle any font file during this phase.
+
+Record only:
+
+```text
+font family semantic roles
+future loading requirements
 ```
 
 ---
 
-## 60. ADR
+# 46. Status Semantics
 
-Add the next repository-consistent design ADR if Phase 12.3 introduces a material architectural decision.
-
-Suggested subject:
+The design contract must remain capable of representing:
 
 ```text
-DESIGN-002 — MUI Consumes the Canonical Furniture Token Contract
+MADE_TO_ORDER
+IN_STOCK
+LOW_STOCK
+UNAVAILABLE
+```
+
+without encoding them as Material error states.
+
+In particular:
+
+```text
+MADE_TO_ORDER
+```
+
+is a primary offering, not warning/error.
+
+Do not define widget implementations yet.
+
+---
+
+# 47. Request-First Production Mode
+
+The first production release currently emphasizes:
+
+```text
+MADE_TO_ORDER
+→ Request Furniture
+```
+
+The Flutter theme must support that product presentation with the same premium treatment as the web.
+
+Do not introduce styling that visually implies:
+
+```text
+request-only = disabled
+```
+
+---
+
+# 48. Theme Generation Strategy
+
+Phase 12.4 must decide/document how Phase 16.2 should consume portable tokens.
+
+Preferred options:
+
+```text
+A. generated Dart constants from design-tokens.json
+
+or
+
+B. manually maintained narrow Flutter semantic adapter
+   whose values are generated/verified against design-tokens.json
+```
+
+Choose based on current design-system tooling.
+
+Do not build a complex code generator if the repository does not need one.
+
+---
+
+# 49. Prefer Simple Generation
+
+If the existing token pipeline can emit Dart safely with a small deterministic transformation:
+
+```text
+document that option.
+```
+
+If not:
+
+```text
+do not introduce Node/Dart codegen machinery merely for elegance.
+```
+
+A small explicit adapter in Phase 16.2 may be preferable.
+
+---
+
+# 50. No Runtime JSON Token Loading
+
+Future Flutter must NOT:
+
+```text
+bundle design-tokens.json
+read JSON at runtime
+construct ThemeData after parsing assets
+```
+
+for static brand tokens.
+
+Use compile-time/static Dart values.
+
+`design-tokens.json` is a build/design contract, not application runtime configuration.
+
+---
+
+# 51. Future Theme Structure Contract
+
+Document a target such as:
+
+```text
+AppTheme
+  ├── lightTheme
+  ├── ColorScheme mapping
+  ├── TextTheme mapping
+  ├── component themes
+  └── minimal extensions
+```
+
+Do not implement:
+
+```text
+darkTheme
+```
+
+unless separately approved later.
+
+---
+
+# 52. Theme Naming
+
+Use brand-neutral implementation names such as:
+
+```text
+AppTheme
+AppColorScheme
+AppTypography
+```
+
+or repository equivalents.
+
+Do not name code:
+
+```text
+NikeTheme
+NikeColors
+NikeSpacing
+```
+
+The Nike system is historical structural provenance, not consumer identity.
+
+---
+
+# 53. Token Naming
+
+Future Dart tokens should preserve semantic meaning.
+
+Prefer conceptually:
+
+```dart
+AppSemanticColors.canvas
+AppSemanticColors.editorial
+```
+
+over:
+
+```dart
+Colors.cream1
+Colors.brown7
+```
+
+where semantics matter.
+
+Do not decide exact Dart API prematurely if not needed.
+
+---
+
+# 54. Flutter Admin Boundary
+
+Do not assume the Flutter app will contain Admin UI.
+
+The project identifies:
+
+```text
+Admin application
+→ Next.js + MUI
+```
+
+The Flutter app is the customer mobile application.
+
+Do not design Staff/Admin mobile theme variants.
+
+---
+
+# 55. Do Not Touch Backend/API
+
+No changes to:
+
+```text
+backend/
+docs/api/
+Laravel
+database
+RBAC
+auth
+commerce rules
+```
+
+Phase 12.4 is design architecture only.
+
+---
+
+# 56. Documentation Updates
+
+Update:
+
+```text
+frontend/design-system/DESIGN.md
+```
+
+only if Flutter mapping principles belong there.
+
+Update:
+
+```text
+frontend/design-system/USAGE.md
+```
+
+with the Flutter consumption rule:
+
+```text
+tokens.css canonical
+→ design-tokens.json portable representation
+→ future static Flutter adapter
+```
+
+Do not duplicate the full token table.
+
+---
+
+# 57. Group L Phase Record
+
+Update:
+
+```text
+phases/group-L-phases.md
+```
+
+to reflect:
+
+```text
+12.1 PASS
+12.2 PASS
+12.3 PASS
+12.4 <current>
+```
+
+Also preserve the corrected distinction:
+
+```text
+12.3
+→ MUI structure was implemented early
+
+12.4
+→ Flutter Material 3 structure is contract only
+
+16.2
+→ actual Flutter ThemeData implementation
+```
+
+This prevents the future agent from duplicating work.
+
+---
+
+# 58. ADR
+
+Add the next repository-consistent design ADR if warranted.
+
+Suggested decision:
+
+```text
+DESIGN-003 — Flutter Material 3 Consumes Shared Furniture Tokens
 ```
 
 Record:
@@ -1368,253 +1452,227 @@ Record:
 ```text
 tokens.css remains canonical
 
-MUI does not redefine tokens
+design-tokens.json is the portable synchronized representation
 
-design-tokens.json may be consumed as synchronized build-time data
-where concrete values are required by MUI
+Flutter does not parse CSS
 
-Young Serif is display-only
+Flutter does not load token JSON at runtime
 
-utility font is default MUI UI typography
+Material 3 is the framework mapping, not brand authority
 
-charcoal is primary action
+ColorScheme uses explicit approved semantic values
 
-brand brown remains separate semantic accent
+no ColorScheme.fromSeed as brand authority
 
-Next.js App Router uses official MUI SSR integration
+Young Serif remains display typography
 
-theme provider is the smallest required client boundary
+utility type remains UI typography
+
+ThemeExtension used only for semantics Material cannot represent
+
+Material Icons are the default mobile icon family
+
+actual ThemeData implementation remains Phase 16.2
+```
+
+Use the actual next ADR identifier in the repository.
+
+---
+
+# 59. No New Dependencies
+
+Expected:
+
+```text
+dependencies = NONE
+```
+
+Do not run:
+
+```text
+flutter pub add
+dart pub add
+npm install
+```
+
+for Phase 12.4.
+
+If design-system validation already uses existing Node tooling, reuse it.
+
+---
+
+# 60. Validation
+
+Run the existing design-system validation suite.
+
+At minimum verify:
+
+```text
+design-tokens.json parses
+
+all Flutter-referenced semantic tokens exist
+
+no MUI-only names leak into portable token contract
+
+no Flutter-only values are added to tokens.css
+
+no unresolved references
+
+no duplicate semantic color roles
+
+contrast remains valid
+
+git diff --check
 ```
 
 ---
 
-# Validation
+# 61. Cross-Platform Mapping Audit
 
-## 61. Inspect Available Frontend Scripts
+Create a concise matrix for important semantics:
 
-Before running commands inspect:
+| Semantic role | Canonical token | Web/MUI | Future Flutter |
+|---|---|---|---|
+| Canvas | `--surface-canvas` | `background.default` | Material surface/background semantic |
+| Paper | `--surface-paper` | `background.paper` | surface/paper semantic |
+| Editorial | `--surface-editorial` | custom semantic | ThemeExtension or suitable M3 surface role |
+| Primary text | `--text-primary` | `text.primary` | `onSurface` or equivalent |
+| Primary action | `--action-primary` | `primary.main` | `ColorScheme.primary` |
+| Brand accent | `--accent-brand` | brand semantic | extension/appropriate semantic |
+| Display font | `--font-display` | display typography | display/headline roles |
+| UI font | `--font-ui` | body/control typography | body/label/control roles |
 
-```text
-frontend/web/package.json
-```
+Do not blindly copy these exact Material properties if current Flutter APIs/documentation establish a better semantic mapping later.
 
-Use the repository's actual scripts.
-
-Do not invent:
-
-```text
-npm test
-pnpm lint
-```
-
-if they do not exist.
+This matrix is an architectural guide.
 
 ---
 
-## 62. Required Verification
+# 62. No False Precision
 
-Run applicable existing commands for:
-
-```text
-TypeScript
-lint
-tests
-build
-```
-
-At minimum:
+Because Phase 16.2 may run against a newer Flutter SDK, avoid freezing volatile implementation details such as:
 
 ```text
-typecheck: PASS
-lint: PASS
-theme contract tests: PASS
-Next.js production build: PASS
+exact constructor signatures
+deprecated ThemeData field names
+specific ThemeExtension generic boilerplate
 ```
 
-Also rerun relevant design-system token validation if the theme imports derived token data.
+unless required.
+
+Phase 12.4 defines:
+
+```text
+semantics
+ownership
+mapping intent
+constraints
+```
+
+Phase 16.2 resolves exact SDK APIs.
 
 ---
 
-## 63. Build Gate
-
-A production:
-
-```text
-next build
-```
-
-or repository equivalent must succeed.
-
-Do not claim Phase 12.3 closure on dev-server rendering only.
-
----
-
-## 64. Warning Gate
-
-Review build/test output for:
-
-```text
-hydration mismatches
-unsupported MUI App Router adapter
-deprecated MUI theme APIs
-Emotion cache warnings
-missing CSS token imports
-font-loading errors
-```
-
-Do not ignore warnings that indicate architectural misuse.
-
----
-
-# Git
-
-## 65. Git Operations
-
-After verification:
-
-1. read root `git-workflow-and-versioning`;
-2. inspect status;
-3. stage only Phase 12.3 changes;
-4. follow required commit/versioning convention;
-5. commit;
-6. push only if permitted/required by the skill.
-
-Do not mix application-component work into the Phase 12.3 commit.
-
----
-
-# Completion Report
-
-## 66. Required Report
+# 63. Phase 12.4 Completion Report
 
 Return:
 
 ```text
-Phase 12.3 status:
+Phase 12.4 status:
 PASS / BLOCKED
 
-MUI theme implemented:
-YES / NO
+Flutter implementation started:
+NO
+
+Flutter project modified:
+NO / <explain>
 
 Canonical token authority:
 tokens.css
 
-MUI token consumption:
-<direct CSS vars / synchronized design-tokens.json / combined>
+Portable Flutter source:
+design-tokens.json
 
-Second token authority created:
+Runtime JSON token loading:
 NO
 
-Next.js version:
-<value>
-
-MUI version:
-<value>
-
-Official MUI App Router integration used:
-YES / NO
-
-Root layout remains Server Component:
-YES / NO
-
-Small client provider boundary:
-YES / NO
-
-Palette mapping:
+Material 3 mapping contract:
 PASS / FAIL
 
-surface.canvas:
-<theme mapping>
-
-surface.paper:
-<theme mapping>
-
-text.primary:
-<theme mapping>
-
-text.secondary:
-<theme mapping>
-
-primary action:
-#111111 semantic mapping / FAIL
-
-brand accent:
-#321E0F semantic mapping / FAIL
-
-Brown used as default primary:
-NO
-
-Display font:
-Young Serif token
-
-Default UI font:
-<existing utility token>
-
-Young Serif universal:
-NO
-
-Canonical type scale preserved:
-YES / NO
-
-Spacing scale preserved:
-YES / NO
-
-Breakpoints preserved:
-YES / NO
-
-Radius scale preserved:
-YES / NO
-
-Elevation mapped/restrained:
+ColorScheme strategy:
 PASS / FAIL
 
-Motion mapped:
+ColorScheme.fromSeed as authority:
+NO
+
+Dynamic system colors:
+NO
+
+Primary action:
+#111111 semantic / FAIL
+
+Brand accent:
+#321E0F semantic / FAIL
+
+Warm canvas:
+#FCF4ED semantic / FAIL
+
+Paper:
+#FFFFFF semantic / FAIL
+
+Editorial surface:
+#F4E9DF semantic / FAIL
+
+Dark theme added:
+NO
+
+Display typography:
+Young Serif
+
+UI typography:
+<existing utility family>
+
+Font assets installed:
+NO
+
+Material Icons policy:
 PASS / FAIL
 
-Focus treatment:
+Spacing mapping:
 PASS / FAIL
 
-Dark mode added:
-NO
+Shape mapping:
+PASS / FAIL
 
-Commerce components added:
-NO
+Elevation mapping:
+PASS / FAIL
 
-Pages designed:
-NO
+Motion mapping:
+PASS / FAIL
 
-Font loading started:
-NO
+Accessibility:
+PASS / FAIL
+
+ThemeExtension policy:
+PASS / FAIL
+
+Cross-platform semantic matrix:
+PASS / FAIL
+
+Design-system validation:
+<commands/results>
+
+Dependencies added:
+NONE
 
 Backend/API changed:
 NO
-
-Dependencies:
-NONE / <explain>
-
-Theme contract tests:
-<x> passed
-
-TypeScript:
-PASS / FAIL
-
-Lint:
-PASS / FAIL
-
-Next.js build:
-PASS / FAIL
-
-Hydration/style warnings:
-NONE / <list>
-
-Design-system validation:
-PASS / NOT REQUIRED
 
 Files changed:
 <list>
 
 ADR:
-<identifier / NONE>
+<id / NONE>
 
 Git workflow skill read:
 YES / NO
@@ -1626,56 +1684,57 @@ Commit:
 <hash/message>
 
 Push:
-<result or NONE>
+<result/NONE>
 
-Phase 12.4:
+Phase 12.5:
 READY / BLOCKED
 ```
 
 ---
 
-# Final STOP Condition
+# 64. STOP Condition
 
-Phase 12.3 is PASS only when:
+Phase 12.4 is PASS only when:
 
-- MUI consumes the approved design-system contract;
-- `tokens.css` remains the sole canonical token authority;
-- no independent MUI color/spacing/type system is created;
-- warm canvas maps correctly;
-- white paper maps correctly;
-- charcoal remains primary action;
-- brown remains a restrained brand accent;
-- Young Serif is limited to display/editorial roles;
-- UI typography continues using the utility sans stack;
-- canonical type scale remains intact;
-- canonical spacing, radius, breakpoints, elevation and motion are preserved;
-- MUI defaults that conflict with the brand are neutralized;
-- accessibility/focus behavior remains intact;
-- Next.js App Router SSR integration is correct for installed versions;
-- only the smallest necessary client provider boundary exists;
-- no font loading has begun;
-- no pages or product components have begun;
-- TypeScript/lint/tests/build pass;
-- no significant hydration or styling warnings remain;
+- Flutter's future Material 3 architecture is documented;
+- `tokens.css` remains the only canonical token authority;
+- `design-tokens.json` is explicitly the portable Flutter input;
+- Flutter will not parse CSS;
+- Flutter will not load token JSON at runtime;
+- Material 3 does not become a second brand authority;
+- explicit color mapping is preferred over `ColorScheme.fromSeed`;
+- charcoal remains the primary action;
+- brown remains a controlled brand accent;
+- warm canvas, paper, editorial and inverse surfaces retain distinct meanings;
+- Young Serif remains display typography;
+- utility typography remains UI typography;
+- spacing, radius, elevation and motion semantics are preserved;
+- ThemeExtension is reserved only for semantics Material 3 cannot cleanly express;
+- Material Icons are the default Flutter icon family;
+- accessibility/mobile adaptation requirements are documented;
+- no Flutter application code has been implemented;
+- no new package has been installed;
+- Group P Phase 16.2 remains the owner of actual `ThemeData` implementation;
+- design-system validation passes;
 - Git operations follow `git-workflow-and-versioning`.
 
 Then report:
 
 ```text
-Phase 12.3 — PASS
-Phase 12.4 — READY
+Phase 12.4 — PASS
+Phase 12.5 — READY
 ```
 
-Do not begin Phase 12.4 automatically.
+Do not start Phase 12.5 automatically.
+
+**Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
 ---
 
 ## Execution Record — 2026-10-06
 
-### 12.3 — MUI Theme Implementation
+### 12.4 — Flutter Material 3 Theme Structure
 
 **Status:** Complete
 
-`frontend/web/theme/theme.ts` adapts synchronized design tokens to one typed MUI light theme. `app/providers.tsx` uses the official Next 16 MUI App Router cache provider and keeps the root layout server-rendered. No font loading, commerce components, page design, or backend work was introduced.
-
-**Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
+`frontend/design-system/flutter-material3.md` defines the future static Material 3 mapping from the canonical portable token contract. It does not create Flutter code, a Flutter project, dependencies, font assets, a dark theme, dynamic color, or runtime JSON token loading. Phase 16.2 remains the owner of actual `ThemeData` implementation.

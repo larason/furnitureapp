@@ -27,7 +27,7 @@ Translate its former high-energy expression into a curated showroom and interior
 
 `--font-display` is Young Serif. Use it for brand moments, hero messaging, major section headings, category storytelling, and selectively prominent product or collection titles. It supplies personality, not interface density. Do not force all display copy uppercase and do not apply aggressive tracking or compressed leading to this serif.
 
-`--font-ui` and its legacy alias `--font-body` preserve the existing Helvetica Now utility stack for navigation, buttons, forms, filters, search, price, metadata, specifications, breadcrumbs, and account or admin interfaces. Utility type supplies precision and scannability. Font loading belongs to Phase 12.4.
+`--font-ui` and its legacy alias `--font-body` preserve the existing Helvetica Now utility stack for navigation, buttons, forms, filters, search, price, metadata, specifications, breadcrumbs, and account or admin interfaces. Utility type supplies precision and scannability. Font loading is framework-specific implementation work, not a shared design-system responsibility; Flutter font loading belongs to Phase 16.2 after licensing and availability are confirmed.
 
 The canonical scale remains 12, 14, 16, 20, 24, 32, 48, and 96 pixels. No page-specific type sizes are permitted.
 
