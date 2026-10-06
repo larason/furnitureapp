@@ -14,7 +14,11 @@
       .row { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: var(--space-4); color: var(--muted); font-size: var(--text-sm); }
       .bar { height: var(--space-4); min-width: 2px; background: var(--accent); }
       .radii { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-4); }
-      .radii article { min-height: 88px; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface); color: var(--fg-2); font-size: var(--text-sm); box-shadow: var(--elev-ring); }
+       .radii article { min-height: 88px; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface); color: var(--fg-2); font-size: var(--text-sm); box-shadow: var(--elev-ring); }
+       .layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-4); margin-top: var(--space-7); }
+       .layers article { min-height: 72px; padding: var(--space-4); border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: var(--text-sm); }
+       .layers .raised { box-shadow: var(--elev-raised); }
+       .focus-demo { margin-top: var(--space-7); padding: var(--space-4); border: 0; border-radius: var(--radius-sm); background: var(--surface-paper); box-shadow: var(--focus-ring); color: var(--fg); font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
 
     </style>
   </head>
@@ -35,6 +39,11 @@
         <article style="border-radius: var(--radius-lg)">--radius-lg</article>
         <article style="border-radius: var(--radius-pill)">--radius-pill</article>
       </section>
+      <section class="layers" aria-label="Elevation roles">
+        <article>Flat surface<br />--elev-flat</article>
+        <article class="raised">True layer<br />--elev-raised</article>
+      </section>
+      <button class="focus-demo" type="button">Keyboard focus remains visible through --focus-ring.</button>
 
     </main>
   </body>

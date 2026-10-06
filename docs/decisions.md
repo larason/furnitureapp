@@ -4,6 +4,78 @@
 
 ---
 
+### ADR/DESIGN-001 — Furniture Token Authority and Brand Translation
+
+**Decision:** Retain the previous Nike-derived system's structural discipline while establishing SL Furnitures as architectural, warm, and editorial. The official `designs/brandlogo.png` is the identity authority. Furniture character comes from the semantic warm-ivory canvas, controlled deep-brown editorial/material accent, Young Serif display typography, photography, and restrained composition. Charcoal `#111111` remains primary text/action and white `#FFFFFF` remains paper/product surface.
+
+`frontend/design-system/tokens.css` is the sole canonical shared-token authority. `design-tokens.json` and `tailwind-v4.css` are synchronized framework-neutral representations; future MUI and Flutter themes consume mappings rather than defining the brand. Components may not introduce an ad-hoc design value when an approved token applies.
+
+**Reason:** This preserves valuable visual structure without carrying over sporty typography or monochrome-only constraints, avoids competing token authorities, and keeps the shared language portable across web and mobile.
+
+**Status:** Accepted and implemented in Phases 12.1-12.2
+
+---
+
+### ADR/DESIGN-002 — MUI Consumes the Canonical Furniture Token Contract
+
+**Decision:** The Next.js MUI theme is a single typed adapter at `frontend/web/theme/theme.ts`. It consumes synchronized `design-tokens.json` values where MUI requires concrete theme values while `tokens.css` remains the sole canonical authority and is globally available to the app. The official Next 16 `AppRouterCacheProvider` provides App Router streaming SSR compatibility within the narrow client provider boundary.
+
+**Consequences:** Charcoal remains `primary.main`; the brown brand accent is separately typed; Young Serif is limited to display variants; default MUI typography uses the utility sans. MUI does not become a second source of colors, spacing, typography, or motion.
+
+**Status:** Accepted and implemented in Phase 12.3
+
+---
+
+### ADR/DESIGN-003 — Flutter Material 3 Consumes Shared Furniture Tokens
+
+**Decision:** Future Flutter `ThemeData` will consume a narrow static semantic adapter derived from or verified against `frontend/design-system/design-tokens.json`; `tokens.css` remains the sole canonical token authority. Flutter does not parse CSS or load token JSON at runtime. Material 3 provides framework behavior, not brand generation: Phase 16.2 will explicitly map approved semantics into `ColorScheme`, `TextTheme`, component themes, and only the small ThemeExtensions that standard Material roles cannot represent.
+
+**Consequences:** Charcoal remains `ColorScheme.primary`; brown stays a controlled brand accent rather than an automatic secondary color; warm canvas, paper, editorial, and inverse surfaces retain separate meanings. `ColorScheme.fromSeed`, dynamic system colors, a dark theme, Flutter application code, dependencies, and font assets are out of scope until later approved work. Young Serif remains display typography, the approved utility family remains UI typography, and built-in Material Icons are the default Flutter icon family.
+
+**Status:** Accepted as the Phase 12.4 mapping contract; implementation deferred to Phase 16.2
+
+---
+
+### ADR/DESIGN-004 — Shared Visual Foundation Semantics
+
+**Decision:** Later web and Flutter UI work uses the existing semantic foundation without creating framework-specific visual scales. Young Serif is display/editorial typography; the utility stack owns interface text; canvas, paper, editorial, and inverse surfaces remain distinct; charcoal is the primary action; brown is a restrained accent; spacing, radius, elevation, motion, and focus use the canonical tokens.
+
+**Consequences:** Media remains sharp by default, ordinary cards remain flat, elevation communicates true layering only, motion stays quiet and reduced-motion aware, and focus remains visible. Component phases may choose framework-specific APIs, but may not invent arbitrary type sizes, spacing, colors, radii, shadows, or transitions. This ADR does not create components or change the existing MUI theme.
+
+**Status:** Accepted and implemented in Phase 12.5
+
+---
+
+### ADR/DESIGN-005 — Cross-Platform Component Convention Architecture
+
+**Decision:** Future web and Flutter components share semantics, visual hierarchy, state vocabulary, and token meaning while remaining independent framework implementations. Framework primitives are preferred over redundant wrappers; wrappers require meaningful accessibility, state, routing, analytics, domain, or responsive behavior. Variants are closed semantic choices, components own internal spacing, parents own external spacing, links navigate, buttons act, cards represent genuinely self-contained units, and Material-family icons remain the only approved icon families.
+
+**Consequences:** MUI `sx` and Flutter local layout primitives remain available for token-driven composition but cannot bypass the design system with arbitrary appearance values. The reference catalog remains non-runtime documentation. Loading, empty, error, status, focus, responsive, and request-first conventions are defined before application components are built. No component library, wrapper, widget, dependency, or application behavior is introduced by Phase 12.6.
+
+**Status:** Accepted as the Phase 12.6 convention contract
+
+---
+
+### ADR/DESIGN-006 — Accessibility Is a Default Design-System Invariant
+
+**Decision:** The shared design system adopts a WCAG 2.2 AA-oriented accessibility baseline documented in `frontend/design-system/ACCESSIBILITY.md`. Accessibility is the default behavior, not an optional mode or overlay. Future implementations prefer native HTML, MUI, and Material semantics; require visible focus, non-color status communication, semantic headings/landmarks, accessible labels and errors, meaningful image alternatives, usable targets, text scaling/reflow, and reduced-motion support. Automated checks supplement, but do not replace, manual browser/device and assistive-technology verification.
+
+**Consequences:** The baseline constrains future web, Flutter, admin, and customer-facing work while preserving platform-native implementations. It does not claim full application WCAG conformance, introduce runtime components, or add dependencies in Phase 12.7.
+
+**Status:** Accepted and implemented in Phase 12.7
+
+---
+
+### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
+
+**Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.
+
+**Consequences:** Do not accept this exception for production release sign-off without rechecking the full audit. Review after the next compatible Next/eslint-config-next release, no later than 2026-11-06. Do not use untrusted glob patterns as lint input outside the normal local or isolated CI workspace.
+
+**Status:** Open, development-only exception
+
+---
+
 ### ADR/CAT-009 — Product Image Storage and R2 Delivery
 
 **Decision:** CAT-009 accepts exactly one JPEG, PNG, or WebP image and stores unmodified bytes in Cloudflare R2 using immutable server-generated keys. Public URLs are derived from `R2_PUBLIC_BASE_URL`; MySQL retains only provider-neutral `file_path` and ProductImage metadata. The first image without an existing primary becomes primary, with product-name alt text and `MAX(sort_order) + 1`; CAT-009 creates product-wide images only.

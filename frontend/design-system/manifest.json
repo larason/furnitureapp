@@ -3,10 +3,10 @@
   "id": "furniture",
   "name": "Furniture",
   "category": "E-Commerce & Retail",
-  "description": "Bundled OpenDesign package for the furniture e-commerce platform, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
+  "description": "SL Furnitures shared design system. tokens.css is the canonical authority; JSON and Tailwind artifacts are synchronized representations.",
   "source": {
-    "type": "bundled",
-    "origin": "OpenDesign curated bundled fixture"
+    "type": "canonical-css-tokens",
+    "origin": "Furniture reconciliation, Phase 12.1-12.2"
   },
   "files": {
     "design": "DESIGN.md",

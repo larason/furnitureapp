@@ -1,0 +1,9 @@
+html {
+  background: var(--surface-canvas);
+}
+
+body {
+  margin: 0;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+}
