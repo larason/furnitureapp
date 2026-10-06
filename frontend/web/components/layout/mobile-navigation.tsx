@@ -6,6 +6,7 @@ import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import { useState } from "react";
 import { BrandMark } from "./brand-mark";
 import { CATEGORY_NAVIGATION_FIXTURE } from "./category-navigation.fixture";
@@ -27,15 +28,17 @@ export function MobileNavigation() {
 
   return (
     <Box sx={{ display: { xs: "inline-flex", md: "none" } }}>
-      <IconButton
-        size="large"
-        aria-label="Open navigation menu"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-      >
-        <Menu aria-hidden />
-      </IconButton>
+      <Tooltip title="Open navigation menu" describeChild>
+        <IconButton
+          size="large"
+          aria-label="Open navigation menu"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        >
+          <Menu aria-hidden />
+        </IconButton>
+      </Tooltip>
       <Drawer
         anchor="left"
         open={open}
@@ -61,13 +64,15 @@ export function MobileNavigation() {
           }}
         >
           <BrandMark />
-          <IconButton
-            size="large"
-            aria-label="Close navigation menu"
-            onClick={close}
-          >
-            <Close aria-hidden />
-          </IconButton>
+          <Tooltip title="Close navigation menu" describeChild>
+            <IconButton
+              size="large"
+              aria-label="Close navigation menu"
+              onClick={close}
+            >
+              <Close aria-hidden />
+            </IconButton>
+          </Tooltip>
         </Box>
         <Divider />
         <Box
