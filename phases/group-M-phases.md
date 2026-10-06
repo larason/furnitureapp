@@ -1,60 +1,108 @@
-# Phase 13.6 — Website Routing Conventions
+# Phase 13.7 — Website Layout System
 
 ## Objective
 
-Define and enforce the canonical **Next.js App Router routing conventions** for the SL Furnitures website before application layouts and storefront pages are implemented.
+Implement the reusable **Next.js + MUI website layout system** for SL Furnitures.
 
-This phase determines:
+This phase establishes the structural shell within which later storefront pages will be built.
 
-- public URL structure;
-- route naming;
-- route ownership;
-- static vs dynamic segments;
-- canonical resource identifiers in URLs;
-- route groups;
-- search/filter query-parameter ownership;
-- account/authenticated route namespace;
-- made-to-order and enquiry route namespaces;
-- URL normalization principles;
-- Server Component defaults;
-- route-level client-boundary rules;
-- navigation/link conventions;
-- reserved namespaces;
-- future metadata ownership;
-- boundaries between Next.js routing and Laravel `/api/v1`.
-
-This phase must establish the **routing contract**, not implement the storefront.
-
-Expected progression:
+The layout should use a proven furniture-commerce information architecture inspired structurally by established furniture retailers such as Urban Ladder:
 
 ```text
-13.5 API client
+utility/announcement region
         ↓
-13.6 routing conventions
+primary header
         ↓
-13.7 layout system
+category navigation
         ↓
-13.8 error/loading/not-found handling
+main content
         ↓
-13.9 responsive foundation
-        ↓
-Group N public catalog implementation
+footer
+```
+
+However:
+
+> Urban Ladder is an approved **structural / information-architecture reference only**.
+
+Do NOT copy:
+
+- Urban Ladder branding;
+- exact visual styling;
+- colors;
+- typography;
+- dimensions;
+- icons;
+- promotional language;
+- sale mechanics;
+- navigation labels without mapping them to our taxonomy;
+- page sections;
+- component implementation;
+- source code;
+- interaction details;
+- promotional density.
+
+SL Furnitures' own Group L design system remains the visual authority.
+
+The resulting shell must feel:
+
+```text
+architectural
+warm
+editorial
+calm
+crafted
+material-led
+spacious
+premium but approachable
+```
+
+rather than:
+
+```text
+marketplace-like
+discount-heavy
+dashboard-like
+generic AI storefront
 ```
 
 ---
 
-# 1. Scope
+# 1. Phase Scope
 
 Implement only:
 
 ```text
-Phase 13.6 — Routing conventions
+Phase 13.7 — Layout System
 ```
+
+This phase owns the reusable structural website shell:
+
+```text
+root/site shell composition
+header structure
+brand/logo region
+search entry-point structure
+account entry-point structure
+desktop category-navigation structure
+mobile navigation structure
+main-content landmark
+content-width/container primitives
+section-width/layout primitives
+footer structure
+desktop/mobile shell adaptation
+sticky/header behavior if justified
+layout-level accessibility structure
+```
+
+It does NOT own final storefront content.
+
+---
+
+# 2. Do Not Start Later Phases
 
 Do NOT begin:
 
 ```text
-13.7 — Layout system
 13.8 — Error/loading/not-found handling
 13.9 — Responsive foundation
 
@@ -71,52 +119,51 @@ Do NOT begin:
 14.11 — Image/performance optimization
 ```
 
-A routing convention may reserve or document future URLs without implementing those pages.
+Also do not start customer feature phases.
 
 ---
 
-# 2. Read Authorities First
+# 3. Read Authorities Before Coding
 
-Before changing anything, inspect:
+Inspect at minimum:
 
 ```text
 AGENTS.md
 frontend/AGENTS.md
 
-docs/
-├── VISION.md
-├── decisions.md
-├── domain/business-rules.md
-├── clerk-authentication-architecture.md
-└── api/
-    ├── api-contract.md
-    ├── api-conventions.md
-    ├── api-resources.md
-    └── openapi.yaml
-
 frontend/design-system/
 ├── DESIGN.md
+├── USAGE.md
 ├── COMPONENTS.md
 ├── ACCESSIBILITY.md
-└── USAGE.md
+├── tokens.css
+├── design-tokens.json
+└── relevant reference catalog
 
 frontend/web/
 ├── app/
+├── theme/
 ├── lib/api/
+├── ROUTING.md
 ├── package.json
 ├── tsconfig.json
 └── next.config.*
 
+docs/
+├── VISION.md
+├── decisions.md
+└── domain/business-rules.md
+
 phases/group-M-phases.md
 ```
 
-Also inspect actual Laravel routes/resource identifiers where necessary.
+Inspect the actual current root layout and provider boundary before making changes.
 
-Do not infer route identifiers from database fields if the public API contract already establishes them.
+Do not recreate infrastructure that already exists.
 
 ---
 
-# 3. Git Workflow
+# 4. Git Workflow
 
 Before ANY Git command:
 
@@ -125,1802 +172,2335 @@ locate and read:
 git-workflow-and-versioning
 ```
 
-Follow that skill exactly.
+Follow it exactly.
 
 Preserve unrelated owner changes.
 
-Never commit secrets or local environment configuration.
+Never commit:
 
-Stage only Phase 13.6 work.
+```text
+.env
+.env.local
+credentials
+tokens
+secrets
+local SDK state
+```
+
+Stage only Phase 13.7 work.
 
 ---
 
-# 4. Existing Foundation Must Be Preserved
+# 5. Preserve Completed Foundations
 
-Phases 13.1–13.5 already established:
+The following are already complete:
 
 ```text
-Next.js App Router
-strict TypeScript
-MUI integration
-token-backed theme
-minimal provider boundary
-generic Laravel API client
+13.1 Next.js setup
+13.2 TypeScript
+13.3 MUI integration
+13.4 Theme integration
+13.5 API client
+13.6 Routing conventions
 ```
 
-Do not recreate or refactor those foundations merely because routing is now being documented.
-
-In particular:
+Do not:
 
 ```text
-do not rerun create-next-app
-do not reinstall MUI
-do not recreate the theme
-do not create another API client
-do not introduce Pages Router
+rerun create-next-app
+replace MUI integration
+recreate the theme
+duplicate providers
+create another API client
+change routing conventions casually
 ```
 
 ---
 
-# 5. App Router Is Authoritative
+# 6. Architectural Direction
 
-The website uses:
-
-```text
-Next.js App Router
-```
-
-Do not introduce:
+Use this dependency hierarchy:
 
 ```text
-pages/
-getServerSideProps
-getStaticProps
-next/router
+Root Next.js layout
+        ↓
+Site shell
+        ↓
+Header / Navigation / Main / Footer
+        ↓
+Layout primitives
+        ↓
+future page composition
+        ↓
+future commerce components
 ```
 
-for new architecture.
+Do not reverse it.
 
-Future navigation should use App Router APIs.
+Pages should eventually consume the layout system.
+
+The layout system must not know individual page implementations.
 
 ---
 
-# 6. Routing Principle
+# 7. Structural Reference Decision
 
-URLs are part of the product contract.
+Record this durable rule:
 
-They must be:
+> Established furniture-commerce websites may inform structural information architecture, but SL Furnitures' tokens, typography, components, accessibility rules, photography philosophy, and interaction principles remain authoritative.
 
-```text
-human-readable
-stable
-predictable
-shareable
-crawlable where public
-bookmarkable
-independent of temporary UI composition
-```
-
-Do not derive routes from component names.
-
-Bad conceptual examples:
+For the shell, the approved structural grammar is:
 
 ```text
-/product-page
-/product-screen
-/shop-component
-/home-screen
-/category-view
+┌──────────────────────────────────────────────────────────────┐
+│ Optional utility / announcement region                      │
+├──────────────────────────────────────────────────────────────┤
+│ Brand                Search                     Account      │
+├──────────────────────────────────────────────────────────────┤
+│ Furniture category navigation                               │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│                       MAIN CONTENT                           │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│                         FOOTER                               │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-URLs describe resources and user intent.
+This is structural guidance, not a pixel specification.
 
 ---
 
-# 7. Route Taxonomy
+# 8. Root Layout
 
-Establish a documented canonical taxonomy for the website.
-
-At minimum evaluate and define namespaces for:
+Inspect:
 
 ```text
-/
-products
-categories
-search
-made-to-order / furniture requests
-enquiries/contact
-account
-authentication entry points if website-owned
+frontend/web/app/layout.tsx
 ```
 
-Only include namespaces supported by project requirements.
+Preserve it as a Server Component unless an unavoidable framework requirement proves otherwise.
 
-Do not invent unrelated sections such as:
+Do NOT add:
 
-```text
-blog
-community
-marketplace
-wishlist
-designer portal
-loyalty
+```tsx
+"use client";
 ```
 
-unless already approved elsewhere.
+to the root layout merely because navigation contains interactive descendants.
+
+Client boundaries belong lower in the tree.
 
 ---
 
-# 8. Homepage
+# 9. Provider Boundary
 
-Reserve:
+Preserve the existing minimal MUI provider architecture established in 13.3–13.4.
+
+Do not create:
 
 ```text
-/
+SiteProvider
+LayoutProvider
+NavigationProvider
+HeaderProvider
 ```
 
-for the public storefront homepage.
+unless a genuine runtime requirement exists.
 
-Do NOT implement Phase 14.1.
-
-The existing minimal scaffold page may remain until Group N.
+Static shell composition does not require global React state.
 
 ---
 
-# 9. Product Listing
+# 10. Site Shell
 
-Establish the canonical product collection route.
-
-Prefer a stable resource-oriented namespace such as:
-
-```text
-/products
-```
-
-unless repository requirements already establish another route.
-
-This will eventually own the public product listing.
-
-Do NOT build it now.
-
----
-
-# 10. Product Detail
-
-Establish the canonical dynamic product route.
+Introduce one clear site-shell composition.
 
 Conceptually:
 
-```text
-/products/[identifier]
+```tsx
+<SiteShell>
+  <SiteHeader />
+  <main>{children}</main>
+  <SiteFooter />
+</SiteShell>
 ```
 
-Determine the identifier from the actual API/public resource contract.
+Exact naming should follow repository conventions.
 
-Possible examples might be:
+Avoid competing concepts such as:
 
 ```text
-slug
-public ID
+AppShell
+WebsiteShell
+PublicShell
+MainShell
+StoreShell
 ```
 
-but DO NOT guess.
+all representing the same thing.
 
-Never expose an internal numeric database ID merely because it is easy.
+Choose one authority.
 
 ---
 
-# 11. Product Identifier Rule
+# 11. Semantic Landmarks
 
-Inspect the product API contract and model/resource behavior.
+The rendered shell should have meaningful structural landmarks:
 
-The routing document must explicitly state:
-
-```text
-what identifier appears in the URL
-whether it is immutable/stable
-whether it is human-readable
-how Laravel resolves it
+```html
+<header>
+<nav>
+<main>
+<footer>
 ```
 
-If the current frozen contract does not provide an appropriate public route identifier:
+where appropriate.
 
-```text
-STOP
+Do not construct the site entirely from anonymous:
+
+```html
+<div>
 ```
 
-and report the contract gap.
-
-Do not silently invent a frontend slug system.
+elements.
 
 ---
 
-# 12. Categories
+# 12. Main Landmark
 
-Establish the canonical category URL convention.
+There should be exactly one primary:
 
-A likely resource shape is:
-
-```text
-/categories/[identifier]
+```html
+<main>
 ```
 
-but inspect the contract first.
+for normal storefront pages.
 
-Do not choose between:
-
-```text
-/categories/chairs
-/category/chairs
-/shop/chairs
-/collections/chairs
-```
-
-based purely on aesthetic preference.
-
-Use the project's actual taxonomy semantics.
+Pages inserted into the shell should not need to recreate the global main landmark.
 
 ---
 
-# 13. Category Identifier
+# 13. Skip-to-Main
 
-As with products, inspect whether category routing uses:
+Phase 12.7 established accessibility requirements.
+
+Implement the structural skip mechanism now because the layout system owns the main landmark.
+
+Provide a keyboard-accessible:
 
 ```text
-slug
-public identifier
-other frozen API field
+Skip to main content
 ```
 
-Do not expose internal numeric IDs without explicit contract support.
+link.
+
+It should:
+
+- be available at the beginning of the navigation sequence;
+- become visibly apparent when focused;
+- target the primary main-content landmark;
+- use approved focus tokens;
+- not permanently clutter the visual design.
+
+Do not implement it as a JavaScript click handler.
+
+Use native anchor semantics.
 
 ---
 
-# 14. Category Hierarchy
+# 14. Header Architecture
 
-The database taxonomy supports hierarchy.
-
-Do NOT automatically encode the entire hierarchy into URLs such as:
+The desktop header should support three conceptual levels where appropriate:
 
 ```text
-/categories/living-room/seating/armchairs
+optional utility/announcement
+primary header
+category navigation
 ```
 
-unless the public API/domain contract explicitly establishes hierarchical canonical URLs.
+Do not make all three visually equally dominant.
 
-Prefer the simplest stable route identity.
-
-Breadcrumb hierarchy and canonical URL hierarchy are separate concerns.
+Hierarchy should be clear.
 
 ---
 
-# 15. Product/Category Relationship
+# 15. Utility / Announcement Region
 
-Do not create duplicate canonical product URLs such as:
+Treat the utility region as optional infrastructure.
+
+Potential future content may include:
 
 ```text
-/products/oak-chair
-/categories/chairs/oak-chair
-/living-room/chairs/oak-chair
+delivery/service information
+showroom/contact information
+made-to-order message
 ```
 
-A product should have one canonical public URL.
+but Phase 13.7 must NOT invent promotional campaigns.
 
-Category context belongs in navigation/breadcrumb/query state unless later architecture deliberately specifies otherwise.
+Do not hard-code:
+
+```text
+50% OFF
+SALE ENDS TONIGHT
+FLASH SALE
+FREE SHIPPING TODAY
+```
+
+unless actual business requirements later provide them.
+
+If there is no approved content, the architecture may support the region without rendering meaningless filler.
 
 ---
 
-# 16. Search
+# 16. Primary Header
 
-Reserve a canonical search route.
+Desktop structural hierarchy should support:
 
-Recommended shape if consistent with the project:
+```text
+Brand/logo
+Search entry point
+Account entry point
+```
+
+Do not add inactive commerce controls merely because conventional ecommerce headers contain them.
+
+---
+
+# 17. Official Logo
+
+Use:
+
+```text
+designs/brandlogo.png
+```
+
+as the brand identity authority if the shell requires the actual brand mark.
+
+Do NOT:
+
+```text
+retype the wordmark using Young Serif
+trace the logo
+recolor it
+redraw it as SVG
+approximate it with CSS
+replace it with generic text
+```
+
+Preserve its visual integrity.
+
+---
+
+# 18. Logo Navigation
+
+The logo should semantically navigate to:
+
+```text
+/
+```
+
+using an internal link.
+
+Provide an accessible name where needed.
+
+Do not make the logo a button.
+
+---
+
+# 19. Logo Sizing
+
+Do not hard-code arbitrary logo dimensions based on guesswork.
+
+Choose a restrained shell size compatible with:
+
+```text
+header height
+visual balance
+mobile adaptation
+official aspect ratio
+```
+
+Use the layout/design token system wherever applicable.
+
+Do not distort the image.
+
+---
+
+# 20. Search Position
+
+The primary header should provide a prominent search entry point.
+
+Furniture discovery benefits strongly from search.
+
+However:
+
+```text
+Phase 14.5
+```
+
+owns actual search functionality/results.
+
+Phase 13.7 may implement only the **shell-level search affordance** necessary for layout composition.
+
+---
+
+# 21. Search Scope
+
+Do NOT implement:
+
+```text
+search API requests
+autocomplete
+search suggestions
+recent searches
+search history
+search results
+debouncing
+predictive search
+```
+
+during 13.7.
+
+---
+
+# 22. Search Semantics
+
+If the header contains an actual search form rather than merely a navigation entry point, it must use semantic:
+
+```html
+<form role="search">
+```
+
+or equivalent appropriate semantics.
+
+But do not create fake functionality.
+
+If search submission behavior belongs to Phase 14.5, prefer a safe structural entry point rather than a misleading non-functional form.
+
+---
+
+# 23. Search Destination
+
+The canonical future search route is:
 
 ```text
 /search
 ```
 
-Search terms should generally be URL state, conceptually:
+with:
 
 ```text
-/search?q=oak+table
+?search=<term>
 ```
 
-rather than:
-
-```text
-/search/oak-table
-```
-
-unless the existing requirements specify otherwise.
-
-Do NOT implement search functionality.
-
-Phase 14.5 owns search.
-
----
-
-# 17. Search Query Parameter
-
-Define one canonical query parameter for the search term.
-
-For example:
-
-```text
-q
-```
-
-Do not permit multiple equivalent conventions:
-
-```text
-q
-query
-search
-keyword
-term
-```
-
-The actual implementation comes later.
-
----
-
-# 18. Filters
-
-Phase 14.6 owns filters/sorting.
-
-Phase 13.6 should only define the routing principle:
-
-```text
-filter state that users should share/bookmark
-→ URL query parameters
-
-ephemeral presentation state
-→ local UI state
-```
-
-Do not implement filters.
-
----
-
-# 19. Filter Parameter Stability
-
-Future filter parameters must be:
-
-```text
-explicit
-documented
-stable
-contract-like
-```
-
-Do not encode the entire filter state into an opaque JSON/base64 query parameter.
-
----
-
-# 20. Sorting
-
-Reserve a canonical sorting parameter convention if the API contract already establishes one.
-
-For example conceptually:
-
-```text
-?sort=price_asc
-```
-
-but use actual contract terminology.
-
-Do not invent frontend enum values that differ from Laravel.
-
----
-
-# 21. Pagination
-
-Inspect the frozen API pagination convention.
-
-Determine how future website pagination maps to URL state.
-
-If API uses:
-
-```text
-page
-```
-
-and that is appropriate for the website, preserve it.
-
-Do not invent cursor/page translation unnecessarily.
-
-The browser URL should support meaningful back/forward navigation.
-
----
-
-# 22. Query Parameter Authority
-
-Where public URL state maps directly to Laravel query parameters, avoid unnecessary renaming.
-
-Bad pattern:
-
-```text
-URL:
-?order=cheap
-
-frontend converts to:
-sort=price_asc
-```
-
-unless a deliberate UI contract justifies the translation.
-
-Prefer one vocabulary across layers where appropriate.
-
----
-
-# 23. Unknown Query Parameters
-
-Document the policy for unknown query parameters.
-
-Do not build a global aggressive query stripper.
-
-Future pages should parse only supported parameters and safely ignore or normalize unsupported ones according to page requirements.
-
----
-
-# 24. Query Parameter Ordering
-
-Do not make application correctness depend on query parameter order.
-
-These should be semantically equivalent:
-
-```text
-?sort=price&page=2
-
-?page=2&sort=price
-```
-
-Canonical SEO normalization can be handled later in Group N.
-
----
-
-# 25. Made-to-Order Is First-Class
-
-MADE_TO_ORDER is a primary business offering.
-
-Its routing must not imply:
-
-```text
-error
-fallback
-unavailable
-special failure
-```
-
-Establish a clear public route for initiating or learning about the made-to-order request flow.
-
-Determine naming from existing project terminology.
-
-Do not invent a different marketing concept.
-
----
-
-# 26. Furniture Request Route
-
-The backend calls the domain concept:
-
-```text
-Furniture Request
-```
-
-Choose/document a human-facing route namespace that maps clearly to this domain.
-
-Examples must be evaluated against existing project wording:
-
-```text
-/made-to-order
-/furniture-requests
-```
-
-Do not create both as competing canonical routes.
-
-One should be canonical if either is adopted.
-
----
-
-# 27. Request Detail/History Routes
-
-Do not automatically expose:
-
-```text
-/furniture-requests/[reference]
-```
-
-publicly.
-
-Inspect whether customers have authenticated request-history/detail requirements.
-
-If such functionality belongs to a later account phase:
-
-```text
-reserve the convention only if justified
-```
-
-Do not implement it.
-
-Anonymous requests must never become enumerable through predictable URLs.
-
----
-
-# 28. General Enquiries
-
-The project has a separate General Enquiry domain.
-
-Define its future public route convention based on existing product language.
-
-Potential concepts include:
-
-```text
-/contact
-/enquiries
-```
-
-but choose based on repository terminology and UX requirements.
-
-Do not create multiple routes for the same purpose without canonicalization policy.
-
----
-
-# 29. Requests and Enquiries Must Remain Distinct
-
-Do not collapse:
-
-```text
-Furniture Request
-```
-
-and:
-
-```text
-General Enquiry
-```
-
-into one routing/domain concept merely because both contain forms.
-
-Their backend workflows are separate.
-
----
-
-# 30. Account Namespace
-
-Reserve:
-
-```text
-/account
-```
-
-as the authenticated customer-area namespace unless existing architecture establishes another convention.
-
-Future account routes should live beneath one coherent namespace.
-
-Conceptually:
-
-```text
-/account
-/account/orders
-/account/requests
-/account/enquiries
-/account/profile
-```
-
-ONLY where those capabilities actually exist.
-
-Do not implement these pages now.
-
----
-
-# 31. Do Not Invent Saved Addresses
-
-Saved addresses are deferred.
-
-Therefore do not reserve/build:
-
-```text
-/account/addresses
-```
-
-as though it were a V1 feature.
-
----
-
-# 32. Customer Account vs Admin
-
-The public/customer Next.js website and admin interface have distinct responsibilities.
-
-Do not place admin functionality under:
-
-```text
-/account/admin
-```
-
-or mix staff/admin routes into the customer route tree.
-
-Admin route architecture belongs to the admin application.
-
----
-
-# 33. Staff/Admin URLs
-
-Do not create website routes such as:
-
-```text
-/admin
-/staff
-/dashboard
-```
-
-unless this specific `frontend/web` application is explicitly intended to host them.
-
-The project architecture identifies admin as a separate Next.js + MUI application concern.
-
-Preserve that boundary.
-
----
-
-# 34. Authentication Routes
-
-Inspect the planned Clerk integration.
-
-Define where sign-in/sign-up URLs will eventually live only if required by the architecture.
-
-Possible convention:
-
-```text
-/sign-in
-/sign-up
-```
-
-but do not guess if Clerk architecture already specifies routes.
-
-Do NOT integrate Clerk in Phase 13.6.
-
----
-
-# 35. Checkout
-
-The project has request-first production constraints and transactional purchase remains deferred/disabled.
-
-Do NOT establish active routes such as:
-
-```text
-/checkout
-/payment
-/order-confirmation
-```
-
-as currently usable storefront routes.
-
-If roadmap documentation needs them for future work, clearly mark them:
-
-```text
-deferred / inactive
-```
-
-Do not create route files.
-
----
-
-# 36. Cart
-
-Likewise, do not expose an active cart route merely because the backend has historical cart work.
-
-Respect the current request-first production policy.
-
-If transactional commerce is disabled in the current release:
-
-```text
-/cart
-```
-
-must not become an active navigable website feature during 13.6.
-
----
-
-# 37. Order Routes
-
-Order/customer purchase routes remain subject to the deferred transactional flow.
-
-Do not implement or advertise:
-
-```text
-/orders
-/account/orders
-```
-
-unless current V1 website requirements explicitly require them independently of the disabled purchase flow.
-
-Document deferred ownership where appropriate.
-
----
-
-# 38. Route Groups
-
-Use Next.js route groups:
-
-```text
-(group)
-```
-
-only when they provide a genuine layout/organization boundary without changing the URL.
-
-Potential future conceptual grouping:
-
-```text
-(marketing)
-(catalog)
-(account)
-```
-
-but do not create route groups merely to make the tree look sophisticated.
-
-Phase 13.7 will own layout implementation.
-
----
-
-# 39. Route Groups Are Not URL Segments
-
-Document explicitly:
-
-```text
-(catalog)
-```
-
-does NOT become:
-
-```text
-/catalog
-```
-
-in the browser URL.
-
-Do not use route groups as a substitute for clear URL taxonomy.
-
----
-
-# 40. Do Not Build Layouts Yet
-
-Even if route groups are documented, do NOT create elaborate:
-
-```text
-(catalog)/layout.tsx
-(account)/layout.tsx
-```
-
-during this phase.
-
-Phase 13.7 owns layout system implementation.
-
-A route group may be created only if strictly necessary to validate a routing convention, and preferably not at all during 13.6.
-
----
-
-# 41. Dynamic Segments
-
-Use:
-
-```text
-[slug]
-```
-
-or the actual identifier name rather than vague:
-
-```text
-[id]
-```
-
-when the public contract specifically uses a slug.
-
-The filesystem should communicate the route contract.
-
----
-
-# 42. Catch-All Segments
-
-Do NOT use:
-
-```text
-[...slug]
-[[...slug]]
-```
-
-for catalog routing unless a concrete hierarchical URL requirement exists.
-
-Catch-all routing often hides ambiguity.
-
-Prefer explicit route structures.
-
----
-
-# 43. Parallel Routes
+according to the Phase 13.6 routing authority.
 
 Do not introduce:
 
 ```text
-@modal
-@sidebar
-```
-
-parallel routes in Phase 13.6.
-
-Those are implementation mechanisms that should be justified by later UX requirements.
-
----
-
-# 44. Intercepting Routes
-
-Do not introduce intercepting route syntax for product modals or similar behavior.
-
-A product must have a normal independently navigable canonical page first.
-
----
-
-# 45. URL Case
-
-Canonical application paths should use:
-
-```text
-lowercase
-```
-
-Do not define mixed-case routes.
-
-Use:
-
-```text
-/made-to-order
-```
-
-not:
-
-```text
-/MadeToOrder
+?q=
+?query=
+?keyword=
 ```
 
 ---
 
-# 46. Multiword Segments
+# 24. Account Entry Point
 
-Use:
-
-```text
-kebab-case
-```
-
-for multiword static route segments.
-
-Example:
+The header may provide an account entry point consistent with the reserved:
 
 ```text
-/made-to-order
+/account
 ```
 
-not:
+namespace.
 
-```text
-/made_to_order
-/madeToOrder
-```
+Do not implement authentication behavior.
+
+Do not integrate Clerk.
+
+Do not determine signed-in state during this phase.
+
+If an account link would currently lead to an unimplemented route, do not expose a broken active navigation link merely to fill header space.
+
+Support the structural slot cleanly.
 
 ---
 
-# 47. Trailing Slash Policy
+# 25. No Cart Icon
 
-Inspect `next.config.*`.
+The current production policy is request-first.
 
-Choose one consistent policy based on existing Next.js behavior.
-
-Do not add trailing-slash redirects merely for preference.
-
-Document whether canonical URLs are conceptually:
+Therefore do NOT add:
 
 ```text
-/products
+cart icon
+cart count
+mini-cart
+shopping bag
+checkout shortcut
 ```
 
-rather than:
+to the site shell.
 
-```text
-/products/
-```
-
-if that matches the existing configuration.
+The routing authority explicitly keeps transactional commerce inactive.
 
 ---
 
-# 48. Route Constants
+# 26. No Wishlist Icon
 
-Do NOT automatically create a giant:
+Do not add wishlist/favourites functionality merely because furniture websites commonly have it.
 
-```text
-ROUTES
-```
-
-object containing every possible path.
-
-Use route helpers/constants only where they provide actual type safety or prevent repeated dynamic URL construction.
-
-Static links such as:
-
-```tsx
-<Link href="/products">
-```
-
-do not necessarily need abstraction.
+It is not part of the current approved website scope.
 
 ---
 
-# 49. Dynamic Route Helpers
+# 27. Header Icon Policy
 
-A small typed helper may eventually be justified for dynamic paths:
+Web icons must use:
 
-```ts
-productPath(product.slug)
+```text
+@mui/icons-material
 ```
 
-but do not implement helpers for pages that do not exist unless Phase 13.6 needs them for a contract/test.
+only.
 
-Avoid speculative abstraction.
+Do not add:
+
+```text
+lucide-react
+react-icons
+Heroicons
+Font Awesome
+custom decorative SVG icons
+emoji UI icons
+```
+
+Icon-only interactive controls require accessible names.
+
+Decorative icons should be hidden from assistive technology.
 
 ---
 
-# 50. No Router Service
+# 28. Desktop Category Navigation
 
-Do not create:
+Provide structural support for category-led furniture navigation.
+
+The top-level navigation should reflect the actual furniture taxonomy rather than copied retailer categories.
+
+Inspect the authoritative category taxonomy.
+
+Likely high-level concepts include existing project categories such as:
 
 ```text
-RouterService
-NavigationManager
-RouteRepository
+Living Room
+Bedroom
+Dining Room & Kitchen
+Office
+Outdoor
+Kids
+Entryway & Hallway
+Lighting
+Decor
+Storage
+Hybrid & Multi-purpose
 ```
 
-The App Router already provides navigation infrastructure.
+Use actual authoritative taxonomy.
+
+Do not blindly render every taxonomy node into the top navigation.
 
 ---
 
-# 51. Link Component
+# 29. Navigation Density
 
-Future internal navigation should use:
+A premium header should not become a database dump.
 
-```text
-next/link
-```
+Determine a sustainable top-level navigation strategy.
 
-or MUI composition with Next Link where required.
-
-Do not use raw:
-
-```html
-<a href="/products">
-```
-
-for routine internal navigation if it defeats Next.js navigation behavior.
-
-External links remain normal anchors.
-
----
-
-# 52. MUI + Next Link
-
-Document the convention for components that need both:
+If the taxonomy contains more items than comfortably fit:
 
 ```text
-MUI visual behavior
+prioritize core categories
 +
-Next.js navigation
+provide a controlled "More" / discovery mechanism
 ```
 
-Prefer semantic composition rather than click handlers that call `router.push()` for ordinary links.
+only if consistent with the approved IA.
 
-A navigation action should remain a link when it semantically is a link.
+Do not shrink text to force everything into one row.
+
+Do not wrap category navigation onto two chaotic lines.
 
 ---
 
-# 53. Button vs Link
+# 30. Category Navigation Is Data-Driven Eventually
 
-Preserve Phase 12.6 semantics:
+Do not hard-code an entirely separate frontend taxonomy that can drift from Laravel.
 
-```text
-navigation
-→ link
+However, Phase 13.7 does NOT need to implement catalog API fetching merely to establish shell geometry.
 
-action
-→ button
-```
+If live category navigation belongs to Group N, establish the component/layout contract now and defer data integration.
 
-Do not style a `<div>` or button as a fake navigation link when an anchor is semantically correct.
+Do not create fake category IDs/slugs.
 
 ---
 
-# 54. Programmatic Navigation
+# 31. Category Links
 
-Use:
+Once real category links are implemented, they must use:
 
 ```text
-router.push()
-router.replace()
+/categories/[slug]
 ```
 
-only when navigation is caused by application logic rather than an ordinary link.
+with Laravel-returned slugs.
 
-Do not make every product card navigation depend on an `onClick`.
+Never generate slugs from labels in the browser.
 
 ---
 
-# 55. Server Components by Default
+# 32. Mega Menu Architecture
 
-Route/page files should remain:
+The desktop layout may support a future furniture-specific mega menu.
+
+Conceptually:
 
 ```text
-Server Components by default
+LIVING ROOM
+────────────────────────────────────────────
+
+Seating            Tables            Storage
+Sofas              Coffee Tables     TV Units
+Lounge Chairs      Side Tables       Cabinets
+Accent Chairs      Console Tables    Shelving
+
+                              Editorial image
+                              Explore Living →
 ```
 
-Do not put:
+This is a **layout capability**, not permission to build the final data-driven menu now.
+
+---
+
+# 33. Mega Menu Scope
+
+If a minimal generic mega-menu primitive is necessary for layout validation, it may be implemented.
+
+But do NOT:
+
+```text
+fetch category hierarchy
+invent merchandising images
+create final category copy
+build promotional menu cards
+create retailer-specific menu content
+```
+
+during Phase 13.7.
+
+Prefer structural primitives with test fixtures/reference data where needed.
+
+---
+
+# 34. Mega Menu Interaction
+
+Any implemented dropdown/mega-menu behavior must support:
+
+```text
+keyboard access
+focus management
+Escape dismissal
+pointer interaction
+logical tab order
+visible focus
+```
+
+Do not implement hover-only navigation.
+
+---
+
+# 35. Avoid Hover Traps
+
+A user moving the pointer between navigation trigger and menu content should not encounter a fragile tiny hover gap.
+
+If hover behavior is implemented, keyboard/click behavior must remain first-class.
+
+Do not make navigation dependent exclusively on pointer hover.
+
+---
+
+# 36. Mobile Header
+
+Mobile should use the same visual language but not mechanically shrink the desktop header.
+
+Conceptually:
+
+```text
+┌───────────────────────────────┐
+│ Menu    Logo      Search/User │
+└───────────────────────────────┘
+```
+
+Exact composition should follow content priority and available width.
+
+---
+
+# 37. Mobile Navigation
+
+Desktop category navigation should collapse into a mobile navigation mechanism.
+
+Likely:
+
+```text
+menu trigger
+→ drawer/sheet
+→ category navigation
+→ utility links
+```
+
+Use MUI primitives where appropriate.
+
+Do not invent a separate mobile information architecture.
+
+---
+
+# 38. Mobile Drawer
+
+If a drawer is implemented:
+
+- use MUI's established primitive rather than custom overlay infrastructure;
+- preserve keyboard focus;
+- close on Escape;
+- restore focus appropriately;
+- label the drawer/navigation;
+- provide an explicit close mechanism;
+- avoid nested interaction traps.
+
+---
+
+# 39. Mobile Category Hierarchy
+
+Do not display the entire taxonomy as one enormous flat list.
+
+If hierarchy is needed, use controlled disclosure.
+
+But do not overbuild complex nested navigation before actual category data integration.
+
+---
+
+# 40. Mobile Search
+
+Search must remain easy to discover on mobile.
+
+Do not hide it three levels deep inside the menu.
+
+However, final search interaction belongs to Phase 14.5.
+
+---
+
+# 41. Sticky Header
+
+Evaluate whether a restrained sticky header improves furniture browsing.
+
+If implemented:
+
+```text
+position: sticky
+```
+
+is preferred over complex scroll-listener JavaScript.
+
+Avoid:
+
+```text
+header shrinks on scroll
+logo morphs
+nav animates away
+parallax header
+scroll direction detection
+```
+
+unless later explicitly approved.
+
+---
+
+# 42. Sticky Elevation
+
+A sticky header may gain subtle separation when necessary.
+
+Use approved elevation/border/surface tokens.
+
+Do not add:
+
+```text
+heavy shadow
+blurred glass
+backdrop-filter spectacle
+```
+
+---
+
+# 43. Header Heights
+
+Do not invent dozens of arbitrary heights.
+
+Header geometry should derive from:
+
+```text
+content
+spacing tokens
+control sizing
+logo proportions
+```
+
+rather than magic numbers.
+
+If fixed/min heights are needed, use the smallest coherent set.
+
+---
+
+# 44. Main Content Region
+
+The layout system must provide a predictable content region.
+
+Pages should not each invent their own:
+
+```text
+max-width
+horizontal padding
+center alignment
+```
+
+---
+
+# 45. Content Container Primitive
+
+Create a reusable content-width primitive if one does not already exist.
+
+Conceptually:
+
+```text
+<ContentContainer>
+  {children}
+</ContentContainer>
+```
+
+It should own:
+
+```text
+maximum readable/site width
+horizontal gutters
+centering
+responsive gutter behavior
+```
+
+Use repository naming conventions.
+
+---
+
+# 46. Container Ownership
+
+The global shell should NOT force every page section into the same width.
+
+Furniture sites require both:
+
+```text
+contained content
+full-bleed editorial imagery
+```
+
+Therefore the layout system should support both intentionally.
+
+---
+
+# 47. Full-Bleed Composition
+
+Support future composition such as:
+
+```text
+FULL BLEED HERO
+────────────────────────────
+
+       contained text
+
+────────────────────────────
+
+contained product grid
+
+────────────────────────────
+
+FULL BLEED EDITORIAL IMAGE
+```
+
+without pages resorting to negative-margin hacks.
+
+Do NOT build the hero itself.
+
+---
+
+# 48. Section Primitive
+
+If justified, establish a lightweight section layout primitive controlling:
+
+```text
+vertical section spacing
+optional content width
+semantic section composition
+```
+
+Do not make a giant:
+
+```text
+Section
+```
+
+component with 25 variants.
+
+Keep it structural.
+
+---
+
+# 49. Page Container vs Section Container
+
+Avoid ambiguity.
+
+If both concepts exist, clearly define:
+
+```text
+Page/content container
+→ horizontal site geometry
+
+Section
+→ vertical composition / semantic grouping
+```
+
+Do not let both independently set arbitrary widths and padding.
+
+---
+
+# 50. Grid Foundation
+
+The layout system may establish generic grid primitives/configuration needed by future pages.
+
+Do NOT build the product grid.
+
+A generic responsive layout grid can define:
+
+```text
+columns
+gaps
+alignment
+```
+
+without knowing product cards.
+
+---
+
+# 51. Product Grid Ownership
+
+Actual:
+
+```text
+product card count
+product grid breakpoints
+listing behavior
+filter sidebar relationship
+```
+
+belong to Phase 14.3 / 14.6.
+
+Do not prematurely encode them into the global shell.
+
+---
+
+# 52. Editorial Layout Capability
+
+The layout system should allow asymmetric editorial compositions later:
+
+```text
+image + text
+text + image
+large image + narrow copy
+```
+
+without creating one-off page CSS.
+
+Do not implement actual editorial homepage sections.
+
+---
+
+# 53. Width Philosophy
+
+Avoid an overly narrow SaaS/dashboard container.
+
+Furniture imagery needs room.
+
+Likewise avoid uncontrolled edge-to-edge text.
+
+The system should support:
+
+```text
+wide visual canvas
++
+controlled readable text measure
+```
+
+as separate concepts.
+
+---
+
+# 54. Text Measure
+
+If a reusable readable-text measure is needed, establish it structurally.
+
+Long editorial copy should not stretch across the full desktop canvas.
+
+Do not invent typography sizes; Group L owns typography.
+
+---
+
+# 55. Layout Spacing
+
+All shell spacing must use approved design tokens/theme mappings.
+
+Do not introduce arbitrary values such as:
+
+```text
+19px
+37px
+53px
+```
+
+because they happen to look good.
+
+If an approved token exists, use it.
+
+---
+
+# 56. MUI `sx` Policy
+
+Follow `COMPONENTS.md`.
+
+Do not turn every layout element into:
 
 ```tsx
-'use client';
+sx={{
+  ...
+}}
 ```
 
-on a page merely because a child eventually needs interaction.
+with one-off visual values.
 
-Keep client boundaries as low as practical.
+Use theme/token-backed structural styling.
+
+Local `sx` is acceptable only under the established policy.
 
 ---
 
-# 56. `useRouter`
+# 57. Breakpoints
+
+Use the existing canonical breakpoints mapped through the MUI theme.
+
+Do NOT introduce a second set such as:
+
+```text
+mobile = 700
+tablet = 950
+desktop = 1234
+```
+
+unless those are already canonical tokens.
+
+---
+
+# 58. Phase 13.9 Boundary
+
+Phase 13.7 must make the shell structurally responsive enough to function.
+
+But Phase:
+
+```text
+13.9 — Responsive foundation
+```
+
+still owns broader responsive-system validation and conventions.
+
+Therefore:
+
+```text
+13.7
+→ responsive shell implementation
+
+13.9
+→ systematic responsive behavior audit/foundation
+```
+
+Do not consume all of 13.9's scope here.
+
+---
+
+# 59. Footer Architecture
+
+Implement a reusable footer structure appropriate for a furniture business.
+
+Conceptually support groups such as:
+
+```text
+Furniture
+Services
+Help
+About
+Contact
+Legal
+```
+
+But only expose links/routes that actually exist or are deliberately safe placeholders without broken navigation.
+
+---
+
+# 60. Footer Restraint
+
+Do not fill the footer with generic ecommerce boilerplate just because competitors have it.
+
+Do NOT invent:
+
+```text
+Rewards
+Affiliate Program
+Investor Relations
+Gift Cards
+Careers
+Press
+Trade Program
+```
+
+without approved business requirements.
+
+---
+
+# 61. Footer Category Links
+
+If actual category links are eventually rendered, use the authoritative category routes.
+
+Do not generate fake category slugs.
+
+---
+
+# 62. Footer Services
+
+The architecture should support legitimate business concepts such as:
+
+```text
+Made to Order
+Furniture Requests
+General Enquiries / Contact
+```
+
+because these exist in the project.
+
+Do not turn MADE_TO_ORDER into an error/help link.
+
+It is a first-class offering.
+
+---
+
+# 63. Footer Contact Information
+
+Do not invent:
+
+```text
+phone numbers
+email addresses
+showroom addresses
+opening hours
+social accounts
+```
+
+If business contact information is not authoritative in the repository, provide the structural slot or omit it.
+
+Never fabricate business details.
+
+---
+
+# 64. Newsletter
+
+Do not add a newsletter subscription form unless newsletter functionality is an approved requirement.
+
+A decorative email input that does nothing is prohibited.
+
+---
+
+# 65. Social Media
+
+Do not add generic Instagram/Facebook/Pinterest icons without authoritative business URLs.
+
+Do not use `href="#"`.
+
+---
+
+# 66. Legal Links
+
+Do not create broken:
+
+```text
+Privacy
+Terms
+Returns
+```
+
+links merely to make the footer look complete.
+
+If those pages do not exist, either omit them or render appropriate non-link structural content only if justified.
+
+---
+
+# 67. Footer Responsive Behavior
+
+Desktop may use multi-column groups.
+
+Mobile may collapse/reflow them.
+
+Do not automatically use accordion behavior unless it genuinely improves the layout and accessibility.
+
+If accordion behavior is used, use MUI semantics and keyboard support.
+
+---
+
+# 68. Background Surfaces
+
+Use the established semantic surfaces.
+
+Likely hierarchy:
+
+```text
+site canvas
+→ warm ivory
+
+product/content relief
+→ paper
+
+editorial section
+→ editorial surface
+
+inverse region
+→ charcoal where justified
+```
+
+Do not make every section alternate beige/white/brown.
+
+Surface changes should communicate composition.
+
+---
+
+# 69. Footer Surface
+
+Choose footer treatment from approved semantic surfaces.
+
+A restrained inverse footer may be appropriate if supported by the design system, but do not introduce a new footer-specific color.
+
+Verify text/icon/focus contrast.
+
+---
+
+# 70. Brown Accent
+
+Deep brown remains a controlled brand accent.
+
+Do NOT make:
+
+```text
+entire header brown
+all nav links brown
+all footer headings brown
+all icons brown
+all borders brown
+```
+
+The visual system should remain charcoal-led and photography-led.
+
+---
+
+# 71. Header Surface
+
+Prefer a calm surface that supports furniture photography and navigation clarity.
 
 Do not use:
 
 ```text
-useRouter
+gradient header
+glassmorphism
+blurred translucent nav
+ornamental texture
 ```
 
-where:
+---
+
+# 72. Borders
+
+Use subtle token-backed borders only where structural separation needs them.
+
+Do not outline every header region and footer column.
+
+Whitespace should do much of the work.
+
+---
+
+# 73. Elevation
+
+Follow Group L:
 
 ```text
-<Link>
+flat first
 ```
 
-is sufficient.
+Header/footer/container surfaces should not become floating cards.
 
-`useRouter` requires a Client Component and should have a concrete interaction reason.
-
----
-
-# 57. Search Params
-
-Future server-renderable pages should accept App Router search parameters through the framework-supported API for the installed Next.js version.
-
-Do not adopt stale examples from older Next.js versions.
-
-Verify against the installed Next.js version before documenting signatures.
-
----
-
-# 58. Dynamic Params
-
-Likewise, use the parameter API supported by the installed Next.js version.
-
-Do not copy old synchronous `params` examples if the installed framework version uses different typing/behavior.
-
-The routing convention must match the actual version in the repository.
-
----
-
-# 59. No Global Client Router State
-
-Do not mirror URL state into a global React context/store merely for navigation.
-
-The URL itself is authoritative for:
+Elevation is reserved for genuine layers such as:
 
 ```text
-route identity
-shareable search state
-shareable filter state
-pagination
-sorting
+mobile drawer
+mega menu
+popover
+```
+
+---
+
+# 74. Radius
+
+Do not wrap:
+
+```text
+header
+footer
+main content
+navigation bar
+page container
+```
+
+in giant rounded cards.
+
+Architectural page regions should remain structurally clean.
+
+---
+
+# 75. Motion
+
+Navigation motion must remain quiet.
+
+Appropriate:
+
+```text
+short fade
+subtle opacity
+controlled menu transition
+underline/color transition
+```
+
+Avoid:
+
+```text
+bouncing
+spring animation
+navigation scaling
+large slide spectacle
+rotating icons
+```
+
+Honor reduced motion.
+
+---
+
+# 76. Photography Boundary
+
+The shell should provide room for photography without introducing placeholder stock photography.
+
+Do not download random furniture imagery during Phase 13.7.
+
+Group N will own actual page imagery/content.
+
+---
+
+# 77. Accessibility Authority
+
+Follow:
+
+```text
+frontend/design-system/ACCESSIBILITY.md
+```
+
+The layout system must establish accessibility structurally rather than trying to repair it later.
+
+---
+
+# 78. Landmark Audit
+
+Verify:
+
+```text
+header landmark
+navigation landmark(s)
+main landmark
+footer landmark
+```
+
+are meaningful and not unnecessarily duplicated.
+
+If multiple `nav` elements exist, provide useful accessible labels where needed.
+
+---
+
+# 79. Navigation Labels
+
+For example:
+
+```text
+Primary navigation
+Furniture categories
+Footer navigation
+```
+
+may be appropriate.
+
+Do not over-label every container.
+
+---
+
+# 80. Heading Ownership
+
+The global shell should not introduce a fake page `<h1>`.
+
+Each future page owns its primary heading.
+
+Header/footer headings must not disrupt logical page heading hierarchy.
+
+---
+
+# 81. Keyboard Navigation
+
+Verify keyboard users can:
+
+```text
+reach skip link
+reach logo/home
+reach navigation
+operate any menu
+reach search entry
+reach account entry
+reach main content
+reach footer
+```
+
+without pointer input.
+
+---
+
+# 82. Focus Visibility
+
+Every interactive shell element must retain visible focus.
+
+Never use:
+
+```css
+outline: none;
+```
+
+without the approved replacement.
+
+Use the established focus token semantics.
+
+---
+
+# 83. Focus Order
+
+DOM order should broadly match visual order.
+
+Do not use CSS ordering tricks that cause keyboard focus to jump unpredictably.
+
+---
+
+# 84. Touch Targets
+
+Mobile controls should meet the established accessibility target-size requirements.
+
+Do not create tiny:
+
+```text
+menu
+search
+close
+account
+```
+
+icon targets merely to preserve visual minimalism.
+
+---
+
+# 85. Zoom/Reflow
+
+The shell must remain usable under text zoom and browser zoom.
+
+Do not use fixed-height navigation regions that clip text when fonts enlarge.
+
+Use:
+
+```text
+min-height
+content-driven sizing
 ```
 
 where appropriate.
 
 ---
 
-# 60. Ephemeral State
+# 86. Reduced Motion
 
-Do not put every UI detail into the URL.
-
-Examples of generally ephemeral state:
+Any shell transitions must respect:
 
 ```text
-temporary hover
-accordion animation progress
-menu open state
+prefers-reduced-motion
+```
+
+through the established design-system approach.
+
+Do not create a second reduced-motion mechanism.
+
+---
+
+# 87. Mobile Menu Scroll
+
+If the mobile navigation exceeds viewport height:
+
+```text
+menu content must scroll
+```
+
+without trapping the page or hiding close controls.
+
+Account for safe viewport behavior.
+
+---
+
+# 88. Body Scroll
+
+If MUI Drawer/Modal handles body scroll locking, use its established behavior.
+
+Do not implement a custom global:
+
+```text
+document.body.style.overflow
+```
+
+mechanism unless unavoidable.
+
+---
+
+# 89. Z-Index
+
+Use the established theme/token z-index hierarchy.
+
+Do not introduce:
+
+```text
+z-index: 999999
+```
+
+for navigation.
+
+---
+
+# 90. Server/Client Boundaries
+
+Keep static shell components as Server Components where possible.
+
+Likely server-capable:
+
+```text
+SiteShell
+Footer
+logo composition
+static header composition
+content container
+section primitives
+```
+
+Client boundaries should be introduced only for genuinely interactive behavior such as:
+
+```text
+mobile drawer
+interactive mega menu
+```
+
+---
+
+# 91. Do Not Make Entire Header Client-Side Automatically
+
+If only the mobile menu requires state, isolate that behavior.
+
+Preferred conceptual architecture:
+
+```text
+SiteHeader            Server where practical
+ ├── Brand
+ ├── DesktopNav
+ └── MobileNavTrigger/Navigation  Client boundary
+```
+
+Exact implementation may vary with MUI requirements.
+
+Keep the client surface small.
+
+---
+
+# 92. No Global Navigation State
+
+Do not introduce Redux/Zustand/Context merely for:
+
+```text
+menu open
+mega menu open
+```
+
+Local component state is sufficient.
+
+Expected new dependencies:
+
+```text
+NONE
+```
+
+---
+
+# 93. No API Fetching in Global Layout Without Need
+
+Do not make every website request block on unnecessary API calls from the root layout.
+
+If live category navigation would require catalog fetching, assess whether it belongs in Group N.
+
+The global shell should remain robust and cache-friendly.
+
+---
+
+# 94. No Auth Fetching Yet
+
+Do not call Clerk or Laravel customer endpoints from the layout.
+
+Authenticated account state belongs to later phases.
+
+---
+
+# 95. No Search API Fetching
+
+The header must not query Laravel during 13.7.
+
+---
+
+# 96. No Product API Fetching
+
+Do not fetch featured products, categories, promotions, or recommendations from the root layout.
+
+---
+
+# 97. Layout Primitive API Discipline
+
+Layout primitives should have narrow APIs.
+
+Good conceptual examples:
+
+```tsx
+<ContentContainer>
+<SiteSection>
+```
+
+Avoid:
+
+```tsx
+<UniversalLayout
+  productGrid
+  hero
+  category
+  inverse
+  marketing
+  checkout
+  dashboard
+  editorial
+  ...
+/>
+```
+
+---
+
+# 98. Semantic Props
+
+Props should describe layout meaning rather than arbitrary CSS values.
+
+Prefer conceptually:
+
+```text
+width="wide"
+surface="canvas"
+```
+
+only if these variants are actually justified by the design contract.
+
+Avoid:
+
+```text
+paddingTop={37}
+maxWidth={1372}
+borderRadius={13}
+```
+
+---
+
+# 99. Escape Hatch Discipline
+
+Do not expose unrestricted styling props merely to make primitives flexible.
+
+The point of the layout system is to prevent future page-level drift.
+
+Follow the component-convention escape-hatch policy.
+
+---
+
+# 100. Composition Over Configuration
+
+Prefer small composable primitives rather than one giant configurable layout engine.
+
+For example:
+
+```text
+SiteShell
+ContentContainer
+SiteSection
+```
+
+is preferable to a 50-prop page builder.
+
+---
+
+# 101. Reference Catalog
+
+Update the existing design-system/reference catalog only if needed to demonstrate layout primitives or shell states.
+
+Do not build a second Storybook-like environment.
+
+Any fixture must remain:
+
+```text
+token-driven
+non-production
+clearly demonstrative
+```
+
+---
+
+# 102. Layout Reference Fixtures
+
+If useful, demonstrate:
+
+```text
+desktop shell geometry
+mobile shell geometry
+contained vs full-bleed sections
+footer grouping
 focus state
+mobile drawer state
 ```
 
-URL state should represent meaningful navigational state.
+Do not turn the reference fixture into the homepage.
 
 ---
 
-# 61. Product Variant URL State
+# 103. No Fake Product Grid
 
-Do not decide yet whether:
+A few neutral blocks may be used to demonstrate layout geometry.
+
+Do not create realistic product cards or catalogue content in 13.7.
+
+Commerce component/page ownership remains later.
+
+---
+
+# 104. Existing Root Placeholder
+
+Do not convert:
 
 ```text
-color
-fabric
-dimensions
-variant
+app/page.tsx
 ```
 
-belong in product-detail query parameters.
+into the final homepage.
 
-That decision belongs with product-detail requirements unless the frozen API/product contract already mandates it.
+It may be minimally adjusted only if necessary to validate shell composition.
 
-Document as:
+The final homepage remains Phase 14.1.
+
+---
+
+# 105. Layout Integration
+
+The site shell should integrate at the appropriate App Router layout level.
+
+Do not create placeholder route files merely to test it.
+
+The current `/` placeholder should naturally render within the shell.
+
+---
+
+# 106. Route Groups
+
+Phase 13.6 allowed a future route group only for a genuine layout boundary.
+
+Evaluate whether one is actually necessary now.
+
+If the entire current website uses the same public shell, the root layout may be sufficient.
+
+Do not introduce:
 
 ```text
-DEFERRED TO 14.4
+(marketing)
+(store)
+(catalog)
 ```
 
-rather than guessing.
+solely because they look architecturally sophisticated.
 
 ---
 
-# 62. SEO Boundary
+# 107. Future Account Layout
 
-Phase 13.6 defines URL structure.
+Do not implement an account-specific layout now.
 
-It does NOT implement:
-
-```text
-generateMetadata
-canonical tags
-Open Graph
-JSON-LD
-robots
-sitemap
-```
-
-Those belong to Group N.
-
-However, routing decisions must not make future SEO unnecessarily difficult.
+The layout system may be composable enough for one later, but `/account` is not implemented.
 
 ---
 
-# 63. Canonical URL Principle
-
-Document that every indexable public resource should eventually have one canonical URL.
-
-Do not implement canonical metadata yet.
-
----
-
-# 64. Redirects
-
-Do not create speculative redirects for route aliases that have never existed publicly.
-
-Redirects should solve:
-
-```text
-real legacy URL
-real renamed route
-real canonicalization requirement
-```
-
-not hypothetical future migrations.
-
----
-
-# 65. Permanent vs Temporary Redirects
-
-When future redirects are needed, their permanence must be intentional.
-
-Do not default every redirect to permanent.
-
-No redirect implementation is expected in 13.6 unless reconciling an existing route conflict.
-
----
-
-# 66. Backend API Routes Are Separate
-
-Browser routes:
-
-```text
-/products
-/categories/...
-/search
-```
-
-are NOT Laravel API routes.
-
-Laravel remains under:
-
-```text
-/api/v1/...
-```
-
-Do not expose backend paths directly as user-facing website URLs.
-
----
-
-# 67. No Next.js API Mirror
+# 108. Future Auth Layout
 
 Do not create:
 
 ```text
-/app/api/products
-/app/api/categories
+(auth)/layout.tsx
 ```
 
-to mirror Laravel.
-
-Phase 13.5 already established the API client boundary.
-
-Laravel remains the backend API.
+during this phase merely because sign-in/sign-up are reserved.
 
 ---
 
-# 68. API Identifier Alignment
+# 109. Future Product Layout
 
-Where public website routes refer to Laravel resources, use public identifiers compatible with the API contract.
-
-Do not create a frontend-only identifier mapping table.
-
----
-
-# 69. Reference Identifiers
-
-Business references such as:
+Do not create:
 
 ```text
-OD-xxxxx
-REQ-xxxxxxxxxx
-PAY-xxxxxxxx
+products/layout.tsx
 ```
 
-have domain meaning.
+unless there is an actual shared layout requirement once Group N starts.
 
-Do not assume they automatically belong in public URLs.
+---
 
-For each future authenticated resource route, consider:
+# 110. Header Navigation Content Authority
+
+Do not create a permanent hard-coded taxonomy copy inside a layout component without documenting ownership.
+
+If temporary fixture navigation is needed for layout testing, isolate it clearly as fixture/demo data.
+
+The future production category navigation must derive from authoritative catalog data or an explicitly approved navigation configuration.
+
+---
+
+# 111. Navigation Configuration
+
+If a small static configuration is genuinely needed for non-category shell links, keep it typed and intentional.
+
+Do not build a CMS/navigation framework.
+
+---
+
+# 112. Link Integrity
+
+No production shell element should render:
 
 ```text
-privacy
-enumerability
-authorization
-404 masking
-shareability
+href="#"
 ```
 
-before using references.
+as a fake destination.
 
-Phase 13.6 may document this principle without creating such routes.
+No broken placeholder navigation.
 
----
-
-# 70. Furniture Request Privacy
-
-Anonymous furniture requests must never gain publicly accessible detail URLs merely because a request reference exists.
-
-A reference is not authentication.
-
-Document this explicitly.
-
----
-
-# 71. Enquiry Privacy
-
-The same rule applies to enquiries.
-
-Do not expose enquiry detail routes publicly without authentication/authorization architecture.
-
----
-
-# 72. Account Authorization
-
-Route names do not provide authorization.
-
-Future:
+If a destination is not implemented:
 
 ```text
-/account/*
+omit the active link
+or render non-interactive structural content
 ```
 
-must still enforce Clerk identity and Laravel ownership/authorization.
-
-Do not treat URL obscurity as security.
+according to context.
 
 ---
 
-# 73. Middleware
+# 113. External Links
 
-Do NOT implement Clerk middleware during Phase 13.6.
+External destinations should use ordinary anchor semantics.
 
-Do not introduce auth middleware merely to reserve account routes.
-
-Authentication routing protection belongs to the appropriate auth/account implementation phase.
-
----
-
-# 74. Middleware for URL Normalization
-
-Avoid middleware for simple routing conventions where Next.js native routing/configuration suffices.
-
-Do not build a universal URL rewriting layer.
-
----
-
-# 75. Locale Routing
-
-Do not introduce:
+Use:
 
 ```text
-/en
-/sw
-/en-US
+target="_blank"
 ```
 
-locale prefixes unless internationalization is already approved.
+only when there is a concrete UX reason.
 
-Do not pre-architect i18n speculatively.
-
----
-
-# 76. Currency in URLs
-
-Do not add currency to route paths/query parameters merely because prices use TZS.
-
-Currency handling is not a routing concern unless future multi-currency requirements explicitly require it.
+Do not automatically force external links into new tabs.
 
 ---
 
-# 77. Tenant Routing
+# 114. Current Route Highlighting
 
-This is not a multi-tenant storefront.
+Do not introduce complex active-route infrastructure yet.
 
-Do not introduce:
+If category navigation does not exist as real routes yet, active state can wait.
+
+When implemented later, active state must not rely on color alone.
+
+---
+
+# 115. Footer Copyright
+
+If copyright text is included, avoid hard-coding a year that will become stale if a simple safe strategy exists.
+
+Do not require a Client Component merely to compute the year.
+
+Server rendering can handle it.
+
+---
+
+# 116. Performance
+
+The shell appears on essentially every page.
+
+Keep it lean.
+
+Avoid:
 
 ```text
-/store/[tenant]
-/shop/[seller]
+large client bundles
+animation libraries
+unnecessary context providers
+large navigation JSON in client code
+heavy icon imports
+duplicate font loading
 ```
 
-architecture.
+---
+
+# 117. MUI Icon Imports
+
+Import only icons actually used.
+
+Do not import the entire icon namespace.
 
 ---
 
-# 78. Café/Campus Concepts
+# 118. Logo/Image Handling
 
-Do not leak concepts from unrelated projects into this furniture application.
+If using Next.js Image for the logo, follow the installed Next.js image API.
 
-Routing terminology must remain furniture-domain specific.
+Do not introduce image optimization policy for product photography; Phase 14.11 owns broader image/performance work.
 
 ---
 
-# 79. Route Documentation
+# 119. CLS
 
-Create one concise routing authority for the website.
+The header/logo should have stable geometry to avoid obvious layout shift.
 
-Preferred location:
+Provide known dimensions/aspect handling where appropriate.
+
+---
+
+# 120. Hydration
+
+Interactive navigation must not produce avoidable server/client markup differences.
+
+No browser-only condition should alter the initial shell structure unpredictably.
+
+---
+
+# 121. Mobile Detection
+
+Do NOT use:
+
+```text
+window.innerWidth
+```
+
+during render to decide between desktop/mobile shells.
+
+Use responsive CSS/MUI breakpoint behavior.
+
+If behavior genuinely requires client media queries, isolate them carefully and avoid hydration mismatch.
+
+---
+
+# 122. Duplicate Navigation
+
+If both desktop and mobile structures exist in the DOM for CSS breakpoint switching, ensure:
+
+```text
+hidden content is truly unavailable appropriately
+focus does not enter invisible navigation
+accessibility tree does not become confusing
+```
+
+Prefer clean responsive composition.
+
+---
+
+# 123. SEO Structural Semantics
+
+Although metadata is Group N, the shell should use semantic HTML that supports future crawlability.
+
+Do not make core navigation dependent on JavaScript-only click handlers.
+
+---
+
+# 124. No Structured Data
+
+Do not add:
+
+```text
+Organization JSON-LD
+WebSite JSON-LD
+Breadcrumb JSON-LD
+```
+
+during 13.7.
+
+Phase 14.8 owns structured data.
+
+---
+
+# 125. No Sitemap/Robots
+
+Do not add:
+
+```text
+sitemap.ts
+robots.ts
+```
+
+during this phase.
+
+---
+
+# 126. No Final Internal-Linking Strategy
+
+Header/footer navigation naturally creates structural links.
+
+But Phase 14.10 owns broader SEO/internal-linking strategy.
+
+Do not attempt to solve it here.
+
+---
+
+# 127. Design Review
+
+Review the implemented shell against these questions:
+
+```text
+Does it feel like a furniture website?
+
+Does photography have room to dominate later?
+
+Is the header immediately understandable?
+
+Can users discover categories easily?
+
+Is search prominent without dominating?
+
+Is MADE_TO_ORDER structurally first-class?
+
+Does the shell avoid inactive transactional commerce?
+
+Does desktop feel spacious?
+
+Does mobile feel intentionally composed rather than compressed?
+
+Does the footer provide useful orientation without generic filler?
+
+Does it look like SL Furnitures rather than Urban Ladder?
+
+Does it avoid generic AI storefront patterns?
+```
+
+All should be satisfactorily answered.
+
+---
+
+# 128. Anti-AI-Slop Audit
+
+Explicitly audit against:
+
+```text
+excessive rounded cards
+random pill controls
+decorative gradients
+glassmorphism
+blur
+floating panels
+oversized shadows
+decorative blobs
+random icons beside headings
+excessive brown
+badge clutter
+centered-everything layouts
+fake statistics
+generic "premium quality" filler
+sale countdowns
+unapproved promotional strips
+```
+
+None should appear merely to make the shell look "designed."
+
+---
+
+# 129. Urban Ladder Structural Audit
+
+Report which structural ideas were adopted.
+
+For example:
+
+```text
+furniture-oriented category navigation
+prominent discovery/search
+multi-level header hierarchy
+large catalogue-oriented navigation capability
+structured footer
+```
+
+Then explicitly report what was NOT copied:
+
+```text
+visual styling
+brand identity
+promotional density
+sale mechanics
+exact menu content
+exact dimensions
+exact typography
+exact component appearance
+```
+
+---
+
+# 130. Screenshot / Visual Verification
+
+Because this phase is visual, run the application and inspect at least representative viewport classes.
+
+At minimum:
+
+```text
+desktop
+tablet/narrow desktop
+mobile
+```
+
+Use the project's available browser/runtime workflow.
+
+Do not declare the layout visually successful from TypeScript/build alone.
+
+Check:
+
+```text
+header proportions
+navigation wrapping
+logo distortion
+horizontal overflow
+main width
+footer composition
+focus visibility
+mobile navigation
+drawer overflow
+```
+
+---
+
+# 131. Narrow Width Stress Test
+
+Test a narrow mobile viewport.
+
+Ensure:
+
+```text
+no horizontal page scroll
+no clipped logo
+no overlapping controls
+no inaccessible menu trigger
+no off-screen close button
+```
+
+---
+
+# 132. Zoom Stress Test
+
+Test meaningful browser zoom/text scaling.
+
+Ensure the header does not collapse or clip critical navigation.
+
+---
+
+# 133. Keyboard Smoke Test
+
+Manually verify:
+
+```text
+Tab
+Shift+Tab
+Enter
+Space where applicable
+Escape for overlays
+```
+
+through shell navigation.
+
+Verify skip-to-main.
+
+---
+
+# 134. Reduced-Motion Smoke Test
+
+Verify implemented navigation transitions remain usable with reduced motion enabled.
+
+---
+
+# 135. Automated Tests
+
+Use the existing frontend test infrastructure.
+
+Add focused tests where appropriate for:
+
+```text
+site-shell landmarks
+main landmark
+skip-link target
+logo/home link
+navigation accessible names
+no forbidden cart/checkout links
+mobile navigation accessibility
+drawer semantics if implemented
+layout primitive contract
+```
+
+Do not install another test runner.
+
+---
+
+# 136. Request-First Regression
+
+Add or run a regression check ensuring the production shell does NOT expose:
+
+```text
+/cart
+/checkout
+/payment
+/order-confirmation
+```
+
+through active navigation.
+
+---
+
+# 137. Routing Regression
+
+Ensure any links introduced conform to:
 
 ```text
 frontend/web/ROUTING.md
 ```
 
-unless the repository already has an appropriate architecture-document location.
-
-Do not scatter the route contract across multiple documents.
+Do not introduce undocumented website routes.
 
 ---
 
-# 80. Required Routing Matrix
+# 138. API Client Regression
 
-The routing authority should contain a table conceptually like:
+Phase 13.5 should remain untouched.
 
-| Route | Purpose | Visibility | Identifier | Implementation owner | Current state |
-|---|---|---|---|---|---|
-| `/` | Storefront homepage | Public | — | 14.1 | Reserved |
-| `/products` | Product listing | Public | — | 14.3 | Reserved |
-| `/products/[...]` | Product detail | Public | contract-defined | 14.4 | Reserved |
-| category route | Category discovery | Public | contract-defined | 14.2 | Reserved |
-| `/search` | Search | Public | query state | 14.5 | Reserved |
-| MTO route | Furniture request | Public | — | later owning phase | Reserved |
-| enquiry route | General enquiry | Public | — | later owning phase | Reserved |
-| `/account` | Customer area | Authenticated | — | later owning phase | Reserved |
-
-Use the actual route decisions established from repository evidence.
-
-Do not blindly copy placeholders from this prompt.
-
----
-
-# 81. Route Status Vocabulary
-
-Use a small status vocabulary such as:
-
-```text
-EXISTING
-RESERVED
-DEFERRED
-PROHIBITED
-```
-
-This helps future agents distinguish:
-
-```text
-documented route
-```
-
-from:
-
-```text
-implemented route
-```
-
----
-
-# 82. Ownership Column
-
-Every reserved route should identify the phase or feature group that owns its implementation where known.
-
-This prevents Phase 13.6 documentation from being mistaken for permission to build it.
-
----
-
-# 83. Deferred Commerce Routes
-
-Explicitly document transactional routes affected by request-first production policy as:
-
-```text
-DEFERRED
-```
-
-Examples if relevant:
-
-```text
-/cart
-/checkout
-/account/orders
-/payment-related routes
-```
-
-Do not create route files for them.
-
----
-
-# 84. Prohibited Routes
-
-Document obvious anti-patterns where useful, such as:
-
-```text
-/api/* as website mirror
-/admin inside customer storefront
-/public request detail by reference
-```
-
-Do not create an enormous blacklist.
-
----
-
-# 85. Filesystem Plan
-
-The routing authority may show a **future conceptual** App Router tree.
-
-For example:
-
-```text
-app/
-├── page.tsx
-├── products/
-│   ├── page.tsx
-│   └── [public-identifier]/
-│       └── page.tsx
-└── ...
-```
-
-Mark it clearly:
-
-```text
-planned structure
-not implemented by Phase 13.6
-```
-
-Do not create empty route files merely to mirror the diagram.
-
----
-
-# 86. No Empty Placeholder Pages
-
-Do not create:
-
-```text
-/products/page.tsx
-/categories/.../page.tsx
-/search/page.tsx
-```
-
-that merely say:
-
-```text
-Coming soon
-```
-
-This pollutes the route tree and can accidentally expose unfinished pages.
-
-Reserve routes in documentation until their owning implementation phase.
-
----
-
-# 87. Existing Root Page
-
-The existing scaffold root page may remain.
-
-Do not replace it with the final homepage.
-
-If it contains inappropriate starter residue that survived 13.1–13.4, make only the minimum cleanup.
-
----
-
-# 88. Route Collision Audit
-
-Audit planned route namespaces for collisions.
-
-Examples:
-
-```text
-/products/new
-/products/[slug]
-```
-
-could collide if `new` is a valid slug.
-
-Do not reserve static subpaths inside dynamic namespaces without considering collision semantics.
-
----
-
-# 89. Reserved Slugs
-
-Do NOT invent a global reserved-slug database unless needed.
-
-If route architecture creates a real collision risk, document the reserved namespace rule or select a structure that avoids the conflict.
-
----
-
-# 90. Slug Normalization
-
-If the API contract uses slugs, determine whether normalization occurs in Laravel.
-
-Do not independently:
-
-```text
-lowercase
-transliterate
-replace spaces
-strip punctuation
-```
-
-in the frontend unless the contract requires it.
-
-Laravel/domain authority should produce canonical resource identifiers.
-
----
-
-# 91. Invalid Identifiers
-
-Phase 13.6 does not decide UI for invalid identifiers.
-
-Future page implementation will map backend 404 to the appropriate Next.js not-found behavior.
-
-Phase 13.8 establishes error/not-found infrastructure.
-
----
-
-# 92. Accessibility
-
-Routing/navigation conventions must preserve:
-
-```text
-semantic links
-keyboard operability
-browser history
-open-in-new-tab behavior
-copy/share URL behavior
-back/forward navigation
-```
-
-Avoid click-only navigation patterns.
-
----
-
-# 93. Skip Link Boundary
-
-Phase 12.7 established the future requirement for a skip-to-main mechanism.
-
-Do NOT implement it in Phase 13.6.
-
-Phase 13.7 layout system owns the appropriate structural integration.
-
-Routing documentation may reference that dependency.
-
----
-
-# 94. Page Titles
-
-Do not implement page titles/metadata.
-
-Phase 14.7 owns SEO metadata.
-
-Routing documentation may note that route identity must provide enough context for future metadata generation.
-
----
-
-# 95. Breadcrumbs
-
-Do not implement breadcrumbs.
-
-Document that breadcrumbs are navigation/UI derived from domain hierarchy and route context, not necessarily a literal reflection of URL path segments.
-
-This is especially important for the category taxonomy.
-
----
-
-# 96. Navigation Menus
-
-Do not implement desktop/mobile menus.
-
-Phase 13.7 owns structural layout and later public UI phases own actual navigation content.
-
-13.6 only defines where links will point.
-
----
-
-# 97. Testing Strategy
-
-Because this is largely architectural, tests should target any executable routing helpers/configuration actually introduced.
-
-Do not add a testing framework just to test documentation.
-
-If no runtime routing code is added, validation may primarily consist of:
-
-```text
-routing policy checks
-route collision audit
-documentation consistency
-TypeScript
-ESLint
-production build
-existing theme/API regression suites
-```
-
----
-
-# 98. Contract Audit
-
-Cross-check documented public identifiers against:
-
-```text
-OpenAPI
-API resources
-Laravel routes
-Laravel resource serializers
-relevant models
-```
-
-Do not claim a slug exists merely because a database table contains a `name`.
-
----
-
-# 99. API Route Audit
-
-Confirm planned website route names do not accidentally duplicate backend `/api/v1` semantics in a confusing way.
-
-The distinction should remain obvious:
-
-```text
-Website:
-https://example.com/products/oak-chair
-
-API:
-https://api.example.com/api/v1/...
-```
-
-Actual deployment hostnames remain environment concerns.
-
----
-
-# 100. Request-First Audit
-
-Explicitly verify the routing document does not accidentally re-enable transactional commerce.
-
-Report:
-
-```text
-Active cart route:
-NO
-
-Active checkout route:
-NO
-
-Active payment route:
-NO
-```
-
-unless project policy has explicitly changed.
-
----
-
-# 101. Admin Boundary Audit
-
-Report:
-
-```text
-Admin routes added to customer web:
-NO
-```
-
----
-
-# 102. Clerk Boundary Audit
-
-Report:
-
-```text
-Clerk dependency changed:
-NO
-
-Auth middleware added:
-NO
-
-Sign-in UI implemented:
-NO
-```
-
-unless an existing route convention needed documentation only.
-
----
-
-# 103. API Client Boundary Audit
-
-Phase 13.6 should not modify the Phase 13.5 transport unless a genuine integration defect is discovered.
+Run its existing tests where practical.
 
 Expected:
 
 ```text
-API client implementation changed:
-NO
-```
-
-If changed, explain why.
-
----
-
-# 104. Design System Boundary
-
-Routing should not require changes to:
-
-```text
-MUI theme
-tokens
-component conventions
-accessibility authority
-Flutter mapping
-```
-
-Expected:
-
-```text
-design-system implementation changes:
+API client changes:
 NONE
 ```
 
 ---
 
-# 105. Dependencies
+# 139. Theme Regression
+
+Run the existing theme contract tests.
+
+The shell must consume the theme rather than changing it casually.
+
+---
+
+# 140. Design-System Regression
+
+Run existing:
+
+```text
+token/reference validation
+component convention validation
+accessibility checks
+icon-policy audit
+```
+
+where available.
+
+---
+
+# 141. TypeScript
+
+Run the actual repository TypeScript/typecheck command.
+
+Must pass.
+
+---
+
+# 142. ESLint
+
+Run the actual repository lint command.
+
+Must pass.
+
+---
+
+# 143. Production Build
+
+Run:
+
+```text
+the actual production build command from package.json
+```
+
+Must pass.
+
+Do not invent a command name.
+
+---
+
+# 144. `git diff --check`
+
+Must pass.
+
+---
+
+# 145. Dependencies
 
 Expected:
 
@@ -1928,61 +2508,105 @@ Expected:
 NONE
 ```
 
-Do not install routing libraries.
-
-Next.js App Router already provides the required infrastructure.
+MUI and MUI Icons already exist.
 
 Do not add:
 
 ```text
-react-router
-wouter
-TanStack Router
+navigation library
+animation library
+CSS framework
+icon library
+layout library
+carousel library
 ```
 
 ---
 
-# 106. AGENTS Guidance
+# 146. Likely Files
 
-Update `frontend/AGENTS.md` only if durable routing rules need enforcement.
+Inspect existing organization first.
 
-Useful durable rules may include:
+Potential additions may resemble:
 
 ```text
-App Router only
+frontend/web/components/layout/
+├── site-shell.tsx
+├── site-header.tsx
+├── site-footer.tsx
+├── content-container.tsx
+├── site-section.tsx
+└── mobile-navigation.tsx
+```
+
+Do NOT mechanically create all of these.
+
+Only create components justified by actual responsibilities.
+
+Possible modifications:
+
+```text
+frontend/web/app/layout.tsx
+frontend/AGENTS.md
+phases/group-M-phases.md
+docs/decisions.md
+```
+
+Do not create Group N pages.
+
+---
+
+# 147. ADR
+
+Add an ADR only if Phase 13.7 establishes a material architectural decision not already captured.
+
+A reasonable candidate could document:
+
+```text
+WEB-002 — Public Website Shell and Layout Composition
+```
+
+if needed.
+
+Potential durable decisions:
+
+```text
+furniture-commerce structural IA
+SL Furnitures visual authority
+server-first shell
+contained + full-bleed composition
+request-first header
+category navigation strategy
+minimal client interaction boundary
+```
+
+Do not add an ADR solely because previous phases had one.
+
+---
+
+# 148. AGENTS Guidance
+
+Update `frontend/AGENTS.md` only for durable rules.
+
+Potential durable rules:
+
+```text
+use canonical site shell
+do not recreate page containers
+do not bypass layout tokens
+no cart/checkout shell controls while request-first
+no fake links
+no unauthorized icon libraries
 Server Components by default
-next/link for ordinary internal navigation
-URL state for shareable filters/search/pagination
-no public internal DB IDs
-no arbitrary route aliases
-no public request/enquiry detail routes
-no active transactional routes while request-first policy applies
+interactive nav boundaries stay small
+Urban Ladder is structural reference only
 ```
 
-Avoid duplicating all of `ROUTING.md`.
+Do not duplicate this entire phase prompt.
 
 ---
 
-# 107. ADR
-
-Add an ADR only if this phase establishes a material routing architecture decision requiring historical explanation.
-
-A possible ADR might cover:
-
-```text
-resource-oriented public URLs
-stable public identifiers
-query parameters for shareable collection state
-request-first transactional-route deferral
-```
-
-Use the repository's existing ADR numbering convention.
-
-Do not create an ADR merely because every phase has had one recently.
-
----
-
-# 108. Phase Record
+# 149. Phase Record
 
 Update:
 
@@ -1993,205 +2617,331 @@ phases/group-M-phases.md
 with:
 
 ```text
-Phase 13.6
+Phase 13.7
 status
-route authority location
-canonical route decisions
-identifier decisions
-deferred routes
-validation performed
+shell architecture
+layout primitives
+header strategy
+navigation strategy
+mobile strategy
+footer strategy
+accessibility implementation
+visual verification
 scope boundaries
+validation
 ```
 
 ---
 
-# 109. Validation
-
-Run the actual available repository commands.
-
-At minimum:
-
-```text
-TypeScript
-ESLint
-production build
-git diff --check
-```
-
-Also run existing relevant regression checks for:
-
-```text
-API client
-theme contract
-```
-
-where inexpensive and available.
-
-If a routing-policy validation script already exists, run it.
-
-Do not invent fake command names.
-
----
-
-# 110. Completion Report
+# 150. Completion Report
 
 Return:
 
 ```text
-Phase 13.6 status:
+Phase 13.7 status:
 PASS / BLOCKED
 
 
-ROUTING AUTHORITY
+SITE SHELL
 
-Routing document:
+Canonical shell:
 <path>
 
-Router:
-Next.js App Router / FAIL
+Root layout:
+<path>
 
-Pages Router introduced:
-NO / FAIL
-
-Routing library added:
-NONE / FAIL
-
-Server Components default:
+Root layout remains Server Component:
 YES / NO
 
+Main landmark:
+PASS / FAIL
 
-PUBLIC ROUTES
+Skip-to-main:
+PASS / FAIL
 
-Homepage:
-<route>
+Duplicate providers:
+NONE / <explain>
 
-Product listing:
-<route>
 
-Product detail:
-<route>
+HEADER
 
-Product route identifier:
-<identifier + contract source>
+Header:
+<path>
 
-Category route:
-<route>
+Official logo used:
+YES / NO / NOT RENDERED <reason>
 
-Category identifier:
-<identifier + contract source>
+Logo links to /:
+YES / NO
 
-Search:
-<route>
-
-Search query parameter:
-<parameter>
-
-Pagination URL convention:
+Primary header structure:
 <summary>
 
-Sorting URL convention:
-<summary/deferred>
+Search affordance:
+<summary>
 
-Filter URL convention:
-<summary/deferred>
+Search functionality implemented:
+NO / FAIL
 
-Made-to-order:
-<route/convention>
+Account affordance:
+<summary>
 
-General enquiry:
-<route/convention>
+Clerk/auth behavior implemented:
+NO / FAIL
 
-Customer account namespace:
-<route/convention>
+Cart control:
+NONE / FAIL
+
+Wishlist control:
+NONE / FAIL
+
+Unauthorized icon libraries:
+NONE / FAIL
 
 
-TRANSACTIONAL ROUTES
+CATEGORY NAVIGATION
 
-Cart active:
+Desktop navigation:
+<summary>
+
+Taxonomy authority:
+<source/strategy>
+
+Hard-coded duplicate production taxonomy:
 NO / <explain>
 
-Checkout active:
-NO / <explain>
+Mega-menu capability:
+<implemented/deferred + reason>
 
-Payment route active:
-NO / <explain>
+Keyboard accessible:
+PASS / NOT IMPLEMENTED
 
-Order route active:
-NO / <explain>
+Hover-only behavior:
+NO / FAIL
+
+
+MOBILE
+
+Mobile header:
+<summary>
+
+Mobile navigation:
+<summary>
+
+Drawer/sheet:
+<implementation / not required>
+
+Keyboard support:
+PASS / FAIL
+
+Escape:
+PASS / NOT APPLICABLE
+
+Focus restoration:
+PASS / NOT APPLICABLE
+
+Narrow viewport:
+PASS / FAIL
+
+Horizontal overflow:
+NONE / FAIL
+
+
+LAYOUT PRIMITIVES
+
+Content container:
+<path>
+
+Full-bleed composition supported:
+YES / NO
+
+Section primitive:
+<path / NONE>
+
+Generic grid foundation:
+<summary / NONE>
+
+Page-specific layout encoded:
+NO / FAIL
+
+Arbitrary spacing values:
+NONE / <explain>
+
+Canonical breakpoints:
+PASS / FAIL
+
+
+FOOTER
+
+Footer:
+<path>
+
+Structure:
+<summary>
+
+Invented contact details:
+NONE / FAIL
+
+Broken placeholder links:
+NONE / FAIL
+
+Newsletter functionality invented:
+NO / FAIL
+
+Unapproved social links:
+NONE / FAIL
+
+MADE_TO_ORDER represented appropriately:
+YES / NO / NOT CURRENTLY LINKED
+
+
+DESIGN SYSTEM
+
+Tokens/theme consumed:
+PASS / FAIL
+
+New visual token authority:
+NONE / FAIL
+
+Young Serif usage:
+<summary>
+
+UI sans usage:
+<summary>
+
+Charcoal action hierarchy:
+PASS / FAIL
+
+Brown restrained:
+PASS / FAIL
+
+Decorative card elevation:
+NONE / FAIL
+
+Glassmorphism:
+NONE / FAIL
+
+Random gradients:
+NONE / FAIL
+
+Excessive pills/radius:
+NONE / FAIL
+
+
+ACCESSIBILITY
+
+Semantic landmarks:
+PASS / FAIL
+
+Navigation labels:
+PASS / FAIL
+
+Heading ownership:
+PASS / FAIL
+
+Keyboard navigation:
+PASS / FAIL
+
+Visible focus:
+PASS / FAIL
+
+Skip link:
+PASS / FAIL
+
+Touch targets:
+PASS / FAIL
+
+Zoom/reflow:
+PASS / FAIL
+
+Reduced motion:
+PASS / FAIL
+
+
+SERVER / CLIENT
+
+Server-first architecture:
+PASS / FAIL
+
+Entire root layout client-side:
+NO / FAIL
+
+Entire shell client-side:
+NO / <reason>
+
+Interactive client boundaries:
+<list>
+
+Global navigation state:
+NONE / FAIL
+
+Browser-width render branching:
+NONE / FAIL
+
+Hydration issues:
+NONE / FAIL
+
+
+STRUCTURAL REFERENCE
+
+Urban Ladder used as:
+STRUCTURAL / IA REFERENCE ONLY
+
+Structural ideas adopted:
+<list>
+
+Visual implementation copied:
+NONE / FAIL
+
+Promotional mechanics copied:
+NONE / FAIL
+
+Exact navigation/menu copied:
+NONE / FAIL
+
+
+REQUEST-FIRST
+
+Active cart link:
+NO
+
+Active checkout link:
+NO
+
+Active payment link:
+NO
+
+Active order-history link:
+NO
 
 Request-first policy preserved:
 YES / NO
 
 
-PRIVACY / SECURITY
+SCOPE
 
-Internal numeric IDs exposed:
-NO / <explain>
-
-Public request detail by reference:
-NO / <explain>
-
-Public enquiry detail by reference:
-NO / <explain>
-
-Account routes treated as authorization:
-NO / FAIL
-
-Admin routes added to customer website:
-NO / FAIL
-
-
-NEXT.JS CONVENTIONS
-
-Route groups:
-<documented/none>
-
-Catch-all routes:
-NONE / <reason>
-
-Parallel routes:
-NONE
-
-Intercepting routes:
-NONE
-
-Internal navigation:
-next/link
-
-Programmatic navigation policy:
-<summary>
-
-Shareable state:
-URL search params
-
-Ephemeral UI state:
-local state
-
-Trailing slash policy:
-<summary>
-
-Path casing:
-lowercase
-
-Multiword segments:
-kebab-case
-
-
-BOUNDARIES
-
-Pages implemented:
-NONE / <list>
-
-Layouts implemented:
-NONE / <list>
-
-Navigation UI implemented:
+Homepage implemented:
 NO
 
-Breadcrumbs implemented:
+Category page implemented:
+NO
+
+Product listing implemented:
+NO
+
+Product detail implemented:
+NO
+
+Search implemented:
+NO
+
+Filters/sorting implemented:
 NO
 
 SEO metadata implemented:
+NO
+
+Structured data implemented:
 NO
 
 Sitemap/robots implemented:
@@ -2200,49 +2950,61 @@ NO
 Clerk integrated:
 NO
 
-Auth middleware added:
+Backend/API changed:
 NO
-
-API client changed:
-NO / <reason>
-
-Theme/design system changed:
-NO / <reason>
 
 Flutter changed:
 NO
 
-Backend/API changed:
-NO
-
 Dependencies added:
-NONE
+NONE / <list>
 
 
-VALIDATION
+VISUAL VERIFICATION
 
-Identifier/API contract audit:
-PASS / BLOCKED
-
-Route collision audit:
+Desktop:
 PASS / FAIL
 
-Request-first route audit:
+Tablet/narrow:
 PASS / FAIL
 
-Privacy route audit:
+Mobile:
+PASS / FAIL
+
+Zoom:
+PASS / FAIL
+
+Keyboard:
+PASS / FAIL
+
+Reduced motion:
+PASS / FAIL
+
+
+AUTOMATED VALIDATION
+
+Layout tests:
+PASS / FAIL
+
+Routing regression:
+PASS / FAIL
+
+Request-first regression:
+PASS / FAIL
+
+API client regression:
+PASS / FAIL
+
+Theme contract:
+PASS / FAIL
+
+Design-system validation:
 PASS / FAIL
 
 TypeScript:
 PASS / FAIL
 
 ESLint:
-PASS / FAIL
-
-API client regression:
-PASS / FAIL
-
-Theme regression:
 PASS / FAIL
 
 Production build:
@@ -2254,11 +3016,11 @@ PASS / FAIL
 
 DOCUMENTATION
 
-frontend/AGENTS.md:
-<updated/unchanged>
-
 Group M execution record:
 PASS / FAIL
+
+frontend/AGENTS.md:
+<updated/unchanged>
 
 ADR:
 <id / NONE>
@@ -2286,150 +3048,132 @@ Push:
 
 RESULT
 
-Phase 13.6:
+Phase 13.7:
 PASS / BLOCKED
 
-Phase 13.7:
+Phase 13.8:
 READY / BLOCKED
 ```
 
 ---
 
-# 111. STOP Condition
+# 151. STOP Condition
 
-Phase 13.6 may be declared PASS only when:
+Phase 13.7 may be declared PASS only when:
 
-- one canonical website routing authority exists;
-- App Router remains authoritative;
-- Pages Router was not introduced;
-- no routing dependency was added;
-- public URL naming is consistent and resource-oriented;
-- product URL identifier is supported by the actual API contract;
-- category URL identifier is supported by the actual API contract;
-- no internal numeric database IDs are exposed without explicit contract approval;
-- homepage, catalog, product, category, search, MTO, enquiry, and account route conventions are either explicitly defined or explicitly deferred with a reason;
-- product resources have one canonical route convention;
-- search/shareable collection state uses a documented URL-query strategy;
-- request and enquiry routing remain separate;
-- anonymous request/enquiry references are not treated as authentication;
-- customer and admin route spaces remain separate;
-- request-first production policy remains intact;
-- cart/checkout/payment routes have not accidentally been activated;
-- Server Components remain the default;
-- ordinary internal navigation is defined around semantic links;
-- no layouts were prematurely built;
-- no catalog pages were prematurely built;
-- no SEO/structured-data/sitemap implementation was started;
-- no Clerk/auth implementation was started;
-- Phase 13.5 API client remains intact;
-- no backend, Flutter, or design-system implementation was changed unnecessarily;
+- one canonical site-shell architecture exists;
+- root layout remains server-first;
+- existing MUI provider architecture is preserved;
+- semantic header/nav/main/footer landmarks are correct;
+- skip-to-main is implemented and functional;
+- the official brand identity is respected;
+- header structure is suitable for furniture discovery;
+- search has a clear structural position without prematurely implementing Phase 14.5;
+- category navigation has a coherent desktop strategy;
+- mobile navigation has a coherent mobile strategy;
+- no fake/broken navigation links exist;
+- no inactive cart/checkout/payment controls are exposed;
+- MADE_TO_ORDER remains first-class;
+- layout primitives support contained and full-bleed composition;
+- pages will not need to reinvent site gutters/max-width;
+- no Group N page composition has been implemented;
+- footer structure is useful but does not invent business information;
+- all layout styling consumes approved tokens/theme values;
+- no duplicate token/theme/layout authority exists;
+- no unauthorized icon library is used;
+- client boundaries remain narrow;
+- no global navigation state is introduced unnecessarily;
+- accessibility landmarks, keyboard navigation, focus, zoom/reflow, touch targets, and reduced motion pass;
+- representative desktop/tablet/mobile visual inspection passes;
+- no horizontal overflow exists at supported widths;
+- request-first policy remains intact;
+- Urban Ladder influence remains structural only;
+- no dependencies were added;
+- API client regression passes;
+- theme/design-system regressions pass;
 - TypeScript passes;
 - ESLint passes;
 - production build passes;
-- relevant regression checks pass;
 - `git diff --check` passes;
 - Git operations follow `git-workflow-and-versioning`.
 
-If the frozen API does **not** provide a suitable public product or category identifier, report:
+Then report:
 
 ```text
-Phase 13.6 — BLOCKED
-
-Reason:
-Public routing requires a stable identifier that is not established by the frozen V1 contract.
-
-Conflict:
-<exact files/fields/routes>
-
-Required resolution:
-<precise contract decision>
+Phase 13.7 — PASS
+Phase 13.8 — READY
 ```
 
-Do not invent a slug locally just to obtain PASS.
-
-Otherwise finish with:
-
-```text
-Phase 13.6 — PASS
-Phase 13.7 — READY
-```
-
-Do not start Phase 13.7 automatically.
+Do not start Phase 13.8 automatically.
 
 **Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
 ---
 
-# Phase 13.6 Execution Record
+# Phase 13.7 Execution Record
 
-## Result
+**Status:** PASS. Phase 13.8 is READY and was not started.
 
-```text
-Phase 13.6: PASS
-Phase 13.7: READY
-```
+## Shell Architecture
 
-Canonical routing authority: `frontend/web/ROUTING.md`.
+- Canonical shell: `frontend/web/components/layout/site-shell.tsx`; rendered by the root Server Component `app/layout.tsx` inside the existing `Providers`.
+- Shell owns the skip link, `<header>`, the single `<main id="main-content" tabIndex={-1}>`, and `<footer>`.
+- Provider boundary unchanged; no new providers, no global navigation state.
 
-## Public Identifier Audit
+## Layout Primitives
 
-```text
-Product route: /products/[slug]
-Category route: /categories/[slug]
-Canonical website identifier: API-returned slug
-Internal numeric database IDs in URLs: NO
-API public opaque ID fallback: prod_... / cat_... (not the canonical website URL)
-```
+- `content-container.tsx` owns site max-width (`--container-max`), centering, and responsive gutters.
+- `site-section.tsx` owns vertical section rhythm, optional contained/full-bleed width, and semantic `surface` variants.
+- `nav-link.tsx` composes `next/link` with token-backed anchor styling; no MUI `component={NextLink}` function prop crosses a Server/Client boundary.
 
-The frozen catalog contract explicitly selects product slugs for Next.js SEO (`api-contract.md §21.3/§21.9`) and defines category detail lookup by slug or public ID (`§21.4`). The actual Laravel controllers resolve those slugs; both identifier routes were covered by the existing focused backend read API tests. This is not a numeric-ID-only API gap, so routing is not blocked.
+## Header Strategy
 
-Slug lifecycle caveat recorded in `ROUTING.md`: category slugs are mutable and no historical redirect/alias is contracted. There is also a product discrepancy: `api-resources.md §11.1` describes product slug as read-only/server-generated, while OpenAPI `ProductUpdateRequest` and current Laravel product update handling accept/persist slug changes. A rename can invalidate an old canonical URL; V1 provides no old-slug history or redirect behavior. Phase 13.6 follows the frozen SEO canonical slug, does not change the API, and does not invent a redirect mechanism. Reconcile the product slug contract and published-slug URL migration policy before making slug edits a routine published-catalog operation.
+- Primary row: brand mark (official `brandlogo.png`, links `/`) + search entry point; mobile trigger on small screens.
+- Category row (desktop, `md+`): fixture-led categories using canonical `/categories/[slug]` routes, with a separated Made to Order link.
+- Search is a shell-level entry point to `/search`; no form, API call, autocomplete, or result behavior.
+- Utility/announcement region omitted: no approved delivery/service/promotional content. No cart, wishlist, or auth controls.
 
-## Canonical Route Decisions
+## Navigation Strategy
 
-```text
-/                                      existing root placeholder; final homepage 14.1
-/products                             public product collection; 14.3
-/products/[slug]                      public product detail; 14.4
-/categories/[slug]                    public category landing; 14.2
-/search?search=...                    public search; 14.5, API parameter preserved
-/furniture-requests                   public request-first Furniture Request; 15.9
-/contact                              public General Enquiry; 15.10
-/sign-in, /sign-up                    reserved Clerk UI; 15.1
-/account, /account/profile            reserved customer area/profile
-/account/requests                     reserved authenticated own requests
-/account/enquiries                    reserved authenticated own enquiries
-```
+- Desktop nav labelled "Primary navigation"; footer groups labelled "Furniture" and "Services".
+- Category fixture mirrors the authoritative `CategorySeeder` top-level slugs; ownership documented in the fixture and deferred to Group N.
+- Mega menu deferred (not required for shell geometry); no hover-only behavior exists.
 
-Collection URL state uses Laravel's `search`, `category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction`, `page`, and `per_page` vocabulary. Category filters prefer the API slug. Paths are lowercase, multiword static segments kebab-case, slashless; Next.js 16 default trailing-slash normalization applies. Search/filter/pagination state is URL state; ephemeral presentation state remains local.
+## Mobile Strategy
 
-Request and enquiry stay distinct. Anonymous request/enquiry detail-by-reference routes are prohibited. Account URL naming does not authorize access; Laravel ownership/auth checks remain required. Admin stays a separate app.
+- Header collapses to menu trigger + brand + search icon.
+- MUI `Drawer` (role dialog, `aria-modal`) with labelled close control, Escape dismissal, focus restoration to the trigger, and scrollable content.
+- Drawer content is unmounted while closed; desktop nav is `display:none` on small screens, so no hidden focus targets.
 
-```text
-Cart, checkout, payment, order confirmation, account order history: DEFERRED
-Route groups/pages/layouts: NOT IMPLEMENTED
-Search/filter UI: NOT IMPLEMENTED
-SEO metadata/redirects/sitemap/robots: NOT IMPLEMENTED
-Clerk/auth middleware: NOT IMPLEMENTED
-Backend/API/Flutter/design system: UNCHANGED
-```
+## Footer Strategy
 
-No API client, route page, layout, routing dependency, or executable routing helper was added. The filesystem tree in `ROUTING.md` is explicitly conceptual only.
+- Editorial surface with brand, Furniture (category links), and Services (Made to Order, Furniture Enquiries) groups plus server-rendered copyright year.
+- No invented contact details, social links, newsletter, legal pages, or generic commerce boilerplate.
+
+## Accessibility Implementation
+
+- Native skip link to `#main-content` (first tab stop, visible on focus, token focus ring).
+- Semantic header/nav/main/footer landmarks with labels; exactly one `main`; page heading hierarchy preserved.
+- 44px+ targets for menu/search/nav; visible focus retained; touch/zoom/reflow verified; reduced motion not bypassed (token motion only).
+
+## Visual Verification
+
+- Desktop (1440), tablet (960), and mobile (390) inspected via headless Chrome screenshots; corrected a narrow-width placeholder `h1` overflow.
+- CDP audit: `scrollWidth === innerWidth` at 320/360/390/640/960/1024/1440; mobile drawer open/Escape/focus-restore verified.
+
+## Scope Boundaries
+
+- No Group N pages; `/` remains the foundation placeholder. No SEO metadata, structured data, sitemap/robots, Clerk, API, backend, or Flutter changes.
 
 ## Validation
 
 ```text
-ProductReadApiTest: PASS (29 tests)
-CategoryReadApiTest: PASS (5 tests)
-Identifier/API contract audit: PASS, with slug mutability caveat above
-Route collision/request-first/privacy audits: PASS
-API client regression: PASS
-Theme regression: PASS
+Layout contract: PASS
+Theme contract: PASS
+API client regression: PASS (17 tests)
 TypeScript: PASS
 ESLint: PASS
 Production build: PASS
 git diff --check: PASS
 Dependencies added: NONE
 ```
-
-Group N remains unstarted. Phase 13.7 is ready and was not started automatically.

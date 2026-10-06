@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "../../design-system/tokens.css";
 import "./globals.css";
+import { SiteShell } from "@/components/layout/site-shell";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
@@ -12,7 +13,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <SiteShell>{children}</SiteShell>
+        </Providers>
       </body>
     </html>
   );

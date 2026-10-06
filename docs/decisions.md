@@ -76,6 +76,16 @@
 
 ---
 
+### ADR/WEB-002 — Public Website Shell and Layout Composition
+
+**Decision:** Phase 13.7 introduces one canonical public website shell at `frontend/web/components/layout/site-shell.tsx`, rendered by the root Server Component layout. The shell owns the single `<main id="main-content">` landmark, semantic header/footer landmarks, a native skip-to-main link, and reusable `ContentContainer`/`SiteSection` primitives that support contained and full-bleed composition. Shell styling consumes the Phase 12 `tokens.css`/MUI theme contract only. The request-first release exposes no cart, checkout, payment, wishlist, or account controls, and no fake `href="#"` navigation. Category navigation is a non-production fixture that mirrors the authoritative `CategorySeeder` slugs and labels until Group N supplies catalog data; the only interactive client boundary is the mobile navigation drawer.
+
+**Consequences:** Future storefront pages compose inside this shell and must not recreate the main landmark, page gutters, or max-width. Group N still owns real homepage, category, product, search, and catalog-data work and is unaffected by this phase. Established furniture retailers (for example, Urban Ladder) inform structural information architecture only; SL Furnitures tokens, typography, components, photography philosophy, and accessibility remain authoritative. No dependency, API, backend, Flutter, or routing change is introduced.
+
+**Status:** Accepted and implemented in Phase 13.7
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.
