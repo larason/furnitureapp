@@ -5,7 +5,7 @@ import designTokens from "../../design-system/design-tokens.json";
 const { primitive, semantic, layout } = designTokens.layers;
 const pixels = (value: string) => Number.parseInt(value, 10);
 const spacingValues = [0, ...primitive.space.map(pixels)];
-const shadows = [primitive.elevation.flat, ...Array(24).fill("var(--elev-raised)")] as Shadows;
+const shadows = [primitive.elevation.flat, ...new Array(24).fill("var(--elev-raised)")] as Shadows;
 
 export const theme = createTheme({
   palette: {

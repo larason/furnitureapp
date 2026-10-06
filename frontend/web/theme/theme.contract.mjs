@@ -14,7 +14,7 @@ const expectedMappings = [
   ["utility font", 'fontFamily: "var(--font-ui)"'],
   ["phone breakpoint", "sm: pixels(layout.breakpoints.phone)"],
   ["canonical spacing", "const spacingValues = [0, ...primitive.space.map(pixels)]"],
-  ["restrained overlays", '...Array(24).fill("var(--elev-raised)")'],
+  ["restrained overlays", '...new Array(24).fill("var(--elev-raised)")'],
 ];
 
 for (const [name, mapping] of expectedMappings) {
