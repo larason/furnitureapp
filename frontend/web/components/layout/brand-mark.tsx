@@ -19,7 +19,7 @@ export function BrandMark() {
       }}
     >
       <Image
-        src="/brandlogo.png"
+        src="/brandlogo.svg"
         alt="SL Furnitures"
         width={LOGO_WIDTH}
         height={LOGO_HEIGHT}

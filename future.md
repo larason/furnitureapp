@@ -46,3 +46,5 @@ export default function Hero() {
   );
 }
 ```
+
+11. on footer add the logo instead of plain text for the brand
