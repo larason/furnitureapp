@@ -12,9 +12,12 @@ export function BrandMark() {
       sx={{
         display: "inline-flex",
         alignItems: "center",
+        minWidth: 0,
         "& img": {
-          height: { xs: "var(--space-7)", md: "var(--space-8)" },
+          height: { xs: "var(--space-9)", md: "var(--space-10)" },
           width: "auto",
+          maxWidth: "100%",
+          objectFit: "contain",
         },
       }}
     >
@@ -23,7 +26,7 @@ export function BrandMark() {
         alt="SL Furnitures"
         width={LOGO_WIDTH}
         height={LOGO_HEIGHT}
-        priority
+        loading="eager"
       />
     </NavLink>
   );

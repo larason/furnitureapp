@@ -12,7 +12,8 @@
     "test:api": "node --test lib/api/__tests__/client.test.mjs",
     "test:layout": "node components/layout/layout.contract.mjs",
     "test:responsive": "node components/layout/responsive.contract.mjs",
-    "test:states": "node components/states/states.contract.mjs"
+    "test:states": "node components/states/states.contract.mjs",
+    "test:homepage": "node --test lib/homepage/homepage.test.mjs"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",

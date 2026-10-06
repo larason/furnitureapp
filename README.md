@@ -253,3 +253,13 @@ To inspect the design system tokens and component catalog:
 ```bash
 pnpm tools-dev run web
 ```
+
+### Run dev server
+```
+npm run dev
+```
+
+with fixtures
+```
+HOMEPAGE_DATA_SOURCE=fixtures npm run dev
+```

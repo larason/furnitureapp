@@ -9,6 +9,7 @@ export default function Loading() {
       <Box
         sx={{
           maxWidth: "var(--content-width-lead)",
+          minHeight: "100dvh",
           display: "flex",
           flexDirection: "column",
           gap: 2,
