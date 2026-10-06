@@ -56,6 +56,21 @@ for (const route of forbiddenRoutes) {
   check(!combined.includes(route), `request-first shell must not reference ${route}`);
 }
 
+const navigation = sourceOf("site-navigation.ts");
+check(
+  navigation.includes("isSiteRouteImplemented"),
+  "shell must expose a route-availability check",
+);
+check(
+  /IMPLEMENTED_SITE_ROUTES\s*:\s*readonly string\[\]\s*=\s*\[\s*"\/"\s*\]/.test(navigation),
+  "only implemented routes may render as active links",
+);
+const navLink = sourceOf("nav-link.tsx");
+check(
+  navLink.includes("isSiteRouteImplemented") && navLink.includes('component="span"'),
+  "NavLink must degrade unimplemented routes to non-link elements",
+);
+
 const imports = [...combined.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]);
 for (const specifier of imports) {
   if (specifier.includes("icon")) {

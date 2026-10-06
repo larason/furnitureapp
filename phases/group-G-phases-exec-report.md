@@ -27,7 +27,7 @@ Header: frontend/web/components/layout/site-header.tsx
 Official logo used: YES (`designs/brandlogo.png` served unchanged as public/brandlogo.png)
 Logo links to /: YES
 Primary header structure: brand left; search affordance right-of-center; mobile menu trigger on small screens
-Search affordance: token-styled entry point linking to canonical /search; no form or API call
+Search affordance: token-styled, non-interactive structural entry point (the /search route is reserved but not yet implemented, so it is not an active link); no form or API call
 Search functionality implemented: NO
 Account affordance: omitted; /account is reserved but unimplemented, so no broken active link is exposed
 Clerk/auth behavior implemented: NO
@@ -39,7 +39,7 @@ Unauthorized icon libraries: NONE (@mui/icons-material only: Search, Menu, Close
 ## CATEGORY NAVIGATION
 
 ```text
-Desktop navigation: <nav aria-label="Primary navigation"> row under the primary header (md+), categories + separated Made to Order link
+Desktop navigation: <nav aria-label="Primary navigation"> row under the primary header (md+), category labels + separated Made to Order label
 Taxonomy authority: non-production fixture mirroring authoritative Laravel CategorySeeder top-level slugs; ownership documented in category-navigation.fixture.ts; Group N supplies catalog data
 Hard-coded duplicate production taxonomy: NO (isolated, typed fixture; authoritative slugs reused)
 Mega-menu capability: deferred (not needed for shell geometry; no data-driven menu built)
@@ -47,7 +47,7 @@ Keyboard accessible: NOT IMPLEMENTED (links are native, focusable anchors; no dr
 Hover-only behavior: NO
 ```
 
-The desktop category row renders six authoritative top-level categories (`living-room`, `bedroom`, `dining-room-kitchen`, `home-office-corporate-workspaces`, `outdoor-patio`, `entryway-accent`) plus a `Made to Order` link to `/furniture-requests`; `/contact` and `/search` are the only other destinations. All destinations are reserved in `web/ROUTING.md`; no `#`, cart, checkout, payment, or order routes appear.
+The desktop category row renders six authoritative top-level categories (`living-room`, `bedroom`, `dining-room-kitchen`, `home-office-corporate-workspaces`, `outdoor-patio`, `entryway-accent`) plus a `Made to Order` label. Since `/search`, `/categories/[slug]`, `/contact`, and `/furniture-requests` are reserved but not yet implemented, they render as non-interactive structural content rather than active links; `/` (brand mark) is the only active internal navigation link. The availability registry lives in `site-navigation.ts`. No `#`, cart, checkout, payment, or order routes appear.
 
 ## MOBILE
 
@@ -78,7 +78,7 @@ Canonical breakpoints: PASS (MUI theme breakpoints mapped from design tokens)
 
 ```text
 Footer: frontend/web/components/layout/site-footer.tsx
-Structure: editorial surface; brand + Furniture (category links) + Services (Made to Order, Furniture Enquiries); server-rendered copyright year
+Structure: editorial surface; brand + Furniture (category labels) + Services (Made to Order, Furniture Enquiries); server-rendered copyright year
 Invented contact details: NONE
 Broken placeholder links: NONE
 Newsletter functionality invented: NO
@@ -184,7 +184,7 @@ Reduced motion: PASS
 
 ```text
 Layout tests: PASS (components/layout/layout.contract.mjs)
-Routing regression: PASS (only ROUTING.md-reserved destinations linked)
+Routing regression: PASS (only implemented routes are active links; reserved destinations render as non-links)
 Request-first regression: PASS
 API client regression: PASS (17 tests)
 Theme contract: PASS
@@ -237,8 +237,9 @@ No routing page, layout route group, API client, Clerk integration, metadata, si
 
 ```text
 git-workflow-and-versioning skill read: YES
-Operations: stage Phase 13.7 files; atomic commit
+Operations: stage Phase 13.7 files; atomic commits
 Commit: feat: implement reusable website layout system
+Review fix: fix: render unimplemented shell destinations as non-links
 Push: NONE (not requested)
 ```
 

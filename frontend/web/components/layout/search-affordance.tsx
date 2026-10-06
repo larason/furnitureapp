@@ -2,11 +2,21 @@ import Search from "@mui/icons-material/Search";
 import Box from "@mui/material/Box";
 import { NavLink } from "./nav-link";
 
+const hiddenOnMobileSx = {
+  position: { xs: "absolute", md: "static" },
+  width: { xs: "1px", md: "auto" },
+  height: { xs: "1px", md: "auto" },
+  m: { xs: "-1px", md: 0 },
+  overflow: { xs: "hidden", md: "visible" },
+  clip: { xs: "rect(0 0 0 0)", md: "auto" },
+  whiteSpace: { xs: "nowrap", md: "normal" },
+  border: 0,
+};
+
 export function SearchAffordance() {
   return (
     <NavLink
       href="/search"
-      aria-label="Search furniture"
       sx={{
         display: "inline-flex",
         alignItems: "center",
@@ -19,16 +29,10 @@ export function SearchAffordance() {
         borderRadius: "var(--radius-sm)",
         color: "text.secondary",
         typography: "body2",
-        transition:
-          "border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard)",
-        "&:hover": {
-          borderColor: "var(--border-strong)",
-          color: "text.primary",
-        },
       }}
     >
       <Search fontSize="small" aria-hidden />
-      <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>
+      <Box component="span" sx={hiddenOnMobileSx}>
         Search furniture
       </Box>
     </NavLink>

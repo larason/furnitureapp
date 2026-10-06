@@ -19,7 +19,6 @@ const mobileItemSx = {
   px: 2,
   color: "text.primary",
   typography: "body1",
-  "&:hover": { backgroundColor: "var(--surface-paper)" },
 };
 
 export function MobileNavigation() {
@@ -81,7 +80,6 @@ export function MobileNavigation() {
               <Box component="li" key={category.slug}>
                 <NavLink
                   href={`/categories/${category.slug}`}
-                  onClick={close}
                   sx={mobileItemSx}
                 >
                   {category.name}
@@ -95,7 +93,6 @@ export function MobileNavigation() {
               <Box component="li" key={link.href}>
                 <NavLink
                   href={link.href}
-                  onClick={close}
                   sx={mobileItemSx}
                 >
                   {link.label}

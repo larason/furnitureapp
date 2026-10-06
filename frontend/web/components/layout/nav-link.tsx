@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import type { SxProps, Theme } from "@mui/material/styles";
 import NextLink from "next/link";
 import type { ReactNode } from "react";
+import { isSiteRouteImplemented } from "./site-navigation";
 
 export type NavLinkSx = Exclude<SxProps<Theme>, ReadonlyArray<unknown>>;
 
@@ -20,8 +21,25 @@ export function NavLink({
   onClick,
   ...rest
 }: NavLinkProps) {
+  if (!isSiteRouteImplemented(href)) {
+    return (
+      <Box component="span" sx={sx} {...rest}>
+        {children}
+      </Box>
+    );
+  }
+
   return (
-    <Box sx={{ display: "contents", "& a": sx }}>
+    <Box
+      sx={{
+        display: "contents",
+        "& a": sx,
+        "& a:focus-visible": {
+          boxShadow: "var(--focus-ring)",
+          borderRadius: "var(--radius-sm)",
+        },
+      }}
+    >
       <NextLink href={href} onClick={onClick} {...rest}>
         {children}
       </NextLink>

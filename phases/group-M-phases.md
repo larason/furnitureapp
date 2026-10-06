@@ -3129,14 +3129,15 @@ Do not start Phase 13.8 automatically.
 ## Header Strategy
 
 - Primary row: brand mark (official `brandlogo.png`, links `/`) + search entry point; mobile trigger on small screens.
-- Category row (desktop, `md+`): fixture-led categories using canonical `/categories/[slug]` routes, with a separated Made to Order link.
-- Search is a shell-level entry point to `/search`; no form, API call, autocomplete, or result behavior.
+- Category row (desktop, `md+`): fixture-led category labels using canonical `/categories/[slug]` route identities, with a separated Made to Order label.
+- Search is a shell-level structural entry point for `/search`; no form, API call, autocomplete, or result behavior.
+- Reserved routes that are not yet implemented (`/search`, `/categories/[slug]`, `/contact`, `/furniture-requests`) render as non-interactive structural content; `/` is the only active internal navigation link. Availability is centralized in `site-navigation.ts`.
 - Utility/announcement region omitted: no approved delivery/service/promotional content. No cart, wishlist, or auth controls.
 
 ## Navigation Strategy
 
 - Desktop nav labelled "Primary navigation"; footer groups labelled "Furniture" and "Services".
-- Category fixture mirrors the authoritative `CategorySeeder` top-level slugs; ownership documented in the fixture and deferred to Group N.
+- Category fixture mirrors the authoritative `CategorySeeder` top-level slugs; ownership documented in the fixture and deferred to Group N. Unimplemented destinations render as non-links via the shell availability registry.
 - Mega menu deferred (not required for shell geometry); no hover-only behavior exists.
 
 ## Mobile Strategy
@@ -3147,7 +3148,7 @@ Do not start Phase 13.8 automatically.
 
 ## Footer Strategy
 
-- Editorial surface with brand, Furniture (category links), and Services (Made to Order, Furniture Enquiries) groups plus server-rendered copyright year.
+- Editorial surface with brand, Furniture (category labels), and Services (Made to Order, Furniture Enquiries) groups plus server-rendered copyright year.
 - No invented contact details, social links, newsletter, legal pages, or generic commerce boilerplate.
 
 ## Accessibility Implementation

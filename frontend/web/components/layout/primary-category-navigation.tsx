@@ -8,12 +8,6 @@ const navItemSx = {
   minHeight: 44,
   color: "text.primary",
   typography: "body2",
-  textDecoration: "underline transparent",
-  textUnderlineOffset: "8px",
-  transition:
-    "text-decoration-color var(--motion-fast) var(--ease-standard)",
-  "&:hover": { textDecorationColor: "currentColor" },
-  "&:focus-visible": { textDecorationColor: "currentColor" },
 };
 
 export function PrimaryCategoryNavigation() {

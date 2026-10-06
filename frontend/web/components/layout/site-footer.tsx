@@ -12,7 +12,6 @@ const footerLinkSx = {
   minHeight: 36,
   color: "text.secondary",
   typography: "body2",
-  "&:hover": { color: "text.primary", textDecoration: "underline" },
 };
 
 type FooterGroupProps = {

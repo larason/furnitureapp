@@ -127,7 +127,7 @@ After UI changes:
 - Pages render inside the shell's single `<main id="main-content">`; do not declare another `main` landmark in a page or layout.
 - Use `ContentContainer` for horizontal site geometry and `SiteSection` for vertical/semantic composition. Do not invent page-level max-widths, gutters, or centering.
 - Shell surfaces, spacing, and typography must consume the design tokens/theme. Do not create a second token authority.
-- While the release is request-first, do not add cart, checkout, payment, wishlist, or account controls, and never use `href="#"` or undocumented routes. Only link destinations reserved in `web/ROUTING.md`.
+- While the release is request-first, do not add cart, checkout, payment, wishlist, or account controls, and never use `href="#"` or undocumented routes. Do not render reserved-but-unimplemented routes as active links; render them as non-interactive structural content until their page exists (see `web/components/layout/site-navigation.ts`). Only implemented routes may be active links.
 - Keep the shell server-first. Introduce a client boundary only for genuine interaction (currently the mobile navigation drawer); do not move the whole header/footer client-side.
 - Category navigation is a fixture until Group N supplies authoritative catalog data; do not duplicate the Laravel taxonomy into frontend-only production navigation.
 - Established furniture retailers are structural/IA references only. SL Furnitures tokens, typography, components, and accessibility remain authoritative.
