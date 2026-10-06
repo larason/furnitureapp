@@ -30,7 +30,7 @@
       "letterSpacing": { "display": 0 },
       "space": ["4px", "8px", "12px", "16px", "20px", "24px", "32px", "48px", "64px", "80px"],
       "radius": ["8px", "20px", "24px", "30px"],
-      "elevation": { "flat": "none", "ring": "0 0 0 1px var(--border-default)", "raised": "elevation.ring" },
+      "elevation": { "flat": "none", "ring": "0 0 0 1px var(--border-default)", "raised": "0 8px 24px rgba(17, 17, 17, 0.12)" },
       "focusRing": "0 0 0 3px var(--action-focus)",
       "zIndex": { "base": 0, "sticky": 100, "menu": 200, "dialog": 300 },
       "motion": { "fast": "150ms", "base": "200ms", "easing": "cubic-bezier(0.2, 0, 0, 1)" }

@@ -43,7 +43,7 @@
   --surface: var(--surface-paper);
   --surface-warm: var(--surface-editorial);
   --fg: var(--text-primary);
-  --fg-2: var(--text-primary);
+  --fg-2: var(--text-secondary);
   --muted: var(--text-secondary);
   --meta: var(--text-muted);
   --border: var(--border-default);
@@ -113,7 +113,7 @@
   --radius-pill: 30px;
   --elev-flat: none;
   --elev-ring: 0 0 0 1px var(--border-default);
-  --elev-raised: var(--elev-ring);
+  --elev-raised: 0 8px 24px rgba(17, 17, 17, 0.12);
   --focus-ring: 0 0 0 3px var(--action-focus);
   --motion-fast: 150ms;
   --motion-base: 200ms;
