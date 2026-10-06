@@ -46,6 +46,16 @@
 
 ---
 
+### ADR/DESIGN-005 — Cross-Platform Component Convention Architecture
+
+**Decision:** Future web and Flutter components share semantics, visual hierarchy, state vocabulary, and token meaning while remaining independent framework implementations. Framework primitives are preferred over redundant wrappers; wrappers require meaningful accessibility, state, routing, analytics, domain, or responsive behavior. Variants are closed semantic choices, components own internal spacing, parents own external spacing, links navigate, buttons act, cards represent genuinely self-contained units, and Material-family icons remain the only approved icon families.
+
+**Consequences:** MUI `sx` and Flutter local layout primitives remain available for token-driven composition but cannot bypass the design system with arbitrary appearance values. The reference catalog remains non-runtime documentation. Loading, empty, error, status, focus, responsive, and request-first conventions are defined before application components are built. No component library, wrapper, widget, dependency, or application behavior is introduced by Phase 12.6.
+
+**Status:** Accepted as the Phase 12.6 convention contract
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.

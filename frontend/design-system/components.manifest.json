@@ -7,11 +7,11 @@
   },
   "fixture": {
     "title": "Furniture Design System — reference components",
-    "description": "Reference fixture for SL Furnitures: warm canvas, white product surfaces, Young Serif editorial display type, controlled pill actions, and flat elevation.",
+    "description": "Reference catalog for SL Furnitures: warm canvas, white product surfaces, Young Serif editorial display type, restrained actions, and purposeful layering.",
     "styleBlockCount": 1,
-    "selectorCount": 56,
-    "classCount": 29,
-    "elementCount": 25
+    "selectorCount": 54,
+    "classCount": 27,
+    "elementCount": 23
   },
   "tokens": {
     "declared": [
@@ -181,7 +181,6 @@
     ".hero-actions",
     ".hero-grid",
     ".hero-meta",
-    ".icon",
     ".lead",
     ".promo-bar",
     ".promo-bar a",
@@ -190,7 +189,6 @@
     ".stack-4 > * + *",
     ".stack-6 > * + *",
     ".stack-8 > * + *",
-    ".swoosh",
     "*",
     "*::after",
     "*::before",
@@ -228,14 +226,12 @@
     "hero-actions",
     "hero-grid",
     "hero-meta",
-    "icon",
     "lead",
     "promo-bar",
     "row-between",
     "stack-3",
     "stack-4",
-    "stack-6",
-    "swoosh"
+    "stack-6"
   ],
   "elements": [
     "a",
@@ -256,11 +252,9 @@
     "main",
     "meta",
     "p",
-    "path",
     "section",
     "span",
     "style",
-    "svg",
     "time",
     "title"
   ],
@@ -422,21 +416,6 @@
         "--surface",
         "--text-xs"
       ]
-    },
-    {
-      "id": "icons",
-      "label": "Icon slots",
-      "present": true,
-      "selectors": [
-        ".icon"
-      ],
-      "classes": [
-        "icon"
-      ],
-      "elements": [
-        "svg"
-      ],
-      "tokenReferences": []
     },
     {
       "id": "typography",

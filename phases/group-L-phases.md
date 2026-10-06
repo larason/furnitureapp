@@ -1,34 +1,62 @@
-# Phase 12.5 — Visual Foundations
+# Phase 12.6 — Component Conventions
 
 ## Objective
 
-Finalize and validate the shared SL Furnitures visual foundation for:
+Define and validate the **shared component conventions** for SL Furnitures.
+
+Phases 12.1–12.5 established:
 
 ```text
-Typography
-Color
-Spacing
-Shape / radius
-Elevation
-Motion
-Focus / interaction visibility
+brand
+→ token authority
+→ framework mappings
+→ visual foundations
 ```
 
-This phase consolidates the former separate roadmap concerns into one design-system foundation phase.
-
-The output must give later UI implementation phases a precise answer to:
+Phase 12.6 establishes:
 
 ```text
-Which typography role should I use?
-Which surface/background role should I use?
-Which spacing token should I use?
-Which radius is appropriate?
-When is elevation allowed?
-Which transition should I use?
-How should focus be shown?
+visual foundations
+        ↓
+component construction rules
+        ↓
+future MUI components
+future Flutter widgets
 ```
 
-without requiring the agent to invent visual values.
+The goal is to make later component implementation predictable and disciplined.
+
+A future agent should be able to answer:
+
+```text
+When should I create a component?
+
+Which component owns spacing?
+
+Which component variants are permitted?
+
+How should buttons differ?
+
+How should forms behave visually?
+
+What belongs in a card?
+
+When should an icon appear?
+
+How are loading/empty/error states represented?
+
+What may MUI/Material defaults control?
+
+What must come from design tokens?
+
+When may a new variant/token be introduced?
+```
+
+without inventing a new local design language.
+
+This phase defines conventions.
+
+It does **not** implement the application's reusable component library.
 
 ---
 
@@ -37,43 +65,73 @@ without requiring the agent to invent visual values.
 Implement only:
 
 ```text
-Phase 12.5 — Visual Foundations
+Phase 12.6 — Component Conventions
 ```
 
-Do NOT begin:
+Define conventions for:
 
 ```text
-12.6 — Component conventions
-12.7 — Accessibility baseline
-
-Group M — Next.js Website Foundation
-Group N — Website Catalog / SEO
-Group O — Customer Commerce
-Group P — Flutter Foundation
+component architecture
+component ownership
+variants
+composition
+buttons/actions
+links
+icons
+forms
+cards/surfaces
+media
+badges/status
+navigation controls
+feedback
+loading
+empty states
+errors
+dialogs/overlays
+responsive component behavior
+MUI usage
+future Flutter Material usage
+token enforcement
 ```
 
-Do not build:
-
-```text
-PageContainer
-Button primitive
-ProductCard
-Header
-Footer
-Navigation
-Homepage
-Product page
-Request form
-Flutter widget
-```
-
-This phase is the finalization of shared visual rules.
+Do NOT begin application component implementation.
 
 ---
 
-# 2. Authorities to Read First
+# 2. Do Not Pull Later Work Forward
 
-Inspect:
+Do NOT build:
+
+```text
+Button wrapper
+Link wrapper
+TextField wrapper
+ProductCard
+CategoryCard
+RequestCard
+StatusBadge
+Header
+Footer
+Navbar
+ProductGrid
+SearchBar
+FilterDrawer
+RequestForm
+EnquiryForm
+Dialog system
+Toast system
+Flutter widgets
+```
+
+Those belong to later framework/application phases.
+
+Phase 12.6 defines how such components must eventually be constructed.
+
+---
+
+# 3. Read Authorities First
+
+Before editing, inspect:
 
 ```text
 AGENTS.md
@@ -84,1800 +142,2338 @@ frontend/design-system/
 ├── USAGE.md
 ├── tokens.css
 ├── design-tokens.json
-├── tailwind-v4.css
-├── manifest.json
 ├── components.html
 ├── components.manifest.json
 ├── flutter-material3.md
+├── manifest.json
 ├── preview/
 └── source/
+
+frontend/web/
+└── existing Phase 12.3 MUI theme
 
 phases/group-L-phases.md
 docs/decisions.md
 ```
 
-Also inspect the existing Phase 12.3 MUI theme implementation to ensure the foundation being documented matches the actual mappings.
+Read the Phase 12.5 execution record before changing component guidance.
 
-Do not change runtime application behavior merely because a documentation value is easier.
+Do not reconstruct previous decisions from memory.
 
 ---
 
-# 3. Canonical Authority
+# 4. Preserve Existing Authorities
 
-Preserve:
+The authority chain remains:
 
 ```text
+DESIGN.md
+    ↓
 tokens.css
-→ sole canonical token authority
+    ↓
+USAGE.md
+    ↓
+framework mapping
+    ↓
+component conventions
+    ↓
+application components
 ```
 
-with:
+Component conventions cannot override tokens.
 
-```text
-design-tokens.json
-→ synchronized portable representation
-
-tailwind-v4.css
-→ synchronized derived representation
-
-MUI theme
-→ framework consumer
-
-future Flutter ThemeData
-→ framework consumer
-```
-
-No new token authority may be introduced.
+They explain how tokens are composed into UI.
 
 ---
 
-# 4. Git Workflow
+# 5. Git Workflow
 
-Before any Git operation:
+Before any Git operation, locate and read the root:
 
 ```text
-read root git-workflow-and-versioning skill
+git-workflow-and-versioning
 ```
 
-Follow it exactly.
+skill.
 
 Git operations are authorized only through that skill.
 
-Preserve unrelated owner work.
+Preserve unrelated owner changes.
 
 Never commit:
 
 ```text
 .env
 credentials
-tokens
-private keys
+secrets
 font binaries
-local SDK state
+local configuration
 ```
 
-Stage only Phase 12.5 files.
+Stage only Phase 12.6 work.
 
 ---
 
-# 5. Phase Strategy
+# 6. Existing Component Catalog
 
-For each visual foundation:
+Inspect:
 
 ```text
-inspect existing token scale
-      ↓
-identify semantic roles
-      ↓
-identify duplication/drift
-      ↓
-preserve stable primitives
-      ↓
-document usage rules
-      ↓
-verify MUI mapping
-      ↓
-verify future Flutter mapping
-      ↓
-validate previews/accessibility
+frontend/design-system/components.html
+frontend/design-system/components.manifest.json
 ```
 
-Do not redesign stable token scales merely to make this phase look substantial.
+Determine:
+
+```text
+which components already have visual examples
+which examples remain relevant
+which terminology is legacy Nike/apparel terminology
+which examples are furniture-oriented
+which examples contradict Phase 12.5
+```
+
+Do not discard the existing catalog simply to replace it.
+
+Reconcile it.
 
 ---
 
-# 6. Typography Foundation
+# 7. Component Catalog Is Reference, Not Runtime
 
-The approved family architecture remains:
+Clarify that:
 
 ```text
-DISPLAY
-→ Young Serif
-
-UTILITY / UI
-→ existing Helvetica Now utility stack
+components.html
+components.manifest.json
 ```
 
-Young Serif supplies personality.
+are design-system reference artifacts.
 
-The utility stack supplies precision and scannability.
+They are NOT:
 
-Do not alter this architecture without an explicit new design decision.
+```text
+React component source
+Flutter widget source
+runtime component registry
+API schema
+```
+
+Future framework components consume the same conventions independently.
 
 ---
 
-# 7. Typography Roles
-
-Finalize a CLOSED set of semantic typography roles.
-
-At minimum distinguish:
-
-```text
-display
-heading
-body
-label
-utility
-```
-
-Use current token naming where possible.
-
-Do not create page-specific roles such as:
-
-```text
-homepageHeading
-productHeroHeading
-checkoutTitle
-footerHeading
-```
-
-unless a truly reusable semantic need exists.
-
----
-
-# 8. Canonical Type Scale
-
-Preserve the approved scale:
-
-```text
-12
-14
-16
-20
-24
-32
-48
-96
-```
-
-Do not introduce intermediate arbitrary sizes.
-
-Every semantic type role must map to one of the canonical sizes.
-
-If the existing token system has named roles already, reconcile those names rather than adding a parallel scale.
-
----
-
-# 9. Display Typography Rules
-
-Young Serif may be used for:
-
-```text
-hero statements
-major page headings
-editorial section headings
-category storytelling
-select prominent product/collection titles
-```
-
-Do not use it for:
-
-```text
-navigation
-buttons
-forms
-filters
-search
-breadcrumbs
-prices
-dense metadata
-technical specifications
-account/admin UI
-status labels
-```
-
-unless a later explicitly approved component convention says otherwise.
-
----
-
-# 10. UI Typography Rules
-
-Utility typography should own:
-
-```text
-navigation
-buttons
-form controls
-input labels
-filter controls
-prices
-product metadata
-dimensions
-material names
-status text
-breadcrumbs
-utility links
-tables
-account/admin interfaces
-```
-
-Do not allow browser/MUI defaults to silently substitute unrelated fonts.
-
----
-
-# 11. Weight Rules
-
-Inspect existing weight tokens.
-
-Normalize usage around a small intentional set.
-
-For example conceptually:
-
-```text
-regular
-medium
-semibold/bold where genuinely needed
-```
-
-Do not use many near-identical weights merely for visual micro-adjustment.
-
-Young Serif should not be synthetically bolded if the loaded face does not support that style properly.
-
-Actual font loading remains implementation-specific.
-
----
-
-# 12. Line Height
-
-Formalize line-height usage for:
-
-```text
-large display
-heading
-body
-labels
-```
-
-Young Serif should retain enough line-height to avoid clipping and cramped editorial typography.
-
-Do not use compressed sportswear-style leading.
-
----
-
-# 13. Letter Spacing
-
-Keep letter spacing restrained.
-
-Do not introduce:
-
-```text
-aggressive negative tracking
-wide all-caps tracking everywhere
-```
-
-The furniture brand is calm/editorial, not athletic.
-
-Utility labels may use approved tracking where the design system already supports it.
-
----
-
-# 14. Uppercase Policy
-
-Do not force:
-
-```text
-BUTTONS
-HEADINGS
-NAVIGATION
-```
-
-to uppercase by default.
-
-Uppercase is an intentional content treatment, not a universal component style.
-
----
-
-# 15. Typography Responsiveness
-
-Do not invent separate arbitrary mobile and desktop sizes.
-
-Use the canonical scale and approved responsive role mappings.
-
-Where display typography needs responsive reduction:
-
-```text
-96 → approved smaller token
-48 → approved smaller token
-```
-
-not arbitrary interpolation unless the current token system intentionally supports fluid typography.
-
----
-
-# 16. Fluid Typography
-
-Inspect current tokens.
-
-If fluid typography is not already part of the system:
-
-```text
-do not introduce clamp() merely because it is fashionable.
-```
-
-If it already exists, preserve its approved bounds.
-
----
-
-# 17. Text Scaling Accessibility
-
-Foundation must remain compatible with:
-
-```text
-browser zoom
-user font scaling
-mobile accessibility scaling
-```
-
-Do not document fixed-height containers that require text not to grow.
-
----
-
-# 18. Color Foundation
-
-Preserve approved semantic anchors:
-
-```text
-surface.canvas
-→ #FCF4ED
-
-surface.paper
-→ #FFFFFF
-
-surface.editorial
-→ #F4E9DF
-
-surface.inverse
-→ #111111
-
-text.primary
-→ #111111
-
-text.secondary
-→ #707072
-
-accent.brand
-→ #321E0F
-
-action.primary
-→ #111111
-```
-
-These values already express the intended warm-but-disciplined furniture identity.
-
----
-
-# 19. Color Philosophy
-
-Formalize:
-
-```text
-Furniture photography carries most visual color.
-
-Interface colors frame the products.
-```
-
-Do not add unnecessary decorative color families.
-
----
-
-# 20. Charcoal Rule
-
-`#111111` remains the main functional anchor for:
-
-```text
-primary text
-primary CTA
-strong icons
-inverse surfaces
-```
-
-Do not replace it globally with brown.
-
----
-
-# 21. Brown Rule
-
-`#321E0F` remains a controlled brand/material accent.
-
-Appropriate roles may include:
-
-```text
-editorial emphasis
-brand moments
-subtle material cue
-select decorative detail
-```
-
-Inappropriate default use:
-
-```text
-every button
-every link
-every heading
-every border
-every icon
-navigation chrome
-```
-
----
-
-# 22. White Rule
-
-`#FFFFFF` remains the pure clean surface for:
-
-```text
-product surfaces
-form surfaces
-clean content blocks
-visual relief
-```
-
-Do not remove white because the default canvas is warm ivory.
-
----
-
-# 23. Editorial Surface Rule
-
-`#F4E9DF` should be reserved for:
-
-```text
-storytelling sections
-brand/editorial blocks
-quiet visual differentiation
-```
-
-Do not use it as a random card background.
-
----
-
-# 24. Functional Colors
-
-Inspect and preserve canonical roles for:
-
-```text
-success
-warning
-error
-information
-focus
-```
-
-Do not repurpose functional colors for decorative branding.
-
----
-
-# 25. Product Status Semantics
-
-Document that:
-
-```text
-MADE_TO_ORDER
-```
-
-is not:
-
-```text
-warning
-error
-unavailable
-```
-
-It is a normal primary offering.
-
-Likewise future:
-
-```text
-IN_STOCK
-LOW_STOCK
-UNAVAILABLE
-```
-
-should use semantic status treatment rather than arbitrary decorative colors.
-
-Do not implement the actual badge components yet.
-
----
-
-# 26. Contrast Validation
-
-Validate at minimum:
-
-```text
-text.primary on surface.canvas
-text.secondary on surface.canvas
-text.primary on surface.paper
-text.secondary on surface.paper
-
-inverse text on surface.inverse
-
-primary action foreground/background
-
-secondary action
-
-focus indicator on:
-- canvas
-- paper
-- editorial
-- inverse
-
-functional status foreground/background pairs
-```
-
-Use WCAG-compliant targets according to text/control usage.
-
----
-
-# 27. Color-Only Communication Prohibited
-
-Document explicitly:
-
-```text
-state may not be communicated by color alone
-```
-
-Future status components must combine color with:
-
-```text
-text
-icon
-shape
-position
-```
-
-as appropriate.
-
----
-
-# 28. Spacing Foundation
-
-Inspect the existing spacing scale.
-
-Preserve it if coherent.
-
-Do NOT create a second spacing scale for:
-
-```text
-MUI
-Flutter
-homepage
-mobile
-```
-
-All framework consumers map to the shared canonical scale.
-
----
-
-# 29. Spacing Categories
-
-Document intended spacing use conceptually:
-
-```text
-micro spacing
-control internal spacing
-component spacing
-content spacing
-section spacing
-page/container spacing
-```
-
-Map these to existing primitives.
-
-Do not create raw values unless a repeated semantic need cannot be represented by existing tokens.
-
----
-
-# 30. Micro Spacing
-
-Micro spacing is for:
-
-```text
-icon ↔ label
-small metadata separation
-inline elements
-tight control composition
-```
-
-Do not use large layout tokens inside controls.
-
----
-
-# 31. Component Spacing
-
-Component spacing is for:
-
-```text
-card content
-form fields
-product information blocks
-list items
-```
-
-This phase documents the rhythm.
-
-It does not build the components.
-
----
-
-# 32. Section Spacing
-
-Define/reconcile semantic section spacing using existing primitives.
-
-Conceptually:
-
-```text
-section.compact
-section.default
-section.spacious
-section.editorial
-```
-
-ONLY if such aliases are justified.
-
-Do not create new raw pixel values when existing primitives suffice.
-
----
-
-# 33. Page Gutters
-
-Inspect existing container/gutter tokens.
-
-Document how future responsive layouts should use:
-
-```text
-mobile gutter
-tablet gutter
-desktop gutter
-wide editorial gutter
-```
-
-Do not implement `PageContainer`.
-
-That belongs to Group M layout work.
-
----
-
-# 34. Grid Gaps
-
-Document consistent grid gaps for:
-
-```text
-product grids
-category grids
-editorial grids
-forms
-```
-
-using existing spacing primitives.
-
-Do not hard-code product-grid values into Group L tokens if a generic grid gap role is sufficient.
-
----
-
-# 35. Avoid Arbitrary Numeric Multipliers
-
-Later MUI code should not rely on unexplained:
-
-```text
-theme.spacing(7.25)
-```
-
-Flutter should not rely on:
-
-```text
-EdgeInsets.all(19)
-```
-
-unless those values correspond to approved tokens.
-
----
-
-# 36. Shape Foundation
-
-Preserve the current philosophy:
-
-```text
-sharp media
-small form radius
-controlled container radius
-pill only for controls that genuinely need it
-```
-
-Do not turn every surface into a rounded card.
-
----
-
-# 37. Radius Roles
-
-Finalize semantic radius usage.
-
-At minimum distinguish conceptually:
-
-```text
-none/sharp
-control
-container
-pill
-```
-
-Use current token names.
-
-Do not create many nearly-identical radii.
-
----
-
-# 38. Media Radius
-
-Product imagery should generally remain visually architectural.
-
-If canonical guidance says:
-
-```text
-sharp media
-```
-
-preserve it.
-
-Do not round every furniture image because MUI/Material defaults use rounded surfaces elsewhere.
-
----
-
-# 39. Form Radius
-
-Inputs, selects, buttons, and interactive controls should use the approved control radius consistently.
-
-Do not allow:
-
-```text
-button 24px
-input 6px
-select 14px
-search field 40px
-```
-
-unless the token system intentionally distinguishes those roles.
-
----
-
-# 40. Pill Geometry
-
-Use pill geometry only for components that semantically justify it, such as potentially:
-
-```text
-small state chips
-segmented controls
-compact filter tokens
-```
-
-Do not make:
-
-```text
-cards
-inputs
-dialogs
-navigation
-product tiles
-```
-
-pill-like.
-
----
-
-# 41. Elevation Foundation
+# 8. Shared Semantics, Independent Implementations
 
 Preserve:
 
 ```text
-flat surfaces first
+Web
+→ MUI / React components
+
+Flutter
+→ Material 3 widgets
 ```
 
-Use:
+Do not attempt to create a cross-framework runtime component package.
+
+Shared:
 
 ```text
-spacing
-border
-surface difference
-photographic depth
+semantics
+visual hierarchy
+state vocabulary
+token meaning
+interaction intent
 ```
 
-before shadows.
-
----
-
-# 42. Elevation Roles
-
-Finalize a minimal meaningful elevation hierarchy.
-
-Conceptually:
+Framework-specific:
 
 ```text
-none
-raised
-overlay
-modal
-```
-
-Use the current token scale rather than inventing those names if equivalents already exist.
-
----
-
-# 43. No Decorative Card Shadows
-
-Product cards, editorial sections, and ordinary content containers should not automatically use elevation.
-
-Furniture imagery and whitespace should provide visual richness.
-
----
-
-# 44. True Layers
-
-Elevation is appropriate for actual layers such as:
-
-```text
-menu
-popover
-dialog
-drawer
-bottom sheet
-tooltip where appropriate
-sticky overlay
-```
-
-Do not eliminate depth where it communicates hierarchy/accessibility.
-
----
-
-# 45. MUI Elevation Reconciliation
-
-Inspect Phase 12.3 MUI theme behavior.
-
-Ensure MUI defaults are not reintroducing:
-
-```text
-heavy Paper shadows
-Card elevation
-floating surfaces everywhere
-```
-
-If the theme already correctly maps the canonical elevation system:
-
-```text
-leave it.
-```
-
-If a small correction is required:
-
-```text
-fix the mapping only.
-```
-
-Do not redesign components.
-
----
-
-# 46. Future Flutter Elevation Reconciliation
-
-Update `flutter-material3.md` only if Phase 12.5 clarifies an existing ambiguity.
-
-Do not implement Flutter code.
-
-Future Material 3 should use canonical elevation semantics rather than default shadow-heavy styling.
-
----
-
-# 47. Motion Foundation
-
-Preserve existing duration/easing tokens.
-
-Motion should remain:
-
-```text
-quiet
-purposeful
-functional
+implementation
+layout APIs
+event APIs
+accessibility APIs
+navigation behavior
+platform adaptation
 ```
 
 ---
 
-# 48. Motion Categories
+# 9. Component Hierarchy
 
-Document semantic motion purposes such as:
+Define a clear conceptual hierarchy.
+
+Recommended:
 
 ```text
-instant/feedback
-standard
-enter/exit
-overlay
+Foundation
+    ↓
+Primitive
+    ↓
+Composite
+    ↓
+Commerce/domain component
+    ↓
+Page composition
 ```
 
-only if current tokens support a clean mapping.
+Examples:
 
-Do not invent dozens of animation durations.
+```text
+Foundation
+→ tokens / typography / color / spacing
+
+Primitive
+→ Button / Input / Link / Surface
+
+Composite
+→ SearchField / QuantitySelector
+
+Commerce
+→ ProductCard / PriceDisplay / RequestCTA
+
+Page composition
+→ ProductGrid / ProductDetail composition
+```
+
+Do not implement these now.
+
+The purpose is ownership clarity.
 
 ---
 
-# 49. Prohibited Motion
+# 10. Primitive Rule
 
-Explicitly prohibit default use of:
+A primitive should exist only when it provides meaningful shared behavior or design-system enforcement.
+
+Do NOT create wrappers such as:
+
+```tsx
+<AppBox>
+<AppStack>
+<AppTypography>
+<AppIcon>
+```
+
+merely to rename MUI.
+
+Similarly, future Flutter must not wrap every:
 
 ```text
-springy cards
-bounce
-excessive hover scaling
-constant parallax
-decorative rotations
-continuous animation
-large page-transition spectacle
+Container
+Row
+Column
+Text
+Icon
 ```
+
+without meaningful value.
 
 ---
 
-# 50. Hover Motion
+# 11. Prefer Framework Primitives
 
-On pointer devices, future hover states should be subtle.
+Future web implementation should prefer MUI directly where MUI already expresses the required semantics correctly.
+
+Example:
+
+```text
+MUI Button
++ theme defaults
++ approved variant
+```
+
+is preferable to:
+
+```text
+CustomButton
+→ MyButton
+→ BrandButton
+→ MuiButton
+```
+
+without additional behavior.
+
+Avoid abstraction for abstraction's sake.
+
+---
+
+# 12. Wrapper Justification
+
+A shared wrapper is justified when it centralizes one or more of:
+
+```text
+accessibility behavior
+repeated semantic variant
+loading behavior
+routing integration
+analytics integration
+domain behavior
+complex responsive behavior
+repeated state logic
+```
+
+Styling alone is not automatically sufficient if the MUI theme already handles it.
+
+---
+
+# 13. Composition Over Giant Components
 
 Prefer:
 
 ```text
-color
-underline
+small focused components
++
+composition
+```
+
+over components with dozens of switches.
+
+Avoid future APIs such as:
+
+```tsx
+<ProductCard
+  horizontal
+  compact
+  hero
+  featured
+  mobile
+  dark
+  editorial
+  rounded
+  elevated
+  showDescription
+  showBadge
+  ...
+/>
+```
+
+If visually/semantically distinct compositions emerge, model them deliberately.
+
+---
+
+# 14. Variant Budget
+
+Component variants must be intentionally limited.
+
+Before adding a variant ask:
+
+```text
+Does this represent a reusable semantic distinction?
+```
+
+Good:
+
+```text
+primary
+secondary
+quiet
+danger
+```
+
+where supported by actual component semantics.
+
+Bad:
+
+```text
+brown
+cream
+homepage
+productPage
+big
+smallBrown
+special
+v2
+```
+
+Variants express purpose, not page-specific appearance.
+
+---
+
+# 15. Size Budget
+
+Do not automatically create:
+
+```text
+xs
+sm
+md
+lg
+xl
+xxl
+```
+
+for every component.
+
+Only expose sizes that have genuine design-system meaning.
+
+Use canonical spacing and typography internally.
+
+---
+
+# 16. Raw Style Props
+
+Future shared components should not expose uncontrolled styling APIs such as:
+
+```tsx
+backgroundColor
+borderRadius
+fontSize
+shadow
+padding
+```
+
+as ordinary product-level props.
+
+That allows callers to bypass the design system.
+
+Prefer semantic variants.
+
+---
+
+# 17. MUI `sx` Policy
+
+Do NOT ban `sx`.
+
+It is a legitimate MUI composition mechanism.
+
+However:
+
+```text
+sx
+```
+
+must not become a route around the design system.
+
+Allowed:
+
+```text
+layout composition
+responsive arrangement
+token-based contextual spacing
+one-off structural positioning
+```
+
+Discouraged/prohibited:
+
+```text
+new raw brand colors
+random radius
+random shadow
+new font sizes
+new component variants
+duplicated reusable component styling
+```
+
+Document this distinction.
+
+---
+
+# 18. Flutter Local Styling Policy
+
+Apply the same principle to future Flutter code.
+
+Local:
+
+```dart
+Padding
+SizedBox
+Align
+Flex
+```
+
+composition is normal.
+
+But do not scatter:
+
+```dart
+Color(0xFF...)
+TextStyle(...)
+BorderRadius.circular(...)
+BoxShadow(...)
+```
+
+with ad-hoc brand values throughout widgets.
+
+Shared visual decisions come from the theme/token adapter.
+
+---
+
+# 19. Button Taxonomy
+
+Define the semantic action hierarchy.
+
+At minimum reconcile:
+
+```text
+Primary
+Secondary
+Text / quiet
+Destructive
+Icon-only
+```
+
+against existing design artifacts.
+
+Do not automatically create every possible MUI button variant.
+
+---
+
+# 20. Primary Button
+
+Primary action should represent:
+
+```text
+the strongest action in the current decision context
+```
+
+Visual foundation:
+
+```text
+charcoal action surface
+high-contrast foreground
+utility typography
+approved control radius
+visible focus
+appropriate minimum target
+quiet motion
+```
+
+Do not use brown as the universal primary CTA.
+
+---
+
+# 21. One Dominant Primary Action
+
+As a general composition rule:
+
+```text
+one visually dominant primary action per immediate decision group
+```
+
+Avoid screens filled with equally dominant black buttons.
+
+This is a hierarchy principle, not an absolute count per page.
+
+---
+
+# 22. Secondary Action
+
+Secondary actions should remain clearly actionable without competing with the primary action.
+
+Use approved:
+
+```text
 border
-small opacity change
+surface
+text
 ```
 
-over:
+semantics.
+
+Do not invent decorative brown buttons as a secondary system unless already approved.
+
+---
+
+# 23. Quiet/Text Action
+
+Use quiet actions for lower-emphasis operations such as:
 
 ```text
-large translateY
-large scale
-deep shadow
+view details
+cancel
+learn more
+secondary navigation
 ```
 
-Do not implement hover styles yet.
+where context supports them.
+
+Do not use low-emphasis styling for destructive or critical actions.
 
 ---
 
-# 51. Reduced Motion
+# 24. Destructive Action
 
-Document that all future framework implementations must respect reduced-motion preferences.
+Destructive semantics must use the approved functional error/destructive language.
 
-Motion must never be essential for understanding content or state.
-
----
-
-# 52. Focus Foundation
-
-Focus is a visual foundation and must be finalized here.
-
-Ensure a semantic focus token/treatment exists.
-
-It must remain visible on:
+Never use:
 
 ```text
-warm canvas
-white paper
-editorial surface
-inverse surface
+brand brown
+warning amber
+primary charcoal alone
 ```
+
+to disguise a destructive action.
+
+Require clear textual meaning.
 
 ---
 
-# 53. Focus Cannot Be Removed
+# 25. Icon-Only Buttons
 
-Explicitly prohibit:
-
-```css
-outline: none;
-```
-
-without an approved visible replacement.
-
-No future component may hide keyboard focus for aesthetics.
-
----
-
-# 54. Focus vs Hover
-
-Document that:
+Icon-only controls must have:
 
 ```text
-hover
-focus
-active
-disabled
+accessible name
+adequate target size
+visible focus
+clear hover/pressed state
 ```
 
-are separate interaction states.
-
-Do not make focus merely copy hover behavior.
+Tooltips may supplement but must not be the sole accessible name.
 
 ---
 
-# 55. Disabled State
+# 26. Material UI Icons
 
-Document disabled-state principles:
-
-```text
-clearly non-interactive
-still readable enough
-not communicated only by opacity when that harms legibility
-```
-
-Do not introduce exact component styles yet.
-
----
-
-# 56. Active / Pressed State
-
-Document that active/pressed states should derive from semantic action tokens rather than arbitrary darker/lighter colors.
-
----
-
-# 57. Icon Foundation
-
-The website icon source has already been approved:
+Web icon source remains:
 
 ```text
 @mui/icons-material
 ```
 
-Do not add:
+Do not introduce:
 
 ```text
 Lucide
-React Icons
 Heroicons
+React Icons
 Font Awesome
-custom icon packs
-emoji-as-icons
-```
-
-Future Flutter uses the Material icon family.
-
-Phase 12.5 should document shared icon principles only:
-
-```text
-meaning before decoration
-consistent stroke/fill family where possible
-semantic theme colors
-accessible names for meaningful icon-only actions
-decorative icons hidden from accessibility APIs
-```
-
-Do not build icon wrappers yet.
-
----
-
-# 58. Icon Sizes
-
-If the design system already defines icon-size tokens:
-
-```text
-preserve them.
-```
-
-If not, only add a small semantic size scale if repeated visual evidence justifies it.
-
-Do not create many arbitrary sizes.
-
----
-
-# 59. Photography Interaction With Foundations
-
-Reconfirm that photography remains the dominant source of visual color.
-
-Spacing and surface choices must allow images to breathe.
-
-Do not compensate for strong imagery by adding excessive borders/shadows/brand colors.
-
----
-
-# 60. Image Backgrounds
-
-Where isolated furniture product imagery uses a clean background:
-
-```text
-surface.paper
-```
-
-or approved product-media surface should be preferred.
-
-Do not invent gray/beige image backgrounds per component later.
-
----
-
-# 61. Cross-Platform Semantic Matrix
-
-Update/reconcile the shared mapping so important foundations mean the same thing across:
-
-```text
-Canonical token
-Web / MUI
-Future Flutter / Material 3
-```
-
-Include at least:
-
-```text
-display typography
-UI typography
-canvas
-paper
-editorial
-inverse
-primary text
-secondary text
-primary action
-brand accent
-border
-focus
-control radius
-container radius
-elevation
-standard motion
-```
-
-Do not require identical framework API names.
-
-Meaning must remain identical.
-
----
-
-# 62. MUI Non-Regression Review
-
-Review the completed Phase 12.3 theme.
-
-Check:
-
-```text
-typography mappings
-palette mappings
-spacing
-shape
-shadows
-transitions
-focus behavior
-breakpoints
-```
-
-against the finalized Phase 12.5 rules.
-
-If already compliant:
-
-```text
-do not rewrite.
-```
-
-If not:
-
-```text
-apply smallest necessary reconciliation.
+emoji icons
+random SVG icon libraries
 ```
 
 ---
 
-# 63. Do Not Pull Group M Forward
+# 27. Flutter Icons
 
-Do not implement:
+Future Flutter uses:
 
 ```text
-API client
-routing
-layout primitives
-error pages
-responsive page shell
-loading UI
-not-found page
+Material Icons
 ```
 
-Those are Group M.
+by default.
 
-Phase 12.5 may define rules they will later use.
+Aim for semantic parity, not necessarily byte-identical glyphs.
 
 ---
 
-# 64. Do Not Pull Group N Forward
+# 28. Icon Restraint
 
-Do not build:
+Icons are functional aids.
+
+Do not add an icon to:
 
 ```text
-homepage
-category page
-product listing
-product detail
+every heading
+every card
+every section title
+every CTA
+```
+
+simply to make UI appear designed.
+
+Text-only controls are valid.
+
+---
+
+# 29. Icon + Text
+
+Where icon and text are combined:
+
+```text
+icon supports the label
+label remains understandable
+```
+
+Do not use ambiguous glyphs to replace clear language.
+
+---
+
+# 30. Links vs Buttons
+
+Formalize:
+
+```text
+Link
+→ navigation
+
+Button
+→ action
+```
+
+Do not style navigation anchors as buttons indiscriminately.
+
+Do not use buttons to perform ordinary navigation when semantic links are appropriate.
+
+Framework implementation must preserve correct HTML semantics on web.
+
+---
+
+# 31. Inline Links
+
+Inline links must remain recognizable through more than subtle color difference where necessary.
+
+Do not rely on brand brown alone against body text if affordance becomes unclear.
+
+Use approved decoration/state treatment.
+
+---
+
+# 32. Form Control Taxonomy
+
+Define shared expectations for:
+
+```text
+text input
+textarea
+select
+checkbox
+radio
+switch
 search
-filters
-SEO metadata
-structured data
-sitemap
-robots
+file input
 ```
 
-Those are Group N.
+Do not implement them.
 
 ---
 
-# 65. Design-System Preview
+# 33. Labels
 
-Update existing design-system previews where supported to visibly demonstrate:
+Form controls require persistent accessible labels where appropriate.
+
+Do not use placeholder-only forms.
+
+Placeholder text is supplementary guidance, not a substitute for a label.
+
+---
+
+# 34. Helper Text
+
+Helper text should explain:
 
 ```text
-typography hierarchy
-surface hierarchy
-spacing rhythm
-radius examples
-elevation examples
-motion tokens if preview tooling supports them
+format
+constraint
+context
+```
+
+when useful.
+
+Do not fill every input with unnecessary explanatory text.
+
+---
+
+# 35. Error Messages
+
+Validation errors should:
+
+```text
+identify the affected field
+explain what needs correction
+remain associated with the field
+not rely solely on red color
+```
+
+Do not use vague:
+
+```text
+Invalid value
+Something went wrong
+```
+
+when a safe, actionable validation explanation is available.
+
+---
+
+# 36. Required Fields
+
+Choose and document one consistent required/optional convention.
+
+Do not mix:
+
+```text
+*
+(required)
+(optional)
+nothing
+```
+
+randomly between forms.
+
+Follow existing product/content requirements where already established.
+
+---
+
+# 37. Input Geometry
+
+All related controls should share coherent:
+
+```text
+height
+radius
+border treatment
+label typography
 focus treatment
 ```
 
-Do not build an application page as a preview.
+through framework theme/component conventions.
 
-Use the existing preview system.
-
----
-
-# 66. Preview Must Be Token-Driven
-
-Preview files must not introduce independent raw visual values.
-
-They should consume canonical tokens.
-
-Any raw values required purely for preview scaffolding must be clearly non-brand/layout infrastructure.
+Do not invent per-form input styling.
 
 ---
 
-# 67. Typography Preview
+# 38. Search
 
-Ensure preview demonstrates:
+Search is an input behavior, not automatically a pill-shaped decorative component.
+
+Its geometry must follow the shape system.
+
+Do not default to oversized rounded search pills merely because many e-commerce sites do.
+
+---
+
+# 39. File Upload
+
+Future request/enquiry attachment controls must clearly communicate:
 
 ```text
-Young Serif display
-UI sans body
-labels
-metadata
-price/utility
-multiple canonical sizes
+allowed file type
+size constraint
+selected file
+remove/replace behavior
+upload/error state
 ```
 
-Do not add noncanonical type sizes for showcase aesthetics.
+but must not expose backend implementation details.
+
+Do not implement attachment UI during this phase.
 
 ---
 
-# 68. Color Preview
+# 40. Surface vs Card
 
-Ensure preview demonstrates:
+Formalize an important distinction:
 
 ```text
-canvas
-paper
-editorial
-inverse
-primary text
-secondary text
-brand accent
-primary action
-functional states
+not every grouped piece of content is a card.
+```
+
+Prefer:
+
+```text
+layout
+whitespace
+typography
+dividers
+surface changes
+```
+
+before adding card containers.
+
+This is essential to the architectural/editorial furniture direction.
+
+---
+
+# 41. Card Rule
+
+Use a card when content genuinely forms a:
+
+```text
+self-contained interactive/content unit
+```
+
+not merely because multiple elements appear near each other.
+
+---
+
+# 42. Card Appearance
+
+Ordinary cards should not automatically have:
+
+```text
+rounded container
+border
+shadow
+colored background
+```
+
+all at once.
+
+Choose the minimum visual containment required.
+
+---
+
+# 43. Product Cards
+
+Define only conventions, not implementation.
+
+Future product cards should generally prioritize:
+
+```text
+large product imagery
+product name
+price / starting price where applicable
+product type/status information where useful
+clear navigation/action
+```
+
+Avoid:
+
+```text
+excess chrome
+multiple badges
+heavy shadows
+decorative icons
+large description blocks
+```
+
+unless the specific experience requires them.
+
+---
+
+# 44. MADE_TO_ORDER Presentation
+
+The current production model gives MADE_TO_ORDER products first-class importance.
+
+Therefore future components must not visually communicate:
+
+```text
+MADE_TO_ORDER = unavailable
+```
+
+or:
+
+```text
+MADE_TO_ORDER = disabled product
+```
+
+It is a valid purchasing/request pathway.
+
+Its primary conversion may be:
+
+```text
+Request Furniture
+```
+
+rather than Add to Cart.
+
+---
+
+# 45. Product Price Semantics
+
+Future component conventions must accommodate:
+
+```text
+base/display price
+starting-at price
+variant-specific price
+```
+
+without inventing pricing logic in the frontend.
+
+The API remains authoritative.
+
+Do not define commerce calculations in the design system.
+
+---
+
+# 46. Media
+
+Furniture imagery should remain visually dominant.
+
+Media conventions should favor:
+
+```text
+clean crop
+consistent aspect treatment
+minimal overlays
+minimal decorative chrome
+```
+
+Do not place unnecessary text/buttons over product photography.
+
+---
+
+# 47. Media Shape
+
+Preserve Phase 12.5:
+
+```text
+product media
+→ generally sharp / architectural
+```
+
+Do not round product images automatically to match control radii.
+
+---
+
+# 48. Image Fallback
+
+Define a future fallback principle:
+
+```text
+missing image
+→ neutral branded placeholder/state
+```
+
+not:
+
+```text
+broken browser icon
+random external placeholder
+```
+
+Do not create the asset yet unless one already exists in the design system.
+
+---
+
+# 49. Badges and Chips
+
+Use badges/chips for compact semantic information.
+
+Examples may include:
+
+```text
+status
+stock state
+product type
+selected filter
+```
+
+Do not turn ordinary metadata into pills.
+
+---
+
+# 50. Badge Restraint
+
+A product card should not accumulate many competing badges.
+
+Define a hierarchy if multiple statuses exist.
+
+Prefer the minimum information necessary for the decision context.
+
+---
+
+# 51. Status Semantics
+
+Status appearance must derive from meaning.
+
+Do not use:
+
+```text
+green = everything good
+red = everything bad
+brown = furniture
+```
+
+without semantic rules.
+
+Status must not rely on color alone.
+
+---
+
+# 52. Navigation Controls
+
+Define principles for:
+
+```text
+breadcrumbs
+tabs
+pagination
+back controls
+menus
+drawers
+bottom navigation
+```
+
+but do not implement them.
+
+Navigation should remain:
+
+```text
+clear
+quiet
+predictable
+accessible
+```
+
+---
+
+# 53. Breadcrumbs
+
+Future desktop/product hierarchy may use breadcrumbs.
+
+They should:
+
+```text
+represent actual hierarchy
+use links for navigable ancestors
+identify current location
+```
+
+Do not use breadcrumbs as decorative metadata.
+
+---
+
+# 54. Pagination
+
+Pagination controls should preserve semantic navigation and accessible current-page indication.
+
+Do not use infinite scroll automatically.
+
+Actual catalog pagination behavior belongs to later catalog implementation and API contract.
+
+---
+
+# 55. Feedback Taxonomy
+
+Define conventions for:
+
+```text
+inline feedback
+toast/snackbar
+alert
+dialog
+page-level state
+```
+
+Choose the least disruptive mechanism appropriate to the message.
+
+---
+
+# 56. Snackbar / Toast
+
+Use for transient, non-blocking confirmation.
+
+Examples:
+
+```text
+saved
+copied
+request submitted
+```
+
+where appropriate.
+
+Do not use snackbars for errors requiring user correction or critical decisions.
+
+---
+
+# 57. Inline Feedback
+
+Use near the relevant content when the user can act locally.
+
+Examples:
+
+```text
+field validation
+attachment failure
+quantity issue
+```
+
+---
+
+# 58. Alerts
+
+Use persistent alerts for information that remains relevant until understood/resolved.
+
+Do not turn ordinary informational copy into colored alert boxes.
+
+---
+
+# 59. Dialogs
+
+Dialogs interrupt workflow and should be reserved for:
+
+```text
+important confirmation
+destructive action
+focused short task
+critical information
+```
+
+Do not place ordinary forms/content into modals merely to reduce page length.
+
+---
+
+# 60. Dialog Actions
+
+Dialog actions must have clear hierarchy.
+
+Destructive confirmation must explicitly identify the destructive operation.
+
+Avoid ambiguous:
+
+```text
+Yes
+No
+OK
+```
+
+where:
+
+```text
+Delete
+Cancel
+```
+
+is clearer.
+
+---
+
+# 61. Loading States
+
+Define three categories:
+
+```text
+initial content loading
+local/action loading
+progressive content loading
+```
+
+Future components must use the least disruptive appropriate treatment.
+
+---
+
+# 62. Action Loading
+
+When submitting an action:
+
+```text
+preserve context
+prevent accidental duplicate submission where necessary
+communicate progress
+```
+
+Do not replace the entire page with a spinner for a local button operation.
+
+---
+
+# 63. Skeletons
+
+Skeletons may be used where they meaningfully preserve layout during content loading.
+
+Do not:
+
+```text
+skeletonize every page
+create flashy shimmer everywhere
+```
+
+Use them only where content shape is reasonably predictable.
+
+---
+
+# 64. Spinner Restraint
+
+Do not use large centered spinners as the universal loading solution.
+
+Loading representation should match scope.
+
+---
+
+# 65. Empty States
+
+An empty state should answer:
+
+```text
+What is empty?
+Why might it be empty?
+What can I do next?
+```
+
+where those answers are useful.
+
+Do not automatically add:
+
+```text
+illustration
+giant icon
+marketing headline
+```
+
+to every empty state.
+
+---
+
+# 66. Error States
+
+Errors should distinguish conceptually:
+
+```text
+validation error
+recoverable request error
+permission/authentication state
+not found
+system/unavailable state
+```
+
+Do not expose backend internals or stack traces.
+
+Actual error mapping belongs to Group M/API client work.
+
+---
+
+# 67. Retry
+
+Offer retry only where repeating the operation is:
+
+```text
+safe
+meaningful
+supported
+```
+
+Do not add generic Retry buttons everywhere.
+
+---
+
+# 68. Responsive Components
+
+A component may change composition at approved breakpoints.
+
+Do not create separate:
+
+```text
+DesktopProductCard
+TabletProductCard
+MobileProductCard
+```
+
+solely because layout changes.
+
+Prefer responsive composition where semantics remain the same.
+
+---
+
+# 69. Different Semantics May Justify Different Components
+
+If mobile interaction genuinely differs—for example:
+
+```text
+desktop popover
+vs
+mobile bottom sheet
+```
+
+separate framework-specific composition may be appropriate.
+
+Do not force pixel-identical behavior across platforms.
+
+---
+
+# 70. Component-Owned vs Parent-Owned Spacing
+
+Define:
+
+```text
+component owns
+→ internal spacing
+
+parent/layout owns
+→ external spacing
+```
+
+This is mandatory.
+
+A reusable component should generally not impose arbitrary outer margins.
+
+Example:
+
+```text
+Button
+→ owns icon-label gap and internal padding
+
+Page layout
+→ owns distance between Button and neighboring section
+```
+
+This prevents unpredictable composition.
+
+---
+
+# 71. Width Ownership
+
+Components should not default to arbitrary fixed widths.
+
+Parent/layout determines available width unless component semantics require otherwise.
+
+Examples where component may legitimately control width behavior:
+
+```text
+dialog
+popover
+tooltip
+compact icon control
+```
+
+---
+
+# 72. Height Ownership
+
+Avoid fixed content heights where text/data can vary.
+
+Fixed minimum control heights are acceptable for accessibility and consistency.
+
+Do not truncate content solely to preserve decorative card alignment unless explicitly approved.
+
+---
+
+# 73. Content Before Decoration
+
+Components must be designed around actual content semantics.
+
+Do not construct empty visual shells and force data into them later.
+
+This is especially important for:
+
+```text
+product names
+prices
+dimensions
+material
+MTO status
+request summaries
+enquiry information
+```
+
+---
+
+# 74. Realistic Content Fixtures
+
+Design-system previews should use furniture-oriented realistic fixture text.
+
+Avoid:
+
+```text
+Lorem ipsum
+Nike Air Max
+Sneaker
+T-shirt
+Apparel
+```
+
+Use neutral fictional furniture content.
+
+Do not introduce claims about real inventory or prices unless clearly fixture data.
+
+---
+
+# 75. Component State Matrix
+
+For each important primitive category, define applicable states.
+
+Typical interactive states:
+
+```text
+default
+hover
+focus-visible
+active/pressed
+disabled
+loading
+error where relevant
+selected where relevant
+```
+
+Not every component requires every state.
+
+Do not manufacture meaningless states.
+
+---
+
+# 76. Hover Is Web-Specific
+
+Flutter/mobile does not need to imitate web hover behavior.
+
+Shared semantic states:
+
+```text
+focus
+pressed
+disabled
+selected
+loading
+```
+
+should map appropriately to platform capabilities.
+
+---
+
+# 77. Focus-Visible
+
+Web components should prefer keyboard-appropriate focus-visible behavior rather than showing/removing focus indiscriminately.
+
+Do not suppress focus after pointer interactions in ways that harm accessibility.
+
+---
+
+# 78. Disabled vs Loading
+
+Document:
+
+```text
+disabled
+≠
+loading
+```
+
+Loading indicates an operation in progress.
+
+Disabled indicates action is currently unavailable.
+
+Do not use disabled styling as the only loading indication.
+
+---
+
+# 79. Selected vs Active
+
+Document:
+
+```text
+selected
+→ persistent/current choice
+
+active/pressed
+→ transient interaction state
+```
+
+Do not conflate them.
+
+---
+
+# 80. Semantic HTML
+
+Future web components must preserve semantic HTML.
+
+Examples:
+
+```text
+navigation → nav
+navigation action → a/link
+action → button
+heading → h1-h6 hierarchy
+list → ul/ol where appropriate
+form label → label
+```
+
+Do not build everything with:
+
+```text
+div
+span
+onClick
+```
+
+because MUI permits flexible primitives.
+
+---
+
+# 81. MUI Polymorphism
+
+When using MUI's:
+
+```text
+component
+```
+
+or equivalent polymorphic APIs, preserve semantic behavior.
+
+Visual appearance must not override correct HTML semantics.
+
+---
+
+# 82. Flutter Semantics
+
+Future Flutter components must use appropriate:
+
+```text
+Semantics
+Tooltip
+button semantics
+selected state
+labels
+```
+
+where built-in Material widgets do not already provide enough information.
+
+Do not duplicate semantics unnecessarily.
+
+---
+
+# 83. Component API Naming
+
+Props should describe:
+
+```text
+meaning
+state
+behavior
+```
+
+rather than arbitrary appearance.
+
+Prefer:
+
+```text
+loading
+selected
+status
+emphasis
+```
+
+over:
+
+```text
+black
+rounded
+shadow
+big
+brown
+```
+
+---
+
+# 84. Boolean Prop Explosion
+
+Avoid components with many independent booleans.
+
+If combinations can create invalid visual states, model the state with a closed semantic variant/type.
+
+---
+
+# 85. Closed Variant Types
+
+Future TypeScript components should use closed unions where appropriate:
+
+```ts
+type Emphasis = 'primary' | 'secondary' | 'quiet';
+```
+
+rather than unrestricted:
+
+```ts
+string
+```
+
+for design-system variants.
+
+Future Dart should use enums/sealed semantics where appropriate.
+
+Do not implement these yet.
+
+---
+
+# 86. Escape Hatch Policy
+
+When a component needs a visual treatment not represented by existing conventions:
+
+```text
+STOP
+→ determine whether this is:
+   1. local layout composition
+   2. reusable component variant
+   3. missing design token
+   4. genuinely new design-system behavior
+```
+
+Then update the correct authority.
+
+Do not patch locally with raw values.
+
+---
+
+# 87. No Page-Specific Design Tokens
+
+Do not create:
+
+```text
+--homepage-card-radius
+--product-page-brown
+--checkout-gap
+--request-form-shadow
+```
+
+unless the concept is genuinely reusable and semantic.
+
+Pages consume the system.
+
+They do not redefine it.
+
+---
+
+# 88. Component Documentation Structure
+
+Update the design-system documentation so each component convention can eventually describe:
+
+```text
+Purpose
+When to use
+When not to use
+Anatomy
+Variants
+Sizes
+States
+Token dependencies
+Accessibility
+Responsive behavior
+Platform notes
+```
+
+Do not require every existing fixture to have a huge specification if it is not yet an implemented primitive.
+
+Establish the format.
+
+---
+
+# 89. Component Manifest
+
+Inspect:
+
+```text
+components.manifest.json
+```
+
+and determine its existing purpose/schema.
+
+If it already represents the component catalog:
+
+```text
+preserve schema compatibility
+```
+
+unless Phase 12.6 exposes a genuine deficiency.
+
+Do not casually redesign the manifest.
+
+---
+
+# 90. Manifest Must Not Become Application Registry
+
+Do not store:
+
+```text
+React import paths
+Flutter class names
+API endpoints
+route configuration
+business logic
+```
+
+unless its existing documented purpose explicitly includes them.
+
+Keep design metadata separate from runtime architecture.
+
+---
+
+# 91. Component Preview Reconciliation
+
+Update:
+
+```text
+components.html
+```
+
+and/or existing preview artifacts only where necessary to demonstrate the finalized conventions.
+
+Prioritize examples of:
+
+```text
+action hierarchy
+links
+form states
+surface/card restraint
+status/badge restraint
+loading/empty/error language
 focus
 ```
 
----
-
-# 69. Spacing Preview
-
-Demonstrate the existing spacing scale in a way that makes relationships obvious.
-
-Do not show arbitrary values outside the scale.
+Do not create a complete storefront.
 
 ---
 
-# 70. Shape Preview
+# 92. Preview Interactivity
 
-Demonstrate:
+If the existing static preview supports simple state demonstration, use it carefully.
+
+Do not introduce a frontend framework just for design-system previews.
+
+No new dependency is expected.
+
+---
+
+# 93. Anti-AI-Slop Component Rules
+
+Explicitly prohibit future agents from automatically adding:
 
 ```text
-sharp
-control radius
-container radius
-pill
+icon in every heading
+icon in every button
+pill around every label
+rounded card around every section
+gradient CTA
+glass panel
+blur background
+floating decorative blobs
+huge shadow
+animated card lift
+random accent borders
+oversized marketing copy everywhere
+three CTAs of equal weight
+unnecessary badge collections
 ```
 
-using canonical tokens.
+The UI should feel deliberately composed rather than generated from generic SaaS/e-commerce patterns.
 
 ---
 
-# 71. Elevation Preview
+# 94. Furniture-Specific Direction
 
-Demonstrate:
+Components should reinforce:
 
 ```text
-flat/default
-true raised layer
-overlay/modal depth
+material
+craft
+space
+proportion
+photography
+editorial hierarchy
 ```
 
-without turning the preview into a gallery of decorative shadows.
-
----
-
-# 72. Accessibility Preview
-
-Where supported, demonstrate keyboard focus visibly.
-
-Ensure preview examples preserve readable contrast.
-
----
-
-# 73. Token Inventory Audit
-
-Run a focused audit for:
+rather than sportswear cues such as:
 
 ```text
-unused semantic tokens
-duplicate semantic aliases
-two aliases representing identical meaning without reason
-primitive values bypassing semantics
-framework-specific token leakage
-```
-
-Do not delete tokens merely because no application component uses them yet.
-
-Delete/reconcile only obvious design-system duplication or stale legacy drift.
-
----
-
-# 74. Legacy Nike Audit
-
-Search active design guidance for any remaining visual instructions that conflict with the current furniture brand, including:
-
-```text
-athletic
-sport
-performance
-aggressive typography
-shoe
-sneaker
-apparel
-sportswear
-```
-
-Historical provenance references are allowed.
-
-Active UI guidance must be furniture-oriented.
-
----
-
-# 75. Raw-Value Audit
-
-Search future-consumer documentation/examples for direct:
-
-```text
-hex
-rgb
-hsl
-px
-rem
-shadow
-transition
-radius
-```
-
-values that bypass approved tokens.
-
-Primitive definitions may contain raw values.
-
-Consumer examples should normally use semantic tokens.
-
----
-
-# 76. Anti-AI-Slop Rules
-
-Reconfirm in `USAGE.md` / `frontend/AGENTS.md` as appropriate:
-
-Future agents must not invent:
-
-```text
-random gradients
-glassmorphism
-blur cards
-decorative blobs
-random pills
-oversized radius
-heavy shadows
-random animation
-one-off type sizes
-one-off spacing
-unapproved colors
-arbitrary font changes
-```
-
-when implementing later UI.
-
----
-
-# 77. Escape Hatch
-
-Keep the approved process:
-
-```text
-Need a visual value
-        ↓
-Does approved token exist?
-        ↓
-YES → use it
-NO  → determine whether reusable semantic need exists
-        ↓
-update token authority
-        ↓
-synchronize derived artifacts
-        ↓
-validate
-        ↓
-consume
-```
-
-Never:
-
-```text
-Need value
-→ hard-code locally
+speed
+aggression
+high-energy contrast everywhere
+oversized promotional labels
+dense badge systems
 ```
 
 ---
 
-# 78. Documentation Updates
+# 95. Admin UI Distinction
 
-Expected likely updates:
+The shared foundations apply to both customer and future admin interfaces, but component composition may differ.
+
+Admin UI should prioritize:
+
+```text
+clarity
+density
+operational efficiency
+```
+
+Customer storefront may prioritize:
+
+```text
+photography
+space
+editorial presentation
+```
+
+Do not create a second admin design system.
+
+---
+
+# 96. Commerce Boundary
+
+Component conventions must not invent business behavior.
+
+Do not define:
+
+```text
+cart eligibility
+price calculations
+inventory rules
+request eligibility
+order transitions
+payment status behavior
+```
+
+from visual assumptions.
+
+Backend/API contracts remain authoritative.
+
+---
+
+# 97. Request-First Boundary
+
+For the initial request-first release:
+
+```text
+MADE_TO_ORDER product
+→ legitimate product
+→ Request Furniture conversion
+```
+
+The design system must support this without implying disabled commerce.
+
+Do not expose dormant transactional checkout merely because generic e-commerce components normally contain Add to Cart.
+
+---
+
+# 98. No API Work
+
+Do not modify:
+
+```text
+backend/
+docs/api/
+OpenAPI
+Laravel
+database
+RBAC
+```
+
+during Phase 12.6.
+
+---
+
+# 99. No Framework Dependencies
+
+Expected:
+
+```text
+dependencies added = NONE
+```
+
+MUI and Material UI Icons are already installed.
+
+Do not add:
+
+```text
+component library
+form library
+animation library
+icon library
+CSS framework
+Storybook
+Chromatic
+```
+
+in this phase.
+
+If Storybook or similar tooling already exists, it may be used but not expanded without need.
+
+---
+
+# 100. Documentation Updates
+
+Likely files:
 
 ```text
 frontend/design-system/DESIGN.md
 frontend/design-system/USAGE.md
-frontend/design-system/preview/*
+frontend/design-system/components.html
+frontend/design-system/components.manifest.json
 frontend/design-system/source/*
-frontend/design-system/flutter-material3.md   # only if clarification needed
-frontend/AGENTS.md                            # only enforcement changes
+frontend/design-system/preview/*
+frontend/design-system/flutter-material3.md
+frontend/AGENTS.md
 
 phases/group-L-phases.md
 docs/decisions.md
 ```
 
-Do not edit every file unless necessary.
+Modify only what is justified.
+
+A dedicated document such as:
+
+```text
+frontend/design-system/COMPONENTS.md
+```
+
+is acceptable if the existing documentation has become too large and repository conventions support it.
+
+If created, clearly define its authority relationship:
+
+```text
+DESIGN.md
+→ visual principles
+
+tokens.css
+→ values
+
+USAGE.md
+→ token usage
+
+COMPONENTS.md
+→ component construction conventions
+```
+
+Do not duplicate all existing content.
 
 ---
 
-# 79. ADR
+# 101. ADR
 
-Add the next repository-consistent design ADR if Phase 12.5 formalizes material decisions not already covered by DESIGN-001/002/003.
+Add the next repository-consistent design ADR only if Phase 12.6 introduces material architectural decisions not already captured.
 
 Suggested subject:
 
 ```text
-DESIGN-004 — Shared Visual Foundation Semantics
+DESIGN-005 — Cross-Platform Component Convention Architecture
 ```
 
-Record:
+Potential decisions:
 
 ```text
-Young Serif remains display-only
+shared semantics, independent framework implementation
 
-utility sans remains UI default
+framework primitives preferred over redundant wrappers
 
-canonical type scale remains unchanged
+semantic variants instead of raw visual props
 
-warm canvas / paper / editorial / inverse surfaces remain distinct
+component owns internal spacing
 
-charcoal remains primary action
+parent owns external spacing
 
-brown remains restrained brand accent
+links navigate; buttons act
 
-shared spacing scale remains authoritative
+cards used only for genuinely self-contained units
 
-shape remains restrained
+Material-family icons only
 
-elevation indicates true layering only
+component states use closed semantic vocabulary
 
-motion remains functional and quiet
+MUI sx allowed for token-driven composition, not design-system bypass
 
-focus visibility is mandatory
-
-framework mappings consume these semantics
+no cross-framework runtime component library
 ```
 
-Do not add an ADR just to repeat existing documentation if no new architecture decision exists.
+Use the actual next ADR ID.
 
 ---
 
-# 80. No New Dependencies
+# 102. Validation — Documentation Integrity
 
-Expected:
-
-```text
-dependencies = NONE
-```
-
-Do not install:
+Validate:
 
 ```text
-animation libraries
-design-token libraries
-color libraries
-font packages
-icon packages
-CSS frameworks
-```
-
-MUI and MUI Icons are already installed from Phase 12.3.
-
----
-
-# 81. No Font Installation
-
-Do not perform:
-
-```text
-next/font integration
-Google Fonts import
-@font-face
-Flutter font assets
-font package installation
-```
-
-unless Phase 12.3 already necessarily established a harmless placeholder mechanism.
-
-Actual loading remains owned by the appropriate application-foundation phase.
-
----
-
-# 82. Validation
-
-Run all existing design-system validation.
-
-At minimum:
-
-```text
-JSON parsing
-token reference resolution
-CSS token validation
-derived representation synchronization
-WCAG contrast validation
-framework-leak checks
-legacy apparel terminology audit
-raw-value/ad-hoc-value audit
-git diff --check
+all referenced tokens exist
+no stale token names
+no contradictory component rules
+no framework-specific values inserted into canonical tokens
+no unsupported Flutter implementation claims
 ```
 
 ---
 
-# 83. MUI Verification
+# 103. Validation — Component Catalog
 
-Because MUI theme implementation already exists, also run the relevant frontend checks if Phase 12.5 modifies any MUI mapping.
-
-Use the actual scripts in:
+Validate:
 
 ```text
-frontend/web/package.json
+components.manifest.json parses
+
+manifest references valid catalog entries
+
+catalog terminology matches furniture brand
+
+no active Nike/apparel examples remain
+
+preview examples use approved tokens
+
+no arbitrary brand hex values in consumers
+
+no unauthorized icon family
 ```
 
-Potential categories:
+---
+
+# 104. Validation — MUI Non-Regression
+
+Because Phase 12.6 should not need to rewrite MUI:
+
+```text
+existing Phase 12.3 theme must remain intact
+```
+
+If any web theme file is changed to reconcile a genuine convention defect, run the repository's actual:
 
 ```text
 typecheck
 lint
-theme tests
+tests
 build
 ```
+
+as applicable.
 
 Do not invent command names.
 
 ---
 
-# 84. No Need to Rebuild Web If Untouched
-
-If Phase 12.5 makes no changes under:
-
-```text
-frontend/web/
-```
-
-a full Next.js build is optional unless project validation requires it.
-
-Still validate the design-system artifacts fully.
-
----
-
-# 85. Cross-Platform Validation
+# 105. Validation — Flutter Boundary
 
 Verify:
 
 ```text
-MUI semantic mapping
-and
-future Flutter mapping
+frontend/app remains untouched
 ```
 
-both align with the finalized visual rules.
+unless it already contains an unrelated owner change.
 
-No framework may reinterpret:
-
-```text
-primary
-canvas
-brand accent
-display typography
-radius
-elevation
-```
-
-differently.
+No Flutter implementation is permitted.
 
 ---
 
-# 86. Phase Completion Report
+# 106. Validation — Group Boundary
+
+Verify no new application source implementing:
+
+```text
+navigation
+catalog
+product cards
+forms
+page layout
+request UI
+```
+
+was added.
+
+Design-system preview/reference files are allowed.
+
+---
+
+# 107. Validation — Raw Values
+
+Run the existing raw-value audit.
+
+Component consumer examples should not introduce:
+
+```text
+unapproved hex colors
+random px/rem spacing
+random radii
+random shadows
+random transition values
+```
+
+Approved preview scaffolding exceptions remain documented.
+
+---
+
+# 108. Validation — Icon Policy
+
+Search relevant frontend/design-system guidance for:
+
+```text
+lucide
+heroicons
+react-icons
+fontawesome
+font-awesome
+emoji icon
+```
+
+Active guidance must not authorize them.
+
+Historical documentation may remain where clearly historical.
+
+---
+
+# 109. Validation — AI-Slop Audit
+
+Search component guidance/previews for patterns contrary to the brand:
+
+```text
+gradient
+glass
+glassmorphism
+blur card
+floating blob
+rounded everything
+large card shadow
+bounce
+spring
+```
+
+Legitimate technical references may remain.
+
+Active design guidance must preserve the restrained furniture direction.
+
+---
+
+# 110. Validation Commands
+
+Run all existing Phase Group L/design-system validation.
+
+At minimum verify:
+
+```text
+JSON parsing
+token references
+manifest integrity
+derived token synchronization
+WCAG/contrast where component fixtures introduce states
+raw-value audit
+legacy apparel audit
+framework-leak audit
+icon-family audit
+git diff --check
+```
+
+Use existing repository scripts where available.
+
+Do not introduce a dependency merely to perform validation.
+
+---
+
+# 111. Completion Report
 
 Return:
 
 ```text
-Phase 12.5 status:
+Phase 12.6 status:
 PASS / BLOCKED
 
-Typography foundation:
-PASS / FAIL
+Component convention authority:
+<file>
 
-Display family:
-Young Serif
-
-UI family:
-<approved utility stack>
-
-Canonical type scale:
-12 / 14 / 16 / 20 / 24 / 32 / 48 / 96
-
-New arbitrary type sizes:
-NONE
-
-Color foundation:
-PASS / FAIL
-
-Canvas:
-#FCF4ED
-
-Paper:
-#FFFFFF
-
-Editorial:
-#F4E9DF
-
-Inverse:
-#111111
-
-Primary text:
-#111111
-
-Secondary text:
-#707072
-
-Primary action:
-#111111
-
-Brand accent:
-#321E0F
-
-Functional color semantics:
-PASS / FAIL
-
-MADE_TO_ORDER treated as error:
-NO
-
-Contrast:
-PASS / FAIL
-
-Spacing foundation:
-PASS / FAIL
-
-Spacing scale:
-PRESERVED / RECONCILED
-
-Section spacing semantics:
-<summary>
-
-Page gutter semantics:
-<summary>
-
-Shape foundation:
-PASS / FAIL
-
-Media shape:
-<summary>
-
-Control radius:
-<token>
-
-Container radius:
-<token>
-
-Pill use restricted:
+Existing catalog reconciled:
 YES / NO
 
-Elevation foundation:
-PASS / FAIL
-
-Decorative card elevation:
-PROHIBITED / FAIL
-
-True layer elevation:
-PASS / FAIL
-
-Motion foundation:
-PASS / FAIL
-
-Reduced-motion rule:
-PASS / FAIL
-
-Focus foundation:
-PASS / FAIL
-
-Focus removed globally:
+Runtime component implementation started:
 NO
 
-Icon policy:
-MUI Icons web / Material Icons Flutter
+React application components created:
+NO
 
-Cross-platform semantic matrix:
+Flutter widgets created:
+NO
+
+Component hierarchy:
 PASS / FAIL
 
-MUI reconciliation required:
+Framework primitives preferred:
 YES / NO
 
-MUI files changed:
-<list / NONE>
+Redundant wrapper policy:
+PASS / FAIL
+
+Semantic variant policy:
+PASS / FAIL
+
+Raw visual props restricted:
+YES / NO
+
+MUI sx policy:
+PASS / FAIL
+
+Internal/external spacing ownership:
+PASS / FAIL
+
+Button hierarchy:
+PASS / FAIL
+
+Primary action remains charcoal:
+YES / NO
+
+Material UI Icons web-only policy:
+PASS / FAIL
+
+Flutter Material Icons policy:
+PASS / FAIL
+
+Links vs buttons:
+PASS / FAIL
+
+Form conventions:
+PASS / FAIL
+
+Card/surface restraint:
+PASS / FAIL
+
+Product media conventions:
+PASS / FAIL
+
+MADE_TO_ORDER first-class treatment:
+PASS / FAIL
+
+Status/badge conventions:
+PASS / FAIL
+
+Feedback conventions:
+PASS / FAIL
+
+Loading conventions:
+PASS / FAIL
+
+Empty-state conventions:
+PASS / FAIL
+
+Error-state conventions:
+PASS / FAIL
+
+Responsive component principles:
+PASS / FAIL
+
+Semantic HTML:
+PASS / FAIL
+
+Flutter semantics:
+PASS / FAIL
+
+State vocabulary:
+<summary>
+
+Anti-AI-slop rules:
+PASS / FAIL
+
+Request-first boundary:
+PASS / FAIL
+
+Component manifest:
+PASS / NOT CHANGED / FAIL
+
+Component previews:
+PASS / NOT CHANGED / FAIL
+
+Canonical tokens changed:
+NO / <explain>
+
+MUI theme changed:
+NO / <explain>
 
 Flutter implementation changed:
 NO
 
-Application components created:
-NO
-
-Group M work started:
-NO
-
-Group N work started:
+Backend/API changed:
 NO
 
 Dependencies added:
 NONE
 
-Design previews:
-PASS / NOT CHANGED / FAIL
-
-Token validation:
-<commands/results>
-
-WCAG validation:
+Token/reference validation:
 PASS / FAIL
 
-Legacy Nike/apparel audit:
+Manifest validation:
+PASS / FAIL
+
+WCAG fixture validation:
 PASS / FAIL
 
 Raw-value audit:
+PASS / FAIL
+
+Legacy apparel audit:
+PASS / FAIL
+
+Icon-family audit:
+PASS / FAIL
+
+Framework-leak audit:
+PASS / FAIL
+
+git diff --check:
 PASS / FAIL
 
 Files changed:
@@ -1896,55 +2492,58 @@ Commit:
 <hash/message>
 
 Push:
-<result/NONE>
+<result / NONE>
 
-Phase 12.6:
+Phase 12.7:
 READY / BLOCKED
 ```
 
 ---
 
-# 87. STOP Condition
+# 112. STOP Condition
 
-Phase 12.5 may be declared PASS only when:
+Phase 12.6 is PASS only when:
 
-- typography semantics are explicit;
-- Young Serif remains display/editorial only;
-- utility sans remains UI default;
-- canonical type scale remains authoritative;
-- no arbitrary type sizes are introduced;
-- semantic color hierarchy is explicit;
-- charcoal remains primary action;
-- brown remains restrained brand accent;
-- canvas, paper, editorial, and inverse surfaces remain distinct;
-- functional colors retain functional meaning;
-- MADE_TO_ORDER is not treated as an error/warning;
-- contrast validation passes;
-- spacing hierarchy and usage rules are explicit;
-- shared spacing primitives remain authoritative;
-- shape usage is explicit and restrained;
-- media is not arbitrarily rounded;
-- pills are limited to justified controls;
-- elevation is reserved for real layering;
-- decorative card shadows are prohibited;
-- motion remains quiet and functional;
-- reduced-motion requirements are preserved;
-- focus treatment is visible and mandatory;
-- web and Flutter mappings remain semantically aligned;
-- no application component/page work has started;
-- no Group M or N implementation has leaked forward;
+- shared component construction conventions are explicit;
+- component hierarchy and ownership are defined;
+- framework primitives are preferred over redundant wrappers;
+- wrappers require meaningful justification;
+- variants are semantic and intentionally limited;
+- raw appearance props cannot casually bypass the design system;
+- MUI `sx` remains available for legitimate composition but not token bypass;
+- future Flutter local styling follows the equivalent rule;
+- buttons have a clear action hierarchy;
+- primary actions remain charcoal;
+- links and buttons retain correct semantics;
+- Material UI Icons remain the sole web icon library;
+- future Flutter uses Material Icons by default;
+- form labeling/error conventions are explicit;
+- cards are used selectively rather than as the default grouping mechanism;
+- furniture imagery remains dominant;
+- MADE_TO_ORDER remains a first-class offering;
+- status treatment does not rely on color alone;
+- feedback/loading/empty/error conventions are explicit;
+- responsive component composition is defined without duplicating desktop/mobile components unnecessarily;
+- components own internal spacing and parents own external spacing;
+- semantic HTML requirements are explicit;
+- Flutter semantics requirements are documented;
+- component state vocabulary is defined;
+- anti-AI-slop component rules are explicit;
+- no application component library has actually been implemented;
+- no Group M/N work has leaked forward;
+- no backend/API behavior changed;
 - no new dependencies were added;
-- design-system validation passes;
+- all design-system validation passes;
 - Git operations follow `git-workflow-and-versioning`.
 
 Then report:
 
 ```text
-Phase 12.5 — PASS
-Phase 12.6 — READY
+Phase 12.6 — PASS
+Phase 12.7 — READY
 ```
 
-Do not start Phase 12.6 automatically.
+Do not start Phase 12.7 automatically.
 
 **Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
@@ -1952,8 +2551,8 @@ Do not start Phase 12.6 automatically.
 
 ## Execution Record — 2026-10-06
 
-### 12.5 — Visual Foundations
+### 12.6 — Component Conventions
 
 **Status:** Complete
 
-`frontend/design-system/USAGE.md` now closes the shared typography, color, spacing, shape, elevation, motion, interaction, and photography rules. Existing token-driven previews demonstrate inverse/action/focus, utility typography, true-layer elevation, and focus states. The existing MUI theme and Flutter mapping contract were reviewed without runtime changes.
+`frontend/design-system/COMPONENTS.md` defines the shared component hierarchy, semantic variant budget, spacing ownership, action and icon policy, forms, surfaces/cards, media, states, accessibility, responsive behavior, MUI/Flutter boundaries, and catalog role. No runtime component library or application component was created.

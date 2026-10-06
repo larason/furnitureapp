@@ -37,7 +37,7 @@
     },
     "semantic": {
       "surface": { "canvas": "#FCF4ED", "paper": "#FFFFFF", "editorial": "#F4E9DF", "inverse": "#111111" },
-      "text": { "primary": "#111111", "secondary": "#707072", "muted": "#9E9EA0", "inverse": "#FFFFFF", "aliases": { "primary": "color.neutral950", "secondary": "color.neutral700", "muted": "color.neutral500", "inverse": "color.white" } },
+      "text": { "primary": "#111111", "secondary": "#707072", "muted": "#707072", "inverse": "#FFFFFF", "aliases": { "primary": "color.neutral950", "secondary": "color.neutral700", "muted": "color.neutral700", "inverse": "color.white" } },
       "border": { "subtle": "#E5E5E5", "default": "#CACACB", "strong": "#707072" },
       "action": { "primary": "#111111", "primaryHover": "#707072", "primaryActive": "#111111", "primaryDisabled": "#E5E5E5", "secondary": "transparent", "focus": "#275DC5" },
       "accent": { "brand": "#321E0F", "material": "#321E0F" },

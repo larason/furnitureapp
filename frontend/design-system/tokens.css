@@ -24,7 +24,7 @@
   --surface-inverse: var(--color-neutral-950);
   --text-primary: var(--color-neutral-950);
   --text-secondary: var(--color-neutral-700);
-  --text-muted: var(--color-neutral-500);
+  --text-muted: var(--color-neutral-700);
   --text-inverse: var(--color-white);
   --border-subtle: var(--color-neutral-200);
   --border-default: var(--color-neutral-300);

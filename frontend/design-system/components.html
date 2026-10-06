@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Furniture Design System — reference components</title>
+    <title>Furniture Design System — reference catalog</title>
     <meta
       name="description"
-      content="Reference fixture for the SL Furnitures design system. Warm canvas,
+      content="Reference catalog for the SL Furnitures design system. Warm canvas,
         restrained paper surfaces, Young Serif editorial display type, controlled
-        pill actions, and flat elevation."
+        actions, and purposeful layering."
     />
     <link rel="stylesheet" href="tokens.css" />
 
@@ -298,16 +298,8 @@
       .form { display: flex; flex-direction: column; gap: var(--space-4); max-width: var(--content-width-form); }
       .form-actions { display: flex; gap: var(--space-3); margin-block-start: var(--space-2); flex-wrap: wrap; }
 
-      .icon { width: 16px; height: 16px; flex-shrink: 0; }
-      .row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+       .row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 
-       /* Decorative rules are intentionally restrained. */
-      .swoosh {
-        width: 64px;
-        height: 4px;
-        background: var(--fg);
-        border-radius: var(--radius-pill);
-      }
     </style>
   </head>
   <body>
@@ -320,7 +312,6 @@
         <div class="hero-grid">
           <div class="stack-6">
             <div class="stack-3">
-              <span class="swoosh" aria-hidden="true"></span>
               <p class="eyebrow">Reference fixture · furniture design system</p>
             </div>
             <h1>Crafted for living.</h1>
@@ -332,10 +323,6 @@
             <div class="hero-actions">
               <a href="./tokens.css" class="btn btn-primary">
                 Shop new arrivals
-                <svg class="icon" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="1.75"
-                  stroke-linecap="round" stroke-linejoin="round"
-                  aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
               </a>
               <a href="./DESIGN.md" class="btn btn-secondary">Read the spec</a>
             </div>
