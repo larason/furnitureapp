@@ -56,6 +56,16 @@
 
 ---
 
+### ADR/DESIGN-006 — Accessibility Is a Default Design-System Invariant
+
+**Decision:** The shared design system adopts a WCAG 2.2 AA-oriented accessibility baseline documented in `frontend/design-system/ACCESSIBILITY.md`. Accessibility is the default behavior, not an optional mode or overlay. Future implementations prefer native HTML, MUI, and Material semantics; require visible focus, non-color status communication, semantic headings/landmarks, accessible labels and errors, meaningful image alternatives, usable targets, text scaling/reflow, and reduced-motion support. Automated checks supplement, but do not replace, manual browser/device and assistive-technology verification.
+
+**Consequences:** The baseline constrains future web, Flutter, admin, and customer-facing work while preserving platform-native implementations. It does not claim full application WCAG conformance, introduce runtime components, or add dependencies in Phase 12.7.
+
+**Status:** Accepted and implemented in Phase 12.7
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.

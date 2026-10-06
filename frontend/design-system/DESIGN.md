@@ -78,4 +78,6 @@ Do not introduce unapproved gradients, blurred translucent cards, decorative blo
 
 `tokens.css` is the canonical token authority. It contains primitive values and semantic aliases. `design-tokens.json` and `tailwind-v4.css` are synchronized derived representations; MUI and Flutter mappings consume this contract in later phases and never redefine it.
 
+The detailed default accessibility baseline and verification contract is in `ACCESSIBILITY.md`. It is WCAG 2.2 AA-oriented and does not claim full application conformance.
+
 Component-specific tokens are deferred until a stable component behavior cannot be expressed with global semantic tokens. Components must consume an approved token whenever one applies.

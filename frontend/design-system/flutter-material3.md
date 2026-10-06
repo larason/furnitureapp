@@ -9,6 +9,7 @@ This document defines how a future Flutter customer application consumes the sha
 - Flutter does not parse CSS or load token JSON at runtime.
 - Phase 16.2 must use static Dart values produced from, or verified against, the portable token contract.
 - No Flutter application, `ThemeData`, font asset, package, dark theme, or dynamic-color implementation is introduced by this contract.
+- `ACCESSIBILITY.md` defines the shared baseline; Phase 16.2 must verify platform-specific Material behavior rather than treating `ThemeData` as automatic conformance.
 
 Material 3 supplies platform behavior, accessibility foundations, and theme APIs. It does not supply the SL Furnitures brand. Future implementation must set `useMaterial3: true` and map approved semantics explicitly; `ColorScheme.fromSeed` and wallpaper/device dynamic color are not brand-generation mechanisms.
 

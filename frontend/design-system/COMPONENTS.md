@@ -21,6 +21,7 @@ DESIGN.md
 - `flutter-material3.md` defines the future Flutter mapping contract.
 - `components.html` and `components.manifest.json` are reference catalog artifacts only. They are not React source, Flutter source, an application registry, API schema, or runtime component metadata.
 - Web and Flutter share semantics, visual hierarchy, state vocabulary, and token meaning, but use independent platform implementations.
+- `ACCESSIBILITY.md` is the accessibility authority for all future component and page implementation.
 
 Do not create application components, wrappers, Flutter widgets, or new dependencies in this phase.
 

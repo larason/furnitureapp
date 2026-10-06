@@ -145,6 +145,13 @@
       .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
       .btn:active { opacity: 0.85; }
 
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
       .btn-primary {
         background: var(--accent);
         color: var(--accent-on);

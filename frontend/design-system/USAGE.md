@@ -10,6 +10,8 @@
 
 `source/` preserves provenance and audit records from the bundled fixture. It is not a second hand-maintained token authority. A token change starts in `tokens.css`, then updates `design-tokens.json` and `tailwind-v4.css` in the same change.
 
+Accessibility authority: read `ACCESSIBILITY.md` after this usage contract. It defines the default WCAG 2.2 AA-oriented baseline and future verification requirements; it does not claim full application conformance.
+
 ## MUI Bridge
 
 `frontend/web/theme/theme.ts` is the single MUI adapter. It consumes synchronized `design-tokens.json` values where MUI needs concrete build-time values and keeps `tokens.css` globally available for CSS-variable references. `app/providers.tsx` uses the official Next 16 `AppRouterCacheProvider` around `ThemeProvider`; the root layout remains a Server Component.
