@@ -69,6 +69,13 @@ Prefer:
 
 Do not introduce ad-hoc CSS when an existing token or component can express the same intent.
 
+## Laravel API Access
+
+- Route all website HTTP calls to Laravel through `web/lib/api/client.ts`; do not use raw page-level `fetch` or add an overlapping HTTP client.
+- Keep this transport domain-neutral. Domain/query functions and their cache policies belong in their owning phases.
+- Preserve the frozen API success/error envelopes and structured validation details. Do not put business rules, redirects, or authorization decisions in the transport.
+- Inject current Clerk bearer tokens per request only in a later approved auth layer; never persist or globally retain tokens.
+
 ## Icons
 
 Use only `@mui/icons-material` for web UI icons. Do not add `lucide-react`, `react-icons`, Heroicons, Font Awesome, custom SVG icon libraries, or emoji as UI icons.

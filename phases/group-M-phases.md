@@ -1,166 +1,134 @@
-# Group M — Website Foundation
-
-# Combined Phase 13.1–13.4
-## Next.js + TypeScript + MUI + Theme Foundation Verification/Reconciliation
+# Phase 13.5 — Website API Client Foundation
 
 ## Objective
 
-Verify, reconcile, and formally close the first four Group M phases against the **existing implementation** rather than rebuilding work already completed before or during Group L.
+Implement the production-ready **Next.js → Laravel API client foundation** for `frontend/web`.
 
-This combined phase covers:
-
-```text
-13.1 — Next.js project setup
-13.2 — TypeScript configuration
-13.3 — MUI integration
-13.4 — Theme integration
-```
-
-The expected execution model is:
+The architecture must establish one consistent path:
 
 ```text
-existing implementation
-        ↓
-inspect
-        ↓
-compare against Group M requirements
-        ↓
-identify genuine gaps
-        ↓
-make smallest necessary corrections
-        ↓
-verify production behavior
-        ↓
-record 13.1–13.4 PASS
+Next.js website
+      ↓
+typed application API boundary
+      ↓
+HTTP transport
+      ↓
+Laravel /api/v1
 ```
 
-NOT:
+The API client must support the public catalog immediately and provide a safe foundation for later authenticated customer functionality without prematurely implementing Clerk authentication.
+
+This phase owns:
 
 ```text
-existing implementation
-        ↓
-delete/recreate/reinstall
+base URL handling
+request construction
+response decoding
+Laravel error decoding
+timeouts
+abort/cancellation
+headers
+query serialization
+JSON handling
+204 handling
+typed request options
+server/client execution compatibility
+request identifiers/correlation metadata
+safe error representation
+cache-policy hooks/options
+testability
 ```
 
-This is primarily a **verification and reconciliation phase**.
+It does NOT own domain endpoint implementations.
 
 ---
 
-# 1. Why These Phases Are Combined
-
-The repository already has overlapping completed work:
-
-```text
-13.1
-Next.js scaffold
-→ project owner created frontend/web manually
-
-13.3
-MUI integration
-→ implemented early during Phase 12.3
-
-13.4
-Theme integration
-→ implemented early during Phase 12.3
-```
-
-Phase 13.2 must now verify the TypeScript configuration supporting that existing implementation.
-
-Therefore running four independent implementation phases would risk:
-
-```text
-duplicate providers
-duplicate themes
-package reinstall churn
-create-next-app overwrite
-configuration drift
-unnecessary refactors
-```
-
-The original Group M ownership remains intact.
-
-These phases are being **closed by verification/reconciliation**, not removed from the roadmap.
-
----
-
-# 2. Active Scope
+# 1. Scope
 
 Implement only:
 
 ```text
-13.1 — Next.js project setup verification
-13.2 — TypeScript configuration verification
-13.3 — MUI integration verification
-13.4 — Theme integration verification
+Phase 13.5 — API Client
 ```
 
 Do NOT begin:
 
 ```text
-13.5 — API client
-13.6 — Routing conventions
-13.7 — Layout system
-13.8 — Error/loading/not-found handling
-13.9 — Responsive foundation
+13.6 routing conventions
+13.7 layout system
+13.8 application error/loading/not-found UI
+13.9 responsive foundation
+
+Group N catalog pages
 ```
 
-Do NOT begin Group N.
+Also do not implement Clerk integration unless an existing repository contract explicitly makes a tiny transport hook necessary.
 
 ---
 
-# 3. Read Authorities First
+# 2. Read Authorities Before Coding
 
-Before making any change, inspect:
+Inspect at minimum:
 
 ```text
 AGENTS.md
 frontend/AGENTS.md
 
-frontend/design-system/
-├── DESIGN.md
-├── USAGE.md
-├── COMPONENTS.md
-├── ACCESSIBILITY.md
-├── tokens.css
-├── design-tokens.json
-├── flutter-material3.md
-└── relevant manifests/records
+docs/api/
+├── api-contract.md
+├── api-conventions.md
+├── api-examples.md
+├── api-resources.md
+└── openapi.yaml
+
+docs/clerk-authentication-architecture.md
+docs/domain/business-rules.md
+docs/decisions.md
+
+frontend/design-system/ACCESSIBILITY.md
 
 frontend/web/
 ├── package.json
-├── package-lock.json / current lockfile
 ├── tsconfig.json
 ├── next.config.*
-├── eslint.config.* / equivalent
 ├── app/
 ├── theme/
-└── existing provider/integration files
+└── existing lib/services/API-related code
 
-phases/group-L-phases.md
+backend/laravel/routes/api.php
+
 phases/group-M-phases.md
-docs/decisions.md
 ```
 
-Also inspect the Phase 12.3 execution record and relevant design ADRs.
+Inspect actual backend implementations where needed to confirm:
 
-Do not infer what Phase 12.3 implemented.
+```text
+response envelopes
+error envelopes
+headers
+pagination
+validation errors
+status codes
+rate limiting
+```
 
-Verify the actual repository.
+The frozen V1 API contract is authoritative.
+
+Do not invent frontend-friendly alternatives.
 
 ---
 
-# 4. Git Workflow
+# 3. Git Workflow
 
-Before ANY Git command:
+Before any Git command, locate and read the root:
 
 ```text
-locate and read:
 git-workflow-and-versioning
 ```
 
-Follow that root skill exactly.
+skill.
 
-Git operations are authorized through that skill.
+Follow it exactly.
 
 Preserve unrelated owner changes.
 
@@ -169,2176 +137,2462 @@ Never commit:
 ```text
 .env
 .env.local
-credentials
-tokens
-Clerk secrets
+API credentials
+Clerk secret keys
+database credentials
 private keys
-machine-specific configuration
 ```
 
-Stage only this combined phase's work.
-
----
-
-# 5. Critical Preservation Rule
-
-Do NOT run:
-
-```bash
-npx create-next-app
-```
-
-or any equivalent scaffolding command.
-
-The project already exists.
-
-Do NOT delete/recreate:
-
-```text
-frontend/web/
-```
-
-Do NOT replace the application with a fresh template.
-
-Phase 13.1 is:
-
-```text
-inspect
-→ verify
-→ reconcile
-```
-
-not scaffolding.
+Git operations are authorized only through that skill.
 
 ---
 
-# 6. No Dependency Reinstallation by Default
+# 4. Architecture Principle
 
-MUI and MUI Icons were already installed during Phase 12.3.
+The API client must be a **thin infrastructure boundary**.
 
-Do NOT automatically run:
+Desired dependency direction:
 
-```bash
-npm install @mui/material
-npm install @mui/icons-material
-npm install @emotion/react
-npm install @emotion/styled
-```
-
-or equivalents.
-
-First inspect:
-
-```text
-package.json
-lockfile
-node_modules state where appropriate
-```
-
-and verify existing versions.
-
-Only repair dependency state if there is an actual defect.
-
----
-
-# 7. Package Manager Authority
-
-Determine the package manager from the existing repository.
-
-Examples:
-
-```text
-package-lock.json
-→ npm
-
-pnpm-lock.yaml
-→ pnpm
-
-yarn.lock
-→ yarn
-```
-
-Do not introduce a second package manager.
-
-Do not regenerate a lockfile with a different package manager.
-
----
-
-# 8. Phase 13.1 — Next.js Project Setup Verification
-
-Inspect the existing:
-
-```text
-frontend/web/
-```
-
-project.
-
-Verify that it is a valid Next.js application using the intended architecture:
-
-```text
-Next.js
-React
-App Router
-TypeScript
-MUI
-```
-
-Do not convert it to Pages Router.
-
----
-
-# 9. Next.js Version
-
-Record the actual installed:
-
-```text
-next
-react
-react-dom
-```
-
-versions.
-
-Do not arbitrarily upgrade them during this phase.
-
-If there is a known compatibility problem between the installed versions and existing MUI integration:
-
-```text
-document the issue
-→ make only the minimum supported correction
-```
-
-Do not perform unrelated dependency modernization.
-
----
-
-# 10. App Router
-
-Verify the project uses:
-
-```text
-app/
-```
-
-as the application routing architecture.
-
-Do not introduce:
-
-```text
-pages/
-```
-
-as a competing routing system.
-
-If `pages/` exists for an intentional technical reason, document it rather than deleting blindly.
-
----
-
-# 11. Root Layout
-
-Verify a valid root:
-
-```text
-app/layout.tsx
-```
-
-exists.
-
-The root layout should remain a:
-
-```text
-Server Component
-```
-
-unless a concrete Next.js requirement proves otherwise.
-
-Do NOT add:
-
-```tsx
-'use client';
-```
-
-to the root layout merely because theme/provider infrastructure needs client behavior.
-
-Use the smallest client boundary.
-
----
-
-# 12. Application Entry
-
-Verify the existing root application structure is minimal and valid.
-
-Do NOT build:
-
-```text
-header
-footer
-navigation
-storefront shell
-catalog
-homepage composition
-```
-
-in Phase 13.1–13.4.
-
-Those belong later.
-
----
-
-# 13. Current Homepage
-
-If the scaffold contains:
-
-```text
-app/page.tsx
-```
-
-keep it minimal.
-
-Do not implement the Group N homepage.
-
-A simple foundation/smoke page is acceptable.
-
-Do not treat placeholder application content as final storefront design.
-
----
-
-# 14. Source Organization
-
-Inspect the existing project organization.
-
-Do NOT reorganize the entire project merely to impose a preferred template.
-
-Only correct structure when it creates a genuine architectural problem.
-
-Likely future concerns may include:
-
-```text
-app/
-theme/
-components/
-lib/
-```
-
-but do not create empty directories merely to anticipate later phases.
-
----
-
-# 15. Next.js Configuration
-
-Inspect:
-
-```text
-next.config.*
-```
-
-Verify it is:
-
-```text
-valid
-minimal
-compatible with installed Next.js
-```
-
-Do not add:
-
-```text
-image hosts
-redirects
-rewrites
-experimental features
-```
-
-without a current requirement.
-
-Image optimization configuration belongs to the appropriate later catalog phase unless already required by existing infrastructure.
-
----
-
-# 16. Environment Configuration
-
-Do not add production environment variables merely to complete setup.
-
-Phase 13.1–13.4 does not require API or Clerk integration.
-
-If existing `.env.example` conventions exist:
-
-```text
-preserve them
-```
-
-but do not add speculative configuration.
-
----
-
-# 17. Ignore Rules
-
-Verify `.gitignore` or relevant repository ignore rules protect common Next.js artifacts such as:
-
-```text
-.next/
-node_modules/
-environment files as appropriate
-```
-
-Do not broaden ignore patterns in ways that hide source/configuration that should be versioned.
-
----
-
-# 18. Build Scripts
-
-Inspect:
-
-```text
-frontend/web/package.json
-```
-
-Verify appropriate existing scripts for the project, typically covering:
-
-```text
-dev
-build
-start
-lint
-```
-
-and type checking where the project already provides it.
-
-Do not invent redundant scripts if equivalent validation already exists.
-
----
-
-# 19. Phase 13.2 — TypeScript Configuration Verification
-
-Inspect:
-
-```text
-frontend/web/tsconfig.json
-```
-
-and any related TypeScript configuration.
-
-The goal is:
-
-```text
-strict
-predictable
-Next.js-compatible
-maintainable
-```
-
-TypeScript must protect the architecture rather than merely transpile JavaScript.
-
----
-
-# 20. Strict TypeScript
-
-Verify:
-
-```json
-"strict": true
-```
-
-or an equivalent configuration that preserves strictness.
-
-Do not disable strictness to silence implementation problems.
-
----
-
-# 21. No Broad Type Escapes
-
-Do not normalize patterns such as:
-
-```ts
-any
-as any
-// @ts-ignore
-// @ts-nocheck
-```
-
-as ordinary implementation techniques.
-
-Existing legitimate exceptions should be reviewed contextually.
-
-Do not blindly rewrite third-party compatibility workarounds.
-
----
-
-# 22. Path Aliases
-
-Inspect existing import aliases.
-
-If the scaffold already uses something such as:
-
-```text
-@/*
-```
-
-verify it resolves correctly.
-
-Do not create multiple competing aliases such as:
-
-```text
-@/*
-~/*
-src/*
-#/*
-```
-
-without reason.
-
-Use the existing convention.
-
----
-
-# 23. Include / Exclude
-
-Verify TypeScript includes the necessary Next.js-generated and application files without accidentally type-checking irrelevant build artifacts.
-
-Do not hand-edit generated Next.js type files.
-
----
-
-# 24. JSX / Module Configuration
-
-Preserve Next.js-supported TypeScript compiler settings.
-
-Do not override framework-managed compiler behavior merely for stylistic preference.
-
----
-
-# 25. TypeScript Build Integrity
-
-Run the project's actual TypeScript validation.
-
-If no explicit typecheck script exists, use an appropriate non-emitting TypeScript check consistent with the project.
-
-Do not modify configuration merely to make invalid code disappear.
-
----
-
-# 26. Phase 13.3 — MUI Integration Verification
-
-Inspect the existing MUI packages.
-
-Expected relevant packages from Phase 12.3 may include:
-
-```text
-@mui/material
-@mui/icons-material
-@mui/material-nextjs
-@emotion/react
-@emotion/styled
-```
-
-Verify actual package state.
-
-Do not reinstall if correct.
-
----
-
-# 27. Official MUI Integration
-
-Verify Next.js App Router integration follows the installed MUI version's supported approach.
-
-Use the existing official MUI integration package already selected in Phase 12.3.
-
-Do not replace it with:
-
-```text
-custom Emotion cache hacks
-Pages Router examples
-old unofficial snippets
-```
-
-unless repository evidence shows the existing integration is defective.
-
----
-
-# 28. SSR Styling
-
-Verify server-rendered MUI styles behave correctly.
-
-Requirements:
-
-```text
-no initial unstyled flash caused by broken integration
-no duplicate style injection
-no obvious hydration mismatch
-no server/client theme divergence
-```
-
-Do not solve SSR problems by converting the whole app to a Client Component.
-
----
-
-# 29. Provider Boundary
-
-Inspect the current provider architecture.
-
-Expected principle:
-
-```text
-Server root layout
-        ↓
-small client provider boundary
-        ↓
-MUI/theme-dependent descendants
-```
-
-Do not expand the client boundary unnecessarily.
-
----
-
-# 30. No Global Client Conversion
-
-Explicitly prohibit solving MUI integration with:
-
-```tsx
-'use client';
-```
-
-at every layout/page level.
-
-Client Components should exist only where:
-
-```text
-state
-effects
-browser APIs
-event handling
-client-only context
-```
-
-require them.
-
----
-
-# 31. Emotion Integration
-
-Verify Emotion is configured only as required by MUI.
-
-Do not introduce:
-
-```text
-styled-components
-Tailwind runtime styling
-CSS-in-JS alternative
-second Emotion cache
-```
-
-as competing runtime styling systems.
-
-The presence of design-system Tailwind output does not mean the Next.js application should adopt Tailwind as a second component styling authority.
-
----
-
-# 32. Material UI Icons
-
-Verify:
-
-```text
-@mui/icons-material
-```
-
-is installed and is the approved website UI icon library.
-
-Do not add:
-
-```text
-lucide-react
-react-icons
-heroicons
-fontawesome
-custom generic SVG icon libraries
-```
-
----
-
-# 33. No Icon Wrapper Yet
-
-Do not create:
-
-```text
-AppIcon
-BrandIcon
-IconFactory
-```
-
-during this phase.
-
-Phase 12.6 already established that redundant wrappers are not desirable.
-
-Use direct Material UI Icons later where appropriate.
-
----
-
-# 34. CssBaseline
-
-Inspect whether:
-
-```text
-CssBaseline
-```
-
-is integrated as part of the Phase 12.3 theme infrastructure.
-
-If correct:
-
-```text
-preserve it.
-```
-
-Do not use CssBaseline to redefine canonical token values.
-
-It may normalize framework/browser behavior.
-
----
-
-# 35. CSS Authority
-
-Inspect global CSS integration.
-
-Global CSS may handle legitimate application/document foundations.
-
-It must not create a second theme.
-
-Do not duplicate:
-
-```text
-colors
-typography
-radius
-shadows
-spacing
-```
-
-with independent hard-coded values if they belong to the design system.
-
----
-
-# 36. Design Token Import
-
-Verify canonical token CSS is made available through the existing intended integration.
-
-Do not create duplicate copies of:
-
-```text
-tokens.css
-```
-
-inside `frontend/web`.
-
-The design-system source remains shared.
-
----
-
-# 37. Phase 13.4 — Theme Integration Verification
-
-Inspect:
-
-```text
-frontend/web/theme/
-```
-
-or the actual Phase 12.3 theme location.
-
-Verify there is:
-
-```text
-one intentional theme entry point
-```
-
-not multiple competing `createTheme()` implementations.
-
----
-
-# 38. Theme Is a Consumer
-
-Verify the MUI theme remains:
-
-```text
-consumer of shared design tokens
-```
-
-not:
-
-```text
-second token authority
-```
-
-Canonical values remain owned by:
-
-```text
-frontend/design-system/tokens.css
-```
-
-with portable/build representations as previously established.
-
----
-
-# 39. No Runtime CSS Parsing
-
-Verify the MUI theme does NOT parse:
-
-```text
-tokens.css
-```
-
-at runtime to construct the theme.
-
-Do not introduce runtime token parsing.
-
----
-
-# 40. No Runtime Token JSON Fetching
-
-Do not:
-
-```text
-fetch design-tokens.json
-import it as client runtime configuration unnecessarily
-load token values over HTTP
-```
-
-for static theming.
-
-Use the established Phase 12.3 mapping strategy.
-
----
-
-# 41. Palette Mapping
-
-Verify existing MUI palette semantics still satisfy Group L.
-
-At minimum:
-
-```text
-primary action
-→ #111111
-
-canvas
-→ #FCF4ED
-
-paper
-→ #FFFFFF
-
-editorial
-→ #F4E9DF
-
-brand accent
-→ #321E0F
-
-primary text
-→ #111111
-
-secondary text
-→ #707072
-```
-
-Do not change values merely because MUI defaults differ.
-
----
-
-# 42. Brown Is Not Primary
-
-Verify:
-
-```text
-#321E0F
-```
-
-has not become the universal:
-
-```text
-primary.main
-button color
-link color
-icon color
-heading color
-```
-
-unless a specific semantic mapping justifies a usage.
-
-Primary action remains charcoal.
-
----
-
-# 43. No ColorScheme-from-Seed Equivalent
-
-The web theme must use explicit approved semantics.
-
-Do not introduce palette-generation machinery that synthesizes an alternative tonal brand system.
-
----
-
-# 44. Typography Mapping
-
-Verify:
-
-```text
-Young Serif
-→ display/editorial roles
-
-approved utility sans
-→ body/navigation/forms/buttons/metadata
-```
-
-Do not make Young Serif the default `body` family.
-
----
-
-# 45. Font Loading Boundary
-
-Inspect existing Phase 12.3 implementation.
-
-If font loading was intentionally deferred:
-
-```text
-do not pull it into this phase unless required for a valid existing theme integration.
-```
-
-If it was already implemented as part of the actual existing integration:
-
-```text
-verify rather than recreate.
-```
-
-Do not duplicate font imports.
-
----
-
-# 46. Typography Scale
-
-Verify the theme uses the approved scale:
-
-```text
-12
-14
-16
-20
-24
-32
-48
-96
-```
-
-Do not allow MUI's default typography scale to silently become a competing system.
-
----
-
-# 47. Spacing
-
-Verify MUI spacing maps coherently to the canonical design-system spacing scale.
-
-Do not preserve MUI default spacing behavior if Phase 12.3 intentionally replaced/mapped it.
-
-Do not introduce arbitrary fractional spacing values.
-
----
-
-# 48. Shape
-
-Verify MUI shape mapping follows:
-
-```text
-sharp media
-restrained controls
-controlled containers
-pill only when semantically justified
-```
-
-Do not globally increase `borderRadius`.
-
----
-
-# 49. Elevation
-
-Verify theme shadows/elevation follow:
-
-```text
-flat by default
-true layers may elevate
-```
-
-Do not restore MUI's decorative card-elevation defaults if Phase 12.3 intentionally neutralized/reconciled them.
-
----
-
-# 50. Motion
-
-Verify transitions use approved duration/easing semantics where mapped.
-
-Do not introduce:
-
-```text
-spring
-bounce
-large scale
-card lift
-```
-
-as theme defaults.
-
----
-
-# 51. Reduced Motion
-
-Phase 12.7 established:
-
-```text
-future web implementation
-must honor prefers-reduced-motion
-```
-
-Verify existing theme/global foundation does not actively contradict this.
-
-Do not build a full animation subsystem.
-
----
-
-# 52. Focus
-
-Verify existing foundational theme/global CSS does not suppress focus.
-
-Search for:
-
-```text
-outline: none
-outline: 0
-```
-
-Review matches contextually.
-
-Do not blindly reject legitimate replacements.
-
-Any focus replacement must satisfy the Phase 12.7 accessibility authority.
-
----
-
-# 53. Breakpoints
-
-Verify MUI breakpoint mapping uses the approved design-system breakpoint contract.
-
-Do not create a second breakpoint scale.
-
-Do not implement responsive page layouts yet.
-
----
-
-# 54. Z-Index
-
-If Phase 12.3 mapped z-index/layering semantics, verify them.
-
-Do not create arbitrary application-specific z-index values in this phase.
-
----
-
-# 55. Component Overrides
-
-Inspect existing `components` theme overrides.
-
-They should be limited to foundational behavior.
-
-Allowed examples:
-
-```text
-baseline Button behavior
-baseline input shape
-baseline Paper/Card elevation behavior
-focus behavior
-```
-
-Do not add:
-
-```text
-ProductCard
-FurnitureRequestCard
-Header
-FilterDrawer
-CommerceCTA
-```
-
-through theme overrides.
-
----
-
-# 56. Theme Augmentation
-
-Verify TypeScript module augmentation is:
-
-```text
-minimal
-typed
-semantic
-```
-
-Do not expose the entire token inventory through MUI theme augmentation.
-
-Only expose semantics that application code genuinely needs.
-
----
-
-# 57. No `any` in Theme Typing
-
-Theme augmentation must not use:
-
-```ts
-any
-```
-
-as an escape hatch.
-
-Resolve actual types.
-
----
-
-# 58. Theme Provider Count
-
-Search for theme/provider initialization.
-
-There should not be multiple unrelated:
-
-```text
-ThemeProvider
-createTheme
-AppRouterCacheProvider
-```
-
-trees unless architecture genuinely requires them.
-
-Record the actual provider chain.
-
----
-
-# 59. Hydration
-
-Run the application sufficiently to verify there are no obvious:
-
-```text
-hydration mismatch
-server/client class mismatch
-style injection warnings
-```
-
-associated with theme integration.
-
-If a warning exists:
-
-```text
-fix the cause
-```
-
-rather than suppressing it.
-
----
-
-# 60. Server Component Preservation
-
-Audit existing:
-
-```text
-app/
-```
-
-files for unnecessary:
-
-```tsx
-'use client';
-```
-
-introduced solely because of theming.
-
-Do NOT broadly refactor legitimate Client Components.
-
-Correct only obvious foundation-level leakage.
-
----
-
-# 61. Accessibility Foundation Non-Regression
-
-The Phase 12.7 authority states that accessibility is default behavior and that native/MUI primitives should be preferred before custom ARIA/wrappers.
-
-Verify 13.1–13.4 do not contradict:
-
-```text
-visible focus
-semantic controls
-adequate targets
-contrast
-reduced motion
-```
-
-Do not claim the scaffold itself constitutes full accessibility verification.
-
----
-
-# 62. Contrast Non-Regression
-
-Re-run existing core theme contrast validation.
-
-At minimum preserve:
-
-```text
-normal text
-large text
-non-text/focus
-```
-
-requirements from the accessibility baseline.
-
-Do not alter canonical colors just to make a new fixture convenient.
-
----
-
-# 63. No Accessibility Overlay
-
-Verify no dependency or component has been added for an:
-
 ```text
-accessibility overlay
-accessibility mode
-accessibility widget
+future page/component
+       ↓
+future domain/query layer
+       ↓
+API client
+       ↓
+fetch
+       ↓
+Laravel
 ```
-
-Accessibility remains built into normal UI.
-
----
-
-# 64. No API Client Yet
 
 Do NOT create:
 
 ```text
-api.ts
-http.ts
-fetcher.ts
-axios client
-Laravel client
-OpenAPI client
+page
+→ raw fetch()
+→ Laravel
 ```
 
-unless one already exists from unrelated owner work.
+throughout the application.
 
-Phase 13.5 owns API client architecture.
-
-If existing API code exists:
+But also do NOT make the transport know about:
 
 ```text
-leave it untouched
-and report it.
+products
+categories
+cart
+orders
+requests
+enquiries
+payments
+```
+
+unless unavoidable for a generic contract type.
+
+Transport should remain domain-neutral.
+
+---
+
+# 5. Use Native Fetch
+
+Prefer the platform/Next.js native:
+
+```ts
+fetch()
+```
+
+Do NOT install:
+
+```text
+axios
+ky
+superagent
+got
+react-query
+SWR
+```
+
+for the transport layer.
+
+The existing platform is sufficient.
+
+Expected new dependencies:
+
+```text
+NONE
 ```
 
 ---
 
-# 65. No Clerk Integration Yet
+# 6. Do Not Build React Data Fetching Yet
 
-Do NOT integrate:
+This phase must NOT introduce:
 
 ```text
-ClerkProvider
-SignIn
-SignUp
-auth middleware
-token acquisition
+useApi()
+useFetch()
+useProducts()
+useCategories()
+React Query
+SWR
+Context-based API state
 ```
 
-in this phase unless already present from owner work.
+The transport client is not a React abstraction.
 
-Authentication integration belongs to its owning frontend phase.
+It must be usable from:
 
-Do not pull backend Clerk architecture into foundation setup prematurely.
+```text
+Server Components
+server-side functions
+future Client Components where appropriate
+tests
+```
+
+without React dependency.
 
 ---
 
-# 66. No Application Routing Conventions Yet
+# 7. Server-First Compatibility
 
-The presence of App Router is Phase 13.1.
+Public catalog architecture will rely heavily on server rendering.
 
-The project's **routing conventions** belong to:
+Therefore the API client must work naturally from server-side Next.js code.
 
-```text
-13.6
-```
-
-Do not define:
-
-```text
-catalog route taxonomy
-account routes
-request routes
-search URL contract
-```
-
-here.
-
----
-
-# 67. No Layout System Yet
-
-Do not implement:
-
-```text
-PageContainer
-Section
-Grid
-Stack abstraction
-Header
-Footer
-Desktop navigation
-Mobile navigation
-```
-
-Phase 13.7 owns layout system work.
-
----
-
-# 68. No Application Error States Yet
-
-Do not implement:
-
-```text
-error.tsx
-global-error.tsx
-not-found.tsx
-loading.tsx
-```
-
-merely to complete the scaffold unless Next.js generated an existing minimal file.
-
-Phase 13.8 owns intentional application error/loading/not-found behavior.
-
-Existing framework files may remain.
-
----
-
-# 69. No Responsive Foundation Implementation Yet
-
-Do not build responsive application composition.
-
-Phase 13.9 owns that work.
-
-Only verify the design-system breakpoints and MUI mapping exist.
-
----
-
-# 70. No Group N Work
-
-Absolutely do not implement:
-
-```text
-homepage
-category page
-product listing
-product detail
-search UI
-filters
-sorting
-SEO metadata architecture
-structured data
-sitemap
-robots
-internal linking
-catalog image optimization
-```
-
-during this combined phase.
-
----
-
-# 71. Existing Placeholder Content
-
-Audit scaffold/template content for obvious:
-
-```text
-Next.js starter branding
-Vercel starter content
-create-next-app tutorial links
-generic starter SVGs
-```
-
-If still present in the visible application foundation:
-
-remove or simplify them.
-
-Do NOT replace them with the final furniture homepage.
-
-Use a minimal neutral foundation placeholder if needed.
-
----
-
-# 72. Unauthorized Icon Audit
-
-Search active web application code for imports from:
-
-```text
-lucide-react
-react-icons
-@heroicons/*
-@fortawesome/*
-```
-
-If such a dependency/import was accidentally introduced by scaffold/template work:
-
-determine whether it is actually used.
-
-Do not blindly remove unrelated owner functionality.
-
-For the project design system, future website UI icons remain:
-
-```text
-@mui/icons-material
-```
-
----
-
-# 73. Styling-System Audit
-
-Search for competing application styling systems.
-
-Examples:
-
-```text
-Tailwind component styling
-styled-components
-Sass theme variables
-duplicate CSS variables
-custom theme provider
-```
-
-Do not automatically remove a tool solely because a file exists.
-
-Determine whether it is actively acting as a competing design authority.
-
-The goal is:
-
-```text
-MUI
-+
-shared canonical design tokens
-```
-
-for website UI.
-
----
-
-# 74. Tailwind Clarification
-
-The existence of:
-
-```text
-frontend/design-system/tailwind-v4.css
-```
-
-is a synchronized design-system representation.
-
-It does NOT automatically authorize:
-
-```text
-Tailwind as the Next.js component styling framework.
-```
-
-Do not install/configure Tailwind in `frontend/web` unless separately approved.
-
----
-
-# 75. CSS Modules
-
-CSS Modules are not inherently prohibited.
-
-They may later be appropriate for specialized structural styling.
-
-But they must not become a second theme/token authority.
-
-Do not introduce them in this phase merely to demonstrate support.
-
----
-
-# 76. Static Assets
-
-Do not reorganize:
-
-```text
-public/
-designs/
-```
-
-or copy brand assets into multiple locations without need.
-
-Asset integration belongs to the phase that consumes the asset.
-
----
-
-# 77. Brand Logo
-
-Do not redraw:
-
-```text
-designs/brandlogo.png
-```
-
-as text or SVG during this phase.
-
-No application header is being built yet.
-
----
-
-# 78. Dependency Audit
-
-Produce a concise inventory of relevant existing foundation dependencies.
-
-At minimum record actual versions for:
-
-```text
-next
-react
-react-dom
-typescript
-@mui/material
-@mui/icons-material
-@mui/material-nextjs
-@emotion/react
-@emotion/styled
-```
-
-Do not change them unless required for compatibility.
-
----
-
-# 79. Dependency Security
-
-If the normal package-manager audit command is part of the repository workflow, it may be run and reported.
-
-Do not perform broad major-version upgrades in response to unrelated audit findings during this phase.
-
-Report material findings separately.
-
----
-
-# 80. Build Reproducibility
-
-Use the repository's lockfile.
-
-Do not delete/regenerate it unnecessarily.
-
-The project should install/build consistently using its selected package manager.
-
----
-
-# 81. TypeScript Verification
-
-Run the actual project TypeScript validation.
-
-Expected result:
-
-```text
-0 errors
-```
-
-Do not suppress errors.
-
----
-
-# 82. ESLint Verification
-
-Run the existing lint command.
-
-Expected:
-
-```text
-0 errors
-```
-
-Warnings should be reviewed and reported.
-
-Do not globally disable rules merely to obtain PASS.
-
----
-
-# 83. Theme Contract Tests
-
-Run the existing Phase 12.3 theme contract tests.
-
-Verify at least:
-
-```text
-palette
-typography
-spacing
-breakpoints
-shape
-elevation
-token mappings
-```
-
-as supported by the actual suite.
-
-Do not rewrite tests simply because they expose a real regression.
-
----
-
-# 84. Accessibility Foundation Checks
-
-Run existing checks for:
-
-```text
-contrast
-focus
-reduced motion where covered
-```
-
-and any Phase 12.7 authority/token validation.
-
-Remember:
-
-```text
-automated checks
-≠
-full WCAG conformance
-```
-
-The accessibility authority explicitly requires later manual verification as well.
-
----
-
-# 85. Production Build
-
-Run:
-
-```text
-the repository's actual production build command
-```
-
-for `frontend/web`.
-
-Expected:
-
-```text
-PASS
-```
-
-Do not substitute development startup for a production-build gate.
-
----
-
-# 86. Runtime Smoke Check
-
-Where practical, perform a minimal runtime smoke check.
-
-Verify:
-
-```text
-application starts
-root route renders
-MUI styles render
-theme provider works
-no obvious hydration warning
-no missing provider error
-no token/theme runtime exception
-```
-
-Do not test nonexistent commerce flows.
-
----
-
-# 87. Server Rendering Check
-
-Inspect/render the root route sufficiently to verify the theme integration does not require the whole page to become client-only.
-
-Important static content should remain server-renderable.
-
-Do not claim full SEO readiness.
-
-Group N owns catalog SEO.
-
----
-
-# 88. No Browser-Only Theme Initialization
-
-Theme construction should not depend unnecessarily on:
+Do not make the API client dependent on:
 
 ```text
 window
 document
 localStorage
-```
-
-No dark-mode preference system is currently approved.
-
-The initial theme is deterministic.
-
----
-
-# 89. No Dark Mode
-
-Verify:
-
-```text
-dark theme
-color-mode switch
-system theme synchronization
-```
-
-has not been introduced.
-
-Do not add it.
-
----
-
-# 90. One Theme
-
-Expected:
-
-```text
-one SL Furnitures website theme
-```
-
-Do not maintain:
-
-```text
-Nike theme
-default MUI theme
-brand theme
-legacy theme
-```
-
-simultaneously.
-
-Historical design provenance may exist in documentation, not runtime competing themes.
-
----
-
-# 91. Raw Value Audit
-
-Run the existing raw-value audit against foundation/theme code.
-
-Approved mapping files may necessarily contain concrete generated/mapped values depending on Phase 12.3 architecture.
-
-The audit must distinguish:
-
-```text
-approved adapter mapping
-```
-
-from:
-
-```text
-ad-hoc application styling
-```
-
-Do not blindly fail all raw literals.
-
----
-
-# 92. Legacy Brand Audit
-
-Search active web foundation code for:
-
-```text
-Nike
-swoosh
-shoe
-sneaker
-apparel
-sportswear
-Futura
-```
-
-Historical documentation may remain.
-
-Active application/theme code must not present the old brand language.
-
----
-
-# 93. AI-Slop Regression Audit
-
-Ensure foundation code has not introduced:
-
-```text
-gradient theme
-glass effects
-random radius
-heavy global shadows
-decorative animation
-random accent colors
-```
-
-No visual redesign is expected in this phase.
-
----
-
-# 94. Files Changed Policy
-
-Because this is primarily verification:
-
-```text
-zero code changes
-```
-
-is a valid successful outcome.
-
-Do not manufacture changes merely so the phase has a diff.
-
-If the existing implementation satisfies the contract:
-
-```text
-document verification
-→ update phase record
-→ PASS
+sessionStorage
+React hooks
+browser-only globals
 ```
 
 ---
 
-# 95. Allowed Reconciliation Changes
+# 8. Client Compatibility
 
-Changes are permitted only for genuine gaps such as:
+Some future interactive operations will need browser-side requests.
+
+The core transport may therefore be runtime-neutral where safe.
+
+However:
 
 ```text
-incorrect TypeScript strictness
-broken alias
-duplicate theme provider
-unsupported MUI App Router integration
-theme mapping regression
-unnecessary root client boundary
-broken token import
-missing build configuration
-starter-template residue
+server-only secrets
 ```
 
-Keep corrections narrow.
+must NEVER become part of a shared client bundle.
+
+Design the boundary so future authenticated/server-only behavior can be layered safely.
 
 ---
 
-# 96. Documentation Record
+# 9. Recommended Structure
 
-Update:
+Inspect existing conventions first.
 
-```text
-phases/group-M-phases.md
-```
-
-with a combined execution record explaining:
+A reasonable minimal structure may resemble:
 
 ```text
-13.1
-→ existing owner-created scaffold verified/reconciled
-
-13.2
-→ TypeScript configuration verified/reconciled
-
-13.3
-→ Phase 12.3 MUI implementation verified/reconciled
-
-13.4
-→ Phase 12.3 theme implementation verified/reconciled
+frontend/web/
+└── lib/
+    └── api/
+        ├── client.ts
+        ├── errors.ts
+        ├── types.ts
+        └── __tests__/
 ```
 
-Do not erase the original roadmap ownership.
+Do not mechanically use this structure if the repository already establishes another appropriate convention.
+
+Do NOT create dozens of tiny files.
+
+Prefer cohesive responsibilities.
 
 ---
 
-# 97. Group L Relationship
+# 10. One Canonical API Client
 
-Record explicitly:
+There must be one canonical generic request mechanism.
+
+Avoid:
 
 ```text
-Group L
-→ established design-system architecture
-
-Group M 13.1–13.4
-→ validates that the actual website foundation correctly consumes it
+apiClient
+httpClient
+fetchClient
+laravelClient
+requestClient
 ```
 
-This avoids future confusion about why MUI/theme work appears in both groups.
+all implementing overlapping behavior.
+
+Choose one clear authority.
 
 ---
 
-# 98. ADR
+# 11. Base URL
 
-Do NOT automatically add another ADR.
+The Laravel API base origin must come from configuration.
 
-The early implementation/reconciliation relationship may simply belong in the phase execution record.
-
-Add an ADR only if a genuine new architectural decision is required.
-
-Do not create:
+Do NOT hard-code:
 
 ```text
-DESIGN-007
+http://localhost:8000
+https://api.example.com
 ```
 
-merely to say existing work passed verification.
+inside request functions.
+
+Use an environment-based configuration appropriate to the execution environment.
 
 ---
 
-# 99. No Group L Reopening
+# 12. Environment Variable Naming
 
-If 13.1–13.4 uncover a minor implementation mismatch:
+Inspect existing repository environment conventions first.
+
+Do not invent multiple aliases such as:
 
 ```text
-fix the website consumer
+API_URL
+BACKEND_URL
+LARAVEL_URL
+NEXT_PUBLIC_API_URL
+API_BASE_URL
+```
+
+Choose one canonical variable based on existing conventions.
+
+Document it in an example environment file if the repository uses one.
+
+Never commit actual environment secrets.
+
+---
+
+# 13. Public vs Server-Only Base URL
+
+Determine whether the same Laravel origin is intentionally reachable from both browser and server.
+
+Do not automatically expose a server-only internal hostname through:
+
+```text
+NEXT_PUBLIC_*
+```
+
+If browser-side direct API calls are not yet required, prefer the least-exposed configuration compatible with current architecture.
+
+Do not invent a proxy/BFF architecture in this phase.
+
+Record the decision.
+
+---
+
+# 14. API Version
+
+The frozen API namespace is:
+
+```text
+/api/v1
+```
+
+The client must have one deterministic convention for applying this prefix.
+
+Avoid accidental URLs such as:
+
+```text
+/api/v1/api/v1/products
+```
+
+or:
+
+```text
+/products
+```
+
+against the wrong origin.
+
+---
+
+# 15. URL Construction
+
+Use safe URL construction.
+
+Do not concatenate arbitrary strings carelessly:
+
+```ts
+baseUrl + path + '?' + query
+```
+
+without handling:
+
+```text
+slashes
+encoding
+query parameters
+arrays
+optional values
+```
+
+---
+
+# 16. Endpoint Input
+
+Generic request paths should be constrained to application API paths.
+
+Do not let arbitrary user-controlled absolute URLs turn the API client into an unintended generic fetch proxy.
+
+---
+
+# 17. Query Serialization
+
+Implement deterministic query serialization.
+
+Support only contract-required value shapes.
+
+Handle appropriately:
+
+```text
+string
+number
+boolean
+arrays if API contract uses them
+undefined/null according to contract
+```
+
+Use:
+
+```ts
+URLSearchParams
 ```
 
 where appropriate.
 
-If they uncover a genuine flaw in the canonical design system:
+Do not invent nested query conventions absent from the API contract.
+
+---
+
+# 18. Request Methods
+
+Support the HTTP methods actually needed by the API foundation:
+
+```text
+GET
+POST
+PUT/PATCH if contract uses them
+DELETE
+```
+
+Do not invent semantic methods like:
+
+```text
+createProduct()
+checkout()
+approveRequest()
+```
+
+in the generic transport.
+
+---
+
+# 19. JSON Requests
+
+For JSON bodies:
+
+```text
+Content-Type: application/json
+```
+
+must be applied correctly.
+
+Do not send the header for requests without JSON bodies when unnecessary.
+
+---
+
+# 20. JSON Serialization
+
+Only serialize defined JSON request bodies.
+
+Do not blindly run:
+
+```ts
+JSON.stringify(undefined)
+```
+
+or transform FormData into JSON.
+
+---
+
+# 21. FormData Support
+
+The API includes attachment-capable workflows later.
+
+The generic transport must not make future `FormData` impossible.
+
+If supporting `FormData` now is straightforward:
+
+```text
+allow BodyInit/FormData
+and do not manually set multipart Content-Type
+```
+
+so the runtime can generate the boundary.
+
+Do NOT implement furniture-request attachment endpoints now.
+
+---
+
+# 22. Default Accept Header
+
+For API requests, use:
+
+```http
+Accept: application/json
+```
+
+unless a particular future endpoint requires another representation.
+
+---
+
+# 23. Header Merging
+
+Allow callers to provide appropriate additional headers without accidentally deleting required defaults.
+
+Header behavior must be deterministic.
+
+Do not allow caller input to silently override security-sensitive future headers without deliberate policy.
+
+---
+
+# 24. Authentication Boundary
+
+Do NOT implement Clerk authentication in this phase.
+
+Do NOT:
+
+```text
+import Clerk hooks
+call useAuth()
+read browser Clerk state
+implement sign-in
+implement middleware
+```
+
+The generic client should nevertheless allow a future authorized layer to provide an:
+
+```http
+Authorization: Bearer <token>
+```
+
+header without redesigning the entire transport.
+
+---
+
+# 25. No Stored Bearer Tokens
+
+Never design the client around:
+
+```text
+localStorage token
+sessionStorage token
+hard-coded bearer token
+```
+
+Clerk will remain the identity/token authority.
+
+---
+
+# 26. Credentials
+
+Do not automatically set:
+
+```ts
+credentials: "include"
+```
+
+unless the actual Laravel/Clerk architecture requires cookie-based behavior.
+
+The current architecture uses Clerk bearer identity.
+
+Avoid unnecessary cross-origin credential semantics.
+
+---
+
+# 27. Request ID / Correlation Metadata
+
+Inspect the API conventions for request/correlation identifiers.
+
+If Laravel emits a request identifier header or error metadata:
+
+```text
+capture it
+```
+
+in the structured API error where useful.
+
+Do not invent a conflicting identifier protocol.
+
+---
+
+# 28. Error Contract Is Authoritative
+
+Inspect the frozen Laravel error contract.
+
+The frontend must decode that contract exactly.
+
+Do not replace backend errors with a frontend invention such as:
+
+```ts
+{
+  message: string;
+}
+```
+
+if the API defines richer fields.
+
+---
+
+# 29. Typed API Error
+
+Create a typed application error representation appropriate to the frozen contract.
+
+Conceptually it may contain:
+
+```text
+HTTP status
+stable backend error code
+safe message
+validation details
+request/correlation ID
+retry metadata
+```
+
+ONLY if those fields actually exist in the contract.
+
+Do not invent unsupported fields.
+
+---
+
+# 30. Error Class
+
+A dedicated error class is appropriate if it materially improves handling.
+
+Example conceptually:
+
+```ts
+class ApiError extends Error {
+  ...
+}
+```
+
+It should preserve:
+
+```text
+safe API metadata
+HTTP status
+stable error identity
+```
+
+without exposing raw backend internals.
+
+---
+
+# 31. Error Cause
+
+Where supported and useful, preserve the original transport/parsing cause internally.
+
+Do not expose:
+
+```text
+stack traces
+internal URLs
+framework exception details
+```
+
+to future user-facing messages.
+
+---
+
+# 32. Validation Errors
+
+Inspect how Laravel represents validation errors.
+
+Preserve the actual contract.
+
+Do not flatten structured validation data into a single string if future forms will need field-level errors.
+
+---
+
+# 33. 401
+
+Treat:
+
+```text
+401 Unauthorized
+```
+
+as an API result.
+
+Do NOT automatically:
+
+```text
+redirect to login
+clear auth
+reload page
+```
+
+inside the generic transport.
+
+Authentication UX belongs to a higher layer.
+
+---
+
+# 34. 403
+
+Do not translate:
+
+```text
+403
+```
+
+into:
+
+```text
+404
+```
+
+on the frontend.
+
+The backend already owns authorization masking semantics.
+
+Trust the backend response contract.
+
+---
+
+# 35. 404
+
+A generic API client should expose the structured 404.
+
+Do not invoke Next.js:
+
+```ts
+notFound()
+```
+
+from the generic transport.
+
+That is a routing/page concern for later phases.
+
+---
+
+# 36. 422
+
+Preserve structured validation information from:
+
+```text
+422
+```
+
+responses.
+
+Do not treat validation failures as network failures.
+
+---
+
+# 37. 429
+
+The backend contract requires rate limiting with:
+
+```http
+Retry-After
+```
+
+Capture the contract-defined retry information.
+
+Do not discard it.
+
+Do not automatically retry mutation requests.
+
+---
+
+# 38. Retry-After
+
+Parse `Retry-After` according to the API convention.
+
+If the repository contract specifies seconds, honor that exact interpretation.
+
+Do not invent milliseconds/absolute dates unless the backend supports them.
+
+---
+
+# 39. 5xx
+
+Server failures should produce a safe typed API error.
+
+Do not expose:
+
+```text
+HTML exception pages
+stack traces
+database errors
+Laravel debug output
+```
+
+through the application error object.
+
+---
+
+# 40. Non-JSON Error Responses
+
+Infrastructure failures may occasionally return:
+
+```text
+HTML
+plain text
+empty body
+proxy error
+```
+
+even when JSON was expected.
+
+The API client must fail safely.
+
+Do not crash with an unrelated:
+
+```text
+Unexpected token '<'
+```
+
+parsing exception as the public application error.
+
+Preserve the HTTP status and classify the malformed/unexpected response safely.
+
+---
+
+# 41. Success Responses
+
+Decode the frozen success envelope exactly.
+
+Do not invent a frontend envelope if the backend already defines one.
+
+If the API has multiple valid response forms:
+
+```text
+single resource
+collection
+pagination
+no-content
+```
+
+support those generically only as contractually required.
+
+---
+
+# 42. Explicit Response Typing
+
+The request function should support typed successful responses.
+
+Conceptually:
+
+```ts
+request<T>(...)
+```
+
+is appropriate.
+
+But generics do NOT validate runtime data.
+
+Do not claim:
+
+```text
+TypeScript generic = runtime schema validation
+```
+
+---
+
+# 43. Runtime Validation
+
+Do NOT add:
+
+```text
+Zod
+Valibot
+Yup
+io-ts
+```
+
+solely for this phase.
+
+If the project already has an approved runtime validation system, inspect it.
+
+Otherwise preserve the frozen contract through types/tests and introduce runtime schemas only in a separately justified phase.
+
+---
+
+# 44. `unknown` Before Trust
+
+When decoding untrusted response JSON, prefer:
+
+```ts
+unknown
+```
+
+during boundary parsing rather than immediately casting everything to:
+
+```ts
+T
+```
+
+Use narrow structural checks for the generic envelope/error fields that the transport must understand.
+
+Avoid a fake runtime validator pretending to validate entire domain resources.
+
+---
+
+# 45. Empty Responses
+
+Handle valid empty response bodies.
+
+Especially:
+
+```text
+204 No Content
+```
+
+must not produce a JSON parsing failure.
+
+---
+
+# 46. HEAD Responses
+
+If HEAD is used by the contract, it must not require JSON parsing.
+
+Do not add HEAD support if no repository use requires it.
+
+---
+
+# 47. Timeout
+
+Network requests must not hang indefinitely.
+
+Implement a reasonable configurable/default timeout using:
+
+```text
+AbortController / AbortSignal
+```
+
+compatible with the supported runtime.
+
+Do not add a timeout library.
+
+---
+
+# 48. Timeout Value
+
+Do not choose an arbitrary value without documenting it.
+
+Inspect repository/API conventions first.
+
+If no timeout is specified, choose a conservative infrastructure default and document it as a frontend transport policy, not an API contract.
+
+Keep it configurable.
+
+---
+
+# 49. Caller Cancellation
+
+Allow future callers to provide an:
+
+```ts
+AbortSignal
+```
+
+where appropriate.
+
+The internal timeout must compose correctly with caller cancellation.
+
+Do not silently ignore the caller's signal.
+
+---
+
+# 50. Abort Classification
+
+Distinguish where useful between:
+
+```text
+request timed out
+caller intentionally aborted
+HTTP error
+network transport failure
+```
+
+Do not mislabel every abort as:
+
+```text
+server unavailable
+```
+
+---
+
+# 51. Network Errors
+
+Network failures have no HTTP status.
+
+Represent them distinctly from:
+
+```text
+404
+422
+500
+```
+
+Do not invent:
+
+```text
+status = 0
+```
+
+unless that convention is explicitly documented and justified.
+
+Prefer a typed transport failure classification.
+
+---
+
+# 52. Retry Policy
+
+Do NOT add automatic retries by default.
+
+Especially never automatically retry:
+
+```text
+POST
+PATCH
+PUT
+DELETE
+```
+
+without idempotency guarantees.
+
+Retries may be designed later at a domain/query layer.
+
+---
+
+# 53. GET Retry
+
+Even GET requests should not receive hidden aggressive retry behavior in this foundational client.
+
+Keep transport behavior predictable.
+
+---
+
+# 54. Next.js Cache Semantics
+
+The API client must allow callers to pass legitimate Next.js fetch caching/revalidation options where server-side requests need them.
+
+Do not hard-code:
+
+```ts
+cache: "no-store"
+```
+
+for every request.
+
+That would undermine future public catalog caching.
+
+---
+
+# 55. Do Not Hard-Code `force-cache`
+
+Likewise do not make every GET:
+
+```ts
+cache: "force-cache"
+```
+
+Public catalog freshness policies belong to endpoint/domain consumers.
+
+---
+
+# 56. Cache Policy Ownership
+
+Use this dependency:
+
+```text
+generic transport
+→ supports cache options
+
+future endpoint/domain client
+→ selects appropriate policy
+
+page
+→ uses domain client
+```
+
+The transport provides capability.
+
+It does not decide catalog business freshness.
+
+---
+
+# 57. Next.js `next` Options
+
+Where supported by the installed Next.js version, allow server callers to provide legitimate:
+
+```text
+revalidate
+tags
+```
+
+options without leaking those Next-specific concepts into backend API contracts.
+
+Keep this as transport configuration.
+
+---
+
+# 58. Client Runtime Compatibility
+
+Do not send Next.js-only fetch options from browser code where they have no meaning.
+
+Design types/implementation carefully so shared transport remains predictable.
+
+---
+
+# 59. Logging
+
+Do NOT add verbose request/response logging containing:
+
+```text
+Authorization headers
+personal information
+request bodies
+contact information
+attachment data
+```
+
+A transport client should not become a data-leak source.
+
+---
+
+# 60. Development Diagnostics
+
+If development diagnostics already exist, safe metadata may include:
+
+```text
+HTTP method
+safe route template/path
+status
+request ID
+```
+
+Avoid secrets and personal data.
+
+Do not add a logging framework.
+
+---
+
+# 61. Authorization Header Redaction
+
+Any diagnostic/error serialization must never include the bearer token.
+
+Add a regression test if the client includes diagnostic metadata that could accidentally serialize headers.
+
+---
+
+# 62. URL Privacy
+
+Be cautious logging complete URLs because future query parameters may contain:
+
+```text
+search terms
+email
+phone
+identifiers
+```
+
+Prefer no automatic URL logging in the transport.
+
+---
+
+# 63. Error Privacy
+
+The accessibility baseline requires error semantics without leaking backend/private-resource information.
+
+The API client should therefore preserve:
+
+```text
+safe backend message
+stable error metadata
+```
+
+but not expose raw response internals indiscriminately.
+
+Do not make the full raw `Response` object the expected UI error surface.
+
+---
+
+# 64. Backend Authority
+
+Never infer business behavior from HTTP status alone when the frozen API supplies a stable error code.
+
+Example principle:
+
+```text
+status
++
+stable error code
++
+contract metadata
+```
+
+may inform higher layers.
+
+Do not embed business rules into the generic client.
+
+---
+
+# 65. Money
+
+Do not convert API money amounts to JavaScript floating-point major currency units.
+
+If generic API types touch money at all:
+
+```text
+preserve integer minor units
++
+currency
+```
+
+exactly as supplied.
+
+Formatting belongs later.
+
+---
+
+# 66. Dates
+
+Do not globally convert all ISO strings into:
+
+```ts
+Date
+```
+
+inside the transport.
+
+The transport should preserve API representations.
+
+Domain mapping may decide later when a `Date` object is useful.
+
+---
+
+# 67. Enum Handling
+
+Do not silently normalize unknown enum values.
+
+V1 enums are CLOSED.
+
+Domain endpoint types later should represent the contract exactly.
+
+Generic transport should not know individual enums.
+
+---
+
+# 68. `additionalProperties: false`
+
+Do not use the frontend client to append undocumented request fields.
+
+Future endpoint DTOs must follow the frozen contract.
+
+The generic transport should transmit exactly the body it receives.
+
+---
+
+# 69. No Client-Side Business Authority
+
+The API client must never become authoritative for:
+
+```text
+price
+inventory
+roles
+ownership
+order status
+delivery fee
+payment status
+request lifecycle
+```
+
+Laravel remains authoritative.
+
+---
+
+# 70. No Direct Database Access
+
+No:
+
+```text
+MySQL
+Firebase
+Supabase
+direct DB SDK
+```
+
+belongs in the web client.
+
+All business data flows through Laravel.
+
+---
+
+# 71. CORS
+
+Do not "solve" CORS by:
+
+```text
+mode: "no-cors"
+```
+
+This is prohibited.
+
+If runtime verification reveals a CORS problem:
+
+```text
+report it
+```
+
+and fix the actual deployment/API configuration only if that work belongs within approved scope.
+
+`no-cors` is not a solution.
+
+---
+
+# 72. Proxy Architecture
+
+Do not create a Next.js catch-all API proxy such as:
+
+```text
+/app/api/[...path]/route.ts
+```
+
+without an explicit architectural decision.
+
+This phase is not permission to turn Next.js into an undocumented BFF.
+
+---
+
+# 73. Server Actions
+
+Do not implement the API client exclusively through:
+
+```text
+Server Actions
+```
+
+Server Actions are an application interaction mechanism, not the generic HTTP transport.
+
+Future flows may use them where appropriate.
+
+---
+
+# 74. API Route Handlers
+
+Do not create Next.js Route Handlers merely to wrap every Laravel endpoint.
+
+Laravel remains the API.
+
+---
+
+# 75. OpenAPI
+
+Use:
+
+```text
+docs/api/openapi.yaml
+```
+
+as a verification source.
+
+Do NOT add an OpenAPI code generator in this phase unless one is already part of the approved repository architecture.
+
+Expected:
+
+```text
+no generated API SDK
+```
+
+for Phase 13.5.
+
+---
+
+# 76. Generic API Types
+
+Only create generic types needed by transport.
+
+Examples may include, depending on actual contract:
+
+```text
+ApiSuccess<T>
+ApiErrorPayload
+ApiValidationErrors
+PaginationMeta
+RequestOptions
+TransportFailure
+```
+
+Do not create all product/cart/order DTOs now.
+
+---
+
+# 77. Pagination
+
+If the frozen contract defines generic pagination metadata:
+
+implement its generic type exactly.
+
+Do not invent:
+
+```text
+pageCount
+hasMore
+cursor
+```
+
+unless present in the contract.
+
+---
+
+# 78. Resource Types
+
+Do NOT manually type every resource in:
+
+```text
+api-resources.md
+```
+
+during Phase 13.5.
+
+Resource-specific types should be introduced alongside their endpoint/domain consumers.
+
+---
+
+# 79. Public API Surface
+
+Keep the API module's exports intentional.
+
+Avoid exposing internal helpers such as:
+
+```text
+parseRawBody
+mergeInternalHeaders
+normalizeUnknownError
+```
+
+unless callers genuinely need them.
+
+---
+
+# 80. Immutability
+
+Do not mutate caller-provided:
+
+```text
+Headers
+RequestInit
+URLSearchParams
+AbortSignal
+```
+
+objects unexpectedly.
+
+Construct internal request state safely.
+
+---
+
+# 81. Request Body Safety
+
+Do not accept an unconstrained generic:
+
+```ts
+body: any
+```
+
+Prefer a sensible body type compatible with supported request modes.
+
+Do not over-engineer this into a complex serialization framework.
+
+---
+
+# 82. Method/Body Safety
+
+Avoid sending request bodies with:
+
+```text
+GET
+HEAD
+```
+
+unless the backend contract explicitly requires such behavior.
+
+---
+
+# 83. URL Encoding Tests
+
+Test values containing characters such as:
+
+```text
+space
+&
++
+/
+Unicode
+```
+
+where query/path encoding applies.
+
+Do not hand-roll encoding.
+
+---
+
+# 84. Base URL Tests
+
+Test normalization for:
+
+```text
+base URL with trailing slash
+base URL without trailing slash
+path with leading slash
+```
+
+according to the chosen API configuration convention.
+
+Prevent duplicate/missing separators.
+
+---
+
+# 85. Missing Configuration
+
+If required API base configuration is absent:
+
+fail clearly.
+
+Do not silently default production code to:
+
+```text
+localhost
+```
+
+A missing configuration should produce a deterministic developer-facing configuration error.
+
+---
+
+# 86. Configuration Validation
+
+Validate at least:
+
+```text
+URL is present
+URL is syntactically valid
+protocol is appropriate
+```
+
+Do not add a general environment-schema dependency.
+
+---
+
+# 87. Browser Exposure Test
+
+If using a server-only API URL:
+
+verify it is not imported into a client component/bundle.
+
+If a public API origin is intentionally required:
+
+document why exposure is safe.
+
+The API URL itself is not necessarily secret, but server-only infrastructure names may be.
+
+---
+
+# 88. Testing Strategy
+
+Add focused tests for the API foundation.
+
+Use the repository's existing frontend test infrastructure.
+
+Do NOT install a second test runner.
+
+If no suitable automated unit test infrastructure exists, inspect the project before deciding whether adding one belongs to this phase.
+
+Do not invent a large testing stack casually.
+
+---
+
+# 89. Required Client Tests
+
+At minimum cover, using the actual contract:
+
+```text
+base URL construction
+query encoding
+default Accept header
+JSON Content-Type behavior
+successful JSON response
+success envelope decoding
+204 response
+structured API error
+validation error preservation
+404 preservation
+429 + Retry-After
+500 safe error handling
+non-JSON error body
+network failure
+timeout
+caller abort
+header merging
+```
+
+Add tests for Next.js cache option forwarding if the architecture exposes them.
+
+---
+
+# 90. Auth Regression Test
+
+If the generic client supports caller-provided authorization headers, verify:
+
+```text
+token can be supplied deliberately
+token is not persisted
+token is not logged
+```
+
+Do not use a real Clerk token.
+
+---
+
+# 91. No Real Backend Dependency in Unit Tests
+
+Unit tests should not require:
+
+```text
+running Laravel
+internet
+production API
+```
+
+Mock/stub the fetch boundary appropriately using existing testing conventions.
+
+---
+
+# 92. Integration Smoke Check
+
+Where practical, a local integration smoke check against the configured Laravel API may be performed if the backend is available.
+
+Do not make Phase 13.5 PASS depend on external infrastructure that is unavailable if unit/contract verification is sufficient.
+
+Report:
+
+```text
+RUN / NOT RUN
+```
+
+with reason.
+
+---
+
+# 93. Type Safety Tests
+
+Ensure TypeScript correctly rejects obviously invalid client option usage where practical.
+
+Do not weaken types to make tests convenient.
+
+---
+
+# 94. Error Narrowing
+
+Provide a clean way for higher layers to determine whether an unknown caught value is the API client's typed error.
+
+For example:
+
+```text
+instanceof
+```
+
+or an appropriate type guard.
+
+Do not force every caller to inspect arbitrary object properties.
+
+---
+
+# 95. Error Message Discipline
+
+`Error.message` should contain a safe developer/application-level description.
+
+Do not stuff serialized backend responses into it.
+
+Keep structured metadata structured.
+
+---
+
+# 96. Future 13.8 Boundary
+
+Phase 13.8 will own presentation of:
+
+```text
+not found
+loading
+unexpected failure
+route-level error
+```
+
+Therefore Phase 13.5 only produces machine-usable error information.
+
+It does NOT choose:
+
+```text
+toast
+dialog
+error page
+inline banner
+redirect
+```
+
+---
+
+# 97. Future Form Boundary
+
+Future request/enquiry forms will decide how:
+
+```text
+422 field errors
+```
+
+map onto actual form controls.
+
+Phase 13.5 preserves them.
+
+It does not render them.
+
+---
+
+# 98. Future Auth Boundary
+
+A later authenticated layer will acquire Clerk tokens and inject them into requests.
+
+The API client must make this possible without coupling the generic transport to Clerk.
+
+Desired future dependency:
+
+```text
+Clerk token acquisition
+       ↓
+authenticated API wrapper/caller
+       ↓
+generic API client
+```
+
+NOT:
+
+```text
+generic API client
+       ↓
+Clerk React hook
+```
+
+---
+
+# 99. Future Catalog Boundary
+
+Group N may eventually create domain clients such as conceptually:
+
+```text
+getProducts()
+getProduct()
+getCategories()
+searchProducts()
+```
+
+Those should use Phase 13.5.
+
+Do NOT implement them now.
+
+---
+
+# 100. Future Cart Boundary
+
+Cart endpoints later use the same transport.
+
+Do not special-case:
+
+```text
+guest token
+cart ownership
+cart persistence
+```
+
+in the generic client during this phase.
+
+---
+
+# 101. Request-First Boundary
+
+The production request-first policy does not change generic transport behavior.
+
+Do not add:
+
+```text
+checkout disabled
+cart disabled
+MTO routing
+```
+
+logic to the API client.
+
+Those are application/domain concerns.
+
+---
+
+# 102. Documentation
+
+Document the API-client architecture concisely.
+
+Preferred location:
+
+```text
+frontend/web/lib/api/README.md
+```
+
+only if repository conventions support local architecture documentation.
+
+Otherwise place the documentation in the existing Group M execution record.
+
+Document:
+
+```text
+authority
+base URL configuration
+/api/v1 behavior
+generic request usage
+error model
+timeout/cancellation
+cache ownership
+authentication boundary
+security constraints
+```
+
+Do not create unnecessary documentation duplication.
+
+---
+
+# 103. Usage Examples
+
+Documentation may show small transport examples such as:
+
+```ts
+const response = await apiRequest<MyResponse>({
+  method: "GET",
+  path: "/example",
+});
+```
+
+Use neutral examples.
+
+Do not implement fake production endpoints merely for documentation.
+
+---
+
+# 104. Environment Documentation
+
+If an environment variable is introduced, update the repository's approved example/template environment file.
+
+Never place a real deployment URL there unless project policy intentionally treats it as public configuration.
+
+Explain expected format.
+
+---
+
+# 105. AGENTS Guidance
+
+Update:
+
+```text
+frontend/AGENTS.md
+```
+
+only if durable API-client rules should constrain future agents.
+
+Useful durable rules may include:
+
+```text
+all Laravel HTTP access goes through canonical API client
+no Axios without architecture approval
+no raw page-level fetch to Laravel
+no business logic in transport
+no token persistence
+preserve backend error contract
+```
+
+Do not turn AGENTS.md into an implementation diary.
+
+---
+
+# 106. ADR Decision
+
+Add an ADR only if this phase introduces a material architecture decision not already recorded.
+
+A reasonable ADR, if repository convention warrants it, would be:
+
+```text
+WEB-001 — Native Fetch API Client Boundary
+```
+
+Possible decisions:
+
+```text
+native fetch
+single generic transport
+Laravel /api/v1
+no Axios
+no React dependency
+server-first/runtime-neutral
+typed errors
+backend contract preserved
+domain-specific clients layered later
+auth injection external to transport
+cache policy owned by consumers
+```
+
+Use the repository's actual ADR numbering convention.
+
+Do not force an ADR if the project records these decisions elsewhere.
+
+---
+
+# 107. Cognitive Complexity
+
+Keep implementation straightforward.
+
+Repository rule remains:
+
+```text
+cognitive complexity ≤ 15
+```
+
+where enforced.
+
+Do not create one giant request function handling every concern through deeply nested branching.
+
+Extract cohesive helpers where justified.
+
+---
+
+# 108. Return Count
+
+Preserve the project's preference for:
+
+```text
+≤ 3 returns per function
+```
+
+where practical.
+
+Do not distort simple TypeScript merely to mechanically satisfy this preference if existing frontend standards clarify otherwise.
+
+---
+
+# 109. Naming
+
+Prefer names that describe infrastructure responsibilities.
+
+Good conceptual examples:
+
+```text
+apiRequest
+ApiError
+buildApiUrl
+parseApiResponse
+```
+
+Avoid vague names:
+
+```text
+helper
+utils
+common
+manager
+serviceThing
+```
+
+Follow existing repository naming conventions first.
+
+---
+
+# 110. No Premature Repository Pattern
+
+Do NOT create:
+
+```text
+ProductRepository
+CategoryRepository
+CartRepository
+OrderRepository
+```
+
+during Phase 13.5.
+
+The project does not need enterprise ceremony around a generic fetch wrapper.
+
+---
+
+# 111. No Global Singleton State
+
+The API client should not maintain mutable global state such as:
+
+```text
+current user
+current token
+last response
+retry queue
+request cache
+```
+
+Next.js fetch/server caching and higher layers own relevant state.
+
+---
+
+# 112. Concurrency
+
+The transport must be safe for concurrent server requests.
+
+Never store per-request:
+
+```text
+Authorization header
+AbortController
+request ID
+```
+
+in shared mutable module state.
+
+This is especially important under SSR.
+
+---
+
+# 113. Server Request Isolation
+
+A future authenticated SSR request must never leak one user's bearer token into another request.
+
+Design Phase 13.5 so authentication is passed per request/call.
+
+No mutable global auth header.
+
+---
+
+# 114. Security Regression Tests
+
+Where practical, test that:
+
+```text
+one request's headers
+do not mutate
+the next request's headers
+```
+
+This is a high-value SSR isolation invariant.
+
+---
+
+# 115. Request Header Authority
+
+Future callers may add headers, but generic client defaults should remain predictable.
+
+Do not accept unsafe headers from user-controlled values.
+
+This is an internal application API, not an arbitrary proxy.
+
+---
+
+# 116. Content Negotiation
+
+Do not add:
+
+```text
+XML
+text/html
+protobuf
+```
+
+support without an API requirement.
+
+V1 API is JSON-oriented except valid no-content/file/multipart cases defined by contract.
+
+---
+
+# 117. File Downloads
+
+Do not build blob/file-download infrastructure unless the frozen V1 frontend endpoints currently require it.
+
+Attachments being uploaded later does not imply generic download support is needed now.
+
+---
+
+# 118. Upload Progress
+
+Native `fetch` does not provide straightforward upload-progress semantics.
+
+Do not replace the transport stack merely to obtain hypothetical future progress bars.
+
+Solve that only when an actual UX requirement exists.
+
+---
+
+# 119. Response Headers
+
+Preserve access to contractually meaningful response metadata such as:
+
+```text
+Retry-After
+request identifier
+pagination headers
+```
+
+if those are actually defined.
+
+Do not expose every response header as application state unnecessarily.
+
+---
+
+# 120. HTTP Status
+
+Successful typed responses may need status metadata only if actual consumers require it.
+
+Do not wrap every successful resource in a huge transport object without reason.
+
+Choose a minimal API that still supports contract requirements.
+
+---
+
+# 121. Generic Client Ergonomics
+
+A future endpoint function should be concise.
+
+Desired conceptual use:
+
+```ts
+return apiRequest<ProductCollection>({
+  path: "/products",
+  query,
+  cache: ...
+});
+```
+
+not:
+
+```ts
+return apiRequest({
+  protocol: ...,
+  parser: ...,
+  serializer: ...,
+  adapter: ...,
+  middleware: ...,
+  responseFactory: ...
+});
+```
+
+Avoid building a mini networking framework.
+
+---
+
+# 122. No Middleware Pipeline Framework
+
+Do not invent Axios-style:
+
+```text
+interceptors
+middleware arrays
+plugin system
+hooks
+```
+
+during this phase.
+
+Simple composition is preferable.
+
+---
+
+# 123. Public Error Shape Stability
+
+Future application code should not depend directly on arbitrary Laravel implementation internals.
+
+Depend on the **frozen API error contract**.
+
+If backend currently emits undocumented fields:
+
+```text
+ignore them
+```
+
+unless the contract is updated through the proper process.
+
+---
+
+# 124. Contract Conflict Rule
+
+If:
+
+```text
+OpenAPI
+api-contract.md
+api-conventions.md
+actual Laravel implementation
+```
+
+disagree materially:
 
 ```text
 STOP
-→ identify Group L authority affected
-→ reconcile canonical source
-→ regenerate/synchronize derived representations
-→ re-run Group L validation
-→ then continue
 ```
 
-Do not silently fork the website away from the design system.
+Do not guess.
+
+Report:
+
+```text
+documents involved
+exact discrepancy
+affected endpoint/field/status
+recommended source-of-truth resolution
+```
+
+Do not silently teach the frontend whichever behavior happens to be easiest.
 
 ---
 
-# 100. Security Boundary
+# 125. Frozen V1 Rule
 
-No secrets may enter client code.
+Do not modify backend V1 merely to simplify the frontend.
 
-Search for obvious accidental exposure patterns around:
+The API contract is frozen.
 
-```text
-Clerk secret keys
-Laravel credentials
-database credentials
-private API tokens
-```
-
-Do not introduce authentication configuration in this phase.
-
-Public environment variables are not automatically safe merely because Next.js permits them.
+Any genuine contract defect requires the established contract-change process.
 
 ---
 
-# 101. Browser Environment Boundary
+# 126. Verification Commands
 
-Do not move server-capable code into Client Components unnecessarily.
+Run actual commands available in `frontend/web/package.json`.
 
-The frontend architecture should preserve:
-
-```text
-Server Components by default
-Client Components when interaction requires them
-```
-
-This remains important for:
+At minimum, where available:
 
 ```text
-performance
-initial rendering
-SEO
-bundle size
+TypeScript/typecheck
+ESLint
+API client tests
+existing theme contract tests
+production build
+git diff --check
 ```
+
+Do not invent script names.
 
 ---
 
-# 102. Bundle Restraint
+# 127. Existing Foundation Non-Regression
 
-Do not import:
+Because 13.1–13.4 passed, re-run enough existing verification to prove 13.5 did not break:
 
 ```text
-entire icon namespaces
-large utility libraries
-unused MUI modules
+MUI SSR integration
+theme contract
+production build
 ```
 
-merely for convenience.
-
-Prefer normal tree-shakeable imports.
-
-Do not perform speculative micro-optimization.
+Do not reopen those phases unnecessarily.
 
 ---
 
-# 103. Accessibility Non-Claim
+# 128. Dependency Check
 
-The completion report must NOT say:
+Final expected dependency change:
 
 ```text
-website is WCAG compliant
+NONE
 ```
 
-The correct statement is:
+If a dependency is added:
 
 ```text
-website foundation is consistent with the WCAG 2.2 AA-oriented design-system baseline
-```
-
-Actual page/journey verification remains future work.
-
----
-
-# 104. Combined Phase Acceptance — 13.1
-
-Phase 13.1 passes only if:
-
-```text
-existing Next.js project verified
-App Router verified
-root layout valid
-Server Component boundary preserved
-package manager identified
-Next config valid
-scripts valid
-no scaffold overwrite performed
-production build passes
+Phase 13.5 cannot be reported as clean PASS
+without explaining why native platform capabilities were insufficient.
 ```
 
 ---
 
-# 105. Combined Phase Acceptance — 13.2
+# 129. Files Expected to Change
 
-Phase 13.2 passes only if:
+Likely:
 
 ```text
-TypeScript config valid
-strictness preserved
-aliases valid
-Next.js compatibility preserved
-no broad type suppression introduced
-type checking passes
+frontend/web/lib/api/*
+frontend/web/.env.example
+    # only if repo convention uses it
+
+frontend/AGENTS.md
+    # only durable guidance
+
+phases/group-M-phases.md
+
+docs/decisions.md
+    # only if ADR justified
 ```
+
+Possibly:
+
+```text
+frontend/web/package.json
+```
+
+only for scripts if genuinely necessary.
+
+Do not modify theme files unless a real regression is discovered.
 
 ---
 
-# 106. Combined Phase Acceptance — 13.3
-
-Phase 13.3 passes only if:
-
-```text
-MUI packages verified
-MUI Icons verified
-official App Router integration verified
-Emotion integration valid
-SSR style integration valid
-provider boundary minimal
-no duplicate MUI/theme infrastructure
-no competing icon library introduced
-```
-
----
-
-# 107. Combined Phase Acceptance — 13.4
-
-Phase 13.4 passes only if:
-
-```text
-single theme authority verified
-tokens.css remains canonical
-theme remains consumer
-palette mapping correct
-typography mapping correct
-spacing mapping correct
-shape mapping correct
-elevation mapping correct
-motion mapping correct
-breakpoint mapping correct
-focus/accessibility foundation preserved
-no dark theme introduced
-theme tests/build pass
-```
-
----
-
-# 108. Completion Report
+# 130. Completion Report
 
 Return:
 
 ```text
-Combined Phase 13.1–13.4 status:
-PASS / PARTIAL / BLOCKED
-
-
-13.1 — NEXT.JS PROJECT SETUP
-
-Status:
+Phase 13.5 status:
 PASS / BLOCKED
 
-Project already existed:
-YES
 
-create-next-app rerun:
-NO
+ARCHITECTURE
 
-Next.js version:
-<version>
+Canonical API client:
+<path>
 
-React version:
-<version>
+Transport:
+native fetch / FAIL
 
-Router:
-APP ROUTER / FAIL
+React dependency:
+NONE / FAIL
 
-Root layout:
-PASS / FAIL
-
-Root layout server component:
-YES / NO
-
-Package manager:
-<manager>
-
-Next config:
-PASS / FAIL
-
-Starter/template residue:
-NONE / <what was reconciled>
-
-Production build:
-PASS / FAIL
-
-
-13.2 — TYPESCRIPT
-
-Status:
-PASS / BLOCKED
-
-TypeScript version:
-<version>
-
-Strict mode:
-YES / NO
-
-Path aliases:
-<summary>
-
-Broad any/ts-ignore foundation escapes:
+Axios/third-party HTTP dependency:
 NONE / <explain>
 
-Type check:
-PASS / FAIL
+Domain-specific endpoints implemented:
+NONE / <list>
 
+API namespace:
+/api/v1 / FAIL
 
-13.3 — MUI INTEGRATION
+Base URL configuration:
+<variable / strategy>
 
-Status:
-PASS / BLOCKED
+Hard-coded production API URL:
+NO / FAIL
 
-Existing Phase 12.3 implementation reused:
+Server-compatible:
 YES / NO
 
-@mui/material:
-<version>
-
-@mui/icons-material:
-<version>
-
-@mui/material-nextjs:
-<version>
-
-@emotion/react:
-<version>
-
-@emotion/styled:
-<version>
-
-Packages reinstalled:
-NO / <explain>
-
-Official App Router integration:
-PASS / FAIL
-
-SSR style integration:
-PASS / FAIL
-
-Provider boundary:
-PASS / FAIL
-
-Duplicate provider/theme:
-NONE / <explain>
-
-Root converted to client component:
-NO
-
-Unauthorized icon library:
-NONE / <explain>
-
-
-13.4 — THEME INTEGRATION
-
-Status:
-PASS / BLOCKED
-
-Existing Phase 12.3 theme reused:
+Browser-compatible where safe:
 YES / NO
 
-Theme entry points:
-<list>
+Mutable global request/auth state:
+NONE / FAIL
 
-Single effective theme:
+
+REQUEST HANDLING
+
+URL construction:
+PASS / FAIL
+
+Query serialization:
+PASS / FAIL
+
+JSON requests:
+PASS / FAIL
+
+FormData-compatible:
+YES / NO / NOT REQUIRED <reason>
+
+Accept header:
+PASS / FAIL
+
+Header merging:
+PASS / FAIL
+
+GET/HEAD body protection:
+PASS / FAIL
+
+Caller AbortSignal:
+PASS / FAIL
+
+Timeout:
+<value / strategy>
+
+Automatic retries:
+NONE / FAIL
+
+
+AUTH BOUNDARY
+
+Clerk integrated:
+NO
+
+Authorization injection supported:
 YES / NO
 
-Canonical authority:
-frontend/design-system/tokens.css
+Bearer tokens persisted:
+NO / FAIL
 
-Theme is consumer:
-YES / NO
+Global auth header:
+NONE / FAIL
 
-Runtime CSS parsing:
+Cross-request token isolation:
+PASS / FAIL
+
+
+RESPONSE CONTRACT
+
+Frozen success contract preserved:
+PASS / FAIL
+
+Frozen error contract preserved:
+PASS / FAIL
+
+Validation errors preserved:
+PASS / FAIL
+
+204 handled:
+PASS / FAIL
+
+404 preserved:
+PASS / FAIL
+
+422 preserved:
+PASS / FAIL
+
+429 Retry-After preserved:
+PASS / FAIL
+
+5xx safely represented:
+PASS / FAIL
+
+Non-JSON error handled:
+PASS / FAIL
+
+Network failure distinguished:
+PASS / FAIL
+
+Timeout distinguished:
+PASS / FAIL
+
+Caller abort distinguished:
+PASS / FAIL
+
+Request/correlation ID:
+<strategy / NOT IN CONTRACT>
+
+
+NEXT.JS
+
+Cache policy hard-coded globally:
+NO / FAIL
+
+Caller cache options:
+PASS / FAIL
+
+Revalidation/tag capability:
+PASS / FAIL / NOT APPLICABLE
+
+Root layout changed:
+NO / <reason>
+
+Client boundary expanded:
+NO / <reason>
+
+
+SECURITY
+
+Secrets in client bundle:
+NONE / FAIL
+
+Token logging:
+NONE / FAIL
+
+Request body logging:
+NONE / FAIL
+
+Raw backend internals exposed:
+NO / FAIL
+
+mode=no-cors:
+NO / FAIL
+
+Undocumented BFF/proxy created:
+NO / FAIL
+
+Direct DB access:
+NO / FAIL
+
+
+TESTS
+
+Base URL:
+PASS / FAIL
+
+Query encoding:
+PASS / FAIL
+
+Headers:
+PASS / FAIL
+
+JSON success:
+PASS / FAIL
+
+204:
+PASS / FAIL
+
+Structured error:
+PASS / FAIL
+
+Validation error:
+PASS / FAIL
+
+404:
+PASS / FAIL
+
+429 + Retry-After:
+PASS / FAIL
+
+500:
+PASS / FAIL
+
+Non-JSON failure:
+PASS / FAIL
+
+Network failure:
+PASS / FAIL
+
+Timeout:
+PASS / FAIL
+
+Caller abort:
+PASS / FAIL
+
+Header/request isolation:
+PASS / FAIL
+
+Cache option forwarding:
+PASS / FAIL / NOT APPLICABLE
+
+Real backend required:
 NO
 
-Runtime token JSON loading:
-NO
 
-Primary action:
-#111111 / FAIL
-
-Brand accent:
-#321E0F / FAIL
-
-Canvas:
-#FCF4ED / FAIL
-
-Paper:
-#FFFFFF / FAIL
-
-Editorial:
-#F4E9DF / FAIL
-
-Display typography:
-Young Serif / FAIL
-
-UI typography:
-<approved utility stack>
-
-Typography scale:
-PASS / FAIL
-
-Spacing:
-PASS / FAIL
-
-Shape:
-PASS / FAIL
-
-Elevation:
-PASS / FAIL
-
-Motion:
-PASS / FAIL
-
-Breakpoints:
-PASS / FAIL
-
-Focus foundation:
-PASS / FAIL
-
-Reduced-motion compatibility:
-PASS / FAIL
-
-Dark theme:
-NO
-
-Theme contract tests:
-PASS / FAIL
-
-
-CROSS-PHASE VALIDATION
+VALIDATION
 
 TypeScript:
 PASS / FAIL
@@ -2346,28 +2600,13 @@ PASS / FAIL
 ESLint:
 PASS / FAIL
 
-Theme tests:
+API client tests:
 PASS / FAIL
 
-Accessibility foundation checks:
+Theme regression:
 PASS / FAIL
 
 Production build:
-PASS / FAIL
-
-Runtime smoke:
-PASS / FAIL / NOT RUN <reason>
-
-Hydration/style warnings:
-NONE / <details>
-
-Raw-value audit:
-PASS / FAIL
-
-Legacy brand audit:
-PASS / FAIL
-
-Icon-family audit:
 PASS / FAIL
 
 git diff --check:
@@ -2376,22 +2615,22 @@ PASS / FAIL
 
 SCOPE
 
-API client implemented:
+13.6 routing conventions started:
 NO
 
-Routing conventions implemented:
+13.7 layout system started:
 NO
 
-Layout system implemented:
+13.8 error/loading UI started:
 NO
 
-Application error/loading handling implemented:
-NO
-
-Responsive application foundation implemented:
+13.9 responsive foundation started:
 NO
 
 Group N started:
+NO
+
+Clerk UI/auth integration started:
 NO
 
 Flutter changed:
@@ -2400,22 +2639,28 @@ NO
 Backend/API changed:
 NO
 
-New dependencies:
-NONE / <explain>
+Dependencies added:
+NONE / <list>
+
+
+DOCUMENTATION
+
+Group M record:
+PASS / FAIL
+
+Environment documentation:
+<path / NONE>
+
+Frontend agent guidance:
+<updated / unchanged>
+
+ADR:
+<id / NONE>
 
 
 FILES CHANGED
 
 <list>
-
-
-DOCUMENTATION
-
-Group M execution record:
-PASS / FAIL
-
-ADR:
-NONE / <id and reason>
 
 
 GIT
@@ -2435,144 +2680,125 @@ Push:
 
 RESULT
 
-13.1:
-PASS / BLOCKED
-
-13.2:
-PASS / BLOCKED
-
-13.3:
-PASS / BLOCKED
-
-13.4:
-PASS / BLOCKED
-
-Combined Phase 13.1–13.4:
-PASS / BLOCKED
-
 Phase 13.5:
+PASS / BLOCKED
+
+Phase 13.6:
 READY / BLOCKED
 ```
 
 ---
 
-# 109. STOP Condition
+# 131. STOP Condition
 
-Combined Phase 13.1–13.4 may be declared PASS only when:
+Phase 13.5 may be declared PASS only when:
 
-- the existing Next.js scaffold has been verified rather than recreated;
-- `create-next-app` was not rerun;
-- App Router is the active architecture;
-- the root layout remains server-capable;
-- TypeScript configuration is strict and valid;
-- type checking passes;
-- the existing MUI installation from Phase 12.3 is reused;
-- `@mui/icons-material` remains the approved web icon library;
-- official MUI App Router integration is valid for the installed versions;
-- SSR styling works without obvious hydration/style mismatch;
-- provider boundaries remain minimal;
-- no duplicate theme/provider infrastructure exists;
-- `tokens.css` remains canonical;
-- the MUI theme remains a consumer rather than a competing authority;
-- palette, typography, spacing, shape, elevation, motion and breakpoints remain aligned with Group L;
-- primary action remains charcoal;
-- brown remains a controlled brand accent;
-- accessibility foundation remains intact;
-- no dark theme was introduced;
-- no API client was implemented;
-- no routing convention work was pulled forward;
-- no layout system was implemented;
-- no application error/loading system was implemented;
-- no responsive application foundation was implemented;
-- no Group N work was started;
-- no Flutter/backend work changed;
-- no dependency was reinstalled/added without an actual need;
+- one canonical generic API transport exists;
+- it uses native `fetch`;
+- no unnecessary HTTP/data-fetching dependency was added;
+- it has no React dependency;
+- it works naturally in server-side Next.js code;
+- it does not depend on browser globals;
+- configuration does not hard-code deployment URLs;
+- `/api/v1` construction is deterministic;
+- query parameters are encoded safely;
+- JSON headers/body behavior is correct;
+- future multipart/FormData use is not unnecessarily blocked;
+- the frozen success/error contracts are preserved;
+- structured validation errors remain available;
+- 204 responses are handled;
+- 401/403/404/422 remain backend-defined outcomes;
+- `429 Retry-After` is preserved according to the API convention;
+- malformed/non-JSON error responses fail safely;
+- HTTP, network, timeout, and intentional-abort failures are distinguishable where needed;
+- requests have bounded timeout behavior;
+- caller cancellation is supported;
+- automatic mutation retries do not exist;
+- cache behavior is not globally hard-coded;
+- future Next.js cache/revalidation behavior can be selected by consumers;
+- Clerk is not coupled into generic transport;
+- bearer tokens are never persisted;
+- no mutable global authorization state exists;
+- concurrent SSR requests cannot leak authorization headers;
+- backend business authority is preserved;
+- no direct database access exists;
+- no undocumented Next.js API proxy/BFF was created;
+- no Group N/domain endpoint implementation was started;
+- tests cover the transport/error edge cases;
 - TypeScript passes;
-- lint passes;
-- theme tests pass;
+- ESLint passes;
+- API client tests pass;
+- existing theme foundation remains healthy;
 - production build passes;
-- design-system/theme validation passes;
+- `git diff --check` passes;
 - Git operations follow `git-workflow-and-versioning`.
 
 Then report:
 
 ```text
-Phase 13.1 — PASS
-Phase 13.2 — PASS
-Phase 13.3 — PASS
-Phase 13.4 — PASS
-
-Combined Phase 13.1–13.4 — PASS
-
-Phase 13.5 — READY
+Phase 13.5 — PASS
+Phase 13.6 — READY
 ```
 
-Do not start Phase 13.5 automatically.
+Do not start Phase 13.6 automatically.
+
+**Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
 ---
 
-# Combined Phase 13.1–13.4 Execution Record
-
-## Result
+# Phase 13.5 Execution Record
 
 ```text
-13.1 — PASS
-13.2 — PASS
-13.3 — PASS
-13.4 — PASS
-Combined Phase 13.1–13.4 — PASS
-Phase 13.5 — READY
+Phase 13.5: PASS
+Phase 13.6: READY
 ```
 
-### 13.1 — Next.js Project Setup
+## Architecture
 
-- Existing `frontend/web` scaffold verified; `create-next-app` was not rerun.
-- Next.js `16.3.8`, React `19.2.8`, and React DOM `19.2.8` are installed.
-- App Router is active through `app/`; no competing `pages/` directory exists.
-- `app/layout.tsx` is a Server Component and `next.config.ts` is valid and minimal.
-- The starter route was reconciled to a minimal MUI foundation page; no Group N homepage work was started.
-- Production build passed.
+- Canonical transport: `frontend/web/lib/api/client.ts`; native `fetch`, no React dependency, no third-party HTTP client, no domain endpoints.
+- All resource paths receive `/api/v1` exactly once. Base origin is server-only `API_BASE_URL`, HTTPS-only except localhost development; no deployment URL fallback is hard-coded. Browser clients require an explicitly supplied approved public origin.
+- Client is concurrency-safe: only immutable fetch/config defaults live in the factory closure. Authorization and all request-specific headers, cancellation state, and timers are per call.
+- No Clerk integration, token persistence, proxy/BFF, raw database access, or automatic retry was introduced.
 
-### 13.2 — TypeScript
+## Request And Response Contract
 
-- TypeScript `5.9.3` is installed.
-- `strict: true`, `noEmit: true`, the existing `@/*` alias, and Next.js compiler integration are preserved.
-- No broad `any`, `@ts-ignore`, or `@ts-nocheck` foundation escape was introduced.
-- `npx tsc --noEmit` passed.
+- Deterministic URL/query construction; scalar/repeated-array query serialization uses `URLSearchParams`; absolute paths, `/api/v1`-prefixed paths, and path traversal segments are rejected.
+- `Accept: application/json` is default. JSON bodies set `Content-Type`; FormData is passed without a multipart header. GET bodies are rejected. Caller headers are cloned/merged.
+- Success envelopes and `meta.pagination` are preserved; 204 returns `undefined`. `ApiError` preserves HTTP status, structured `errors`, validation details, request ID, and numeric-seconds `Retry-After` on 429. Malformed/non-JSON responses expose no raw response body. 401/403/404/422 are not remapped.
+- `ApiTransportError` separates network, timeout, and intentional abort. Default timeout is 10 seconds and configurable; per-request AbortSignal is honored. No mutable token/header state or logging exists.
+- Cache policy is caller-selected. Native `cache` works in either runtime; Next.js `next.revalidate`/`next.tags` are forwarded only server-side.
 
-### 13.3 — MUI Integration
+## Configuration And Documentation
 
-- Existing Phase 12.3 integration was reused without package reinstallation.
-- Installed versions: `@mui/material` `9.4.0`, `@mui/icons-material` `9.4.0`, `@mui/material-nextjs` `9.4.0`, `@emotion/react` `11.14.0`, `@emotion/styled` `11.14.1`.
-- `AppRouterCacheProvider` and `ThemeProvider` remain in the small client boundary at `app/providers.tsx`.
-- The root layout remains server-capable; no duplicate provider/theme or unauthorized icon library exists.
-- The Tailwind application pipeline was removed; `frontend/design-system/tailwind-v4.css` remains export-only.
+- `API_BASE_URL` format and server/browser exposure boundary are documented in `frontend/web/lib/api/README.md`. No frontend `.env.example` convention exists; no example file or real deployment URL was added.
+- Durable routing-through-client and backend-authority rules were added to `frontend/AGENTS.md`.
+- ADR `WEB-001` records the native Fetch boundary. No dependencies were added.
 
-### 13.4 — Theme Integration
-
-- Existing Phase 12.3 theme was reused from `theme/theme.ts`; it is the single `createTheme()` entry point.
-- `frontend/design-system/tokens.css` remains canonical and the MUI adapter consumes synchronized `design-tokens.json` values.
-- No runtime CSS parsing, token fetch, dark theme, or system color-mode synchronization exists.
-- Palette, typography, spacing, shape, elevation, motion, breakpoint, and focus mappings remain aligned with Group L.
-- Theme contract passed.
-
-## Cross-Phase Validation
+## Tests And Verification
 
 ```text
-TypeScript: PASS
-ESLint: PASS
-Theme contract: PASS
-Production build: PASS
-Runtime smoke: PASS
-Hydration/style warnings: NONE observed in startup or root response
-Accessibility foundation: PASS by non-regression review
-Legacy brand audit: PASS
-Icon-family audit: PASS
+API client tests: PASS (16 cases; Node built-in test runner, no new dependency)
+TypeScript: PASS (`npx tsc --noEmit`)
+ESLint: PASS (`npm run lint`)
+Theme contract: PASS (`npm run test:theme`)
+Production build: PASS (`npm run build`)
 git diff --check: PASS
 ```
 
-Scope preserved: no API client, routing conventions, layout system, application error/loading system, responsive application foundation, Group N work, Flutter work, backend/API work, or new dependency was introduced by this combined phase. `future.md` remains unrelated owner work and was not changed.
+Coverage includes URL/version construction, query/path encoding, configuration, headers and per-request authorization isolation, JSON/FormData, GET-body rejection, success/pagination/204, structured API and validation errors, 401/403/404/422, 429 retry metadata, malformed 500 responses, network failure, timeout, caller abort, and cache option forwarding/runtime separation.
 
-Group L established the shared design-system architecture; Group M 13.1–13.4 verified that the existing website foundation consumes it correctly. The next phase is 13.5 API client architecture; it is ready but was not started automatically.
+Local Laravel integration smoke: **NOT RUN** — `API_BASE_URL` is not configured in this environment. API unit/contract behavior is verified without requiring Laravel or external network access.
 
-**Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
+## Scope
+
+```text
+13.6 routing conventions: NOT STARTED
+13.7 layout system: NOT STARTED
+13.8 application error/loading UI: NOT STARTED
+13.9 responsive foundation: NOT STARTED
+Group N catalog/domain clients: NOT STARTED
+Clerk UI/auth: NOT STARTED
+Flutter/backend/API changes: NONE
+```
+
+Phase 13.6 is ready; it was not started automatically.

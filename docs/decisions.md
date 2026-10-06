@@ -66,6 +66,16 @@
 
 ---
 
+### ADR/WEB-001 — Native Fetch API Client Boundary
+
+**Decision:** The Next.js website uses one domain-neutral `apiRequest` boundary in `frontend/web/lib/api/client.ts`, implemented with native `fetch` and the frozen Laravel `/api/v1` contract. The server-only `API_BASE_URL` is an HTTPS origin without the version path; transport adds `/api/v1` once. Request callers choose cache policy. Domain endpoint clients and Clerk token acquisition remain outside the generic transport.
+
+**Consequences:** The transport preserves typed success envelopes, pagination metadata, structured Laravel errors, request IDs, and numeric-seconds `Retry-After`; uses bounded timeouts and caller cancellation; performs no automatic retries or logging; and stores no per-request auth state. Browser use requires an explicitly supplied public origin and omits Next-only cache options. No proxy/BFF, third-party HTTP client, runtime domain schema, or dependency was added.
+
+**Status:** Accepted and implemented in Phase 13.5
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.
