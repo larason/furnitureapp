@@ -20,7 +20,7 @@ export function NavLink({
   sx,
   onClick,
   ...rest
-}: NavLinkProps) {
+}: Readonly<NavLinkProps>) {
   if (!isSiteRouteImplemented(href)) {
     return (
       <Box component="span" sx={sx} {...rest}>

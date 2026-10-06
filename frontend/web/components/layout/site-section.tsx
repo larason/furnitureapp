@@ -28,7 +28,7 @@ export function SiteSection({
   component = "section",
   id,
   ...rest
-}: SiteSectionProps) {
+}: Readonly<SiteSectionProps>) {
   return (
     <Box
       component={component}

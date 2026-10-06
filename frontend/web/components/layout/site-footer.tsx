@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import { CATEGORY_NAVIGATION_FIXTURE } from "./category-navigation.fixture";
+import { BrandMark } from "./brand-mark";
 import { ContentContainer } from "./content-container";
 import { NavLink } from "./nav-link";
 import { SITE_SERVICE_LINKS } from "./site-navigation";
@@ -19,13 +20,13 @@ type FooterGroupProps = {
   links: readonly { label: string; href: string }[];
 };
 
-function FooterGroup({ title, links }: FooterGroupProps) {
+function FooterGroup({ title, links }: Readonly<FooterGroupProps>) {
   return (
     <Box component="nav" aria-label={title}>
       <Typography
         component="h2"
         variant="subtitle2"
-        sx={{ mb: 1.5, color: "text.primary" }}
+         sx={{ mb: "var(--space-3)", color: "text.primary" }}
       >
         {title}
       </Typography>
@@ -67,9 +68,9 @@ export function SiteFooter() {
           }}
         >
           <Box sx={{ maxWidth: "var(--content-width-lead)" }}>
-            <Typography variant="h6" component="p" sx={{ mb: 1 }}>
-              SL Furnitures
-            </Typography>
+            <Box sx={{ mb: 1 }}>
+              <BrandMark />
+            </Box>
             <Typography variant="body2" color="text.secondary">
               Furniture made for your home.
             </Typography>

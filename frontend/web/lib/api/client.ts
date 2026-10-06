@@ -21,6 +21,7 @@ export interface ApiPagination {
 
 export interface ApiMeta {
   pagination?: ApiPagination;
+  unread_count?: number;
   request_id?: string;
 }
 
@@ -170,14 +171,12 @@ function normalizePath(path: string): string {
 }
 
 function isDotSegment(segment: string): boolean {
-  let decoded = segment;
   try {
-    decoded = decodeURIComponent(segment);
+    const decoded = decodeURIComponent(segment);
+    return decoded === "." || decoded === "..";
   } catch {
     throw new ApiConfigurationError("API resource path contains invalid encoding.");
   }
-
-  return decoded === "." || decoded === "..";
 }
 
 function appendQuery(params: URLSearchParams, query?: ApiQuery): void {
@@ -194,49 +193,70 @@ function appendQuery(params: URLSearchParams, query?: ApiQuery): void {
   for (const [key, value] of Object.entries(query)) {
     const values = Array.isArray(value) ? value : [value];
     for (const item of values) {
-      if (item === undefined || item === null) {
-        continue;
-      }
-      if (typeof item === "number" && !Number.isFinite(item)) {
-        throw new ApiConfigurationError(`Query parameter "${key}" must be a finite number.`);
-      }
-      if (typeof item !== "string" && typeof item !== "number" && typeof item !== "boolean") {
-        throw new ApiConfigurationError(`Query parameter "${key}" has an unsupported value.`);
-      }
-      params.append(key, String(item));
+      appendQueryValue(params, key, item);
     }
   }
 }
 
-function buildRequestInit(request: ApiRequestOptions, method: ApiMethod): RequestInit & { next?: ApiRequestOptions["next"] } {
+function appendQueryValue(
+  params: URLSearchParams,
+  key: string,
+  value: ApiQueryValue,
+): void {
+  if (value === undefined || value === null) {
+    return;
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new ApiConfigurationError(`Query parameter "${key}" must be a finite number.`);
+  }
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+    throw new ApiConfigurationError(`Query parameter "${key}" has an unsupported value.`);
+  }
+  params.append(key, String(value));
+}
+
+function buildRequestInit(
+  request: ApiRequestOptions,
+  method: ApiMethod,
+): RequestInit & { next?: NonNullable<ApiRequestOptions["next"]> } {
   const headers = new Headers(request.headers);
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
 
-  let body: BodyInit | undefined;
-  if (request.body !== undefined) {
-    if (method === "GET") {
-      throw new ApiConfigurationError("GET requests cannot include a body.");
-    }
-    if (isFormData(request.body)) {
-      if (headers.has("Content-Type")) {
-        throw new ApiConfigurationError("Do not set Content-Type when sending FormData.");
-      }
-      body = request.body;
-    } else {
-      if (!headers.has("Content-Type")) {
-        headers.set("Content-Type", "application/json");
-      }
-      body = JSON.stringify(request.body);
-    }
-  }
-
-  const init: RequestInit & { next?: ApiRequestOptions["next"] } = { method, headers, body, cache: request.cache };
+  const init: RequestInit & { next?: NonNullable<ApiRequestOptions["next"]> } = {
+    method,
+    headers,
+    body: buildRequestBody(request.body, method, headers),
+    cache: request.cache,
+  };
   if (request.next && typeof window === "undefined") {
     init.next = { ...request.next, tags: request.next.tags ? [...request.next.tags] : undefined };
   }
   return init;
+}
+
+function buildRequestBody(
+  body: ApiRequestOptions["body"],
+  method: ApiMethod,
+  headers: Headers,
+): BodyInit | undefined {
+  if (body === undefined) {
+    return undefined;
+  }
+  if (method === "GET") {
+    throw new ApiConfigurationError("GET requests cannot include a body.");
+  }
+  if (isFormData(body)) {
+    if (headers.has("Content-Type")) {
+      throw new ApiConfigurationError("Do not set Content-Type when sending FormData.");
+    }
+    return body;
+  }
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  return JSON.stringify(body);
 }
 
 function isFormData(body: ApiRequestBody): body is FormData {
@@ -332,6 +352,16 @@ function parseMeta(value: unknown, status: number, responseId?: string): ApiMeta
   }
   if (value.pagination !== undefined) {
     meta.pagination = parsePagination(value.pagination, status, responseId);
+  }
+  if (value.unread_count !== undefined) {
+    if (
+      typeof value.unread_count !== "number" ||
+      !Number.isSafeInteger(value.unread_count) ||
+      value.unread_count < 0
+    ) {
+      throw invalidApiResponse(status, responseId);
+    }
+    meta.unread_count = value.unread_count;
   }
   return meta;
 }

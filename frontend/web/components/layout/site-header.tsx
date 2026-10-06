@@ -20,7 +20,7 @@ export function SiteHeader() {
             display: "flex",
             alignItems: "center",
             gap: { xs: 1, md: 2 },
-            py: { xs: 1.5, md: 2 },
+            py: { xs: "var(--space-3)", md: 2 },
           }}
         >
           <MobileNavigation />

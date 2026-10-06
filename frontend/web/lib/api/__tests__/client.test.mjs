@@ -105,18 +105,30 @@ test("rejects bodies on GET requests", async () => {
   await assert.rejects(apiRequest({ path: "/products", body: {} }), /cannot include a body/);
 });
 
-test("preserves pagination metadata and handles 204", async () => {
+test("preserves pagination and notification unread-count metadata and handles 204", async () => {
   const apiRequest = createClient(async (_url, init) =>
     init.method === "DELETE"
       ? new Response(null, { status: 204 })
-      : Response.json({ data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } }),
+      : Response.json({ data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false }, unread_count: 3 } }),
   );
 
   const collection = await apiRequest({ path: "/products" });
   const removed = await apiRequest({ path: "/products/item", method: "DELETE" });
 
   assert.equal(collection.meta.pagination.last_page, 1);
+  assert.equal(collection.meta.unread_count, 3);
   assert.equal(removed, undefined);
+});
+
+test("rejects invalid notification unread-count metadata", async () => {
+  const apiRequest = createClient(async () =>
+    Response.json({ data: [], meta: { unread_count: -1 } }),
+  );
+
+  await assert.rejects(
+    apiRequest({ path: "/me/notifications" }),
+    (error) => error instanceof ApiError && error.kind === "invalid-response",
+  );
 });
 
 test("preserves structured API errors, validation details, request ID, and Retry-After", async () => {

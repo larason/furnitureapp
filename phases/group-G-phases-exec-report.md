@@ -61,7 +61,7 @@ Error boundary client scope: app/error.tsx only ('use client'); shared states co
 
 ```text
 Canonical 404 presentation: "404" eyebrow + "We couldn't find that page." + "The address may have changed, or the page may no longer exist." + Return home
-Uses framework not-found mechanism: YES (notFound() / unmatched route -> app/not-found.tsx; HTTP 404)
+Uses framework not-found mechanism: YES. The verified unmatched URL rendered app/not-found.tsx with HTTP 404. A future resource page that calls notFound() after streaming begins can render the same UI with HTTP 200; resource-page checks must verify HTTP status separately from the not-found UI.
 Safe home navigation: YES
 Fake product recommendations: NONE
 Missing resources redirected home: NO

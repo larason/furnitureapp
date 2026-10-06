@@ -104,7 +104,8 @@ for (const slug of authoritativeSlugs) {
 }
 
 if (failures.length > 0) {
-  console.error(`Layout contract: FAIL\n${failures.map((failure) => ` - ${failure}`).join("\n")}`);
+  const details = failures.map((failure) => " - " + failure).join("\n");
+  console.error(`Layout contract: FAIL\n${details}`);
   process.exit(1);
 }
 

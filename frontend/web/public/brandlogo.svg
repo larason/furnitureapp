@@ -4,15 +4,14 @@
 <svg
    version="1.1"
    id="svg1"
-   width="4666.6665"
-   height="1920"
-   viewBox="0 0 4666.6665 1920"
-   sodipodi:docname="cover.png"
+   width="3456.1699"
+   height="377.6709"
+   viewBox="0 0 3456.1699 377.6709"
+   sodipodi:docname="cover.svg"
    inkscape:export-filename="brandlogo.svg"
    inkscape:export-xdpi="96"
    inkscape:export-ydpi="96"
    inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
-   inkscape:dataloss="true"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
@@ -40,8 +39,8 @@
     <inkscape:page
        x="0"
        y="0"
-       width="4666.6665"
-       height="1920"
+       width="3456.1699"
+       height="377.6709"
        id="page2"
        margin="0"
        bleed="0" />
@@ -49,20 +48,21 @@
   <g
      inkscape:groupmode="layer"
      inkscape:label="Image"
-     id="g1">
+     id="g1"
+     transform="translate(-853.82477,-720.58923)">
     <text
        xml:space="preserve"
-       style="font-weight:600;font-size:615.855px;font-family:FreeSans;-inkscape-font-specification:'FreeSans Semi-Bold';letter-spacing:0px;writing-mode:lr-tb;direction:ltr;fill:#321e0f;stroke-width:34.1251;stroke-opacity:0.924684"
-       x="125.72594"
-       y="1133.35"
+       style="font-weight:600;font-size:484.193px;font-family:FreeSans;-inkscape-font-specification:'FreeSans Semi-Bold';letter-spacing:0px;writing-mode:lr-tb;direction:ltr;fill:#321e0f;stroke-width:26.8296;stroke-opacity:0.924684"
+       x="844.14069"
+       y="1091.4814"
        id="text1"
-       inkscape:export-filename="brandlogo.svg"
+       inkscape:export-filename="favicon.svg"
        inkscape:export-xdpi="96"
        inkscape:export-ydpi="96"><tspan
          sodipodi:role="line"
          id="tspan1"
-         x="125.72594"
-         y="1133.35"
-         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Young Serif';-inkscape-font-specification:'Young Serif';stroke-width:34.1251">SL Furnitures</tspan></text>
+         x="844.14069"
+         y="1091.4814"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Young Serif';-inkscape-font-specification:'Young Serif';stroke-width:26.8296">SL Furnitures</tspan></text>
   </g>
 </svg>

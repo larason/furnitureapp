@@ -9,7 +9,7 @@ import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
-import { useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import { BrandMark } from "./brand-mark";
 import { CATEGORY_NAVIGATION_FIXTURE } from "./category-navigation.fixture";
 import { NavLink } from "./nav-link";
@@ -29,6 +29,12 @@ export function MobileNavigation() {
   const theme = useTheme();
   const desktopNavigation = useMediaQuery(theme.breakpoints.up("md"));
   const close = () => setOpen(false);
+
+  useEffect(() => {
+    if (desktopNavigation && open) {
+      startTransition(() => setOpen(false));
+    }
+  }, [desktopNavigation, open]);
 
   return (
     <Box sx={{ display: { xs: "inline-flex", md: "none" } }}>
@@ -64,7 +70,7 @@ export function MobileNavigation() {
             alignItems: "center",
             justifyContent: "space-between",
             px: 2,
-            py: 1.5,
+            py: "var(--space-3)",
           }}
         >
           <BrandMark />

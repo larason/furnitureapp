@@ -11,7 +11,7 @@ export function ContentContainer({
   children,
   component = "div",
   id,
-}: ContentContainerProps) {
+}: Readonly<ContentContainerProps>) {
   return (
     <Box
       component={component}

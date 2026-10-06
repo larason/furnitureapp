@@ -21,7 +21,7 @@ export function SearchAffordance() {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: { xs: "center", md: "flex-start" },
-        gap: 1.5,
+         gap: "var(--space-3)",
         minHeight: 44,
         width: { xs: 44, md: "100%" },
         px: { xs: 0, md: 2 },

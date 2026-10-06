@@ -15,7 +15,7 @@ export function PageMessage({
   title,
   description,
   children,
-}: PageMessageProps) {
+}: Readonly<PageMessageProps>) {
   return (
     <Box
       sx={{
@@ -93,7 +93,7 @@ export function PageMessageLink({
   href,
   children,
   emphasis = "primary",
-}: PageMessageLinkProps) {
+}: Readonly<PageMessageLinkProps>) {
   return (
     <NavLink
       href={href}

@@ -5,7 +5,7 @@ import { SiteHeader } from "./site-header";
 
 export const MAIN_CONTENT_ID = "main-content";
 
-export function SiteShell({ children }: { children: ReactNode }) {
+export function SiteShell({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <Box
       sx={{

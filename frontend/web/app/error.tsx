@@ -7,7 +7,7 @@ import {
   PageMessageLink,
 } from "@/components/states/page-message";
 
-export default function Error({ retry }: { retry: () => void }) {
+export default function ErrorPage({ retry }: Readonly<{ retry: () => void }>) {
   return (
     <SiteSection>
       <PageMessage
