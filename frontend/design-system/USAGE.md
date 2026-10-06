@@ -57,3 +57,30 @@ Do not introduce gradients without authority, glass effects, blurred translucent
 Approved core pairings meet their intended WCAG use: primary text on canvas and paper, secondary text on canvas, inverse text on inverse surface, and white text on the charcoal primary action. The focus ring uses `--action-focus` and remains distinct on canvas, paper, and inverse contexts. Functional status requires text, iconography, or another non-color cue alongside color.
 
 The official logo keeps its own asset background. Present it unchanged on compatible light surfaces; do not infer transparency or recolor it.
+
+## Visual Foundation Rules
+
+These are the closed semantic choices for later component work. Framework APIs may differ, but the meaning does not.
+
+| Foundation | Use | Canonical roles |
+| --- | --- | --- |
+| Display typography | Editorial statements, major headings, storytelling, select prominent product titles | `--font-display`, 24 / 32 / 48 / 96 |
+| UI typography | Navigation, controls, forms, pricing, metadata, status, specifications, account/admin UI | `--font-ui`, 12 / 14 / 16 / 20 |
+| Body rhythm | Readable paragraphs and supporting copy | `--leading-body` |
+| Tight rhythm | Labels, controls, metadata, compact headings | `--leading-snug` |
+| Display rhythm | Young Serif headings without cramped leading | `--leading-display` |
+| Canvas | Default page field | `--surface-canvas` |
+| Paper | Product, form, and clean content surface | `--surface-paper` |
+| Editorial | Storytelling and quiet differentiation only | `--surface-editorial` |
+| Inverse | High-contrast section or true inverse surface, not dark mode | `--surface-inverse` |
+| Control radius | Inputs, buttons, and ordinary interactive controls | `--radius-sm` |
+| Container radius | Controlled panels or grouped surfaces | `--radius-md` / `--radius-lg` |
+| Pill radius | Chips, compact filters, or controls that require it | `--radius-pill` only |
+| Elevation | Real layers only | `--elev-flat` by default; `--elev-raised` for overlays |
+| Motion | Feedback and standard transitions | `--motion-fast` / `--motion-base` with `--ease-standard` |
+
+Use the spacing scale by relationship: `--space-1` to `--space-3` for micro/control rhythm, `--space-4` to `--space-6` for component rhythm, `--space-7` to `--space-8` for content rhythm, and `--space-9` to `--space-10` for section/page rhythm. Responsive gutters and section spacing use their existing semantic layout tokens; do not create mobile-only scales.
+
+Interaction states are distinct: hover may adjust color, border, underline, or restrained opacity; focus is always visible through `--focus-ring`; active/pressed derives from action semantics; disabled remains readable and is not communicated by opacity alone. Never remove focus without an equally visible approved replacement. State must not rely on color alone.
+
+Photography remains the dominant source of visual color. Do not compensate with decorative gradients, heavy shadows, arbitrary borders, rounded media, or repeated accent treatments. Product imagery is generally sharp; cards and ordinary containers are flat unless they represent a true layer.

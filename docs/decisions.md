@@ -36,6 +36,16 @@
 
 ---
 
+### ADR/DESIGN-004 — Shared Visual Foundation Semantics
+
+**Decision:** Later web and Flutter UI work uses the existing semantic foundation without creating framework-specific visual scales. Young Serif is display/editorial typography; the utility stack owns interface text; canvas, paper, editorial, and inverse surfaces remain distinct; charcoal is the primary action; brown is a restrained accent; spacing, radius, elevation, motion, and focus use the canonical tokens.
+
+**Consequences:** Media remains sharp by default, ordinary cards remain flat, elevation communicates true layering only, motion stays quiet and reduced-motion aware, and focus remains visible. Component phases may choose framework-specific APIs, but may not invent arbitrary type sizes, spacing, colors, radii, shadows, or transitions. This ADR does not create components or change the existing MUI theme.
+
+**Status:** Accepted and implemented in Phase 12.5
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.
