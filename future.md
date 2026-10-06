@@ -23,3 +23,5 @@
 8. use lovable or ai studio to speed up development for the admin dashboard UI and features- by connecting to github with the repo.
 
 9. fix this. Staff-lifecycle endpoints (ADM-001..006) are still notImplemented() (501); orders/payments/delivery are formally deferred (11.7/11.11/11.12), and checkout is permanently gated. Production scope is request-first, so the website's primary flows are catalog → made-to-order request → enquiry, and the admin app can't yet manage staff/orders.
+
+10. since i will optimize images myself what is the recommended image formats, size for furniture ecommerce platform products cards, displaying in search engines/social medias, and hero images
