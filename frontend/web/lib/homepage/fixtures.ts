@@ -22,18 +22,18 @@ export const HOMEPAGE_CATEGORY_FIXTURES: readonly CategorySummary[] = [
 
 export const HOMEPAGE_PRODUCT_FIXTURES: readonly ProductSummary[] = [
   {
-    id: "fixture_armchair", slug: "fixture-open-frame-armchair", name: "Open-frame armchair",
-    price: { amount: 65000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
-    primary_image: { url: `${fixtureRoot}/products/wooden-armchair.jpg`, alt_text: "An open wooden armchair with cream seat and back cushions" },
+    id: "fixture_armchair", slug: "fixture-open-frame-armchair", name: "lounge chair",
+    price: { amount: 10000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
+    primary_image: { url: `${fixtureRoot}/products/lounge-chair.jpg`, alt_text: "An open wooden armchair with cream seat and back cushions" },
   },
   {
     id: "fixture_sofa", slug: "fixture-soft-two-seat-sofa", name: "Soft two-seat sofa",
-    price: { amount: 145000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
-    primary_image: { url: `${fixtureRoot}/products/white-double-sofa.jpg`, alt_text: "A cream two-seat sofa with broad upholstered arms" },
+    price: { amount: 24500000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
+    primary_image: { url: `${fixtureRoot}/products/white-sofa.jpg`, alt_text: "A cream two-seat sofa with broad upholstered arms" },
   },
   {
-    id: "fixture_compact_sofa", slug: "fixture-compact-sofa", name: "Compact sofa",
-    price: { amount: 120000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
-    primary_image: { url: `${fixtureRoot}/products/sofa.jpg`, alt_text: "A warm ochre two-seat sofa with straight arms and loose back cushions" },
+    id: "fixture_barrelchair", slug: "fixture-barrel-chair", name: "Barrel chair",
+    price: { amount: 10000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
+    primary_image: { url: `${fixtureRoot}/products/barrel-armchair.jpg`, alt_text: "A cream barrel chair with a curved back" },
   },
 ];

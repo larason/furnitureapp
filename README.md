@@ -263,3 +263,34 @@ with fixtures
 ```
 HOMEPAGE_DATA_SOURCE=fixtures npm run dev
 ```
+
+# Troubleshooting
+
+### images not appearing after replacement
+
+The old image usually appears for one of these reasons:
+
+1. Next.js Image Optimizer cache
+next/image caches optimized images under:
+frontend/web/.next/cache/images/
+Restarting the dev server does not necessarily clear that cache.
+Clear it with:
+```
+rm -rf frontend/web/.next/cache/images
+```
+Then restart npm run dev.
+
+2. Browser cache
+Use a hard refresh:
+- Chrome/Linux: Ctrl + Shift + R
+- Or open DevTools and select Disable cache.
+
+3. Fixtures are not enabled
+The local fixture images only appear when running:
+HOMEPAGE_DATA_SOURCE=fixtures npm run dev
+
+4. API mode is showing API media
+Without HOMEPAGE_DATA_SOURCE=fixtures, products and categories come from Laravel, so changing fixtures.ts will not affect those images.
+The browser ultimately requests an optimized URL like:
+/_next/image?url=%2Ffurnitures%2Ffixtures%2Fproducts%2Fsofa.jpg&w=640&q=75
+Changing the filename in fixtures.ts should invalidate that URL automatically. If it does not, clear .next/cache/images and perform a hard refresh.
