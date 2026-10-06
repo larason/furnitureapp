@@ -1668,4 +1668,14 @@ Phase 12.4 — READY
 
 Do not begin Phase 12.4 automatically.
 
+---
+
+## Execution Record — 2026-10-06
+
+### 12.3 — MUI Theme Implementation
+
+**Status:** Complete
+
+`frontend/web/theme/theme.ts` adapts synchronized design tokens to one typed MUI light theme. `app/providers.tsx` uses the official Next 16 MUI App Router cache provider and keeps the root layout server-rendered. No font loading, commerce components, page design, or backend work was introduced.
+
 **Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**

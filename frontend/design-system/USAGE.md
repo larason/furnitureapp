@@ -8,7 +8,15 @@
 4. Treat `tailwind-v4.css` as a synchronized export only. Tailwind is not authorized for `frontend/web`.
 5. Inspect previews for a visual sanity check. The existing component fixture is reference material, not a source of token authority.
 
-`source/` preserves provenance and audit records from the bundled fixture. It is not a second hand-maintained token authority. A token change starts in `tokens.css`, then updates `design-tokens.json` and `tailwind-v4.css` in the same change. Framework mappings are deferred to Phase 12.3.
+`source/` preserves provenance and audit records from the bundled fixture. It is not a second hand-maintained token authority. A token change starts in `tokens.css`, then updates `design-tokens.json` and `tailwind-v4.css` in the same change.
+
+## MUI Bridge
+
+`frontend/web/theme/theme.ts` is the single MUI adapter. It consumes synchronized `design-tokens.json` values where MUI needs concrete build-time values and keeps `tokens.css` globally available for CSS-variable references. `app/providers.tsx` uses the official Next 16 `AppRouterCacheProvider` around `ThemeProvider`; the root layout remains a Server Component.
+
+MUI maps canvas to `background.default`, paper to `background.paper`, charcoal action to `primary.main`, the utility font to default UI typography, and Young Serif to display headings only. Typed `theme.palette.brand.accent`, `theme.palette.surface.editorial`, and `theme.palette.surface.inverse` expose the few furniture semantics MUI does not natively name. Do not add an MUI-only token system or raw color values to components.
+
+Use only `@mui/icons-material` for UI icons. Icons inherit semantic theme colors and use standard MUI sizes. Decorative icons are hidden from assistive technology; meaningful icon-only controls require accessible labels and tooltips. Do not substitute emoji, other icon libraries, or arbitrary custom SVG icons, and do not mix outlined and filled variants without an intentional reason.
 
 ## Token Layers
 

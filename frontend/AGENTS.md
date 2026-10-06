@@ -69,6 +69,12 @@ Prefer:
 
 Do not introduce ad-hoc CSS when an existing token or component can express the same intent.
 
+## Icons
+
+Use only `@mui/icons-material` for web UI icons. Do not add `lucide-react`, `react-icons`, Heroicons, Font Awesome, custom SVG icon libraries, or emoji as UI icons.
+
+Icons inherit semantic theme colors rather than hard-coded values and use standard MUI sizes consistently. Hide decorative icons from assistive technology. Icon-only controls with meaningful actions require accessible labels and tooltips. Do not decorate every heading or card with icons, and do not mix outlined and filled icon variants without an intentional design reason.
+
 ## Component reuse
 
 Before creating a new UI primitive, inspect existing components.

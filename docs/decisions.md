@@ -16,6 +16,26 @@
 
 ---
 
+### ADR/DESIGN-002 — MUI Consumes the Canonical Furniture Token Contract
+
+**Decision:** The Next.js MUI theme is a single typed adapter at `frontend/web/theme/theme.ts`. It consumes synchronized `design-tokens.json` values where MUI requires concrete theme values while `tokens.css` remains the sole canonical authority and is globally available to the app. The official Next 16 `AppRouterCacheProvider` provides App Router streaming SSR compatibility within the narrow client provider boundary.
+
+**Consequences:** Charcoal remains `primary.main`; the brown brand accent is separately typed; Young Serif is limited to display variants; default MUI typography uses the utility sans. MUI does not become a second source of colors, spacing, typography, or motion.
+
+**Status:** Accepted and implemented in Phase 12.3
+
+---
+
+### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
+
+**Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.
+
+**Consequences:** Do not accept this exception for production release sign-off without rechecking the full audit. Review after the next compatible Next/eslint-config-next release, no later than 2026-11-06. Do not use untrusted glob patterns as lint input outside the normal local or isolated CI workspace.
+
+**Status:** Open, development-only exception
+
+---
+
 ### ADR/CAT-009 — Product Image Storage and R2 Delivery
 
 **Decision:** CAT-009 accepts exactly one JPEG, PNG, or WebP image and stores unmodified bytes in Cloudflare R2 using immutable server-generated keys. Public URLs are derived from `R2_PUBLIC_BASE_URL`; MySQL retains only provider-neutral `file_path` and ProductImage metadata. The first image without an existing primary becomes primary, with product-name alt text and `MAX(sort_order) + 1`; CAT-009 creates product-wide images only.
