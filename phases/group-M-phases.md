@@ -2787,7 +2787,7 @@ git diff --check: PASS
 
 Coverage includes URL/version construction, query/path encoding, configuration, headers and per-request authorization isolation, JSON/FormData, GET-body rejection, success/pagination/204, structured API and validation errors, 401/403/404/422, 429 retry metadata, malformed 500 responses, network failure, timeout, caller abort, and cache option forwarding/runtime separation.
 
-Local Laravel integration smoke: **NOT RUN** — the Laravel server was not running during verification. API unit/contract behavior is verified without requiring Laravel or external network access.
+Local Laravel integration smoke: **PASS** — using `API_BASE_URL=http://127.0.0.1:8000`, the Phase 13.5 client called the existing `GET /api/v1/products` endpoint and decoded `data: []` plus valid `meta.pagination` (`200`, `total: 0`). No special endpoint was created.
 
 ## Scope
 
