@@ -28,8 +28,9 @@
 serve images on the fly to webp by nextjs
 Next.js — built-in WebP via next/image
 
-Next.js next/image automatically converts images to WebP (or AVIF) at request time via its built-in Image Optimization API. No configuration needed for basic usage.
+Next.js next/image automatically converts images to WebP at request time via its built-in Image Optimization API. No configuration needed for basic usage.
 
+```
 // Just use next/image — it auto-converts to WebP in modern browsers
 import Image from 'next/image';
 
@@ -44,3 +45,4 @@ export default function Hero() {
     />
   );
 }
+```
