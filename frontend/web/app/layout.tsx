@@ -7,6 +7,9 @@ import { Providers } from "./providers";
 export const metadata: Metadata = {
   title: "SL Furnitures",
   description: "Furniture made for your home.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
