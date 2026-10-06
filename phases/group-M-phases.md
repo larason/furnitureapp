@@ -1,131 +1,96 @@
-# Phase 13.7 — Website Layout System
+# Phase 13.8 — Error / Loading / Not-Found Handling
 
 ## Objective
 
-Implement the reusable **Next.js + MUI website layout system** for SL Furnitures.
+Implement the reusable **Next.js App Router failure and transitional-state foundation** for the SL Furnitures public website.
 
-This phase establishes the structural shell within which later storefront pages will be built.
+This phase establishes how the website handles:
 
-The layout should use a proven furniture-commerce information architecture inspired structurally by established furniture retailers such as Urban Ladder:
+- route loading;
+- route-level unexpected errors;
+- root/global failures where appropriate;
+- 404/not-found states;
+- API `404` → website `notFound()` translation;
+- expected API failures versus exceptional failures;
+- retry behavior;
+- accessible status communication;
+- failure-state visual composition;
+- server/client boundaries;
+- future page integration rules.
 
-```text
-utility/announcement region
-        ↓
-primary header
-        ↓
-category navigation
-        ↓
-main content
-        ↓
-footer
-```
+The architecture must support later catalog, search, furniture-request, enquiry, and account pages without each feature inventing a separate error/loading system.
 
-However:
-
-> Urban Ladder is an approved **structural / information-architecture reference only**.
-
-Do NOT copy:
-
-- Urban Ladder branding;
-- exact visual styling;
-- colors;
-- typography;
-- dimensions;
-- icons;
-- promotional language;
-- sale mechanics;
-- navigation labels without mapping them to our taxonomy;
-- page sections;
-- component implementation;
-- source code;
-- interaction details;
-- promotional density.
-
-SL Furnitures' own Group L design system remains the visual authority.
-
-The resulting shell must feel:
+The desired model is:
 
 ```text
-architectural
-warm
-editorial
-calm
-crafted
-material-led
-spacious
-premium but approachable
-```
-
-rather than:
-
-```text
-marketplace-like
-discount-heavy
-dashboard-like
-generic AI storefront
+Request / navigation
+        │
+        ├── pending
+        │      ↓
+        │   loading boundary
+        │
+        ├── expected absence
+        │      ↓
+        │   notFound()
+        │      ↓
+        │   not-found UI
+        │
+        ├── expected domain/API failure
+        │      ↓
+        │   page/component handles intentionally
+        │
+        └── unexpected exception
+               ↓
+            error boundary
+               ↓
+          recovery / retry UI
 ```
 
 ---
 
-# 1. Phase Scope
+# 1. Scope
 
 Implement only:
 
 ```text
-Phase 13.7 — Layout System
+Phase 13.8 — Error/loading/not-found handling
 ```
 
-This phase owns the reusable structural website shell:
+This phase may introduce:
 
 ```text
-root/site shell composition
-header structure
-brand/logo region
-search entry-point structure
-account entry-point structure
-desktop category-navigation structure
-mobile navigation structure
-main-content landmark
-content-width/container primitives
-section-width/layout primitives
-footer structure
-desktop/mobile shell adaptation
-sticky/header behavior if justified
-layout-level accessibility structure
+app/loading.tsx
+app/error.tsx
+app/not-found.tsx
 ```
 
-It does NOT own final storefront content.
+and `global-error.tsx` only if technically justified.
+
+It may also introduce small reusable presentation primitives/helpers for these states where they eliminate duplication.
+
+It must NOT implement:
+
+```text
+13.9 responsive foundation
+
+14.1 homepage
+14.2 category pages
+14.3 product listing
+14.4 product detail
+14.5 search
+14.6 filters/sorting
+14.7 SEO metadata
+14.8 structured data
+14.9 sitemap/robots
+14.10 internal linking
+14.11 image/performance optimization
+```
 
 ---
 
-# 2. Do Not Start Later Phases
+# 2. Read Authorities First
 
-Do NOT begin:
-
-```text
-13.8 — Error/loading/not-found handling
-13.9 — Responsive foundation
-
-14.1 — Homepage
-14.2 — Category pages
-14.3 — Product listing
-14.4 — Product detail
-14.5 — Search
-14.6 — Filters/sorting
-14.7 — SEO metadata
-14.8 — Structured data
-14.9 — Sitemap/robots
-14.10 — Internal linking
-14.11 — Image/performance optimization
-```
-
-Also do not start customer feature phases.
-
----
-
-# 3. Read Authorities Before Coding
-
-Inspect at minimum:
+Before coding, inspect:
 
 ```text
 AGENTS.md
@@ -136,30 +101,58 @@ frontend/design-system/
 ├── USAGE.md
 ├── COMPONENTS.md
 ├── ACCESSIBILITY.md
-├── tokens.css
-├── design-tokens.json
-└── relevant reference catalog
+└── tokens.css
 
 frontend/web/
 ├── app/
-├── theme/
+├── components/layout/
 ├── lib/api/
+│   ├── client.ts
+│   └── README.md
 ├── ROUTING.md
+├── theme/
 ├── package.json
 ├── tsconfig.json
 └── next.config.*
 
-docs/
-├── VISION.md
-├── decisions.md
-└── domain/business-rules.md
+docs/api/
+├── api-contract.md
+├── api-conventions.md
+├── api-resources.md
+└── openapi.yaml
 
+docs/decisions.md
 phases/group-M-phases.md
 ```
 
-Inspect the actual current root layout and provider boundary before making changes.
+Inspect the actual installed Next.js version before implementing App Router conventions.
 
-Do not recreate infrastructure that already exists.
+Do not copy stale Next.js examples from memory.
+
+---
+
+# 3. Preserve Phase 13.7
+
+Phase 13.7 established:
+
+```text
+SiteShell
+SiteHeader
+Primary navigation
+Mobile navigation
+ContentContainer
+SiteSection
+SiteFooter
+single <main id="main-content">
+skip-to-main
+server-first root layout
+```
+
+Preserve this architecture.
+
+The current shell already has one `<main id="main-content">` and keeps the root layout as a Server Component.
+
+Do not create a second application shell merely for errors.
 
 ---
 
@@ -172,2291 +165,2129 @@ locate and read:
 git-workflow-and-versioning
 ```
 
-Follow it exactly.
+Follow that skill exactly.
 
 Preserve unrelated owner changes.
 
-Never commit:
+Never commit environment files or secrets.
 
-```text
-.env
-.env.local
-credentials
-tokens
-secrets
-local SDK state
-```
-
-Stage only Phase 13.7 work.
+Stage only Phase 13.8 work.
 
 ---
 
-# 5. Preserve Completed Foundations
+# 5. Failure Taxonomy
 
-The following are already complete:
+Document and enforce four distinct concepts:
 
 ```text
-13.1 Next.js setup
-13.2 TypeScript
-13.3 MUI integration
-13.4 Theme integration
-13.5 API client
-13.6 Routing conventions
+LOADING
+Known pending state
+
+NOT FOUND
+Requested public resource does not exist / is unavailable
+under the public routing contract
+
+EXPECTED FAILURE
+Known API/domain outcome that the feature can present intentionally
+
+UNEXPECTED ERROR
+Unhandled exception / infrastructure or programming failure
 ```
 
-Do not:
+Do not collapse all four into:
 
 ```text
-rerun create-next-app
-replace MUI integration
-recreate the theme
-duplicate providers
-create another API client
-change routing conventions casually
+Something went wrong
 ```
 
 ---
 
-# 6. Architectural Direction
+# 6. Expected Failure Is Not an Error Boundary
 
-Use this dependency hierarchy:
+An App Router `error.tsx` boundary is for unexpected exceptions.
+
+It must not become the normal presentation mechanism for:
 
 ```text
-Root Next.js layout
-        ↓
-Site shell
-        ↓
-Header / Navigation / Main / Footer
-        ↓
-Layout primitives
-        ↓
-future page composition
-        ↓
-future commerce components
+empty product results
+no search matches
+validation errors
+request validation failure
+authentication required
+permission denied
+normal 404
+empty order/request history
+MADE_TO_ORDER state
 ```
 
-Do not reverse it.
-
-Pages should eventually consume the layout system.
-
-The layout system must not know individual page implementations.
+Those have feature-specific semantics.
 
 ---
 
-# 7. Structural Reference Decision
+# 7. Empty State Is Not Not-Found
 
-Record this durable rule:
-
-> Established furniture-commerce websites may inform structural information architecture, but SL Furnitures' tokens, typography, components, accessibility rules, photography philosophy, and interaction principles remain authoritative.
-
-For the shell, the approved structural grammar is:
+Establish explicitly:
 
 ```text
-┌──────────────────────────────────────────────────────────────┐
-│ Optional utility / announcement region                      │
-├──────────────────────────────────────────────────────────────┤
-│ Brand                Search                     Account      │
-├──────────────────────────────────────────────────────────────┤
-│ Furniture category navigation                               │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│                       MAIN CONTENT                           │
-│                                                              │
-├──────────────────────────────────────────────────────────────┤
-│                         FOOTER                               │
-└──────────────────────────────────────────────────────────────┘
+/product-that-does-not-exist
+→ 404 / notFound()
+
+/products?filter=...
+with zero matching products
+→ valid page + empty result state
 ```
 
-This is structural guidance, not a pixel specification.
+Do not turn empty search/list results into HTTP 404.
+
+Group N will implement the actual empty catalogue/search presentation.
 
 ---
 
-# 8. Root Layout
+# 8. MADE_TO_ORDER Is Not an Error
 
-Inspect:
+Preserve the design-system rule:
 
 ```text
-frontend/web/app/layout.tsx
+MADE_TO_ORDER
+≠ unavailable error
+≠ warning
+≠ failure
 ```
 
-Preserve it as a Server Component unless an unavoidable framework requirement proves otherwise.
-
-Do NOT add:
-
-```tsx
-"use client";
-```
-
-to the root layout merely because navigation contains interactive descendants.
-
-Client boundaries belong lower in the tree.
+Never route made-to-order products through failure-state UI merely because they cannot follow a normal stock purchase path.
 
 ---
 
-# 9. Provider Boundary
+# 9. App Router Boundaries
 
-Preserve the existing minimal MUI provider architecture established in 13.3–13.4.
-
-Do not create:
+Inspect the installed Next.js version and implement the correct supported conventions for:
 
 ```text
-SiteProvider
-LayoutProvider
-NavigationProvider
-HeaderProvider
+loading.tsx
+error.tsx
+not-found.tsx
+global-error.tsx
+notFound()
 ```
 
-unless a genuine runtime requirement exists.
-
-Static shell composition does not require global React state.
+Do not assume APIs or signatures from another Next.js release.
 
 ---
 
-# 10. Site Shell
+# 10. Root Loading Boundary
 
-Introduce one clear site-shell composition.
+Evaluate whether:
+
+```text
+frontend/web/app/loading.tsx
+```
+
+is appropriate for the current architecture.
+
+If introduced, it should provide a restrained route-transition/pending state suitable for the global shell.
+
+Do not create a theatrical full-screen loader.
+
+---
+
+# 11. Loading Visual Philosophy
+
+Loading UI should feel:
+
+```text
+quiet
+stable
+predictable
+structural
+```
+
+Avoid:
+
+```text
+spinning logo
+large centered spinner
+progress spectacle
+bouncing dots
+brand animation
+shimmer everywhere
+pulse-heavy skeletons
+```
+
+The furniture site should remain calm.
+
+---
+
+# 12. Layout Stability
+
+Loading states should preserve approximate page geometry when possible.
+
+Future page-level loading states should reduce:
+
+```text
+layout shift
+content jumping
+unexpected shell movement
+```
+
+Do not make the global header/footer disappear simply because page content is pending.
+
+---
+
+# 13. Shell Persistence
+
+Normal route-level loading should occur within the established site shell where App Router hierarchy allows it.
 
 Conceptually:
 
-```tsx
-<SiteShell>
-  <SiteHeader />
-  <main>{children}</main>
-  <SiteFooter />
-</SiteShell>
+```text
+Header
+Navigation
+
+[ pending page content ]
+
+Footer
 ```
 
-Exact naming should follow repository conventions.
-
-Avoid competing concepts such as:
+not:
 
 ```text
-AppShell
-WebsiteShell
-PublicShell
-MainShell
-StoreShell
+[ blank white screen + spinner ]
 ```
-
-all representing the same thing.
-
-Choose one authority.
 
 ---
 
-# 11. Semantic Landmarks
+# 14. Global Loading vs Feature Loading
 
-The rendered shell should have meaningful structural landmarks:
+Do not attempt to design all future skeletons in 13.8.
 
-```html
-<header>
-<nav>
-<main>
-<footer>
+Establish the ownership rule:
+
+```text
+global loading
+→ generic route-level pending treatment
+
+feature loading
+→ future owning page/component phase
 ```
 
-where appropriate.
+For example:
 
-Do not construct the site entirely from anonymous:
+```text
+product-grid skeleton
+→ Phase 14.3
 
-```html
-<div>
+product-detail skeleton
+→ Phase 14.4
+
+search-results skeleton
+→ Phase 14.5
 ```
-
-elements.
 
 ---
 
-# 12. Main Landmark
+# 15. Skeleton Policy
 
-There should be exactly one primary:
+If generic skeleton primitives already exist in MUI, they may be used where justified.
 
-```html
-<main>
-```
+Do NOT create an elaborate custom skeleton framework.
 
-for normal storefront pages.
+Do not add a dependency.
 
-Pages inserted into the shell should not need to recreate the global main landmark.
+If using MUI `Skeleton`, configure it according to reduced-motion requirements.
 
 ---
 
-# 13. Skip-to-Main
+# 16. Reduced Motion for Loading
 
-Phase 12.7 established accessibility requirements.
+Do not rely on animated pulse/wave as the only indication of loading.
 
-Implement the structural skip mechanism now because the layout system owns the main landmark.
+Honor the existing reduced-motion contract.
 
-Provide a keyboard-accessible:
-
-```text
-Skip to main content
-```
-
-link.
-
-It should:
-
-- be available at the beginning of the navigation sequence;
-- become visibly apparent when focused;
-- target the primary main-content landmark;
-- use approved focus tokens;
-- not permanently clutter the visual design.
-
-Do not implement it as a JavaScript click handler.
-
-Use native anchor semantics.
+If animation is disabled, the loading state must remain understandable.
 
 ---
 
-# 14. Header Architecture
+# 17. Loading Accessibility
 
-The desktop header should support three conceptual levels where appropriate:
+Avoid noisy repeated live-region announcements.
+
+A route loading boundary may expose concise status text where useful:
 
 ```text
-optional utility/announcement
-primary header
-category navigation
+Loading…
 ```
 
-Do not make all three visually equally dominant.
+but do not cause screen readers to announce dozens of skeleton cells.
 
-Hierarchy should be clear.
+Decorative skeleton elements should not pollute the accessibility tree.
 
 ---
 
-# 15. Utility / Announcement Region
+# 18. Root Error Boundary
 
-Treat the utility region as optional infrastructure.
-
-Potential future content may include:
+Implement:
 
 ```text
-delivery/service information
-showroom/contact information
-made-to-order message
+frontend/web/app/error.tsx
 ```
 
-but Phase 13.7 must NOT invent promotional campaigns.
+if supported/appropriate for the installed Next.js version.
 
-Do not hard-code:
+Remember that `error.tsx` requires a Client Component under normal App Router semantics.
 
-```text
-50% OFF
-SALE ENDS TONIGHT
-FLASH SALE
-FREE SHIPPING TODAY
-```
+Keep that client boundary isolated.
 
-unless actual business requirements later provide them.
-
-If there is no approved content, the architecture may support the region without rendering meaningless filler.
+Do NOT make the site shell or root layout client-side just because the error boundary requires client behavior.
 
 ---
 
-# 16. Primary Header
+# 19. Error Boundary Responsibility
 
-Desktop structural hierarchy should support:
+The root error boundary should catch unexpected failures within its route segment.
+
+It should present:
 
 ```text
-Brand/logo
-Search entry point
-Account entry point
+clear heading
+short explanation
+retry/recovery action
+safe route back to useful content where appropriate
 ```
 
-Do not add inactive commerce controls merely because conventional ecommerce headers contain them.
+It should NOT display:
+
+```text
+stack trace
+exception class
+database error
+API body
+Laravel trace
+environment information
+internal path
+request headers
+secret/token
+```
 
 ---
 
-# 17. Official Logo
+# 20. Error Message Tone
 
-Use:
+Use calm, concise language.
 
-```text
-designs/brandlogo.png
-```
-
-as the brand identity authority if the shell requires the actual brand mark.
-
-Do NOT:
+For example conceptually:
 
 ```text
-retype the wordmark using Young Serif
-trace the logo
-recolor it
-redraw it as SVG
-approximate it with CSS
-replace it with generic text
+We couldn't load this page.
+Please try again.
 ```
 
-Preserve its visual integrity.
+Do not use:
+
+```text
+Oopsie!
+Uh-oh!
+Something exploded!
+404 furniture not found 😂
+```
+
+Avoid overly playful failure copy.
 
 ---
 
-# 18. Logo Navigation
+# 21. Retry
 
-The logo should semantically navigate to:
+Use the App Router error-boundary recovery mechanism supported by the installed Next.js version.
+
+Typically this means the provided:
+
+```text
+reset()
+```
+
+mechanism where appropriate.
+
+Do not implement retry by:
+
+```text
+window.location.reload()
+```
+
+unless there is a concrete technical reason.
+
+---
+
+# 22. Retry Semantics
+
+Retry must mean:
+
+```text
+attempt to render/recover the failed segment again
+```
+
+It must not:
+
+```text
+repeat a non-idempotent form submission
+repeat a furniture request
+repeat an enquiry
+repeat a payment
+```
+
+without explicit feature-level safeguards.
+
+This distinction must be documented for future phases.
+
+---
+
+# 23. Error Logging
+
+Inspect current Next.js/application observability architecture.
+
+Do not install Sentry or another monitoring dependency during 13.8.
+
+Do not create fake logging infrastructure.
+
+If Next.js provides an error digest, it may remain useful internally, but do not expose it unnecessarily to users.
+
+---
+
+# 24. Global Error Boundary
+
+Evaluate:
+
+```text
+app/global-error.tsx
+```
+
+carefully.
+
+Add it only if:
+
+- supported by installed Next.js;
+- it meaningfully protects against root-layout failure;
+- its requirements are correctly understood;
+- it can be implemented without duplicating normal error UI incorrectly.
+
+Do not add it simply because Next.js supports the filename.
+
+---
+
+# 25. Global Error Independence
+
+If `global-error.tsx` replaces the root layout when active under the installed Next.js behavior, it must contain whatever minimal document structure that framework requires.
+
+Do not assume `SiteShell` will still exist.
+
+Verify this against the installed Next.js documentation/version.
+
+---
+
+# 26. Global Error Styling
+
+A catastrophic root failure should still look recognizably like SL Furnitures using the smallest safe styling strategy.
+
+However, avoid making global error recovery depend on the same provider/theme infrastructure whose failure it may be handling.
+
+Resilience takes priority over perfect visual fidelity at this level.
+
+---
+
+# 27. Not-Found Boundary
+
+Implement a canonical website not-found state using the supported App Router convention.
+
+Expected location likely:
+
+```text
+frontend/web/app/not-found.tsx
+```
+
+unless installed Next.js semantics require another structure.
+
+---
+
+# 28. Not-Found Purpose
+
+The not-found state should communicate:
+
+```text
+the requested page/resource could not be found
+```
+
+without implying:
+
+```text
+server crash
+permission failure
+empty catalogue
+temporary network problem
+```
+
+---
+
+# 29. 404 Visual Treatment
+
+Keep it restrained.
+
+A suitable composition is conceptually:
+
+```text
+404
+
+We couldn't find that page.
+
+The address may have changed, or the page may no longer exist.
+
+[Return home]
+```
+
+Potentially a second useful route may be offered only if that destination actually exists.
+
+Do not create a giant novelty `404` design.
+
+---
+
+# 30. No Fake Product Recommendations
+
+Do not fill the 404 page with:
+
+```text
+Trending furniture
+Recommended products
+Popular categories
+```
+
+because that would require Group N catalog integration.
+
+Keep 13.8 generic.
+
+---
+
+# 31. 404 Navigation
+
+At minimum, provide a safe route to:
 
 ```text
 /
 ```
 
-using an internal link.
+using `next/link`.
 
-Provide an accessible name where needed.
-
-Do not make the logo a button.
+Do not link to unimplemented pages merely to make the state appear complete.
 
 ---
 
-# 19. Logo Sizing
+# 32. Not-Found and Site Shell
 
-Do not hard-code arbitrary logo dimensions based on guesswork.
+Where supported by the current App Router hierarchy, normal not-found presentation should remain compatible with the public site shell.
 
-Choose a restrained shell size compatible with:
+Avoid duplicating header/footer inside `not-found.tsx` if the layout already provides them.
+
+---
+
+# 33. Resource 404 Mapping
+
+Create/document the rule for future public resource pages:
 
 ```text
-header height
-visual balance
-mobile adaptation
-official aspect ratio
+Laravel says resource does not exist
+        ↓
+Next.js page translates that expected absence
+        ↓
+notFound()
+        ↓
+canonical website not-found UI
 ```
 
-Use the layout/design token system wherever applicable.
-
-Do not distort the image.
-
----
-
-# 20. Search Position
-
-The primary header should provide a prominent search entry point.
-
-Furniture discovery benefits strongly from search.
-
-However:
+This is particularly important for future:
 
 ```text
-Phase 14.5
+/products/[slug]
+/categories/[slug]
 ```
-
-owns actual search functionality/results.
-
-Phase 13.7 may implement only the **shell-level search affordance** necessary for layout composition.
 
 ---
 
-# 21. Search Scope
+# 34. Do Not Implement Product/Category Pages
 
-Do NOT implement:
+You may create/test a reusable translation helper only if justified.
+
+Do NOT create:
 
 ```text
-search API requests
-autocomplete
-search suggestions
-recent searches
-search history
-search results
-debouncing
-predictive search
+app/products/[slug]/page.tsx
+app/categories/[slug]/page.tsx
 ```
 
-during 13.7.
+to demonstrate `notFound()`.
+
+Those remain Group N.
 
 ---
 
-# 22. Search Semantics
+# 35. API Client Contract
 
-If the header contains an actual search form rather than merely a navigation entry point, it must use semantic:
+Phase 13.5 already preserves Laravel success/error envelopes.
 
-```html
-<form role="search">
-```
+Do not destroy that abstraction.
 
-or equivalent appropriate semantics.
-
-But do not create fake functionality.
-
-If search submission behavior belongs to Phase 14.5, prefer a safe structural entry point rather than a misleading non-functional form.
-
----
-
-# 23. Search Destination
-
-The canonical future search route is:
+Inspect exactly how:
 
 ```text
-/search
+404
+422
+401
+403
+429
+5xx
+network failure
+timeout
+abort
 ```
 
-with:
+are represented by the client.
+
+Build 13.8 rules around actual client behavior.
+
+Do not guess.
+
+---
+
+# 36. Do Not Make API Client UI-Aware
+
+The generic API client should NOT call:
 
 ```text
-?search=<term>
+notFound()
+redirect()
+router.push()
+toast()
 ```
 
-according to the Phase 13.6 routing authority.
+itself.
 
-Do not introduce:
+Transport should remain transport.
+
+Page/domain integration owns presentation decisions.
+
+Expected architecture:
 
 ```text
-?q=
-?query=
-?keyword=
+API client
+→ typed transport result/error
+
+page/domain adapter
+→ interprets semantics
+
+Next.js
+→ notFound()/expected state/error boundary
 ```
 
 ---
 
-# 24. Account Entry Point
+# 37. 404 Translation Helper
 
-The header may provide an account entry point consistent with the reserved:
+If repeated translation logic is clearly inevitable, a tiny server-side helper may be justified.
 
-```text
-/account
-```
-
-namespace.
-
-Do not implement authentication behavior.
-
-Do not integrate Clerk.
-
-Do not determine signed-in state during this phase.
-
-If an account link would currently lead to an unimplemented route, do not expose a broken active navigation link merely to fill header space.
-
-Support the structural slot cleanly.
-
----
-
-# 25. No Cart Icon
-
-The current production policy is request-first.
-
-Therefore do NOT add:
+For example conceptually:
 
 ```text
-cart icon
-cart count
-mini-cart
-shopping bag
-checkout shortcut
+get-or-not-found
 ```
 
-to the site shell.
+But do not create an abstraction before inspecting the actual API error model.
 
-The routing authority explicitly keeps transactional commerce inactive.
-
----
-
-# 26. No Wishlist Icon
-
-Do not add wishlist/favourites functionality merely because furniture websites commonly have it.
-
-It is not part of the current approved website scope.
+It must not hide unrelated failures.
 
 ---
 
-# 27. Header Icon Policy
+# 38. Only 404 Becomes Not Found
 
-Web icons must use:
+Do not accidentally map:
+
+```text
+401
+403
+422
+429
+500
+network error
+timeout
+```
+
+to `notFound()`.
+
+A 404 masking rule from backend authorization may intentionally make some resources indistinguishable from absence, but the frontend should follow the API's returned status rather than reconstruct backend authorization logic.
+
+---
+
+# 39. 401
+
+Document the future handling rule:
+
+```text
+401
+→ authentication concern
+```
+
+Do not implement Clerk redirects in 13.8.
+
+Public catalog pages generally should not require authentication.
+
+Authenticated feature phases will own actual behavior.
+
+---
+
+# 40. 403
+
+Document:
+
+```text
+403
+→ known authorization/permission outcome where the contract exposes it
+```
+
+Do not turn it into generic 404 unless the Laravel contract already masks that endpoint as 404.
+
+Do not invent authorization behavior in the frontend.
+
+---
+
+# 41. 422
+
+Validation failures belong to forms/features.
+
+Future furniture-request/enquiry forms should map validation errors to fields/form summaries.
+
+Do not send `422` into the global error boundary as normal behavior.
+
+13.8 should document this ownership.
+
+---
+
+# 42. 429
+
+The backend contract supports rate limiting and `Retry-After`.
+
+Document the rule:
+
+```text
+429
+→ expected rate-limit outcome
+→ feature-specific retry messaging/timing
+```
+
+Do not implement a global automatic retry loop.
+
+Do not ignore `Retry-After`.
+
+---
+
+# 43. 5xx
+
+Unexpected backend server failures may propagate to a route/feature error boundary depending on context.
+
+Do not convert 5xx into:
+
+```text
+No products found
+```
+
+or:
+
+```text
+404
+```
+
+---
+
+# 44. Network Failure
+
+Network/DNS/connectivity failures are not 404.
+
+Treat them as unavailable/error conditions.
+
+Do not claim the requested resource does not exist when Laravel could not be reached.
+
+---
+
+# 45. Timeout
+
+Phase 13.5 introduced timeout behavior.
+
+Timeout should remain distinguishable from:
+
+```text
+not found
+validation failure
+caller cancellation
+```
+
+Do not rewrite all fetch failures into one generic status inside the API client.
+
+---
+
+# 46. Caller Cancellation
+
+An intentional `AbortSignal` cancellation should not automatically surface a dramatic error UI.
+
+Inspect the Phase 13.5 semantics and preserve them.
+
+Do not log expected caller cancellation as an application crash.
+
+---
+
+# 47. Error Classification
+
+If a reusable classifier is justified, it must be:
+
+```text
+small
+typed
+transport-aware
+framework-independent where practical
+```
+
+Do not create a giant `ErrorManager` service.
+
+---
+
+# 48. No Magic String Matching
+
+Do not determine status by:
+
+```ts
+error.message.includes("404")
+```
+
+Use typed/status-bearing information from the API client.
+
+---
+
+# 49. No `any`
+
+Error handling frequently tempts developers to use:
+
+```ts
+catch (error: any)
+```
+
+Do not.
+
+Use:
+
+```text
+unknown
+```
+
+plus safe narrowing, or established typed error/result structures.
+
+---
+
+# 50. Error Cause Preservation
+
+Where errors are wrapped, preserve useful technical cause/status internally where practical.
+
+Do not discard debugging information merely to produce friendly UI.
+
+But never expose internal details directly to the user.
+
+---
+
+# 51. Loading vs Suspense
+
+Understand the installed App Router behavior before adding manual `<Suspense>` boundaries.
+
+Do not sprinkle Suspense throughout the shell simply because `loading.tsx` exists.
+
+Use route loading boundaries first where appropriate.
+
+Future page phases may add granular Suspense when justified.
+
+---
+
+# 52. No Artificial Delays
+
+Do not add:
+
+```ts
+await sleep(1000)
+```
+
+or fake latency merely to make loading UI visible.
+
+Tests may simulate pending states without modifying production behavior.
+
+---
+
+# 53. No Minimum Spinner Time
+
+Do not force loading indicators to remain visible for aesthetic reasons.
+
+Fast responses should remain fast.
+
+---
+
+# 54. Loading Content Ownership
+
+The global loading state should not know whether the future page is:
+
+```text
+homepage
+category
+product
+search
+request
+enquiry
+```
+
+Keep it generic.
+
+---
+
+# 55. Reusable State Presentation
+
+If justified, create a small generic presentation component, conceptually:
+
+```text
+StateMessage
+```
+
+or:
+
+```text
+PageState
+```
+
+for:
+
+```text
+not-found
+unexpected error
+possibly generic empty informational state
+```
+
+But do not over-generalize.
+
+---
+
+# 56. Avoid One Mega-State Component
+
+Do not build:
+
+```tsx
+<AppState
+  loading
+  error
+  empty
+  notFound
+  offline
+  success
+  warning
+  maintenance
+  compact
+  fullPage
+  product
+  search
+  account
+  ...
+/>
+```
+
+Prefer simple composition.
+
+---
+
+# 57. Component Conventions
+
+Follow:
+
+```text
+frontend/design-system/COMPONENTS.md
+```
+
+Use semantic variants only.
+
+Do not create arbitrary visual props.
+
+---
+
+# 58. Error Action Semantics
+
+Use:
+
+```text
+button
+```
+
+for:
+
+```text
+Try again
+```
+
+when it invokes `reset()`.
+
+Use:
+
+```text
+link
+```
+
+for:
+
+```text
+Return home
+```
+
+because it navigates.
+
+Do not interchange them for styling convenience.
+
+---
+
+# 59. Icons
+
+Use:
 
 ```text
 @mui/icons-material
 ```
 
-only.
+only if an icon materially improves comprehension.
 
-Do not add:
-
-```text
-lucide-react
-react-icons
-Heroicons
-Font Awesome
-custom decorative SVG icons
-emoji UI icons
-```
-
-Icon-only interactive controls require accessible names.
-
-Decorative icons should be hidden from assistive technology.
-
----
-
-# 28. Desktop Category Navigation
-
-Provide structural support for category-led furniture navigation.
-
-The top-level navigation should reflect the actual furniture taxonomy rather than copied retailer categories.
-
-Inspect the authoritative category taxonomy.
-
-Likely high-level concepts include existing project categories such as:
+Do not decorate every state with:
 
 ```text
-Living Room
-Bedroom
-Dining Room & Kitchen
-Office
-Outdoor
-Kids
-Entryway & Hallway
-Lighting
-Decor
-Storage
-Hybrid & Multi-purpose
+warning triangle
+sad face
+broken chair
+magnifying glass
 ```
 
-Use actual authoritative taxonomy.
+by default.
 
-Do not blindly render every taxonomy node into the top navigation.
+Text and hierarchy should carry meaning.
 
 ---
 
-# 29. Navigation Density
+# 60. No Custom Error Illustrations
 
-A premium header should not become a database dump.
+Do not generate or add decorative 404/error artwork in this phase.
 
-Determine a sustainable top-level navigation strategy.
+No broken-chair illustration.
 
-If the taxonomy contains more items than comfortably fit:
+No random stock image.
+
+No custom SVG artwork.
+
+---
+
+# 61. Typography
+
+Use the existing typography system.
+
+A not-found/error state may use Young Serif for a major editorial heading if consistent with the theme.
+
+Utility text/actions remain UI sans.
+
+Do not invent typography values.
+
+---
+
+# 62. Color
+
+Use semantic tokens.
+
+Do not make the entire error page red.
+
+Error color should communicate actual error semantics, not dominate the experience.
+
+Not-found is generally neutral, not destructive.
+
+---
+
+# 63. Brand Accent
+
+Do not use brown merely because the state needs visual interest.
+
+The existing restrained accent policy remains in force.
+
+---
+
+# 64. Surfaces
+
+Prefer the established canvas/paper/editorial surfaces.
+
+Do not put error states inside giant floating cards unless a real component hierarchy requires it.
+
+---
+
+# 65. Elevation
+
+No decorative shadow around a 404/error message.
+
+Flat-first design remains authoritative.
+
+---
+
+# 66. Radius
+
+Do not turn failure states into oversized rounded dashboard cards.
+
+---
+
+# 67. Spacing
+
+Use canonical layout spacing.
+
+The existing `ContentContainer` and `SiteSection` should be reused where appropriate rather than recreating page gutters.
+
+Phase 13.7 established those primitives explicitly.
+
+---
+
+# 68. State Width
+
+Failure copy should have a controlled readable measure.
+
+Do not stretch two lines of error text across the entire furniture canvas.
+
+---
+
+# 69. Vertical Composition
+
+The state should feel intentionally positioned within the content area without relying on fragile:
 
 ```text
-prioritize core categories
-+
-provide a controlled "More" / discovery mechanism
+height: calc(100vh - 173px)
 ```
 
-only if consistent with the approved IA.
+magic numbers.
 
-Do not shrink text to force everything into one row.
-
-Do not wrap category navigation onto two chaotic lines.
+Do not couple state layout to hard-coded header/footer heights.
 
 ---
 
-# 30. Category Navigation Is Data-Driven Eventually
+# 70. Mobile
 
-Do not hard-code an entirely separate frontend taxonomy that can drift from Laravel.
+Error/not-found/loading states must remain usable on narrow mobile widths.
 
-However, Phase 13.7 does NOT need to implement catalog API fetching merely to establish shell geometry.
+No clipped large `404`.
 
-If live category navigation belongs to Group N, establish the component/layout contract now and defer data integration.
+No horizontally overflowing buttons.
 
-Do not create fake category IDs/slugs.
+No fixed widths that exceed the viewport.
 
 ---
 
-# 31. Category Links
+# 71. Action Layout
 
-Once real category links are implemented, they must use:
+On narrow screens, actions may stack if needed.
+
+Do not shrink touch targets to preserve a desktop row.
+
+---
+
+# 72. Accessibility — Error Heading
+
+Unexpected error and not-found states should have a meaningful heading.
+
+Maintain logical heading structure.
+
+Do not rely on giant `404` numerals as the only accessible heading.
+
+---
+
+# 73. Accessibility — Status
+
+Use live-region semantics deliberately.
+
+Do not make the entire error page:
 
 ```text
-/categories/[slug]
+role="alert"
 ```
 
-with Laravel-returned slugs.
+without considering how much content will be announced.
 
-Never generate slugs from labels in the browser.
+Unexpected asynchronous feature errors may need different treatment later.
 
----
-
-# 32. Mega Menu Architecture
-
-The desktop layout may support a future furniture-specific mega menu.
-
-Conceptually:
-
-```text
-LIVING ROOM
-────────────────────────────────────────────
-
-Seating            Tables            Storage
-Sofas              Coffee Tables     TV Units
-Lounge Chairs      Side Tables       Cabinets
-Accent Chairs      Console Tables    Shelving
-
-                              Editorial image
-                              Explore Living →
-```
-
-This is a **layout capability**, not permission to build the final data-driven menu now.
+For route-level error pages, focus/heading semantics may be sufficient.
 
 ---
 
-# 33. Mega Menu Scope
+# 74. Accessibility — Focus After Navigation
 
-If a minimal generic mega-menu primitive is necessary for layout validation, it may be implemented.
+Normal navigation to a not-found route should follow App Router/browser focus behavior.
 
-But do NOT:
+Do not introduce aggressive custom focus management unless needed.
 
-```text
-fetch category hierarchy
-invent merchandising images
-create final category copy
-build promotional menu cards
-create retailer-specific menu content
-```
-
-during Phase 13.7.
-
-Prefer structural primitives with test fixtures/reference data where needed.
+Document future feature-level expectations.
 
 ---
 
-# 34. Mega Menu Interaction
+# 75. Accessibility — Retry
 
-Any implemented dropdown/mega-menu behavior must support:
-
-```text
-keyboard access
-focus management
-Escape dismissal
-pointer interaction
-logical tab order
-visible focus
-```
-
-Do not implement hover-only navigation.
-
----
-
-# 35. Avoid Hover Traps
-
-A user moving the pointer between navigation trigger and menu content should not encounter a fragile tiny hover gap.
-
-If hover behavior is implemented, keyboard/click behavior must remain first-class.
-
-Do not make navigation dependent exclusively on pointer hover.
-
----
-
-# 36. Mobile Header
-
-Mobile should use the same visual language but not mechanically shrink the desktop header.
-
-Conceptually:
-
-```text
-┌───────────────────────────────┐
-│ Menu    Logo      Search/User │
-└───────────────────────────────┘
-```
-
-Exact composition should follow content priority and available width.
-
----
-
-# 37. Mobile Navigation
-
-Desktop category navigation should collapse into a mobile navigation mechanism.
-
-Likely:
-
-```text
-menu trigger
-→ drawer/sheet
-→ category navigation
-→ utility links
-```
-
-Use MUI primitives where appropriate.
-
-Do not invent a separate mobile information architecture.
-
----
-
-# 38. Mobile Drawer
-
-If a drawer is implemented:
-
-- use MUI's established primitive rather than custom overlay infrastructure;
-- preserve keyboard focus;
-- close on Escape;
-- restore focus appropriately;
-- label the drawer/navigation;
-- provide an explicit close mechanism;
-- avoid nested interaction traps.
-
----
-
-# 39. Mobile Category Hierarchy
-
-Do not display the entire taxonomy as one enormous flat list.
-
-If hierarchy is needed, use controlled disclosure.
-
-But do not overbuild complex nested navigation before actual category data integration.
-
----
-
-# 40. Mobile Search
-
-Search must remain easy to discover on mobile.
-
-Do not hide it three levels deep inside the menu.
-
-However, final search interaction belongs to Phase 14.5.
-
----
-
-# 41. Sticky Header
-
-Evaluate whether a restrained sticky header improves furniture browsing.
-
-If implemented:
-
-```text
-position: sticky
-```
-
-is preferred over complex scroll-listener JavaScript.
+The retry control must have an understandable accessible name.
 
 Avoid:
 
 ```text
-header shrinks on scroll
-logo morphs
-nav animates away
-parallax header
-scroll direction detection
+Retry icon only
 ```
 
-unless later explicitly approved.
+for the primary recovery action.
 
 ---
 
-# 42. Sticky Elevation
-
-A sticky header may gain subtle separation when necessary.
-
-Use approved elevation/border/surface tokens.
-
-Do not add:
-
-```text
-heavy shadow
-blurred glass
-backdrop-filter spectacle
-```
-
----
-
-# 43. Header Heights
-
-Do not invent dozens of arbitrary heights.
-
-Header geometry should derive from:
-
-```text
-content
-spacing tokens
-control sizing
-logo proportions
-```
-
-rather than magic numbers.
-
-If fixed/min heights are needed, use the smallest coherent set.
-
----
-
-# 44. Main Content Region
-
-The layout system must provide a predictable content region.
-
-Pages should not each invent their own:
-
-```text
-max-width
-horizontal padding
-center alignment
-```
-
----
-
-# 45. Content Container Primitive
-
-Create a reusable content-width primitive if one does not already exist.
-
-Conceptually:
-
-```text
-<ContentContainer>
-  {children}
-</ContentContainer>
-```
-
-It should own:
-
-```text
-maximum readable/site width
-horizontal gutters
-centering
-responsive gutter behavior
-```
-
-Use repository naming conventions.
-
----
-
-# 46. Container Ownership
-
-The global shell should NOT force every page section into the same width.
-
-Furniture sites require both:
-
-```text
-contained content
-full-bleed editorial imagery
-```
-
-Therefore the layout system should support both intentionally.
-
----
-
-# 47. Full-Bleed Composition
-
-Support future composition such as:
-
-```text
-FULL BLEED HERO
-────────────────────────────
-
-       contained text
-
-────────────────────────────
-
-contained product grid
-
-────────────────────────────
-
-FULL BLEED EDITORIAL IMAGE
-```
-
-without pages resorting to negative-margin hacks.
-
-Do NOT build the hero itself.
-
----
-
-# 48. Section Primitive
-
-If justified, establish a lightweight section layout primitive controlling:
-
-```text
-vertical section spacing
-optional content width
-semantic section composition
-```
-
-Do not make a giant:
-
-```text
-Section
-```
-
-component with 25 variants.
-
-Keep it structural.
-
----
-
-# 49. Page Container vs Section Container
-
-Avoid ambiguity.
-
-If both concepts exist, clearly define:
-
-```text
-Page/content container
-→ horizontal site geometry
-
-Section
-→ vertical composition / semantic grouping
-```
-
-Do not let both independently set arbitrary widths and padding.
-
----
-
-# 50. Grid Foundation
-
-The layout system may establish generic grid primitives/configuration needed by future pages.
-
-Do NOT build the product grid.
-
-A generic responsive layout grid can define:
-
-```text
-columns
-gaps
-alignment
-```
-
-without knowing product cards.
-
----
-
-# 51. Product Grid Ownership
-
-Actual:
-
-```text
-product card count
-product grid breakpoints
-listing behavior
-filter sidebar relationship
-```
-
-belong to Phase 14.3 / 14.6.
-
-Do not prematurely encode them into the global shell.
-
----
-
-# 52. Editorial Layout Capability
-
-The layout system should allow asymmetric editorial compositions later:
-
-```text
-image + text
-text + image
-large image + narrow copy
-```
-
-without creating one-off page CSS.
-
-Do not implement actual editorial homepage sections.
-
----
-
-# 53. Width Philosophy
-
-Avoid an overly narrow SaaS/dashboard container.
-
-Furniture imagery needs room.
-
-Likewise avoid uncontrolled edge-to-edge text.
-
-The system should support:
-
-```text
-wide visual canvas
-+
-controlled readable text measure
-```
-
-as separate concepts.
-
----
-
-# 54. Text Measure
-
-If a reusable readable-text measure is needed, establish it structurally.
-
-Long editorial copy should not stretch across the full desktop canvas.
-
-Do not invent typography sizes; Group L owns typography.
-
----
-
-# 55. Layout Spacing
-
-All shell spacing must use approved design tokens/theme mappings.
-
-Do not introduce arbitrary values such as:
-
-```text
-19px
-37px
-53px
-```
-
-because they happen to look good.
-
-If an approved token exists, use it.
-
----
-
-# 56. MUI `sx` Policy
-
-Follow `COMPONENTS.md`.
-
-Do not turn every layout element into:
-
-```tsx
-sx={{
-  ...
-}}
-```
-
-with one-off visual values.
-
-Use theme/token-backed structural styling.
-
-Local `sx` is acceptable only under the established policy.
-
----
-
-# 57. Breakpoints
-
-Use the existing canonical breakpoints mapped through the MUI theme.
-
-Do NOT introduce a second set such as:
-
-```text
-mobile = 700
-tablet = 950
-desktop = 1234
-```
-
-unless those are already canonical tokens.
-
----
-
-# 58. Phase 13.9 Boundary
-
-Phase 13.7 must make the shell structurally responsive enough to function.
-
-But Phase:
-
-```text
-13.9 — Responsive foundation
-```
-
-still owns broader responsive-system validation and conventions.
-
-Therefore:
-
-```text
-13.7
-→ responsive shell implementation
-
-13.9
-→ systematic responsive behavior audit/foundation
-```
-
-Do not consume all of 13.9's scope here.
-
----
-
-# 59. Footer Architecture
-
-Implement a reusable footer structure appropriate for a furniture business.
-
-Conceptually support groups such as:
-
-```text
-Furniture
-Services
-Help
-About
-Contact
-Legal
-```
-
-But only expose links/routes that actually exist or are deliberately safe placeholders without broken navigation.
-
----
-
-# 60. Footer Restraint
-
-Do not fill the footer with generic ecommerce boilerplate just because competitors have it.
-
-Do NOT invent:
-
-```text
-Rewards
-Affiliate Program
-Investor Relations
-Gift Cards
-Careers
-Press
-Trade Program
-```
-
-without approved business requirements.
-
----
-
-# 61. Footer Category Links
-
-If actual category links are eventually rendered, use the authoritative category routes.
-
-Do not generate fake category slugs.
-
----
-
-# 62. Footer Services
-
-The architecture should support legitimate business concepts such as:
-
-```text
-Made to Order
-Furniture Requests
-General Enquiries / Contact
-```
-
-because these exist in the project.
-
-Do not turn MADE_TO_ORDER into an error/help link.
-
-It is a first-class offering.
-
----
-
-# 63. Footer Contact Information
-
-Do not invent:
-
-```text
-phone numbers
-email addresses
-showroom addresses
-opening hours
-social accounts
-```
-
-If business contact information is not authoritative in the repository, provide the structural slot or omit it.
-
-Never fabricate business details.
-
----
-
-# 64. Newsletter
-
-Do not add a newsletter subscription form unless newsletter functionality is an approved requirement.
-
-A decorative email input that does nothing is prohibited.
-
----
-
-# 65. Social Media
-
-Do not add generic Instagram/Facebook/Pinterest icons without authoritative business URLs.
-
-Do not use `href="#"`.
-
----
-
-# 66. Legal Links
-
-Do not create broken:
-
-```text
-Privacy
-Terms
-Returns
-```
-
-links merely to make the footer look complete.
-
-If those pages do not exist, either omit them or render appropriate non-link structural content only if justified.
-
----
-
-# 67. Footer Responsive Behavior
-
-Desktop may use multi-column groups.
-
-Mobile may collapse/reflow them.
-
-Do not automatically use accordion behavior unless it genuinely improves the layout and accessibility.
-
-If accordion behavior is used, use MUI semantics and keyboard support.
-
----
-
-# 68. Background Surfaces
-
-Use the established semantic surfaces.
-
-Likely hierarchy:
-
-```text
-site canvas
-→ warm ivory
-
-product/content relief
-→ paper
-
-editorial section
-→ editorial surface
-
-inverse region
-→ charcoal where justified
-```
-
-Do not make every section alternate beige/white/brown.
-
-Surface changes should communicate composition.
-
----
-
-# 69. Footer Surface
-
-Choose footer treatment from approved semantic surfaces.
-
-A restrained inverse footer may be appropriate if supported by the design system, but do not introduce a new footer-specific color.
-
-Verify text/icon/focus contrast.
-
----
-
-# 70. Brown Accent
-
-Deep brown remains a controlled brand accent.
-
-Do NOT make:
-
-```text
-entire header brown
-all nav links brown
-all footer headings brown
-all icons brown
-all borders brown
-```
-
-The visual system should remain charcoal-led and photography-led.
-
----
-
-# 71. Header Surface
-
-Prefer a calm surface that supports furniture photography and navigation clarity.
-
-Do not use:
-
-```text
-gradient header
-glassmorphism
-blurred translucent nav
-ornamental texture
-```
-
----
-
-# 72. Borders
-
-Use subtle token-backed borders only where structural separation needs them.
-
-Do not outline every header region and footer column.
-
-Whitespace should do much of the work.
-
----
-
-# 73. Elevation
-
-Follow Group L:
-
-```text
-flat first
-```
-
-Header/footer/container surfaces should not become floating cards.
-
-Elevation is reserved for genuine layers such as:
-
-```text
-mobile drawer
-mega menu
-popover
-```
-
----
-
-# 74. Radius
-
-Do not wrap:
-
-```text
-header
-footer
-main content
-navigation bar
-page container
-```
-
-in giant rounded cards.
-
-Architectural page regions should remain structurally clean.
-
----
-
-# 75. Motion
-
-Navigation motion must remain quiet.
-
-Appropriate:
-
-```text
-short fade
-subtle opacity
-controlled menu transition
-underline/color transition
-```
-
-Avoid:
-
-```text
-bouncing
-spring animation
-navigation scaling
-large slide spectacle
-rotating icons
-```
-
-Honor reduced motion.
-
----
-
-# 76. Photography Boundary
-
-The shell should provide room for photography without introducing placeholder stock photography.
-
-Do not download random furniture imagery during Phase 13.7.
-
-Group N will own actual page imagery/content.
-
----
-
-# 77. Accessibility Authority
-
-Follow:
-
-```text
-frontend/design-system/ACCESSIBILITY.md
-```
-
-The layout system must establish accessibility structurally rather than trying to repair it later.
-
----
-
-# 78. Landmark Audit
+# 76. Accessibility — Contrast
 
 Verify:
 
 ```text
-header landmark
-navigation landmark(s)
-main landmark
-footer landmark
+heading
+body copy
+links
+buttons
+focus indicators
 ```
 
-are meaningful and not unnecessarily duplicated.
-
-If multiple `nav` elements exist, provide useful accessible labels where needed.
+against the actual surfaces used by all state UIs.
 
 ---
 
-# 79. Navigation Labels
+# 77. Accessibility — Reduced Motion
 
-For example:
+Loading/retry transitions must honor reduced motion.
+
+---
+
+# 78. Accessibility — Error Identification
+
+For future forms:
 
 ```text
-Primary navigation
-Furniture categories
-Footer navigation
+field error
+→ associated with field
+
+form-level error
+→ clear summary/message where appropriate
 ```
 
-may be appropriate.
+Do not implement forms now.
 
-Do not over-label every container.
-
----
-
-# 80. Heading Ownership
-
-The global shell should not introduce a fake page `<h1>`.
-
-Each future page owns its primary heading.
-
-Header/footer headings must not disrupt logical page heading hierarchy.
+Record the ownership rule only if not already covered by ACCESSIBILITY.md.
 
 ---
 
-# 81. Keyboard Navigation
+# 79. Native HTTP Meaning
 
-Verify keyboard users can:
+Preserve meaningful HTTP semantics where Next.js supports them.
+
+A not-found resource should use the framework's not-found mechanism rather than rendering a normal `200` page that merely says "404".
+
+---
+
+# 80. Do Not Redirect Missing Resources Home
+
+Never implement:
 
 ```text
-reach skip link
-reach logo/home
-reach navigation
-operate any menu
-reach search entry
-reach account entry
-reach main content
-reach footer
+missing product
+→ redirect("/")
 ```
 
-without pointer input.
+This hides the error and produces confusing SEO/navigation behavior.
+
+Use `notFound()`.
 
 ---
 
-# 82. Focus Visibility
+# 81. Do Not Redirect All Errors Home
 
-Every interactive shell element must retain visible focus.
+Unexpected errors should remain errors with recovery options.
 
-Never use:
-
-```css
-outline: none;
-```
-
-without the approved replacement.
-
-Use the established focus token semantics.
+Do not mask application failures by silently returning users to `/`.
 
 ---
 
-# 83. Focus Order
+# 82. No Automatic Infinite Retry
 
-DOM order should broadly match visual order.
+Do not repeatedly retry failed API requests without explicit policy.
 
-Do not use CSS ordering tricks that cause keyboard focus to jump unpredictably.
-
----
-
-# 84. Touch Targets
-
-Mobile controls should meet the established accessibility target-size requirements.
-
-Do not create tiny:
+This is particularly important for:
 
 ```text
-menu
+429
+5xx
+network outage
+```
+
+---
+
+# 83. No Automatic Mutation Retry
+
+Never automatically retry non-idempotent mutations as a global error-handling strategy.
+
+Future:
+
+```text
+furniture request submission
+enquiry submission
+payment
+```
+
+must define their own idempotency/retry behavior.
+
+---
+
+# 84. Retry-After
+
+Preserve the Phase 13.5 API client's ability to expose headers/status information needed for `Retry-After`.
+
+If it currently does not expose sufficient information, report the precise gap.
+
+Do not silently redesign the client.
+
+---
+
+# 85. API Client Modification Gate
+
+Expected:
+
+```text
+API client changed:
+NO
+```
+
+If a genuine defect prevents correct status classification, STOP and report it unless the correction is trivially within the established 13.5 contract.
+
+Do not casually reopen the transport layer.
+
+---
+
+# 86. Route-Level vs Component-Level Errors
+
+Document:
+
+```text
+route-level rendering/data failure
+→ route error boundary
+
+recoverable widget failure
+→ future local component handling/boundary if justified
+
+form/domain failure
+→ feature-specific state
+```
+
+Do not force every small failure to blank the entire page.
+
+---
+
+# 87. Nested Error Boundaries
+
+Do not create nested boundaries for routes that do not exist yet.
+
+Group N may introduce more granular boundaries when actual failure domains are known.
+
+---
+
+# 88. Root Boundary Should Stay Generic
+
+The root boundary should not mention:
+
+```text
+product
+category
 search
-close
-account
+order
+request
 ```
 
-icon targets merely to preserve visual minimalism.
+because it may catch any route.
 
 ---
 
-# 85. Zoom/Reflow
+# 89. Not-Found Should Stay Generic
 
-The shell must remain usable under text zoom and browser zoom.
-
-Do not use fixed-height navigation regions that clip text when fonts enlarge.
-
-Use:
+Likewise, the global not-found UI should not say:
 
 ```text
-min-height
-content-driven sizing
+Product not found
 ```
 
-where appropriate.
+Future product pages can trigger the generic site 404 unless a justified route-specific not-found UI is introduced later.
 
 ---
 
-# 86. Reduced Motion
+# 90. Error Copy Authority
 
-Any shell transitions must respect:
+Keep user-facing copy centralized with the component/boundary that owns it.
+
+Do not scatter equivalent:
 
 ```text
-prefers-reduced-motion
+Something went wrong
+Page failed
+Unable to load
 ```
 
-through the established design-system approach.
-
-Do not create a second reduced-motion mechanism.
+strings across unrelated files.
 
 ---
 
-# 87. Mobile Menu Scroll
+# 91. Testing — Loading
 
-If the mobile navigation exceeds viewport height:
+Test the global loading state structurally.
+
+Verify:
 
 ```text
-menu content must scroll
+accessible loading indication
+no fake page content
+no Group N product skeleton
+no prohibited animation behavior
 ```
-
-without trapping the page or hiding close controls.
-
-Account for safe viewport behavior.
 
 ---
 
-# 88. Body Scroll
+# 92. Testing — Error
 
-If MUI Drawer/Modal handles body scroll locking, use its established behavior.
+Test the error boundary with a controlled test harness.
 
-Do not implement a custom global:
+Verify:
 
 ```text
-document.body.style.overflow
+friendly user message
+no raw exception shown
+retry invokes reset
+home navigation works if provided
+accessible action semantics
 ```
 
-mechanism unless unavoidable.
+Do not add a permanent production route that intentionally throws.
 
 ---
 
-# 89. Z-Index
+# 93. Testing — Not Found
 
-Use the established theme/token z-index hierarchy.
-
-Do not introduce:
+Verify the not-found UI:
 
 ```text
-z-index: 999999
+has meaningful heading
+contains safe home navigation
+uses no broken links
+uses no Group N product/category content
 ```
-
-for navigation.
 
 ---
 
-# 90. Server/Client Boundaries
+# 94. Test `notFound()` Translation
 
-Keep static shell components as Server Components where possible.
-
-Likely server-capable:
+If a helper is introduced for API 404 translation, test:
 
 ```text
-SiteShell
-Footer
-logo composition
-static header composition
-content container
-section primitives
+404 → not-found behavior
+
+401 → NOT not-found
+403 → NOT not-found unless API already returns 404
+422 → NOT not-found
+429 → NOT not-found
+500 → NOT not-found
+network → NOT not-found
+timeout → NOT not-found
+abort → NOT not-found
 ```
 
-Client boundaries should be introduced only for genuinely interactive behavior such as:
+---
+
+# 95. Error Privacy Test
+
+Add/check regression protection that user-visible error UI does not expose:
 
 ```text
-mobile drawer
-interactive mega menu
+stack
+digest
+raw Laravel body
+exception message
+internal numeric IDs
+filesystem path
+environment variables
+headers
 ```
 
 ---
 
-# 91. Do Not Make Entire Header Client-Side Automatically
+# 96. Shell Regression
 
-If only the mobile menu requires state, isolate that behavior.
-
-Preferred conceptual architecture:
+Verify:
 
 ```text
-SiteHeader            Server where practical
- ├── Brand
- ├── DesktopNav
- └── MobileNavTrigger/Navigation  Client boundary
+normal loading
+normal not-found
+normal route error
 ```
 
-Exact implementation may vary with MUI requirements.
-
-Keep the client surface small.
-
----
-
-# 92. No Global Navigation State
-
-Do not introduce Redux/Zustand/Context merely for:
+do not accidentally duplicate:
 
 ```text
-menu open
-mega menu open
+header
+main
+footer
 ```
 
-Local component state is sufficient.
-
-Expected new dependencies:
-
-```text
-NONE
-```
+under the installed Next.js layout behavior.
 
 ---
 
-# 93. No API Fetching in Global Layout Without Need
+# 97. Request-First Regression
 
-Do not make every website request block on unnecessary API calls from the root layout.
-
-If live category navigation would require catalog fetching, assess whether it belongs in Group N.
-
-The global shell should remain robust and cache-friendly.
-
----
-
-# 94. No Auth Fetching Yet
-
-Do not call Clerk or Laravel customer endpoints from the layout.
-
-Authenticated account state belongs to later phases.
-
----
-
-# 95. No Search API Fetching
-
-The header must not query Laravel during 13.7.
-
----
-
-# 96. No Product API Fetching
-
-Do not fetch featured products, categories, promotions, or recommendations from the root layout.
-
----
-
-# 97. Layout Primitive API Discipline
-
-Layout primitives should have narrow APIs.
-
-Good conceptual examples:
-
-```tsx
-<ContentContainer>
-<SiteSection>
-```
-
-Avoid:
-
-```tsx
-<UniversalLayout
-  productGrid
-  hero
-  category
-  inverse
-  marketing
-  checkout
-  dashboard
-  editorial
-  ...
-/>
-```
-
----
-
-# 98. Semantic Props
-
-Props should describe layout meaning rather than arbitrary CSS values.
-
-Prefer conceptually:
-
-```text
-width="wide"
-surface="canvas"
-```
-
-only if these variants are actually justified by the design contract.
-
-Avoid:
-
-```text
-paddingTop={37}
-maxWidth={1372}
-borderRadius={13}
-```
-
----
-
-# 99. Escape Hatch Discipline
-
-Do not expose unrestricted styling props merely to make primitives flexible.
-
-The point of the layout system is to prevent future page-level drift.
-
-Follow the component-convention escape-hatch policy.
-
----
-
-# 100. Composition Over Configuration
-
-Prefer small composable primitives rather than one giant configurable layout engine.
-
-For example:
-
-```text
-SiteShell
-ContentContainer
-SiteSection
-```
-
-is preferable to a 50-prop page builder.
-
----
-
-# 101. Reference Catalog
-
-Update the existing design-system/reference catalog only if needed to demonstrate layout primitives or shell states.
-
-Do not build a second Storybook-like environment.
-
-Any fixture must remain:
-
-```text
-token-driven
-non-production
-clearly demonstrative
-```
-
----
-
-# 102. Layout Reference Fixtures
-
-If useful, demonstrate:
-
-```text
-desktop shell geometry
-mobile shell geometry
-contained vs full-bleed sections
-footer grouping
-focus state
-mobile drawer state
-```
-
-Do not turn the reference fixture into the homepage.
-
----
-
-# 103. No Fake Product Grid
-
-A few neutral blocks may be used to demonstrate layout geometry.
-
-Do not create realistic product cards or catalogue content in 13.7.
-
-Commerce component/page ownership remains later.
-
----
-
-# 104. Existing Root Placeholder
-
-Do not convert:
-
-```text
-app/page.tsx
-```
-
-into the final homepage.
-
-It may be minimally adjusted only if necessary to validate shell composition.
-
-The final homepage remains Phase 14.1.
-
----
-
-# 105. Layout Integration
-
-The site shell should integrate at the appropriate App Router layout level.
-
-Do not create placeholder route files merely to test it.
-
-The current `/` placeholder should naturally render within the shell.
-
----
-
-# 106. Route Groups
-
-Phase 13.6 allowed a future route group only for a genuine layout boundary.
-
-Evaluate whether one is actually necessary now.
-
-If the entire current website uses the same public shell, the root layout may be sufficient.
-
-Do not introduce:
-
-```text
-(marketing)
-(store)
-(catalog)
-```
-
-solely because they look architecturally sophisticated.
-
----
-
-# 107. Future Account Layout
-
-Do not implement an account-specific layout now.
-
-The layout system may be composable enough for one later, but `/account` is not implemented.
-
----
-
-# 108. Future Auth Layout
-
-Do not create:
-
-```text
-(auth)/layout.tsx
-```
-
-during this phase merely because sign-in/sign-up are reserved.
-
----
-
-# 109. Future Product Layout
-
-Do not create:
-
-```text
-products/layout.tsx
-```
-
-unless there is an actual shared layout requirement once Group N starts.
-
----
-
-# 110. Header Navigation Content Authority
-
-Do not create a permanent hard-coded taxonomy copy inside a layout component without documenting ownership.
-
-If temporary fixture navigation is needed for layout testing, isolate it clearly as fixture/demo data.
-
-The future production category navigation must derive from authoritative catalog data or an explicitly approved navigation configuration.
-
----
-
-# 111. Navigation Configuration
-
-If a small static configuration is genuinely needed for non-category shell links, keep it typed and intentional.
-
-Do not build a CMS/navigation framework.
-
----
-
-# 112. Link Integrity
-
-No production shell element should render:
-
-```text
-href="#"
-```
-
-as a fake destination.
-
-No broken placeholder navigation.
-
-If a destination is not implemented:
-
-```text
-omit the active link
-or render non-interactive structural content
-```
-
-according to context.
-
----
-
-# 113. External Links
-
-External destinations should use ordinary anchor semantics.
-
-Use:
-
-```text
-target="_blank"
-```
-
-only when there is a concrete UX reason.
-
-Do not automatically force external links into new tabs.
-
----
-
-# 114. Current Route Highlighting
-
-Do not introduce complex active-route infrastructure yet.
-
-If category navigation does not exist as real routes yet, active state can wait.
-
-When implemented later, active state must not rely on color alone.
-
----
-
-# 115. Footer Copyright
-
-If copyright text is included, avoid hard-coding a year that will become stale if a simple safe strategy exists.
-
-Do not require a Client Component merely to compute the year.
-
-Server rendering can handle it.
-
----
-
-# 116. Performance
-
-The shell appears on essentially every page.
-
-Keep it lean.
-
-Avoid:
-
-```text
-large client bundles
-animation libraries
-unnecessary context providers
-large navigation JSON in client code
-heavy icon imports
-duplicate font loading
-```
-
----
-
-# 117. MUI Icon Imports
-
-Import only icons actually used.
-
-Do not import the entire icon namespace.
-
----
-
-# 118. Logo/Image Handling
-
-If using Next.js Image for the logo, follow the installed Next.js image API.
-
-Do not introduce image optimization policy for product photography; Phase 14.11 owns broader image/performance work.
-
----
-
-# 119. CLS
-
-The header/logo should have stable geometry to avoid obvious layout shift.
-
-Provide known dimensions/aspect handling where appropriate.
-
----
-
-# 120. Hydration
-
-Interactive navigation must not produce avoidable server/client markup differences.
-
-No browser-only condition should alter the initial shell structure unpredictably.
-
----
-
-# 121. Mobile Detection
-
-Do NOT use:
-
-```text
-window.innerWidth
-```
-
-during render to decide between desktop/mobile shells.
-
-Use responsive CSS/MUI breakpoint behavior.
-
-If behavior genuinely requires client media queries, isolate them carefully and avoid hydration mismatch.
-
----
-
-# 122. Duplicate Navigation
-
-If both desktop and mobile structures exist in the DOM for CSS breakpoint switching, ensure:
-
-```text
-hidden content is truly unavailable appropriately
-focus does not enter invisible navigation
-accessibility tree does not become confusing
-```
-
-Prefer clean responsive composition.
-
----
-
-# 123. SEO Structural Semantics
-
-Although metadata is Group N, the shell should use semantic HTML that supports future crawlability.
-
-Do not make core navigation dependent on JavaScript-only click handlers.
-
----
-
-# 124. No Structured Data
-
-Do not add:
-
-```text
-Organization JSON-LD
-WebSite JSON-LD
-Breadcrumb JSON-LD
-```
-
-during 13.7.
-
-Phase 14.8 owns structured data.
-
----
-
-# 125. No Sitemap/Robots
-
-Do not add:
-
-```text
-sitemap.ts
-robots.ts
-```
-
-during this phase.
-
----
-
-# 126. No Final Internal-Linking Strategy
-
-Header/footer navigation naturally creates structural links.
-
-But Phase 14.10 owns broader SEO/internal-linking strategy.
-
-Do not attempt to solve it here.
-
----
-
-# 127. Design Review
-
-Review the implemented shell against these questions:
-
-```text
-Does it feel like a furniture website?
-
-Does photography have room to dominate later?
-
-Is the header immediately understandable?
-
-Can users discover categories easily?
-
-Is search prominent without dominating?
-
-Is MADE_TO_ORDER structurally first-class?
-
-Does the shell avoid inactive transactional commerce?
-
-Does desktop feel spacious?
-
-Does mobile feel intentionally composed rather than compressed?
-
-Does the footer provide useful orientation without generic filler?
-
-Does it look like SL Furnitures rather than Urban Ladder?
-
-Does it avoid generic AI storefront patterns?
-```
-
-All should be satisfactorily answered.
-
----
-
-# 128. Anti-AI-Slop Audit
-
-Explicitly audit against:
-
-```text
-excessive rounded cards
-random pill controls
-decorative gradients
-glassmorphism
-blur
-floating panels
-oversized shadows
-decorative blobs
-random icons beside headings
-excessive brown
-badge clutter
-centered-everything layouts
-fake statistics
-generic "premium quality" filler
-sale countdowns
-unapproved promotional strips
-```
-
-None should appear merely to make the shell look "designed."
-
----
-
-# 129. Urban Ladder Structural Audit
-
-Report which structural ideas were adopted.
-
-For example:
-
-```text
-furniture-oriented category navigation
-prominent discovery/search
-multi-level header hierarchy
-large catalogue-oriented navigation capability
-structured footer
-```
-
-Then explicitly report what was NOT copied:
-
-```text
-visual styling
-brand identity
-promotional density
-sale mechanics
-exact menu content
-exact dimensions
-exact typography
-exact component appearance
-```
-
----
-
-# 130. Screenshot / Visual Verification
-
-Because this phase is visual, run the application and inspect at least representative viewport classes.
-
-At minimum:
-
-```text
-desktop
-tablet/narrow desktop
-mobile
-```
-
-Use the project's available browser/runtime workflow.
-
-Do not declare the layout visually successful from TypeScript/build alone.
-
-Check:
-
-```text
-header proportions
-navigation wrapping
-logo distortion
-horizontal overflow
-main width
-footer composition
-focus visibility
-mobile navigation
-drawer overflow
-```
-
----
-
-# 131. Narrow Width Stress Test
-
-Test a narrow mobile viewport.
-
-Ensure:
-
-```text
-no horizontal page scroll
-no clipped logo
-no overlapping controls
-no inaccessible menu trigger
-no off-screen close button
-```
-
----
-
-# 132. Zoom Stress Test
-
-Test meaningful browser zoom/text scaling.
-
-Ensure the header does not collapse or clip critical navigation.
-
----
-
-# 133. Keyboard Smoke Test
-
-Manually verify:
-
-```text
-Tab
-Shift+Tab
-Enter
-Space where applicable
-Escape for overlays
-```
-
-through shell navigation.
-
-Verify skip-to-main.
-
----
-
-# 134. Reduced-Motion Smoke Test
-
-Verify implemented navigation transitions remain usable with reduced motion enabled.
-
----
-
-# 135. Automated Tests
-
-Use the existing frontend test infrastructure.
-
-Add focused tests where appropriate for:
-
-```text
-site-shell landmarks
-main landmark
-skip-link target
-logo/home link
-navigation accessible names
-no forbidden cart/checkout links
-mobile navigation accessibility
-drawer semantics if implemented
-layout primitive contract
-```
-
-Do not install another test runner.
-
----
-
-# 136. Request-First Regression
-
-Add or run a regression check ensuring the production shell does NOT expose:
+Error-state work must not introduce links to:
 
 ```text
 /cart
 /checkout
 /payment
 /order-confirmation
+/account/orders
 ```
 
-through active navigation.
+The Phase 13.7 shell deliberately contains none of these.
 
 ---
 
-# 137. Routing Regression
+# 98. Routing Regression
 
-Ensure any links introduced conform to:
+All recovery navigation must comply with:
 
 ```text
 frontend/web/ROUTING.md
 ```
 
-Do not introduce undocumented website routes.
+No new route taxonomy.
 
 ---
 
-# 138. API Client Regression
+# 99. No Search Implementation
 
-Phase 13.5 should remain untouched.
+Do not make 404/error recovery include a functioning search form.
 
-Run its existing tests where practical.
+Search remains Phase 14.5.
+
+A link to `/search` should only be used if the current routing/shell policy considers the reserved route safe to expose; otherwise prefer `/`.
+
+---
+
+# 100. No Homepage Work
+
+The existing `/` remains the foundation placeholder.
+
+Do not redesign it to support error-state work.
+
+Phase 13.7 explicitly left the homepage unimplemented.
+
+---
+
+# 101. No Error Analytics Dependency
+
+Do not install:
+
+```text
+Sentry
+Bugsnag
+Datadog
+LogRocket
+```
+
+during this phase.
+
+Observability can be added under an explicit future operational requirement.
+
+---
+
+# 102. No Toast Library
+
+Do not install a toast/snackbar library.
+
+MUI already provides primitives if later features need transient feedback.
+
+Global route errors should not be reduced to transient toast messages.
+
+---
+
+# 103. No State Library
+
+Do not add:
+
+```text
+Redux
+Zustand
+Jotai
+```
+
+for error/loading state.
+
+App Router boundaries and local state are sufficient.
+
+---
+
+# 104. No Retry Library
+
+Do not add:
+
+```text
+React Query
+SWR
+axios-retry
+```
+
+solely for retry handling.
+
+The project intentionally uses native fetch through the Phase 13.5 client.
+
+---
+
+# 105. Existing Dependencies Only
 
 Expected:
 
 ```text
-API client changes:
-NONE
+New dependencies: NONE
 ```
 
 ---
 
-# 139. Theme Regression
+# 106. Server/Client Boundary
 
-Run the existing theme contract tests.
+Expected:
 
-The shell must consume the theme rather than changing it casually.
+```text
+loading.tsx
+→ Server Component where possible
+
+not-found.tsx
+→ Server Component where possible
+
+error.tsx
+→ Client Component only because framework requires reset/error boundary behavior
+```
+
+Do not expand `'use client'` farther than necessary.
 
 ---
 
-# 140. Design-System Regression
+# 107. Error Prop Typing
+
+Use the exact error prop type appropriate for the installed Next.js version.
+
+Do not blindly copy:
+
+```ts
+error: Error & { digest?: string }
+```
+
+without verifying compatibility.
+
+---
+
+# 108. `reset()` Typing
+
+Use the framework-supported reset signature.
+
+No `any`.
+
+---
+
+# 109. No Browser-Only Error Detection
+
+Do not depend on:
+
+```text
+window
+navigator
+localStorage
+```
+
+for generic route failure classification.
+
+---
+
+# 110. Offline Detection
+
+Do not implement an offline-mode system during 13.8.
+
+Network failure may use generic unavailable/error treatment.
+
+Offline-specific UX can be added later if requirements justify it.
+
+---
+
+# 111. Error Boundary Styling Dependency
+
+Because `error.tsx` is client-side, ensure styling does not require creating another theme provider.
+
+It should consume the existing provider/theme hierarchy when that hierarchy remains active.
+
+---
+
+# 112. Global Error Fallback Styling
+
+If a `global-error.tsx` is added and normal providers are unavailable, keep its CSS minimal and resilient.
+
+Do not duplicate the full MUI theme inside it.
+
+---
+
+# 113. Avoid Hydration Mismatch
+
+Do not use unstable render-time data in failure states.
+
+Avoid:
+
+```text
+random IDs
+current timestamps displayed differently server/client
+window-dependent copy
+```
+
+---
+
+# 114. Error Digest
+
+Do not render `error.digest` publicly by default.
+
+It may be useful for logging/diagnostics later.
+
+---
+
+# 115. Development vs Production
+
+Do not intentionally expose more exception detail in custom user UI merely because:
+
+```text
+NODE_ENV=development
+```
+
+Next.js already has development tooling.
+
+The production-facing component should remain safe.
+
+---
+
+# 116. Styling Ownership
+
+Prefer reusable state presentation styles/components rather than duplicating visual CSS across:
+
+```text
+error.tsx
+not-found.tsx
+loading.tsx
+```
+
+But loading is semantically different enough that it does not need to be forced into the same component.
+
+---
+
+# 117. Generic Page State Primitive
+
+If introduced, keep its API narrow.
+
+Conceptually:
+
+```tsx
+<PageMessage
+  eyebrow="404"
+  title="Page not found"
+  description="..."
+  actions={...}
+/>
+```
+
+But avoid raw React-node configuration if it produces an ungoverned mini page-builder.
+
+Use the simplest implementation consistent with existing component conventions.
+
+---
+
+# 118. Error State and SiteSection
+
+Reuse Phase 13.7 primitives where appropriate.
+
+Do not duplicate:
+
+```text
+max width
+horizontal gutters
+section spacing
+```
+
+Phase 13.7 already established token-backed `ContentContainer` and `SiteSection`.
+
+---
+
+# 119. State Height
+
+Do not force every error state to fill the viewport.
+
+The shell/footer should remain naturally composed.
+
+A reasonable minimum vertical breathing space may be token-driven, but avoid header-height calculations.
+
+---
+
+# 120. Button Hierarchy
+
+Retry should normally be the primary action for recoverable unexpected errors.
+
+Return-home can be secondary.
+
+Not-found usually makes navigation/home the primary action because retrying the same nonexistent URL is meaningless.
+
+---
+
+# 121. Link Styling
+
+Use the established navigation/link conventions from Phase 12.6.
+
+Do not introduce a new error-page link style.
+
+---
+
+# 122. Loading Indicator Color
+
+Use semantic action/text tokens.
+
+Do not introduce a special brand-brown spinner token.
+
+---
+
+# 123. Error Color Semantics
+
+Reserve error color for genuinely error-related accents.
+
+Not-found is absence/navigation, not destructive failure.
+
+---
+
+# 124. 404 Numeral
+
+If displaying `404`, treat it as secondary context rather than the sole message.
+
+It should not overwhelm the furniture site's visual hierarchy.
+
+---
+
+# 125. Error Boundary Reset Test
+
+Ensure the retry button actually invokes the framework `reset` function once per activation.
+
+No duplicate handler.
+
+No navigation side effect.
+
+---
+
+# 126. Error Boundary Error Object
+
+Do not mutate the provided error object.
+
+---
+
+# 127. Logging Side Effects
+
+If the boundary currently logs to console in development, do not introduce uncontrolled production `console.error` behavior merely for Phase 13.8.
+
+Follow existing repository logging policy.
+
+---
+
+# 128. API Error Headers
+
+If the Phase 13.5 client exposes response headers, preserve them.
+
+If not, do not redesign transport unless future 429 handling is impossible without doing so.
+
+Record any limitation precisely.
+
+---
+
+# 129. Future Rate-Limit UI
+
+Document that future features should use:
+
+```text
+Retry-After
+```
+
+when provided.
+
+Do not implement countdown timers now.
+
+---
+
+# 130. Future Validation UI
+
+Document that backend field validation errors must eventually map by contract field names.
+
+Do not create a generic parser that guesses field names.
+
+---
+
+# 131. Future Auth UI
+
+Document that auth-required outcomes belong to Clerk/account integration.
+
+Do not add sign-in redirect behavior now.
+
+---
+
+# 132. Future Request/Enquiry Mutation Errors
+
+Furniture Request and General Enquiry are separate domains.
+
+Their future submission errors must remain separate.
+
+Do not build one generic "contact form error" workflow.
+
+---
+
+# 133. Future Payment Errors
+
+Payments remain deferred.
+
+Do not introduce payment failure UI.
+
+---
+
+# 134. Error Boundary Naming
+
+Use conventional Next.js filenames where framework-owned:
+
+```text
+error.tsx
+loading.tsx
+not-found.tsx
+global-error.tsx
+```
+
+Do not hide framework boundaries behind custom filenames.
+
+---
+
+# 135. Generic Components Naming
+
+If generic supporting components are introduced, use descriptive semantic names.
+
+Avoid:
+
+```text
+ErrorThing
+FallbackBox
+StateStuff
+```
+
+---
+
+# 136. No Error Route
+
+Do not create:
+
+```text
+/error
+/404
+/not-found
+```
+
+as navigable website routes.
+
+Use framework boundaries.
+
+---
+
+# 137. No Loading Route
+
+Do not create:
+
+```text
+/loading
+```
+
+---
+
+# 138. No Query-Based Error Simulator
+
+Do not ship:
+
+```text
+?error=true
+?throw=1
+```
+
+production behavior for testing.
+
+Use tests/harnesses.
+
+---
+
+# 139. Visual Verification
+
+Run the application and visually inspect at least:
+
+```text
+loading state
+not-found state
+unexpected-error state
+```
+
+at representative:
+
+```text
+desktop
+mobile
+```
+
+If error state requires a test harness, ensure it is not shipped as a public production route.
+
+---
+
+# 140. Not-Found Real Runtime Check
+
+Use a genuinely nonexistent URL such as a random unreserved path during local verification.
+
+Confirm the expected not-found UI is rendered under the installed Next.js behavior.
+
+Do not add a route just for this test.
+
+---
+
+# 141. Error Runtime Check
+
+Use test infrastructure or temporary local-only instrumentation that is removed before completion.
+
+Confirm the actual `error.tsx` boundary behavior, not merely static component rendering.
+
+---
+
+# 142. Loading Runtime Check
+
+Verify loading behavior without committing artificial delays.
+
+If the current placeholder route is too fast to observe naturally, rely on focused tests rather than altering production timing.
+
+---
+
+# 143. Mobile Visual Check
+
+At narrow width verify:
+
+```text
+no overflow
+heading wraps
+actions remain usable
+touch targets remain adequate
+404 does not clip
+```
+
+---
+
+# 144. Shell Visual Check
+
+Ensure:
+
+```text
+header
+main
+footer
+```
+
+still compose correctly around normal not-found/loading states.
+
+---
+
+# 145. Focus Visual Check
+
+Keyboard through recovery actions.
+
+Visible focus must use the established focus treatment.
+
+---
+
+# 146. Contrast Check
+
+Validate the chosen state surfaces/text/actions using existing accessibility tooling.
+
+---
+
+# 147. Automated Contract Tests
+
+Add focused tests or extend existing contract tests for:
+
+```text
+framework boundary files
+server/client boundary expectations
+safe copy
+retry behavior
+home link
+no forbidden commerce links
+no raw errors
+no unauthorized icons
+no arbitrary values
+```
+
+Use existing infrastructure.
+
+---
+
+# 148. API Client Regression
+
+Run the Phase 13.5 API client tests.
+
+Expected:
+
+```text
+PASS
+```
+
+No API client regressions.
+
+---
+
+# 149. Layout Regression
+
+Run the Phase 13.7 layout contract tests.
+
+The execution record currently reports those tests passing.
+
+Expected after 13.8:
+
+```text
+PASS
+```
+
+---
+
+# 150. Theme Regression
+
+Run the theme contract.
+
+Expected:
+
+```text
+PASS
+```
+
+---
+
+# 151. Design-System Validation
 
 Run existing:
 
 ```text
 token/reference validation
 component convention validation
-accessibility checks
+accessibility validation
 icon-policy audit
 ```
 
@@ -2464,458 +2295,354 @@ where available.
 
 ---
 
-# 141. TypeScript
+# 152. TypeScript
 
-Run the actual repository TypeScript/typecheck command.
-
-Must pass.
-
----
-
-# 142. ESLint
-
-Run the actual repository lint command.
+Run the actual repository typecheck.
 
 Must pass.
 
 ---
 
-# 143. Production Build
+# 153. ESLint
 
-Run:
+Run the actual lint command.
+
+Must pass.
+
+---
+
+# 154. Production Build
+
+Run the actual production build command from `package.json`.
+
+Must pass.
+
+---
+
+# 155. `git diff --check`
+
+Must pass.
+
+---
+
+# 156. Likely File Structure
+
+Inspect existing conventions first.
+
+Possible files:
 
 ```text
-the actual production build command from package.json
+frontend/web/app/
+├── loading.tsx
+├── error.tsx
+└── not-found.tsx
 ```
 
-Must pass.
+Potential supporting components:
 
-Do not invent a command name.
+```text
+frontend/web/components/states/
+├── page-message.tsx
+└── route-loading.tsx
+```
+
+Do not mechanically create these exact files.
+
+Only introduce abstractions justified by implementation.
+
+`global-error.tsx` is optional and requires explicit technical justification.
 
 ---
 
-# 144. `git diff --check`
-
-Must pass.
-
----
-
-# 145. Dependencies
+# 157. Do Not Modify Group N Routes
 
 Expected:
 
 ```text
-NONE
+app/products/*       NONE
+app/categories/*     NONE
+app/search/*         NONE
 ```
 
-MUI and MUI Icons already exist.
+unless such files already existed before this phase.
 
-Do not add:
-
-```text
-navigation library
-animation library
-CSS framework
-icon library
-layout library
-carousel library
-```
+Do not create them.
 
 ---
 
-# 146. Likely Files
+# 158. Documentation
 
-Inspect existing organization first.
+Update durable guidance where needed.
 
-Potential additions may resemble:
-
-```text
-frontend/web/components/layout/
-├── site-shell.tsx
-├── site-header.tsx
-├── site-footer.tsx
-├── content-container.tsx
-├── site-section.tsx
-└── mobile-navigation.tsx
-```
-
-Do NOT mechanically create all of these.
-
-Only create components justified by actual responsibilities.
-
-Possible modifications:
+Likely:
 
 ```text
-frontend/web/app/layout.tsx
 frontend/AGENTS.md
 phases/group-M-phases.md
-docs/decisions.md
 ```
 
-Do not create Group N pages.
+Do not duplicate this entire prompt.
+
+Durable rules should include the failure taxonomy and ownership boundaries.
 
 ---
 
-# 147. ADR
+# 159. ADR
 
-Add an ADR only if Phase 13.7 establishes a material architectural decision not already captured.
+Add an ADR only if Phase 13.8 establishes a material architectural decision requiring historical explanation.
 
-A reasonable candidate could document:
-
-```text
-WEB-002 — Public Website Shell and Layout Composition
-```
-
-if needed.
-
-Potential durable decisions:
+A possible decision:
 
 ```text
-furniture-commerce structural IA
-SL Furnitures visual authority
-server-first shell
-contained + full-bleed composition
-request-first header
-category navigation strategy
-minimal client interaction boundary
+WEB-003 — App Router Failure-State Architecture
 ```
 
-Do not add an ADR solely because previous phases had one.
+could capture:
+
+```text
+route boundary ownership
+404 translation
+expected vs unexpected failures
+API client remains framework-agnostic
+retry semantics
+```
+
+Only add it if useful.
 
 ---
 
-# 148. AGENTS Guidance
-
-Update `frontend/AGENTS.md` only for durable rules.
-
-Potential durable rules:
-
-```text
-use canonical site shell
-do not recreate page containers
-do not bypass layout tokens
-no cart/checkout shell controls while request-first
-no fake links
-no unauthorized icon libraries
-Server Components by default
-interactive nav boundaries stay small
-Urban Ladder is structural reference only
-```
-
-Do not duplicate this entire phase prompt.
-
----
-
-# 149. Phase Record
-
-Update:
-
-```text
-phases/group-M-phases.md
-```
-
-with:
-
-```text
-Phase 13.7
-status
-shell architecture
-layout primitives
-header strategy
-navigation strategy
-mobile strategy
-footer strategy
-accessibility implementation
-visual verification
-scope boundaries
-validation
-```
-
----
-
-# 150. Completion Report
+# 160. Completion Report
 
 Return:
 
 ```text
-Phase 13.7 status:
+Phase 13.8 status:
 PASS / BLOCKED
 
 
-SITE SHELL
+BOUNDARIES
 
-Canonical shell:
-<path>
+loading.tsx:
+<path / NOT ADDED + reason>
 
-Root layout:
-<path>
+error.tsx:
+<path / NOT ADDED + reason>
 
-Root layout remains Server Component:
+not-found.tsx:
+<path / NOT ADDED + reason>
+
+global-error.tsx:
+<path / NOT ADDED + technical justification>
+
+Installed Next.js version verified:
 YES / NO
 
-Main landmark:
-PASS / FAIL
 
-Skip-to-main:
-PASS / FAIL
+FAILURE TAXONOMY
 
-Duplicate providers:
-NONE / <explain>
+Loading:
+<rule>
+
+Not found:
+<rule>
+
+Expected API/domain failure:
+<rule>
+
+Unexpected error:
+<rule>
+
+Empty result treated as 404:
+NO / FAIL
+
+MADE_TO_ORDER treated as error:
+NO / FAIL
 
 
-HEADER
+LOADING
 
-Header:
-<path>
-
-Official logo used:
-YES / NO / NOT RENDERED <reason>
-
-Logo links to /:
+Shell preserved while page pending:
 YES / NO
 
-Primary header structure:
+Global loading treatment:
 <summary>
 
-Search affordance:
-<summary>
-
-Search functionality implemented:
+Product skeleton implemented:
 NO / FAIL
 
-Account affordance:
-<summary>
-
-Clerk/auth behavior implemented:
+Category skeleton implemented:
 NO / FAIL
 
-Cart control:
-NONE / FAIL
-
-Wishlist control:
-NONE / FAIL
-
-Unauthorized icon libraries:
-NONE / FAIL
-
-
-CATEGORY NAVIGATION
-
-Desktop navigation:
-<summary>
-
-Taxonomy authority:
-<source/strategy>
-
-Hard-coded duplicate production taxonomy:
-NO / <explain>
-
-Mega-menu capability:
-<implemented/deferred + reason>
-
-Keyboard accessible:
-PASS / NOT IMPLEMENTED
-
-Hover-only behavior:
+Search skeleton implemented:
 NO / FAIL
 
+Artificial delay:
+NONE / FAIL
 
-MOBILE
-
-Mobile header:
-<summary>
-
-Mobile navigation:
-<summary>
-
-Drawer/sheet:
-<implementation / not required>
-
-Keyboard support:
+Reduced motion:
 PASS / FAIL
 
-Escape:
-PASS / NOT APPLICABLE
-
-Focus restoration:
-PASS / NOT APPLICABLE
-
-Narrow viewport:
+Accessible status:
 PASS / FAIL
 
-Horizontal overflow:
-NONE / FAIL
 
+ERROR
 
-LAYOUT PRIMITIVES
+Unexpected error presentation:
+<summary>
 
-Content container:
-<path>
+Raw exception exposed:
+NO / FAIL
 
-Full-bleed composition supported:
+Stack exposed:
+NO / FAIL
+
+Digest exposed:
+NO / FAIL
+
+Retry:
+<implementation>
+
+Retry uses framework recovery:
 YES / NO
 
-Section primitive:
-<path / NONE>
+window.location.reload:
+NO / <reason>
 
-Generic grid foundation:
-<summary / NONE>
+Home navigation:
+<summary>
 
-Page-specific layout encoded:
+Error boundary client scope:
+<summary>
+
+
+NOT FOUND
+
+Canonical 404 presentation:
+<summary>
+
+Uses framework not-found mechanism:
+YES / NO
+
+Safe home navigation:
+YES / NO
+
+Fake product recommendations:
+NONE / FAIL
+
+Missing resources redirected home:
 NO / FAIL
 
-Arbitrary spacing values:
-NONE / <explain>
 
-Canonical breakpoints:
-PASS / FAIL
+API ERROR MAPPING
 
+API client changed:
+NO / <reason>
 
-FOOTER
+404:
+notFound() at page/domain integration
 
-Footer:
-<path>
+401:
+<documented ownership>
 
-Structure:
-<summary>
+403:
+<documented ownership>
 
-Invented contact details:
+422:
+<documented ownership>
+
+429:
+<documented ownership>
+
+5xx:
+<documented ownership>
+
+Network:
+<documented ownership>
+
+Timeout:
+<documented ownership>
+
+Caller abort:
+<documented ownership>
+
+Status detected through typed/status-bearing data:
+YES / NO
+
+Magic message matching:
 NONE / FAIL
 
-Broken placeholder links:
-NONE / FAIL
 
-Newsletter functionality invented:
-NO / FAIL
+SECURITY / PRIVACY
 
-Unapproved social links:
-NONE / FAIL
+Raw Laravel response rendered:
+NO
 
-MADE_TO_ORDER represented appropriately:
-YES / NO / NOT CURRENTLY LINKED
+Internal IDs rendered:
+NO
 
+Environment data rendered:
+NO
 
-DESIGN SYSTEM
+Headers rendered:
+NO
 
-Tokens/theme consumed:
-PASS / FAIL
+Stack/path rendered:
+NO
 
-New visual token authority:
-NONE / FAIL
-
-Young Serif usage:
-<summary>
-
-UI sans usage:
-<summary>
-
-Charcoal action hierarchy:
-PASS / FAIL
-
-Brown restrained:
-PASS / FAIL
-
-Decorative card elevation:
-NONE / FAIL
-
-Glassmorphism:
-NONE / FAIL
-
-Random gradients:
-NONE / FAIL
-
-Excessive pills/radius:
-NONE / FAIL
+Secrets rendered:
+NO
 
 
 ACCESSIBILITY
 
-Semantic landmarks:
+Meaningful state headings:
 PASS / FAIL
 
-Navigation labels:
+Retry semantics:
 PASS / FAIL
 
-Heading ownership:
+Link/button semantics:
 PASS / FAIL
 
-Keyboard navigation:
+Keyboard:
 PASS / FAIL
 
 Visible focus:
 PASS / FAIL
 
-Skip link:
+Contrast:
 PASS / FAIL
 
-Touch targets:
-PASS / FAIL
-
-Zoom/reflow:
+Mobile reflow:
 PASS / FAIL
 
 Reduced motion:
 PASS / FAIL
 
+Live regions restrained:
+PASS / FAIL
+
 
 SERVER / CLIENT
 
-Server-first architecture:
-PASS / FAIL
-
-Entire root layout client-side:
-NO / FAIL
-
-Entire shell client-side:
-NO / <reason>
-
-Interactive client boundaries:
-<list>
-
-Global navigation state:
-NONE / FAIL
-
-Browser-width render branching:
-NONE / FAIL
-
-Hydration issues:
-NONE / FAIL
-
-
-STRUCTURAL REFERENCE
-
-Urban Ladder used as:
-STRUCTURAL / IA REFERENCE ONLY
-
-Structural ideas adopted:
-<list>
-
-Visual implementation copied:
-NONE / FAIL
-
-Promotional mechanics copied:
-NONE / FAIL
-
-Exact navigation/menu copied:
-NONE / FAIL
-
-
-REQUEST-FIRST
-
-Active cart link:
-NO
-
-Active checkout link:
-NO
-
-Active payment link:
-NO
-
-Active order-history link:
-NO
-
-Request-first policy preserved:
+Root layout remains Server Component:
 YES / NO
+
+Site shell remains server-first:
+YES / NO
+
+error.tsx client boundary isolated:
+YES / NO
+
+not-found server-capable:
+YES / NO
+
+loading server-capable:
+YES / NO
+
+New global client state:
+NONE / FAIL
 
 
 SCOPE
@@ -2923,13 +2650,10 @@ SCOPE
 Homepage implemented:
 NO
 
-Category page implemented:
+Product routes implemented:
 NO
 
-Product listing implemented:
-NO
-
-Product detail implemented:
+Category routes implemented:
 NO
 
 Search implemented:
@@ -2938,16 +2662,13 @@ NO
 Filters/sorting implemented:
 NO
 
-SEO metadata implemented:
-NO
-
-Structured data implemented:
-NO
-
-Sitemap/robots implemented:
-NO
-
 Clerk integrated:
+NO
+
+Form validation UI implemented:
+NO
+
+Payment failure UI implemented:
 NO
 
 Backend/API changed:
@@ -2960,39 +2681,39 @@ Dependencies added:
 NONE / <list>
 
 
-VISUAL VERIFICATION
+RUNTIME VERIFICATION
 
-Desktop:
+Real nonexistent URL:
 PASS / FAIL
 
-Tablet/narrow:
+Error boundary behavior:
 PASS / FAIL
 
-Mobile:
+Loading behavior:
 PASS / FAIL
 
-Zoom:
+Desktop visual:
 PASS / FAIL
 
-Keyboard:
+Mobile visual:
 PASS / FAIL
 
-Reduced motion:
+Keyboard/focus:
 PASS / FAIL
 
 
-AUTOMATED VALIDATION
+REGRESSION
 
-Layout tests:
+API client:
 PASS / FAIL
 
-Routing regression:
+Layout contract:
 PASS / FAIL
 
-Request-first regression:
+Routing contract:
 PASS / FAIL
 
-API client regression:
+Request-first:
 PASS / FAIL
 
 Theme contract:
@@ -3016,11 +2737,14 @@ PASS / FAIL
 
 DOCUMENTATION
 
+Failure-state guidance:
+<path>
+
 Group M execution record:
 PASS / FAIL
 
 frontend/AGENTS.md:
-<updated/unchanged>
+<updated / unchanged>
 
 ADR:
 <id / NONE>
@@ -3048,127 +2772,132 @@ Push:
 
 RESULT
 
-Phase 13.7:
+Phase 13.8:
 PASS / BLOCKED
 
-Phase 13.8:
+Phase 13.9:
 READY / BLOCKED
 ```
 
 ---
 
-# 151. STOP Condition
+# 161. STOP Condition
 
-Phase 13.7 may be declared PASS only when:
+Phase 13.8 may be declared PASS only when:
 
-- one canonical site-shell architecture exists;
-- root layout remains server-first;
-- existing MUI provider architecture is preserved;
-- semantic header/nav/main/footer landmarks are correct;
-- skip-to-main is implemented and functional;
-- the official brand identity is respected;
-- header structure is suitable for furniture discovery;
-- search has a clear structural position without prematurely implementing Phase 14.5;
-- category navigation has a coherent desktop strategy;
-- mobile navigation has a coherent mobile strategy;
-- no fake/broken navigation links exist;
-- no inactive cart/checkout/payment controls are exposed;
-- MADE_TO_ORDER remains first-class;
-- layout primitives support contained and full-bleed composition;
-- pages will not need to reinvent site gutters/max-width;
-- no Group N page composition has been implemented;
-- footer structure is useful but does not invent business information;
-- all layout styling consumes approved tokens/theme values;
-- no duplicate token/theme/layout authority exists;
-- no unauthorized icon library is used;
-- client boundaries remain narrow;
-- no global navigation state is introduced unnecessarily;
-- accessibility landmarks, keyboard navigation, focus, zoom/reflow, touch targets, and reduced motion pass;
-- representative desktop/tablet/mobile visual inspection passes;
-- no horizontal overflow exists at supported widths;
-- request-first policy remains intact;
-- Urban Ladder influence remains structural only;
-- no dependencies were added;
-- API client regression passes;
-- theme/design-system regressions pass;
+- loading, not-found, expected failure, and unexpected error are explicitly distinguished;
+- App Router boundary implementation matches the installed Next.js version;
+- a canonical not-found state exists;
+- a canonical unexpected-error boundary exists;
+- route-level loading behavior is intentionally defined;
+- normal loading preserves the website shell where appropriate;
+- global/root failure behavior is understood rather than guessed;
+- the root layout remains a Server Component;
+- the site shell remains server-first;
+- any required error Client Component is narrowly isolated;
+- no raw exception, Laravel body, stack, path, secret, environment data, or internal identifier is exposed;
+- retry uses appropriate framework recovery semantics;
+- retry does not establish unsafe mutation retry policy;
+- API client remains transport/framework agnostic;
+- API 404 can be intentionally translated to `notFound()` by future page/domain integration;
+- 401/403/422/429/5xx/network/timeout/abort are not incorrectly translated to 404;
+- empty result sets are not treated as not-found;
+- MADE_TO_ORDER is not treated as failure;
+- `Retry-After` ownership is documented for future rate-limit UI;
+- no artificial delays exist;
+- no product/category/search-specific skeletons were prematurely implemented;
+- no Group N routes/pages were created;
+- no Clerk/auth behavior was introduced;
+- no payment/error workflow was introduced;
+- state UI consumes existing layout/theme/design-system foundations;
+- mobile reflow passes;
+- keyboard/focus passes;
+- contrast passes;
+- reduced-motion behavior passes;
+- a real unknown URL renders the canonical not-found state;
+- actual error-boundary behavior is verified;
+- layout/API/routing/request-first/theme regressions pass;
 - TypeScript passes;
 - ESLint passes;
 - production build passes;
 - `git diff --check` passes;
+- no new dependencies were added;
 - Git operations follow `git-workflow-and-versioning`.
 
-Then report:
+If the API client cannot reliably distinguish status-bearing API failures from network/timeout/abort failures, report:
 
 ```text
-Phase 13.7 — PASS
-Phase 13.8 — READY
+Phase 13.8 — BLOCKED
+
+Reason:
+The Phase 13.5 transport contract does not expose enough structured
+failure information to implement safe routing/error classification.
+
+Observed behavior:
+<exact implementation>
+
+Required correction:
+<smallest transport-contract correction>
 ```
 
-Do not start Phase 13.8 automatically.
+Do not use error-message string matching as a workaround.
+
+Otherwise finish with:
+
+```text
+Phase 13.8 — PASS
+Phase 13.9 — READY
+```
+
+Do not start Phase 13.9 automatically.
 
 **Git operations are authorized only through the root `git-workflow-and-versioning` skill. Follow that skill exactly.**
 
 ---
 
-# Phase 13.7 Execution Record
+# Phase 13.8 Execution Record
 
-**Status:** PASS. Phase 13.8 is READY and was not started.
+**Status:** PASS. Phase 13.9 is READY and was not started.
 
-## Shell Architecture
+## Boundaries
 
-- Canonical shell: `frontend/web/components/layout/site-shell.tsx`; rendered by the root Server Component `app/layout.tsx` inside the existing `Providers`.
-- Shell owns the skip link, `<header>`, the single `<main id="main-content" tabIndex={-1}>`, and `<footer>`.
-- Provider boundary unchanged; no new providers, no global navigation state.
+- `app/loading.tsx` — added, Server Component; renders inside the site shell; generic shell-preserving pending state.
+- `app/not-found.tsx` — added, Server Component; generic public 404 rendered through the framework not-found mechanism.
+- `app/error.tsx` — added, Client Component; isolated unexpected-error boundary using the Next 16.3.8 `retry` prop.
+- `app/global-error.tsx` — NOT added: the root layout is minimal, Next.js already provides a built-in root-layout 500 fallback, and a custom global error would replace the document and lose the theme/providers without demonstrated need.
+- Installed Next.js 16.3.8 verified against `node_modules/next/dist/docs/` before implementation.
 
-## Layout Primitives
+## Failure Taxonomy
 
-- `content-container.tsx` owns site max-width (`--container-max`), centering, and responsive gutters.
-- `site-section.tsx` owns vertical section rhythm, optional contained/full-bleed width, and semantic `surface` variants.
-- `nav-link.tsx` composes `next/link` with token-backed anchor styling; no MUI `component={NextLink}` function prop crosses a Server/Client boundary.
+- Loading: pending route segment; generic restrained status; shell persists.
+- Not found: expected public absence; framework `notFound()`; generic copy; no product/category specifics.
+- Expected API/domain failure: owned by the feature (validation, auth, rate limit, empty results, MADE_TO_ORDER); never the error boundary.
+- Unexpected error: `app/error.tsx`; calm copy; framework `retry`; safe home route.
+- Empty results are not 404; MADE_TO_ORDER is not treated as failure.
 
-## Header Strategy
+## Implementation
 
-- Primary row: brand mark (official `brandlogo.png`, links `/`) + search entry point; mobile trigger on small screens.
-- Category row (desktop, `md+`): fixture-led category labels using canonical `/categories/[slug]` route identities, with a separated Made to Order label.
-- Search is a shell-level structural entry point for `/search`; no form, API call, autocomplete, or result behavior.
-- Reserved routes that are not yet implemented (`/search`, `/categories/[slug]`, `/contact`, `/furniture-requests`) render as non-interactive structural content; `/` is the only active internal navigation link. Availability is centralized in `site-navigation.ts`.
-- Utility/announcement region omitted: no approved delivery/service/promotional content. No cart, wishlist, or auth controls.
+- Shared `components/states/page-message.tsx` (`PageMessage`, `PageMessageLink`) reused by error/not-found; consumes `SiteSection` and design tokens.
+- Loading uses static neutral bars plus a concise `role="status"` "Loading…"; no animation, no fake page content, no artificial delay.
+- Error copy: "We couldn't load this page." + "Try again" (primary, framework retry) + "Return home" (secondary link).
+- Not-found copy: "404" eyebrow + "We couldn't find that page." + "Return home".
+- API client unchanged; typed `ApiError.status` / `ApiTransportError.kind` already distinguish 404 from 401/403/422/429/5xx/network/timeout/abort (Phase 13.5 tests confirm).
 
-## Navigation Strategy
+## Accessibility
 
-- Desktop nav labelled "Primary navigation"; footer groups labelled "Furniture" and "Services".
-- Category fixture mirrors the authoritative `CategorySeeder` top-level slugs; ownership documented in the fixture and deferred to Group N. Unimplemented destinations render as non-links via the shell availability registry.
-- Mega menu deferred (not required for shell geometry); no hover-only behavior exists.
+- Meaningful `h1` per state; button (retry) vs link (home) semantics preserved; skip link and shell landmarks intact; visible focus via the theme focus ring; approved token contrast; mobile reflow passes at 320/390; no motion beyond tokens.
 
-## Mobile Strategy
+## Runtime Verification
 
-- Header collapses to menu trigger + brand + search icon.
-- MUI `Drawer` (role dialog, `aria-modal`) with labelled close control, Escape dismissal, focus restoration to the trigger, and scrollable content.
-- Drawer content is unmounted while closed; desktop nav is `display:none` on small screens, so no hidden focus targets.
-
-## Footer Strategy
-
-- Editorial surface with brand, Furniture (category labels), and Services (Made to Order, Furniture Enquiries) groups plus server-rendered copyright year.
-- No invented contact details, social links, newsletter, legal pages, or generic commerce boilerplate.
-
-## Accessibility Implementation
-
-- Native skip link to `#main-content` (first tab stop, visible on focus, token focus ring).
-- Semantic header/nav/main/footer landmarks with labels; exactly one `main`; page heading hierarchy preserved.
-- 44px+ targets for menu/search/nav; visible focus retained; touch/zoom/reflow verified; reduced motion not bypassed (token motion only).
-
-## Visual Verification
-
-- Desktop (1440), tablet (960), and mobile (390) inspected via headless Chrome screenshots; corrected a narrow-width placeholder `h1` overflow.
-- CDP audit: `scrollWidth === innerWidth` at 320/360/390/640/960/1024/1440; mobile drawer open/Escape/focus-restore verified.
-
-## Scope Boundaries
-
-- No Group N pages; `/` remains the foundation placeholder. No SEO metadata, structured data, sitemap/robots, Clerk, API, backend, or Flutter changes.
+- `GET /definitely-not-a-real-page-xyz` → HTTP 404 with the canonical not-found UI.
+- Temporary dynamic `probe-error` route (removed before completion) → hydrated `error.tsx` UI verified; no raw exception exposed.
+- Temporary dynamic `probe-loading` route (removed before completion) → `loading.tsx` rendered with shell preserved at desktop and mobile.
+- Single header/main/footer on loading, not-found, and error states.
 
 ## Validation
 
 ```text
+States contract: PASS
 Layout contract: PASS
 Theme contract: PASS
 API client regression: PASS (17 tests)
@@ -3176,5 +2905,5 @@ TypeScript: PASS
 ESLint: PASS
 Production build: PASS
 git diff --check: PASS
-Dependencies added: NONE
+New dependencies: NONE
 ```

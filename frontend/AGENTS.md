@@ -131,3 +131,13 @@ After UI changes:
 - Keep the shell server-first. Introduce a client boundary only for genuine interaction (currently the mobile navigation drawer); do not move the whole header/footer client-side.
 - Category navigation is a fixture until Group N supplies authoritative catalog data; do not duplicate the Laravel taxonomy into frontend-only production navigation.
 - Established furniture retailers are structural/IA references only. SL Furnitures tokens, typography, components, and accessibility remain authoritative.
+
+## Failure States
+
+- Keep four failure classes distinct: route loading, not found, expected domain/API failure, and unexpected error. Never collapse them into one generic "Something went wrong".
+- Route-level unexpected errors belong to `app/error.tsx` (an isolated Client Component using the framework `retry()`). Expected outcomes (validation, authentication, authorization, empty results, rate limits, MADE_TO_ORDER) must not be routed through the error boundary.
+- `app/not-found.tsx` is the generic public 404. Use the framework `notFound()` for expected absence; never redirect missing resources home or show product/category-specific 404 copy.
+- `app/loading.tsx` is a generic, shell-preserving pending state. Do not encode product/category/search skeletons or artificial delays; feature skeletons belong to their owning Group N phases.
+- Retry re-renders the failed segment only. Never use `window.location.reload()`, and never auto-retry non-idempotent mutations (requests, enquiries, payments).
+- The API client stays framework-agnostic and only a 404 is translated to `notFound()` at page/domain integration. Never map 401/403/422/429/5xx/network/timeout/abort to 404, and never detect status by message string matching.
+- Never render raw exception messages, stacks, digests, Laravel bodies, filesystem paths, headers, environment data, or internal identifiers in failure UI.

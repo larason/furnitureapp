@@ -86,6 +86,16 @@
 
 ---
 
+### ADR/WEB-003 — App Router Failure-State Architecture
+
+**Decision:** Phase 13.8 defines four distinct failure classes for the public website: LOADING (`app/loading.tsx`, a Server Component that renders inside the site shell), NOT FOUND (`app/not-found.tsx` rendered through the framework `notFound()` mechanism, generic and server-capable), EXPECTED domain/API failure (owned by the feature, never the error boundary), and UNEXPECTED error (`app/error.tsx`, an isolated Client Component using the framework `retry()` recovery). `global-error.tsx` is deliberately not added: the root layout is minimal, Next.js already supplies a built-in 500 fallback for root-layout failure, and a custom global error would replace the whole document, lose the theme/providers, and duplicate document styling without a demonstrated need. The transport (`lib/api/client.ts`) remains framework-agnostic: it exposes typed `ApiError.status`, `ApiError.retryAfterSeconds`, and `ApiTransportError.kind`, and only a 404 is translated to `notFound()` at page/domain integration.
+
+**Consequences:** Group N pages own their skeletons, empty states, and validation/authentication/rate-limit presentation; the shell provides only generic pending, not-found, and unexpected-error states. Retry re-renders the failed segment and does not replay non-idempotent mutations. No dependency, API, backend, or Flutter change is introduced.
+
+**Status:** Accepted and implemented in Phase 13.8
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.
