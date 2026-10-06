@@ -72,7 +72,7 @@ export function SiteFooter() {
               <BrandMark />
             </Box>
             <Typography variant="body2" color="text.secondary">
-              Furniture that make you feel at home.
+              Furniture that makes you feel at home.
             </Typography>
           </Box>
           <FooterGroup title="Furniture" links={categoryLinks} />

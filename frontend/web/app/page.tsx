@@ -19,11 +19,11 @@ export default async function Home() {
   return (
     <>
       <SiteSection aria-label="Furniture for your home">
-        {preview && (
-          <Typography variant="body2" sx={{ mb: 4 }}>
-            Design preview — furniture, room images and prices are development fixtures, not a live catalog.
-          </Typography>
-        )}
+        <Typography variant="body2" sx={{ mb: 4 }}>
+          {preview
+            ? "Design preview — furniture, room images and prices are development fixtures, not a live catalog."
+            : "Catalog data is loaded from the API. Hero and editorial imagery are development visual fixtures."}
+        </Typography>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 2fr" }, alignItems: "center", gap: { xs: 6, md: 8 } }}>
           <Box sx={{ position: "relative", aspectRatio: "var(--media-product-hero)", gridColumn: { md: 2 }, gridRow: { md: 1 } }}>
             <Image src={HOMEPAGE_MEDIA.hero.url} alt={HOMEPAGE_MEDIA.hero.alt} fill sizes={HERO_IMAGE_SIZES} preload style={{ objectFit: "cover" }} />
