@@ -2,7 +2,7 @@
 @import "tailwindcss";
 @import "./tokens.css";
 
-@theme {
+@theme inline {
   --color-canvas: var(--surface-canvas);
   --color-paper: var(--surface-paper);
   --color-editorial: var(--surface-editorial);
