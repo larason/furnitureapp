@@ -66,6 +66,46 @@
 
 ---
 
+### ADR/WEB-001 — Native Fetch API Client Boundary
+
+**Decision:** The Next.js website uses one domain-neutral `apiRequest` boundary in `frontend/web/lib/api/client.ts`, implemented with native `fetch` and the frozen Laravel `/api/v1` contract. The server-only `API_BASE_URL` is an HTTPS origin without the version path; transport adds `/api/v1` once. Request callers choose cache policy. Domain endpoint clients and Clerk token acquisition remain outside the generic transport.
+
+**Consequences:** The transport preserves typed success envelopes, pagination metadata, structured Laravel errors, request IDs, and numeric-seconds `Retry-After`; uses bounded timeouts and caller cancellation; performs no automatic retries or logging; and stores no per-request auth state. Browser use requires an explicitly supplied public origin and omits Next-only cache options. No proxy/BFF, third-party HTTP client, runtime domain schema, or dependency was added.
+
+**Status:** Accepted and implemented in Phase 13.5
+
+---
+
+### ADR/WEB-002 — Public Website Shell and Layout Composition
+
+**Decision:** Phase 13.7 introduces one canonical public website shell at `frontend/web/components/layout/site-shell.tsx`, rendered by the root Server Component layout. The shell owns the single `<main id="main-content">` landmark, semantic header/footer landmarks, a native skip-to-main link, and reusable `ContentContainer`/`SiteSection` primitives that support contained and full-bleed composition. Shell styling consumes the Phase 12 `tokens.css`/MUI theme contract only. The request-first release exposes no cart, checkout, payment, wishlist, or account controls, and no fake `href="#"` navigation. Navigation destinations reserved in `web/ROUTING.md` but not yet implemented (for example `/search`, `/categories/[slug]`, `/contact`, `/furniture-requests`) render as non-interactive structural content rather than broken links; active links are limited to implemented routes, tracked in `frontend/web/components/layout/site-navigation.ts`. Category navigation is a non-production fixture that mirrors the authoritative `CategorySeeder` slugs and labels until Group N supplies catalog data; the only interactive client boundary is the mobile navigation drawer.
+
+**Consequences:** Future storefront pages compose inside this shell and must not recreate the main landmark, page gutters, or max-width. Group N still owns real homepage, category, product, search, and catalog-data work and is unaffected by this phase. Established furniture retailers (for example, Urban Ladder) inform structural information architecture only; SL Furnitures tokens, typography, components, photography philosophy, and accessibility remain authoritative. No dependency, API, backend, Flutter, or routing change is introduced.
+
+**Status:** Accepted and implemented in Phase 13.7
+
+---
+
+### ADR/WEB-003 — App Router Failure-State Architecture
+
+**Decision:** Phase 13.8 defines four distinct failure classes for the public website: LOADING (`app/loading.tsx`, a Server Component that renders inside the site shell), NOT FOUND (`app/not-found.tsx` rendered through the framework `notFound()` mechanism, generic and server-capable), EXPECTED domain/API failure (owned by the feature, never the error boundary), and UNEXPECTED error (`app/error.tsx`, an isolated Client Component using the framework `retry()` recovery). `global-error.tsx` is deliberately not added: the root layout is minimal, Next.js already supplies a built-in 500 fallback for root-layout failure, and a custom global error would replace the whole document, lose the theme/providers, and duplicate document styling without a demonstrated need. The transport (`lib/api/client.ts`) remains framework-agnostic: it exposes typed `ApiError.status`, `ApiError.retryAfterSeconds`, and `ApiTransportError.kind`, and only a 404 is translated to `notFound()` at page/domain integration.
+
+**Consequences:** Group N pages own their skeletons, empty states, and validation/authentication/rate-limit presentation; the shell provides only generic pending, not-found, and unexpected-error states. Retry re-renders the failed segment and does not replay non-idempotent mutations. No dependency, API, backend, or Flutter change is introduced.
+
+**Status:** Accepted and implemented in Phase 13.8
+
+---
+
+### ADR/WEB-004 — Responsive Web Foundation
+
+**Decision:** The public website has one responsive authority: `frontend/design-system/tokens.css`, synchronized to `design-tokens.json` and mapped directly to MUI in `frontend/web/theme/theme.ts`. `ContentContainer` owns the site maximum width and gutters; `SiteSection` owns contained versus full-bleed composition. Responsive presentation is CSS-first and server-first, with MUI breakpoint styling preferred over viewport JavaScript, device detection, or page-specific breakpoint systems. The viewport verification matrix is testing evidence, not a second breakpoint scale.
+
+**Consequences:** Future pages may change composition at canonical thresholds but cannot create independent container or gutter systems, global overflow masking, `100vw`/negative-margin full-bleed hacks, or render-time viewport branching. Product-grid, image, filter, search, and page-specific responsive behavior remain owned by their Group N phases. The existing interactive drawer remains the only shell client boundary.
+
+**Status:** Accepted and implemented in Phase 13.9
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.

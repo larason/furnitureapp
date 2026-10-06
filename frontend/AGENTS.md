@@ -69,6 +69,19 @@ Prefer:
 
 Do not introduce ad-hoc CSS when an existing token or component can express the same intent.
 
+## Laravel API Access
+
+- Route all website HTTP calls to Laravel through `web/lib/api/client.ts`; do not use raw page-level `fetch` or add an overlapping HTTP client.
+- Keep this transport domain-neutral. Domain/query functions and their cache policies belong in their owning phases.
+- Preserve the frozen API success/error envelopes and structured validation details. Do not put business rules, redirects, or authorization decisions in the transport.
+- Inject current Clerk bearer tokens per request only in a later approved auth layer; never persist or globally retain tokens.
+
+## Website Routes
+
+- Consult `web/ROUTING.md` before adding website routes. Keep App Router conventions there authoritative.
+- Product and category URLs use the slugs returned by Laravel; do not derive frontend-only slugs or use internal numeric database IDs.
+- Put shareable collection/search state in documented URL parameters using the Laravel contract vocabulary. Do not implement routes owned by later phases early.
+
 ## Icons
 
 Use only `@mui/icons-material` for web UI icons. Do not add `lucide-react`, `react-icons`, Heroicons, Font Awesome, custom SVG icon libraries, or emoji as UI icons.
@@ -107,3 +120,32 @@ After UI changes:
 3. run tests
 4. run visual regression checks
 5. report any token violations
+
+## Website Shell
+
+- Use the canonical site shell at `web/components/layout/site-shell.tsx`. Do not introduce a competing shell (`AppShell`, `StoreShell`, etc.).
+- Pages render inside the shell's single `<main id="main-content">`; do not declare another `main` landmark in a page or layout.
+- Use `ContentContainer` for horizontal site geometry and `SiteSection` for vertical/semantic composition. Do not invent page-level max-widths, gutters, or centering.
+- Shell surfaces, spacing, and typography must consume the design tokens/theme. Do not create a second token authority.
+- While the release is request-first, do not add cart, checkout, payment, wishlist, or account controls, and never use `href="#"` or undocumented routes. Do not render reserved-but-unimplemented routes as active links; render them as non-interactive structural content until their page exists (see `web/components/layout/site-navigation.ts`). Only implemented routes may be active links.
+- Keep the shell server-first. Introduce a client boundary only for genuine interaction (currently the mobile navigation drawer); do not move the whole header/footer client-side.
+- Category navigation is a fixture until Group N supplies authoritative catalog data; do not duplicate the Laravel taxonomy into frontend-only production navigation.
+- Established furniture retailers are structural/IA references only. SL Furnitures tokens, typography, components, and accessibility remain authoritative.
+
+## Responsive Foundation
+
+- `design-system/tokens.css` owns the canonical responsive values. MUI maps them in `web/theme/theme.ts`; do not add page-specific breakpoint scales or device-specific layout rules.
+- Use CSS/MUI breakpoint styling for presentation. Do not branch layout during render with `window.innerWidth`, user-agent detection, or `useMediaQuery` unless JavaScript behavior genuinely requires it.
+- `ContentContainer` owns ordinary site max-width and gutters. `SiteSection` owns contained versus full-bleed composition; pages must not create a second container, gutter, or viewport-width hack.
+- Do not hide layout defects with global `overflow-x: hidden`, `100vw`, or negative viewport margins. Fix the overflowing element and preserve logical DOM order as layouts reflow.
+- Future page phases own their responsive compositions, grids, image ratios, and feature-specific overlays. Follow `web/RESPONSIVE.md` before adding them.
+
+## Failure States
+
+- Keep four failure classes distinct: route loading, not found, expected domain/API failure, and unexpected error. Never collapse them into one generic "Something went wrong".
+- Route-level unexpected errors belong to `app/error.tsx` (an isolated Client Component using the framework `retry()`). Expected outcomes (validation, authentication, authorization, empty results, rate limits, MADE_TO_ORDER) must not be routed through the error boundary.
+- `app/not-found.tsx` is the generic public 404. Use the framework `notFound()` for expected absence; never redirect missing resources home or show product/category-specific 404 copy.
+- `app/loading.tsx` is a generic, shell-preserving pending state. Do not encode product/category/search skeletons or artificial delays; feature skeletons belong to their owning Group N phases.
+- Retry re-renders the failed segment only. Never use `window.location.reload()`, and never auto-retry non-idempotent mutations (requests, enquiries, payments).
+- The API client stays framework-agnostic and only a 404 is translated to `notFound()` at page/domain integration. Never map 401/403/422/429/5xx/network/timeout/abort to 404, and never detect status by message string matching.
+- Never render raw exception messages, stacks, digests, Laravel bodies, filesystem paths, headers, environment data, or internal identifiers in failure UI.

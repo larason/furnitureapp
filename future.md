@@ -25,3 +25,26 @@
 9. fix this. Staff-lifecycle endpoints (ADM-001..006) are still notImplemented() (501); orders/payments/delivery are formally deferred (11.7/11.11/11.12), and checkout is permanently gated. Production scope is request-first, so the website's primary flows are catalog → made-to-order request → enquiry, and the admin app can't yet manage staff/orders.
 
 10. since i will optimize images myself what is the recommended image formats, size for furniture ecommerce platform products cards, displaying in search engines/social medias, and hero images
+serve images on the fly to webp by nextjs
+Next.js — built-in WebP via next/image
+
+Next.js next/image automatically converts images to WebP at request time via its built-in Image Optimization API. No configuration needed for basic usage.
+
+```
+// Just use next/image — it auto-converts to WebP in modern browsers
+import Image from 'next/image';
+
+export default function Hero() {
+  return (
+    <Image
+      src="/hero.jpg"        // Can be JPG or PNG — served as WebP automatically
+      alt="Hero image"
+      width={1200}
+      height={600}
+      priority              // Use for above-the-fold images (improves LCP)
+    />
+  );
+}
+```
+
+11. on footer add the logo instead of plain text for the brand

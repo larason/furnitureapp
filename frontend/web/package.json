@@ -7,7 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:theme": "node theme/theme.contract.mjs"
+    "typecheck": "tsc --noEmit",
+    "test:theme": "node theme/theme.contract.mjs",
+    "test:api": "node --test lib/api/__tests__/client.test.mjs",
+    "test:layout": "node components/layout/layout.contract.mjs",
+    "test:responsive": "node components/layout/responsive.contract.mjs",
+    "test:states": "node components/states/states.contract.mjs"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
