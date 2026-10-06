@@ -76,6 +76,12 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - Preserve the frozen API success/error envelopes and structured validation details. Do not put business rules, redirects, or authorization decisions in the transport.
 - Inject current Clerk bearer tokens per request only in a later approved auth layer; never persist or globally retain tokens.
 
+## Website Routes
+
+- Consult `web/ROUTING.md` before adding website routes. Keep App Router conventions there authoritative.
+- Product and category URLs use the slugs returned by Laravel; do not derive frontend-only slugs or use internal numeric database IDs.
+- Put shareable collection/search state in documented URL parameters using the Laravel contract vocabulary. Do not implement routes owned by later phases early.
+
 ## Icons
 
 Use only `@mui/icons-material` for web UI icons. Do not add `lucide-react`, `react-icons`, Heroicons, Font Awesome, custom SVG icon libraries, or emoji as UI icons.
