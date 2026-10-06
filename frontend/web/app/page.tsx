@@ -1,12 +1,12 @@
 import ArrowForward from "@mui/icons-material/ArrowForward";
 import Button from "@mui/material/Button";
-import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { SiteSection } from "@/components/layout/site-section";
 
 export default function Home() {
   return (
-    <Container maxWidth="lg" sx={{ py: { xs: 7, md: 10 } }}>
+    <SiteSection>
       <Stack spacing={6} sx={{ maxWidth: "var(--content-width-lead)" }}>
         <Typography component="p" variant="overline" color="text.secondary">
           SL Furnitures
@@ -32,6 +32,6 @@ export default function Home() {
           Explore the collection
         </Button>
       </Stack>
-    </Container>
+    </SiteSection>
   );
 }

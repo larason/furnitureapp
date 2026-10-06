@@ -132,6 +132,14 @@ After UI changes:
 - Category navigation is a fixture until Group N supplies authoritative catalog data; do not duplicate the Laravel taxonomy into frontend-only production navigation.
 - Established furniture retailers are structural/IA references only. SL Furnitures tokens, typography, components, and accessibility remain authoritative.
 
+## Responsive Foundation
+
+- `design-system/tokens.css` owns the canonical responsive values. MUI maps them in `web/theme/theme.ts`; do not add page-specific breakpoint scales or device-specific layout rules.
+- Use CSS/MUI breakpoint styling for presentation. Do not branch layout during render with `window.innerWidth`, user-agent detection, or `useMediaQuery` unless JavaScript behavior genuinely requires it.
+- `ContentContainer` owns ordinary site max-width and gutters. `SiteSection` owns contained versus full-bleed composition; pages must not create a second container, gutter, or viewport-width hack.
+- Do not hide layout defects with global `overflow-x: hidden`, `100vw`, or negative viewport margins. Fix the overflowing element and preserve logical DOM order as layouts reflow.
+- Future page phases own their responsive compositions, grids, image ratios, and feature-specific overlays. Follow `web/RESPONSIVE.md` before adding them.
+
 ## Failure States
 
 - Keep four failure classes distinct: route loading, not found, expected domain/API failure, and unexpected error. Never collapse them into one generic "Something went wrong".

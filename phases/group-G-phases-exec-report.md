@@ -207,3 +207,194 @@ Phase 13.9: READY
 ```
 
 Phase 13.9 was not started automatically.
+
+---
+
+# Phase 13.9 Execution Record — Responsive Foundation
+
+## Result
+
+```text
+Phase 13.9: PASS
+Group M: CLOSED
+Group N: READY
+```
+
+## Breakpoint Authority
+
+```text
+Canonical source: frontend/design-system/tokens.css
+Synchronized source: frontend/design-system/design-tokens.json
+MUI adapter: frontend/web/theme/theme.ts
+
+xs: base / 0px
+sm: --breakpoint-phone / 640px
+md: --breakpoint-tablet / 960px
+lg: --breakpoint-desktop / 1024px
+xl: --container-max / 1440px
+
+MUI default drift: NONE
+Second breakpoint authority: NONE
+Raw width media queries: NONE
+```
+
+## Responsive Strategy
+
+```text
+CSS-first: YES
+Device detection: NONE
+window.innerWidth layout branching: NONE
+Server-first architecture preserved: YES
+Hydration issues: NONE observed
+```
+
+The one `useMediaQuery` use is justified behavior, not layout styling: the existing interactive mobile drawer is forced closed while desktop navigation is active, preventing a desktop resize from leaving the modal visible or focus-trapping users.
+
+## Container And Typography
+
+```text
+ContentContainer: frontend/web/components/layout/content-container.tsx
+Maximum width: --container-max / 1440px
+Gutters: --container-gutter-phone/tablet/desktop / 16px, 24px, 48px
+Contained sections: SiteSection -> ContentContainer
+Full-bleed sections: SiteSection width="full" without viewport-width or negative-margin hacks
+Nested containers: only intentional nested contained content inside a full-bleed section; never ordinary page composition
+Page-specific gutter systems: NONE
+Canonical type scale: preserved
+Arbitrary responsive typography: NONE
+```
+
+The foundation placeholder now uses `SiteSection` rather than MUI `Container`; this removes the only parallel page container. The header no longer has a raw `480px` search cap. The drawer width is now bounded by existing form-width and spacing tokens.
+
+## Accessibility And Runtime Verification
+
+```text
+Viewport matrix: 320, 390, 640, 960, 1024, 1440, 1728px
+Horizontal overflow: NONE at every tested width
+Navigation boundary: 959px mobile only; 960px and 961px desktop only
+Both navigation modes active: NO
+Neither navigation mode available: NO
+Drawer at 320px: PASS (opens, remains within viewport)
+Open drawer then resize to desktop: PASS (modal closes through the behavioral md guard)
+404 at desktop: PASS (canonical heading, no overflow)
+200% zoom method: Chrome CDP page scale factor; visual viewport reduced to 512px with no horizontal overflow
+Touch targets: PASS (existing 44px controls retained)
+Reduced motion: PASS (global prefers-reduced-motion override added; no responsive animation introduced)
+Hover-only essential behavior: NONE
+```
+
+The existing Phase 13.8 loading, not-found, and error states retain their `SiteSection`/`PageMessage` token-backed composition, wrapping action row, server-first boundaries, and prior mobile runtime coverage. No state-page redesign was needed.
+
+## Responsive Contract
+
+```text
+Added: frontend/web/components/layout/responsive.contract.mjs
+Script: npm run test:responsive
+
+Guards:
+- canonical design-token to MUI breakpoint mapping;
+- ContentContainer maximum width and responsive gutters;
+- SiteSection contained composition;
+- no page-level MUI Container authority;
+- shared md navigation transition;
+- drawer resize behavior;
+- no raw width media queries, viewport JavaScript, user-agent detection,
+  100vw, negative viewport margins, or global overflow-x masking;
+- reduced-motion preference support.
+```
+
+## Client Boundaries
+
+```text
+app/providers.tsx: required MUI App Router provider
+app/error.tsx: required App Router retry boundary
+components/layout/mobile-navigation.tsx: required drawer interaction
+New client boundaries: NONE
+Responsive client state: existing mobile drawer only
+```
+
+## Scope
+
+```text
+Homepage/catalog/product/category/search/filter UI: NOT IMPLEMENTED
+SEO/structured data/sitemap/robots: NOT IMPLEMENTED
+API client changed: NO
+Routing changed: NO
+Backend changed: NO
+Flutter changed: NO
+Dependencies added: NONE
+```
+
+## Validation
+
+```text
+Theme contract: PASS
+API client: PASS (17 tests)
+Layout contract: PASS
+State contract: PASS
+Responsive contract: PASS
+TypeScript: PASS
+ESLint: PASS
+Production build: PASS
+git diff --check: PASS
+```
+
+## Documentation
+
+```text
+Responsive authority: frontend/web/RESPONSIVE.md
+Durable enforcement: frontend/AGENTS.md (Responsive Foundation)
+ADR: ADR/WEB-004 — Responsive Web Foundation
+```
+
+## Group M Exit Review
+
+```text
+13.1 Next.js: PASS
+13.2 TypeScript: PASS
+13.3 MUI: PASS
+13.4 Theme: PASS
+13.5 API client: PASS
+13.6 Routing: PASS
+13.7 Layout: PASS
+13.8 Failure states: PASS
+13.9 Responsive foundation: PASS
+
+Server-first: PASS
+Design-system authority: PASS
+API-ready: PASS
+Routing-ready: PASS
+Layout-ready: PASS
+Failure-state-ready: PASS
+Responsive-ready: PASS
+Accessibility foundation: PASS
+Request-first policy: PASS
+```
+
+## Files Changed
+
+```text
+Added:
+  frontend/web/RESPONSIVE.md
+  frontend/web/components/layout/responsive.contract.mjs
+
+Modified:
+  frontend/web/app/globals.css
+  frontend/web/app/page.tsx
+  frontend/web/components/layout/mobile-navigation.tsx
+  frontend/web/components/layout/site-header.tsx
+  frontend/web/package.json
+  frontend/AGENTS.md
+  docs/decisions.md
+  phases/group-G-phases-exec-report.md
+```
+
+## Result
+
+```text
+Phase 13.9 — PASS
+Group M — CLOSED
+Group N — READY
+```
+
+Phase 14.1 was not started.

@@ -7,6 +7,8 @@ import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 import { useState } from "react";
 import { BrandMark } from "./brand-mark";
 import { CATEGORY_NAVIGATION_FIXTURE } from "./category-navigation.fixture";
@@ -24,6 +26,8 @@ const mobileItemSx = {
 
 export function MobileNavigation() {
   const [open, setOpen] = useState(false);
+  const theme = useTheme();
+  const desktopNavigation = useMediaQuery(theme.breakpoints.up("md"));
   const close = () => setOpen(false);
 
   return (
@@ -41,14 +45,14 @@ export function MobileNavigation() {
       </Tooltip>
       <Drawer
         anchor="left"
-        open={open}
+        open={open && !desktopNavigation}
         onClose={close}
         slotProps={{
           paper: {
             id: "mobile-navigation",
             "aria-label": "Navigation menu",
             sx: {
-              width: "min(88vw, 360px)",
+              width: "min(calc(100% - var(--space-6)), var(--content-width-form))",
               backgroundColor: "var(--surface-canvas)",
             },
           },

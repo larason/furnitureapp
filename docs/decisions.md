@@ -96,6 +96,16 @@
 
 ---
 
+### ADR/WEB-004 — Responsive Web Foundation
+
+**Decision:** The public website has one responsive authority: `frontend/design-system/tokens.css`, synchronized to `design-tokens.json` and mapped directly to MUI in `frontend/web/theme/theme.ts`. `ContentContainer` owns the site maximum width and gutters; `SiteSection` owns contained versus full-bleed composition. Responsive presentation is CSS-first and server-first, with MUI breakpoint styling preferred over viewport JavaScript, device detection, or page-specific breakpoint systems. The viewport verification matrix is testing evidence, not a second breakpoint scale.
+
+**Consequences:** Future pages may change composition at canonical thresholds but cannot create independent container or gutter systems, global overflow masking, `100vw`/negative-margin full-bleed hacks, or render-time viewport branching. Product-grid, image, filter, search, and page-specific responsive behavior remain owned by their Group N phases. The existing interactive drawer remains the only shell client boundary.
+
+**Status:** Accepted and implemented in Phase 13.9
+
+---
+
 ### ADR/SECURITY-001 — Temporary Development Dependency Audit Exception
 
 **Decision:** `frontend/web` retains the Next 16.3.8 lint dependency chain despite `npm audit` reporting `CVE-2026-93687` through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`. The vulnerability is development-only and does not appear in `npm audit --omit=dev --audit-level=high`; the GitHub advisory lists no patched `braces` version. `npm audit fix --force` proposes an incompatible downgrade of `eslint-config-next` to 14.2.35 and is not a remediation.

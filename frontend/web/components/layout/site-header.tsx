@@ -30,7 +30,6 @@ export function SiteHeader() {
               display: "flex",
               justifyContent: { xs: "flex-end", md: "center" },
               flex: { xs: "0 0 auto", md: "1 1 auto" },
-              maxWidth: { md: 480 },
               ml: { xs: "auto", md: 0 },
             }}
           >
