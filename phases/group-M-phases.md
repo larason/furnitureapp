@@ -2770,14 +2770,14 @@ Phase 13.6: READY
 
 ## Configuration And Documentation
 
-- `API_BASE_URL` format and server/browser exposure boundary are documented in `frontend/web/lib/api/README.md`. No frontend `.env.example` convention exists; no example file or real deployment URL was added.
+- `API_BASE_URL` is configured locally in ignored `frontend/web/.env.local` as `http://127.0.0.1:8000`; production still requires its own HTTPS deployment value. The format and server/browser exposure boundary are documented in `frontend/web/lib/api/README.md`. No frontend `.env.example` convention exists; no real deployment URL was added.
 - Durable routing-through-client and backend-authority rules were added to `frontend/AGENTS.md`.
 - ADR `WEB-001` records the native Fetch boundary. No dependencies were added.
 
 ## Tests And Verification
 
 ```text
-API client tests: PASS (16 cases; Node built-in test runner, no new dependency)
+API client tests: PASS (17 cases; Node built-in test runner, no new dependency)
 TypeScript: PASS (`npx tsc --noEmit`)
 ESLint: PASS (`npm run lint`)
 Theme contract: PASS (`npm run test:theme`)
@@ -2787,7 +2787,7 @@ git diff --check: PASS
 
 Coverage includes URL/version construction, query/path encoding, configuration, headers and per-request authorization isolation, JSON/FormData, GET-body rejection, success/pagination/204, structured API and validation errors, 401/403/404/422, 429 retry metadata, malformed 500 responses, network failure, timeout, caller abort, and cache option forwarding/runtime separation.
 
-Local Laravel integration smoke: **NOT RUN** — `API_BASE_URL` is not configured in this environment. API unit/contract behavior is verified without requiring Laravel or external network access.
+Local Laravel integration smoke: **NOT RUN** — the Laravel server was not running during verification. API unit/contract behavior is verified without requiring Laravel or external network access.
 
 ## Scope
 

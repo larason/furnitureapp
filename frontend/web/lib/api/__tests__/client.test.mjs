@@ -236,3 +236,37 @@ test("validates required origin configuration", async () => {
   await assert.rejects(missing({ path: "/products" }), /API_BASE_URL/);
   await assert.rejects(invalid({ path: "/products" }), /HTTPS/);
 });
+
+test("uses API_BASE_URL when configured and has no production localhost fallback", async () => {
+  const originalEnvironment = process.env.NODE_ENV;
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+  let requestedUrl;
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.API_BASE_URL = "http://127.0.0.1:8000";
+    const developmentClient = createApiClient({ fetchImpl: async (url) => {
+      requestedUrl = new URL(url);
+      return Response.json({ data: {} });
+    } });
+    await developmentClient({ path: "/products" });
+
+    process.env.NODE_ENV = "production";
+    delete process.env.API_BASE_URL;
+    const productionClient = createApiClient({ fetchImpl: async () => Response.json({ data: {} }) });
+    await assert.rejects(productionClient({ path: "/products" }), /API_BASE_URL/);
+  } finally {
+    if (originalEnvironment === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalEnvironment;
+    }
+    if (originalApiBaseUrl === undefined) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = originalApiBaseUrl;
+    }
+  }
+
+  assert.equal(requestedUrl.origin, "http://127.0.0.1:8000");
+  assert.equal(requestedUrl.pathname, "/api/v1/products");
+});

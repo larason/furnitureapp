@@ -4,7 +4,7 @@
 
 ## Configuration And URL Convention
 
-Set server-only `API_BASE_URL` to the HTTPS API **origin**, without a path, query, or trailing API prefix. HTTP is accepted only for localhost development. Do not use `NEXT_PUBLIC_` for this configuration; it may identify internal infrastructure. There is no frontend `.env.example` convention in this app, so configure it in the deployment environment. Missing or invalid configuration fails explicitly; there is no localhost fallback.
+Set server-only `API_BASE_URL` to the API **origin**, without a path, query, or trailing API prefix. The ignored `frontend/web/.env.local` sets `API_BASE_URL=http://127.0.0.1:8000` for local development. Production must provide its own HTTPS origin through deployment environment configuration. Do not use `NEXT_PUBLIC_` for this setting; it may identify internal infrastructure. There is no frontend `.env.example` convention in this app. Missing or invalid configuration fails explicitly; the client has no code-level localhost fallback.
 
 Calls provide an unversioned resource suffix, for example `path: "/products"`; the transport adds `/api/v1` exactly once. Do not pass absolute URLs or user-controlled paths. Browser callers that are intentionally approved for direct API access must provide an explicit, public HTTPS `baseUrl` when creating their client; the server-only environment value is not exposed for browser use.
 
