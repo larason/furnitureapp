@@ -4,7 +4,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { ProductCard } from "@/components/catalog/product-card";
+import { ProductGrid } from "@/components/catalog/product-grid";
 import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
 import { ApiError } from "@/lib/api/client";
@@ -15,15 +15,6 @@ type CategoryPageProps = Readonly<{
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ page?: string | readonly string[] }>;
 }>;
-
-const productGrid = {
-  display: "grid",
-  gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" },
-  gap: { xs: 7, sm: 5, md: 7 },
-  p: 0,
-  m: 0,
-  listStyle: "none",
-};
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
   const { slug } = await params;
@@ -52,13 +43,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
         <Stack spacing={7}>
           <Typography component="h2" variant="h3">Furniture</Typography>
           {catalog.products.length ? (
-            <Box component="ul" sx={productGrid}>
-              {catalog.products.map((product) => (
-                <Box component="li" key={product.id}>
-                  <ProductCard product={product} sizes={CATEGORY_PRODUCT_IMAGE_SIZES} />
-                </Box>
-              ))}
-            </Box>
+            <ProductGrid products={catalog.products} sizes={CATEGORY_PRODUCT_IMAGE_SIZES} />
           ) : (
             <Typography>There are no pieces listed in this category yet.</Typography>
           )}

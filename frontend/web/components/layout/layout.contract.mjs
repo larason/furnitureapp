@@ -62,8 +62,8 @@ check(
   "shell must expose a route-availability check",
 );
 check(
-  /IMPLEMENTED_SITE_ROUTES\s*:\s*readonly string\[\]\s*=\s*\[\s*"\/"\s*\]/.test(navigation),
-  "only implemented routes may render as active links",
+  navigation.includes('"/"') && navigation.includes('"/products"'),
+  "implemented routes must render as active links",
 );
 const navLink = sourceOf("nav-link.tsx");
 check(

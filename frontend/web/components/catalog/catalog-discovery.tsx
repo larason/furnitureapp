@@ -6,10 +6,9 @@ import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
 import type { HomepageCatalog } from "@/lib/homepage/catalog";
 import { CATEGORY_IMAGE_SIZES, PRODUCT_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
-import { ProductCard } from "./product-card";
+import { ProductGrid } from "./product-grid";
 
 const categoryGrid = { display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" }, gap: { xs: 4, sm: 6 }, p: 0, m: 0, listStyle: "none" };
-const productGrid = { display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(3, minmax(0, 1fr))" }, gap: { xs: 7, sm: 5, md: 7 }, p: 0, m: 0, listStyle: "none" };
 
 export function CatalogDiscovery({ catalog }: Readonly<{ catalog: HomepageCatalog }>) {
   return (
@@ -49,13 +48,7 @@ export function CatalogDiscovery({ catalog }: Readonly<{ catalog: HomepageCatalo
             <Typography variant="body2">Discover our latest made-to-order pieces. Display prices are a starting point; requirements are agreed through a furniture request.</Typography>
           </Box>
           {catalog.products.length ? (
-            <Box component="ul" sx={productGrid}>
-              {catalog.products.map((product) => (
-                <Box component="li" key={product.id}>
-                  <ProductCard product={product} sizes={PRODUCT_IMAGE_SIZES} href={`/products/${product.slug}`} />
-                </Box>
-              ))}
-            </Box>
+            <ProductGrid products={catalog.products} sizes={PRODUCT_IMAGE_SIZES} />
           ) : <Typography>Made-to-order pieces will appear here as they are published.</Typography>}
         </Stack>
       </SiteSection>

@@ -28,67 +28,63 @@ function loadTs(file, overrides = {}) {
   return compiled.exports;
 }
 
-test("category catalog resolves the category then filters products by its API slug", async () => {
+test("product catalog uses the canonical API client with page one omitted", async () => {
   const previous = process.env.HOMEPAGE_DATA_SOURCE;
   delete process.env.HOMEPAGE_DATA_SOURCE;
   const calls = [];
   const apiRequest = async (request) => {
     calls.push(request);
-    if (request.path.startsWith("/categories/")) {
-      return { data: { id: "cat_living", name: "Living Room", slug: "living-room", description: "Furniture for living spaces.", image: null } };
-    }
     return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
   };
 
   try {
-    const { getCategoryCatalog } = loadTs("lib/category/catalog.ts", { "../api/client": { apiRequest } });
-    const catalog = await getCategoryCatalog("living-room", 1);
-    assert.equal(catalog.category.slug, "living-room");
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].path, "/categories/living-room");
-    assert.deepEqual(calls[1].query, { category: "living-room" });
+    const { getProductCatalog } = loadTs("lib/products/catalog.ts", { "../api/client": { apiRequest } });
+    const firstPage = await getProductCatalog(1);
+    await getProductCatalog(2);
+    assert.equal(firstPage.source, "api");
+    assert.deepEqual(calls[0], { path: "/products", cache: "no-store" });
+    assert.deepEqual(calls[1].query, { page: 2 });
   } finally {
     if (previous === undefined) delete process.env.HOMEPAGE_DATA_SOURCE;
     else process.env.HOMEPAGE_DATA_SOURCE = previous;
   }
 });
 
-test("category API failures are not replaced with fixture data", async () => {
+test("product catalog does not replace an API failure with fixture data", async () => {
   const previous = process.env.HOMEPAGE_DATA_SOURCE;
   delete process.env.HOMEPAGE_DATA_SOURCE;
   const failure = new Error("upstream unavailable");
 
   try {
-    const { getCategoryCatalog } = loadTs("lib/category/catalog.ts", {
-      "../api/client": { apiRequest: async () => { throw failure; } },
-    });
-    await assert.rejects(getCategoryCatalog("living-room", 1), (error) => error === failure);
+    const { getProductCatalog } = loadTs("lib/products/catalog.ts", { "../api/client": { apiRequest: async () => { throw failure; } } });
+    await assert.rejects(getProductCatalog(1), (error) => error === failure);
   } finally {
     if (previous === undefined) delete process.env.HOMEPAGE_DATA_SOURCE;
     else process.env.HOMEPAGE_DATA_SOURCE = previous;
   }
 });
 
-test("category route remains server-rendered, uses the canonical card, and reserves 404 for missing categories", () => {
-  const page = read("app/categories/[slug]/page.tsx");
+test("product listing stays server-first, reuses shared catalog primitives, and keeps phase boundaries", () => {
+  const page = read("app/products/page.tsx");
+  const grid = read("components/catalog/product-grid.tsx");
+  const card = read("components/catalog/product-card.tsx");
+  const navigation = read("components/layout/site-navigation.ts");
   const proxy = read("proxy.ts");
-  assert.match(page, /getCategoryCatalog/);
+  assert.match(page, /getProductCatalog/);
   assert.match(page, /ProductGrid/);
-  assert.match(read("components/catalog/product-grid.tsx"), /ProductCard/);
-  assert.match(page, /notFound\(\)/);
-  assert.match(page, /ApiError/);
+  assert.match(page, /Page \{currentPage\} of \{lastPage\}/);
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
-  assert.doesNotMatch(page, /["']use client["']|<main|component="main"|href="#"|\/cart|\/checkout|\/payment|CategoryProductCard|ProductTile/);
+  assert.doesNotMatch(page, /["']use client["']|notFound\(\)|<main|component="main"|href="#"|\/cart|\/checkout|\/payment|wishlist|Buy now|filter|sort/);
+  assert.match(grid, /ProductCard/);
+  assert.match(card, /var\(--media-product-card\)/);
+  assert.match(navigation, /"\/products"/);
   assert.match(proxy, /matcher: "\/categories\/:path\*"/);
-  assert.match(proxy, /NextResponse\.next\(\{ status: 404 \}\)/);
-  assert.match(proxy, /status: 404/);
-  assert.match(proxy, /ApiError/);
-  assert.doesNotMatch(proxy, /validCategories|router\.replace|window\.location/);
+  assert.doesNotMatch(proxy, /products/);
 });
 
-test("homepage category destinations are active only for the implemented dynamic category route", () => {
-  const { isSiteRouteImplemented } = loadTs("components/layout/site-navigation.ts");
-  assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
-  assert.equal(isSiteRouteImplemented("/categories/living-room?page=2"), true);
-  assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), false);
+test("product listing pagination helpers normalize malformed pages and preserve the clean first-page URL", () => {
+  const page = read("app/products/page.tsx");
+  assert.match(page, /function parsePage/);
+  assert.ok(page.includes("/^[1-9]\\d*$/"));
+  assert.match(page, /return page === 1 \? "\/products" : `\/products\?page=\$\{page\}`/);
 });
