@@ -70,6 +70,10 @@ check(
   navLink.includes("isSiteRouteImplemented") && navLink.includes('component="span"'),
   "NavLink must degrade unimplemented routes to non-link elements",
 );
+check(
+  /typeof sx === "function" \? sx\(theme\) : sx/.test(navLink),
+  "NavLink must resolve callback sx values against the current theme",
+);
 
 const imports = [...combined.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]);
 for (const specifier of imports) {

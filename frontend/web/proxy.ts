@@ -3,6 +3,10 @@ import type { NextRequest } from "next/server";
 import { ApiError, apiRequest } from "@/lib/api/client";
 
 export async function proxy(request: NextRequest) {
+  if (process.env.HOMEPAGE_DATA_SOURCE === "fixtures") {
+    return NextResponse.next();
+  }
+
   const slug = request.nextUrl.pathname.split("/").pop();
   if (!slug) {
     return NextResponse.next();

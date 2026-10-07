@@ -80,6 +80,7 @@ test("category route remains server-rendered, uses the canonical card, and reser
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
   assert.doesNotMatch(page, /["']use client["']|<main|component="main"|href="#"|\/cart|\/checkout|\/payment|CategoryProductCard|ProductTile/);
   assert.match(proxy, /matcher: "\/categories\/:path\*"/);
+  assert.match(proxy, /HOMEPAGE_DATA_SOURCE === "fixtures"/);
   assert.match(proxy, /NextResponse\.next\(\{ status: 404 \}\)/);
   assert.match(proxy, /status: 404/);
   assert.match(proxy, /ApiError/);
