@@ -300,3 +300,5 @@ Changing the filename in fixtures.ts should invalidate that URL automatically. I
 - amount: 24500000 represents TZS 245,000.00
 formatMoney() divides the integer by 100 before display, per the frozen API contract: 1 TZS = 100 minor units.
 So the extra two zeros in fixtures.ts are intentional. If you want a displayed price of TZS 1,000,000.00, the fixture must be amount: 100000000
+
+6. MADE_TO_ORDER From price prefix: CAT-002 defines its price as an informational starting estimate. The prefix accurately communicates that contract and is permitted by Phase 14.4’s price-copy rule. e.g From TZS 245,000.00
