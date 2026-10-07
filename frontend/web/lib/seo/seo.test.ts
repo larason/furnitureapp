@@ -56,6 +56,23 @@ test("site origin comes only from SITE_URL and rejects unsafe or malformed value
   }
 });
 
+test("production rejects a localhost website origin", () => {
+  const env = process.env as Record<string, string | undefined>;
+  const previous = env.NODE_ENV;
+  env.NODE_ENV = "production";
+  try {
+    withSiteUrl("http://localhost:3000", () => assert.throws(() => getSiteOrigin(), SiteUrlError));
+    withSiteUrl("http://127.0.0.1:8000", () => assert.throws(() => getSiteOrigin(), SiteUrlError));
+    withSiteUrl(TEST_ORIGIN, () => assert.equal(getSiteOrigin(), TEST_ORIGIN));
+  } finally {
+    if (previous === undefined) {
+      delete env.NODE_ENV;
+    } else {
+      env.NODE_ENV = previous;
+    }
+  }
+});
+
 test("canonical paths are slashless for non-root routes and preserve meaningful query state", () => {
   assert.equal(buildCanonicalPath("/"), "/");
   assert.equal(buildCanonicalPath("/products"), "/products");
@@ -101,6 +118,14 @@ test("product collection metadata keeps the base indexable while faceting and so
     const filteredPaged = serialize(buildProductsMetadata({ product_type: "MADE_TO_ORDER", page: "3" }));
     assert.equal(filteredPaged.alternates?.canonical, `${TEST_ORIGIN}/products`);
     assert.deepEqual(filteredPaged.robots, { index: false, follow: true });
+
+    const searched = serialize(buildProductsMetadata({ search: "chair" }));
+    assert.equal(searched.alternates?.canonical, `${TEST_ORIGIN}/products`);
+    assert.deepEqual(searched.robots, { index: false, follow: true });
+
+    const searchedPaged = serialize(buildProductsMetadata({ search: "chair", page: "2" }));
+    assert.equal(searchedPaged.alternates?.canonical, `${TEST_ORIGIN}/products`);
+    assert.deepEqual(searchedPaged.robots, { index: false, follow: true });
 
     for (const query of [{ availability: "available" }, { min_price: "100" }, { max_price: "200" }, { sort: "price" }, { sort_direction: "asc" }]) {
       assert.deepEqual(serialize(buildProductsMetadata(query)).robots, { index: false, follow: true });

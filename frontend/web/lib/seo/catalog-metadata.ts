@@ -8,7 +8,7 @@ import { boundText, normalizeDescription } from "./text";
 
 const MAX_SEARCH_TERM_LENGTH = 60;
 
-const FACET_QUERY_KEYS = ["category", "product_type", "availability", "min_price", "max_price", "sort", "sort_direction"] as const;
+const DISCOVERY_QUERY_KEYS = ["search", "category", "product_type", "availability", "min_price", "max_price", "sort", "sort_direction"] as const;
 
 const PRODUCTS_DESCRIPTION = "Browse furniture from SL Furnitures, including ready-made pieces and made-to-order designs.";
 const SEARCH_DESCRIPTION = "Search the SL Furnitures catalog by furniture name and product details.";
@@ -22,14 +22,14 @@ export function buildHomeMetadata(): Metadata {
 }
 
 export function buildProductsMetadata(query: ProductCollectionQuery): Metadata {
-  const faceted = FACET_QUERY_KEYS.some((key) => query[key] !== undefined);
+  const discovery = DISCOVERY_QUERY_KEYS.some((key) => query[key] !== undefined);
   const page = collectionPage(query);
 
   return createPageMetadata({
     title: "Furniture",
     description: PRODUCTS_DESCRIPTION,
-    canonicalPath: faceted || page <= 1 ? "/products" : `/products?page=${page}`,
-    robots: faceted ? NOINDEX_FOLLOW : undefined,
+    canonicalPath: discovery || page <= 1 ? "/products" : `/products?page=${page}`,
+    robots: discovery ? NOINDEX_FOLLOW : undefined,
   });
 }
 

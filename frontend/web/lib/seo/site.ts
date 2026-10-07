@@ -31,7 +31,8 @@ export function getSiteOrigin(): string | undefined {
     throw new SiteUrlError("SITE_URL must be a valid absolute origin, for example https://example.com.");
   }
 
-  const validProtocol = url.protocol === "https:" || (url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname));
+  const allowLocalHttp = process.env.NODE_ENV !== "production";
+  const validProtocol = url.protocol === "https:" || (allowLocalHttp && url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname));
   if (!validProtocol || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
     throw new SiteUrlError("SITE_URL must be an HTTPS origin; HTTP is allowed only for local development.");
   }
