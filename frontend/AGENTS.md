@@ -83,6 +83,16 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - Put shareable collection/search state in documented URL parameters using the Laravel contract vocabulary. Do not implement routes owned by later phases early.
 - Category navigation links use the canonical `/categories/{slug}` resource. The frozen API's `GET /products?category={slug}` is product retrieval/discovery only; never substitute it for canonical category navigation. Product and category link slugs always come from Laravel, never from local slugification or machine IDs.
 
+## Images & Performance
+
+- Photographic catalog media uses `next/image`; do not replace it with raw `<img>`.
+- Preload at most the single above-the-fold LCP image per page with the `preload` prop (Next 16 deprecated `priority`); keep everything below the fold lazy.
+- Product-grid images must use the shared `sizes` constants in `lib/homepage/image-sizes.ts` that match the real responsive grid columns; do not hardcode or fork `sizes`.
+- Reserve image geometry with the frozen media aspect tokens to avoid CLS, and keep the `object-fit` choice that preserves furniture legibility.
+- Keep remote image origins narrowly allow-listed from `CATALOG_MEDIA_BASE_URL`; never add wildcard hosts or an arbitrary image proxy.
+- Keep catalog pages server-first with narrow client boundaries; do not add client cache libraries or convert catalog navigation to client-side SPA.
+- Public catalog endpoints are cache-safe, but do not invent cache/revalidation durations without an approved catalog-freshness policy. Prefer request-local deduplication (React `cache()`).
+
 ## Structured Data (SEO)
 
 - Emit JSON-LD only from server components, in the initial HTML, through the shared `components/seo/json-ld.tsx` renderer and `lib/seo/structured-data.ts` builders.

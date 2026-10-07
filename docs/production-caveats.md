@@ -212,3 +212,43 @@ them until their owning phase ships:
   (data-driven) without a global fetch/availability regression.
 - Reintroducing `Product.offers`/rich-result markup only when a real purchase
   flow exists.
+
+---
+
+## 11. Catalog caching (deferred decision)
+
+- **LIMITATION — persistent caching/revalidation is deferred.** The frozen
+  contract marks the public catalog endpoints (CAT-001..CAT-006) as
+  unauthenticated, customer-state-free, and safe for public caching/CDN/ISR.
+  However, no approved catalog-freshness/staleness policy exists, so the website
+  deliberately does **not** invent a revalidation interval. Public catalog
+  requests currently use `cache: "no-store"`.
+- **Request-local deduplication is in place.** CAT-002/CAT-004 detail resolution
+  is wrapped in React `cache()` so `generateMetadata` and the page share one
+  request, and structured data reuses the resolved resource. Collection pages use
+  one CAT-001 request (no CAT-002 N+1).
+- **ASSESS — caching opportunity.** Introducing Next fetch revalidation or ISR
+  for the public catalog is a permitted future optimization, but it requires an
+  explicit business freshness decision first. When adopted, scope it to public
+  catalog data only; never cache account, orders, cart, checkout, payments, or
+  private request/enquiry detail as public content.
+
+## 12. Image delivery notes
+
+- Catalog photography uses `next/image` with responsive `sizes` that match the
+  real ProductGrid columns (1/2/3). The product-grid `sizes` were corrected so the
+  640–960px range reflects the 2-column layout (previously under-declared).
+- Only the single above-the-fold LCP image per page is preloaded: the homepage
+  hero and the PDP lead image. Below-fold media (cards, extra gallery views)
+  stays lazy by default.
+- The brand logo is an SVG rendered `eager` (header and mobile drawer share the
+  same URL, so the browser reuses it); it is not rasterized or recolored.
+- **ASSESS — homepage hero/editorial are fixture assets.** The homepage renders
+  `public/furnitures/fixtures/**` hero and editorial photographs in every mode
+  (they are not API-backed). `next/image` optimizes delivery, but these source
+  files are large (hero ~857 KB, editorial ~661 KB). Replace them with
+  production-owned assets when available; do not recompress blindly without a
+  visual check.
+- **ASSESS — unused fixture files.** A few tracked `*.jpg~` editor-backup files
+  remain under `public/furnitures/fixtures/products/`; they are unreferenced and
+  deploy with the site. Safe to remove as cleanup (no rendered impact).

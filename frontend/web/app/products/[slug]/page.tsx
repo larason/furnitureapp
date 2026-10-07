@@ -52,7 +52,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             <NavLink href="/">Home</NavLink><NavLink href="/products">Furniture</NavLink><NavLink href={`/categories/${product.category.slug}`}>{product.category.name}</NavLink><Typography color="text.primary" aria-current="page">{product.name}</Typography>
           </Breadcrumbs>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" }, gap: { xs: 7, md: 8 } }}>
-            <ProductMedia image={leadImage} productName={product.name} priority />
+            <ProductMedia image={leadImage} productName={product.name} preload />
             <Stack spacing={4} sx={{ minWidth: 0, alignSelf: "center" }}>
               {detail.source === "fixtures" ? <Typography variant="body2" color="text.secondary">Design preview</Typography> : null}
               <Typography component="h1" variant="h2">{product.name}</Typography>
@@ -70,8 +70,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
   );
 }
 
-function ProductMedia({ image, productName, priority = false }: Readonly<{ image: { url: string; alt_text: string | null } | undefined; productName: string; priority?: boolean }>) {
-  return <Box sx={{ position: "relative", aspectRatio: "var(--media-product-hero)", bgcolor: "background.paper" }}>{image ? <Image src={image.url} alt={image.alt_text || productName} fill sizes={PRODUCT_DETAIL_IMAGE_SIZES} priority={priority} style={{ objectFit: "contain" }} /> : <Box sx={{ height: "100%", display: "grid", placeItems: "center", p: 4 }}><Typography variant="body2" color="text.secondary">Photograph to follow</Typography></Box>}</Box>;
+function ProductMedia({ image, productName, preload = false }: Readonly<{ image: { url: string; alt_text: string | null } | undefined; productName: string; preload?: boolean }>) {
+  return <Box sx={{ position: "relative", aspectRatio: "var(--media-product-hero)", bgcolor: "background.paper" }}>{image ? <Image src={image.url} alt={image.alt_text || productName} fill sizes={PRODUCT_DETAIL_IMAGE_SIZES} preload={preload} style={{ objectFit: "contain" }} /> : <Box sx={{ height: "100%", display: "grid", placeItems: "center", p: 4 }}><Typography variant="body2" color="text.secondary">Photograph to follow</Typography></Box>}</Box>;
 }
 
 function availabilityLabel(productType: string | undefined, stockIndicator: string, availability: string) {
