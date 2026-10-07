@@ -33,7 +33,16 @@ export function NavLink({
     <Box
       sx={{
         display: "contents",
-        "& a": sx,
+        "& a": {
+          ...sx,
+          color: "inherit",
+          textDecoration: "none",
+          fontWeight: "var(--font-weight-regular)",
+          textTransform: "none",
+        },
+        "& a:hover": {
+          textDecoration: "underline",
+        },
         "& a:focus-visible": {
           boxShadow: "var(--focus-ring)",
           borderRadius: "var(--radius-sm)",

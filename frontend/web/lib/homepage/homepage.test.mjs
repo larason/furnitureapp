@@ -90,8 +90,12 @@ test("homepage respects frozen tokens, shell, server and request-first boundarie
   const page = read("app/page.tsx");
   const card = read("components/catalog/product-card.tsx");
   const discovery = read("components/catalog/catalog-discovery.tsx");
+  const navLink = read("components/layout/nav-link.tsx");
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
   assert.doesNotMatch(page + card + discovery, /["']use client["']|<main|component="main"|<img|href="#"|#[0-9a-f]{3,8}\b|\d+px|boxShadow|borderRadius|window\.innerWidth|\/cart|\/checkout|\/payment|HomepageProductCard/);
+  assert.match(navLink, /textDecoration: "none"/);
+  assert.match(navLink, /color: "inherit"/);
+  assert.match(navLink, /"& a:hover": \{\s*textDecoration: "underline"/);
   assert.match(page, /SiteSection/);
   assert.match(page, /Design preview/);
   assert.match(card, /var\(--media-product-card\)/);
