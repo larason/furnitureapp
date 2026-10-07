@@ -102,6 +102,7 @@ test("Clerk integration keeps public catalog routes public and uses canonical au
   const signUp = read("app/sign-up/[[...sign-up]]/page.tsx");
   const navigation = read("components/layout/auth-navigation.tsx");
   const appearance = read("lib/auth/clerk-appearance.ts");
+  const authLayout = read("components/auth/auth-page-layout.tsx");
 
   assert.match(layout, /<ClerkProvider afterSignOutUrl="\/" appearance=\{clerkAppearance\}>/);
   assert.match(proxy, /clerkMiddleware/);
@@ -114,13 +115,25 @@ test("Clerk integration keeps public catalog routes public and uses canonical au
   assert.match(bridge, /createAuthenticatedLaravelRequest\(auth, apiRequest\)/);
   assert.match(bridge, /path: "\/me", cache: "no-store"/);
   assert.doesNotMatch(apiClient, /@clerk/);
-  assert.match(signIn, /<SignIn \/>/);
-  assert.match(signUp, /<SignUp \/>/);
+  assert.match(signIn, /<AuthPageLayout title="Welcome back">\s*<SignIn appearance=\{clerkAuthAppearance\} \/>/);
+  assert.match(signUp, /<AuthPageLayout title="Create your account">\s*<SignUp appearance=\{clerkAuthAppearance\} \/>/);
   assert.match(signIn + signUp, /robots: \{ index: false, follow: false \}/);
   assert.match(navigation, /useAuth/);
   assert.match(navigation, /if \(!isLoaded\)/);
   assert.match(navigation, /UserButton/);
-  assert.match(appearance, /card: \{\s*boxShadow: "none"/);
+  assert.match(appearance, /options: \{\s*elevation: "flush"/);
+  assert.match(appearance, /headerTitle: \{\s*fontFamily: "var\(--font-display\)"/);
+  assert.doesNotMatch(appearance.match(/export const clerkAuthAppearance[\s\S]*/)?.[0] ?? "", /boxShadow/);
+  assert.match(appearance, /colorBorder: "var\(--text-primary\)"/);
+  assert.match(appearance, /borderRadius: "0"/);
+  assert.match(appearance, /border: "var\(--border-width\) solid var\(--text-primary\)"/);
+  assert.match(appearance, /padding: "var\(--space-6\)"/);
+  assert.doesNotMatch(appearance.match(/export const clerkAppearance[\s\S]*?as const;/)?.[0] ?? "", /card:/);
+  assert.match(authLayout, /src=\{AUTH_HERO_SOURCE\}/);
+  assert.match(authLayout, /aspectRatio: "var\(--media-editorial\)"/);
+  assert.match(authLayout, /lg: '"title \." "form hero"'/);
+  assert.match(authLayout, /objectFit: "contain"/);
+  assert.doesNotMatch(authLayout, /priority/);
   assert.equal(isSiteRouteImplemented("/sign-in"), true);
   assert.equal(isSiteRouteImplemented("/sign-up"), true);
   assert.equal(isSiteRouteImplemented("/products"), true);

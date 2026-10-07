@@ -1,8 +1,7 @@
 import { SignUp } from "@clerk/nextjs";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
 import type { Metadata } from "next";
-import { SiteSection } from "@/components/layout/site-section";
+import { AuthPageLayout } from "@/components/auth/auth-page-layout";
+import { clerkAuthAppearance } from "@/lib/auth/clerk-appearance";
 
 export const metadata: Metadata = {
   title: "Create your account",
@@ -12,11 +11,8 @@ export const metadata: Metadata = {
 
 export default function SignUpPage() {
   return (
-    <SiteSection aria-label="Create your account" surface="paper">
-      <Stack spacing={6} sx={{ maxWidth: "var(--content-width-form)" }}>
-        <Typography component="p" variant="h2">Create your account</Typography>
-        <SignUp />
-      </Stack>
-    </SiteSection>
+    <AuthPageLayout title="Create your account">
+      <SignUp appearance={clerkAuthAppearance} />
+    </AuthPageLayout>
   );
 }

@@ -1,12 +1,7 @@
 export const clerkAppearance = {
-  elements: {
-    card: {
-      boxShadow: "none",
-    },
-  },
   variables: {
     colorBackground: "var(--surface-paper)",
-    colorBorder: "var(--border-default)",
+    colorBorder: "var(--text-primary)",
     colorDanger: "var(--color-danger)",
     colorForeground: "var(--text-primary)",
     colorInput: "var(--surface-paper)",
@@ -24,5 +19,26 @@ export const clerkAppearance = {
     fontSize: "var(--text-sm)",
     borderRadius: "var(--radius-sm)",
     spacing: "var(--space-4)",
+  },
+} as const;
+
+export const clerkAuthAppearance = {
+  ...clerkAppearance,
+  variables: {
+    ...clerkAppearance.variables,
+    borderRadius: "0",
+  },
+  options: {
+    elevation: "flush",
+  },
+  elements: {
+    card: {
+      border: "var(--border-width) solid var(--text-primary)",
+      borderRadius: "0",
+      padding: "var(--space-6)",
+    },
+    headerTitle: {
+      fontFamily: "var(--font-display)",
+    },
   },
 } as const;

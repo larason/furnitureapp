@@ -1,8 +1,7 @@
 import { SignIn } from "@clerk/nextjs";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
 import type { Metadata } from "next";
-import { SiteSection } from "@/components/layout/site-section";
+import { AuthPageLayout } from "@/components/auth/auth-page-layout";
+import { clerkAuthAppearance } from "@/lib/auth/clerk-appearance";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -12,11 +11,8 @@ export const metadata: Metadata = {
 
 export default function SignInPage() {
   return (
-    <SiteSection aria-label="Sign in" surface="paper">
-      <Stack spacing={6} sx={{ maxWidth: "var(--content-width-form)" }}>
-        <Typography component="p" variant="h2">Welcome back</Typography>
-        <SignIn />
-      </Stack>
-    </SiteSection>
+    <AuthPageLayout title="Welcome back">
+      <SignIn appearance={clerkAuthAppearance} />
+    </AuthPageLayout>
   );
 }
