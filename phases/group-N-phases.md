@@ -1,4 +1,4 @@
-# Phase 14.5 — Public Product Search
+# Phase 14.6 — Product Filtering & Sorting
 
 ## Entry State
 
@@ -8,47 +8,61 @@ Phase 14.2A — PASS
 Phase 14.2 — PASS
 Phase 14.3 — PASS
 Phase 14.4 — PASS
-Phase 14.5 — ACTIVE
+Phase 14.5 — PASS
+Phase 14.6 — ACTIVE
 ```
 
-Implement the canonical public furniture search experience.
+Implement public catalog filtering and sorting using the already-frozen CAT-001 query contract.
 
-Canonical website route:
-
-```text
-/search?search=<term>
-```
-
-Do NOT start Phase 14.6.
+Do NOT start Phase 14.7.
 
 ---
 
 # 1. Objective
 
-Build a public, server-rendered search experience that allows visitors to search the authoritative Laravel product catalog.
+Extend the existing public catalog experience so visitors can narrow and order furniture using authoritative Laravel catalog semantics.
 
-The experience must:
+Primary surfaces:
 
 ```text
-accept a search term
-encode that term in the URL
-query CAT-001
-render Product Summary results
-reuse ProductGrid
-preserve canonical ProductCard navigation
-support pagination
-provide truthful empty states
-work without JavaScript
-remain accessible and responsive
+/products
+/search?search=<term>
 ```
 
-Search is a **catalog discovery surface**, not a new search architecture.
+Phase 14.6 must provide:
+
+```text
+category filtering
+product-type filtering
+availability filtering
+price-range filtering
+sorting
+URL-persistent state
+pagination preservation
+clear/reset behavior
+responsive filter controls
+accessible forms
+```
+
+The implementation must remain:
+
+```text
+server-first
+URL-driven
+shareable
+bookmarkable
+progressively enhanced
+Laravel-authoritative
+token-driven
+```
+
+Do not build a frontend filtering engine.
 
 ---
 
 # 2. Read Before Coding
 
-Read and follow:
+Read:
 
 ```text
 AGENTS.md
@@ -56,19 +70,17 @@ frontend/AGENTS.md
 
 frontend/design-system/
   DESIGN.md
-  USAGE.md
   COMPONENTS.md
   ACCESSIBILITY.md
+  USAGE.md
   tokens.css
-  design-tokens.json
 
 frontend/web/
   ROUTING.md
   RESPONSIVE.md
   app/
   components/
-  lib/api/
-  theme/
+  lib/
 
 docs/api/
   api-contract.md
@@ -82,24 +94,26 @@ docs/decisions.md
 phases/group-N-phases.md
 ```
 
-Inspect the actual implementations from:
+Inspect actual implementations from:
 
 ```text
-13.5 API client
-13.7 layout
-13.8 failure states
-13.9 responsive foundation
-
-14.1 homepage
 14.2 category pages
-14.2A hard-404 architecture
-14.3 product listing
-14.4 product detail
+14.3 Product Listing
+14.4 Product Detail
+14.5 Search
+
+ProductGrid
+ProductCard
+catalog query/data helpers
+pagination
+search form
+fixture architecture
+proxy.ts
 ```
 
-Do not implement from assumptions.
+Also inspect the new `tsx` + `node:test` infrastructure established by the SonarQube remediation.
 
-Repository authority wins.
+Do not recreate `load-ts.mjs` or any VM loader.
 
 ---
 
@@ -116,73 +130,13 @@ Preserve unrelated owner changes.
 
 Never commit secrets or `.env*`.
 
-Use one atomic Phase 14.5 commit.
+Use an atomic Phase 14.6 commit.
 
 ---
 
-# 4. Canonical Search Route
+# 4. Frozen CAT-001 Query Vocabulary
 
-Implement:
-
-```text
-/search
-```
-
-Search state uses:
-
-```text
-?search=<term>
-```
-
-Examples:
-
-```text
-/search?search=sofa
-/search?search=dining%20table
-/search?search=walnut
-```
-
-Do NOT introduce:
-
-```text
-?q=
-?query=
-?keyword=
-?term=
-?s=
-```
-
-The canonical vocabulary is `search`.
-
----
-
-# 5. Website Route vs Laravel Endpoint
-
-Important distinction:
-
-```text
-Website:
-GET /search?search=chair
-
-Laravel:
-GET /api/v1/products?search=chair
-```
-
-There is NO requirement for:
-
-```text
-GET /api/v1/search
-```
-
-Do not create one.
-
-Do not modify Laravel merely to make the website route names symmetrical.
-
----
-
-# 6. CAT-001 Is Search Authority
-
-Use the existing public product collection endpoint:
+The public product collection already supports:
 
 ```text
 GET /api/v1/products
@@ -191,486 +145,281 @@ GET /api/v1/products
 with:
 
 ```text
-search=<term>
+search
+category
+product_type
+availability
+min_price
+max_price
+sort
+sort_direction
+page
+per_page
 ```
 
-The backend owns:
+Use these names exactly.
 
-```text
-search semantics
-FULLTEXT behavior
-variant matching
-visibility rules
-filter composition
-sorting
-pagination
-SQL escaping
-database-driver behavior
-```
-
-The frontend must not reproduce these rules.
+Do NOT introduce aliases.
 
 ---
 
-# 7. Do Not Build a Frontend Search Engine
+# 5. Canonical Filter Contract
+
+## Category
+
+```text
+category=<backend category slug>
+```
+
+Laravel also accepts public category IDs, but website URLs should prefer authoritative backend slugs.
+
+Do not generate category slugs locally.
+
+---
+
+## Product Type
+
+Closed values:
+
+```text
+IN_STOCK
+MADE_TO_ORDER
+```
+
+Do not invent:
+
+```text
+READY_MADE
+CUSTOM
+PREORDER
+REQUEST_ONLY
+```
+
+---
+
+## Availability
+
+Closed values:
+
+```text
+available
+unavailable
+```
+
+Case matters.
+
+Do not send:
+
+```text
+AVAILABLE
+UNAVAILABLE
+in_stock
+out_of_stock
+```
+
+---
+
+## Price
+
+```text
+min_price
+max_price
+```
+
+These are integer TZS **minor units**.
+
+Do not send floating-point monetary values to Laravel.
+
+---
+
+## Sort
+
+Allowed:
+
+```text
+created_at
+price
+name
+```
+
+Direction:
+
+```text
+asc
+desc
+```
+
+No other public sort field is permitted.
+
+---
+
+# 6. Explicitly Forbidden Filter
+
+Do NOT create:
+
+```text
+stock_indicator=
+```
+
+`stock_indicator` is display-only.
+
+Therefore do not expose filters such as:
+
+```text
+Low stock
+Stock indicator
+Only a few left
+```
+
+as CAT-001 filters.
+
+---
+
+# 7. Backend Query Pipeline Is Authority
+
+Laravel already owns:
+
+```text
+search
+  ↓
+filters
+  ↓
+allow-listed sort
+  ↓
+id ASC deterministic tie-breaker
+  ↓
+pagination
+```
+
+The frontend supplies URL state only.
+
+Do not reproduce this pipeline in JavaScript.
+
+---
+
+# 8. No Client-Side Filtering
 
 Forbidden:
 
 ```text
-fetch all products
-→ filter in JavaScript
+fetch products
+→ Array.filter()
+→ Array.sort()
 ```
 
 Also forbidden:
 
 ```text
-Fuse.js
-MiniSearch
-Lunr
-Algolia
-Meilisearch
-ElasticSearch
-local fuzzy matching
-custom relevance engine
+fetch all 100 products
+→ filter locally
 ```
 
-No search dependency is expected.
+Every production filter/sort change must result in an appropriate CAT-001 query.
 
 ---
 
-# 8. Backend Search Semantics
+# 9. Canonical `/products` Examples
 
-Inspect the authoritative backend contract and implementation.
-
-Do NOT attempt to duplicate:
+Valid URLs conceptually include:
 
 ```text
-MySQL FULLTEXT
-MariaDB FULLTEXT
-SQLite fallback behavior
-variant SKU search
-variant attribute search
-escaping rules
-visibility constraints
+/products?category=living-room
+
+/products?product_type=MADE_TO_ORDER
+
+/products?availability=available
+
+/products?min_price=5000000&max_price=200000000
+
+/products?sort=price&sort_direction=asc
+
+/products?category=living-room&product_type=IN_STOCK&sort=price&sort_direction=asc
 ```
 
-The browser sends the term.
-
-Laravel determines matches.
+Parameter order has no semantic meaning.
 
 ---
 
-# 9. Public Access
+# 10. Search Composition
 
-Search is public.
-
-Required:
-
-```text
-Clerk: NONE
-authentication: NONE
-cookies required: NONE
-customer account required: NONE
-```
-
-Do not introduce auth during this phase.
-
----
-
-# 10. Server-First Architecture
-
-Expected:
-
-```text
-app/search/page.tsx
-→ Server Component
-```
-
-Do not add `"use client"` to the search page.
-
-Search results must be present in server-rendered HTML.
-
----
-
-# 11. Native GET Search Form
-
-Prefer a semantic HTML GET form.
-
-Conceptually:
-
-```html
-<form action="/search" method="get">
-  <label>...</label>
-  <input name="search" ... />
-  <button type="submit">Search</button>
-</form>
-```
-
-Exact implementation must use the existing design system/MUI architecture.
-
-The essential behavior is:
-
-```text
-input
-→ native GET
-→ /search?search=<encoded term>
-→ server-rendered results
-```
-
-Search must work with JavaScript disabled.
-
----
-
-# 12. No Client Search State
-
-Do not introduce React state merely to hold the search term.
-
-Do not require:
-
-```text
-useState
-useEffect
-useRouter
-router.push
-window.location
-```
-
-for ordinary search submission.
-
-The URL is the durable state.
-
----
-
-# 13. No Debounced Search
-
-Do not implement:
-
-```text
-search-as-you-type
-debounce
-live results
-autocomplete
-suggestions
-predictive search
-typeahead
-```
-
-Those are not required by Phase 14.5.
-
----
-
-# 14. No Search Overlay
-
-Do not create a modal/command-palette search system.
-
-The canonical search destination is `/search`.
-
----
-
-# 15. Header Search Integration
-
-Inspect the existing `SearchAffordance` from the website shell.
-
-Phase 13.7 intentionally reserved `/search` without implementing search functionality.
-
-Now activate the legitimate search destination.
-
-At minimum:
-
-```text
-header search affordance
-→ /search
-```
-
-If the existing architecture naturally supports a real semantic search form in the header without unnecessary client state or visual disruption, that may be implemented.
-
-Do NOT rebuild the entire header.
-
----
-
-# 16. Header Integration Rule
-
-Do not create competing search implementations such as:
-
-```text
-HeaderSearch
-DesktopSearch
-MobileSearch
-SearchBar
-SearchInput
-GlobalSearch
-```
-
-unless their responsibilities genuinely differ.
-
-Prefer one reusable search-form responsibility where appropriate.
-
----
-
-# 17. Search Page Without Query
-
-`/search` is a valid public page.
-
-It should NOT be a 404.
-
-When no meaningful search term exists, render an intentional search-entry state such as:
-
-```text
-Search furniture
-Find pieces by name, material, style, or other catalog information.
-[search field]
-```
-
-Copy must remain factual and should not promise fields the backend does not actually search.
-
----
-
-# 18. Do Not Treat Missing Query as Error
-
-These are not errors:
-
-```text
-/search
-/search?search=
-```
-
-Do not invoke:
-
-```text
-notFound()
-error boundary
-validation error UI
-```
-
-merely because a search term is absent.
-
----
-
-# 19. Blank / Whitespace Search
-
-The backend deliberately normalizes empty/whitespace search to no search predicate.
-
-The website should avoid accidentally turning a blank search page into an unfiltered duplicate of `/products`.
-
-Normalize **presentation intent** conservatively:
-
-```text
-missing search
-empty search
-whitespace-only search
-```
-
-should render the search-entry state rather than displaying the entire catalog as “search results.”
-
-Do not change backend semantics.
-
----
-
-# 20. Search Term Normalization
-
-Do not aggressively transform user search input.
-
-Do NOT:
-
-```text
-lowercase manually
-stem words
-remove punctuation
-transliterate
-rewrite spelling
-singularize/pluralize
-remove stop words
-```
-
-Laravel owns search interpretation.
-
-Trimming surrounding whitespace for UI/query-state purposes is acceptable if consistent with the backend contract.
-
----
-
-# 21. URL Encoding
-
-Use standard URL/form encoding.
-
-Do not hand-build unsafe query strings.
-
-Search terms may contain:
-
-```text
-spaces
-&
-%
-_
-\
-punctuation
-Unicode
-```
-
-The backend already owns SQL escaping.
-
-The frontend must correctly encode URL state.
-
----
-
-# 22. Next.js Search Params
-
-Use the installed Next.js 16.3.8 App Router conventions.
-
-Verify actual framework behavior for `searchParams`.
-
-Do not copy obsolete Next.js examples blindly.
-
----
-
-# 23. API Client
-
-Reuse:
-
-```text
-frontend/web/lib/api/client.ts
-```
-
-and the existing catalog-domain helper established by 14.1–14.4 where appropriate.
-
-Do NOT introduce:
-
-```text
-Axios
-React Query
-SWR
-new fetch wrapper
-Next.js API proxy
-route handler proxy
-BFF
-```
-
----
-
-# 24. Existing Product Collection Logic
-
-Phase 14.3 already implemented:
-
-```text
-GET /api/v1/products
-ProductGrid
-pagination
-Product Summary mapping
-empty collection behavior
-```
-
-Reuse that architecture.
-
-Do not duplicate it under search-specific names.
-
----
-
-# 25. Extend the Existing Catalog Query Boundary
-
-If Phase 14.3 created something conceptually equivalent to:
-
-```text
-getProducts(...)
-buildProductQuery(...)
-ProductCollection
-ProductGrid
-Pagination
-```
-
-extend/reuse it.
-
-Do not create:
-
-```text
-searchProductsViaApi()
-SearchProductGrid
-SearchProductCard
-SearchPagination
-SearchPriceFormatter
-```
-
-when the existing collection architecture can represent the same responsibility.
-
----
-
-# 26. Search Request
-
-For a meaningful term:
-
-```text
-GET /api/v1/products?search=<term>
-```
-
-Use the established cache policy.
-
-Current catalog implementation reports:
-
-```text
-no-store
-```
-
-Remain consistent unless repository authority says otherwise.
-
----
-
-# 27. Search + Pagination
-
-Search results must support pagination.
+Filters must compose with Phase 14.5 search.
 
 Example:
 
 ```text
-/search?search=chair&page=2
+/search?search=chair&category=living-room&product_type=MADE_TO_ORDER
 ```
 
-The search term must survive Previous/Next navigation.
+Backend request:
+
+```text
+GET /api/v1/products?search=chair&category=living-room&product_type=MADE_TO_ORDER
+```
+
+Do not create a second search/filter endpoint.
 
 ---
 
-# 28. Clean Page-One URL
+# 11. Search Term Must Survive Filtering
 
-Preserve the Phase 14.3 convention.
-
-Page one should not unnecessarily canonicalize UI navigation to:
-
-```text
-/search?search=chair&page=1
-```
-
-Prefer:
+Given:
 
 ```text
 /search?search=chair
 ```
 
-for page one.
-
-Do not implement comprehensive SEO canonical tags; that remains Phase 14.7.
-
----
-
-# 29. Preserve Search Term Across Pagination
-
-Required:
+applying:
 
 ```text
-/search?search=chair
-→ Next
-→ /search?search=chair&page=2
-
-page 2
-→ Previous
-→ /search?search=chair
+product_type=MADE_TO_ORDER
 ```
 
-Do not lose the query.
+must produce conceptually:
+
+```text
+/search?search=chair&product_type=MADE_TO_ORDER
+```
+
+Never silently drop the search term.
 
 ---
 
-# 30. Do Not Implement Filters Yet
+# 12. Filters Must Survive Pagination
 
-Phase 14.6 owns filters and sorting.
+Given:
 
-Do NOT add UI for:
+```text
+/products?category=living-room&sort=price&sort_direction=asc
+```
+
+Next page must preserve that state:
+
+```text
+/products?category=living-room&sort=price&sort_direction=asc&page=2
+```
+
+---
+
+# 13. Search + Filters Must Survive Pagination
+
+Example:
+
+```text
+/search?search=chair&availability=available&page=2
+```
+
+Pagination must preserve both:
+
+```text
+search=chair
+availability=available
+```
+
+---
+
+# 14. Filter Changes Reset Pagination
+
+When the user changes:
 
 ```text
 category
@@ -680,128 +429,896 @@ min_price
 max_price
 sort
 sort_direction
-```
-
-during Phase 14.5.
-
----
-
-# 31. Query-Parameter Boundary
-
-The routing contract allows catalog query parameters generally, but Phase 14.5 owns only:
-
-```text
 search
-page
 ```
 
-and any already-established pagination parameter necessary for the existing ProductGrid contract.
+the resulting request should return to page 1.
 
-Do not prematurely build the Phase 14.6 filter parser/UI.
-
----
-
-# 32. Unknown Parameters
-
-Do not globally strip/rewrite unknown query parameters.
-
-Follow the existing routing convention.
-
-The search page should read only the parameters it owns.
-
----
-
-# 33. Search Results Heading
-
-For a meaningful query, provide a clear page heading.
-
-Example structure:
+Do NOT preserve a stale:
 
 ```text
-Search results
-"Dining table"
+page=7
 ```
 
-or equivalent.
+after changing filters.
 
-Avoid awkward keyword-stuffed headings.
-
-Exactly one H1.
+The clean page-one URL should omit `page=1`.
 
 ---
 
-# 34. Search Term Display
+# 15. `per_page`
 
-When echoing the user's search term:
+Do not expose a page-size selector unless repository authority explicitly requires one.
+
+Continue using the existing product-listing pagination size.
+
+Phase 14.6 is not permission to add:
 
 ```text
-render as text
-never HTML
+20 / 40 / 80 per page
 ```
 
-Do not use:
+controls.
+
+---
+
+# 16. Default Sort
+
+Laravel default is:
 
 ```text
-dangerouslySetInnerHTML
+created_at DESC
+then id ASC
 ```
 
-Do not attempt custom match highlighting with HTML injection.
+When the user has not explicitly selected sorting, prefer the clean URL:
+
+```text
+/products
+```
+
+rather than unnecessarily serializing:
+
+```text
+?sort=created_at&sort_direction=desc
+```
+
+unless the existing routing architecture requires explicit defaults.
 
 ---
 
-# 35. No Search-Term Highlighting Requirement
+# 17. User-Facing Sort Choices
 
-Do not add complex highlighting of matching fragments.
+The UI may present clear human labels mapped to frozen query pairs.
 
-The backend returns products, not authoritative match ranges.
+A reasonable mapping is:
 
-No regex-based HTML highlighting is required.
+```text
+Newest
+→ default / created_at DESC
+
+Price: Low to high
+→ sort=price&sort_direction=asc
+
+Price: High to low
+→ sort=price&sort_direction=desc
+
+Name: A to Z
+→ sort=name&sort_direction=asc
+
+Name: Z to A
+→ sort=name&sort_direction=desc
+```
+
+But inspect repository UX conventions before finalizing labels.
+
+Do not invent:
+
+```text
+Best selling
+Popular
+Recommended
+Featured
+Top rated
+Relevance
+Trending
+```
+
+because Laravel provides no such sort semantics.
 
 ---
 
-# 36. Product Results
+# 18. Sort Pair Is One UI Concept
 
-Use the canonical:
+Although Laravel exposes:
+
+```text
+sort
+sort_direction
+```
+
+the customer does not necessarily need two separate controls.
+
+Prefer one clear sorting control that maps each user-facing option to a valid frozen pair.
+
+Do not make customers understand backend query architecture.
+
+---
+
+# 19. No Fake Relevance Sort
+
+Search must NOT introduce:
+
+```text
+Sort by relevance
+```
+
+unless the frozen API explicitly adds such a sort later.
+
+It currently does not.
+
+---
+
+# 20. Category Filter Authority
+
+Use CAT-003:
+
+```text
+GET /api/v1/categories
+```
+
+for public category filter options where category options are needed.
+
+CAT-003 returns active storefront top-level categories beneath the structural Furnitures Root.
+
+Do not duplicate taxonomy in frontend constants.
+
+---
+
+# 21. No Hard-Coded Production Categories
+
+Forbidden:
+
+```ts
+const categories = [
+  "Living Room",
+  "Bedroom",
+  ...
+];
+```
+
+for production filter options.
+
+Use authoritative API data.
+
+Fixture taxonomy may remain only in explicit fixture mode.
+
+---
+
+# 22. Category Slug
+
+Filter value:
+
+```text
+category.slug
+```
+
+Display:
+
+```text
+category.name
+```
+
+Do not send the display name.
+
+---
+
+# 23. Category Collection Pagination
+
+CAT-003 itself is paginated.
+
+Do not assume the first page contains every category forever.
+
+Inspect the existing category retrieval helper established in 14.1/14.2 and reuse it.
+
+If the existing architecture already obtains all required active top-level categories safely, reuse that path.
+
+Do not fetch `per_page=100` reflexively without understanding the existing contract and expected taxonomy size.
+
+---
+
+# 24. Category Filter Failure
+
+If product retrieval succeeds but category-option retrieval unexpectedly fails, do not silently invent categories.
+
+Use the established failure architecture or a deliberately degraded filter presentation only if existing architecture clearly supports that distinction.
+
+Do not hide upstream failures with fixtures.
+
+---
+
+# 25. Product Type Filter
+
+Present the two actual domain concepts:
+
+```text
+In stock
+Made to order
+```
+
+while sending:
+
+```text
+IN_STOCK
+MADE_TO_ORDER
+```
+
+MADE_TO_ORDER must remain a first-class offering.
+
+Do not visually style it as an error/warning.
+
+---
+
+# 26. Availability Filter
+
+Use:
+
+```text
+Available
+Unavailable
+```
+
+mapped to:
+
+```text
+available
+unavailable
+```
+
+Do not conflate:
+
+```text
+product_type=IN_STOCK
+```
+
+with:
+
+```text
+availability=available
+```
+
+They are separate frozen semantics.
+
+---
+
+# 27. Product Type vs Availability
+
+These combinations are not for the frontend to reinterpret.
+
+For example:
+
+```text
+product_type=MADE_TO_ORDER
+availability=available
+```
+
+must be passed to Laravel if selected.
+
+Do not impose undocumented cross-field rules.
+
+---
+
+# 28. Price Filter UX
+
+The public UI may accept user-friendly TZS amounts.
+
+But CAT-001 requires integer minor units.
+
+Therefore establish one explicit conversion boundary:
+
+```text
+user-facing TZS
+→ validated integer monetary value
+→ minor units
+→ URL/API query
+```
+
+Reuse existing money utilities if they support this responsibility.
+
+---
+
+# 29. Money Precision
+
+Project convention remains:
+
+```text
+1 TZS = 100 minor units
+```
+
+Do not perform business arithmetic using floating point.
+
+If the UI accepts whole TZS:
+
+```text
+125000 TZS
+→ 12500000 minor units
+```
+
+using integer-safe conversion.
+
+---
+
+# 30. Do Not Expose Minor Units to Users
+
+Do not label a field:
+
+```text
+Minimum price in minor units
+```
+
+Customers should see ordinary TZS amounts.
+
+The API boundary handles minor-unit serialization.
+
+---
+
+# 31. Price Input Constraints
+
+Use appropriate accessible numeric input semantics.
+
+Do not accept:
+
+```text
+negative prices
+NaN
+Infinity
+scientific notation as intentional money UX
+```
+
+Do not silently reinterpret malformed values.
+
+---
+
+# 32. Price Cross-Field Rule
+
+Frozen contract requires:
+
+```text
+min_price <= max_price
+```
+
+Laravel remains authoritative.
+
+Frontend UX should prevent or clearly handle an obviously inverted range where practical.
+
+Do not replace backend validation.
+
+---
+
+# 33. Invalid URL State
+
+Users can manually edit URLs.
+
+Therefore Phase 14.6 must handle invalid values deliberately.
+
+Examples:
+
+```text
+?product_type=WRONG
+?availability=yes
+?sort=rating
+?sort_direction=sideways
+?min_price=-1
+?min_price=500&max_price=100
+```
+
+Do not crash.
+
+Do not silently convert arbitrary values into valid ones and pretend they were requested.
+
+---
+
+# 34. Laravel Validation Authority
+
+CAT-001 invalid supported parameters may return:
+
+```text
+422 INVALID_VALUE
+```
+
+Do not convert that to:
+
+```text
+empty catalog
+404
+```
+
+Use the established expected-error/state architecture.
+
+---
+
+# 35. Unknown Query Parameters
+
+The routing contract states:
+
+```text
+a route reads only the parameters it owns
+```
+
+Do not globally strip unknown parameters.
+
+Do not build a query sanitizer that rewrites the browser URL on every render.
+
+---
+
+# 36. URL Is State Authority
+
+Filter state must come from URL search parameters.
+
+Do not maintain a competing durable state in:
+
+```text
+React Context
+Redux
+Zustand
+localStorage
+sessionStorage
+cookies
+```
+
+No new state library.
+
+---
+
+# 37. Progressive Enhancement
+
+The filtering/sorting experience should remain functional without JavaScript where practical.
+
+A native GET form is the preferred baseline:
+
+```text
+<form method="get">
+```
+
+This naturally creates shareable URLs.
+
+---
+
+# 38. `/products` Filter Form
+
+Conceptually:
+
+```text
+GET /products
+```
+
+with controls named according to the frozen API vocabulary.
+
+Do not require client-side navigation merely to apply filters.
+
+---
+
+# 39. `/search` Filter Form
+
+Conceptually:
+
+```text
+GET /search
+```
+
+and preserve:
+
+```html
+<input type="hidden" name="search" ...>
+```
+
+or equivalent server-rendered state.
+
+Do not make users re-enter their search when applying a filter.
+
+---
+
+# 40. Apply Behavior
+
+A clear:
+
+```text
+Apply filters
+```
+
+action is acceptable and preferable to adding client JavaScript solely for auto-submit.
+
+Do not introduce `useEffect` watching filter values.
+
+---
+
+# 41. Sorting Apply Behavior
+
+Sorting may use the same native GET form/apply action.
+
+Do not add client JS merely so a select auto-submits.
+
+Progressive enhancement is more important than fashionable interaction.
+
+---
+
+# 42. Clear Filters
+
+Provide a clear way to remove filter/sort state.
+
+For `/products`:
+
+```text
+Clear filters
+→ /products
+```
+
+For `/search`:
+
+```text
+Clear filters
+→ preserve search term
+```
+
+Example:
+
+```text
+/search?search=chair&category=living-room
+```
+
+clear filters becomes:
+
+```text
+/search?search=chair
+```
+
+Do not clear the search term when the action says “Clear filters.”
+
+---
+
+# 43. Clear Search Is Different
+
+Do not conflate:
+
+```text
+Clear filters
+```
+
+with:
+
+```text
+Clear search
+```
+
+Phase 14.5 owns the search term.
+
+---
+
+# 44. Active Filter Summary
+
+A restrained active-filter summary may be useful.
+
+But do not build a badge/chip wall.
+
+If implemented, use existing MUI semantics and frozen tokens.
+
+Do not create a new pill-heavy visual language.
+
+---
+
+# 45. Active Filter Removal
+
+If individual removable filters are implemented, their links/actions must preserve all other current URL state and reset pagination.
+
+Do not require JavaScript merely for removal.
+
+---
+
+# 46. Desktop Information Architecture
+
+A furniture catalog commonly benefits from:
+
+```text
+collection heading
+result context
+sort control
+filter controls
+product grid
+pagination
+```
+
+Possible desktop structure:
+
+```text
+filters | product results
+```
+
+or a restrained filter disclosure above the grid.
+
+Choose based on the existing SL Furnitures layout system.
+
+Urban Ladder may inform information architecture only.
+
+Do not copy its visual treatment.
+
+---
+
+# 47. Mobile Information Architecture
+
+Do not simply squeeze a desktop sidebar into 320px.
+
+A compact mobile filter disclosure is appropriate.
+
+Before introducing a new Drawer, inspect the existing MUI mobile-navigation pattern and design-system conventions.
+
+---
+
+# 48. Mobile Client Boundary
+
+A mobile filter Drawer may justify a narrowly scoped Client Component.
+
+However, it is NOT mandatory.
+
+Prefer native/server-compatible disclosure if it provides a strong accessible experience.
+
+If a Drawer is used:
+
+```text
+page remains Server Component
+ProductGrid remains server-rendered
+URL remains state authority
+Drawer only owns temporary open/closed state
+filter values still submit through URL
+```
+
+---
+
+# 49. Client State Boundary
+
+The only acceptable local state is ephemeral presentation state such as:
+
+```text
+filter panel open/closed
+```
+
+Do not put authoritative filter values into React state if the URL already owns them.
+
+---
+
+# 50. No Client-Side Result Refresh Architecture
+
+Do not introduce:
+
+```text
+fetch in useEffect
+router.refresh orchestration
+optimistic filtering
+client cache
+React Query
+SWR
+```
+
+Phase 14.6 remains server-driven.
+
+---
+
+# 51. Existing ProductGrid
+
+Reuse canonical:
 
 ```text
 ProductGrid
-ProductCard
 ```
 
-from Phase 14.3.
-
-Do not create search-specific cards.
-
----
-
-# 37. Product Navigation
-
-Search result ProductCards must continue to navigate to:
+Do not create:
 
 ```text
-/products/{backendSlug}
+FilteredProductGrid
+SortableProductGrid
+SearchFilteredGrid
 ```
-
-using authoritative Laravel slugs.
-
-No locally generated slug.
 
 ---
 
-# 38. Search Empty State
+# 52. Existing ProductCard
 
-A successful search with zero matches is:
+Reuse canonical ProductCard unchanged unless a genuine reusable requirement emerges.
+
+Filtering must not alter card design.
+
+---
+
+# 53. Existing Pagination
+
+Extend the canonical pagination query-preservation behavior.
+
+Do not create:
+
+```text
+FilterPagination
+SearchFilterPagination
+```
+
+---
+
+# 54. Shared Catalog Query Representation
+
+By the end of Phase 14.6, `/products` and `/search` should preferably share one typed representation for CAT-001 URL/query state.
+
+Conceptually:
+
+```ts
+type ProductCollectionQuery = {
+  search?: string;
+  category?: string;
+  product_type?: "IN_STOCK" | "MADE_TO_ORDER";
+  availability?: "available" | "unavailable";
+  min_price?: ...;
+  max_price?: ...;
+  sort?: "created_at" | "price" | "name";
+  sort_direction?: "asc" | "desc";
+  page?: number;
+};
+```
+
+Do not copy this literally without inspecting existing types.
+
+Extend existing catalog query types where possible.
+
+---
+
+# 55. One Query Serializer
+
+Do not hand-build query strings separately in:
+
+```text
+products page
+search page
+pagination
+filter controls
+clear-filter links
+```
+
+Prefer one reusable query serialization responsibility.
+
+It must use standard URL encoding.
+
+---
+
+# 56. Serializer Must Not Become Contract Authority
+
+The serializer represents the frozen contract.
+
+It must not invent:
+
+```text
+aliases
+new enums
+fallback sort fields
+implicit filters
+```
+
+---
+
+# 57. Search Integration
+
+Phase 14.5's `getProductCatalog` should remain the canonical product collection data boundary if appropriate.
+
+Extend it rather than creating:
+
+```text
+getFilteredProducts()
+getSortedProducts()
+getSearchFilteredProducts()
+```
+
+unless repository structure genuinely requires otherwise.
+
+---
+
+# 58. Fixture Mode
+
+Production/default mode remains API-backed.
+
+Fixture filtering may be extended only for explicit visual-development mode.
+
+Do not use fixtures as fallback.
+
+---
+
+# 59. Fixture Semantics
+
+Fixture filtering does not need to reproduce Laravel SQL internals.
+
+It should only support deterministic visual verification of:
+
+```text
+category
+product type
+availability
+price
+sorting
+pagination
+search composition
+```
+
+where practical.
+
+Document it as fixture behavior.
+
+---
+
+# 60. No Fixture Contract Drift
+
+Use the same public query vocabulary in fixture mode.
+
+Do not invent:
+
+```text
+fixtureCategory
+fixtureSort
+filterBy
+```
+
+---
+
+# 61. Category Pages
+
+Phase 14.2 category pages are category landing/discovery pages.
+
+Do NOT automatically turn `/categories/[slug]` into the generic filterable listing surface.
+
+Phase 14.6's primary filtering surfaces are:
+
+```text
+/products
+/search
+```
+
+Keep category landing pages focused unless existing repository architecture explicitly establishes otherwise.
+
+---
+
+# 62. Category Navigation to Filtered Products
+
+Do not replace canonical:
+
+```text
+/categories/[slug]
+```
+
+navigation with:
+
+```text
+/products?category=<slug>
+```
+
+They serve different IA purposes.
+
+The category filter is an additional catalog-discovery mechanism.
+
+---
+
+# 63. Result Count
+
+Reuse authoritative:
+
+```text
+meta.pagination.total
+```
+
+if displaying result counts.
+
+Do not use current-page array length as total results.
+
+---
+
+# 64. Empty Filtered Result
+
+A valid filter combination with no matches is:
 
 ```text
 HTTP 200
-```
-
-It is NOT:
-
-```text
-404
-error
-exception
 ```
 
 Render a factual empty state.
@@ -809,932 +1326,480 @@ Render a factual empty state.
 Example intent:
 
 ```text
-No furniture found for “<term>”.
-Try another search.
+No furniture matches these filters.
 ```
 
-Do not invent recommendations.
-
----
-
-# 39. Empty Search vs Empty Results
-
-These are different states:
+Offer:
 
 ```text
-/search
-→ no query / search-entry state
-
-/search?search=zzzzzz
-→ query executed / zero-result state
+Clear filters
 ```
 
-Do not collapse them.
+where appropriate.
+
+Do not show fake recommendations.
 
 ---
 
-# 40. No Fake Recommendations
+# 65. Search + Filter Empty Result
 
-Zero-result search must not invent:
+Example:
 
 ```text
-Popular products
-Trending now
-Customers also searched
-Recommended for you
+/search?search=chair&product_type=MADE_TO_ORDER
 ```
 
-unless authoritative data exists.
-
----
-
-# 41. No Search History
-
-Do not implement:
+with zero results remains:
 
 ```text
-recent searches
-localStorage history
-account search history
+HTTP 200
 ```
 
----
-
-# 42. No Analytics Infrastructure
-
-Do not introduce search analytics during this phase.
+and should preserve the user's search context.
 
 ---
 
-# 43. Error Handling
+# 66. No 404 for Filters
 
-Search uses the established Phase 13.8 failure architecture.
-
-Expected distinctions:
+Never invoke `notFound()` because:
 
 ```text
-200 + products
-→ results
-
-200 + empty data
-→ zero-result state
-
-422
-→ expected query/validation handling
-
-429
-→ respect Retry-After architecture
-
-5xx
-→ unexpected failure
-
-network failure
-→ unexpected transport failure
-
-timeout
-→ timeout transport failure
+category filter has no products
+price range has no products
+search + filter has no products
 ```
 
-Do not convert failures into empty search results.
+A collection query is not a resource lookup.
 
 ---
 
-# 44. Search Is Never Product 404
+# 67. Proxy Boundary
 
-A search returning zero products must never call:
+Do not add `/products` or `/search` to resource-existence preflight.
 
-```text
-notFound()
-```
-
-The search page exists independently of whether matches exist.
-
----
-
-# 45. Hard-404 Proxy Boundary
-
-Phase 14.4 added hard-404 preflight for:
+Existing hard-404 behavior remains only for actual detail resources such as:
 
 ```text
 /products/[slug]
-```
-
-Phase 14.2A added it for:
-
-```text
 /categories/[slug]
 ```
 
-`/search` must NOT receive resource-existence preflight.
-
-Required:
-
-```text
-/search
-→ no hard-404 catalog preflight
-```
-
 ---
 
-# 46. Proxy Regression
+# 68. Request-First Commerce
 
-Verify the existing proxy remains scoped correctly:
-
-```text
-/categories/[slug]
-→ category resource preflight
-
-/products/[slug]
-→ product resource preflight
-
-/products
-→ no detail preflight
-
-/search
-→ no resource preflight
-```
-
----
-
-# 47. Search Must Not Trigger CAT-002
-
-Search results use CAT-001 Product Summary.
-
-Do not fetch every result's CAT-002 detail resource.
-
-Forbidden:
-
-```text
-CAT-001
-→ loop products
-→ CAT-002 for each result
-```
-
-That would create N+1 API traffic.
-
----
-
-# 48. Product Summary Is Enough
-
-Search results should use the same Product Summary representation as `/products`.
-
-Do not require:
-
-```text
-full description
-full gallery
-full variants
-timestamps
-```
-
-for search cards.
-
----
-
-# 49. Search Form Design
-
-The search field should feel integrated with SL Furnitures:
-
-```text
-quiet
-clear
-functional
-editorial
-spacious
-```
-
-Not:
-
-```text
-command palette
-tech dashboard
-neon search bar
-oversized pill
-floating glass panel
-```
-
----
-
-# 50. Search Field Label
-
-The control must have an accessible name.
-
-Prefer a visible label where composition permits.
-
-A placeholder is not a replacement for a label.
-
----
-
-# 51. Search Button
-
-Use an actual submit button.
-
-Do not make a decorative icon the only inaccessible action.
-
-If an icon-only control is genuinely used, it requires an accessible label.
-
----
-
-# 52. Material UI Icons
-
-Website icon policy remains:
-
-```text
-@mui/icons-material only
-```
+Filtering does not change deployment mode.
 
 Do not add:
 
 ```text
-Lucide
-Heroicons
-react-icons
-Font Awesome
-custom search SVG
-emoji
+Add to cart
+Buy now
+Checkout
+Wishlist
+Payment
 ```
+
+to ProductCard or listing controls.
+
+MADE_TO_ORDER remains first-class.
 
 ---
 
-# 53. Search Icon Restraint
+# 69. Filter Labels
 
-One search icon where functionally useful is enough.
+Use human-readable labels.
 
-Do not decorate:
+Examples:
 
 ```text
-heading
-empty state
-result count
-product cards
+Category
+Product type
+Availability
+Price
+Sort by
 ```
 
-with repeated search icons.
-
----
-
-# 54. Search Input Autofocus
-
-Do not automatically autofocus if doing so causes:
+Avoid backend jargon such as:
 
 ```text
-unexpected mobile keyboard
-scroll jump
-focus theft
+product_type
+sort_direction
+minor units
 ```
 
-Default to normal document focus unless repository UX rules justify otherwise.
+in customer-facing UI.
 
 ---
 
-# 55. Search Form Submission
+# 70. Accessibility
 
-Submitting must work via keyboard:
+Filter controls require:
 
 ```text
-focus input
-type term
-Enter
-→ search
+proper labels
+fieldset/legend where groups benefit
+keyboard operability
+visible focus
+clear selected state
+non-color-only state
+touch-friendly controls
+logical tab order
 ```
 
-and via submit control.
+---
+
+# 71. Native Form Semantics
+
+Prefer:
+
+```text
+fieldset
+legend
+label
+input
+select
+button
+```
+
+or accessible MUI equivalents.
+
+Do not replace native semantics with clickable `Box` elements.
 
 ---
 
-# 56. Search Form Reuse
+# 72. Checkboxes vs Single-Value Contract
 
-If both header and search page need an actual search form, prefer one reusable semantic responsibility.
+CAT-001 accepts one value for:
 
-But do not force identical layout if header and page compositions differ.
+```text
+category
+product_type
+availability
+```
 
-Shared behavior does not require identical presentation.
+Do not present multi-select checkboxes that imply OR semantics unless the backend actually supports arrays/multiple values.
+
+A single-select/radio/select interaction should accurately reflect the contract.
 
 ---
 
-# 57. Design-System Authority
+# 73. Critical Multi-Select Rule
 
-All visual implementation must consume:
+Do NOT build UI allowing:
+
+```text
+IN_STOCK + MADE_TO_ORDER simultaneously
+```
+
+as two selected `product_type` values.
+
+The backend contract is singular.
+
+Likewise do not multi-select:
+
+```text
+available + unavailable
+```
+
+or multiple categories through repeated query values unless the contract explicitly supports that.
+
+---
+
+# 74. Price Accessibility
+
+Minimum and maximum price controls must have distinct accessible labels.
+
+Do not rely solely on placeholder text.
+
+---
+
+# 75. Sorting Accessibility
+
+Sort control must have an accessible label such as:
+
+```text
+Sort products
+```
+
+The visible selected option must correspond to URL state.
+
+---
+
+# 76. Mobile Filter Trigger
+
+If using a disclosure/Drawer:
+
+```text
+Filter
+```
+
+must expose:
+
+```text
+accessible name
+expanded/open state where appropriate
+keyboard operation
+Escape close if modal/drawer
+focus restoration
+```
+
+Reuse established mobile-navigation accessibility patterns where relevant.
+
+---
+
+# 77. Focus
+
+Applying filters performs normal navigation.
+
+Do not add complicated client-side focus management merely to mimic SPA filtering.
+
+Normal server navigation semantics are acceptable.
+
+---
+
+# 78. Responsive Requirements
+
+Verify:
+
+```text
+320
+390
+640
+959
+960
+961
+1024
+1440
+1728
+```
+
+Pay particular attention to:
+
+```text
+filter controls
+sort control
+long category names
+price inputs
+active filter state
+ProductGrid width
+pagination
+```
+
+---
+
+# 79. 200% Reflow
+
+At 200%:
+
+```text
+filters remain reachable
+labels remain visible
+controls do not overlap
+sort remains usable
+product grid reflows
+pagination remains usable
+```
+
+No horizontal document scrolling.
+
+---
+
+# 80. Design System
+
+Use:
 
 ```text
 tokens.css
 → MUI theme
 → existing primitives
-→ search composition
+→ collection controls
 ```
 
-No search-specific design scale.
+Do not create a filtering-specific visual system.
 
 ---
 
-# 58. No Ad-Hoc Visual Values
+# 81. Visual Character
 
-Do not invent:
+Filters should feel:
 
 ```text
-hex colors
+quiet
+architectural
+functional
+spacious
+editorial
+```
+
+Not:
+
+```text
+dashboard
+admin panel
+marketplace control center
+badge cloud
+pill wall
+glass panel
+```
+
+---
+
+# 82. No Excessive Containers
+
+Avoid putting every filter group inside its own card.
+
+Use:
+
+```text
 spacing
-font sizes
-line heights
-radii
-shadows
-breakpoints
-focus rings
-motion timings
-container widths
+typography
+subtle approved separators
 ```
 
----
-
-# 59. Typography
-
-Use Young Serif selectively for appropriate editorial/display roles.
-
-Search UI controls/results metadata remain utility sans.
-
-Do not make form controls Young Serif.
+for hierarchy.
 
 ---
 
-# 60. Product Cards
+# 83. Typography
 
-Product cards remain restrained:
+Use utility sans for:
 
 ```text
-image
-name
-price
-small factual state
+filter labels
+inputs
+selects
+prices
+sort controls
+result metadata
 ```
 
-Do not make search results visually different from other catalog results merely because they came from search.
+Do not use Young Serif for ordinary form controls.
 
 ---
 
-# 61. No Search Result Badges
+# 84. Icons
+
+Use only:
+
+```text
+@mui/icons-material
+```
+
+where icons genuinely clarify controls.
+
+Do not decorate every filter heading.
+
+---
+
+# 85. No Dependency
+
+Expected new dependency count:
+
+```text
+0
+```
 
 Do not add:
 
 ```text
-Best match
-Top result
-Popular
-Trending
-Recommended
+query-string
+qs
+react-hook-form
+Formik
+Zod
+React Query
+SWR
+state libraries
+slider packages
 ```
 
-unless the backend supplies authoritative semantics.
+merely for catalog filtering.
 
 ---
 
-# 62. Result Count
+# 86. Price Slider
 
-If the existing CAT-001 pagination metadata supplies total count, it may be displayed factually.
+Do NOT introduce a dual-handle slider dependency.
 
-Do not calculate total by:
+Simple accessible min/max inputs are preferable.
+
+If existing MUI Slider is considered, remember that URL/native-form behavior and precise accessible input remain more important than visual novelty.
+
+---
+
+# 87. SEO Boundary
+
+Do not implement comprehensive:
 
 ```text
-results.length
-```
-
-when pagination exists.
-
----
-
-# 63. Result Count Copy
-
-If displayed, distinguish:
-
-```text
-total matching products
-```
-
-from:
-
-```text
-products on this page
-```
-
-Do not misrepresent pagination metadata.
-
----
-
-# 64. Relevance Claims
-
-Do not label results:
-
-```text
-Most relevant
-Best match
-```
-
-unless the backend contract explicitly guarantees that ordering.
-
-The frontend must not infer ranking semantics.
-
----
-
-# 65. Sorting Boundary
-
-Do not add a “Sort by relevance” control.
-
-Phase 14.6 owns sorting UI, and `relevance` is not in the frozen public sort allow-list unless the repository now explicitly says otherwise.
-
-Frozen explicit sort fields are:
-
-```text
-created_at
-price
-name
-```
-
-Do not invent another sort value.
-
----
-
-# 66. Search Pipeline
-
-Preserve backend authority:
-
-```text
-search
-→ filter
-→ sort
-→ paginate
-```
-
-Phase 14.5 supplies the search portion.
-
-Phase 14.6 will expose appropriate filters/sorting.
-
----
-
-# 67. Responsive Layout
-
-Reuse:
-
-```text
-ContentContainer
-SiteSection
-ProductGrid
-canonical breakpoints
-canonical gutters
-```
-
-Do not create a search-specific responsive system.
-
----
-
-# 68. Mobile Search
-
-At 320px:
-
-```text
-search field fits
-submit control remains usable
-term does not overflow
-result heading reflows
-ProductGrid remains correct
-pagination remains usable
-```
-
-Do not solve narrow widths by globally hiding overflow.
-
----
-
-# 69. Desktop Search
-
-Do not stretch the search field across an unreadably wide page merely because space exists.
-
-Use existing content/layout authority.
-
----
-
-# 70. Long Queries
-
-Test a long but valid search term.
-
-The URL, heading, field and empty-state copy must wrap safely.
-
-Do not truncate the actual search term in a way that obscures what was searched.
-
----
-
-# 71. Special Characters
-
-Test URL-safe behavior for terms containing:
-
-```text
-&
-%
-_
-\
-quotes
-multiple spaces
-Unicode
-```
-
-The frontend must not crash or generate malformed URLs.
-
----
-
-# 72. Security
-
-User-entered search terms are untrusted text.
-
-Required:
-
-```text
-no raw HTML rendering
-no eval
-no custom SQL
-no direct database access
-no logging sensitive request state unnecessarily
-```
-
-React text rendering should provide the normal escaping boundary.
-
----
-
-# 73. Search Form and XSS
-
-Add regression coverage ensuring a term conceptually like:
-
-```text
-<script>alert(1)</script>
-```
-
-is rendered as text and never executed/interpreted as markup.
-
-Do not build your own HTML sanitizer merely for plain-text React rendering.
-
----
-
-# 74. Accessibility
-
-Verify:
-
-```text
-one main
-one H1
-logical headings
-search landmark/form semantics
-accessible search label
-keyboard submit
-visible focus
-touch target size
-result links keyboard accessible
-pagination accessible
-empty state understandable
-status not color-only
-200% reflow
-```
-
----
-
-# 75. Search Landmark
-
-Use appropriate search semantics.
-
-Avoid unnecessary nested/duplicate search landmarks if both header and page forms are present.
-
-If multiple search landmarks exist, ensure they can be distinguished accessibly where required.
-
----
-
-# 76. Focus Behavior
-
-After normal server navigation, do not implement custom focus manipulation unless needed.
-
-Do not forcibly move focus into results using client JavaScript.
-
-Preserve normal browser/document navigation.
-
----
-
-# 77. JavaScript Boundary
-
-Expected new `"use client"` files:
-
-```text
-NONE
-```
-
-A normal search form does not need client JavaScript.
-
-If the agent believes otherwise, STOP and justify why native GET submission is insufficient before introducing it.
-
----
-
-# 78. Fixture Policy
-
-The API remains the default.
-
-Do not catch API errors and substitute fixtures.
-
-If the existing explicit development fixture mode can support search safely, it may be extended only if useful for visual verification.
-
-Requirements remain:
-
-```text
-explicit fixture mode
-visible fixture notice
-no error fallback
-same ProductGrid/ProductCard
-same query semantics as far as fixture mode explicitly documents
-```
-
----
-
-# 79. Fixture Search Is Not Backend Search Proof
-
-If fixtures are used for visual search testing:
-
-```text
-fixture search
-≠
-proof of Laravel FULLTEXT behavior
-```
-
-Do not claim otherwise.
-
----
-
-# 80. Do Not Reimplement FULLTEXT in Fixtures
-
-Do not build a sophisticated client search engine merely to make fixtures behave like MySQL.
-
-A small deterministic fixture matcher, if already supported by the fixture architecture, may exist only for visual development.
-
-Production/default mode remains CAT-001.
-
----
-
-# 81. Local Empty Database
-
-If the local Laravel catalog remains empty:
-
-```text
-/search?search=chair
-→ HTTP 200
-→ zero-result state
-```
-
-This is valid runtime verification.
-
-Do not seed production data solely to make search screenshots look populated.
-
----
-
-# 82. Backend Search Verification
-
-Where the existing backend test infrastructure permits, run the established CAT-001 search tests rather than rewriting them.
-
-The backend already has dedicated coverage for:
-
-```text
-search semantics
-inactive variant exclusion
-SQLite fallback
-MySQL/MariaDB FULLTEXT
-```
-
-Do not change backend code during Phase 14.5 unless a genuine frozen-contract defect is discovered.
-
----
-
-# 83. Search Page Runtime Verification
-
-Verify:
-
-```text
-/search
-→ HTTP 200
-
-/search?search=
-→ HTTP 200
-
-/search?search=%20%20%20
-→ HTTP 200
-
-/search?search=chair
-→ HTTP 200
-
-/search?search=definitely-no-match
-→ HTTP 200
-```
-
-No query state should produce a resource 404.
-
----
-
-# 84. Pagination Runtime
-
-Where enough fixture/API results exist, verify:
-
-```text
-/search?search=chair&page=2
-```
-
-preserves `search=chair`.
-
-If the real database cannot produce multiple pages, use focused automated/fixture testing without fabricating production data.
-
----
-
-# 85. Existing Route Regression
-
-Verify:
-
-```text
-/
-→ works
-
-/products
-→ HTTP 200
-
-/products/[missing]
-→ HTTP 404
-
-/categories/[missing]
-→ HTTP 404
-
-/search
-→ HTTP 200
-```
-
----
-
-# 86. Search Header Regression
-
-The global search affordance must now lead to a real implemented route.
-
-No:
-
-```text
-href="#"
-disabled fake control
-dead /search destination
-```
-
----
-
-# 87. Search Result Product Navigation
-
-From a populated fixture/API search result:
-
-```text
-ProductCard
-→ /products/{backendSlug}
-```
-
-must continue to work.
-
-Do not add search context to the product URL such as:
-
-```text
-/products/chair?from=search
-```
-
-unless explicitly required later.
-
----
-
-# 88. Search Page Status Semantics
-
-Expected:
-
-```text
-no term
-→ 200 entry state
-
-matches
-→ 200 results
-
-zero matches
-→ 200 empty state
-
-invalid supported query value
-→ expected validation handling
-
-backend failure
-→ error architecture
-```
-
-No accidental 404.
-
----
-
-# 89. No Search-Specific Error Page
-
-Reuse the established failure architecture.
-
-Do not create:
-
-```text
-SearchErrorPage
-Search404
-SearchNetworkError
-```
-
-unless an existing reusable state cannot represent a genuine feature-owned expected failure.
-
----
-
-# 90. No New Loading Architecture
-
-Use existing App Router loading behavior where applicable.
-
-Do not add artificial delays or client spinners.
-
----
-
-# 91. Phase 14.6 Boundary
-
-Do NOT implement:
-
-```text
-filter drawer
-filter chips
-category filter UI
-product type filter
-availability filter
-price range
-sort selector
-clear-all filters
-active filter count
-mobile filter sheet
-```
-
-Those belong to Phase 14.6.
-
----
-
-# 92. Phase 14.7 Boundary
-
-Do NOT implement comprehensive:
-
-```text
-search metadata
-canonical metadata
-robots decisions
+canonical URL policy
+filter-page indexing policy
+robots metadata
+faceted-navigation SEO
 Open Graph
-Twitter cards
-dynamic title architecture
+dynamic SEO titles
 ```
 
 Phase 14.7 owns SEO metadata.
 
----
-
-# 93. Phase 14.8 Boundary
-
-Do NOT add structured data.
+Record any faceted-navigation SEO concern for 14.7 rather than solving it early.
 
 ---
 
-# 94. Phase 14.9 Boundary
+# 88. Structured Data Boundary
 
-Do NOT modify sitemap/robots.
+Do not modify JSON-LD.
 
----
-
-# 95. Phase 14.10 Boundary
-
-Do not create a search-driven recommendation/internal-linking system.
+Phase 14.8 owns structured data.
 
 ---
 
-# 96. Phase 14.11 Boundary
+# 89. Sitemap Boundary
 
-Use existing optimized ProductCard image behavior.
+Do not add filter URLs to sitemap.
 
-Do not expand into comprehensive image-performance work.
+Phase 14.9 owns sitemap/robots.
 
 ---
 
-# 97. Backend Boundary
+# 90. Internal Linking Boundary
 
-Expected backend changes:
+Do not create SEO filter landing pages or generated facet links.
+
+Phase 14.10 owns comprehensive internal linking.
+
+---
+
+# 91. Performance Boundary
+
+Do not add caching/prefetch architecture merely for filters.
+
+Phase 14.11 owns comprehensive performance optimization.
+
+---
+
+# 92. Backend Boundary
+
+Expected:
 
 ```text
-NONE
+backend changes: NONE
 ```
 
-CAT-001 search already exists.
+The filtering/sorting contract already exists.
 
-If the frontend discovers a genuine frozen-contract/backend mismatch:
+If frontend implementation discovers a frozen-contract/backend mismatch:
 
 ```text
 STOP
 document exact mismatch
-identify owning backend phase
-do not silently redesign the API
+do not silently change Laravel
 ```
 
 ---
 
-# 98. Flutter Boundary
+# 93. Flutter Boundary
 
 Expected:
 
@@ -1744,158 +1809,366 @@ NONE
 
 ---
 
-# 99. Dependencies
+# 94. Test Infrastructure
 
-Expected:
+Use the remediated standard:
 
 ```text
-NONE
+node:test
++
+tsx
+```
+
+for TypeScript behavioral tests.
+
+Do NOT recreate:
+
+```text
+load-ts.mjs
+node:vm
+eval
+new Function
+custom runtime TypeScript loader
 ```
 
 ---
 
-# 100. Component Creation Gate
+# 95. Focused Test Command
 
-For every new component report:
+Add a focused suite following existing conventions, preferably:
 
 ```text
-Component:
-<name>
-
-Stable responsibility:
-<responsibility>
-
-Existing components inspected:
-<list>
-
-MUI primitives considered:
-<list>
-
-Why existing composition was insufficient:
-<reason>
-
-Reusable outside /search:
-YES / NO
+npm run test:filters
 ```
 
-A component existing only to hide a few `sx` properties is not sufficient justification.
+or:
+
+```text
+npm run test:catalog-controls
+```
+
+Choose one name consistent with repository terminology.
+
+Do not create multiple overlapping suites.
 
 ---
 
-# 101. Likely Legitimate New Responsibility
+# 96. Minimum Query Contract Tests
 
-A reusable semantic search form may be legitimate if both:
+Test exact serialization for:
 
 ```text
-header
-search page
+category
+product_type
+availability
+min_price
+max_price
+sort
+sort_direction
+page
+search
 ```
-
-need the same behavior.
-
-But do not force shared visual composition where the contexts differ.
-
-Behavioral reuse and visual composition can remain separate.
 
 ---
 
-# 102. Forbidden Reinventions
-
-Avoid:
-
-```text
-SearchProductCard
-SearchProductGrid
-SearchPrice
-SearchContainer
-SearchSection
-SearchPagination
-SearchTypography
-SearchButton
-```
-
-when canonical equivalents already exist.
-
----
-
-# 103. Automated Test Command
-
-Add a focused script following project convention, preferably:
-
-```text
-npm run test:search
-```
-
-if consistent with the current package scripts.
-
----
-
-# 104. Minimum Search Contract Tests
+# 97. Category Tests
 
 Cover:
 
 ```text
-/search route exists
-public access
-server-first page
-canonical search parameter is "search"
-q/query aliases are not introduced
-meaningful query calls CAT-001 with search=
-no /api/v1/search endpoint used
-API client reused
-no client-side product filtering
-no search dependency
-missing term renders entry state
-empty term renders entry state
-whitespace-only term renders entry state
-zero matches render HTTP-200 empty state
-results reuse ProductGrid
-results reuse ProductCard
-ProductCard URLs use backend slug
-pagination preserves search term
-page one removes unnecessary page=1
-/search receives no hard-404 preflight
-/products collection remains unaffected
-product/category hard-404 behavior remains intact
-non-404 API failures are not converted to empty results
+backend slug used
+display name not sent
+no frontend slugification
+single category only
+CAT-003 options reused
 ```
 
 ---
 
-# 105. Search Security Tests
+# 98. Product Type Tests
 
 Cover:
 
 ```text
-special characters safely encoded
-HTML-like query rendered as text
-no dangerouslySetInnerHTML
-no query interpolation into markup
+IN_STOCK
+MADE_TO_ORDER
+invalid value
+single selection
+```
+
+Ensure MADE_TO_ORDER is not styled/treated as error.
+
+---
+
+# 99. Availability Tests
+
+Cover:
+
+```text
+available
+unavailable
+invalid value
+```
+
+Ensure availability is not conflated with product type.
+
+---
+
+# 100. Forbidden Stock Indicator Test
+
+Explicit regression:
+
+```text
+stock_indicator filter:
+NOT IMPLEMENTED
+```
+
+No query serializer/UI should emit it.
+
+---
+
+# 101. Price Tests
+
+Cover:
+
+```text
+minimum only
+maximum only
+both
+min == max
+min < max
+min > max
+zero
+negative
+malformed input
+TZS → minor-unit conversion
+```
+
+Do not invent backend outcomes; test frontend conversion/validation and Laravel's actual documented response behavior separately.
+
+---
+
+# 102. Sort Tests
+
+Cover every supported pair used by the UI:
+
+```text
+created_at DESC
+price ASC
+price DESC
+name ASC
+name DESC
+```
+
+If “Newest” is represented by omitted sort parameters, test that clean URL behavior.
+
+---
+
+# 103. Unsupported Sort Test
+
+Ensure UI/serializer cannot intentionally emit:
+
+```text
+rating
+popularity
+relevance
+best_selling
+featured
 ```
 
 ---
 
-# 106. Search Accessibility Tests
+# 104. Pagination Tests
 
-Cover where practical:
+Given active filters, test:
 
 ```text
-search field accessible name
-submit button semantics
-keyboard submit
-one H1
-ProductCard link semantics
-pagination labels
-zero-result message
+next preserves filters
+previous preserves filters
+page 1 removes page=1
+filter change removes stale page
+sort change removes stale page
 ```
 
 ---
 
-# 107. Regression Suites
+# 105. Search Composition Tests
 
-Run the established equivalents of:
+Given:
 
 ```text
+search=chair
+```
+
+test applying/removing:
+
+```text
+category
+product_type
+availability
+price
+sort
+```
+
+without losing `search`.
+
+---
+
+# 106. Clear Tests
+
+Verify:
+
+```text
+/products + clear
+→ /products
+
+/search?search=chair + clear filters
+→ /search?search=chair
+```
+
+---
+
+# 107. Zero Results Tests
+
+Verify valid zero-result combinations:
+
+```text
+HTTP 200
+factual empty state
+no 404
+no fixture fallback
+no fake recommendations
+```
+
+---
+
+# 108. Error Tests
+
+Verify:
+
+```text
+422
+429
+5xx
+timeout
+network failure
+```
+
+remain distinguishable according to the established API/state architecture.
+
+Do not convert any into an empty product list.
+
+---
+
+# 109. Fixture Tests
+
+Where fixture mode supports visual verification, cover enough combinations to prove:
+
+```text
+filtering
+sorting
+search + filtering
+pagination preservation
+```
+
+Do not claim fixture behavior proves Laravel SQL behavior.
+
+---
+
+# 110. Laravel Contract Verification
+
+Run existing backend CAT-001 tests covering filters/sorting.
+
+Do not rewrite backend tests unless implementation reveals a genuine defect.
+
+Report exact test command and count.
+
+---
+
+# 111. Runtime API Smoke Tests
+
+If local Laravel is available, test representative CAT-001 URLs.
+
+If the local database remains empty, filters may legitimately all return:
+
+```text
+200
+data: []
+```
+
+Do not create synthetic production data merely for smoke testing.
+
+---
+
+# 112. Browser Verification
+
+Verify both:
+
+```text
+/products
+/search?search=<term>
+```
+
+with filtering controls.
+
+If fixture mode is needed for populated visual verification, clearly distinguish:
+
+```text
+API runtime evidence
+vs
+fixture visual evidence
+```
+
+---
+
+# 113. Product Detail Regression
+
+Verify:
+
+```text
+/products/[missing]
+→ HTTP 404
+```
+
+remains intact.
+
+---
+
+# 114. Category Regression
+
+Verify:
+
+```text
+/categories/[missing]
+→ HTTP 404
+```
+
+remains intact.
+
+---
+
+# 115. Collection Regression
+
+Verify:
+
+```text
+/products
+→ HTTP 200
+
+/search
+→ HTTP 200
+```
+
+and neither receives resource preflight.
+
+---
+
+# 116. Existing Frontend Suites
+
+Run:
+
+```text
+npm run test:filters       # actual chosen name
 npm run test:search
 npm run test:product-detail
 npm run test:products
@@ -1906,126 +2179,110 @@ npm run test:theme
 npm run test:layout
 npm run test:responsive
 npm run test:states
-npm run test:routing
 ```
 
-Use actual available script names.
+plus routing tests if separately exposed.
 
 ---
 
-# 108. Static Validation
+# 117. Static Validation
 
 Must pass:
 
 ```text
-TypeScript
-ESLint
-production build
+npm run typecheck
+npm run lint
+npm run build
 git diff --check
 ```
 
 ---
 
-# 109. Visual Verification
+# 118. Sonar Regression
 
-Inspect at minimum:
-
-```text
-320px
-390px
-960px
-1440px
-```
-
-Test both:
+Because test infrastructure was recently remediated, ensure Phase 14.6 introduces none of:
 
 ```text
-search-entry state
-zero-results state
-populated fixture/API results where available
+node:vm
+eval
+new Function
+SourceTextModule
+runInContext
+custom TS execution
 ```
+
+Do not reopen the SonarQube issue.
 
 ---
 
-# 110. 200% Reflow
+# 119. Component Creation Audit
 
-Verify:
+For each new component report:
 
 ```text
-search input remains usable
-button remains reachable
-query heading wraps
-results reflow
-pagination remains usable
-no horizontal document scroll
+Component:
+<name>
+
+Responsibility:
+<stable responsibility>
+
+Existing components inspected:
+<list>
+
+MUI primitives considered:
+<list>
+
+Why existing composition was insufficient:
+<reason>
+
+Reusable by both /products and /search:
+YES / NO
 ```
+
+Prefer reusable catalog controls rather than route-specific duplicates.
 
 ---
 
-# 111. Horizontal Overflow
+# 120. Expected Reuse
 
-Required:
+Likely reusable responsibilities may include conceptually:
 
 ```text
-document.documentElement.scrollWidth <= window.innerWidth
+CatalogFilters
+CatalogSort
+CatalogQuery
 ```
 
-Do not use global `overflow-x:hidden` as a fix.
+but these names are NOT requirements.
+
+Inspect the repo first.
+
+Do not create components simply because this prompt names a concept.
 
 ---
 
-# 112. Visual Quality Audit
+# 121. Forbidden Duplicates
 
-Search must remain consistent with the existing storefront.
-
-Check for:
+Do not create:
 
 ```text
-excessive rounded search container
-oversized search icon
-pill-heavy UI
-dashboard styling
-floating glass search
-gratuitous cards
-decorative empty-state illustration
-fake recommendation blocks
+ProductsFilterPanel
+SearchFilterPanel
+
+ProductsSort
+SearchSort
+
+ProductsPagination
+SearchPagination
 ```
 
-Expected:
-
-```text
-NONE
-```
+when the same catalog-query responsibility can be shared.
 
 ---
 
-# 113. Token Audit
+# 122. Client Boundary Audit
 
-Search Phase 14.5 changes for:
-
-```text
-raw hex
-arbitrary spacing
-arbitrary typography
-custom radius
-custom shadow
-raw breakpoint
-custom transition
-```
-
-Expected:
-
-```text
-NONE
-```
-
-unless already expressed through approved theme/token authority.
-
----
-
-# 114. Client Boundary Audit
-
-Report every new file containing:
+Report all new files containing:
 
 ```text
 "use client"
@@ -2037,47 +2294,33 @@ Expected:
 NONE
 ```
 
-Existing client boundaries from previous phases are allowed.
+or at most a narrowly justified ephemeral mobile filter disclosure.
 
----
-
-# 115. Network Audit
-
-For one search page render, verify:
+If one exists, report:
 
 ```text
-one appropriate CAT-001 collection request
-no CAT-002 N+1
-no /api/v1/search
-no duplicate search request caused by component structure
-```
-
-Framework/runtime verification traffic does not count as catalog duplication; distinguish it clearly.
-
----
-
-# 116. Documentation
-
-Update:
-
-```text
-phases/group-N-phases.md
-```
-
-with the Phase 14.5 execution record.
-
-Update `frontend/AGENTS.md` only if Phase 14.5 establishes a genuinely durable rule not already covered by:
-
-```text
-ROUTING.md
-design system
-responsive authority
-API architecture
+why native/server composition was insufficient
+what local state it owns
+why URL filter state remains server authority
+JS payload introduced
+no-JS fallback
 ```
 
 ---
 
-# 117. ADR
+# 123. Token Audit
+
+Search changes for:
+
+```text
+raw hex colors
+arbitrary spacing
+arbitrary font sizes
+arbitrary radius
+custom shadows
+raw breakpoint widths
+custom transition timings
+```
 
 Expected:
 
@@ -2085,293 +2328,340 @@ Expected:
 NONE
 ```
 
-The route and search architecture are already decided.
+---
 
-Do not create an ADR simply to record implementation.
+# 124. AI-Slop Audit
 
-If a material architectural conflict is discovered, STOP and explain it before adding a decision.
+Explicitly check for:
+
+```text
+filter-chip wall
+excessive pills
+card-per-filter
+gradient panels
+glassmorphism
+decorative icons
+floating control islands
+fake marketplace badges
+oversized rounded controls
+```
+
+Expected:
+
+```text
+NONE
+```
 
 ---
 
-# 118. Completion Report
+# 125. Documentation
+
+Update:
+
+```text
+frontend/web/ROUTING.md
+```
+
+only if necessary to mark the already-reserved filtering/sorting behavior as implemented.
+
+Do not rewrite the frozen query vocabulary.
+
+Update:
+
+```text
+phases/group-N-phases.md
+```
+
+with Phase 14.6 execution evidence.
+
+Update `frontend/AGENTS.md` only for a genuinely durable rule not already documented.
+
+---
+
+# 126. ADR
+
+Expected:
+
+```text
+NONE
+```
+
+The query contract and URL-state architecture are already decided.
+
+If a material unresolved architectural conflict appears, STOP before inventing a new decision.
+
+---
+
+# 127. Completion Report
 
 Return:
 
 ```text
-Phase 14.5 status:
+PHASE 14.6 — FILTERING & SORTING
+
+Status:
 PASS / BLOCKED
 
 
-ROUTE
+ROUTES
 
-Search route:
-<actual>
-
-Canonical parameter:
-search / FAIL
-
-Alternative q/query parameter introduced:
-NO / FAIL
-
-Public:
-YES / NO
-
-Server Component:
-YES / NO
-
-
-SEARCH ARCHITECTURE
-
-Website route:
-/search
-
-Laravel endpoint:
-<actual>
-
-CAT-001 reused:
-YES / NO
-
-/api/v1/search introduced:
-NO / FAIL
-
-Frontend search engine:
-NONE / FAIL
-
-New search dependency:
-NONE / FAIL
-
-API client reused:
-YES / NO
-
-Cache policy:
-<actual>
-
-
-SEARCH FORM
-
-Method:
-GET / <other>
-
-Action:
-<actual>
-
-Input name:
-search / FAIL
-
-Accessible label:
-PASS / FAIL
-
-Keyboard Enter:
-PASS / FAIL
-
-Works without JS:
-YES / NO
-
-Debounce:
-NONE / FAIL
-
-Autocomplete/typeahead:
-NONE / FAIL
-
-
-HEADER
-
-Existing search affordance:
-REUSED / <details>
-
-Destination:
-/search / FAIL
-
-Header rebuilt:
-NO / FAIL
-
-Dead search link:
-NONE / FAIL
-
-
-QUERY STATES
+/products:
+<status>
 
 /search:
-HTTP <status>
-State: <state>
+<status>
 
-/search?search=:
-HTTP <status>
-State: <state>
-
-Whitespace query:
-HTTP <status>
-State: <state>
-
-Matching query:
-HTTP <status>
-State: <state>
-
-Zero-result query:
-HTTP <status>
-State: <state>
-
-
-RESULTS
-
-ProductGrid reused:
+Category pages modified:
 YES / NO
 
-ProductCard reused:
-YES / NO
-
-Product Summary used:
-YES / NO
-
-CAT-002 per result:
-NONE / FAIL
-
-Backend slug navigation:
-PASS / FAIL
-
-Result count:
-<behavior>
-
-Fake relevance claims:
-NONE / FAIL
-
-
-PAGINATION
-
-Existing pagination reused:
-YES / NO
-
-Search term preserved:
-PASS / FAIL
-
-Page 1 URL:
-<example>
-
-Page 2 URL:
-<example>
-
-Unnecessary page=1:
-NONE / FAIL
-
-
-EMPTY STATES
-
-No-query state:
+Reason:
 <summary>
 
-Zero-result state:
+
+CAT-001 CONTRACT
+
+category:
+<implementation>
+
+product_type:
+<implementation>
+
+availability:
+<implementation>
+
+min_price:
+<implementation>
+
+max_price:
+<implementation>
+
+sort:
+<implementation>
+
+sort_direction:
+<implementation>
+
+stock_indicator filter:
+NONE / FAIL
+
+Aliases introduced:
+NONE / FAIL
+
+
+CATEGORY AUTHORITY
+
+Category source:
+CAT-003 / <other>
+
+Backend slugs used:
+YES / NO
+
+Hard-coded production taxonomy:
+NONE / FAIL
+
+Frontend slug generation:
+NONE / FAIL
+
+
+URL STATE
+
+URL is authority:
+YES / NO
+
+React durable filter state:
+NONE / FAIL
+
+localStorage:
+NONE / FAIL
+
+sessionStorage:
+NONE / FAIL
+
+Filter change resets page:
+PASS / FAIL
+
+Sort change resets page:
+PASS / FAIL
+
+Pagination preserves state:
+PASS / FAIL
+
+Search preserved:
+PASS / FAIL
+
+Clean page-one URL:
+PASS / FAIL
+
+
+FILTER UX
+
+Category:
+<control>
+
+Product type:
+<control>
+
+Availability:
+<control>
+
+Price:
+<control>
+
+Apply:
+<behavior>
+
+Clear filters:
+<behavior>
+
+Multi-select unsupported values exposed:
+NO / FAIL
+
+
+SORT UX
+
+Options:
+<list>
+
+Default:
+<behavior>
+
+Unsupported sort modes:
+NONE / FAIL
+
+Separate backend jargon exposed:
+NO / FAIL
+
+
+PRICE
+
+Customer-facing unit:
+TZS / FAIL
+
+API unit:
+INTEGER MINOR UNITS / FAIL
+
+Conversion boundary:
 <summary>
 
-Zero results treated as 404:
-NO / FAIL
-
-Fake recommendations:
+Floating-point business arithmetic:
 NONE / FAIL
 
-
-ERRORS
-
-422:
+min > max:
 <behavior>
 
-429:
-<behavior>
 
-5xx:
-<behavior>
+SEARCH COMPOSITION
 
-Network failure:
-<behavior>
+/search?search=... preserved:
+PASS / FAIL
 
-Timeout:
-<behavior>
+Search + category:
+PASS / FAIL
 
-API failure converted to empty results:
-NO / FAIL
+Search + type:
+PASS / FAIL
+
+Search + availability:
+PASS / FAIL
+
+Search + price:
+PASS / FAIL
+
+Search + sort:
+PASS / FAIL
+
+Clear filters preserves search:
+PASS / FAIL
 
 
-PROXY / HARD 404
+DATA
 
-/search preflight:
+Production filtering:
+LARAVEL CAT-001 / FAIL
+
+Client-side filtering:
 NONE / FAIL
 
-/products preflight:
+Client-side sorting:
 NONE / FAIL
 
-/products/[slug] hard 404:
-PASS / FAIL
-
-/categories/[slug] hard 404:
-PASS / FAIL
-
-
-SECURITY
-
-Search term rendered as text:
-PASS / FAIL
-
-HTML-like query safe:
-PASS / FAIL
-
-dangerouslySetInnerHTML:
+Fetch-all filtering:
 NONE / FAIL
 
-Special-character URL encoding:
-PASS / FAIL
-
-Client-side SQL/search semantics:
+CAT-002 N+1:
 NONE / FAIL
 
-
-DESIGN SYSTEM
-
-Frozen tokens:
-PASS / FAIL
-
-New token authority:
+Fixture fallback:
 NONE / FAIL
-
-Raw colors:
-NONE / <list>
-
-Raw spacing:
-NONE / <list>
-
-Raw typography:
-NONE / <list>
-
-Raw radii:
-NONE / <list>
-
-Raw shadows:
-NONE / <list>
-
-Raw breakpoints:
-NONE / <list>
 
 
 COMPONENT REUSE
 
-Existing components reused:
-<list>
+ProductGrid:
+REUSED / FAIL
+
+ProductCard:
+REUSED / FAIL
+
+Pagination:
+REUSED / <details>
+
+Existing catalog helper:
+REUSED / <details>
 
 New components:
 <list>
 
-New-component justification:
-<details>
-
-SearchProductCard:
+Duplicate route-specific controls:
 NONE / FAIL
 
-SearchProductGrid:
+
+SERVER / CLIENT
+
+Pages server-first:
+PASS / FAIL
+
+New client boundaries:
+NONE / <list>
+
+Ephemeral state only:
+PASS / FAIL / N/A
+
+Filter values in client state:
 NONE / FAIL
 
-SearchPagination:
-NONE / FAIL
+No-JS filtering:
+PASS / FAIL
 
-Duplicate price formatter:
-NONE / FAIL
+
+ACCESSIBILITY
+
+Filter labels:
+PASS / FAIL
+
+Fieldsets/legends:
+PASS / FAIL
+
+Price labels:
+PASS / FAIL
+
+Sort label:
+PASS / FAIL
+
+Keyboard:
+PASS / FAIL
+
+Visible focus:
+PASS / FAIL
+
+Touch targets:
+PASS / FAIL
+
+Mobile disclosure:
+PASS / FAIL / N/A
+
+200% reflow:
+PASS / FAIL
 
 
 RESPONSIVE
@@ -2382,154 +2672,106 @@ PASS / FAIL
 390:
 PASS / FAIL
 
+640:
+PASS / FAIL
+
+959:
+PASS / FAIL
+
 960:
+PASS / FAIL
+
+961:
+PASS / FAIL
+
+1024:
 PASS / FAIL
 
 1440:
 PASS / FAIL
 
-200% reflow:
+1728:
 PASS / FAIL
 
 Horizontal overflow:
 NONE / FAIL
 
-Long query:
-PASS / FAIL
+
+EMPTY / ERROR STATES
+
+Filtered zero results:
+HTTP <status>
+
+Search+filter zero results:
+HTTP <status>
+
+Zero results → 404:
+NO / FAIL
+
+422:
+<behavior>
+
+429:
+<behavior>
+
+5xx:
+<behavior>
+
+Failures converted to empty:
+NO / FAIL
 
 
-ACCESSIBILITY
+PROXY REGRESSION
 
-One main:
-PASS / FAIL
-
-One H1:
-PASS / FAIL
-
-Search semantics:
-PASS / FAIL
-
-Input label:
-PASS / FAIL
-
-Keyboard submit:
-PASS / FAIL
-
-Visible focus:
-PASS / FAIL
-
-Touch targets:
-PASS / FAIL
-
-Product links:
-PASS / FAIL
-
-Pagination:
-PASS / FAIL
-
-Empty state:
-PASS / FAIL
-
-
-SERVER / CLIENT
-
-Server-first:
-PASS / FAIL
-
-New "use client" files:
-NONE / <list>
-
-Client search state:
+/products preflight:
 NONE / FAIL
 
-Browser-width branching:
+/search preflight:
 NONE / FAIL
 
+Missing PDP:
+HTTP <status>
 
-NETWORK
+Missing category:
+HTTP <status>
 
-CAT-001 requests:
-<count/reason>
 
-CAT-002 result requests:
+TEST INFRASTRUCTURE
+
+Runner:
+node:test + tsx / <other>
+
+load-ts.mjs:
+ABSENT / FAIL
+
+node:vm:
 NONE / FAIL
 
-/api/v1/search requests:
+eval/new Function:
 NONE / FAIL
-
-Unexpected duplicate requests:
-NONE / <details>
-
-
-PHASE BOUNDARIES
-
-Filters implemented:
-NO
-
-Sorting UI implemented:
-NO
-
-Autocomplete implemented:
-NO
-
-Suggestions implemented:
-NO
-
-Search history implemented:
-NO
-
-Search analytics implemented:
-NO
-
-Comprehensive SEO implemented:
-NO
-
-Structured data implemented:
-NO
-
-Sitemap/robots changed:
-NO
-
-Recommendation engine implemented:
-NO
-
-Backend changed:
-NO
-
-Flutter changed:
-NO
-
-Dependencies added:
-NONE
 
 
 VALIDATION
 
-Search contract:
+Filter/sort suite:
 PASS / FAIL
 
-Search security:
+Search:
 PASS / FAIL
 
-Search accessibility:
+Product detail:
 PASS / FAIL
 
-Product detail regression:
+Products:
 PASS / FAIL
 
-Products regression:
+Category:
 PASS / FAIL
 
-Category regression:
+Homepage:
 PASS / FAIL
 
-Homepage regression:
-PASS / FAIL
-
-Hard-404 regression:
-PASS / FAIL
-
-API client:
+API:
 PASS / FAIL
 
 Theme:
@@ -2544,7 +2786,7 @@ PASS / FAIL
 States:
 PASS / FAIL
 
-Routing:
+Laravel CAT-001:
 PASS / FAIL
 
 TypeScript:
@@ -2560,31 +2802,58 @@ git diff --check:
 PASS / FAIL
 
 
-VISUAL VERIFICATION
+DESIGN
 
-Search entry:
+Frozen tokens:
 PASS / FAIL
 
-Zero results:
-PASS / FAIL
+Ad-hoc visual values:
+NONE / <list>
 
-Populated results:
-PASS / FAIL / NOT AVAILABLE
+Duplicate design authority:
+NONE / FAIL
 
-Mobile:
-PASS / FAIL
+AI-slop patterns:
+NONE / <list>
 
-Desktop:
-PASS / FAIL
+Urban Ladder usage:
+STRUCTURAL REFERENCE ONLY / N/A
 
-Console errors:
-NONE / <details>
+
+PHASE BOUNDARIES
+
+Comprehensive SEO:
+NO
+
+Structured data:
+NO
+
+Sitemap/robots:
+NO
+
+Comprehensive internal linking:
+NO
+
+Performance phase:
+NO
+
+Backend changed:
+NO
+
+Flutter changed:
+NO
+
+Dependencies added:
+NONE
 
 
 DOCUMENTATION
 
-Group N record:
-PASS / FAIL
+ROUTING.md:
+UPDATED / UNCHANGED
+
+Group N:
+UPDATED / FAIL
 
 frontend/AGENTS.md:
 UPDATED / UNCHANGED
@@ -2615,84 +2884,76 @@ Push:
 
 RESULT
 
-Phase 14.5:
+Phase 14.6:
 PASS / BLOCKED
 
-Phase 14.6:
+Phase 14.7:
 READY / BLOCKED
 ```
 
 ---
 
-# 119. STOP Condition
+# 128. STOP Condition
 
-Phase 14.5 may be declared PASS only when:
+Phase 14.6 may be declared PASS only when:
 
-- `/search` exists;
-- `/search` is public;
-- `search` is the canonical query parameter;
-- no `q`, `query`, or other alias is introduced;
-- search uses CAT-001;
-- no `/api/v1/search` endpoint is invented;
-- no frontend search engine is introduced;
-- the canonical API client is reused;
-- search remains server-first;
-- normal search submission works without JavaScript;
-- the URL is the durable search state;
-- no-query, blank-query and whitespace-query states are intentional;
-- blank search does not accidentally masquerade as a full-catalog search;
-- zero results return HTTP 200;
-- zero results are not treated as 404;
-- API failures are not disguised as empty results;
+- `/products` supports the frozen CAT-001 filters;
+- `/search` composes search with those same filters;
+- `category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, and `sort_direction` use exact frozen vocabulary;
+- `stock_indicator` is not exposed as a filter;
+- no undocumented filter/sort aliases exist;
+- category options come from authoritative catalog data rather than duplicated production constants;
+- category filter URLs use backend slugs;
+- URL search parameters remain durable filter state;
+- filtering works through CAT-001 rather than JavaScript arrays;
+- sorting happens in Laravel;
+- filter/sort changes reset stale pagination;
+- pagination preserves active search/filter/sort state;
+- page one remains clean;
+- `/search` preserves the search term while filtering;
+- clearing filters from search does not erase the search term;
 - ProductGrid is reused;
 - ProductCard is reused;
-- Product Summary is used;
-- no CAT-002 N+1 exists;
-- ProductCard navigation continues using authoritative backend slugs;
-- pagination preserves the search term;
-- page one retains the clean URL convention;
-- `/search` receives no hard-404 preflight;
-- `/products` remains unaffected by detail preflight;
-- category and product detail hard-404 behavior remains intact;
-- header search now reaches a legitimate implemented route;
-- no dead search interaction exists;
-- no autocomplete/typeahead/debounce architecture is added;
-- no search history or analytics architecture is added;
-- no filter/sort UI is implemented early;
-- no fake relevance claims are made;
-- no unsupported sort value is invented;
-- special characters are safely encoded;
-- search terms are rendered only as escaped text;
-- no `dangerouslySetInnerHTML` is introduced;
-- frozen design tokens remain authoritative;
-- no search-specific design system is created;
-- no duplicate ProductCard/ProductGrid/Pagination/price formatter exists;
-- responsive behavior passes;
-- 200% reflow passes;
-- horizontal overflow is absent;
-- accessibility checks pass;
-- new client JS is absent unless narrowly justified;
+- canonical pagination is reused/extended rather than forked;
+- no CAT-002 N+1 is introduced;
+- product type and availability remain distinct semantics;
+- MADE_TO_ORDER remains first-class;
+- price UI is customer-facing TZS while API values remain integer minor units;
+- no floating-point business-money arithmetic is introduced;
+- invalid query states do not crash or masquerade as empty results;
+- valid zero-result combinations return HTTP 200;
+- no collection query becomes a 404;
+- `/products` and `/search` receive no detail-resource preflight;
+- existing product/category hard-404 behavior remains intact;
+- the implementation remains server-first;
+- URL state remains authoritative;
+- any client state is narrowly limited to ephemeral presentation state;
+- native/no-JS filter submission remains functional;
 - no new dependency is added;
-- backend remains unchanged unless a genuine contract defect blocks the phase;
-- Flutter remains unchanged;
-- Phase 14.6+ work remains untouched;
-- product-detail regression passes;
-- product-listing regression passes;
-- category regression passes;
-- homepage regression passes;
+- no duplicate filter architecture exists between `/products` and `/search`;
+- frozen design tokens remain authoritative;
+- responsive checks pass;
+- 200% reflow passes;
+- accessibility checks pass;
+- no horizontal overflow exists;
+- the new `tsx` test infrastructure is used;
+- no VM/dynamic-execution test loader returns;
+- CAT-001 backend filter/sort tests pass;
+- all existing frontend regressions pass;
 - TypeScript passes;
 - ESLint passes;
 - production build passes;
 - `git diff --check` passes;
+- no Phase 14.7+ work is implemented;
 - Git operations follow `git-workflow-and-versioning`.
 
 Then report exactly:
 
 ```text
-Phase 14.5 — PASS
-Phase 14.6 — READY
+Phase 14.6 — PASS
+Phase 14.7 — READY
 ```
 
-Do not start Phase 14.6 automatically.
+Do not start Phase 14.7 automatically.
 
-**Search is a thin, truthful website experience over the authoritative CAT-001 catalog query—not a second search engine. Keep the URL shareable, the form native, the results server-rendered, the ProductGrid canonical, and Laravel responsible for deciding what matches.**
+**Phase 14.6 is URL-driven catalog refinement, not a client-side product engine. Laravel already owns search, filtering, deterministic sorting, and pagination; the website's job is to expose that contract clearly, accessibly, and beautifully while preserving the restrained SL Furnitures design system.**

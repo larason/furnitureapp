@@ -14,11 +14,11 @@ test("search sends the meaningful term to CAT-001 and preserves API failures", a
       calls.push(request);
       return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
     });
-    await getProductCatalog(2, apiRequest, { search: "chair" });
-    assert.deepEqual(calls[0], { path: "/products", cache: "no-store", query: { search: "chair", page: 2 } });
+    await getProductCatalog({ search: "chair", page: "2" }, apiRequest);
+    assert.deepEqual(calls[0], { path: "/products", cache: "no-store", query: { search: "chair", page: "2" } });
 
     const failure = new Error("upstream unavailable");
-    await assert.rejects(getProductCatalog(1, stubTransport(() => { throw failure; }), { search: "chair" }), (error) => error === failure);
+    await assert.rejects(getProductCatalog({ search: "chair" }, stubTransport(() => { throw failure; })), (error) => error === failure);
   });
 });
 
@@ -33,7 +33,8 @@ test("search route is server-rendered, uses a native GET form, and retains searc
   assert.match(page, /action="\/search"/);
   assert.match(page, /method="get"/);
   assert.match(page, /htmlInput: \{ name: "search" \}/);
-  assert.match(page, /new URLSearchParams/);
+  assert.match(page, /ProductCollectionPagination/);
+  assert.match(read("lib/catalog/filters.ts"), /new URLSearchParams/);
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
   assert.doesNotMatch(page, /["']use client["']|useState|useEffect|useRouter|router\.push|window\.location|dangerouslySetInnerHTML|\/api\/v1\/search|fuse|lunr|algolia/);
   assert.doesNotMatch(proxy, /search/);
@@ -55,7 +56,7 @@ test("search distinguishes entry, populated, empty, and HTML-like query states w
     assert.match(entry, /Enter a search term/);
     assert.match(populated, /lounge chair/);
     assert.match(populated, /Design preview/);
-    assert.match(empty, /No furniture found for/);
+    assert.match(empty, /No furniture matches these filters/);
     assert.match(empty, /Design preview/);
     assert.match(htmlLike, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
     assert.doesNotMatch(htmlLike, /<script>alert\(1\)<\/script>/);
