@@ -24,3 +24,11 @@
 " will not appear
 
 9. add stickers on furnitures and give customers flyers, business cards or other promotional materials
+
+10. Production checklist / caveats:
+- SITE_URL: set it to the real HTTPS origin. It's required for canonical tags, og:url/images, and sitemap.xml. If absent, the site runs but those are omitted and robots.txt drops the Sitemap: line. If set to a malformed value or http://localhost, it now throws (in production), so the build/runtime fails loudly rather than emitting a localhost canonical.
+- API_BASE_URL must be an HTTPS origin in production (HTTP is allowed only for localhost); CATALOG_MEDIA_BASE_URL must cover your CDN for next/image.
+- HOMEPAGE_DATA_SOURCE must be unset or api in production — never fixtures.
+- Rebuild/restart on deploy: the earlier confusion was a stale .next; the fixes only appear after a fresh build.
+- JavaScript is required only for price entry and sort selection (documented narrow limitation). Without JS, the controls still round-trip whatever is already in the URL, and all other filtering/linking works.
+One honest caveat: the price/sort clients initialize from props with useState/defaultValue, so if a future change updates those values via client-side navigation (instead of the current native full-page form submit), they'd need syncing. With today's architecture (form submit = full navigation), they always remount and are correct.
