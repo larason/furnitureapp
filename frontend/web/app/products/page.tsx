@@ -27,7 +27,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
   return (
     <SiteSection aria-label="Furniture collection" surface="paper">
       <Stack spacing={7}>
-        <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}><NavLink href="/">Home</NavLink><Typography color="text.primary">Furniture</Typography></Breadcrumbs>
+        <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}><NavLink href="/">Home</NavLink><Typography color="text.primary" aria-current="page">Furniture</Typography></Breadcrumbs>
         <Stack spacing={3} sx={{ maxWidth: "var(--content-width-lead)" }}><Typography component="h1" variant="h2">Furniture</Typography>{total !== undefined ? <Typography variant="body2" color="text.secondary">{total} {total === 1 ? "piece" : "pieces"}</Typography> : null}{catalog.source === "fixtures" ? <Typography variant="body2" color="text.secondary">Design preview</Typography> : null}</Stack>
         <ProductCollectionControls action="/products" categories={categories} query={query} />
         {catalog.products.length ? <ProductGrid products={catalog.products} sizes={PRODUCT_IMAGE_SIZES} /> : <Typography>No furniture matches these filters.</Typography>}

@@ -43,7 +43,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
         <Stack spacing={5} sx={{ maxWidth: "var(--content-width-lead)" }}>
           <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}>
             <NavLink href="/">Home</NavLink>
-            <Typography color="text.primary">{catalog.category.name}</Typography>
+            <Typography color="text.primary" aria-current="page">{catalog.category.name}</Typography>
           </Breadcrumbs>
           <Typography component="h1" variant="h2">{catalog.category.name}</Typography>
           {catalog.category.description ? <Typography variant="body1">{catalog.category.description}</Typography> : null}

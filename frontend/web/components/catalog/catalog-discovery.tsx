@@ -48,7 +48,12 @@ export function CatalogDiscovery({ catalog }: Readonly<{ catalog: HomepageCatalo
             <Typography variant="body2">Discover our latest made-to-order pieces. Display prices are a starting point; requirements are agreed through a furniture request.</Typography>
           </Box>
           {catalog.products.length ? (
-            <ProductGrid products={catalog.products} sizes={PRODUCT_IMAGE_SIZES} />
+            <Stack spacing={6}>
+              <ProductGrid products={catalog.products} sizes={PRODUCT_IMAGE_SIZES} />
+              <Box>
+                <NavLink href="/products" sx={{ display: "inline-flex", alignItems: "center", minHeight: 44, typography: "button" }}>View all furniture</NavLink>
+              </Box>
+            </Stack>
           ) : <Typography>Made-to-order pieces will appear here as they are published.</Typography>}
         </Stack>
       </SiteSection>

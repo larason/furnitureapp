@@ -1,7 +1,7 @@
-# PHASE 14.9 — SITEMAP / ROBOTS
+# PHASE 14.10 — INTERNAL LINKING
 
-# ENTRY STATE
-```
+ENTRY STATE
+
 Phase 14.1 — Homepage — PASS
 Phase 14.2 — Category Pages — PASS
 Phase 14.3 — Product Listing — PASS
@@ -10,1436 +10,1447 @@ Phase 14.5 — Search — PASS
 Phase 14.6 — Filters & Sorting — PASS
 Phase 14.7 — SEO Metadata — PASS
 Phase 14.8 — Structured Data — PASS
-Phase 14.9 — Sitemap / Robots — ACTIVE
-```
-Do not start Phase 14.10 automatically.
+Phase 14.9 — Sitemap / Robots — PASS
+Phase 14.10 — Internal Linking — ACTIVE
+
+Phase 14.11 — Image / Performance Optimization — NOT STARTED
+
+Do not start Phase 14.11 automatically.
 
 
 1. OBJECTIVE
 
-Implement the public website's crawl-discovery layer using the installed Next.js App Router metadata-file conventions:
-```
-app/sitemap.ts
-app/robots.ts
-```
-The implementation must:
+Audit and complete the public catalog's internal-linking architecture so users and crawlers can naturally navigate between implemented canonical storefront resources.
 
-- expose canonical public indexable URLs through /sitemap.xml;
-- discover public products/categories from authoritative Laravel catalog APIs;
-- avoid search/filter/facet URL explosion;
-- expose an appropriate /robots.txt;
-- advertise /sitemap.xml from robots.txt only when a valid public SITE_URL exists;
-- reuse the Phase 14.7 site-origin/canonical architecture;
-- preserve Phase 14.7 page-level robots/canonical decisions;
-- preserve Phase 14.8 structured data unchanged.
+Internal links must arise from genuine information architecture and shopping/discovery relationships.
 
-No hard-coded production catalog snapshot.
+The target canonical graph is primarily:
+```
+Homepage
+  ↓
+Product collection
+  ↓
+Product detail
+
+Homepage
+  ↓
+Category
+  ↓
+Product detail
+
+Category
+  ↓
+Product detail
+
+Product detail
+  ↑
+Category
+
+Search
+  ↓
+Product detail
+
+Header/navigation
+  ↓
+Implemented category/catalog/search destinations
+
+Pagination
+  ↔
+Adjacent collection pages
+```
+The phase must NOT create artificial SEO link farms, keyword blocks, hidden links, speculative related-products systems, or links to routes that do not exist.
 
 
 2. READ BEFORE CODING
 
-Read:
-
+Read and obey:
+```
 AGENTS.md
 frontend/AGENTS.md
 
 frontend/web/ROUTING.md
 frontend/web/RESPONSIVE.md
 
-docs/api/
-  api-contract.md
-  api-conventions.md
-  api-resources.md
-  openapi.yaml
+frontend/design-system/DESIGN.md
+frontend/design-system/COMPONENTS.md
+frontend/design-system/ACCESSIBILITY.md
 
+docs/api/api-contract.md
+docs/api/api-conventions.md
+docs/api/api-resources.md
 docs/decisions.md
 docs/domain/business-rules.md
 
 phases/group-N-phases.md
 
-Then inspect:
+Then inspect the ACTUAL current implementation from Phases 14.1–14.9:
 
-frontend/web/app/
-frontend/web/lib/api/
-frontend/web/lib/products/
-frontend/web/lib/category/
-frontend/web/lib/seo/
+app/page.tsx
+app/products/page.tsx
+app/products/[slug]/page.tsx
+app/categories/[slug]/page.tsx
+app/search/page.tsx
 
-especially:
-
-lib/seo/site.ts
-Phase 14.7 metadata implementation
-Phase 14.8 structured-data implementation
-catalog pagination helpers
-CAT-001 integration
-CAT-003 integration
-fixture architecture
+ProductCard
+ProductGrid
+CatalogDiscovery
+ProductCollectionControls
+pagination components
+breadcrumb implementation
+SiteHeader
+PrimaryCategoryNavigation
+MobileNavigation
+SiteFooter
+site-navigation.ts
+category navigation data/fixture
+catalog data helpers
+SEO metadata
+structured data
+crawl/sitemap helpers
 proxy.ts
-package.json
-
-Repository reality wins over this prompt where filenames differ.
-
-
-3. CHECK CURRENT FRAMEWORK / CRAWLER GUIDANCE
-
-Before coding, verify the installed Next.js version's current App Router conventions for:
-
-MetadataRoute.Sitemap
-MetadataRoute.Robots
-app/sitemap.ts
-app/robots.ts
-
-Also check current official Google guidance for:
-
-XML sitemaps
-canonical URLs in sitemaps
-lastmod
-robots.txt
-faceted-navigation crawling
-
-Do not use an outdated Pages Router tutorial.
+```
+Repository reality wins over assumptions in this prompt.
 
 
-4. GIT POLICY
+3. GIT POLICY
 
 Before ANY Git command:
 
-locate/read/follow:
+locate/read/follow root skill:
 git-workflow-and-versioning
 
 Preserve unrelated owner changes.
 
 Never commit:
-
+```
 .env
 .env.local
 secrets
-
-Use an atomic Phase 14.9 commit.
-
-
-5. USE NEXT.JS METADATA FILE CONVENTIONS
-
-Prefer:
-
-app/sitemap.ts
-app/robots.ts
-
-using:
-
-MetadataRoute.Sitemap
-MetadataRoute.Robots
-
-Do not manually build XML strings unless the installed framework has a demonstrated limitation.
-
-Do not create:
-
-public/sitemap.xml
-public/robots.txt
-
-as static snapshots when catalog URLs are dynamic.
+```
+Use one atomic Phase 14.10 commit.
 
 
-6. PROXY EXCLUSION — IMPORTANT
+4. FIRST TASK — BUILD AN INTERNAL-LINK AUDIT
 
-Next.js metadata files are special route handlers.
+Before changing code, enumerate every currently rendered internal navigation surface.
 
-Inspect the existing proxy.ts matcher.
+For each, record:
+```
+SOURCE
+ANCHOR / UI ELEMENT
+DESTINATION
+CANONICAL / DISCOVERY / RESERVED
+IMPLEMENTED?
+LINK ACTIVE?
+SEMANTIC LINK?
+BACKEND SLUG?
+BROKEN / STALE?
+ACTION REQUIRED?
+```
+At minimum audit:
 
-Ensure:
+- logo;
+- desktop category navigation;
+- mobile category navigation;
+- header search;
+- footer links;
+- homepage category discovery;
+- homepage product cards;
+- homepage collection actions;
+- category breadcrumbs;
+- category child-category discovery;
+- category product cards;
+- category pagination;
+- /products product cards;
+- /products pagination;
+- search product cards;
+- search pagination;
+- PDP breadcrumbs;
+- PDP category context;
+- PDP gallery controls, ensuring they are not mistaken for navigation;
+- empty-state recovery links;
+- not-found recovery links.
 
-/sitemap.xml
-/robots.txt
+Do not begin by adding new sections.
 
-are NOT accidentally subjected to product/category hard-404 preflight.
-
-Do not broaden proxy matching.
-
-If they are already excluded, leave proxy.ts unchanged.
+Understand the existing graph first.
 
 
-7. SITE ORIGIN AUTHORITY
+5. ROUTING AUTHORITY
 
-Reuse Phase 14.7:
+frontend/web/ROUTING.md remains authoritative.
 
-SITE_URL
-lib/seo/site.ts
-canonical URL helpers
+Canonical public routes currently include:
+```
+/
+ /products
+ /products/[slug]
+ /categories/[slug]
+ /search
+```
+Only use other destinations if inspection proves they are implemented.
 
-Do NOT create:
+Do not activate a route merely because ROUTING.md reserves it.
 
-SITEMAP_BASE_URL
-ROBOTS_BASE_URL
-PUBLIC_URL
-NEXT_PUBLIC_SITE_URL
+
+6. BACKEND SLUG AUTHORITY
+
+Product links:
+
+/products/{product.slug}
+
+Category links:
+
+/categories/{category.slug}
+
+Use Laravel-returned slugs.
+
+Never:
+
+- slugify product.name;
+- slugify category.name;
+- derive paths from IDs;
+- use database numeric IDs;
+- lowercase arbitrary labels;
+- transliterate;
+- use fixture-only production slugs.
+
+
+7. SEMANTIC LINK RULE
+
+Ordinary navigation uses semantic:
+
+next/link
+
+or the project's established accessible wrapper around it.
 
 Do not use:
 
-API_BASE_URL
-Host
-X-Forwarded-Host
-R2 origin
-fixture origin
+router.push()
 
-as website identity.
-
-
-8. SITE_URL MISSING — DECISION ALREADY MADE
-
-Do NOT stop for a decision here.
-
-If SITE_URL is missing:
-
-- do not guess a production domain;
-- do not use localhost;
-- do not fail npm run build solely because deployment SITE_URL is absent;
-- sitemap generation must not emit fabricated absolute URLs;
-- robots.txt must not emit a fabricated Sitemap directive.
-
-Conservative expected behavior:
-
-sitemap:
-no canonical URL entries requiring an invented origin
-
-robots:
-valid crawler policy
-Sitemap directive omitted
-
-Use the existing Phase 14.7 configuration/warning architecture where possible.
-
-Report:
-
-Production SITE_URL:
-REQUIRED / NOT CONFIGURED
-
-This is a deployment readiness caveat, not permission to invent an origin.
-
-
-9. MALFORMED SITE_URL
-
-Phase 14.7 already treats malformed SITE_URL as configuration error.
-
-Preserve that behavior.
-
-Do not silently repair malformed production origins.
-
-Do not turn:
-
-foo
-localhost-ish garbage
-API URL
-
-into a sitemap origin.
-
-
-10. SITEMAP URL POLICY
-
-Include only canonical URLs that the website wants search engines to discover/index.
-
-Primary V1 sitemap URL classes:
-
-/
- /products
- /products/{backend-product-slug}
- /categories/{backend-category-slug}
-
-Only include routes that are actually implemented and indexable.
-
-
-11. DO NOT INCLUDE RESERVED ROUTES
-
-Do not include routes merely because ROUTING.md reserves them.
-
-For example, do not include an unimplemented:
-
-/account
-/contact
-/furniture-requests
-
-unless inspection proves that route is implemented, public, canonical and indexable.
-
-Sitemap describes deployed content, not future roadmap.
-
-
-12. SEARCH EXCLUSION
-
-Do NOT include:
-
-/search
-/search?search=...
-/search?...filters...
-
-Phase 14.7 deliberately marks search:
-
-noindex, follow
-
-A noindex search route does not belong in the sitemap.
-
-
-13. FILTER/FACET EXCLUSION
-
-Do NOT include URLs containing:
-
-category=
-product_type=
-availability=
-min_price=
-max_price=
-sort=
-sort_direction=
-
-No faceted product URL belongs in the sitemap.
-
-Examples forbidden:
-
-/products?category=living-room
-/products?product_type=MADE_TO_ORDER
-/products?availability=available
-/products?sort=price&sort_direction=asc
-/products?min_price=...
-/products?...multiple facets...
-
-Phase 14.7 already deliberately prevents these from becoming indexable landing-page identities.
-
-
-14. PAGINATION EXCLUSION FROM SITEMAP
-
-Do NOT enumerate:
-
-/products?page=2
-/products?page=3
-/categories/foo?page=2
-
-inside the sitemap.
-
-Although Phase 14.7 may self-canonicalize meaningful plain pagination, sitemap discovery should focus on:
-
-- collection root;
-- category canonical resources;
-- product canonical resources.
-
-Individual products/categories are explicitly discoverable through the sitemap, so listing pagination does not need sitemap enumeration.
-
-Do not change Phase 14.7 pagination canonical behavior.
-
-
-15. PAGE=1
-
-Never emit:
-
-?page=1
-
-Sitemap URLs are clean canonical paths.
-
-
-16. NO QUERY STRINGS
-
-Expected sitemap URLs:
-
-query string count = 0
-
-unless an already-established canonical public route genuinely requires one.
-
-For current Group N public catalog:
-
-NONE should.
-
-
-17. HOMEPAGE
-
-Include:
-
-SITE_URL/
-
-exactly once.
-
-
-18. PRODUCT COLLECTION
-
-Include:
-
-SITE_URL/products
-
-exactly once.
-
-Do not include `/products/` with trailing slash.
-
-
-19. PRODUCT DETAILS
-
-Discover products from authoritative CAT-001.
-
-For every public catalog product returned by CAT-001, include:
-
-SITE_URL/products/{product.slug}
-
-Use backend-returned slug.
-
-Do NOT use:
-
-product.id
-product.name slugification
-local fixture slug
-array index
-
-
-20. PRODUCT COLLECTION PAGINATION
-
-CAT-001 is paginated.
-
-The sitemap must retrieve ALL public product summaries needed to enumerate canonical product URLs.
-
-Do not fetch only page 1 and silently omit the rest.
-
-
-21. SAFE API PAGINATION
-
-Respect the frozen pagination contract:
-
-page
-per_page
-meta.pagination
-
-Maximum per_page is 100.
-
-A reasonable sitemap crawl strategy is:
-
-per_page=100
-page=1..last_page
-
-provided the actual frozen contract confirms this.
-
-Do not request:
-
-per_page=10000
-unbounded response
-undocumented "all=true"
-
-
-22. PAGINATION TERMINATION
-
-Use authoritative pagination metadata.
-
-Do not loop until an empty page if reliable:
-
-last_page
-has_next
-
-already exists.
-
-Protect against malformed/non-progressing pagination metadata.
-
-Do not create an infinite server-side loop.
-
-
-23. PRODUCT DEDUPLICATION
-
-Sitemap must not contain duplicate product canonical URLs.
-
-If duplicate slugs unexpectedly appear across API pages:
-
-- deduplicate defensively by canonical URL;
-- do not silently invent alternate URLs;
-- report the unexpected contract condition.
-
-Backend slug uniqueness remains authoritative.
-
-
-24. CATEGORY DETAILS
-
-Discover public categories from authoritative CAT-003.
-
-Include:
-
-SITE_URL/categories/{category.slug}
-
-using backend-returned slugs.
-
-No local slugification.
-
-
-25. CATEGORY PAGINATION
-
-CAT-003 is paginated.
-
-Do not assume page 1 contains every public category.
-
-Traverse its pagination safely according to the frozen API contract.
-
-
-26. CATEGORY SCOPE — IMPORTANT
-
-Inspect CAT-003's actual V1 semantics.
-
-If CAT-003 exposes only active top-level storefront categories, sitemap generation must not fabricate nested category URLs from seed knowledge.
-
-Only include category resources discoverable through authoritative public API data.
-
-Do not query the database.
-
-Do not import Laravel seeders.
-
-Do not hard-code the known furniture taxonomy.
-
-
-27. NESTED CATEGORY DISCOVERY
-
-If the public API does not expose a complete recursive category collection, do not invent a crawler solely from frontend fixture knowledge.
-
-Report:
-
-Nested public category discovery:
-SUPPORTED / NOT AVAILABLE THROUGH CAT-003
-
-If existing authoritative public category data already exposes nested children sufficient for traversal, use it.
-
-Otherwise sitemap completeness is bounded by the frozen public API.
-
-Do not change Laravel in Phase 14.9 merely to satisfy sitemap completeness.
-
-
-28. ACTIVE/PUBLISHED RESOURCES ONLY
-
-Public catalog endpoints already mask unpublished/hidden/deactivated resources.
-
-Sitemap must consume those public endpoints rather than operational/admin endpoints.
-
-Do not expose draft resources.
-
-
-29. NO AUTHENTICATION
-
-Sitemap generation must use public catalog access only.
-
-Do not:
-
-attach Clerk token
-use staff/admin endpoint
-use customer session
-read cookies
-
-Public catalog is anonymous.
-
-
-30. GENERIC API CLIENT
-
-Reuse the canonical API transport and existing catalog data helpers where appropriate.
-
-Do not build a second HTTP client inside sitemap.ts.
-
-Do not put sitemap-specific concepts into lib/api/client.ts.
-
-
-31. DATA HELPER REUSE
-
-If existing CAT-001/CAT-003 helpers are tied to UI pagination, extract/reuse the smallest appropriate public-catalog retrieval responsibility.
-
-Do not copy API response parsing into sitemap.ts if canonical typed parsing already exists.
-
-
-32. NO CAT-002 N+1
-
-Do NOT call:
-
-CAT-002 once per product
-
-to construct the sitemap.
-
-CAT-001 summary data already contains canonical product slugs.
-
-Expected:
-
-CAT-001 paginated collection requests only.
-
-
-33. NO CAT-004 N+1
-
-Likewise do not fetch every category detail merely to obtain its slug.
-
-Use CAT-003 collection data where sufficient.
-
-
-34. SITEMAP LASTMOD — TRUTH ONLY
-
-Only emit lastModified when an authoritative source represents the last significant modification of that public page.
+for ordinary links.
 
 Do not use:
 
-new Date()
-build time
-request time
-server startup time
-Git commit time
+button + onClick
 
-as fake lastmod.
+to simulate navigation.
 
+Do not use:
 
-35. UPDATED_AT
+<div onClick>
 
-If CAT-001/CAT-003 public summaries expose an authoritative content updated timestamp appropriate for the canonical page, it may be used.
+Do not use:
 
-If they do not:
+href="#"
 
-omit lastModified.
+Do not add JavaScript merely to make normal navigation work.
 
-Do not change the backend solely to populate sitemap lastmod.
 
+8. SERVER-FIRST
 
-36. CHANGEFREQUENCY
-
-Do not invent changeFrequency values merely because Next.js supports them.
-
-Google treats sitemap hints as hints.
-
-Unless project authority has a meaningful policy:
-
-omit changeFrequency.
-
-
-37. PRIORITY
-
-Do not assign arbitrary sitemap priority scores such as:
-
-homepage = 1.0
-products = 0.9
-categories = 0.8
-
-unless project authority explicitly establishes them.
-
-Prefer omission.
-
-Do not perform "SEO score" theater.
-
-
-38. IMAGE SITEMAP
-
-Do NOT add image sitemap entries in Phase 14.9 unless existing project roadmap explicitly requires them.
-
-Product media already appears on canonical product pages.
-
-Keep Phase 14.9 focused.
-
-Do not call CAT-002 per product to collect galleries.
-
-
-39. SITEMAP SIZE
-
-Google's sitemap protocol limits a sitemap to 50,000 URLs or 50 MB uncompressed.
-
-Assess expected catalog size.
-
-For current V1, a single sitemap is likely sufficient.
-
-Do not implement generateSitemaps/sharding preemptively unless actual catalog scale requires it.
-
-
-40. FUTURE SCALE
-
-If the current authoritative catalog could exceed 50,000 sitemap URLs:
-
-STOP
-
-Report the measured/contract-supported scale and implement an appropriate sitemap-index/sharding design only if genuinely required.
-
-Do not prematurely add complexity.
-
-
-41. DETERMINISTIC ORDER
-
-Return sitemap entries in a deterministic order.
-
-Recommended conceptual grouping:
-
-/
- /products
-categories sorted deterministically
-products sorted deterministically
-
-Do not rely on unstable object iteration.
-
-The exact order has no SEO ranking meaning; determinism is for testability and operational stability.
-
-
-42. SITEMAP API FAILURE
-
-Do not silently replace Laravel catalog failure with fixture data.
-
-Do not emit a misleading "complete" sitemap containing only static URLs if product/category discovery unexpectedly fails, unless a deliberate existing failure policy establishes that degradation.
-
-Prefer surfacing the upstream failure according to the framework route-handler behavior.
-
-A crawler receiving a temporary server error can retry.
-
-Do not convert infrastructure failure into a permanently incomplete successful sitemap.
-
-
-43. 404 RESOURCE RACE
-
-If a product disappears between sitemap generation and later crawl, its PDP may legitimately return 404.
-
-Do not preflight every sitemap URL through CAT-002.
-
-Normal catalog churn is acceptable.
-
-
-44. ROBOTS.TXT PURPOSE
-
-robots.txt controls crawling.
-
-It is NOT:
-
-- an authorization mechanism;
-- a privacy mechanism;
-- a replacement for noindex;
-- a replacement for authentication;
-- a way to hide secrets.
-
-Do not place sensitive URLs in public robots policy under the assumption that they become private.
-
-
-45. ROBOTS DEFAULT
-
-The public storefront should remain crawlable.
-
-Use a general crawler policy based on:
-
-User-agent: *
-Allow: /
-
-with deliberate exclusions below.
-
-
-46. SEARCH CRAWLING
-
-Disallow crawling of:
-
-/search
-
-because:
-
-- it is internal search;
-- Phase 14.7 already marks it noindex;
-- arbitrary search terms create unbounded crawl space;
-- there is no SEO value in crawling internal search combinations.
-
-Do not include /search in sitemap.
-
-
-47. FACETED NAVIGATION CRAWLING
-
-Phase 14.6 creates URL-parameter facets.
-
-Google's current crawling guidance explicitly warns that faceted navigation can create effectively infinite URL spaces and recommends preventing crawling when those URLs do not need indexing.
-
-Therefore robots.txt should prevent crawler exploration of the owned non-indexable product facet parameters where safely expressible:
-
-category
-product_type
-availability
-min_price
-max_price
-sort
-sort_direction
-
-Use Robots Exclusion patterns compatible with the current Google interpretation and Next.js MetadataRoute.Robots output.
-
-
-48. FACET PATTERN SAFETY
-
-Do not write one broad rule such as:
-
-Disallow: /*?*
-
-because that would also suppress useful pagination or unrelated future query state.
-
-Rules must target the known Phase 14.6 facet/sort parameter names specifically.
-
-
-49. QUERY PARAMETER ORDER
-
-Facet parameters can occur:
-
-first
-middle
-last
-
-Example:
-
-/products?category=living-room
-/products?page=2&category=living-room
-/products?category=living-room&page=2
-
-Ensure chosen robots patterns address parameter presence rather than only one exact ordering where feasible under robots syntax.
-
-Test the generated text.
-
-
-50. SEARCH PARAMETER
-
-The canonical search UI uses:
-
-/search?search=...
-
-Since /search itself is disallowed, no separate `search=` query-pattern rule is required solely for that route.
-
-Do not accidentally block a future unrelated route merely because it has a parameter named `search` unless the current routing policy requires it.
-
-
-51. PAGINATION CRAWLING
-
-Do NOT disallow:
-
-?page=
-
-globally.
-
-Phase 14.7 deliberately treats meaningful plain collection pagination differently from faceted state.
-
-Crawlers may need pagination to discover content through ordinary links.
-
-Sitemap directly exposes products, but robots policy must not silently contradict the established pagination/indexability architecture.
-
-
-52. PRODUCT/CATEGORY DETAIL CRAWLING
-
-Do NOT disallow:
-
-/products/
-/categories/
-
-These are primary indexable resource surfaces.
-
-
-53. ROOT PRODUCT COLLECTION
-
-Do NOT disallow:
-
-/products
-
-The canonical product collection is indexable.
-
-
-54. ADMIN/API ROUTES
-
-This is the public Next.js website host.
-
-Do not invent disallow rules for Laravel API paths that do not exist on this host.
-
-Likewise do not invent:
-
-/admin
-/internal
-/private
-
-rules unless those paths actually exist on this Next.js application and crawling policy requires them.
-
-Robots should describe the actual host.
-
-
-55. RESERVED AUTH ROUTES
-
-Do not disallow hypothetical future:
-
-/account
-/orders
-/checkout
-
-unless those routes actually exist on this public host.
-
-Phase 14.9 is not future-route policy design.
-
-
-56. ROBOTS SITEMAP DIRECTIVE
-
-When valid SITE_URL exists:
-
-Sitemap: {SITE_URL}/sitemap.xml
-
-Use the existing canonical URL/origin helper.
-
-Do not hand-concatenate a second origin implementation.
-
-
-57. ROBOTS WITHOUT SITE_URL
-
-When SITE_URL is absent:
-
-omit the Sitemap directive.
-
-Do not emit:
-
-Sitemap: /sitemap.xml
-Sitemap: http://localhost:3000/sitemap.xml
-Sitemap: http://127.0.0.1:...
-Sitemap: {API_BASE_URL}/sitemap.xml
-
-Robots rules themselves may still render validly.
-
-
-58. HOST DIRECTIVE
-
-Do not emit a robots Host directive unless there is a demonstrated requirement.
-
-It is not needed merely because MetadataRoute.Robots supports it.
-
-
-59. CRAWL DELAY
-
-Do not emit:
-
-Crawl-delay
-
-without an operational requirement.
-
-Do not invent crawler throttling policy.
-
-
-60. BOT-SPECIFIC RULES
-
-Do not create special Googlebot/Bingbot/AI crawler policies in this phase unless project authority explicitly requires them.
-
-Use:
-
-User-agent: *
-
-for the general public crawler policy.
-
-
-61. GOOGLE-EXTENDED
-
-Do not make a policy decision about Google-Extended, AI training/use, or other AI crawlers in Phase 14.9 unless the project owner explicitly requests one.
-
-That is a business/policy decision, not a technical default.
-
-
-62. ROBOTS VS PAGE-LEVEL NOINDEX
-
-Preserve Phase 14.7 page-level robots metadata.
-
-Do not remove:
-
-noindex, follow
-
-from search/filtered pages just because robots.txt now reduces crawling.
-
-They serve related but distinct purposes.
-
-Do not modify Phase 14.7 metadata merely to "simplify" robots.txt.
-
-
-63. CANONICAL SIGNAL CONSISTENCY
-
-Sitemap should reinforce canonical identity established in Phase 14.7:
-
-homepage:
-/
-
-product collection:
-/products
-
-product:
-/products/{slug}
-
-category:
-/categories/{slug}
-
-Do not list noncanonical aliases.
-
-Google treats sitemap inclusion as a canonicalization signal, so sitemap and rel=canonical must agree.
-
-
-64. TRAILING SLASH
-
-Preserve Phase 14.7 slashless policy.
-
-Expected:
-
-https://site.example/products
-
-not:
-
-https://site.example/products/
-
-
-65. HTTP/HTTPS
-
-SITE_URL determines the canonical scheme.
-
-Do not rewrite HTTPS to HTTP.
-
-Do not infer scheme from API_BASE_URL.
-
-
-66. WWW/NON-WWW
-
-SITE_URL determines the canonical hostname.
-
-Do not produce both:
-
-https://example.com/...
-https://www.example.com/...
-
-unless project authority intentionally uses both, which current architecture does not.
-
-
-67. FIXTURE MODE
-
-Fixture mode may be used for deterministic local sitemap tests.
-
-But production/default API mode must remain authoritative.
-
-No silent API failure → fixture sitemap fallback.
-
-
-68. FIXTURE SITEMAP
-
-If explicit fixture mode is supported for sitemap visual/runtime verification:
-
-- use only explicit fixture data;
-- make the mode unmistakable;
-- never claim it proves production catalog completeness.
-
-Do not add a second fixture dataset just for sitemap if existing catalog fixtures can be reused safely.
-
-
-69. PRODUCTION DATABASE EMPTY
-
-If local Laravel API returns zero products/categories:
-
-a valid API-backed sitemap may contain only:
-
-/
- /products
-
-provided SITE_URL is explicitly configured for the test.
-
-Do not create fake database catalog records merely to make sitemap look populated.
-
-
-70. DEPLOYMENT SITE_URL TEST
-
-For runtime verification, it is acceptable to launch the production Next.js server with an explicit temporary test origin such as:
-
-SITE_URL=https://example.invalid
-
-or another clearly non-production test origin supported by the existing validation rules.
-
-Do not commit it.
-
-Do not use it as production configuration.
-
-If `.invalid` conflicts with existing URL validation, use an explicit local test configuration only in tests and clearly report it.
-
-Never infer the production domain.
-
-
-71. NO CLIENT CODE
+Internal linking must not turn server-rendered pages into client components.
 
 Expected new "use client":
 
 NONE
 
-Sitemap and robots are server metadata routes.
+unless inspection proves an existing interactive boundary genuinely owns the behavior.
 
-No React component should be required.
+A simple link never justifies a new client component.
 
 
-72. NO VISUAL CHANGES
+9. PRODUCTCARD IS THE CANONICAL PRODUCT LINK SURFACE
 
-Expected visual UI changes:
+Phase 14.4 already activated ProductCard links using backend slugs.
 
-NONE
+Preserve that architecture.
 
-Do not touch:
+ProductCard should remain the canonical reusable product discovery component used by:
 
-MUI theme
+homepage
+category
+/products
+/search
+
+Do not create:
+
+HomepageProductLink
+CategoryProductLink
+SearchProductCard
+SeoProductCard
+
+Do not fork ProductCard for internal linking.
+
+
+10. PRODUCT CARD LINK TARGET
+
+Every actionable ProductCard with a valid backend slug must resolve to:
+
+/products/{slug}
+
+No query-state copy should become the canonical product destination.
+
+For example, do NOT produce:
+```
+/products/sofa?category=living-room
+/products/sofa?search=sofa
+/products/sofa?from=homepage
+```
+unless an already-approved UX requirement exists.
+
+Current expected canonical product link is clean.
+
+
+11. PRODUCT CARD CLICK AREA
+
+Inspect the current ProductCard semantics.
+
+Prefer a clear semantic product link around the meaningful product identity/navigation surface.
+
+Do not introduce nested interactive controls.
+
+If the whole card is already correctly linked and accessible, leave it alone.
+
+Do not redesign ProductCard merely for SEO.
+
+
+12. PRODUCT LINK ANCHOR TEXT
+
+The accessible link name must contain the actual product name.
+
+Do not use repetitive generic labels such as:
+
+View
+Learn more
+Click here
+See product
+
+as the only accessible link text.
+
+Visible product-name linking is preferred where compatible with the existing ProductCard.
+
+
+13. HOMEPAGE INTERNAL LINKING
+
+Audit Phase 14.1.
+
+Homepage should naturally expose implemented discovery paths through:
+
+- category/room discovery;
+- product cards;
+- a restrained route to the full product collection where appropriate.
+
+Do not redesign the homepage.
+
+Do not add an "SEO links" section.
+
+
+14. HOMEPAGE → PRODUCTS
+
+If the homepage currently shows a selected/featured product subset but has no natural way to continue browsing the full catalog, add ONE restrained contextual link such as:
+
+View all furniture
+
+to:
+
+/products
+
+ONLY if it fits the existing section composition and design-system conventions.
+
+If an equivalent canonical action already exists:
+
+reuse it.
+
+Do not duplicate it.
+
+
+15. HOMEPAGE → CATEGORIES
+
+Category discovery items with authoritative category slugs should link to:
+
+/categories/{slug}
+
+This should already exist from Phase 14.2.
+
+Verify rather than reinvent.
+
+Do not activate fixture category links in API mode unless the destination is backed by authoritative catalog data.
+
+
+16. CATEGORY PAGE
+
+The category page should provide:
+
+breadcrumb:
+Home → Category
+
+and product discovery through canonical ProductCard links.
+
+If child categories are actually returned by authoritative public category data and displayed, they should link to their canonical category slugs.
+
+Do not fabricate child-category links from local taxonomy knowledge.
+
+
+17. CATEGORY IMAGE REFINEMENT
+
+A separate category-page visual refinement may already have removed the standalone category image.
+
+Do not undo it.
+
+Phase 14.10 does not reintroduce:
+
+category hero image
+decorative category banner
+SEO image block
+
+Internal linking is independent of that visual decision.
+
+
+18. CATEGORY → PRODUCTS
+
+Products displayed on:
+
+/categories/{slug}
+
+must link directly to canonical:
+
+/products/{product.slug}
+
+Do NOT link through:
+
+/products?category={slug}
+
+for the individual product.
+
+
+19. CATEGORY → GENERIC COLLECTION
+
+Do not automatically add a generic /products link to every category page just for link count.
+
+Only retain/add it if it is a useful user navigation action such as:
+
+All furniture
+
+and it fits existing IA.
+
+Avoid redundant links.
+
+
+20. PRODUCT DETAIL BREADCRUMB
+
+Audit PDP breadcrumb.
+
+Expected semantic hierarchy where authoritative category context exists:
+
+Home
+→ Furniture
+→ Category
+→ Product
+
+Expected destinations:
+```
+Home → /
+Furniture → /products
+Category → /categories/{backend-category-slug}
+Product → current page, non-link preferred
+```
+Do not locally derive the category slug.
+
+
+21. PRODUCT BREADCRUMB TRUTH
+
+The visible PDP breadcrumb and Phase 14.8 BreadcrumbList should describe the same hierarchy.
+
+Do not create contradictory navigation such as:
+
+visible:
+Home → Products → Sofa
+
+JSON-LD:
+Home → Furniture → Living Room → Sofa
+
+when CAT-002 supplies category context.
+
+Reconcile using authoritative data.
+
+
+22. CURRENT ITEM
+
+The current breadcrumb item should normally be:
+
+aria-current="page"
+
+and not unnecessarily link back to itself.
+
+Do not create self-links purely for SEO.
+
+
+23. CATEGORY BREADCRUMB
+
+Expected:
+
+Home → Category
+
+where Category is the current item.
+
+If the API provides a truthful parent hierarchy and the UI already supports it, preserve it.
+
+Do not fabricate hierarchy from hard-coded taxonomy.
+
+
+24. SEARCH RESULTS
+
+Search is a discovery surface and remains:
+
+noindex, follow
+
+Search result ProductCards SHOULD link to canonical product detail pages.
+
+This is exactly what `follow` is useful for.
+
+Do not disable product links merely because /search is noindex.
+
+
+25. SEARCH QUERY PRESERVATION
+
+Search pagination must continue preserving the current search query.
+
+Do not modify the frozen Phase 14.5 behavior.
+
+But product-detail links themselves should remain clean canonical URLs.
+
+Do not append search terms to PDP URLs.
+
+
+26. FILTERED PRODUCT COLLECTION
+
+Filtered/sorted /products states remain discovery surfaces.
+
+Product cards from filtered results must still link directly to canonical PDP URLs.
+
+Do not propagate filter parameters into product URLs.
+
+
+27. PAGINATION
+
+Preserve Phase 14.3/14.5/14.6 server-first pagination.
+
+Pagination links should be real semantic anchors.
+
+Do not replace them with client-side button navigation.
+
+
+28. CLEAN PAGE ONE
+
+Preserve:
+
+/products
+
+for page 1.
+
+Do not generate:
+
+/products?page=1
+
+The same rule applies to category/search pagination according to their existing architecture.
+
+
+29. PAGINATION STATE PRESERVATION
+
+When pagination belongs to a discovery state, preserve only the parameters necessary for that discovery state.
+
+Examples:
+
+search:
+search + page
+
+filtered listing:
+approved filter/sort state + page
+
+category:
+category route + page
+
+Do not silently drop active state.
+
+Do not append unrelated state.
+
+
+30. PREVIOUS/NEXT
+
+Existing previous/next pagination should remain accessible.
+
+Do not implement numeric pagination merely for SEO unless user experience genuinely requires it.
+
+No need to expose hundreds of page-number links.
+
+
+31. HEADER CATEGORY NAVIGATION — IMPORTANT
+
+The category navigation was originally introduced with fixture-backed taxonomy during the layout phase.
+
+Now inspect its current state carefully.
+
+Determine whether production navigation is still backed by:
+
+category-navigation.fixture.ts
+
+or whether later phases replaced it with authoritative catalog data.
+
+Report this explicitly.
+
+
+32. NO PRODUCTION FIXTURE TAXONOMY
+
+If production header/mobile navigation still relies on the old fixture as its production category authority:
+
+do NOT silently leave this unresolved.
+
+Phase 14.10 is the correct phase to reconcile real internal navigation with real catalog authority.
+
+However, do not solve it by adding duplicate taxonomy constants.
+
+
+33. HEADER DATA STRATEGY
+
+If header category navigation requires authoritative catalog categories, first inspect the existing architecture.
+
+Prefer reuse of the canonical CAT-003 catalog category retrieval/data mapping.
+
+Do not:
+
+- query Laravel DB directly;
+- import Laravel seeders;
+- duplicate category arrays;
+- create a second API client;
+- hard-code slugs.
+
+
+34. ROOT-LAYOUT FETCH WARNING
+
+Do NOT casually add an uncached Laravel fetch to the root layout on every request.
+
+Before changing global navigation data flow, assess:
+
+- current shell ownership;
+- Next.js server-component caching behavior;
+- existing catalog helper cache policy;
+- API failure semantics;
+- build/runtime behavior;
+- whether the navigation already has a suitable data source.
+
+If making global nav data-driven would create a new significant availability/caching architecture decision:
+
+STOP and report it.
+
+Do not make the entire website unavailable merely because category navigation API retrieval fails.
+
+
+35. SAFE ALTERNATIVE
+
+If authoritative dynamic global category navigation cannot be introduced safely within existing architecture, keep the current established navigation behavior and document the remaining limitation.
+
+Do not invent a new caching layer in Phase 14.10.
+
+Phase 14.11 owns broader performance/cache optimization.
+
+
+36. STICKY CATEGORY NAVIGATION
+
+A separately requested sticky category navbar may already be implemented.
+
+Preserve it.
+
+Do not remove sticky behavior while changing link destinations.
+
+Do not redesign the header.
+
+Verify sticky navigation still:
+
+- uses semantic links;
+- does not obscure focused elements;
+- behaves correctly at responsive breakpoints;
+- has appropriate stacking from existing z-index tokens.
+
+
+37. MOBILE NAVIGATION
+
+Desktop and mobile navigation should expose the same canonical destination semantics where appropriate.
+
+Do not allow:
+
+desktop → real category
+mobile → stale fixture category
+
+or vice versa.
+
+They should share one route/data authority.
+
+
+38. FOOTER AUDIT
+
+Inspect SiteFooter.
+
+Footer should contain only useful, implemented destinations.
+
+Do not add dozens of category/product links to increase internal-link count.
+
+Do not create a keyword-heavy SEO footer.
+
+
+39. FOOTER CATALOG LINK
+
+If no useful catalog entry point exists in the footer and the existing footer IA naturally has a shopping/discovery group, `/products` may be linked there.
+
+But do not redesign the footer solely for Phase 14.10.
+
+
+40. RESERVED FOOTER ROUTES
+
+Do not activate:
+
+Contact
+Account
+Orders
+Cart
+Checkout
+Furniture Request
+
+unless the actual Next.js route is implemented.
+
+Reserved ≠ implemented.
+
+
+41. MADE TO ORDER
+
+MADE_TO_ORDER remains a first-class product state.
+
+Do not route made-to-order product cards to a nonexistent request page.
+
+They still link to their canonical PDP:
+
+/products/{slug}
+
+until a real request journey is implemented.
+
+
+42. NO FAKE REQUEST CTA
+
+Do not add:
+
+Request this item
+Get a quote
+Order now
+Buy now
+
+as internal links unless the destination/workflow actually exists.
+
+Request-first means absence of checkout does not authorize fake request navigation.
+
+
+43. RELATED PRODUCTS — OUT OF SCOPE BY DEFAULT
+
+Do NOT invent a "You may also like" or "Related products" algorithm merely to create internal links.
+
+There is no approved related-product API contract in the current phase.
+
+No:
+
+same-category guessed recommendation
+random products
+client-side recommendation
+hard-coded recommendations
+
+
+44. PDP CATEGORY DISCOVERY IS ENOUGH
+
+For Phase 14.10, a truthful PDP link back to its authoritative category plus `/products` through breadcrumb/navigation provides sufficient reverse discovery.
+
+Do not manufacture recommendation content.
+
+
+45. CROSS-CATEGORY LINKS
+
+Do not invent cross-category relationships.
+
+The backend data model may support category structures/graphs internally, but unless a frozen public API exposes an approved relation for this page, do not use it.
+
+
+46. INTERNAL LINK QUALITY > QUANTITY
+
+Do not optimize for:
+
+"number of links per page"
+
+Optimize for:
+
+- user navigation;
+- canonical resource discovery;
+- semantic hierarchy;
+- crawl reachability;
+- truthful context;
+- accessibility.
+
+
+47. NO HIDDEN LINKS
+
+Forbidden:
+
+display:none SEO links
+visually hidden bulk navigation
+zero-size anchors
+off-screen keyword links
+transparent links
+CSS-hidden category lists
+
+Visually-hidden text is allowed only for legitimate accessibility labeling, not crawler manipulation.
+
+
+48. NO KEYWORD-STUFFED ANCHORS
+
+Use natural UI labels:
+
+Living Room
+Furniture
+View all furniture
+Product Name
+
+Do not generate anchors such as:
+
+Best Premium Luxury Living Room Furniture Tanzania Cheap Sofa Online
+
+unless that exact copy is legitimate visible editorial content, which it currently is not.
+
+
+49. NO EXTERNAL SEO LINKS
+
+Phase 14.10 concerns internal linking.
+
+Do not add external backlinks/social links/directories for SEO.
+
+
+50. CANONICAL VS DISCOVERY STATES
+
+Keep the distinction established in Phase 14.7:
+
+INDEXABLE CANONICAL:
+/
+ /products
+ /products/[slug]
+ /categories/[slug]
+
+DISCOVERY / NOINDEX:
+ /search
+ filtered/sorted /products states
+
+Internal links may point through discovery states when needed for user interaction, but canonical content links should favor canonical resources.
+
+
+51. CATEGORY FILTER LINKS
+
+Do not replace canonical category links with:
+
+/products?category={slug}
+
+The frozen API uses the category query parameter for product retrieval, but the WEBSITE canonical category surface is:
+
+/categories/{slug}
+
+These concepts must remain distinct.
+
+
+52. FILTER CONTROL LINKS
+
+Phase 14.6 controls may legitimately create query URLs.
+
+Do not remove those because of internal-linking concerns.
+
+They are user discovery controls, not canonical category navigation.
+
+
+53. SITEMAP CONSISTENCY
+
+Phase 14.9 sitemap contains:
+
+/
+ /products
+ /categories/{slug}
+ /products/{slug}
+
+The natural internal-link graph should make these same resource classes reachable through the UI.
+
+Do not add internal canonical resource classes that contradict the sitemap policy without a real reason.
+
+
+54. ROBOTS CONSISTENCY
+
+Do not modify Phase 14.9 robots rules.
+
+Search/facet crawling policy remains unchanged.
+
+
+55. SEO METADATA CONSISTENCY
+
+Do not modify Phase 14.7 canonical/noindex policy unless verification uncovers a genuine contradiction caused by existing links.
+
+Any such contradiction must be reported rather than silently redesigned.
+
+
+56. STRUCTURED DATA CONSISTENCY
+
+Phase 14.8 BreadcrumbList must stay consistent with visible breadcrumb hierarchy.
+
+If visible breadcrumb implementation is corrected, update the JSON-LD only if necessary to keep both truthful and aligned.
+
+Do not otherwise expand JSON-LD.
+
+
+57. ORGANIZATION / WEBSITE JSON-LD
+
+Do not change homepage WebSite/Organization JSON-LD for internal linking.
+
+No SearchAction.
+
+
+58. PRODUCT OFFERS
+
+Do not add Product.offers.
+
+Request-first decision remains unchanged.
+
+
+59. HTTP STATUS
+
+Internal linking changes must not weaken hard 404 behavior.
+
+Verify:
+```
+missing /products/[slug] → HTTP 404
+missing /categories/[slug] → HTTP 404
+```
+Do not modify proxy preflight unless a demonstrated internal-linking defect requires it.
+
+
+60. LINK TO KNOWN PUBLIC RESOURCES ONLY
+
+Never create a product/category link from an absent or invalid slug.
+
+If the canonical component receives malformed data, fail safely according to existing data-boundary conventions.
+
+Do not invent fallback slugs.
+
+
+61. EMPTY CATALOG
+
+When Laravel returns no products/categories:
+
+- /products remains HTTP 200 with factual empty state;
+- homepage/category behavior remains truthful;
+- no fake product/category links are generated.
+
+Do not create fixtures in API mode.
+
+
+62. FIXTURE MODE
+
+Explicit fixture mode may retain fixture-backed navigation for visual development where already designed.
+
+But fixture links must never silently become production authority.
+
+Keep API/default and explicit fixture behavior distinguishable.
+
+
+63. LINK PREFETCH
+
+Do not globally disable or aggressively enable Next.js prefetch as an SEO technique.
+
+Keep framework defaults unless actual measured behavior requires change.
+
+Phase 14.11 owns performance tuning.
+
+
+64. PERFORMANCE BOUNDARY
+
+Do not add extra CAT-002/CAT-004 fetches merely to construct links.
+
+Use data already resolved for the page wherever possible.
+
+No N+1 internal-link architecture.
+
+
+65. PRODUCT COLLECTION DATA
+
+CAT-001 summaries already provide product slugs.
+
+Use them.
+
+Do not fetch product details to build ProductCard links.
+
+
+66. CATEGORY DATA
+
+Use CAT-003/CAT-004 category slugs/context already available through approved data paths.
+
+Do not fetch category detail solely to construct a link if the slug is already present.
+
+
+67. ACCESSIBILITY
+
+Every link must:
+
+- be keyboard reachable;
+- have meaningful accessible text;
+- preserve visible focus;
+- not rely on color alone where context is ambiguous;
+- meet existing target-size rules where applicable.
+
+Do not suppress outlines.
+
+
+68. CURRENT PAGE NAVIGATION
+
+Where navigation includes the current page, use appropriate:
+
+aria-current="page"
+
+when the existing component architecture supports it.
+
+Do not add duplicate current-page self-links.
+
+
+69. BREADCRUMB SEMANTICS
+
+Visible breadcrumbs should use:
+
+nav aria-label="Breadcrumb"
+
+and an ordered hierarchy or MUI Breadcrumbs with equivalent semantics.
+
+The current item should be identifiable.
+
+Do not use breadcrumbs merely as decorative text.
+
+
+70. RESPONSIVE
+
+Internal links must remain usable at:
+```
+320
+390
+640
+959
+960
+961
+1024
+1440
+```
+Pay particular attention to:
+
+- sticky category navigation;
+- breadcrumb wrapping;
+- ProductCard link areas;
+- pagination;
+- mobile drawer navigation;
+- long category/product names.
+
+
+71. 200% REFLOW
+
+Verify important internal navigation remains usable under browser zoom/reflow.
+
+No horizontal page overflow caused by breadcrumb/link changes.
+
+
+72. DESIGN SYSTEM
+
+Use existing:
+
 tokens
+MUI theme
+NavLink
 ProductCard
 ProductGrid
-category header
-sticky navigation
-filters
-search UI
-PDP gallery
+layout primitives
+breadcrumb implementation
+pagination implementation
+
+Do not invent new colors, spacing, radii, shadows, or typography.
 
 
-73. CATEGORY PAGE IMAGE REFINEMENT
+73. ICON POLICY
 
-If the separately requested category-page image refinement has not yet been implemented, do NOT bundle it into Phase 14.9.
+If any icon is genuinely needed:
 
-Keep it as a separate visual commit/task.
+@mui/icons-material only.
 
-Sitemap/robots should remain SEO infrastructure only.
+But internal-link work should not need decorative new icons.
+
+Do not add arrows to every link.
 
 
-74. NO NEW DEPENDENCY
+74. URBAN LADDER REFERENCE
+
+Urban Ladder remains structural/IA inspiration only.
+
+Do not inspect/copy competitor source code.
+
+Do not copy:
+
+copy
+visual treatment
+link labels
+footer
+navigation taxonomy
+SEO blocks
+
+
+75. NO NEW DEPENDENCY
 
 Expected:
 
 dependencies added = NONE
 
-Do not install:
-
-sitemap
-next-sitemap
-robots-txt
-SEO packages
-XML libraries
-
-Next.js already supplies the required metadata routes.
+Do not install SEO/link-analysis packages.
 
 
-75. TEST INFRASTRUCTURE
+76. TEST INFRASTRUCTURE
 
-Use existing:
+Continue using:
 
 node:test + tsx
 
-Do not recreate:
+Do not reintroduce:
 
 load-ts.mjs
 node:vm
 eval
 new Function
-SourceTextModule
-custom TS loaders
+custom runtime TypeScript execution.
 
 
-76. FOCUSED TEST SUITE
+77. ADD FOCUSED TEST
 
-Add one focused script following repository conventions:
+Add:
 
-npm run test:crawl
+npm run test:links
 
-or:
-
-npm run test:sitemap
-
-Choose ONE name that accurately covers sitemap + robots.
+or equivalent existing naming convention.
 
 Prefer:
 
-test:crawl
+test:links
 
-if it tests both resources.
-
-Do not create overlapping test suites unnecessarily.
+This test should verify the internal-link contract rather than implementation trivia.
 
 
-77. SITEMAP STATIC URL TESTS
+78. PRODUCTCARD LINK TEST
 
-With valid test SITE_URL, assert exactly one:
+Verify ProductCard:
 
-/
- /products
-
-base entry.
-
-Assert:
-
-/search absent.
+- links to /products/{backend slug};
+- uses backend slug verbatim;
+- has meaningful accessible product-name context;
+- does not append search/filter/category tracking query;
+- does not use machine ID.
 
 
-78. PRODUCT SITEMAP TESTS
+79. HOMEPAGE LINK TEST
 
-Use paginated fake CAT-001 transport/data.
+Verify:
 
-Test:
-
-- one page;
-- multiple pages;
-- final partial page;
-- zero products;
-- backend slugs;
-- duplicate defensive handling;
-- deterministic output;
-- no product IDs in URLs;
-- no local slugification.
+- canonical category links use backend slugs;
+- homepage product cards reach PDPs;
+- /products is reachable through a natural collection action if implemented;
+- no reserved/dead route becomes active.
 
 
-79. CATEGORY SITEMAP TESTS
+80. CATEGORY LINK TEST
 
-Use paginated fake CAT-003 data.
+Verify:
 
-Test:
-
-- one page;
-- multiple pages;
-- zero categories;
-- backend slugs;
-- deterministic output;
-- no hard-coded taxonomy.
+- breadcrumb Home link;
+- category current-page semantics;
+- child category links only from authoritative data;
+- product cards link to canonical PDPs;
+- no /products?category= replacement for canonical category navigation.
 
 
-80. PAGINATION REQUEST TEST
+81. PDP LINK TEST
 
-Verify collection traversal respects:
+Verify:
 
-per_page <= 100
+Home → /
+Furniture → /products
+Category → /categories/{slug}
 
-and advances using authoritative pagination metadata.
+when authoritative category context exists.
 
-No unbounded request.
-
-No CAT-002/CAT-004 N+1.
+Current product should not create an unnecessary self-link.
 
 
-81. QUERY-FREE SITEMAP TEST
+82. SEARCH LINK TEST
 
-Assert every sitemap URL has:
+Verify:
 
-search === ""
+search results → clean canonical PDP
 
-for current V1 sitemap policy.
+Search pagination preserves:
 
-No:
+search=<term>
 
-page
-category
-product_type
-availability
-min_price
-max_price
-sort
-sort_direction
+PDP links do NOT preserve the search query.
+
+
+83. FILTER LINK TEST
+
+Verify:
+
+filtered /products result cards → clean canonical PDP
+
+Pagination preserves approved filter/sort state.
+
+Product links do not carry filter state.
+
+
+84. PAGINATION TEST
+
+Verify:
+
+- previous/next are semantic links;
+- page 1 URL is clean;
+- active state preserved;
+- invalid unrelated parameters not introduced.
+
+
+85. NAVIGATION TEST
+
+Audit desktop and mobile navigation.
+
+Verify:
+
+- destinations agree;
+- implemented links are active;
+- stale/dead destinations are not active;
+- backend slug policy is respected;
+- no href="#" exists.
+
+
+86. FOOTER TEST
+
+Verify footer has:
+
+- no broken internal link;
+- no placeholder href;
+- no link to unimplemented route presented as active;
+- no SEO link farm.
+
+
+87. BROKEN LINK CONTRACT TEST
+
+Create a finite set of known rendered internal destinations from fixture/test data and assert route shape validity.
+
+Do not attempt a network crawler over arbitrary application state.
+
+The test should be deterministic.
+
+
+88. STATIC SOURCE AUDIT
+
+Search frontend/web for suspicious internal navigation patterns:
+
+href="#"
+router.push(
+window.location
+location.href
+onClick navigation
+hard-coded /products?category=
+machine-ID product URLs
+local slugify utilities
+
+Do not mechanically delete legitimate occurrences.
+
+Classify each finding.
+
+
+89. ROUTE GRAPH TEST
+
+Using controlled fixture data, verify canonical resources are reachable:
+```
+/ → category
+/ → product
+/ → /products
+/category → product
+/products → product
+/search → product
+/product → category
+/product → /products
+```
+Where a relationship is unavailable because authoritative data lacks it, report NOT AVAILABLE rather than fabricate it.
+
+
+90. CRAWL DEPTH
+
+Do not attempt to guarantee an arbitrary "all pages within exactly 3 clicks" metric.
+
+Instead verify no canonical product/category resource rendered by the current catalog architecture is orphaned from all normal discovery paths.
+
+Sitemap remains a supplementary discovery mechanism, not a substitute for navigation.
+
+
+91. ORPHAN PRODUCT ANALYSIS
+
+Given controlled catalog data:
+
+a product returned by CAT-001 should be reachable from:
+
+/products
+
+through ProductCard.
+
+If it is also category-associated, category discovery may provide another path.
+
+Do not require homepage featuring for every product.
+
+
+92. ORPHAN CATEGORY ANALYSIS
+
+A category intended for public storefront discovery should be reachable through at least one approved category discovery/navigation surface where the public API exposes it.
+
+If CAT-003 exposes categories that current global navigation cannot safely expose because of the previously documented root-layout architecture limitation:
+
+report it explicitly.
+
+Do not hide the limitation.
+
+
+93. LINK COUNTS
+
+You may report counts for verification, but no minimum link-count target exists.
+
+Do not fail because a page has "too few SEO links."
+
+
+94. RUNTIME API VERIFICATION
+
+If local Laravel remains empty:
+
+report real catalog link verification as:
+
+NOT AVAILABLE — EMPTY LOCAL CATALOG
+
+Do not create production/test DB data just to populate links.
+
+Use explicit fixture mode for deterministic route/link verification.
+
+
+95. FIXTURE RUNTIME
+
+Use the existing fixture architecture to verify:
+```
+homepage → category
+homepage → PDP
+/products → PDP
+category → PDP
+search → PDP
+PDP → category
+PDP → /products
+```
+where fixture data supports those relationships.
+
+
+96. BROWSER VERIFICATION
+
+Use installed Chrome.
+
+At minimum verify:
+
+320px
+390px
+959px
+960px
+961px
+1440px
+
+Check:
+
+- desktop navigation;
+- sticky behavior;
+- mobile drawer;
+- breadcrumb links;
+- product cards;
+- pagination;
+- keyboard traversal;
+- focus visibility;
+- no horizontal overflow;
+- no console errors;
+- no unexpected network failures.
+
+
+97. LINK STATUS
+
+For deterministic fixture/API routes used during runtime verification, follow representative links and verify expected HTTP status.
+
+Expected canonical destinations:
+
+implemented valid route → 200
+missing product → 404
+missing category → 404
+
+Do not require every discovery query URL to be indexable.
+
+
+98. NO VISUAL REDESIGN
+
+Expected visual change:
+
+NONE or minimal link-affordance adjustment required for accessibility.
+
+Do not redesign:
+```
+homepage
+category page
+PDP
 search
-
-
-82. CANONICAL CONSISTENCY TEST
-
-Assert sitemap URLs correspond to Phase 14.7 canonical route shapes.
-
-No:
-
-machine IDs
-trailing slash variants
-API routes
-fixture-only aliases
-
-
-83. SITE_URL MISSING TEST
-
-Unset SITE_URL.
-
-Verify:
-
-- no localhost sitemap URLs;
-- no API origin;
-- no fabricated public origin;
-- build/test remains viable;
-- robots omits Sitemap directive.
-
-Test actual intended empty/no-origin sitemap behavior.
-
-
-84. MALFORMED SITE_URL TEST
-
-Provide malformed SITE_URL.
-
-Verify existing Phase 14.7 configuration error behavior remains intact.
-
-Do not silently omit a malformed configured value as though it were simply missing.
-
-
-85. LASTMOD TEST
-
-If authoritative lastmod is unavailable:
-
-assert sitemap entries omit it.
-
-Do not assert current time.
-
-If authoritative timestamp exists:
-
-assert correct mapping.
-
-No `new Date()` as fabricated content freshness.
-
-
-86. ROBOTS TEST
-
-Verify generated robots policy contains:
-
-User-agent: *
-Allow: /
-
-and the deliberate search/facet crawl exclusions.
-
-Verify it does NOT contain invented:
-
-Crawl-delay
-Host
-bot-specific policies
-private-route guesses
-
-
-87. ROBOTS SITEMAP TEST
-
-With SITE_URL:
-
-Sitemap: {SITE_URL}/sitemap.xml
-
-Without SITE_URL:
-
-no Sitemap directive.
-
-
-88. ROBOTS FACET TEST
-
-Verify each owned facet/sort parameter is covered as intended:
-
-category
-product_type
-availability
-min_price
-max_price
-sort
-sort_direction
-
-Verify:
-
-?page=
-
-is NOT globally disallowed.
-
-
-89. ROBOTS SEARCH TEST
-
-Verify:
-
-/search
-
-is disallowed from crawling.
-
-Do not rely on robots.txt as the only noindex mechanism; Phase 14.7 remains unchanged.
-
-
-90. PROXY TEST
-
-Verify:
-
-/sitemap.xml
-/robots.txt
-
-are not intercepted by category/product preflight.
-
-Missing product/category hard-404 behavior must remain intact.
-
-
-91. RUNTIME SITEMAP VERIFICATION
-
-Run production build/server.
-
-With explicit valid test SITE_URL, request:
-
-GET /sitemap.xml
-
-Verify:
-
-HTTP 200
-Content-Type appropriate XML
-valid XML
-absolute URLs
-no localhost
-no API origin
-no search URL
-no filter URL
-no duplicate loc entries
-
-
-92. RUNTIME ROBOTS VERIFICATION
-
-Request:
-
-GET /robots.txt
-
-Verify:
-
-HTTP 200
-text/plain-compatible response
-correct user-agent
-correct allow/disallow rules
-correct Sitemap directive when SITE_URL exists
-no fabricated host
-
-
-93. API MODE RUNTIME
-
-When local Laravel is available, run sitemap in API-backed mode.
-
-If catalog remains empty, report:
-
-Products discovered: 0
-Categories discovered: 0
-
-Do not call that a failure if Laravel legitimately returns an empty public catalog.
-
-
-94. MULTI-PAGE PAGINATION EVIDENCE
-
-If the local API has too little data to exercise multiple CAT-001/CAT-003 pages:
-
-use typed transport/unit fixtures to prove multi-page traversal.
-
-Do not create production DB records solely for sitemap testing.
-
-
-95. XML PARSING
-
-Parse generated sitemap XML in test/runtime verification where practical.
-
-Do not validate merely by searching for `<url>` strings.
-
-No malformed XML.
-
-
-96. URL LIMIT
-
-Count emitted URLs.
-
-Report:
-
-Total sitemap URLs:
-<n>
-
-If >= 50,000:
-
-BLOCK
-
-and implement/plan proper sitemap splitting before PASS.
-
-
-97. API FAILURE TEST
-
-Simulate CAT-001/CAT-003 unexpected failure.
-
-Verify:
-
-- no fixture fallback;
-- no fabricated successful complete sitemap;
-- failure propagates according to chosen metadata-route architecture.
-
-Do not mask 500 as empty catalog.
-
-
-98. REGRESSION — SEO
+filters
+footer
+header
+ProductCard
+ProductGrid
+```
+Do not reintroduce removed category imagery.
+
+
+99. REGRESSION — CRAWL
 
 Run:
 
+npm run test:crawl
+
+Verify Phase 14.9 remains unchanged.
+
+Sitemap canonical URLs must still match internal-link targets.
+
+
+100. REGRESSION — SEO
+
+Run:
+```
 npm run test:seo
 npm run test:structured-data
-
+```
 Verify:
 
-canonicals unchanged
-robots meta unchanged
-JSON-LD unchanged
+canonical policy unchanged;
+search noindex unchanged;
+filtered collection noindex unchanged;
+BreadcrumbList remains truthful;
+offers remain absent.
 
 
-99. REGRESSION — CATALOG
+101. REGRESSION — CATALOG
 
-Run existing suites:
-
+Run actual available scripts:
+```
 npm run test:filters
 npm run test:search
 npm run test:product-detail
@@ -1451,11 +1462,9 @@ npm run test:theme
 npm run test:layout
 npm run test:responsive
 npm run test:states
+```
 
-Use actual script names.
-
-
-100. STATIC VALIDATION
+102. STATIC VALIDATION
 
 Must pass:
 
@@ -1465,91 +1474,69 @@ npm run build
 git diff --check
 
 
-101. SONAR REGRESSION
+103. SONAR REGRESSION
 
 Do not introduce:
-
+```
 node:vm
 eval
 new Function
-runtime code injection
-custom TS module loader
+runtime source compilation
+unsafe dynamic execution.
+```
 
-The previous Sonar remediation remains closed.
-
-
-102. BACKEND BOUNDARY
+104. BACKEND BOUNDARY
 
 Expected:
 
 backend changed = NO
 
-Do not add a special sitemap endpoint to Laravel.
+Do not add:
 
-Do not modify CAT-001/CAT-003 merely for sitemap convenience.
+related-products endpoint
+SEO endpoint
+navigation endpoint
+breadcrumb endpoint
+
+unless a genuine frozen-contract blocker is discovered.
+
+If such a blocker exists:
+
+STOP.
 
 
-103. FLUTTER BOUNDARY
+105. FLUTTER BOUNDARY
 
 Expected:
 
 Flutter changed = NO
 
 
-104. DESIGN SYSTEM BOUNDARY
+106. DESIGN-SYSTEM BOUNDARY
 
 Expected:
 
-design system changed = NO
+design-system authority changed = NO
+
+Consume existing tokens/components.
 
 
-105. PHASE 14.10 BOUNDARY
+107. PHASE 14.11 BOUNDARY
 
-Do NOT perform comprehensive internal-linking changes.
+Do NOT perform:
 
-Do not:
-
-redesign navigation
-add SEO link clouds
-add related-category blocks
-add footer keyword links
-add breadcrumb hierarchy merely for crawling
-
-Phase 14.10 owns internal linking.
-
-
-106. PHASE 14.11 BOUNDARY
-
-Do NOT begin:
-
-image optimization
+image compression
+next/image tuning beyond fixing a direct link regression
+bundle analysis
+font optimization
+Core Web Vitals optimization
+prefetch tuning
 cache redesign
 ISR migration
-bundle optimization
-performance tuning
+R2 optimization
+responsive image overhaul
 
-Phase 14.11 owns comprehensive performance hardening.
-
-
-107. SEARCH CONSOLE
-
-Do not attempt to submit the sitemap to Google Search Console in this phase unless explicitly requested and an appropriate authenticated integration exists.
-
-Implementation ends with making:
-
-/sitemap.xml
-/robots.txt
-
-correctly available.
-
-Document future deployment step:
-
-configure SITE_URL
-deploy
-verify public URLs
-submit/verify sitemap in Search Console
-
-Do not claim submission occurred.
+Those belong to Phase 14.11.
 
 
 108. DOCUMENTATION
@@ -1560,19 +1547,24 @@ phases/group-N-phases.md
 
 Record:
 
-- sitemap inclusion policy;
-- sitemap exclusion policy;
-- CAT-001/CAT-003 discovery;
-- pagination strategy;
-- lastmod decision;
-- robots policy;
-- faceted-navigation crawl policy;
-- SITE_URL missing behavior;
-- runtime evidence.
+- audited internal-link graph;
+- canonical link policy;
+- ProductCard link authority;
+- breadcrumb hierarchy;
+- category-navigation authority;
+- search/filter discovery behavior;
+- pagination state preservation;
+- dead/reserved-route findings;
+- fixture/API runtime evidence;
+- any unavoidable navigation limitation.
 
-Update ROUTING.md only if sitemap/robots route conventions or crawler policy are durable routing documentation.
+Update:
 
-Do not rewrite Phase 14.7 canonical rules.
+frontend/web/ROUTING.md
+
+only if current implemented navigation rules need durable clarification.
+
+Do not rewrite canonical policy already documented.
 
 
 109. ADR
@@ -1581,310 +1573,301 @@ Expected:
 
 ADR = NONE
 
-The architecture already has:
+This phase should apply existing routing/catalog/SEO authority.
 
-SITE_URL authority
-canonical route authority
-public catalog authority
+If resolving production category navigation requires a new global caching/failure architecture decision:
 
-Next.js metadata-file conventions are implementation.
+STOP.
 
-If a genuinely new cross-system policy is required:
-
-STOP
-
-Do not invent one silently.
+Do not create the ADR silently.
 
 
 110. COMPLETION REPORT
 
 Return:
-
-PHASE 14.9 — SITEMAP / ROBOTS
+```
+PHASE 14.10 — INTERNAL LINKING
 
 Status:
 PASS / BLOCKED
 
 
-FRAMEWORK
+AUDIT
 
-Next.js version:
-<value>
+Internal navigation surfaces audited:
+<n>
 
-Sitemap convention:
-app/sitemap.ts / <actual>
+Broken links before:
+<n>
 
-Robots convention:
-app/robots.ts / <actual>
+Broken links after:
+<n>
 
-New dependency:
+Placeholder hrefs:
+NONE / <details>
+
+Programmatic ordinary navigation:
+NONE / <details>
+
+Dead reserved routes activated:
 NONE / FAIL
 
 
-SITE ORIGIN
+CANONICAL GRAPH
 
-SITE_URL reused:
+/ → /products:
+PASS / NOT APPLICABLE / FAIL
+
+/ → category:
+PASS / NOT AVAILABLE / FAIL
+
+/ → product:
+PASS / NOT AVAILABLE / FAIL
+
+/products → product:
+PASS / NOT AVAILABLE / FAIL
+
+category → product:
+PASS / NOT AVAILABLE / FAIL
+
+search → product:
+PASS / NOT AVAILABLE / FAIL
+
+product → /products:
+PASS / FAIL
+
+product → category:
+PASS / NOT AVAILABLE / FAIL
+
+
+PRODUCT LINKS
+
+Component:
+ProductCard / <actual>
+
+Slug source:
+BACKEND / FAIL
+
+Machine IDs:
+NONE / FAIL
+
+Local slugification:
+NONE / FAIL
+
+Search params propagated to PDP:
+NO / FAIL
+
+Filter params propagated to PDP:
+NO / FAIL
+
+Accessible product-name link:
+PASS / FAIL
+
+
+CATEGORY LINKS
+
+Canonical shape:
+/categories/{backend slug}
+
+products?category used as canonical category navigation:
+NO / FAIL
+
+Child-category authority:
+<source / NOT AVAILABLE>
+
+Hard-coded production taxonomy added:
+NO / FAIL
+
+
+BREADCRUMBS
+
+Category:
+<actual hierarchy>
+
+PDP:
+<actual hierarchy>
+
+Semantic breadcrumb nav:
+PASS / FAIL
+
+aria-current:
+PASS / FAIL
+
+Visible hierarchy matches JSON-LD:
+PASS / FAIL
+
+
+GLOBAL NAVIGATION
+
+Desktop source:
+<actual>
+
+Mobile source:
+<actual>
+
+Shared authority:
 YES / FAIL
 
-Production SITE_URL:
-<configured / REQUIRED NOT CONFIGURED>
+Production fixture taxonomy:
+<YES/NO>
 
-API_BASE_URL used:
-NO / FAIL
+If YES, disposition:
+<reason/remediation/limitation>
 
-Host header trusted:
-NO / FAIL
-
-Localhost production fallback:
-NONE / FAIL
-
-Missing SITE_URL behavior:
-<summary>
+Sticky category navigation preserved:
+YES / N/A / FAIL
 
 
-SITEMAP
+FOOTER
 
-/sitemap.xml:
-HTTP <status>
-
-Absolute URLs:
+Implemented routes only:
 PASS / FAIL
 
-Canonical URLs only:
+Placeholder links:
+NONE / FAIL
+
+SEO link block:
+NONE / FAIL
+
+
+PAGINATION
+
+Semantic links:
 PASS / FAIL
 
-Trailing slash variants:
-NONE / FAIL
-
-Query strings:
-NONE / FAIL
-
-Duplicate URLs:
-NONE / FAIL
-
-Total URLs:
-<n>
-
-
-STATIC ENTRIES
-
-Homepage:
-INCLUDED / FAIL
-
-/products:
-INCLUDED / FAIL
-
-/search:
-EXCLUDED / FAIL
-
-Reserved unimplemented routes:
-NONE / FAIL
-
-
-PRODUCT DISCOVERY
-
-Source:
-CAT-001 / FAIL
-
-Pagination:
-<strategy>
-
-All pages traversed:
+Clean page one:
 PASS / FAIL
 
-per_page:
+Search state preserved:
+PASS / FAIL
+
+Filter state preserved:
+PASS / FAIL
+
+Unrelated state introduced:
+NONE / FAIL
+
+
+REQUEST-FIRST
+
+Made-to-order PDP links:
+PASS / FAIL
+
+Fake request CTA:
+NONE / FAIL
+
+Cart:
+NONE / unchanged
+
+Checkout:
+NONE / unchanged
+
+Payment:
+NONE / unchanged
+
+Product offers JSON-LD:
+NONE / unchanged
+
+
+SEO CONSISTENCY
+
+Phase 14.7 canonicals:
+PASS / FAIL
+
+Phase 14.7 noindex:
+PASS / FAIL
+
+Phase 14.8 breadcrumbs:
+PASS / FAIL
+
+Phase 14.8 offers omission:
+PASS / FAIL
+
+Phase 14.9 sitemap:
+PASS / FAIL
+
+Phase 14.9 robots:
+PASS / FAIL
+
+
+ACCESSIBILITY
+
+Keyboard:
+PASS / FAIL
+
+Visible focus:
+PASS / FAIL
+
+Meaningful link text:
+PASS / FAIL
+
+Nested interactive controls:
+NONE / FAIL
+
+Breadcrumb semantics:
+PASS / FAIL
+
+Mobile drawer:
+PASS / FAIL
+
+200% reflow:
+PASS / FAIL
+
+
+RESPONSIVE
+
+320:
+PASS / FAIL
+
+390:
+PASS / FAIL
+
+959:
+PASS / FAIL
+
+960:
+PASS / FAIL
+
+961:
+PASS / FAIL
+
+1440:
+PASS / FAIL
+
+Horizontal overflow:
+NONE / FAIL
+
+
+RUNTIME
+
+Browser:
 <value>
 
-CAT-002 N+1:
-NONE / FAIL
+API mode:
+PASS / EMPTY CATALOG / API NOT AVAILABLE
 
-Product slug source:
-BACKEND / FAIL
-
-Machine IDs in URLs:
-NONE / FAIL
-
-Products discovered:
-<n>
-
-
-CATEGORY DISCOVERY
-
-Source:
-CAT-003 / FAIL
-
-Pagination:
-<strategy>
-
-All pages traversed:
+Fixture mode:
 PASS / FAIL
 
-Category slug source:
-BACKEND / FAIL
+Representative valid links:
+<results>
 
-Hard-coded taxonomy:
-NONE / FAIL
-
-CAT-004 N+1:
-NONE / FAIL
-
-Categories discovered:
-<n>
-
-Nested public category discovery:
-SUPPORTED / NOT AVAILABLE THROUGH CAT-003
-
-
-EXCLUSIONS
-
-/search:
-EXCLUDED / FAIL
-
-Filter URLs:
-EXCLUDED / FAIL
-
-Sort URLs:
-EXCLUDED / FAIL
-
-Price URLs:
-EXCLUDED / FAIL
-
-Pagination URLs:
-EXCLUDED FROM SITEMAP / FAIL
-
-page=1:
-EXCLUDED / FAIL
-
-Fixture-only URLs:
-NONE / FAIL
-
-
-LASTMOD
-
-Authoritative source:
-<field / NOT AVAILABLE>
-
-Fabricated current timestamps:
-NONE / FAIL
-
-changeFrequency:
-<OMITTED / justified>
-
-priority:
-<OMITTED / justified>
-
-
-ROBOTS
-
-/robots.txt:
-HTTP <status>
-
-User-agent:
-*
-
-Public crawling:
-ALLOWED / FAIL
-
-/search crawling:
-DISALLOWED / FAIL
-
-Faceted navigation:
-<rules>
-
-Pagination globally blocked:
-NO / FAIL
-
-Products blocked:
-NO / FAIL
-
-Categories blocked:
-NO / FAIL
-
-Crawl-delay:
-NONE / FAIL
-
-Host directive:
-NONE / FAIL
-
-Bot-specific policy:
-NONE / FAIL
-
-
-SITEMAP DIRECTIVE
-
-With SITE_URL:
-<value>
-
-Without SITE_URL:
-OMITTED / FAIL
-
-
-PROXY
-
-/sitemap.xml preflight:
-NONE / FAIL
-
-/robots.txt preflight:
-NONE / FAIL
-
-Missing PDP:
+Missing product:
 HTTP 404 / FAIL
 
 Missing category:
 HTTP 404 / FAIL
 
-
-FAILURE BEHAVIOR
-
-CAT-001 failure:
-<behavior>
-
-CAT-003 failure:
-<behavior>
-
-Fixture fallback:
-NONE / FAIL
-
-Incomplete successful sitemap on unexpected API failure:
-NO / FAIL
+Console errors:
+NONE / <details>
 
 
-SEO REGRESSION
+TESTS
 
-Phase 14.7 canonicals:
+test:links:
 PASS / FAIL
 
-Search noindex:
-PASS / FAIL
-
-Filtered collection noindex:
-PASS / FAIL
-
-Pagination canonical:
-PASS / FAIL
-
-Phase 14.8 JSON-LD:
-PASS / FAIL
-
-
-TEST INFRASTRUCTURE
-
-Runner:
-node:test + tsx / <actual>
-
-load-ts.mjs:
-ABSENT / FAIL
-
-node:vm:
-NONE / FAIL
-
-eval/new Function:
-NONE / FAIL
-
-
-VALIDATION
-
-test:crawl/test:sitemap:
+test:crawl:
 PASS / FAIL
 
 test:seo:
@@ -1939,28 +1922,10 @@ git diff --check:
 PASS / FAIL
 
 
-RUNTIME
+DEPENDENCIES
 
-Production sitemap XML:
-PASS / FAIL
-
-XML parsing:
-PASS / FAIL
-
-Production robots.txt:
-PASS / FAIL
-
-API-backed runtime:
-PASS / FAIL / API NOT AVAILABLE
-
-Fixture runtime:
-PASS / FAIL / NOT REQUIRED
-
-No localhost canonical URLs:
-PASS / FAIL
-
-No API-origin sitemap URLs:
-PASS / FAIL
+Added:
+NONE / FAIL
 
 
 BOUNDARIES
@@ -1974,20 +1939,20 @@ NO
 Design system changed:
 NO
 
-Visible UI changed:
+New client component:
 NO
 
-Category-page visual refinement bundled:
-NO
+Related-products system:
+NONE
 
-Phase 14.10 work:
+New SEO link section:
+NONE
+
+Category-page image redesign:
 NONE
 
 Phase 14.11 work:
 NONE
-
-Search Console submission:
-NOT PERFORMED
 
 
 DOCUMENTATION
@@ -2008,7 +1973,7 @@ git-workflow-and-versioning read:
 YES / NO
 
 Operations:
-<list>
+<exact operations>
 
 Commit:
 <hash/message>
@@ -2017,83 +1982,62 @@ Push:
 <result / NONE>
 
 
-DEPLOYMENT FOLLOW-UP
-
-SITE_URL configuration required:
-YES / NO
-
-Public sitemap verification required:
-YES
-
-Search Console submission/verification:
-PENDING
-
-
 RESULT
 
-Phase 14.9:
+Phase 14.10:
 PASS / BLOCKED
 
-Phase 14.10:
+Phase 14.11:
 READY / BLOCKED
-
+```
 
 111. STOP CONDITION
 
-Phase 14.9 may be declared PASS only when:
+Phase 14.10 may be declared PASS only when:
 
-- app/sitemap.ts uses the installed Next.js metadata convention;
-- app/robots.ts uses the installed Next.js metadata convention;
-- SITE_URL from Phase 14.7 is the only public-site origin authority;
-- no production domain is guessed;
-- missing SITE_URL does not cause localhost/API-origin leakage;
-- missing SITE_URL does not unnecessarily break the production build;
-- robots omits the sitemap directive when no valid SITE_URL exists;
-- homepage is included;
-- /products is included;
-- every sitemap product URL comes from authoritative CAT-001 backend slugs;
-- every sitemap category URL comes from authoritative CAT-003 backend slugs;
-- CAT-001 pagination is fully traversed;
-- CAT-003 pagination is fully traversed;
-- per_page stays within the frozen <=100 contract;
-- no CAT-002 N+1 exists;
-- no CAT-004 N+1 exists;
-- no hard-coded production taxonomy is used;
-- /search is excluded;
-- all Phase 14.6 filter/sort/price facet URLs are excluded;
-- pagination URLs are not unnecessarily enumerated in sitemap;
-- no query strings appear in current V1 sitemap URLs;
-- no machine IDs are used as canonical paths;
-- no duplicate URLs exist;
-- sitemap entries are deterministic;
-- lastmod is emitted only from authoritative content timestamps, otherwise omitted;
-- current time/build time is not fabricated as lastmod;
-- priority/changeFrequency are omitted unless genuinely justified;
-- robots allows public canonical catalog crawling;
-- robots disallows /search crawling;
-- robots deliberately controls known non-indexable faceted navigation without globally blocking useful query strings;
-- ?page= is not globally blocked;
-- products/categories remain crawlable;
-- no invented private/admin/API route policy is added;
-- no bot-specific/AI-crawler business policy is invented;
-- sitemap/robots bypass resource proxy preflight;
-- unexpected catalog API failure is not masked by fixture/incomplete-success fallback;
-- sitemap stays below protocol limits or is properly split;
-- production-shaped /sitemap.xml returns valid XML;
-- production-shaped /robots.txt returns valid text;
-- sitemap and Phase 14.7 canonical policy agree;
-- Phase 14.7 page-level robots behavior remains intact;
-- Phase 14.8 JSON-LD remains intact;
-- no client component is added;
-- no visual UI changes are bundled;
-- no category-page redesign is bundled;
-- no dependency is added;
+- the existing internal-link graph has been audited before adding links;
+- all ordinary navigation uses semantic links;
+- backend slugs remain the sole product/category URL authority;
+- ProductCard remains the canonical reusable product-link surface;
+- homepage category discovery reaches canonical category pages where authoritative data exists;
+- homepage/catalog discovery reaches canonical PDPs;
+- /products reaches products through ProductCard;
+- category product discovery reaches canonical PDPs;
+- search results reach canonical PDPs despite /search being noindex;
+- filtered product results reach clean canonical PDPs;
+- PDP links back to /products;
+- PDP links to its authoritative category when category context exists;
+- visible breadcrumbs are semantic and truthful;
+- visible PDP breadcrumb hierarchy agrees with Phase 14.8 BreadcrumbList;
+- no unnecessary current-page self-links are added;
+- pagination remains semantic and preserves required discovery state;
+- page-one URLs remain clean;
+- no filter/search state leaks into canonical PDP URLs;
+- canonical category navigation does not use /products?category= as a substitute for /categories/[slug];
+- desktop/mobile navigation do not diverge in route semantics;
+- sticky category navigation remains correct if already implemented;
+- old fixture-backed global navigation authority is explicitly audited;
+- no duplicate hard-coded production taxonomy is introduced;
+- no dangerous root-layout/API availability architecture is silently added;
+- footer contains no broken/placeholder/SEO-farm links;
+- no reserved unimplemented route is activated;
+- MADE_TO_ORDER continues to link to its canonical PDP;
+- no fake request/cart/checkout/payment destination is introduced;
+- no related-products algorithm is invented;
+- no hidden links or keyword-stuffed SEO anchors are introduced;
+- Phase 14.7 canonical/noindex behavior remains unchanged;
+- Phase 14.8 structured data remains truthful;
+- Phase 14.9 sitemap/robots remain unchanged and consistent with canonical links;
+- missing product/category still return hard HTTP 404;
+- empty API catalog produces no fabricated links;
+- accessibility and responsive checks pass;
+- no new dependency is added;
 - no backend change is made;
 - no Flutter change is made;
-- no Phase 14.10 work is started;
-- no Phase 14.11 work is started;
-- focused crawl tests pass;
-- all relevant regressions pass;
+- no design-system authority changes;
+- no Phase 14.11 performance work is started;
+- focused internal-link tests pass;
+- all relevant regression suites pass;
 - typecheck passes;
 - lint passes;
 - production build passes;
@@ -2102,7 +2046,7 @@ Phase 14.9 may be declared PASS only when:
 
 Then report exactly:
 
-Phase 14.9 — PASS
-Phase 14.10 — READY
+Phase 14.10 — PASS
+Phase 14.11 — READY
 
-Do not start Phase 14.10 automatically.
+Do not start Phase 14.11 automatically.

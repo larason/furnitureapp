@@ -22,10 +22,10 @@ Therefore the canonical route uses the current API slug, but historic URL perman
 
 | Website route | Purpose | Visibility | URL identity/state | Owner | Status |
 |---|---|---|---|---|---|
-| `/` | Public storefront homepage | Public | None | Phase 14.1 | Existing foundation placeholder; reserved for final homepage |
-| `/products` | Product collection | Public | Shareable API-aligned query parameters | Phase 14.3 | Reserved |
-| `/products/[slug]` | Product detail | Public | Laravel-returned `Product.slug` | Phase 14.4 | Reserved |
-| `/categories/[slug]` | Category landing page | Public | Laravel-returned `Category.slug` | Phase 14.2 | Reserved |
+| `/` | Public storefront homepage | Public | None | Phase 14.1 | Implemented |
+| `/products` | Product collection | Public | Shareable API-aligned query parameters | Phase 14.3 | Implemented |
+| `/products/[slug]` | Product detail | Public | Laravel-returned `Product.slug` | Phase 14.4 | Implemented |
+| `/categories/[slug]` | Category landing page | Public | Laravel-returned `Category.slug` | Phase 14.2 | Implemented |
 | `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Implemented |
 | `/furniture-requests` | Create a Furniture Request, including MADE_TO_ORDER interest | Public | Form state; no public request identifier | Owning request UI phase | Reserved |
 | `/contact` | Create a general Enquiry | Public | Form state; no public enquiry identifier | Phase 15.10 | Reserved |
@@ -84,6 +84,15 @@ Structured data describes only content and commercial capability that actually e
 - Product discovery traverses every CAT-001 page (`per_page=100`); category discovery reuses the paginated CAT-003 traversal. No CAT-002/CAT-004 N+1. `lastModified`, `changeFrequency`, and `priority` are omitted because no authoritative timestamp or ranking policy exists, and unexpected API failure propagates rather than falling back to fixtures.
 - `SITE_URL` is required for a meaningful sitemap. Without it, `/sitemap.xml` is an empty `urlset` and `/robots.txt` omits the `Sitemap` directive; no localhost or API origin is emitted.
 - `robots.txt` allows general crawling, disallows `/search` and the owned facet parameters (`category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction`) as both first (`/*?param=`) and subsequent (`/*&param=`) query parameters, and does not globally block `?page=`, product, or category routes. Page-level `noindex, follow` decisions from Phase 14.7 are unchanged.
+
+## Internal Linking Policy
+
+- Every product/category link uses the backend-returned slug: `/products/{slug}` and `/categories/{slug}`. Product cards link to clean canonical PDP URLs with no search/filter/category query state. The API's `GET /products?category={slug}` parameter is product retrieval/discovery only; it never replaces the website's canonical `/categories/[slug]` category resource.
+- `ProductCard` is the single reusable product-link surface for the homepage, category, `/products`, and `/search`; it is not forked per page, and its accessible link text is the product name.
+- Breadcrumbs are semantic (`nav aria-label="Breadcrumb"`): category = Home → Category; product = Home → Furniture → `/categories/{slug}` → product. The current item carries `aria-current="page"` and is not a link. The visible hierarchy matches the Phase 14.8 `BreadcrumbList`.
+- Pagination uses semantic anchors, preserves only its discovery state (search, or approved filter/sort), and keeps page-one URLs clean.
+- The homepage links categories to `/categories/{slug}` and offers one "View all furniture" link to `/products`.
+- Global header, mobile, and footer category navigation still uses the Phase 13.7 non-interactive fixture: destinations render as non-links until authoritative catalog-driven global navigation can be introduced without adding a root-layout fetch/availability regression. Reserved routes (`/furniture-requests`, `/contact`, `/account`, cart/checkout) remain inactive. This is a documented limitation, not a broken link.
 
 ## Route And Navigation Rules
 

@@ -49,7 +49,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
       <SiteSection aria-label="Product detail" surface="paper">
         <Stack spacing={7}>
           <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}>
-            <NavLink href="/">Home</NavLink><NavLink href="/products">Furniture</NavLink><NavLink href={`/categories/${product.category.slug}`}>{product.category.name}</NavLink><Typography color="text.primary">{product.name}</Typography>
+            <NavLink href="/">Home</NavLink><NavLink href="/products">Furniture</NavLink><NavLink href={`/categories/${product.category.slug}`}>{product.category.name}</NavLink><Typography color="text.primary" aria-current="page">{product.name}</Typography>
           </Breadcrumbs>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" }, gap: { xs: 7, md: 8 } }}>
             <ProductMedia image={leadImage} productName={product.name} priority />

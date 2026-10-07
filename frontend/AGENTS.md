@@ -81,6 +81,7 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - Consult `web/ROUTING.md` before adding website routes. Keep App Router conventions there authoritative.
 - Product and category URLs use the slugs returned by Laravel; do not derive frontend-only slugs or use internal numeric database IDs.
 - Put shareable collection/search state in documented URL parameters using the Laravel contract vocabulary. Do not implement routes owned by later phases early.
+- Category navigation links use the canonical `/categories/{slug}` resource. The frozen API's `GET /products?category={slug}` is product retrieval/discovery only; never substitute it for canonical category navigation. Product and category link slugs always come from Laravel, never from local slugification or machine IDs.
 
 ## Structured Data (SEO)
 
