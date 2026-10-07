@@ -26,3 +26,9 @@
 9. add stickers on furnitures and give customers flyers, business cards or other promotional materials
 
 10. run production checklist in [production-caveats.md](docs/production-caveats.md) and mention all steps that must be done physically by the user
+
+11. Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview 
+
+12. Current sign-up/sign-in is Clerk-only. The website does not yet call Laravel /api/v1/me after authentication, so creating a Clerk account alone does not create/update a local users record.
+
+13. The website bridge exists in frontend/web/lib/auth/laravel.ts, but nothing currently invokes it. To save a local user immediately after verification/sign-up, we should add a post-authenticated /me call.

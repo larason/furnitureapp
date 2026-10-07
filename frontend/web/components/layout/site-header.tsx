@@ -1,4 +1,5 @@
 import Box from "@mui/material/Box";
+import { AuthNavigation } from "./auth-navigation";
 import { BrandMark } from "./brand-mark";
 import { ContentContainer } from "./content-container";
 import { MobileNavigation } from "./mobile-navigation";
@@ -34,6 +35,7 @@ export function SiteHeader() {
           >
             <SearchAffordance />
           </Box>
+          <AuthNavigation />
         </Box>
       </ContentContainer>
     </Box>

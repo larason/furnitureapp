@@ -23,9 +23,11 @@
     "test:structured-data": "node --import=tsx --test lib/seo/structured-data.test.ts",
     "test:crawl": "node --import=tsx --test lib/seo/crawl.test.ts",
     "test:links": "node --import=tsx --test lib/catalog/internal-links.test.ts",
-    "test:performance": "node --import=tsx --test lib/performance/performance.test.ts"
+    "test:performance": "node --import=tsx --test lib/performance/performance.test.ts",
+    "test:auth": "node --import=tsx --test lib/auth/auth.test.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.9.11",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",

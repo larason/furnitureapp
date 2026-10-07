@@ -29,8 +29,8 @@ Therefore the canonical route uses the current API slug, but historic URL perman
 | `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Implemented |
 | `/furniture-requests` | Create a Furniture Request, including MADE_TO_ORDER interest | Public | Form state; no public request identifier | Owning request UI phase | Reserved |
 | `/contact` | Create a general Enquiry | Public | Form state; no public enquiry identifier | Phase 15.10 | Reserved |
-| `/sign-in` | Clerk sign-in entry point | Public | Clerk-owned identity flow | Phase 15.1 | Reserved |
-| `/sign-up` | Clerk sign-up entry point | Public | Clerk-owned identity flow | Phase 15.1 | Reserved |
+| `/sign-in` | Clerk sign-in entry point | Public | Clerk-owned identity flow | Phase 15.1 | Implemented |
+| `/sign-up` | Clerk sign-up entry point | Public | Clerk-owned identity flow | Phase 15.1 | Implemented |
 | `/account` | Customer account area | Authenticated UX | Current customer's account only | Owning account UI phase | Reserved |
 | `/account/profile` | Customer profile | Authenticated UX | Current customer only | Owning profile UI phase | Reserved |
 | `/account/requests` | Customer's own Furniture Requests | Authenticated UX | Current customer only | Owning request/account phase | Reserved |
@@ -96,11 +96,11 @@ Structured data describes only content and commercial capability that actually e
 
 ## Route And Navigation Rules
 
-- Next.js App Router is authoritative. Implemented public routes are `/`, `/products`, `/products/[slug]`, `/categories/[slug]`, and `/search`, plus the `/sitemap.xml` and `/robots.txt` metadata routes. Reserved routes in this document render as non-interactive structural content until their owning phase ships. Do not add `pages/` or create placeholder route files.
+- Next.js App Router is authoritative. Implemented public routes are `/`, `/products`, `/products/[slug]`, `/categories/[slug]`, `/search`, `/sign-in`, and `/sign-up`, plus the `/sitemap.xml` and `/robots.txt` metadata routes. Reserved routes in this document render as non-interactive structural content until their owning phase ships. Do not add `pages/` or create placeholder route files.
 - Route paths are lowercase, static multiword segments use kebab-case, and canonical paths have no trailing slash. `next.config.ts` does not enable `trailingSlash`; the installed Next.js default redirects slash-suffixed page URLs to their slashless form.
 - Server Components are the default. Pages needing interactive descendants keep client boundaries below the page where practical.
 - Ordinary internal navigation uses semantic `next/link` (with MUI composition when needed); buttons perform actions. Use programmatic router navigation only when application logic requires it, not for routine links.
-- Route groups, catch-all, parallel, and intercepting routes are not introduced now. A future layout may use a route group only for a real organization/layout boundary; route groups never appear in the public URL.
+- Other than Clerk-owned `/sign-in/[[...sign-in]]` and `/sign-up/[[...sign-up]]`, route groups, catch-all, parallel, and intercepting routes are not introduced now. A future layout may use a route group only for a real organization/layout boundary; route groups never appear in the public URL.
 - A dynamic parameter is a contract value, not a locally derived label. Do not lowercase, transliterate, or otherwise normalize identifiers in the browser.
 - Account URLs are UX organization only, not authorization. Clerk provides identity; Laravel must independently enforce authentication, ownership, and permissions. Anonymous requests and enquiries stay public to create but their details are never public by reference.
 
@@ -126,8 +126,8 @@ app/
   furniture-requests/page.tsx      # Reserved (owning request UI phase)
   contact/page.tsx                 # Reserved (Phase 15.10)
   account/...                      # Reserved (owning authenticated account phases)
-  sign-in/...                      # Reserved (Phase 15.1 / Clerk)
-  sign-up/...                      # Reserved (Phase 15.1 / Clerk)
+  sign-in/[[...sign-in]]/page.tsx  # Implemented (Phase 15.1 / Clerk)
+  sign-up/[[...sign-up]]/page.tsx  # Implemented (Phase 15.1 / Clerk)
 ```
 
 Reserved routes are not implemented; they render as non-interactive structural content and are not active links or indexable pages.
