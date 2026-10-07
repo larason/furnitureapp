@@ -7,6 +7,7 @@ import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import type { ReactNode } from "react";
 import { PriceFilterInputs } from "@/components/catalog/price-filter-inputs";
+import { SortFilterSelect } from "@/components/catalog/sort-filter-select";
 import { NavLink } from "@/components/layout/nav-link";
 import { productCollectionHref, singleValue, toFilterControlValues, type ProductCollectionQuery } from "@/lib/catalog/filters";
 import type { CategorySummary } from "@/lib/catalog/types";
@@ -28,8 +29,7 @@ export function ProductCollectionControls({ action, categories, query }: Product
           <FilterSelect label="Product type" name="product_type" defaultValue={values.productType}><MenuItem value="">All furniture</MenuItem><MenuItem value="IN_STOCK">In stock</MenuItem><MenuItem value="MADE_TO_ORDER">Made to order</MenuItem></FilterSelect>
           <FilterSelect label="Availability" name="availability" defaultValue={values.availability}><MenuItem value="">Any availability</MenuItem><MenuItem value="available">Available</MenuItem><MenuItem value="unavailable">Unavailable</MenuItem></FilterSelect>
           <PriceFilterInputs minPriceTzs={values.minPriceTzs} maxPriceTzs={values.maxPriceTzs} minPriceMinorUnits={singleValue(query.min_price)} maxPriceMinorUnits={singleValue(query.max_price)} />
-          <FilterSelect label="Sort by" name="sort" defaultValue={values.sort === "newest" ? "" : values.sort}><MenuItem value="">Newest</MenuItem><MenuItem value="price">Price</MenuItem><MenuItem value="name">Name</MenuItem></FilterSelect>
-          <FilterSelect label="Order" name="sort_direction" defaultValue={values.sortDirection}><MenuItem value="">Default order</MenuItem><MenuItem value="asc">Low to high / A to Z</MenuItem><MenuItem value="desc">High to low / Z to A</MenuItem></FilterSelect>
+          <SortFilterSelect sort={values.sort} sortDirection={values.sortDirection} />
         </Box>
         <Stack direction="row" spacing={3} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}><Button type="submit" variant="contained">Apply filters</Button><NavLink href={clearHref}>Clear filters</NavLink></Stack>
       </Stack>

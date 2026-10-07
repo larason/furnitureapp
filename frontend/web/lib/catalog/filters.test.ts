@@ -11,6 +11,9 @@ import {
 } from "./filters";
 import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
 import { isInvertedRange, syncPriceField } from "@/components/catalog/price-filter-inputs";
+import { SORT_OPTIONS, SortFilterSelect, toSortOptionValue } from "@/components/catalog/sort-filter-select";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 test("CAT-001 serializes every supported collection parameter and omits page one", () => {
   const query = parseProductCollectionQuery({
@@ -107,4 +110,31 @@ test("price filter inputs omit invalid or empty values and flag inverted ranges"
   assert.equal(isInvertedRange("500000", "200000"), true);
   assert.equal(isInvertedRange("200000", "500000"), false);
   assert.equal(isInvertedRange("200000", "200000"), false);
+});
+
+test("sort control maps every user option to one valid frozen sort pair", () => {
+  assert.deepEqual(SORT_OPTIONS.map((option) => option.label), ["Newest", "Price: Low to high", "Price: High to low", "Name: A to Z", "Name: Z to A"]);
+  assert.equal(toSortOptionValue("price", "asc"), "price:asc");
+  assert.equal(toSortOptionValue("price", "desc"), "price:desc");
+  assert.equal(toSortOptionValue("name", "asc"), "name:asc");
+  assert.equal(toSortOptionValue("name", "desc"), "name:desc");
+  assert.equal(toSortOptionValue("newest", ""), "");
+  assert.equal(toSortOptionValue("created_at", "asc"), "");
+  assert.equal(toSortOptionValue(undefined, undefined), "");
+});
+
+test("sort control submits the frozen pair through hidden inputs and omits it for Newest", () => {
+  const asc = renderToStaticMarkup(createElement(SortFilterSelect, { sort: "price", sortDirection: "asc" }));
+  assert.match(asc, /name="sort" value="price"/);
+  assert.match(asc, /name="sort_direction" value="asc"/);
+  assert.match(asc, /Price: Low to high/);
+
+  const newest = renderToStaticMarkup(createElement(SortFilterSelect, { sort: "newest", sortDirection: "" }));
+  assert.doesNotMatch(newest, /name="sort"/);
+  assert.doesNotMatch(newest, /name="sort_direction"/);
+
+  const controls = read("components/catalog/product-collection-controls.tsx");
+  assert.match(controls, /SortFilterSelect/);
+  assert.doesNotMatch(controls, /label="Order"/);
+  assert.doesNotMatch(controls, /<FilterSelect label="Sort by"/);
 });
