@@ -10,6 +10,7 @@ import {
   toFilterControlValues,
 } from "./filters";
 import { stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
+import { read } from "../test-utils/frontend-test-helpers";
 
 test("CAT-001 serializes every supported collection parameter and omits page one", () => {
   const query = parseProductCollectionQuery({
@@ -73,4 +74,10 @@ test("category filter options use CAT-003 slugs and retrieve every API page with
     assert.deepEqual(calls, [{ path: "/categories", cache: "no-store" }, { path: "/categories", cache: "no-store", query: { page: 2 } }]);
     assert.equal(serializeProductCollectionQuery({ category: options[0].slug }), "category=living-room");
   });
+});
+
+test("catalog controls preserve an existing search term independently of the destination pathname", () => {
+  const controls = read("components/catalog/product-collection-controls.tsx");
+  assert.match(controls, /\{search \? <input type="hidden" name="search" value=\{search\}/);
+  assert.doesNotMatch(controls, /action === "\/search" && search/);
 });

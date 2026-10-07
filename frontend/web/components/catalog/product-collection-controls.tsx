@@ -16,11 +16,11 @@ type ProductCollectionControlsProps = Readonly<{ action: "/products" | "/search"
 export function ProductCollectionControls({ action, categories, query }: ProductCollectionControlsProps) {
   const values = toFilterControlValues(query);
   const search = singleValue(query.search);
-  const clearHref = productCollectionHref(action, action === "/search" && search ? { search } : {});
+  const clearHref = productCollectionHref(action, search ? { search } : {});
 
   return (
     <Box component="form" action={action} method="get" aria-label="Filter furniture" sx={{ borderBlock: "1px solid var(--border-subtle)", py: 5 }}>
-      {action === "/search" && search ? <input type="hidden" name="search" value={search} /> : null}
+      {search ? <input type="hidden" name="search" value={search} /> : null}
       <Stack component="fieldset" spacing={4} sx={{ border: 0, p: 0, m: 0 }}>
         <Box component="legend" sx={{ typography: "subtitle1", p: 0 }}>Filter furniture</Box>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, gap: 3 }}>
