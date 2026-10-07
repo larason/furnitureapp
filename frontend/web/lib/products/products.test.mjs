@@ -91,6 +91,7 @@ test("product listing pagination helpers normalize malformed pages and preserve 
 
 test("product detail uses CAT-002 data, activates canonical card links, and preserves request-only boundaries", () => {
   const page = read("app/products/[slug]/page.tsx");
+  const imageSizes = read("lib/homepage/image-sizes.ts");
   const detail = read("lib/products/detail.ts");
   const grid = read("components/catalog/product-grid.tsx");
   const proxy = read("proxy.ts");
@@ -104,4 +105,7 @@ test("product detail uses CAT-002 data, activates canonical card links, and pres
   assert.match(grid, /href=\{`\/products\/\$\{product\.slug\}`\}/);
   assert.match(proxy, /"\/products\/:slug"/);
   assert.match(proxy, /resource === "products"/);
+  assert.match(page, /stockIndicator === "MADE_TO_ORDER"\) label = "Made to order"/);
+  assert.match(page, /PRODUCT_DETAIL_IMAGE_SIZES/);
+  assert.match(imageSizes, /export const PRODUCT_DETAIL_IMAGE_SIZES/);
 });

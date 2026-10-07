@@ -13,7 +13,10 @@ export type ProductCardProps = Readonly<{
 
 export function ProductCard({ product, sizes, href }: ProductCardProps) {
   const madeToOrder = product.product_type === "MADE_TO_ORDER";
-  const status = madeToOrder ? "Made to order" : product.availability === "available" ? "In stock" : "Currently unavailable";
+  let status = "Currently unavailable";
+  if (madeToOrder) status = "Made to order";
+  else if (product.availability === "available" && product.stock_indicator === "LOW_STOCK") status = "Low stock";
+  else if (product.availability === "available") status = "In stock";
 
   return (
     <Box component="article" sx={{ minWidth: 0 }}>

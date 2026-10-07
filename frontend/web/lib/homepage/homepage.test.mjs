@@ -43,7 +43,7 @@ test("money preserves TZS minor units, including cents, and rejects invalid data
 
 test("canonical ProductCard renders media as data, request state and safe deferred links", () => {
   const { ProductCard } = loadTs("components/catalog/product-card.tsx");
-  const product = { name: "A considered chair", price: { amount: 101, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "unavailable", primary_image: { url: "/sample.jpg", alt_text: "Wooden chair with cream cushions" } };
+  const product = { name: "A considered chair", price: { amount: 101, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "unavailable", stock_indicator: "MADE_TO_ORDER", primary_image: { url: "/sample.jpg", alt_text: "Wooden chair with cream cushions" } };
   const markup = renderToStaticMarkup(createElement(ProductCard, { product, sizes: "33vw", href: "/products/considered-chair" }));
   assert.match(markup, /<article/);
   assert.match(markup, /<h3/);
@@ -57,6 +57,8 @@ test("canonical ProductCard renders media as data, request state and safe deferr
   const missing = renderToStaticMarkup(createElement(ProductCard, { product: { ...product, primary_image: null }, sizes: "33vw" }));
   assert.match(missing, /Photograph to follow/);
   assert.match(missing, /A considered chair/);
+  const lowStock = renderToStaticMarkup(createElement(ProductCard, { product: { ...product, product_type: "IN_STOCK", availability: "available", stock_indicator: "LOW_STOCK" }, sizes: "33vw" }));
+  assert.match(lowStock, /Low stock/);
 });
 
 test("homepage reads the public API by default and never falls back to fixtures", async () => {

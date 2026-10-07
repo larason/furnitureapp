@@ -6,6 +6,7 @@ export type ProductCardData = Readonly<{
   price: Money;
   primary_image: Readonly<{ url: string; alt_text: string | null }> | null;
   availability: "available" | "unavailable";
+  stock_indicator: "IN_STOCK" | "LOW_STOCK" | "MADE_TO_ORDER";
 }>;
 
 export type ProductSummary = ProductCardData & Readonly<{
@@ -26,4 +27,4 @@ export type CategoryDetail = CategorySummary & Readonly<{
 
 export type ProductImage = Readonly<{ id: string; url: string; alt_text: string | null; sort_order: number; is_primary: boolean }>;
 export type ProductVariant = Readonly<{ id: string; sku: string; name: string; price: Money; availability: "available" | "unavailable"; stock_indicator: "IN_STOCK" | "LOW_STOCK" | "MADE_TO_ORDER" }>;
-export type ProductDetail = ProductSummary & Readonly<{ description: string | null; category: CategoryDetail; images: readonly ProductImage[]; variants: readonly ProductVariant[]; stock_indicator: "IN_STOCK" | "LOW_STOCK" | "MADE_TO_ORDER"; created_at: string; updated_at: string }>;
+export type ProductDetail = ProductSummary & Readonly<{ description: string | null; category: CategoryDetail; images: readonly ProductImage[]; variants: readonly ProductVariant[]; created_at: string; updated_at: string }>;

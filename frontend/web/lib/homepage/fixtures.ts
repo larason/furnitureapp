@@ -23,17 +23,17 @@ export const HOMEPAGE_CATEGORY_FIXTURES: readonly CategorySummary[] = [
 export const HOMEPAGE_PRODUCT_FIXTURES: readonly ProductSummary[] = [
   {
     id: "fixture_armchair", slug: "fixture-open-frame-armchair", name: "lounge chair",
-    price: { amount: 10000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
+    price: { amount: 10000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available", stock_indicator: "MADE_TO_ORDER",
     primary_image: { url: `${fixtureRoot}/products/lounge-chair.jpg`, alt_text: "An open wooden armchair with cream seat and back cushions" },
   },
   {
     id: "fixture_sofa", slug: "fixture-soft-two-seat-sofa", name: "Soft two-seat sofa",
-    price: { amount: 24500000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
+    price: { amount: 24500000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available", stock_indicator: "MADE_TO_ORDER",
     primary_image: { url: `${fixtureRoot}/products/white-sofa.jpg`, alt_text: "A cream two-seat sofa with broad upholstered arms" },
   },
   {
     id: "fixture_barrelchair", slug: "fixture-barrel-chair", name: "Barrel chair",
-    price: { amount: 10000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available",
+    price: { amount: 10000000, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "available", stock_indicator: "MADE_TO_ORDER",
     primary_image: { url: `${fixtureRoot}/products/barrel-armchair.jpg`, alt_text: "A cream barrel chair with a curved back" },
   },
 ];
@@ -50,7 +50,6 @@ export const HOMEPAGE_PRODUCT_DETAIL_FIXTURES: Readonly<Record<string, ProductDe
     description: "A made-to-order furniture piece shown as part of the design preview.",
     images: product.primary_image ? [{ id: `${product.id}_image`, url: product.primary_image.url, alt_text: product.primary_image.alt_text, sort_order: 0, is_primary: true }] : [],
     variants: [],
-    stock_indicator: "MADE_TO_ORDER",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   }]),

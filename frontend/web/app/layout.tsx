@@ -15,7 +15,7 @@ const youngSerif = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Buy Furniture Online from Tanzania | SL Furnitures",
+  title: "Buy or request Furniture Online from Tanzania | SL Furnitures",
   description: "Premium for less.",
   icons: {
     icon: "/favicon.svg",

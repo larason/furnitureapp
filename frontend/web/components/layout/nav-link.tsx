@@ -11,6 +11,7 @@ export type NavLinkProps = {
   href: string;
   children: ReactNode;
   sx?: NavLinkSx;
+  inactive?: boolean;
   "aria-label"?: string;
   onClick?: () => void;
 };
@@ -19,12 +20,13 @@ export function NavLink({
   href,
   children,
   sx,
+  inactive = false,
   onClick,
   ...rest
 }: Readonly<NavLinkProps>) {
   const resolvedSx = typeof sx === "function" ? sx(theme) : sx;
 
-  if (!isSiteRouteImplemented(href)) {
+  if (inactive || !isSiteRouteImplemented(href)) {
     return (
       <Box component="span" sx={resolvedSx} {...rest}>
         {children}

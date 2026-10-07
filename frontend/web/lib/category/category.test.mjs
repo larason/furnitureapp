@@ -93,3 +93,10 @@ test("homepage category destinations are active only for the implemented dynamic
   assert.equal(isSiteRouteImplemented("/categories/living-room?page=2"), true);
   assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), true);
 });
+
+test("fixture-backed shell category navigation remains non-interactive", () => {
+  assert.match(read("components/layout/primary-category-navigation.tsx"), /<NavLink href=\{`\/categories\/\$\{category\.slug\}`\} inactive/);
+  assert.match(read("components/layout/mobile-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*inactive/);
+  assert.match(read("components/layout/site-footer.tsx"), /inactive: true/);
+  assert.match(read("components/layout/nav-link.tsx"), /inactive \|\| !isSiteRouteImplemented/);
+});
