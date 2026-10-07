@@ -66,6 +66,16 @@ Canonical route identity, indexability, and query-state behavior are distinct. T
 - `/search` is always `noindex, follow`; search queries canonicalize to `/search` rather than creating an indexable page per term.
 - Canonical and social metadata use the server-only `SITE_URL` website origin. `API_BASE_URL` and request host headers are never canonical origins.
 
+## Structured Data Policy
+
+Structured data describes only content and commercial capability that actually exist, and reuses the same `SITE_URL` origin, canonical builder, media selection, and cached CAT-002/CAT-004 resources as metadata.
+
+- Site-level `WebSite` and `Organization` JSON-LD are emitted once on the homepage. `Organization` carries only authoritative facts (name, url); no logo, address, telephone, email, social profile, or legal detail is invented.
+- `Product` JSON-LD is emitted only on canonical `/products/[slug]` pages, using CAT-002 `name`, `description`, authoritative media, and the backend slug URL. No `brand`, `sku`, `gtin`/`mpn`, reviews, ratings, variants, or `ProductGroup` are invented.
+- `Product.offers` is intentionally omitted. The release is request-first with no active cart, checkout, or payment journey, so an `Offer`/merchant-listing representation would overstate the visible capability. Product rich-result/merchant-listing eligibility is therefore not claimed.
+- `BreadcrumbList` mirrors the visible hierarchy on `/products/[slug]` and `/categories/[slug]`, with one-based positions and absolute website URLs.
+- No `Product`, `ItemList`, or `SearchAction` graph is emitted on `/products`, `/categories/[slug]`, or `/search`. `SearchAction` is not used.
+
 ## Route And Navigation Rules
 
 - Next.js App Router is authoritative. The only current application route is `/` (`app/page.tsx`); it remains a minimal placeholder until Phase 14.1. Do not add `pages/` or create placeholder route files.

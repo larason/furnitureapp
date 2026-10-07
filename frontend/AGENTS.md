@@ -82,6 +82,14 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - Product and category URLs use the slugs returned by Laravel; do not derive frontend-only slugs or use internal numeric database IDs.
 - Put shareable collection/search state in documented URL parameters using the Laravel contract vocabulary. Do not implement routes owned by later phases early.
 
+## Structured Data (SEO)
+
+- Emit JSON-LD only from server components, in the initial HTML, through the shared `components/seo/json-ld.tsx` renderer and `lib/seo/structured-data.ts` builders.
+- Reuse the Phase 14.7 `SITE_URL` origin, canonical builder, media selection, and cached CAT-002/CAT-004 resources. Never use `API_BASE_URL`, CDN origins, or request host headers for page identity.
+- Describe only what the page truthfully shows. Do not invent brand, SKU, GTIN/MPN, reviews, ratings, variants, or business details, and do not serialize API minor-unit prices as major units.
+- `Product.offers` stays omitted while the release is request-first (no active cart/checkout/payment). Do not fabricate merchant-listing fields. `MADE_TO_ORDER` is a valid offering, never `OutOfStock`.
+- `Product` JSON-LD belongs only on canonical product-detail pages; keep collection, category, and search pages free of product graphs and `SearchAction`.
+
 ## Icons
 
 Use only `@mui/icons-material` for web UI icons. Do not add `lucide-react`, `react-icons`, Heroicons, Font Awesome, custom SVG icon libraries, or emoji as UI icons.

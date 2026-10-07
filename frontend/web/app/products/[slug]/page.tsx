@@ -8,12 +8,14 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
+import { JsonLd } from "@/components/seo/json-ld";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/catalog/format-money";
 import { selectPrimaryImage } from "@/lib/catalog/media";
 import { PRODUCT_DETAIL_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getProductDetail } from "@/lib/products/detail";
 import { buildProductMetadata } from "@/lib/seo/catalog-metadata";
+import { buildBreadcrumbStructuredData, buildProductStructuredData } from "@/lib/seo/structured-data";
 
 type ProductPageProps = Readonly<{ params: Promise<{ slug: string }> }>;
 
@@ -32,9 +34,18 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const leadImage = selectPrimaryImage(product.images);
   const secondaryImages = product.images.filter((image) => image.id !== leadImage?.id);
   const productAvailability = availabilityLabel(product.product_type, product.stock_indicator, product.availability);
+  const productStructuredData = buildProductStructuredData(product);
+  const breadcrumbStructuredData = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: "Furniture", path: "/products" },
+    { name: product.category.name, path: `/categories/${product.category.slug}` },
+    { name: product.name, path: `/products/${product.slug}` },
+  ]);
 
   return (
     <>
+      {productStructuredData ? <JsonLd data={productStructuredData} /> : null}
+      {breadcrumbStructuredData ? <JsonLd data={breadcrumbStructuredData} /> : null}
       <SiteSection aria-label="Product detail" surface="paper">
         <Stack spacing={7}>
           <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}>

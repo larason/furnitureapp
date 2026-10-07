@@ -7,10 +7,12 @@ import Image from "next/image";
 import { CatalogDiscovery } from "@/components/catalog/catalog-discovery";
 import { SiteSection } from "@/components/layout/site-section";
 import { isSiteRouteImplemented } from "@/components/layout/site-navigation";
+import { JsonLd } from "@/components/seo/json-ld";
 import { HOMEPAGE_MEDIA } from "@/lib/homepage/fixtures";
 import { EDITORIAL_IMAGE_SIZES, HERO_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getHomepageCatalog } from "@/lib/homepage/catalog";
 import { buildHomeMetadata } from "@/lib/seo/catalog-metadata";
+import { buildSiteStructuredData } from "@/lib/seo/structured-data";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +21,11 @@ export const metadata: Metadata = buildHomeMetadata();
 export default async function Home() {
   const catalog = await getHomepageCatalog();
   const preview = catalog.source === "fixtures";
+  const siteStructuredData = buildSiteStructuredData();
 
   return (
     <>
+      {siteStructuredData ? <JsonLd data={siteStructuredData} /> : null}
       <SiteSection aria-label="Furniture for your home">
         <Typography variant="body2" sx={{ mb: 4 }}>
           {preview

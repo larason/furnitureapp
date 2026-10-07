@@ -9,10 +9,12 @@ import { cache } from "react";
 import { ProductGrid } from "@/components/catalog/product-grid";
 import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
+import { JsonLd } from "@/components/seo/json-ld";
 import { ApiError } from "@/lib/api/client";
 import { getCategoryCatalog } from "@/lib/category/catalog";
 import { CATEGORY_PRODUCT_IMAGE_SIZES, EDITORIAL_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { buildCategoryMetadata } from "@/lib/seo/catalog-metadata";
+import { buildBreadcrumbStructuredData } from "@/lib/seo/structured-data";
 
 type CategoryPageProps = Readonly<{
   params: Promise<{ slug: string }>;
@@ -30,9 +32,14 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
   const { slug } = await params;
   const { page } = await searchParams;
   const catalog = await loadCategoryCatalogCached(slug, firstScalar(page));
+  const breadcrumbStructuredData = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: catalog.category.name, path: `/categories/${catalog.category.slug}` },
+  ]);
 
   return (
     <>
+      {breadcrumbStructuredData ? <JsonLd data={breadcrumbStructuredData} /> : null}
       <SiteSection aria-label="Category introduction" surface="paper">
         <Stack spacing={5} sx={{ maxWidth: "var(--content-width-lead)" }}>
           <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}>

@@ -4,8 +4,8 @@ import { selectPrimaryImage } from "../catalog/media";
 import type { CategoryDetail, ProductDetail } from "../catalog/types";
 import { createPageMetadata, NOINDEX_FOLLOW, type SocialImage } from "./metadata";
 import { SITE_DEFAULT_DESCRIPTION, SITE_DEFAULT_TITLE, SITE_NAME } from "./site";
+import { boundText, normalizeDescription } from "./text";
 
-const MAX_DESCRIPTION_LENGTH = 300;
 const MAX_SEARCH_TERM_LENGTH = 60;
 
 const FACET_QUERY_KEYS = ["category", "product_type", "availability", "min_price", "max_price", "sort", "sort_direction"] as const;
@@ -68,16 +68,4 @@ export function buildCategoryMetadata(category: CategoryDetail, page: number): M
 
 function toSocialImage(url: string, alt: string | null, fallbackAlt: string): SocialImage {
   return { url, alt: alt?.trim() || fallbackAlt };
-}
-
-function normalizeDescription(value: string | null | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized ? boundText(normalized, MAX_DESCRIPTION_LENGTH) : undefined;
-}
-
-function boundText(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 1).trimEnd()}\u2026` : value;
 }
