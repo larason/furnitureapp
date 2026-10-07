@@ -19,6 +19,7 @@ const theme = read(join(webDir, "theme/theme.ts"));
 const container = read(join(layoutDir, "content-container.tsx"));
 const section = read(join(layoutDir, "site-section.tsx"));
 const header = read(join(layoutDir, "site-header.tsx"));
+const categoryNavigation = read(join(layoutDir, "primary-category-navigation.tsx"));
 const mobileNavigation = read(join(layoutDir, "mobile-navigation.tsx"));
 const page = read(join(webDir, "app/page.tsx"));
 const globals = read(join(webDir, "app/globals.css"));
@@ -58,7 +59,7 @@ check(
 check(!page.includes("@mui/material/Container"), "app/page.tsx must not create a second container authority");
 check(/<SiteSection(?:\s|>)/.test(page), "app/page.tsx must use the canonical section/container composition");
 check(
-  header.includes('display: { xs: "none", md: "block" }') &&
+  categoryNavigation.includes('display: { xs: "none", md: "block" }') &&
     mobileNavigation.includes('display: { xs: "inline-flex", md: "none" }'),
   "desktop and mobile navigation must transition at the canonical md breakpoint",
 );

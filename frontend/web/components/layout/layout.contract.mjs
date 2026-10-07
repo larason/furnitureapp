@@ -47,6 +47,10 @@ check(
 
 check(sourceOf("site-header.tsx").includes('component="header"'), "site-header must render a header landmark");
 check(sourceOf("site-footer.tsx").includes('component="footer"'), "site-footer must render a footer landmark");
+const categoryNavigation = sourceOf("primary-category-navigation.tsx");
+check(categoryNavigation.includes('position: "sticky"'), "canonical category navigation must use CSS sticky positioning");
+check(categoryNavigation.includes('zIndex: "var(--z-sticky)"'), "sticky category navigation must use the approved z-index token");
+check(!categoryNavigation.includes('use client') && !categoryNavigation.includes('addEventListener') && !categoryNavigation.includes('IntersectionObserver'), "category navigation must not use client-side scroll behavior");
 
 const combined = layoutSources.map((entry) => entry.source).join("\n");
 check(!/href=\{?["']#["']\}?/.test(combined), "no href=\"#\" placeholder links are allowed");

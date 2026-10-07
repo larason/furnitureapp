@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import type { ReactNode } from "react";
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
+import { PrimaryCategoryNavigation } from "./primary-category-navigation";
 
 export const MAIN_CONTENT_ID = "main-content";
 
@@ -50,6 +51,7 @@ export function SiteShell({ children }: Readonly<{ children: ReactNode }>) {
         Skip to main content
       </Box>
       <SiteHeader />
+      <PrimaryCategoryNavigation />
       <Box
         component="main"
         id={MAIN_CONTENT_ID}

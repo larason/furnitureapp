@@ -1,5 +1,6 @@
 import Box from "@mui/material/Box";
 import { CATEGORY_NAVIGATION_FIXTURE } from "./category-navigation.fixture";
+import { ContentContainer } from "./content-container";
 import { NavLink } from "./nav-link";
 
 const navItemSx = {
@@ -12,7 +13,8 @@ const navItemSx = {
 
 export function PrimaryCategoryNavigation() {
   return (
-    <Box component="nav" aria-label="Primary navigation">
+    <Box component="nav" aria-label="Primary navigation" sx={{ display: { xs: "none", md: "block" }, position: "sticky", top: 0, zIndex: "var(--z-sticky)", backgroundColor: "var(--surface-canvas)", borderTop: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-subtle)" }}>
+      <ContentContainer>
       <Box
         component="ul"
         sx={{
@@ -47,6 +49,7 @@ export function PrimaryCategoryNavigation() {
           </NavLink>
         </Box>
       </Box>
+      </ContentContainer>
     </Box>
   );
 }
