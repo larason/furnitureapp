@@ -2,36 +2,57 @@ import Breadcrumbs from "@mui/material/Breadcrumbs";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
+import { JsonLd } from "@/components/seo/json-ld";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/catalog/format-money";
+import { selectPrimaryImage } from "@/lib/catalog/media";
 import { PRODUCT_DETAIL_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getProductDetail } from "@/lib/products/detail";
+import { buildProductMetadata } from "@/lib/seo/catalog-metadata";
+import { buildBreadcrumbStructuredData, buildProductStructuredData } from "@/lib/seo/structured-data";
 
 type ProductPageProps = Readonly<{ params: Promise<{ slug: string }> }>;
 
 const MISSING_PRODUCT_ERROR_CODES = new Set(["RESOURCE_NOT_FOUND", "PRODUCT_NOT_FOUND"]);
 
+export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const detail = await loadProductDetailCached(slug);
+  return buildProductMetadata(detail.product);
+}
+
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;
-  const detail = await loadProductDetail(slug);
+  const detail = await loadProductDetailCached(slug);
   const { product } = detail;
-  const leadImage = product.images.find((image) => image.is_primary) ?? product.images[0];
+  const leadImage = selectPrimaryImage(product.images);
   const secondaryImages = product.images.filter((image) => image.id !== leadImage?.id);
   const productAvailability = availabilityLabel(product.product_type, product.stock_indicator, product.availability);
+  const productStructuredData = slug === product.slug ? buildProductStructuredData(product) : undefined;
+  const breadcrumbStructuredData = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: "Furniture", path: "/products" },
+    { name: product.category.name, path: `/categories/${product.category.slug}` },
+    { name: product.name, path: `/products/${product.slug}` },
+  ]);
 
   return (
     <>
+      {productStructuredData ? <JsonLd data={productStructuredData} /> : null}
+      {breadcrumbStructuredData ? <JsonLd data={breadcrumbStructuredData} /> : null}
       <SiteSection aria-label="Product detail" surface="paper">
         <Stack spacing={7}>
           <Breadcrumbs aria-label="Breadcrumb" separator={<span aria-hidden="true">/</span>}>
-            <NavLink href="/">Home</NavLink><NavLink href="/products">Furniture</NavLink><NavLink href={`/categories/${product.category.slug}`}>{product.category.name}</NavLink><Typography color="text.primary">{product.name}</Typography>
+            <NavLink href="/">Home</NavLink><NavLink href="/products">Furniture</NavLink><NavLink href={`/categories/${product.category.slug}`}>{product.category.name}</NavLink><Typography color="text.primary" aria-current="page">{product.name}</Typography>
           </Breadcrumbs>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" }, gap: { xs: 7, md: 8 } }}>
-            <ProductMedia image={leadImage} productName={product.name} priority />
+            <ProductMedia image={leadImage} productName={product.name} preload />
             <Stack spacing={4} sx={{ minWidth: 0, alignSelf: "center" }}>
               {detail.source === "fixtures" ? <Typography variant="body2" color="text.secondary">Design preview</Typography> : null}
               <Typography component="h1" variant="h2">{product.name}</Typography>
@@ -49,8 +70,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
   );
 }
 
-function ProductMedia({ image, productName, priority = false }: Readonly<{ image: { url: string; alt_text: string | null } | undefined; productName: string; priority?: boolean }>) {
-  return <Box sx={{ position: "relative", aspectRatio: "var(--media-product-hero)", bgcolor: "background.paper" }}>{image ? <Image src={image.url} alt={image.alt_text || productName} fill sizes={PRODUCT_DETAIL_IMAGE_SIZES} priority={priority} style={{ objectFit: "contain" }} /> : <Box sx={{ height: "100%", display: "grid", placeItems: "center", p: 4 }}><Typography variant="body2" color="text.secondary">Photograph to follow</Typography></Box>}</Box>;
+function ProductMedia({ image, productName, preload = false }: Readonly<{ image: { url: string; alt_text: string | null } | undefined; productName: string; preload?: boolean }>) {
+  return <Box sx={{ position: "relative", aspectRatio: "var(--media-product-hero)", bgcolor: "background.paper" }}>{image ? <Image src={image.url} alt={image.alt_text || productName} fill sizes={PRODUCT_DETAIL_IMAGE_SIZES} preload={preload} style={{ objectFit: "contain" }} /> : <Box sx={{ height: "100%", display: "grid", placeItems: "center", p: 4 }}><Typography variant="body2" color="text.secondary">Photograph to follow</Typography></Box>}</Box>;
 }
 
 function availabilityLabel(productType: string | undefined, stockIndicator: string, availability: string) {
@@ -74,6 +95,8 @@ async function loadProductDetail(slug: string) {
     throw error;
   }
 }
+
+const loadProductDetailCached = cache(loadProductDetail);
 
 function isMissingProductError(error: unknown): error is ApiError {
   return error instanceof ApiError

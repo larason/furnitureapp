@@ -33,7 +33,7 @@ export function SearchAffordance() {
     >
       <Search fontSize="small" aria-hidden />
       <Box component="span" sx={hiddenOnMobileSx}>
-        Search furniture, categories, and more
+        Search furniture
       </Box>
     </NavLink>
   );

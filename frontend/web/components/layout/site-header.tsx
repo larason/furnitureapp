@@ -2,7 +2,6 @@ import Box from "@mui/material/Box";
 import { BrandMark } from "./brand-mark";
 import { ContentContainer } from "./content-container";
 import { MobileNavigation } from "./mobile-navigation";
-import { PrimaryCategoryNavigation } from "./primary-category-navigation";
 import { SearchAffordance } from "./search-affordance";
 
 export function SiteHeader() {
@@ -37,16 +36,6 @@ export function SiteHeader() {
           </Box>
         </Box>
       </ContentContainer>
-      <Box
-        sx={{
-          display: { xs: "none", md: "block" },
-          borderTop: "1px solid var(--border-subtle)",
-        }}
-      >
-        <ContentContainer>
-          <PrimaryCategoryNavigation />
-        </ContentContainer>
-      </Box>
     </Box>
   );
 }

@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import "../../design-system/tokens.css";
 import "./globals.css";
 import { SiteShell } from "@/components/layout/site-shell";
+import { getMetadataBase, SITE_DEFAULT_DESCRIPTION, SITE_DEFAULT_TITLE, SITE_NAME } from "@/lib/seo/site";
 import { Providers } from "./providers";
 
 const youngSerif = localFont({
@@ -15,8 +16,22 @@ const youngSerif = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Buy or request Furniture Online from Tanzania | SL Furnitures",
-  description: "Premium for less.",
+  metadataBase: getMetadataBase(),
+  title: {
+    default: `${SITE_DEFAULT_TITLE} | ${SITE_NAME}`,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DEFAULT_DESCRIPTION,
+  applicationName: SITE_NAME,
+  openGraph: {
+    title: SITE_DEFAULT_TITLE,
+    description: SITE_DEFAULT_DESCRIPTION,
+    siteName: SITE_NAME,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+  },
   icons: {
     icon: "/favicon.svg",
   },

@@ -22,11 +22,11 @@ Therefore the canonical route uses the current API slug, but historic URL perman
 
 | Website route | Purpose | Visibility | URL identity/state | Owner | Status |
 |---|---|---|---|---|---|
-| `/` | Public storefront homepage | Public | None | Phase 14.1 | Existing foundation placeholder; reserved for final homepage |
-| `/products` | Product collection | Public | Shareable API-aligned query parameters | Phase 14.3 | Reserved |
-| `/products/[slug]` | Product detail | Public | Laravel-returned `Product.slug` | Phase 14.4 | Reserved |
-| `/categories/[slug]` | Category landing page | Public | Laravel-returned `Category.slug` | Phase 14.2 | Reserved |
-| `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Reserved |
+| `/` | Public storefront homepage | Public | None | Phase 14.1 | Implemented |
+| `/products` | Product collection | Public | Shareable API-aligned query parameters | Phase 14.3 | Implemented |
+| `/products/[slug]` | Product detail | Public | Laravel-returned `Product.slug` | Phase 14.4 | Implemented |
+| `/categories/[slug]` | Category landing page | Public | Laravel-returned `Category.slug` | Phase 14.2 | Implemented |
+| `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Implemented |
 | `/furniture-requests` | Create a Furniture Request, including MADE_TO_ORDER interest | Public | Form state; no public request identifier | Owning request UI phase | Reserved |
 | `/contact` | Create a general Enquiry | Public | Form state; no public enquiry identifier | Phase 15.10 | Reserved |
 | `/sign-in` | Clerk sign-in entry point | Public | Clerk-owned identity flow | Phase 15.1 | Reserved |
@@ -53,11 +53,50 @@ Search, filters, sorting, and pagination that a customer should be able to share
 | Sorting | `sort`, `sort_direction` | `sort`: `created_at`, `price`, `name`; direction: `asc` / `desc`. |
 | Pagination | `page`, `per_page` | One-based page; `per_page` 1–100, backend default 20. |
 
-Parameter order has no meaning. A URL parser should read only parameters supported by its route and must not globally strip/rewrite unknown parameters. Ephemeral display state (menus, focus, hover, temporary accordion state) stays local. No route implementation, filter UI, or SEO canonicalization is part of this phase.
+Parameter order has no meaning. A URL parser should read only parameters supported by its route and must not globally strip/rewrite unknown parameters. Ephemeral display state (menus, focus, hover, temporary accordion state) stays local.
+
+## Search And Collection Metadata Policy
+
+Canonical route identity, indexability, and query-state behavior are distinct. The public catalog metadata policy is:
+
+- `/`, `/products/[slug]`, and `/categories/[slug]` are canonical, indexable resource identities. Product and category canonicals use the Laravel-returned slug, never a locally derived slug or machine ID.
+- `/categories/[slug]` is the canonical category-resource surface. A category-filtered collection such as `/products?category=living-room` is a discovery state and must not compete with it.
+- `/products` is the canonical generic collection. Filter, sort, price, and availability query states are `noindex, follow` discovery states that canonicalize to `/products`.
+- Meaningful plain pagination is preserved rather than collapsed to page 1: `/products?page=N` (`N > 1`) self-canonicalizes, and `/products` remains canonical for page 1. Category pagination self-canonicalizes the same way.
+- `/search` is always `noindex, follow`; search queries canonicalize to `/search` rather than creating an indexable page per term.
+- Canonical and social metadata use the server-only `SITE_URL` website origin. `API_BASE_URL` and request host headers are never canonical origins.
+
+## Structured Data Policy
+
+Structured data describes only content and commercial capability that actually exist, and reuses the same `SITE_URL` origin, canonical builder, media selection, and cached CAT-002/CAT-004 resources as metadata.
+
+- Site-level `WebSite` and `Organization` JSON-LD are emitted once on the homepage. `Organization` carries only authoritative facts (name, url); no logo, address, telephone, email, social profile, or legal detail is invented.
+- `Product` JSON-LD is emitted only on canonical `/products/[slug]` pages, using CAT-002 `name`, `description`, authoritative media, and the backend slug URL. No `brand`, `sku`, `gtin`/`mpn`, reviews, ratings, variants, or `ProductGroup` are invented.
+- `Product.offers` is intentionally omitted. The release is request-first with no active cart, checkout, or payment journey, so an `Offer`/merchant-listing representation would overstate the visible capability. Product rich-result/merchant-listing eligibility is therefore not claimed.
+- `BreadcrumbList` mirrors the visible hierarchy on `/products/[slug]` and `/categories/[slug]`, with one-based positions and absolute website URLs.
+- No `Product`, `ItemList`, or `SearchAction` graph is emitted on `/products`, `/categories/[slug]`, or `/search`. `SearchAction` is not used.
+
+## Crawl Discovery Policy
+
+`/sitemap.xml` and `/robots.txt` are Next.js metadata routes (`app/sitemap.ts`, `app/robots.ts`) generated from the public catalog.
+
+- The sitemap contains only canonical, query-free, indexable URLs: `/`, `/products`, `/categories/{slug}`, and `/products/{slug}`. Slugs come from CAT-003/CAT-001. Search, facet, sort, price, pagination, and reserved-but-unimplemented routes are excluded.
+- Product discovery traverses every CAT-001 page (`per_page=100`); category discovery reuses the paginated CAT-003 traversal. No CAT-002/CAT-004 N+1. `lastModified`, `changeFrequency`, and `priority` are omitted because no authoritative timestamp or ranking policy exists, and unexpected API failure propagates rather than falling back to fixtures.
+- `SITE_URL` is required for a meaningful sitemap. Without it, `/sitemap.xml` is an empty `urlset` and `/robots.txt` omits the `Sitemap` directive; no localhost or API origin is emitted.
+- `robots.txt` allows general crawling, disallows `/search` and the owned facet parameters (`category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction`) as both first (`/*?param=`) and subsequent (`/*&param=`) query parameters, and does not globally block `?page=`, product, or category routes. Page-level `noindex, follow` decisions from Phase 14.7 are unchanged.
+
+## Internal Linking Policy
+
+- Every product/category link uses the backend-returned slug: `/products/{slug}` and `/categories/{slug}`. Product cards link to clean canonical PDP URLs with no search/filter/category query state. The API's `GET /products?category={slug}` parameter is product retrieval/discovery only; it never replaces the website's canonical `/categories/[slug]` category resource.
+- `ProductCard` is the single reusable product-link surface for the homepage, category, `/products`, and `/search`; it is not forked per page, and its accessible link text is the product name.
+- Breadcrumbs are semantic (`nav aria-label="Breadcrumb"`): category = Home → Category; product = Home → Furniture → `/categories/{slug}` → product. The current item carries `aria-current="page"` and is not a link. The visible hierarchy matches the Phase 14.8 `BreadcrumbList`.
+- Pagination uses semantic anchors, preserves only its discovery state (search, or approved filter/sort), and keeps page-one URLs clean.
+- The homepage links categories to `/categories/{slug}` and offers one "View all furniture" link to `/products`.
+- Global header, mobile, and footer category navigation still uses the Phase 13.7 non-interactive fixture: destinations render as non-links until authoritative catalog-driven global navigation can be introduced without adding a root-layout fetch/availability regression. Reserved routes (`/furniture-requests`, `/contact`, `/account`, cart/checkout) remain inactive. This is a documented limitation, not a broken link.
 
 ## Route And Navigation Rules
 
-- Next.js App Router is authoritative. The only current application route is `/` (`app/page.tsx`); it remains a minimal placeholder until Phase 14.1. Do not add `pages/` or create placeholder route files.
+- Next.js App Router is authoritative. Implemented public routes are `/`, `/products`, `/products/[slug]`, `/categories/[slug]`, and `/search`, plus the `/sitemap.xml` and `/robots.txt` metadata routes. Reserved routes in this document render as non-interactive structural content until their owning phase ships. Do not add `pages/` or create placeholder route files.
 - Route paths are lowercase, static multiword segments use kebab-case, and canonical paths have no trailing slash. `next.config.ts` does not enable `trailingSlash`; the installed Next.js default redirects slash-suffixed page URLs to their slashless form.
 - Server Components are the default. Pages needing interactive descendants keep client boundaries below the page where practical.
 - Ordinary internal navigation uses semantic `next/link` (with MUI composition when needed); buttons perform actions. Use programmatic router navigation only when application logic requires it, not for routine links.
@@ -73,20 +112,22 @@ Admin remains a separate Next.js application. This customer website does not add
 
 Public request/enquiry detail routes by identifier are prohibited without a separately approved secure access design. References and opaque IDs are not credentials. The API client's `data` and `meta` do not change the browser URL taxonomy.
 
-## Future Filesystem Sketch (Not Implemented)
+## Public Route Status
 
 ```text
 app/
-  page.tsx                         # existing foundation placeholder
-  products/page.tsx                # Phase 14.3
-  products/[slug]/page.tsx         # Phase 14.4
-  categories/[slug]/page.tsx       # Phase 14.2
-  search/page.tsx                  # Phase 14.5
-  furniture-requests/page.tsx      # owning request UI phase
-  contact/page.tsx                 # Phase 15.10
-  account/...                      # owning authenticated account phases
-  sign-in/...                      # Phase 15.1 / Clerk
-  sign-up/...                      # Phase 15.1 / Clerk
+  page.tsx                         # Implemented (Phase 14.1)
+  products/page.tsx                # Implemented (Phase 14.3)
+  products/[slug]/page.tsx         # Implemented (Phase 14.4)
+  categories/[slug]/page.tsx       # Implemented (Phase 14.2)
+  search/page.tsx                  # Implemented (Phase 14.5)
+  sitemap.ts                       # Implemented (Phase 14.9)
+  robots.ts                        # Implemented (Phase 14.9)
+  furniture-requests/page.tsx      # Reserved (owning request UI phase)
+  contact/page.tsx                 # Reserved (Phase 15.10)
+  account/...                      # Reserved (owning authenticated account phases)
+  sign-in/...                      # Reserved (Phase 15.1 / Clerk)
+  sign-up/...                      # Reserved (Phase 15.1 / Clerk)
 ```
 
-This is a route plan only. No route pages, layouts, navigation, Clerk integration, metadata, sitemap, robots, redirects, or Group N catalog behavior are implemented by Phase 13.6.
+Reserved routes are not implemented; they render as non-interactive structural content and are not active links or indexable pages.

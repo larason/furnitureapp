@@ -11,7 +11,7 @@ export const SITE_SERVICE_LINKS: readonly ServiceLink[] = [
 // Routes in web/ROUTING.md that currently resolve to an implemented App Router
 // page. Reserved routes render as non-interactive structural content until the
 // owning phase ships, so the shell never exposes a broken navigation link.
-export const IMPLEMENTED_SITE_ROUTES: readonly string[] = ["/", "/products"];
+export const IMPLEMENTED_SITE_ROUTES: readonly string[] = ["/", "/products", "/search"];
 
 const IMPLEMENTED_DYNAMIC_ROUTE_PATTERNS = [/^\/categories\/[^/]+$/, /^\/products\/[^/]+$/];
 

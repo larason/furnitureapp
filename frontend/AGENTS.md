@@ -81,6 +81,31 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - Consult `web/ROUTING.md` before adding website routes. Keep App Router conventions there authoritative.
 - Product and category URLs use the slugs returned by Laravel; do not derive frontend-only slugs or use internal numeric database IDs.
 - Put shareable collection/search state in documented URL parameters using the Laravel contract vocabulary. Do not implement routes owned by later phases early.
+- Category navigation links use the canonical `/categories/{slug}` resource. The frozen API's `GET /products?category={slug}` is product retrieval/discovery only; never substitute it for canonical category navigation. Product and category link slugs always come from Laravel, never from local slugification or machine IDs.
+
+## Images & Performance
+
+- Photographic catalog media uses `next/image`; do not replace it with raw `<img>`.
+- Preload at most the single above-the-fold LCP image per page with the `preload` prop (Next 16 deprecated `priority`); keep everything below the fold lazy.
+- Product-grid images must use the shared `sizes` constants in `lib/homepage/image-sizes.ts` that match the real responsive grid columns; do not hardcode or fork `sizes`.
+- Reserve image geometry with the frozen media aspect tokens to avoid CLS, and keep the `object-fit` choice that preserves furniture legibility.
+- Keep remote image origins narrowly allow-listed from `CATALOG_MEDIA_BASE_URL`; never add wildcard hosts or an arbitrary image proxy.
+- Keep catalog pages server-first with narrow client boundaries; do not add client cache libraries or convert catalog navigation to client-side SPA.
+- Public catalog endpoints are cache-safe, but do not invent cache/revalidation durations without an approved catalog-freshness policy. Prefer request-local deduplication (React `cache()`).
+
+## Structured Data (SEO)
+
+- Emit JSON-LD only from server components, in the initial HTML, through the shared `components/seo/json-ld.tsx` renderer and `lib/seo/structured-data.ts` builders.
+- Reuse the Phase 14.7 `SITE_URL` origin, canonical builder, media selection, and cached CAT-002/CAT-004 resources. Never use `API_BASE_URL`, CDN origins, or request host headers for page identity.
+- Describe only what the page truthfully shows. Do not invent brand, SKU, GTIN/MPN, reviews, ratings, variants, or business details, and do not serialize API minor-unit prices as major units.
+- `Product.offers` stays omitted while the release is request-first (no active cart/checkout/payment). Do not fabricate merchant-listing fields. `MADE_TO_ORDER` is a valid offering, never `OutOfStock`.
+- `Product` JSON-LD belongs only on canonical product-detail pages; keep collection, category, and search pages free of product graphs and `SearchAction`.
+
+## Crawl Discovery
+
+- Serve `/sitemap.xml` and `/robots.txt` through `app/sitemap.ts` / `app/robots.ts` (Next metadata routes); never add static `public/` snapshots.
+- Sitemap entries are canonical, query-free URLs from the public catalog APIs (`/`, `/products`, `/categories/{slug}`, `/products/{slug}`), using backend slugs. Do not enumerate search, facet, sort, price, pagination, or reserved routes, and do not fabricate `lastModified`/`changeFrequency`/`priority`.
+- `robots.txt` allows public crawling, disallows `/search` and the owned facet parameters as first and subsequent query params, and advertises `Sitemap: {SITE_URL}/sitemap.xml` only when `SITE_URL` is configured. Keep page-level `noindex` metadata independent of robots rules.
 
 ## Icons
 

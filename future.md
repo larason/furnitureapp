@@ -22,3 +22,7 @@
 
 8. For production, we should replace HOMEPAGE_MEDIA with approved production media before deployment. Until then, the notice is intentionally visible rather than hiding the fixture status. so that "Catalog data is loaded from the API. Hero and editorial imagery are development visual fixtures.
 " will not appear
+
+9. add stickers on furnitures and give customers flyers, business cards or other promotional materials
+
+10. run production checklist in [production-caveats.md](docs/production-caveats.md) and mention all steps that must be done physically by the user
