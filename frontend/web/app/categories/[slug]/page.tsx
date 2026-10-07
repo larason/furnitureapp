@@ -3,7 +3,6 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { Metadata } from "next";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { ProductGrid } from "@/components/catalog/product-grid";
@@ -12,7 +11,7 @@ import { SiteSection } from "@/components/layout/site-section";
 import { JsonLd } from "@/components/seo/json-ld";
 import { ApiError } from "@/lib/api/client";
 import { getCategoryCatalog } from "@/lib/category/catalog";
-import { CATEGORY_PRODUCT_IMAGE_SIZES, EDITORIAL_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
+import { CATEGORY_PRODUCT_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { buildCategoryMetadata } from "@/lib/seo/catalog-metadata";
 import { buildBreadcrumbStructuredData } from "@/lib/seo/structured-data";
 
@@ -48,11 +47,6 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
           </Breadcrumbs>
           <Typography component="h1" variant="h2">{catalog.category.name}</Typography>
           {catalog.category.description ? <Typography variant="body1">{catalog.category.description}</Typography> : null}
-          {catalog.category.image ? (
-            <Box sx={{ position: "relative", aspectRatio: "var(--media-editorial)" }}>
-              <Image src={catalog.category.image.url} alt="" fill sizes={EDITORIAL_IMAGE_SIZES} style={{ objectFit: "cover" }} />
-            </Box>
-          ) : null}
         </Stack>
       </SiteSection>
 

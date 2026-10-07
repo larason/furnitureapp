@@ -52,6 +52,24 @@ test("category route remains server-rendered, uses the canonical card, and reser
   assert.doesNotMatch(proxy, /validCategories|router\.replace|window\.location/);
 });
 
+test("category header is text-first and keeps the CAT-004 image only in the data model", () => {
+  const page = read("app/categories/[slug]/page.tsx");
+  const types = read("lib/catalog/types.ts");
+  const catalog = read("lib/category/catalog.ts");
+
+  assert.doesNotMatch(page, /next\/image|EDITORIAL_IMAGE_SIZES|catalog\.category\.image|media-editorial/);
+  const breadcrumbIndex = page.indexOf("Breadcrumbs");
+  const headingIndex = page.indexOf('component="h1"');
+  const descriptionIndex = page.indexOf("catalog.category.description");
+  assert.ok(breadcrumbIndex >= 0);
+  assert.ok(breadcrumbIndex < headingIndex);
+  assert.ok(headingIndex < descriptionIndex);
+
+  assert.match(types, /image: Readonly<\{ url: string \}> \| null/);
+  assert.match(types, /export type CategoryDetail = CategorySummary/);
+  assert.match(catalog, /category: \{ \.\.\.category, description: null \}/);
+});
+
 test("homepage category destinations are active only for the implemented dynamic category route", () => {
   assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
   assert.equal(isSiteRouteImplemented("/categories/living-room?page=2"), true);
