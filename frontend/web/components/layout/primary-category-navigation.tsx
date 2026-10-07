@@ -27,7 +27,7 @@ export function PrimaryCategoryNavigation() {
       >
         {CATEGORY_NAVIGATION_FIXTURE.map((category) => (
           <Box component="li" key={category.slug} sx={{ display: "flex" }}>
-            <NavLink href={`/categories/${category.slug}`} sx={navItemSx}>
+            <NavLink href={`/categories/${category.slug}`} inactive sx={navItemSx}>
               {category.name}
             </NavLink>
           </Box>

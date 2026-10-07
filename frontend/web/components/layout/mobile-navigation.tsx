@@ -95,6 +95,7 @@ export function MobileNavigation() {
               <Box component="li" key={category.slug}>
                 <NavLink
                   href={`/categories/${category.slug}`}
+                  inactive
                   sx={mobileItemSx}
                 >
                   {category.name}

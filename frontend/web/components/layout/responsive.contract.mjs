@@ -56,7 +56,7 @@ check(
   "SiteSection must own contained composition through ContentContainer",
 );
 check(!page.includes("@mui/material/Container"), "app/page.tsx must not create a second container authority");
-check(page.includes("<SiteSection>"), "app/page.tsx must use the canonical section/container composition");
+check(/<SiteSection(?:\s|>)/.test(page), "app/page.tsx must use the canonical section/container composition");
 check(
   header.includes('display: { xs: "none", md: "block" }') &&
     mobileNavigation.includes('display: { xs: "inline-flex", md: "none" }'),

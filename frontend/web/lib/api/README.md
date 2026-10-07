@@ -6,6 +6,8 @@
 
 Set server-only `API_BASE_URL` to the API **origin**, without a path, query, or trailing API prefix. The ignored `frontend/web/.env.local` sets `API_BASE_URL=http://127.0.0.1:8000` for local development. Production must provide its own HTTPS origin through deployment environment configuration. Do not use `NEXT_PUBLIC_` for this setting; it may identify internal infrastructure. There is no frontend `.env.example` convention in this app. Missing or invalid configuration fails explicitly; the client has no code-level localhost fallback.
 
+`next/image` trusts `CATALOG_MEDIA_BASE_URL` for catalog images. It defaults to `API_BASE_URL` when Laravel serves media from the API origin. Set `CATALOG_MEDIA_BASE_URL` explicitly to the HTTPS CDN origin when Laravel returns CDN image URLs; this is required in production when the CDN differs from the API origin. It is a server-side build/runtime setting and must not use `NEXT_PUBLIC_`.
+
 Calls provide an unversioned resource suffix, for example `path: "/products"`; the transport adds `/api/v1` exactly once. Do not pass absolute URLs or user-controlled paths. Browser callers that are intentionally approved for direct API access must provide an explicit, public HTTPS `baseUrl` when creating their client; the server-only environment value is not exposed for browser use.
 
 ## Usage

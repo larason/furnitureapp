@@ -62,13 +62,17 @@ check(
   "shell must expose a route-availability check",
 );
 check(
-  /IMPLEMENTED_SITE_ROUTES\s*:\s*readonly string\[\]\s*=\s*\[\s*"\/"\s*\]/.test(navigation),
-  "only implemented routes may render as active links",
+  navigation.includes('"/"') && navigation.includes('"/products"'),
+  "implemented routes must render as active links",
 );
 const navLink = sourceOf("nav-link.tsx");
 check(
   navLink.includes("isSiteRouteImplemented") && navLink.includes('component="span"'),
   "NavLink must degrade unimplemented routes to non-link elements",
+);
+check(
+  /typeof sx === "function" \? sx\(theme\) : sx/.test(navLink),
+  "NavLink must resolve callback sx values against the current theme",
 );
 
 const imports = [...combined.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]);

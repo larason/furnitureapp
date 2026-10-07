@@ -253,3 +253,52 @@ To inspect the design system tokens and component catalog:
 ```bash
 pnpm tools-dev run web
 ```
+
+### Run dev server
+```
+npm run dev
+```
+
+with fixtures
+```
+HOMEPAGE_DATA_SOURCE=fixtures npm run dev
+```
+
+# Troubleshooting
+
+### images not appearing after replacement
+
+The old image usually appears for one of these reasons:
+
+1. Next.js Image Optimizer cache
+next/image caches optimized images under:
+frontend/web/.next/cache/images/
+Restarting the dev server does not necessarily clear that cache.
+Clear it with:
+```
+rm -rf frontend/web/.next/cache/images
+```
+Then restart npm run dev.
+
+2. Browser cache
+Use a hard refresh:
+- Chrome/Linux: Ctrl + Shift + R
+- Or open DevTools and select Disable cache.
+
+3. Fixtures are not enabled
+The local fixture images only appear when running:
+HOMEPAGE_DATA_SOURCE=fixtures npm run dev
+
+4. API mode is showing API media
+Without HOMEPAGE_DATA_SOURCE=fixtures, products and categories come from Laravel, so changing fixtures.ts will not affect those images.
+The browser ultimately requests an optimized URL like:
+/_next/image?url=%2Ffurnitures%2Ffixtures%2Fproducts%2Fsofa.jpg&w=640&q=75
+Changing the filename in fixtures.ts should invalidate that URL automatically. If it does not, clear .next/cache/images and perform a hard refresh.
+
+5. Fixture prices are stored in minor units, not whole TZS.
+- amount: 10000000 represents TZS 100,000.00
+- amount: 24500000 represents TZS 245,000.00
+formatMoney() divides the integer by 100 before display, per the frozen API contract: 1 TZS = 100 minor units.
+So the extra two zeros in fixtures.ts are intentional. If you want a displayed price of TZS 1,000,000.00, the fixture must be amount: 100000000
+
+6. MADE_TO_ORDER From price prefix: CAT-002 defines its price as an informational starting estimate. The prefix accurately communicates that contract and is permitted by Phase 14.4’s price-copy rule. e.g From TZS 245,000.00

@@ -17,7 +17,7 @@ const footerLinkSx = {
 
 type FooterGroupProps = {
   title: string;
-  links: readonly { label: string; href: string }[];
+  links: readonly { label: string; href: string; inactive?: boolean }[];
 };
 
 function FooterGroup({ title, links }: Readonly<FooterGroupProps>) {
@@ -33,7 +33,7 @@ function FooterGroup({ title, links }: Readonly<FooterGroupProps>) {
       <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none" }}>
         {links.map((link) => (
           <Box component="li" key={`${title}-${link.href}`}>
-            <NavLink href={link.href} sx={footerLinkSx}>
+            <NavLink href={link.href} inactive={link.inactive} sx={footerLinkSx}>
               {link.label}
             </NavLink>
           </Box>
@@ -48,6 +48,7 @@ export function SiteFooter() {
   const categoryLinks = CATEGORY_NAVIGATION_FIXTURE.map((category) => ({
     label: category.name,
     href: `/categories/${category.slug}`,
+    inactive: true,
   }));
 
   return (
@@ -72,7 +73,7 @@ export function SiteFooter() {
               <BrandMark />
             </Box>
             <Typography variant="body2" color="text.secondary">
-              Furniture made for your home.
+              Furniture that makes you feel at home.
             </Typography>
           </Box>
           <FooterGroup title="Furniture" links={categoryLinks} />

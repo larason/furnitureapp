@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import type { SxProps, Theme } from "@mui/material/styles";
 import NextLink from "next/link";
 import type { ReactNode } from "react";
+import { theme } from "@/theme/theme";
 import { isSiteRouteImplemented } from "./site-navigation";
 
 export type NavLinkSx = Exclude<SxProps<Theme>, ReadonlyArray<unknown>>;
@@ -10,6 +11,7 @@ export type NavLinkProps = {
   href: string;
   children: ReactNode;
   sx?: NavLinkSx;
+  inactive?: boolean;
   "aria-label"?: string;
   onClick?: () => void;
 };
@@ -18,12 +20,15 @@ export function NavLink({
   href,
   children,
   sx,
+  inactive = false,
   onClick,
   ...rest
 }: Readonly<NavLinkProps>) {
-  if (!isSiteRouteImplemented(href)) {
+  const resolvedSx = typeof sx === "function" ? sx(theme) : sx;
+
+  if (inactive || !isSiteRouteImplemented(href)) {
     return (
-      <Box component="span" sx={sx} {...rest}>
+      <Box component="span" sx={resolvedSx} {...rest}>
         {children}
       </Box>
     );
@@ -33,7 +38,16 @@ export function NavLink({
     <Box
       sx={{
         display: "contents",
-        "& a": sx,
+        "& a": {
+          color: "inherit",
+          ...resolvedSx,
+          textDecoration: "none",
+          fontWeight: "var(--font-weight-regular)",
+          textTransform: "none",
+        },
+        "& a:hover": {
+          textDecoration: "underline",
+        },
         "& a:focus-visible": {
           boxShadow: "var(--focus-ring)",
           borderRadius: "var(--radius-sm)",
