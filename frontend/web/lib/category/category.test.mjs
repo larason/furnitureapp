@@ -71,12 +71,18 @@ test("category API failures are not replaced with fixture data", async () => {
 
 test("category route remains server-rendered, uses the canonical card, and reserves 404 for missing categories", () => {
   const page = read("app/categories/[slug]/page.tsx");
+  const proxy = read("proxy.ts");
   assert.match(page, /getCategoryCatalog/);
   assert.match(page, /ProductCard/);
   assert.match(page, /notFound\(\)/);
   assert.match(page, /ApiError/);
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
   assert.doesNotMatch(page, /["']use client["']|<main|component="main"|href="#"|\/cart|\/checkout|\/payment|CategoryProductCard|ProductTile/);
+  assert.match(proxy, /matcher: "\/categories\/:path\*"/);
+  assert.match(proxy, /NextResponse\.next\(\{ status: 404 \}\)/);
+  assert.match(proxy, /status: 404/);
+  assert.match(proxy, /ApiError/);
+  assert.doesNotMatch(proxy, /validCategories|router\.replace|window\.location/);
 });
 
 test("homepage category destinations are active only for the implemented dynamic category route", () => {

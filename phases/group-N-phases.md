@@ -1,2059 +1,594 @@
-# Phase 14.2 — Public Category Pages
+# Phase 14.2A — Category Hard-404 Remediation
 
-## Objective
+## Status Entering This Remediation
 
-Implement production-quality public furniture category pages using the canonical route:
+```text
+Phase 14.2 — BLOCKED
+Group N — OPEN
+Phase 14.3 — BLOCKED
+```
+
+Phase 14.2 implementation is otherwise substantially complete.
+
+Runtime verification discovered one blocking production-semantic defect:
+
+```text
+/categories/<definitely-missing-slug>
+```
+
+renders the canonical not-found UI but responds:
+
+```text
+HTTP 200
+```
+
+rather than:
+
+```text
+HTTP 404
+```
+
+The current behavior is a Next.js streamed/soft 404 because `notFound()` is reached only after asynchronous category resolution has allowed the response to begin streaming.
+
+This remediation owns only that defect.
+
+Do NOT begin Phase 14.3.
+
+---
+
+# 1. Objective
+
+Ensure that a genuinely nonexistent category route:
 
 ```text
 /categories/[slug]
 ```
 
-A category page must answer:
+returns:
 
 ```text
-Where am I?
-What furniture belongs here?
-What can I explore?
+HTTP 404
 ```
 
-while preserving the calm, editorial, furniture-first SL Furnitures design established in Phase 14.1.
+while continuing to render the canonical Phase 13.8 not-found experience.
 
-This phase must convert category discovery from homepage presentation into real, crawlable, server-rendered category destinations backed by the existing Laravel catalog API.
-
-The result must remain:
+Required result:
 
 ```text
-architectural
-warm
-editorial
-calm
-photography-led
-spacious
-commerce-oriented
-```
-
-without becoming a generic ecommerce grid page.
-
----
-
-# 1. Phase Boundary
-
-Implement only:
-
-```text
-14.2 — Category pages
-```
-
-Do NOT implement:
-
-```text
-14.3 — Product listing
-14.4 — Product detail
-14.5 — Search
-14.6 — Filters / sorting
-14.7 — SEO metadata
-14.8 — Structured data
-14.9 — Sitemap / robots
-14.10 — Internal linking strategy
-14.11 — Image / performance optimization
-```
-
-Natural category-page semantics and links are allowed.
-
-Do not consume the owning phases above prematurely.
-
----
-
-# 2. Read Authorities Before Coding
-
-Before modifying code, inspect:
-
-```text
-AGENTS.md
-frontend/AGENTS.md
-
-frontend/design-system/
-├── DESIGN.md
-├── USAGE.md
-├── COMPONENTS.md
-├── ACCESSIBILITY.md
-├── tokens.css
-└── design-tokens.json
-
-frontend/web/
-├── app/
-├── components/
-├── lib/api/
-├── theme/
-├── ROUTING.md
-└── RESPONSIVE.md        # if present
-
-docs/api/
-├── api-contract.md
-├── api-resources.md
-├── api-conventions.md
-└── openapi.yaml
-
-docs/domain/business-rules.md
-docs/decisions.md
-phases/group-N-phases.md
-```
-
-Inspect the actual Phase 14.1 implementation, especially:
-
-```text
-ProductCard
-CatalogDiscovery
-homepage catalog data mapping
-money formatting
-media handling
-fixture architecture
-```
-
-Do not work from memory or assumptions.
-
----
-
-# 3. Git Policy
-
-Before ANY Git operation:
-
-```text
-locate/read/follow:
-git-workflow-and-versioning
-```
-
-Preserve unrelated owner changes.
-
-Never commit secrets or environment files.
-
-Stage only Phase 14.2 work.
-
-Use an atomic phase commit.
-
----
-
-# 4. Frozen Design System — NON-NEGOTIABLE
-
-The frozen design system remains the visual authority.
-
-The dependency chain is:
-
-```text
-frozen tokens
+Missing category
     ↓
-MUI theme
-    ↓
-existing primitives
-    ↓
-existing commerce components
-    ↓
-category-page composition
+HTTP 404
+    +
+canonical not-found UI
 ```
 
-Do not reverse this relationship.
-
-A category page does NOT have authority to invent another design system.
-
----
-
-# 5. Repository Authority Beats Prompt Suggestions
-
-Phase 14.1 correctly discovered that:
+Not:
 
 ```text
---media-product-card: 4 / 3
-```
-
-is the frozen product-card media token.
-
-Preserve it.
-
-Do NOT change it to 4:5 merely because an earlier planning recommendation suggested 4:5.
-
-General rule:
-
-> If this prompt contains a visual recommendation that conflicts with an already-frozen repository token or documented design-system decision, the repository authority wins.
-
-Report the discrepancy rather than silently changing the design system.
-
----
-
-# 6. No New Visual Values
-
-Do not invent:
-
-```text
-colors
-spacing values
-font sizes
-line heights
-radii
-shadows
-elevations
-breakpoints
-container widths
-motion durations
-easing
-focus treatments
-media ratios
-```
-
-when frozen values already exist.
-
-Expected audit result:
-
-```text
-Unapproved ad-hoc visual values: NONE
+HTTP 200
+    +
+noindex
+    +
+not-found-looking UI
 ```
 
 ---
 
-# 7. No Component Reinvention
+# 2. Preserve Existing Correct Behavior
 
-Before creating ANY component, inspect:
-
-```text
-frontend/web/components/
-frontend/design-system/COMPONENTS.md
-MUI primitives
-```
-
-Especially preserve and reuse the canonical Phase 14.1:
+Do not regress:
 
 ```text
-ProductCard
+server-first rendering
+Laravel category authority
+canonical backend slug authority
+canonical ProductCard
+category product filtering
+empty-category semantics
+minimal server pagination
+homepage category-link activation
+frozen design tokens
+responsive foundation
+Phase 13.8 failure states
+request-first policy
 ```
 
-Do NOT create:
-
-```text
-CategoryProductCard
-RoomProductCard
-CategoryPageProductCard
-ProductTile
-FurnitureCard
-```
-
-to display the same product concept.
+This is not a category-page rewrite.
 
 ---
 
-# 8. ProductCard Is Canonical
+# 3. Verify Framework Behavior First
 
-The Phase 14.1 `ProductCard` is intended for:
+Before modifying code, inspect the **installed Next.js version** and its corresponding local/official framework documentation or implementation behavior.
+
+Do not solve this from remembered behavior from an older Next.js release.
+
+Establish exactly:
 
 ```text
-homepage
-category pages
-product listing
-search results
+Why does the current route commit HTTP 200 before notFound()?
+
+Which route/layout/loading/Suspense boundary causes streaming to begin?
+
+What supported Next.js mechanism allows the category existence decision to occur before the HTTP status is committed?
 ```
 
-Phase 14.2 is its first cross-page reuse test.
-
-If the category page reveals a genuine missing semantic capability, improve the canonical component carefully.
-
-Do NOT fork it.
+Document the finding.
 
 ---
 
-# 9. ProductCard Changes
+# 4. Do Not "Fix" This With Client Logic
 
-Any modification to ProductCard must answer:
-
-```text
-What domain capability was missing?
-
-Why is it reusable outside category pages?
-
-Why is this not a category-specific visual variation?
-
-Does the change preserve Phase 14.1?
-```
-
-Do not add arbitrary styling props such as:
+Forbidden:
 
 ```text
-compact
-categoryVariant
-largeImage
-cardGap
-imageHeight
-rounded
-shadow
+client-side redirect
+router.replace()
+window.location
+client-side 404 component
+useEffect
 ```
 
-just to fit this page.
+The HTTP status must be correct at the server response level.
 
 ---
 
-# 10. Existing Layout Primitives
+# 5. Do Not Fake the Status
 
-Reuse:
-
-```text
-SiteShell
-SiteSection
-ContentContainer
-NavLink
-```
-
-and existing MUI/theme primitives.
-
-Do not create:
+Do not add:
 
 ```text
-CategoryContainer
-CategorySection
-CategoryButton
-CategoryTypography
+<meta name="robots" content="noindex">
 ```
 
-where existing primitives already own those responsibilities.
+and declare the issue solved.
+
+Next.js already provides soft-404/noindex behavior.
+
+The requirement is:
+
+```text
+actual HTTP status = 404
+```
 
 ---
 
-# 11. Urban Ladder Reference
+# 6. Do Not Redirect Missing Categories
 
-Urban Ladder remains approved as:
-
-```text
-STRUCTURAL / INFORMATION-ARCHITECTURE REFERENCE ONLY
-```
-
-For category pages, it may inform understanding of:
+Forbidden:
 
 ```text
-category hierarchy
-category introduction
-sub-category discovery
-product discovery
-breadcrumb placement
-commerce page rhythm
+/categories/bad-slug → /
+/categories/bad-slug → /categories
 ```
 
-It is NOT a visual authority.
+A nonexistent canonical category is a missing resource.
+
+It must remain a 404.
 
 ---
 
-# 12. Do Not Copy Urban Ladder
+# 7. Do Not Create a Custom Success-Looking 404
 
-Do NOT copy:
-
-```text
-category-page layout pixel-for-pixel
-grid dimensions
-filter treatment
-card styling
-copy
-promotions
-sale treatments
-badges
-colors
-typography
-spacing
-imagery
-source code
-CSS
-```
-
-Translate furniture-commerce lessons through the frozen SL Furnitures system.
-
----
-
-# 13. Canonical Route
-
-Implement:
-
-```text
-/categories/[slug]
-```
-
-using Next.js App Router.
-
-Do not create alternate category URL schemes such as:
-
-```text
-/category/[slug]
-/shop/[category]
-/collections/[category]
-/rooms/[slug]
-```
-
-unless already approved by `ROUTING.md`.
-
----
-
-# 14. Slug Authority
-
-The slug comes from Laravel.
-
-Never generate category slugs in the browser/frontend from:
-
-```text
-category.name
-```
-
-Do not use frontend slugification libraries.
-
-Do not expose numeric database IDs.
-
----
-
-# 15. Existing Slug Caveat
-
-Preserve the Phase 13.6 routing decision:
-
-- category slugs are canonical website identifiers;
-- category slugs may currently be mutable;
-- old-slug redirect/history behavior is not yet established.
-
-Do not invent slug-history redirects during 14.2.
-
-If the issue remains relevant, document it as an existing known constraint.
-
----
-
-# 16. Server-First Route
-
-The category page must be a Server Component by default.
-
-Do NOT put:
+Do not return:
 
 ```tsx
-"use client";
+return <NotFoundLookingComponent />;
 ```
 
-at the category page root.
+from a normal successful page response.
 
-Public catalog discovery should remain server-renderable.
+That preserves the defect.
+
+Use the framework's correct not-found/status semantics.
 
 ---
 
-# 17. Route Parameter Handling
+# 8. Preserve Canonical Not-Found UI
 
-Use the installed Next.js version's actual App Router conventions.
-
-Do not copy outdated examples from memory.
-
-Verify the installed Next.js behavior before implementing dynamic route parameter access.
-
----
-
-# 18. Category Resolution
-
-Resolve the category using the existing Laravel API and Phase 13.5 API client.
-
-Do not:
-
-```text
-query MySQL directly
-create frontend category authority
-hard-code production category objects
-create Next.js API proxy
-```
-
-Laravel remains authoritative.
-
----
-
-# 19. API Client
-
-Use:
-
-```text
-frontend/web/lib/api/client.ts
-```
+The user-facing presentation should continue to come from the established Phase 13.8 not-found architecture.
 
 Do not create:
 
 ```text
-categoryApi.ts with another fetch abstraction
-Axios client
-SWR layer
-React Query layer
-Next API proxy
+CategoryNotFound
+Category404
+MissingCategoryPage
 ```
 
-A thin domain query/helper layer is acceptable if consistent with existing architecture and it delegates transport to the canonical client.
+merely to solve the transport status.
 
 ---
 
-# 20. Inspect Existing Category Contract
+# 9. Investigate Streaming Boundaries
 
-Before coding, verify from Laravel/OpenAPI:
+Inspect at minimum:
 
 ```text
-category detail endpoint
-accepted identifier
-category response shape
-parent relationship
-children relationship
-slug
-name
-description if any
-media if any
-product relationship if any
-pagination behavior
+app/layout.tsx
+app/loading.tsx
+app/not-found.tsx
+app/categories/[slug]/page.tsx
+category data/query helpers
+SiteShell
+any Suspense boundaries affecting the route
 ```
 
-Do not guess.
+Determine where the response can begin streaming before category existence is known.
+
+Do not assume `page.tsx` alone is responsible.
 
 ---
 
-# 21. Product Retrieval Contract
+# 10. Important `loading.tsx` Investigation
 
-Determine from the actual public products endpoint how products are filtered by category.
-
-Phase 13.6 documented the collection query contract including:
+Explicitly determine whether the root or relevant route-segment:
 
 ```text
-category
-product_type
-availability
-min_price
-max_price
-sort
-sort_direction
-page
-per_page
+loading.tsx
 ```
 
-Verify actual implementation before use.
+causes a Suspense/streaming boundary that permits shell/loading output to be flushed before category resolution completes.
 
-Do not invent another category-products endpoint unless one already exists.
+If so, solve the problem deliberately.
+
+Do not delete the global loading foundation casually.
+
+Phase 13.8 behavior remains an architectural requirement.
 
 ---
 
-# 22. Category Page Data Flow
+# 11. Preferred Architectural Property
 
-Preferred conceptual flow:
+For a dynamic public resource route whose existence controls HTTP status:
+
+> Resource existence should be known before the response status becomes irreversibly committed.
+
+The exact implementation must follow the installed Next.js-supported architecture.
+
+Do not invent framework hacks.
+
+---
+
+# 12. Avoid Duplicate API Requests
+
+A tempting solution may resolve the category once for metadata/layout/status and again for page rendering.
+
+Avoid unnecessary duplicate Laravel calls.
+
+If framework architecture requires the same category lookup from multiple server contexts, inspect whether request-scoped deduplication/caching using supported React/Next.js mechanisms is appropriate.
+
+Do not introduce a global mutable cache.
+
+Do not install a caching library.
+
+---
+
+# 13. No Middleware API Lookup Unless Proven Necessary
+
+Do NOT immediately solve this by making middleware call Laravel for every category request.
+
+That could introduce:
 
 ```text
-URL slug
-   ↓
-Laravel category detail
-   ↓
-resolved canonical category
-   ↓
-Laravel product collection filtered by category
-   ↓
-category-page presentation
+extra network hop
+runtime constraints
+duplicated authorization/error semantics
+latency
+deployment coupling
 ```
 
-Use actual API capabilities.
+Use middleware only if investigation proves it is the correct supported architecture and alternatives are demonstrably unsuitable.
+
+Expected solution should preferably remain inside normal App Router server rendering.
 
 ---
 
-# 23. 404 Semantics
-
-If Laravel establishes that the requested category does not exist:
-
-```text
-notFound()
-```
-
-should produce the Phase 13.8 canonical not-found experience.
-
-Do not redirect missing categories to `/`.
-
-Do not render:
-
-```text
-No category found
-```
-
-with HTTP 200.
-
----
-
-# 24. 404 Masking
-
-Respect backend security semantics.
-
-Do not reinterpret arbitrary failures as 404.
-
-Use typed/status-bearing API failures.
-
-No magic message matching.
-
----
-
-# 25. Unexpected Failures
-
-Unexpected API/transport/server failures should propagate through the established failure architecture.
-
-Do not silently show fixtures.
-
-Do not convert network failure into "category not found."
-
----
-
-# 26. Fixtures
-
-Phase 14.1 introduced explicit homepage fixture mode.
-
-Do not automatically reuse homepage fixture behavior for production category routes unless there is a clearly established development architecture supporting it.
-
-If fixtures are needed for category-page visual development:
-
-- keep them explicitly opt-in;
-- identify them visibly in development;
-- do not silently fall back after API failure;
-- do not create a second fixture architecture.
-
-Prefer reusing the existing fixture infrastructure.
-
----
-
-# 27. Category Page Purpose
-
-The page should clearly communicate:
-
-```text
-category identity
-category context
-relevant child categories, when meaningful
-relevant products
-```
-
-without unnecessary marketing filler.
-
----
-
-# 28. Recommended Category Composition
-
-A strong starting architecture is:
-
-```text
-Breadcrumb
-    ↓
-Category introduction
-    ↓
-Optional child-category discovery
-    ↓
-Category product preview
-```
-
-Do not mechanically implement every block if API/domain data does not support it.
-
----
-
-# 29. Category Introduction
-
-The category header may include:
-
-```text
-category name
-short authoritative description
-optional category imagery if authoritative media exists
-```
-
-Do not invent category marketing descriptions if the backend does not provide them.
-
----
-
-# 30. No Fake Category Copy
-
-If Laravel only provides:
-
-```text
-name
-slug
-```
-
-do not generate AI descriptions such as:
-
-> Discover beautifully crafted pieces designed to transform your living room...
-
-Either omit description or use approved static editorial content only if the repository explicitly owns such content.
-
----
-
-# 31. Category Hero Restraint
-
-A category page does not automatically need a giant homepage-style hero.
-
-Do not make every category route another landing page.
-
-The category identity should be clear without burying products below enormous imagery.
-
----
-
-# 32. Category Media
-
-If authoritative category media exists, use it appropriately.
-
-If it does not:
-
-```text
-do not invent production category imagery
-```
-
-merely because homepage fixture categories have images.
-
-Homepage fixtures are not production category media authority.
-
----
-
-# 33. Child Categories
-
-If the category has child categories and the API exposes them, provide useful child-category discovery.
-
-Examples conceptually:
-
-```text
-Living Room
-├── Seating
-├── Tables
-└── Storage & Media
-```
-
-Do not duplicate the taxonomy manually.
-
----
-
-# 34. Child Category Links
-
-Child-category links use:
-
-```text
-/categories/[slug]
-```
-
-with backend-returned slugs.
-
-No frontend slug generation.
-
----
-
-# 35. Category Hierarchy
-
-Respect the existing three-level category taxonomy.
-
-Do not flatten everything merely for visual simplicity if hierarchy matters.
-
-Likewise, do not display the entire taxonomy tree on every category page.
-
-Show contextually useful relationships.
-
----
-
-# 36. Breadcrumb
-
-Implement a restrained semantic breadcrumb if the actual category hierarchy supports it.
-
-Use proper navigation semantics.
-
-Conceptually:
-
-```text
-Home / Living Room / Seating
-```
-
-but derive actual labels/slugs from authoritative data.
-
----
-
-# 37. Breadcrumb Accessibility
-
-Use an appropriately labelled navigation landmark.
-
-Current page should be represented semantically and should not need a redundant clickable self-link.
-
-Do not use decorative slash characters as screen-reader content when avoidable.
-
----
-
-# 38. Breadcrumb Component
-
-Before creating a breadcrumb component, inspect whether:
-
-```text
-MUI Breadcrumbs
-existing project primitive
-```
-
-already satisfies the requirement.
-
-Do not reinvent it.
-
-If a project wrapper is justified, keep it generic and reusable.
-
----
-
-# 39. Product Presentation
-
-Category pages may show products belonging to that category.
-
-Reuse:
-
-```text
-ProductCard
-```
-
-from Phase 14.1.
-
----
-
-# 40. Phase 14.3 Boundary
-
-This is critical.
-
-Phase 14.2 must NOT implement the complete generic product-listing experience owned by Phase 14.3.
-
-Do NOT prematurely build:
-
-```text
-/products generic listing page
-listing toolbar
-result-count architecture
-advanced pagination UI
-generic catalog grid system
-listing URL-state architecture
-listing empty-state system
-```
-
-unless the category page genuinely requires a minimal reusable primitive.
-
----
-
-# 41. Category Product Preview vs Generic Listing
-
-For 14.2, implement enough product presentation to make the category page useful.
-
-Think:
-
-```text
-category-specific product discovery
-```
-
-not:
-
-```text
-Phase 14.3 embedded early
-```
-
-If the category can contain many products, use the existing API pagination contract responsibly, but do not turn this phase into the complete listing/filter/sort experience.
-
----
-
-# 42. Product Grid
-
-A simple responsive product layout is permitted because products must be presented.
-
-It must use:
-
-```text
-canonical breakpoints
-canonical spacing
-canonical ProductCard
-```
-
-Do not establish a second visual grid system.
-
----
-
-# 43. Product Grid Component
-
-Before creating a reusable `ProductGrid`, determine whether simple MUI/CSS Grid composition is sufficient.
-
-Only create a canonical reusable grid component if there is a real cross-page responsibility that Phase 14.3 can reuse.
+# 14. No Next.js Proxy Endpoint
 
 Do not create:
 
 ```text
-CategoryProductGrid
+/api/categories/[slug]
 ```
 
-unless it truly has category-specific domain semantics.
+inside Next.js merely to control the status.
+
+Laravel remains the API authority.
 
 ---
 
-# 44. Product Card Media Ratio
+# 15. Do Not Move Catalog Authority Into Next.js
 
-Continue using the frozen:
+Do not hard-code known category slugs to prevalidate requests.
 
-```text
---media-product-card
+Forbidden:
+
+```ts
+const validCategories = [
+  "living-room",
+  "bedroom",
+  ...
+];
 ```
 
-authority.
-
-Do not introduce another ratio in category pages.
+The database/API remains authoritative.
 
 ---
 
-# 45. Product Images
+# 16. Do Not Use Homepage Fixture Taxonomy
 
-Use `next/image` through the canonical ProductCard implementation.
+Fixture slugs must not become production route existence authority.
 
-Do not duplicate image handling inside the category page.
-
----
-
-# 46. Product Media Source
-
-Production media must come from API data.
-
-Do not map product names to local fixture images in production.
-
-Fixture mode may use explicit fixture media according to the established development architecture.
+Production category existence is decided by Laravel.
 
 ---
 
-# 47. Product Detail Links
+# 17. Error Taxonomy Must Remain Correct
 
-Phase 14.4 owns:
+Preserve:
 
 ```text
-/products/[slug]
-```
-
-implementation.
-
-Do not create that page now.
-
-If product cards cannot safely link without producing 404s, preserve their non-interactive Phase 14.1 behavior until 14.4.
-
-Do not use dead links.
-
----
-
-# 48. Homepage Category Links
-
-Once `/categories/[slug]` is genuinely implemented and verified, update Phase 14.1 category discovery so production category cards can navigate to the now-valid category routes.
-
-This is an expected integration step for 14.2.
-
-Do not leave category cards artificially non-interactive once their destination exists.
-
----
-
-# 49. Homepage Link Source
-
-Homepage category links must use the category's authoritative backend-returned:
-
-```text
-slug
-```
-
-Never derive the href from category names.
-
----
-
-# 50. Fixture Homepage Links
-
-If fixture mode has category slugs compatible with fixture category pages, linking may be enabled only if those destinations actually work under fixture mode.
-
-Otherwise keep fixture-only destinations non-interactive rather than creating broken routes.
-
----
-
-# 51. Product Type
-
-Preserve domain meaning such as:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-or whatever the frozen API enums actually use.
-
-Do not rename backend states casually in frontend domain logic.
-
-Presentation copy may be human-friendly.
-
----
-
-# 52. MADE_TO_ORDER
-
-Continue treating MADE_TO_ORDER as a first-class category result.
-
-It is not:
-
-```text
-unavailable
-error
-disabled
-sold out
-```
-
-unless another domain field explicitly says so.
-
----
-
-# 53. Availability
-
-Use only actual API availability semantics.
-
-Do not infer stock from:
-
-```text
-price
-product type
-presence of image
-```
-
----
-
-# 54. Price
-
-Reuse the Phase 14.1 contract-safe TZS formatting.
-
-Do not create another category price formatter.
-
----
-
-# 55. Money
-
-Preserve the project's integer minor-unit convention at domain/API boundaries.
-
-Do not introduce floating-point money arithmetic.
-
----
-
-# 56. Empty Category
-
-A valid category containing zero products is NOT a 404.
-
-This distinction is mandatory:
-
-```text
-missing category → 404
-
-existing category with zero products → valid category page
-```
-
----
-
-# 57. Empty Category Presentation
-
-Use a calm, useful empty state.
-
-Do not treat it as an application error.
-
-Do not invent fake products.
-
-Do not silently switch to another category.
-
----
-
-# 58. Empty Category Copy
-
-Keep copy factual.
-
-Example concept:
-
-```text
-There are no pieces listed in this category yet.
-```
-
-Do not claim:
-
-```text
-Sold out
-Coming soon
-Restocking
-```
-
-unless backend data supports it.
-
----
-
-# 59. Empty State Component
-
-Inspect existing state primitives before creating anything.
-
-If a generic reusable empty-state concept is genuinely missing, create one only if consistent with `COMPONENTS.md`.
-
-Do not create a giant category-specific empty card.
-
----
-
-# 60. Pagination
-
-Inspect the API response.
-
-If category products are paginated, do not discard pagination semantics.
-
-However, comprehensive listing pagination UX can remain Phase 14.3 if not needed to make 14.2 correct.
-
-Do not fetch an arbitrary enormous `per_page` value just to avoid dealing with pagination.
-
----
-
-# 61. No Infinite Scroll
-
-Do not introduce infinite scroll.
-
----
-
-# 62. No "Load More" Architecture Prematurely
-
-Do not add client-side load-more state merely because the API paginates.
-
-If category pages need navigation between result pages now, use the smallest server-first solution consistent with the routing contract.
-
-Do not preempt Phase 14.3.
-
----
-
-# 63. Filters
-
-Do NOT implement filters.
-
-Phase 14.6 owns:
-
-```text
-product_type
-availability
-price
-filter UI
-filter drawers
-```
-
-even though the API already supports those parameters.
-
----
-
-# 64. Sorting
-
-Do NOT implement sort controls.
-
-Phase 14.6 owns sorting UX.
-
----
-
-# 65. Search
-
-Do NOT add category-local search.
-
-Phase 14.5 owns search.
-
----
-
-# 66. Result Count
-
-A simple factual count may be shown only if directly available and useful.
-
-Do not build a listing toolbar around it.
-
----
-
-# 67. Category Navigation
-
-Do not duplicate the SiteHeader category navigation inside the page.
-
-Page-level child-category discovery is different from global navigation.
-
----
-
-# 68. Category Page Visual Hierarchy
-
-A good category page should generally prioritize:
-
-```text
-context
+Laravel category 404
     ↓
-category identity
+Next.js notFound()
     ↓
-sub-category discovery when relevant
-    ↓
-products
+HTTP 404
 ```
 
-Avoid excessive promotional interruption.
-
----
-
-# 69. No Promotional Banners
-
-Do not add:
+But:
 
 ```text
-sale banners
-coupon strips
-discount promos
-delivery promos
-countdowns
+Laravel 500
+network failure
+timeout
+invalid upstream response
 ```
 
-to category pages.
+must NOT become 404.
+
+Those remain unexpected failures handled through the existing error architecture.
 
 ---
 
-# 70. No Fake Editorial Blocks
+# 18. Empty Category Must Remain 200
 
-Do not insert random lifestyle sections between product rows merely to make the category page visually rich.
-
-Phase 14.2 is primarily discovery.
-
----
-
-# 71. Photography
-
-Furniture/product imagery should remain the dominant visual richness.
-
-UI remains restrained.
-
----
-
-# 72. Surface Usage
-
-Use only approved semantic surfaces.
-
-Do not create category-specific background colors.
-
----
-
-# 73. Brown Accent
-
-Continue using deep brown as a controlled accent.
-
-Do not make category headings, every link, every border and every state brown.
-
----
-
-# 74. Typography
-
-Use:
+Do not confuse:
 
 ```text
-Young Serif
+category does not exist
 ```
 
-selectively for category identity/editorial display where appropriate.
-
-Use utility sans for:
+with:
 
 ```text
-breadcrumb
-product names where design authority says so
-prices
-metadata
-states
-controls
+category exists but contains zero products
 ```
 
-Follow the frozen typography mapping.
-
----
-
-# 75. Heading Hierarchy
-
-Each category page needs one meaningful:
-
-```html
-<h1>
-```
-
-representing the category name.
-
-Do not reuse the site logo as H1.
-
-Do not produce multiple H1s.
-
----
-
-# 76. Dynamic Heading
-
-The H1 should use authoritative category data.
-
-Do not hard-code route-specific headings in frontend code.
-
----
-
-# 77. Semantic Sections
-
-Use headings for child-category and product sections where useful.
-
-Do not skip heading levels for visual reasons.
-
----
-
-# 78. Responsive Foundation
-
-Consume Phase 13.9.
-
-Do not invent category-specific:
+Required:
 
 ```text
-breakpoints
-site gutters
-container widths
-media queries
+missing category
+→ HTTP 404
+
+existing empty category
+→ HTTP 200
 ```
 
+Even though the current local database has no existing empty category available for live verification, preserve and test this contract.
+
 ---
 
-# 79. Mobile
+# 19. Current Empty Database Is Acceptable
 
-At narrow widths ensure:
+Current local API evidence:
 
-```text
-breadcrumb reflows
-category title reflows
-child categories remain usable
-product cards remain legible
-empty state remains readable
+```json
+{
+  "data": [],
+  "meta": {
+    "pagination": {
+      "total": 0
+    }
+  }
+}
 ```
 
-Do not shrink typography below approved values.
+is not a Phase 14.2 implementation failure.
 
----
+Do NOT seed production/test catalog records merely to satisfy runtime verification.
 
-# 80. Tablet
-
-Tablet should not simply become an enlarged mobile page.
-
-Use the canonical responsive composition.
-
----
-
-# 81. Desktop
-
-Desktop should use space efficiently without turning into a dense marketplace grid.
-
-Maintain the project's editorial calm.
-
----
-
-# 82. Wide Desktop
-
-Use existing maximum-width/full-bleed rules.
-
-Do not stretch product cards indefinitely.
-
----
-
-# 83. CSS-First
-
-No:
+The following may remain:
 
 ```text
-window.innerWidth
-navigator.userAgent
-device detection
+Real top-level category:
+NOT AVAILABLE
+
+Real nested category:
+NOT AVAILABLE
+
+Category with products:
+NOT AVAILABLE
+
+Existing empty category:
+NOT AVAILABLE
+
+Real resolved-slug product filtering:
+NOT AVAILABLE
 ```
 
-for layout.
+until local catalog data naturally exists.
 
 ---
 
-# 84. Client Components
+# 20. Runtime Verification — Required Hard Gate
 
-Expected category-page root:
+After remediation, run Laravel:
 
 ```text
-Server Component
+http://127.0.0.1:8000
 ```
 
-Any new Client Component must be explicitly justified.
+and Next.js using the locally assigned development/production port.
 
-With no filters/sorting/search in this phase, there should be little reason for category-page client state.
+Use API-backed mode.
 
----
+Then request a definitely nonexistent category.
 
-# 85. Loading
+Verify using an HTTP-level tool such as:
 
-The existing App Router loading foundation should remain applicable.
-
-Do not create elaborate category skeletons unless a genuine route-segment requirement justifies them.
-
-Phase 13.8 deliberately deferred product/category-specific skeletons.
-
----
-
-# 86. Error
-
-Do not create a duplicate generic category error system.
-
-Unexpected failures use the established error boundary.
-
----
-
-# 87. Not Found
-
-Missing category uses:
-
-```text
-notFound()
+```bash
+curl -i http://127.0.0.1:<next-port>/categories/category-that-does-not-exist-928374
 ```
 
-and the established canonical 404 presentation.
+or equivalent.
 
----
-
-# 88. Accessibility
-
-Follow `ACCESSIBILITY.md`.
-
-Verify:
+Required:
 
 ```text
-one H1
-logical headings
-semantic breadcrumb
-link semantics
-keyboard
-focus
-touch targets
-image alt
-contrast
-zoom/reflow
-no color-only states
-```
-
----
-
-# 89. Product Image Alt
-
-Use actual product media alt text if the API provides authoritative alt text.
-
-Otherwise use the established safe product-media fallback strategy.
-
-Do not expose filenames as alt text.
-
----
-
-# 90. Category Image Alt
-
-If category media is meaningful, provide meaningful alt.
-
-If purely decorative, use appropriate decorative treatment.
-
----
-
-# 91. Keyboard
-
-Users must be able to traverse:
-
-```text
-breadcrumb
-child categories
-product interactions that are actually active
-footer
-```
-
-in logical order.
-
----
-
-# 92. Focus
-
-Use the frozen focus treatment.
-
-Do not suppress outlines.
-
----
-
-# 93. Zoom/Reflow
-
-Verify at meaningful 200% equivalent reflow.
-
-No horizontal two-dimensional scrolling for ordinary page content.
-
----
-
-# 94. Horizontal Overflow
-
-Check:
-
-```text
-document.documentElement.scrollWidth <= window.innerWidth
-```
-
-at representative Phase 13.9 widths.
-
-Do not use global overflow hiding.
-
----
-
-# 95. Image Stability
-
-Category/product media must reserve stable geometry.
-
-No obvious CLS from image loading.
-
----
-
-# 96. `next/image`
-
-Continue using Next.js image handling.
-
-Do not create another media component solely for category pages unless a reusable domain need exists.
-
----
-
-# 97. `sizes`
-
-ProductCard already owns its placement/image behavior.
-
-If the category grid changes the effective rendered widths enough that its `sizes` contract needs enhancement, improve the canonical component appropriately.
-
-Do not hard-code category-only image logic inside it without considering Phase 14.3 reuse.
-
----
-
-# 98. Remote Media
-
-Preserve the Phase 14.1:
-
-```text
-CATALOG_MEDIA_BASE_URL
-```
-
-architecture if that is the actual established implementation.
-
-Do not introduce another media environment variable.
-
----
-
-# 99. R2
-
-Do not add R2 infrastructure.
-
-The category page consumes URLs from API data.
-
-Storage implementation remains separate.
-
----
-
-# 100. Performance
-
-Keep the page server-first and lean.
-
-Do not add:
-
-```text
-carousel library
-grid library
-animation library
-client data-fetching library
-```
-
-Expected dependencies:
-
-```text
-NONE
-```
-
----
-
-# 101. Above-the-Fold Images
-
-Do not mark all category/product images as priority/preloaded.
-
-Only genuinely critical above-the-fold media should receive special treatment.
-
-Avoid competing with the page's actual LCP resource.
-
----
-
-# 102. Category LCP
-
-Inspect the real rendered page.
-
-Determine whether category title/media/product imagery becomes LCP.
-
-Do not guess.
-
-Do not perform comprehensive Phase 14.11 optimization yet.
-
----
-
-# 103. No Decorative Motion
-
-No:
-
-```text
-scroll reveal
-product-card lift animation
-parallax
-spring effects
-```
-
----
-
-# 104. Natural Homepage Integration
-
-Once category routes are implemented, homepage category discovery should become genuinely navigable.
-
-This is part of Phase 14.2 integration.
-
-Do not redesign the homepage.
-
-Only activate/adjust the appropriate links.
-
----
-
-# 105. Homepage Regression
-
-After enabling category links, verify Phase 14.1 still passes:
-
-```text
-visual composition
-accessibility
-responsive behavior
-request-first policy
-no dead links
-```
-
----
-
-# 106. Global Header Integration
-
-If the existing global category navigation currently has deferred/non-interactive category destinations and can now safely link to implemented category routes using authoritative data already available to it, inspect whether activation belongs here.
-
-Do NOT introduce root-layout API fetching merely to accomplish this.
-
-If activation requires new global taxonomy-fetch architecture, defer it and report why.
-
----
-
-# 107. No Hard-Coded Taxonomy Duplication
-
-Do not solve global/header linking by copying category slugs into another frontend array.
-
----
-
-# 108. URL Query Contract
-
-If minimal pagination is required, preserve the canonical URL query contract.
-
-Do not invent:
-
-```text
-?p=2
-?categoryPage=2
-```
-
-if the API/routing convention uses:
-
-```text
-?page=2
-```
-
----
-
-# 109. Query Validation
-
-Do not trust arbitrary URL query input blindly.
-
-If category pagination is implemented, parse and constrain it safely.
-
-Malformed values should have deterministic behavior.
-
-Do not crash the page.
-
----
-
-# 110. Canonical Category URL
-
-Do not append unnecessary query parameters to the default category page.
-
-Prefer:
-
-```text
-/categories/living-room
-```
-
-over:
-
-```text
-/categories/living-room?page=1
-```
-
-for the initial state where applicable.
-
----
-
-# 111. SEO Boundary
-
-Do not perform comprehensive Phase 14.7 metadata work.
-
-However, do not create category pages that fundamentally prevent future metadata generation from authoritative category data.
-
----
-
-# 112. Metadata
-
-If the existing application already has a basic metadata pattern required for route correctness, preserve it.
-
-Do not turn 14.2 into metadata architecture.
-
-Document that dynamic category metadata remains Phase 14.7 unless already explicitly owned elsewhere.
-
----
-
-# 113. Structured Data
-
-Do NOT add:
-
-```text
-BreadcrumbList JSON-LD
-ItemList JSON-LD
-Product JSON-LD
-```
-
-Phase 14.8 owns structured data.
-
-Semantic HTML breadcrumb is appropriate now; JSON-LD is not.
-
----
-
-# 114. Sitemap
-
-Do not add category routes to sitemap generation now.
-
-Phase 14.9 owns sitemap/robots.
-
----
-
-# 115. Internal Linking
-
-Homepage → category and parent → child category links are natural functional navigation and should be implemented where routes exist.
-
-Do not perform the comprehensive Phase 14.10 SEO internal-linking strategy.
-
----
-
-# 116. Category Fixture Images
-
-Do not generate a new set of images merely because 14.2 exists if existing development fixtures adequately support visual verification.
-
-Reuse coherent fixtures where appropriate.
-
-Do not bloat Git with duplicate images.
-
----
-
-# 117. Component Reinvention Audit
-
-At completion, list every new component.
-
-For each:
-
-```text
-Component:
-<name>
-
-Responsibility:
-<reason>
-
-Existing project primitive inspected:
-<list>
-
-MUI primitive considered:
-<list>
-
-Why a new component was necessary:
-<reason>
-
-Reusable outside category pages:
-YES / NO
-```
-
-A component that cannot justify itself should probably be removed.
-
----
-
-# 118. Frozen Token Audit
-
-Audit new/modified category code for:
-
-```text
-raw hex colors
-arbitrary spacing
-arbitrary font sizes
-custom radius
-custom shadows
-raw width breakpoints
-custom motion values
-new media ratios
-```
-
-Expected:
-
-```text
-Unapproved values: NONE
-```
-
----
-
-# 119. Urban Ladder Audit
-
-Report:
-
-```text
-Structural ideas considered:
-<list>
-
-Structural ideas adopted:
-<list>
-
-Visual design copied:
-NONE
-
-Exact layout copied:
-NONE
-
-Copy copied:
-NONE
-
-Assets copied:
-NONE
-
-Promotional mechanics copied:
-NONE
-```
-
----
-
-# 120. Anti-AI-Slop Audit
-
-Explicitly inspect for:
-
-```text
-rounded-card overload
-pill overload
-badge overload
-gradient backgrounds
-glassmorphism
-decorative shadows
-random icons
-generic category marketing copy
-fake promotions
-fake ratings
-fake metrics
-excessive centered layout
-brown everywhere
-unnecessary animation
-```
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 121. Tests — Route
-
-Add coverage proving:
-
-```text
-valid category slug renders category
-missing category invokes not-found semantics
-unexpected API failure is not converted to 404
-empty category is valid, not 404
-```
-
-Use the repository's existing testing conventions.
-
----
-
-# 122. Tests — Slug
-
-Prove:
-
-```text
-backend slug is used
-numeric database ID is not exposed
-frontend slug generation is absent
-```
-
----
-
-# 123. Tests — Product Filtering
-
-Prove the category product request uses the contract-approved category filter/identifier.
-
-Do not merely assert rendered fixture content.
-
----
-
-# 124. Tests — ProductCard Reuse
-
-Prove the category page uses the canonical ProductCard.
-
-No duplicate category product-card implementation.
-
----
-
-# 125. Tests — Request-First
-
-Verify category pages expose no:
-
-```text
-cart
-checkout
-buy now
-payment
-wishlist
-```
-
-controls.
-
----
-
-# 126. Tests — Links
-
-Verify:
-
-```text
-homepage category links → valid /categories/[slug]
-child-category links → valid /categories/[slug]
-no href="#"
-no known broken product-detail links
-```
-
-according to implemented routes.
-
----
-
-# 127. Tests — Accessibility
-
-Where supported by existing test infrastructure, verify:
-
-```text
-one H1
-breadcrumb landmark
-heading hierarchy
-semantic links
-empty state
-```
-
-Do not claim automated accessibility tests prove complete conformance.
-
----
-
-# 128. Runtime Verification
-
-Use actual runtime/browser verification for at least:
-
-```text
-top-level category
-nested category if supported
-category with products
-empty category if available/fixture-supported
-nonexistent category
-```
-
----
-
-# 129. Viewport Verification
-
-Use the canonical Phase 13.9 viewport matrix.
-
-At minimum:
-
-```text
-320
-390
-tablet
-narrow desktop
-1440
-wide desktop
-```
-
-or the exact documented matrix.
-
----
-
-# 130. Boundary Width Verification
-
-Retain checks around the shell's major responsive transition.
-
-Category implementation must not break navigation behavior.
-
----
-
-# 131. Real API Smoke
-
-If local Laravel/API configuration is available, perform a real Next.js → Laravel category smoke test.
-
-Verify:
-
-```text
-category detail
-category product retrieval
-404 category
-```
-
-Do not block Phase 14.2 solely because a production domain is not deployed.
-
-If local API is unavailable, report exactly what could not be runtime-integrated rather than fabricating PASS.
-
----
-
-# 132. API Error Verification
-
-Where practical, verify typed handling for:
-
-```text
+HTTP status:
 404
-5xx
-network/transport failure
 ```
 
-No message matching.
+Do not infer the status from rendered content.
 
 ---
 
-# 133. Existing Regression Suite
+# 21. Production Runtime Verification
+
+Because the defect occurred in both development and `next start`, verify both if practical:
+
+```text
+npm run dev
+```
+
+and:
+
+```text
+npm run build
+npm run start
+```
+
+The production server is especially important.
+
+Required:
+
+```text
+development missing category → HTTP 404
+production missing category → HTTP 404
+```
+
+---
+
+# 22. Browser Verification
+
+Use installed:
+
+```text
+Google Chrome
+```
+
+or Fedora Firefox.
+
+Chrome DevTools availability is NOT required.
+
+Verify the canonical not-found UI still renders after the transport fix.
+
+---
+
+# 23. Browser Accessibility Regression
+
+For the missing category page verify:
+
+```text
+one main
+one H1
+keyboard access
+visible focus
+return-home link
+no horizontal overflow
+```
+
+Do not redesign it.
+
+---
+
+# 24. Streaming Regression
+
+Verify that the fix does not create an obviously degraded experience for ordinary successful routes.
+
+In particular inspect whether changing a loading/Suspense boundary causes:
+
+```text
+blank page while all catalog data loads
+lost site shell
+large layout shift
+broken loading state
+```
+
+If a tradeoff is necessary, document it explicitly.
+
+---
+
+# 25. Loading Architecture
+
+If the remediation requires changing loading-boundary placement, preserve the intent of Phase 13.8:
+
+```text
+known pending state
+shell continuity where appropriate
+calm generic presentation
+no fake product/category skeletons
+```
+
+Do not introduce detailed category skeletons in this remediation.
+
+---
+
+# 26. Homepage Regression
+
+The homepage must continue to work.
+
+Do not alter its data strategy merely to repair category 404 semantics.
 
 Run:
 
 ```text
-homepage contract
-API client
-layout contract
-responsive contract
-state/failure contract
-routing contract
-request-first regression
-theme contract
-design-system validation
+npm run test:homepage
 ```
 
-All must remain PASS.
+---
+
+# 27. Category Contract Regression
+
+Run:
+
+```text
+npm run test:category
+```
+
+Add/adjust tests so the architecture that caused the soft 404 is less likely to regress.
+
+Unit/source tests alone do not replace the required HTTP runtime check.
 
 ---
 
-# 134. TypeScript
+# 28. HTTP Integration Regression Test
 
-Must pass.
+If the repository's test architecture can reasonably exercise a built/running Next.js server without introducing dependencies or fragile CI behavior, consider adding a focused HTTP-level regression for:
 
----
+```text
+/categories/definitely-missing
+→ 404
+```
 
-# 135. ESLint
+Do not build an enormous E2E framework solely for this one issue.
 
-Must pass.
-
----
-
-# 136. Production Build
-
-Must pass.
-
-Dynamic category routing must not require production API availability during build unless architecture explicitly intends that.
-
-Do not solve build failures by swallowing real runtime failures.
+If runtime-only verification is the appropriate level, document that.
 
 ---
 
-# 137. `git diff --check`
-
-Must pass.
-
----
-
-# 138. Dependencies
+# 29. No New Dependencies
 
 Expected:
 
@@ -2061,317 +596,252 @@ Expected:
 NONE
 ```
 
-If a new dependency appears necessary:
+Do not install Playwright, Cypress, Puppeteer, or another test framework just for this remediation.
 
-```text
-STOP
-```
-
-and justify it before installation.
-
-This phase should not need one.
+Installed Chrome/Firefox plus existing tools are sufficient.
 
 ---
 
-# 139. Documentation
+# 30. Design System
 
-Update:
-
-```text
-phases/group-N-phases.md
-```
-
-with the Phase 14.2 execution record.
-
-Update `frontend/AGENTS.md` only for genuinely durable rules not already covered.
-
-Do not paste phase-specific implementation details into global agent guidance.
-
----
-
-# 140. ADR
-
-Expected:
+Expected design changes:
 
 ```text
 NONE
 ```
 
-unless a material architectural decision is genuinely required.
+Do not touch frozen tokens.
 
-Do not create an ADR simply because a dynamic route was added.
+Do not modify ProductCard media ratio.
+
+Do not redesign category pages.
 
 ---
 
-# 141. Completion Report
+# 31. Backend
+
+Expected Laravel changes:
+
+```text
+NONE
+```
+
+The Laravel endpoint already correctly returns:
+
+```text
+404 RESOURCE_NOT_FOUND
+```
+
+The defect exists in the Next.js response semantics.
+
+Do not modify backend behavior to compensate for a frontend streaming problem.
+
+---
+
+# 32. API Client
+
+Do not modify the API client's error contract unless investigation demonstrates an actual client defect.
+
+The current evidence says Laravel's 404 is already correctly recognized.
+
+---
+
+# 33. Scope
+
+Do NOT implement:
+
+```text
+14.3 product listing
+14.4 product detail
+14.5 search
+14.6 filters/sorting
+14.7 SEO metadata
+14.8 structured data
+14.9 sitemap/robots
+14.10 SEO internal linking
+14.11 image optimization
+```
+
+No new feature work.
+
+---
+
+# 34. Documentation
+
+Update the Phase 14.2 execution record with:
+
+```text
+initial soft-404 discovery
+root cause
+remediation
+runtime HTTP evidence
+```
+
+Do not erase the failed verification history.
+
+The record should show that runtime testing caught the issue and that it was subsequently corrected.
+
+---
+
+# 35. Git
+
+Before Git operations, read/follow:
+
+```text
+git-workflow-and-versioning
+```
+
+The previous Phase 14.2 commit already exists.
+
+Create a separate atomic remediation commit rather than rewriting history unless the Git skill explicitly dictates otherwise.
+
+Suggested intent:
+
+```text
+fix(web): preserve hard 404 for missing categories
+```
+
+Exact message follows repository Git policy.
+
+---
+
+# 36. Completion Report
 
 Return:
 
 ```text
-Phase 14.2 status:
+Phase 14.2A status:
 PASS / BLOCKED
 
 
-ROUTE
+ORIGINAL DEFECT
 
-Canonical route:
-/categories/[slug]
+Missing category before remediation:
+HTTP 200 soft 404
 
-Page:
-<path>
+Canonical not-found UI:
+YES
 
-Server Component:
+Laravel upstream response:
+HTTP 404 RESOURCE_NOT_FOUND
+
+
+ROOT CAUSE
+
+Installed Next.js version:
+<version>
+
+Streaming boundary responsible:
+<exact finding>
+
+Why status was committed before notFound():
+<explanation>
+
+Framework documentation/behavior verified:
 YES / NO
 
-Numeric database IDs in URLs:
-NONE / FAIL
 
-Frontend slug generation:
-NONE / FAIL
+REMEDIATION
 
-
-CATEGORY RESOLUTION
-
-Detail endpoint:
-<actual endpoint>
-
-Identifier:
-<actual contract>
-
-Slug authority:
-LARAVEL / FAIL
-
-Missing category:
-notFound() / FAIL
-
-Unexpected failure converted to 404:
-NO / FAIL
-
-Empty category converted to 404:
-NO / FAIL
-
-
-DATA
-
-Category source:
-REAL API / FIXTURE / BOTH
-
-Product source:
-REAL API / FIXTURE / BOTH
-
-API client reused:
-YES / NO
-
-Direct fetch outside canonical client:
-NONE / FAIL
-
-Product category filter:
-<actual query/contract>
-
-Fixture fallback after API error:
-NONE / FAIL
-
-Backend changes:
-NONE / <list>
-
-
-PAGE COMPOSITION
-
-Rendered order:
-1. <...>
-2. <...>
-3. <...>
-
-Category H1:
-<source>
-
-Breadcrumb:
-<summary>
-
-Child-category discovery:
-<summary / N/A>
-
-Product presentation:
-<summary>
-
-Empty state:
-<summary>
-
-
-COMPONENT REUSE
-
-Canonical ProductCard reused:
-YES / NO
-
-ProductCard modified:
-NO / <explain reusable change>
-
-Existing layout primitives reused:
+Files changed:
 <list>
 
-New components:
-<list + justification>
+Architecture used:
+<explanation>
 
-Duplicate product card:
-NONE / FAIL
+Client-side workaround:
+NONE
 
-Category-specific Button:
-NONE / FAIL
+Redirect workaround:
+NONE
 
-Category-specific Container:
-NONE / FAIL
+Hard-coded category list:
+NONE
+
+Middleware API lookup:
+NONE / <justification>
+
+Next.js proxy endpoint:
+NONE
+
+Duplicate Laravel requests introduced:
+NO / <explanation>
+
+New dependency:
+NONE
 
 
-DESIGN SYSTEM
+HTTP SEMANTICS
 
-Frozen tokens:
+Development:
+Missing category HTTP status:
+404 / FAIL
+
+Production next start:
+Missing category HTTP status:
+404 / FAIL
+
+Canonical not-found UI:
 PASS / FAIL
 
-New token authority:
-NONE / FAIL
-
-Raw unapproved colors:
-NONE / <list>
-
-Raw unapproved spacing:
-NONE / <list>
-
-Raw unapproved typography:
-NONE / <list>
-
-Raw unapproved radius:
-NONE / <list>
-
-Raw unapproved shadows:
-NONE / <list>
-
-Raw unapproved breakpoints:
-NONE / <list>
-
-New media ratio:
-NONE / <list>
-
-Product-card media authority:
-<token>
-
-
-URBAN LADDER
-
-Usage:
-STRUCTURAL / IA REFERENCE ONLY
-
-Structural ideas considered:
-<list>
-
-Structural ideas adopted:
-<list>
-
-Visual design copied:
-NONE / FAIL
-
-Exact layout copied:
-NONE / FAIL
-
-Copy copied:
-NONE / FAIL
-
-Assets copied:
-NONE / FAIL
-
-Promotional mechanics copied:
-NONE / FAIL
-
-
-PRODUCTS
-
-Canonical ProductCard:
+Missing category no longer soft-404:
 PASS / FAIL
 
-Product media:
-<source>
+Unexpected API failures still remain errors:
+PASS / FAIL
 
-Product detail links:
-<active / deferred>
+Existing empty category remains 200:
+PASS / TESTED CONTRACT ONLY / FAIL
 
-MADE_TO_ORDER:
-<summary>
 
-Price formatter reused:
+LOCAL CATALOG AVAILABILITY
+
+Top-level category:
+<actual slug / NOT AVAILABLE>
+
+Nested category:
+<actual slug / NOT AVAILABLE>
+
+Category with products:
+<actual slug / NOT AVAILABLE>
+
+Existing empty category:
+<actual slug / NOT AVAILABLE>
+
+Resolved category product filtering:
+PASS / NOT AVAILABLE
+
+Synthetic catalog data created:
+NO
+
+
+LOADING / STREAMING
+
+Loading architecture preserved:
+YES / <explain adjustment>
+
+Site shell preserved:
 YES / NO
 
-Cart:
-NONE
+Successful route UX regression:
+NONE / <details>
 
-Buy now:
-NONE
-
-Wishlist:
-NONE
-
-Ratings:
-NONE
-
-Fake sale:
+New category skeleton:
 NONE
 
 
-HOMEPAGE INTEGRATION
+BROWSER
 
-Category discovery links activated:
-YES / NO / N/A
+Browser:
+<Chrome / Firefox>
 
-Uses backend slugs:
-YES / NO
-
-Broken homepage links:
-NONE / FAIL
-
-Homepage redesign:
-NO / FAIL
-
-
-RESPONSIVE
-
-Canonical breakpoints:
+Canonical 404 UI:
 PASS / FAIL
 
-CSS-first:
-YES / NO
-
-320:
+One main:
 PASS / FAIL
-
-390:
-PASS / FAIL
-
-Tablet:
-PASS / FAIL
-
-Narrow desktop:
-PASS / FAIL
-
-Desktop:
-PASS / FAIL
-
-Wide desktop:
-PASS / FAIL
-
-200% reflow:
-PASS / FAIL
-
-Horizontal overflow:
-NONE / FAIL
-
-
-ACCESSIBILITY
 
 One H1:
-PASS / FAIL
-
-Breadcrumb semantics:
-PASS / FAIL
-
-Heading hierarchy:
 PASS / FAIL
 
 Keyboard:
@@ -2380,154 +850,43 @@ PASS / FAIL
 Visible focus:
 PASS / FAIL
 
-Touch targets:
-PASS / FAIL
-
-Image alt:
-PASS / FAIL
-
-Contrast:
-PASS / FAIL
-
-Reduced motion:
-PASS / FAIL
-
-
-PERFORMANCE
-
-Server-first:
-YES / NO
-
-New client state:
-NONE / <list>
-
-Image geometry stable:
-PASS / FAIL
-
-Image priority restrained:
-PASS / FAIL
-
-New runtime dependency:
-NONE / <list>
-
-
-PHASE BOUNDARIES
-
-Generic /products listing implemented:
-NO
-
-Product detail implemented:
-NO
-
-Search implemented:
-NO
-
-Filters implemented:
-NO
-
-Sorting implemented:
-NO
-
-Comprehensive SEO implemented:
-NO
-
-Structured data implemented:
-NO
-
-Sitemap/robots implemented:
-NO
-
-R2 integration implemented:
-NO
-
-Flutter changed:
-NO
-
-
-ANTI-AI-SLOP
-
-Rounded-card overload:
+Horizontal overflow:
 NONE / FAIL
 
-Pill overload:
-NONE / FAIL
-
-Badge overload:
-NONE / FAIL
-
-Gradients:
-NONE / FAIL
-
-Glassmorphism:
-NONE / FAIL
-
-Decorative shadows:
-NONE / FAIL
-
-Random icons:
-NONE / FAIL
-
-Fake copy/claims:
-NONE / FAIL
-
-Promotional clutter:
-NONE / FAIL
-
-Brand-brown overuse:
-NONE / FAIL
-
-Decorative motion:
-NONE / FAIL
+Console/network errors:
+NONE / <details>
 
 
-VALIDATION
+REGRESSION
 
-Category route tests:
+npm run test:category:
 PASS / FAIL
 
-404 semantics:
-PASS / FAIL
-
-Empty-category semantics:
-PASS / FAIL
-
-Slug contract:
-PASS / FAIL
-
-Product category filtering:
-PASS / FAIL
-
-ProductCard reuse:
-PASS / FAIL
-
-Homepage integration:
-PASS / FAIL
-
-Homepage regression:
+npm run test:homepage:
 PASS / FAIL
 
 API client:
 PASS / FAIL
 
-Layout contract:
+Layout:
 PASS / FAIL
 
-Responsive contract:
+Responsive:
 PASS / FAIL
 
-State contract:
+State/failure:
 PASS / FAIL
 
-Routing contract:
+Routing:
 PASS / FAIL
 
 Request-first:
 PASS / FAIL
 
-Theme contract:
+Theme:
 PASS / FAIL
 
-Design-system validation:
+Design system:
 PASS / FAIL
 
 TypeScript:
@@ -2543,54 +902,43 @@ git diff --check:
 PASS / FAIL
 
 
-RUNTIME
+SCOPE
 
-Top-level category:
-PASS / FAIL / NOT AVAILABLE
+Design tokens changed:
+NO
 
-Nested category:
-PASS / FAIL / NOT AVAILABLE
+ProductCard forked:
+NO
 
-Category with products:
-PASS / FAIL / NOT AVAILABLE
+Backend changed:
+NO
 
-Empty category:
-PASS / FAIL / NOT AVAILABLE
+Flutter changed:
+NO
 
-Missing category:
-PASS / FAIL
+Phase 14.3 work:
+NONE
 
-Real Laravel integration:
-PASS / NOT AVAILABLE
-
-Unavailable checks:
-<exact explanation>
+Dependencies added:
+NONE
 
 
 DOCUMENTATION
 
-Group N record:
-PASS / FAIL
+Phase 14.2 failure history retained:
+YES / NO
 
-frontend/AGENTS.md:
-UPDATED / UNCHANGED
+Root cause documented:
+YES / NO
 
-ADR:
-<id / NONE>
-
-
-FILES CHANGED
-
-<list>
+Runtime hard-404 evidence documented:
+YES / NO
 
 
 GIT
 
-git-workflow-and-versioning skill read:
+git-workflow-and-versioning read:
 YES / NO
-
-Operations:
-<list>
 
 Commit:
 <hash/message>
@@ -2601,6 +949,9 @@ Push:
 
 RESULT
 
+Phase 14.2A:
+PASS / BLOCKED
+
 Phase 14.2:
 PASS / BLOCKED
 
@@ -2610,64 +961,138 @@ READY / BLOCKED
 
 ---
 
-# 142. STOP Condition
+# 37. STOP Condition
 
-Phase 14.2 may be declared PASS only when:
-
-- `/categories/[slug]` is implemented using the App Router;
-- the page is server-first;
-- category identity comes from Laravel;
-- canonical backend-returned slugs are used;
-- no frontend slug generation exists;
-- numeric database IDs never appear in category URLs;
-- missing categories produce the established 404;
-- unexpected failures are not mislabeled as 404;
-- valid empty categories remain HTTP-valid category pages;
-- category products are retrieved through the actual frozen API contract;
-- no silent fixture fallback exists;
-- the Phase 14.1 canonical ProductCard is reused;
-- no CategoryProductCard fork exists;
-- the frozen `--media-product-card` authority remains intact;
-- no second token/component/layout authority is created;
-- existing SiteSection/ContentContainer/MUI primitives are reused;
-- any breadcrumb is semantic and hierarchy-backed;
-- child-category discovery uses authoritative taxonomy data;
-- homepage category links are activated where their destinations now genuinely exist;
-- no dead links or `href="#"` exist;
-- no generic `/products` listing experience has been implemented prematurely;
-- product detail remains Phase 14.4;
-- filters/sorting remain Phase 14.6;
-- comprehensive SEO remains Phase 14.7;
-- structured data remains Phase 14.8;
-- sitemap/robots remain Phase 14.9;
-- R2/media optimization remains outside this phase;
-- MADE_TO_ORDER remains a first-class offering;
-- no cart/checkout/buy-now/wishlist/review/sale behavior appears;
-- no fake category descriptions, promotions, statistics or claims exist;
-- Urban Ladder remains structural/IA reference only;
-- no copied competitor visuals/assets/copy exist;
-- responsive behavior consumes Phase 13.9;
-- no horizontal overflow exists;
-- 200% reflow remains usable;
-- accessibility checks pass;
-- server-first architecture remains intact;
-- no unnecessary client state is added;
-- no dependencies are added;
-- Phase 14.1 remains passing;
-- API/layout/responsive/state/routing/request-first/theme/design-system regressions pass;
-- TypeScript passes;
-- ESLint passes;
-- production build passes;
-- `git diff --check` passes;
-- Git operations comply with `git-workflow-and-versioning`.
-
-Then report:
+This remediation passes only if an actual HTTP request to the Next.js category route proves:
 
 ```text
+/categories/<nonexistent-slug>
+→ HTTP 404
+```
+
+in production `next start`.
+
+The canonical not-found UI must remain intact.
+
+A response of:
+
+```text
+HTTP 200 + noindex
+```
+
+is still a failure.
+
+Do not declare PASS based only on:
+
+```text
+notFound() was called
+the 404 component rendered
+noindex exists
+unit tests passed
+Next.js documents soft 404s
+```
+
+The required observable contract is the HTTP status itself.
+
+If a supported App Router architecture cannot satisfy this requirement without a material architectural tradeoff, STOP and report the options rather than silently accepting the soft 404.
+
+On success:
+
+```text
+Phase 14.2A — PASS
 Phase 14.2 — PASS
 Phase 14.3 — READY
 ```
 
 Do not start Phase 14.3 automatically.
 
-**The category page must extend the storefront architecture established by 14.1, not start another design exercise. Frozen tokens remain authoritative, `ProductCard` remains canonical, Laravel remains the taxonomy authority, and Urban Ladder remains a structural reference rather than something to copy.**
+---
+
+# Phase 14.2A Execution Record
+
+## Result
+
+Phase 14.2A: PASS
+
+Phase 14.2: PASS
+
+Phase 14.3: READY, not started
+
+## Original Defect
+
+Before remediation, a missing category rendered the canonical Phase 13.8
+not-found UI but returned HTTP 200 in both `next dev` and `next start`.
+Laravel correctly returned HTTP 404 `RESOURCE_NOT_FOUND`.
+
+## Root Cause
+
+Installed Next.js version: 16.3.8.
+
+The root `app/loading.tsx` creates a loading/Suspense boundary. Category
+existence was resolved asynchronously inside `app/categories/[slug]/page.tsx`,
+so the response could begin streaming before `notFound()` was reached. Next.js
+therefore produced the documented soft-404 behavior: HTTP 200 plus the
+not-found UI and `noindex` metadata.
+
+## Remediation
+
+Added `frontend/web/proxy.ts`, narrowly matched to `/categories/:path*`.
+It uses the existing server-only API client to preflight the Laravel category
+resource. An upstream `ApiError` with status 404 returns
+`NextResponse.next({ status: 404 })`, allowing the normal category route to
+render the canonical not-found boundary while preserving the hard HTTP status.
+Unexpected API failures are not converted to 404. No client workaround,
+redirect, hard-coded taxonomy, backend change, dependency, or design-system
+change was introduced.
+
+The proxy and page necessarily perform the category lookup in separate server
+contexts; this is the supported pre-stream status tradeoff. The page remains
+the authority for rendering category data and product filtering.
+
+## Runtime Evidence
+
+- Laravel origin: `http://127.0.0.1:8000`
+- Next development origin: `http://127.0.0.1:3000`
+- Next production origin: `http://127.0.0.1:3001`
+- API-backed mode confirmed through the existing ignored `.env.local` with `API_BASE_URL=http://127.0.0.1:8000`; no `NEXT_PUBLIC_API_BASE_URL` used.
+- `GET /api/v1/categories` returned an empty collection (`total: 0`).
+- `GET /api/v1/products?per_page=20` returned an empty collection (`total: 0`).
+- Real top-level category: NOT AVAILABLE.
+- Real nested category: NOT AVAILABLE.
+- Category with products: NOT AVAILABLE.
+- Existing empty category: NOT AVAILABLE.
+- Resolved category product filtering: NOT AVAILABLE.
+- No synthetic catalog data was created.
+- `/categories/definitely-nonexistent-phase-14-2` returned HTTP 404 in development and production `next start`.
+- The response contained the canonical `We couldn't find that page.` UI.
+
+## Browser Evidence
+
+Browser: installed Google Chrome.
+
+Verified at 959px, 960px, 961px, and 1440px:
+
+- One `main` and one `h1`.
+- Canonical not-found UI and return-home link present.
+- Keyboard traversal reached the skip link, navigation, and return-home link.
+- Focus ring was visible.
+- No horizontal overflow.
+- No console errors.
+- Not-found shell images loaded with stable dimensions.
+
+The browser observed expected HTTP 404 responses for the missing category and
+for stale fixture navigation links while the local Laravel catalog was empty.
+
+## Verification
+
+- `npm run test:category`: PASS
+- `npm run test:homepage`: PASS
+- `npm run test:theme`: PASS
+- `npm run test:layout`: PASS
+- `npm run test:responsive`: PASS
+- `npm run test:states`: PASS
+- `npm run test:api`: PASS
+- `npm run typecheck`: PASS
+- `npm run lint`: PASS
+- `npm run build`: PASS
+- `git diff --check`: PASS
