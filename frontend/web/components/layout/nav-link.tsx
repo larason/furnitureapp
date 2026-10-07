@@ -34,8 +34,8 @@ export function NavLink({
       sx={{
         display: "contents",
         "& a": {
-          ...sx,
           color: "inherit",
+          ...sx,
           textDecoration: "none",
           fontWeight: "var(--font-weight-regular)",
           textTransform: "none",
