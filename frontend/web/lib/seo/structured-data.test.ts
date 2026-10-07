@@ -154,6 +154,12 @@ test("breadcrumbs mirror the visible hierarchy with absolute canonical URLs and 
   });
 });
 
+test("Product JSON-LD is emitted only on the canonical slug route, not public-ID aliases", () => {
+  const page = read("app/products/[slug]/page.tsx");
+  assert.match(page, /slug === product\.slug \? buildProductStructuredData/);
+  assert.match(page, /buildBreadcrumbStructuredData/);
+});
+
 test("structured data stays off listing, category, and search collections and reuses Phase 14.7 boundaries", () => {
   const productsPage = read("app/products/page.tsx");
   const searchPage = read("app/search/page.tsx");

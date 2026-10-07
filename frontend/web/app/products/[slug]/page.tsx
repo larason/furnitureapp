@@ -34,7 +34,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const leadImage = selectPrimaryImage(product.images);
   const secondaryImages = product.images.filter((image) => image.id !== leadImage?.id);
   const productAvailability = availabilityLabel(product.product_type, product.stock_indicator, product.availability);
-  const productStructuredData = buildProductStructuredData(product);
+  const productStructuredData = slug === product.slug ? buildProductStructuredData(product) : undefined;
   const breadcrumbStructuredData = buildBreadcrumbStructuredData([
     { name: "Home", path: "/" },
     { name: "Furniture", path: "/products" },

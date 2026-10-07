@@ -96,7 +96,7 @@ Structured data describes only content and commercial capability that actually e
 
 ## Route And Navigation Rules
 
-- Next.js App Router is authoritative. The only current application route is `/` (`app/page.tsx`); it remains a minimal placeholder until Phase 14.1. Do not add `pages/` or create placeholder route files.
+- Next.js App Router is authoritative. Implemented public routes are `/`, `/products`, `/products/[slug]`, `/categories/[slug]`, and `/search`, plus the `/sitemap.xml` and `/robots.txt` metadata routes. Reserved routes in this document render as non-interactive structural content until their owning phase ships. Do not add `pages/` or create placeholder route files.
 - Route paths are lowercase, static multiword segments use kebab-case, and canonical paths have no trailing slash. `next.config.ts` does not enable `trailingSlash`; the installed Next.js default redirects slash-suffixed page URLs to their slashless form.
 - Server Components are the default. Pages needing interactive descendants keep client boundaries below the page where practical.
 - Ordinary internal navigation uses semantic `next/link` (with MUI composition when needed); buttons perform actions. Use programmatic router navigation only when application logic requires it, not for routine links.
@@ -112,20 +112,22 @@ Admin remains a separate Next.js application. This customer website does not add
 
 Public request/enquiry detail routes by identifier are prohibited without a separately approved secure access design. References and opaque IDs are not credentials. The API client's `data` and `meta` do not change the browser URL taxonomy.
 
-## Future Filesystem Sketch (Not Implemented)
+## Public Route Status
 
 ```text
 app/
-  page.tsx                         # existing foundation placeholder
-  products/page.tsx                # Phase 14.3
-  products/[slug]/page.tsx         # Phase 14.4
-  categories/[slug]/page.tsx       # Phase 14.2
-  search/page.tsx                  # Phase 14.5
-  furniture-requests/page.tsx      # owning request UI phase
-  contact/page.tsx                 # Phase 15.10
-  account/...                      # owning authenticated account phases
-  sign-in/...                      # Phase 15.1 / Clerk
-  sign-up/...                      # Phase 15.1 / Clerk
+  page.tsx                         # Implemented (Phase 14.1)
+  products/page.tsx                # Implemented (Phase 14.3)
+  products/[slug]/page.tsx         # Implemented (Phase 14.4)
+  categories/[slug]/page.tsx       # Implemented (Phase 14.2)
+  search/page.tsx                  # Implemented (Phase 14.5)
+  sitemap.ts                       # Implemented (Phase 14.9)
+  robots.ts                        # Implemented (Phase 14.9)
+  furniture-requests/page.tsx      # Reserved (owning request UI phase)
+  contact/page.tsx                 # Reserved (Phase 15.10)
+  account/...                      # Reserved (owning authenticated account phases)
+  sign-in/...                      # Reserved (Phase 15.1 / Clerk)
+  sign-up/...                      # Reserved (Phase 15.1 / Clerk)
 ```
 
-This is a route plan only. No route pages, layouts, navigation, Clerk integration, metadata, sitemap, robots, redirects, or Group N catalog behavior are implemented by Phase 13.6.
+Reserved routes are not implemented; they render as non-interactive structural content and are not active links or indexable pages.
