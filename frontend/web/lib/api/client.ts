@@ -95,7 +95,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-type RequestFunction = <T = unknown>(options: ApiRequestOptions) => Promise<ApiSuccess<T> | undefined>;
+export type RequestFunction = <T = unknown>(options: ApiRequestOptions) => Promise<ApiSuccess<T> | undefined>;
 
 export function createApiClient(options: ApiClientOptions = {}): RequestFunction {
   const fetchImpl = options.fetchImpl ?? fetch;

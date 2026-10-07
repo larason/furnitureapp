@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadTs, read, withApiDataSource } from "../test-utils/load-ts.mjs";
+import type { ApiRequestOptions } from "@/lib/api/client";
+import { getProductCatalog } from "@/lib/products/catalog";
+import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
 
 test("product catalog uses the canonical API client with page one omitted", async () => {
   await withApiDataSource(async () => {
-    const calls = [];
-    const apiRequest = async (request) => {
+    const calls: ApiRequestOptions[] = [];
+    const apiRequest = stubTransport((request) => {
       calls.push(request);
       return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
-    };
-    const { getProductCatalog } = loadTs("lib/products/catalog.ts", { "../api/client": { apiRequest } });
-    const firstPage = await getProductCatalog(1);
-    await getProductCatalog(2);
+    });
+    const firstPage = await getProductCatalog(1, apiRequest);
+    await getProductCatalog(2, apiRequest);
     assert.equal(firstPage.source, "api");
     assert.deepEqual(calls[0], { path: "/products", cache: "no-store" });
     assert.deepEqual(calls[1].query, { page: 2 });
@@ -21,8 +22,10 @@ test("product catalog uses the canonical API client with page one omitted", asyn
 test("product catalog does not replace an API failure with fixture data", async () => {
   await withApiDataSource(async () => {
     const failure = new Error("upstream unavailable");
-    const { getProductCatalog } = loadTs("lib/products/catalog.ts", { "../api/client": { apiRequest: async () => { throw failure; } } });
-    await assert.rejects(getProductCatalog(1), (error) => error === failure);
+    const apiRequest = stubTransport(() => {
+      throw failure;
+    });
+    await assert.rejects(getProductCatalog(1, apiRequest), (error) => error === failure);
   });
 });
 

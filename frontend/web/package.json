@@ -13,10 +13,10 @@
     "test:layout": "node components/layout/layout.contract.mjs",
     "test:responsive": "node components/layout/responsive.contract.mjs",
     "test:states": "node components/states/states.contract.mjs",
-    "test:homepage": "node --test lib/homepage/homepage.test.mjs",
-    "test:category": "node --test lib/category/category.test.mjs",
-    "test:products": "node --test lib/products/products.test.mjs",
-    "test:product-detail": "node --test lib/products/products.test.mjs"
+    "test:homepage": "node --import=tsx --test lib/homepage/homepage.test.ts",
+    "test:category": "node --import=tsx --test lib/category/category.test.ts",
+    "test:products": "node --import=tsx --test lib/products/products.test.ts",
+    "test:product-detail": "node --import=tsx --test lib/products/products.test.ts"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
@@ -35,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "tsx": "4.23.15",
     "typescript": "^5"
   }
 }

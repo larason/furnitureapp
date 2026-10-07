@@ -1,8 +1,9 @@
-import { apiRequest } from "../api/client";
+import type { RequestFunction } from "../api/client";
+import { apiRequest as defaultApiRequest } from "../api/client";
 import type { CategorySummary, ProductSummary } from "../catalog/types";
 import { HOMEPAGE_CATEGORY_FIXTURES, HOMEPAGE_PRODUCT_FIXTURES } from "./fixtures";
 
-export async function getHomepageCatalog() {
+export async function getHomepageCatalog(apiRequest: RequestFunction = defaultApiRequest) {
   const source = process.env.HOMEPAGE_DATA_SOURCE ?? "api";
   if (source !== "api" && source !== "fixtures") {
     throw new Error("Invalid homepage data source.");

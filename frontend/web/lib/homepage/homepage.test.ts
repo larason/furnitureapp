@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { loadTs, read } from "../test-utils/load-ts.mjs";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ProductCard } from "@/components/catalog/product-card";
+import type { ApiRequestOptions } from "@/lib/api/client";
+import { formatMoney } from "@/lib/catalog/format-money";
+import type { ProductCardData } from "@/lib/catalog/types";
+import { getHomepageCatalog } from "@/lib/homepage/catalog";
+import { read, stubTransport } from "../test-utils/frontend-test-helpers";
 
 test("money preserves TZS minor units, including cents, and rejects invalid data", () => {
-  const { formatMoney } = loadTs("lib/catalog/format-money.ts");
   assert.match(formatMoney({ amount: 125000000, currency: "TZS" }), /TZS\s+1,250,000\.00/);
   assert.match(formatMoney({ amount: 101, currency: "TZS" }), /TZS\s+1\.01/);
   assert.match(formatMoney({ amount: 0, currency: "TZS" }), /TZS\s+0\.00/);
@@ -15,8 +19,7 @@ test("money preserves TZS minor units, including cents, and rejects invalid data
 });
 
 test("canonical ProductCard renders media as data, request state and safe deferred links", () => {
-  const { ProductCard } = loadTs("components/catalog/product-card.tsx");
-  const product = { name: "A considered chair", price: { amount: 101, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "unavailable", stock_indicator: "MADE_TO_ORDER", primary_image: { url: "/sample.jpg", alt_text: "Wooden chair with cream cushions" } };
+  const product: ProductCardData = { name: "A considered chair", price: { amount: 101, currency: "TZS" }, product_type: "MADE_TO_ORDER", availability: "unavailable", stock_indicator: "MADE_TO_ORDER", primary_image: { url: "/sample.jpg", alt_text: "Wooden chair with cream cushions" } };
   const markup = renderToStaticMarkup(createElement(ProductCard, { product, sizes: "33vw", href: "/products/considered-chair" }));
   assert.match(markup, /<article/);
   assert.match(markup, /<h3/);
@@ -37,25 +40,29 @@ test("canonical ProductCard renders media as data, request state and safe deferr
 test("homepage reads the public API by default and never falls back to fixtures", async () => {
   const previous = process.env.HOMEPAGE_DATA_SOURCE;
   delete process.env.HOMEPAGE_DATA_SOURCE;
-  const calls = [];
-  const apiRequest = async (request) => { calls.push(request); return { data: [] }; };
+  const calls: ApiRequestOptions[] = [];
+  const apiRequest = stubTransport((request) => {
+    calls.push(request);
+    return { data: [] };
+  });
   try {
-    const { getHomepageCatalog } = loadTs("lib/homepage/catalog.ts", { "../api/client": { apiRequest } });
-    const result = await getHomepageCatalog();
+    const result = await getHomepageCatalog(apiRequest);
     assert.equal(result.source, "api");
     assert.deepEqual(result.products, []);
     assert.equal(calls.length, 2);
     assert.ok(calls.every((call) => call.cache === "no-store"));
-    assert.equal(calls[1].query.product_type, "MADE_TO_ORDER");
+    assert.equal((calls[1].query as Record<string, unknown>).product_type, "MADE_TO_ORDER");
     const failure = new Error("upstream unavailable");
-    const broken = loadTs("lib/homepage/catalog.ts", { "../api/client": { apiRequest: async () => { throw failure; } } });
-    await assert.rejects(broken.getHomepageCatalog(), (error) => error === failure);
+    const broken = stubTransport(() => {
+      throw failure;
+    });
+    await assert.rejects(getHomepageCatalog(broken), (error) => error === failure);
     process.env.HOMEPAGE_DATA_SOURCE = "fixtures";
-    const preview = await broken.getHomepageCatalog();
+    const preview = await getHomepageCatalog(broken);
     assert.equal(preview.source, "fixtures");
     assert.equal(preview.products.length, 3);
     process.env.HOMEPAGE_DATA_SOURCE = "unexpected";
-    await assert.rejects(broken.getHomepageCatalog(), /Invalid homepage data source/);
+    await assert.rejects(getHomepageCatalog(broken), /Invalid homepage data source/);
   } finally {
     if (previous === undefined) delete process.env.HOMEPAGE_DATA_SOURCE;
     else process.env.HOMEPAGE_DATA_SOURCE = previous;

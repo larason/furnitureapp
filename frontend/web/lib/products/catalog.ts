@@ -1,5 +1,5 @@
-import type { ApiPagination } from "../api/client";
-import { apiRequest } from "../api/client";
+import type { ApiPagination, RequestFunction } from "../api/client";
+import { apiRequest as defaultApiRequest } from "../api/client";
 import type { ProductSummary } from "../catalog/types";
 import { HOMEPAGE_PRODUCT_FIXTURES } from "../homepage/fixtures";
 
@@ -9,7 +9,7 @@ export type ProductCatalog = Readonly<{
   pagination?: ApiPagination;
 }>;
 
-export async function getProductCatalog(page: number): Promise<ProductCatalog> {
+export async function getProductCatalog(page: number, apiRequest: RequestFunction = defaultApiRequest): Promise<ProductCatalog> {
   const source = process.env.HOMEPAGE_DATA_SOURCE ?? "api";
   if (source !== "api" && source !== "fixtures") {
     throw new Error("Invalid homepage data source.");

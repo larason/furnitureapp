@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadTs, read, withApiDataSource } from "../test-utils/load-ts.mjs";
+import { isSiteRouteImplemented } from "@/components/layout/site-navigation";
+import type { ApiRequestOptions } from "@/lib/api/client";
+import { getCategoryCatalog } from "@/lib/category/catalog";
+import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
 
 test("category catalog resolves the category then filters products by its API slug", async () => {
   await withApiDataSource(async () => {
-    const calls = [];
-    const apiRequest = async (request) => {
+    const calls: ApiRequestOptions[] = [];
+    const apiRequest = stubTransport((request) => {
       calls.push(request);
       if (request.path.startsWith("/categories/")) {
         return { data: { id: "cat_living", name: "Living Room", slug: "living-room", description: "Furniture for living spaces.", image: null } };
       }
       return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
-    };
-    const { getCategoryCatalog } = loadTs("lib/category/catalog.ts", { "../api/client": { apiRequest } });
-    const catalog = await getCategoryCatalog("living-room", 1);
+    });
+    const catalog = await getCategoryCatalog("living-room", 1, apiRequest);
+    assert.ok(catalog);
     assert.equal(catalog.category.slug, "living-room");
     assert.equal(calls.length, 2);
     assert.equal(calls[0].path, "/categories/living-room");
@@ -24,10 +27,10 @@ test("category catalog resolves the category then filters products by its API sl
 test("category API failures are not replaced with fixture data", async () => {
   await withApiDataSource(async () => {
     const failure = new Error("upstream unavailable");
-    const { getCategoryCatalog } = loadTs("lib/category/catalog.ts", {
-      "../api/client": { apiRequest: async () => { throw failure; } },
+    const apiRequest = stubTransport(() => {
+      throw failure;
     });
-    await assert.rejects(getCategoryCatalog("living-room", 1), (error) => error === failure);
+    await assert.rejects(getCategoryCatalog("living-room", 1, apiRequest), (error) => error === failure);
   });
 });
 
@@ -50,7 +53,6 @@ test("category route remains server-rendered, uses the canonical card, and reser
 });
 
 test("homepage category destinations are active only for the implemented dynamic category route", () => {
-  const { isSiteRouteImplemented } = loadTs("components/layout/site-navigation.ts");
   assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
   assert.equal(isSiteRouteImplemented("/categories/living-room?page=2"), true);
   assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), true);
