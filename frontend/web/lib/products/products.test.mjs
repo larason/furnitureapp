@@ -1,67 +1,29 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import ts from "typescript";
-
-const require = createRequire(import.meta.url);
-const web = fileURLToPath(new URL("../../", import.meta.url));
-const read = (file) => readFileSync(resolve(web, file), "utf8");
-
-function loadTs(file, overrides = {}) {
-  const path = resolve(web, file);
-  const output = ts.transpileModule(readFileSync(path, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-  }).outputText;
-  const compiled = { exports: {} };
-  const importer = (specifier) => {
-    if (specifier in overrides) return overrides[specifier];
-    if (specifier.startsWith(".") || specifier.startsWith("@/")) {
-      const target = specifier.startsWith("@/") ? resolve(web, specifier.slice(2)) : resolve(dirname(path), specifier);
-      return loadTs(target + ".ts", overrides);
-    }
-    return require(specifier);
-  };
-  new Function("require", "module", "exports", output)(importer, compiled, compiled.exports);
-  return compiled.exports;
-}
+import { loadTs, read, withApiDataSource } from "../test-utils/load-ts.mjs";
 
 test("product catalog uses the canonical API client with page one omitted", async () => {
-  const previous = process.env.HOMEPAGE_DATA_SOURCE;
-  delete process.env.HOMEPAGE_DATA_SOURCE;
-  const calls = [];
-  const apiRequest = async (request) => {
-    calls.push(request);
-    return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
-  };
-
-  try {
+  await withApiDataSource(async () => {
+    const calls = [];
+    const apiRequest = async (request) => {
+      calls.push(request);
+      return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
+    };
     const { getProductCatalog } = loadTs("lib/products/catalog.ts", { "../api/client": { apiRequest } });
     const firstPage = await getProductCatalog(1);
     await getProductCatalog(2);
     assert.equal(firstPage.source, "api");
     assert.deepEqual(calls[0], { path: "/products", cache: "no-store" });
     assert.deepEqual(calls[1].query, { page: 2 });
-  } finally {
-    if (previous === undefined) delete process.env.HOMEPAGE_DATA_SOURCE;
-    else process.env.HOMEPAGE_DATA_SOURCE = previous;
-  }
+  });
 });
 
 test("product catalog does not replace an API failure with fixture data", async () => {
-  const previous = process.env.HOMEPAGE_DATA_SOURCE;
-  delete process.env.HOMEPAGE_DATA_SOURCE;
-  const failure = new Error("upstream unavailable");
-
-  try {
+  await withApiDataSource(async () => {
+    const failure = new Error("upstream unavailable");
     const { getProductCatalog } = loadTs("lib/products/catalog.ts", { "../api/client": { apiRequest: async () => { throw failure; } } });
     await assert.rejects(getProductCatalog(1), (error) => error === failure);
-  } finally {
-    if (previous === undefined) delete process.env.HOMEPAGE_DATA_SOURCE;
-    else process.env.HOMEPAGE_DATA_SOURCE = previous;
-  }
+  });
 });
 
 test("product listing stays server-first, reuses shared catalog primitives, and keeps phase boundaries", () => {

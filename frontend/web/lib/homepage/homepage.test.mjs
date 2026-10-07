@@ -1,35 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import ts from "typescript";
-
-const require = createRequire(import.meta.url);
-const web = fileURLToPath(new URL("../../", import.meta.url));
-const read = (file) => readFileSync(resolve(web, file), "utf8");
-
-function loadTs(file, overrides = {}) {
-  const path = resolve(web, file);
-  const output = ts.transpileModule(readFileSync(path, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-  }).outputText;
-  const compiled = { exports: {} };
-  const importer = (specifier) => {
-    if (specifier in overrides) return overrides[specifier];
-    if (specifier.startsWith(".") || specifier.startsWith("@/")) {
-      const target = specifier.startsWith("@/") ? resolve(web, specifier.slice(2)) : resolve(dirname(path), specifier);
-      const extension = specifier.endsWith(".json") ? "" : target.endsWith("card") || target.endsWith("nav-link") ? ".tsx" : ".ts";
-      return extension ? loadTs(target + extension, overrides) : require(target);
-    }
-    return require(specifier);
-  };
-  new Function("require", "module", "exports", output)(importer, compiled, compiled.exports);
-  return compiled.exports;
-}
+import { loadTs, read } from "../test-utils/load-ts.mjs";
 
 test("money preserves TZS minor units, including cents, and rejects invalid data", () => {
   const { formatMoney } = loadTs("lib/catalog/format-money.ts");
