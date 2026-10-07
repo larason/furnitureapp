@@ -1,119 +1,113 @@
-# Phase 14.6 — Product Filtering & Sorting
+# Phase 14.7 — SEO Metadata
 
 ## Entry State
 
 ```text
-Phase 14.1 — PASS
-Phase 14.2A — PASS
-Phase 14.2 — PASS
-Phase 14.3 — PASS
-Phase 14.4 — PASS
-Phase 14.5 — PASS
-Phase 14.6 — ACTIVE
+Phase 14.1 — Homepage — PASS
+Phase 14.2 — Category Pages — PASS
+Phase 14.3 — Product Listing — PASS
+Phase 14.4 — Product Detail — PASS
+Phase 14.5 — Search — PASS
+Phase 14.6 — Filters & Sorting — PASS
+Phase 14.7 — SEO Metadata — ACTIVE
 ```
 
-Implement public catalog filtering and sorting using the already-frozen CAT-001 query contract.
+Implement the public website's canonical Next.js metadata architecture.
 
-Do NOT start Phase 14.7.
+Do **not** start Phase 14.8.
 
 ---
 
 # 1. Objective
 
-Extend the existing public catalog experience so visitors can narrow and order furniture using authoritative Laravel catalog semantics.
-
-Primary surfaces:
+Implement accurate, server-rendered SEO metadata for the public catalog routes already built:
 
 ```text
+/
 /products
-/search?search=<term>
+/products/[slug]
+/categories/[slug]
+/search
 ```
 
-Phase 14.6 must provide:
+Phase 14.7 owns:
 
 ```text
-category filtering
-product-type filtering
-availability filtering
-price-range filtering
-sorting
-URL-persistent state
-pagination preservation
-clear/reset behavior
-responsive filter controls
-accessible forms
+site title/default metadata
+page titles
+meta descriptions
+canonical URLs
+robots metadata decisions at page level
+Open Graph metadata
+Twitter card metadata
+metadata image selection
+metadata URL/origin handling
+query/facet canonicalization policy
+not-found metadata correctness
 ```
 
-The implementation must remain:
+This phase does **not** own:
 
 ```text
-server-first
-URL-driven
-shareable
-bookmarkable
-progressively enhanced
-Laravel-authoritative
-token-driven
+JSON-LD / Schema.org
+sitemap.xml
+robots.txt
+SEO landing-page generation
+new internal-linking architecture
+performance optimization
 ```
 
-Do not build a frontend filtering engine.
+Those remain later Group N phases.
 
 ---
 
 # 2. Read Before Coding
 
-Read:
+Read and inspect:
 
 ```text
 AGENTS.md
 frontend/AGENTS.md
 
-frontend/design-system/
-  DESIGN.md
-  COMPONENTS.md
-  ACCESSIBILITY.md
-  USAGE.md
-  tokens.css
+frontend/web/ROUTING.md
+frontend/web/RESPONSIVE.md
 
-frontend/web/
-  ROUTING.md
-  RESPONSIVE.md
-  app/
-  components/
-  lib/
+frontend/design-system/DESIGN.md
+frontend/design-system/ACCESSIBILITY.md
 
-docs/api/
-  api-contract.md
-  api-conventions.md
-  api-resources.md
-  openapi.yaml
-
-docs/domain/business-rules.md
+docs/api/api-contract.md
+docs/api/api-resources.md
+docs/api/openapi.yaml
 docs/decisions.md
 
 phases/group-N-phases.md
 ```
 
-Inspect actual implementations from:
+Then inspect the actual implementations of:
 
 ```text
-14.2 category pages
-14.3 Product Listing
-14.4 Product Detail
-14.5 Search
+app/layout.tsx
+app/page.tsx
 
-ProductGrid
-ProductCard
-catalog query/data helpers
-pagination
-search form
-fixture architecture
+app/products/page.tsx
+app/products/[slug]/page.tsx
+
+app/categories/[slug]/page.tsx
+
+app/search/page.tsx
+
 proxy.ts
+
+catalog data helpers
+product detail helper
+category helper
+media helpers
+fixture-mode helpers
 ```
 
-Also inspect the new `tsx` + `node:test` infrastructure established by the SonarQube remediation.
+Also inspect any existing `metadata`, `generateMetadata`, `metadataBase`, Open Graph, robots, or title implementation before adding anything.
 
-Do not recreate `load-ts.mjs` or any VM loader.
+Do not assume Phase 13 or earlier phases left metadata completely empty.
 
 ---
 
@@ -128,24 +122,595 @@ git-workflow-and-versioning
 
 Preserve unrelated owner changes.
 
-Never commit secrets or `.env*`.
+Do not commit:
 
-Use an atomic Phase 14.6 commit.
+```text
+.env
+.env.local
+secrets
+temporary runtime files
+```
+
+Use an atomic Phase 14.7 commit.
 
 ---
 
-# 4. Frozen CAT-001 Query Vocabulary
+# 4. Next.js Metadata API
 
-The public product collection already supports:
+Use the installed Next.js App Router metadata architecture.
+
+Prefer:
 
 ```text
-GET /api/v1/products
+export const metadata
 ```
 
-with:
+for static metadata and:
 
 ```text
-search
+export async function generateMetadata(...)
+```
+
+for resource-derived metadata.
+
+Do not manually inject:
+
+```html
+<title>
+<meta>
+<link rel="canonical">
+```
+
+through arbitrary page JSX.
+
+Do not add `next/head`.
+
+Do not create a parallel metadata system.
+
+---
+
+# 5. Server-First Metadata
+
+Metadata generation must remain server-side.
+
+Expected new client boundaries:
+
+```text
+NONE
+```
+
+Do not fetch metadata in:
+
+```text
+useEffect
+browser JavaScript
+client components
+```
+
+Search engines and non-JavaScript clients must receive metadata from the server response.
+
+---
+
+# 6. Site Identity
+
+Canonical site/brand name:
+
+```text
+SL Furnitures
+```
+
+Use that exact existing brand identity.
+
+Do not rename the business for SEO purposes.
+
+Do not invent slogans, awards, locations, shipping promises, quality claims, guarantees, or market leadership.
+
+The design system describes SL Furnitures as architectural, warm, and editorial; metadata copy should remain factual and restrained rather than keyword-stuffed.
+
+---
+
+# 7. Root Title Architecture
+
+Establish one consistent title architecture.
+
+Prefer a root title template conceptually equivalent to:
+
+```text
+%s | SL Furnitures
+```
+
+with an appropriate site default.
+
+Individual pages should supply their page-specific portion rather than manually concatenating inconsistent brand strings everywhere.
+
+Inspect the installed Next.js metadata API and implement the correct template/default mechanism.
+
+---
+
+# 8. No Keyword Stuffing
+
+Forbidden titles such as:
+
+```text
+BEST CHEAP FURNITURE TANZANIA | SOFAS BEDS CHAIRS SALE | SL FURNITURES
+```
+
+Do not stuff category/product names repeatedly.
+
+Metadata should read naturally.
+
+---
+
+# 9. Metadata Descriptions
+
+Descriptions must be:
+
+```text
+factual
+concise
+page-specific where useful
+derived from authoritative data where available
+```
+
+Do not invent:
+
+```text
+free delivery
+same-day delivery
+best prices
+luxury quality
+award-winning
+handmade
+sustainable
+premium materials
+nationwide shipping
+```
+
+unless those claims are explicitly established by project authority.
+
+---
+
+# 10. Site Origin Is Required for Canonical Metadata
+
+Canonical and social metadata need an authoritative public website origin.
+
+Before implementing this, inspect whether the repository already defines something equivalent to:
+
+```text
+SITE_URL
+APP_URL
+WEB_URL
+metadataBase
+```
+
+Reuse existing authority if present.
+
+Do not introduce a second site-origin configuration.
+
+---
+
+# 11. If No Site-Origin Authority Exists
+
+If no website-origin configuration exists, introduce **one server-side website-origin configuration** for metadata.
+
+Preferred conceptual name:
+
+```text
+SITE_URL
+```
+
+unless repository naming conventions establish another name.
+
+It represents only the public website origin:
+
+```text
+https://example.com
+```
+
+not:
+
+```text
+https://example.com/
+https://example.com/products
+https://api.example.com
+```
+
+Do NOT use `API_BASE_URL` as the website canonical origin.
+
+---
+
+# 12. Server-Only Site URL
+
+Do not introduce:
+
+```text
+NEXT_PUBLIC_SITE_URL
+```
+
+merely because metadata needs the origin.
+
+Metadata generation is server-side.
+
+Prefer a server-only environment variable unless existing deployment architecture establishes otherwise.
+
+---
+
+# 13. Do Not Invent the Production Domain
+
+The repository currently does not establish a production SL Furnitures website origin in the evidence available for this phase.
+
+Therefore:
+
+```text
+DO NOT GUESS ONE.
+```
+
+Do not hard-code:
+
+```text
+slfurnitures.com
+slfurniture.co.tz
+example.com
+localhost
+```
+
+as the production canonical origin.
+
+If production configuration is unavailable, implement the configuration boundary and report:
+
+```text
+Production SITE_URL:
+REQUIRED / NOT CONFIGURED
+```
+
+rather than inventing a domain.
+
+---
+
+# 14. Local Development
+
+Development/test behavior may use an explicit local test origin where needed for deterministic tests.
+
+Do not allow a localhost fallback to silently become production canonical metadata.
+
+Production misconfiguration must be detectable.
+
+Choose the exact validation behavior after inspecting existing environment/config conventions.
+
+---
+
+# 15. Root Metadata
+
+The root layout should own site-wide metadata that genuinely applies everywhere, such as:
+
+```text
+site title template
+default site title
+metadataBase/site origin integration
+appropriate default description
+Open Graph site name
+```
+
+Do not put product/category-specific metadata in the root layout.
+
+---
+
+# 16. Homepage Metadata
+
+Route:
+
+```text
+/
+```
+
+Implement a unique title and description appropriate to the actual homepage.
+
+The homepage currently uses the message:
+
+```text
+Furniture for the way you live.
+```
+
+It may inform the homepage title/description.
+
+Do not invent promotional claims.
+
+Canonical:
+
+```text
+/
+```
+
+---
+
+# 17. Product Listing Metadata
+
+Route:
+
+```text
+/products
+```
+
+Provide a factual title such as the repository's chosen equivalent of:
+
+```text
+Furniture
+```
+
+and an appropriate restrained description.
+
+Canonical base collection:
+
+```text
+/products
+```
+
+---
+
+# 18. Product Detail Metadata
+
+Route:
+
+```text
+/products/[slug]
+```
+
+Use CAT-002 authoritative product data.
+
+The frozen API explicitly provides the necessary public detail fields for SSR/Open Graph metadata.
+
+Title should derive from:
+
+```text
+product.name
+```
+
+Canonical must use:
+
+```text
+/products/{product.slug}
+```
+
+using the backend-returned canonical slug.
+
+Do not generate the slug locally.
+
+---
+
+# 19. Product Description
+
+Prefer:
+
+```text
+product.description
+```
+
+when it contains useful customer-facing content.
+
+If the product description is absent/blank according to actual types, use a short factual fallback based only on known product fields.
+
+Do not synthesize marketing prose with AI-style claims.
+
+---
+
+# 20. Product Canonical Slug
+
+CAT-002 may resolve by slug or opaque product ID, but the website's canonical public route is slug-based.
+
+Therefore if a product detail request somehow resolves through an identifier and the returned product has:
+
+```text
+slug = modern-3-seater-sofa
+```
+
+canonical metadata must point to:
+
+```text
+/products/modern-3-seater-sofa
+```
+
+not the machine ID.
+
+The API contract explicitly distinguishes public crawlable slugs from machine identifiers.
+
+---
+
+# 21. Product Open Graph Image
+
+Use authoritative product media.
+
+Selection priority:
+
+```text
+CAT-002 primary image
+→ appropriate first ordered product image if existing helper defines that fallback
+→ no fabricated product image
+```
+
+The Product Image contract exposes:
+
+```text
+url
+alt_text
+sort_order
+is_primary
+```
+
+for public catalog media.
+
+Reuse existing media-selection logic if one already exists.
+
+Do not duplicate product-primary-image rules in metadata code.
+
+---
+
+# 22. Missing Product Image
+
+If no valid product image exists:
+
+```text
+do not invent one
+do not use an unrelated fixture image
+do not use another product
+```
+
+Use the site's legitimate default social metadata behavior if one exists.
+
+If no appropriate default social image exists, omit the image rather than lying.
+
+---
+
+# 23. Fixture Media
+
+Explicit fixture mode may generate fixture metadata for local visual/testing purposes.
+
+Production/default API mode must never emit fixture product imagery as fallback metadata.
+
+---
+
+# 24. Category Metadata
+
+Route:
+
+```text
+/categories/[slug]
+```
+
+Use CAT-004 authoritative category data.
+
+Title derives from:
+
+```text
+category.name
+```
+
+A natural title may conceptually be:
+
+```text
+Living Room Furniture
+```
+
+where appropriate.
+
+Do not blindly append “Furniture” if the resulting title becomes nonsensical or repetitive.
+
+---
+
+# 25. Category Description
+
+Prefer:
+
+```text
+category.description
+```
+
+when meaningful.
+
+If unavailable, use only a restrained factual fallback based on:
+
+```text
+category.name
+SL Furnitures
+```
+
+Do not fabricate room-design claims.
+
+---
+
+# 26. Category Canonical
+
+Canonical:
+
+```text
+/categories/{category.slug}
+```
+
+Use the backend-returned slug.
+
+Do not derive it from the category display name.
+
+---
+
+# 27. Category Image
+
+If the authoritative category response supplies a valid public image suitable for social metadata, it may be used.
+
+Do not use unrelated homepage/editorial fixtures as a fake category image in production.
+
+---
+
+# 28. Search Metadata
+
+Route:
+
+```text
+/search
+```
+
+Search-result pages should **not be indexable**.
+
+Use page-level robots metadata equivalent to:
+
+```text
+index: false
+follow: true
+```
+
+for `/search`, including populated search queries.
+
+This avoids indexing arbitrary internal search-result combinations.
+
+---
+
+# 29. Search Title
+
+The page may use a useful title such as:
+
+```text
+Search furniture
+```
+
+and, when a meaningful query exists, may include the search term in a restrained way.
+
+Example conceptually:
+
+```text
+Search results for “chair”
+```
+
+Do not put raw unbounded user input into metadata without applying the same validated/bounded search contract already established by Phase 14.5.
+
+---
+
+# 30. Search Description
+
+Do not generate elaborate descriptions from user-entered search text.
+
+A generic factual search description is sufficient.
+
+Search pages are noindex.
+
+---
+
+# 31. Search Canonical
+
+Do not create a huge canonical universe for arbitrary internal search terms.
+
+Use the phase's chosen canonical policy consistently with:
+
+```text
+noindex, follow
+```
+
+Do not treat each arbitrary search query as a valuable indexable landing page.
+
+---
+
+# 32. Faceted `/products` SEO Policy
+
+Phase 14.6 introduced combinations of:
+
+```text
 category
 product_type
 availability
@@ -154,272 +719,17 @@ max_price
 sort
 sort_direction
 page
-per_page
 ```
 
-Use these names exactly.
+These create potentially large URL spaces.
 
-Do NOT introduce aliases.
+Do not allow every arbitrary filter/sort combination to become a distinct indexable SEO page.
 
 ---
 
-# 5. Canonical Filter Contract
+# 33. Filtered Product Collections
 
-## Category
-
-```text
-category=<backend category slug>
-```
-
-Laravel also accepts public category IDs, but website URLs should prefer authoritative backend slugs.
-
-Do not generate category slugs locally.
-
----
-
-## Product Type
-
-Closed values:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-Do not invent:
-
-```text
-READY_MADE
-CUSTOM
-PREORDER
-REQUEST_ONLY
-```
-
----
-
-## Availability
-
-Closed values:
-
-```text
-available
-unavailable
-```
-
-Case matters.
-
-Do not send:
-
-```text
-AVAILABLE
-UNAVAILABLE
-in_stock
-out_of_stock
-```
-
----
-
-## Price
-
-```text
-min_price
-max_price
-```
-
-These are integer TZS **minor units**.
-
-Do not send floating-point monetary values to Laravel.
-
----
-
-## Sort
-
-Allowed:
-
-```text
-created_at
-price
-name
-```
-
-Direction:
-
-```text
-asc
-desc
-```
-
-No other public sort field is permitted.
-
----
-
-# 6. Explicitly Forbidden Filter
-
-Do NOT create:
-
-```text
-stock_indicator=
-```
-
-`stock_indicator` is display-only.
-
-Therefore do not expose filters such as:
-
-```text
-Low stock
-Stock indicator
-Only a few left
-```
-
-as CAT-001 filters.
-
----
-
-# 7. Backend Query Pipeline Is Authority
-
-Laravel already owns:
-
-```text
-search
-  ↓
-filters
-  ↓
-allow-listed sort
-  ↓
-id ASC deterministic tie-breaker
-  ↓
-pagination
-```
-
-The frontend supplies URL state only.
-
-Do not reproduce this pipeline in JavaScript.
-
----
-
-# 8. No Client-Side Filtering
-
-Forbidden:
-
-```text
-fetch products
-→ Array.filter()
-→ Array.sort()
-```
-
-Also forbidden:
-
-```text
-fetch all 100 products
-→ filter locally
-```
-
-Every production filter/sort change must result in an appropriate CAT-001 query.
-
----
-
-# 9. Canonical `/products` Examples
-
-Valid URLs conceptually include:
-
-```text
-/products?category=living-room
-
-/products?product_type=MADE_TO_ORDER
-
-/products?availability=available
-
-/products?min_price=5000000&max_price=200000000
-
-/products?sort=price&sort_direction=asc
-
-/products?category=living-room&product_type=IN_STOCK&sort=price&sort_direction=asc
-```
-
-Parameter order has no semantic meaning.
-
----
-
-# 10. Search Composition
-
-Filters must compose with Phase 14.5 search.
-
-Example:
-
-```text
-/search?search=chair&category=living-room&product_type=MADE_TO_ORDER
-```
-
-Backend request:
-
-```text
-GET /api/v1/products?search=chair&category=living-room&product_type=MADE_TO_ORDER
-```
-
-Do not create a second search/filter endpoint.
-
----
-
-# 11. Search Term Must Survive Filtering
-
-Given:
-
-```text
-/search?search=chair
-```
-
-applying:
-
-```text
-product_type=MADE_TO_ORDER
-```
-
-must produce conceptually:
-
-```text
-/search?search=chair&product_type=MADE_TO_ORDER
-```
-
-Never silently drop the search term.
-
----
-
-# 12. Filters Must Survive Pagination
-
-Given:
-
-```text
-/products?category=living-room&sort=price&sort_direction=asc
-```
-
-Next page must preserve that state:
-
-```text
-/products?category=living-room&sort=price&sort_direction=asc&page=2
-```
-
----
-
-# 13. Search + Filters Must Survive Pagination
-
-Example:
-
-```text
-/search?search=chair&availability=available&page=2
-```
-
-Pagination must preserve both:
-
-```text
-search=chair
-availability=available
-```
-
----
-
-# 14. Filter Changes Reset Pagination
-
-When the user changes:
+For `/products` URLs whose distinguishing query state is only filtering/sorting:
 
 ```text
 category
@@ -429,1389 +739,1056 @@ min_price
 max_price
 sort
 sort_direction
-search
 ```
 
-the resulting request should return to page 1.
-
-Do NOT preserve a stale:
+prefer:
 
 ```text
-page=7
+robots:
+  index: false
+  follow: true
 ```
 
-after changing filters.
+unless repository SEO authority explicitly establishes an indexable facet.
 
-The clean page-one URL should omit `page=1`.
+Do not create indexable faceted landing pages in Phase 14.7.
 
 ---
 
-# 15. `per_page`
+# 34. Why Category Filters Are Not SEO Category Pages
 
-Do not expose a page-size selector unless repository authority explicitly requires one.
-
-Continue using the existing product-listing pagination size.
-
-Phase 14.6 is not permission to add:
+The project already has canonical category pages:
 
 ```text
-20 / 40 / 80 per page
+/categories/[slug]
 ```
 
-controls.
+Therefore:
+
+```text
+/products?category=living-room
+```
+
+must not compete with:
+
+```text
+/categories/living-room
+```
+
+as a second SEO category landing page.
+
+Keep category pages as the canonical category-resource surface.
 
 ---
 
-# 16. Default Sort
+# 35. Sorting URLs
 
-Laravel default is:
-
-```text
-created_at DESC
-then id ASC
-```
-
-When the user has not explicitly selected sorting, prefer the clean URL:
-
-```text
-/products
-```
-
-rather than unnecessarily serializing:
-
-```text
-?sort=created_at&sort_direction=desc
-```
-
-unless the existing routing architecture requires explicit defaults.
-
----
-
-# 17. User-Facing Sort Choices
-
-The UI may present clear human labels mapped to frozen query pairs.
-
-A reasonable mapping is:
-
-```text
-Newest
-→ default / created_at DESC
-
-Price: Low to high
-→ sort=price&sort_direction=asc
-
-Price: High to low
-→ sort=price&sort_direction=desc
-
-Name: A to Z
-→ sort=name&sort_direction=asc
-
-Name: Z to A
-→ sort=name&sort_direction=desc
-```
-
-But inspect repository UX conventions before finalizing labels.
-
-Do not invent:
-
-```text
-Best selling
-Popular
-Recommended
-Featured
-Top rated
-Relevance
-Trending
-```
-
-because Laravel provides no such sort semantics.
-
----
-
-# 18. Sort Pair Is One UI Concept
-
-Although Laravel exposes:
+URLs differing only by:
 
 ```text
 sort
 sort_direction
 ```
 
-the customer does not necessarily need two separate controls.
+must not create new indexable content identities.
 
-Prefer one clear sorting control that maps each user-facing option to a valid frozen pair.
+Sorting changes presentation order, not the underlying resource identity.
 
-Do not make customers understand backend query architecture.
-
----
-
-# 19. No Fake Relevance Sort
-
-Search must NOT introduce:
-
-```text
-Sort by relevance
-```
-
-unless the frozen API explicitly adds such a sort later.
-
-It currently does not.
+Use the chosen noindex/canonical policy consistently.
 
 ---
 
-# 20. Category Filter Authority
+# 36. Price Filter URLs
 
-Use CAT-003:
+URLs such as:
 
 ```text
-GET /api/v1/categories
+/products?min_price=...
+/products?max_price=...
 ```
 
-for public category filter options where category options are needed.
+must not become automatically indexable SEO landing pages.
 
-CAT-003 returns active storefront top-level categories beneath the structural Furnitures Root.
-
-Do not duplicate taxonomy in frontend constants.
+No generated “Furniture under X” SEO architecture is part of V1 Phase 14.7.
 
 ---
 
-# 21. No Hard-Coded Production Categories
+# 37. Availability/Product-Type Facets
 
-Forbidden:
+Likewise:
 
-```ts
-const categories = [
-  "Living Room",
-  "Bedroom",
-  ...
-];
+```text
+availability
+product_type
 ```
 
-for production filter options.
+do not automatically create indexable landing pages.
 
-Use authoritative API data.
-
-Fixture taxonomy may remain only in explicit fixture mode.
+`MADE_TO_ORDER` remains a first-class customer offering, but Phase 14.7 does not invent a new SEO landing-page taxonomy.
 
 ---
 
-# 22. Category Slug
+# 38. Pagination Is Different From Sorting
 
-Filter value:
+Do not blindly canonicalize every paginated collection page to page 1.
 
-```text
-category.slug
-```
-
-Display:
+A page such as:
 
 ```text
-category.name
+/products?page=2
 ```
 
-Do not send the display name.
+contains a different slice of products.
+
+Inspect current search-engine guidance and existing project routing semantics before choosing canonical behavior for pagination.
+
+Do not solve duplicate sorting/faceting by incorrectly collapsing meaningful pagination.
 
 ---
 
-# 23. Category Collection Pagination
+# 39. Conservative Pagination Policy
 
-CAT-003 itself is paginated.
+For plain product-list pagination with no search/filter/sort state:
 
-Do not assume the first page contains every category forever.
+```text
+/products?page=N
+```
 
-Inspect the existing category retrieval helper established in 14.1/14.2 and reuse it.
+prefer a self-referencing canonical that preserves meaningful `page=N` for pages greater than 1.
 
-If the existing architecture already obtains all required active top-level categories safely, reuse that path.
+For page 1:
 
-Do not fetch `per_page=100` reflexively without understanding the existing contract and expected taxonomy size.
+```text
+/products
+```
+
+remains canonical.
+
+Do not serialize:
+
+```text
+?page=1
+```
+
+into the canonical.
 
 ---
 
-# 24. Category Filter Failure
+# 40. Filtered Pagination
 
-If product retrieval succeeds but category-option retrieval unexpectedly fails, do not silently invent categories.
+A URL such as:
 
-Use the established failure architecture or a deliberately degraded filter presentation only if existing architecture clearly supports that distinction.
+```text
+/products?product_type=MADE_TO_ORDER&page=2
+```
 
-Do not hide upstream failures with fixtures.
+remains part of a filtered/faceted collection and should inherit the filtered collection's noindex policy.
+
+Its canonical handling must not pretend it is an indexable standalone landing page.
 
 ---
 
-# 25. Product Type Filter
+# 41. `per_page`
 
-Present the two actual domain concepts:
+`per_page` is a presentation/pagination control, not a distinct SEO content identity.
 
-```text
-In stock
-Made to order
-```
+Do not create canonical variants solely because the page size differs.
 
-while sending:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-MADE_TO_ORDER must remain a first-class offering.
-
-Do not visually style it as an error/warning.
+Inspect whether the frontend currently exposes or serializes it before implementing metadata logic.
 
 ---
 
-# 26. Availability Filter
+# 42. Unknown Query Parameters
 
-Use:
+Do not globally strip/rewrite arbitrary unknown query parameters.
 
-```text
-Available
-Unavailable
-```
+ROUTING.md explicitly states that routes read only the parameters they own and must not globally rewrite unknown parameters.
 
-mapped to:
+Metadata logic should operate on owned query state.
 
-```text
-available
-unavailable
-```
-
-Do not conflate:
-
-```text
-product_type=IN_STOCK
-```
-
-with:
-
-```text
-availability=available
-```
-
-They are separate frozen semantics.
+Do not turn SEO metadata generation into a URL-cleanup router.
 
 ---
 
-# 27. Product Type vs Availability
+# 43. Canonical Builder
 
-These combinations are not for the frontend to reinterpret.
+Create or reuse one narrow canonical URL responsibility.
 
-For example:
+Do not manually concatenate canonical strings independently across:
 
 ```text
-product_type=MADE_TO_ORDER
-availability=available
+homepage
+products
+PDP
+categories
+search
 ```
 
-must be passed to Laravel if selected.
+Use standard URL APIs.
 
-Do not impose undocumented cross-field rules.
+Avoid double slashes and accidental API origins.
 
 ---
 
-# 28. Price Filter UX
+# 44. Canonical Origin Safety
 
-The public UI may accept user-friendly TZS amounts.
+Canonical URLs must use the website origin.
 
-But CAT-001 requires integer minor units.
-
-Therefore establish one explicit conversion boundary:
+Never generate canonicals from:
 
 ```text
-user-facing TZS
-→ validated integer monetary value
-→ minor units
-→ URL/API query
+API_BASE_URL
+request Host header without deliberate trust policy
+Cloudflare R2 media origin
+fixture origin
 ```
 
-Reuse existing money utilities if they support this responsibility.
+Do not trust arbitrary forwarded host input to determine SEO identity.
 
 ---
 
-# 29. Money Precision
+# 45. Open Graph Base Metadata
 
-Project convention remains:
-
-```text
-1 TZS = 100 minor units
-```
-
-Do not perform business arithmetic using floating point.
-
-If the UI accepts whole TZS:
+Establish shared Open Graph values where appropriate:
 
 ```text
-125000 TZS
-→ 12500000 minor units
+siteName: SL Furnitures
+type: website
 ```
 
-using integer-safe conversion.
+Resource pages may override fields.
+
+Do not invent social usernames/accounts.
 
 ---
 
-# 30. Do Not Expose Minor Units to Users
+# 46. Product Open Graph Type
 
-Do not label a field:
+Use the correct supported Next.js/Open Graph metadata semantics available in the installed version.
 
-```text
-Minimum price in minor units
-```
+Do not invent unsupported metadata fields.
 
-Customers should see ordinary TZS amounts.
-
-The API boundary handles minor-unit serialization.
+Phase 14.8, not this phase, owns Schema.org `Product`.
 
 ---
 
-# 31. Price Input Constraints
+# 47. Open Graph Titles
 
-Use appropriate accessible numeric input semantics.
+Open Graph titles should align with page titles but do not need duplicated brand strings if the framework/template already handles presentation appropriately.
 
-Do not accept:
-
-```text
-negative prices
-NaN
-Infinity
-scientific notation as intentional money UX
-```
-
-Do not silently reinterpret malformed values.
-
----
-
-# 32. Price Cross-Field Rule
-
-Frozen contract requires:
+Avoid:
 
 ```text
-min_price <= max_price
-```
-
-Laravel remains authoritative.
-
-Frontend UX should prevent or clearly handle an obviously inverted range where practical.
-
-Do not replace backend validation.
-
----
-
-# 33. Invalid URL State
-
-Users can manually edit URLs.
-
-Therefore Phase 14.6 must handle invalid values deliberately.
-
-Examples:
-
-```text
-?product_type=WRONG
-?availability=yes
-?sort=rating
-?sort_direction=sideways
-?min_price=-1
-?min_price=500&max_price=100
-```
-
-Do not crash.
-
-Do not silently convert arbitrary values into valid ones and pretend they were requested.
-
----
-
-# 34. Laravel Validation Authority
-
-CAT-001 invalid supported parameters may return:
-
-```text
-422 INVALID_VALUE
-```
-
-Do not convert that to:
-
-```text
-empty catalog
-404
-```
-
-Use the established expected-error/state architecture.
-
----
-
-# 35. Unknown Query Parameters
-
-The routing contract states:
-
-```text
-a route reads only the parameters it owns
-```
-
-Do not globally strip unknown parameters.
-
-Do not build a query sanitizer that rewrites the browser URL on every render.
-
----
-
-# 36. URL Is State Authority
-
-Filter state must come from URL search parameters.
-
-Do not maintain a competing durable state in:
-
-```text
-React Context
-Redux
-Zustand
-localStorage
-sessionStorage
-cookies
-```
-
-No new state library.
-
----
-
-# 37. Progressive Enhancement
-
-The filtering/sorting experience should remain functional without JavaScript where practical.
-
-A native GET form is the preferred baseline:
-
-```text
-<form method="get">
-```
-
-This naturally creates shareable URLs.
-
----
-
-# 38. `/products` Filter Form
-
-Conceptually:
-
-```text
-GET /products
-```
-
-with controls named according to the frozen API vocabulary.
-
-Do not require client-side navigation merely to apply filters.
-
----
-
-# 39. `/search` Filter Form
-
-Conceptually:
-
-```text
-GET /search
-```
-
-and preserve:
-
-```html
-<input type="hidden" name="search" ...>
-```
-
-or equivalent server-rendered state.
-
-Do not make users re-enter their search when applying a filter.
-
----
-
-# 40. Apply Behavior
-
-A clear:
-
-```text
-Apply filters
-```
-
-action is acceptable and preferable to adding client JavaScript solely for auto-submit.
-
-Do not introduce `useEffect` watching filter values.
-
----
-
-# 41. Sorting Apply Behavior
-
-Sorting may use the same native GET form/apply action.
-
-Do not add client JS merely so a select auto-submits.
-
-Progressive enhancement is more important than fashionable interaction.
-
----
-
-# 42. Clear Filters
-
-Provide a clear way to remove filter/sort state.
-
-For `/products`:
-
-```text
-Clear filters
-→ /products
-```
-
-For `/search`:
-
-```text
-Clear filters
-→ preserve search term
-```
-
-Example:
-
-```text
-/search?search=chair&category=living-room
-```
-
-clear filters becomes:
-
-```text
-/search?search=chair
-```
-
-Do not clear the search term when the action says “Clear filters.”
-
----
-
-# 43. Clear Search Is Different
-
-Do not conflate:
-
-```text
-Clear filters
-```
-
-with:
-
-```text
-Clear search
-```
-
-Phase 14.5 owns the search term.
-
----
-
-# 44. Active Filter Summary
-
-A restrained active-filter summary may be useful.
-
-But do not build a badge/chip wall.
-
-If implemented, use existing MUI semantics and frozen tokens.
-
-Do not create a new pill-heavy visual language.
-
----
-
-# 45. Active Filter Removal
-
-If individual removable filters are implemented, their links/actions must preserve all other current URL state and reset pagination.
-
-Do not require JavaScript merely for removal.
-
----
-
-# 46. Desktop Information Architecture
-
-A furniture catalog commonly benefits from:
-
-```text
-collection heading
-result context
-sort control
-filter controls
-product grid
-pagination
-```
-
-Possible desktop structure:
-
-```text
-filters | product results
-```
-
-or a restrained filter disclosure above the grid.
-
-Choose based on the existing SL Furnitures layout system.
-
-Urban Ladder may inform information architecture only.
-
-Do not copy its visual treatment.
-
----
-
-# 47. Mobile Information Architecture
-
-Do not simply squeeze a desktop sidebar into 320px.
-
-A compact mobile filter disclosure is appropriate.
-
-Before introducing a new Drawer, inspect the existing MUI mobile-navigation pattern and design-system conventions.
-
----
-
-# 48. Mobile Client Boundary
-
-A mobile filter Drawer may justify a narrowly scoped Client Component.
-
-However, it is NOT mandatory.
-
-Prefer native/server-compatible disclosure if it provides a strong accessible experience.
-
-If a Drawer is used:
-
-```text
-page remains Server Component
-ProductGrid remains server-rendered
-URL remains state authority
-Drawer only owns temporary open/closed state
-filter values still submit through URL
+SL Furnitures | Chair | Chair Furniture | Buy Chair | SL Furnitures
 ```
 
 ---
 
-# 49. Client State Boundary
+# 48. Open Graph Descriptions
 
-The only acceptable local state is ephemeral presentation state such as:
+Use the same factual source hierarchy as normal metadata descriptions.
 
-```text
-filter panel open/closed
-```
-
-Do not put authoritative filter values into React state if the URL already owns them.
+Do not maintain separate invented marketing copy.
 
 ---
 
-# 50. No Client-Side Result Refresh Architecture
+# 49. Twitter Metadata
+
+Use Next.js metadata support for a standard large-image card where a suitable image exists.
+
+Do not invent:
+
+```text
+twitter creator
+twitter site
+social account handles
+```
+
+unless repository authority provides them.
+
+---
+
+# 50. Social Image Dimensions
+
+If authoritative image metadata does not include width/height, do not invent dimensions.
+
+Use fields supported by actual source data.
+
+Do not hard-code false `1200x630` dimensions onto arbitrary product imagery.
+
+---
+
+# 51. Image Alt Metadata
+
+Where the metadata API supports image alt text, reuse authoritative:
+
+```text
+alt_text
+```
+
+from product/category media.
+
+Do not generate keyword-stuffed image alt text.
+
+---
+
+# 52. Homepage Social Image
+
+Inspect whether the homepage has a legitimate brand/editorial image suitable for social sharing.
+
+If an existing production-authoritative homepage hero is appropriate, it may be used.
+
+Do not automatically use fixture-only imagery as production Open Graph media.
+
+If no durable production social image exists:
+
+```text
+omit it
+```
+
+rather than inventing one.
+
+---
+
+# 53. Logo Is Not Automatically an OG Hero
+
+The official brand logo is identity authority, but do not automatically stretch it into a social preview image if its dimensions/composition are unsuitable.
+
+Do not modify/recolor the logo.
+
+---
+
+# 54. Metadata and R2
+
+Do not create new R2 infrastructure.
+
+Existing backend product media remains authoritative.
+
+Metadata should consume the same public media URLs already supplied through the catalog API.
+
+---
+
+# 55. No Duplicate Product Fetch if Avoidable
+
+`generateMetadata()` and the PDP may both require CAT-002.
+
+Inspect the existing product-detail data architecture and installed Next.js fetch behavior.
+
+Prefer sharing/deduplicating the authoritative resource retrieval where safely possible.
 
 Do not introduce:
 
 ```text
-fetch in useEffect
-router.refresh orchestration
-optimistic filtering
-client cache
-React Query
-SWR
+metadata CAT-002 request
++
+page CAT-002 request
 ```
 
-Phase 14.6 remains server-driven.
+as an unavoidable permanent N+1 without investigating reuse/deduplication.
 
 ---
 
-# 51. Existing ProductGrid
+# 56. Do Not Add Metadata to API Client
 
-Reuse canonical:
+The generic Phase 13.5 API transport remains domain-neutral.
 
-```text
-ProductGrid
-```
-
-Do not create:
+Do not add SEO concepts to:
 
 ```text
-FilteredProductGrid
-SortableProductGrid
-SearchFilteredGrid
+lib/api/client.ts
 ```
+
+SEO belongs at the web/page/domain integration layer.
 
 ---
 
-# 52. Existing ProductCard
+# 57. Missing Product Metadata
 
-Reuse canonical ProductCard unchanged unless a genuine reusable requirement emerges.
-
-Filtering must not alter card design.
-
----
-
-# 53. Existing Pagination
-
-Extend the canonical pagination query-preservation behavior.
-
-Do not create:
-
-```text
-FilterPagination
-SearchFilterPagination
-```
-
----
-
-# 54. Shared Catalog Query Representation
-
-By the end of Phase 14.6, `/products` and `/search` should preferably share one typed representation for CAT-001 URL/query state.
-
-Conceptually:
-
-```ts
-type ProductCollectionQuery = {
-  search?: string;
-  category?: string;
-  product_type?: "IN_STOCK" | "MADE_TO_ORDER";
-  availability?: "available" | "unavailable";
-  min_price?: ...;
-  max_price?: ...;
-  sort?: "created_at" | "price" | "name";
-  sort_direction?: "asc" | "desc";
-  page?: number;
-};
-```
-
-Do not copy this literally without inspecting existing types.
-
-Extend existing catalog query types where possible.
-
----
-
-# 55. One Query Serializer
-
-Do not hand-build query strings separately in:
-
-```text
-products page
-search page
-pagination
-filter controls
-clear-filter links
-```
-
-Prefer one reusable query serialization responsibility.
-
-It must use standard URL encoding.
-
----
-
-# 56. Serializer Must Not Become Contract Authority
-
-The serializer represents the frozen contract.
-
-It must not invent:
-
-```text
-aliases
-new enums
-fallback sort fields
-implicit filters
-```
-
----
-
-# 57. Search Integration
-
-Phase 14.5's `getProductCatalog` should remain the canonical product collection data boundary if appropriate.
-
-Extend it rather than creating:
-
-```text
-getFilteredProducts()
-getSortedProducts()
-getSearchFilteredProducts()
-```
-
-unless repository structure genuinely requires otherwise.
-
----
-
-# 58. Fixture Mode
-
-Production/default mode remains API-backed.
-
-Fixture filtering may be extended only for explicit visual-development mode.
-
-Do not use fixtures as fallback.
-
----
-
-# 59. Fixture Semantics
-
-Fixture filtering does not need to reproduce Laravel SQL internals.
-
-It should only support deterministic visual verification of:
-
-```text
-category
-product type
-availability
-price
-sorting
-pagination
-search composition
-```
-
-where practical.
-
-Document it as fixture behavior.
-
----
-
-# 60. No Fixture Contract Drift
-
-Use the same public query vocabulary in fixture mode.
-
-Do not invent:
-
-```text
-fixtureCategory
-fixtureSort
-filterBy
-```
-
----
-
-# 61. Category Pages
-
-Phase 14.2 category pages are category landing/discovery pages.
-
-Do NOT automatically turn `/categories/[slug]` into the generic filterable listing surface.
-
-Phase 14.6's primary filtering surfaces are:
-
-```text
-/products
-/search
-```
-
-Keep category landing pages focused unless existing repository architecture explicitly establishes otherwise.
-
----
-
-# 62. Category Navigation to Filtered Products
-
-Do not replace canonical:
-
-```text
-/categories/[slug]
-```
-
-navigation with:
-
-```text
-/products?category=<slug>
-```
-
-They serve different IA purposes.
-
-The category filter is an additional catalog-discovery mechanism.
-
----
-
-# 63. Result Count
-
-Reuse authoritative:
-
-```text
-meta.pagination.total
-```
-
-if displaying result counts.
-
-Do not use current-page array length as total results.
-
----
-
-# 64. Empty Filtered Result
-
-A valid filter combination with no matches is:
-
-```text
-HTTP 200
-```
-
-Render a factual empty state.
-
-Example intent:
-
-```text
-No furniture matches these filters.
-```
-
-Offer:
-
-```text
-Clear filters
-```
-
-where appropriate.
-
-Do not show fake recommendations.
-
----
-
-# 65. Search + Filter Empty Result
-
-Example:
-
-```text
-/search?search=chair&product_type=MADE_TO_ORDER
-```
-
-with zero results remains:
-
-```text
-HTTP 200
-```
-
-and should preserve the user's search context.
-
----
-
-# 66. No 404 for Filters
-
-Never invoke `notFound()` because:
-
-```text
-category filter has no products
-price range has no products
-search + filter has no products
-```
-
-A collection query is not a resource lookup.
-
----
-
-# 67. Proxy Boundary
-
-Do not add `/products` or `/search` to resource-existence preflight.
-
-Existing hard-404 behavior remains only for actual detail resources such as:
+For a missing:
 
 ```text
 /products/[slug]
+```
+
+preserve the existing hard HTTP 404 behavior.
+
+Do not generate normal indexable product metadata before the resource is known to exist.
+
+The canonical Phase 13.8 not-found experience remains authoritative.
+
+---
+
+# 58. Missing Category Metadata
+
+Likewise:
+
+```text
 /categories/[slug]
 ```
 
+must preserve hard HTTP 404 behavior.
+
+Do not emit a canonical/indexable category identity for a missing category.
+
 ---
 
-# 68. Request-First Commerce
+# 59. Proxy Regression
 
-Filtering does not change deployment mode.
+Phase 14.2A/14.4 proxy preflight exists to preserve hard 404 status before streaming.
 
-Do not add:
+Phase 14.7 must not break or duplicate it.
+
+Do not add SEO-specific proxy fetches.
+
+---
+
+# 60. Unexpected API Failure
+
+A:
 
 ```text
+500
+429
+timeout
+network failure
+```
+
+must not be converted into:
+
+```text
+404
+```
+
+because metadata generation failed.
+
+Preserve the established failure-state architecture.
+
+---
+
+# 61. Metadata Failure Must Not Lie
+
+If authoritative product/category retrieval unexpectedly fails, do not fabricate:
+
+```text
+generic product title
+fake canonical slug
+fake social image
+```
+
+that makes the resource appear valid.
+
+Use the existing error behavior.
+
+---
+
+# 62. Fixture Mode
+
+Explicit fixture mode may support deterministic metadata tests.
+
+But:
+
+```text
+fixture mode != production fallback
+```
+
+Do not silently fall back from API failure to fixture metadata.
+
+---
+
+# 63. Metadata Security
+
+Never include in public metadata:
+
+```text
+internal IDs unless required by public URL contract
+staff data
+customer data
+email
+phone
+private enquiry content
+request details
+internal notes
+storage keys
+authorization information
+API error details
+request IDs
+```
+
+Public catalog fields only.
+
+---
+
+# 64. Search Input Safety
+
+Search terms may be reflected in `<title>` or metadata.
+
+Treat them as untrusted user input.
+
+Use framework metadata escaping.
+
+Do not manually construct raw HTML metadata.
+
+Do not use:
+
+```text
+dangerouslySetInnerHTML
+```
+
+for metadata.
+
+---
+
+# 65. Description Normalization
+
+If API descriptions contain formatting/newlines, normalize them safely for metadata.
+
+Do not interpret API text as HTML.
+
+Do not create an HTML sanitizer dependency merely for metadata.
+
+---
+
+# 66. Metadata Length
+
+Keep titles and descriptions sensible and readable.
+
+Do not implement brittle SEO logic whose only purpose is to hit an exact character count.
+
+If truncation is needed, centralize it and avoid cutting Unicode incorrectly where practical.
+
+Accuracy is more important than an arbitrary “SEO score.”
+
+---
+
+# 67. Product Price in Metadata
+
+Normal title/description metadata does not need to embed price.
+
+Do not generate brittle price-bearing titles such as:
+
+```text
+Chair - TZS 450,000 - Buy Now
+```
+
+especially under request-first deployment.
+
+Product price belongs naturally in the page and later structured data where appropriate.
+
+---
+
+# 68. Availability in Metadata
+
+Do not turn availability into promotional title spam.
+
+Avoid:
+
+```text
+IN STOCK NOW!!!
+```
+
+Metadata may remain focused on product identity.
+
+---
+
+# 69. Request-First Policy
+
+Metadata must not imply functionality the production website does not expose.
+
+Forbidden copy:
+
+```text
+Buy online
 Add to cart
-Buy now
-Checkout
-Wishlist
-Payment
+Checkout now
+Order today
+Pay online
 ```
 
-to ProductCard or listing controls.
+unless those flows are actually active.
 
-MADE_TO_ORDER remains first-class.
+The release remains request-first.
 
 ---
 
-# 69. Filter Labels
+# 70. MADE_TO_ORDER
 
-Use human-readable labels.
-
-Examples:
+MADE_TO_ORDER is not:
 
 ```text
-Category
-Product type
-Availability
-Price
-Sort by
+unavailable
+error
+out of stock
 ```
 
-Avoid backend jargon such as:
-
-```text
-product_type
-sort_direction
-minor units
-```
-
-in customer-facing UI.
+Do not generate metadata that frames made-to-order products negatively.
 
 ---
 
-# 70. Accessibility
+# 71. Category vs Product Listing
 
-Filter controls require:
+Maintain the information architecture:
 
 ```text
-proper labels
-fieldset/legend where groups benefit
-keyboard operability
-visible focus
-clear selected state
-non-color-only state
-touch-friendly controls
-logical tab order
+/categories/[slug]
+    canonical category-resource landing page
+
+/products
+    canonical generic product collection
 ```
+
+Do not make filtered `/products?category=...` compete with category-resource pages.
 
 ---
 
-# 71. Native Form Semantics
+# 72. Search vs Product Listing
 
-Prefer:
+Maintain:
 
 ```text
-fieldset
-legend
-label
-input
-select
-button
+/search
 ```
 
-or accessible MUI equivalents.
+as internal discovery.
 
-Do not replace native semantics with clickable `Box` elements.
+Do not redirect search queries to `/products`.
+
+Do not merge the routes merely for SEO.
 
 ---
 
-# 72. Checkboxes vs Single-Value Contract
+# 73. Not-Found Robots
 
-CAT-001 accepts one value for:
+Inspect actual Next.js behavior for `notFound()` in the installed version.
 
-```text
-category
-product_type
-availability
-```
+Do not manually duplicate framework-provided noindex behavior unless necessary and tested.
 
-Do not present multi-select checkboxes that imply OR semantics unless the backend actually supports arrays/multiple values.
-
-A single-select/radio/select interaction should accurately reflect the contract.
+The existing canonical not-found architecture must remain intact.
 
 ---
 
-# 73. Critical Multi-Select Rule
+# 74. Error Page Metadata
 
-Do NOT build UI allowing:
+Do not spend Phase 14.7 creating elaborate SEO metadata for transient error boundaries.
 
-```text
-IN_STOCK + MADE_TO_ORDER simultaneously
-```
+Unexpected failures should not become indexable content identities.
 
-as two selected `product_type` values.
-
-The backend contract is singular.
-
-Likewise do not multi-select:
-
-```text
-available + unavailable
-```
-
-or multiple categories through repeated query values unless the contract explicitly supports that.
+Keep scope focused on successful public routes and established not-found semantics.
 
 ---
 
-# 74. Price Accessibility
+# 75. Structured Data Boundary — Critical
 
-Minimum and maximum price controls must have distinct accessible labels.
-
-Do not rely solely on placeholder text.
-
----
-
-# 75. Sorting Accessibility
-
-Sort control must have an accessible label such as:
+Do NOT add:
 
 ```text
-Sort products
+application/ld+json
+Product JSON-LD
+BreadcrumbList
+Organization
+WebSite
+SearchAction
+ItemList
+Offer
 ```
 
-The visible selected option must correspond to URL state.
-
----
-
-# 76. Mobile Filter Trigger
-
-If using a disclosure/Drawer:
-
-```text
-Filter
-```
-
-must expose:
-
-```text
-accessible name
-expanded/open state where appropriate
-keyboard operation
-Escape close if modal/drawer
-focus restoration
-```
-
-Reuse established mobile-navigation accessibility patterns where relevant.
-
----
-
-# 77. Focus
-
-Applying filters performs normal navigation.
-
-Do not add complicated client-side focus management merely to mimic SPA filtering.
-
-Normal server navigation semantics are acceptable.
-
----
-
-# 78. Responsive Requirements
-
-Verify:
-
-```text
-320
-390
-640
-959
-960
-961
-1024
-1440
-1728
-```
-
-Pay particular attention to:
-
-```text
-filter controls
-sort control
-long category names
-price inputs
-active filter state
-ProductGrid width
-pagination
-```
-
----
-
-# 79. 200% Reflow
-
-At 200%:
-
-```text
-filters remain reachable
-labels remain visible
-controls do not overlap
-sort remains usable
-product grid reflows
-pagination remains usable
-```
-
-No horizontal document scrolling.
-
----
-
-# 80. Design System
-
-Use:
-
-```text
-tokens.css
-→ MUI theme
-→ existing primitives
-→ collection controls
-```
-
-Do not create a filtering-specific visual system.
-
----
-
-# 81. Visual Character
-
-Filters should feel:
-
-```text
-quiet
-architectural
-functional
-spacious
-editorial
-```
-
-Not:
-
-```text
-dashboard
-admin panel
-marketplace control center
-badge cloud
-pill wall
-glass panel
-```
-
----
-
-# 82. No Excessive Containers
-
-Avoid putting every filter group inside its own card.
-
-Use:
-
-```text
-spacing
-typography
-subtle approved separators
-```
-
-for hierarchy.
-
----
-
-# 83. Typography
-
-Use utility sans for:
-
-```text
-filter labels
-inputs
-selects
-prices
-sort controls
-result metadata
-```
-
-Do not use Young Serif for ordinary form controls.
-
----
-
-# 84. Icons
-
-Use only:
-
-```text
-@mui/icons-material
-```
-
-where icons genuinely clarify controls.
-
-Do not decorate every filter heading.
-
----
-
-# 85. No Dependency
-
-Expected new dependency count:
-
-```text
-0
-```
-
-Do not add:
-
-```text
-query-string
-qs
-react-hook-form
-Formik
-Zod
-React Query
-SWR
-state libraries
-slider packages
-```
-
-merely for catalog filtering.
-
----
-
-# 86. Price Slider
-
-Do NOT introduce a dual-handle slider dependency.
-
-Simple accessible min/max inputs are preferable.
-
-If existing MUI Slider is considered, remember that URL/native-form behavior and precise accessible input remain more important than visual novelty.
-
----
-
-# 87. SEO Boundary
-
-Do not implement comprehensive:
-
-```text
-canonical URL policy
-filter-page indexing policy
-robots metadata
-faceted-navigation SEO
-Open Graph
-dynamic SEO titles
-```
-
-Phase 14.7 owns SEO metadata.
-
-Record any faceted-navigation SEO concern for 14.7 rather than solving it early.
-
----
-
-# 88. Structured Data Boundary
-
-Do not modify JSON-LD.
+in Phase 14.7.
 
 Phase 14.8 owns structured data.
 
+Even though CAT-002 was explicitly designed to support Product JSON-LD later, do not implement it early.
+
 ---
 
-# 89. Sitemap Boundary
+# 76. Sitemap Boundary
 
-Do not add filter URLs to sitemap.
+Do NOT add:
+
+```text
+app/sitemap.ts
+sitemap.xml
+```
 
 Phase 14.9 owns sitemap/robots.
 
 ---
 
-# 90. Internal Linking Boundary
+# 77. Robots.txt Boundary
 
-Do not create SEO filter landing pages or generated facet links.
+Do NOT add:
 
-Phase 14.10 owns comprehensive internal linking.
+```text
+app/robots.ts
+robots.txt
+```
+
+Phase 14.9 owns site-level crawler directives.
+
+Page-level `robots` metadata is allowed and required where appropriate in Phase 14.7.
 
 ---
 
-# 91. Performance Boundary
+# 78. Internal Linking Boundary
 
-Do not add caching/prefetch architecture merely for filters.
+Do not redesign breadcrumbs/navigation/product links for SEO.
+
+Phase 14.10 owns comprehensive internal-linking work.
+
+Existing links must simply continue working.
+
+---
+
+# 79. Performance Boundary
+
+Do not redesign image loading/caching/fetch strategy merely for metadata.
 
 Phase 14.11 owns comprehensive performance optimization.
 
+Avoid obvious duplicate API fetches, but do not turn Phase 14.7 into a caching project.
+
 ---
 
-# 92. Backend Boundary
+# 80. No New Dependency
 
 Expected:
 
 ```text
-backend changes: NONE
+new dependencies: NONE
 ```
 
-The filtering/sorting contract already exists.
+Next.js already supplies the metadata API.
 
-If frontend implementation discovers a frozen-contract/backend mismatch:
+Do not add:
 
 ```text
-STOP
-document exact mismatch
-do not silently change Laravel
+next-seo
+react-helmet
+SEO libraries
+slug libraries
+schema libraries
 ```
 
 ---
 
-# 93. Flutter Boundary
+# 81. Metadata Helper Architecture
 
-Expected:
+Create shared helpers only for genuinely repeated stable responsibilities, for example:
 
 ```text
-NONE
+site identity/config
+canonical URL construction
+description normalization
+social-image mapping
 ```
+
+Do not create an enormous generic:
+
+```text
+SeoManager
+SeoEngine
+MetadataFactory with 30 flags
+```
+
+Prefer small typed functions.
 
 ---
 
-# 94. Test Infrastructure
+# 82. No Page-Specific Boolean Soup
 
-Use the remediated standard:
+Avoid APIs such as:
+
+```text
+buildMetadata({
+  isProduct: true,
+  isCategory: false,
+  isSearch: false,
+  useImage: true,
+  noIndex: false,
+  ...
+})
+```
+
+Use clear page/resource-specific composition.
+
+---
+
+# 83. Type Safety
+
+Use Next.js:
+
+```text
+Metadata
+ResolvingMetadata
+```
+
+types where appropriate.
+
+Do not use:
+
+```text
+any
+```
+
+to bypass metadata typing.
+
+---
+
+# 84. Canonical URL Encoding
+
+Use standard URL construction.
+
+Product/category slugs come from backend authority.
+
+Search/query values must be encoded correctly.
+
+Do not concatenate unescaped user input into canonical/social URLs.
+
+---
+
+# 85. Trailing Slash
+
+Canonical URLs must follow existing routing policy:
+
+```text
+no trailing slash
+```
+
+except root `/`.
+
+ROUTING.md already establishes slashless canonical paths.
+
+---
+
+# 86. Page-One Canonical
+
+Do not emit:
+
+```text
+/products?page=1
+```
+
+as canonical.
+
+Use:
+
+```text
+/products
+```
+
+Phase 14.6 already established clean page-one URLs.
+
+---
+
+# 87. Sort Canonical
+
+Do not make:
+
+```text
+/products?sort=price&sort_direction=asc
+```
+
+a separate indexable canonical collection.
+
+Sorting is presentation order.
+
+---
+
+# 88. Search Canonical/Robots Test
+
+Test at least:
+
+```text
+/search
+/search?search=
+/search?search=chair
+/search?search=chair&page=2
+/search?search=chair&product_type=MADE_TO_ORDER
+```
+
+All must follow the deliberate search noindex policy.
+
+---
+
+# 89. Product Collection Metadata Tests
+
+Test:
+
+```text
+/products
+/products?page=2
+/products?sort=price&sort_direction=asc
+/products?category=living-room
+/products?product_type=MADE_TO_ORDER
+/products?availability=available
+/products?min_price=...
+/products?<multiple facets>
+```
+
+Verify canonical and robots behavior according to this phase's policy.
+
+---
+
+# 90. Product Detail Tests
+
+Test metadata derived from an authoritative fixture/resource containing:
+
+```text
+name
+slug
+description
+primary image
+image alt
+```
+
+Verify:
+
+```text
+title
+description
+canonical
+Open Graph URL
+Open Graph image
+Twitter metadata
+```
+
+Do not assert invented fields.
+
+---
+
+# 91. Missing Product Test
+
+Verify missing product still produces:
+
+```text
+HTTP 404
+canonical not-found UI
+non-indexable framework behavior
+```
+
+and does not emit a normal product canonical.
+
+---
+
+# 92. Category Tests
+
+Test:
+
+```text
+category name
+backend slug
+description
+image when present
+canonical
+Open Graph metadata
+```
+
+No local slug generation.
+
+---
+
+# 93. Missing Category Test
+
+Verify:
+
+```text
+HTTP 404
+```
+
+remains intact.
+
+---
+
+# 94. Homepage Test
+
+Verify:
+
+```text
+unique title
+description
+canonical /
+Open Graph site identity
+```
+
+and no fixture-only production metadata.
+
+---
+
+# 95. HTML Runtime Verification
+
+Do not rely only on TypeScript object tests.
+
+Run the production Next.js server and inspect rendered HTML/metadata for representative routes.
+
+Verify actual output contains the expected:
+
+```text
+<title>
+meta description
+canonical link
+robots meta where applicable
+og:title
+og:description
+og:url
+og:image when valid
+twitter card metadata
+```
+
+Use actual generated HTML as evidence.
+
+---
+
+# 96. Duplicate Tag Audit
+
+Verify no accidental duplicate:
+
+```text
+title
+description
+canonical
+robots
+og:url
+```
+
+is emitted through competing metadata implementations.
+
+---
+
+# 97. Absolute URL Audit
+
+Where absolute URLs are required, verify they resolve against the configured website origin.
+
+No canonical URL may point to:
+
+```text
+127.0.0.1
+localhost
+Laravel API origin
+R2 origin as page URL
+```
+
+in production configuration.
+
+Media URLs may of course use the authoritative CDN/R2 origin supplied by the API.
+
+---
+
+# 98. Social Preview Image Audit
+
+Verify metadata never points to:
+
+```text
+missing fixture files
+localhost-only fixture media
+unconfigured internal storage keys
+private media
+```
+
+in production/API mode.
+
+---
+
+# 99. Test Infrastructure
+
+Use the remediated frontend test infrastructure:
 
 ```text
 node:test
@@ -1819,7 +1796,7 @@ node:test
 tsx
 ```
 
-for TypeScript behavioral tests.
+where TypeScript behavioral tests are required.
 
 Do NOT recreate:
 
@@ -1828,347 +1805,31 @@ load-ts.mjs
 node:vm
 eval
 new Function
-custom runtime TypeScript loader
+SourceTextModule
+custom runtime TypeScript execution
 ```
 
 ---
 
-# 95. Focused Test Command
+# 100. Focused Test Command
 
-Add a focused suite following existing conventions, preferably:
+Add one focused Phase 14.7 suite following current conventions, preferably:
 
 ```text
+npm run test:seo
+```
+
+Do not add a new testing framework.
+
+---
+
+# 101. Existing Regression Suites
+
+Run all relevant frontend regressions, including:
+
+```text
+npm run test:seo
 npm run test:filters
-```
-
-or:
-
-```text
-npm run test:catalog-controls
-```
-
-Choose one name consistent with repository terminology.
-
-Do not create multiple overlapping suites.
-
----
-
-# 96. Minimum Query Contract Tests
-
-Test exact serialization for:
-
-```text
-category
-product_type
-availability
-min_price
-max_price
-sort
-sort_direction
-page
-search
-```
-
----
-
-# 97. Category Tests
-
-Cover:
-
-```text
-backend slug used
-display name not sent
-no frontend slugification
-single category only
-CAT-003 options reused
-```
-
----
-
-# 98. Product Type Tests
-
-Cover:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-invalid value
-single selection
-```
-
-Ensure MADE_TO_ORDER is not styled/treated as error.
-
----
-
-# 99. Availability Tests
-
-Cover:
-
-```text
-available
-unavailable
-invalid value
-```
-
-Ensure availability is not conflated with product type.
-
----
-
-# 100. Forbidden Stock Indicator Test
-
-Explicit regression:
-
-```text
-stock_indicator filter:
-NOT IMPLEMENTED
-```
-
-No query serializer/UI should emit it.
-
----
-
-# 101. Price Tests
-
-Cover:
-
-```text
-minimum only
-maximum only
-both
-min == max
-min < max
-min > max
-zero
-negative
-malformed input
-TZS → minor-unit conversion
-```
-
-Do not invent backend outcomes; test frontend conversion/validation and Laravel's actual documented response behavior separately.
-
----
-
-# 102. Sort Tests
-
-Cover every supported pair used by the UI:
-
-```text
-created_at DESC
-price ASC
-price DESC
-name ASC
-name DESC
-```
-
-If “Newest” is represented by omitted sort parameters, test that clean URL behavior.
-
----
-
-# 103. Unsupported Sort Test
-
-Ensure UI/serializer cannot intentionally emit:
-
-```text
-rating
-popularity
-relevance
-best_selling
-featured
-```
-
----
-
-# 104. Pagination Tests
-
-Given active filters, test:
-
-```text
-next preserves filters
-previous preserves filters
-page 1 removes page=1
-filter change removes stale page
-sort change removes stale page
-```
-
----
-
-# 105. Search Composition Tests
-
-Given:
-
-```text
-search=chair
-```
-
-test applying/removing:
-
-```text
-category
-product_type
-availability
-price
-sort
-```
-
-without losing `search`.
-
----
-
-# 106. Clear Tests
-
-Verify:
-
-```text
-/products + clear
-→ /products
-
-/search?search=chair + clear filters
-→ /search?search=chair
-```
-
----
-
-# 107. Zero Results Tests
-
-Verify valid zero-result combinations:
-
-```text
-HTTP 200
-factual empty state
-no 404
-no fixture fallback
-no fake recommendations
-```
-
----
-
-# 108. Error Tests
-
-Verify:
-
-```text
-422
-429
-5xx
-timeout
-network failure
-```
-
-remain distinguishable according to the established API/state architecture.
-
-Do not convert any into an empty product list.
-
----
-
-# 109. Fixture Tests
-
-Where fixture mode supports visual verification, cover enough combinations to prove:
-
-```text
-filtering
-sorting
-search + filtering
-pagination preservation
-```
-
-Do not claim fixture behavior proves Laravel SQL behavior.
-
----
-
-# 110. Laravel Contract Verification
-
-Run existing backend CAT-001 tests covering filters/sorting.
-
-Do not rewrite backend tests unless implementation reveals a genuine defect.
-
-Report exact test command and count.
-
----
-
-# 111. Runtime API Smoke Tests
-
-If local Laravel is available, test representative CAT-001 URLs.
-
-If the local database remains empty, filters may legitimately all return:
-
-```text
-200
-data: []
-```
-
-Do not create synthetic production data merely for smoke testing.
-
----
-
-# 112. Browser Verification
-
-Verify both:
-
-```text
-/products
-/search?search=<term>
-```
-
-with filtering controls.
-
-If fixture mode is needed for populated visual verification, clearly distinguish:
-
-```text
-API runtime evidence
-vs
-fixture visual evidence
-```
-
----
-
-# 113. Product Detail Regression
-
-Verify:
-
-```text
-/products/[missing]
-→ HTTP 404
-```
-
-remains intact.
-
----
-
-# 114. Category Regression
-
-Verify:
-
-```text
-/categories/[missing]
-→ HTTP 404
-```
-
-remains intact.
-
----
-
-# 115. Collection Regression
-
-Verify:
-
-```text
-/products
-→ HTTP 200
-
-/search
-→ HTTP 200
-```
-
-and neither receives resource preflight.
-
----
-
-# 116. Existing Frontend Suites
-
-Run:
-
-```text
-npm run test:filters       # actual chosen name
 npm run test:search
 npm run test:product-detail
 npm run test:products
@@ -2181,11 +1842,11 @@ npm run test:responsive
 npm run test:states
 ```
 
-plus routing tests if separately exposed.
+Use actual available script names if Phase 14.6 chose a different focused suite name.
 
 ---
 
-# 117. Static Validation
+# 102. Static Verification
 
 Must pass:
 
@@ -2198,173 +1859,163 @@ git diff --check
 
 ---
 
-# 118. Sonar Regression
+# 103. Backend Regression
 
-Because test infrastructure was recently remediated, ensure Phase 14.6 introduces none of:
+No Laravel implementation change is expected.
 
-```text
-node:vm
-eval
-new Function
-SourceTextModule
-runInContext
-custom TS execution
-```
+You may use existing CAT-002/CAT-004 tests as evidence that the resource fields consumed by metadata remain contract-correct.
 
-Do not reopen the SonarQube issue.
+Do not modify backend behavior for SEO.
 
 ---
 
-# 119. Component Creation Audit
+# 104. Browser/HTTP Verification
 
-For each new component report:
+Verify representative production-build routes with Chrome/curl or equivalent:
 
 ```text
-Component:
-<name>
-
-Responsibility:
-<stable responsibility>
-
-Existing components inspected:
-<list>
-
-MUI primitives considered:
-<list>
-
-Why existing composition was insufficient:
-<reason>
-
-Reusable by both /products and /search:
-YES / NO
+/
+ /products
+ /products/[fixture-or-real-slug]
+ /categories/[fixture-or-real-slug]
+ /search
+ /search?search=chair
 ```
 
-Prefer reusable catalog controls rather than route-specific duplicates.
+If the local Laravel database still has no catalog records, use explicit fixture mode for populated metadata verification and clearly distinguish it from API runtime evidence.
+
+Do not create production database records solely for this test.
 
 ---
 
-# 120. Expected Reuse
+# 105. Source-of-Truth Audit
 
-Likely reusable responsibilities may include conceptually:
+For every metadata value, identify its source:
 
 ```text
-CatalogFilters
-CatalogSort
-CatalogQuery
+Site name:
+repository brand authority
+
+Product title:
+CAT-002 product.name
+
+Product description:
+CAT-002 product.description / documented factual fallback
+
+Product canonical slug:
+CAT-002 product.slug
+
+Product image:
+authoritative product media
+
+Category title:
+CAT-004 category.name
+
+Category description:
+CAT-004 category.description / documented factual fallback
+
+Category canonical slug:
+CAT-004 category.slug
+
+Search term:
+validated URL search state
+
+Canonical origin:
+server-side site-origin configuration
 ```
 
-but these names are NOT requirements.
-
-Inspect the repo first.
-
-Do not create components simply because this prompt names a concept.
+No invented database or marketing data.
 
 ---
 
-# 121. Forbidden Duplicates
+# 106. Metadata vs Visible Content
 
-Do not create:
+Metadata should accurately describe the page customers actually receive.
 
-```text
-ProductsFilterPanel
-SearchFilterPanel
+Do not create an SEO-only hidden narrative that differs materially from visible content.
 
-ProductsSort
-SearchSort
-
-ProductsPagination
-SearchPagination
-```
-
-when the same catalog-query responsibility can be shared.
+No cloaking-like behavior.
 
 ---
 
-# 122. Client Boundary Audit
+# 107. Accessibility
 
-Report all new files containing:
+Metadata work should not alter visible heading semantics.
 
-```text
-"use client"
-```
+Do not change H1 text merely to satisfy title-tag preferences unless a genuine content defect exists.
 
-Expected:
+Metadata title and visible H1 may differ modestly because they serve different contexts.
+
+---
+
+# 108. Design System
+
+Expected visual changes:
 
 ```text
 NONE
 ```
 
-or at most a narrowly justified ephemeral mobile filter disclosure.
+SEO metadata should not require new colors, typography, spacing, components, or layout.
 
-If one exists, report:
-
-```text
-why native/server composition was insufficient
-what local state it owns
-why URL filter state remains server authority
-JS payload introduced
-no-JS fallback
-```
+Do not touch frozen design tokens.
 
 ---
 
-# 123. Token Audit
+# 109. Sticky Navigation Regression
 
-Search changes for:
+The recently added sticky category navigation must remain unchanged unless metadata work reveals an unrelated compile/test issue.
 
-```text
-raw hex colors
-arbitrary spacing
-arbitrary font sizes
-arbitrary radius
-custom shadows
-raw breakpoint widths
-custom transition timings
-```
-
-Expected:
-
-```text
-NONE
-```
+Do not combine shell redesign with SEO metadata.
 
 ---
 
-# 124. AI-Slop Audit
+# 110. Phase 14.6 Regression
 
-Explicitly check for:
-
-```text
-filter-chip wall
-excessive pills
-card-per-filter
-gradient panels
-glassmorphism
-decorative icons
-floating control islands
-fake marketplace badges
-oversized rounded controls
-```
-
-Expected:
+Do not change:
 
 ```text
-NONE
+filter vocabulary
+sort vocabulary
+price conversion architecture
+search preservation
+pagination behavior
 ```
+
+SEO logic may read owned query state but must not rewrite Phase 14.6 behavior.
 
 ---
 
-# 125. Documentation
+# 111. Price URL Contract
 
-Update:
+Canonical/facet logic must understand that:
 
 ```text
-frontend/web/ROUTING.md
+min_price
+max_price
 ```
 
-only if necessary to mark the already-reserved filtering/sorting behavior as implemented.
+contain integer TZS minor units.
 
-Do not rewrite the frozen query vocabulary.
+Do not reinterpret them as customer-facing TZS.
+
+Do not modify the approved narrow JavaScript conversion boundary.
+
+---
+
+# 112. Search Preservation Regression
+
+The valid code-review finding already fixed in Phase 14.6 must remain fixed:
+
+```text
+ProductCollectionControls preserves existing search state
+```
+
+Metadata work must not alter this.
+
+---
+
+# 113. Documentation
 
 Update:
 
@@ -2372,374 +2023,358 @@ Update:
 phases/group-N-phases.md
 ```
 
-with Phase 14.6 execution evidence.
+with Phase 14.7 execution evidence.
 
-Update `frontend/AGENTS.md` only for a genuinely durable rule not already documented.
+Update `ROUTING.md` only if a durable canonical/indexing rule genuinely belongs there.
+
+If you document the SEO policy, clearly distinguish:
+
+```text
+canonical route identity
+indexability
+query-state behavior
+```
+
+Do not rewrite the frozen routing contract.
 
 ---
 
-# 126. ADR
+# 114. ADR Policy
 
 Expected:
 
 ```text
-NONE
+ADR: NONE
 ```
 
-The query contract and URL-state architecture are already decided.
+Normal Next.js metadata implementation does not require an ADR.
 
-If a material unresolved architectural conflict appears, STOP before inventing a new decision.
+If introducing a durable site-origin configuration is merely framework configuration, document it with the frontend environment/config contract rather than creating an architecture decision.
+
+If a genuinely new cross-application SEO architecture decision is required:
+
+```text
+STOP
+```
+
+and report it before inventing one.
 
 ---
 
-# 127. Completion Report
+# 115. Files Expected to Change
+
+Likely areas include:
+
+```text
+frontend/web/app/layout.tsx
+frontend/web/app/page.tsx
+frontend/web/app/products/page.tsx
+frontend/web/app/products/[slug]/page.tsx
+frontend/web/app/categories/[slug]/page.tsx
+frontend/web/app/search/page.tsx
+
+frontend/web/lib/...metadata helpers if justified
+
+frontend/web/package.json
+  only for test script, not dependency
+
+frontend/web/ROUTING.md
+  only if durable SEO routing policy requires it
+
+phases/group-N-phases.md
+```
+
+Actual repository architecture wins.
+
+Do not create files merely because they appear in this list.
+
+---
+
+# 116. Completion Report
 
 Return:
 
 ```text
-PHASE 14.6 — FILTERING & SORTING
+PHASE 14.7 — SEO METADATA
 
 Status:
 PASS / BLOCKED
 
 
-ROUTES
+SITE IDENTITY
 
-/products:
-<status>
+Site name:
+<value>
 
-/search:
-<status>
+Root title default:
+<value>
 
-Category pages modified:
-YES / NO
+Title template:
+<value>
 
-Reason:
+Default description:
+<value/source>
+
+Production website origin:
+<configured value / REQUIRED NOT CONFIGURED>
+
+Origin source:
+<environment/config>
+
+API_BASE_URL used for canonical origin:
+NO / FAIL
+
+
+HOMEPAGE
+
+Title:
+<value>
+
+Description:
 <summary>
 
+Canonical:
+<value>
 
-CAT-001 CONTRACT
-
-category:
-<implementation>
-
-product_type:
-<implementation>
-
-availability:
-<implementation>
-
-min_price:
-<implementation>
-
-max_price:
-<implementation>
-
-sort:
-<implementation>
-
-sort_direction:
-<implementation>
-
-stock_indicator filter:
-NONE / FAIL
-
-Aliases introduced:
-NONE / FAIL
-
-
-CATEGORY AUTHORITY
-
-Category source:
-CAT-003 / <other>
-
-Backend slugs used:
+Indexable:
 YES / NO
 
-Hard-coded production taxonomy:
-NONE / FAIL
+Open Graph:
+PASS / FAIL
 
-Frontend slug generation:
-NONE / FAIL
+Twitter:
+PASS / FAIL
 
 
-URL STATE
+PRODUCT LISTING
 
-URL is authority:
+Base title:
+<value>
+
+Base canonical:
+<value>
+
+Base indexable:
 YES / NO
 
-React durable filter state:
-NONE / FAIL
+Page > 1 canonical policy:
+<policy>
 
-localStorage:
-NONE / FAIL
+Filtered collection indexable:
+NO / FAIL
 
-sessionStorage:
-NONE / FAIL
+Sorted collection indexable:
+NO / FAIL
 
-Filter change resets page:
-PASS / FAIL
+Price facet indexable:
+NO / FAIL
 
-Sort change resets page:
-PASS / FAIL
+Availability facet indexable:
+NO / FAIL
 
-Pagination preserves state:
-PASS / FAIL
-
-Search preserved:
-PASS / FAIL
-
-Clean page-one URL:
-PASS / FAIL
-
-
-FILTER UX
-
-Category:
-<control>
-
-Product type:
-<control>
-
-Availability:
-<control>
-
-Price:
-<control>
-
-Apply:
-<behavior>
-
-Clear filters:
-<behavior>
-
-Multi-select unsupported values exposed:
+Product-type facet indexable:
 NO / FAIL
 
 
-SORT UX
+PRODUCT DETAIL
 
-Options:
-<list>
+Metadata source:
+CAT-002 / FAIL
 
-Default:
-<behavior>
+Title source:
+<field>
 
-Unsupported sort modes:
+Description source:
+<field/fallback>
+
+Canonical slug source:
+BACKEND / FAIL
+
+Canonical:
+<pattern>
+
+Primary social image:
+<source>
+
+Fixture production fallback:
 NONE / FAIL
 
-Separate backend jargon exposed:
+Missing product:
+HTTP 404 / FAIL
+
+
+CATEGORY
+
+Metadata source:
+CAT-004 / FAIL
+
+Title source:
+<field>
+
+Description source:
+<field/fallback>
+
+Canonical slug source:
+BACKEND / FAIL
+
+Canonical:
+<pattern>
+
+Category image:
+<behavior>
+
+Filtered /products category competing canonical:
 NO / FAIL
-
-
-PRICE
-
-Customer-facing unit:
-TZS / FAIL
-
-API unit:
-INTEGER MINOR UNITS / FAIL
-
-Conversion boundary:
-<summary>
-
-Floating-point business arithmetic:
-NONE / FAIL
-
-min > max:
-<behavior>
-
-
-SEARCH COMPOSITION
-
-/search?search=... preserved:
-PASS / FAIL
-
-Search + category:
-PASS / FAIL
-
-Search + type:
-PASS / FAIL
-
-Search + availability:
-PASS / FAIL
-
-Search + price:
-PASS / FAIL
-
-Search + sort:
-PASS / FAIL
-
-Clear filters preserves search:
-PASS / FAIL
-
-
-DATA
-
-Production filtering:
-LARAVEL CAT-001 / FAIL
-
-Client-side filtering:
-NONE / FAIL
-
-Client-side sorting:
-NONE / FAIL
-
-Fetch-all filtering:
-NONE / FAIL
-
-CAT-002 N+1:
-NONE / FAIL
-
-Fixture fallback:
-NONE / FAIL
-
-
-COMPONENT REUSE
-
-ProductGrid:
-REUSED / FAIL
-
-ProductCard:
-REUSED / FAIL
-
-Pagination:
-REUSED / <details>
-
-Existing catalog helper:
-REUSED / <details>
-
-New components:
-<list>
-
-Duplicate route-specific controls:
-NONE / FAIL
-
-
-SERVER / CLIENT
-
-Pages server-first:
-PASS / FAIL
-
-New client boundaries:
-NONE / <list>
-
-Ephemeral state only:
-PASS / FAIL / N/A
-
-Filter values in client state:
-NONE / FAIL
-
-No-JS filtering:
-PASS / FAIL
-
-
-ACCESSIBILITY
-
-Filter labels:
-PASS / FAIL
-
-Fieldsets/legends:
-PASS / FAIL
-
-Price labels:
-PASS / FAIL
-
-Sort label:
-PASS / FAIL
-
-Keyboard:
-PASS / FAIL
-
-Visible focus:
-PASS / FAIL
-
-Touch targets:
-PASS / FAIL
-
-Mobile disclosure:
-PASS / FAIL / N/A
-
-200% reflow:
-PASS / FAIL
-
-
-RESPONSIVE
-
-320:
-PASS / FAIL
-
-390:
-PASS / FAIL
-
-640:
-PASS / FAIL
-
-959:
-PASS / FAIL
-
-960:
-PASS / FAIL
-
-961:
-PASS / FAIL
-
-1024:
-PASS / FAIL
-
-1440:
-PASS / FAIL
-
-1728:
-PASS / FAIL
-
-Horizontal overflow:
-NONE / FAIL
-
-
-EMPTY / ERROR STATES
-
-Filtered zero results:
-HTTP <status>
-
-Search+filter zero results:
-HTTP <status>
-
-Zero results → 404:
-NO / FAIL
-
-422:
-<behavior>
-
-429:
-<behavior>
-
-5xx:
-<behavior>
-
-Failures converted to empty:
-NO / FAIL
-
-
-PROXY REGRESSION
-
-/products preflight:
-NONE / FAIL
-
-/search preflight:
-NONE / FAIL
-
-Missing PDP:
-HTTP <status>
 
 Missing category:
-HTTP <status>
+HTTP 404 / FAIL
+
+
+SEARCH
+
+Indexable:
+NO / FAIL
+
+Robots:
+noindex, follow / <actual>
+
+Search title:
+<behavior>
+
+Search term escaped safely:
+PASS / FAIL
+
+Arbitrary search landing pages created:
+NONE / FAIL
+
+
+CANONICALS
+
+Builder:
+<path/responsibility>
+
+Website origin:
+PASS / FAIL
+
+Trailing slash policy:
+PASS / FAIL
+
+page=1 removed:
+PASS / FAIL
+
+Product uses returned slug:
+PASS / FAIL
+
+Category uses returned slug:
+PASS / FAIL
+
+API origin used:
+NO / FAIL
+
+Host header trusted:
+NO / <details>
+
+
+SOCIAL METADATA
+
+Open Graph site name:
+PASS / FAIL
+
+Open Graph URLs:
+PASS / FAIL
+
+Product image:
+PASS / FAIL
+
+Product image alt:
+PASS / FAIL
+
+Category image:
+PASS / FAIL / N/A
+
+Twitter card:
+PASS / FAIL
+
+Invented social handles:
+NONE / FAIL
+
+Invented image dimensions:
+NONE / FAIL
+
+
+DATA SAFETY
+
+Private data in metadata:
+NONE / FAIL
+
+Internal IDs exposed unnecessarily:
+NONE / FAIL
+
+API error details exposed:
+NONE / FAIL
+
+Fixture fallback in production:
+NONE / FAIL
+
+Marketing claims invented:
+NONE / FAIL
+
+
+SERVER ARCHITECTURE
+
+Metadata server-rendered:
+YES / FAIL
+
+New client components:
+NONE / FAIL
+
+Duplicate CAT-002 request:
+NONE / <justification>
+
+Duplicate CAT-004 request:
+NONE / <justification>
+
+Generic API client modified for SEO:
+NO / FAIL
+
+
+BOUNDARIES
+
+JSON-LD:
+NONE
+
+Structured data:
+NONE
+
+sitemap.ts:
+NONE
+
+robots.ts:
+NONE
+
+New internal-linking architecture:
+NONE
+
+Performance phase work:
+NONE
+
+Backend changed:
+NO
+
+Flutter changed:
+NO
+
+Design system changed:
+NO
+
+Dependencies added:
+NONE
 
 
 TEST INFRASTRUCTURE
 
 Runner:
-node:test + tsx / <other>
+node:test + tsx / <actual>
 
 load-ts.mjs:
 ABSENT / FAIL
@@ -2753,40 +2388,40 @@ NONE / FAIL
 
 VALIDATION
 
-Filter/sort suite:
+test:seo:
 PASS / FAIL
 
-Search:
+Phase 14.6 filter suite:
 PASS / FAIL
 
-Product detail:
+test:search:
 PASS / FAIL
 
-Products:
+test:product-detail:
 PASS / FAIL
 
-Category:
+test:products:
 PASS / FAIL
 
-Homepage:
+test:category:
 PASS / FAIL
 
-API:
+test:homepage:
 PASS / FAIL
 
-Theme:
+test:api:
 PASS / FAIL
 
-Layout:
+test:theme:
 PASS / FAIL
 
-Responsive:
+test:layout:
 PASS / FAIL
 
-States:
+test:responsive:
 PASS / FAIL
 
-Laravel CAT-001:
+test:states:
 PASS / FAIL
 
 TypeScript:
@@ -2802,69 +2437,49 @@ git diff --check:
 PASS / FAIL
 
 
-DESIGN
+RUNTIME HTML
 
-Frozen tokens:
+Homepage metadata:
 PASS / FAIL
 
-Ad-hoc visual values:
-NONE / <list>
+Products metadata:
+PASS / FAIL
 
-Duplicate design authority:
+PDP metadata:
+PASS / FAIL / DATA NOT AVAILABLE
+
+Category metadata:
+PASS / FAIL / DATA NOT AVAILABLE
+
+Search noindex:
+PASS / FAIL
+
+Filtered collection noindex:
+PASS / FAIL
+
+Duplicate title tags:
 NONE / FAIL
 
-AI-slop patterns:
-NONE / <list>
+Duplicate canonical tags:
+NONE / FAIL
 
-Urban Ladder usage:
-STRUCTURAL REFERENCE ONLY / N/A
-
-
-PHASE BOUNDARIES
-
-Comprehensive SEO:
-NO
-
-Structured data:
-NO
-
-Sitemap/robots:
-NO
-
-Comprehensive internal linking:
-NO
-
-Performance phase:
-NO
-
-Backend changed:
-NO
-
-Flutter changed:
-NO
-
-Dependencies added:
-NONE
+Production localhost canonicals:
+NONE / FAIL
 
 
 DOCUMENTATION
 
-ROUTING.md:
-UPDATED / UNCHANGED
-
 Group N:
 UPDATED / FAIL
 
-frontend/AGENTS.md:
+ROUTING.md:
+UPDATED / UNCHANGED
+
+Environment/config documentation:
 UPDATED / UNCHANGED
 
 ADR:
 NONE / <id>
-
-
-FILES CHANGED
-
-<list>
 
 
 GIT
@@ -2884,76 +2499,68 @@ Push:
 
 RESULT
 
-Phase 14.6:
+Phase 14.7:
 PASS / BLOCKED
 
-Phase 14.7:
+Phase 14.8:
 READY / BLOCKED
 ```
 
 ---
 
-# 128. STOP Condition
+# 117. STOP Condition
 
-Phase 14.6 may be declared PASS only when:
+Phase 14.7 may be declared PASS only when:
 
-- `/products` supports the frozen CAT-001 filters;
-- `/search` composes search with those same filters;
-- `category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, and `sort_direction` use exact frozen vocabulary;
-- `stock_indicator` is not exposed as a filter;
-- no undocumented filter/sort aliases exist;
-- category options come from authoritative catalog data rather than duplicated production constants;
-- category filter URLs use backend slugs;
-- URL search parameters remain durable filter state;
-- filtering works through CAT-001 rather than JavaScript arrays;
-- sorting happens in Laravel;
-- filter/sort changes reset stale pagination;
-- pagination preserves active search/filter/sort state;
-- page one remains clean;
-- `/search` preserves the search term while filtering;
-- clearing filters from search does not erase the search term;
-- ProductGrid is reused;
-- ProductCard is reused;
-- canonical pagination is reused/extended rather than forked;
-- no CAT-002 N+1 is introduced;
-- product type and availability remain distinct semantics;
-- MADE_TO_ORDER remains first-class;
-- price UI is customer-facing TZS while API values remain integer minor units;
-- no floating-point business-money arithmetic is introduced;
-- invalid query states do not crash or masquerade as empty results;
-- valid zero-result combinations return HTTP 200;
-- no collection query becomes a 404;
-- `/products` and `/search` receive no detail-resource preflight;
-- existing product/category hard-404 behavior remains intact;
-- the implementation remains server-first;
-- URL state remains authoritative;
-- any client state is narrowly limited to ephemeral presentation state;
-- native/no-JS filter submission remains functional;
+- one canonical Next.js metadata architecture exists;
+- the site identity is consistently `SL Furnitures`;
+- a production website origin is not guessed;
+- canonical URLs use website origin, never `API_BASE_URL`;
+- homepage has unique factual metadata;
+- `/products` has unique collection metadata;
+- product metadata derives from CAT-002;
+- product canonical uses the backend-returned slug;
+- category metadata derives from CAT-004;
+- category canonical uses the backend-returned slug;
+- missing products/categories retain hard HTTP 404 behavior;
+- search pages are `noindex, follow`;
+- arbitrary filtered/sorted/price/availability/product-type collection combinations are not turned into indexable SEO landing pages;
+- `/products?category=...` does not compete with `/categories/[slug]`;
+- meaningful plain pagination is not blindly canonicalized to page 1;
+- `page=1` does not create a duplicate canonical;
+- Open Graph metadata is factual;
+- Twitter metadata is factual;
+- authoritative catalog imagery is reused where suitable;
+- no fixture media leaks into production metadata;
+- no social accounts are invented;
+- no image dimensions are invented;
+- no marketing claims are invented;
+- no private data enters metadata;
+- metadata remains server-rendered;
+- no unnecessary client component is introduced;
+- no SEO concepts leak into the generic API transport;
 - no new dependency is added;
-- no duplicate filter architecture exists between `/products` and `/search`;
-- frozen design tokens remain authoritative;
-- responsive checks pass;
-- 200% reflow passes;
-- accessibility checks pass;
-- no horizontal overflow exists;
-- the new `tsx` test infrastructure is used;
-- no VM/dynamic-execution test loader returns;
-- CAT-001 backend filter/sort tests pass;
-- all existing frontend regressions pass;
+- Phase 14.6 query/filter behavior remains unchanged;
+- sticky navigation remains unaffected;
+- no JSON-LD is implemented;
+- no sitemap is implemented;
+- no `robots.txt` implementation is added;
+- no Phase 14.10 internal-linking work is introduced;
+- no Phase 14.11 performance project is introduced;
+- focused metadata tests pass;
+- runtime HTML metadata is inspected, not merely TypeScript objects;
+- all relevant regressions pass;
 - TypeScript passes;
 - ESLint passes;
 - production build passes;
 - `git diff --check` passes;
-- no Phase 14.7+ work is implemented;
 - Git operations follow `git-workflow-and-versioning`.
 
 Then report exactly:
 
 ```text
-Phase 14.6 — PASS
-Phase 14.7 — READY
+Phase 14.7 — PASS
+Phase 14.8 — READY
 ```
 
-Do not start Phase 14.7 automatically.
-
-**Phase 14.6 is URL-driven catalog refinement, not a client-side product engine. Laravel already owns search, filtering, deterministic sorting, and pagination; the website's job is to expose that contract clearly, accessibly, and beautifully while preserving the restrained SL Furnitures design system.**
+Do not start Phase 14.8 automatically.

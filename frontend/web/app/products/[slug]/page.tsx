@@ -2,24 +2,34 @@ import Breadcrumbs from "@mui/material/Breadcrumbs";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/catalog/format-money";
+import { selectPrimaryImage } from "@/lib/catalog/media";
 import { PRODUCT_DETAIL_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getProductDetail } from "@/lib/products/detail";
+import { buildProductMetadata } from "@/lib/seo/catalog-metadata";
 
 type ProductPageProps = Readonly<{ params: Promise<{ slug: string }> }>;
 
 const MISSING_PRODUCT_ERROR_CODES = new Set(["RESOURCE_NOT_FOUND", "PRODUCT_NOT_FOUND"]);
 
+export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const detail = await loadProductDetailCached(slug);
+  return buildProductMetadata(detail.product);
+}
+
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;
-  const detail = await loadProductDetail(slug);
+  const detail = await loadProductDetailCached(slug);
   const { product } = detail;
-  const leadImage = product.images.find((image) => image.is_primary) ?? product.images[0];
+  const leadImage = selectPrimaryImage(product.images);
   const secondaryImages = product.images.filter((image) => image.id !== leadImage?.id);
   const productAvailability = availabilityLabel(product.product_type, product.stock_indicator, product.availability);
 
@@ -74,6 +84,8 @@ async function loadProductDetail(slug: string) {
     throw error;
   }
 }
+
+const loadProductDetailCached = cache(loadProductDetail);
 
 function isMissingProductError(error: unknown): error is ApiError {
   return error instanceof ApiError

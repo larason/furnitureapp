@@ -1,6 +1,7 @@
 import Breadcrumbs from "@mui/material/Breadcrumbs";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
 import { ProductCollectionControls } from "@/components/catalog/product-collection-controls";
 import { ProductCollectionPagination } from "@/components/catalog/product-collection-pagination";
 import { ProductGrid } from "@/components/catalog/product-grid";
@@ -10,8 +11,13 @@ import { getCategoryFilterOptions } from "@/lib/category/options";
 import { parseProductCollectionQuery, type ProductCollectionSearchParams } from "@/lib/catalog/filters";
 import { PRODUCT_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getProductCatalog } from "@/lib/products/catalog";
+import { buildProductsMetadata } from "@/lib/seo/catalog-metadata";
 
 type ProductsPageProps = Readonly<{ searchParams: Promise<ProductCollectionSearchParams> }>;
+
+export async function generateMetadata({ searchParams }: ProductsPageProps): Promise<Metadata> {
+  return buildProductsMetadata(parseProductCollectionQuery(await searchParams));
+}
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps) {
   const query = parseProductCollectionQuery(await searchParams);

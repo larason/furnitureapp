@@ -53,7 +53,18 @@ Search, filters, sorting, and pagination that a customer should be able to share
 | Sorting | `sort`, `sort_direction` | `sort`: `created_at`, `price`, `name`; direction: `asc` / `desc`. |
 | Pagination | `page`, `per_page` | One-based page; `per_page` 1–100, backend default 20. |
 
-Parameter order has no meaning. A URL parser should read only parameters supported by its route and must not globally strip/rewrite unknown parameters. Ephemeral display state (menus, focus, hover, temporary accordion state) stays local. No route implementation, filter UI, or SEO canonicalization is part of this phase.
+Parameter order has no meaning. A URL parser should read only parameters supported by its route and must not globally strip/rewrite unknown parameters. Ephemeral display state (menus, focus, hover, temporary accordion state) stays local.
+
+## Search And Collection Metadata Policy
+
+Canonical route identity, indexability, and query-state behavior are distinct. The public catalog metadata policy is:
+
+- `/`, `/products/[slug]`, and `/categories/[slug]` are canonical, indexable resource identities. Product and category canonicals use the Laravel-returned slug, never a locally derived slug or machine ID.
+- `/categories/[slug]` is the canonical category-resource surface. A category-filtered collection such as `/products?category=living-room` is a discovery state and must not compete with it.
+- `/products` is the canonical generic collection. Filter, sort, price, and availability query states are `noindex, follow` discovery states that canonicalize to `/products`.
+- Meaningful plain pagination is preserved rather than collapsed to page 1: `/products?page=N` (`N > 1`) self-canonicalizes, and `/products` remains canonical for page 1. Category pagination self-canonicalizes the same way.
+- `/search` is always `noindex, follow`; search queries canonicalize to `/search` rather than creating an indexable page per term.
+- Canonical and social metadata use the server-only `SITE_URL` website origin. `API_BASE_URL` and request host headers are never canonical origins.
 
 ## Route And Navigation Rules
 

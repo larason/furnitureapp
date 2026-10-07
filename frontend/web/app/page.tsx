@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
 import Image from "next/image";
 import { CatalogDiscovery } from "@/components/catalog/catalog-discovery";
 import { SiteSection } from "@/components/layout/site-section";
@@ -9,8 +10,11 @@ import { isSiteRouteImplemented } from "@/components/layout/site-navigation";
 import { HOMEPAGE_MEDIA } from "@/lib/homepage/fixtures";
 import { EDITORIAL_IMAGE_SIZES, HERO_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getHomepageCatalog } from "@/lib/homepage/catalog";
+import { buildHomeMetadata } from "@/lib/seo/catalog-metadata";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = buildHomeMetadata();
 
 export default async function Home() {
   const catalog = await getHomepageCatalog();

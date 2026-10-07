@@ -80,6 +80,11 @@ export function singleValue(value: ProductCollectionQueryValue | undefined): str
   return typeof value === "string" ? value : undefined;
 }
 
+export function collectionPage(query: ProductCollectionQuery): number {
+  const value = singleValue(query.page);
+  return value !== undefined && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : 1;
+}
+
 function appendValue(params: URLSearchParams, key: string, value: ProductCollectionQueryValue) {
   if (typeof value !== "string") {
     for (const item of value) params.append(key, item);

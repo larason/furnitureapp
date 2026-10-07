@@ -2,24 +2,34 @@ import Breadcrumbs from "@mui/material/Breadcrumbs";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { ProductGrid } from "@/components/catalog/product-grid";
 import { NavLink } from "@/components/layout/nav-link";
 import { SiteSection } from "@/components/layout/site-section";
 import { ApiError } from "@/lib/api/client";
 import { getCategoryCatalog } from "@/lib/category/catalog";
 import { CATEGORY_PRODUCT_IMAGE_SIZES, EDITORIAL_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
+import { buildCategoryMetadata } from "@/lib/seo/catalog-metadata";
 
 type CategoryPageProps = Readonly<{
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ page?: string | readonly string[] }>;
 }>;
 
+export async function generateMetadata({ params, searchParams }: CategoryPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const { page } = await searchParams;
+  const catalog = await loadCategoryCatalogCached(slug, firstScalar(page));
+  return buildCategoryMetadata(catalog.category, parsePage(page));
+}
+
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
   const { slug } = await params;
   const { page } = await searchParams;
-  const catalog = await loadCategoryCatalog(slug, page);
+  const catalog = await loadCategoryCatalogCached(slug, firstScalar(page));
 
   return (
     <>
@@ -75,9 +85,15 @@ async function loadCategoryCatalog(slug: string, page: string | readonly string[
 }
 
 function parsePage(value: string | readonly string[] | undefined): number {
-  const page = Array.isArray(value) ? value[0] : value;
+  const page = firstScalar(value);
   return page && /^[1-9]\d*$/.test(page) && Number.isSafeInteger(Number(page)) ? Number(page) : 1;
 }
+
+function firstScalar(value: string | readonly string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : value?.[0];
+}
+
+const loadCategoryCatalogCached = cache((slug: string, page: string | undefined) => loadCategoryCatalog(slug, page));
 
 function categoryPageHref(slug: string, page: number): string {
   return page === 1 ? `/categories/${slug}` : `/categories/${slug}?page=${page}`;

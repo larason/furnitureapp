@@ -34,3 +34,13 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Environment Configuration
+
+Server-only variables (never use `NEXT_PUBLIC_`):
+
+- `API_BASE_URL` — Laravel API origin for catalog data. See `lib/api/README.md`.
+- `CATALOG_MEDIA_BASE_URL` — optional catalog media/CDN origin for `next/image`; defaults to `API_BASE_URL`.
+- `SITE_URL` — the public website origin used only for canonical and social metadata (for example `https://www.example.com`). Set it to the site origin without a path, query, or trailing slash. Metadata is server-rendered, so this remains a server-only setting. It is required in production; if it is missing, canonical and social URLs are omitted (never resolved to localhost) and the server logs a warning. Do not use `API_BASE_URL` as the website canonical origin.
+
+`HOMEPAGE_DATA_SOURCE=fixtures` enables an explicit, deterministic design-preview mode for local visual work. Fixture data is never used as a production fallback.

@@ -3,6 +3,7 @@ import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
 import { ProductCollectionControls } from "@/components/catalog/product-collection-controls";
 import { ProductCollectionPagination } from "@/components/catalog/product-collection-pagination";
 import { ProductGrid } from "@/components/catalog/product-grid";
@@ -11,8 +12,13 @@ import { getCategoryFilterOptions } from "@/lib/category/options";
 import { isMeaningfulSearch, parseProductCollectionQuery, singleValue, type ProductCollectionSearchParams } from "@/lib/catalog/filters";
 import { PRODUCT_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { getProductCatalog } from "@/lib/products/catalog";
+import { buildSearchMetadata } from "@/lib/seo/catalog-metadata";
 
 type SearchPageProps = Readonly<{ searchParams: Promise<ProductCollectionSearchParams> }>;
+
+export async function generateMetadata({ searchParams }: SearchPageProps): Promise<Metadata> {
+  return buildSearchMetadata(parseProductCollectionQuery(await searchParams));
+}
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const query = parseProductCollectionQuery(await searchParams);

@@ -18,7 +18,8 @@
     "test:products": "node --import=tsx --test lib/products/products.test.ts",
     "test:product-detail": "node --import=tsx --test lib/products/products.test.ts",
     "test:search": "node --import=tsx --test lib/search/search.test.ts",
-    "test:filters": "node --import=tsx --test lib/catalog/filters.test.ts"
+    "test:filters": "node --import=tsx --test lib/catalog/filters.test.ts",
+    "test:seo": "node --import=tsx --test lib/seo/seo.test.ts"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
