@@ -37,3 +37,7 @@ export const HOMEPAGE_PRODUCT_FIXTURES: readonly ProductSummary[] = [
     primary_image: { url: `${fixtureRoot}/products/barrel-armchair.jpg`, alt_text: "A cream barrel chair with a curved back" },
   },
 ];
+
+export const FIXTURE_PRODUCTS_BY_CATEGORY_SLUG: Readonly<Record<string, readonly ProductSummary[]>> = {
+  "living-room": HOMEPAGE_PRODUCT_FIXTURES,
+};

@@ -27,4 +27,11 @@ export const PRODUCT_IMAGE_SIZES = [
   `calc(100vw - ${gutters.phone} * 2)`,
 ].join(", ");
 
+export const CATEGORY_PRODUCT_IMAGE_SIZES = [
+  `(min-width: ${containerMax}) calc((${containerMax} - ${gutters.desktop} * 2 - ${space[6]} * 2) / 3)`,
+  `(min-width: ${breakpoints.tablet}) calc((100vw - ${gutters.tablet} * 2 - ${space[6]} * 2) / 3)`,
+  `(min-width: ${breakpoints.phone}) calc((100vw - ${gutters.tablet} * 2 - ${space[5]}) / 2)`,
+  `calc(100vw - ${gutters.phone} * 2)`,
+].join(", ");
+
 export const EDITORIAL_IMAGE_SIZES = HERO_IMAGE_SIZES;

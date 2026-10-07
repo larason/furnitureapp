@@ -19,3 +19,7 @@ export type CategorySummary = Readonly<{
   slug: string;
   image: Readonly<{ url: string }> | null;
 }>;
+
+export type CategoryDetail = CategorySummary & Readonly<{
+  description: string | null;
+}>;
