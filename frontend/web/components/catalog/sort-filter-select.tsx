@@ -28,7 +28,7 @@ export function SortFilterSelect({ sort, sortDirection }: Readonly<{ sort?: stri
   return (
     <>
       <FormControl fullWidth>
-        <InputLabel id="sort-label">Sort by</InputLabel>
+        <InputLabel id="sort-label" shrink>Sort by</InputLabel>
         <Select labelId="sort-label" label="Sort by" value={value} displayEmpty onChange={(event) => setValue(String(event.target.value))} renderValue={(selected) => SORT_OPTIONS.find((option) => option.value === selected)?.label ?? SORT_OPTIONS[0].label}>
           {SORT_OPTIONS.map((option) => (
             <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
