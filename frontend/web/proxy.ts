@@ -7,13 +7,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const slug = request.nextUrl.pathname.split("/").pop();
+  const path = request.nextUrl.pathname.split("/").filter(Boolean);
+  const resource = path[0];
+  const slug = path.at(-1);
   if (!slug) {
     return NextResponse.next();
   }
 
+  const apiPath = resource === "products" ? `products/${encodeURIComponent(slug)}` : `categories/${encodeURIComponent(slug)}`;
+
   try {
-    await apiRequest({ path: `categories/${encodeURIComponent(slug)}`, cache: "no-store" });
+    await apiRequest({ path: apiPath, cache: "no-store" });
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       return NextResponse.next({ status: 404 });
@@ -24,5 +28,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/categories/:path*",
+  matcher: ["/categories/:path*", "/products/:slug"],
 };

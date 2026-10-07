@@ -23,3 +23,7 @@ export type CategorySummary = Readonly<{
 export type CategoryDetail = CategorySummary & Readonly<{
   description: string | null;
 }>;
+
+export type ProductImage = Readonly<{ id: string; url: string; alt_text: string | null; sort_order: number; is_primary: boolean }>;
+export type ProductVariant = Readonly<{ id: string; sku: string; name: string; price: Money; availability: "available" | "unavailable"; stock_indicator: "IN_STOCK" | "LOW_STOCK" | "MADE_TO_ORDER" }>;
+export type ProductDetail = ProductSummary & Readonly<{ description: string | null; category: CategoryDetail; images: readonly ProductImage[]; variants: readonly ProductVariant[]; stock_indicator: "IN_STOCK" | "LOW_STOCK" | "MADE_TO_ORDER"; created_at: string; updated_at: string }>;

@@ -13,7 +13,7 @@ export const SITE_SERVICE_LINKS: readonly ServiceLink[] = [
 // owning phase ships, so the shell never exposes a broken navigation link.
 export const IMPLEMENTED_SITE_ROUTES: readonly string[] = ["/", "/products"];
 
-const IMPLEMENTED_DYNAMIC_ROUTE_PATTERNS = [/^\/categories\/[^/]+$/];
+const IMPLEMENTED_DYNAMIC_ROUTE_PATTERNS = [/^\/categories\/[^/]+$/, /^\/products\/[^/]+$/];
 
 export function isSiteRouteImplemented(href: string): boolean {
   const pathname = href.split(/[?#]/, 1)[0];

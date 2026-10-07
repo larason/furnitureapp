@@ -15,7 +15,8 @@
     "test:states": "node components/states/states.contract.mjs",
     "test:homepage": "node --test lib/homepage/homepage.test.mjs",
     "test:category": "node --test lib/category/category.test.mjs",
-    "test:products": "node --test lib/products/products.test.mjs"
+    "test:products": "node --test lib/products/products.test.mjs",
+    "test:product-detail": "node --test lib/products/products.test.mjs"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",

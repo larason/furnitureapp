@@ -1,4 +1,4 @@
-import type { CategorySummary, ProductSummary } from "../catalog/types";
+import type { CategorySummary, ProductDetail, ProductSummary } from "../catalog/types";
 
 const fixtureRoot = "/furnitures/fixtures";
 
@@ -41,3 +41,17 @@ export const HOMEPAGE_PRODUCT_FIXTURES: readonly ProductSummary[] = [
 export const FIXTURE_PRODUCTS_BY_CATEGORY_SLUG: Readonly<Record<string, readonly ProductSummary[]>> = {
   "living-room": HOMEPAGE_PRODUCT_FIXTURES,
 };
+
+const fixtureCategory = { id: "fixture_living", name: "Living Room", slug: "living-room", description: "Furniture for living spaces.", image: null };
+export const HOMEPAGE_PRODUCT_DETAIL_FIXTURES: Readonly<Record<string, ProductDetail>> = Object.fromEntries(
+  HOMEPAGE_PRODUCT_FIXTURES.map((product) => [product.slug, {
+    ...product,
+    category: fixtureCategory,
+    description: "A made-to-order furniture piece shown as part of the design preview.",
+    images: product.primary_image ? [{ id: `${product.id}_image`, url: product.primary_image.url, alt_text: product.primary_image.alt_text, sort_order: 0, is_primary: true }] : [],
+    variants: [],
+    stock_indicator: "MADE_TO_ORDER",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  }]),
+);

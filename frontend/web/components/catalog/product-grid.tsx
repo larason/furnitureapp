@@ -16,7 +16,7 @@ export function ProductGrid({ products, sizes }: Readonly<{ products: readonly P
     <Box component="ul" sx={productGridSx}>
       {products.map((product) => (
         <Box component="li" key={product.id} sx={{ minWidth: 0 }}>
-          <ProductCard product={product} sizes={sizes} />
+          <ProductCard product={product} sizes={sizes} href={`/products/${product.slug}`} />
         </Box>
       ))}
     </Box>

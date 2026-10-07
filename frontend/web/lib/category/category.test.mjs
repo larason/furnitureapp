@@ -79,7 +79,7 @@ test("category route remains server-rendered, uses the canonical card, and reser
   assert.match(page, /ApiError/);
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
   assert.doesNotMatch(page, /["']use client["']|<main|component="main"|href="#"|\/cart|\/checkout|\/payment|CategoryProductCard|ProductTile/);
-  assert.match(proxy, /matcher: "\/categories\/:path\*"/);
+  assert.match(proxy, /"\/categories\/:path\*"/);
   assert.match(proxy, /HOMEPAGE_DATA_SOURCE === "fixtures"/);
   assert.match(proxy, /NextResponse\.next\(\{ status: 404 \}\)/);
   assert.match(proxy, /status: 404/);
@@ -91,5 +91,5 @@ test("homepage category destinations are active only for the implemented dynamic
   const { isSiteRouteImplemented } = loadTs("components/layout/site-navigation.ts");
   assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
   assert.equal(isSiteRouteImplemented("/categories/living-room?page=2"), true);
-  assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), false);
+  assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), true);
 });

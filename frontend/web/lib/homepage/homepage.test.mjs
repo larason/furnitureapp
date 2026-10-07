@@ -52,7 +52,8 @@ test("canonical ProductCard renders media as data, request state and safe deferr
   assert.match(markup, /loading="lazy"/);
   assert.match(markup, /Made to order/);
   assert.match(markup, /From TZS/);
-  assert.doesNotMatch(markup, /<a[\s>]|Currently unavailable|Mui-error|fixtures/);
+  assert.match(markup, /<a href="\/products\/considered-chair"/);
+  assert.doesNotMatch(markup, /Currently unavailable|Mui-error|fixtures/);
   const missing = renderToStaticMarkup(createElement(ProductCard, { product: { ...product, primary_image: null }, sizes: "33vw" }));
   assert.match(missing, /Photograph to follow/);
   assert.match(missing, /A considered chair/);

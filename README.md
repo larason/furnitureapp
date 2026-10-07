@@ -294,3 +294,9 @@ Without HOMEPAGE_DATA_SOURCE=fixtures, products and categories come from Laravel
 The browser ultimately requests an optimized URL like:
 /_next/image?url=%2Ffurnitures%2Ffixtures%2Fproducts%2Fsofa.jpg&w=640&q=75
 Changing the filename in fixtures.ts should invalidate that URL automatically. If it does not, clear .next/cache/images and perform a hard refresh.
+
+5. Fixture prices are stored in minor units, not whole TZS.
+- amount: 10000000 represents TZS 100,000.00
+- amount: 24500000 represents TZS 245,000.00
+formatMoney() divides the integer by 100 before display, per the frozen API contract: 1 TZS = 100 minor units.
+So the extra two zeros in fixtures.ts are intentional. If you want a displayed price of TZS 1,000,000.00, the fixture must be amount: 100000000
