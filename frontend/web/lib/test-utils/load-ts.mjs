@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
@@ -38,6 +39,7 @@ export function loadTs(file, overrides = {}) {
     }
     return require(specifier);
   };
-  new Function("require", "module", "exports", output)(importer, compiled, compiled.exports);
+  const moduleFactory = new vm.Script(`(function(require, module, exports) { ${output}\n})`, { filename: path }).runInThisContext({ timeout: 1_000 });
+  moduleFactory(importer, compiled, compiled.exports);
   return compiled.exports;
 }

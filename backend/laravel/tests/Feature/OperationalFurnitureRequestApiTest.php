@@ -255,7 +255,12 @@ final class OperationalFurnitureRequestApiTest extends TestCase
             'phone' => '+255700000101',
             'created_at' => Carbon::parse('2026-02-02 12:00:00'),
         ]);
-        FurnitureRequest::factory()->create(['created_at' => Carbon::parse('2026-02-03 12:00:00')]);
+        FurnitureRequest::factory()->create([
+            'name' => 'Unrelated Customer',
+            'email' => 'unrelated@example.test',
+            'phone' => '+255700000999',
+            'created_at' => Carbon::parse('2026-02-03 12:00:00'),
+        ]);
         $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_request_filters']));
 
         foreach (['Amara', 'amara@example.com', '+255700000101', $matching->request_reference, 'Custom Oak Table'] as $search) {
