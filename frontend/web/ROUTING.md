@@ -76,6 +76,15 @@ Structured data describes only content and commercial capability that actually e
 - `BreadcrumbList` mirrors the visible hierarchy on `/products/[slug]` and `/categories/[slug]`, with one-based positions and absolute website URLs.
 - No `Product`, `ItemList`, or `SearchAction` graph is emitted on `/products`, `/categories/[slug]`, or `/search`. `SearchAction` is not used.
 
+## Crawl Discovery Policy
+
+`/sitemap.xml` and `/robots.txt` are Next.js metadata routes (`app/sitemap.ts`, `app/robots.ts`) generated from the public catalog.
+
+- The sitemap contains only canonical, query-free, indexable URLs: `/`, `/products`, `/categories/{slug}`, and `/products/{slug}`. Slugs come from CAT-003/CAT-001. Search, facet, sort, price, pagination, and reserved-but-unimplemented routes are excluded.
+- Product discovery traverses every CAT-001 page (`per_page=100`); category discovery reuses the paginated CAT-003 traversal. No CAT-002/CAT-004 N+1. `lastModified`, `changeFrequency`, and `priority` are omitted because no authoritative timestamp or ranking policy exists, and unexpected API failure propagates rather than falling back to fixtures.
+- `SITE_URL` is required for a meaningful sitemap. Without it, `/sitemap.xml` is an empty `urlset` and `/robots.txt` omits the `Sitemap` directive; no localhost or API origin is emitted.
+- `robots.txt` allows general crawling, disallows `/search` and the owned facet parameters (`category`, `product_type`, `availability`, `min_price`, `max_price`, `sort`, `sort_direction`) as both first (`/*?param=`) and subsequent (`/*&param=`) query parameters, and does not globally block `?page=`, product, or category routes. Page-level `noindex, follow` decisions from Phase 14.7 are unchanged.
+
 ## Route And Navigation Rules
 
 - Next.js App Router is authoritative. The only current application route is `/` (`app/page.tsx`); it remains a minimal placeholder until Phase 14.1. Do not add `pages/` or create placeholder route files.

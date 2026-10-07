@@ -210,6 +210,6 @@ test("metadata layer stays server-only and respects phase boundaries", () => {
   assert.doesNotMatch(catalogMetadata, /ld\+json|application\/ld|dangerouslySetInnerHTML|next\/head/);
   assert.doesNotMatch(proxy, /metadata|SITE_URL/);
   assert.equal(NOINDEX_FOLLOW.index, false);
-  assert.equal(existsSync("app/sitemap.ts"), false);
-  assert.equal(existsSync("app/robots.ts"), false);
+  assert.equal(existsSync("app/sitemap.ts"), true);
+  assert.equal(existsSync("app/robots.ts"), true);
 });

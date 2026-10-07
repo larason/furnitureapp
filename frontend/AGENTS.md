@@ -90,6 +90,12 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - `Product.offers` stays omitted while the release is request-first (no active cart/checkout/payment). Do not fabricate merchant-listing fields. `MADE_TO_ORDER` is a valid offering, never `OutOfStock`.
 - `Product` JSON-LD belongs only on canonical product-detail pages; keep collection, category, and search pages free of product graphs and `SearchAction`.
 
+## Crawl Discovery
+
+- Serve `/sitemap.xml` and `/robots.txt` through `app/sitemap.ts` / `app/robots.ts` (Next metadata routes); never add static `public/` snapshots.
+- Sitemap entries are canonical, query-free URLs from the public catalog APIs (`/`, `/products`, `/categories/{slug}`, `/products/{slug}`), using backend slugs. Do not enumerate search, facet, sort, price, pagination, or reserved routes, and do not fabricate `lastModified`/`changeFrequency`/`priority`.
+- `robots.txt` allows public crawling, disallows `/search` and the owned facet parameters as first and subsequent query params, and advertises `Sitemap: {SITE_URL}/sitemap.xml` only when `SITE_URL` is configured. Keep page-level `noindex` metadata independent of robots rules.
+
 ## Icons
 
 Use only `@mui/icons-material` for web UI icons. Do not add `lucide-react`, `react-icons`, Heroicons, Font Awesome, custom SVG icon libraries, or emoji as UI icons.
