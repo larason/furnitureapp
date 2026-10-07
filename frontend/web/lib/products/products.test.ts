@@ -63,6 +63,9 @@ test("product detail uses CAT-002 data, activates canonical card links, and pres
   assert.match(page, /getProductDetail/);
   assert.match(page, /notFound\(\)/);
   assert.match(page, /formatMoney/);
+  assert.match(page, /error\.kind === "api"/);
+  assert.match(page, /RESOURCE_NOT_FOUND/);
+  assert.match(page, /PRODUCT_NOT_FOUND/);
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);
   assert.doesNotMatch(page, /["']use client["']|\/cart|\/checkout|\/payment|Buy now|Add to cart|wishlist/);
   assert.match(detail, /path: `products\/\$\{encodeURIComponent\(slug\)\}`/);

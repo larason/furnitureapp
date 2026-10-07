@@ -13,6 +13,8 @@ import { getProductDetail } from "@/lib/products/detail";
 
 type ProductPageProps = Readonly<{ params: Promise<{ slug: string }> }>;
 
+const MISSING_PRODUCT_ERROR_CODES = new Set(["RESOURCE_NOT_FOUND", "PRODUCT_NOT_FOUND"]);
+
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;
   const detail = await loadProductDetail(slug);
@@ -68,7 +70,14 @@ async function loadProductDetail(slug: string) {
     if (!detail) notFound();
     return detail;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) notFound();
+    if (isMissingProductError(error)) notFound();
     throw error;
   }
+}
+
+function isMissingProductError(error: unknown): error is ApiError {
+  return error instanceof ApiError
+    && error.kind === "api"
+    && error.status === 404
+    && error.errors.some((item) => MISSING_PRODUCT_ERROR_CODES.has(item.code));
 }
