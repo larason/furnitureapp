@@ -9,8 +9,8 @@ import {
   serializeProductCollectionQuery,
   toFilterControlValues,
 } from "./filters";
-import { stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
-import { read } from "../test-utils/frontend-test-helpers";
+import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
+import { isInvertedRange, syncPriceField } from "@/components/catalog/price-filter-inputs";
 
 test("CAT-001 serializes every supported collection parameter and omits page one", () => {
   const query = parseProductCollectionQuery({
@@ -80,4 +80,31 @@ test("catalog controls preserve an existing search term independently of the des
   const controls = read("components/catalog/product-collection-controls.tsx");
   assert.match(controls, /\{search \? <input type="hidden" name="search" value=\{search\}/);
   assert.doesNotMatch(controls, /action === "\/search" && search/);
+});
+
+test("price filter inputs convert whole TZS on change so the frozen minor-unit query is actually submitted", () => {
+  const component = read("components/catalog/price-filter-inputs.tsx");
+  assert.match(component, /onChange=\{syncPrices\}/);
+  assert.doesNotMatch(component, /onSubmit/);
+
+  const visible = { value: "200000", setCustomValidity: () => {} };
+  const hidden = { name: "", value: "", dataset: { queryName: "max_price" } };
+  assert.equal(syncPriceField(visible, hidden), "20000000");
+  assert.equal(hidden.name, "max_price");
+  assert.equal(hidden.value, "20000000");
+});
+
+test("price filter inputs omit invalid or empty values and flag inverted ranges", () => {
+  const cleared = { name: "min_price", value: "100", dataset: { queryName: "min_price" } };
+  assert.equal(syncPriceField({ value: "  ", setCustomValidity: () => {} }, cleared), "");
+  assert.equal(cleared.name, "");
+  assert.equal(cleared.value, "");
+
+  const invalid = { name: "min_price", value: "100", dataset: { queryName: "min_price" } };
+  assert.equal(syncPriceField({ value: "200000.5", setCustomValidity: () => {} }, invalid), "");
+  assert.equal(invalid.name, "");
+
+  assert.equal(isInvertedRange("500000", "200000"), true);
+  assert.equal(isInvertedRange("200000", "500000"), false);
+  assert.equal(isInvertedRange("200000", "200000"), false);
 });
