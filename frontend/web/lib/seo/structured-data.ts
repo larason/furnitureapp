@@ -7,11 +7,11 @@ export type JsonLdNode = Readonly<Record<string, unknown>>;
 export type BreadcrumbItem = Readonly<{ name: string; path: string }>;
 
 const SCRIPT_BREAKOUT_PATTERNS: readonly [RegExp, string][] = [
-  [/</g, "\\u003c"],
-  [/>/g, "\\u003e"],
-  [/&/g, "\\u0026"],
-  [/\u2028/g, "\\u2028"],
-  [/\u2029/g, "\\u2029"],
+  [/</g, String.raw`\u003c`],
+  [/>/g, String.raw`\u003e`],
+  [/&/g, String.raw`\u0026`],
+  [/\u2028/g, String.raw`\u2028`],
+  [/\u2029/g, String.raw`\u2029`],
 ];
 
 export function serializeJsonLd(data: JsonLdNode): string {

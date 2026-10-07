@@ -50,27 +50,30 @@ async function listProductSlugs(apiRequest: RequestFunction): Promise<readonly s
     throw new Error("Invalid homepage data source.");
   }
 
-  const products: ProductSummary[] = [];
-  let page = 1;
-  let lastPage = 1;
-  do {
-    const response = await apiRequest<readonly ProductSummary[]>({
-      path: "/products",
-      cache: "no-store",
-      query: { per_page: SITEMAP_PAGE_SIZE, page },
-    });
-    if (!response) {
-      throw new Error("Sitemap product response is missing.");
-    }
-    products.push(...response.data);
-    lastPage = response.meta?.pagination?.last_page ?? 1;
-    if (lastPage > MAX_SITEMAP_PAGES) {
-      throw new Error("Catalog exceeds the safe sitemap page limit.");
-    }
-    page += 1;
-  } while (page <= lastPage);
+  const firstPage = await fetchProductPage(apiRequest, 1);
+  const lastPage = firstPage.meta?.pagination?.last_page ?? 1;
+  if (lastPage > MAX_SITEMAP_PAGES) {
+    throw new Error("Catalog exceeds the safe sitemap page limit.");
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: lastPage - 1 }, (_, index) => index + 2).map((page) => fetchProductPage(apiRequest, page)),
+  );
+  const products: ProductSummary[] = [firstPage, ...remainingPages].flatMap((response) => response.data);
 
   return products.map((product) => product.slug);
+}
+
+async function fetchProductPage(apiRequest: RequestFunction, page: number) {
+  const response = await apiRequest<readonly ProductSummary[]>({
+    path: "/products",
+    cache: "no-store",
+    query: { per_page: SITEMAP_PAGE_SIZE, page },
+  });
+  if (!response) {
+    throw new Error("Sitemap product response is missing.");
+  }
+  return response;
 }
 
 async function listCategorySlugs(apiRequest: RequestFunction): Promise<readonly string[]> {
@@ -86,8 +89,12 @@ function canonicalUrl(path: string): string {
   return url;
 }
 
+function compareAlphabetically(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
 function uniqueSorted(values: readonly string[]): readonly string[] {
-  return [...new Set(values.filter((value) => value.length > 0))].sort();
+  return [...new Set(values.filter((value) => value.length > 0))].sort(compareAlphabetically);
 }
 
 function dedupe(paths: readonly string[]): readonly string[] {

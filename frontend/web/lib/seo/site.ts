@@ -48,7 +48,7 @@ export function getMetadataBase(): URL | undefined {
 export function buildCanonicalPath(pathname: string): string {
   const [rawPath = "", rawQuery] = pathname.split("?");
   let path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
-  path = path.replace(/\/+$/, "") || "/";
+  path = path.replace(/(^|[^/])\/+$/, "$1") || "/";
   return rawQuery ? `${path}?${rawQuery}` : path;
 }
 

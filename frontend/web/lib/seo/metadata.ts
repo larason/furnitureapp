@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { buildCanonicalUrl, SITE_NAME } from "./site";
+import { buildCanonicalUrl, getSiteOrigin, SITE_NAME } from "./site";
 
 export type SocialImage = Readonly<{ url: string; alt: string }>;
 
@@ -15,7 +15,7 @@ export type PageMetadataInput = Readonly<{
 
 export function createPageMetadata(input: PageMetadataInput): Metadata {
   const canonical = buildCanonicalUrl(input.canonicalPath);
-  const images = input.images ?? [];
+  const images = getSiteOrigin() ? input.images ?? [] : [];
 
   return {
     title: input.title,

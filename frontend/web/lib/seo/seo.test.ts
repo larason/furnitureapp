@@ -180,6 +180,23 @@ test("product metadata falls back to a factual description without inventing cla
   });
 });
 
+test("product and category metadata omit relative social images when SITE_URL is unavailable", () => {
+  const product = HOMEPAGE_PRODUCT_DETAIL_FIXTURES["fixture-open-frame-armchair"];
+  const category = { ...HOMEPAGE_CATEGORY_FIXTURES[0], description: null };
+  withSiteUrl(undefined, () => {
+    const productMetadata = serialize(buildProductMetadata(product));
+    assert.equal(productMetadata.alternates?.canonical, undefined);
+    assert.equal(productMetadata.openGraph?.images, undefined);
+    assert.equal(productMetadata.twitter?.images, undefined);
+    assert.equal(productMetadata.twitter?.card, "summary");
+
+    const categoryMetadata = serialize(buildCategoryMetadata(category, 1));
+    assert.equal(categoryMetadata.alternates?.canonical, undefined);
+    assert.equal(categoryMetadata.openGraph?.images, undefined);
+    assert.equal(categoryMetadata.twitter?.images, undefined);
+  });
+});
+
 test("category metadata derives from CAT-004, uses the backend slug, and self-canonicalizes pagination", () => {
   const category = { ...HOMEPAGE_CATEGORY_FIXTURES[0], description: "Furniture for living spaces." };
   withSiteUrl(TEST_ORIGIN, () => {

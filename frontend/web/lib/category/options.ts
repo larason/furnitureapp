@@ -13,8 +13,12 @@ export async function getCategoryFilterOptions(apiRequest: RequestFunction = def
 
   const categories = [...firstPage.data];
   const lastPage = firstPage.meta?.pagination?.last_page ?? 1;
-  for (let page = 2; page <= lastPage; page += 1) {
-    const response = await apiRequest<readonly CategorySummary[]>({ path: "/categories", cache: "no-store", query: { page } });
+  const remainingPages = await Promise.all(
+    Array.from({ length: Math.max(lastPage - 1, 0) }, (_, index) => index + 2).map((page) =>
+      apiRequest<readonly CategorySummary[]>({ path: "/categories", cache: "no-store", query: { page } }),
+    ),
+  );
+  for (const response of remainingPages) {
     if (!response) throw new Error("Category response is missing.");
     categories.push(...response.data);
   }

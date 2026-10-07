@@ -15,6 +15,8 @@ import { CATEGORY_PRODUCT_IMAGE_SIZES } from "@/lib/homepage/image-sizes";
 import { buildCategoryMetadata } from "@/lib/seo/catalog-metadata";
 import { buildBreadcrumbStructuredData } from "@/lib/seo/structured-data";
 
+type SearchParamValue = string | readonly string[] | undefined;
+
 type CategoryPageProps = Readonly<{
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ page?: string | readonly string[] }>;
@@ -70,7 +72,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
   );
 }
 
-async function loadCategoryCatalog(slug: string, page: string | readonly string[] | undefined) {
+async function loadCategoryCatalog(slug: string, page: SearchParamValue) {
   try {
     const catalog = await getCategoryCatalog(slug, parsePage(page));
     if (!catalog) {
@@ -85,12 +87,12 @@ async function loadCategoryCatalog(slug: string, page: string | readonly string[
   }
 }
 
-function parsePage(value: string | readonly string[] | undefined): number {
+function parsePage(value: SearchParamValue): number {
   const page = firstScalar(value);
   return page && /^[1-9]\d*$/.test(page) && Number.isSafeInteger(Number(page)) ? Number(page) : 1;
 }
 
-function firstScalar(value: string | readonly string[] | undefined): string | undefined {
+function firstScalar(value: SearchParamValue): string | undefined {
   return typeof value === "string" ? value : value?.[0];
 }
 

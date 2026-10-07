@@ -991,7 +991,7 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 
 ---
 
-## PHASE GROUP H — PAYMENTS
+## PHASE GROUP H — PAYMENTS *deferred*
 
 ### Phase 8.1 — Payment provider selection/integration boundary
 ### Phase 8.2 — Payment model
@@ -1007,7 +1007,7 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 
 ---
 
-## PHASE GROUP I — ORDER MANAGEMENT
+## PHASE GROUP I — ORDER MANAGEMENT *deferred*
 
 ### Phase 9.1 — Order creation finalization
 ### Phase 9.2 — Order status state machine

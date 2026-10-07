@@ -3,7 +3,8 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import SearchPage from "@/app/search/page";
 import { isSiteRouteImplemented } from "@/components/layout/site-navigation";
-import type { ApiRequestOptions } from "@/lib/api/client";
+import { ApiError, type ApiRequestOptions } from "@/lib/api/client";
+import { isSearchValidationError, SEARCH_QUERY_MAX_LENGTH } from "@/lib/catalog/filters";
 import { getProductCatalog } from "@/lib/products/catalog";
 import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
 
@@ -22,6 +23,18 @@ test("search sends the meaningful term to CAT-001 and preserves API failures", a
   });
 });
 
+test("search length limit matches the API contract and only 422 search validation is treated as expected", () => {
+  assert.equal(SEARCH_QUERY_MAX_LENGTH, 100);
+  const searchValidation = new ApiError(422, [{ code: "INVALID_VALUE", message: "The search field must not be greater than 100 characters.", field: "search" }], "req_1");
+  const otherFieldValidation = new ApiError(422, [{ code: "INVALID_VALUE", message: "The category field is invalid.", field: "category" }], "req_2");
+  const serverError = new ApiError(500, [{ code: "SERVER_ERROR", message: "Unexpected error." }], "req_3");
+
+  assert.equal(isSearchValidationError(searchValidation), true);
+  assert.equal(isSearchValidationError(otherFieldValidation), false);
+  assert.equal(isSearchValidationError(serverError), false);
+  assert.equal(isSearchValidationError(new Error("boom")), false);
+});
+
 test("search route is server-rendered, uses a native GET form, and retains search pagination", () => {
   const page = read("app/search/page.tsx");
   const proxy = read("proxy.ts");
@@ -32,7 +45,8 @@ test("search route is server-rendered, uses a native GET form, and retains searc
   assert.match(page, /component="form"/);
   assert.match(page, /action="\/search"/);
   assert.match(page, /method="get"/);
-  assert.match(page, /htmlInput: \{ name: "search" \}/);
+  assert.match(page, /htmlInput: \{ name: "search", maxLength: SEARCH_QUERY_MAX_LENGTH \}/);
+  assert.match(page, /isSearchValidationError/);
   assert.match(page, /ProductCollectionPagination/);
   assert.match(read("lib/catalog/filters.ts"), /new URLSearchParams/);
   assert.equal((page.match(/component="h1"/g) ?? []).length, 1);

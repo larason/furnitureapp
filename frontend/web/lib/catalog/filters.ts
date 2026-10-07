@@ -1,3 +1,5 @@
+import { ApiError } from "../api/client";
+
 export type ProductCollectionQueryValue = string | readonly string[];
 
 export type ProductCollectionQuery = Readonly<{
@@ -18,6 +20,8 @@ export const PRODUCT_TYPES = ["IN_STOCK", "MADE_TO_ORDER"] as const;
 export const AVAILABILITY_VALUES = ["available", "unavailable"] as const;
 export const SORT_FIELDS = ["created_at", "price", "name"] as const;
 export const SORT_DIRECTIONS = ["asc", "desc"] as const;
+
+export const SEARCH_QUERY_MAX_LENGTH = 100;
 
 const QUERY_KEYS = ["search", "category", "product_type", "availability", "min_price", "max_price", "sort", "sort_direction", "page"] as const;
 const WHOLE_TZS = /^\d+$/;
@@ -43,7 +47,7 @@ export function serializeProductCollectionQuery(query: ProductCollectionQuery): 
 }
 
 export function productCollectionHref(pathname: "/products" | "/search", query: ProductCollectionQuery, page?: number): string {
-  const nextQuery = { ...query, ...(page === undefined ? isPageOne(query.page) ? { page: undefined } : {} : page === 1 ? { page: undefined } : { page: String(page) }) };
+  const nextQuery = { ...query, ...resolvePageUpdate(query.page, page) };
   const serialized = serializeProductCollectionQuery(nextQuery);
   return serialized ? `${pathname}?${serialized}` : pathname;
 }
@@ -93,12 +97,26 @@ function appendValue(params: URLSearchParams, key: string, value: ProductCollect
   }
 }
 
+export function isSearchValidationError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 422 && error.errors.some((item) => item.field === "search");
+}
+
 function isDefaultSort(query: ProductCollectionQuery, key: string): boolean {
   return (key === "sort" || key === "sort_direction") && query.sort === "created_at" && query.sort_direction === "desc";
 }
 
 function isPageOne(value: ProductCollectionQueryValue | undefined): boolean {
   return value === "1";
+}
+
+function resolvePageUpdate(currentPage: ProductCollectionQueryValue | undefined, page: number | undefined): ProductCollectionQuery {
+  if (page === undefined) {
+    return isPageOne(currentPage) ? { page: undefined } : {};
+  }
+  if (page === 1) {
+    return { page: undefined };
+  }
+  return { page: String(page) };
 }
 
 function validValue<T extends readonly string[]>(value: string | undefined, values: T): T[number] | undefined {
