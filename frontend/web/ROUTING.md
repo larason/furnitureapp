@@ -26,7 +26,7 @@ Therefore the canonical route uses the current API slug, but historic URL perman
 | `/products` | Product collection | Public | Shareable API-aligned query parameters | Phase 14.3 | Reserved |
 | `/products/[slug]` | Product detail | Public | Laravel-returned `Product.slug` | Phase 14.4 | Reserved |
 | `/categories/[slug]` | Category landing page | Public | Laravel-returned `Category.slug` | Phase 14.2 | Reserved |
-| `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Reserved |
+| `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Implemented |
 | `/furniture-requests` | Create a Furniture Request, including MADE_TO_ORDER interest | Public | Form state; no public request identifier | Owning request UI phase | Reserved |
 | `/contact` | Create a general Enquiry | Public | Form state; no public enquiry identifier | Phase 15.10 | Reserved |
 | `/sign-in` | Clerk sign-in entry point | Public | Clerk-owned identity flow | Phase 15.1 | Reserved |

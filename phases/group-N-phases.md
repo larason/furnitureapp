@@ -1,4 +1,4 @@
-# Phase 14.4 — Product Detail Page
+# Phase 14.5 — Public Product Search
 
 ## Entry State
 
@@ -7,71 +7,48 @@ Phase 14.1 — PASS
 Phase 14.2A — PASS
 Phase 14.2 — PASS
 Phase 14.3 — PASS
-Phase 14.4 — ACTIVE
+Phase 14.4 — PASS
+Phase 14.5 — ACTIVE
 ```
 
-Implement the canonical public Product Detail Page (PDP) for SL Furnitures.
+Implement the canonical public furniture search experience.
 
-Expected route:
+Canonical website route:
 
 ```text
-/products/[slug]
+/search?search=<term>
 ```
 
-Verify the frozen route before coding.
-
-Do NOT start Phase 14.5 or later phases.
+Do NOT start Phase 14.6.
 
 ---
 
 # 1. Objective
 
-Build the canonical public furniture detail experience where a visitor can understand an individual product sufficiently to decide whether to continue into the appropriate business workflow.
+Build a public, server-rendered search experience that allows visitors to search the authoritative Laravel product catalog.
 
-The page should clearly answer:
-
-```text
-What is this furniture piece?
-What does it look like?
-What does it cost?
-What type of product is it?
-Is it available?
-What details/specifications are authoritative?
-What options/variants exist?
-Is it made to order?
-What is the legitimate next action?
-```
-
-The PDP must feel:
+The experience must:
 
 ```text
-architectural
-warm
-editorial
-calm
-material-led
-photography-led
-spacious
-premium but approachable
+accept a search term
+encode that term in the URL
+query CAT-001
+render Product Summary results
+reuse ProductGrid
+preserve canonical ProductCard navigation
+support pagination
+provide truthful empty states
+work without JavaScript
+remain accessible and responsive
 ```
 
-It must NOT become:
-
-```text
-Amazon product page
-generic Shopify PDP
-Urban Ladder clone
-marketplace detail page
-sales funnel
-badge wall
-specification dashboard
-```
+Search is a **catalog discovery surface**, not a new search architecture.
 
 ---
 
 # 2. Read Before Coding
 
-Read and follow the actual repository authority:
+Read and follow:
 
 ```text
 AGENTS.md
@@ -105,23 +82,24 @@ docs/decisions.md
 phases/group-N-phases.md
 ```
 
-Explicitly inspect implementations from:
+Inspect the actual implementations from:
 
 ```text
 13.5 API client
-13.7 layout system
+13.7 layout
 13.8 failure states
 13.9 responsive foundation
 
 14.1 homepage
 14.2 category pages
-14.2A category hard-404 remediation
+14.2A hard-404 architecture
 14.3 product listing
+14.4 product detail
 ```
 
-Do not implement from this prompt alone.
+Do not implement from assumptions.
 
-Repository contracts win.
+Repository authority wins.
 
 ---
 
@@ -136,2100 +114,1789 @@ git-workflow-and-versioning
 
 Preserve unrelated owner changes.
 
-Never commit:
+Never commit secrets or `.env*`.
 
-```text
-.env
-.env.local
-credentials
-tokens
-secrets
-```
-
-Use an atomic Phase 14.4 commit.
+Use one atomic Phase 14.5 commit.
 
 ---
 
-# 4. Frozen Product Contract
+# 4. Canonical Search Route
 
-The frozen catalog decisions establish:
-
-```text
-CAT-002
-GET /api/v1/products/{product}
-```
-
-as the public product-detail resource.
-
-Verify the exact contract.
-
-The endpoint resolves a product by:
+Implement:
 
 ```text
-public slug
-or
-opaque machine ID
+/search
 ```
 
-but the website route uses the backend-provided **slug**.
+Search state uses:
 
-Do NOT generate a slug client-side.
+```text
+?search=<term>
+```
 
-Do NOT expose numeric database IDs in website URLs.
+Examples:
+
+```text
+/search?search=sofa
+/search?search=dining%20table
+/search?search=walnut
+```
+
+Do NOT introduce:
+
+```text
+?q=
+?query=
+?keyword=
+?term=
+?s=
+```
+
+The canonical vocabulary is `search`.
 
 ---
 
-# 5. Canonical Website Route
+# 5. Website Route vs Laravel Endpoint
 
-Expected:
-
-```text
-/products/[slug]
-```
-
-Examples conceptually:
+Important distinction:
 
 ```text
-/products/amani-lounge-chair
-/products/mkongo-dining-table
+Website:
+GET /search?search=chair
+
+Laravel:
+GET /api/v1/products?search=chair
 ```
 
-Do not create aliases such as:
+There is NO requirement for:
 
 ```text
-/product/[slug]
-/furniture/[slug]
-/item/[slug]
-/shop/[slug]
+GET /api/v1/search
 ```
+
+Do not create one.
+
+Do not modify Laravel merely to make the website route names symmetrical.
 
 ---
 
-# 6. Public Access
+# 6. CAT-001 Is Search Authority
 
-Product detail is public catalog.
+Use the existing public product collection endpoint:
+
+```text
+GET /api/v1/products
+```
+
+with:
+
+```text
+search=<term>
+```
+
+The backend owns:
+
+```text
+search semantics
+FULLTEXT behavior
+variant matching
+visibility rules
+filter composition
+sorting
+pagination
+SQL escaping
+database-driver behavior
+```
+
+The frontend must not reproduce these rules.
+
+---
+
+# 7. Do Not Build a Frontend Search Engine
+
+Forbidden:
+
+```text
+fetch all products
+→ filter in JavaScript
+```
+
+Also forbidden:
+
+```text
+Fuse.js
+MiniSearch
+Lunr
+Algolia
+Meilisearch
+ElasticSearch
+local fuzzy matching
+custom relevance engine
+```
+
+No search dependency is expected.
+
+---
+
+# 8. Backend Search Semantics
+
+Inspect the authoritative backend contract and implementation.
+
+Do NOT attempt to duplicate:
+
+```text
+MySQL FULLTEXT
+MariaDB FULLTEXT
+SQLite fallback behavior
+variant SKU search
+variant attribute search
+escaping rules
+visibility constraints
+```
+
+The browser sends the term.
+
+Laravel determines matches.
+
+---
+
+# 9. Public Access
+
+Search is public.
 
 Required:
 
 ```text
+Clerk: NONE
 authentication: NONE
-Clerk requirement: NONE
-customer session requirement: NONE
+cookies required: NONE
+customer account required: NONE
 ```
 
-A visitor must be able to view:
-
-```text
-product
-price
-public availability
-images
-description
-variants/public specifications
-```
-
-without authentication.
-
-Do not introduce Clerk during 14.4.
+Do not introduce auth during this phase.
 
 ---
 
-# 7. Full Detail vs Product Summary
-
-Do NOT use the listing representation as if it were the full PDP contract.
-
-The frozen architecture distinguishes:
-
-```text
-Product Summary
-→ collection/listing use
-
-Full Product Detail
-→ individual product page
-```
-
-The detail representation should be inspected for authoritative fields such as:
-
-```text
-id
-slug
-name
-product_type
-price
-category
-availability
-stock_indicator
-description
-images[]
-variants[]
-timestamps
-```
-
-Use only fields actually present in the frozen contract.
-
-Do not fabricate fields because furniture websites commonly have them.
-
----
-
-# 8. Laravel Is Product Authority
-
-Laravel owns:
-
-```text
-identity
-slug
-name
-description
-product type
-price
-currency
-category
-images
-variants
-availability
-stock indicator
-publication state
-```
-
-The frontend is presentation only.
-
-Do not infer business state from UI assumptions.
-
----
-
-# 9. Frozen Design System — ABSOLUTE RULE
-
-The implementation hierarchy remains:
-
-```text
-tokens.css
-    ↓
-MUI theme
-    ↓
-existing primitives
-    ↓
-existing commerce components
-    ↓
-PDP composition
-```
-
-Do NOT create a PDP-specific design system.
-
----
-
-# 10. Explicit Token Requirement
-
-Every visual decision must use the frozen system.
-
-Do NOT invent:
-
-```text
-colors
-font sizes
-font families
-spacing
-radii
-shadows
-elevation
-breakpoints
-motion
-focus styles
-container widths
-media ratios
-```
-
-Expected audit:
-
-```text
-Unapproved ad-hoc design values:
-NONE
-```
-
----
-
-# 11. Do Not Reinvent Components
-
-Before creating ANY component, search the existing implementation.
-
-Reuse where applicable:
-
-```text
-SiteShell
-SiteSection
-ContentContainer
-NavLink
-ProductCard
-ProductGrid
-existing breadcrumb implementation
-existing price formatter
-existing media handling
-existing state components
-MUI primitives
-Next.js Image
-```
-
-Do not recreate them under PDP-specific names.
-
----
-
-# 12. Component Creation Gate
-
-A new component is justified only when it owns a stable reusable responsibility.
-
-Before adding one, answer:
-
-```text
-What responsibility does it own?
-
-Why can existing composition not express it cleanly?
-
-Is it furniture/product-domain reusable?
-
-Does MUI already provide the primitive?
-
-Does an existing project component already own this behavior?
-```
-
----
-
-# 13. Forbidden Reinventions
-
-Do NOT create redundant components such as:
-
-```text
-ProductDetailButton
-ProductDetailTypography
-ProductDetailContainer
-PdpSection
-PdpBreadcrumb
-ProductDetailPrice
-FurnitureButton
-ProductDetailProductCard
-```
-
-unless a genuine reusable responsibility demonstrably requires one.
-
----
-
-# 14. ProductCard Activation
-
-Phase 14.3 intentionally left product detail navigation for 14.4.
-
-Now activate canonical product navigation where appropriate in the existing `ProductCard`.
+# 10. Server-First Architecture
 
 Expected:
 
 ```text
-ProductCard
-→ /products/{backendSlug}
-```
-
-This should activate product discovery from:
-
-```text
-homepage
-category pages
-/products
-future search results
-```
-
-without page-specific card forks.
-
----
-
-# 15. ProductCard Must Stay Canonical
-
-Do NOT create:
-
-```text
-LinkedProductCard
-ProductCardLink
-ClickableProductCard
-ListingProductLinkCard
-```
-
-merely because links are now active.
-
-Improve the canonical `ProductCard` contract if necessary.
-
----
-
-# 16. ProductCard Link Semantics
-
-Use real navigation semantics.
-
-Do not make an entire complex card a fake button.
-
-Ensure:
-
-```text
-keyboard accessibility
-clear focus
-valid link nesting
-no nested interactive conflicts
-```
-
-Since no wishlist/quick-add controls exist, the card interaction model should remain simple.
-
----
-
-# 17. Server-First PDP
-
-The page must remain server-first.
-
-Expected:
-
-```text
-app/products/[slug]/page.tsx
+app/search/page.tsx
 → Server Component
 ```
 
-Do not add:
+Do not add `"use client"` to the search page.
 
-```tsx
-"use client";
-```
-
-to the entire PDP.
+Search results must be present in server-rendered HTML.
 
 ---
 
-# 18. Dynamic Params
+# 11. Native GET Search Form
+
+Prefer a semantic HTML GET form.
+
+Conceptually:
+
+```html
+<form action="/search" method="get">
+  <label>...</label>
+  <input name="search" ... />
+  <button type="submit">Search</button>
+</form>
+```
+
+Exact implementation must use the existing design system/MUI architecture.
+
+The essential behavior is:
+
+```text
+input
+→ native GET
+→ /search?search=<encoded term>
+→ server-rendered results
+```
+
+Search must work with JavaScript disabled.
+
+---
+
+# 12. No Client Search State
+
+Do not introduce React state merely to hold the search term.
+
+Do not require:
+
+```text
+useState
+useEffect
+useRouter
+router.push
+window.location
+```
+
+for ordinary search submission.
+
+The URL is the durable state.
+
+---
+
+# 13. No Debounced Search
+
+Do not implement:
+
+```text
+search-as-you-type
+debounce
+live results
+autocomplete
+suggestions
+predictive search
+typeahead
+```
+
+Those are not required by Phase 14.5.
+
+---
+
+# 14. No Search Overlay
+
+Do not create a modal/command-palette search system.
+
+The canonical search destination is `/search`.
+
+---
+
+# 15. Header Search Integration
+
+Inspect the existing `SearchAffordance` from the website shell.
+
+Phase 13.7 intentionally reserved `/search` without implementing search functionality.
+
+Now activate the legitimate search destination.
+
+At minimum:
+
+```text
+header search affordance
+→ /search
+```
+
+If the existing architecture naturally supports a real semantic search form in the header without unnecessary client state or visual disruption, that may be implemented.
+
+Do NOT rebuild the entire header.
+
+---
+
+# 16. Header Integration Rule
+
+Do not create competing search implementations such as:
+
+```text
+HeaderSearch
+DesktopSearch
+MobileSearch
+SearchBar
+SearchInput
+GlobalSearch
+```
+
+unless their responsibilities genuinely differ.
+
+Prefer one reusable search-form responsibility where appropriate.
+
+---
+
+# 17. Search Page Without Query
+
+`/search` is a valid public page.
+
+It should NOT be a 404.
+
+When no meaningful search term exists, render an intentional search-entry state such as:
+
+```text
+Search furniture
+Find pieces by name, material, style, or other catalog information.
+[search field]
+```
+
+Copy must remain factual and should not promise fields the backend does not actually search.
+
+---
+
+# 18. Do Not Treat Missing Query as Error
+
+These are not errors:
+
+```text
+/search
+/search?search=
+```
+
+Do not invoke:
+
+```text
+notFound()
+error boundary
+validation error UI
+```
+
+merely because a search term is absent.
+
+---
+
+# 19. Blank / Whitespace Search
+
+The backend deliberately normalizes empty/whitespace search to no search predicate.
+
+The website should avoid accidentally turning a blank search page into an unfiltered duplicate of `/products`.
+
+Normalize **presentation intent** conservatively:
+
+```text
+missing search
+empty search
+whitespace-only search
+```
+
+should render the search-entry state rather than displaying the entire catalog as “search results.”
+
+Do not change backend semantics.
+
+---
+
+# 20. Search Term Normalization
+
+Do not aggressively transform user search input.
+
+Do NOT:
+
+```text
+lowercase manually
+stem words
+remove punctuation
+transliterate
+rewrite spelling
+singularize/pluralize
+remove stop words
+```
+
+Laravel owns search interpretation.
+
+Trimming surrounding whitespace for UI/query-state purposes is acceptable if consistent with the backend contract.
+
+---
+
+# 21. URL Encoding
+
+Use standard URL/form encoding.
+
+Do not hand-build unsafe query strings.
+
+Search terms may contain:
+
+```text
+spaces
+&
+%
+_
+\
+punctuation
+Unicode
+```
+
+The backend already owns SQL escaping.
+
+The frontend must correctly encode URL state.
+
+---
+
+# 22. Next.js Search Params
 
 Use the installed Next.js 16.3.8 App Router conventions.
 
-Do not copy outdated examples for synchronous route params.
+Verify actual framework behavior for `searchParams`.
 
-Verify the installed framework behavior.
+Do not copy obsolete Next.js examples blindly.
 
 ---
 
-# 19. API Client
+# 23. API Client
 
-Use the canonical:
+Reuse:
 
 ```text
 frontend/web/lib/api/client.ts
 ```
 
-Do not introduce:
+and the existing catalog-domain helper established by 14.1–14.4 where appropriate.
+
+Do NOT introduce:
 
 ```text
 Axios
-SWR
 React Query
+SWR
 new fetch wrapper
-frontend BFF
-API route proxy
+Next.js API proxy
+route handler proxy
+BFF
 ```
-
-A thin catalog-domain helper may be reused/extended if 14.1–14.3 already established one.
 
 ---
 
-# 20. Cache Policy
+# 24. Existing Product Collection Logic
 
-Inspect the public catalog fetch policy established by 14.1–14.3.
+Phase 14.3 already implemented:
 
-Current reported policy is:
+```text
+GET /api/v1/products
+ProductGrid
+pagination
+Product Summary mapping
+empty collection behavior
+```
+
+Reuse that architecture.
+
+Do not duplicate it under search-specific names.
+
+---
+
+# 25. Extend the Existing Catalog Query Boundary
+
+If Phase 14.3 created something conceptually equivalent to:
+
+```text
+getProducts(...)
+buildProductQuery(...)
+ProductCollection
+ProductGrid
+Pagination
+```
+
+extend/reuse it.
+
+Do not create:
+
+```text
+searchProductsViaApi()
+SearchProductGrid
+SearchProductCard
+SearchPagination
+SearchPriceFormatter
+```
+
+when the existing collection architecture can represent the same responsibility.
+
+---
+
+# 26. Search Request
+
+For a meaningful term:
+
+```text
+GET /api/v1/products?search=<term>
+```
+
+Use the established cache policy.
+
+Current catalog implementation reports:
 
 ```text
 no-store
 ```
 
-Remain consistent unless repository authority now says otherwise.
-
-Do not introduce caching architecture during this phase.
+Remain consistent unless repository authority says otherwise.
 
 ---
 
-# 21. Missing Product Semantics
+# 27. Search + Pagination
 
-A genuinely nonexistent/unpublished product must render the canonical not-found UI.
+Search results must support pagination.
 
-Concept:
+Example:
 
 ```text
-Laravel:
-GET /api/v1/products/definitely-not-real
-→ 404 RESOURCE_NOT_FOUND
+/search?search=chair&page=2
+```
 
-Next.js:
-/products/definitely-not-real
-→ canonical not-found UI
+The search term must survive Previous/Next navigation.
+
+---
+
+# 28. Clean Page-One URL
+
+Preserve the Phase 14.3 convention.
+
+Page one should not unnecessarily canonicalize UI navigation to:
+
+```text
+/search?search=chair&page=1
+```
+
+Prefer:
+
+```text
+/search?search=chair
+```
+
+for page one.
+
+Do not implement comprehensive SEO canonical tags; that remains Phase 14.7.
+
+---
+
+# 29. Preserve Search Term Across Pagination
+
+Required:
+
+```text
+/search?search=chair
+→ Next
+→ /search?search=chair&page=2
+
+page 2
+→ Previous
+→ /search?search=chair
+```
+
+Do not lose the query.
+
+---
+
+# 30. Do Not Implement Filters Yet
+
+Phase 14.6 owns filters and sorting.
+
+Do NOT add UI for:
+
+```text
+category
+product_type
+availability
+min_price
+max_price
+sort
+sort_direction
+```
+
+during Phase 14.5.
+
+---
+
+# 31. Query-Parameter Boundary
+
+The routing contract allows catalog query parameters generally, but Phase 14.5 owns only:
+
+```text
+search
+page
+```
+
+and any already-established pagination parameter necessary for the existing ProductGrid contract.
+
+Do not prematurely build the Phase 14.6 filter parser/UI.
+
+---
+
+# 32. Unknown Parameters
+
+Do not globally strip/rewrite unknown query parameters.
+
+Follow the existing routing convention.
+
+The search page should read only the parameters it owns.
+
+---
+
+# 33. Search Results Heading
+
+For a meaningful query, provide a clear page heading.
+
+Example structure:
+
+```text
+Search results
+"Dining table"
+```
+
+or equivalent.
+
+Avoid awkward keyword-stuffed headings.
+
+Exactly one H1.
+
+---
+
+# 34. Search Term Display
+
+When echoing the user's search term:
+
+```text
+render as text
+never HTML
+```
+
+Do not use:
+
+```text
+dangerouslySetInnerHTML
+```
+
+Do not attempt custom match highlighting with HTML injection.
+
+---
+
+# 35. No Search-Term Highlighting Requirement
+
+Do not add complex highlighting of matching fragments.
+
+The backend returns products, not authoritative match ranges.
+
+No regex-based HTML highlighting is required.
+
+---
+
+# 36. Product Results
+
+Use the canonical:
+
+```text
+ProductGrid
+ProductCard
+```
+
+from Phase 14.3.
+
+Do not create search-specific cards.
+
+---
+
+# 37. Product Navigation
+
+Search result ProductCards must continue to navigate to:
+
+```text
+/products/{backendSlug}
+```
+
+using authoritative Laravel slugs.
+
+No locally generated slug.
+
+---
+
+# 38. Search Empty State
+
+A successful search with zero matches is:
+
+```text
+HTTP 200
+```
+
+It is NOT:
+
+```text
+404
+error
+exception
+```
+
+Render a factual empty state.
+
+Example intent:
+
+```text
+No furniture found for “<term>”.
+Try another search.
+```
+
+Do not invent recommendations.
+
+---
+
+# 39. Empty Search vs Empty Results
+
+These are different states:
+
+```text
+/search
+→ no query / search-entry state
+
+/search?search=zzzzzz
+→ query executed / zero-result state
+```
+
+Do not collapse them.
+
+---
+
+# 40. No Fake Recommendations
+
+Zero-result search must not invent:
+
+```text
+Popular products
+Trending now
+Customers also searched
+Recommended for you
+```
+
+unless authoritative data exists.
+
+---
+
+# 41. No Search History
+
+Do not implement:
+
+```text
+recent searches
+localStorage history
+account search history
 ```
 
 ---
 
-# 22. HARD 404 Is Required
+# 42. No Analytics Infrastructure
 
-Phase 14.2 exposed an important Next.js streaming issue.
+Do not introduce search analytics during this phase.
 
-Do NOT repeat it unnoticed.
+---
 
-A missing product page must return:
+# 43. Error Handling
+
+Search uses the established Phase 13.8 failure architecture.
+
+Expected distinctions:
 
 ```text
-HTTP 404
+200 + products
+→ results
+
+200 + empty data
+→ zero-result state
+
+422
+→ expected query/validation handling
+
+429
+→ respect Retry-After architecture
+
+5xx
+→ unexpected failure
+
+network failure
+→ unexpected transport failure
+
+timeout
+→ timeout transport failure
 ```
 
-not:
+Do not convert failures into empty search results.
+
+---
+
+# 44. Search Is Never Product 404
+
+A search returning zero products must never call:
 
 ```text
-HTTP 200 + noindex + not-found UI
+notFound()
+```
+
+The search page exists independently of whether matches exist.
+
+---
+
+# 45. Hard-404 Proxy Boundary
+
+Phase 14.4 added hard-404 preflight for:
+
+```text
+/products/[slug]
+```
+
+Phase 14.2A added it for:
+
+```text
+/categories/[slug]
+```
+
+`/search` must NOT receive resource-existence preflight.
+
+Required:
+
+```text
+/search
+→ no hard-404 catalog preflight
 ```
 
 ---
 
-# 23. Inspect Phase 14.2A Before Solving 404
+# 46. Proxy Regression
 
-Phase 14.2A already introduced a narrow hard-404 preflight architecture.
-
-Inspect:
+Verify the existing proxy remains scoped correctly:
 
 ```text
-frontend/web/proxy.ts
-```
+/categories/[slug]
+→ category resource preflight
 
-before implementing product hard-404 behavior.
+/products/[slug]
+→ product resource preflight
 
-Do NOT invent an unrelated second mechanism if the existing architecture can safely support product resources.
-
----
-
-# 24. Proxy Extension Gate
-
-If the correct architecture is to extend the existing preflight mechanism from categories to product detail routes, do so carefully.
-
-The matcher must distinguish:
-
-```text
 /products
+→ no detail preflight
+
+/search
+→ no resource preflight
+```
+
+---
+
+# 47. Search Must Not Trigger CAT-002
+
+Search results use CAT-001 Product Summary.
+
+Do not fetch every result's CAT-002 detail resource.
+
+Forbidden:
+
+```text
+CAT-001
+→ loop products
+→ CAT-002 for each result
+```
+
+That would create N+1 API traffic.
+
+---
+
+# 48. Product Summary Is Enough
+
+Search results should use the same Product Summary representation as `/products`.
+
+Do not require:
+
+```text
+full description
+full gallery
+full variants
+timestamps
+```
+
+for search cards.
+
+---
+
+# 49. Search Form Design
+
+The search field should feel integrated with SL Furnitures:
+
+```text
+quiet
+clear
+functional
+editorial
+spacious
+```
+
+Not:
+
+```text
+command palette
+tech dashboard
+neon search bar
+oversized pill
+floating glass panel
+```
+
+---
+
+# 50. Search Field Label
+
+The control must have an accessible name.
+
+Prefer a visible label where composition permits.
+
+A placeholder is not a replacement for a label.
+
+---
+
+# 51. Search Button
+
+Use an actual submit button.
+
+Do not make a decorative icon the only inaccessible action.
+
+If an icon-only control is genuinely used, it requires an accessible label.
+
+---
+
+# 52. Material UI Icons
+
+Website icon policy remains:
+
+```text
+@mui/icons-material only
+```
+
+Do not add:
+
+```text
+Lucide
+Heroicons
+react-icons
+Font Awesome
+custom search SVG
+emoji
+```
+
+---
+
+# 53. Search Icon Restraint
+
+One search icon where functionally useful is enough.
+
+Do not decorate:
+
+```text
+heading
+empty state
+result count
+product cards
+```
+
+with repeated search icons.
+
+---
+
+# 54. Search Input Autofocus
+
+Do not automatically autofocus if doing so causes:
+
+```text
+unexpected mobile keyboard
+scroll jump
+focus theft
+```
+
+Default to normal document focus unless repository UX rules justify otherwise.
+
+---
+
+# 55. Search Form Submission
+
+Submitting must work via keyboard:
+
+```text
+focus input
+type term
+Enter
+→ search
+```
+
+and via submit control.
+
+---
+
+# 56. Search Form Reuse
+
+If both header and search page need an actual search form, prefer one reusable semantic responsibility.
+
+But do not force identical layout if header and page compositions differ.
+
+Shared behavior does not require identical presentation.
+
+---
+
+# 57. Design-System Authority
+
+All visual implementation must consume:
+
+```text
+tokens.css
+→ MUI theme
+→ existing primitives
+→ search composition
+```
+
+No search-specific design scale.
+
+---
+
+# 58. No Ad-Hoc Visual Values
+
+Do not invent:
+
+```text
+hex colors
+spacing
+font sizes
+line heights
+radii
+shadows
+breakpoints
+focus rings
+motion timings
+container widths
+```
+
+---
+
+# 59. Typography
+
+Use Young Serif selectively for appropriate editorial/display roles.
+
+Search UI controls/results metadata remain utility sans.
+
+Do not make form controls Young Serif.
+
+---
+
+# 60. Product Cards
+
+Product cards remain restrained:
+
+```text
+image
+name
+price
+small factual state
+```
+
+Do not make search results visually different from other catalog results merely because they came from search.
+
+---
+
+# 61. No Search Result Badges
+
+Do not add:
+
+```text
+Best match
+Top result
+Popular
+Trending
+Recommended
+```
+
+unless the backend supplies authoritative semantics.
+
+---
+
+# 62. Result Count
+
+If the existing CAT-001 pagination metadata supplies total count, it may be displayed factually.
+
+Do not calculate total by:
+
+```text
+results.length
+```
+
+when pagination exists.
+
+---
+
+# 63. Result Count Copy
+
+If displayed, distinguish:
+
+```text
+total matching products
 ```
 
 from:
 
 ```text
-/products/[slug]
+products on this page
 ```
 
-The collection route MUST NOT receive product-detail preflight.
+Do not misrepresent pagination metadata.
 
-Required:
+---
+
+# 64. Relevance Claims
+
+Do not label results:
 
 ```text
-/products
-→ no product existence preflight
-
-/products/[slug]
-→ product resource preflight if required for hard 404
+Most relevant
+Best match
 ```
 
+unless the backend contract explicitly guarantees that ordering.
+
+The frontend must not infer ranking semantics.
+
 ---
 
-# 25. No Proxy Data Authority
+# 65. Sorting Boundary
 
-Even if preflight is required:
+Do not add a “Sort by relevance” control.
+
+Phase 14.6 owns sorting UI, and `relevance` is not in the frozen public sort allow-list unless the repository now explicitly says otherwise.
+
+Frozen explicit sort fields are:
 
 ```text
-proxy
-→ status/existence concern
-
-page
-→ rendering/data authority
-```
-
-Do not turn proxy code into the PDP renderer/data source.
-
----
-
-# 26. No Error Masking
-
-Only an authoritative upstream product:
-
-```text
-404 RESOURCE_NOT_FOUND
-```
-
-may become a product 404.
-
-Do NOT convert:
-
-```text
-500
-502
-503
-timeout
-network failure
-invalid API response
-```
-
-into 404.
-
-Unexpected failures continue through the established failure architecture.
-
----
-
-# 27. Preflight Tradeoff
-
-If hard 404 requires two product-detail requests in separate server contexts, document it explicitly as the same deliberate pre-stream status tradeoff established by Phase 14.2A.
-
-Do not hide the cost.
-
-Do not introduce a cache solely to disguise it.
-
----
-
-# 28. Product Page Composition
-
-Use an original SL Furnitures composition.
-
-A strong PDP hierarchy is likely:
-
-```text
-breadcrumb
-    ↓
-primary product media / gallery
-    +
-product information
-    ↓
-description / product story
-    ↓
-variant/specification information where authoritative
-    ↓
-appropriate request-first next action
-```
-
-Exact composition must come from:
-
-```text
-actual product contract
-frozen design system
-responsive foundation
-```
-
-not competitor copying.
-
----
-
-# 29. Urban Ladder — REFERENCE ONLY
-
-Urban Ladder may be examined only as a structural furniture-commerce reference.
-
-Useful questions:
-
-```text
-How does a furniture PDP prioritize photography?
-Where is product identity placed?
-How are specifications separated from merchandising?
-How does mobile reorder gallery and information?
-How is visual density controlled?
-```
-
----
-
-# 30. Urban Ladder Is NOT Visual Authority
-
-Do NOT copy:
-
-```text
-exact PDP layout
-gallery implementation
-thumbnail treatment
-price block
-CTA design
-specification layout
-accordions
-badges
-promotions
-typography
-colors
-spacing
-radii
-shadows
-copy
-imagery
-icons
-```
-
-The resulting page must clearly be SL Furnitures.
-
----
-
-# 31. Product Photography Is Primary
-
-Furniture photography should carry most visual richness.
-
-UI chrome should remain quiet.
-
-Do not bury the product behind:
-
-```text
-cards
-panels
-badges
-decorative borders
-shadows
-colored boxes
-```
-
----
-
-# 32. Product Gallery
-
-Use the authoritative:
-
-```text
-images[]
-```
-
-from the product-detail representation.
-
-Inspect its exact fields before coding.
-
-Potential fields may include:
-
-```text
-url
-alt_text
-is_primary
-sort_order
-```
-
-but do not assume names.
-
----
-
-# 33. Image Ordering
-
-Respect backend-provided ordering.
-
-Do not independently sort images unless the contract explicitly requires the frontend to do so.
-
-The full detail representation is expected to provide the sorted gallery.
-
----
-
-# 34. Primary Image
-
-Use backend primary/order semantics.
-
-Do not guess primary media from:
-
-```text
-array position
-filename
-largest dimensions
-```
-
-unless the frozen API explicitly guarantees the array order for this purpose.
-
----
-
-# 35. Image Alt
-
-Use authoritative image alt text when supplied.
-
-Where a contractually valid image lacks alt text, apply the existing semantic media fallback convention.
-
-Do not stuff keywords into alt text.
-
----
-
-# 36. Gallery Must Work Without JavaScript
-
-The core product imagery must remain available in server-rendered HTML.
-
-Do not build a gallery where the product has no usable image until hydration.
-
----
-
-# 37. Gallery Interaction
-
-Do NOT introduce a complicated carousel library.
-
-No new dependency is expected.
-
-Prefer:
-
-```text
-server-rendered gallery
-CSS layout
-native/MUI primitives
-minimal progressive enhancement only if genuinely necessary
-```
-
----
-
-# 38. Gallery on Desktop
-
-Furniture deserves substantial imagery.
-
-Possible structural approaches include:
-
-```text
-large lead image + secondary gallery
-editorial image grid
-lead image + restrained thumbnail navigation
-```
-
-Choose based on the actual image contract and frozen design system.
-
-Do not automatically imitate Urban Ladder.
-
----
-
-# 39. Gallery on Mobile
-
-Mobile must prioritize:
-
-```text
-clear product image
-product identity
-price/state
-description/action
-```
-
-without excessive scrolling caused by blindly stacking every large gallery image before product information.
-
-Find a balanced composition.
-
----
-
-# 40. Do Not Invent Gallery Media Ratio
-
-Inspect the frozen media tokens.
-
-Use an existing approved product-detail/gallery ratio if one exists.
-
-If no product-detail ratio exists, first determine whether intrinsic image dimensions or existing media tokens solve the layout.
-
-Do NOT silently add:
-
-```text
-4:5
-1:1
-3:2
-```
-
-as a new design authority.
-
-If a genuinely missing global semantic token is discovered, STOP and report it rather than burying a design-system change inside the PDP.
-
----
-
-# 41. `next/image`
-
-Use Next.js Image through the established media architecture.
-
-Do not manually generate WebP files.
-
-Do not introduce a second image loader.
-
----
-
-# 42. R2
-
-Existing Cloudflare R2 media architecture already exists in Laravel.
-
-The PDP consumes API-provided public media URLs.
-
-Do NOT:
-
-```text
-create R2 infrastructure
-install R2 SDK
-upload images from frontend
-duplicate media configuration
-```
-
----
-
-# 43. Remote Media Configuration
-
-Reuse the media-host allow-list/configuration established during 14.1.
-
-Do not introduce a second environment variable for the same media origin.
-
----
-
-# 44. Image `sizes`
-
-Set meaningful responsive `sizes` based on actual PDP geometry.
-
-Do not copy ProductCard's listing `sizes` blindly.
-
-PDP media is materially larger.
-
----
-
-# 45. Image Loading Priority
-
-Only the true initial lead image should be considered for preload/high priority.
-
-Do not eagerly load the entire gallery.
-
----
-
-# 46. Stable Geometry
-
-Avoid layout shift.
-
-Image containers must have stable geometry.
-
----
-
-# 47. Missing Images
-
-A product with zero images must still render a valid PDP.
-
-Use the established restrained media-empty treatment.
-
-Do not inject:
-
-```text
-stock photography
-random fixture image
-competitor image
-AI-generated replacement
-```
-
-in production.
-
----
-
-# 48. Product Identity
-
-The information area should prioritize factual hierarchy:
-
-```text
-category/context
-product name
+created_at
 price
-product type / public availability
-appropriate next action
+name
 ```
 
-Exact ordering may adapt to the actual design.
+Do not invent another sort value.
 
 ---
 
-# 49. H1
+# 66. Search Pipeline
 
-Exactly one H1.
-
-The H1 should be the authoritative product name.
-
-Do not add a separate marketing H1 above it.
-
----
-
-# 50. Breadcrumb
-
-Reuse the existing breadcrumb architecture from category/listing pages.
-
-Conceptually:
+Preserve backend authority:
 
 ```text
-Home
-/
-Furniture
-/
-<Category>
-/
-<Product>
+search
+→ filter
+→ sort
+→ paginate
 ```
 
-Use only destinations that actually exist.
+Phase 14.5 supplies the search portion.
 
-Do not create dead breadcrumb links.
-
----
-
-# 51. Category Link
-
-Since Phase 14.2 implemented category pages, the authoritative product category may link to:
-
-```text
-/categories/{backendCategorySlug}
-```
-
-provided the detail representation actually supplies the category slug.
-
-Do not generate one locally.
+Phase 14.6 will expose appropriate filters/sorting.
 
 ---
 
-# 52. Price
-
-Reuse the canonical price formatter established earlier.
-
-Do NOT create:
-
-```text
-formatPdpPrice
-productDetailPriceFormatter
-```
-
-Money remains:
-
-```text
-integer minor units at API boundary
-+
-currency
-```
-
-No floating-point business arithmetic.
-
----
-
-# 53. Price Copy
-
-Do not invent:
-
-```text
-starting from
-sale price
-discount
-finance price
-monthly payment
-```
-
-unless the frozen product contract actually provides the semantics.
-
----
-
-# 54. Product Type
-
-Respect the CLOSED enum:
-
-```text
-IN_STOCK
-MADE_TO_ORDER
-```
-
-Do not invent a third UI state.
-
----
-
-# 55. Availability
-
-Respect the frozen distinction:
-
-```text
-availability:
-available | unavailable
-
-stock_indicator:
-IN_STOCK | LOW_STOCK | MADE_TO_ORDER
-```
-
-Do not collapse these into an invented enum.
-
----
-
-# 56. Availability Is Informational
-
-Public availability is coarse information.
-
-Never display:
-
-```text
-physical_quantity
-reserved_quantity
-available_quantity
-warehouse quantities
-supplier data
-internal inventory records
-```
-
----
-
-# 57. LOW_STOCK
-
-If `stock_indicator=LOW_STOCK`, present only the approved public semantic.
-
-Do not translate it into fabricated urgency such as:
-
-```text
-Only 2 left!
-Hurry!
-Selling fast!
-```
-
----
-
-# 58. MADE_TO_ORDER Is First-Class
-
-MADE_TO_ORDER is not:
-
-```text
-unavailable
-error
-warning
-disabled product
-second-class listing
-```
-
-It is a primary SL Furnitures offering.
-
-The PDP should explain it calmly and provide the appropriate request pathway when that route exists.
-
----
-
-# 59. Critical Deployment Decision — REQUEST ONLY
-
-Inspect `docs/decisions.md` for the latest deployment-mode decision.
-
-The currently supplied ADR states:
-
-```text
-Initial Production Commerce Mode — Request Only
-```
-
-with initial production publishing MADE_TO_ORDER products and purchase intent going through the Made-to-Order Request workflow.
-
-Do NOT assume that:
-
-```text
-Group H PASS
-```
-
-automatically repeals this deployment decision.
-
-Only a newer authoritative ADR may supersede it.
-
----
-
-# 60. No Cart/Checkout CTA Under Current Deployment Mode
-
-Unless the repository now contains a newer explicit decision enabling transactional purchasing, Phase 14.4 must NOT expose:
-
-```text
-Add to cart
-Buy now
-Checkout
-Payment
-Quantity selector for purchase
-```
-
-even for an `IN_STOCK` product.
-
-The frozen API may support future commerce contracts while the current deployment remains request-only.
-
----
-
-# 61. Do Not Delete Future Commerce Semantics
-
-Request-only deployment does NOT mean rewriting or deleting the frozen backend contracts for future:
-
-```text
-cart
-checkout
-orders
-payment
-```
-
-This is a frontend deployment-scope constraint.
-
----
-
-# 62. Made-to-Order Request Action
-
-The correct domain action for MADE_TO_ORDER is the Request Furniture workflow.
-
-However, verify whether its website route has actually been implemented.
-
-If:
-
-```text
-/furniture-requests
-```
-
-does NOT yet exist, do not create a dead link.
-
----
-
-# 63. Do Not Steal Future Phase Work
-
-If the request route belongs to a later frontend phase:
-
-```text
-render truthful non-interactive/request-context information
-or
-use an already-implemented legitimate destination
-```
-
-Do not implement the entire request form during 14.4.
-
----
-
-# 64. No Fake CTA
-
-Forbidden:
-
-```text
-href="#"
-Request now → dead route
-Contact us → nonexistent route
-Call us → fabricated phone number
-WhatsApp → fabricated account
-```
-
-Every interactive action must work.
-
----
-
-# 65. Variants
-
-The frozen Product Detail representation includes full variants.
-
-Inspect the actual representation.
-
-Do not assume variants mean:
-
-```text
-color picker
-fabric picker
-size selector
-configurator
-```
-
-unless the API actually supplies enough structured semantics.
-
----
-
-# 66. Variant Data Is Authoritative
-
-Use only contract fields.
-
-Potential concepts might include:
-
-```text
-variant id
-SKU
-dimensions
-color
-fabric
-price
-active/public state
-```
-
-but inspect the API.
-
-Do not invent missing variant metadata.
-
----
-
-# 67. Variant Presentation
-
-Phase 14.4 may present variant information/specifications.
-
-It should NOT create a sophisticated purchase/configuration engine.
-
-Prefer factual presentation over simulated configurability.
-
----
-
-# 68. Variant Selector Gate
-
-Do not create an interactive variant selector unless it has an actual Phase 14.4 business consequence.
-
-Under request-only deployment, a selector that merely looks purchasable but cannot feed a legitimate workflow is misleading.
-
----
-
-# 69. No Fake Swatches
-
-Do not turn color names into arbitrary CSS swatches.
-
-A value like:
-
-```text
-Walnut
-```
-
-does not authorize the frontend to invent a hexadecimal walnut color.
-
----
-
-# 70. No Fake Fabric Thumbnails
-
-None unless supplied by authoritative media.
-
----
-
-# 71. SKU
-
-If SKU is public according to the contract, it may be displayed as restrained metadata.
-
-Do not expose internal database IDs as SKU substitutes.
-
----
-
-# 72. Dimensions
-
-If structured dimensions exist in the detail/variant contract, present them accurately.
-
-Do not concatenate values ambiguously.
-
-Preserve units supplied/defined by the contract.
-
----
-
-# 73. Product Description
-
-Render authoritative product description.
-
-Do not rewrite it into marketing prose.
-
-Do not generate additional product claims.
-
----
-
-# 74. Description Semantics
-
-If description is plain text, treat it as plain text.
-
-Do not render arbitrary backend text as HTML unless the frozen contract explicitly establishes sanitized rich content.
-
-No `dangerouslySetInnerHTML` without an approved trusted/sanitized content architecture.
-
----
-
-# 75. Materials / Room / Style Metadata
-
-The database architecture may contain materials, room tags and style tags.
-
-Do NOT display them unless CAT-002 actually serializes them publicly.
-
-Database existence does not equal API contract exposure.
-
----
-
-# 76. Specifications
-
-If the API exposes enough factual fields, use a restrained specification area.
-
-Potential structure:
-
-```text
-Dimensions
-Material
-Colour
-Fabric
-SKU
-Variant
-```
-
-but only include fields actually supported.
-
-Do not create empty specification labels.
-
----
-
-# 77. Specification UI
-
-Avoid dashboard-like tables when simple definition semantics suffice.
-
-Consider semantic:
-
-```html
-<dl>
-```
-
-or equivalent MUI composition.
-
-Use the simplest accessible representation.
-
----
-
-# 78. No Decorative Icons for Specs
-
-Do not add icons beside every:
-
-```text
-dimension
-material
-colour
-SKU
-```
-
-Icons should clarify actions/status, not decorate metadata.
-
----
-
-# 79. No Trust-Badge Row
-
-Do not invent:
-
-```text
-Secure payment
-Premium quality
-Fast delivery
-Best price
-Quality guaranteed
-Easy returns
-```
-
-unless those are documented business promises.
-
----
-
-# 80. No Delivery Promise
-
-Do not display:
-
-```text
-Delivered in 3 days
-Ships tomorrow
-Free delivery
-```
-
-without authoritative business data.
-
----
-
-# 81. No Reviews
-
-Do not add:
-
-```text
-stars
-rating
-review count
-customer reviews
-```
-
-Reviews are not part of this frozen MVP surface.
-
----
-
-# 82. No Wishlist
-
-Do not add wishlist/favourite controls.
-
----
-
-# 83. No Social Share Widget
-
-Do not add social sharing UI in this phase.
-
----
-
-# 84. No Promotional Urgency
-
-No:
-
-```text
-limited time
-flash sale
-selling fast
-X people viewing
-```
-
----
-
-# 85. No Cross-Sell Yet Unless Explicitly Owned
-
-Do not add:
-
-```text
-You may also like
-Related products
-Complete the room
-Recently viewed
-```
-
-merely because PDPs commonly have them.
-
-Phase 14.10 owns comprehensive internal linking, and recommendation behavior requires an authoritative rule.
-
-Keep Phase 14.4 focused.
-
----
-
-# 86. ProductGrid Boundary
-
-Do not use `ProductGrid` simply to add unrelated recommendations.
-
-ProductGrid remains canonical for actual product collections.
-
----
-
-# 87. Responsive Desktop Composition
-
-A reasonable structural model is:
-
-```text
-media region | information region
-```
-
-at appropriate desktop widths.
-
-But use canonical breakpoints and actual content needs.
-
-Do not hard-code a competitor's proportions.
-
----
-
-# 88. Mobile Composition
-
-On mobile, content should recompose naturally.
-
-Likely priority:
-
-```text
-breadcrumb/context
-product image
-product name
-price/state
-relevant action/context
-description/specifications
-remaining media
-```
-
-But validate against actual gallery approach.
-
-Do not simply shrink the desktop layout.
-
----
-
-# 89. Sticky Product Information
-
-Do NOT add a sticky purchase panel merely because many ecommerce sites do.
-
-Under request-only deployment it is particularly unnecessary unless a real usability requirement is demonstrated.
-
----
-
-# 90. Mobile Sticky CTA
-
-Do NOT add a bottom sticky CTA in this phase.
-
----
-
-# 91. No Viewport Detection
-
-Forbidden:
-
-```text
-window.innerWidth
-navigator.userAgent
-device-specific rendering
-```
-
-Use canonical CSS/MUI responsive behavior.
-
----
-
-# 92. Canonical Breakpoints
-
-Use only the established responsive authority.
-
-No PDP-specific raw media-query widths.
-
----
-
-# 93. Content Width
+# 67. Responsive Layout
 
 Reuse:
 
 ```text
 ContentContainer
 SiteSection
+ProductGrid
+canonical breakpoints
+canonical gutters
 ```
 
-Do not create a PDP-specific page-width system.
+Do not create a search-specific responsive system.
 
 ---
 
-# 94. Spacing
+# 68. Mobile Search
 
-Use frozen spacing tokens.
-
-Parent owns external spacing.
-
-Components own internal spacing.
-
-No magic pixel gaps.
-
----
-
-# 95. Typography
-
-Use the frozen typography contract.
-
-Young Serif:
+At 320px:
 
 ```text
-product name / appropriate editorial display role
+search field fits
+submit control remains usable
+term does not overflow
+result heading reflows
+ProductGrid remains correct
+pagination remains usable
 ```
 
-Utility sans:
+Do not solve narrow widths by globally hiding overflow.
+
+---
+
+# 69. Desktop Search
+
+Do not stretch the search field across an unreadably wide page merely because space exists.
+
+Use existing content/layout authority.
+
+---
+
+# 70. Long Queries
+
+Test a long but valid search term.
+
+The URL, heading, field and empty-state copy must wrap safely.
+
+Do not truncate the actual search term in a way that obscures what was searched.
+
+---
+
+# 71. Special Characters
+
+Test URL-safe behavior for terms containing:
 
 ```text
-price
-availability
-variant metadata
-specifications
-controls
-breadcrumbs
+&
+%
+_
+\
+quotes
+multiple spaces
+Unicode
 ```
 
-Do not turn the entire PDP into display typography.
+The frontend must not crash or generate malformed URLs.
 
 ---
 
-# 96. Product Name Scaling
+# 72. Security
 
-Use approved typography tokens/responsive mappings.
-
-Do not introduce a custom `clamp()` merely for PDP.
-
----
-
-# 97. Color
-
-Photography carries color.
-
-Use established semantic surfaces/text/actions.
-
-Deep brown remains a controlled accent.
-
-Do NOT make every:
-
-```text
-heading
-CTA
-border
-icon
-status
-```
-
-brown.
-
----
-
-# 98. Flat-First
-
-Prefer:
-
-```text
-spacing
-typographic hierarchy
-photography
-subtle separators where approved
-```
-
-over:
-
-```text
-cards
-shadows
-floating panels
-outlined boxes
-```
-
----
-
-# 99. Shape
-
-Product media should respect frozen media/shape semantics.
-
-Do not round every gallery image heavily.
-
----
-
-# 100. Motion
-
-No:
-
-```text
-parallax
-zoom-on-scroll
-spring gallery
-floating animation
-scroll reveal
-stagger
-```
-
-Any interaction motion must use approved tokens and respect reduced motion.
-
----
-
-# 101. Accessibility
-
-Follow the frozen accessibility baseline.
-
-Verify:
-
-```text
-one H1
-one main
-logical heading hierarchy
-meaningful alt
-keyboard navigation
-visible focus
-touch targets
-non-color status communication
-200% reflow
-reduced motion
-```
-
----
-
-# 102. Gallery Accessibility
-
-If gallery controls exist:
-
-```text
-controls need accessible names
-current image/state must be understandable
-thumbnail images require appropriate semantics
-keyboard use must work
-focus must remain visible
-```
-
-Do not make images keyboard-focusable merely because they are images.
-
----
-
-# 103. Zoom/Lightbox
-
-Do not add a lightbox unless clearly justified.
-
-If no robust accessible implementation exists without adding unnecessary complexity/dependencies, defer it.
-
-Core PDP must not depend on a lightbox.
-
----
-
-# 104. Empty Gallery Accessibility
-
-Missing product media must have a meaningful non-image treatment rather than a broken image with meaningless alt.
-
----
-
-# 105. Long Content
-
-Test:
-
-```text
-long product names
-long descriptions
-long variant names
-long material/fabric values
-large prices
-```
-
-Do not solve by truncating authoritative information aggressively.
-
----
-
-# 106. 200% Reflow
-
-At 200% equivalent zoom:
-
-```text
-no horizontal document scrolling
-product identity remains visible
-gallery remains usable
-price/state remain readable
-specifications reflow
-```
-
----
-
-# 107. Narrow Mobile
-
-Verify at 320px.
-
-Particularly inspect:
-
-```text
-breadcrumbs
-long H1
-price
-availability
-gallery
-specifications
-action copy
-```
-
----
-
-# 108. Wide Desktop
-
-Do not allow the product information column to become excessively wide.
-
-Respect canonical content width.
-
----
-
-# 109. Fixture Policy
-
-Production/default mode remains API-backed.
-
-Do not fall back to fixtures after product API failure.
-
-Forbidden:
-
-```text
-try API
-catch
-return fixture product
-```
-
----
-
-# 110. Fixture PDP
-
-If the existing development fixture system can support a product detail page cleanly, it may be extended strictly for visual development.
-
-Requirements:
-
-```text
-explicit development-only mode
-visible fixture notice
-same product-detail component/data contract
-no fixture imports inside reusable visual components
-no fallback-on-error
-```
-
----
-
-# 111. Do Not Create a Second Fixture Architecture
-
-Reuse the existing Phase 14.1 fixture mechanism.
-
-Do not add:
-
-```text
-PDP_USE_FAKE_DATA
-PRODUCT_DETAIL_MOCK
-mockProduct.ts
-```
-
-as competing configuration.
-
----
-
-# 112. Fixture Images
-
-If fixture PDP data is used, reuse curated furniture imagery where suitable.
-
-Do not add dozens of unnecessary images merely to simulate a giant gallery.
-
-A small representative set is sufficient.
-
----
-
-# 113. Real Local API State
-
-The local database was previously verified empty.
-
-Therefore a real product detail may still be unavailable.
-
-Do NOT seed production/test data merely for visual verification.
-
-Report truthfully:
-
-```text
-Real product detail:
-NOT AVAILABLE
-```
-
-if the database remains empty.
-
----
-
-# 114. Real Missing Product Test
-
-Even with an empty database, this is testable.
-
-Verify Laravel:
-
-```text
-GET /api/v1/products/definitely-nonexistent-phase-14-4
-→ HTTP 404
-→ RESOURCE_NOT_FOUND
-```
-
-Then verify Next.js:
-
-```text
-/products/definitely-nonexistent-phase-14-4
-→ HTTP 404
-→ canonical not-found UI
-```
-
-in both:
-
-```text
-next dev
-next start
-```
-
----
-
-# 115. Hard-404 Browser Verification
-
-At minimum inspect:
-
-```text
-canonical not-found UI
-one main
-one H1
-keyboard navigation
-visible focus
-no horizontal overflow
-no console errors
-```
-
----
-
-# 116. Product Detail Runtime
-
-If fixture mode exists, visually verify the populated PDP separately from real API hard-404 verification.
-
-Clearly report:
-
-```text
-API-backed missing-product evidence
-vs
-fixture visual evidence
-```
-
-Do not imply fixture data came from Laravel.
-
----
-
-# 117. ProductCard Link Regression
-
-After activating product links, verify from:
-
-```text
-homepage
-category page
-/products
-```
-
-that URLs use:
-
-```text
-/products/{backendSlug}
-```
-
-No locally generated slug.
-
----
-
-# 118. Empty Catalog Regression
-
-The real:
-
-```text
-/products
-```
-
-must remain HTTP 200 with the current empty API collection.
-
-Do not let product-detail hard-404 infrastructure affect it.
-
----
-
-# 119. Category Hard-404 Regression
-
-Verify:
-
-```text
-/categories/definitely-nonexistent-phase-14-2
-→ HTTP 404
-```
-
-still works.
-
----
-
-# 120. Proxy Matcher Regression
-
-Explicitly test:
-
-```text
-/products
-/products/definitely-nonexistent-phase-14-4
-/categories/definitely-nonexistent-phase-14-2
-/
-```
-
-Expected:
-
-```text
-/products
-→ no detail preflight
-
-/products/{slug}
-→ detail hard-404 mechanism
-
-/categories/{slug}
-→ existing category mechanism
-
-/
-→ unaffected
-```
-
----
-
-# 121. No Duplicate Preflight on Collection
-
-Hard requirement:
-
-```text
-/products
-```
-
-must not cause an extra CAT-002 request.
-
----
-
-# 122. API Failure Test
-
-Test a non-404 upstream failure.
-
-Expected:
-
-```text
-NOT converted to not-found
-```
-
-It must remain an unexpected API failure and follow Phase 13.8 architecture.
-
----
-
-# 123. Product Detail Contract Tests
-
-Add a focused command following project convention, preferably:
-
-```text
-npm run test:product-detail
-```
-
-if consistent with existing scripts.
-
----
-
-# 124. Minimum Product Detail Tests
-
-Cover:
-
-```text
-canonical route uses backend slug
-CAT-002 detail endpoint used
-canonical API client reused
-server-first page
-404 becomes canonical not-found
-hard 404 mechanism does not affect /products
-non-404 upstream failure is not masked
-ProductCard links activate using backend slug
-price formatter reused
-product type semantics preserved
-availability semantics preserved
-raw inventory never rendered
-MADE_TO_ORDER not treated as error
-no transactional CTA under current deployment mode
-no fake request link
-gallery consumes authoritative images
-missing gallery is safe
-description renders safely
-variant data is factual
-no duplicate design/component system
-```
-
----
-
-# 125. Gallery Tests
-
-Where practical cover:
-
-```text
-zero images
-one image
-multiple images
-authoritative order
-primary image semantics
-alt text
-stable geometry
-lead-image priority
-secondary-image lazy behavior
-```
-
----
-
-# 126. Variant Tests
-
-Where supported by actual contract:
-
-```text
-zero variants
-one variant
-multiple variants
-long values
-optional/null fields
-variant-specific price if contract exposes it
-```
-
-Do not write tests for invented fields.
-
----
-
-# 127. MADE_TO_ORDER Tests
+User-entered search terms are untrusted text.
 
 Required:
 
 ```text
-MADE_TO_ORDER
-→ normal valid PDP
-→ not warning/error
-→ no Add to cart
-→ no Buy now
-→ no checkout
-→ request workflow represented only if legitimate implemented destination exists
+no raw HTML rendering
+no eval
+no custom SQL
+no direct database access
+no logging sensitive request state unnecessarily
+```
+
+React text rendering should provide the normal escaping boundary.
+
+---
+
+# 73. Search Form and XSS
+
+Add regression coverage ensuring a term conceptually like:
+
+```text
+<script>alert(1)</script>
+```
+
+is rendered as text and never executed/interpreted as markup.
+
+Do not build your own HTML sanitizer merely for plain-text React rendering.
+
+---
+
+# 74. Accessibility
+
+Verify:
+
+```text
+one main
+one H1
+logical headings
+search landmark/form semantics
+accessible search label
+keyboard submit
+visible focus
+touch target size
+result links keyboard accessible
+pagination accessible
+empty state understandable
+status not color-only
+200% reflow
 ```
 
 ---
 
-# 128. IN_STOCK Under Request-Only Deployment
+# 75. Search Landmark
 
-Unless a newer ADR supersedes request-only production:
+Use appropriate search semantics.
 
-```text
-IN_STOCK
-→ may display factual product type/availability
-→ must NOT expose transactional purchase CTA
-```
+Avoid unnecessary nested/duplicate search landmarks if both header and page forms are present.
 
-This prevents frontend deployment policy from drifting away from repository authority.
+If multiple search landmarks exist, ensure they can be distinguished accessibly where required.
 
 ---
 
-# 129. ProductCard Regression Tests
+# 76. Focus Behavior
 
-Run and extend existing product tests so activation of links does not break:
+After normal server navigation, do not implement custom focus manipulation unless needed.
+
+Do not forcibly move focus into results using client JavaScript.
+
+Preserve normal browser/document navigation.
+
+---
+
+# 77. JavaScript Boundary
+
+Expected new `"use client"` files:
 
 ```text
-homepage
-categories
+NONE
+```
+
+A normal search form does not need client JavaScript.
+
+If the agent believes otherwise, STOP and justify why native GET submission is insufficient before introducing it.
+
+---
+
+# 78. Fixture Policy
+
+The API remains the default.
+
+Do not catch API errors and substitute fixtures.
+
+If the existing explicit development fixture mode can support search safely, it may be extended only if useful for visual verification.
+
+Requirements remain:
+
+```text
+explicit fixture mode
+visible fixture notice
+no error fallback
+same ProductGrid/ProductCard
+same query semantics as far as fixture mode explicitly documents
+```
+
+---
+
+# 79. Fixture Search Is Not Backend Search Proof
+
+If fixtures are used for visual search testing:
+
+```text
+fixture search
+≠
+proof of Laravel FULLTEXT behavior
+```
+
+Do not claim otherwise.
+
+---
+
+# 80. Do Not Reimplement FULLTEXT in Fixtures
+
+Do not build a sophisticated client search engine merely to make fixtures behave like MySQL.
+
+A small deterministic fixture matcher, if already supported by the fixture architecture, may exist only for visual development.
+
+Production/default mode remains CAT-001.
+
+---
+
+# 81. Local Empty Database
+
+If the local Laravel catalog remains empty:
+
+```text
+/search?search=chair
+→ HTTP 200
+→ zero-result state
+```
+
+This is valid runtime verification.
+
+Do not seed production data solely to make search screenshots look populated.
+
+---
+
+# 82. Backend Search Verification
+
+Where the existing backend test infrastructure permits, run the established CAT-001 search tests rather than rewriting them.
+
+The backend already has dedicated coverage for:
+
+```text
+search semantics
+inactive variant exclusion
+SQLite fallback
+MySQL/MariaDB FULLTEXT
+```
+
+Do not change backend code during Phase 14.5 unless a genuine frozen-contract defect is discovered.
+
+---
+
+# 83. Search Page Runtime Verification
+
+Verify:
+
+```text
+/search
+→ HTTP 200
+
+/search?search=
+→ HTTP 200
+
+/search?search=%20%20%20
+→ HTTP 200
+
+/search?search=chair
+→ HTTP 200
+
+/search?search=definitely-no-match
+→ HTTP 200
+```
+
+No query state should produce a resource 404.
+
+---
+
+# 84. Pagination Runtime
+
+Where enough fixture/API results exist, verify:
+
+```text
+/search?search=chair&page=2
+```
+
+preserves `search=chair`.
+
+If the real database cannot produce multiple pages, use focused automated/fixture testing without fabricating production data.
+
+---
+
+# 85. Existing Route Regression
+
+Verify:
+
+```text
+/
+→ works
+
 /products
+→ HTTP 200
+
+/products/[missing]
+→ HTTP 404
+
+/categories/[missing]
+→ HTTP 404
+
+/search
+→ HTTP 200
 ```
 
 ---
 
-# 130. Existing Test Suites
+# 86. Search Header Regression
 
-Run at minimum the established equivalents of:
+The global search affordance must now lead to a real implemented route.
+
+No:
 
 ```text
+href="#"
+disabled fake control
+dead /search destination
+```
+
+---
+
+# 87. Search Result Product Navigation
+
+From a populated fixture/API search result:
+
+```text
+ProductCard
+→ /products/{backendSlug}
+```
+
+must continue to work.
+
+Do not add search context to the product URL such as:
+
+```text
+/products/chair?from=search
+```
+
+unless explicitly required later.
+
+---
+
+# 88. Search Page Status Semantics
+
+Expected:
+
+```text
+no term
+→ 200 entry state
+
+matches
+→ 200 results
+
+zero matches
+→ 200 empty state
+
+invalid supported query value
+→ expected validation handling
+
+backend failure
+→ error architecture
+```
+
+No accidental 404.
+
+---
+
+# 89. No Search-Specific Error Page
+
+Reuse the established failure architecture.
+
+Do not create:
+
+```text
+SearchErrorPage
+Search404
+SearchNetworkError
+```
+
+unless an existing reusable state cannot represent a genuine feature-owned expected failure.
+
+---
+
+# 90. No New Loading Architecture
+
+Use existing App Router loading behavior where applicable.
+
+Do not add artificial delays or client spinners.
+
+---
+
+# 91. Phase 14.6 Boundary
+
+Do NOT implement:
+
+```text
+filter drawer
+filter chips
+category filter UI
+product type filter
+availability filter
+price range
+sort selector
+clear-all filters
+active filter count
+mobile filter sheet
+```
+
+Those belong to Phase 14.6.
+
+---
+
+# 92. Phase 14.7 Boundary
+
+Do NOT implement comprehensive:
+
+```text
+search metadata
+canonical metadata
+robots decisions
+Open Graph
+Twitter cards
+dynamic title architecture
+```
+
+Phase 14.7 owns SEO metadata.
+
+---
+
+# 93. Phase 14.8 Boundary
+
+Do NOT add structured data.
+
+---
+
+# 94. Phase 14.9 Boundary
+
+Do NOT modify sitemap/robots.
+
+---
+
+# 95. Phase 14.10 Boundary
+
+Do not create a search-driven recommendation/internal-linking system.
+
+---
+
+# 96. Phase 14.11 Boundary
+
+Use existing optimized ProductCard image behavior.
+
+Do not expand into comprehensive image-performance work.
+
+---
+
+# 97. Backend Boundary
+
+Expected backend changes:
+
+```text
+NONE
+```
+
+CAT-001 search already exists.
+
+If the frontend discovers a genuine frozen-contract/backend mismatch:
+
+```text
+STOP
+document exact mismatch
+identify owning backend phase
+do not silently redesign the API
+```
+
+---
+
+# 98. Flutter Boundary
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 99. Dependencies
+
+Expected:
+
+```text
+NONE
+```
+
+---
+
+# 100. Component Creation Gate
+
+For every new component report:
+
+```text
+Component:
+<name>
+
+Stable responsibility:
+<responsibility>
+
+Existing components inspected:
+<list>
+
+MUI primitives considered:
+<list>
+
+Why existing composition was insufficient:
+<reason>
+
+Reusable outside /search:
+YES / NO
+```
+
+A component existing only to hide a few `sx` properties is not sufficient justification.
+
+---
+
+# 101. Likely Legitimate New Responsibility
+
+A reusable semantic search form may be legitimate if both:
+
+```text
+header
+search page
+```
+
+need the same behavior.
+
+But do not force shared visual composition where the contexts differ.
+
+Behavioral reuse and visual composition can remain separate.
+
+---
+
+# 102. Forbidden Reinventions
+
+Avoid:
+
+```text
+SearchProductCard
+SearchProductGrid
+SearchPrice
+SearchContainer
+SearchSection
+SearchPagination
+SearchTypography
+SearchButton
+```
+
+when canonical equivalents already exist.
+
+---
+
+# 103. Automated Test Command
+
+Add a focused script following project convention, preferably:
+
+```text
+npm run test:search
+```
+
+if consistent with the current package scripts.
+
+---
+
+# 104. Minimum Search Contract Tests
+
+Cover:
+
+```text
+/search route exists
+public access
+server-first page
+canonical search parameter is "search"
+q/query aliases are not introduced
+meaningful query calls CAT-001 with search=
+no /api/v1/search endpoint used
+API client reused
+no client-side product filtering
+no search dependency
+missing term renders entry state
+empty term renders entry state
+whitespace-only term renders entry state
+zero matches render HTTP-200 empty state
+results reuse ProductGrid
+results reuse ProductCard
+ProductCard URLs use backend slug
+pagination preserves search term
+page one removes unnecessary page=1
+/search receives no hard-404 preflight
+/products collection remains unaffected
+product/category hard-404 behavior remains intact
+non-404 API failures are not converted to empty results
+```
+
+---
+
+# 105. Search Security Tests
+
+Cover:
+
+```text
+special characters safely encoded
+HTML-like query rendered as text
+no dangerouslySetInnerHTML
+no query interpolation into markup
+```
+
+---
+
+# 106. Search Accessibility Tests
+
+Cover where practical:
+
+```text
+search field accessible name
+submit button semantics
+keyboard submit
+one H1
+ProductCard link semantics
+pagination labels
+zero-result message
+```
+
+---
+
+# 107. Regression Suites
+
+Run the established equivalents of:
+
+```text
+npm run test:search
 npm run test:product-detail
 npm run test:products
 npm run test:category
@@ -2244,58 +1911,58 @@ npm run test:routing
 
 Use actual available script names.
 
-Do not invent failing commands merely to match this prompt.
-
 ---
 
-# 131. TypeScript
+# 108. Static Validation
 
-Must pass.
-
----
-
-# 132. ESLint
-
-Must pass.
-
----
-
-# 133. Production Build
-
-Must pass.
-
-The build must not require a populated Laravel database.
-
----
-
-# 134. Browser Widths
-
-Verify representative widths:
+Must pass:
 
 ```text
-320
-390
-640
-959
-960
-961
-1024
-1440
-1728
-```
-
-For populated fixture visual testing, focus particularly on:
-
-```text
-320
-390
-960
-1440
+TypeScript
+ESLint
+production build
+git diff --check
 ```
 
 ---
 
-# 135. Horizontal Overflow
+# 109. Visual Verification
+
+Inspect at minimum:
+
+```text
+320px
+390px
+960px
+1440px
+```
+
+Test both:
+
+```text
+search-entry state
+zero-results state
+populated fixture/API results where available
+```
+
+---
+
+# 110. 200% Reflow
+
+Verify:
+
+```text
+search input remains usable
+button remains reachable
+query heading wraps
+results reflow
+pagination remains usable
+no horizontal document scroll
+```
+
+---
+
+# 111. Horizontal Overflow
 
 Required:
 
@@ -2303,56 +1970,25 @@ Required:
 document.documentElement.scrollWidth <= window.innerWidth
 ```
 
-Do not fix overflow with:
-
-```css
-overflow-x: hidden;
-```
-
-on the document.
-
-Fix the source.
+Do not use global `overflow-x:hidden` as a fix.
 
 ---
 
-# 136. Visual Verification
+# 112. Visual Quality Audit
 
-Inspect:
+Search must remain consistent with the existing storefront.
 
-```text
-gallery prominence
-product name hierarchy
-price hierarchy
-availability clarity
-MADE_TO_ORDER treatment
-description readability
-variant/specification readability
-mobile composition
-desktop composition
-image cropping
-long content
-missing image behavior
-focus state
-```
-
----
-
-# 137. No AI-Slop Audit
-
-Explicitly inspect for:
+Check for:
 
 ```text
-excessive cards
-pill badges everywhere
-rounded containers everywhere
-decorative icons
-gradient surfaces
-glassmorphism
-huge ornamental headings
-fake luxury prose
-fake trust claims
-fake urgency
-generic ecommerce CTA clutter
+excessive rounded search container
+oversized search icon
+pill-heavy UI
+dashboard styling
+floating glass search
+gratuitous cards
+decorative empty-state illustration
+fake recommendation blocks
 ```
 
 Expected:
@@ -2363,20 +1999,18 @@ NONE
 
 ---
 
-# 138. Token Audit
+# 113. Token Audit
 
-Search Phase 14.4 changes for:
+Search Phase 14.5 changes for:
 
 ```text
-raw hex colors
+raw hex
 arbitrary spacing
-arbitrary font sizes
-arbitrary line heights
+arbitrary typography
 custom radius
 custom shadow
-raw breakpoint widths
-custom transition timing
-new media ratio
+raw breakpoint
+custom transition
 ```
 
 Expected:
@@ -2385,45 +2019,15 @@ Expected:
 NONE
 ```
 
-unless an existing approved token literally resolves to that value through the theme.
-
-Do not bypass tokens by copying their raw value locally.
+unless already expressed through approved theme/token authority.
 
 ---
 
-# 139. Component Reinvention Audit
+# 114. Client Boundary Audit
 
-For each newly created component report:
+Report every new file containing:
 
 ```text
-Component:
-<name>
-
-Responsibility:
-<responsibility>
-
-Existing project components inspected:
-<list>
-
-MUI primitives considered:
-<list>
-
-Why composition alone was insufficient:
-<reason>
-
-Reusable outside PDP:
-YES / NO
-```
-
-If the answer reveals the component is merely a styling wrapper, remove it.
-
----
-
-# 140. Client Boundary Audit
-
-List every Phase 14.4 file containing:
-
-```tsx
 "use client"
 ```
 
@@ -2433,143 +2037,26 @@ Expected:
 NONE
 ```
 
-unless a narrowly scoped gallery interaction genuinely requires it.
+Existing client boundaries from previous phases are allowed.
 
-If one exists, explain:
+---
+
+# 115. Network Audit
+
+For one search page render, verify:
 
 ```text
-why server HTML alone was insufficient
-why the boundary is narrow
-what JS it adds
-how no-JS core content remains usable
+one appropriate CAT-001 collection request
+no CAT-002 N+1
+no /api/v1/search
+no duplicate search request caused by component structure
 ```
 
----
-
-# 141. Performance
-
-Do not add a dependency.
-
-Do not ship a large gallery library.
-
-Do not preload all images.
-
-Do not client-render the entire PDP.
-
-Do not duplicate catalog data in client state.
+Framework/runtime verification traffic does not count as catalog duplication; distinguish it clearly.
 
 ---
 
-# 142. Phase Boundaries
-
-Do NOT implement:
-
-```text
-14.5 Search
-14.6 Filters/sorting
-14.7 comprehensive SEO metadata
-14.8 structured data
-14.9 sitemap/robots
-14.10 comprehensive internal linking
-14.11 comprehensive image/performance optimization
-```
-
----
-
-# 143. SEO Boundary
-
-The PDP must still be:
-
-```text
-public
-server-rendered
-semantic
-crawlable
-slug-based
-```
-
-But comprehensive product metadata belongs to 14.7.
-
-Do not consume that phase now.
-
----
-
-# 144. Structured Data Boundary
-
-Do NOT add:
-
-```text
-Product JSON-LD
-Offer JSON-LD
-BreadcrumbList JSON-LD
-```
-
-Phase 14.8 owns it.
-
----
-
-# 145. Internal Linking Boundary
-
-Functional breadcrumb/category/ProductCard links are allowed.
-
-Do not build:
-
-```text
-related products
-recommendation engine
-room graph
-style graph
-```
-
-during 14.4.
-
----
-
-# 146. Image Optimization Boundary
-
-Use `next/image` correctly now.
-
-Do not prematurely implement the full Phase 14.11 optimization strategy.
-
----
-
-# 147. Backend Boundary
-
-Expected backend changes:
-
-```text
-NONE
-```
-
-CAT-002 already exists.
-
-If frontend implementation discovers that CAT-002 lacks a field required by the frozen contract, STOP and report the backend contract/implementation defect.
-
-Do not silently patch Laravel from Phase 14.4.
-
----
-
-# 148. Flutter Boundary
-
-Flutter changes:
-
-```text
-NONE
-```
-
----
-
-# 149. Dependencies
-
-Expected:
-
-```text
-NONE
-```
-
----
-
-# 150. Documentation
+# 116. Documentation
 
 Update:
 
@@ -2577,15 +2064,20 @@ Update:
 phases/group-N-phases.md
 ```
 
-with the Phase 14.4 execution record.
+with the Phase 14.5 execution record.
 
-Update `frontend/AGENTS.md` only for genuinely durable newly established rules.
+Update `frontend/AGENTS.md` only if Phase 14.5 establishes a genuinely durable rule not already covered by:
 
-Do not duplicate existing design-system rules.
+```text
+ROUTING.md
+design system
+responsive authority
+API architecture
+```
 
 ---
 
-# 151. ADR
+# 117. ADR
 
 Expected:
 
@@ -2593,280 +2085,242 @@ Expected:
 NONE
 ```
 
-Ordinary PDP composition does not need an ADR.
+The route and search architecture are already decided.
 
-If the agent believes an ADR is necessary, explain the unresolved architectural choice before creating one.
+Do not create an ADR simply to record implementation.
 
----
-
-# 152. Runtime Environment
-
-Use the established local setup:
-
-```text
-Laravel:
-http://127.0.0.1:8000
-
-Next.js:
-available local port
-
-frontend/web/.env.local:
-API_BASE_URL=http://127.0.0.1:8000
-```
-
-Do not commit `.env.local`.
-
-Do not introduce:
-
-```text
-NEXT_PUBLIC_API_BASE_URL
-```
+If a material architectural conflict is discovered, STOP and explain it before adding a decision.
 
 ---
 
-# 153. Completion Report
+# 118. Completion Report
 
 Return:
 
 ```text
-Phase 14.4 status:
+Phase 14.5 status:
 PASS / BLOCKED
 
 
 ROUTE
 
-Canonical route:
+Search route:
 <actual>
 
-Page:
-<path>
+Canonical parameter:
+search / FAIL
 
-Identifier:
-BACKEND SLUG / FAIL
+Alternative q/query parameter introduced:
+NO / FAIL
 
-Locally generated slug:
-NONE / FAIL
+Public:
+YES / NO
 
 Server Component:
 YES / NO
 
 
-API
+SEARCH ARCHITECTURE
 
-Endpoint:
+Website route:
+/search
+
+Laravel endpoint:
 <actual>
 
-Representation:
-FULL PRODUCT DETAIL / <other>
-
-Public:
+CAT-001 reused:
 YES / NO
+
+/api/v1/search introduced:
+NO / FAIL
+
+Frontend search engine:
+NONE / FAIL
+
+New search dependency:
+NONE / FAIL
 
 API client reused:
 YES / NO
 
-Direct fetch outside client:
-NONE / FAIL
-
 Cache policy:
 <actual>
 
-Fixture fallback after API error:
+
+SEARCH FORM
+
+Method:
+GET / <other>
+
+Action:
+<actual>
+
+Input name:
+search / FAIL
+
+Accessible label:
+PASS / FAIL
+
+Keyboard Enter:
+PASS / FAIL
+
+Works without JS:
+YES / NO
+
+Debounce:
+NONE / FAIL
+
+Autocomplete/typeahead:
 NONE / FAIL
 
 
-HARD 404
+HEADER
 
-Laravel missing product:
-HTTP <status>
+Existing search affordance:
+REUSED / <details>
 
-Next dev missing product:
-HTTP <status>
+Destination:
+/search / FAIL
 
-Next start missing product:
-HTTP <status>
-
-Canonical not-found UI:
-PASS / FAIL
-
-Non-404 upstream failure masked as 404:
+Header rebuilt:
 NO / FAIL
 
-Mechanism:
-<summary>
-
-Preflight tradeoff:
-<summary>
-
-Collection /products preflight:
+Dead search link:
 NONE / FAIL
 
 
-PRODUCTCARD ACTIVATION
+QUERY STATES
 
-Canonical ProductCard reused:
+/search:
+HTTP <status>
+State: <state>
+
+/search?search=:
+HTTP <status>
+State: <state>
+
+Whitespace query:
+HTTP <status>
+State: <state>
+
+Matching query:
+HTTP <status>
+State: <state>
+
+Zero-result query:
+HTTP <status>
+State: <state>
+
+
+RESULTS
+
+ProductGrid reused:
 YES / NO
 
-ProductCard fork:
+ProductCard reused:
+YES / NO
+
+Product Summary used:
+YES / NO
+
+CAT-002 per result:
 NONE / FAIL
 
-Homepage links:
-<status>
-
-Category links:
-<status>
-
-Listing links:
-<status>
-
-URL source:
-BACKEND SLUG / FAIL
-
-
-PAGE COMPOSITION
-
-Rendered hierarchy:
-1. <...>
-2. <...>
-3. <...>
-
-H1:
-<product-name behavior>
-
-Breadcrumb:
-<summary>
-
-Product information:
-<summary>
-
-Description:
-<summary>
-
-Specifications:
-<summary>
-
-Variants:
-<summary>
-
-Primary action/context:
-<summary>
-
-
-GALLERY
-
-API images[] used:
-YES / NO
-
-New media authority:
-NONE / FAIL
-
-Lead image:
-<selection semantics>
-
-Ordering:
-<authority>
-
-Alt:
-<behavior>
-
-Zero images:
-<behavior>
-
-One image:
-<behavior>
-
-Multiple images:
-<behavior>
-
-Next Image:
-YES / NO
-
-Lead priority:
-<behavior>
-
-Secondary loading:
-<behavior>
-
-Responsive sizes:
-<summary>
-
-Stable geometry:
+Backend slug navigation:
 PASS / FAIL
 
-New dependency:
+Result count:
+<behavior>
+
+Fake relevance claims:
 NONE / FAIL
 
 
-PRODUCT CONTRACT
+PAGINATION
 
-Name:
-AUTHORITATIVE / FAIL
+Existing pagination reused:
+YES / NO
 
-Description:
-AUTHORITATIVE / FAIL
-
-Price:
-AUTHORITATIVE / FAIL
-
-Price formatter:
-REUSED / FAIL
-
-Product type:
-<behavior>
-
-Availability:
-<behavior>
-
-Stock indicator:
-<behavior>
-
-Raw inventory exposed:
-NONE / FAIL
-
-Category:
-<behavior>
-
-Variant data:
-<behavior>
-
-
-MADE TO ORDER
-
-Treated as first-class:
+Search term preserved:
 PASS / FAIL
 
-Treated as error/unavailable:
+Page 1 URL:
+<example>
+
+Page 2 URL:
+<example>
+
+Unnecessary page=1:
+NONE / FAIL
+
+
+EMPTY STATES
+
+No-query state:
+<summary>
+
+Zero-result state:
+<summary>
+
+Zero results treated as 404:
 NO / FAIL
 
-Normal checkout CTA:
-NONE / FAIL
-
-Request action:
-<implemented legitimate route / truthful deferred treatment>
-
-Fake/dead request link:
+Fake recommendations:
 NONE / FAIL
 
 
-DEPLOYMENT MODE
+ERRORS
 
-Latest authoritative commerce deployment decision:
-<decision>
+422:
+<behavior>
 
-Newer superseding ADR found:
-YES / NO
+429:
+<behavior>
 
-Cart CTA:
-NONE / <justification>
+5xx:
+<behavior>
 
-Buy-now CTA:
-NONE / <justification>
+Network failure:
+<behavior>
 
-Checkout CTA:
-NONE / <justification>
+Timeout:
+<behavior>
 
-Payment CTA:
-NONE / <justification>
+API failure converted to empty results:
+NO / FAIL
+
+
+PROXY / HARD 404
+
+/search preflight:
+NONE / FAIL
+
+/products preflight:
+NONE / FAIL
+
+/products/[slug] hard 404:
+PASS / FAIL
+
+/categories/[slug] hard 404:
+PASS / FAIL
+
+
+SECURITY
+
+Search term rendered as text:
+PASS / FAIL
+
+HTML-like query safe:
+PASS / FAIL
+
+dangerouslySetInnerHTML:
+NONE / FAIL
+
+Special-character URL encoding:
+PASS / FAIL
+
+Client-side SQL/search semantics:
+NONE / FAIL
 
 
 DESIGN SYSTEM
@@ -2877,25 +2331,22 @@ PASS / FAIL
 New token authority:
 NONE / FAIL
 
-Raw unapproved colors:
+Raw colors:
 NONE / <list>
 
-Raw unapproved spacing:
+Raw spacing:
 NONE / <list>
 
-Raw unapproved typography:
+Raw typography:
 NONE / <list>
 
-Raw unapproved radii:
+Raw radii:
 NONE / <list>
 
-Raw unapproved shadows:
+Raw shadows:
 NONE / <list>
 
-Raw unapproved breakpoints:
-NONE / <list>
-
-New media ratio:
+Raw breakpoints:
 NONE / <list>
 
 
@@ -2910,52 +2361,16 @@ New components:
 New-component justification:
 <details>
 
-Duplicate breadcrumb:
+SearchProductCard:
+NONE / FAIL
+
+SearchProductGrid:
+NONE / FAIL
+
+SearchPagination:
 NONE / FAIL
 
 Duplicate price formatter:
-NONE / FAIL
-
-Duplicate ProductCard:
-NONE / FAIL
-
-PDP-specific Button:
-NONE / FAIL
-
-PDP-specific Container:
-NONE / FAIL
-
-
-URBAN LADDER
-
-Usage:
-STRUCTURAL / IA REFERENCE ONLY
-
-Structural ideas considered:
-<list>
-
-Ideas adopted:
-<list>
-
-Exact layout copied:
-NONE / FAIL
-
-Gallery copied:
-NONE / FAIL
-
-CTA copied:
-NONE / FAIL
-
-Specs copied:
-NONE / FAIL
-
-Visual design copied:
-NONE / FAIL
-
-Copy copied:
-NONE / FAIL
-
-Assets copied:
 NONE / FAIL
 
 
@@ -2967,25 +2382,10 @@ PASS / FAIL
 390:
 PASS / FAIL
 
-640:
-PASS / FAIL
-
-959:
-PASS / FAIL
-
 960:
 PASS / FAIL
 
-961:
-PASS / FAIL
-
-1024:
-PASS / FAIL
-
 1440:
-PASS / FAIL
-
-1728:
 PASS / FAIL
 
 200% reflow:
@@ -2993,6 +2393,9 @@ PASS / FAIL
 
 Horizontal overflow:
 NONE / FAIL
+
+Long query:
+PASS / FAIL
 
 
 ACCESSIBILITY
@@ -3003,19 +2406,13 @@ PASS / FAIL
 One H1:
 PASS / FAIL
 
-Heading hierarchy:
+Search semantics:
 PASS / FAIL
 
-Breadcrumb:
+Input label:
 PASS / FAIL
 
-Gallery semantics:
-PASS / FAIL
-
-Image alt:
-PASS / FAIL
-
-Keyboard:
+Keyboard submit:
 PASS / FAIL
 
 Visible focus:
@@ -3024,88 +2421,64 @@ PASS / FAIL
 Touch targets:
 PASS / FAIL
 
-Status not color-only:
+Product links:
 PASS / FAIL
 
-Reduced motion:
+Pagination:
+PASS / FAIL
+
+Empty state:
 PASS / FAIL
 
 
-PERFORMANCE
+SERVER / CLIENT
 
 Server-first:
 PASS / FAIL
 
-New client boundaries:
+New "use client" files:
 NONE / <list>
 
-New client JS:
-NONE / <details>
+Client search state:
+NONE / FAIL
 
-Lead image priority:
-PASS / FAIL
-
-Secondary images lazy:
-PASS / FAIL
-
-Stable geometry:
-PASS / FAIL
-
-No gallery dependency:
-PASS / FAIL
+Browser-width branching:
+NONE / FAIL
 
 
-CURRENT LOCAL DATA
+NETWORK
 
-Laravel origin:
-<origin>
+CAT-001 requests:
+<count/reason>
 
-Products total:
-<number>
+CAT-002 result requests:
+NONE / FAIL
 
-Real product available:
-YES / NO
+/api/v1/search requests:
+NONE / FAIL
 
-Synthetic production data created:
-NO / FAIL
-
-Fixture visual PDP:
-<USED / NOT USED>
-
-
-RUNTIME
-
-Missing Laravel product:
-PASS / FAIL
-
-Missing Next dev product hard 404:
-PASS / FAIL
-
-Missing Next production product hard 404:
-PASS / FAIL
-
-/products remains HTTP 200:
-PASS / FAIL
-
-Category hard-404 regression:
-PASS / FAIL
-
-Browser:
-<browser>
-
-Console errors:
-NONE / <details>
-
-Network failures:
+Unexpected duplicate requests:
 NONE / <details>
 
 
 PHASE BOUNDARIES
 
-Search implemented:
+Filters implemented:
 NO
 
-Filters/sorting implemented:
+Sorting UI implemented:
+NO
+
+Autocomplete implemented:
+NO
+
+Suggestions implemented:
+NO
+
+Search history implemented:
+NO
+
+Search analytics implemented:
 NO
 
 Comprehensive SEO implemented:
@@ -3114,19 +2487,10 @@ NO
 Structured data implemented:
 NO
 
-Sitemap/robots implemented:
+Sitemap/robots changed:
 NO
 
 Recommendation engine implemented:
-NO
-
-Comprehensive internal linking implemented:
-NO
-
-Comprehensive image optimization implemented:
-NO
-
-R2 infrastructure changed:
 NO
 
 Backend changed:
@@ -3135,28 +2499,22 @@ NO
 Flutter changed:
 NO
 
+Dependencies added:
+NONE
+
 
 VALIDATION
 
-Product-detail contract:
+Search contract:
 PASS / FAIL
 
-Hard-404 tests:
+Search security:
 PASS / FAIL
 
-ProductCard link activation:
+Search accessibility:
 PASS / FAIL
 
-Gallery tests:
-PASS / FAIL
-
-Variant tests:
-PASS / FAIL
-
-MADE_TO_ORDER tests:
-PASS / FAIL
-
-Request-first tests:
+Product detail regression:
 PASS / FAIL
 
 Products regression:
@@ -3168,7 +2526,13 @@ PASS / FAIL
 Homepage regression:
 PASS / FAIL
 
+Hard-404 regression:
+PASS / FAIL
+
 API client:
+PASS / FAIL
+
+Theme:
 PASS / FAIL
 
 Layout:
@@ -3183,12 +2547,6 @@ PASS / FAIL
 Routing:
 PASS / FAIL
 
-Theme:
-PASS / FAIL
-
-Design system:
-PASS / FAIL
-
 TypeScript:
 PASS / FAIL
 
@@ -3200,6 +2558,27 @@ PASS / FAIL
 
 git diff --check:
 PASS / FAIL
+
+
+VISUAL VERIFICATION
+
+Search entry:
+PASS / FAIL
+
+Zero results:
+PASS / FAIL
+
+Populated results:
+PASS / FAIL / NOT AVAILABLE
+
+Mobile:
+PASS / FAIL
+
+Desktop:
+PASS / FAIL
+
+Console errors:
+NONE / <details>
 
 
 DOCUMENTATION
@@ -3236,70 +2615,71 @@ Push:
 
 RESULT
 
-Phase 14.4:
+Phase 14.5:
 PASS / BLOCKED
 
-Phase 14.5:
+Phase 14.6:
 READY / BLOCKED
 ```
 
 ---
 
-# 154. STOP Condition
+# 119. STOP Condition
 
-Phase 14.4 may be declared PASS only when:
+Phase 14.5 may be declared PASS only when:
 
-- `/products/[slug]` is implemented;
-- website URLs use authoritative backend slugs;
-- CAT-002/full Product Detail is used;
-- the page remains public;
-- the page remains server-first;
+- `/search` exists;
+- `/search` is public;
+- `search` is the canonical query parameter;
+- no `q`, `query`, or other alias is introduced;
+- search uses CAT-001;
+- no `/api/v1/search` endpoint is invented;
+- no frontend search engine is introduced;
 - the canonical API client is reused;
-- no second data-fetch architecture exists;
-- missing products produce genuine HTTP 404 in both development and production;
-- non-404 upstream failures are not disguised as missing products;
-- `/products` remains a normal collection route without detail preflight;
-- the Phase 14.2 category hard-404 behavior remains intact;
-- canonical ProductCard navigation is activated without creating a card fork;
-- homepage/category/listing cards all use `/products/{backendSlug}`;
-- the full product gallery consumes authoritative media;
-- missing media is safe;
-- image ordering follows backend authority;
-- image geometry is stable;
-- only appropriate initial imagery is prioritized;
-- no gallery dependency is added;
-- authoritative description is rendered safely;
-- price formatting is reused;
-- money remains integer minor-unit based at the contract boundary;
-- `product_type`, `availability`, and `stock_indicator` retain distinct frozen semantics;
-- raw inventory is never exposed;
-- MADE_TO_ORDER remains first-class;
-- variant information is factual and contract-driven;
-- no fake swatches/configurator is invented;
-- the latest deployment-mode ADR is respected;
-- under the current request-only decision, no cart/buy-now/checkout/payment CTA is exposed unless a newer authoritative ADR explicitly supersedes it;
-- no dead Request Furniture link exists;
-- no fake contact/WhatsApp/phone action exists;
-- no ratings/reviews/wishlist/sale/urgency/trust-badge UI is invented;
-- no recommendation engine is added;
-- all visual implementation consumes frozen tokens;
-- no ad-hoc visual scale is introduced;
-- existing primitives/components are reused before new components are created;
-- Urban Ladder is used only for structural/IA study;
-- no competitor visual design, copy, assets, gallery, CTA or specification treatment is copied;
-- responsive behavior passes narrow mobile through wide desktop;
+- search remains server-first;
+- normal search submission works without JavaScript;
+- the URL is the durable search state;
+- no-query, blank-query and whitespace-query states are intentional;
+- blank search does not accidentally masquerade as a full-catalog search;
+- zero results return HTTP 200;
+- zero results are not treated as 404;
+- API failures are not disguised as empty results;
+- ProductGrid is reused;
+- ProductCard is reused;
+- Product Summary is used;
+- no CAT-002 N+1 exists;
+- ProductCard navigation continues using authoritative backend slugs;
+- pagination preserves the search term;
+- page one retains the clean URL convention;
+- `/search` receives no hard-404 preflight;
+- `/products` remains unaffected by detail preflight;
+- category and product detail hard-404 behavior remains intact;
+- header search now reaches a legitimate implemented route;
+- no dead search interaction exists;
+- no autocomplete/typeahead/debounce architecture is added;
+- no search history or analytics architecture is added;
+- no filter/sort UI is implemented early;
+- no fake relevance claims are made;
+- no unsupported sort value is invented;
+- special characters are safely encoded;
+- search terms are rendered only as escaped text;
+- no `dangerouslySetInnerHTML` is introduced;
+- frozen design tokens remain authoritative;
+- no search-specific design system is created;
+- no duplicate ProductCard/ProductGrid/Pagination/price formatter exists;
+- responsive behavior passes;
 - 200% reflow passes;
-- no horizontal overflow exists;
+- horizontal overflow is absent;
 - accessibility checks pass;
-- server-first rendering is preserved;
-- client JS remains absent or narrowly justified;
-- no dependencies are added;
-- Phase 14.5+ work remains untouched;
-- backend remains unchanged unless a genuine frozen-contract defect blocks the phase;
+- new client JS is absent unless narrowly justified;
+- no new dependency is added;
+- backend remains unchanged unless a genuine contract defect blocks the phase;
 - Flutter remains unchanged;
-- homepage regression passes;
-- category regression passes;
+- Phase 14.6+ work remains untouched;
+- product-detail regression passes;
 - product-listing regression passes;
+- category regression passes;
+- homepage regression passes;
 - TypeScript passes;
 - ESLint passes;
 - production build passes;
@@ -3309,10 +2689,10 @@ Phase 14.4 may be declared PASS only when:
 Then report exactly:
 
 ```text
-Phase 14.4 — PASS
-Phase 14.5 — READY
+Phase 14.5 — PASS
+Phase 14.6 — READY
 ```
 
-Do not start Phase 14.5 automatically.
+Do not start Phase 14.6 automatically.
 
-**The Product Detail Page is a product-understanding surface, not permission to invent a second commerce architecture. Let authoritative furniture photography and product information lead the page; let the frozen SL Furnitures tokens control its visual language; reuse the components already earned in Phases 14.1–14.3; and use Urban Ladder only to study proven information hierarchy, never to copy its design.**
+**Search is a thin, truthful website experience over the authoritative CAT-001 catalog query—not a second search engine. Keep the URL shareable, the form native, the results server-rendered, the ProductGrid canonical, and Laravel responsible for deciding what matches.**
