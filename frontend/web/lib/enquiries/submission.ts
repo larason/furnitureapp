@@ -19,14 +19,15 @@ export type EnquiryFieldErrors = Partial<Record<"name" | "contact" | "subject" |
 
 export type EnquiryValidationContext = Readonly<{ isAuthenticated: boolean }>;
 
-export function validateEnquiry(values: EnquiryFormValues, context: EnquiryValidationContext = { isAuthenticated: false }): EnquiryFieldErrors {
+export function validateEnquiry(values: EnquiryFormValues, context?: EnquiryValidationContext): EnquiryFieldErrors {
   const errors: EnquiryFieldErrors = {};
   const subjectLength = values.subject.trim().length;
   const messageLength = values.message.trim().length;
+  const isAuthenticated = context?.isAuthenticated ?? false;
 
-  if (!context.isAuthenticated && !values.name.trim()) errors.name = "Enter your name.";
+  if (!isAuthenticated && !values.name.trim()) errors.name = "Enter your name.";
   else if (values.name.trim().length > 120) errors.name = "Use 120 characters or fewer.";
-  if (!context.isAuthenticated && !values.phone.trim() && !values.email.trim()) errors.contact = "Enter a phone number or email address.";
+  if (!isAuthenticated && !values.phone.trim() && !values.email.trim()) errors.contact = "Enter a phone number or email address.";
   else if (values.phone.trim().length > 30) errors.contact = "Use a phone number with 30 characters or fewer.";
   else if (values.email.trim() && (!isEmail(values.email.trim()) || values.email.trim().length > 255)) errors.contact = "Enter a valid email address with 255 characters or fewer.";
   if (subjectLength < 5 || subjectLength > 200) errors.subject = "Enter a subject with 5 to 200 characters.";
