@@ -422,6 +422,16 @@ void main() {
   });
 
   group('startup behavior', () {
+    test('a supplied compile-time secret define is rejected', () {
+      if (!bool.hasEnvironment('CLERK_SECRET_KEY')) return;
+
+      expect(
+        () => ConfigValidator.loadCompileTime(),
+        _throwsConfig,
+        reason: 'CLERK_SECRET_KEY must never enter the application',
+      );
+    });
+
     test('22. the app runs with a validated configuration', () {
       expect(
         ConfigValidator.validate(_local()).environment,

@@ -7,6 +7,7 @@ Laravel API as the Next.js website and shares the project design system.
 
 - **Platform:** Android only. iOS, web, and desktop targets are intentionally not
   generated and must not be added without an explicit decision (ADR/DESIGN-007).
+- **Launcher label:** `Buy Furnitures`
 - **Application ID:** `com.slfurnitures.app`
 - **Dart package:** `sl_furnitures`
 

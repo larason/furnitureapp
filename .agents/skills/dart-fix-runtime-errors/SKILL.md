@@ -13,6 +13,7 @@ metadata:
   - [Null Safety](#null-safety)
   - [Error Handling](#error-handling)
 - [Workflows](#workflows)
+  - [Workflow: Runtime Error Resolution](#workflow-runtime-error-resolution)
   - [Workflow: Static Analysis Resolution](#workflow-static-analysis-resolution)
 - [Examples](#examples)
 
@@ -41,6 +42,41 @@ Distinguish between recoverable exceptions and unrecoverable errors.
 *   **Rethrowing:** Use `rethrow` inside a `catch` block to propagate an exception while preserving its original stack trace.
 
 ## Workflows
+
+### Workflow: Runtime Error Resolution
+
+Use this sequential workflow when a running Dart or Flutter application reports
+an exception or unexpected behavior. Copy the checklist to track progress.
+
+**Task Progress:**
+- [ ] 1. Retrieve the active runtime failure.
+- [ ] 2. Locate the failing code.
+- [ ] 3. Apply the smallest root-cause fix.
+- [ ] 4. Verify the fix with hot reload.
+
+**1. Retrieve the active runtime failure**
+
+Use `get_runtime_errors` to collect the current exception and complete stack
+trace. Do not infer the cause from a screenshot or a partial log message.
+
+**2. Locate the failing code**
+
+Use `lsp` with the file and line information from the stack trace to inspect
+the surrounding code, references, and type information. Trace the first
+application frame rather than changing the framework or symptom site first.
+
+**3. Apply the smallest root-cause fix**
+
+Preserve existing behavior outside the failing path. Add or update a focused
+regression test when the failure can be reproduced without the running app.
+
+**4. Verify the fix**
+
+Use `hot_reload` and repeat the failing interaction. Confirm that the runtime
+error is gone and that no new analyzer or test failures were introduced.
+
+If hot reload cannot apply the change, perform a full restart and record that
+limitation in the verification result.
 
 ### Workflow: Static Analysis Resolution
 

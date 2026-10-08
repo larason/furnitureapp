@@ -16,11 +16,19 @@ class ConfigValidationException implements Exception {
 
 /// Compile-time defines read through `--dart-define-from-file`.
 abstract final class CompileTimeDefines {
+  // Dart can detect named defines, but it cannot enumerate arbitrary defines.
+  static const String forbiddenSecretField = 'CLERK_SECRET_KEY';
+  static const bool _hasForbiddenSecret =
+      bool.hasEnvironment(forbiddenSecretField);
+
   static const Map<String, Object?> values = <String, Object?>{
     'APP_ENV': String.fromEnvironment('APP_ENV'),
     'API_BASE_URL': String.fromEnvironment('API_BASE_URL'),
     'CLERK_PUBLISHABLE_KEY': String.fromEnvironment('CLERK_PUBLISHABLE_KEY'),
-    'ENABLE_DIAGNOSTICS': bool.fromEnvironment('ENABLE_DIAGNOSTICS'),
+    if (bool.hasEnvironment('ENABLE_DIAGNOSTICS'))
+      'ENABLE_DIAGNOSTICS': String.fromEnvironment('ENABLE_DIAGNOSTICS'),
+    if (_hasForbiddenSecret)
+      forbiddenSecretField: String.fromEnvironment(forbiddenSecretField),
   };
 }
 
@@ -45,7 +53,8 @@ abstract final class ConfigValidator {
   };
 
   /// Rejected with a specific diagnostic rather than as a generic unknown field.
-  static const String _forbiddenSecretField = 'CLERK_SECRET_KEY';
+  static const String _forbiddenSecretField =
+      CompileTimeDefines.forbiddenSecretField;
 
   /// Tracked example values that must never validate as runnable config.
   static const List<String> _placeholderMarkers = <String>[
