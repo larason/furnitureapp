@@ -2951,3 +2951,17 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Reusing the tested Group J surface avoids a second operational API and keeps the frozen request-first, privacy, and authorization boundaries intact. Documentation now follows the implemented close-only state machine rather than historical optional-reopen wording.
 
 **Status:** Accepted and verified in Phase 11.10 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalEnquiryApiTest,OpenApiEnquiryContractTest}.php`, `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `docs/api/{api-contract.md,api-conventions.md,api-resources.md,openapi.yaml}`, `docs/domain/business-rules.md`, `docs/decisions.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/DESIGN-007 — Android-Only Flutter App Foundation
+
+**Decision:** The SL Furnitures customer application is a Flutter project at `frontend/app/` targeting **Android only**. iOS, web, and desktop targets are intentionally not generated. The permanent Android application ID and namespace are `com.slfurnitures.app`; the Dart package is `sl_furnitures`. The launcher label is `SL Furnitures`.
+
+Phase 16.1 establishes the project setup only: it adds the Android host project, a strict-but-standard analyzer baseline (`flutter_lints` plus `strict-casts`, `strict-inference`, `strict-raw-types`), a minimal entry point (`lib/main.dart`) and root widget (`lib/app.dart`) with a neutral bootstrap placeholder, and an app-shell smoke test. It introduces **no** theme, environment configuration, networking, authentication, routing, or feature structure — those remain Phases 16.2–16.9.
+
+The app consumes the shared design system exclusively through the existing `frontend/design-system/` contract. Flutter does not parse `tokens.css` or load `design-tokens.json` at runtime; Phase 16.2 maps approved tokens into `ThemeData` via a static Dart adapter. No mobile-specific token authority, font family, icon pack, or brand value is created. Native visual verification stays pending until a device/emulator is attached; automated analysis and builds are not treated as visual proof.
+
+**Reason:** Fixes the durable Play Store identity and platform scope before any UI exists, keeps the app on one shared design authority, follows the repository's phase-by-phase dependency order, and avoids scaffolding theme or business layers outside their owning phases.
+
+**Status:** Accepted and verified in Phase 16.1 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`pubspec.yaml`, `analysis_options.yaml`, `lib/main.dart`, `lib/app.dart`, `test/app_test.dart`, `README.md`, `android/app/src/main/AndroidManifest.xml`), `docs/decisions.md`, `phases/group-P-phases.md`
