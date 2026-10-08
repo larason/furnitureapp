@@ -81,24 +81,28 @@ test("breadcrumbs are semantic, name the current page, and keep backend category
   assert.match(productsPage, /aria-current="page"/);
 });
 
-test("global navigation stays semantic, fixture-backed, and free of placeholder or programmatic navigation", () => {
+test("global navigation keeps the seeded category destinations active and free of placeholder or programmatic navigation", () => {
   const combined = NAVIGATION_SOURCES.map((file) => read(file)).join("\n");
 
   assert.doesNotMatch(combined, /href="#"/);
   assert.doesNotMatch(combined, /router\.push|window\.location|location\.href/);
   assert.doesNotMatch(combined, /products\?category=/);
-  assert.match(read("components/layout/primary-category-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\} inactive/);
-  assert.match(read("components/layout/mobile-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*?inactive/);
-  assert.match(read("components/layout/site-footer.tsx"), /inactive: true/);
+  assert.doesNotMatch(read("components/layout/primary-category-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\} inactive/);
+  const mobileCategoryLink = read("components/layout/mobile-navigation.tsx").match(/<NavLink\s+href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*?>/);
+  assert.ok(mobileCategoryLink);
+  assert.doesNotMatch(mobileCategoryLink[0], /\binactive\b/);
+  assert.doesNotMatch(read("components/layout/site-footer.tsx"), /inactive: true/);
 });
 
-test("only implemented routes are activated and reserved storefront routes stay inactive", () => {
+test("only implemented routes are activated while deferred storefront routes stay inactive", () => {
   assert.equal(isSiteRouteImplemented("/"), true);
   assert.equal(isSiteRouteImplemented("/products"), true);
   assert.equal(isSiteRouteImplemented("/search"), true);
   assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
   assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), true);
-  for (const reserved of ["/furniture-requests", "/contact", "/account", "/account/orders", "/cart", "/checkout"]) {
+  assert.equal(isSiteRouteImplemented("/furniture-requests"), true);
+  assert.equal(isSiteRouteImplemented("/contact"), true);
+  for (const reserved of ["/account", "/account/orders", "/cart", "/checkout"]) {
     assert.equal(isSiteRouteImplemented(reserved), false, `${reserved} must remain inactive`);
   }
 });

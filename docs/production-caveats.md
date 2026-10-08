@@ -19,16 +19,21 @@ Status legend:
 
 ## 1. Environment configuration
 
-All website variables are **server-only**. Never expose them with a
-`NEXT_PUBLIC_` prefix, never commit `.env` / `.env.local`, and never reuse
-application/database credentials in the frontend.
+Website configuration is server-only unless explicitly documented as client-safe
+by Clerk. Never commit `.env` / `.env.local`, never expose server secrets with a
+`NEXT_PUBLIC_` prefix, and never reuse application/database credentials in the
+frontend.
 
 | Variable | Status | Purpose | Behaviour if missing/invalid |
 | --- | --- | --- | --- |
 | `SITE_URL` | REQUIRED | Public website origin for canonical, Open Graph/Twitter, JSON-LD, sitemap, and robots `Sitemap:` directive | Missing: absolute SEO URLs are omitted, sitemap is an empty `<urlset>`, robots omits the `Sitemap:` line, and JSON-LD site entities are omitted. Invalid/malformed: throws `SiteUrlError`. |
 | `API_BASE_URL` | REQUIRED | Laravel API origin (all catalog/domain requests) | Missing/blank or non-HTTPS (except localhost) throws `ApiConfigurationError`; requests fail. |
+| `NEXT_PUBLIC_API_BASE_URL` | REQUIRED for Phase 15.9/15.10 release | Public HTTPS Laravel API origin for direct browser `REQ-001`/`ENQ-001` submission only | Missing/invalid: furniture-request and enquiry submissions fail safely. Must be a public origin, never a private host, credential, path, query, or secret. |
 | `CATALOG_MEDIA_BASE_URL` | ASSESS | Public catalog media/CDN origin for `next/image` remote patterns | Falls back to `API_BASE_URL`. If images are served from a different origin and this is unset, `next/image` fails to load them. |
 | `HOMEPAGE_DATA_SOURCE` | DO NOT set to `fixtures` | Selects `api` (default) or `fixtures` catalog source | Any value other than `api`/`fixtures` throws `Invalid homepage data source.` and 500s pages. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | REQUIRED for Clerk | Client-safe Clerk instance configuration | Clerk auth UI/session initialization fails when absent or invalid. |
+| `CLERK_SECRET_KEY` | REQUIRED for Clerk | Server-only Clerk authentication/session configuration | Clerk server integration fails when absent or invalid. Never expose it to the browser. |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`, redirect variables | REQUIRED for dedicated Clerk pages | Client-safe route and fallback configuration written by Clerk setup | Sign-in/sign-up routing or safe fallback behavior can fail if missing or inconsistent with deployed routes. |
 | `NODE_ENV` | REQUIRED | Framework production mode | Managed by the build/runtime; do not override casually. |
 
 Details:
@@ -47,6 +52,18 @@ Details:
 - `HOMEPAGE_DATA_SOURCE=fixtures` must **never** be set in production; it serves
   development fixture products/categories and bypasses the API and the
   detail-route 404 preflight.
+- Clerk credentials, verification, password recovery, session restoration, and
+  logout are Clerk-owned. Laravel receives only request-scoped bearer tokens for
+  protected API calls and remains authoritative for local roles, account state,
+  and authorization.
+- **REQUIRED — Phase 15.9/15.10 browser transport.** Configure Laravel
+  `CORS_ALLOWED_ORIGINS` with the exact website HTTPS origin(s), production Clerk
+  issuer/keys/authorized parties, and the public `NEXT_PUBLIC_API_BASE_URL` above.
+  Do not introduce a Next.js proxy, Route Handler, Server Action, or alternate
+  API client for `REQ-001` or `ENQ-001`.
+- **REQUIRED — request body limits.** The deployed reverse proxy must accept at
+  least 6 MiB request bodies, preserving Laravel's 5 MiB inline attachment
+  contract plus multipart overhead. Verify this with a real browser request.
 
 ---
 
@@ -56,8 +73,13 @@ Details:
   Changes (and the `.next` output) must be rebuilt; a stale build will serve old
   client components (this has already caused confusion during development).
 - **REQUIRED — run the Node middleware (`proxy.ts`).** Detail-route hard-404
-  behaviour depends on it (see §5). If the deployment platform does not run
-  middleware, missing products/categories will not return a clean 404.
+  behaviour and Clerk session context depend on it (see §5). If the deployment
+  platform does not run middleware, missing products/categories will not return a
+  clean 404 and Clerk server authentication will not function.
+- **REQUIRED — configure Clerk production settings.** Use production Clerk keys,
+  configured production domain/origins, public email/password sign-up, required
+  email verification, and no phone/Organization requirement. Production Clerk
+  dashboard configuration has not been live-verified by this repository.
 - **ASSESS — `next/image` remote patterns.** `next.config.ts` builds
   `images.remotePatterns` from `CATALOG_MEDIA_BASE_URL` (or `API_BASE_URL`).
   Ensure the production media/CDN host is covered.
@@ -126,15 +148,19 @@ Details:
 - **REQUIRED — `/products` and `/search` must not be preflighted.** Confirm the
   middleware matcher still excludes collection routes and metadata routes
   (`/sitemap.xml`, `/robots.txt`).
+- **REQUIRED — Clerk utility routes.** `/sign-in`, `/sign-up`, and Clerk's
+  `/__clerk/**` frontend API route must not be routed through catalog detail
+  preflight. They remain public; public catalog pages must not acquire a login
+  wall.
 - **LIMITATION — slug mutability.** Backend slugs are not immutable and there is
   no old-slug redirect contract; renamed slugs may 404. Establish a redirect/
   migration policy before treating slug edits as routine content operations.
-- **LIMITATION — global category navigation is a non-interactive fixture.** The
-  header/mobile/footer category lists render as non-links until authoritative
-  catalog-driven global navigation can be introduced without a global fetch/
-  availability regression. Categories remain reachable via the homepage
-  discovery, product breadcrumbs, and the sitemap. Reserved routes
-  (`/furniture-requests`, `/contact`, `/account`, cart/checkout) stay inactive.
+- **LIMITATION — global category navigation uses a static taxonomy.** The
+  header/mobile/footer category lists link to the canonical seeded category
+  slugs until catalog-driven global navigation can replace the static source
+  without a global fetch/availability regression. `/furniture-requests` and
+  `/contact` are active. Reserved routes (`/account`, cart/checkout) stay
+  inactive.
 
 ---
 
@@ -170,9 +196,9 @@ Details:
 These routes/capabilities are reserved and inactive; do not activate or link
 them until their owning phase ships:
 
-- customer auth (Clerk), account, orders — deferred;
+- customer account and orders — deferred; Clerk customer sign-in/sign-up is
+  implemented, but no customer account/dashboard route exists yet;
 - cart, checkout, payment, order confirmation — deferred (request-first release);
-- furniture requests (`/furniture-requests`) and general enquiries (`/contact`);
 - comprehensive internal-linking, image/performance hardening (later Group N
   phases).
 
@@ -181,7 +207,8 @@ them until their owning phase ships:
 ## 9. Pre-launch verification checklist
 
 1. `SITE_URL` set to the real HTTPS origin; `API_BASE_URL` and
-   `CATALOG_MEDIA_BASE_URL` set correctly; `HOMEPAGE_DATA_SOURCE` unset.
+   `CATALOG_MEDIA_BASE_URL` set correctly; Clerk production keys and public route
+   variables configured; `HOMEPAGE_DATA_SOURCE` unset.
 2. Fresh production build and restart; middleware enabled.
 3. Smoke test: `GET /`, `/products`, `/products?page=2`,
    `/products?category=…` (noindex), a real `/products/{slug}`,
@@ -194,10 +221,19 @@ them until their owning phase ships:
    `og:url`, JSON-LD, sitemap, or robots output.
 7. Confirm `next/image` loads catalog media from the configured origin.
 8. Submit/verify the sitemap in Search Console (manual step).
-9. Re-run the frontend suite (`npm run test:seo`, `test:structured-data`,
+9. Smoke test Clerk sign-up, required email verification, sign-in, password
+   recovery, sign-out, and a token-backed `GET /api/v1/me`; confirm public pages
+    remain accessible signed out and no Clerk/Laravel token reaches page HTML.
+10. Verify `/furniture-requests` from the deployed website origin: CORS
+    preflight, anonymous and authenticated Clerk JSON submissions, and anonymous
+    and authenticated 5 MiB multipart submissions. Confirm attachments remain
+    private, no `X-Upload-Token` is rendered or persisted, and reverse-proxy
+    limits permit the upload.
+11. Re-run the frontend suite (`npm run test:furniture-requests`, `test:seo`, `test:structured-data`,
    `test:crawl`, `test:links`, `test:filters`, `test:search`,
    `test:product-detail`, `test:products`, `test:category`, `test:homepage`,
-   `test:api`, `test:theme`, `test:layout`, `test:responsive`, `test:states`,
+    `test:api`, `test:theme`, `test:layout`, `test:responsive`, `test:states`,
+    `test:auth`,
    `typecheck`, `lint`, `build`).
 
 ---

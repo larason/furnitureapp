@@ -76,6 +76,14 @@ Do not introduce ad-hoc CSS when an existing token or component can express the 
 - Preserve the frozen API success/error envelopes and structured validation details. Do not put business rules, redirects, or authorization decisions in the transport.
 - Inject current Clerk bearer tokens per request only in a later approved auth layer; never persist or globally retain tokens.
 
+## Clerk Website Authentication
+
+- Clerk is the website's sole customer credential and session provider. Use its prebuilt flows for sign-up, sign-in, verification, recovery, session tasks, and logout; do not add a parallel website auth system.
+- Laravel remains the authority for local User projection, role, account state, ownership, permissions, and business authorization. Never use Clerk metadata or Organizations as application RBAC.
+- Authenticated Laravel requests use the server-only `web/lib/auth/laravel.ts` bridge. It retrieves the current Clerk session token per request and forwards it only as `Authorization: Bearer <token>` through `web/lib/api/client.ts` with `cache: "no-store"`. The approved Phase 15.9/15.10 public mutation forms are narrow browser exceptions: they use the same client with an explicit `NEXT_PUBLIC_API_BASE_URL` public origin and obtain a current `useAuth().getToken()` only for an active `REQ-001`/`ENQ-001` submission; they do not persist the token or add a proxy, Server Action, or second client.
+- Do not persist or render Clerk tokens. Never pass them in props, URLs, client storage, logs, analytics, JSON-LD, metadata, or shared caches.
+- Public catalog, SEO, request, and enquiry surfaces stay public. Resource-level server checks and Laravel authorization protect later private customer features; proxy middleware is not the authorization boundary.
+
 ## Website Routes
 
 - Consult `web/ROUTING.md` before adding website routes. Keep App Router conventions there authoritative.

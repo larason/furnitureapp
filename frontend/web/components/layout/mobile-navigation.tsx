@@ -2,7 +2,9 @@
 
 import Close from "@mui/icons-material/Close";
 import Menu from "@mui/icons-material/Menu";
+import { SignInButton, SignUpButton, UserButton, useAuth } from "@clerk/nextjs";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
@@ -26,6 +28,7 @@ const mobileItemSx = {
 
 export function MobileNavigation() {
   const [open, setOpen] = useState(false);
+  const { isLoaded, isSignedIn } = useAuth();
   const theme = useTheme();
   const desktopNavigation = useMediaQuery(theme.breakpoints.up("md"));
   const close = () => setOpen(false);
@@ -95,7 +98,7 @@ export function MobileNavigation() {
               <Box component="li" key={category.slug}>
                 <NavLink
                   href={`/categories/${category.slug}`}
-                  inactive
+                  onClick={close}
                   sx={mobileItemSx}
                 >
                   {category.name}
@@ -109,11 +112,27 @@ export function MobileNavigation() {
               <Box component="li" key={link.href}>
                 <NavLink
                   href={link.href}
+                  onClick={close}
                   sx={mobileItemSx}
                 >
                   {link.label}
                 </NavLink>
               </Box>
+            ))}
+          </Box>
+          <Divider sx={{ my: 2 }} />
+          <Box sx={{ display: "grid", gap: 1, px: 1 }}>
+            {isLoaded && (isSignedIn ? (
+              <UserButton />
+            ) : (
+              <>
+                <SignInButton>
+                  <Button variant="outlined" fullWidth onClick={close}>Sign in</Button>
+                </SignInButton>
+                <SignUpButton>
+                  <Button variant="contained" fullWidth onClick={close}>Create account</Button>
+                </SignUpButton>
+              </>
             ))}
           </Box>
         </Box>

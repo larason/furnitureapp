@@ -26,3 +26,36 @@
 9. add stickers on furnitures and give customers flyers, business cards or other promotional materials
 
 10. run production checklist in [production-caveats.md](docs/production-caveats.md) and mention all steps that must be done physically by the user
+
+11. Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview 
+
+12. Current sign-up/sign-in is Clerk-only. The website does not yet call Laravel /api/v1/me after authentication, so creating a Clerk account alone does not create/update a local users record.
+The website bridge exists in frontend/web/lib/auth/laravel.ts, but nothing currently invokes it. To save a local user immediately after verification/sign-up, we should add a post-authenticated /me call.
+Local-user lifecycle: Successful Clerk sign-up/sign-in does not itself guarantee a corresponding Laravel users row. Local CUSTOMER projection is created lazily by Laravel when the authenticated Clerk identity first reaches an application endpoint requiring local user resolution. Public catalog browsing must not trigger provisioning merely because a Clerk session exists.
+
+13. A few observations worth carrying forward:
+ 1. Clerk JWKS connectivity: Local live token authentication is verified and separate from CORS. Production still requires verification against the production Clerk instance and deployed API origin.
+ 2. Guest-cart cookies: When Group F implements the browser-facing guest-cart flow, verify credentials: 'include', cookie attributes, and the exact frontend/backend host relationship.
+ 3. Frontend API transport: Phases 15.9 and 15.10 may use `NEXT_PUBLIC_API_BASE_URL` only for direct browser `REQ-001` and `ENQ-001` submission through the existing API client. Production requires a public HTTPS API origin, exact CORS origins, Clerk configuration, and reverse-proxy body-limit verification. Do not introduce a second API transport.
+4. Production deployment: Configure CORS_ALLOWED_ORIGINS using the actual deployed frontend origins and rerun the CORS integration tests.
+
+14. HUMAN ACTION REQUIRED
+Why: Production deployment and origins do not exist yet, so the full transport cannot be demonstrated.
+Action: On deployment, set for the API host:
+  CORS_ALLOWED_ORIGINS=<exact production website origin(s)>
+  CLERK_SECRET_KEY / CLERK_ISSUER / CLERK_AUTHORIZED_PARTIES=<production Clerk instance>
+  reverse-proxy client body limit >= 6 MiB
+  and for the website: NEXT_PUBLIC_API_BASE_URL=https://<public API origin>
+Expected result: preflight + anonymous/authenticated JSON and 5 MiB multipart succeed from the production origin over HTTPS.
+
+15. /var/www/html/furnitureapp/phases/group-O-phases.md
+- Phases 15.9 and 15.10 use approved direct browser `REQ-001` and `ENQ-001` paths for public anonymous submission and optional Clerk bearer association. The server-only `/me` bridge remains separate and is not required for these flows.
+- Prohibits a new BFF/route-handler proxy, alternate HTTP client, token persistence, and Server Actions without validating 5 MiB attachment limits.
+- Requires JSON without attachment and inline FormData with attachment; the existing API client supports both.
+- Requires no auto-retry for POST ambiguity and distinct handling for 409, 401, 403, 404, 413, 422, 429, timeout, and network failures.
+
+16. Outstanding gates
+The following remain open and should be carried forward without reopening completed phases:
+1. Production transport: HTTPS API origin, CORS, production Clerk configuration, reverse-proxy limits and deployed-browser verification.
+2. Authenticated enquiry: Real Clerk customer browser submission for ENQ-001.
+3. Legal approval: Privacy Policy, Terms of Service and About Us content must receive business/legal approval before publication or indexing.

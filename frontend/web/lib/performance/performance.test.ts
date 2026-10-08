@@ -28,6 +28,9 @@ const EXPECTED_CLIENT_COMPONENTS = [
   "app/providers.tsx",
   "components/catalog/price-filter-inputs.tsx",
   "components/catalog/sort-filter-select.tsx",
+  "components/enquiries/enquiry-form.tsx",
+  "components/furniture-requests/furniture-request-form.tsx",
+  "components/layout/auth-navigation.tsx",
   "components/layout/mobile-navigation.tsx",
 ];
 

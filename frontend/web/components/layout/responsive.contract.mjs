@@ -68,6 +68,15 @@ check(
     mobileNavigation.includes("open={open && !desktopNavigation}"),
   "an open mobile drawer must be closed while the viewport uses desktop navigation",
 );
+check(
+  /href=\{link\.href\}[\s\S]{0,100}onClick=\{close\}/.test(mobileNavigation),
+  "mobile navigation links must close the drawer before navigating",
+);
+check(
+  /<SignInButton>[\s\S]{0,100}onClick=\{close\}/.test(mobileNavigation) &&
+    /<SignUpButton>[\s\S]{0,100}onClick=\{close\}/.test(mobileNavigation),
+  "mobile authentication buttons must close the drawer before opening Clerk",
+);
 check(!header.includes("maxWidth: { md: 480 }"), "header must not use a raw responsive search width");
 check(!mobileNavigation.includes("88vw") && !mobileNavigation.includes("360px"), "drawer sizing must use existing tokens");
 check(

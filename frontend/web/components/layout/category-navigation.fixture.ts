@@ -1,7 +1,6 @@
 /**
- * Non-production navigation fixture for Phase 13.7 shell geometry only.
- * Slugs mirror the authoritative Laravel CategorySeeder taxonomy; Group N
- * replaces this fixture with authoritative catalog navigation data.
+ * Static navigation taxonomy. Slugs mirror Laravel's CategorySeeder taxonomy
+ * until catalog-backed global navigation is introduced.
  */
 export type CategoryNavigationItem = {
   name: string;

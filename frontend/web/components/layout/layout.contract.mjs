@@ -91,10 +91,11 @@ for (const specifier of imports) {
 
 check(!combined.includes("window.innerWidth"), "must not branch on window.innerWidth");
 
+const clientLayoutFiles = new Set(["auth-navigation.tsx", "mobile-navigation.tsx"]);
 for (const { file, source } of layoutSources) {
   const isClient = /["']use client["']/.test(source);
   if (isClient) {
-    check(file === "mobile-navigation.tsx", `unexpected client boundary in ${file}`);
+    check(clientLayoutFiles.has(file), `unexpected client boundary in ${file}`);
   }
 }
 

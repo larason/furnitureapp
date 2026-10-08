@@ -1113,13 +1113,13 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 ## PHASE GROUP O — WEBSITE CUSTOMER COMMERCE
 
 ### Phase 15.1 — Registration/login UI
-### Phase 15.2 — Cart UI
-### Phase 15.3 — Checkout UI
-### Phase 15.4 — Pickup/delivery choice
-### Phase 15.5 — Payment UI
-### Phase 15.6 — Order confirmation
-### Phase 15.7 — Customer orders
-### Phase 15.8 — Tracking UI
+### Phase 15.2 — Cart UI - *deferred*
+### Phase 15.3 — Checkout UI - *deferred*
+### Phase 15.4 — Pickup/delivery choice - *deferred*
+### Phase 15.5 — Payment UI - *deferred*
+### Phase 15.6 — Order confirmation - *deferred*
+### Phase 15.7 — Customer orders - *deferred*
+### Phase 15.8 — Tracking UI - *deferred*
 ### Phase 15.9 — Furniture request UI
 ### Phase 15.10 — Enquiry/contact UI
 
