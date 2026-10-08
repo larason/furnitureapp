@@ -36,7 +36,7 @@ Local-user lifecycle: Successful Clerk sign-up/sign-in does not itself guarantee
 13. A few observations worth carrying forward:
  1. Clerk JWKS connectivity: Local live token authentication is verified and separate from CORS. Production still requires verification against the production Clerk instance and deployed API origin.
  2. Guest-cart cookies: When Group F implements the browser-facing guest-cart flow, verify credentials: 'include', cookie attributes, and the exact frontend/backend host relationship.
- 3. Frontend API transport: Phase 15.9 may use `NEXT_PUBLIC_API_BASE_URL` only for direct browser `REQ-001` submission through the existing API client. Production requires a public HTTPS API origin, exact CORS origins, Clerk configuration, and reverse-proxy body-limit verification. Do not introduce a second API transport.
+ 3. Frontend API transport: Phases 15.9 and 15.10 may use `NEXT_PUBLIC_API_BASE_URL` only for direct browser `REQ-001` and `ENQ-001` submission through the existing API client. Production requires a public HTTPS API origin, exact CORS origins, Clerk configuration, and reverse-proxy body-limit verification. Do not introduce a second API transport.
 4. Production deployment: Configure CORS_ALLOWED_ORIGINS using the actual deployed frontend origins and rerun the CORS integration tests.
 
 14. HUMAN ACTION REQUIRED
@@ -49,7 +49,7 @@ Action: On deployment, set for the API host:
 Expected result: preflight + anonymous/authenticated JSON and 5 MiB multipart succeed from the production origin over HTTPS.
 
 15. /var/www/html/furnitureapp/phases/group-O-phases.md
-- Phase 15.9 uses the approved direct browser `REQ-001` path for public anonymous submission and optional Clerk bearer association. The server-only `/me` bridge remains separate and is not required for this flow.
+- Phases 15.9 and 15.10 use approved direct browser `REQ-001` and `ENQ-001` paths for public anonymous submission and optional Clerk bearer association. The server-only `/me` bridge remains separate and is not required for these flows.
 - Prohibits a new BFF/route-handler proxy, alternate HTTP client, token persistence, and Server Actions without validating 5 MiB attachment limits.
 - Requires JSON without attachment and inline FormData with attachment; the existing API client supports both.
 - Requires no auto-retry for POST ambiguity and distinct handling for 409, 401, 403, 404, 413, 422, 429, timeout, and network failures.

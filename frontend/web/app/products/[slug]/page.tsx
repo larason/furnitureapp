@@ -5,7 +5,6 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { Metadata } from "next";
 import Image from "next/image";
-import NextLink from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { NavLink } from "@/components/layout/nav-link";
@@ -60,7 +59,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
               <Typography component="h1" variant="h2">{product.name}</Typography>
               <Typography variant="body1">{product.product_type === "MADE_TO_ORDER" ? "From " : ""}{formatMoney(product.price)}</Typography>
               <Typography variant="body2" color="text.secondary">{productAvailability}</Typography>
-              {product.product_type === "MADE_TO_ORDER" ? <Button component={NextLink} href={`/furniture-requests?product=${encodeURIComponent(product.slug)}`} variant="contained" sx={{ alignSelf: "flex-start", minHeight: 44 }}>Request this furniture</Button> : null}
+              {product.product_type === "MADE_TO_ORDER" ? <Button href={`/furniture-requests?product=${encodeURIComponent(product.slug)}`} variant="contained" sx={{ alignSelf: "flex-start", minHeight: 44 }}>Request this furniture</Button> : null}
             </Stack>
           </Box>
         </Stack>

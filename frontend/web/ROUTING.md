@@ -28,7 +28,7 @@ Therefore the canonical route uses the current API slug, but historic URL perman
 | `/categories/[slug]` | Category landing page | Public | Laravel-returned `Category.slug` | Phase 14.2 | Implemented |
 | `/search` | Search results | Public | `?search=<term>` | Phase 14.5 | Implemented |
 | `/furniture-requests` | Create a Furniture Request, including MADE_TO_ORDER interest | Public | Form state; optional `?product=<Laravel product slug>` context; no public request identifier | Phase 15.9 | Implemented locally; production transport gate remains blocked |
-| `/contact` | Create a general Enquiry | Public | Form state; no public enquiry identifier | Phase 15.10 | Reserved |
+| `/contact` | Create a general Enquiry | Public | Form state; no public enquiry identifier | Phase 15.10 | Implemented locally; production transport gate remains blocked |
 | `/sign-in` | Clerk sign-in entry point | Public | Clerk-owned identity flow | Phase 15.1 | Implemented |
 | `/sign-up` | Clerk sign-up entry point | Public | Clerk-owned identity flow | Phase 15.1 | Implemented |
 | `/account` | Customer account area | Authenticated UX | Current customer's account only | Owning account UI phase | Reserved |
@@ -92,11 +92,11 @@ Structured data describes only content and commercial capability that actually e
 - Breadcrumbs are semantic (`nav aria-label="Breadcrumb"`): category = Home → Category; product = Home → Furniture → `/categories/{slug}` → product. The current item carries `aria-current="page"` and is not a link. The visible hierarchy matches the Phase 14.8 `BreadcrumbList`.
 - Pagination uses semantic anchors, preserves only its discovery state (search, or approved filter/sort), and keeps page-one URLs clean.
 - The homepage links categories to `/categories/{slug}` and offers one "View all furniture" link to `/products`.
-- Global header, mobile, and footer category navigation still uses the Phase 13.7 non-interactive fixture: destinations render as non-links until authoritative catalog-driven global navigation can be introduced without adding a root-layout fetch/availability regression. `/furniture-requests` is active; other reserved routes (`/contact`, `/account`, cart/checkout) remain inactive. This is a documented limitation, not a broken link.
+- Global header, mobile, and footer category navigation still uses the Phase 13.7 non-interactive fixture: destinations render as non-links until authoritative catalog-driven global navigation can be introduced without adding a root-layout fetch/availability regression. `/furniture-requests` and `/contact` are active; other reserved routes (`/account`, cart/checkout) remain inactive. This is a documented limitation, not a broken link.
 
 ## Route And Navigation Rules
 
-- Next.js App Router is authoritative. Implemented public routes are `/`, `/products`, `/products/[slug]`, `/categories/[slug]`, `/search`, `/furniture-requests`, `/sign-in`, and `/sign-up`, plus the `/sitemap.xml` and `/robots.txt` metadata routes. Reserved routes in this document render as non-interactive structural content until their owning phase ships. Do not add `pages/` or create placeholder route files.
+- Next.js App Router is authoritative. Implemented public routes are `/`, `/products`, `/products/[slug]`, `/categories/[slug]`, `/search`, `/furniture-requests`, `/contact`, `/sign-in`, and `/sign-up`, plus the `/sitemap.xml` and `/robots.txt` metadata routes. Reserved routes in this document render as non-interactive structural content until their owning phase ships. Do not add `pages/` or create placeholder route files.
 - `/furniture-requests?product=<slug>` is a product-context convenience only. The server resolves the slug through CAT-002, accepts only a current public `MADE_TO_ORDER` product, and passes the resulting opaque product ID to `REQ-001`. Invalid, unpublished, or non-MTO context is not preselected; the visitor can submit a custom request. The route is `noindex, follow`, absent from the sitemap, and never exposes a request ID or contact data in its URL.
 - Route paths are lowercase, static multiword segments use kebab-case, and canonical paths have no trailing slash. `next.config.ts` does not enable `trailingSlash`; the installed Next.js default redirects slash-suffixed page URLs to their slashless form.
 - Server Components are the default. Pages needing interactive descendants keep client boundaries below the page where practical.
@@ -125,7 +125,7 @@ app/
   sitemap.ts                       # Implemented (Phase 14.9)
   robots.ts                        # Implemented (Phase 14.9)
   furniture-requests/page.tsx      # Implemented locally (Phase 15.9; production transport gate blocked)
-  contact/page.tsx                 # Reserved (Phase 15.10)
+  contact/page.tsx                 # Implemented locally (Phase 15.10; production transport gate blocked)
   account/...                      # Reserved (owning authenticated account phases)
   sign-in/[[...sign-in]]/page.tsx  # Implemented (Phase 15.1 / Clerk)
   sign-up/[[...sign-up]]/page.tsx  # Implemented (Phase 15.1 / Clerk)

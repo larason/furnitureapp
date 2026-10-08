@@ -25,7 +25,8 @@
     "test:links": "node --import=tsx --test lib/catalog/internal-links.test.ts",
     "test:performance": "node --import=tsx --test lib/performance/performance.test.ts",
     "test:auth": "node --import=tsx --test lib/auth/auth.test.ts",
-    "test:furniture-requests": "node --import=tsx --test lib/furniture-requests/*.test.ts"
+    "test:furniture-requests": "node --import=tsx --test lib/furniture-requests/*.test.ts",
+    "test:enquiries": "node --import=tsx --test lib/enquiries/*.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.11",

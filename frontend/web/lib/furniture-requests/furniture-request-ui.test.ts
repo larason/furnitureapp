@@ -37,7 +37,8 @@ test("request form uses the single API client with an ephemeral Clerk bearer", (
 test("MTO PDPs expose the request journey without enabling commerce", () => {
   const productPage = read("app/products/[slug]/page.tsx");
 
-  assert.match(productPage, /component=\{NextLink\}/);
+  assert.match(productPage, /<Button href=\{`\/furniture-requests\?product=/);
+  assert.doesNotMatch(productPage, /component=\{NextLink\}/);
   assert.match(productPage, /Request this furniture/);
   assert.match(productPage, /furniture-requests\?product=/);
   assert.doesNotMatch(productPage, /Add to cart|Buy now|\/checkout|\/payment/);

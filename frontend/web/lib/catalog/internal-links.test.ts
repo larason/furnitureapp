@@ -99,7 +99,8 @@ test("only implemented routes are activated while deferred storefront routes sta
   assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
   assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), true);
   assert.equal(isSiteRouteImplemented("/furniture-requests"), true);
-  for (const reserved of ["/contact", "/account", "/account/orders", "/cart", "/checkout"]) {
+  assert.equal(isSiteRouteImplemented("/contact"), true);
+  for (const reserved of ["/account", "/account/orders", "/cart", "/checkout"]) {
     assert.equal(isSiteRouteImplemented(reserved), false, `${reserved} must remain inactive`);
   }
 });

@@ -9,7 +9,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Image from "next/image";
-import { useEffect, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction, type SubmitEvent } from "react";
 import { ApiConfigurationError, ApiError, ApiTransportError, createApiClient } from "@/lib/api/client";
 import { MAX_ATTACHMENT_BYTES, serializeFurnitureRequest, validateFurnitureRequest, type FurnitureRequestFieldErrors, type FurnitureRequestFormValues } from "@/lib/furniture-requests/submission";
 
@@ -59,7 +59,7 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
 
   const linkedProductId = useProductContext ? product?.id : undefined;
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) return;
 
