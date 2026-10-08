@@ -1,0 +1,6 @@
+{
+  "APP_ENV": "staging",
+  "API_BASE_URL": "https://api.staging.example.invalid",
+  "CLERK_PUBLISHABLE_KEY": "pk_test_XXXX",
+  "ENABLE_DIAGNOSTICS": false
+}

@@ -2956,7 +2956,7 @@ The current `orders` schema has no `billing_address` column and the repository h
 
 ### ADR/DESIGN-007 — Android-Only Flutter App Foundation
 
-**Decision:** The SL Furnitures customer application is a Flutter project at `frontend/app/` targeting **Android only**. iOS, web, and desktop targets are intentionally not generated. The permanent Android application ID and namespace are `com.slfurnitures.app`; the Dart package is `sl_furnitures`. The launcher label is `SL Furnitures`.
+**Decision:** The SL Furnitures customer application is a Flutter project at `frontend/app/` targeting **Android only**. iOS, web, and desktop targets are intentionally not generated. The permanent Android application ID and namespace are `com.slfurnitures.app`; the Dart package is `sl_furnitures`. The launcher label is `Buy Furnitures`.
 
 Phase 16.1 establishes the project setup only: it adds the Android host project, a strict-but-standard analyzer baseline (`flutter_lints` plus `strict-casts`, `strict-inference`, `strict-raw-types`), a minimal entry point (`lib/main.dart`) and root widget (`lib/app.dart`) with a neutral bootstrap placeholder, and an app-shell smoke test. It introduces **no** theme, environment configuration, networking, authentication, routing, or feature structure — those remain Phases 16.2–16.9.
 

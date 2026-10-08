@@ -3,11 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/app.dart';
 import 'package:sl_furnitures/theme/tokens/generated_tokens.dart';
 
+import 'support/test_config.dart';
+
 void main() {
   testWidgets('launches the app shell with the token-driven brand theme', (
     tester,
   ) async {
-    await tester.pumpWidget(const SLFurnituresApp());
+    await tester.pumpWidget(SLFurnituresApp(config: localTestConfig()));
 
     expect(find.byType(MaterialApp), findsOneWidget);
 

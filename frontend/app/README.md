@@ -6,18 +6,17 @@ Laravel API as the Next.js website and shares the project design system.
 ## Scope
 
 - **Platform:** Android only. iOS, web, and desktop targets are intentionally not
-  generated and must not be added without an explicit decision.
+  generated and must not be added without an explicit decision (ADR/DESIGN-007).
 - **Application ID:** `com.slfurnitures.app`
 - **Dart package:** `sl_furnitures`
 
 ## Phase status
 
-This project contains the **Phase 16.1 (project setup)** and **Phase 16.2
-(theme / Material 3)** foundations.
+This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
+Material 3)**, and **Phase 16.3 (environment configuration)** foundations.
 
 Not yet implemented (owned by later Group P phases):
 
-- 16.3 environment configuration
 - 16.4 networking layer
 - 16.5 authentication storage/session
 - 16.6 routing/navigation
@@ -27,6 +26,110 @@ Not yet implemented (owned by later Group P phases):
 
 No customer-facing screen exists yet. Debug builds show the development-only
 theme preview harness; release builds show the neutral bootstrap placeholder.
+
+## Environment configuration
+
+Configuration uses Flutter's compile-time mechanism, `--dart-define-from-file`.
+There is no runtime `.env` loading and no environment-management package.
+
+```text
+lib/config/
+  app_environment.dart    # closed enum: local, staging, production
+  app_config.dart         # immutable AppConfig value object
+  config_validation.dart  # deterministic validator + compile-time reader
+config/
+  local.example.json
+  local-device.example.json
+  staging.example.json
+  production.example.json
+```
+
+`main()` calls `ConfigValidator.loadCompileTime()` **before** `runApp`. Invalid
+configuration never starts the app: a `ConfigFailureApp` screen is shown with a
+diagnostic that names fields and rules only, never a configuration value.
+
+### Supported fields
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `APP_ENV` | always | `local`, `staging`, or `production`. Unknown or missing values are rejected — there is no fallback. |
+| `API_BASE_URL` | always | Laravel API **origin** only. Do not add `/api/v1`; Phase 16.4 applies the frozen version and paths. |
+| `CLERK_PUBLISHABLE_KEY` | staging, production | Optional locally (no auth flow exists yet). Must start with `pk_`. |
+| `ENABLE_DIAGNOSTICS` | no | Defaults to `false`. Non-secret startup logging only. |
+
+Any other field — including `CLERK_SECRET_KEY` — is rejected.
+
+### Validation rules
+
+- **All environments:** origin must parse, use `http`/`https`, carry a host, and
+  contain no userinfo, query, fragment, or path prefix. Placeholder values
+  (`example.invalid`, `changeme`, …) are rejected. Trailing slashes and scheme/
+  host case are normalized deterministically.
+- **staging / production:** must be `https`, and must not use a development-only
+  host — loopback (`localhost`, `127.0.0.0/8`, `::1`), Android emulator
+  (`10.0.2.2`, `10.0.3.2`), private networks (`10/8`, `172.16/12`, `192.168/16`,
+  `169.254/16`), or `.local` / `.internal` / `.localhost` names.
+- **local:** plain `HTTP` is explicitly permitted.
+
+### Local development
+
+Real configuration files are **ignored by Git**; only `*.example.json` is
+tracked. Create your own copy:
+
+```bash
+cp config/local.example.json config/local.json
+```
+
+Android Emulator (the host loopback is `10.0.2.2`):
+
+```bash
+flutter run --dart-define-from-file=config/local.json
+```
+
+Physical Android device over USB — the device cannot reach your computer's
+`127.0.0.1`, so forward the port first. **The mapping does not survive a
+reconnect**, so re-run it whenever you replug:
+
+```bash
+adb reverse tcp:8000 tcp:8000
+adb reverse --list                 # confirm: UsbFfs tcp:8000 tcp:8000
+flutter run --dart-define-from-file=config/local-device.json
+```
+
+Alternatively use your development machine's LAN IP (where the firewall permits
+it). Never commit a private LAN IP into tracked source.
+
+iOS Simulator would use `http://127.0.0.1:8000`, but **no iOS host project
+exists** — see limitations below.
+
+### Transport security
+
+Local HTTP is allowed **only** in debug builds, through a debug-only Android
+manifest exception in `android/app/src/debug/AndroidManifest.xml`
+(`android:usesCleartextTraffic="true"`). The main/release manifest never sets
+it, so production keeps the platform default of no cleartext traffic. TLS is
+never disabled globally and no permissive certificate callback is installed.
+
+### Staging and production
+
+`staging.example.json` and `production.example.json` use clearly marked
+placeholders (`.invalid` hosts, `pk_*_XXXX` keys). Those files are **deliberately
+not runnable** — validation rejects them until replaced with real values.
+
+Production additionally requires an explicit `APP_ENV=production`, HTTPS, no
+development host, valid public Clerk configuration, and diagnostics off by
+default.
+
+### Secret-management boundary
+
+Flutter bundles are inspectable; `--dart-define` is **not** a secret store.
+
+- A Clerk **publishable** key is public and may ship in the app.
+- Never place in this app: `CLERK_SECRET_KEY`, database credentials, Laravel
+  `APP_KEY`, payment secrets, signing secrets, or private API credentials.
+
+Startup diagnostics print only the selected environment and whether optional
+public configuration is present — never the API origin or any key.
 
 ## Design system boundary
 
@@ -49,18 +152,8 @@ dart run tool/generate_tokens.dart           # regenerate lib/theme/tokens/gener
 dart run tool/generate_tokens.dart --check   # fail if generated tokens are stale
 ```
 
-The generator resolves `var(...)` references, preserves semantic names, converts
-colors/px/line-heights/durations/aspect ratios, and fails on unresolved
-references, missing required tokens, or unsupported syntax. Output is
-deterministic and `dart format`-stabilised, and carries a header naming its
-source and regeneration command.
-
-`test/theme/token_sync_test.dart` runs the same staleness check inside
-`flutter test`, so a change to `tokens.css` without regeneration fails CI.
-
 **`lib/theme/tokens/generated_tokens.dart` is the only file allowed to contain
-raw `Color(0x...)` values.** This is enforced by
-`test/theme/theme_definitions_test.dart`.
+raw `Color(0x...)` values**, enforced by `test/theme/theme_definitions_test.dart`.
 
 ## Theme architecture
 
@@ -79,12 +172,8 @@ lib/theme/
   preview/theme_preview.dart     # development-only preview harness
 ```
 
-Adapter files (`app_spacing.dart`, `app_shapes.dart`, `app_motion.dart`,
-`app_typography.dart`) are **aliases over `GeneratedTokens`** — they define no
-values of their own, so there is no second token palette.
-
-Only a **light** theme exists. `tokens.css` defines no dark palette, so dark
-mode is deferred; `--surface-inverse` is an inverse surface, not dark mode.
+Only a **light** theme exists. `tokens.css` defines no dark palette, so dark mode
+is deferred; `--surface-inverse` is an inverse surface, not dark mode.
 
 ## Fonts
 
@@ -102,41 +191,25 @@ files.
 flutter pub get          # resolve dependencies
 dart format .            # format (CI requires --set-exit-if-changed clean)
 flutter analyze          # static analysis (flutter_lints + strict analyzer modes)
-flutter test             # unit, widget, and design-system compliance tests
+flutter test             # unit, widget, config, and design-system tests
 dart run tool/generate_tokens.dart --check   # token freshness
-flutter build apk --debug   # verify the Android build
-flutter run              # run on a connected device or emulator
+git diff --check         # whitespace errors
+flutter build apk --debug --dart-define-from-file=config/local.json
+flutter run --dart-define-from-file=config/local.json
 ```
 
-## Theme preview harness
+## Known limitations
 
-`lib/theme/preview/theme_preview.dart` renders typography, semantic color
-swatches, buttons with disabled/focused states, inputs, cards, chips,
-selection controls, loading indicators, and navigation — as a verification
-tool only. It is shown in debug builds and is not a production screen.
-
-## Prerequisites
-
-- Flutter 3.44.x (stable) with Dart 3.12.x
-- Android SDK (compile/target SDK from the installed Flutter toolchain)
-- JDK 17+ (bundled with Android Studio)
-
-## Structure
-
-```text
-lib/
-  main.dart     # entry point
-  app.dart      # root widget — applies AppTheme.light()
-  theme/        # Phase 16.2 theme layer (see above)
-test/
-  app_test.dart           # app-shell smoke test
-  support/tokens_css.dart # canonical CSS fixture for generator tests
-  theme/                  # sync, structure, accessibility, rendering tests
-  tool/                   # generator behaviour tests
-tool/                     # token generator + CLI
-assets/fonts/             # bundled Young Serif + OFL licence
-android/                  # Android host project
-```
+- **iOS is not implemented.** The project is Android-only by decision, so no
+  `ios/` host project and no App Transport Security exception exist. The
+  configuration layer itself is platform-neutral; if iOS is later enabled it
+  will need a debug-scoped ATS exception mirroring the Android one.
+- **No networking yet.** Phase 16.4 will consume `apiBaseUrl`; nothing in this
+  phase performs an HTTP request, and no Laravel connectivity is claimed.
+- **No authentication yet.** Phase 16.5 owns Clerk sessions and secure storage.
+  This phase only exposes and validates public Clerk configuration.
+- **Staging and production are unverified.** Their origins are not deployed, so
+  only validation rules are tested for them.
 
 ## Repository rules
 

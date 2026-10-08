@@ -1,728 +1,771 @@
-# Phase 16.2 — Flutter Theme / Material 3
+# Phase 16.3 — Flutter Environment Configuration
 ## Group P — Flutter Application Foundation
 
 ### Objective
 
-Implement the Flutter Material 3 theme using the existing authoritative design tokens defined in `tokens.css`.
+Implement a secure, typed, maintainable environment-configuration foundation for the Flutter customer application.
 
-The Flutter application must share the same brand identity as the existing Next.js + MUI website while preserving native Flutter interaction patterns.
+The application must support three environments:
 
-This phase covers:
+- LOCAL — development against the locally running Laravel API.
+- STAGING — integration and pre-production testing.
+- PRODUCTION — public release against the deployed Laravel API.
 
-- Design-token integration.
-- Material 3 theme configuration.
-- Typography and font integration.
-- Semantic color mapping.
-- Spacing, shape, and elevation foundations.
-- Reusable theme extensions.
-- Theme-level component styling.
-- Automated design-system compliance tests.
+The implementation must support Android and iOS without introducing environment-specific business logic.
 
-**Do not implement customer-facing screens during this phase.**
+**Current deployment status:** Laravel is running locally. The production API is not deployed, and the existing production transport verification gate remains blocked.
 
-The previously provided furniture mobile screenshot remains a layout inspiration reference only. It is not a source of colors, typography, spacing, or component styling.
+This phase establishes configuration only. Do not implement HTTP clients, Clerk authentication sessions, navigation, or customer features.
 
 ---
 
 ## 1. Mandatory Repository Inspection
 
-Before implementation, inspect:
+Before making changes, inspect:
 
-1. Root `AGENTS.md`.
-2. Current Group P documentation.
-3. Phase 16.1 Flutter project structure and completion report.
-4. Authoritative `tokens.css`.
-5. Existing Next.js MUI theme and token mappings.
-6. Existing Flutter theme files, if any.
-7. Flutter SDK version and `pubspec.yaml`.
-8. Existing fonts and licensed font assets.
-9. Existing design-system tests and generation scripts.
-10. Existing repository tooling and CI conventions.
+1. Root `AGENTS.md` and any nested Flutter instructions.
+2. Group P phase documentation.
+3. Phase 16.1 and Phase 16.2 completion records.
+4. Flutter project structure and `pubspec.yaml`.
+5. Existing `lib/app.dart` and `lib/main.dart`.
+6. Existing `lib/theme/` implementation.
+7. Android and iOS platform configurations.
+8. Existing configuration utilities or build scripts.
+9. Next.js environment-variable conventions.
+10. Laravel's current local API configuration.
+11. Clerk integration contracts from Group D.
+12. Repository `.gitignore` rules and CI conventions.
 
-Identify the exact canonical location of `tokens.css` in the repository.
+Identify the actual Flutter project directory before editing files.
 
-Do not assume the uploaded file path is the repository's canonical path.
+Do not assume a particular directory name.
 
-Document the findings before making architectural changes.
+Preserve the completed Phase 16.2 theme implementation.
 
-## 2. Design-Token Authority
+## 2. Configuration Architecture
 
-The existing `tokens.css` is authoritative.
+Use Flutter's native compile-time environment mechanism:
 
-Do not replace, redesign, or independently reinterpret its visual identity.
+`--dart-define-from-file`
 
-The file contains:
+Prefer a small typed configuration abstraction built around `String.fromEnvironment`, `bool.fromEnvironment`, and related supported Dart compile-time APIs.
 
-- Primitive colors.
-- Semantic color roles.
-- Compatibility aliases.
-- Typography families, weights, sizes, and line heights.
-- Spacing and layout measurements.
-- Responsive breakpoints.
-- Media aspect ratios.
-- Border radii.
-- Elevation.
-- Focus indicators.
-- Motion durations and easing.
-- Layering values.
+Do not introduce an environment-management package unless the existing repository already requires one.
 
-### Mandatory authority order
+Avoid runtime `.env` loading as the primary configuration mechanism.
 
-1. Frozen business/API contracts for functional behavior.
-2. Canonical `tokens.css` for visual values.
-3. Existing MUI theme for approved component semantics.
-4. Flutter Material 3 for platform-specific component behavior.
-5. Mobile layout screenshot for structural inspiration only.
+### Recommended structure
 
-If Material 3 defaults conflict with approved brand tokens, explicitly map the relevant component styling instead of silently adopting unrelated defaults.
-
-Do not modify canonical tokens to accommodate Flutter.
-
-## 3. Shared Token Integration
-
-Create a maintainable Flutter token-consumption mechanism.
-
-### Preferred approach
-
-Use a deterministic generation or transformation process that reads the existing canonical CSS tokens and produces typed Dart token definitions.
-
-The Flutter output must be derived from the same source consumed by Next.js.
-
-Avoid manually maintaining a separate list of token values.
-
-A possible structure is:
+Adapt to existing project conventions:
 
 ```text
-flutter_app/
-  lib/
-    core/
-      design_system/
-        tokens/
-          generated_tokens.dart
-        theme/
-          app_theme.dart
-          app_color_extensions.dart
-          app_spacing.dart
-          app_typography.dart
-          app_shapes.dart
-          app_motion.dart
+lib/
+  config/
+    app_environment.dart
+    app_config.dart
+    config_validation.dart
+
+config/
+  local.example.json
+  staging.example.json
+  production.example.json
 ```
 
-This structure is illustrative. Adapt it to the existing Phase 16.1 project structure.
+These paths are illustrative.
 
-### Generation requirements
+Do not move the existing `lib/theme/` files.
 
-The token generator must:
+The configuration implementation must remain separate from the design-system token architecture.
 
-1. Read the canonical CSS file.
-2. Resolve `var(...)` references.
-3. Preserve semantic token names.
-4. Convert CSS color values into Flutter-compatible values.
-5. Convert pixel-based design measurements into appropriate Flutter logical dimensions.
-6. Preserve unitless line-height multipliers.
-7. Convert durations into `Duration` values.
-8. Preserve aspect ratios as numeric ratios.
-9. Fail on unresolved references.
-10. Fail on missing required tokens.
-11. Produce deterministic output.
-12. Avoid duplicating canonical values in manually maintained Dart files.
+### Design principles
 
-Do not build a large general-purpose CSS parser unless necessary.
+- One typed configuration entry point.
+- Explicit environment selection.
+- Immutable configuration after startup.
+- Centralized validation.
+- No scattered environment lookups throughout features.
+- No duplicated API URLs.
+- No configuration-based duplication of business rules.
 
-Use the simplest reliable parser or existing project tooling capable of handling the actual token syntax.
-
-Preserve the generated-file header identifying its source and regeneration command.
-
-### Synchronization
-
-Add a verification mechanism that detects when generated Flutter tokens are stale relative to `tokens.css`.
-
-A canonical token change must not silently leave Flutter using outdated values.
-
-Do not introduce a second authoritative token file.
+Avoid unnecessary interfaces, service locators, or dependency-injection frameworks.
 
 ---
 
-## 4. Semantic Color Mapping
+## 3. Environment Definitions
 
-Map the canonical semantic roles into Flutter Material 3.
+Implement a closed environment model:
 
-The supplied token file defines:
+```dart
+enum AppEnvironment {
+  local,
+  staging,
+  production,
+}
+```
 
-- `surface-canvas`
-- `surface-paper`
-- `surface-editorial`
-- `surface-inverse`
-- `text-primary`
-- `text-secondary`
-- `text-muted`
-- `text-inverse`
-- `border-subtle`
-- `border-default`
-- `border-strong`
-- `action-primary`
-- `action-primary-hover`
-- `action-primary-active`
-- `action-primary-disabled`
-- `action-secondary`
-- `action-focus`
-- `accent-brand`
-- `accent-material`
+Unknown environment names must fail validation.
 
-It also defines semantic success, warning, danger, and information colors.
+Do not silently default an invalid environment to LOCAL.
 
-### Material 3 mapping
+The application must not accidentally select PRODUCTION or LOCAL because a configuration value is missing.
 
-Create a coherent `ColorScheme` using the approved semantic roles.
+### Required configuration fields
 
-Use `ThemeExtension` for semantic values not represented directly by `ColorScheme`.
-
-Ensure:
-
-- Canvas backgrounds use the approved canvas role.
-- Paper surfaces use the approved paper role.
-- Primary actions use the approved action role.
-- Brand accents remain distinct from primary action colors.
-- Text uses the approved semantic hierarchy.
-- Borders use the approved border roles.
-- Error styling uses the approved danger role.
-- Focus indicators use the approved focus role.
-
-Do not substitute Material 3's generated tonal palettes for canonical brand values.
-
-Do not use `ColorScheme.fromSeed()` as the final source of visual authority.
-
-Where Flutter requires additional Material 3 color roles that are not explicitly defined in `tokens.css`, derive them from approved semantics where unambiguous.
-
-If a required role cannot be mapped safely, document the gap rather than inventing a new brand color.
-
-### Theme mode
-
-Implement the approved light theme.
-
-Do not invent a dark palette.
-
-If the project has no approved dark-mode tokens, record dark-mode support as deferred.
-
-Do not automatically generate dark colors from Material 3 defaults.
-
----
-
-## 5. Typography Integration
-
-The canonical typography definitions include:
-
-**Display family:** Young Serif, with fallback fonts.
-
-**UI family:** Helvetica Now Text Medium / Helvetica Now Text, with system fallbacks.
-
-**Text sizes:**
-
-- XS: 12
-- SM: 14
-- Base: 16
-- LG: 20
-- XL: 24
-- 2XL: 32
-- 3XL: 48
-- 4XL: 96
-
-**Weights:** Regular 400 and Medium 500.
-
-**Line heights:**
-
-- Body: 1.75
-- Snug: 1.2
-- Display: 1.05
-
-### Implementation requirements
-
-1. Inspect the existing website font assets and loading strategy.
-2. Determine which font assets are licensed and available for mobile redistribution.
-3. Register approved fonts through Flutter's asset configuration.
-4. Map canonical text sizes and line-height multipliers to `TextTheme`.
-5. Create reusable semantic typography styles where necessary.
-6. Preserve text scaling and accessibility.
-7. Avoid hardcoded font sizes in components.
-8. Avoid introducing Google Fonts or unrelated typography packages without approval.
-
-If Young Serif or Helvetica Now Text assets are unavailable or cannot legally be bundled, use a documented platform-safe fallback temporarily.
-
-Do not silently substitute a different brand font.
-
-Do not download arbitrary font files.
-
-Do not treat CSS font-family fallback strings as guaranteed font assets available on Android or iOS.
-
-### Display typography
-
-The 96-unit display token must not automatically be used for mobile headings.
-
-Use an appropriate existing semantic typography role based on content hierarchy and available screen space.
-
-Responsive typography must not introduce undocumented brand-scale values.
-
----
-
-## 6. Spacing and Layout Tokens
-
-The canonical spacing scale is:
-
-| Token | Value |
+| Field | Purpose |
 |---|---|
-| space-1 | 4 |
-| space-2 | 8 |
-| space-3 | 12 |
-| space-4 | 16 |
-| space-5 | 20 |
-| space-6 | 24 |
-| space-7 | 32 |
-| space-8 | 48 |
-| space-9 | 64 |
-| space-10 | 80 |
+| APP_ENV | Selected environment |
+| API_BASE_URL | Laravel API origin |
+| CLERK_PUBLISHABLE_KEY | Public Clerk application key, when required by the approved mobile integration |
+| ENABLE_DIAGNOSTICS | Non-secret diagnostics setting, if needed |
 
-Implement typed access to these values.
+The actual Clerk configuration requirements must be verified against the installed or approved Clerk Flutter SDK and Group D authentication architecture.
 
-Use the existing responsive gutter and section-spacing tokens where appropriate.
+Do not invent Clerk environment variables or SDK configuration parameters.
 
-### Important
+Only include fields required by the current architecture.
 
-Do not invent a second spacing scale for Flutter.
+### API URL convention
 
-Do not scatter arbitrary `EdgeInsets` or `SizedBox` values throughout the application.
+Use the Laravel API origin as the canonical base URL, for example:
 
-Use approved spacing tokens for brand-driven layout decisions.
+`http://127.0.0.1:8000`
 
-Runtime safe-area padding, keyboard insets, viewport calculations, and accessibility-related minimum dimensions are permitted as platform-specific requirements.
+Do not automatically append `/api/v1` to the configuration value.
 
-### Responsive behavior
+The future networking layer must apply the frozen API version and endpoint paths consistently.
 
-The CSS source defines phone, tablet, and desktop breakpoints.
-
-Expose those values through the Flutter token layer, but do not assume web breakpoints always translate directly into native layout decisions.
-
-Use available viewport constraints and Flutter layout conventions.
+Do not duplicate `/api/v1` across configuration and request builders.
 
 ---
 
-## 7. Shape, Elevation, and Motion
+## 4. Local Development — Android and iOS
 
-Use the canonical values:
+The Laravel backend currently runs locally.
 
-**Radii**
+Mobile devices and emulators do not always resolve the development computer's loopback address in the same way.
 
-- Small: 8
-- Medium: 20
-- Large: 24
-- Pill: 30
+The agent must account for this explicitly.
 
-**Elevation**
+### Android emulator
 
-- Flat: none
-- Ring: token-defined border ring
-- Raised: token-defined ring
+For the standard Android Emulator, the development computer's loopback service is commonly accessible through:
 
-**Motion**
+`http://10.0.2.2:8000`
 
-- Fast: 150 ms
-- Base: 200 ms
+This address is for the Android Emulator and must not be treated as a universal Android host address.
 
-Use the approved standard easing curve.
+### iOS simulator
 
-### Requirements
+For an iOS Simulator running on the same Mac as Laravel, a local loopback URL such as:
 
-Implement reusable shape and motion accessors.
+`http://127.0.0.1:8000`
 
-Prefer subtle, token-compliant surfaces rather than introducing default Material elevation shadows everywhere.
+may be appropriate.
 
-The CSS ring and focus-ring definitions must be mapped deliberately to Flutter borders or focus decorations; do not assume CSS box shadows translate directly into native Flutter elevation.
+### Physical Android device
 
-Support reduced-motion accessibility behavior where applicable.
+A physical Android device cannot normally reach the development computer through its own `127.0.0.1`.
 
-Do not introduce arbitrary animation timings.
+Support a documented development workflow using one of:
 
----
+- A development computer's LAN IP, where the network and firewall permit access.
+- An approved Android Debug Bridge reverse-port mapping.
 
-## 8. Material 3 Component Themes
+For USB debugging, an example is:
 
-Configure reusable theme-level styling for foundational Flutter components.
+```bash
+adb reverse tcp:8000 tcp:8000
+```
 
-Include components where relevant to the existing app foundation:
+When ADB reverse is active and correctly configured, the Android device can access the forwarded service through its own loopback address.
 
-- AppBar
-- FilledButton
-- OutlinedButton
-- TextButton
-- IconButton
-- TextField / InputDecoration
-- Card
-- NavigationBar
-- NavigationRail, if needed
-- Dialog
-- BottomSheet
-- Checkbox
-- Radio
-- Switch
-- SnackBar
-- Divider
-- ProgressIndicator
+Do not assume that ADB reverse persists after reconnecting the device.
 
-### Component rules
+Do not hardcode a developer's private LAN IP into tracked application source.
 
-1. Use the canonical semantic colors.
-2. Use approved typography.
-3. Use approved shape tokens.
-4. Use existing spacing tokens.
-5. Preserve disabled, focused, pressed, and error states.
-6. Maintain accessible touch targets.
-7. Avoid unnecessary Material elevation.
-8. Do not introduce unrelated component variants.
+### Local transport security
 
-Configure theme-level defaults rather than repeatedly styling individual widgets.
+Local HTTP may be permitted only in explicitly configured development builds.
 
-Do not create a large custom widget library during this phase.
+Do not disable TLS certificate validation globally.
 
-Reusable commerce widgets belong to subsequent phases.
+Do not add permissive certificate callbacks.
+
+Do not allow production builds to use arbitrary HTTP API origins.
+
+Any Android cleartext traffic exception or iOS App Transport Security exception must be limited to the intended development configuration.
+
+Do not add unrestricted cleartext allowances to production platform manifests.
+
+If the existing Android/iOS configuration cannot safely support the required development transport without a platform-specific change, document and implement the smallest debug-only exception.
 
 ---
 
-## 9. Accessibility Requirements
+## 5. Staging Configuration
 
-The theme must support:
+Prepare staging configuration support without inventing deployed infrastructure.
 
-- System text scaling.
-- Readable contrast.
-- Visible keyboard focus.
-- Accessible disabled states.
-- Appropriate interactive target sizes.
-- Screen-reader-compatible components.
-- High-contrast considerations.
-- Reduced-motion preferences where supported.
+Staging must:
 
-Check contrast using actual semantic foreground/background pairs.
+- Use an explicit STAGING environment.
+- Require a valid HTTPS API origin.
+- Use staging-specific public Clerk configuration where applicable.
+- Remain isolated from production credentials and production-only services.
+- Fail validation if required settings are absent.
 
-Do not assume that a token is accessible in every possible combination merely because it exists in the canonical file.
+Do not fabricate a staging domain.
 
-If an approved token pairing fails accessibility checks, report the specific pairing and proposed resolution.
+Do not use production endpoints as silent staging fallbacks.
 
-Do not silently change the canonical palette.
+Example configuration files may use clearly marked placeholders, but such files must not be accepted as valid runnable configurations.
 
 ---
 
-## 10. Theme Verification
+## 6. Production Configuration
 
-Create automated tests for:
+Production must require:
 
-1. Canonical token loading.
-2. CSS variable resolution.
-3. Correct color conversion.
-4. Spacing values.
-5. Typography mappings.
-6. Shape values.
-7. Motion values.
-8. Material 3 enablement.
-9. Semantic ColorScheme mappings.
-10. ThemeExtension availability.
-11. Deterministic token generation.
-12. Detection of stale generated tokens.
-13. Missing-token and invalid-reference failures.
-14. No unapproved colors in theme definitions.
-15. Basic widget rendering under the configured theme.
+1. Explicit `APP_ENV=production`.
+2. A valid HTTPS API origin.
+3. No localhost, loopback, emulator-only, or private-network API endpoint.
+4. Valid required public Clerk configuration.
+5. No development-only transport exceptions.
+6. No development diagnostics enabled by default.
+7. No debug-only environment fallback.
 
-Where appropriate, add golden tests for representative Material 3 components.
+Do not embed production secrets in Flutter.
 
-Avoid screenshot-dependent tests that merely reproduce the reference image.
+### Important security boundary
+
+Flutter application bundles are inspectable.
+
+Values passed through `--dart-define` are not a secure secret store.
+
+A Clerk publishable key is intended to be public.
+
+A Clerk secret key is not.
+
+Never include:
+
+- `CLERK_SECRET_KEY`
+- Database credentials
+- Laravel `APP_KEY`
+- Payment-provider secret keys
+- Signing secrets
+- Private API credentials
+
+Production API and Clerk configuration must remain externally supplied until actual deployment details are available.
+
+Do not claim production configuration is verified merely because a production template exists.
+
+---
+
+## 7. Configuration Validation
+
+Implement deterministic validation before normal application initialization.
+
+### Environment validation
+
+Reject:
+
+- Missing environment selection.
+- Unknown environment names.
+- Missing required configuration.
+- Placeholder values.
+- Invalid URLs.
+- Unsupported URL schemes.
+- URL userinfo, query strings, or fragments in the API origin.
+- Unexpected API path prefixes when the contract expects an origin.
+- Development-only addresses in staging/production.
+- Insecure production transport.
+
+Normalize only where normalization is unambiguous.
+
+For example, handling a trailing slash may be acceptable.
+
+Do not silently rewrite an invalid API host or protocol.
+
+### Local validation
+
+Allow explicit local HTTP configuration.
+
+Support emulator, simulator, and physical-device development addresses where applicable.
+
+Do not assume that a valid URL is reachable.
+
+### Failure behavior
+
+Invalid configuration must stop normal application startup with a clear diagnostic.
+
+Never print credentials or raw configuration objects.
+
+Do not display private values in an error screen.
+
+Do not silently continue with an unintended environment.
+
+---
+
+## 8. Configuration Files and Git Hygiene
+
+Provide tracked, non-secret example configuration files.
+
+For example:
+
+```json
+{
+  "APP_ENV": "local",
+  "API_BASE_URL": "http://10.0.2.2:8000"
+}
+```
+
+If the approved Clerk integration requires a publishable key, include a documented placeholder in the example.
+
+Do not put real keys into tracked examples.
+
+Create or document the appropriate local configuration workflow.
+
+Ensure private developer configuration files are ignored by Git.
+
+Avoid broad ignore patterns that accidentally hide legitimate source files or example templates.
+
+### Recommended commands
+
+Android Emulator:
+
+```bash
+flutter run \
+  --dart-define-from-file=config/local.json
+```
+
+Physical Android with ADB reverse:
+
+```bash
+adb reverse tcp:8000 tcp:8000
+
+flutter run \
+  --dart-define-from-file=config/local-device.json
+```
+
+The device configuration should use the forwarded loopback origin.
+
+These commands are illustrative; adapt them to the actual repository layout and connected device.
+
+Do not create unnecessary platform-specific entry points when one entry point and explicit configuration files are sufficient.
+
+---
+
+## 9. Integration with the Existing App
+
+Wire configuration into the Flutter startup sequence.
+
+Requirements:
+
+- Load and validate configuration before initializing dependent services.
+- Make validated configuration accessible through a simple, explicit mechanism.
+- Avoid mutable global configuration.
+- Preserve the existing `AppTheme.light()` integration.
+- Preserve the Phase 16.2 theme preview and tests.
+- Avoid adding API calls during startup.
+- Avoid requiring a live Laravel server merely to construct the app.
+
+Prefer constructor injection or another lightweight established project convention.
+
+Do not introduce a dependency-injection package solely for configuration.
+
+### Boundary with Phase 16.4
+
+Phase 16.4 will implement the networking layer.
+
+This phase should only expose a validated API origin that the future networking layer can consume.
+
+Do not implement:
+
+- Dio or HTTP clients.
+- Request interceptors.
+- Authentication headers.
+- API response parsing.
+- Retry policies.
+- Pagination.
+- API repositories.
+- Network connectivity monitoring.
+
+---
+
+## 10. Clerk Configuration Boundary
+
+Preserve the existing Group D authentication decisions.
+
+Clerk remains the authentication provider for both Next.js and Flutter.
+
+Laravel remains responsible for backend token verification and authorization.
+
+For this phase:
+
+- Identify which public Clerk values the future Flutter SDK requires.
+- Expose those values through typed configuration when appropriate.
+- Validate their presence according to environment requirements.
+- Do not initialize customer authentication flows.
+- Do not implement token persistence.
+- Do not create custom Laravel authentication endpoints.
+- Do not implement a second token verifier.
+- Do not send passwords to Laravel.
+
+The actual Clerk session and secure-storage implementation belongs to Phase 16.5.
+
+Do not copy `CLERK_SECRET_KEY` from the backend or website server environment into Flutter.
+
+---
+
+## 11. Diagnostics and Logging
+
+Provide safe startup diagnostics for development.
+
+Permitted diagnostic information:
+
+- Selected environment.
+- Configuration validation status.
+- Non-sensitive application build information.
+- Whether optional public configuration is present.
+
+Avoid printing the complete API configuration object.
+
+Never print secret keys, bearer tokens, session identifiers, or private credentials.
+
+Do not add a full logging framework during this phase.
+
+Structured application diagnostics belong to Phase 16.9.
+
+---
+
+## 12. Automated Tests
+
+Add focused tests for the environment-configuration contract.
+
+### Required test cases
+
+1. LOCAL parses successfully.
+2. STAGING parses successfully.
+3. PRODUCTION parses successfully.
+4. Unknown environment is rejected.
+5. Missing environment is rejected.
+6. Missing API origin is rejected.
+7. Malformed API origin is rejected.
+8. Unsupported URL schemes are rejected.
+9. Production HTTP is rejected.
+10. Staging HTTP is rejected.
+11. Local HTTP is permitted.
+12. Production loopback hosts are rejected.
+13. Production emulator hosts are rejected.
+14. Production private-network hosts are rejected.
+15. Placeholder configuration is rejected.
+16. API origins with unexpected paths are rejected.
+17. API origin normalization is deterministic.
+18. Required Clerk public configuration is validated.
+19. Secret-key configuration is not accepted as a public configuration field.
+20. Invalid configuration cannot silently fall back to another environment.
+21. Configuration objects are immutable.
+22. Existing Flutter app initialization and theme tests continue to pass.
+
+### Testing strategy
+
+Separate parsing and validation from compile-time environment access so the validator can be tested using controlled values.
+
+Do not require changing process environment variables during tests.
+
+Do not require live network access.
+
+Use test-only configuration factories or explicit constructor arguments where appropriate.
 
 ### Quality checks
 
 Run:
 
 ```bash
-flutter pub get
-dart format .
+dart format --set-exit-if-changed .
 flutter analyze
 flutter test
+dart run tool/generate_tokens.dart --check
+git diff --check
 ```
 
-Also run the token-generation verification command established by the implementation.
+The Phase 16.2 token synchronization check must continue to pass.
 
-Use the actual repository's tooling and supported Flutter SDK.
-
-Do not claim tests passed unless they were executed successfully.
+Do not modify generated theme tokens manually.
 
 ---
 
-## 11. Theme Preview and Visual Verification
+## 13. Platform Verification
 
-Provide a small development-only theme preview or test harness using existing project conventions.
+Verify the configuration on available development targets.
 
-It may display:
+The previously verified Android physical device may be reused if still available.
 
-- Typography hierarchy.
-- Semantic colors.
-- Buttons and states.
-- Text inputs.
-- Cards.
-- Navigation components.
-- Focus states.
-- Loading indicators.
+Check:
 
-This is a verification tool, not a production customer screen.
+- Application launches with valid LOCAL configuration.
+- Application refuses invalid configuration.
+- Selected environment is correctly resolved.
+- Existing Material 3 theme renders correctly.
+- No startup crashes.
+- No sensitive configuration values appear in logs.
+- No production configuration is accidentally selected.
 
-Do not begin implementing the catalog, product details, favorites, or other Group Q features.
+If using ADB reverse, verify that the mapping exists.
 
-If a Flutter emulator or physical device is available, verify rendering on a native target.
+Do not claim that Laravel API communication works until an actual request is performed in Phase 16.4.
 
-If no device is available, report native visual verification as pending.
+For staging and production, configuration-validation tests are sufficient at this stage.
 
-Chrome DevTools MCP may help inspect the Next.js website but cannot substitute for native Flutter verification.
+Actual deployed connectivity remains pending.
 
 ---
 
-## 12. Scope Restrictions
+## 14. Scope Restrictions
 
 Do not implement:
 
-- Phase 16.3 environment configuration.
 - Phase 16.4 networking.
-- Phase 16.5 authentication/session handling.
-- Phase 16.6 navigation architecture.
-- Group Q customer features.
-- Cart, checkout, payment, or order flows.
-- Furniture request or enquiry forms.
-- New backend endpoints.
-- API contract changes.
-- A new website design system.
+- Phase 16.5 Clerk session handling.
+- Phase 16.6 routing/navigation.
+- Phase 16.7 feature modules.
+- Phase 16.8 error/loading architecture.
+- Phase 16.9 application logging.
+- Group Q customer screens.
+- New Laravel endpoints.
+- Backend environment changes.
+- Production deployment.
+- A second design-token system.
 
-Do not refactor the Next.js MUI theme unless required for a separately approved shared-token integration change.
+Do not enable cart, checkout, payment, or order purchasing.
 
-Preserve all existing website behavior.
+The initial production commerce mode remains REQUEST ONLY.
 
-### Production commerce restriction
-
-The project's initial production mode is REQUEST ONLY.
-
-Normal cart, checkout, payment, and order purchasing remain deferred.
-
-Do not enable these flows in the Flutter theme preview or introduce purchase-oriented behavior.
+Preserve the existing design system and all completed Group O work.
 
 ---
 
-## 13. Documentation
+## 15. Documentation
 
-Update the Group P phase documentation with:
+Update the existing Group P documentation and Flutter README.
 
-- Canonical token source location.
-- Flutter token generation strategy.
-- Generated Dart output location.
-- MUI-to-Flutter semantic mapping.
-- Font integration decisions.
-- Light/dark theme status.
-- Accessibility findings.
-- Verification commands.
-- Test results.
-- Deferred decisions.
+Document:
 
-Document any missing assets or required token additions.
+- Configuration architecture.
+- Environment names.
+- Required public values.
+- Example configuration files.
+- Local Android Emulator setup.
+- Physical Android device setup.
+- ADB reverse workflow.
+- iOS Simulator considerations.
+- Staging and production requirements.
+- Configuration validation rules.
+- Secret-management boundaries.
+- Test commands.
+- Deferred networking and authentication responsibilities.
 
-Do not modify unrelated Group O completion or production-gate records.
+Do not rewrite unrelated project documentation.
+
+Do not modify the frozen API contract.
 
 ---
 
-## 14. Completion Report
+## 16. Required Completion Report
 
-Provide:
+At completion, provide:
 
 1. Repository inspection findings.
-2. Files created or modified.
-3. Token generation strategy.
-4. Material 3 theme architecture.
-5. Semantic color mappings.
-6. Typography/font decisions.
-7. Spacing, shape, elevation, and motion mappings.
-8. Component themes configured.
-9. Accessibility verification results.
+2. Files created and modified.
+3. Configuration architecture.
+4. Environment variables supported.
+5. Local Android Emulator configuration.
+6. Physical Android configuration.
+7. Staging/production validation rules.
+8. Clerk public-configuration decisions.
+9. Security and secret-handling verification.
 10. Automated test results.
-11. Native visual verification status.
-12. Remaining risks or missing approvals.
-13. Final Phase 16.2 status.
+11. Native-device verification results.
+12. Known limitations and deferred work.
+13. Final Phase 16.3 status.
 
 ### Definition of Done
 
-Phase 16.2 passes when:
+Phase 16.3 is complete when:
 
-- Flutter Material 3 is enabled.
-- The Flutter theme is derived from canonical `tokens.css`.
-- There is no independently maintained competing token palette.
-- Typography, colors, spacing, shapes, and motion are mapped consistently.
-- Theme-level Material components use approved semantic roles.
-- Token synchronization is verified.
-- Automated tests and static analysis pass.
-- Missing font or accessibility decisions are explicitly documented.
-- No unrelated application features are introduced.
+- LOCAL, STAGING, and PRODUCTION are explicitly supported.
+- Configuration is typed, immutable, and validated.
+- Local Android development is correctly documented.
+- Production rejects insecure or development-only API origins.
+- No secret values are embedded in the Flutter app.
+- Existing Phase 16.2 theme and token-generation tests remain passing.
+- Flutter launches correctly with valid local configuration.
+- Invalid configuration fails safely.
+- No networking or authentication implementation has leaked into this phase.
+- Documentation and verification evidence are complete.
 
-**Implementation directive:** Inspect first, implement the smallest maintainable theme architecture, enforce canonical tokens, verify generation and rendering, document results, and stop at Phase 16.2.
+**Implementation directive:** Inspect the existing repository first, implement the smallest secure environment-configuration foundation, test it thoroughly, preserve all previous phase results, and stop at Phase 16.3.
 
 ---
 
-## Phase 16.2 Closure Record
+## Phase 16.3 Closure Record
 
 ### 1. Repository inspection findings
 
-- **Canonical token source confirmed:** `frontend/design-system/tokens.css`. The uploaded/illustrative path was not assumed. Synchronized derived artifacts remain `design-tokens.json` and `tailwind-v4.css`; neither became a Flutter source.
-- **Existing MUI adapter:** `frontend/web/theme/theme.ts` (enforced by `theme.contract.mjs`, which rejects raw hex in theme definitions). Used as the approved-semantics reference only; it was not refactored.
-- **Mapping contract:** `frontend/design-system/flutter-material3.md` supplied the role-by-role intent checked during implementation.
-- **Phase 16.1 baseline:** `frontend/app/` — Android-only, package `sl_furnitures`, applicationId `com.slfurnitures.app`. No pre-existing Flutter theme, tokens, or fonts existed.
-- **Toolchain:** Flutter 3.44.6 / Dart 3.12.2. `useMaterial3` defaults to true in this SDK; every `*ThemeData` type and every optional `ColorScheme` role was verified against the installed SDK before use rather than assumed.
-- **Fonts:** Young Serif TTF plus its OFL licence are already shipped by the website at `frontend/web/public/fonts/`. Helvetica Now Text is commercial and appears nowhere in the repository.
-- **Tooling:** `dart format`, `flutter analyze` (strict-casts/strict-inference/strict-raw-types), `flutter test`. No Flutter token-generation script existed before this phase.
+- **Flutter project directory:** `frontend/app/` (confirmed, not assumed). Package `sl_furnitures`, applicationId `com.slfurnitures.app`.
+- **No `ios/` host project exists.** The project is Android-only by decision (ADR/DESIGN-007), so no iOS file could be added without reopening that decision.
+- **Android manifests:** `src/main` had **no** `android:usesCleartextTraffic` and `targetSdkVersion` is 36, so plain `http://10.0.2.2:8000` would have been blocked on Android 9+. A debug-only exception was therefore required by §4.
+- **No existing configuration utility or build script**; `lib/main.dart` was three lines and `lib/app.dart` held the theme wiring.
+- **Laravel local API:** `backend/laravel/.env.example` sets `APP_URL=http://127.0.0.1:8000` — the canonical loopback origin used in examples.
+- **Next.js conventions:** no committed `.env.example`; `frontend/web/.env.local` is the working file. Env handling is therefore file-based and git-ignored on web too.
+- **Clerk contract (Group D):** `docs/clerk-authentication-architecture.md` records that the **Flutter Clerk package choice is deferred** and that "only publishable/client-safe Clerk configuration ships in the app"; `docs/api/api-conventions.md:920` states `CLERK_SECRET_KEY` remains server-only.
+- **Git hygiene:** root `.gitignore` held only `.kilo/` and `.freebuff/`; the app `.gitignore` had no config rules.
+- **Phase 16.2 preserved:** theme files, generated tokens, and tests untouched; token `--check` still passes.
 
-### 2. Files created or modified
+### 2. Files created and modified
 
-**Created — generator**
+**Created**
 
-- `tool/token_generator.dart` — pure generation library: `generateTokensDart(css, {sourceLabel})`, `TokenGenerationException`, `requiredTokenNames`, `dartIdentifier()`.
-- `tool/generate_tokens.dart` — CLI with write mode and `--check` staleness mode; applies `dart format` in both modes so write and check compare identical output.
-
-**Created — generated tokens**
-
-- `lib/theme/tokens/generated_tokens.dart` — `abstract final class GeneratedTokens`. The only file permitted to contain raw `Color(0x...)` literals.
-
-**Created — theme adapters (aliases over `GeneratedTokens`, no locally defined values)**
-
-- `lib/theme/app_color_scheme.dart`, `app_color_extensions.dart`, `app_typography.dart`, `app_spacing.dart`, `app_shapes.dart`, `app_motion.dart`, `app_theme.dart`
-- `lib/theme/component_themes/` — `app_button_themes.dart`, `app_input_themes.dart`, `app_surface_themes.dart`, `app_navigation_themes.dart`, `app_selection_themes.dart`, `app_feedback_themes.dart`
-- `lib/theme/preview/theme_preview.dart` — development-only preview harness.
+- `lib/config/app_environment.dart` — closed `AppEnvironment` enum with `tryParse`.
+- `lib/config/app_config.dart` — immutable `AppConfig` value object.
+- `lib/config/config_validation.dart` — `ConfigValidationException`, `CompileTimeDefines`, `ConfigValidator`.
+- `config/local.example.json`, `config/local-device.example.json`, `config/staging.example.json`, `config/production.example.json`.
+- `test/config/config_validation_test.dart` (27 tests) and `test/support/test_config.dart`.
 
 **Modified**
 
-- `lib/app.dart` — applies `AppTheme.light()`; shows the preview screen in debug and the existing bootstrap placeholder otherwise.
-- `pubspec.yaml` — registers the `Young Serif` family.
-- `assets/fonts/YoungSerif-Regular.ttf` + `assets/fonts/OFL-Young-Serif.txt` — bundled OFL display font and its licence.
-- `test/app_test.dart` — app-shell smoke test now asserts the token-driven brand theme.
+- `lib/main.dart` — validates before `runApp`; renders `ConfigFailureApp` on failure.
+- `lib/app.dart` — `SLFurnituresApp` now takes `required AppConfig config`; added `ConfigFailureApp`.
+- `test/app_test.dart` — injects `localTestConfig()`.
+- `android/app/src/debug/AndroidManifest.xml` — debug-only `usesCleartextTraffic="true"`.
+- `.gitignore` — ignores `/config/*.json`, re-includes `!/config/*.example.json`.
+- `README.md` — configuration architecture and workflow.
 
-**Deleted (obsolete after the redesign)**
+**Not touched:** `frontend/design-system/**`, the frozen API contract, all Group O records, `src/main/AndroidManifest.xml`, and the generated theme tokens.
 
-- `lib/theme/app_tokens.dart`, `lib/theme/app_theme_extensions.dart`, `test/theme/token_contract_test.dart`.
+### 3. Configuration architecture
 
-**Unchanged:** `frontend/design-system/tokens.css`, the Next.js MUI theme, all Group O records, and every backend/API artifact.
+One typed entry point, validated once, before any widget exists:
 
-### 3. Flutter token generation strategy
+```text
+--dart-define-from-file  →  CompileTimeDefines.values  →  ConfigValidator.validate()
+                                                              ↓
+                                                    AppConfig (immutable)
+                                                              ↓
+                                          SLFurnituresApp(config:)  — constructor injection
+```
 
-A deterministic generator reads the canonical CSS and emits typed Dart; it is not a general-purpose CSS parser.
+Parsing/validation is deliberately separated from compile-time access so every rule is testable with controlled values, without process environment variables or network access (§12 testing strategy). No service locator, DI package, interface layer, or runtime `.env` loader was introduced. `lib/theme/` was not moved; the config layer does not reference the token architecture.
 
-1. Reads `frontend/design-system/tokens.css` (path constant `sourceRelativePath`; label constant `sourceLabel`).
-2. Parses `:root` custom properties and resolves every `var(...)` reference, with circular-reference detection.
-3. Preserves semantic token names through `dartIdentifier()` (`--surface-canvas` → `surfaceCanvas`, `--space-1` → `space1`).
-4. Converts `#RRGGBB`/`#RRGGBBAA` → `Color(0x…)`; `px` lengths → `double` (CSS unitless `0` allowed); unitless line-height multipliers preserved; durations → `Duration`; aspect ratios → numeric ratio; `z-*` → `int`; font stacks → `List<String>`.
-5. **Fails** on unresolved `var()` references, on a missing `:root`, on any missing entry in `requiredTokenNames`, and on unsupported value syntax — each with a `TokenGenerationException` message.
-6. Output is deterministic: the same CSS always yields byte-identical, `dart format`-stabilised output.
-7. The generated header records `Source: frontend/design-system/tokens.css`, the regenerate command, and the verify command.
+`apiBaseUrl` is stored as a **`String`** rather than `Uri` so a configuration instance can be declared `const` — a `Uri` is not const-constructible in Dart, and const construction is what makes immutability provable in a test (§12 case 21).
 
-**Synchronization:** `dart run tool/generate_tokens.dart --check` regenerates and compares, failing when `tokens.css` changed but the Dart file did not. The same check runs inside the test suite via `test/theme/token_sync_test.dart`, so staleness fails `flutter test` as well. No second authoritative token file exists; `design-tokens.json`/`tailwind-v4.css` remain web-side representations and are not consumed by Flutter.
+### 4. Environment variables supported
 
-### 4. Material 3 theme architecture
+| Field | Required | Behavior |
+| --- | --- | --- |
+| `APP_ENV` | always | `local` \| `staging` \| `production`; missing or unknown is rejected |
+| `API_BASE_URL` | always | Laravel API **origin** only — no `/api/v1`, path, query, fragment, or userinfo |
+| `CLERK_PUBLISHABLE_KEY` | staging + production | optional locally; must start `pk_`; never `sk_` |
+| `ENABLE_DIAGNOSTICS` | no | defaults `false`; accepts boolean or `"true"`/`"false"` |
 
-`AppTheme.light()` returns one `ThemeData` with `useMaterial3: true`, an explicit `ColorScheme`, `AppTypography.textTheme`, three `ThemeExtension`s, and theme-level component themes. There is no `ColorScheme.fromSeed`, no dynamic/system color, and no `surfaceTint` colouring — `surfaceTint` is transparent so elevation never tints a brand surface.
+Any other key is rejected — including `CLERK_SECRET_KEY`, which gets its own diagnostic.
 
-### 5. MUI-to-Flutter semantic mapping
+### 5. Local Android Emulator configuration
 
-| Semantic role | Canonical token | MUI | Flutter |
-| --- | --- | --- | --- |
-| App canvas | `--surface-canvas` | `background.default` | `ColorScheme.surface` + `scaffoldBackgroundColor` |
-| Paper surface | `--surface-paper` | `background.paper` | `surfaceContainer*` / `surfaceBright` |
-| Editorial surface | `--surface-editorial` | `surface.editorial` | `ThemeExtension AppSurfaceColors.editorial` |
-| Inverse surface | `--surface-inverse` | `surface.inverse` | `inverseSurface` / `onInverseSurface` (not dark mode) |
-| Primary action | `--action-primary` | `primary.main` | `ColorScheme.primary` (charcoal `#111111`) |
-| Action foreground | `--text-inverse` | `primary.contrastText` | `onPrimary` |
-| Action container | `--action-primary-disabled` | `action.disabledBackground` | `primaryContainer` |
-| Secondary | `--text-secondary` | `text.secondary` | `secondary`, `onSurfaceVariant` |
-| Text hierarchy | `--text-primary` / `--text-secondary` / `--text-muted` / `--text-inverse` | `text.*` | `onSurface`, `onSurfaceVariant`, `onInverseSurface` |
-| Borders | `--border-subtle` / `--border-default` / `--border-strong` | `divider` | `outlineVariant`, `outline`, `dividerTheme` |
-| Error | `--danger` | `error.main` | `error` / `onError` |
-| Focus | `--action-focus` | `action.focus` | focus border + `--focus-ring` decoration (`#275DC5`) |
-| Brand accent | `--accent-brand` | `brand.accent` | `ThemeExtension AppBrandColors` — never `secondary` |
-| Status | `--success` / `--warn` / `--info` | status palette | `ThemeExtension AppStatusColors` — never primary/secondary/tertiary |
+`config/local.example.json` → `API_BASE_URL: http://10.0.2.2:8000`, the emulator's alias for the host loopback. Run with:
 
-Status colours are deliberately **not** placed in `ColorScheme.secondary`/`tertiary`; the brown accent is deliberately **not** placed in `secondary`; editorial is not forced into a container role.
+```bash
+flutter run --dart-define-from-file=config/local.json
+```
 
-### 6. Typography and font decisions
+### 6. Physical Android configuration
 
-- **Young Serif: bundled.** The OFL TTF the website already ships is copied to `assets/fonts/` with `OFL-Young-Serif.txt`, registered as family `Young Serif`. Safe to redistribute; no arbitrary font was downloaded.
-- **Helvetica Now Text: not bundled.** It is commercial and distributed nowhere in this repository, so utility type resolves to the platform sans (the terminal generic `sans-serif` of the canonical stack). This is the documented fallback required by §5, **not** a substituted brand font, and no Google Fonts or typography package was added.
-- Young Serif covers `displayLarge` (96), `displayMedium` (48), `displaySmall` (32) and `headlineLarge` (32) only. Every other role uses the utility family at the canonical 12/14/16/20/24/32 sizes with weights 400/500 and line heights 1.75/1.2/1.05 — no Material default size (36/45/57) survives.
-- The 96 unit is exposed as `displayLarge` but is **not** applied to any screen; mobile headings must use an existing semantic role sized to the viewport. No undocumented responsive scale was introduced.
-- The mapping contract's optional Young Serif usage on `headlineMedium`/`titleLarge` is intentionally not exercised, since no editorial screen exists yet; component phases may request it.
+`config/local-device.example.json` → `http://127.0.0.1:8000`, used **with** port forwarding:
 
-### 7. Spacing, shape, elevation, and motion
+```bash
+adb reverse tcp:8000 tcp:8000
+adb reverse --list            # verified: UsbFfs tcp:8000 tcp:8000
+```
 
-- **Spacing:** `AppSpacing` exposes `space-1..10` (4…80), the phone/tablet/desktop gutters and section spacing, and container/form/lead widths — all aliases of `GeneratedTokens`. Web breakpoints are exposed for reference only; native layouts must react to real viewport constraints. Safe-area, keyboard-inset and minimum-target values remain permitted platform concerns.
-- **Shape:** `AppRadii` = 8 / 20 / 24 / 30 from `radiusSm/Md/Lg/Pill`. Media stays sharp by default.
-- **Elevation:** flat surfaces first. `AppElevation` decomposes `--elevation-ring` (0 0 0 1 `#CACACB`) and `--elevation-raised` (0 8 24 `rgba(17,17,17,0.12)`) into `BoxDecoration` borders/shadows. CSS box shadows were **not** translated into `Material` elevation: `Card` is flat with a hairline ring, while dialogs and bottom sheets carry the raised ring. `--focus-ring` (0 0 0 3 `#275DC5`) maps to the focused input border decoration, not to a native shadow.
-- **Motion:** `AppMotion.fast` = 150 ms, `AppMotion.base` = 200 ms, standard easing `cubic-bezier(0.2, 0, 0, 1)` exposed as control points, plus a `prefersReducedMotion`/`resolve` helper. No arbitrary timings.
+The README states explicitly that the mapping does not survive a reconnect, and that a private LAN IP must never be committed. `config/*.json` is git-ignored while `*.example.json` stays tracked (verified with `git check-ignore` for all eight names).
 
-### 8. Component themes configured
+### 7. Staging/production validation rules
 
-AppBar, FilledButton, ElevatedButton, OutlinedButton, TextButton, IconButton, FloatingActionButton, SegmentedButton, TextField/InputDecoration, SearchBar, Card, Dialog, BottomSheet, Divider, NavigationBar, TabBar, ListTile, Chip, Checkbox, Radio, Switch, ProgressIndicator, SnackBar, Tooltip. All are theme-level defaults wired in `AppTheme.light()`; pill actions, 48 dp minimum targets, charcoal pressed/disabled states, token focus borders, and inverse-surface snackbars/tooltips.
+Both must be `https`, must carry a valid public Clerk publishable key, and must not use a development-only host: loopback (`localhost`, `127.0.0.0/8`, `::1`), emulator (`10.0.2.2`, `10.0.3.2`), private ranges (`10/8`, `172.16–31/12`, `192.168/16`, `169.254/16`), or `.local` / `.internal` / `.localhost` names. Placeholder values are rejected in every environment. `staging`/`production` example files are intentionally **not runnable**. Production additionally rejects development-only origins and defaults diagnostics to off.
 
-No custom widget library, navigation architecture, environment config, networking, auth, or Group Q screen was introduced.
+### 8. Clerk public-configuration decisions
 
-### 9. Accessibility findings
+- The **Flutter Clerk package choice remains deferred** (Group D), so no SDK parameter was invented — only the framework-neutral publishable key is exposed.
+- Required for staging/production; optional locally, because no authentication flow exists until Phase 16.5 (documented assumption).
+- Format is enforced (`pk_` prefix) and `sk_` values are refused even when supplied under the publishable-key field.
+- No authentication flow, token persistence, or second verifier was implemented; `CLERK_SECRET_KEY` is never read.
 
-Automated checks in `test/theme/theme_accessibility_test.dart` (they supplement — they do not replace — manual and assistive-technology review):
+### 9. Security and secret-handling verification
 
-- **11 text pairs pass ≥ 4.5:1:** primary text on canvas/paper/editorial; secondary text on canvas/paper; inverse text on inverse surface, primary action, success, warning, danger, and information.
-- **3 focus-indicator pairs pass ≥ 3:1:** focus ring on canvas, paper, and inverse.
-- **Touch targets:** primary action and icon-only action both render ≥ 48 dp under the theme.
-- **Text scaling:** layout reflows at 2× linear system text scaling.
-- Reduced-motion preference is representable through `AppMotion.resolve`.
+- **Cleartext is debug-only.** The exception lives solely in `src/debug/AndroidManifest.xml`; the main manifest still contains no `usesCleartextTraffic` or `networkSecurityConfig` (verified by grep), so release builds keep the platform default of no cleartext HTTP.
+- No TLS is disabled anywhere; no permissive certificate callback exists.
+- Validation messages and the failure screen name **fields and rules only, never values** — asserted by tests that confirm a rejected secret and an unknown field's value do not appear in the message.
+- Device logcat scan for `sk_live|sk_test|pk_live|pk_test|api.acmefurniture|127.0.0.1|10.0.2.2|APP_KEY|password` returned only Flutter's own Dart VM service URL.
+- Diagnostics print only the environment name and whether optional public config is present.
+- No secret exists in any tracked file; all four real config names are git-ignored.
 
-**No approved token pairing failed.** Gaps that could not be satisfied from canonical tokens are recorded in §12 rather than silently re-coloured.
+### 10. Automated test results
 
-### 10. Verification commands and results
-
-Run from `frontend/app/`:
+Quality checks (run from `frontend/app/`, exit status captured):
 
 | Command | Result |
 | --- | --- |
-| `dart format --output=none --set-exit-if-changed .` | Passed — 27 files, 0 changed |
+| `dart format --output=none --set-exit-if-changed .` | Passed — 32 files, 0 changed |
 | `flutter analyze` | Passed — `No issues found!` |
-| `flutter test` | Passed — `All tests passed!` (48 tests) |
+| `flutter test` | Passed — `All tests passed!` (**76 tests**) |
 | `dart run tool/generate_tokens.dart --check` | Passed — `Token generation: OK (generated tokens are current).` |
-| `flutter build apk --debug` | Passed — `app-debug.apk` built |
+| `git diff --check` | Passed |
+| `flutter build apk --debug --dart-define-from-file=config/local.json` | Passed — `app-debug.apk` built |
 
-48 tests across 7 files, by requirement: generator parsing, resolution, conversion, determinism, header, required-token enforcement, identifier mapping, and failure cases — 12; generated-token staleness detection — 1; theme structure, semantic mappings, no-brand-brown-in-action-roles, Young Serif scope, canonical sizes, extensions, elevation, shapes, reduced motion — 13; contrast pairs (11 text at 4.5:1, 3 indicator at 3:1), 48 dp touch targets, and text scaling — 17; raw-colour audit, generated-file locality, and Material component widget rendering — 3; preview harness rendering — 1; app shell — 1.
+`test/config/config_validation_test.dart` contributes 27 tests and covers **all 22 required cases** from §12 (verified by extracting the numbered test names 1–22). The Phase 16.2 suites (49 tests) remain passing unchanged.
 
-### 11. Native visual verification
+Two defects were found by these tests/verification and fixed rather than suppressed:
 
-**Performed on a physical Android device** (`R58TA1771DR`, Android 12, armeabi-v7a), not an emulator:
+1. `http://` passed validation because it has an authority component but an **empty host** — now rejected (`uri.host.isEmpty`).
+2. The failure screen resolved `Theme.of(context)` **above** its `MaterialApp`, so it rendered Material's default `#1D1B20` text instead of brand `#111111` — fixed with a `Builder` inside the `MaterialApp`, confirmed on the device before/after.
 
-- `adb install -r app-debug.apk` → Success; `com.slfurnitures.app/.MainActivity` launched and gained focus.
-- Logcat showed **no** `E/flutter`, `FATAL EXCEPTION`, or `AndroidRuntime` errors.
-- Captured frame renders the canonical palette exactly: `#FCF4ED` (canvas), `#FFFFFF` (paper), `#111111` (charcoal text/action), `#E5E5E5`, `#CACACB`, `#707072`, plus the blue focus indicator `#275DC5`.
+### 11. Native-device verification results
 
-**Limitation:** the captured frame covers only the top of the scrollable preview; `#F4E9DF` (editorial) and the status colours `#007D48` / `#8A5A00` / `#1151FF` sit below the fold in that frame. They are exercised by the automated contrast and extension tests, but a below-the-fold device frame was not captured. Headless-emulator verification was unreliable (intermittent `adb` disconnects), which is why a physical device was used.
+Physical device `R58TA1771DR` (Android 12, armeabi-v7a).
 
-### 12. Deferred decisions, gaps, and missing approvals
+| Scenario | Result |
+| --- | --- |
+| Valid LOCAL config | Install success; logcat `SL Furnitures configuration valid: environment=local, clerkPublishableKey=absent`; no `E/flutter`/`FATAL`; screenshot shows canonical palette (`#FCF4ED`, `#FFFFFF`, `#111111`, `#275DC5`) |
+| Build with **no** config file | Startup stopped: `SL Furnitures configuration rejected: APP_ENV is required and must be one of: local, staging, production.` — no crash, no fallback to a valid start (`configuration valid` count = 0). Failure screen renders on canvas `#FCF4ED` with brand `#111111` text |
+| ADB reverse mapping | `adb reverse tcp:8000 tcp:8000` → `adb reverse --list` reports `UsbFfs tcp:8000 tcp:8000` |
+| Secret leakage | None found in logcat |
 
-1. **Dark theme: deferred.** `tokens.css` defines no dark palette, so only the approved light theme exists. `--surface-inverse` is an inverse surface, **not** dark mode, and no dark colours were generated from Material defaults.
-2. **`scrim` token gap.** Material requires a translucent modal scrim that canonical tokens do not define; it is derived as `--surface-inverse` at 54% alpha and flagged in code as a gap, not a new brand colour.
-3. **Helvetica Now Text licensing.** Bundling it requires a redistribution licence the repository does not hold. The platform-sans fallback stands until licensing is approved; this must be revisited before any claim of full typographic parity.
-4. **`44ch` lead width** is emitted as an approximate `44` with a source-unit comment; CSS `ch` has no exact Flutter equivalent.
-5. **Below-fold device frame** for editorial/status colours not yet captured (see §11).
-6. **Golden tests** were not added: representative-component rendering is covered by widget tests, and screenshot tests reproducing the reference image are explicitly discouraged by §10.
-7. **Phase 16.2 scope only.** Environment configuration (16.3), networking (16.4), auth/session (16.5), routing (16.6), and all Group Q features remain unimplemented.
+**Honesty note:** early screenshots were captured before the Flutter surface was created (`FlutterRenderer: Width is zero` → `surfaceChanged` about 4s later) and came out black. Those frames were re-taken after the surface was up; only the verified frames are reported above.
 
-### 13. Phase 16.2 status
+Laravel API communication is **not** claimed — no request is performed until Phase 16.4.
 
-**Phase 16.2: COMPLETE.** Definition of Done is satisfied:
+### 12. Known limitations and deferred work
 
-- Flutter Material 3 is enabled and the theme is derived from canonical `tokens.css` through a deterministic, `--check`-verified generator.
-- There is no independently maintained competing token palette; only the generated file holds raw values, enforced by test.
-- Typography, colour, spacing, shape, elevation, and motion map consistently from the same source the website consumes.
-- Theme-level Material components use approved semantic roles with preserved disabled/focused/pressed/error states.
-- Token synchronization, static analysis, formatting, 48 tests, and the Android debug build all pass.
-- Missing font, `scrim`, and dark-mode decisions are explicitly documented above.
-- No unrelated application feature was introduced.
+1. **iOS not implemented.** No `ios/` project exists, so no ATS exception was added; the config layer is platform-neutral and an iOS build would need a debug-scoped ATS exception mirroring the Android one.
+2. **CLERK_PUBLISHABLE_KEY optional in LOCAL** — an assumption justified by §8's example (APP_ENV + API_BASE_URL only) and by no auth flow existing yet.
+3. **Staging/production connectivity unverified** — their origins are not deployed; only validation rules are tested.
+4. **`ENABLE_DIAGNOSTICS=true` is not refused in production**, only off by default, because §6 requires "not enabled by default" rather than forbidding it.
+5. **Emulator/genuine LAN-IP workflow** documented but only the ADB-reverse path was exercised on hardware.
+6. **Phase 16.4 boundary respected:** no Dio/HTTP client, interceptor, auth header, parser, retry, pagination, repository, or connectivity monitoring.
 
-Group P does **not** proceed to Phase 16.3 automatically; that remains a separate owner instruction. All Group O completion and production-gate records are unchanged.
+### 13. Phase 16.3 status
+
+**Phase 16.3: COMPLETE.** Definition of Done is satisfied:
+
+- LOCAL, STAGING, and PRODUCTION are explicitly supported with a closed enum and no fallback.
+- Configuration is typed, immutable (const-constructed in tests), and centrally validated.
+- Local Android Emulator, physical device, and ADB-reverse workflows are documented and the mapping verified.
+- Production rejects insecure and development-only API origins.
+- No secret value is embedded in the app; debug-only cleartext is scoped to the debug manifest.
+- All 76 tests pass, including every Phase 16.2 theme and token test; token `--check` passes.
+- Flutter launches with valid LOCAL configuration and refuses invalid configuration safely on a physical device.
+- No networking or authentication implementation leaked into this phase.
+- Documentation and verification evidence are complete.
+
+Group P does **not** proceed to Phase 16.4 automatically; that remains a separate owner instruction. Group O records are unchanged.
+
+**Out-of-scope observation (not changed by this phase):** `android:label` was changed to `Buy Furnitures` and `mipmap-hdpi/ic_launcher.png` was replaced by another actor during this phase. ADR/DESIGN-007 records the label as `SL Furnitures`, so that ADR and the manifest now disagree; reconciling the app identity was left to the owner.

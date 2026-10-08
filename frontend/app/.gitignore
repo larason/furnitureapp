@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Private environment configuration. Only the tracked *.example.json templates
+# are shared; real --dart-define-from-file values stay on the developer machine.
+/config/*.json
+!/config/*.example.json
