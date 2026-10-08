@@ -31,6 +31,21 @@ const INITIAL_VALUES: FurnitureRequestFormValues = {
 };
 
 type FieldName = "name" | "phone" | "email" | "quantity" | "length" | "width" | "height" | "material" | "color" | "notes";
+type SetFieldErrors = Dispatch<SetStateAction<FurnitureRequestFieldErrors>>;
+type SetSubmissionMessage = Dispatch<SetStateAction<string | undefined>>;
+
+const PRODUCT_UNAVAILABLE_MESSAGE = "This product is no longer available for requests. You can continue as a custom furniture request instead.";
+const SELECTED_PRODUCT_UNAVAILABLE_MESSAGE = "The selected furniture is no longer available. You can continue as a custom furniture request instead.";
+const GENERIC_SUBMISSION_ERROR_MESSAGE = "We could not submit your request right now. Please try again later.";
+const PRODUCT_UNAVAILABLE_MESSAGES = new Map<number, string>([
+  [409, PRODUCT_UNAVAILABLE_MESSAGE],
+  [404, SELECTED_PRODUCT_UNAVAILABLE_MESSAGE],
+]);
+const API_ERROR_MESSAGES = new Map<number, string>([
+  [401, "Your signed-in session could not be confirmed. Please sign in again before submitting."],
+  [403, "This account cannot submit a furniture request. Please use a customer account or submit as a visitor."],
+  [413, "The attachment is too large. Choose a file no larger than 5 MiB."],
+]);
 
 export type FurnitureRequestProductContext = Readonly<{
   id: string;
@@ -112,6 +127,10 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
     updateAttachment(null);
   }
 
+  let submitLabel = "Submit as visitor";
+  if (isLoaded) submitLabel = "Submit furniture request";
+  if (isSubmitting) submitLabel = "Sending request...";
+
   if (isSubmitted) {
     return (
       <Stack ref={acknowledgementRef} tabIndex={-1} spacing={4} aria-live="polite" sx={{ maxWidth: "var(--content-width-form)", outline: "none" }}>
@@ -156,7 +175,7 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
         </FormGroup>
         <Stack spacing={2}>
           <Button type="submit" variant="contained" disabled={isSubmitting} sx={{ alignSelf: "flex-start", minHeight: 44 }}>
-            {isSubmitting ? "Sending request..." : isLoaded ? "Submit furniture request" : "Submit as visitor"}
+            {submitLabel}
           </Button>
           {!isLoaded ? <Typography role="status" variant="body2" color="text.secondary">Sign-in status is still loading. You can submit as a visitor, or wait for your customer session to be ready.</Typography> : null}
           <Typography variant="body2" color="text.secondary">Please do not submit again while your request is sending. We will only confirm success after the request is received.</Typography>
@@ -179,35 +198,55 @@ function attachmentLabel(attachment: Blob): string {
   return `${name} (${Math.ceil(attachment.size / 1024)} KiB of ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MiB maximum)`;
 }
 
-function handleSubmissionError(error: unknown, setFieldErrors: Dispatch<SetStateAction<FurnitureRequestFieldErrors>>, setSubmissionMessage: Dispatch<SetStateAction<string | undefined>>, markProductUnavailable: () => void): void {
-  if (error instanceof ApiError && error.status === 422) {
-    if (hasProductContextError(error)) {
-      setFieldErrors({});
-      setSubmissionMessage("This product is no longer available for requests. You can continue as a custom furniture request instead.");
-      markProductUnavailable();
-      return;
-    }
-    setFieldErrors(apiErrorsToFields(error));
-    setSubmissionMessage("Please correct the highlighted details and try again.");
+function handleSubmissionError(error: unknown, setFieldErrors: SetFieldErrors, setSubmissionMessage: SetSubmissionMessage, markProductUnavailable: () => void): void {
+  if (error instanceof ApiError) {
+    handleApiError(error, setFieldErrors, setSubmissionMessage, markProductUnavailable);
     return;
   }
-  if (error instanceof ApiError && error.status === 409) {
-    setSubmissionMessage("This product is no longer available for requests. You can continue as a custom furniture request instead.");
+
+  let message = GENERIC_SUBMISSION_ERROR_MESSAGE;
+  if (error instanceof ApiConfigurationError) message = "Furniture requests are not configured for this environment.";
+  else if (error instanceof ApiTransportError) message = "We could not confirm whether your request was received. Please do not submit again automatically; contact us before retrying.";
+
+  setSubmissionMessage(message);
+}
+
+function handleApiError(error: ApiError, setFieldErrors: SetFieldErrors, setSubmissionMessage: SetSubmissionMessage, markProductUnavailable: () => void): void {
+  if (error.status === 422) {
+    handleValidationError(error, setFieldErrors, setSubmissionMessage, markProductUnavailable);
+    return;
+  }
+
+  const unavailableMessage = productUnavailableMessage(error.status);
+  if (unavailableMessage) {
+    setSubmissionMessage(unavailableMessage);
     markProductUnavailable();
     return;
   }
-  if (error instanceof ApiError && error.status === 401) setSubmissionMessage("Your signed-in session could not be confirmed. Please sign in again before submitting.");
-  else if (error instanceof ApiError && error.status === 403) setSubmissionMessage("This account cannot submit a furniture request. Please use a customer account or submit as a visitor.");
-  else if (error instanceof ApiError && error.status === 404) {
-    setSubmissionMessage("The selected furniture is no longer available. You can continue as a custom furniture request instead.");
+
+  setSubmissionMessage(apiErrorMessage(error));
+}
+
+function handleValidationError(error: ApiError, setFieldErrors: SetFieldErrors, setSubmissionMessage: SetSubmissionMessage, markProductUnavailable: () => void): void {
+  if (hasProductContextError(error)) {
+    setFieldErrors({});
+    setSubmissionMessage(PRODUCT_UNAVAILABLE_MESSAGE);
     markProductUnavailable();
+    return;
   }
-  else if (error instanceof ApiError && error.status === 413) setSubmissionMessage("The attachment is too large. Choose a file no larger than 5 MiB.");
-  else if (error instanceof ApiError && error.status === 429) setSubmissionMessage(error.retryAfterSeconds ? `Please wait ${error.retryAfterSeconds} seconds before submitting another request.` : "Too many requests were sent. Please wait before trying again.");
-  else if (error instanceof ApiError) setSubmissionMessage("We could not submit your request right now. Please try again later.");
-  else if (error instanceof ApiConfigurationError) setSubmissionMessage("Furniture requests are not configured for this environment.");
-  else if (error instanceof ApiTransportError) setSubmissionMessage("We could not confirm whether your request was received. Please do not submit again automatically; contact us before retrying.");
-  else setSubmissionMessage("We could not submit your request right now. Please try again later.");
+
+  setFieldErrors(apiErrorsToFields(error));
+  setSubmissionMessage("Please correct the highlighted details and try again.");
+}
+
+function productUnavailableMessage(status: number): string | undefined {
+  return PRODUCT_UNAVAILABLE_MESSAGES.get(status);
+}
+
+function apiErrorMessage(error: ApiError): string {
+  if (error.status === 429) return error.retryAfterSeconds ? `Please wait ${error.retryAfterSeconds} seconds before submitting another request.` : "Too many requests were sent. Please wait before trying again.";
+
+  return API_ERROR_MESSAGES.get(error.status) ?? GENERIC_SUBMISSION_ERROR_MESSAGE;
 }
 
 function hasProductContextError(error: ApiError): boolean {

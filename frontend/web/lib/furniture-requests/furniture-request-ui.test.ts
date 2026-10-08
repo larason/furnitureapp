@@ -26,9 +26,10 @@ test("request form uses the single API client with an ephemeral Clerk bearer", (
   assert.match(form, /timeoutMs: values\.attachment \? ATTACHMENT_TIMEOUT_MS : undefined/);
   assert.match(form, /if \(isLoaded && isSignedIn\)/);
   assert.match(form, /Submit as visitor/);
-  assert.match(form, /status === 409/);
+  assert.match(form, /PRODUCT_UNAVAILABLE_MESSAGES/);
+  assert.match(form, /\[409, PRODUCT_UNAVAILABLE_MESSAGE\]/);
   assert.match(form, /hasProductContextError\(error\)/);
-  assert.match(form, /status === 413/);
+  assert.match(form, /\[413, "The attachment is too large/);
   assert.match(form, /status === 429/);
   assert.match(form, /attachmentInputRef\.current\.value = ""/);
   assert.doesNotMatch(form + api, /X-Upload-Token|localStorage|sessionStorage|Server Action|fetch\(/);

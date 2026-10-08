@@ -1,5 +1,3 @@
-import type { JsonValue } from "@/lib/api/client";
-
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 const ACCEPTED_ATTACHMENT_TYPES = new Set([
@@ -28,32 +26,47 @@ export type FurnitureRequestFieldErrors = Partial<Record<"name" | "contact" | "q
 
 type RequestDimensions = Readonly<{ length?: number; width?: number; height?: number; unit: "cm" }>;
 type MutableRequestDimensions = { length?: number; width?: number; height?: number };
-type RequestPayload = Record<string, JsonValue>;
+type RequestFieldValue = string | number | RequestDimensions;
+type RequestPayload = Record<string, RequestFieldValue>;
+const DIMENSION_FIELDS = ["length", "width", "height"] as const;
 
 export function validateFurnitureRequest(values: FurnitureRequestFormValues): FurnitureRequestFieldErrors {
   const errors: FurnitureRequestFieldErrors = {};
-  const dimensions = ["length", "width", "height"] as const;
-  const name = values.name.trim();
-  const contactProvided = Boolean(values.phone.trim() || values.email.trim());
-
-  if (!name) errors.name = "Enter your name.";
-  else if (name.length > 120) errors.name = "Use 120 characters or fewer.";
-  if (!contactProvided) errors.contact = "Enter a phone number or email address.";
-  if (values.phone.trim().length > 30) errors.contact = "Use a phone number with 30 characters or fewer.";
-  if (values.email.trim() && (!isEmail(values.email.trim()) || values.email.trim().length > 255)) errors.contact = "Enter a valid email address with 255 characters or fewer.";
-  if (values.quantity.trim() && !isWholeNumberInRange(values.quantity, 1, 100)) errors.quantity = "Quantity must be a whole number from 1 to 100.";
-
-  for (const field of dimensions) {
-    if (values[field].trim() && !isPositiveDimension(values[field])) {
-      errors[field] = "Enter a measurement greater than 0 and no more than 10,000 cm.";
-    }
-  }
-  if (values.material.length > 500) errors.material = "Use 500 characters or fewer.";
-  if (values.color.length > 200) errors.color = "Use 200 characters or fewer.";
-  if (values.notes.length > 5000) errors.notes = "Use 5,000 characters or fewer.";
+  addContactErrors(errors, values);
+  addQuantityError(errors, values.quantity);
+  addDimensionErrors(errors, values);
+  addOptionalTextErrors(errors, values);
   if (values.attachment) addAttachmentError(errors, values.attachment);
 
   return errors;
+}
+
+function addContactErrors(errors: FurnitureRequestFieldErrors, values: FurnitureRequestFormValues): void {
+  const name = values.name.trim();
+  const phone = values.phone.trim();
+  const email = values.email.trim();
+
+  if (!name) errors.name = "Enter your name.";
+  else if (name.length > 120) errors.name = "Use 120 characters or fewer.";
+  if (!phone && !email) errors.contact = "Enter a phone number or email address.";
+  if (phone.length > 30) errors.contact = "Use a phone number with 30 characters or fewer.";
+  if (email && (!isEmail(email) || email.length > 255)) errors.contact = "Enter a valid email address with 255 characters or fewer.";
+}
+
+function addQuantityError(errors: FurnitureRequestFieldErrors, quantity: string): void {
+  if (quantity.trim() && !isWholeNumberInRange(quantity, 1, 100)) errors.quantity = "Quantity must be a whole number from 1 to 100.";
+}
+
+function addDimensionErrors(errors: FurnitureRequestFieldErrors, values: FurnitureRequestFormValues): void {
+  for (const field of DIMENSION_FIELDS) {
+    if (values[field].trim() && !isPositiveDimension(values[field])) errors[field] = "Enter a measurement greater than 0 and no more than 10,000 cm.";
+  }
+}
+
+function addOptionalTextErrors(errors: FurnitureRequestFieldErrors, values: FurnitureRequestFormValues): void {
+  if (values.material.length > 500) errors.material = "Use 500 characters or fewer.";
+  if (values.color.length > 200) errors.color = "Use 200 characters or fewer.";
+  if (values.notes.length > 5000) errors.notes = "Use 5,000 characters or fewer.";
 }
 
 export function serializeFurnitureRequest(values: FurnitureRequestFormValues, productId?: string): RequestPayload | FormData {
@@ -85,19 +98,18 @@ function requestFields(values: FurnitureRequestFormValues, productId?: string): 
 }
 
 function parsedDimensions(values: FurnitureRequestFormValues): RequestDimensions | undefined {
-  const dimensions = ["length", "width", "height"] as const;
   const result: MutableRequestDimensions = {};
 
-  for (const field of dimensions) if (values[field].trim()) result[field] = Number(values[field]);
+  for (const field of DIMENSION_FIELDS) if (values[field].trim()) result[field] = Number(values[field]);
   return Object.keys(result).length ? { ...result, unit: "cm" } : undefined;
 }
 
-function appendMultipartValue(formData: FormData, key: string, value: JsonValue): void {
-  if (key === "dimensions" && isDimensions(value)) {
+function appendMultipartValue(formData: FormData, key: string, value: RequestFieldValue): void {
+  if (typeof value === "object") {
     for (const [dimension, amount] of Object.entries(value)) formData.append(`dimensions[${dimension}]`, String(amount));
     return;
   }
-  formData.append(key, String(value));
+  formData.append(key, value.toString());
 }
 
 function addAttachmentError(errors: FurnitureRequestFieldErrors, attachment: Blob): void {
@@ -119,9 +131,5 @@ function isPositiveDimension(value: string): boolean {
 }
 
 function isEmail(value: string): boolean {
-  return /^\S+@\S+\.\S+$/.test(value);
-}
-
-function isDimensions(value: JsonValue): value is RequestDimensions {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && "unit" in value;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }

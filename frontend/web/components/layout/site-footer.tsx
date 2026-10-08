@@ -48,7 +48,6 @@ export function SiteFooter() {
   const categoryLinks = CATEGORY_NAVIGATION_FIXTURE.map((category) => ({
     label: category.name,
     href: `/categories/${category.slug}`,
-    inactive: true,
   }));
 
   return (

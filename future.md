@@ -54,5 +54,8 @@ Expected result: preflight + anonymous/authenticated JSON and 5 MiB multipart su
 - Requires JSON without attachment and inline FormData with attachment; the existing API client supports both.
 - Requires no auto-retry for POST ambiguity and distinct handling for 409, 401, 403, 404, 413, 422, 429, timeout, and network failures.
 
-16.  Legal/business approval required before publishing/indexing these pages.
-- Existing Phase 15.9 production transport and Phase 15.10 authenticated enquiry-browser verification blockers remain.
+16. Outstanding gates
+The following remain open and should be carried forward without reopening completed phases:
+1. Production transport: HTTPS API origin, CORS, production Clerk configuration, reverse-proxy limits and deployed-browser verification.
+2. Authenticated enquiry: Real Clerk customer browser submission for ENQ-001.
+3. Legal approval: Privacy Policy, Terms of Service and About Us content must receive business/legal approval before publication or indexing.

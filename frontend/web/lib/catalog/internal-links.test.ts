@@ -81,15 +81,15 @@ test("breadcrumbs are semantic, name the current page, and keep backend category
   assert.match(productsPage, /aria-current="page"/);
 });
 
-test("global navigation stays semantic, fixture-backed, and free of placeholder or programmatic navigation", () => {
+test("global navigation keeps the seeded category destinations active and free of placeholder or programmatic navigation", () => {
   const combined = NAVIGATION_SOURCES.map((file) => read(file)).join("\n");
 
   assert.doesNotMatch(combined, /href="#"/);
   assert.doesNotMatch(combined, /router\.push|window\.location|location\.href/);
   assert.doesNotMatch(combined, /products\?category=/);
-  assert.match(read("components/layout/primary-category-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\} inactive/);
-  assert.match(read("components/layout/mobile-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*?inactive/);
-  assert.match(read("components/layout/site-footer.tsx"), /inactive: true/);
+  assert.doesNotMatch(read("components/layout/primary-category-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\} inactive/);
+  assert.doesNotMatch(read("components/layout/mobile-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*?inactive/);
+  assert.doesNotMatch(read("components/layout/site-footer.tsx"), /inactive: true/);
 });
 
 test("only implemented routes are activated while deferred storefront routes stay inactive", () => {

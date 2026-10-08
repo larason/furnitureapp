@@ -21,6 +21,8 @@ test("enquiry form uses the existing API client and current Clerk token only whi
   assert.match(form, /headers\.set\("Authorization", `Bearer \$\{token\}`\)/);
   assert.match(form, /path: "\/enquiries"/);
   assert.match(form, /cache: "no-store"/);
+  assert.match(form, /hasAuthenticatedSession/);
+  assert.match(form, /validateEnquiry\(values, \{ isAuthenticated: hasAuthenticatedSession \}\)/);
   assert.match(form, /component="form" method="post" onSubmit=\{handleSubmit\}/);
   assert.match(form, /status === 413/);
   assert.match(form, /status === 429/);

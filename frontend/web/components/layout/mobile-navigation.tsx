@@ -98,7 +98,7 @@ export function MobileNavigation() {
               <Box component="li" key={category.slug}>
                 <NavLink
                   href={`/categories/${category.slug}`}
-                  inactive
+                  onClick={close}
                   sx={mobileItemSx}
                 >
                   {category.name}
@@ -112,6 +112,7 @@ export function MobileNavigation() {
               <Box component="li" key={link.href}>
                 <NavLink
                   href={link.href}
+                  onClick={close}
                   sx={mobileItemSx}
                 >
                   {link.label}
@@ -126,10 +127,10 @@ export function MobileNavigation() {
             ) : (
               <>
                 <SignInButton>
-                  <Button variant="outlined" fullWidth>Sign in</Button>
+                  <Button variant="outlined" fullWidth onClick={close}>Sign in</Button>
                 </SignInButton>
                 <SignUpButton>
-                  <Button variant="contained" fullWidth>Create account</Button>
+                  <Button variant="contained" fullWidth onClick={close}>Create account</Button>
                 </SignUpButton>
               </>
             ))}

@@ -1,5 +1,3 @@
-import type { JsonValue } from "@/lib/api/client";
-
 export const MAX_ENQUIRY_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 const ACCEPTED_ATTACHMENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -19,14 +17,16 @@ export type EnquiryFormValues = Readonly<{
 
 export type EnquiryFieldErrors = Partial<Record<"name" | "contact" | "subject" | "message" | "category" | "attachment", string>>;
 
-export function validateEnquiry(values: EnquiryFormValues): EnquiryFieldErrors {
+export type EnquiryValidationContext = Readonly<{ isAuthenticated: boolean }>;
+
+export function validateEnquiry(values: EnquiryFormValues, context: EnquiryValidationContext = { isAuthenticated: false }): EnquiryFieldErrors {
   const errors: EnquiryFieldErrors = {};
   const subjectLength = values.subject.trim().length;
   const messageLength = values.message.trim().length;
 
-  if (!values.name.trim()) errors.name = "Enter your name.";
+  if (!context.isAuthenticated && !values.name.trim()) errors.name = "Enter your name.";
   else if (values.name.trim().length > 120) errors.name = "Use 120 characters or fewer.";
-  if (!values.phone.trim() && !values.email.trim()) errors.contact = "Enter a phone number or email address.";
+  if (!context.isAuthenticated && !values.phone.trim() && !values.email.trim()) errors.contact = "Enter a phone number or email address.";
   else if (values.phone.trim().length > 30) errors.contact = "Use a phone number with 30 characters or fewer.";
   else if (values.email.trim() && (!isEmail(values.email.trim()) || values.email.trim().length > 255)) errors.contact = "Enter a valid email address with 255 characters or fewer.";
   if (subjectLength < 5 || subjectLength > 200) errors.subject = "Enter a subject with 5 to 200 characters.";
@@ -36,20 +36,20 @@ export function validateEnquiry(values: EnquiryFormValues): EnquiryFieldErrors {
   return errors;
 }
 
-export function serializeEnquiry(values: EnquiryFormValues): Record<string, JsonValue> | FormData {
-  const fields: Record<string, JsonValue> = {
-    name: values.name.trim(),
+export function serializeEnquiry(values: EnquiryFormValues): Record<string, string> | FormData {
+  const fields: Record<string, string> = {
     subject: values.subject.trim(),
     message: values.message.trim(),
   };
 
+  if (values.name.trim()) fields.name = values.name.trim();
   if (values.phone.trim()) fields.phone = values.phone.trim();
   if (values.email.trim()) fields.email = values.email.trim();
   if (values.category) fields.category = values.category;
   if (!values.attachment) return fields;
 
   const formData = new FormData();
-  for (const [key, value] of Object.entries(fields)) formData.append(key, String(value));
+  for (const [key, value] of Object.entries(fields)) formData.append(key, value);
   formData.append("attachment", values.attachment);
   return formData;
 }
@@ -63,5 +63,5 @@ function addAttachmentError(errors: EnquiryFieldErrors, attachment: Blob): void 
 }
 
 function isEmail(value: string): boolean {
-  return /^\S+@\S+\.\S+$/.test(value);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }

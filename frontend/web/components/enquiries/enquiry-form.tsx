@@ -25,6 +25,7 @@ type EnquiryResponse = Readonly<{ enquiry_status?: string }>;
 
 export function EnquiryForm() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  const hasAuthenticatedSession = isLoaded && isSignedIn === true;
   const [values, setValues] = useState<EnquiryFormValues>(INITIAL_VALUES);
   const [fieldErrors, setFieldErrors] = useState<EnquiryFieldErrors>({});
   const [submissionMessage, setSubmissionMessage] = useState<string>();
@@ -41,7 +42,7 @@ export function EnquiryForm() {
     event.preventDefault();
     if (isSubmitting) return;
 
-    const errors = validateEnquiry(values);
+    const errors = validateEnquiry(values, { isAuthenticated: hasAuthenticatedSession });
     setFieldErrors(errors);
     setSubmissionMessage(undefined);
     if (Object.keys(errors).length) return;
@@ -90,8 +91,12 @@ export function EnquiryForm() {
     updateAttachment(null);
   }
 
+  let submitLabel = "Send as visitor";
+  if (isLoaded) submitLabel = "Send enquiry";
+  if (isSubmitting) submitLabel = "Sending enquiry...";
+
   if (isSubmitted) {
-    return <Stack ref={acknowledgementRef} tabIndex={-1} spacing={4} aria-live="polite" sx={{ maxWidth: "var(--content-width-form)", outline: "none" }}><Typography component="h2" variant="h3">Your enquiry has been received.</Typography><Typography>Thank you for contacting SL Furnitures. We will review your message and use the contact details you provided.</Typography>{submissionMessage ? <Typography variant="body2" color="text.secondary">Status: {submissionMessage}</Typography> : null}</Stack>;
+    return <Stack ref={acknowledgementRef} tabIndex={-1} spacing={4} aria-live="polite" sx={{ maxWidth: "var(--content-width-form)", outline: "none" }}><Typography component="h2" variant="h3">Your enquiry has been received.</Typography><Typography>Thank you for contacting SL Furnitures. We will review your message and use your available contact details.</Typography>{submissionMessage ? <Typography variant="body2" color="text.secondary">Status: {submissionMessage}</Typography> : null}</Stack>;
   }
 
   return (
@@ -108,12 +113,12 @@ export function EnquiryForm() {
           {values.attachment ? <Typography variant="body2" aria-live="polite">{attachmentLabel(values.attachment)}</Typography> : null}
           {fieldErrors.attachment ? <Typography role="alert" variant="body2" color="error">{fieldErrors.attachment}</Typography> : null}
         </FormGroup>
-        <FormGroup title="Contact details" description="Your name and at least one way to reach you are required.">
-          <TextField required label="Your name" value={values.name} onChange={(event) => updateField("name", event.target.value)} error={Boolean(fieldErrors.name)} helperText={fieldErrors.name} autoComplete="name" slotProps={{ htmlInput: { name: "name", maxLength: 120 } }} />
-          <TextField label="Phone number" value={values.phone} onChange={(event) => updateField("phone", event.target.value)} error={Boolean(fieldErrors.contact)} helperText={fieldErrors.contact ?? "Provide a phone number, email address, or both."} autoComplete="tel" slotProps={{ htmlInput: { name: "phone", maxLength: 30 } }} />
+        <FormGroup title="Contact details" description={hasAuthenticatedSession ? "Optional: we can use the contact details on your signed-in account." : "Your name and at least one way to reach you are required."}>
+          <TextField required={!hasAuthenticatedSession} label="Your name" value={values.name} onChange={(event) => updateField("name", event.target.value)} error={Boolean(fieldErrors.name)} helperText={fieldErrors.name} autoComplete="name" slotProps={{ htmlInput: { name: "name", maxLength: 120 } }} />
+          <TextField label="Phone number" value={values.phone} onChange={(event) => updateField("phone", event.target.value)} error={Boolean(fieldErrors.contact)} helperText={fieldErrors.contact ?? (hasAuthenticatedSession ? "Optional when your account has a reachable contact detail." : "Provide a phone number, email address, or both.")} autoComplete="tel" slotProps={{ htmlInput: { name: "phone", maxLength: 30 } }} />
           <TextField label="Email address" type="email" value={values.email} onChange={(event) => updateField("email", event.target.value)} error={Boolean(fieldErrors.contact)} helperText={fieldErrors.contact} autoComplete="email" slotProps={{ htmlInput: { name: "email", maxLength: 255 } }} />
         </FormGroup>
-        <Stack spacing={2}><Button type="submit" variant="contained" disabled={isSubmitting} sx={{ alignSelf: "flex-start", minHeight: 44 }}>{isSubmitting ? "Sending enquiry..." : isLoaded ? "Send enquiry" : "Send as visitor"}</Button>{!isLoaded ? <Typography role="status" variant="body2" color="text.secondary">Sign-in status is still loading. You can submit as a visitor, or wait for your customer session to be ready.</Typography> : null}<Typography variant="body2" color="text.secondary">Please do not submit again while your enquiry is sending. We will only confirm success after it is received.</Typography></Stack>
+        <Stack spacing={2}><Button type="submit" variant="contained" disabled={isSubmitting} sx={{ alignSelf: "flex-start", minHeight: 44 }}>{submitLabel}</Button>{!isLoaded ? <Typography role="status" variant="body2" color="text.secondary">Sign-in status is still loading. You can submit as a visitor, or wait for your customer session to be ready.</Typography> : null}<Typography variant="body2" color="text.secondary">Please do not submit again while your enquiry is sending. We will only confirm success after it is received.</Typography></Stack>
       </Stack>
     </Box>
   );

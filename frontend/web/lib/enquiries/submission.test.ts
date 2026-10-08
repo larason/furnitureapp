@@ -31,6 +31,30 @@ test("accepts optional category and attachment-free JSON submissions", () => {
   });
 });
 
+test("allows an authenticated customer to omit profile-derived contact details", () => {
+  const values = { ...validValues, name: "", phone: "", email: "" };
+
+  assert.deepEqual(validateEnquiry(values, { isAuthenticated: true }), {});
+  assert.deepEqual(serializeEnquiry(values), {
+    subject: "Delivery to Dodoma",
+    message: "Could you tell me whether you deliver furniture to Dodoma?",
+    category: "DELIVERY",
+  });
+});
+
+test("still requires contact details for a visitor", () => {
+  const errors = validateEnquiry({ ...validValues, name: "", phone: "", email: "" }, { isAuthenticated: false });
+
+  assert.equal(errors.name, "Enter your name.");
+  assert.equal(errors.contact, "Enter a phone number or email address.");
+});
+
+test("rejects an email address with multiple at signs", () => {
+  const errors = validateEnquiry({ ...validValues, phone: "", email: "asha@furnitures@example.com" });
+
+  assert.equal(errors.contact, "Enter a valid email address with 255 characters or fewer.");
+});
+
 test("serializes one supported attachment as multipart form data", () => {
   const attachment = new File(["reference"], "room-plan.pdf", { type: "application/pdf" });
   const payload = serializeEnquiry({ ...validValues, attachment });

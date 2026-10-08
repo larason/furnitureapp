@@ -41,7 +41,7 @@ async function resolveProductContext(value: string | string[] | undefined): Prom
 
   try {
     const detail = await getProductDetail(value);
-    if (!detail || detail.source !== "api" || detail.product.product_type !== "MADE_TO_ORDER") return { status: "unavailable" };
+    if (detail?.source !== "api" || detail.product.product_type !== "MADE_TO_ORDER") return { status: "unavailable" };
     const image = selectPrimaryImage(detail.product.images);
     return {
       status: "ready",

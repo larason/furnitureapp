@@ -54,6 +54,12 @@ test("requires a name and at least one contact method", () => {
   assert.equal(errors.contact, "Enter a phone number or email address.");
 });
 
+test("rejects an email address with multiple at signs", () => {
+  const errors = validateFurnitureRequest({ ...validValues, phone: "", email: "asha@furnitures@example.com" });
+
+  assert.equal(errors.contact, "Enter a valid email address with 255 characters or fewer.");
+});
+
 test("rejects client-invalid quantity, dimensions, and attachments before submission", () => {
   const errors = validateFurnitureRequest({
     ...validValues,
