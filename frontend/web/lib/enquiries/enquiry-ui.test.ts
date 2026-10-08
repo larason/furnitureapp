@@ -26,6 +26,6 @@ test("enquiry form uses the existing API client and current Clerk token only whi
   assert.match(form, /component="form" method="post" onSubmit=\{handleSubmit\}/);
   assert.match(form, /status === 413/);
   assert.match(form, /status === 429/);
-  assert.match(form, /attachmentInputRef\.current\.value = ""/);
+  assert.match(form, /useSubmissionFormState/);
   assert.doesNotMatch(form + api, /X-Upload-Token|localStorage|sessionStorage|Server Action|fetch\(/);
 });

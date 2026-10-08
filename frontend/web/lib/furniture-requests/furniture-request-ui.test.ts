@@ -31,7 +31,7 @@ test("request form uses the single API client with an ephemeral Clerk bearer", (
   assert.match(form, /hasProductContextError\(error\)/);
   assert.match(form, /\[413, "The attachment is too large/);
   assert.match(form, /status === 429/);
-  assert.match(form, /attachmentInputRef\.current\.value = ""/);
+  assert.match(form, /useSubmissionFormState/);
   assert.doesNotMatch(form + api, /X-Upload-Token|localStorage|sessionStorage|Server Action|fetch\(/);
 });
 

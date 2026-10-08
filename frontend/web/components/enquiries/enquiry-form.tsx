@@ -12,9 +12,10 @@ import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction, type SubmitEvent } from "react";
+import { type Dispatch, type ReactNode, type SetStateAction, type SubmitEvent } from "react";
 import { ApiConfigurationError, ApiError, ApiTransportError, createApiClient } from "@/lib/api/client";
 import { MAX_ENQUIRY_ATTACHMENT_BYTES, serializeEnquiry, validateEnquiry, type EnquiryFieldErrors, type EnquiryFormValues } from "@/lib/enquiries/submission";
+import { useSubmissionFormState } from "@/lib/forms/use-submission-form-state";
 
 const browserApiRequest = createApiClient({ baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL });
 const ATTACHMENT_TIMEOUT_MS = 120_000;
@@ -26,17 +27,7 @@ type EnquiryResponse = Readonly<{ enquiry_status?: string }>;
 export function EnquiryForm() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const hasAuthenticatedSession = isLoaded && isSignedIn === true;
-  const [values, setValues] = useState<EnquiryFormValues>(INITIAL_VALUES);
-  const [fieldErrors, setFieldErrors] = useState<EnquiryFieldErrors>({});
-  const [submissionMessage, setSubmissionMessage] = useState<string>();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const acknowledgementRef = useRef<HTMLDivElement>(null);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isSubmitted) acknowledgementRef.current?.focus();
-  }, [isSubmitted]);
+  const { values, fieldErrors, setFieldErrors, submissionMessage, setSubmissionMessage, isSubmitting, setIsSubmitting, isSubmitted, setIsSubmitted, acknowledgementRef, attachmentInputRef, updateField, updateAttachment, removeAttachment } = useSubmissionFormState<FieldName, EnquiryFormValues>(INITIAL_VALUES);
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,21 +65,6 @@ export function EnquiryForm() {
     } finally {
       setIsSubmitting(false);
     }
-  }
-
-  function updateField(field: FieldName, value: string) {
-    setValues((current) => ({ ...current, [field]: value }));
-    setFieldErrors((current) => ({ ...current, [field]: undefined, contact: field === "phone" || field === "email" ? undefined : current.contact }));
-  }
-
-  function updateAttachment(attachment: File | null) {
-    setValues((current) => ({ ...current, attachment }));
-    setFieldErrors((current) => ({ ...current, attachment: undefined }));
-  }
-
-  function removeAttachment() {
-    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
-    updateAttachment(null);
   }
 
   let submitLabel = "Send as visitor";

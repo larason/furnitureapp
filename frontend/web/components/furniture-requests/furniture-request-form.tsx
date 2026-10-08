@@ -9,9 +9,10 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Image from "next/image";
-import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction, type SubmitEvent } from "react";
+import { useState, type Dispatch, type ReactNode, type SetStateAction, type SubmitEvent } from "react";
 import { ApiConfigurationError, ApiError, ApiTransportError, createApiClient } from "@/lib/api/client";
 import { MAX_ATTACHMENT_BYTES, serializeFurnitureRequest, validateFurnitureRequest, type FurnitureRequestFieldErrors, type FurnitureRequestFormValues } from "@/lib/furniture-requests/submission";
+import { useSubmissionFormState } from "@/lib/forms/use-submission-form-state";
 
 const browserApiRequest = createApiClient({ baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL });
 const ATTACHMENT_TIMEOUT_MS = 120_000;
@@ -58,19 +59,9 @@ type RequestResponse = Readonly<{ reference?: string; request_reference?: string
 
 export function FurnitureRequestForm({ product }: Readonly<{ product?: FurnitureRequestProductContext }>) {
   const { isLoaded, isSignedIn, getToken } = useAuth();
-  const [values, setValues] = useState<FurnitureRequestFormValues>(INITIAL_VALUES);
-  const [fieldErrors, setFieldErrors] = useState<FurnitureRequestFieldErrors>({});
-  const [submissionMessage, setSubmissionMessage] = useState<string>();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const { values, fieldErrors, setFieldErrors, submissionMessage, setSubmissionMessage, isSubmitting, setIsSubmitting, isSubmitted, setIsSubmitted, acknowledgementRef, attachmentInputRef, updateField, updateAttachment, removeAttachment } = useSubmissionFormState<FieldName, FurnitureRequestFormValues>(INITIAL_VALUES);
   const [useProductContext, setUseProductContext] = useState(Boolean(product));
   const [productUnavailable, setProductUnavailable] = useState(false);
-  const acknowledgementRef = useRef<HTMLDivElement>(null);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isSubmitted) acknowledgementRef.current?.focus();
-  }, [isSubmitted]);
 
   const linkedProductId = useProductContext ? product?.id : undefined;
 
@@ -110,21 +101,6 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
     } finally {
       setIsSubmitting(false);
     }
-  }
-
-  function updateField(field: FieldName, value: string) {
-    setValues((current) => ({ ...current, [field]: value }));
-    setFieldErrors((current) => ({ ...current, [field]: undefined, contact: field === "phone" || field === "email" ? undefined : current.contact }));
-  }
-
-  function updateAttachment(attachment: File | null) {
-    setValues((current) => ({ ...current, attachment }));
-    setFieldErrors((current) => ({ ...current, attachment: undefined }));
-  }
-
-  function removeAttachment() {
-    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
-    updateAttachment(null);
   }
 
   let submitLabel = "Submit as visitor";
