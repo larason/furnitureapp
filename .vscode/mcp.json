@@ -4,14 +4,27 @@
 			"url": "https://mcp.clerk.com/mcp",
 			"type": "http"
 		},
-	    "dart": {
-            "command": "dart",
-            "args": ["mcp-server"]
-    },
-    "marionette": {
-            "command": "dart",
-            "args": ["pub", "global", "run", "marionette_mcp"]
-    }
+		"dart": {
+			"command": "dart",
+			"args": [
+				"mcp-server"
+			],
+			"type": "stdio"
+		},
+		"marionette": {
+			"command": "dart",
+			"args": [
+				"pub",
+				"global",
+				"run",
+				"marionette_mcp"
+			],
+			"type": "stdio"
+		},
+		"Clerk Flutter SDK": {
+			"type": "http",
+			"url": "https://docs.page/clerk-community/clerk-sdk-flutter/mcp"
+		}
 	},
 	"inputs": []
 }
