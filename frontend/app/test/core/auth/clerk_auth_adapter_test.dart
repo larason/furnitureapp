@@ -62,6 +62,12 @@ void main() {
       adapter.dispose();
     });
 
+    test('unavailable fallback can be disposed safely', () {
+      final adapter = ClerkAuthAdapter.unavailable();
+
+      expect(adapter.dispose, returnsNormally);
+    });
+
     test('returns the current Clerk session token when signed in', () async {
       final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
       final adapter = ClerkAuthAdapter(gateway: gateway);
@@ -120,6 +126,24 @@ void main() {
         adapter.dispose();
       },
     );
+
+    test('initialization does not clear a previous sign-out block', () async {
+      final gateway = _FakeGateway(
+        signedIn: true,
+        token: 'clerk-token',
+        signOutError: StateError('sign out failed'),
+      );
+      final adapter = ClerkAuthAdapter(gateway: gateway);
+      await adapter.initialize();
+      await expectLater(adapter.signOut(), throwsStateError);
+
+      gateway.signedIn = true;
+      await adapter.initialize();
+
+      expect(adapter.status, ClerkAuthStatus.signedOut);
+      expect(await adapter.getToken(), isNull);
+      adapter.dispose();
+    });
 
     test('rejects a token that completes after sign out starts', () async {
       final delayedToken = Completer<String?>();

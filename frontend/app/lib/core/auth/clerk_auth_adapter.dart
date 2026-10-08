@@ -24,6 +24,7 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   }
 
   ClerkAuthAdapter.unavailable() : _gateway = _UnavailableGateway() {
+    _changesSubscription = _gateway.changes.listen(_handleGatewayChange);
     _status = ClerkAuthStatus.temporarilyUnavailable;
   }
 
@@ -57,14 +58,22 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
       ),
     );
     final adapter = ClerkAuthAdapter(gateway: _ClerkAuthGateway(auth));
-    await adapter.initialize();
-    return adapter;
+    try {
+      await adapter.initialize();
+      return adapter;
+    } catch (error, stackTrace) {
+      try {
+        adapter.dispose();
+      } catch (_) {
+        // Preserve the initialization failure as the public error.
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   Future<void> initialize() async {
     try {
       await _gateway.initialize();
-      _localSessionBlocked = false;
       _setStatus(_currentStatus);
     } catch (_) {
       _setStatus(ClerkAuthStatus.temporarilyUnavailable);
