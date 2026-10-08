@@ -36,7 +36,11 @@ metadata:
 
 ### Normalization vs. Canonicalization (`p.normalize` vs. `p.canonicalize`)
 * `p.normalize(path)` resolves `.` and `..` segments purely lexically without consulting the filesystem or standardizing case.
-* When deduplicating directory paths or comparing physical file identity across symlinks, relative roots, or case-insensitive filesystems, use `p.canonicalize(path)`.
+* `p.canonicalize(path)` is also a lexical normalization tool; reserve it for
+  lexical path comparisons and deduplication.
+* When identifying whether paths refer to the same physical file, resolve
+  symlinks through the filesystem first (`File(path).resolveSymbolicLinks()` or
+  `Directory(path).resolveSymbolicLinks()`), then compare the resolved paths.
 
 ### Strip Location Specifiers & Convert URIs Safely
 * Strings formatted as `<path>:<line>-<col>` or `<path>:<line>` are not pure file paths. Passing them directly to `p.normalize` or `Uri.parse` causes bugs (on Windows, `Uri.parse` mistakes `C:` for a URI scheme and `:line` for a port).
@@ -118,7 +122,12 @@ with relative prefix patterns:
 import 'package:path/path.dart' as p;
 
 String computeWebAssetKey(String filePath, String projectRoot) {
-  final relative = p.relative(filePath, from: projectRoot);
+  final root = p.normalize(p.absolute(projectRoot));
+  final file = p.normalize(p.absolute(filePath));
+  if (file == root || !p.isWithin(root, file)) {
+    throw ArgumentError('filePath must be inside projectRoot');
+  }
+  final relative = p.relative(file, from: root);
   final segments = p.split(relative);
   return switch (segments) {
     ['assets', ...] => p.posix.joinAll(segments),

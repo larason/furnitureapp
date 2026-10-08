@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -388,6 +389,7 @@ void main() {
 
   group('package:http transport', () {
     test('disables redirects and uses abortable JSON requests', () async {
+      final abortTrigger = Completer<void>();
       final httpClient = RecordingHttpClient(
         body: utf8.encode('{"data":{"ok":true}}'),
       );
@@ -402,7 +404,7 @@ void main() {
             'Content-Type': 'application/json',
           },
           body: ApiJsonBody(Uint8List.fromList(utf8.encode('{"ok":true}'))),
-          abortTrigger: Future<void>.value(),
+          abortTrigger: abortTrigger.future,
         ),
       );
 

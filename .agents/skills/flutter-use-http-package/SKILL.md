@@ -43,7 +43,9 @@ Execute HTTP operations and map responses to strongly typed Dart objects.
 *   **URIs:** Always parse URL strings using `Uri.parse('your_url')`.
 *   **Headers:** Inject authorization and content-type headers via the `headers` parameter map. Use `HttpHeaders.authorizationHeader` for auth tokens.
 *   **Payloads:** For POST and PUT requests, encode the body using `jsonEncode()` from `dart:convert`.
-*   **Status Validation:** Evaluate `response.statusCode`. Treat `200 OK` (GET/PUT/DELETE) and `201 CREATED` (POST) as success. 
+*   **Status Validation:** Evaluate `response.statusCode` against the endpoint's
+    documented success statuses. Success may include `200 OK`, `201 CREATED`,
+    `202 ACCEPTED`, or `204 NO CONTENT`; do not assume one status per method.
 *   **Error Handling:** Throw explicit exceptions for non-success status codes. Never return `null` on failure, as this prevents `FutureBuilder` from triggering its error state and causes infinite loading indicators.
 *   **Deserialization:** Parse the raw string using `jsonDecode(response.body)` and map it to a custom Dart object using a factory constructor (e.g., `fromJson`).
 
@@ -65,7 +67,10 @@ Use the following checklist to implement and validate network operations.
 - [ ] 3. Apply conditional logic based on the operation type:
   - **If fetching data (GET):** Append query parameters to the URI.
   - **If mutating data (POST/PUT):** Set `'Content-Type': 'application/json; charset=UTF-8'` and attach the `jsonEncode` body.
-  - **If deleting data (DELETE):** Return an empty model instance on success (`200 OK`).
+  - **If deleting data (DELETE):** Accept the endpoint's documented success
+    statuses, including `204 NO CONTENT` where applicable. Do not decode a
+    response body for `204` and do not fabricate one; return a dedicated empty
+    result such as `void`/`null` only when the client contract permits it.
 - [ ] 4. Validate the `statusCode` and throw an `Exception` on failure.
 - [ ] 5. Integrate the `Future` into the UI using `FutureBuilder`.
 - [ ] 6. Handle `snapshot.hasData`, `snapshot.hasError`, and default to a `CircularProgressIndicator`.
