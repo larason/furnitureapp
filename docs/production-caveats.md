@@ -28,6 +28,7 @@ frontend.
 | --- | --- | --- | --- |
 | `SITE_URL` | REQUIRED | Public website origin for canonical, Open Graph/Twitter, JSON-LD, sitemap, and robots `Sitemap:` directive | Missing: absolute SEO URLs are omitted, sitemap is an empty `<urlset>`, robots omits the `Sitemap:` line, and JSON-LD site entities are omitted. Invalid/malformed: throws `SiteUrlError`. |
 | `API_BASE_URL` | REQUIRED | Laravel API origin (all catalog/domain requests) | Missing/blank or non-HTTPS (except localhost) throws `ApiConfigurationError`; requests fail. |
+| `NEXT_PUBLIC_API_BASE_URL` | REQUIRED for Phase 15.9 release | Public HTTPS Laravel API origin for direct browser `REQ-001` submission only | Missing/invalid: furniture-request submissions fail safely. Must be a public origin, never a private host, credential, path, query, or secret. |
 | `CATALOG_MEDIA_BASE_URL` | ASSESS | Public catalog media/CDN origin for `next/image` remote patterns | Falls back to `API_BASE_URL`. If images are served from a different origin and this is unset, `next/image` fails to load them. |
 | `HOMEPAGE_DATA_SOURCE` | DO NOT set to `fixtures` | Selects `api` (default) or `fixtures` catalog source | Any value other than `api`/`fixtures` throws `Invalid homepage data source.` and 500s pages. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | REQUIRED for Clerk | Client-safe Clerk instance configuration | Clerk auth UI/session initialization fails when absent or invalid. |
@@ -55,6 +56,14 @@ Details:
   logout are Clerk-owned. Laravel receives only request-scoped bearer tokens for
   protected API calls and remains authoritative for local roles, account state,
   and authorization.
+- **REQUIRED — Phase 15.9 browser transport.** Configure Laravel
+  `CORS_ALLOWED_ORIGINS` with the exact website HTTPS origin(s), production Clerk
+  issuer/keys/authorized parties, and the public `NEXT_PUBLIC_API_BASE_URL` above.
+  Do not introduce a Next.js proxy, Route Handler, Server Action, or alternate
+  API client for `REQ-001`.
+- **REQUIRED — request body limits.** The deployed reverse proxy must accept at
+  least 6 MiB request bodies, preserving Laravel's 5 MiB inline attachment
+  contract plus multipart overhead. Verify this with a real browser request.
 
 ---
 
@@ -190,7 +199,7 @@ them until their owning phase ships:
 - customer account and orders — deferred; Clerk customer sign-in/sign-up is
   implemented, but no customer account/dashboard route exists yet;
 - cart, checkout, payment, order confirmation — deferred (request-first release);
-- furniture requests (`/furniture-requests`) and general enquiries (`/contact`);
+- general enquiries (`/contact`);
 - comprehensive internal-linking, image/performance hardening (later Group N
   phases).
 
@@ -215,8 +224,13 @@ them until their owning phase ships:
 8. Submit/verify the sitemap in Search Console (manual step).
 9. Smoke test Clerk sign-up, required email verification, sign-in, password
    recovery, sign-out, and a token-backed `GET /api/v1/me`; confirm public pages
-   remain accessible signed out and no Clerk/Laravel token reaches page HTML.
-10. Re-run the frontend suite (`npm run test:seo`, `test:structured-data`,
+    remain accessible signed out and no Clerk/Laravel token reaches page HTML.
+10. Verify `/furniture-requests` from the deployed website origin: CORS
+    preflight, anonymous and authenticated Clerk JSON submissions, and anonymous
+    and authenticated 5 MiB multipart submissions. Confirm attachments remain
+    private, no `X-Upload-Token` is rendered or persisted, and reverse-proxy
+    limits permit the upload.
+11. Re-run the frontend suite (`npm run test:furniture-requests`, `test:seo`, `test:structured-data`,
    `test:crawl`, `test:links`, `test:filters`, `test:search`,
    `test:product-detail`, `test:products`, `test:category`, `test:homepage`,
     `test:api`, `test:theme`, `test:layout`, `test:responsive`, `test:states`,

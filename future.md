@@ -38,3 +38,18 @@ Local-user lifecycle: Successful Clerk sign-up/sign-in does not itself guarantee
  2. Guest-cart cookies: When Group F implements the browser-facing guest-cart flow, verify credentials: 'include', cookie attributes, and the exact frontend/backend host relationship.
  3. Frontend API transport: Keep NEXT_PUBLIC_API_BASE_URL unused until the client-side transport decision is formally approved. Avoid introducing a second API transport accidentally.
 4. Production deployment: Configure CORS_ALLOWED_ORIGINS using the actual deployed frontend origins and rerun the CORS integration tests.
+
+14. HUMAN ACTION REQUIRED
+Why: Production deployment and origins do not exist yet, so the full transport cannot be demonstrated.
+Action: On deployment, set for the API host:
+  CORS_ALLOWED_ORIGINS=<exact production website origin(s)>
+  CLERK_SECRET_KEY / CLERK_ISSUER / CLERK_AUTHORIZED_PARTIES=<production Clerk instance>
+  reverse-proxy client body limit >= 6 MiB
+  and for the website: NEXT_PUBLIC_API_BASE_URL=https://<public API origin>
+Expected result: preflight + anonymous/authenticated JSON and 5 MiB multipart succeed from the production origin over HTTPS.
+
+15. /var/www/html/furnitureapp/phases/group-O-phases.md
+- Requires public anonymous submission and optional Clerk bearer association, while the currently implemented auth bridge is server-only.
+- Prohibits a new BFF/route-handler proxy, alternate HTTP client, token persistence, and Server Actions without validating 5 MiB attachment limits.
+- Requires JSON without attachment and inline FormData with attachment; the existing API client supports both.
+- Requires no auto-retry for POST ambiguity and distinct handling for 409, 401, 403, 404, 413, 422, 429, timeout, and network failures.

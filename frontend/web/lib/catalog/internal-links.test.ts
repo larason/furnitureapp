@@ -92,13 +92,14 @@ test("global navigation stays semantic, fixture-backed, and free of placeholder 
   assert.match(read("components/layout/site-footer.tsx"), /inactive: true/);
 });
 
-test("only implemented routes are activated and reserved storefront routes stay inactive", () => {
+test("only implemented routes are activated while deferred storefront routes stay inactive", () => {
   assert.equal(isSiteRouteImplemented("/"), true);
   assert.equal(isSiteRouteImplemented("/products"), true);
   assert.equal(isSiteRouteImplemented("/search"), true);
   assert.equal(isSiteRouteImplemented("/categories/living-room"), true);
   assert.equal(isSiteRouteImplemented("/products/fixture-open-frame-armchair"), true);
-  for (const reserved of ["/furniture-requests", "/contact", "/account", "/account/orders", "/cart", "/checkout"]) {
+  assert.equal(isSiteRouteImplemented("/furniture-requests"), true);
+  for (const reserved of ["/contact", "/account", "/account/orders", "/cart", "/checkout"]) {
     assert.equal(isSiteRouteImplemented(reserved), false, `${reserved} must remain inactive`);
   }
 });
