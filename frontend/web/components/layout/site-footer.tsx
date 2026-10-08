@@ -5,7 +5,7 @@ import { CATEGORY_NAVIGATION_FIXTURE } from "./category-navigation.fixture";
 import { BrandMark } from "./brand-mark";
 import { ContentContainer } from "./content-container";
 import { NavLink } from "./nav-link";
-import { SITE_SERVICE_LINKS } from "./site-navigation";
+import { SITE_INFORMATION_LINKS, SITE_SERVICE_LINKS } from "./site-navigation";
 
 const footerLinkSx = {
   display: "inline-flex",
@@ -64,7 +64,7 @@ export function SiteFooter() {
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1.4fr 1fr 1fr" },
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1.4fr 1fr 1fr 1fr" },
             gap: { xs: 5, md: 6 },
           }}
         >
@@ -78,6 +78,7 @@ export function SiteFooter() {
           </Box>
           <FooterGroup title="Furniture" links={categoryLinks} />
           <FooterGroup title="Services" links={SITE_SERVICE_LINKS} />
+          <FooterGroup title="Information" links={SITE_INFORMATION_LINKS} />
         </Box>
         <Divider sx={{ my: { xs: 4, md: 6 } }} />
         <Typography variant="caption" color="text.secondary">

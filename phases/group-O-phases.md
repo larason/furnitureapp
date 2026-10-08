@@ -1,291 +1,534 @@
-# Phase 15.10 — Enquiry/Contact UI
-## Group O — Final Implementation Phase
+# Phase 15.11 — Legal, Privacy & About Pages
+## Group O — Final Website Completion Phase
 
 ### Objective
 
-Implement the complete Enquiry/Contact user interface for the furniture e-commerce website.
+Implement three polished, responsive, accessible, and production-structured informational pages for the furniture e-commerce website:
 
-Customers and visitors must be able to contact the business through a clear, accessible, responsive enquiry form.
+1. Privacy Policy
+2. Terms of Service
+3. About Us
 
-The implementation must integrate with the existing Laravel enquiry API while preserving the frozen Version 1 API contract.
+Integrate these pages into the existing footer and navigation architecture.
 
-This is the final phase of Group O. Do not expand its scope into unrelated functionality.
+This phase extends Group O. Group P must not begin until Phase 15.11's required local implementation criteria have passed.
 
-### 1. Mandatory Repository Inspection
-
-Before implementation:
-
-1. Read `AGENTS.md`, the current Group O phase documentation, and the frozen API contract.
-2. Review Phase 15.9's implementation and verification results.
-3. Inspect the Laravel enquiry endpoints, request validation, authentication policy, rate limiting, and error contracts.
-4. Inspect the existing Next.js App Router structure, shared API client, Clerk integration, design tokens, MUI theme, reusable components, and navigation.
-5. Identify existing contact-related routes, components, or placeholders.
-6. Check whether the enquiry API supports anonymous and authenticated submissions.
-7. Inspect the canonical request and response examples.
-
-Do not assume the enquiry endpoint, field names, validation limits, or response shape.
-
-Use the repository as the source of truth.
-
-If an essential contract is missing or contradictory, report the issue rather than inventing a replacement.
-
-### 2. Enquiry/Contact Page
-
-Implement the contact experience using the established routing conventions.
-
-Prefer `/contact` as the public-facing route unless the project already defines another canonical route.
-
-The page should provide:
-
-- A clear heading and brief introduction.
-- A well-structured enquiry form.
-- Existing verified business contact information, where available.
-- Appropriate submission, loading, success, and error states.
-- A responsive layout for desktop, tablet, and mobile.
-
-Do not invent a business address, telephone number, email address, operating hours, or social media account.
-
-Use the existing Nike-inspired design system, MUI theme, design tokens, and reusable primitives.
-
-Do not introduce new visual tokens, arbitrary colors, spacing values, typography scales, or competing component styles.
-
-### 3. Enquiry Form
-
-Build the form strictly from the frozen enquiry API contract.
-
-Fields may include name, email, phone, subject, and message only where supported by the backend contract.
-
-Requirements:
-
-1. Use the exact API field names and permitted values.
-2. Apply client-side validation consistent with backend constraints.
-3. Clearly identify required and optional fields.
-4. Provide accessible labels and field-level error messages.
-5. Preserve entered values after recoverable validation or network errors.
-6. Disable duplicate submissions while a request is pending.
-7. Support keyboard navigation and screen readers.
-8. Never silently discard user input.
-9. Do not add file attachments unless explicitly supported by the enquiry contract.
-
-The Laravel API remains authoritative for validation.
-
-### 4. Authentication and API Integration
-
-Use the existing approved API transport.
-
-Do not introduce:
-
-- A second API client.
-- A Next.js proxy.
-- An unapproved Server Action submission path.
-- A new authentication mechanism.
-- Direct database access from the frontend.
-
-If the backend supports anonymous enquiries, allow visitors to submit without signing in.
-
-If authenticated enquiries are supported, reuse the existing Clerk bearer-token integration.
-
-Do not require authentication unless the frozen API contract requires it.
-
-Do not assume that authenticated profile information automatically overrides submitted contact fields.
-
-Follow the existing API conventions for request IDs, validation errors, rate limiting, and response handling.
-
-### 5. Submission Lifecycle
-
-Implement a predictable submission lifecycle:
-
-**Idle:** Form is editable and ready.
-
-**Submitting:** Show progress and prevent duplicate submissions.
-
-**Validation error:** Display the backend's field-level validation errors without clearing the form.
-
-**Rate limited:** Display an appropriate message and respect `Retry-After` when provided.
-
-**Network failure:** Display a recoverable error and preserve entered values.
-
-**Success:** Show a clear acknowledgement based on the actual API response.
-
-**Unknown outcome:** If the request may have reached the server but the response was lost, do not automatically resubmit it.
-
-Do not implement automatic retries for non-idempotent enquiry creation.
-
-Do not promise response times, email notifications, or reference numbers unless those behaviors are supported by the backend.
-
-### 6. Navigation and Discoverability
-
-Integrate the contact page into existing website navigation.
-
-Inspect the current header, footer, mobile navigation, and related links before changing them.
-
-Requirements:
-
-- Avoid duplicate navigation entries.
-- Preserve existing navigation hierarchy.
-- Use the canonical contact route consistently.
-- Verify that all contact links resolve correctly.
-- Preserve responsive navigation behavior.
-
-Do not redesign unrelated navigation components.
-
-### 7. SEO, Accessibility, and Responsiveness
-
-Follow existing Next.js metadata and SEO conventions.
-
-Implement appropriate page title, description, and canonical metadata.
-
-Do not introduce fabricated structured business information.
-
-Ensure:
-
-- Responsive behavior across established breakpoints.
-- WCAG-aligned form labels, error announcements, and focus handling.
-- Accessible success and failure feedback.
-- Proper loading and disabled states.
-- No unexpected layout shifts.
-- No unnecessary client-side rendering of static content.
-
-Prefer a server-first page structure, with client components limited to functionality requiring browser interaction.
-
-### 8. Security and Privacy
-
-Enforce the existing application security boundaries.
-
-- Do not expose Clerk secrets or private environment variables.
-- Do not log enquiry contents, authentication tokens, or unnecessary personal information.
-- Do not introduce public access to private API resources.
-- Do not bypass backend rate limiting or validation.
-- Do not introduce CAPTCHA or third-party anti-spam services without approval.
-- Do not expose internal error traces to users.
-- Do not persist enquiry form data in browser storage unless already authorized by project requirements.
-
-Treat all user-entered content as untrusted.
-
-### 9. Automated Verification
-
-Add focused tests following the repository's established test conventions.
-
-Cover:
-
-1. Public page rendering.
-2. Required-field validation.
-3. Optional-field behavior.
-4. Successful anonymous submission, where supported.
-5. Authenticated submission, where supported.
-6. Backend validation errors.
-7. Rate limiting and `Retry-After`.
-8. Network failures.
-9. Duplicate-submission prevention.
-10. Success acknowledgement.
-11. Accessibility and keyboard navigation.
-12. Responsive layouts.
-13. Contact navigation links.
-14. Existing API client compatibility.
-
-Run the relevant existing regression suites, including type checking, linting, and production build.
-
-Do not modify unrelated tests merely to obtain a passing result.
-
-### 10. Browser Verification — Chrome DevTools MCP
-
-Use the configured local `chrome-devtools` MCP server to test the implementation in a real browser.
-
-Verify:
-
-- Contact page navigation and rendering.
-- Form interaction and validation.
-- Anonymous submission.
-- Authenticated submission, where supported.
-- Actual network requests to Laravel.
-- Successful response handling.
-- Error and rate-limit behavior.
-- Desktop and mobile layouts.
-- Browser console errors.
-- Accessibility-related interaction issues.
-
-Use the actual locally running Laravel backend when feasible.
-
-Clean up disposable test records and artifacts.
-
-Do not claim browser verification succeeded unless the relevant browser checks actually ran.
-
-### 11. Production Gate Preservation
-
-Phase 15.9's production transport gate remains BLOCKED.
-
-Do not treat successful local enquiry submission as production readiness.
-
-Preserve the outstanding requirements for:
-
-- Deployed HTTPS API origin.
-- Exact production CORS origins.
-- Production Clerk configuration.
-- Reverse-proxy request limits.
-- Production browser transport verification.
-
-These requirements must remain visible in Group O's final status.
-
-Do not reopen or modify the Phase 15.9 implementation unless a genuine regression is discovered.
-
-### 12. Group O Closure
-
-After implementing Phase 15.10:
-
-1. Review all Group O phases against their documented acceptance criteria.
-2. Confirm that local implementation and verification are complete for each applicable phase.
-3. Identify any unresolved defects, deferred decisions, or production-only verification requirements.
-4. Update the existing Group O phase documentation.
-5. Record the tests executed and their actual results.
-6. Clearly separate implementation completion from production readiness.
-7. Preserve unrelated working-tree changes.
-
-**Group O may be marked LOCAL IMPLEMENTATION COMPLETE only if every required local acceptance criterion passes.**
-
-Do not mark Group O fully production-ready while the Phase 15.9 production transport gate remains blocked.
-
-### 13. Completion Report
-
-Provide:
-
-- Files created or modified.
-- Enquiry API contract used.
-- Routes and navigation integrated.
-- Anonymous/authenticated behavior.
-- Validation and submission states.
-- Automated test results.
-- Chrome DevTools MCP browser verification results.
-- Outstanding issues.
-- Final Phase 15.10 status.
-- Final Group O status.
-
-### Definition of Done
-
-Phase 15.10 is locally complete when the public contact experience is functional, accessible, responsive, integrated with the frozen Laravel enquiry contract, verified through automated tests and real-browser testing, and free of unresolved required local implementation blockers.
-
-Group O closure must preserve all outstanding production release gates.
+The implementation must strictly follow the project's established design system and preserve all existing architecture and API contracts.
 
 ---
 
-## Implementation Status — 2026-10-08
+## 1. Mandatory Repository Inspection
 
-### Phase 15.9 — Furniture Request UI
+Before making changes, inspect:
 
-- Local implementation and transport verification: **PASS**.
-- Production browser transport and release: **BLOCKED** pending a deployed HTTPS API origin, exact production CORS origins, production Clerk configuration, reverse-proxy body limit verification, and deployed-browser verification.
+- Root `AGENTS.md` and relevant nested agent instructions.
+- `phases/group-O-phases.md` and existing Phase 15.10 closure notes.
+- The established Next.js App Router structure.
+- Existing footer and navigation components.
+- MUI theme implementation.
+- Existing design-system tokens and component primitives.
+- The Nike-inspired design-system source files, where retained.
+- Current responsive breakpoints and typography conventions.
+- Existing SEO, metadata, accessibility, and testing patterns.
+- Project documentation containing verified business details, customer policies, payment terms, delivery rules, and data-handling behavior.
 
-### Phase 15.10 — Enquiry/Contact UI
+Do not begin implementation until the relevant design-system implementation and content sources have been identified.
 
-- Implemented `/contact` as a server-first, `noindex, follow` public contact page with canonical metadata and existing service-navigation links.
-- `ENQ-001` uses the frozen `POST /api/v1/enquiries` contract: anonymous submission requires `name`, at least one contact method, `subject` (5-200), and plain-text `message` (10-5000); optional category and one private inline attachment follow the closed backend contract.
-- Browser submission uses the existing API client with the approved public `NEXT_PUBLIC_API_BASE_URL` origin. It sends an ephemeral Clerk bearer only while a signed-in visitor submits; no proxy, Server Action, second client, token persistence, or attachment upload capability is introduced.
-- Local browser verification: desktop and 390px mobile rendering passed; empty-form validation exposes labelled field errors; anonymous JSON submission preflight returned `204` and `POST /api/v1/enquiries` returned `201` with the OPEN acknowledgement. The disposable browser enquiry was deleted after verification.
-- Automated verification: focused enquiry tests (6); Laravel ENQ contract suites (155 tests, 698 assertions); all web regression scripts; `npm run typecheck`; `npm run lint -- --max-warnings=0`; `npm run build`.
-- Authenticated API behavior is covered by the Laravel ENQ suites. Authenticated browser submission is not yet demonstrated because no disposable Clerk browser session is available.
+**Important:** The existing implemented MUI theme and approved project tokens are authoritative. The original Nike reference system must not override intentional project-specific adaptations.
 
-### Group O Status
+## 2. Strict Design-System Enforcement
 
-- **LOCAL IMPLEMENTATION COMPLETE: BLOCKED** until the authenticated `ENQ-001` browser submission is verified with a disposable Clerk customer session.
-- **PRODUCTION READY: BLOCKED**. Phase 15.9/15.10 require a deployed HTTPS Laravel origin, exact production CORS origins, production Clerk issuer/keys/authorized parties, reverse-proxy request bodies of at least 6 MiB, and deployed-browser anonymous/authenticated JSON plus 5 MiB multipart verification.
+This is a mandatory requirement, not a recommendation.
 
-Proceed with repository inspection first, then implement Phase 15.10 according to existing architecture and design conventions. Do not invent API contracts, change frozen behavior, or expand scope without authorization.
+All three pages must use the existing approved design system.
+
+### 2.1 Token-only styling
+
+Use existing tokens for:
+
+- Colors and semantic color roles.
+- Typography families, sizes, weights, and line heights.
+- Spacing and layout gaps.
+- Container widths and responsive breakpoints.
+- Border colors, widths, and radii.
+- Shadows and elevation.
+- Interactive states.
+- Focus indicators.
+- Component dimensions.
+
+Do not introduce arbitrary values or new design tokens.
+
+### 2.2 Forbidden styling practices
+
+Do not:
+
+- Hardcode hex, RGB, HSL, or other color values.
+- Use arbitrary pixel-based spacing or typography.
+- Invent new visual effects or decorative gradients.
+- Create new button variants without approval.
+- Introduce new font families.
+- Override MUI tokens with local CSS values.
+- Copy IKEA, Nike, or another website's visual elements directly.
+- Create page-specific design systems.
+- Use generic AI-generated marketing layouts that conflict with the existing website.
+
+Avoid excessive cards, unnecessary rounded containers, decorative icons, and visually unrelated sections.
+
+### 2.3 Reuse existing primitives
+
+Prefer existing components for:
+
+- Page containers.
+- Headings and text.
+- Breadcrumbs.
+- Links and buttons.
+- Section layouts.
+- Dividers.
+- Responsive content grids.
+- Navigation elements.
+
+If a genuinely reusable component is missing, implement it using existing tokens and document why it was necessary.
+
+Do not duplicate existing primitives.
+
+### 2.4 Design-system compliance review
+
+Before declaring completion:
+
+1. Audit every new component for token compliance.
+2. Check for hardcoded colors, spacing, typography, and breakpoints.
+3. Confirm all responsive behavior follows existing MUI conventions.
+4. Run existing theme and design-system tests.
+5. Inspect the rendered pages with Chrome DevTools MCP.
+
+Any design-system violation is a required defect.
+
+---
+
+## 3. Privacy Policy Page
+
+**Route:** `/privacy-policy`
+
+Create a clear, readable Privacy Policy page.
+
+Use the project's actual architecture and verified data-handling behavior as the factual basis.
+
+Review the existing implementation of:
+
+- Clerk authentication.
+- Customer accounts and profiles.
+- Cart and checkout.
+- Orders and payments.
+- Furniture requests.
+- General enquiries.
+- Cookies and guest-cart credentials.
+- Private attachment handling.
+- Backend logging and security.
+- Any analytics, messaging, or third-party integrations actually used.
+
+The document should address, where applicable:
+
+1. Information collected.
+2. Purposes of processing.
+3. Authentication and account information.
+4. Orders, payments, and delivery information.
+5. Furniture requests and enquiries.
+6. Cookies and session technologies.
+7. Third-party service providers.
+8. Data security.
+9. Retention and deletion.
+10. Customer privacy rights.
+11. Policy updates.
+12. Contact information for privacy enquiries.
+
+### Legal content safeguards
+
+Do not invent:
+
+- A registered company name.
+- A physical business address.
+- A privacy contact email.
+- Specific data-retention periods.
+- Regulatory registrations.
+- Legal guarantees.
+- Third-party processing arrangements.
+- Data-transfer mechanisms.
+
+Research the applicable legal jurisdiction from project documentation.
+
+Do not assume the business is legally registered in a particular jurisdiction merely because of its currency or target market.
+
+Draft content must accurately describe verified behavior and clearly identify missing legal/business decisions.
+
+If substantive legal information is unavailable, mark the policy as **DRAFT — LEGAL REVIEW REQUIRED** in project documentation and prevent unapproved legal text from being presented as a finalized binding policy.
+
+Do not silently publish fabricated or incomplete legal commitments.
+
+---
+
+## 4. Terms of Service Page
+
+**Route:** `/terms-of-service`
+
+Implement a structured Terms of Service page aligned with the actual furniture e-commerce business model.
+
+Inspect the frozen contracts and existing documented policies before drafting.
+
+Address relevant subjects such as:
+
+1. Introduction and acceptance of terms.
+2. Account registration and customer responsibilities.
+3. Product descriptions and availability.
+4. Product variants and pricing.
+5. In-stock purchases.
+6. Made-to-order furniture requests.
+7. Order placement and confirmation.
+8. Payment handling.
+9. Delivery and self-pickup.
+10. Order status and fulfillment.
+11. Cancellations, returns, and refunds.
+12. Product warranties, where applicable.
+13. Intellectual property.
+14. Acceptable use.
+15. Liability and dispute handling.
+16. Updates to the terms.
+17. Contact information.
+
+### Business-rule accuracy
+
+Preserve documented Version 1 business rules.
+
+For example:
+
+- Browsing is available without registration.
+- Checkout requires an authenticated customer account.
+- Furniture requests may be submitted anonymously.
+- Delivery and self-pickup follow existing backend contracts.
+- Do not imply that made-to-order enquiries automatically create purchases.
+- Do not promise payment methods or refunds that have not been implemented or approved.
+
+Do not invent a cancellation window, return period, warranty duration, refund entitlement, or governing-law clause.
+
+Where business or legal approval is required, identify the decision explicitly.
+
+Legal review is required before the Terms of Service are treated as production-approved.
+
+---
+
+## 5. About Us Page
+
+**Route:** `/about`
+
+Create an attractive, credible About Us page consistent with the furniture brand's established visual identity.
+
+The page should communicate the business clearly without unnecessary marketing exaggeration.
+
+Suggested content structure:
+
+### Introduction
+
+Explain what the furniture business offers.
+
+### What We Offer
+
+Describe the supported business model:
+
+- Ready-to-purchase furniture.
+- Made-to-order furniture enquiries.
+- Product customization where supported.
+- Delivery or self-pickup according to existing policies.
+
+### Our Approach
+
+Explain the value of furniture quality, functionality, and thoughtful design without making unverified manufacturing or sourcing claims.
+
+### Explore Our Furniture
+
+Provide a contextual link to the existing product catalog.
+
+### Request Custom Furniture
+
+Link to the existing `/furniture-requests` experience.
+
+### Contact Us
+
+Link to `/contact`.
+
+### Content requirements
+
+Do not invent:
+
+- Founding dates.
+- Founder identities.
+- Employee counts.
+- Factory locations.
+- Years of experience.
+- Customer testimonials.
+- Awards or certifications.
+- Sustainability claims.
+- Manufacturing capabilities not supported by the business documentation.
+
+Use verified brand assets and existing product imagery when appropriate.
+
+Do not introduce stock imagery or unrelated illustrations merely to fill space.
+
+The page should feel like a natural extension of the existing storefront.
+
+---
+
+## 6. Shared Informational Page Architecture
+
+Use a consistent page structure for the Privacy Policy and Terms of Service.
+
+Prefer server-rendered content using Next.js App Router.
+
+Requirements:
+
+- Semantic heading hierarchy.
+- Readable content width.
+- Consistent section spacing.
+- Clear document titles.
+- Effective-date information only when verified or approved.
+- Accessible links.
+- Mobile-friendly text layout.
+- No unnecessary client-side JavaScript.
+
+If the project already has a reusable editorial or content layout, reuse it.
+
+Do not introduce a CMS, Markdown rendering framework, or additional dependency unless justified by an existing requirement.
+
+Keep content maintainable and separate from unnecessarily complex presentation logic.
+
+---
+
+## 7. Footer Integration
+
+Inspect the existing footer architecture.
+
+Add or activate the following links:
+
+| Label | Destination |
+|---|---|
+| About Us | `/about` |
+| Privacy Policy | `/privacy-policy` |
+| Terms of Service | `/terms-of-service` |
+| Contact Us | `/contact` |
+
+Follow existing footer grouping, typography, spacing, hover, focus, and responsive conventions.
+
+Do not redesign the footer.
+
+Do not duplicate links already present.
+
+Verify the footer on desktop, tablet, and mobile.
+
+All links must use the existing navigation conventions and resolve without errors.
+
+---
+
+## 8. SEO and Metadata
+
+Follow the existing Next.js metadata conventions.
+
+Each page must have:
+
+- A unique title.
+- An appropriate description.
+- A canonical URL.
+- Correct semantic HTML.
+- Appropriate indexing directives.
+
+The About page may be indexable when its content is approved and accurate.
+
+Privacy Policy and Terms of Service should use the indexing policy appropriate to the project's launch status.
+
+Do not automatically copy the `/contact` page's `noindex, follow` behavior.
+
+However, do not expose unapproved draft legal documents as finalized production policies.
+
+If the website is not yet ready for public indexing, preserve the existing site-wide indexing restrictions.
+
+---
+
+## 9. Accessibility and Responsive Requirements
+
+Follow established accessibility and responsive design conventions.
+
+Verify:
+
+- Semantic landmarks.
+- Correct heading order.
+- Keyboard-accessible navigation.
+- Visible focus indicators.
+- Sufficient text contrast.
+- Readable line lengths.
+- Proper text wrapping.
+- No horizontal overflow.
+- Mobile-friendly spacing.
+- Support for browser zoom and text scaling.
+
+Do not suppress accessibility warnings.
+
+Investigate any failures and distinguish pre-existing issues from newly introduced defects.
+
+---
+
+## 10. Automated Testing
+
+Add focused tests for the three new routes.
+
+Test:
+
+1. Successful route rendering.
+2. Correct metadata.
+3. Canonical URLs.
+4. Expected page headings.
+5. Semantic content structure.
+6. Footer navigation.
+7. Internal links.
+8. Responsive behavior.
+9. Accessibility.
+10. Design-system token compliance.
+
+Run existing regression suites where applicable:
+
+- Routing and links.
+- Layout.
+- Responsive design.
+- Theme.
+- Accessibility.
+- SEO.
+- Performance.
+- TypeScript type checking.
+- ESLint.
+- Production build.
+
+Do not weaken tests or alter unrelated expectations merely to obtain passing results.
+
+---
+
+## 11. Chrome DevTools MCP Verification
+
+Use the configured `chrome-devtools` MCP server.
+
+Open each route in a real browser:
+
+- `/privacy-policy`
+- `/terms-of-service`
+- `/about`
+
+Verify desktop and mobile rendering.
+
+Inspect:
+
+- Typography and spacing.
+- Container alignment.
+- Footer link behavior.
+- Responsive layout.
+- Browser console errors.
+- Accessibility issues.
+- Navigation behavior.
+- Unexpected layout shifts.
+
+Capture screenshots for visual comparison with existing storefront pages.
+
+Check that all pages maintain the same design language as the existing website.
+
+Do not claim browser verification succeeded unless it was actually performed.
+
+---
+
+## 12. Documentation and Group O Closure
+
+Extend the existing Group O phase documentation with:
+
+**Phase 15.11 — Legal, Privacy & About Pages**
+
+Record:
+
+- Implementation scope.
+- Route decisions.
+- Design-system requirements.
+- Verified content sources.
+- Legal review dependencies.
+- Acceptance criteria.
+- Test evidence.
+- Production restrictions.
+
+After Phase 15.11 passes local verification, review the complete Group O implementation.
+
+Preserve the existing Phase 15.9 production transport blocker and Phase 15.10 authenticated-browser verification limitation.
+
+Do not silently change their statuses.
+
+Group O may be marked **LOCAL IMPLEMENTATION COMPLETE** only when every required local criterion is satisfied.
+
+Legal policy approval and production transport verification must remain explicit release gates.
+
+Do not begin Group P automatically.
+
+---
+
+## 13. Required Completion Report
+
+Provide:
+
+1. Files created or modified.
+2. Routes implemented.
+3. Footer links integrated.
+4. Design-system components and tokens reused.
+5. Results of the token-compliance audit.
+6. Privacy Policy content status.
+7. Terms of Service content status.
+8. About Us content status.
+9. Automated test results.
+10. Chrome DevTools MCP verification results.
+11. Outstanding legal and production requirements.
+12. Final Phase 15.11 and Group O statuses.
+
+### Definition of Done
+
+Phase 15.11 is locally complete when all three routes are implemented, visually consistent with the existing design system, accessible, responsive, correctly linked from the footer, and verified through automated tests and Chrome DevTools MCP.
+
+Privacy Policy and Terms of Service must not be considered legally approved until the appropriate business/legal review is completed.
+
+Group O must not be marked production-ready while existing deployment, authentication verification, or legal approval gates remain unresolved.
+
+**Implementation directive:** Inspect the repository first, reuse existing architecture, enforce approved design tokens strictly, implement all three pages, verify them in the browser, and update Group O documentation without modifying unrelated features.
+
+---
+
+## Phase 15.11 Closure Record
+
+### Implementation scope
+
+- Added server-rendered `/about`, `/privacy-policy`, and `/terms-of-service` App Router pages.
+- Added the `InformationPage`, `DocumentSection`, and `DraftLegalNotice` editorial primitives using MUI typography, alerts, stacks, and the existing `SiteSection` layout.
+- Added an Information footer group with About Us, Privacy Policy, and Terms of Service links. The existing enquiry label is now Contact Us.
+- All three routes use canonical metadata and `noindex, follow`; they are intentionally absent from the sitemap until their business content is approved.
+
+### Verified content and legal status
+
+- Content is limited to verified current website behavior: public catalog browsing, made-to-order requests and enquiries, Clerk authentication, Laravel-backed validation and authorization, private attachments, and the request-first release scope.
+- Privacy Policy and Terms of Service are prominently marked `DRAFT — LEGAL REVIEW REQUIRED`. They do not invent a business address, privacy contact, retention period, jurisdiction, governing law, refund/return entitlement, warranty, or other unapproved business term.
+- About content is intentionally factual and minimal. It remains `noindex, follow` until approved business copy is available.
+
+### Local verification
+
+- Passed: `npm run test:information`
+- Passed: `npm run test:links`
+- Passed: `npm run test:theme`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint -- --max-warnings=0`
+- Passed: `npm run build`
+- Passed: `git diff --check`
+- Chrome DevTools MCP verified each route on desktop and mobile viewports. The rendered accessibility trees show a single page heading, sequential content headings, semantic footer navigation, and named links. Screenshots were captured for all desktop/mobile route combinations.
+- The browser console has no page error. It retains the expected local-development Clerk warning about development keys.
+
+### Release gates and status
+
+- **Phase 15.11: LOCAL IMPLEMENTATION COMPLETE.**
+- **Group O: LOCAL IMPLEMENTATION COMPLETE.** Group P must not begin automatically.
+- Legal/business approval remains required before the Privacy Policy, Terms of Service, and About page can be treated as final or indexable.
+- Preserve the existing Phase 15.9 production transport blocker: a production HTTPS Laravel API origin, exact CORS origins, production Clerk configuration, reverse-proxy body limit of at least 6 MiB, and deployed-browser JSON/multipart verification are still required.
+- Preserve the existing Phase 15.10 limitation: authenticated browser `ENQ-001` verification remains pending a disposable Clerk customer session.

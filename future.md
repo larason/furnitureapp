@@ -53,3 +53,6 @@ Expected result: preflight + anonymous/authenticated JSON and 5 MiB multipart su
 - Prohibits a new BFF/route-handler proxy, alternate HTTP client, token persistence, and Server Actions without validating 5 MiB attachment limits.
 - Requires JSON without attachment and inline FormData with attachment; the existing API client supports both.
 - Requires no auto-retry for POST ambiguity and distinct handling for 409, 401, 403, 404, 413, 422, 429, timeout, and network failures.
+
+16.  Legal/business approval required before publishing/indexing these pages.
+- Existing Phase 15.9 production transport and Phase 15.10 authenticated enquiry-browser verification blockers remain.

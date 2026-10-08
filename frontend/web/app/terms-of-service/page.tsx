@@ -1,0 +1,10 @@
+import Typography from "@mui/material/Typography";
+import type { Metadata } from "next";
+import { DocumentSection, DraftLegalNotice, InformationPage } from "@/components/information/information-page";
+import { NOINDEX_FOLLOW, createPageMetadata } from "@/lib/seo/metadata";
+
+export const metadata: Metadata = createPageMetadata({ title: "Terms of Service", description: "Draft service information for SL Furnitures.", canonicalPath: "/terms-of-service", robots: NOINDEX_FOLLOW });
+
+export default function TermsOfServicePage() {
+  return <InformationPage title="Terms of Service" introduction="The current website service model and the decisions still awaiting approval."><DraftLegalNotice /><DocumentSection title="Using the website"><Typography>Visitors may browse the public furniture catalog without an account. Customers are responsible for information submitted through accounts, enquiries, and furniture requests. The website must not be used to interfere with its operation or submit unlawful or harmful material.</Typography></DocumentSection><DocumentSection title="Furniture and made-to-order requests"><Typography>Catalog descriptions, availability, and product information are provided through the website. A made-to-order furniture request or general enquiry is not an order, quotation, payment, delivery confirmation, or production commitment. Commercial terms require a separate business agreement.</Typography></DocumentSection><DocumentSection title="Purchases and fulfilment"><Typography>The Version 1 production release is request-first. Cart, checkout, payment, order, delivery, pickup, cancellation, return, refund, and warranty terms are not active customer website features and have not been approved for publication here.</Typography></DocumentSection><DocumentSection title="Changes and legal review"><Typography>Business identity, jurisdiction, dispute handling, liability, intellectual-property terms, and contact details require legal and business approval. Any approved terms will identify their effective date and update process.</Typography></DocumentSection></InformationPage>;
+}

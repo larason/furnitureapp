@@ -5,13 +5,19 @@ export type ServiceLink = {
 
 export const SITE_SERVICE_LINKS: readonly ServiceLink[] = [
   { label: "Made to Order", href: "/furniture-requests" },
-  { label: "Furniture Enquiries", href: "/contact" },
+  { label: "Contact Us", href: "/contact" },
+];
+
+export const SITE_INFORMATION_LINKS: readonly ServiceLink[] = [
+  { label: "About Us", href: "/about" },
+  { label: "Privacy Policy", href: "/privacy-policy" },
+  { label: "Terms of Service", href: "/terms-of-service" },
 ];
 
 // Routes in web/ROUTING.md that currently resolve to an implemented App Router
 // page. Reserved routes render as non-interactive structural content until the
 // owning phase ships, so the shell never exposes a broken navigation link.
-export const IMPLEMENTED_SITE_ROUTES: readonly string[] = ["/", "/products", "/search", "/sign-in", "/sign-up", "/furniture-requests", "/contact"];
+export const IMPLEMENTED_SITE_ROUTES: readonly string[] = ["/", "/products", "/search", "/sign-in", "/sign-up", "/furniture-requests", "/contact", "/about", "/privacy-policy", "/terms-of-service"];
 
 const IMPLEMENTED_DYNAMIC_ROUTE_PATTERNS = [/^\/categories\/[^/]+$/, /^\/products\/[^/]+$/];
 
