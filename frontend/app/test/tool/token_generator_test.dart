@@ -33,6 +33,44 @@ void main() {
     );
   });
 
+  test('converts hex alpha from CSS order to Flutter ARGB order', () {
+    const declaration = '--color-warm-100: #fcf4ed;';
+
+    String convert(String hex) => generateTokensDart(
+      canonicalCss.replaceFirst(declaration, '--color-warm-100: $hex;'),
+    );
+
+    // CSS #RRGGBBAA keeps alpha last; Flutter 0xAARRGGBB keeps it first.
+    expect(
+      convert('#fcf4ed99'),
+      contains('static const Color colorWarm100 = Color(0x99FCF4ED);'),
+    );
+    // CSS #RGBA expands to #RRGGBBAA first, then reorders identically.
+    expect(
+      convert('#fcf4'),
+      contains('static const Color colorWarm100 = Color(0x44FFCCFF);'),
+    );
+    // Existing 3- and 6-digit behaviour is unchanged.
+    expect(
+      convert('#fcf4ed'),
+      contains('static const Color colorWarm100 = Color(0xFFFCF4ED);'),
+    );
+    expect(
+      convert('#fcf'),
+      contains('static const Color colorWarm100 = Color(0xFFFFCCFF);'),
+    );
+    expect(
+      () => convert('#fcf4ed9'),
+      throwsA(
+        isA<TokenGenerationException>().having(
+          (error) => error.message,
+          'message',
+          contains('Unsupported color value'),
+        ),
+      ),
+    );
+  });
+
   test('converts measurements, durations, ratios, and families', () {
     expect(generated, contains('static const double space10 = 80;'));
     expect(generated, contains('static const double borderWidth = 1.5;'));

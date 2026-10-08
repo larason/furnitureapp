@@ -62,14 +62,18 @@ Future<int> _verify(File outputFile, String generated) async {
     return 1;
   }
   final expected = await formattedDartSource(generated);
-  if (expected != null && outputFile.readAsStringSync() == expected) {
-    stdout.writeln('Token generation: OK (generated tokens are current).');
-    return 0;
+  if (expected == null) {
+    stderr.writeln('Token verification failed because dart format failed.');
+    return 1;
   }
-  stderr.writeln(
-    'Generated tokens are stale. Run: dart run tool/generate_tokens.dart',
-  );
-  return 1;
+  if (outputFile.readAsStringSync() != expected) {
+    stderr.writeln(
+      'Generated tokens are stale. Run: dart run tool/generate_tokens.dart',
+    );
+    return 1;
+  }
+  stdout.writeln('Token generation: OK (generated tokens are current).');
+  return 0;
 }
 
 /// Formats a candidate output in a scratch file so write and check modes apply

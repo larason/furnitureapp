@@ -407,14 +407,22 @@ String _colorLiteral(String value) {
   if (value == 'transparent') return 'Color(0x00000000)';
   final rgb = _rgbColor.firstMatch(value);
   if (rgb != null) return _rgbLiteral(value);
+  return 'Color(0x${_hexToFlutter(value)})';
+}
+
+/// Converts CSS `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` into Flutter's
+/// `0xAARRGGBB` literal order: CSS keeps alpha last, Flutter keeps it first.
+String _hexToFlutter(String value) {
   final hex = value.replaceFirst('#', '');
-  final expanded = hex.length == 3
-      ? hex.split('').map((character) => '$character$character').join()
-      : hex;
-  if (expanded.length != 6) {
-    throw TokenGenerationException('Unsupported color value: "$value".');
-  }
-  return 'Color(0xFF${expanded.toUpperCase()})';
+  final digits = switch (hex.length) {
+    3 || 4 => hex.split('').map((character) => '$character$character').join(),
+    6 || 8 => hex,
+    _ => throw TokenGenerationException('Unsupported color value: "$value".'),
+  };
+  final argb = digits.length == 8
+      ? '${digits.substring(6)}${digits.substring(0, 6)}'
+      : 'FF$digits';
+  return argb.toUpperCase();
 }
 
 String _rgbLiteral(String value) {
