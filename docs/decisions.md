@@ -690,6 +690,18 @@ The website keeps public catalog/SEO and anonymous request/enquiry pages public.
 
 ---
 
+### ADR/AUTH-015 — Flutter Phase 16.5 Clerk Session Adapter
+
+**Decision:** The Android Flutter app uses `clerk_auth` `0.0.18-beta`, the current community-maintained Clerk Dart package compatible with the installed Dart/Flutter versions. The package is isolated behind `ClerkAuthAdapter` and the existing SDK-independent `AuthTokenProvider`; feature code does not import Clerk types. Clerk's documented `Auth.initialize`, `Auth.sessionToken`, `sessionTokenStream`, and `Auth.signOut` APIs own restoration, token renewal, and sign-out. The package's plaintext `DefaultPersistor` is not used. A `SecureClerkPersistor` serializes only the SDK-required state into `flutter_secure_storage`, backed by Android Keystore encryption, and Android backup is disabled to prevent encrypted-state/key mismatches after restore.
+
+The adapter represents initialization, signed-out, signed-in, action-required, and temporarily-unavailable states. Pending Clerk sessions and in-progress security flows cannot provide a Laravel bearer token. Auth initialization failure leaves the public app available with authenticated requests unavailable; it does not fabricate a session or silently grant protected access. Live authenticated verification remains blocked until a real publishable key and supported development sign-in workflow are supplied. This phase adds no sign-in UI and no Laravel auth protocol.
+
+**Reason:** The official Clerk Flutter SDK path is not currently available as a stable official package. This is the narrowest documented compatible integration, keeps storage encrypted, preserves the Laravel bearer boundary, and isolates the beta dependency for future replacement.
+
+**Status:** Accepted for Phase 16.5 | **Affected:** `frontend/app/lib/core/auth/`, `frontend/app/lib/main.dart`, `frontend/app/lib/app.dart`, `frontend/app/pubspec.yaml`, `frontend/app/android/app/src/main/AndroidManifest.xml`, `frontend/app/README.md`
+
+---
+
 ### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
 
 **Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.

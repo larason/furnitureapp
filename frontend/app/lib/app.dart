@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
+import 'core/auth/clerk_auth_adapter.dart';
 import 'core/network/api_client.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
@@ -23,11 +24,15 @@ class SLFurnituresApp extends StatefulWidget {
     required this.config,
     this.apiClient,
     this.ownsApiClient = false,
+    this.authAdapter,
+    this.ownsAuthAdapter = false,
   });
 
   final AppConfig config;
   final ApiClient? apiClient;
   final bool ownsApiClient;
+  final ClerkAuthAdapter? authAdapter;
+  final bool ownsAuthAdapter;
 
   @override
   State<SLFurnituresApp> createState() => _SLFurnituresAppState();
@@ -38,6 +43,9 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
   void dispose() {
     if (widget.ownsApiClient) {
       widget.apiClient?.close();
+    }
+    if (widget.ownsAuthAdapter) {
+      widget.authAdapter?.dispose();
     }
     super.dispose();
   }

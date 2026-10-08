@@ -1,1072 +1,630 @@
-# Phase 16.4 — Flutter Networking Layer
-## Group P — Flutter Application Foundation
+# Phase 16.5 — Authentication Storage & Session
 
-**Project:** SL Furnitures — Android Customer App
-**Status:** COMPLETE
-**Prerequisites:** Phases 16.1, 16.2, and 16.3 complete
+**Project:** SL Furnitures — Flutter Android Customer Application  
+**Group:** P — Flutter Application Foundation  
+**Prerequisite:** Phase 16.4 completed  
+**Implementation status:** READY
 
 ## 1. Objective
 
-Implement a production-quality, domain-neutral HTTP networking layer for the Flutter Android application.
+Implement secure, persistent Clerk authentication session management for the Flutter Android application and connect it to the existing Phase 16.4 networking layer.
 
-The networking layer must consume the existing validated `AppConfig.apiBaseUrl`, communicate with Laravel's frozen `/api/v1` API, preserve typed response and error contracts, and provide a secure authentication injection boundary for the future Clerk integration.
+The application must be able to:
 
-This phase must implement real transport behavior, not a collection of placeholder classes.
+1. Initialize its Clerk client safely.
+2. Restore an existing authenticated session after app restart.
+3. Maintain accurate authentication state.
+4. Obtain a current Clerk session token for authenticated Laravel API requests.
+5. Support Clerk-managed session renewal.
+6. Sign out through Clerk.
+7. Clear or invalidate session-dependent application state appropriately.
+8. Continue supporting anonymous access without authentication.
 
-However, it must not implement application features, Clerk session management, customer screens, or business-domain repositories.
+This is an authentication infrastructure phase, not a sign-in UI phase.
 
-### Core principles
+**Non-negotiable:** Clerk is the only authentication authority. Laravel is the authority for application roles, ownership, permissions, and business account state.
 
-1. One authoritative HTTP transport boundary.
-2. One canonical API version prefix.
-3. Explicit request authentication requirements.
-4. Strongly typed success and error handling.
-5. Bounded timeouts and request cancellation.
-6. No automatic replay of requests.
-7. No storage of bearer credentials.
-8. No duplicated Laravel business rules.
-9. Deterministic tests with mocked HTTP responses.
-10. Minimal, justified dependencies.
+## 2. Mandatory inspection
 
----
+Before implementation, read:
 
-## 2. Mandatory Repository Inspection
-
-Before writing code, inspect:
-
-- Root `AGENTS.md`.
-- `frontend/AGENTS.md`.
-- Flutter project `README.md`.
-- Phase 16.3 completion report and configuration implementation.
-- `docs/decisions.md`.
-- Group P phase records.
-- `frontend/web/lib/api/client.ts`.
-- `docs/api/api-contract.md`.
-- `docs/api/api-conventions.md`.
-- `docs/api/openapi.yaml`.
-- `docs/api/api-resources.md`.
+- Root and Flutter `AGENTS.md`.
+- `frontend/mobile` or the actual Flutter application directory.
+- Existing Flutter README.
+- `docs/decisions.md`, especially ADR/AUTH-009 through AUTH-013.
 - `docs/clerk-authentication-architecture.md`.
-- Laravel route registration and error-response implementation.
-- Current Flutter `pubspec.yaml`, test conventions, and application entry point.
+- Group P Phase 16.1–16.4 records.
+- `docs/api/openapi.yaml`.
+- `docs/api/api-conventions.md`.
+- `docs/api/api-contract.md`.
+- `frontend/web` Clerk integration for reference.
+- Phase 16.3 `AppConfig` implementation.
+- Phase 16.4 `ApiClient`, `AuthTokenProvider`, cancellation, and API error handling.
+- Existing Flutter test conventions and Android build configuration.
 
-Treat the actual repository as authoritative.
+Determine the actual Phase 16.5 scope in the repository's Group P plan. If this instruction conflicts with a frozen decision, follow the frozen decision and report the conflict.
 
-The Next.js API client is a behavioral reference, not an implementation template to copy mechanically.
+Do not overwrite or duplicate an existing abstraction.
 
-Confirm the installed Flutter/Dart versions and current dependency compatibility before choosing a networking library.
+## 3. Clerk SDK selection and feasibility gate
 
-### Inspection deliverables
+Before adding dependencies, investigate the current official Clerk Flutter/Dart SDK and any maintained compatible alternatives.
 
-Document:
+Verify against authoritative package documentation:
 
-- Existing configuration API and constructor requirements.
-- Existing HTTP dependencies, if any.
-- Canonical Laravel request and response contracts.
-- Actual request ID and `Retry-After` conventions.
-- Existing authentication boundary.
-- Relevant API headers.
-- Frozen pagination structure.
-- Whether a live public read endpoint can be used for integration testing.
+- Android support.
+- Compatibility with the installed Flutter/Dart versions.
+- Compatibility with the existing Clerk application.
+- Session restoration.
+- Secure session persistence.
+- Session token acquisition.
+- Token renewal behavior.
+- Sign-out.
+- Authentication state notifications.
+- Handling of pending security tasks.
+- Package maintenance and stability.
 
-Do not modify the frozen backend contract to accommodate Flutter.
+**Prefer an official maintained Clerk integration where it satisfies the requirements.**
 
----
+If no suitable package exists, investigate a narrow supported integration, but do not invent a proprietary authentication protocol.
 
-## 3. HTTP Client Selection
+Do not independently implement Clerk's session cookies, refresh tokens, or token exchange from undocumented endpoints.
 
-Prefer Dart's maintained `package:http` unless repository inspection demonstrates a concrete need for Dio or another client.
+### Required decision
 
-The Phase 13.5 Next.js client uses native `fetch` with a small transport abstraction. Follow the same architectural philosophy.
+Record the selected SDK, version, supported APIs, persistence mechanism, and limitations.
 
-Avoid adding Dio solely to obtain interceptors, automatic retries, or generic service abstractions.
+If a secure supported session-restoration path cannot be established, stop before implementing a custom workaround and report the blocker.
 
-The selected implementation must support:
+Do not claim persistence is secure merely because a package calls its storage mechanism secure.
 
-- GET, POST, PATCH, PUT where contracted, and DELETE.
-- JSON request bodies.
-- JSON response parsing.
-- Request headers.
-- Auth token injection.
-- Timeout handling.
-- Explicit cancellation.
-- Mockable transport.
-- Multipart support at the transport level if required by the frozen API.
+## 4. Authentication architecture
 
-If `package:http` is selected, inspect its supported cancellation mechanism, including `AbortableRequest` where applicable. Do not assume a `Future.timeout()` wrapper cancels an underlying socket request.
+Implement a small, testable architecture.
 
-Implement cancellation only through a mechanism actually supported by the chosen client.
-
-Do not build an unnecessary interceptor framework.
-
----
-
-## 4. Recommended File Organization
-
-Adapt names to existing conventions.
+Suggested structure, adaptable to repository conventions:
 
 ```text
 lib/
   core/
-    network/
-      api_client.dart
-      api_request.dart
-      api_response.dart
-      api_error.dart
-      api_transport_exception.dart
-      api_pagination.dart
-      auth_token_provider.dart
-      request_cancellation.dart
-      network_constants.dart
-
-test/
-  core/
-    network/
-      api_client_test.dart
-      api_response_test.dart
-      api_error_test.dart
-      api_pagination_test.dart
-      api_auth_test.dart
-      api_cancellation_test.dart
-      api_security_test.dart
+    auth/
+      auth_repository.dart
+      clerk_auth_adapter.dart
+      auth_session_state.dart
+      auth_session_controller.dart
+      auth_failure.dart
 ```
 
-This is an architectural guide, not a mandatory file count.
+Create only files justified by real responsibilities.
 
-Prefer cohesive classes and avoid one-file-per-trivial-type fragmentation.
+### AuthRepository
 
-Do not introduce a broad `core/` framework that extends beyond networking.
+Expose a narrow, SDK-independent contract for:
 
----
+- Initializing authentication.
+- Reading current session state.
+- Observing authentication changes.
+- Acquiring the current session token.
+- Signing out.
+- Disposing listeners and resources.
 
-## 5. Centralized API Client
+Do not expose Clerk SDK objects to feature repositories or screens.
 
-Implement one reusable client responsible for:
+### ClerkAuthAdapter
 
-- Resolving the configured API origin.
-- Constructing versioned request URLs.
-- Applying standard HTTP headers.
-- Encoding request bodies.
-- Sending HTTP requests.
-- Enforcing timeouts.
-- Supporting cancellation.
-- Parsing success responses.
-- Parsing API failures.
-- Preserving response metadata.
-- Injecting authentication only when explicitly requested.
+The adapter owns direct communication with the selected Clerk SDK.
 
-Suggested conceptual API:
+It must:
 
-```dart
-final response = await apiClient.get<Map<String, dynamic>>(
-  '/products',
-  queryParameters: {
-    'per_page': '20',
-  },
-);
-```
+- Use the configured Clerk publishable key.
+- Restore and observe Clerk sessions.
+- Obtain current session tokens using supported SDK methods.
+- Delegate renewal to Clerk.
+- Delegate sign-out to Clerk.
+- Translate SDK failures into safe application-level results.
 
-The final method signature may differ.
+Avoid creating a generic authentication service with unrelated responsibilities.
 
-Ensure the public API is easy for later feature repositories to consume.
+### AuthSessionController
 
-### Dependency injection
+Introduce a controller only if it adds meaningful state coordination beyond the SDK's existing facilities.
 
-The client should receive:
+Do not add a state-management dependency solely for this phase.
 
-- Validated `AppConfig` or its validated API origin.
-- An injectable HTTP transport.
-- An optional `AuthTokenProvider`.
-- A bounded timeout configuration, if justified.
+Use existing Flutter primitives where sufficient.
 
-The HTTP transport must be replaceable in tests.
+## 5. Authentication state model
 
-Do not create a global mutable HTTP singleton.
+Represent at least these conceptual states:
 
-Do not initialize Clerk or call Laravel merely by constructing the client.
+| State | Meaning |
+|---|---|
+| Initializing | Session restoration has not completed |
+| Signed out | No usable Clerk session exists |
+| Authenticated | Clerk reports a usable completed session |
+| Action required | Clerk requires an outstanding verification/security step |
+| Temporarily unavailable | Session validity cannot currently be established |
 
-### Resource ownership
+Adapt the model to the selected SDK's actual state vocabulary.
 
-If the client creates its own underlying HTTP transport, it owns and closes it.
+### Requirements
 
-If a transport is injected by the caller, ownership must remain explicit.
+- Do not represent an unknown session as signed out prematurely.
+- Do not represent a pending security-task session as authenticated.
+- Do not equate local token presence with authentication.
+- Do not equate an authenticated Clerk user with an authorized Laravel CUSTOMER.
+- Do not trust cached email or user metadata as proof of identity.
+- Do not create a second application-specific login session.
 
-Closing the API client must not accidentally close a shared client owned elsewhere.
+Authentication state transitions must be deterministic and testable.
 
----
+## 6. Secure session storage
 
-## 6. API URL Construction
+Use the SDK's supported persistent session mechanism where it provides the required Android security guarantees.
 
-Phase 16.3 guarantees that `API_BASE_URL` is an origin without `/api/v1`.
+If the SDK requires a storage adapter, use an appropriate Android Keystore-backed encrypted storage mechanism.
 
-The networking layer must append `/api/v1` exactly once.
+### Security requirements
 
-Example:
+- No passwords in Flutter application storage.
+- No Clerk secret keys in the APK.
+- No raw bearer tokens in SharedPreferences.
+- No raw bearer tokens in ordinary files.
+- No credentials in SQLite.
+- No credentials in logs, crash reports, or analytics.
+- No credentials in route arguments.
+- No credentials in widget state unnecessarily.
+- No manually persisted bearer-token cache.
+
+Only persist the minimum session material required by the supported Clerk integration.
+
+Document what is stored, how it is protected, and which component owns deletion.
+
+### Android-specific considerations
+
+Inspect:
+
+- Android backup and restore behavior.
+- Device migration behavior.
+- Keystore key availability.
+- Reinstallation behavior.
+- App-data clearing.
+- Secure-storage read failures.
+- Session invalidation after remote revocation.
+
+Ensure encrypted session material cannot become silently reusable or corrupted following a backup/restore mismatch.
+
+Do not disable Android backup globally without understanding the existing app policy.
+
+If storage is unavailable or corrupted, fail safely and preserve anonymous app functionality.
+
+## 7. Session restoration
+
+At application startup:
+
+1. Validate Phase 16.3 configuration.
+2. Initialize the selected Clerk integration.
+3. Attempt supported session restoration.
+4. Resolve the initial authentication state.
+5. Expose that state to the application.
+6. Allow public application functionality regardless of authentication outcome.
+
+Do not make a Laravel `/me` request merely to initialize the networking layer.
+
+Do not block the entire public app indefinitely while Clerk is unavailable.
+
+Use bounded initialization behavior and a recoverable failure state.
+
+### Important
+
+Session restoration is not the same as checking whether an old JWT string exists.
+
+A restored session must be recognized by the Clerk integration as usable.
+
+If connectivity is unavailable and validity cannot be established, do not silently grant protected access.
+
+## 8. Phase 16.4 AuthTokenProvider integration
+
+Implement the concrete adapter for the existing `AuthTokenProvider`.
+
+**Do not redesign the networking layer.**
+
+The flow must be:
 
 ```text
-Configured origin:
-http://127.0.0.1:8000
-
-Request path:
-/products
-
-Final URL:
-http://127.0.0.1:8000/api/v1/products
+Protected feature request
+        |
+        v
+ApiClient — REQUIRED auth
+        |
+        v
+AuthTokenProvider
+        |
+        v
+ClerkAuthAdapter
+        |
+        v
+Current Clerk session token
+        |
+        v
+Authorization: Bearer <token>
+        |
+        v
+Laravel /api/v1
 ```
 
 ### Required behavior
 
-- Never duplicate `/api/v1`.
-- Never allow callers to override the configured API host.
-- Never allow an absolute URL as an ordinary API path.
-- Reject protocol-relative URLs.
-- Reject path traversal attempts.
-- Preserve legitimate encoded resource identifiers.
-- Encode query parameters correctly.
-- Avoid double-encoding query values.
-- Preserve the API's `snake_case` query naming.
-- Handle empty query values according to the frozen contract.
-- Support repeated query keys only where the contract explicitly permits them.
+- Obtain a current token for each authenticated request.
+- Use the SDK's supported renewal mechanism.
+- Do not retain a long-lived bearer token in `ApiClient`.
+- Do not attach Authorization to public requests unless the request explicitly requires optional authentication.
+- Do not attach tokens to third-party image or storage hosts.
+- Do not expose tokens through exception messages.
+- Do not create Laravel sessions or exchange Clerk tokens for custom mobile tokens.
 
-Do not create a generic arbitrary-URL fetch utility.
+The existing `AuthTokenProvider` contract must remain stable unless a proven compatibility issue requires a documented, narrowly scoped change.
 
-The networking layer is exclusively for the trusted Laravel API origin.
+## 9. Token expiry and renewal
 
----
+Clerk owns token lifecycle management.
 
-## 7. HTTP Headers
-
-Apply the canonical API request headers.
-
-### Standard JSON requests
-
-```http
-Accept: application/json
-Content-Type: application/json
-```
-
-`Content-Type` is required when a JSON body is actually sent.
-
-Do not send a misleading JSON content type on multipart requests.
-
-Use UTF-8 JSON encoding.
-
-### Authentication
-
-For authenticated requests:
-
-```http
-Authorization: Bearer <Clerk session token>
-```
-
-The token must be obtained from the injected provider at request time.
-
-Do not retain it as mutable client-wide header state.
-
-### Special contract headers
-
-The transport must permit narrowly controlled, explicitly requested headers such as:
-
-- `Idempotency-Key`
-- `X-Guest-Cart-Id`
-- `X-Upload-Token`
-
-Only where permitted by the frozen endpoint contract.
-
-Do not automatically generate guest-cart credentials, upload tokens, or idempotency keys.
-
-Those belong to later domain workflows.
-
-Protect transport-owned headers from accidental caller overrides.
-
-Do not attach browser cookies, CSRF tokens, or browser-specific headers to the bearer-only Android API path.
-
----
-
-## 8. Authentication Token Provider
-
-Implement a minimal abstraction equivalent to:
-
-```dart
-abstract interface class AuthTokenProvider {
-  Future<String?> getToken();
-}
-```
-
-Adapt naming to the approved Clerk architecture.
-
-The interface must remain independent of Clerk package-specific classes.
-
-### Authentication modes
-
-Support explicit request intent:
-
-- PUBLIC — no bearer token attached.
-- REQUIRED — a valid token must be available before sending.
-
-If an optional-authenticated request mode is required by the frozen contract, introduce it deliberately with documented behavior.
-
-Do not make all public requests automatically authenticated merely because a user is signed in.
-
-### Required behavior
-
-For REQUIRED requests:
-
-1. Ask the provider for the current token.
-2. If unavailable, fail locally with a typed authentication-unavailable result.
-3. Do not send an unauthenticated request accidentally.
-4. Attach the bearer token only to the intended Laravel origin.
-5. Do not persist or log the token.
-
-For PUBLIC requests:
-
-- Do not require Clerk initialization.
-- Do not invoke token acquisition unnecessarily.
-- Do not attach Authorization.
-
-### Phase boundary
-
-Phase 16.4 implements the interface and transport integration only.
-
-Phase 16.5 owns:
-
-- Clerk SDK initialization.
-- Session restoration.
-- Token renewal.
-- Secure storage.
-- Sign-in/sign-out.
-- Authentication state listeners.
-
-Do not introduce a fake production token provider.
-
-Test providers may supply controlled dummy tokens.
-
-### HTTP 401 behavior
-
-Preserve HTTP 401 as a typed API failure.
-
-Do not automatically sign out.
-
-Do not blindly refresh or replay requests.
-
-Phase 16.5 will define how session renewal integrates with the transport while preserving bounded retry semantics.
-
-HTTP 403 must remain distinct from 401.
-
----
-
-## 9. Typed Success Responses
-
-Laravel uses the frozen success envelope:
-
-```json
-{
-  "data": {
-    "id": "123",
-    "name": "Example"
-  }
-}
-```
-
-For collections:
-
-```json
-{
-  "data": [],
-  "meta": {
-    "pagination": {
-      "current_page": 1,
-      "per_page": 20,
-      "total": 0,
-      "last_page": 1,
-      "has_next": false,
-      "has_previous": false
-    }
-  }
-}
-```
-
-Implement typed representations for:
-
-- Single-resource responses.
-- Collection responses.
-- Pagination metadata.
-- Optional response metadata.
-- Server request correlation ID.
-
-### Data parsing
-
-The transport must validate the envelope structure without imposing product-specific schemas.
-
-Later domain repositories own the decoding of individual product, category, request, or profile models.
-
-Do not generate all API domain models in this phase.
-
-### Empty responses
-
-Handle documented successful responses with no body, such as HTTP 204, separately from JSON envelope responses.
-
-Do not treat a legitimately empty response as malformed JSON.
-
-For a success status that contractually requires an envelope, a missing or invalid envelope is a protocol failure.
-
-Do not fabricate `data: null` to hide malformed responses.
-
----
-
-## 10. Structured API Errors
-
-The frozen Laravel error envelope is:
-
-```json
-{
-  "errors": [
-    {
-      "code": "INVALID_VALUE",
-      "message": "The supplied value is invalid.",
-      "field": "delivery_address.city",
-      "details": {}
-    }
-  ],
-  "meta": {
-    "request_id": "request-correlation-id"
-  }
-}
-```
-
-Optional error members must remain optional.
-
-Implement an `ApiError` representation that preserves:
-
-- HTTP status.
-- All returned errors, in order.
-- Machine-readable error code.
-- Human-readable message.
-- Optional field path.
-- Optional structured details.
-- Request correlation ID.
-- Retry-after duration when supplied by the HTTP header.
-
-### Important rules
-
-- `errors` must be treated as an array.
-- Preserve multiple field errors.
-- Preserve canonical dot-path field names.
-- Never branch on English message text.
-- Do not collapse all failures into a generic exception.
-- Do not rewrite server error codes.
-- Do not invent new Laravel machine codes.
-
-Keep the server's CLOSED error-code vocabulary distinct from client-side transport failure kinds.
-
-A future domain layer may map a server code into a localized presentation.
-
-### HTTP status coverage
-
-Test at least:
-
-| HTTP | Expected classification |
-|---|---|
-| 400 | Malformed request |
-| 401 | Authentication failure |
-| 403 | Authorization failure |
-| 404 | Not found |
-| 405 | Method not allowed |
-| 409 | Conflict |
-| 410 | Gone, where applicable |
-| 413 | Payload too large |
-| 415 | Unsupported media type |
-| 422 | Validation/business failure |
-| 429 | Rate limited |
-| 500 | Server failure |
-| 502–504 | Upstream failure |
-
-Preserve the exact HTTP status independently of the API error code.
-
-Do not translate an API 404 into a Flutter route-not-found event inside the transport.
-
----
-
-## 11. Request ID Handling
-
-Laravel returns a server-generated request ID.
-
-The networking layer must support:
-
-- `X-Request-Id` response header.
-- `meta.request_id` in API error responses.
-- Correlation ID preservation in typed failures.
-
-When both sources are present, verify and document the chosen precedence and handling of inconsistencies.
-
-Do not silently invent a new correlation ID to replace Laravel's ID.
-
-Do not use customer IDs, bearer tokens, or resource identifiers as request IDs.
-
-Do not automatically print correlation IDs to logs in this phase.
-
-Phase 16.9 owns application diagnostics.
-
----
-
-## 12. Retry-After Handling
-
-Laravel uses the standard HTTP header:
-
-```http
-Retry-After: 60
-```
-
-Interpret numeric values as seconds.
-
-Preserve the result in a typed property such as:
-
-`retryAfterSeconds`
+The Flutter implementation must use documented SDK methods for obtaining usable session tokens.
 
 ### Rules
 
-- Parse valid non-negative numeric seconds.
-- Reject malformed or negative values safely.
-- Do not interpret numeric values as milliseconds.
-- Do not invent a JSON `retry_after` field.
-- Do not automatically retry a rate-limited request.
-- Preserve HTTP 429 and its machine code.
-- Support `Retry-After` on other responses where the server legitimately supplies it.
+- Do not implement a custom JWT signer.
+- Do not parse JWT claims as a substitute for Clerk session authority.
+- Do not create an independent refresh-token mechanism.
+- Do not store manually calculated token-expiry timestamps as the session authority.
+- Do not refresh continuously in the background without a documented requirement.
+- Do not implement an unbounded renewal loop.
 
-Check the frozen contract before supporting HTTP-date values; do not add behavior that contradicts the existing Next.js transport.
+Where the SDK supports transparent renewal, use it.
 
----
+Where renewal fails, surface a typed authentication failure or appropriate recoverable state.
 
-## 13. Transport Failure Taxonomy
+Preserve the distinction between temporary connectivity failure and confirmed session invalidation.
 
-Separate server-returned API failures from failures where no valid API response was received.
+## 10. Laravel 401 and 403 behavior
 
-Suggested transport failure categories:
+The existing API client already preserves typed HTTP errors.
 
-- Connection failure.
-- DNS resolution failure, where distinguishable.
-- TLS/certificate failure.
-- Timeout.
-- Cancellation.
-- Invalid response JSON.
-- Invalid response envelope.
-- Unsupported response content type, where applicable.
+Integrate authentication state handling without destroying that behavior.
 
-Do not claim distinctions the selected HTTP library cannot reliably identify.
+### HTTP 401
 
-Use safe error messages.
-
-Never expose raw exception strings that might contain sensitive URLs, tokens, request bodies, or device/network internals.
-
-### Failure examples
-
-| Scenario | Classification |
-|---|---|
-| Laravel returns 422 JSON | API failure |
-| Laravel returns 429 JSON | API failure with Retry-After |
-| Server unreachable | Transport failure |
-| TLS certificate rejected | Transport failure |
-| Request times out | Transport failure |
-| User cancels request | Cancellation |
-| HTTP 200 with malformed JSON | Protocol/decoding failure |
-| HTTP 500 with HTML instead of API envelope | Protocol failure retaining HTTP status |
-
-A transport failure must never masquerade as a Laravel domain error.
-
----
-
-## 14. Timeouts and Cancellation
-
-Implement bounded request timeouts.
+May indicate an invalid, expired, revoked, or otherwise unacceptable authentication session.
 
 Requirements:
 
-- No unbounded HTTP request.
-- Timeout duration is centralized and documented.
-- Cancellation can be initiated by the caller.
-- Timeout and explicit cancellation are distinguishable.
-- Cancellation is not reported as an API 500.
-- Late responses must not update canceled operations.
-- Cancellation resources are cleaned up.
-- Underlying connections should be terminated where the HTTP implementation supports it.
+- Preserve the original Laravel error code.
+- Do not automatically sign out on every 401.
+- Do not silently replay mutations.
+- Do not initiate infinite refresh loops.
+- Do not hide `SESSION_EXPIRED` or `INVALID_AUTHENTICATION`.
+- Allow the owning authentication layer to reconcile the session using supported Clerk APIs.
 
-Avoid unnecessary configurable timeout hierarchies.
+If a narrowly bounded renewal/retry mechanism is genuinely necessary, document the exact conditions and prohibit unsafe mutation replay.
 
-### Retry policy
+### HTTP 403
 
-**Do not implement automatic retries in Phase 16.4.**
+Means the request was authenticated but not authorized.
 
-In particular, never automatically replay:
+Do not treat 403 as a reason to refresh or sign out.
 
-- POST requests.
-- PATCH requests.
-- DELETE requests.
-- Checkout or payment operations.
-- Made-to-order submissions.
-- Attachment uploads.
+Laravel remains authoritative for local account status and permissions.
 
-Even a failed or timed-out request may already have been processed by Laravel.
+### Pending sessions
 
-Future retries require endpoint-specific idempotency and reconciliation decisions.
+Clerk sessions with outstanding security tasks must not be treated as fully authenticated.
 
----
+Laravel already rejects pending security-task sessions. The Flutter client must not bypass this boundary.
 
-## 15. JSON and Multipart Boundaries
+## 11. Sign-out behavior
 
-### JSON
+Implement sign-out using Clerk's supported session lifecycle API.
 
-Use canonical JSON serialization.
+### Required sequence
+
+1. Initiate Clerk sign-out for the current session.
+2. Observe or reconcile the resulting Clerk state.
+3. Invalidate the local authenticated session projection.
+4. Notify listeners.
+5. Ensure subsequent REQUIRED API requests cannot use the old token.
+6. Preserve public browsing.
+
+### Important security cases
+
+- In-flight authenticated requests during sign-out.
+- Session changes during token acquisition.
+- Sign-out while offline.
+- SDK sign-out failure.
+- Multiple sessions on different devices.
+- Late authentication callbacks.
+- Restart after successful sign-out.
+
+A late token response from the previous session must not re-authenticate the application.
+
+Where practical, use a session generation/version mechanism to reject stale asynchronous completions.
+
+Do not implement global sign-out across all devices unless explicitly supported and required.
+
+If sign-out fails, do not falsely report that the server-side Clerk session was revoked. Preserve a safe local state and communicate the unresolved remote state.
+
+## 12. Multi-session behavior
+
+The same customer may have sessions on:
+
+- Next.js website.
+- Android phone.
+- Another Android device.
+
+Do not assume one active session globally.
+
+Signing out on Android must not automatically revoke unrelated web sessions.
+
+Do not derive session ownership from email addresses.
+
+Do not use Clerk user metadata to assign Laravel roles.
+
+The backend's `users.clerk_user_id` mapping remains authoritative for linking external identity to local ownership.
+
+## 13. Configuration and secrets
+
+Reuse the Phase 16.3 configuration foundation.
+
+Do not introduce a second `.env` loader.
+
+Only public, client-safe Clerk configuration may be included in Flutter.
+
+Clerk secret keys, backend verification secrets, and privileged API credentials must never be embedded in the Android app.
+
+If Phase 16.3 does not currently provide the required public Clerk configuration, extend its validated configuration narrowly and document the change.
+
+Do not weaken release-mode configuration validation.
+
+Never hardcode a development Clerk key as a production fallback.
+
+## 14. Integration with application startup
+
+Integrate the authentication infrastructure into the existing Flutter bootstrap.
 
 Requirements:
 
-- Encode request objects correctly.
-- Preserve integer values without converting them to floating-point numbers.
-- Do not transform `snake_case` keys into camelCase.
-- Preserve explicit `null` where the contract permits it.
-- Do not remove legitimate empty arrays.
-- Reject unsupported request-body types.
-- Do not silently convert arbitrary objects with `toString()`.
+- Preserve the Phase 16.2 Material 3 theme.
+- Preserve the Phase 16.3 configuration validation.
+- Preserve the Phase 16.4 API client.
+- No unnecessary startup Laravel calls.
+- No sign-in screen in this phase.
+- No new navigation architecture.
+- No duplicate application root.
+- No global mutable Clerk singleton outside the SDK's documented ownership model.
+- Dispose subscriptions and resources correctly.
+
+A Clerk initialization failure must not crash anonymous browsing unless the failure is a genuine invalid application configuration that the existing startup policy treats as fatal.
 
-Money remains integer minor units plus currency.
+## 15. Automated tests
+
+Use a fake SDK gateway or adapter for deterministic tests.
+
+Do not require real Clerk credentials for the main unit-test suite.
+
+### A. Initialization and restoration
+
+Test:
+
+1. No stored session.
+2. Valid restored session.
+3. Expired session.
+4. Revoked session where detectable.
+5. Pending security-task session.
+6. Temporary network failure.
+7. Corrupted session storage.
+8. Repeated initialization.
+9. Initialization timeout or bounded failure.
+10. Safe anonymous fallback.
 
-Do not introduce floating-point money calculations.
+### B. Authentication state
 
-### Multipart
+Test:
 
-The frozen API includes attachment operations.
+11. Initializing to signed out.
+12. Initializing to authenticated.
+13. Authenticated to signed out.
+14. Authenticated to action required.
+15. State notifications.
+16. Listener disposal.
+17. Stale asynchronous callback rejection.
+18. No duplicate event emission where inappropriate.
 
-Support multipart request construction through the selected transport library where necessary.
+### C. Token provider
 
-However:
+Test:
 
-- Do not implement attachment screens.
-- Do not invent upload endpoints.
-- Do not persist upload tokens.
-- Do not implement file selection.
-- Do not implement image compression or transformations.
-- Do not bypass file-size or MIME restrictions.
-- Do not add an upload service that duplicates future feature ownership.
+19. Valid current token returned.
+20. No session returns no token.
+21. Pending session returns no usable token.
+22. Token renewal through SDK.
+23. Renewal failure.
+24. Concurrent token requests.
+25. Session changes during token acquisition.
+26. No bearer token stored in ApiClient.
+27. No token returned from a signed-out session.
 
-If multipart support requires a distinct request path, keep it inside the same centralized API client boundary.
-
----
+### D. Laravel integration
 
-## 16. Response Security and Caching
+Test:
 
-The networking layer must not persist private API responses automatically.
+28. PUBLIC request requires no Clerk token.
+29. REQUIRED request obtains token.
+30. Bearer header attached correctly.
+31. HTTP 401 preserved.
+32. HTTP 403 preserved.
+33. Pending-session token never dispatched.
+34. No automatic unsafe mutation replay.
+35. No custom Laravel authentication endpoint used.
 
-Do not introduce:
-
-- HTTP response disk caching.
-- Offline persistence.
-- Credential caches.
-- Shared cookie jars.
-- Background synchronization.
-- Response logging.
-- Analytics transmission.
-
-Respect the Laravel contract's private/no-store boundaries.
-
-Public catalog caching, if later required, must be implemented deliberately in its owning feature phase.
-
-Do not implement an implicit in-memory global cache.
-
-Do not attach authorization to external image URLs or arbitrary hosts.
-
-The networking client is for Laravel API requests, not Cloudflare R2 image retrieval.
-
----
-
-## 17. Automated Tests
-
-Use mocked transport responses.
-
-Tests must not depend on an active Laravel server, Clerk account, or public internet connection.
-
-### A. URL construction
-
-1. Correct API origin.
-2. `/api/v1` appended once.
-3. Correct path joining.
-4. Correct query encoding.
-5. Repeated parameters where supported.
-6. Absolute URL rejected.
-7. Protocol-relative URL rejected.
-8. Path traversal rejected.
-9. Unexpected API version prefix rejected.
-10. Host cannot be overridden.
+### E. Sign-out
 
-### B. HTTP requests
+Test:
 
-11. GET without body.
-12. POST JSON encoding.
-13. PATCH JSON encoding.
-14. DELETE request.
-15. Correct Accept header.
-16. Correct Content-Type.
-17. Explicit custom header allow-list.
-18. Unsupported header overrides rejected.
+36. Successful Clerk sign-out.
+37. Token unavailable afterward.
+38. Listener notification.
+39. Sign-out failure.
+40. Offline sign-out behavior.
+41. Sign-out during token retrieval.
+42. Sign-out during an in-flight request.
+43. Multiple sessions remain independent.
+44. Restart after sign-out.
 
-### C. Authentication
+### F. Security
 
-19. Public request works without token provider.
-20. Public request does not attach Authorization.
-21. Required request obtains token.
-22. Required request attaches correct bearer header.
-23. Missing token fails before network.
-24. Provider failure is classified safely.
-25. No token persists between requests.
-26. HTTP 401 remains distinct from 403.
-27. No automatic logout.
-28. No automatic authentication retry.
+Test:
 
-### D. Success parsing
+45. No raw token persistence.
+46. No password persistence.
+47. No token in exception text.
+48. No token in logs.
+49. No secret key embedded in configuration.
+50. Secure storage failure handling.
+51. No arbitrary-host bearer forwarding.
+52. No unauthorized local role assignment.
 
-29. Single-resource envelope.
-30. Collection envelope.
-31. Empty collection.
-32. Pagination metadata.
-33. Optional metadata.
-34. HTTP 204 handling.
-35. Invalid success envelope.
-36. Malformed JSON.
-37. Unexpected content type.
+Use the list as a coverage matrix, not a requirement to manufacture exactly 52 separate test functions.
 
-### E. API errors
+Test actual SDK-backed persistence behavior where possible through an Android integration test rather than claiming mocked storage tests prove device security.
 
-38. Single error.
-39. Multiple errors.
-40. Field-level dot paths.
-41. Structured details.
-42. HTTP 401.
-43. HTTP 403.
-44. HTTP 404.
-45. HTTP 409.
-46. HTTP 422.
-47. HTTP 429.
-48. HTTP 500.
-49. HTTP 502/503/504.
-50. Request ID preservation.
-51. Invalid error envelope.
-52. HTML error response.
+## 16. Live integration verification
 
-### F. Transport resilience
+Where a disposable Clerk development customer is available, verify the real authentication boundary.
 
-53. Connection failure.
-54. Timeout.
-55. Explicit cancellation.
-56. Cancellation before dispatch.
-57. Cancellation during request.
-58. Late completion after cancellation.
-59. No automatic retries.
-60. No mutation replay.
-61. Resource cleanup.
+Recommended sequence:
 
-### G. Retry-After
+1. Initialize Clerk on Android.
+2. Authenticate using a supported development-only test workflow or an already established test session.
+3. Verify session restoration after process restart.
+4. Acquire a current session token.
+5. Call `GET /api/v1/me` through the existing ApiClient.
+6. Verify Laravel returns the correct authenticated customer response.
+7. Confirm token handling remains private.
+8. Sign out using Clerk.
+9. Confirm REQUIRED requests can no longer acquire a usable token.
+10. Confirm public catalog requests continue working.
 
-62. Numeric seconds parsed.
-63. Zero seconds accepted.
-64. Invalid value rejected.
-65. Negative value rejected.
-66. Missing header handled.
-67. No automatic retry.
-68. Non-429 supported where contracted.
+Use the real backend and real Clerk development application for this integration test.
 
-### H. Security
+Do not inject arbitrary test JWT strings and call that successful Clerk authentication.
 
-69. No bearer token in exception messages.
-70. No bearer token in diagnostics.
-71. No request-body leakage.
-72. No credentials in query parameters.
-73. No cross-origin redirect leaking Authorization.
-74. No arbitrary-host request execution.
-75. No insecure TLS bypass.
-76. No private response caching.
+Do not hardcode test credentials or ship a development authentication bypass.
 
-Add tests for additional real edge cases discovered during implementation.
+If no supported sign-in workflow is available before a later UI phase, record the live authenticated integration as **BLOCKED**, not PASS.
 
-Do not add meaningless tests merely to increase the count.
+A temporary development harness is acceptable if secure and removed afterward.
 
----
+The Phase 16.4 physical-device request evidence gap should remain open until a real device request is observed.
 
-## 18. Redirect and Credential-Leak Protection
+## 17. Documentation
 
-Review the chosen HTTP client's redirect behavior carefully.
-
-Authenticated requests must never forward bearer credentials to an untrusted redirect destination.
-
-Prefer disabling automatic redirects for the Laravel API transport and treating unexpected redirects as controlled transport/protocol failures.
-
-Do not silently follow an HTTP-to-HTTPS or HTTPS-to-HTTP redirect when authentication is attached.
-
-A production API should already be configured with its canonical HTTPS origin.
-
-Do not disable certificate validation to make local testing easier.
-
----
-
-## 19. Integration with App Startup
-
-Integrate the networking layer with the existing Phase 16.3 configuration foundation.
-
-The application should be able to construct the API client after successful configuration validation.
-
-However:
-
-- Do not perform automatic API calls during startup.
-- Do not require a reachable Laravel server for app launch.
-- Do not introduce a provider/state-management package merely to expose the client.
-- Do not change the existing theme preview harness.
-- Do not implement a new application shell.
-- Do not create customer-facing screens.
-
-Preserve the existing debug/release bootstrap behavior.
-
-Use explicit ownership and disposal for networking resources.
-
----
-
-## 20. Real Android Device Verification
-
-Use the existing local Laravel development environment where available.
-
-For a physical Android device over USB:
-
-```bash
-adb reverse tcp:8000 tcp:8000
-adb reverse --list
-```
-
-Then launch Flutter with the Phase 16.3 device configuration.
-
-Verify:
-
-1. Valid LOCAL configuration loads.
-2. App starts successfully.
-3. A real public Laravel API request succeeds using a test-only invocation.
-4. The final URL contains `/api/v1` exactly once.
-5. JSON responses are parsed correctly.
-6. A known Laravel API error is parsed into the typed error structure.
-7. No bearer token or secret appears in logs.
-8. No Flutter crash or uncaught exception occurs.
-9. Existing Material 3 preview remains intact.
-
-Prefer a temporary test-only networking probe or an existing development test harness.
-
-Do not leave a permanent customer-facing networking test screen.
-
-Do not add an unconditional request to `main()`.
-
-If Laravel is unavailable, document the limitation and rely on mocked transport tests. Do not report live integration as passing.
-
----
-
-## 21. Documentation
-
-Update the Flutter README and existing Group P phase record.
+Update the Flutter README and existing Group P phase records.
 
 Document:
 
-- Selected HTTP library and justification.
-- API client architecture.
-- Public request examples.
-- Authenticated request examples using a test token provider.
-- Versioned URL construction.
-- JSON and pagination handling.
-- API error taxonomy.
-- Transport failure taxonomy.
-- Request ID semantics.
-- Retry-After handling.
-- Timeout and cancellation behavior.
-- Redirect security.
-- Dependency ownership and disposal.
-- Local device integration procedure.
-- Test commands.
-- Deferred responsibilities.
+- SDK/package selected.
+- Why it was selected.
+- Supported Android versions.
+- Session storage mechanism.
+- Restoration behavior.
+- Authentication state model.
+- Token-provider integration.
+- Token renewal behavior.
+- Sign-out behavior.
+- 401 versus 403 handling.
+- Offline and corrupted-storage behavior.
+- Multi-device session semantics.
+- Configuration requirements.
+- Testing and live verification evidence.
+- Known limitations.
+- Deferred sign-in UI work.
 
-If a durable architecture decision is needed, append it to the existing `docs/decisions.md` following repository conventions.
+Append an ADR to the existing `docs/decisions.md` only where a new durable architecture decision is required.
 
-Do not create competing architecture-decision files.
+Do not create a competing decision log.
 
----
+## 18. Verification
 
-## 22. Verification Commands
-
-Run all checks after the final code and documentation edits.
+After final edits, run:
 
 ```bash
+flutter pub get
 dart format --set-exit-if-changed .
 flutter analyze
 flutter test
 dart run tool/generate_tokens.dart --check
+flutter build apk --debug
 git diff --check
 ```
 
-Additionally, verify:
+Adjust paths and token-check commands to the actual repository conventions.
 
-- `flutter pub get` succeeds.
-- No unnecessary dependencies were added.
-- No forbidden platform targets were generated.
-- Existing environment-configuration tests pass.
-- Existing design-system tests pass.
-- All networking tests pass.
-- No unintended backend changes exist.
-- No API contract files were modified.
-- No production secrets were introduced.
+Also verify:
 
-Use the repository's established static-analysis and CI conventions.
+- No unrelated dependencies.
+- No Android permission added without justification.
+- No iOS/web/desktop target generation.
+- No frozen Laravel API changes.
+- No design-token drift.
+- No sensitive files committed.
+- No auth secret exposed in the APK.
+- No broken Phase 16.4 tests.
+- No unintended startup network dependency.
 
----
-
-## 23. Explicit Scope Exclusions
+## 19. Explicit exclusions
 
 Do not implement:
 
-- Clerk SDK initialization.
-- Clerk sign-in/sign-up.
-- Clerk session restoration.
-- Token refresh implementation.
-- Secure token storage.
-- Navigation and routing.
-- Product repositories.
-- Category repositories.
-- Search repositories.
-- Customer profile repositories.
-- Request submission services.
-- Checkout/payment services.
-- Cart synchronization.
-- Offline storage.
+- Customer sign-in screen.
+- Customer registration screen.
+- Email verification UI.
+- Password recovery UI.
+- Profile screen.
+- Laravel profile repository.
+- Catalog or product repositories.
+- New Laravel auth endpoints.
+- Sanctum or custom mobile JWTs.
+- Custom refresh-token services.
+- Application navigation.
+- Cart, checkout, or payments.
+- Biometric authentication.
 - Push notifications.
-- Global error/loading widgets.
-- Application logging infrastructure.
+- Background sync.
+- Application-wide logging.
 - Analytics.
-- New Laravel endpoints.
-- New API versions.
-- Backend schema changes.
-- iOS/web/desktop support.
+- New design tokens.
 
-Phase 16.4 must remain a networking foundation.
+Do not add a placeholder login screen simply to demonstrate SDK initialization.
 
----
+## 20. Definition of Done
 
-## 24. Completion Report
+Phase 16.5 passes when:
 
-At the end, report:
+- A suitable supported Clerk integration has been selected and documented.
+- Secure Android session persistence is implemented through the supported integration.
+- Existing sessions can be restored.
+- Authentication state is observable and correct.
+- Pending security sessions are not considered authenticated.
+- `AuthTokenProvider` is backed by Clerk.
+- Current session tokens are obtained without independent bearer-token storage.
+- Laravel authenticated requests use the existing ApiClient.
+- 401 and 403 remain distinct.
+- No unsafe automatic request replay occurs.
+- Sign-out uses Clerk and invalidates local authenticated access.
+- Anonymous access continues to work.
+- Unit tests and regression tests pass.
+- Debug APK builds.
+- Live integration evidence is recorded accurately.
+- Documentation is updated.
+- No later-phase UI or business features are introduced.
 
-1. Repository inspection findings.
-2. Files created and modified.
-3. HTTP library selection and justification.
-4. API client public interface.
-5. URL and header construction rules.
-6. AuthTokenProvider contract.
-7. Typed response and pagination models.
-8. API error and transport failure models.
-9. Timeout/cancellation behavior.
-10. Retry and redirect policies.
-11. Security controls.
-12. Automated test results.
-13. Physical Android verification results.
-14. Documentation changes.
-15. Risks and deferred work.
-16. Final phase status.
-
-Clearly distinguish:
-
-- Automated tests passing.
-- Local Android integration passing.
-- Staging/production integration not yet verified.
-
-Do not claim success for any check that was not executed.
-
----
-
-## 25. Definition of Done
-
-Phase 16.4 is complete when:
-
-- One centralized networking client exists.
-- The client consumes the validated Phase 16.3 configuration.
-- `/api/v1` is appended exactly once.
-- HTTP requests use canonical headers and JSON semantics.
-- Public requests work without Clerk.
-- Protected requests use an injectable token provider.
-- Server success envelopes are correctly parsed.
-- Structured Laravel errors are preserved.
-- Pagination metadata is typed.
-- HTTP status and error codes remain distinct.
-- Request IDs are retained.
-- Retry-After numeric seconds are handled correctly.
-- Timeouts and explicit cancellation work.
-- No automatic request retries exist.
-- Credentials cannot leak through redirects.
-- No sensitive request/response logging exists.
-- Mocked networking tests pass.
-- Existing Flutter tests and token checks remain passing.
-- Android local integration is verified or explicitly recorded as blocked.
-- Documentation is complete.
-- No later-phase features have been implemented.
-
-**Final instruction to the agent:** Inspect first, implement only the networking layer, follow the frozen Laravel V1 API contract, preserve the Phase 16.3 configuration foundation, validate all security boundaries, run every required check after final edits, and stop at Phase 16.4.
-
----
-
-## Phase 16.4 Implementation Record
-
-**Status:** COMPLETE. Automated networking verification and a local live API
-probe passed; physical-device request execution remains explicitly unverified.
-
-### Repository inspection findings
-
-- Flutter 3.44.6 and Dart 3.12.2 are installed.
-- No HTTP dependency existed before this phase.
-- The frozen client contract uses `/api/v1`, `data`/`meta` success envelopes,
-  `errors`/`meta.request_id` failures, `X-Request-Id`, numeric `Retry-After`,
-  `snake_case` fields, and bearer-only Laravel authentication.
-- The existing Next.js client was used as a behavioral reference for URL
-  validation, envelope parsing, request-ID fallback, and safe transport errors.
-- A temporary Flutter-client probe used the local public endpoint and was
-  removed after verification; permanent tests continue to use mocked transport.
-
-### Implementation
-
-- Added `package:http` and direct `http_parser` dependencies.
-- Added the centralized `ApiClient`, injectable `ApiTransport`, production
-  `HttpApiTransport`, `AuthTokenProvider`, `RequestCancellation`, typed success
-  metadata/pagination, structured API errors, and transport exceptions.
-- Added explicit `PUBLIC` and `REQUIRED` authentication intent.
-- Added request-scoped bearer injection, allow-listed special headers, JSON and
-  multipart request construction, bounded timeout handling, abortable requests,
-  redirect blocking, and no automatic retry behavior.
-- Integrated client construction after validated startup configuration without
-  performing a startup request. The application owns and disposes the client
-  it constructs; injected clients remain caller-owned.
-
-### Verification
-
-| Command | Result |
-| --- | --- |
-| `flutter pub get` | Passed |
-| `dart format lib test/core/network` | Passed |
-| `flutter analyze` | Passed — no issues |
-| `flutter test test/core/network/api_client_test.dart` | Passed — 19 tests |
-| `flutter test` | Passed — 97 tests |
-| Temporary live Flutter-client probe against `http://127.0.0.1:8000/api/v1/products` | Passed — `data` and pagination parsed |
-| `dart run tool/generate_tokens.dart --check` | Passed |
-| `flutter build apk --debug --dart-define-from-file=config/local.json` | Passed |
-| `git diff --check` | Passed |
-
-The final verification gate passed after the documentation edits. The package
-manager reports newer incompatible transitive versions, but dependency
-resolution and the locked build completed successfully.
-
-### Deferred and unverified
-
-- Clerk SDK initialization, session restoration, renewal, secure storage, and
-  sign-in/sign-out remain Phase 16.5 responsibilities.
-- Domain repositories and feature-specific request/multipart workflows remain
-  outside Phase 16.4.
-- The physical device was detected and USB reverse status was checked, but its
-  shell had no `curl` and the app has no customer-facing request screen yet, so
-  device-side request execution remains unverified. The host-side Flutter
-  client probe passed against the live Laravel endpoint.
-
-**Phase 16.4 exit condition:** COMPLETE.
+**Final instruction:** Inspect the existing repository and Clerk SDK capabilities first. Implement the narrowest secure session architecture compatible with the frozen decisions. Do not invent authentication protocols, weaken storage security, or change the Laravel authentication contract. Stop at Phase 16.5 and report any unresolved SDK or device-verification blocker explicitly.

@@ -64,6 +64,7 @@ final GoRouter _router = GoRouter(
       builder: (context, state) => const HomeScreen(),
       routes: [
         GoRoute(
+          name: 'details',
           path: 'details/:id',
           builder: (context, state) => DetailsScreen(id: state.pathParameters['id']!),
         ),

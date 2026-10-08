@@ -14,12 +14,12 @@ Laravel API as the Next.js website and shares the project design system.
 ## Phase status
 
 This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
-Material 3)**, **Phase 16.3 (environment configuration)**, and **Phase 16.4
-(networking layer)** foundations.
+Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
+(networking layer)**, and **Phase 16.5 (authentication storage/session)**
+foundations.
 
 Not yet implemented (owned by later Group P phases):
 
-- 16.5 authentication storage/session
 - 16.6 routing/navigation
 - 16.7 feature/module structure
 - 16.8 error/loading states
@@ -87,6 +87,26 @@ The default timeout is 10 seconds and every request accepts an explicit
 `RequestCancellation`. Closing an `ApiClient` closes only a transport created by
 that client; injected transports remain caller-owned. Startup constructs the
 client after configuration validation but performs no API request.
+
+## Authentication session boundary
+
+Phase 16.5 uses the current `clerk_auth` community-maintained
+beta SDK (`0.0.18-beta`) behind `ClerkAuthAdapter`. The SDK owns Clerk sign-in,
+session restoration, renewal, and sign-out. The app exposes only the current
+session token through `AuthTokenProvider`; `ApiClient` obtains it at request
+time and never stores bearer credentials.
+
+The SDK's default file persistor is not used because it writes plaintext JSON.
+`SecureClerkPersistor` stores the SDK's required client/session state through
+`flutter_secure_storage`, which uses Android Keystore-backed encryption. Android
+backup is disabled in the main manifest to prevent encrypted storage metadata
+from being restored without its device key.
+
+The package is beta and community-maintained rather than an official stable
+Clerk Flutter SDK. The adapter isolates this dependency so a supported SDK can
+replace it without changing API consumers. No sign-in UI is included in this
+phase, and live authenticated verification remains blocked until a real Clerk
+publishable key and a supported development sign-in workflow are supplied.
 
 ## Marionette MCP
 
