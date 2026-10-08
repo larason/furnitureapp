@@ -3034,3 +3034,30 @@ framework, boilerplate layers, speculative models, or request-only commerce
 features.
 
 **Status:** Accepted and implemented in Phase 16.7 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`lib/core/auth/auth_session.dart`, `lib/core/feature_dependencies.dart`, `lib/core/auth/clerk_auth_adapter.dart`, `lib/features/README.md`, `test/architecture/feature_architecture_test.dart`, `README.md`), `docs/decisions.md`
+
+---
+
+### ADR/APP-006 — Shared Flutter Async Presentation Boundary
+
+**Decision:** Phase 16.8 provides a narrow shared presentation layer under
+`frontend/app/lib/core/presentation/`. `AsyncViewState<T>` is a sealed,
+feature-owned state vocabulary for initial, loading, content, empty, failure,
+refreshing, and submitting states; features use only the states their operation
+needs. `AsyncRefreshing` and `AsyncFailure` can retain typed prior data so a
+refresh does not erase valid content by default.
+
+`ErrorPresentationMapper` consumes the existing parsed `ApiError` and
+`ApiTransportException` types. It does not parse response bodies, define API
+codes, inspect exception text, retry requests, start authentication, or sign out
+users. It preserves request IDs and canonical field paths, maps cancellation to
+no user-facing presentation, and uses a generic safe fallback for unknown
+exceptions. `AppLoadingView`, `AppEmptyView`, `AppErrorView`, and
+`AppInlineError` use the existing Material 3 theme and token-derived spacing;
+recovery callbacks belong to the owning feature and are never enabled without a
+real callback.
+
+**Reason:** This gives future Group Q features consistent accessible states
+without moving transport ownership into presentation, introducing a global
+state manager, or implementing feature business behavior prematurely.
+
+**Status:** Accepted and implemented in Phase 16.8 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`lib/core/presentation/**`, `test/core/presentation/**`, `README.md`, `lib/features/README.md`), `docs/decisions.md`

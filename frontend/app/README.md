@@ -17,11 +17,10 @@ This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
 Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 (networking layer)**, **Phase 16.5 (authentication storage/session)**,
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
-structure)** foundations.
+structure)**, and **Phase 16.8 (error/loading states)** foundations.
 
 Not yet implemented (owned by later Group P phases):
 
-- 16.8 error/loading states
 - 16.9 logging/diagnostics
 
 The root application now uses `MaterialApp.router`. Route placeholders establish
@@ -76,6 +75,22 @@ Group Q feature implementation must remain request-first. Catalog, categories,
 product detail, search, furniture requests, enquiries, and account are future
 feature families. Cart, checkout, payments, orders, order tracking, and
 favorites remain unimplemented and unregistered.
+
+## Async Presentation
+
+`lib/core/presentation/` contains the shared Phase 16.8 presentation contract:
+
+- `AsyncViewState<T>` provides typed initial, loading, content, empty, failure, refreshing, and submitting states without a global state manager.
+- `AppLoadingView` supports full-content and inline progress with accessible status semantics.
+- `AppEmptyView` distinguishes successful empty data from failure and accepts an optional caller-owned action.
+- `AppErrorView` and `AppInlineError` render safe mapped failure descriptions; recovery is explicit and caller-owned.
+- `ErrorPresentationMapper` consumes parsed `ApiError`/`ApiTransportException` values, preserves field errors and request IDs, and suppresses cancellation UI.
+
+Features must not parse raw HTTP bodies or duplicate API error-code handling.
+They decide whether a retry or refresh is safe and pass the callback to the
+shared widget. The mapper does not start authentication, sign the user out, or
+retry requests automatically. The existing `AuthSession` and router continue to
+own authentication states and access policy.
 
 ## Networking layer
 

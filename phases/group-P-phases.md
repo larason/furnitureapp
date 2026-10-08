@@ -1,630 +1,607 @@
-# Phase 16.7 — Flutter Feature/Module Structure
+# Phase 16.8 — Flutter Error & Loading States
 
-**Project:** SL Furnitures — Flutter Android Customer App  
+**Project:** SL Furnitures — Android Customer Application  
 **Group:** P — Flutter Application Foundation  
-**Prerequisites:** Phases 16.1–16.6 complete  
+**Prerequisites:** Phases 16.1–16.7 complete  
 **Status:** COMPLETED — 2026-10-08
 
 ## 1. Objective
 
-Establish a clean, scalable, feature-first module architecture for the Flutter application.
+Implement a small, reusable, accessible presentation foundation for asynchronous loading, empty results, expected failures, and safe recovery actions.
 
-The architecture must support future catalog, category, product detail, search, furniture request, enquiry, and account features while reusing the existing shared foundations.
+This phase must provide the components and state conventions that future Group Q feature screens can use without inventing their own inconsistent loading/error UI.
 
-The implementation must be proportional to the project's size.
+**Primary architectural decision:** Keep transport errors in the existing networking layer, feature-specific failures in their owning features, and reusable visual states in a narrow shared presentation layer.
 
-Do not introduce enterprise-scale architecture patterns, excessive abstractions, or boilerplate solely for theoretical future requirements.
+Do not build a second networking/error framework.
 
-### Required outcomes
-
-1. A clear feature/module directory convention.
-2. Explicit dependency-direction rules.
-3. Reusable integration with the existing ApiClient.
-4. Compatibility with Clerk session management.
-5. Compatibility with the existing go_router configuration.
-6. Feature-local ownership of data, state, and presentation.
-7. Testable module composition.
-8. Documentation for implementing future Group Q features.
-9. No premature customer feature implementation.
-
-**Do not advance to Phase 16.8 or Group Q.**
+Do not implement catalog, request, enquiry, or account business functionality.
 
 ---
 
 ## 2. Mandatory repository inspection
 
-Read and inspect:
+Before coding, read:
 
-- Root `AGENTS.md`.
-- Flutter-specific `AGENTS.md`.
-- Group P Phase 16.7 requirements.
-- Completed Phase 16.1–16.6 records.
-- Flutter README.
-- `docs/decisions.md`.
-- Existing `lib/` structure.
-- `lib/theme/`.
-- Phase 16.3 configuration implementation.
-- Phase 16.4 networking implementation.
-- Phase 16.5 Clerk authentication implementation.
-- Phase 16.6 router and route registry.
-- Frozen API contracts.
-- Approved request-only commerce decision.
-- Group Q feature sequence.
+1. Root `AGENTS.md` and `frontend/AGENTS.md`.
+2. Group P Phase 16.8 specification and earlier phase completion records.
+3. `docs/decisions.md`, especially:
+   - ADR/DESIGN-001 through ADR/DESIGN-006.
+   - ADR/API-ERR-001 through ADR/API-ERR-007.
+   - ADR/WEB-003 for conceptual alignment, not framework copying.
+   - Flutter architecture decisions from Phases 16.2–16.7.
+4. `frontend/app/README.md`.
+5. `lib/core/network/` and existing error classes.
+6. `lib/core/auth/` including `AuthSession`.
+7. `lib/core/feature_dependencies.dart`.
+8. `lib/navigation/` and the router's existing error/status pages.
+9. `lib/theme/` including generated tokens, component themes and motion.
+10. `lib/features/README.md`.
+11. Existing tests and app composition.
 
-Identify the actual code structure before proposing changes.
+Record the exact current names of networking exception types, constructors, and authentication states.
 
-Do not reorganize completed foundations merely to match a suggested directory tree.
+Do not guess APIs from these instructions.
 
-Report any architectural conflicts before implementing a competing pattern.
-
----
-
-## 3. Architectural approach
-
-Use **feature-first organization with lightweight internal layering**.
-
-Avoid a global arrangement such as:
-
-```text
-lib/
-  models/
-  repositories/
-  controllers/
-  screens/
-  services/
-```
-
-This organization makes ownership unclear as the application grows.
-
-Prefer:
-
-```text
-lib/
-  features/
-    catalog/
-    categories/
-    product_detail/
-    search/
-    furniture_requests/
-    enquiries/
-    account/
-```
-
-Each feature owns its own presentation, data access, and feature-specific models when those elements are actually implemented.
-
-### Layering
-
-Use three conceptual layers where justified:
-
-- **Presentation:** Flutter widgets and feature-specific state.
-- **Data:** Repositories, API DTOs, and mappings.
-- **Domain:** Business-facing models and transformations when a distinct domain representation is genuinely necessary.
-
-Do not mandate all three directories for every small feature.
-
-Do not create empty repositories, use cases, or interfaces simply to fill a template.
+Reuse existing mechanisms before adding abstractions.
 
 ---
 
-## 4. Preserve existing shared foundations
+## 3. Required state vocabulary
 
-Retain the existing implementation locations for:
+Use the following conceptual states:
 
-- Design system and theme.
-- Environment configuration.
-- Networking.
-- Authentication.
-- Routing.
+| State | Meaning | Owner |
+|---|---|---|
+| Initial | No operation started | Feature |
+| Loading | First load is in progress | Feature/shared presentation |
+| Content | Valid data available | Feature |
+| Empty | Successful operation returned no results | Feature/shared presentation |
+| Expected failure | Recoverable API/domain/transport failure | Feature/shared presentation |
+| Unexpected failure | Unanticipated defect or invalid assumption | Existing error handling + safe fallback |
+| Refreshing | Existing content is being updated | Feature |
+| Submitting | User-triggered mutation is in progress | Feature |
 
-Do not migrate `lib/theme/` into another directory.
+Not every future feature must implement all eight states.
 
-Do not relocate the completed ApiClient, Clerk adapter, or router unless there is a demonstrated correctness problem.
+Do not introduce a universal state machine with transitions that every screen must satisfy.
 
-Shared foundations must remain independently usable by future features.
+### Critical distinction
 
-### Ownership rule
+A successful API response containing `data: []` is not a transport error.
 
-Features consume shared foundations.
+An API error is not an empty result.
 
-Shared foundations must not import feature-specific implementation code.
+A loading state is not an authentication state.
 
-Avoid circular dependencies.
+An unexpected programming exception is not automatically a retryable network failure.
+
+Cancellation is not a user-facing failure by default.
 
 ---
 
-## 5. Recommended module layout
+## 4. Shared presentation location
 
-The following is an illustrative target architecture.
+Prefer a narrowly scoped structure such as:
 
 ```text
 lib/
-  app.dart
-  main.dart
-
-  theme/
-    ...
-
-  config/
-    ...
-
   core/
-    network/
-      ...
-    auth/
-      ...
-
-  navigation/
-    ...
-
-  features/
-    catalog/
-      catalog_feature.dart
-
-    categories/
-      categories_feature.dart
-
-    product_detail/
-      product_detail_feature.dart
-
-    search/
-      search_feature.dart
-
-    furniture_requests/
-      furniture_requests_feature.dart
-
-    enquiries/
-      enquiries_feature.dart
-
-    account/
-      account_feature.dart
-```
-
-Do not create all illustrated files automatically.
-
-The final structure must reflect the repository's existing conventions and actual module responsibilities.
-
-### Future feature structure
-
-When a feature is implemented in Group Q, it may expand into:
-
-```text
-features/
-  catalog/
-    data/
-      catalog_repository.dart
-      catalog_dto.dart
-    domain/
-      catalog_item.dart
     presentation/
-      catalog_screen.dart
-      catalog_controller.dart
+      async_view_state.dart
+      app_loading_view.dart
+      app_empty_view.dart
+      app_error_view.dart
+      app_inline_error.dart
+      app_retry_action.dart
+      error_presentation_mapper.dart
 ```
 
-This is an example of eventual organization, not an instruction to implement those files in Phase 16.7.
+These names are illustrative.
+
+Inspect existing conventions and create only files that have clear responsibilities.
+
+Do not create duplicate classes or folders if equivalent shared components already exist.
+
+Do not create a general-purpose widget library.
+
+Keep reusable state components independent of feature DTOs and business models.
 
 ---
 
-## 6. Feature module contract
+## 5. Async state representation
 
-Define a lightweight convention for feature ownership.
+Evaluate whether a lightweight sealed state type materially simplifies future feature controllers.
 
-Every feature should have a clearly identifiable entry point or composition location.
+If adopted, use Dart 3 sealed classes or another SDK-native type-safe approach.
 
-That entry point may coordinate:
-
-- Feature dependencies.
-- Feature route builders.
-- Feature-local repositories.
-- Feature-specific state.
-- Feature screen construction.
-
-Do not require every feature to implement a common interface if that interface provides no actual benefit.
-
-Do not introduce a plugin registry, reflection-based discovery, or runtime module loading.
-
-The architecture should remain statically typed and straightforward.
-
-### Feature dependencies
-
-A future catalog module should be able to receive the existing ApiClient without constructing another HTTP client.
-
-A future account module should be able to consume the existing Clerk authentication abstraction without importing Clerk SDK internals.
-
-A future furniture request module should use the existing API contract without introducing its own HTTP transport.
-
----
-
-## 7. Dependency direction
-
-Enforce this direction:
+Suggested conceptual shape:
 
 ```text
-Feature presentation
-        |
-        v
-Feature state/controller
-        |
-        v
-Feature repository
-        |
-        v
-Shared ApiClient
-        |
-        v
-Laravel API
+AsyncState<T>
+  Initial<T>
+  Loading<T>
+  Data<T>
+  Empty<T>
+  Failure<T>
 ```
 
-Use only the layers that the feature actually needs.
-
-### Rules
-
-- Presentation must not construct raw HTTP requests.
-- Presentation must not parse Laravel error envelopes.
-- Feature repositories must not create their own networking clients.
-- Feature modules must not initialize Clerk.
-- Features must not directly read `String.fromEnvironment`.
-- Features must not access encrypted session storage.
-- Feature code must not alter global design tokens.
-- Backend authorization must not be duplicated in Flutter.
-- Feature-specific data models must not be placed in unrelated shared modules.
-
-Cross-feature imports should be minimized.
-
-If two features genuinely share a model, place it in a narrowly scoped shared location with documented ownership.
-
-Do not move every model into `core/`.
-
----
-
-## 8. Module composition
-
-Establish a lightweight mechanism for supplying shared dependencies to future features.
-
-Preferred options include:
-
-- Explicit constructor injection.
-- A small composition root.
-- Existing dependency injection conventions already present in the application.
-
-Do not introduce Riverpod, Bloc, GetIt, Provider, or another dependency merely to satisfy this phase.
-
-If a state-management choice is needed later, defer it until a concrete feature demonstrates the requirement.
-
-### Required shared dependencies
-
-The architecture must support access to:
-
-- Existing ApiClient.
-- Existing AuthRepository.
-- Existing AppConfig where legitimately needed.
-- Existing navigation interfaces.
-- Existing theme through Flutter's Theme context.
-
-Do not create multiple ApiClient instances for individual features without a justified lifecycle requirement.
-
-### Ownership and disposal
-
-Document who creates and disposes:
-
-- HTTP transport.
-- ApiClient.
-- Clerk adapter.
-- Authentication listeners.
-- Feature repositories.
-- Feature controllers.
-
-Avoid double disposal and hidden global ownership.
-
----
-
-## 9. Router integration
-
-Preserve the Phase 16.6 `go_router` implementation.
-
-Feature modules should eventually provide screen builders or equivalent integration points.
-
-The central router must remain authoritative for:
-
-- Route names.
-- Route paths.
-- Public/protected access.
-- Deep-link parsing.
-- Authentication redirects.
-- Unknown-route behavior.
+This is not a required literal API.
 
 ### Requirements
 
-- No second router.
-- No feature-local `MaterialApp`.
-- No duplicate route registry.
-- No bypass of Clerk route guards.
-- No direct modification of protected-route policy by feature widgets.
-- No feature-specific navigation logic inside shared networking code.
+- Preserve type safety.
+- Avoid `dynamic` payloads.
+- Avoid contradictory flags such as `isLoading=true` and `hasError=true` without defined semantics.
+- Support existing-content refresh without destroying visible content.
+- Do not require a new state-management package.
+- Do not introduce a global async-state singleton.
+- Do not add speculative pagination or mutation frameworks.
 
-The existing approved route registry must remain intact.
+If a shared state type adds more complexity than value, document the simpler approved convention and implement reusable presentation widgets instead.
 
-### Placeholders
+### Refreshing behavior
 
-Retain Phase 16.6 placeholders where needed.
+Future screens should be able to keep existing data visible while a refresh occurs.
 
-Do not replace them with fabricated product cards, fake account information, or unfinished commerce screens.
+A refresh failure should not automatically erase previously valid content.
 
-If route-builder extraction improves modularity, perform the smallest refactor and preserve all navigation behavior.
-
----
-
-## 10. Feature scope and activation
-
-Separate feature architecture from feature availability.
-
-### Initial active feature families
-
-Prepare for:
-
-- Home/catalog.
-- Categories.
-- Product detail.
-- Search/filtering.
-- Furniture requests.
-- Enquiries.
-- Account/profile.
-
-These are future implementation targets, not features to build now.
-
-### Deferred commerce features
-
-The frozen Group Q plan includes:
-
-- Cart.
-- Checkout.
-- Payments.
-- Orders.
-- Order tracking.
-
-These remain deferred under the current REQUEST ONLY production mode.
-
-Do not register new routes for them.
-
-Do not create empty production screens for them.
-
-Do not enable them through a hidden debug switch.
-
-Do not introduce speculative feature flags.
-
-When the business authorizes purchase functionality later, those modules can be introduced through their owning phases.
-
-### Favorites
-
-Do not introduce a favorites module unless the approved mobile feature plan explicitly requires it.
-
-Phase 16.6 intentionally omitted the favorites route.
-
-Preserve that decision.
+Do not implement catalog refresh or pagination now.
 
 ---
 
-## 11. Data model ownership
+## 6. Loading presentation
 
-Define where future DTOs and models will live.
+Implement a reusable loading view using existing Material 3 primitives.
 
-### API DTOs
+Support at least:
 
-Feature-local data classes should represent Laravel's actual response structure.
+- Full-content loading.
+- Inline loading.
+- Accessible progress indication.
 
-Do not invent product or request fields.
-
-Use the frozen OpenAPI schema when implementing future DTOs.
-
-### Domain models
-
-Create domain models only when they add value beyond raw API transport representations.
-
-Do not duplicate the entire API schema into two identical class hierarchies.
-
-### Shared models
-
-A model belongs in shared code only when genuinely required by multiple features and has stable ownership.
-
-Do not create a large generic `models/` directory.
-
-### Money and identity
-
-Preserve backend conventions:
-
-- Money uses integer minor units and currency.
-- IDs remain opaque.
-- No client-generated Laravel identity.
-- No client-controlled roles.
-- No client-side replacement for backend authorization.
-
-Do not implement these models in Phase 16.7 unless required for a minimal structural test.
-
----
-
-## 12. State-management convention
-
-Document a default approach for future feature state.
-
-For small, localized state, prefer Flutter's built-in mechanisms.
-
-For more complex asynchronous feature state, evaluate the existing project's conventions before selecting an additional package.
+Prefer `CircularProgressIndicator` or other native Material widgets.
 
 ### Requirements
 
-- State belongs to its owning feature.
-- Avoid global mutable feature state.
-- Avoid direct networking in widgets.
-- Dispose controllers and subscriptions.
-- Keep loading and error presentation consistent with the upcoming Phase 16.8.
-- Do not implement a complete state-management framework now.
+- Use the existing theme.
+- Avoid hard-coded colors.
+- Avoid arbitrary animation timing.
+- Provide meaningful semantics.
+- Do not animate purely for decoration.
+- Respect reduced-motion settings where relevant.
+- Do not trap focus.
+- Do not use blocking dialogs for ordinary background loading.
+- Avoid layout jumps where a stable content region can be maintained.
 
-Do not create generic `BaseController`, `BaseRepository`, or `BaseViewModel` classes without a concrete use case.
+### Skeletons
+
+Do not build a generic shimmer/skeleton framework.
+
+Catalog and product-specific skeletons belong to their later feature phases.
+
+A generic loading view is sufficient for Phase 16.8.
 
 ---
 
-## 13. Testing strategy
+## 7. Empty-state presentation
 
-Define a test structure that mirrors feature ownership.
+Implement a reusable empty-state view.
 
-Suggested future layout:
+Support:
+
+- Required title.
+- Optional description.
+- Optional appropriate icon.
+- Optional action supplied by the caller.
+
+The component must not decide business meaning.
+
+Examples for future use:
+
+- No products match the current filters.
+- No categories are available.
+- No search results.
+- No request history.
+
+These are illustrative scenarios only.
+
+Do not create actual catalog or history screens.
+
+### Requirements
+
+- Distinguish empty data from errors.
+- Do not imply that a user must sign in when the feature is public.
+- Do not fabricate product recommendations.
+- Do not display fake inventory or promotional content.
+- Do not show a retry action by default for a successful empty result.
+
+---
+
+## 8. Error presentation architecture
+
+Separate error classification from error rendering.
+
+Use a small pure mapper that converts existing error information into a safe presentation description.
+
+For example, the presentation result may contain:
 
 ```text
-test/
-  features/
-    catalog/
-    categories/
-    product_detail/
-    search/
-    furniture_requests/
-    enquiries/
-    account/
+ErrorPresentation
+  title
+  message
+  recoveryAction
+  requestId
+  fieldErrors
 ```
 
-### Required structural tests
+The exact implementation is left to repository inspection.
 
-Add focused tests where they verify real architecture behavior:
+### Do not duplicate the API contract
 
-1. Existing app composition remains valid.
-2. Feature entry points can be constructed using test dependencies where implemented.
-3. Router integration remains functional.
-4. Shared ApiClient is not recreated unexpectedly.
-5. No feature requires real Clerk initialization for a pure unit test.
-6. Existing public routes remain public.
-7. Existing protected account route remains protected.
-8. No deferred commerce routes are registered.
-9. No second MaterialApp or router is introduced.
-10. Existing theme integration remains intact.
-11. Existing 116 tests continue to pass.
+The existing ApiClient already parses Laravel's canonical error envelope.
 
-Do not create tests that assert only that a directory exists.
+The presentation layer must consume that parsed representation.
 
-Do not write large tests for hypothetical future features.
+It must not:
 
-### Architecture checks
+- Decode raw HTTP response bodies.
+- Parse JSON error envelopes again.
+- Parse human-readable messages to identify error types.
+- Define a new API error-code registry.
+- Replace HTTP status semantics.
+- Modify the frozen Laravel contract.
 
-If practical, add a small maintainable source-level dependency check enforcing the most important boundaries.
+### Safe fallback
 
-For example:
+Unknown failures must display a generic, non-sensitive message.
 
-- `core/network` must not import `features`.
-- `theme` must not import `features`.
-- Feature presentation must not import the raw HTTP package directly.
-- Features must not import Clerk SDK internals.
+Never show:
 
-Avoid a fragile regex-based linter that falsely rejects valid Dart code.
-
-Prefer analyzer-supported mechanisms or simple explicit tests with documented limitations.
+- Stack traces.
+- Raw exception objects.
+- Authorization headers.
+- Clerk tokens.
+- API origins.
+- Internal filesystem paths.
+- Database details.
+- Provider response bodies.
 
 ---
 
-## 14. Documentation and developer conventions
+## 9. API error classification
 
-Update the Flutter README with a concise feature-module development guide.
+Preserve the existing distinction between HTTP status and machine-readable error code.
 
-Explain:
+Implement presentation mapping for relevant categories.
 
-- Where to place a new feature.
-- When to create `data/`, `domain/`, and `presentation/`.
-- How to inject ApiClient.
-- How to use AuthRepository.
-- How to integrate routes.
-- How to add feature-specific tests.
-- How to handle feature-specific models.
-- How to avoid cross-feature coupling.
-- Which features remain deferred.
-- Which responsibilities belong to Phase 16.8 and Phase 16.9.
+| Failure | Expected UI behavior |
+|---|---|
+| No connection | Explain connection problem; allow safe retry |
+| Timeout | Explain request did not complete; offer appropriate recovery |
+| Cancelled request | Usually render nothing |
+| HTTP 401 | Authentication required or session action; defer to existing auth boundary |
+| HTTP 403 | Access denied; do not force sign-out |
+| HTTP 404 | Resource unavailable where applicable |
+| HTTP 409 | Conflict; require state refresh or reconciliation where applicable |
+| HTTP 422 | Present validation/business errors, including field errors |
+| HTTP 429 | Rate limited; respect existing Retry-After metadata |
+| HTTP 5xx | Temporary service failure or safe generic error |
+| Malformed/invalid envelope | Safe unexpected-response feedback |
+| Unsupported content type | Safe unexpected-response feedback |
 
-### Example workflow
+Use the actual existing exception types and API codes.
 
-Document how Phase 17.1 will eventually implement catalog:
+### HTTP 401
 
-1. Create catalog feature-local models based on the frozen API.
-2. Create a catalog repository using ApiClient.
-3. Add feature-specific state handling.
-4. Implement catalog presentation using approved Material 3 tokens.
-5. Connect the screen to the existing router.
-6. Add repository and widget tests.
+Do not independently refresh Clerk tokens or redirect from a generic error widget.
 
-This workflow is documentation only.
+Authentication actions belong to the existing AuthSession and navigation architecture.
 
-Do not implement it now.
+### HTTP 403
 
----
+Do not treat forbidden access as an expired Clerk session.
 
-## 15. Preserve earlier phases
+### HTTP 404
 
-The implementation must not regress:
+Do not automatically turn every API 404 into a go_router unknown-route page.
 
-**Phase 16.2**
+Route matching and missing API resources are separate concerns.
 
-- Generated design tokens.
-- Young Serif display typography.
-- Material 3 component themes.
-- Token synchronization.
+### HTTP 422
 
-**Phase 16.3**
+Preserve all available field-level errors.
 
-- Typed environment configuration.
-- Android LOCAL/STAGING/PRODUCTION validation.
+Use canonical dot paths supplied by the API.
 
-**Phase 16.4**
+Do not collapse multiple field errors into one opaque string.
 
-- Centralized ApiClient.
-- Typed Laravel errors.
-- Cancellation and timeouts.
-- Request IDs and Retry-After.
-- Redirect protection.
+### HTTP 429
 
-**Phase 16.5**
+Preserve the existing numeric Retry-After value.
 
-- Clerk SDK adapter.
-- Encrypted session persistence.
-- AuthTokenProvider.
-- Authentication state.
-- Sign-out and renewal.
+Do not implement a countdown timer or automatic retry loop in this phase.
 
-**Phase 16.6**
+The UI may explain that the user should wait before retrying.
 
-- One go_router.
-- Public routes.
-- Protected `/account`.
-- Safe intended-destination restoration.
-- Deep-link validation.
-- Android back behavior.
-
-Do not refactor these systems merely for stylistic consistency.
+Do not fabricate an exact retry time when none was provided.
 
 ---
 
-## 16. Explicit exclusions
+## 10. Retry and recovery behavior
 
-Do not implement:
+A reusable error view may expose an optional callback supplied by its owning feature.
 
-- Real product catalog API consumption.
-- Product/category DTOs without an immediate structural need.
-- Catalog screens.
-- Search behavior.
-- Furniture request submission.
-- Enquiry submission.
-- Profile data loading.
-- Clerk sign-in UI.
-- Checkout/payment/order features.
-- Favorites.
-- New Laravel endpoints.
-- New API error conventions.
-- Shared loading/error UI — Phase 16.8.
-- Logging infrastructure — Phase 16.9.
-- Global state-management migration.
-- A new design system.
-- New platform targets.
+The shared widget must not decide whether an operation is safe to replay.
 
-Do not introduce backend or API contract changes.
+### Safe retry principles
+
+- Public GET reads may normally offer manual retry.
+- Cancelled requests should not be retried automatically.
+- Mutations must not be blindly replayed.
+- Ambiguous timeouts after submission may require reconciliation.
+- HTTP 409 may require refreshing server state rather than repeating the same mutation.
+- HTTP 429 must respect the existing server retry guidance.
+- Authentication errors require the existing auth workflow.
+
+### Button behavior
+
+Do not show an enabled Retry button unless a real callback exists.
+
+Do not place a fake retry button on placeholder routes.
+
+Do not create automatic retries inside error widgets.
+
+Do not introduce a second retry policy that conflicts with Phase 16.4.
 
 ---
 
-## 17. Verification
+## 11. Form and field errors
 
-After all edits, run:
+Provide a small presentation convention for future forms.
+
+Support:
+
+- General form-level error.
+- Multiple field-level errors.
+- Canonical API field paths.
+- Accessible error descriptions.
+- Clear association between fields and errors.
+- Removal or update of stale errors after correction, controlled by the owning form.
+
+### Scope
+
+Do not implement actual furniture request or enquiry forms.
+
+Do not build a generic dynamic form generator.
+
+Do not create field-specific validation rules not present in the frozen API contract.
+
+Laravel remains authoritative.
+
+Client validation remains advisory.
+
+---
+
+## 12. Authentication and navigation states
+
+Reuse existing Phase 16.5 and 16.6 behavior.
+
+The router already distinguishes:
+
+- Restoring session.
+- Signed out.
+- Authentication action required.
+- Temporarily unavailable authentication.
+- Authenticated.
+
+Do not replace these states with a generic loading/error abstraction.
+
+### Integration
+
+Where beneficial, reuse shared visual primitives within existing neutral status screens.
+
+Do not change route access policy.
+
+Do not change the allow-listed `/account` return destination.
+
+Do not introduce sign-in UI.
+
+Do not create new Clerk session persistence.
+
+Do not trigger API calls during router initialization.
+
+---
+
+## 13. Material 3 and design tokens
+
+Use the existing Phase 16.2 theme.
+
+Canonical authority remains:
+
+`frontend/design-system/tokens.css`
+
+Flutter consumes generated token mappings.
+
+### Visual rules
+
+- Warm canvas and white paper surfaces retain their existing semantics.
+- Primary actions use the approved charcoal treatment.
+- Error styling uses the approved semantic danger mapping.
+- Status meaning must not depend on color alone.
+- Use platform sans for interface messages.
+- Reserve Young Serif for approved editorial/display roles.
+- Use existing spacing and shape adapters.
+- Use Material icons where appropriate.
+- Avoid decorative shadows and excessive elevation.
+- Do not introduce new colors, radii, typography scales, or motion durations.
+
+Do not modify the generated token file manually.
+
+If a required token is missing, document the gap rather than inventing a new brand value.
+
+---
+
+## 14. Accessibility requirements
+
+Test all shared presentation states for:
+
+1. Readable semantic labels.
+2. Proper heading and message hierarchy.
+3. Sufficient text contrast.
+4. Visible keyboard focus.
+5. Accessible action labels.
+6. Appropriate minimum touch targets.
+7. Large text scaling, including 2×.
+8. Small-screen overflow handling.
+9. Reduced-motion behavior.
+10. Screen-reader-friendly progress indication.
+11. Field-error discoverability.
+12. Non-color-only error communication.
+
+### Loading semantics
+
+Avoid announcing every progress-frame update.
+
+Use meaningful status text where necessary.
+
+### Errors
+
+Error actions must describe the recovery operation.
+
+Do not use vague action labels when a more precise one is available.
+
+### Empty states
+
+Do not announce an empty state as an application failure.
+
+---
+
+## 15. Preview and verification harness
+
+Create a development-only state preview if needed to validate the new components on Android.
+
+It may demonstrate:
+
+- Full-page loading.
+- Inline loading.
+- Empty state.
+- Recoverable network error.
+- Validation error.
+- Rate-limited feedback.
+- Unexpected-response fallback.
+
+### Restrictions
+
+- Keep the production root route unchanged.
+- Do not register public production preview routes.
+- Do not add a new navigation shell.
+- Do not create fake commerce workflows.
+- Do not perform real network requests.
+- Do not ship debug controls in release builds.
+
+Prefer widget tests or the existing development preview conventions when they provide sufficient coverage.
+
+---
+
+## 16. Tests
+
+Add focused unit and widget tests.
+
+### A. State behavior
+
+1. Initial state is distinguishable from loading.
+2. Loading state renders correctly.
+3. Content state does not display an error.
+4. Empty state is not treated as failure.
+5. Refresh preserves existing content where supported.
+6. Cancellation is handled without unwanted error UI.
+
+### B. Error mapping
+
+7. Connection failure.
+8. Timeout.
+9. Cancellation.
+10. API 401.
+11. API 403.
+12. API 404.
+13. API 409.
+14. API 422.
+15. API 429 with Retry-After.
+16. API 429 without Retry-After.
+17. API 500/503.
+18. Invalid response envelope.
+19. Unknown exception fallback.
+20. Multiple field errors.
+21. Request ID propagation.
+
+### C. Recovery
+
+22. Retry callback is invoked exactly once per activation.
+23. No retry callback means no actionable retry control.
+24. Mutation errors are not automatically replayed.
+25. Rate-limit presentation does not invent a deadline.
+26. Authentication error does not invoke a second auth flow.
+
+### D. Widget accessibility
+
+27. Loading progress has meaningful semantics.
+28. Error title and message are readable.
+29. Empty state supports optional actions.
+30. Large text does not overflow.
+31. Focus behavior is correct.
+32. Touch targets are usable.
+33. Reduced-motion behavior is respected.
+
+### E. Regression
+
+34. Existing router behavior remains intact.
+35. Existing Clerk tests pass.
+36. Existing ApiClient tests pass.
+37. Existing theme tests pass.
+38. Existing feature architecture tests pass.
+39. No deferred commerce routes appear.
+40. No new startup API request is introduced.
+
+This is a coverage matrix, not a requirement to create exactly 40 test methods.
+
+Use deterministic fakes.
+
+No real Laravel or Clerk services should be required for automated tests.
+
+---
+
+## 17. Documentation
+
+Update:
+
+- Flutter README.
+- Applicable Group P phase completion record.
+- `docs/decisions.md` if a durable architectural decision is made.
+- `lib/features/README.md` with guidance on consuming shared error/loading presentation.
+
+Document:
+
+1. State vocabulary.
+2. Shared widget ownership.
+3. Error mapping policy.
+4. API machine-code handling.
+5. Request ID presentation.
+6. Field validation conventions.
+7. Retry safety rules.
+8. Authentication-state separation.
+9. Accessibility behavior.
+10. Examples for future Group Q integration.
+11. Deferred feature-specific skeletons.
+12. Known limitations.
+
+Do not rewrite unrelated architecture decisions.
+
+---
+
+## 18. Verification commands
+
+Run from the Flutter project directory:
 
 ```bash
 flutter pub get
@@ -634,114 +611,150 @@ flutter test --concurrency=1
 dart run tool/generate_tokens.dart --check
 flutter build apk --debug
 git diff --check
+git diff --cached --check
 ```
 
-Use the actual repository paths.
+### Requirements
 
-### Additional verification
+- Existing 119 tests remain passing.
+- New error/loading tests pass.
+- No new analyzer warnings.
+- No generated token drift.
+- Debug APK builds.
+- No unapproved dependencies.
+- No API contract changes.
+- No backend modifications.
+- No deferred commerce features.
+- No new startup network calls.
 
-- Existing 116 tests remain passing.
-- Router tests remain passing.
-- Authentication tests remain passing.
-- Networking tests remain passing.
-- No unused architectural dependency was added.
-- No new commerce route exists.
-- No duplicate app root exists.
-- No theme-token drift exists.
-- No frozen contract changed.
-- No sensitive configuration entered source control.
+### Whitespace checks
 
-### Existing staged whitespace issue
+Phase 16.7 reported two intentional Markdown hard-break spaces in `phases/group-P-phases.md`.
 
-Phase 16.6 reported two pre-existing trailing Markdown spaces in the staged phase specification.
+Report staged and unstaged whitespace results separately.
 
-Inspect them, but do not silently modify unrelated staged content.
+If `git diff --check` flags those intentional spaces, explain the precise file/lines.
 
-Report `git diff --check` and `git diff --cached --check` separately.
-
-Do not claim the staged check passes if those pre-existing issues remain.
+Do not silently rewrite unrelated documentation or falsely report a passing check.
 
 ---
 
-## 18. Physical Android verification
+## 19. Physical Android verification
 
-Because this phase is primarily architectural, do not invent UI just to demonstrate module structure.
+Where a physical Android device and Marionette are available, verify the reusable states through an approved development-only preview or test harness.
 
-Where available, verify:
+Inspect:
 
-- App launches.
-- Public root route still renders.
-- Material 3 theme remains intact.
-- No startup crash.
-- Existing router initialization works.
-- No unexpected Clerk or Laravel calls are introduced.
+- Loading indicator visibility.
+- Error message readability.
+- Empty-state layout.
+- Retry control interaction when provided.
+- Safe-area behavior.
+- Text scaling where testable.
+- No render overflow.
+- No Flutter exceptions.
+- Theme consistency.
 
-Physical testing of new customer screens is not required because this phase must not implement them.
+Do not add production navigation controls merely to make a test harness accessible.
 
-Do not claim device navigation coverage beyond what is actually tested.
+If a particular interaction cannot be driven through Marionette, record the limitation and rely on widget tests for that behavior.
+
+Do not claim device accessibility settings were tested if the required device-config integration is unavailable.
 
 ---
 
-## 19. Completion report
+## 20. Explicit scope exclusions
+
+Do not implement:
+
+- Product catalog fetching.
+- Product detail API integration.
+- Search.
+- Furniture request forms.
+- Enquiry forms.
+- Account profile UI.
+- Clerk sign-in UI.
+- Cart.
+- Checkout.
+- Payments.
+- Orders.
+- Tracking.
+- Favorites.
+- A generic form-generation framework.
+- A new networking package.
+- A second API client.
+- Automatic retry middleware.
+- Global state-management framework.
+- Logging/diagnostics infrastructure — Phase 16.9.
+- A new theme or token palette.
+- Backend changes.
+
+Do not implement Phase 16.9 prematurely.
+
+---
+
+## 21. Completion report
 
 Provide:
 
 1. Repository inspection findings.
-2. Final feature/module directory structure.
-3. Files added, changed, or moved.
-4. Shared versus feature ownership rules.
-5. Dependency injection/composition decisions.
-6. Router integration decisions.
-7. State-management conventions.
-8. Future data-model ownership rules.
-9. Active and deferred feature boundaries.
-10. Automated tests and regression results.
-11. Android verification results.
-12. Documentation changes.
-13. Existing staged-diff status.
-14. Risks and deferred work.
-15. Final Phase 16.7 status.
+2. State representation decision.
+3. Files added and modified.
+4. Shared loading components.
+5. Shared empty-state components.
+6. Error classification and presentation mapping.
+7. Retry/recovery rules.
+8. Field-error handling.
+9. Router/auth integration.
+10. Material 3 token usage.
+11. Accessibility verification.
+12. Automated test results.
+13. Physical Android verification.
+14. Documentation changes.
+15. Staged and unstaged whitespace status.
+16. Deferred work and remaining risks.
+17. Final Phase 16.8 status.
 
-## 20. Definition of Done
+## Definition of Done
 
-Phase 16.7 is complete when:
+Phase 16.8 passes when:
 
-- A documented feature-first architecture exists.
-- Existing shared foundations remain intact.
-- Feature dependency direction is explicit.
-- Future feature composition is testable.
-- The router remains centralized.
-- No second networking or authentication system exists.
-- No speculative domain implementations are introduced.
-- Deferred commerce features remain absent.
-- Existing 116 tests continue passing.
-- Flutter analysis and debug build pass.
-- Token synchronization passes.
-- Documentation explains how Group Q features should be added.
-- No later phase is implemented prematurely.
+- Shared loading, empty, and error presentation exists.
+- Existing ApiClient error distinctions are preserved.
+- Safe error mapping is deterministic and testable.
+- Laravel field errors and request IDs remain available.
+- Retry actions are explicit and safe.
+- No automatic mutation replay exists.
+- Clerk and router state ownership remains unchanged.
+- Components consume the approved Material 3 design system.
+- Accessibility tests cover meaningful states.
+- Existing 119 tests continue to pass.
+- All required static checks and build checks pass.
+- Android verification is completed or accurately documented as limited.
+- No later-phase customer functionality is introduced.
 
-**Final instruction:** Inspect the repository first, introduce the smallest useful feature-module architecture, preserve completed foundations, document clear ownership boundaries, run every required verification check, and stop at Phase 16.7.
+**Final instruction:** Implement the smallest maintainable error/loading presentation foundation that Group Q can reuse. Preserve all existing architecture, verify every change, document the result, and stop at Phase 16.8.
 
 ---
 
 ## Completion record — 2026-10-08
 
-- Confirmed the existing structure: theme, config, networking, authentication,
-  and routing remain shared foundations; no feature modules existed before this
-  phase. Phase 16.5 provides `ClerkAuthAdapter`, not a separate
-  `AuthRepository`, so the feature boundary uses a new narrow `AuthSession`
-  interface rather than exposing Clerk SDK types.
-- Added `FeatureDependencies` for explicit constructor injection of the shared
-  `ApiClient` and optional `AuthSession`. It is a reference holder only; the
-  application composition root retains lifecycle ownership.
-- Added `lib/features/README.md` documenting capability-first directories,
-  optional lightweight internal layers, dependency direction, model ownership,
-  router integration, state conventions, and the future Group Q workflow.
-- Added architecture tests proving injected service identity, public feature
-  composition without auth, centralized router usage, and absent deferred
-  commerce routes.
-- No customer screens, repositories, DTOs, state framework, API clients,
-  Clerk UI, backend changes, or deferred commerce routes were introduced.
-- Physical verification remains limited to the Phase 16.6 root-route launch
-  check because this phase introduces no customer-facing UI. Live Clerk sign-in
-  remains blocked by the development sign-in workflow.
+- Added `AsyncViewState<T>` as a lightweight sealed Dart 3 vocabulary for
+  initial, loading, content, empty, failure, refreshing, and submitting states.
+  Refreshing and failure states can retain typed previous content without
+  introducing a universal state machine or state-management dependency.
+- Added token-driven `AppLoadingView`, `AppEmptyView`, `AppErrorView`, and
+  `AppInlineError` widgets with accessible status semantics, optional caller
+  actions, no automatic retries, and no fabricated feature data.
+- Added `ErrorPresentationMapper` over the existing `ApiError` and
+  `ApiTransportException` classes. It preserves status distinctions, request
+  IDs, canonical field paths, and rate-limit guidance; cancellation produces no
+  user-facing error by default; unknown exceptions use safe generic text.
+- Added mapper, state, accessibility, action, large-text, and recovery tests.
+  No catalog, request, enquiry, account, auth UI, API, or backend feature was
+  implemented.
+- Verification passed: `flutter analyze`, `flutter test --concurrency=1`,
+  token synchronization, and the existing router/auth/network/theme regression
+  suites. Physical verification remains limited to widget tests for the new
+  states unless the development-only preview is explicitly enabled; no
+  production preview route was added.

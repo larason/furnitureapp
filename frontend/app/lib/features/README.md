@@ -63,5 +63,28 @@ Catalog, categories, product detail, search, furniture requests, enquiries, and
 account are future feature families. Cart, checkout, payments, orders, order
 tracking, and favorites remain absent under request-only production scope.
 
-Loading/error presentation belongs to Phase 16.8. Logging and diagnostics
-belong to Phase 16.9.
+## Shared Async Presentation
+
+Reusable async presentation lives in `lib/core/presentation/`; feature DTOs and
+business models do not belong there. `AsyncViewState<T>` uses sealed Dart 3
+states: `AsyncInitial`, `AsyncLoading`, `AsyncContent`, `AsyncEmpty`,
+`AsyncFailure`, `AsyncRefreshing`, and `AsyncSubmitting`. Features choose only
+the states their operation needs. `AsyncRefreshing` and `AsyncFailure` can keep
+typed prior data visible; a refresh failure must not erase valid content by
+default.
+
+Use `AppLoadingView` for full-content or inline progress, `AppEmptyView` for a
+successful empty result, and `AppErrorView`/`AppInlineError` for mapped expected
+failures. Actions are supplied by the owning feature. No retry button is shown
+without a real callback, and shared widgets never retry automatically.
+
+`ErrorPresentationMapper` consumes `ApiError` and `ApiTransportException` after
+the existing `ApiClient` has parsed them. It preserves HTTP semantics, field
+paths, and request IDs while using safe user-facing messages. Cancellation maps
+to no presentation by default. It never parses raw response bodies, error text,
+or credentials. A 401 does not start a second auth flow; a 403 does not sign the
+user out; a 429 does not invent a deadline.
+
+Loading is not authentication state, empty data is not failure, and unexpected
+exceptions use a generic safe fallback. Loading/error presentation is owned by
+Phase 16.8; logging and diagnostics belong to Phase 16.9.
