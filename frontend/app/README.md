@@ -15,12 +15,12 @@ Laravel API as the Next.js website and shares the project design system.
 
 This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
 Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
-(networking layer)**, **Phase 16.5 (authentication storage/session)**, and
-**Phase 16.6 (routing/navigation)** foundations.
+(networking layer)**, **Phase 16.5 (authentication storage/session)**,
+**Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
+structure)** foundations.
 
 Not yet implemented (owned by later Group P phases):
 
-- 16.7 feature/module structure
 - 16.8 error/loading states
 - 16.9 logging/diagnostics
 
@@ -47,6 +47,35 @@ destination. It rejects external origins, authentication-flow loops, query
 parameters, and malformed resource identifiers. Android App Links are deferred
 until a production domain, manifest intent filters, `assetlinks.json`, and
 device verification are available.
+
+## Feature Modules
+
+Feature code is organized by customer capability under `lib/features/`, with
+the convention documented in `lib/features/README.md`. Future Group Q work may
+add `data/`, `domain/`, and `presentation/` inside the owning feature, but small
+features should not create layers without a concrete responsibility.
+
+Feature composition uses explicit constructor injection through
+`FeatureDependencies`. It supplies the existing `ApiClient` and, when needed,
+the SDK-independent `AuthSession` boundary. The application composition root
+owns and disposes the API client, transport, and Clerk adapter; feature modules
+do not dispose shared services.
+
+The dependency direction is:
+
+```text
+feature presentation -> feature state -> feature repository -> core ApiClient
+```
+
+Features do not create HTTP clients, initialize Clerk, read secure storage or
+compile-time configuration, parse API error envelopes in widgets, or duplicate
+Laravel authorization. The central `lib/navigation/` router remains the only
+route registry and `MaterialApp` root.
+
+Group Q feature implementation must remain request-first. Catalog, categories,
+product detail, search, furniture requests, enquiries, and account are future
+feature families. Cart, checkout, payments, orders, order tracking, and
+favorites remain unimplemented and unregistered.
 
 ## Networking layer
 
@@ -325,8 +354,8 @@ flutter run --dart-define-from-file=config/local.json
   successfully reached Laravel's public `/api/v1/products` endpoint and parsed
   its response. Physical-device request execution remains pending; staging and
   production are not deployed.
-- **No authentication yet.** Phase 16.5 owns Clerk sessions and secure storage.
-  This phase only exposes and validates public Clerk configuration.
+- **No sign-in UI yet.** Live authenticated verification needs a real Clerk
+  publishable key and a supported development sign-in workflow.
 - **Staging and production are unverified.** Their origins are not deployed, so
   only validation rules are tested for them.
 

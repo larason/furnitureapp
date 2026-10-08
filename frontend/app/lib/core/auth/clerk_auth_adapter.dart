@@ -3,16 +3,10 @@ import 'dart:async';
 import 'package:clerk_auth/clerk_auth.dart';
 import 'package:flutter/foundation.dart';
 
-import '../network/auth_token_provider.dart';
+import 'auth_session.dart';
 import 'secure_clerk_persistor.dart';
 
-enum ClerkAuthStatus {
-  initializing,
-  signedOut,
-  signedIn,
-  actionRequired,
-  temporarilyUnavailable,
-}
+export 'auth_session.dart';
 
 abstract interface class ClerkAuthGateway {
   Stream<void> get changes;
@@ -24,23 +18,27 @@ abstract interface class ClerkAuthGateway {
   void terminate();
 }
 
-class ClerkAuthAdapter extends ChangeNotifier implements AuthTokenProvider {
-  ClerkAuthAdapter({required this._gateway});
+class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
+  ClerkAuthAdapter({required this._gateway}) {
+    _changesSubscription = _gateway.changes.listen(_handleGatewayChange);
+  }
 
   ClerkAuthAdapter.unavailable() : _gateway = _UnavailableGateway() {
     _status = ClerkAuthStatus.temporarilyUnavailable;
   }
 
   final ClerkAuthGateway _gateway;
-  late final StreamSubscription<void> _changesSubscription = _gateway.changes
-      .listen(_handleGatewayChange);
+  late final StreamSubscription<void> _changesSubscription;
   ClerkAuthStatus _status = ClerkAuthStatus.initializing;
   int _sessionGeneration = 0;
   bool _localSessionBlocked = false;
   bool _signOutInProgress = false;
   bool _disposed = false;
 
+  @override
   ClerkAuthStatus get status => _status;
+
+  @override
   bool get isSignedIn =>
       !_localSessionBlocked && !_signOutInProgress && _gateway.isSignedIn;
 
@@ -91,6 +89,7 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthTokenProvider {
     return token;
   }
 
+  @override
   Future<void> signOut() async {
     _sessionGeneration++;
     _localSessionBlocked = true;
@@ -98,6 +97,7 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthTokenProvider {
     _setStatus(ClerkAuthStatus.signedOut);
     try {
       await _gateway.signOut();
+      _localSessionBlocked = false;
       _setStatus(ClerkAuthStatus.signedOut);
     } catch (_) {
       _setStatus(ClerkAuthStatus.temporarilyUnavailable);

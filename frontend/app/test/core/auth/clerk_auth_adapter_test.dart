@@ -85,6 +85,42 @@ void main() {
       adapter.dispose();
     });
 
+    test(
+      'restores a later gateway sign-in after successful sign out',
+      () async {
+        final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+
+        await adapter.signOut();
+        gateway.signedIn = true;
+        await gateway.emitChange();
+
+        expect(adapter.status, ClerkAuthStatus.signedIn);
+        adapter.dispose();
+      },
+    );
+
+    test(
+      'keeps failed sign out blocked from later stale gateway changes',
+      () async {
+        final gateway = _FakeGateway(
+          signedIn: true,
+          token: 'clerk-token',
+          signOutError: StateError('sign out failed'),
+        );
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+
+        await expectLater(adapter.signOut(), throwsStateError);
+        await gateway.emitChange();
+
+        expect(adapter.status, ClerkAuthStatus.signedOut);
+        expect(await adapter.getToken(), isNull);
+        adapter.dispose();
+      },
+    );
+
     test('rejects a token that completes after sign out starts', () async {
       final delayedToken = Completer<String?>();
       final gateway = _FakeGateway(signedIn: true, delayedToken: delayedToken);
@@ -126,11 +162,17 @@ class _FakeSecureStore implements SecureKeyValueStore {
 }
 
 class _FakeGateway implements ClerkAuthGateway {
-  _FakeGateway({this.signedIn = false, this.token, this.delayedToken});
+  _FakeGateway({
+    this.signedIn = false,
+    this.token,
+    this.delayedToken,
+    this.signOutError,
+  });
 
   bool signedIn;
   final String? token;
   final Completer<String?>? delayedToken;
+  final Object? signOutError;
   int signOutCalls = 0;
   final _changes = StreamController<void>.broadcast();
 
@@ -153,8 +195,14 @@ class _FakeGateway implements ClerkAuthGateway {
   @override
   Future<void> signOut() async {
     signOutCalls++;
+    if (signOutError case final error?) throw error;
     signedIn = false;
     _changes.add(null);
+  }
+
+  Future<void> emitChange() async {
+    _changes.add(null);
+    await Future<void>.delayed(Duration.zero);
   }
 
   @override

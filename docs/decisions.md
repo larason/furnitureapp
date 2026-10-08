@@ -3007,3 +3007,30 @@ The router retains only an allow-listed, query-free internal `/account` continua
 **Consequences:** Flutter navigation has stable route names, typed location builders, predictable Android back behavior, safe unknown-route feedback, and testable auth transitions without a live Clerk sign-in flow. Later feature phases replace route placeholders in place; they do not add independent route registries or client-side authorization.
 
 **Status:** Accepted and implemented in Phase 16.6 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`pubspec.yaml`, `lib/app.dart`, `lib/navigation/**`, `test/navigation/**`, `README.md`), `docs/decisions.md`
+
+---
+
+### ADR/APP-005 — Lightweight Feature-First Flutter Composition
+
+**Decision:** Flutter customer features are organized by capability under
+`frontend/app/lib/features/`, while completed shared foundations remain in
+`core/`, `theme/`, and `navigation/`. Feature code receives the existing
+`ApiClient` and optional SDK-independent `AuthSession` through explicit
+`FeatureDependencies` constructor injection. The application composition root
+owns creation and disposal of the API client, transport, and Clerk adapter;
+`FeatureDependencies` does not own or dispose shared services.
+
+Features may add local `data/`, `domain/`, and `presentation/` layers only when
+the feature has an actual responsibility for them. The central `go_router`
+configuration remains the sole route registry and auth policy boundary. No
+feature module initializes Clerk, reads secure storage or compile-time config,
+creates an HTTP client, parses transport envelopes in presentation, or
+duplicates Laravel authorization. No feature modules, repositories, screens, or
+models are implemented before their owning Group Q phases.
+
+**Reason:** This provides a testable composition boundary and clear dependency
+direction without introducing a state-management or dependency-injection
+framework, boilerplate layers, speculative models, or request-only commerce
+features.
+
+**Status:** Accepted and implemented in Phase 16.7 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`lib/core/auth/auth_session.dart`, `lib/core/feature_dependencies.dart`, `lib/core/auth/clerk_auth_adapter.dart`, `lib/features/README.md`, `test/architecture/feature_architecture_test.dart`, `README.md`), `docs/decisions.md`
