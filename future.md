@@ -32,3 +32,9 @@
 12. Current sign-up/sign-in is Clerk-only. The website does not yet call Laravel /api/v1/me after authentication, so creating a Clerk account alone does not create/update a local users record.
 The website bridge exists in frontend/web/lib/auth/laravel.ts, but nothing currently invokes it. To save a local user immediately after verification/sign-up, we should add a post-authenticated /me call.
 Local-user lifecycle: Successful Clerk sign-up/sign-in does not itself guarantee a corresponding Laravel users row. Local CUSTOMER projection is created lazily by Laravel when the authenticated Clerk identity first reaches an application endpoint requiring local user resolution. Public catalog browsing must not trigger provisioning merely because a Clerk session exists.
+
+13. A few observations worth carrying forward:
+ 1. Clerk JWKS connectivity: The 503 EXTERNAL_SERVICE_ERROR is separate from CORS. Resolve and verify live token authentication before considering the authentication integration complete.
+ 2. Guest-cart cookies: When Group F implements the browser-facing guest-cart flow, verify credentials: 'include', cookie attributes, and the exact frontend/backend host relationship.
+ 3. Frontend API transport: Keep NEXT_PUBLIC_API_BASE_URL unused until the client-side transport decision is formally approved. Avoid introducing a second API transport accidentally.
+4. Production deployment: Configure CORS_ALLOWED_ORIGINS using the actual deployed frontend origins and rerun the CORS integration tests.
