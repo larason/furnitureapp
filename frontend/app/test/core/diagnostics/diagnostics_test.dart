@@ -64,10 +64,7 @@ void main() {
 
   test('disabled diagnostics do not write to the sink', () {
     final sink = InMemoryDiagnosticSink();
-    const diagnostics = DefaultAppDiagnostics(
-      enabled: false,
-      sink: NoopDiagnosticSink(),
-    );
+    final diagnostics = DefaultAppDiagnostics(enabled: false, sink: sink);
 
     diagnostics.record(
       DiagnosticEvent.now(
