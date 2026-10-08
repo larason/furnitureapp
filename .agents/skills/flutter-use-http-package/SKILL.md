@@ -73,7 +73,10 @@ Use the following checklist to implement and validate network operations.
     result such as `void`/`null` only when the client contract permits it.
 - [ ] 4. Validate the `statusCode` and throw an `Exception` on failure.
 - [ ] 5. Integrate the `Future` into the UI using `FutureBuilder`.
-- [ ] 6. Handle `snapshot.hasData`, `snapshot.hasError`, and default to a `CircularProgressIndicator`.
+- [ ] 6. Handle `snapshot.hasError`, then handle completed success without data
+  (for permitted `void`/`null` results) as an explicit empty-success state;
+  render `snapshot.data` when present and use `CircularProgressIndicator` only
+  while the future is not complete.
 - [ ] 7. **Feedback Loop:** Run the app -> trigger the network request -> review console for unhandled exceptions -> fix parsing or permission errors.
 
 ## Examples
@@ -157,7 +160,13 @@ class _PhotoGalleryState extends State<PhotoGallery> {
     return FutureBuilder<List<Photo>>(
       future: _futurePhotos,
       builder: (context, snapshot) {
-        if (snapshot.hasData) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        if (snapshot.connectionState == ConnectionState.done) {
+          if (!snapshot.hasData) {
+            return const Center(child: Text('No results'));
+          }
           final photos = snapshot.data!;
           return ListView.builder(
             itemCount: photos.length,
@@ -166,10 +175,8 @@ class _PhotoGalleryState extends State<PhotoGallery> {
               title: Text(photos[index].title),
             ),
           );
-        } else if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
         }
-        
+
         // Default loading state
         return const Center(child: CircularProgressIndicator());
       },

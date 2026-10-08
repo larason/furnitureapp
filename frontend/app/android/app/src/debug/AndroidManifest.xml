@@ -1,19 +1,15 @@
 <manifest
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- The INTERNET permission is required for development. Specifically,
          the Flutter tool needs it to communicate with the running application
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
-     <!-- Debug-only: allows LOCAL development against http://10.0.2.2:8000 and
-          http://127.0.0.1:8000. The main manifest explicitly disables this, so
-          release builds keep cleartext traffic disabled by policy.
-         ConfigValidator also rejects HTTP for STAGING and PRODUCTION, so this
-         exception is limited to LOCAL debug development and must not be copied
-         to the main/release manifest. -->
+     <!-- Debug-only: the network security config permits HTTP only for local
+          loopback/emulator hosts. Release uses the main manifest's explicit
+          cleartext=false policy. ConfigValidator also rejects HTTP for STAGING
+          and PRODUCTION. -->
     <application
         android:allowBackup="false"
-        android:usesCleartextTraffic="true"
-        tools:replace="android:usesCleartextTraffic"/>
+        android:networkSecurityConfig="@xml/network_security_config"/>
 </manifest>
