@@ -51,6 +51,7 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
   const [useProductContext, setUseProductContext] = useState(Boolean(product));
   const [productUnavailable, setProductUnavailable] = useState(false);
   const acknowledgementRef = useRef<HTMLDivElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isSubmitted) acknowledgementRef.current?.focus();
@@ -106,6 +107,11 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
     setFieldErrors((current) => ({ ...current, attachment: undefined }));
   }
 
+  function removeAttachment() {
+    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    updateAttachment(null);
+  }
+
   if (isSubmitted) {
     return (
       <Stack ref={acknowledgementRef} tabIndex={-1} spacing={4} aria-live="polite" sx={{ maxWidth: "var(--content-width-form)", outline: "none" }}>
@@ -137,8 +143,8 @@ export function FurnitureRequestForm({ product }: Readonly<{ product?: Furniture
         </FormGroup>
         <FormGroup title="Reference attachment" description="Optional: one JPG, PNG, WebP, or PDF file, up to 5 MiB. Attachments are private.">
           <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
-            <Button component="label" variant="outlined" disabled={isSubmitting}>Choose a file<input hidden name="attachment" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => updateAttachment(event.target.files?.[0] ?? null)} /></Button>
-            {values.attachment ? <Button type="button" variant="text" onClick={() => updateAttachment(null)} disabled={isSubmitting}>Remove file</Button> : null}
+            <Button component="label" variant="outlined" disabled={isSubmitting}>Choose a file<input ref={attachmentInputRef} hidden name="attachment" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => updateAttachment(event.target.files?.[0] ?? null)} /></Button>
+            {values.attachment ? <Button type="button" variant="text" onClick={removeAttachment} disabled={isSubmitting}>Remove file</Button> : null}
           </Stack>
           {values.attachment ? <Typography variant="body2" aria-live="polite">{attachmentLabel(values.attachment)}</Typography> : null}
           {fieldErrors.attachment ? <Typography role="alert" variant="body2" color="error">{fieldErrors.attachment}</Typography> : null}
@@ -175,6 +181,12 @@ function attachmentLabel(attachment: Blob): string {
 
 function handleSubmissionError(error: unknown, setFieldErrors: Dispatch<SetStateAction<FurnitureRequestFieldErrors>>, setSubmissionMessage: Dispatch<SetStateAction<string | undefined>>, markProductUnavailable: () => void): void {
   if (error instanceof ApiError && error.status === 422) {
+    if (hasProductContextError(error)) {
+      setFieldErrors({});
+      setSubmissionMessage("This product is no longer available for requests. You can continue as a custom furniture request instead.");
+      markProductUnavailable();
+      return;
+    }
     setFieldErrors(apiErrorsToFields(error));
     setSubmissionMessage("Please correct the highlighted details and try again.");
     return;
@@ -196,6 +208,10 @@ function handleSubmissionError(error: unknown, setFieldErrors: Dispatch<SetState
   else if (error instanceof ApiConfigurationError) setSubmissionMessage("Furniture requests are not configured for this environment.");
   else if (error instanceof ApiTransportError) setSubmissionMessage("We could not confirm whether your request was received. Please do not submit again automatically; contact us before retrying.");
   else setSubmissionMessage("We could not submit your request right now. Please try again later.");
+}
+
+function hasProductContextError(error: ApiError): boolean {
+  return error.errors.some((item) => item.field === "product_id");
 }
 
 function apiErrorsToFields(error: ApiError): FurnitureRequestFieldErrors {

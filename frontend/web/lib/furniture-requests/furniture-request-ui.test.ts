@@ -27,8 +27,10 @@ test("request form uses the single API client with an ephemeral Clerk bearer", (
   assert.match(form, /if \(isLoaded && isSignedIn\)/);
   assert.match(form, /Submit as visitor/);
   assert.match(form, /status === 409/);
+  assert.match(form, /hasProductContextError\(error\)/);
   assert.match(form, /status === 413/);
   assert.match(form, /status === 429/);
+  assert.match(form, /attachmentInputRef\.current\.value = ""/);
   assert.doesNotMatch(form + api, /X-Upload-Token|localStorage|sessionStorage|Server Action|fetch\(/);
 });
 
