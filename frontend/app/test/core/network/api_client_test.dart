@@ -203,6 +203,40 @@ void main() {
       expect(response!.meta!.requestId, 'req-header');
     });
 
+    test('omits an unsafe response header request ID', () async {
+      final client = _client(
+        FakeTransport.json(
+          200,
+          <String, Object?>{'data': <String, Object?>{}},
+          headers: <String, String>{'X-Request-Id': 'bad\nrequest-id'},
+        ),
+      );
+
+      final response = await client.get<Object?>('/products');
+
+      expect(response!.meta, isNull);
+    });
+
+    test('rejects an unsafe success body request ID', () async {
+      final client = _client(
+        FakeTransport.json(200, <String, Object?>{
+          'data': <String, Object?>{},
+          'meta': <String, Object?>{'request_id': 'x' * 129},
+        }),
+      );
+
+      await expectLater(
+        client.get<Object?>('/products'),
+        throwsA(
+          isA<ApiError>().having(
+            (error) => error.invalidResponse,
+            'invalid',
+            true,
+          ),
+        ),
+      );
+    });
+
     test('handles documented 204 without fabricating an envelope', () async {
       final client = _client(FakeTransport.raw(204, Uint8List(0)));
 
@@ -231,6 +265,25 @@ void main() {
         client.get<Object?>(
           '/products',
           decoder: (_) => throw const FormatException('invalid product'),
+        ),
+        throwsA(
+          isA<ApiError>().having(
+            (error) => error.invalidResponse,
+            'invalid',
+            true,
+          ),
+        ),
+      );
+    });
+
+    test('converts decoder type errors into invalid response errors', () async {
+      final client = _client(FakeTransport.success({'id': '1'}));
+      dynamic malformedValue = 7;
+
+      await expectLater(
+        client.get<Object?>(
+          '/products',
+          decoder: (_) => malformedValue as String,
         ),
         throwsA(
           isA<ApiError>().having(
@@ -305,6 +358,31 @@ void main() {
         expect(error.errors.first.details!['min'], 1);
       },
     );
+
+    test('rejects an unsafe error body request ID', () async {
+      final client = _client(
+        FakeTransport.json(422, <String, Object?>{
+          'errors': <Object?>[
+            <String, Object?>{
+              'code': 'INVALID_VALUE',
+              'message': 'Invalid value',
+            },
+          ],
+          'meta': <String, Object?>{'request_id': 'bad\u0000request-id'},
+        }),
+      );
+
+      await expectLater(
+        client.get<Object?>('/products'),
+        throwsA(
+          isA<ApiError>().having(
+            (error) => error.invalidResponse,
+            'invalid',
+            true,
+          ),
+        ),
+      );
+    });
 
     test('keeps 401 and 403 distinct', () async {
       for (final status in <int>[401, 403]) {

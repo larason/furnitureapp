@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' hide DiagnosticLevel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/config/app_config.dart';
@@ -193,6 +195,28 @@ void main() {
     expect(boundary.handleAsyncError(error, stack), isTrue);
     expect(sink.events, hasLength(1));
     expect(sink.events.single.code, DiagnosticCode.unhandledAsyncError);
+  });
+
+  test('zoned async failures are forwarded after recording', () {
+    final sink = InMemoryDiagnosticSink();
+    final diagnostics = DefaultAppDiagnostics(enabled: true, sink: sink);
+    final boundary = DiagnosticErrorBoundary(diagnostics: diagnostics);
+    final error = StateError('private async exception text');
+    final stack = StackTrace.current;
+    final forwarded = <Object>[];
+    final parentZone = Zone.current.fork(
+      specification: ZoneSpecification(
+        handleUncaughtError: (_, _, _, error, _) => forwarded.add(error),
+      ),
+    );
+
+    parentZone.run(() {
+      boundary.handleZonedAsyncError(parentZone, error, stack);
+    });
+
+    expect(sink.events, hasLength(1));
+    expect(sink.events.single.code, DiagnosticCode.unhandledAsyncError);
+    expect(forwarded, contains(same(error)));
   });
 }
 

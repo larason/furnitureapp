@@ -519,9 +519,8 @@ class ApiClient {
     ApiTransportResponse response,
     ApiDecoder<T>? decoder,
   ) async {
-    final responseId = _header(
-      response.headers,
-      NetworkConstants.requestIdHeader,
+    final responseId = DiagnosticSanitizer.requestId(
+      _header(response.headers, NetworkConstants.requestIdHeader),
     );
     final retryAfter = _parseRetryAfter(
       _header(response.headers, NetworkConstants.retryAfterHeader),
@@ -556,7 +555,7 @@ class ApiClient {
     } else {
       try {
         data = decoder(payload['data']);
-      } on Exception {
+      } catch (_) {
         throw _invalidResponse(response.statusCode, responseId);
       }
     }
@@ -589,7 +588,8 @@ class ApiClient {
     }
     final meta = payload['meta'] as Map;
     final bodyRequestId = meta['request_id'];
-    if (bodyRequestId is! String || bodyRequestId.isEmpty) {
+    if (bodyRequestId is! String ||
+        DiagnosticSanitizer.requestId(bodyRequestId) == null) {
       return _invalidResponse(statusCode, responseId, retryAfter);
     }
     final errors = <ApiErrorItem>[];
@@ -635,7 +635,9 @@ class ApiClient {
     final paginationValue = value['pagination'];
     final unreadValue = value['unread_count'];
     final requestValue = value['request_id'];
-    if (requestValue != null && requestValue is! String) {
+    if (requestValue != null &&
+        (requestValue is! String ||
+            DiagnosticSanitizer.requestId(requestValue) == null)) {
       throw _invalidResponse(statusCode, responseId);
     }
     if (unreadValue != null && (unreadValue is! int || unreadValue < 0)) {

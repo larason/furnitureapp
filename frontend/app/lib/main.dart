@@ -28,9 +28,11 @@ Future<void> main() async {
   final errorBoundary = isFlutterTest
       ? DiagnosticErrorBoundary(diagnostics: diagnostics)
       : installDiagnosticErrorBoundary(diagnostics);
+  final parentZone = Zone.current;
   await runZonedGuarded(
     () => _startApplication(diagnostics),
-    errorBoundary.handleAsyncError,
+    (error, stackTrace) =>
+        errorBoundary.handleZonedAsyncError(parentZone, error, stackTrace),
   );
 }
 

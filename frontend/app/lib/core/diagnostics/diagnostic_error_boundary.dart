@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' hide DiagnosticLevel;
 
 import 'app_diagnostics.dart';
@@ -52,6 +54,15 @@ class DiagnosticErrorBoundary {
       ),
     );
     return previousAsyncError?.call(error, stackTrace) ?? false;
+  }
+
+  void handleZonedAsyncError(
+    Zone parentZone,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    final handled = handleAsyncError(error, stackTrace);
+    if (!handled) parentZone.handleUncaughtError(error, stackTrace);
   }
 
   bool _wasReported(Object error, StackTrace stackTrace) {
