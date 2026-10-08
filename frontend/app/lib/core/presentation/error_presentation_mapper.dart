@@ -9,6 +9,7 @@ class ErrorPresentation {
     required this.message,
     this.recoveryAction = ErrorRecoveryAction.none,
     this.requestId,
+    this.retryAfterSeconds,
     this.fieldErrors = const <String, List<String>>{},
   });
 
@@ -16,6 +17,7 @@ class ErrorPresentation {
   final String message;
   final ErrorRecoveryAction recoveryAction;
   final String? requestId;
+  final int? retryAfterSeconds;
   final Map<String, List<String>> fieldErrors;
 }
 
@@ -111,6 +113,7 @@ abstract final class ErrorPresentationMapper {
             ? 'Please wait and try again later.'
             : 'Please wait before trying again.',
         requestId: error.requestId,
+        retryAfterSeconds: error.retryAfterSeconds,
         fieldErrors: fields,
       ),
       >= 500 => ErrorPresentation(

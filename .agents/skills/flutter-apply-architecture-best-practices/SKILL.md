@@ -86,12 +86,14 @@ class UserRepository {
   
   final ApiClient _apiClient;
   User? _cachedUser;
+  String? _cachedUserId;
 
   Future<User> getUser(String id) async {
-    if (_cachedUser != null) return _cachedUser!;
+    if (_cachedUserId == id && _cachedUser != null) return _cachedUser!;
     
     final apiModel = await _apiClient.fetchUser(id);
     _cachedUser = User(id: apiModel.id, name: apiModel.fullName); // Transform to Domain Model
+    _cachedUserId = id;
     return _cachedUser!;
   }
 }

@@ -108,15 +108,22 @@ import 'dart:io';
 Future<void> safeWriteln(String line) async {
   try {
     stdout.writeln(line);
-  } on SocketException catch (e) {
-    // EPIPE / Broken pipe: downstream closed standard input.
-    if (e.osError?.errorCode == 32 || e.message.contains('Broken pipe')) {
-      await stdout.close().catchError((_) {});
-      // In a bulk streaming context, calling exit(0) immediately stops the
-      // producer loop when downstream has closed its pipe.
-      exit(0);
-    }
-    rethrow;
+    await stdout.flush();
+  } catch (error, stackTrace) {
+    final isBrokenPipe = switch (error) {
+      SocketException e =>
+        e.osError?.errorCode == 32 || e.message.contains('Broken pipe'),
+      FileSystemException e =>
+        e.osError?.errorCode == 32 || e.message.contains('Broken pipe'),
+      _ => false,
+    };
+    if (!isBrokenPipe) Error.throwWithStackTrace(error, stackTrace);
+
+    // EPIPE / Broken pipe: downstream closed standard input. Flush surfaces
+    // asynchronous IOSink failures before the producer continues writing.
+    await stdout.close().catchError((_) {});
+    // In a bulk streaming context, stop the producer when the pipe closes.
+    exit(0);
   }
 }
 ```

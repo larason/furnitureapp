@@ -75,6 +75,7 @@ void main() {
     );
     await tester.pumpWidget(_host(const AppErrorView(error: error)));
 
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(find.text('Connection problem'), findsOneWidget);
     expect(find.text('Reference: req_123'), findsOneWidget);
     expect(find.text('Try again'), findsNothing);
@@ -121,5 +122,28 @@ void main() {
 
     await tester.pump();
     expect(tester.takeException(), isNull);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+  });
+
+  testWidgets('empty view keeps its action in a scrollable region', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        const AppEmptyView(
+          title: 'A long empty-state title',
+          description: 'A long description that may wrap at large text sizes.',
+          actionLabel: 'Refresh',
+          onAction: _noop,
+        ),
+        textScale: 2,
+      ),
+    );
+
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.text('Refresh'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
+
+void _noop() {}

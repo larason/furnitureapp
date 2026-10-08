@@ -107,7 +107,9 @@ void main() {
 
     expect(withRetryAfter!.message, 'Please wait before trying again.');
     expect(withRetryAfter.recoveryAction, ErrorRecoveryAction.none);
+    expect(withRetryAfter.retryAfterSeconds, 30);
     expect(withoutRetryAfter!.message, 'Please wait and try again later.');
+    expect(withoutRetryAfter.retryAfterSeconds, isNull);
   });
 
   test('uses a generic safe fallback for unknown exceptions', () {
