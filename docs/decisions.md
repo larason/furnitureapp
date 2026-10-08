@@ -2995,3 +2995,15 @@ The app consumes the shared design system exclusively through the existing `fron
 **Consequences / deferred:** Only the approved light theme exists — no dark palette was generated from Material defaults, because `tokens.css` defines none. Material's required modal `scrim` has no canonical token and is derived from `--surface-inverse` at 54% alpha, recorded as a gap rather than a new brand colour. `44ch` is emitted as an approximate `44`. Bundling Helvetica Now Text awaits a redistribution licence. Golden tests were not added; component rendering is covered by widget tests instead.
 
 **Status:** Accepted and implemented in Phase 16.2 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`tool/token_generator.dart`, `tool/generate_tokens.dart`, `lib/theme/**`, `lib/app.dart`, `pubspec.yaml`, `assets/fonts/**`, `test/theme/**`, `test/tool/**`, `test/support/**`, `test/app_test.dart`, `README.md`), `docs/decisions.md`, `phases/group-P-phases.md`
+
+---
+
+### ADR/APP-004 — Declarative Flutter Routing and Request-First Navigation
+
+**Decision:** Phase 16.6 uses `go_router` with one root navigator and a centralized `lib/navigation/` registry. Public discovery, made-to-order request, and enquiry/contact routes are available regardless of Clerk state. `/account` is protected; the router reacts only to the adapter's state and never requests, retains, or inspects a bearer token. It redirects protected destinations to sign-in when signed out and to a neutral status route during initialization, required Clerk action, or temporary unavailability.
+
+The router retains only an allow-listed, query-free internal `/account` continuation after successful authentication. External URLs, authentication routes, query-bearing destinations, and malformed resource identifiers are rejected. Cart, checkout, payment, orders, favorites, and a stateful bottom-navigation shell are deferred because request-first scope does not yet own those destinations. Android App Links are also deferred pending a verified production domain and Digital Asset Links setup.
+
+**Consequences:** Flutter navigation has stable route names, typed location builders, predictable Android back behavior, safe unknown-route feedback, and testable auth transitions without a live Clerk sign-in flow. Later feature phases replace route placeholders in place; they do not add independent route registries or client-side authorization.
+
+**Status:** Accepted and implemented in Phase 16.6 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`pubspec.yaml`, `lib/app.dart`, `lib/navigation/**`, `test/navigation/**`, `README.md`), `docs/decisions.md`

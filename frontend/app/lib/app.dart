@@ -1,12 +1,12 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/network/api_client.dart';
+import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
-import 'theme/preview/theme_preview.dart';
 
 /// Root application widget.
 ///
@@ -15,9 +15,8 @@ import 'theme/preview/theme_preview.dart';
 /// consumes the validated config through [apiClient]; no request is made during
 /// startup.
 ///
-/// Screen implementation belongs to later Group P phases. Debug builds render
-/// the theme preview harness; release builds render a neutral placeholder until
-/// the catalog shell is implemented.
+/// Feature screens are introduced by their owning Group P phases. This root
+/// only owns route registration and authentication-aware access control.
 class SLFurnituresApp extends StatefulWidget {
   const SLFurnituresApp({
     super.key,
@@ -39,8 +38,25 @@ class SLFurnituresApp extends StatefulWidget {
 }
 
 class _SLFurnituresAppState extends State<SLFurnituresApp> {
+  late final ValueNotifier<ClerkAuthStatus> _anonymousAuthState = ValueNotifier(
+    ClerkAuthStatus.signedOut,
+  );
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = AppRouter.create(
+      authState: widget.authAdapter ?? _anonymousAuthState,
+      getAuthStatus: () =>
+          widget.authAdapter?.status ?? ClerkAuthStatus.signedOut,
+    );
+  }
+
   @override
   void dispose() {
+    _router.dispose();
+    _anonymousAuthState.dispose();
     if (widget.ownsApiClient) {
       widget.apiClient?.close();
     }
@@ -52,12 +68,10 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'SL Furnitures',
       theme: AppTheme.light(),
-      home: kDebugMode
-          ? const ThemePreviewScreen()
-          : const BootstrapPlaceholder(),
+      routerConfig: _router,
     );
   }
 }
@@ -103,18 +117,6 @@ class ConfigFailureApp extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-}
-
-/// Neutral first screen. Replaced by the real catalog shell in later phases.
-class BootstrapPlaceholder extends StatelessWidget {
-  const BootstrapPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: SafeArea(child: Center(child: Text('SL Furnitures'))),
     );
   }
 }

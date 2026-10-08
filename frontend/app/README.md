@@ -15,18 +15,38 @@ Laravel API as the Next.js website and shares the project design system.
 
 This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
 Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
-(networking layer)**, and **Phase 16.5 (authentication storage/session)**
-foundations.
+(networking layer)**, **Phase 16.5 (authentication storage/session)**, and
+**Phase 16.6 (routing/navigation)** foundations.
 
 Not yet implemented (owned by later Group P phases):
 
-- 16.6 routing/navigation
 - 16.7 feature/module structure
 - 16.8 error/loading states
 - 16.9 logging/diagnostics
 
-No customer-facing screen exists yet. Debug builds show the development-only
-theme preview harness; release builds show the neutral bootstrap placeholder.
+The root application now uses `MaterialApp.router`. Route placeholders establish
+the Phase 16.6 navigation contract only; customer feature screens remain owned
+by their later phases. The development-only theme preview remains directly
+testable but is no longer the application home screen.
+
+## Navigation
+
+`lib/navigation/` is the single route registry. Public routes are home, catalog,
+product/category details, search, made-to-order requests, contact, and the
+future Clerk sign-in/sign-up entry points. `/account` is the sole protected
+placeholder route.
+
+The router refreshes from `ClerkAuthAdapter` without requesting or retaining a
+token. Protected routes redirect to a Clerk entry point when signed out and to a
+neutral status screen while a session is restoring, needs action, or is
+temporarily unavailable. Public catalog and request routes remain available in
+all of those states.
+
+After sign-in, the router restores only the allow-listed internal `/account`
+destination. It rejects external origins, authentication-flow loops, query
+parameters, and malformed resource identifiers. Android App Links are deferred
+until a production domain, manifest intent filters, `assetlinks.json`, and
+device verification are available.
 
 ## Networking layer
 
