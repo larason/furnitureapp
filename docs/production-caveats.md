@@ -155,12 +155,12 @@ Details:
 - **LIMITATION — slug mutability.** Backend slugs are not immutable and there is
   no old-slug redirect contract; renamed slugs may 404. Establish a redirect/
   migration policy before treating slug edits as routine content operations.
-- **LIMITATION — global category navigation is a non-interactive fixture.** The
-  header/mobile/footer category lists render as non-links until authoritative
-  catalog-driven global navigation can be introduced without a global fetch/
-  availability regression. Categories remain reachable via the homepage
-  discovery, product breadcrumbs, and the sitemap. Reserved routes
-  (`/furniture-requests`, `/contact`, `/account`, cart/checkout) stay inactive.
+- **LIMITATION — global category navigation uses a static taxonomy.** The
+  header/mobile/footer category lists link to the canonical seeded category
+  slugs until catalog-driven global navigation can replace the static source
+  without a global fetch/availability regression. `/furniture-requests` and
+  `/contact` are active. Reserved routes (`/account`, cart/checkout) stay
+  inactive.
 
 ---
 
@@ -199,7 +199,6 @@ them until their owning phase ships:
 - customer account and orders — deferred; Clerk customer sign-in/sign-up is
   implemented, but no customer account/dashboard route exists yet;
 - cart, checkout, payment, order confirmation — deferred (request-first release);
-- general enquiries (`/contact`);
 - comprehensive internal-linking, image/performance hardening (later Group N
   phases).
 

@@ -88,7 +88,9 @@ test("global navigation keeps the seeded category destinations active and free o
   assert.doesNotMatch(combined, /router\.push|window\.location|location\.href/);
   assert.doesNotMatch(combined, /products\?category=/);
   assert.doesNotMatch(read("components/layout/primary-category-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\} inactive/);
-  assert.doesNotMatch(read("components/layout/mobile-navigation.tsx"), /href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*?inactive/);
+  const mobileCategoryLink = read("components/layout/mobile-navigation.tsx").match(/<NavLink\s+href=\{`\/categories\/\$\{category\.slug\}`\}[\s\S]*?>/);
+  assert.ok(mobileCategoryLink);
+  assert.doesNotMatch(mobileCategoryLink[0], /\binactive\b/);
   assert.doesNotMatch(read("components/layout/site-footer.tsx"), /inactive: true/);
 });
 

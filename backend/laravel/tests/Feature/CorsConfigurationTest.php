@@ -24,6 +24,13 @@ class CorsConfigurationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $configuredOrigins = config('cors.allowed_origins');
+
+        $this->assertIsArray($configuredOrigins);
+        $this->assertContains('api/*', config('cors.paths'));
+        $this->assertNotContains('*', $configuredOrigins);
+        $this->assertSame([], config('cors.allowed_origins_patterns'));
+
         // Two explicit origins mirror the real local configuration and keep the
         // CORS service on its dynamic origin-matching path. With a single origin
         // fruitcake/php-cors emits that origin unconditionally, which is still
@@ -102,13 +109,6 @@ class CorsConfigurationTest extends TestCase
 
         $this->assertContains('authorization', $headers);
         $this->assertContains('content-type', $headers);
-    }
-
-    public function test_origins_are_explicit_without_patterns_or_wildcards(): void
-    {
-        $this->assertContains('api/*', config('cors.paths'));
-        $this->assertNotContains('*', config('cors.allowed_origins'));
-        $this->assertSame([], config('cors.allowed_origins_patterns'));
     }
 
     public function test_second_allowed_origin_is_also_granted(): void
