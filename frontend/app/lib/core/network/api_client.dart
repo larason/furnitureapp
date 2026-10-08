@@ -444,9 +444,16 @@ class ApiClient {
       );
     }
     final meta = _parseMeta(payload['meta'], response.statusCode, responseId);
-    final data = decoder == null
-        ? _castData<T>(payload['data'], response.statusCode, responseId)
-        : decoder(payload['data']);
+    late final T data;
+    if (decoder == null) {
+      data = _castData<T>(payload['data'], response.statusCode, responseId);
+    } else {
+      try {
+        data = decoder(payload['data']);
+      } on Exception {
+        throw _invalidResponse(response.statusCode, responseId);
+      }
+    }
     return ApiResponse(data: data, meta: meta);
   }
 

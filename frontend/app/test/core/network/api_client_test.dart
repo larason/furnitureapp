@@ -220,6 +220,24 @@ void main() {
       );
     });
 
+    test('converts decoder exceptions into invalid response errors', () async {
+      final client = _client(FakeTransport.success({'id': '1'}));
+
+      await expectLater(
+        client.get<Object?>(
+          '/products',
+          decoder: (_) => throw const FormatException('invalid product'),
+        ),
+        throwsA(
+          isA<ApiError>().having(
+            (error) => error.invalidResponse,
+            'invalid',
+            true,
+          ),
+        ),
+      );
+    });
+
     test('rejects unsupported response content types', () async {
       final client = _client(
         FakeTransport.raw(

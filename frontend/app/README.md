@@ -88,6 +88,22 @@ The default timeout is 10 seconds and every request accepts an explicit
 that client; injected transports remain caller-owned. Startup constructs the
 client after configuration validation but performs no API request.
 
+## Marionette MCP
+
+The debug app initializes `MarionetteBinding` for runtime Flutter interaction;
+the binding is skipped under `flutter test` to avoid competing with Flutter's
+test binding. The MCP server is configured for OpenCode and VS Code with:
+
+```bash
+dart pub global activate marionette_mcp
+dart pub global run marionette_mcp
+```
+
+Run the app in debug mode, copy its VM service URI from the Flutter console,
+then connect Marionette to inspect widgets, tap controls, enter text, scroll,
+and capture screenshots. A hot restart is required after changing the binding
+in `main.dart`.
+
 ## Environment configuration
 
 Configuration uses Flutter's compile-time mechanism, `--dart-define-from-file`.
