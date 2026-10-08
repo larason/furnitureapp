@@ -2965,3 +2965,21 @@ The app consumes the shared design system exclusively through the existing `fron
 **Reason:** Fixes the durable Play Store identity and platform scope before any UI exists, keeps the app on one shared design authority, follows the repository's phase-by-phase dependency order, and avoids scaffolding theme or business layers outside their owning phases.
 
 **Status:** Accepted and verified in Phase 16.1 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`pubspec.yaml`, `analysis_options.yaml`, `lib/main.dart`, `lib/app.dart`, `test/app_test.dart`, `README.md`, `android/app/src/main/AndroidManifest.xml`), `docs/decisions.md`, `phases/group-P-phases.md`
+
+---
+
+### ADR/DESIGN-008 — Flutter Theme Is Generated From Canonical `tokens.css`
+
+**Decision:** The Flutter Material 3 theme is produced by a deterministic generator, not by a hand-maintained Dart palette. `frontend/app/tool/token_generator.dart` + `tool/generate_tokens.dart` read the sole canonical authority `frontend/design-system/tokens.css`, resolve `var(...)` references, preserve semantic token names, and convert colors, pixel measurements, unitless line-height multipliers, durations, and aspect ratios into typed Dart. The CLI writes `frontend/app/lib/theme/tokens/generated_tokens.dart` (`abstract final class GeneratedTokens`) or, with `--check`, fails when that file is stale relative to `tokens.css`. Output is byte-deterministic and `dart format`-stabilised, and carries a header naming the source and the regeneration command. Generation fails loudly on unresolved references, a missing `:root`, missing required tokens, or unsupported value syntax.
+
+`GeneratedTokens` is the **only** file permitted to hold raw `Color(0x...)` literals, enforced by `test/theme/theme_definitions_test.dart`. `AppSpacing`, `AppShapes`, `AppMotion`, and `AppTypography` are aliases over it and define no values, so there is no second token palette; `design-tokens.json` and `tailwind-v4.css` remain web-side representations and are not consumed by Flutter. Staleness is checked twice — by `dart run tool/generate_tokens.dart --check` and by `test/theme/token_sync_test.dart` inside `flutter test`.
+
+`AppTheme.light()` sets `useMaterial3: true` with an **explicit `ColorScheme`** — no `ColorScheme.fromSeed`, no dynamic wallpaper color, `surfaceTint` transparent. Charcoal `--action-primary` is `primary`; the brown `--accent-brand` is a `ThemeExtension AppBrandColors`, never `secondary`; editorial is `ThemeExtension AppSurfaceColors`; success/warning/info are `ThemeExtension AppStatusColors` (danger alone becomes `error`). CSS rings and focus rings map to borders and focus decorations rather than native `Material` elevation, cards stay flat, and motion uses only the 150/200 ms tokens with a reduced-motion resolver.
+
+**Fonts:** Young Serif is bundled from the OFL asset the website already ships (`assets/fonts/`), display roles only (96/48/32). Helvetica Now Text is commercial and distributed nowhere in this repository, so utility type uses the platform sans — the terminal generic of the canonical stack, a documented fallback rather than a substituted brand font. No Google Fonts package and no downloaded font was added.
+
+**Reason:** One generator-driven source keeps the app provably in sync with the website, makes canonical changes fail visibly instead of silently drifting, and satisfies the authority order (`tokens.css` before Material defaults) without inventing a competing token file.
+
+**Consequences / deferred:** Only the approved light theme exists — no dark palette was generated from Material defaults, because `tokens.css` defines none. Material's required modal `scrim` has no canonical token and is derived from `--surface-inverse` at 54% alpha, recorded as a gap rather than a new brand colour. `44ch` is emitted as an approximate `44`. Bundling Helvetica Now Text awaits a redistribution licence. Golden tests were not added; component rendering is covered by widget tests instead.
+
+**Status:** Accepted and implemented in Phase 16.2 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`tool/token_generator.dart`, `tool/generate_tokens.dart`, `lib/theme/**`, `lib/app.dart`, `pubspec.yaml`, `assets/fonts/**`, `test/theme/**`, `test/tool/**`, `test/support/**`, `test/app_test.dart`, `README.md`), `docs/decisions.md`, `phases/group-P-phases.md`
