@@ -3061,3 +3061,36 @@ without moving transport ownership into presentation, introducing a global
 state manager, or implementing feature business behavior prematurely.
 
 **Status:** Accepted and implemented in Phase 16.8 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`lib/core/presentation/**`, `test/core/presentation/**`, `README.md`, `lib/features/README.md`), `docs/decisions.md`
+
+---
+
+### ADR/APP-007 — Privacy-Safe Flutter Diagnostics Boundary
+
+**Decision:** Phase 16.9 adds one SDK-independent `AppDiagnostics` interface under
+`frontend/app/lib/core/diagnostics/`. Features and shared boundaries record typed
+`DiagnosticEvent` values with closed severity, category, code, timestamp, validated
+Laravel request ID, and allow-listed context. Output is separated behind
+`DiagnosticSink`; the app supplies a development console sink, tests use a bounded
+in-memory sink, and disabled/production policy uses a no-op sink. No remote,
+persistent, analytics, or crash-upload sink is introduced.
+
+`ENABLE_DIAGNOSTICS` remains the only configuration switch. Local and staging
+output requires explicit enablement; production is always disabled. Framework and
+unhandled-async errors are captured at the application boundary with duplicate
+suppression and existing handler delegation. `ApiClient`, Clerk/session
+persistence, and the central router own their respective events. Expected
+cancellation is not recorded as an error, and diagnostics never owns UI recovery,
+authentication, retries, or authorization.
+
+Sensitive data is excluded by construction: no arbitrary metadata map is exposed;
+only environment, operation, HTTP method, status, stable API code, numeric retry
+delay, transport/route category, cancellation state, and validated request ID are
+available. Bodies, headers, URLs/query strings, credentials, secure-storage
+values, identity, user text, raw exception messages, and production stacks are not
+event fields.
+
+**Reason:** A small allow-listed boundary gives future features actionable local
+failure evidence without creating a second observability platform or a telemetry
+privacy liability.
+
+**Status:** Accepted and implemented in Phase 16.9 | **Date:** 2026-10-09 | **Affected:** `frontend/app/lib/core/diagnostics/**`, `lib/core/network/api_client.dart`, `lib/core/auth/**`, `lib/navigation/**`, `lib/main.dart`, `lib/app.dart`, `lib/core/feature_dependencies.dart`, tests, and Flutter documentation

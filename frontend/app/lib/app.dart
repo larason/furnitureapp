@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
+import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
@@ -25,6 +26,7 @@ class SLFurnituresApp extends StatefulWidget {
     this.ownsApiClient = false,
     this.authAdapter,
     this.ownsAuthAdapter = false,
+    this.diagnostics = const NoopAppDiagnostics(),
   });
 
   final AppConfig config;
@@ -32,6 +34,7 @@ class SLFurnituresApp extends StatefulWidget {
   final bool ownsApiClient;
   final ClerkAuthAdapter? authAdapter;
   final bool ownsAuthAdapter;
+  final AppDiagnostics diagnostics;
 
   @override
   State<SLFurnituresApp> createState() => _SLFurnituresAppState();
@@ -50,6 +53,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       authState: widget.authAdapter ?? _anonymousAuthState,
       getAuthStatus: () =>
           widget.authAdapter?.status ?? ClerkAuthStatus.signedOut,
+      diagnostics: widget.diagnostics,
     );
   }
 

@@ -8,6 +8,12 @@ import 'api_response.dart';
 import 'api_transport.dart';
 import 'api_transport_exception.dart';
 import 'auth_token_provider.dart';
+import '../diagnostics/app_diagnostics.dart';
+import '../diagnostics/diagnostic_category.dart';
+import '../diagnostics/diagnostic_code.dart';
+import '../diagnostics/diagnostic_event.dart';
+import '../diagnostics/diagnostic_level.dart';
+import '../diagnostics/diagnostic_sanitizer.dart';
 import 'network_constants.dart';
 import 'request_cancellation.dart';
 
@@ -27,6 +33,7 @@ class ApiClient {
     required AppConfig config,
     ApiTransport? transport,
     this.authTokenProvider,
+    this.diagnostics = const NoopAppDiagnostics(),
     Duration timeout = const Duration(
       milliseconds: NetworkConstants.defaultTimeoutMs,
     ),
@@ -40,6 +47,7 @@ class ApiClient {
   final bool _ownsTransport;
   final AuthTokenProvider? authTokenProvider;
   final Duration _defaultTimeout;
+  final AppDiagnostics diagnostics;
   bool _isClosed = false;
 
   Future<ApiResponse<T>?> get<T>(
@@ -209,12 +217,27 @@ class ApiClient {
       if (timedOut || cancelled) {
         throw _cancellationFailure(timedOut);
       }
-      return _decodeResponse<T>(response, decoder);
-    } on ApiError {
+      return await _decodeResponse<T>(response, decoder);
+    } on ApiError catch (error) {
+      _recordApiError(method, error);
       rethrow;
-    } on ApiTransportException {
+    } on ApiTransportException catch (error) {
+      if (error.kind != ApiTransportFailureKind.cancellation) {
+        _recordTransportError(method, error);
+      }
       rethrow;
     } on ApiAuthenticationException {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.info,
+          category: DiagnosticCategory.authentication,
+          code: DiagnosticCode.authSessionRenewalFailed,
+          context: DiagnosticContext(
+            operation: DiagnosticOperation.authSessionRenewal,
+            transportFailure: DiagnosticTransportFailure.authentication,
+          ),
+        ),
+      );
       rethrow;
     } on ApiConfigurationException {
       rethrow;
@@ -231,6 +254,89 @@ class ApiClient {
       timer.cancel();
     }
   }
+
+  void _recordApiError(ApiHttpMethod method, ApiError error) {
+    final code = error.invalidResponse
+        ? DiagnosticCode.apiInvalidResponse
+        : error.statusCode == 429
+        ? DiagnosticCode.apiRateLimited
+        : DiagnosticCode.apiRequestFailed;
+    final level = error.invalidResponse || error.statusCode >= 500
+        ? DiagnosticLevel.error
+        : error.statusCode == 429
+        ? DiagnosticLevel.warning
+        : DiagnosticLevel.info;
+    diagnostics.record(
+      DiagnosticEvent.now(
+        level: level,
+        category: DiagnosticCategory.network,
+        code: code,
+        requestId: DiagnosticSanitizer.requestId(error.requestId),
+        context: DiagnosticContext(
+          operation: DiagnosticOperation.apiRequest,
+          httpMethod: _diagnosticMethod(method),
+          statusCode: error.statusCode,
+          apiErrorCode: DiagnosticSanitizer.apiErrorCode(
+            error.errors.isEmpty ? null : error.errors.first.code,
+          ),
+          retryAfterSeconds: error.retryAfterSeconds,
+        ),
+      ),
+    );
+  }
+
+  void _recordTransportError(
+    ApiHttpMethod method,
+    ApiTransportException error,
+  ) {
+    final code = switch (error.kind) {
+      ApiTransportFailureKind.timeout => DiagnosticCode.apiRequestTimeout,
+      ApiTransportFailureKind.connection => DiagnosticCode.apiConnectionFailed,
+      ApiTransportFailureKind.invalidResponse ||
+      ApiTransportFailureKind.invalidEnvelope ||
+      ApiTransportFailureKind.unsupportedContentType =>
+        DiagnosticCode.apiInvalidResponse,
+      ApiTransportFailureKind.cancellation => DiagnosticCode.apiRequestFailed,
+    };
+    final level = error.kind == ApiTransportFailureKind.timeout
+        ? DiagnosticLevel.warning
+        : DiagnosticLevel.error;
+    diagnostics.record(
+      DiagnosticEvent.now(
+        level: level,
+        category: DiagnosticCategory.network,
+        code: code,
+        requestId: DiagnosticSanitizer.requestId(error.requestId),
+        context: DiagnosticContext(
+          operation: DiagnosticOperation.apiRequest,
+          httpMethod: _diagnosticMethod(method),
+          statusCode: error.statusCode,
+          transportFailure: switch (error.kind) {
+            ApiTransportFailureKind.connection =>
+              DiagnosticTransportFailure.connection,
+            ApiTransportFailureKind.timeout =>
+              DiagnosticTransportFailure.timeout,
+            ApiTransportFailureKind.invalidResponse =>
+              DiagnosticTransportFailure.invalidResponse,
+            ApiTransportFailureKind.invalidEnvelope =>
+              DiagnosticTransportFailure.invalidEnvelope,
+            ApiTransportFailureKind.unsupportedContentType =>
+              DiagnosticTransportFailure.unsupportedContentType,
+            ApiTransportFailureKind.cancellation => null,
+          },
+        ),
+      ),
+    );
+  }
+
+  DiagnosticHttpMethod _diagnosticMethod(ApiHttpMethod method) =>
+      switch (method) {
+        ApiHttpMethod.get => DiagnosticHttpMethod.get,
+        ApiHttpMethod.post => DiagnosticHttpMethod.post,
+        ApiHttpMethod.put => DiagnosticHttpMethod.put,
+        ApiHttpMethod.patch => DiagnosticHttpMethod.patch,
+        ApiHttpMethod.delete => DiagnosticHttpMethod.delete,
+      };
 
   Future<String?> _resolveToken(ApiAuthMode authMode) async {
     if (authMode == ApiAuthMode.public) return null;

@@ -12,6 +12,9 @@ import 'package:sl_furnitures/core/network/api_transport.dart';
 import 'package:sl_furnitures/core/network/api_transport_exception.dart';
 import 'package:sl_furnitures/core/network/auth_token_provider.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
+import 'package:sl_furnitures/core/diagnostics/app_diagnostics.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_code.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_sink.dart';
 
 void main() {
   group('URL construction', () {
@@ -385,6 +388,64 @@ void main() {
 
       expect(error.toString(), isNot(contains('token-or-url-secret')));
     });
+
+    test(
+      'records safe rate-limit metadata with the Laravel request ID',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final diagnostics = DefaultAppDiagnostics(enabled: true, sink: sink);
+        final client = _client(
+          FakeTransport.json(
+            429,
+            <String, Object?>{
+              'errors': <Object?>[
+                <String, Object?>{
+                  'code': 'RATE_LIMITED',
+                  'message': 'Please wait.',
+                },
+              ],
+              'meta': <String, Object?>{'request_id': 'req-429'},
+            },
+            headers: <String, String>{'Retry-After': '30'},
+          ),
+          diagnostics: diagnostics,
+        );
+        expect(client.diagnostics, same(diagnostics));
+
+        await expectLater(
+          client.get<Object?>('/products'),
+          throwsA(isA<ApiError>()),
+        );
+
+        expect(sink.events, hasLength(1));
+        expect(sink.events.single.code, DiagnosticCode.apiRateLimited);
+        expect(sink.events.single.requestId, 'req-429');
+        expect(sink.events.single.context.retryAfterSeconds, 30);
+        expect(
+          sink.events.single.toJson().toString(),
+          isNot(contains('Please wait')),
+        );
+      },
+    );
+
+    test('does not record expected request cancellation as an error', () async {
+      final sink = InMemoryDiagnosticSink();
+      final cancellation = RequestCancellation();
+      final client = _client(
+        FakeTransport.waitForAbort(),
+        diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+      );
+
+      final request = client.get<Object?>(
+        '/products',
+        cancellation: cancellation,
+        timeout: const Duration(seconds: 1),
+      );
+      cancellation.cancel();
+      await expectLater(request, throwsA(isA<ApiTransportException>()));
+
+      expect(sink.events, isEmpty);
+    });
   });
 
   group('package:http transport', () {
@@ -419,6 +480,7 @@ void main() {
 ApiClient _client(
   FakeTransport transport, {
   AuthTokenProvider? authTokenProvider,
+  AppDiagnostics diagnostics = const NoopAppDiagnostics(),
 }) => ApiClient(
   config: const AppConfig(
     environment: AppEnvironment.local,
@@ -426,6 +488,7 @@ ApiClient _client(
   ),
   transport: transport,
   authTokenProvider: authTokenProvider,
+  diagnostics: diagnostics,
 );
 
 Future<ApiError> _captureApiError(Future<Object?> Function() operation) async {

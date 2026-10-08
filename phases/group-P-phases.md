@@ -1,607 +1,759 @@
-# Phase 16.8 — Flutter Error & Loading States
+# Phase 16.9 — Logging & Diagnostics
 
-**Project:** SL Furnitures — Android Customer Application  
+**Project:** SL Furnitures — Flutter Android Customer Application  
 **Group:** P — Flutter Application Foundation  
-**Prerequisites:** Phases 16.1–16.7 complete  
-**Status:** COMPLETED — 2026-10-08
+**Prerequisites:** Phases 16.1–16.8 complete  
+**Status:** COMPLETE
+**Milestone:** Final Group P phase
 
 ## 1. Objective
 
-Implement a small, reusable, accessible presentation foundation for asynchronous loading, empty results, expected failures, and safe recovery actions.
+Implement a small, structured, privacy-safe diagnostics foundation for the Flutter Android application.
 
-This phase must provide the components and state conventions that future Group Q feature screens can use without inventing their own inconsistent loading/error UI.
+The implementation must provide enough information to investigate:
 
-**Primary architectural decision:** Keep transport errors in the existing networking layer, feature-specific failures in their owning features, and reusable visual states in a narrow shared presentation layer.
+- Application startup and configuration failures.
+- Network connectivity and API failures.
+- Authentication lifecycle failures.
+- Navigation failures.
+- Unexpected Flutter framework errors.
+- Unhandled asynchronous exceptions.
+- Future feature-specific failures.
 
-Do not build a second networking/error framework.
+Diagnostics must be useful during development without creating a security or privacy liability.
 
-Do not implement catalog, request, enquiry, or account business functionality.
+### Required outcomes
+
+1. One centralized diagnostic interface.
+2. A small, closed set of severity levels.
+3. Safe structured diagnostic events.
+4. Environment-aware output policy.
+5. Strict sensitive-data protection.
+6. Correlation with Laravel request IDs.
+7. Integration with existing startup and failure boundaries.
+8. Testable diagnostic sinks.
+9. No duplicate reporting of expected failures.
+10. Documentation and a final Group P verification report.
+
+**Do not implement a remote observability platform.**
 
 ---
 
 ## 2. Mandatory repository inspection
 
-Before coding, read:
+Before implementation, read:
 
-1. Root `AGENTS.md` and `frontend/AGENTS.md`.
-2. Group P Phase 16.8 specification and earlier phase completion records.
-3. `docs/decisions.md`, especially:
-   - ADR/DESIGN-001 through ADR/DESIGN-006.
-   - ADR/API-ERR-001 through ADR/API-ERR-007.
-   - ADR/WEB-003 for conceptual alignment, not framework copying.
-   - Flutter architecture decisions from Phases 16.2–16.7.
-4. `frontend/app/README.md`.
-5. `lib/core/network/` and existing error classes.
-6. `lib/core/auth/` including `AuthSession`.
-7. `lib/core/feature_dependencies.dart`.
-8. `lib/navigation/` and the router's existing error/status pages.
-9. `lib/theme/` including generated tokens, component themes and motion.
-10. `lib/features/README.md`.
-11. Existing tests and app composition.
+- Root `AGENTS.md`.
+- `frontend/AGENTS.md`.
+- Group P Phase 16.9 specification.
+- All Group P completion records.
+- `frontend/app/README.md`.
+- `docs/decisions.md`.
+- Existing Flutter application bootstrap.
+- `lib/config/`.
+- `lib/core/network/`.
+- `lib/core/auth/`.
+- `lib/core/feature_dependencies.dart`.
+- `lib/navigation/`.
+- `lib/core/presentation/`.
+- `lib/features/README.md`.
+- Existing tests.
+- Android manifest and build configuration.
 
-Record the exact current names of networking exception types, constructors, and authentication states.
+Pay particular attention to:
 
-Do not guess APIs from these instructions.
+- `ENABLE_DIAGNOSTICS`.
+- `AppEnvironment`.
+- Existing `ApiError` and `ApiTransportException`.
+- Laravel `meta.request_id`.
+- Clerk SDK error handling.
+- Existing router failure handling.
+- Existing `ErrorPresentationMapper`.
+- Phase 16.8 cancellation semantics.
 
-Reuse existing mechanisms before adding abstractions.
+Determine whether a logger or error-capture mechanism already exists.
 
----
+Do not add another if the current implementation can be safely extended.
 
-## 3. Required state vocabulary
-
-Use the following conceptual states:
-
-| State | Meaning | Owner |
-|---|---|---|
-| Initial | No operation started | Feature |
-| Loading | First load is in progress | Feature/shared presentation |
-| Content | Valid data available | Feature |
-| Empty | Successful operation returned no results | Feature/shared presentation |
-| Expected failure | Recoverable API/domain/transport failure | Feature/shared presentation |
-| Unexpected failure | Unanticipated defect or invalid assumption | Existing error handling + safe fallback |
-| Refreshing | Existing content is being updated | Feature |
-| Submitting | User-triggered mutation is in progress | Feature |
-
-Not every future feature must implement all eight states.
-
-Do not introduce a universal state machine with transitions that every screen must satisfy.
-
-### Critical distinction
-
-A successful API response containing `data: []` is not a transport error.
-
-An API error is not an empty result.
-
-A loading state is not an authentication state.
-
-An unexpected programming exception is not automatically a retryable network failure.
-
-Cancellation is not a user-facing failure by default.
+Do not move completed infrastructure into a new architecture.
 
 ---
 
-## 4. Shared presentation location
+## 3. Architectural approach
 
-Prefer a narrowly scoped structure such as:
+Use a lightweight, SDK-independent diagnostic boundary.
+
+Suggested structure:
 
 ```text
 lib/
   core/
-    presentation/
-      async_view_state.dart
-      app_loading_view.dart
-      app_empty_view.dart
-      app_error_view.dart
-      app_inline_error.dart
-      app_retry_action.dart
-      error_presentation_mapper.dart
+    diagnostics/
+      app_diagnostics.dart
+      diagnostic_event.dart
+      diagnostic_level.dart
+      diagnostic_sink.dart
+      console_diagnostic_sink.dart
+      diagnostic_policy.dart
+      diagnostic_sanitizer.dart
 ```
 
-These names are illustrative.
+The names and exact number of files are illustrative.
 
-Inspect existing conventions and create only files that have clear responsibilities.
+Prefer fewer files if responsibilities remain clear.
 
-Do not create duplicate classes or folders if equivalent shared components already exist.
+### AppDiagnostics
 
-Do not create a general-purpose widget library.
+Expose a narrow interface for recording diagnostic events.
 
-Keep reusable state components independent of feature DTOs and business models.
+Example conceptual API:
 
----
-
-## 5. Async state representation
-
-Evaluate whether a lightweight sealed state type materially simplifies future feature controllers.
-
-If adopted, use Dart 3 sealed classes or another SDK-native type-safe approach.
-
-Suggested conceptual shape:
-
-```text
-AsyncState<T>
-  Initial<T>
-  Loading<T>
-  Data<T>
-  Empty<T>
-  Failure<T>
+```dart
+abstract interface class AppDiagnostics {
+  void record(DiagnosticEvent event);
+}
 ```
 
-This is not a required literal API.
+The implementation may provide convenience methods if they improve clarity.
 
-### Requirements
+Do not create an elaborate logging DSL.
 
-- Preserve type safety.
-- Avoid `dynamic` payloads.
-- Avoid contradictory flags such as `isLoading=true` and `hasError=true` without defined semantics.
-- Support existing-content refresh without destroying visible content.
-- Do not require a new state-management package.
-- Do not introduce a global async-state singleton.
-- Do not add speculative pagination or mutation frameworks.
+### DiagnosticSink
 
-If a shared state type adds more complexity than value, document the simpler approved convention and implement reusable presentation widgets instead.
+Separate event creation from event output.
 
-### Refreshing behavior
+The design should support:
 
-Future screens should be able to keep existing data visible while a refresh occurs.
+- A no-op sink.
+- A development console sink.
+- An in-memory test sink.
 
-A refresh failure should not automatically erase previously valid content.
+Do not implement remote sinks.
 
-Do not implement catalog refresh or pagination now.
+Do not create a database for logs.
+
+Do not add file-based persistent logging without an explicit requirement.
 
 ---
 
-## 6. Loading presentation
+## 4. Severity levels
 
-Implement a reusable loading view using existing Material 3 primitives.
+Define a small closed vocabulary.
 
-Support at least:
+Recommended levels:
 
-- Full-content loading.
-- Inline loading.
-- Accessible progress indication.
-
-Prefer `CircularProgressIndicator` or other native Material widgets.
-
-### Requirements
-
-- Use the existing theme.
-- Avoid hard-coded colors.
-- Avoid arbitrary animation timing.
-- Provide meaningful semantics.
-- Do not animate purely for decoration.
-- Respect reduced-motion settings where relevant.
-- Do not trap focus.
-- Do not use blocking dialogs for ordinary background loading.
-- Avoid layout jumps where a stable content region can be maintained.
-
-### Skeletons
-
-Do not build a generic shimmer/skeleton framework.
-
-Catalog and product-specific skeletons belong to their later feature phases.
-
-A generic loading view is sufficient for Phase 16.8.
-
----
-
-## 7. Empty-state presentation
-
-Implement a reusable empty-state view.
-
-Support:
-
-- Required title.
-- Optional description.
-- Optional appropriate icon.
-- Optional action supplied by the caller.
-
-The component must not decide business meaning.
-
-Examples for future use:
-
-- No products match the current filters.
-- No categories are available.
-- No search results.
-- No request history.
-
-These are illustrative scenarios only.
-
-Do not create actual catalog or history screens.
-
-### Requirements
-
-- Distinguish empty data from errors.
-- Do not imply that a user must sign in when the feature is public.
-- Do not fabricate product recommendations.
-- Do not display fake inventory or promotional content.
-- Do not show a retry action by default for a successful empty result.
-
----
-
-## 8. Error presentation architecture
-
-Separate error classification from error rendering.
-
-Use a small pure mapper that converts existing error information into a safe presentation description.
-
-For example, the presentation result may contain:
-
-```text
-ErrorPresentation
-  title
-  message
-  recoveryAction
-  requestId
-  fieldErrors
-```
-
-The exact implementation is left to repository inspection.
-
-### Do not duplicate the API contract
-
-The existing ApiClient already parses Laravel's canonical error envelope.
-
-The presentation layer must consume that parsed representation.
-
-It must not:
-
-- Decode raw HTTP response bodies.
-- Parse JSON error envelopes again.
-- Parse human-readable messages to identify error types.
-- Define a new API error-code registry.
-- Replace HTTP status semantics.
-- Modify the frozen Laravel contract.
-
-### Safe fallback
-
-Unknown failures must display a generic, non-sensitive message.
-
-Never show:
-
-- Stack traces.
-- Raw exception objects.
-- Authorization headers.
-- Clerk tokens.
-- API origins.
-- Internal filesystem paths.
-- Database details.
-- Provider response bodies.
-
----
-
-## 9. API error classification
-
-Preserve the existing distinction between HTTP status and machine-readable error code.
-
-Implement presentation mapping for relevant categories.
-
-| Failure | Expected UI behavior |
+| Level | Meaning |
 |---|---|
-| No connection | Explain connection problem; allow safe retry |
-| Timeout | Explain request did not complete; offer appropriate recovery |
-| Cancelled request | Usually render nothing |
-| HTTP 401 | Authentication required or session action; defer to existing auth boundary |
-| HTTP 403 | Access denied; do not force sign-out |
-| HTTP 404 | Resource unavailable where applicable |
-| HTTP 409 | Conflict; require state refresh or reconciliation where applicable |
-| HTTP 422 | Present validation/business errors, including field errors |
-| HTTP 429 | Rate limited; respect existing Retry-After metadata |
-| HTTP 5xx | Temporary service failure or safe generic error |
-| Malformed/invalid envelope | Safe unexpected-response feedback |
-| Unsupported content type | Safe unexpected-response feedback |
+| Debug | Development-only diagnostic detail |
+| Info | Expected significant lifecycle event |
+| Warning | Recoverable abnormal condition |
+| Error | Operation failure requiring investigation |
+| Critical | Unexpected application-level failure |
 
-Use the actual existing exception types and API codes.
+Do not add unnecessary levels.
 
-### HTTP 401
+### Important distinctions
 
-Do not independently refresh Clerk tokens or redirect from a generic error widget.
+A cancelled request is not automatically an error.
 
-Authentication actions belong to the existing AuthSession and navigation architecture.
+A successful empty catalog response is not a warning.
 
-### HTTP 403
+An expected 422 validation response is not a critical failure.
 
-Do not treat forbidden access as an expired Clerk session.
+A 401 during an ordinary authentication transition is not necessarily a crash.
 
-### HTTP 404
-
-Do not automatically turn every API 404 into a go_router unknown-route page.
-
-Route matching and missing API resources are separate concerns.
-
-### HTTP 422
-
-Preserve all available field-level errors.
-
-Use canonical dot paths supplied by the API.
-
-Do not collapse multiple field errors into one opaque string.
-
-### HTTP 429
-
-Preserve the existing numeric Retry-After value.
-
-Do not implement a countdown timer or automatic retry loop in this phase.
-
-The UI may explain that the user should wait before retrying.
-
-Do not fabricate an exact retry time when none was provided.
+Do not classify every non-200 response as an application defect.
 
 ---
 
-## 10. Retry and recovery behavior
+## 5. Structured diagnostic events
 
-A reusable error view may expose an optional callback supplied by its owning feature.
+Use typed events with a small, stable structure.
 
-The shared widget must not decide whether an operation is safe to replay.
+Suggested conceptual fields:
 
-### Safe retry principles
+```text
+DiagnosticEvent
+  level
+  category
+  code
+  timestamp
+  requestId?
+  safeContext?
+```
 
-- Public GET reads may normally offer manual retry.
-- Cancelled requests should not be retried automatically.
-- Mutations must not be blindly replayed.
-- Ambiguous timeouts after submission may require reconciliation.
-- HTTP 409 may require refreshing server state rather than repeating the same mutation.
-- HTTP 429 must respect the existing server retry guidance.
-- Authentication errors require the existing auth workflow.
+The implementation must use safe, explicitly defined metadata.
 
-### Button behavior
+### Categories
 
-Do not show an enabled Retry button unless a real callback exists.
+Suggested categories:
 
-Do not place a fake retry button on placeholder routes.
+- startup
+- configuration
+- network
+- authentication
+- navigation
+- presentation
+- unexpected
 
-Do not create automatic retries inside error widgets.
+Use a closed enum or equivalent where useful.
 
-Do not introduce a second retry policy that conflicts with Phase 16.4.
+Do not build a dynamic event taxonomy that grows uncontrollably.
 
----
+### Event codes
 
-## 11. Form and field errors
+Prefer stable event identifiers such as:
 
-Provide a small presentation convention for future forms.
+```text
+APP_STARTUP_FAILED
+API_REQUEST_FAILED
+API_REQUEST_TIMEOUT
+AUTH_SESSION_RESTORE_FAILED
+AUTH_SESSION_SIGN_OUT_FAILED
+NAVIGATION_ROUTE_UNAVAILABLE
+UNEXPECTED_FLUTTER_ERROR
+UNHANDLED_ASYNC_ERROR
+```
 
-Support:
+These are illustrative application diagnostic codes.
 
-- General form-level error.
-- Multiple field-level errors.
-- Canonical API field paths.
-- Accessible error descriptions.
-- Clear association between fields and errors.
-- Removal or update of stale errors after correction, controlled by the owning form.
-
-### Scope
-
-Do not implement actual furniture request or enquiry forms.
-
-Do not build a generic dynamic form generator.
-
-Do not create field-specific validation rules not present in the frozen API contract.
-
-Laravel remains authoritative.
-
-Client validation remains advisory.
-
----
-
-## 12. Authentication and navigation states
-
-Reuse existing Phase 16.5 and 16.6 behavior.
-
-The router already distinguishes:
-
-- Restoring session.
-- Signed out.
-- Authentication action required.
-- Temporarily unavailable authentication.
-- Authenticated.
-
-Do not replace these states with a generic loading/error abstraction.
-
-### Integration
-
-Where beneficial, reuse shared visual primitives within existing neutral status screens.
-
-Do not change route access policy.
-
-Do not change the allow-listed `/account` return destination.
-
-Do not introduce sign-in UI.
-
-Do not create new Clerk session persistence.
-
-Do not trigger API calls during router initialization.
+They must not be confused with or replace Laravel's frozen API error codes.
 
 ---
 
-## 13. Material 3 and design tokens
+## 6. Sensitive-data protection
 
-Use the existing Phase 16.2 theme.
+**Privacy and credential protection are mandatory.**
 
-Canonical authority remains:
+Never log:
 
-`frontend/design-system/tokens.css`
+- Clerk session tokens.
+- Authorization headers.
+- Cookies.
+- Passwords.
+- Refresh tokens.
+- Clerk secret keys.
+- Secure-storage contents.
+- Raw API request bodies.
+- Raw API response bodies.
+- Customer names.
+- Email addresses.
+- Phone numbers.
+- Delivery addresses.
+- Furniture request descriptions.
+- Enquiry messages.
+- User-generated text.
+- Complete URLs containing query parameters.
+- Raw exception messages from untrusted SDKs or HTTP libraries.
+- Full stack traces in production diagnostics.
 
-Flutter consumes generated token mappings.
+### Allow-listed diagnostic metadata
 
-### Visual rules
+Prefer fields such as:
 
-- Warm canvas and white paper surfaces retain their existing semantics.
-- Primary actions use the approved charcoal treatment.
-- Error styling uses the approved semantic danger mapping.
-- Status meaning must not depend on color alone.
-- Use platform sans for interface messages.
-- Reserve Young Serif for approved editorial/display roles.
-- Use existing spacing and shape adapters.
-- Use Material icons where appropriate.
-- Avoid decorative shadows and excessive elevation.
-- Do not introduce new colors, radii, typography scales, or motion durations.
+- Diagnostic event code.
+- Severity.
+- Environment identifier.
+- Safe HTTP method.
+- HTTP status.
+- Stable Laravel API error code.
+- Laravel request ID, subject to safe-format validation.
+- Transport failure category.
+- Safe operation identifier.
+- Route name from an approved registry.
+- Whether an operation was cancelled.
 
-Do not modify the generated token file manually.
+Do not log raw URL paths if they can contain customer or resource identifiers.
 
-If a required token is missing, document the gap rather than inventing a new brand value.
+Do not log arbitrary query parameters.
 
----
+Do not log user identifiers, even if they appear pseudonymous.
 
-## 14. Accessibility requirements
+### Design requirement
 
-Test all shared presentation states for:
+Use an allow-list rather than attempting to redact arbitrary maps.
 
-1. Readable semantic labels.
-2. Proper heading and message hierarchy.
-3. Sufficient text contrast.
-4. Visible keyboard focus.
-5. Accessible action labels.
-6. Appropriate minimum touch targets.
-7. Large text scaling, including 2×.
-8. Small-screen overflow handling.
-9. Reduced-motion behavior.
-10. Screen-reader-friendly progress indication.
-11. Field-error discoverability.
-12. Non-color-only error communication.
+A generic recursive sanitizer must not be the sole security boundary.
 
-### Loading semantics
+Prefer typed, explicitly approved metadata fields that cannot accidentally contain credentials or personal information.
 
-Avoid announcing every progress-frame update.
-
-Use meaningful status text where necessary.
-
-### Errors
-
-Error actions must describe the recovery operation.
-
-Do not use vague action labels when a more precise one is available.
-
-### Empty states
-
-Do not announce an empty state as an application failure.
+Where text-based sanitization is still needed, treat it as defense in depth.
 
 ---
 
-## 15. Preview and verification harness
+## 7. Diagnostic output policy
 
-Create a development-only state preview if needed to validate the new components on Android.
+Reuse Phase 16.3 configuration.
 
-It may demonstrate:
+Do not introduce another environment configuration system.
 
-- Full-page loading.
-- Inline loading.
-- Empty state.
-- Recoverable network error.
-- Validation error.
-- Rate-limited feedback.
-- Unexpected-response fallback.
+### Local development
+
+When diagnostics are enabled:
+
+- Emit structured, readable events.
+- Use a single consistent output format.
+- Keep metadata minimal.
+- Do not print raw exceptions.
+- Do not print credentials.
+- Avoid excessive per-frame or per-widget logs.
+
+### Staging
+
+Use only the explicitly approved diagnostic behavior.
+
+Do not assume staging is safe for sensitive data.
+
+### Production
+
+Production must not emit verbose diagnostic information merely because a developer previously enabled debug output.
+
+Default to a no-op sink or a strictly minimal approved sink.
+
+Do not create a production telemetry pipeline without a separate decision.
+
+### Important
+
+`ENABLE_DIAGNOSTICS=false` must be meaningful.
+
+Disabled diagnostics should not produce ordinary application diagnostic events.
+
+Critical error handlers must still preserve the application's safe error behavior even when diagnostic output is disabled.
+
+Do not confuse disabling logging with swallowing errors.
+
+---
+
+## 8. Flutter framework error capture
+
+Inspect existing startup error handling.
+
+Integrate safely with supported Flutter/Dart error boundaries, where appropriate:
+
+- `FlutterError.onError`.
+- `PlatformDispatcher.instance.onError`.
+- `runZonedGuarded`, only if justified.
+
+### Requirements
+
+- Do not blindly install overlapping handlers.
+- Preserve existing framework behavior where necessary.
+- Avoid reporting the same exception multiple times.
+- Do not hide unexpected errors.
+- Do not turn framework exceptions into success states.
+- Do not crash the app while attempting to record diagnostics.
+- Avoid recursively logging logger failures.
+
+### Error ownership
+
+Determine which boundary owns each error.
+
+For example:
+
+- ApiClient owns typed transport classification.
+- Feature controller owns expected operation failure handling.
+- Flutter framework boundary owns unexpected framework exceptions.
+- Application bootstrap owns configuration failure handling.
+
+Do not make every layer log the same failure.
+
+### Stack traces
+
+Keep raw stack traces out of production diagnostic output.
+
+For development, any stack trace emission must be explicitly approved and checked for sensitive content.
+
+Do not serialize arbitrary exception objects.
+
+---
+
+## 9. Network diagnostics integration
+
+Preserve Phase 16.4 ApiClient behavior.
+
+Do not introduce:
+
+- Another HTTP client.
+- An interceptor framework.
+- Automatic retries.
+- Request-body logging.
+- Response-body logging.
+- Authorization-header logging.
+
+### Safe events
+
+Examples:
+
+- Request timeout.
+- Connection failure.
+- Invalid API envelope.
+- Unsupported response type.
+- Unexpected HTTP 5xx.
+- Rate limiting.
+- Request cancellation, only where diagnostically useful.
+
+### Request correlation
+
+Use the existing request ID extraction behavior.
+
+The existing API client treats:
+
+1. `meta.request_id` as authoritative.
+2. `X-Request-Id` as fallback.
+
+Do not change that precedence.
+
+If a request ID is present, retain it as a safe correlation value after validating its expected format and size.
+
+Do not invent request IDs that appear to have originated from Laravel.
+
+Do not log full URLs.
+
+### HTTP semantics
+
+Preserve:
+
+- HTTP status.
+- Stable Laravel error codes.
+- Retry-After numeric seconds.
+- Cancellation.
+- Transport error classification.
+
+Do not turn structured Laravel errors into raw exception text.
+
+---
+
+## 10. Authentication diagnostics
+
+Integrate only with the existing Clerk adapter and SDK-independent `AuthSession` boundary.
+
+Do not modify the authentication protocol.
+
+### Permitted event types
+
+- Clerk initialization failed.
+- Session restoration failed.
+- Session renewal failed.
+- Sign-out failed.
+- Session state transitioned to unavailable.
+- Secure persistence failed.
+
+### Never log
+
+- Session token.
+- Clerk client object serialization.
+- Stored session payload.
+- User email.
+- User ID.
+- Authentication credentials.
+- Raw Clerk exception message.
+
+### Session transitions
+
+Avoid logging every repeated SDK state notification.
+
+If recording a transition, record only approved state categories.
+
+Do not log identity attributes.
+
+### Authentication authority
+
+Clerk continues to own authentication.
+
+Laravel continues to own customer authorization.
+
+Diagnostics must not introduce a second session store.
+
+---
+
+## 11. Navigation diagnostics
+
+Reuse the Phase 16.6 router.
+
+Potential diagnostic events:
+
+- Unknown route.
+- Invalid route parameter.
+- Rejected external return destination.
+- Authentication redirect failure.
+- Unexpected navigation exception.
+
+### Requirements
+
+- Do not log complete deep-link URLs.
+- Do not log query strings.
+- Do not log raw product identifiers.
+- Do not log intended return destinations containing parameters.
+- Prefer approved route names and safe failure categories.
+- Do not duplicate router error presentation.
+- Do not change protected-route access rules.
+
+No new navigation destinations should be registered.
+
+---
+
+## 12. Integration with Phase 16.8
+
+Preserve the completed error/loading architecture.
+
+The diagnostics layer must not own UI presentation.
+
+### Ownership
+
+**ErrorPresentationMapper**
+
+Converts existing failures into safe user-facing presentation.
+
+**AppDiagnostics**
+
+Records safe machine-readable diagnostic events.
+
+**Feature controller**
+
+Decides whether to show an error, retry, reconcile, or ignore cancellation.
+
+Do not combine these into one generic error service.
+
+### Cancellation
+
+Cancelled requests must remain silent to the user by default.
+
+Do not record ordinary expected cancellation as an error.
+
+### Mutation failures
+
+Do not add automatic retry behavior.
+
+A timeout during made-to-order request submission must not trigger automatic resubmission.
+
+---
+
+## 13. Dependency injection
+
+Extend the Phase 16.7 composition approach narrowly.
+
+Use the existing application composition root.
+
+If useful, expose the diagnostics boundary through `FeatureDependencies`.
+
+### Requirements
+
+- No global mutable logging singleton unless the existing architecture genuinely requires it.
+- No new dependency-injection package.
+- No feature-specific console logger.
+- No direct `print()` or `debugPrint()` scattered throughout future features.
+- No circular imports.
+- No duplicate diagnostic sink ownership.
+
+The application root should construct the diagnostic service and own its lifecycle.
+
+Feature modules should receive the interface, not the concrete console implementation.
+
+---
+
+## 14. Performance and reliability
+
+Diagnostics must not materially affect app responsiveness.
+
+### Requirements
+
+- Logging must not block the UI thread.
+- Avoid expensive serialization.
+- Avoid deep object traversal.
+- Avoid unbounded in-memory event accumulation.
+- Avoid high-frequency widget rebuild logs.
+- Avoid recursive diagnostic failures.
+- Disabled diagnostics should have negligible overhead.
+- No network request should be required to record an event.
+- Diagnostic failures must not interrupt normal user operations.
+
+A bounded in-memory sink may be used for tests.
+
+Do not introduce background workers or persistent log queues.
+
+---
+
+## 15. Testing requirements
+
+Use deterministic fake sinks.
+
+No live Laravel, Clerk, or external telemetry service should be required.
+
+### A. Diagnostic core
+
+Test:
+
+1. Debug event creation.
+2. Info event creation.
+3. Warning event creation.
+4. Error event creation.
+5. Critical event creation.
+6. Stable event category and code.
+7. Timestamp handling.
+8. Optional request ID.
+9. Disabled diagnostics.
+10. Sink failure isolation.
+
+### B. Privacy
+
+Test:
+
+11. Authorization header cannot enter diagnostic output.
+12. Clerk token cannot enter diagnostic output.
+13. Password cannot enter diagnostic output.
+14. Customer email is excluded.
+15. Customer phone is excluded.
+16. Raw API body is excluded.
+17. Raw response body is excluded.
+18. Query parameters are excluded.
+19. Arbitrary exception messages are excluded.
+20. Unsafe metadata keys are rejected.
+21. Oversized metadata values are rejected.
+22. Raw stack traces are excluded from production output.
+
+### C. Networking
+
+Test:
+
+23. Timeout classification.
+24. Connection failure classification.
+25. HTTP 401 handling.
+26. HTTP 403 handling.
+27. HTTP 422 handling.
+28. HTTP 429 and Retry-After.
+29. HTTP 500/503 handling.
+30. Laravel request ID correlation.
+31. Header request ID fallback.
+32. Expected cancellation is not logged as an error.
+33. No duplicate logging.
+34. No request/response payload logging.
+
+### D. Authentication
+
+Test:
+
+35. Session restoration failure.
+36. Token renewal failure.
+37. Sign-out failure.
+38. Pending-action state is not misclassified.
+39. Secure-storage failure.
+40. No Clerk identity or token leakage.
+
+### E. Framework and navigation
+
+Test:
+
+41. Unexpected Flutter error capture.
+42. Unhandled asynchronous error capture.
+43. Handler failure does not recurse.
+44. Unknown-route diagnostic.
+45. Unsafe deep-link rejection.
+46. Route parameter values are not logged.
+47. Existing router behavior remains intact.
+
+### F. Regression
+
+Test:
+
+48. Existing 140 tests continue to pass.
+49. No startup API calls are added.
+50. No new authentication protocol.
+51. No new commerce routes.
+52. No change to error/loading presentation semantics.
+53. Diagnostics disabled by default where required.
+54. Production build configuration remains safe.
+
+This is a coverage matrix, not a requirement to manufacture 54 separate test methods.
+
+Prefer meaningful tests over test-count inflation.
+
+---
+
+## 16. Development diagnostics preview
+
+A small development-only diagnostic demonstration may be useful.
+
+It may trigger synthetic events such as:
+
+- Network timeout classification.
+- Safe HTTP 429 metadata.
+- Unknown route category.
+- Generic unexpected error.
 
 ### Restrictions
 
-- Keep the production root route unchanged.
-- Do not register public production preview routes.
-- Do not add a new navigation shell.
-- Do not create fake commerce workflows.
-- Do not perform real network requests.
-- Do not ship debug controls in release builds.
+- No real credentials.
+- No real customer data.
+- No production debug screen.
+- No new production route.
+- No live API calls.
+- No simulated success claims for Clerk authentication.
+- No remote telemetry.
 
-Prefer widget tests or the existing development preview conventions when they provide sufficient coverage.
-
----
-
-## 16. Tests
-
-Add focused unit and widget tests.
-
-### A. State behavior
-
-1. Initial state is distinguishable from loading.
-2. Loading state renders correctly.
-3. Content state does not display an error.
-4. Empty state is not treated as failure.
-5. Refresh preserves existing content where supported.
-6. Cancellation is handled without unwanted error UI.
-
-### B. Error mapping
-
-7. Connection failure.
-8. Timeout.
-9. Cancellation.
-10. API 401.
-11. API 403.
-12. API 404.
-13. API 409.
-14. API 422.
-15. API 429 with Retry-After.
-16. API 429 without Retry-After.
-17. API 500/503.
-18. Invalid response envelope.
-19. Unknown exception fallback.
-20. Multiple field errors.
-21. Request ID propagation.
-
-### C. Recovery
-
-22. Retry callback is invoked exactly once per activation.
-23. No retry callback means no actionable retry control.
-24. Mutation errors are not automatically replayed.
-25. Rate-limit presentation does not invent a deadline.
-26. Authentication error does not invoke a second auth flow.
-
-### D. Widget accessibility
-
-27. Loading progress has meaningful semantics.
-28. Error title and message are readable.
-29. Empty state supports optional actions.
-30. Large text does not overflow.
-31. Focus behavior is correct.
-32. Touch targets are usable.
-33. Reduced-motion behavior is respected.
-
-### E. Regression
-
-34. Existing router behavior remains intact.
-35. Existing Clerk tests pass.
-36. Existing ApiClient tests pass.
-37. Existing theme tests pass.
-38. Existing feature architecture tests pass.
-39. No deferred commerce routes appear.
-40. No new startup API request is introduced.
-
-This is a coverage matrix, not a requirement to create exactly 40 test methods.
-
-Use deterministic fakes.
-
-No real Laravel or Clerk services should be required for automated tests.
+Prefer unit tests when they adequately demonstrate the behavior.
 
 ---
 
-## 17. Documentation
+## 17. Physical Android verification
+
+Where the physical Android device and Marionette are available, verify:
+
+1. App launches with diagnostics disabled.
+2. Public root route remains functional.
+3. Material 3 theme remains intact.
+4. No unexpected diagnostic noise.
+5. Development diagnostics can be enabled through approved local configuration.
+6. Only safe diagnostic metadata appears.
+7. No Clerk tokens or user information appear.
+8. No UI regressions.
+9. No Flutter exceptions introduced by diagnostics.
+
+If practical, inspect development logs using `adb logcat`.
+
+### Important
+
+Do not claim authenticated diagnostic verification without a real Clerk development sign-in flow.
+
+Do not claim production telemetry verification because no remote telemetry system is being implemented.
+
+---
+
+## 18. Documentation
 
 Update:
 
 - Flutter README.
-- Applicable Group P phase completion record.
-- `docs/decisions.md` if a durable architectural decision is made.
-- `lib/features/README.md` with guidance on consuming shared error/loading presentation.
+- `lib/features/README.md`.
+- Group P Phase 16.9 completion record.
+- `docs/decisions.md` if a durable diagnostics decision is required.
 
 Document:
 
-1. State vocabulary.
-2. Shared widget ownership.
-3. Error mapping policy.
-4. API machine-code handling.
-5. Request ID presentation.
-6. Field validation conventions.
-7. Retry safety rules.
-8. Authentication-state separation.
-9. Accessibility behavior.
-10. Examples for future Group Q integration.
-11. Deferred feature-specific skeletons.
-12. Known limitations.
+1. Diagnostic architecture.
+2. Severity levels.
+3. Event categories.
+4. Safe metadata allow-list.
+5. Sensitive-data exclusions.
+6. Environment output policy.
+7. Flutter error capture.
+8. Network request correlation.
+9. Clerk lifecycle diagnostics.
+10. Router diagnostics.
+11. Diagnostic ownership.
+12. How future features emit events.
+13. Testing approach.
+14. Device verification.
+15. Known limitations.
 
-Do not rewrite unrelated architecture decisions.
+Provide a short developer example showing how a future feature records a safe failure event without exposing the API response or user input.
+
+Do not create a second architecture guide.
 
 ---
 
-## 18. Verification commands
+## 19. Verification commands
 
-Run from the Flutter project directory:
+Run from the Flutter project root:
 
 ```bash
 flutter pub get
@@ -614,147 +766,271 @@ git diff --check
 git diff --cached --check
 ```
 
-### Requirements
+Also inspect:
 
-- Existing 119 tests remain passing.
-- New error/loading tests pass.
-- No new analyzer warnings.
-- No generated token drift.
+- Added dependencies.
+- Android manifest changes.
+- Source files for raw logging.
+- Sensitive data exposure.
+- Existing Clerk and ApiClient behavior.
+- Existing router behavior.
+- Token generation freshness.
+- Feature dependency direction.
+
+### Acceptance
+
+- All existing 140 tests pass.
+- New diagnostics tests pass.
+- Analyzer passes.
 - Debug APK builds.
-- No unapproved dependencies.
-- No API contract changes.
-- No backend modifications.
-- No deferred commerce features.
-- No new startup network calls.
-
-### Whitespace checks
-
-Phase 16.7 reported two intentional Markdown hard-break spaces in `phases/group-P-phases.md`.
-
-Report staged and unstaged whitespace results separately.
-
-If `git diff --check` flags those intentional spaces, explain the precise file/lines.
-
-Do not silently rewrite unrelated documentation or falsely report a passing check.
+- Token check passes.
+- Staged and unstaged whitespace checks pass.
+- No unapproved packages are added.
+- No API contract changes occur.
+- No backend changes occur.
+- No commerce features are activated.
 
 ---
 
-## 19. Physical Android verification
-
-Where a physical Android device and Marionette are available, verify the reusable states through an approved development-only preview or test harness.
-
-Inspect:
-
-- Loading indicator visibility.
-- Error message readability.
-- Empty-state layout.
-- Retry control interaction when provided.
-- Safe-area behavior.
-- Text scaling where testable.
-- No render overflow.
-- No Flutter exceptions.
-- Theme consistency.
-
-Do not add production navigation controls merely to make a test harness accessible.
-
-If a particular interaction cannot be driven through Marionette, record the limitation and rely on widget tests for that behavior.
-
-Do not claim device accessibility settings were tested if the required device-config integration is unavailable.
-
----
-
-## 20. Explicit scope exclusions
+## 20. Explicit exclusions
 
 Do not implement:
 
-- Product catalog fetching.
-- Product detail API integration.
-- Search.
-- Furniture request forms.
-- Enquiry forms.
-- Account profile UI.
-- Clerk sign-in UI.
-- Cart.
-- Checkout.
-- Payments.
-- Orders.
-- Tracking.
-- Favorites.
-- A generic form-generation framework.
-- A new networking package.
-- A second API client.
-- Automatic retry middleware.
-- Global state-management framework.
-- Logging/diagnostics infrastructure — Phase 16.9.
-- A new theme or token palette.
-- Backend changes.
+- Firebase Crashlytics.
+- Sentry.
+- Datadog.
+- OpenTelemetry exporters.
+- Google Analytics.
+- Firebase Analytics.
+- Remote log upload.
+- A Laravel diagnostics endpoint.
+- Persistent device log databases.
+- Customer activity tracking.
+- Behavioral analytics.
+- Session recording.
+- Screen recording.
+- Production debug dashboards.
+- Custom crash-report upload.
+- Background synchronization.
+- Automatic API retries.
+- New authentication flows.
+- New navigation destinations.
+- Customer feature screens.
+- Cart, checkout, payments, orders, tracking, or favorites.
+- A new state-management framework.
+- A new design system.
 
-Do not implement Phase 16.9 prematurely.
+Future observability integrations require a separate architecture and privacy decision.
 
 ---
 
-## 21. Completion report
+## 21. Final Group P verification
+
+Because this is the last Group P phase, perform a foundation-wide regression review.
+
+### Phase 16.1 — Project setup
+
+Verify:
+
+- Android-only target.
+- Correct application identity.
+- Existing package configuration.
+- Stable startup.
+
+### Phase 16.2 — Theme
+
+Verify:
+
+- Generated design tokens are synchronized.
+- Material 3 theme is unchanged.
+- No hard-coded visual values were introduced.
+
+### Phase 16.3 — Environment
+
+Verify:
+
+- Configuration validation remains authoritative.
+- No secrets are embedded.
+- Diagnostics use the existing configuration field.
+
+### Phase 16.4 — Networking
+
+Verify:
+
+- ApiClient remains centralized.
+- Auth tokens remain request-scoped.
+- Request IDs are preserved.
+- No automatic retry was added.
+
+### Phase 16.5 — Authentication
+
+Verify:
+
+- Clerk remains the sole authentication provider.
+- Encrypted session storage remains intact.
+- No token is logged.
+- No alternative mobile session system exists.
+
+### Phase 16.6 — Routing
+
+Verify:
+
+- One go_router exists.
+- Public browsing remains public.
+- `/account` remains protected.
+- Deferred commerce routes remain absent.
+
+### Phase 16.7 — Features
+
+Verify:
+
+- FeatureDependencies remains the composition boundary.
+- Feature-first conventions remain intact.
+- No premature feature implementation exists.
+
+### Phase 16.8 — Error/loading
+
+Verify:
+
+- Shared states remain reusable.
+- Error mapping remains safe.
+- Cancellation behavior remains unchanged.
+- No automatic mutation replay exists.
+
+### Phase 16.9 — Diagnostics
+
+Verify:
+
+- Centralized diagnostic interface exists.
+- Output is environment-controlled.
+- Metadata is allow-listed.
+- Sensitive information cannot be emitted through supported APIs.
+- Unexpected failures are captured without duplication.
+
+---
+
+## 22. Completion report
 
 Provide:
 
 1. Repository inspection findings.
-2. State representation decision.
+2. Final diagnostic architecture.
 3. Files added and modified.
-4. Shared loading components.
-5. Shared empty-state components.
-6. Error classification and presentation mapping.
-7. Retry/recovery rules.
-8. Field-error handling.
-9. Router/auth integration.
-10. Material 3 token usage.
-11. Accessibility verification.
-12. Automated test results.
-13. Physical Android verification.
-14. Documentation changes.
-15. Staged and unstaged whitespace status.
-16. Deferred work and remaining risks.
-17. Final Phase 16.8 status.
+4. Diagnostic interface and sink design.
+5. Severity and event taxonomy.
+6. Sensitive-data protection.
+7. Environment output policy.
+8. Framework error capture behavior.
+9. ApiClient integration.
+10. Clerk integration.
+11. Router integration.
+12. Phase 16.8 integration.
+13. Dependency injection changes.
+14. Test coverage and counts.
+15. Physical Android verification.
+16. Documentation changes.
+17. Foundation-wide regression results.
+18. Remaining blockers.
+19. Phase 16.9 PASS/FAIL.
+20. Group P overall completion status.
 
-## Definition of Done
+## 23. Definition of Done
 
-Phase 16.8 passes when:
+Phase 16.9 is complete when:
 
-- Shared loading, empty, and error presentation exists.
-- Existing ApiClient error distinctions are preserved.
-- Safe error mapping is deterministic and testable.
-- Laravel field errors and request IDs remain available.
-- Retry actions are explicit and safe.
-- No automatic mutation replay exists.
-- Clerk and router state ownership remains unchanged.
-- Components consume the approved Material 3 design system.
-- Accessibility tests cover meaningful states.
-- Existing 119 tests continue to pass.
-- All required static checks and build checks pass.
-- Android verification is completed or accurately documented as limited.
-- No later-phase customer functionality is introduced.
+- A centralized diagnostic interface exists.
+- Structured events use stable categories and severity levels.
+- Diagnostic output is controlled by existing environment configuration.
+- Sensitive data is excluded by construction.
+- Laravel request IDs can be used for safe correlation.
+- Existing network, Clerk, navigation, and presentation boundaries remain intact.
+- Unexpected framework errors are handled safely.
+- Expected failures are not logged repeatedly.
+- Diagnostic sinks are testable.
+- Existing 140 tests and new tests pass.
+- Analyzer and debug APK build pass.
+- Token synchronization passes.
+- Documentation is complete.
+- Group P regression review passes.
+- Remaining external verification blockers are accurately recorded.
 
-**Final instruction:** Implement the smallest maintainable error/loading presentation foundation that Group Q can reuse. Preserve all existing architecture, verify every change, document the result, and stop at Phase 16.8.
+**Final instruction:** Implement the smallest useful privacy-safe diagnostics foundation, preserve every completed Group P architecture decision, run the full verification suite, and stop at Phase 16.9. Do not begin Group Q until this phase is reviewed and accepted.
 
 ---
 
-## Completion record — 2026-10-08
+## 24. Phase 16.9 Completion Record
 
-- Added `AsyncViewState<T>` as a lightweight sealed Dart 3 vocabulary for
-  initial, loading, content, empty, failure, refreshing, and submitting states.
-  Refreshing and failure states can retain typed previous content without
-  introducing a universal state machine or state-management dependency.
-- Added token-driven `AppLoadingView`, `AppEmptyView`, `AppErrorView`, and
-  `AppInlineError` widgets with accessible status semantics, optional caller
-  actions, no automatic retries, and no fabricated feature data.
-- Added `ErrorPresentationMapper` over the existing `ApiError` and
-  `ApiTransportException` classes. It preserves status distinctions, request
-  IDs, canonical field paths, and rate-limit guidance; cancellation produces no
-  user-facing error by default; unknown exceptions use safe generic text.
-- Added mapper, state, accessibility, action, large-text, and recovery tests.
-  No catalog, request, enquiry, account, auth UI, API, or backend feature was
-  implemented.
-- Verification passed: `flutter analyze`, `flutter test --concurrency=1`,
-  token synchronization, and the existing router/auth/network/theme regression
-  suites. Physical verification remains limited to widget tests for the new
-  states unless the development-only preview is explicitly enabled; no
-  production preview route was added.
+### Repository inspection findings
+
+- No existing centralized logger, error-capture service, remote telemetry sink, or
+  persistent log store existed.
+- `ENABLE_DIAGNOSTICS` already belonged to the validated `AppConfig` contract and
+  defaults to false.
+- `ApiClient` already preserved Laravel `meta.request_id`, header fallback,
+  stable error codes, numeric `Retry-After`, and cancellation classification.
+- Clerk, routing, and Phase 16.8 presentation boundaries were already centralized
+  and were extended without changing their protocols or UI ownership.
+
+### Final architecture
+
+- `AppDiagnostics` is the single recording interface.
+- `DiagnosticEvent` uses closed severity, category, code, operation, transport,
+  route, and HTTP-method vocabularies.
+- `DiagnosticSink` has no-op, console, and bounded in-memory implementations.
+- `DiagnosticPolicy` reuses `AppConfig` and disables production output regardless
+  of an accidental enable flag.
+- `DiagnosticErrorBoundary` captures framework and unhandled async failures,
+  delegates existing handlers, and suppresses duplicate object/stack reports.
+
+### Integration ownership
+
+- Bootstrap records safe startup/configuration failures and installs framework
+  boundaries; it never records raw startup exceptions.
+- `ApiClient` records typed API/transport failures after awaiting response parsing;
+  cancellations remain silent and no retry was added.
+- Clerk adapter and secure persistence record restore, renewal, sign-out, and
+  storage failures without identity, token, storage-key, or exception details.
+- The central router records unknown routes, invalid resource parameters, and
+  unsafe authentication destinations without route parameters or URLs.
+- `FeatureDependencies.diagnostics` exposes the interface to future features.
+- Phase 16.8 remains responsible for user-facing error mapping and recovery UI.
+
+### Privacy and output policy
+
+Only approved context fields can be emitted: environment, operation, HTTP method,
+status, stable API error code, Laravel request ID after format/length validation,
+numeric retry delay, transport category, route-failure category, and cancellation
+state. Bodies, headers, URLs/query strings, Clerk tokens, passwords, cookies,
+secure-storage contents, user identity/contact data, user text, raw exception
+messages, and production stack traces are excluded.
+
+Local/staging console output requires `ENABLE_DIAGNOSTICS=true`; production always
+uses a no-op sink. Sink failures cannot interrupt application operations.
+
+### Verification
+
+- New diagnostics, network, auth, and navigation tests pass.
+- Full regression suite: **156 tests passed**.
+- `flutter analyze`: passed.
+- `dart format --set-exit-if-changed .`: passed.
+- `dart run tool/generate_tokens.dart --check`: passed.
+- `flutter build apk --debug`: passed.
+- `git diff --check`: reports the two pre-existing intentional Markdown
+  hard-break spaces on the phase header lines; no new code whitespace errors were
+  introduced. `git diff --cached --check`: passed with no staged changes.
+- No dependency, Android manifest, backend, API contract, commerce route, or
+  authentication protocol change was introduced.
+
+### Physical Android verification and blockers
+
+The debug APK builds, but no physical Android device/Marionette session was
+available for this phase's runtime log inspection. Therefore authenticated Clerk
+diagnostic verification and production telemetry verification are not claimed.
+Existing limitations remain: real Clerk sign-in configuration, deployed staging/
+production origins, and Android App Links verification are pending.
+
+### Result
+
+- **Phase 16.9:** PASS
+- **Group P overall:** COMPLETE, pending owner review of this final foundation
+  record. Group Q must not begin until Phase 16.9 is accepted.

@@ -25,7 +25,8 @@ adds meaning beyond the Laravel response. Small features may keep these files
 at the feature root instead of creating every layer.
 
 Feature composition receives `FeatureDependencies` through explicit
-constructors. It may use the shared `ApiClient` and optional `AuthSession`; it
+constructors. It may use the shared `ApiClient`, optional `AuthSession`, and
+`AppDiagnostics`; it
 must not construct another HTTP client, initialize Clerk, read secure storage,
 read compile-time environment values, or implement Laravel authorization.
 
@@ -87,4 +88,13 @@ user out; a 429 does not invent a deadline.
 
 Loading is not authentication state, empty data is not failure, and unexpected
 exceptions use a generic safe fallback. Loading/error presentation is owned by
-Phase 16.8; logging and diagnostics belong to Phase 16.9.
+Phase 16.8; logging and diagnostics are available through
+`FeatureDependencies.diagnostics`.
+
+## Diagnostics Usage
+
+Features record safe machine-readable failures through `AppDiagnostics`; they do
+not call `print()`/`debugPrint()`, serialize exceptions, or pass API bodies,
+headers, URLs, user identity, or user-entered text. Use the closed diagnostic
+categories and codes with only typed allow-listed context. Cancellation is not an
+error event unless a feature has a specific operational reason to record it.

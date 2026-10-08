@@ -1,7 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide DiagnosticLevel;
 import 'package:go_router/go_router.dart';
 
 import '../core/auth/clerk_auth_adapter.dart';
+import '../core/diagnostics/app_diagnostics.dart';
+import '../core/diagnostics/diagnostic_category.dart';
+import '../core/diagnostics/diagnostic_code.dart';
+import '../core/diagnostics/diagnostic_event.dart';
+import '../core/diagnostics/diagnostic_level.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
 import 'route_guard.dart';
@@ -10,8 +15,9 @@ abstract final class AppRouter {
   static GoRouter create({
     required Listenable authState,
     required ClerkAuthStatus Function() getAuthStatus,
+    AppDiagnostics diagnostics = const NoopAppDiagnostics(),
   }) {
-    final guard = RouteGuard(getAuthStatus);
+    final guard = RouteGuard(getAuthStatus, diagnostics: diagnostics);
     return GoRouter(
       initialLocation: AppRoutes.home,
       refreshListenable: authState,
@@ -33,6 +39,7 @@ abstract final class AppRouter {
               builder: (_, state) => _resourcePlaceholder(
                 title: 'Product',
                 identifier: state.pathParameters['productId'],
+                diagnostics: diagnostics,
               ),
             ),
           ],
@@ -48,6 +55,7 @@ abstract final class AppRouter {
               builder: (_, state) => _resourcePlaceholder(
                 title: 'Category',
                 identifier: state.pathParameters['categoryId'],
+                diagnostics: diagnostics,
               ),
             ),
           ],
@@ -92,15 +100,40 @@ abstract final class AppRouter {
           ),
         ),
       ],
-      errorBuilder: (_, _) => const _RouteErrorScreen(),
+      errorBuilder: (_, _) {
+        diagnostics.record(
+          DiagnosticEvent.now(
+            level: DiagnosticLevel.warning,
+            category: DiagnosticCategory.navigation,
+            code: DiagnosticCode.navigationRouteUnavailable,
+            context: const DiagnosticContext(
+              operation: DiagnosticOperation.navigation,
+              routeFailure: DiagnosticRouteFailure.unknownRoute,
+            ),
+          ),
+        );
+        return const _RouteErrorScreen();
+      },
     );
   }
 
   static Widget _resourcePlaceholder({
     required String title,
     required String? identifier,
+    required AppDiagnostics diagnostics,
   }) {
     if (!AppRoutes.isValidResourceId(identifier)) {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.warning,
+          category: DiagnosticCategory.navigation,
+          code: DiagnosticCode.navigationInvalidParameter,
+          context: const DiagnosticContext(
+            operation: DiagnosticOperation.navigation,
+            routeFailure: DiagnosticRouteFailure.invalidParameter,
+          ),
+        ),
+      );
       return const _RouteErrorScreen(invalidParameter: true);
     }
     return _RoutePlaceholder(title: title, detail: identifier);

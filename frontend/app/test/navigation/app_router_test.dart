@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sl_furnitures/core/auth/clerk_auth_adapter.dart';
+import 'package:sl_furnitures/core/diagnostics/app_diagnostics.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_code.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_sink.dart';
 import 'package:sl_furnitures/navigation/app_router.dart';
 import 'package:sl_furnitures/navigation/app_routes.dart';
 import 'package:sl_furnitures/theme/app_theme.dart';
@@ -165,14 +168,39 @@ void main() {
 
       expect(find.text('Products'), findsWidgets);
     });
+
+    testWidgets(
+      'records unsafe authentication destinations without logging them',
+      (tester) async {
+        final sink = InMemoryDiagnosticSink();
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go('/sign-in?continue=https%3A%2F%2Fevil.example');
+        await tester.pumpAndSettle();
+
+        expect(
+          sink.events.single.code,
+          DiagnosticCode.navigationUnsafeDestination,
+        );
+        expect(sink.events.single.toJson().toString(), isNot(contains('evil')));
+      },
+    );
   });
 }
 
 class _RouterHarness {
-  _RouterHarness(ClerkAuthStatus status) : _status = ValueNotifier(status) {
+  _RouterHarness(
+    ClerkAuthStatus status, {
+    AppDiagnostics diagnostics = const NoopAppDiagnostics(),
+  }) : _status = ValueNotifier(status) {
     router = AppRouter.create(
       authState: _status,
       getAuthStatus: () => _status.value,
+      diagnostics: diagnostics,
     );
     addTearDown(dispose);
   }

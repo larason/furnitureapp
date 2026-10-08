@@ -1,19 +1,41 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide DiagnosticLevel;
 import 'package:go_router/go_router.dart';
 
 import '../core/auth/clerk_auth_adapter.dart';
+import '../core/diagnostics/app_diagnostics.dart';
+import '../core/diagnostics/diagnostic_category.dart';
+import '../core/diagnostics/diagnostic_code.dart';
+import '../core/diagnostics/diagnostic_event.dart';
+import '../core/diagnostics/diagnostic_level.dart';
 import 'app_routes.dart';
 
 class RouteGuard {
-  const RouteGuard(this._getAuthStatus);
+  const RouteGuard(
+    this._getAuthStatus, {
+    this.diagnostics = const NoopAppDiagnostics(),
+  });
 
   final ClerkAuthStatus Function() _getAuthStatus;
+  final AppDiagnostics diagnostics;
 
   String? redirect(BuildContext context, GoRouterState state) {
     final path = state.uri.path;
     final intended = AppRoutes.safeIntendedDestination(
       state.uri.queryParameters['continue'],
     );
+    if (state.uri.queryParameters['continue'] != null && intended == null) {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.warning,
+          category: DiagnosticCategory.navigation,
+          code: DiagnosticCode.navigationUnsafeDestination,
+          context: const DiagnosticContext(
+            operation: DiagnosticOperation.navigation,
+            routeFailure: DiagnosticRouteFailure.unsafeDestination,
+          ),
+        ),
+      );
+    }
     final authStatus = _getAuthStatus();
 
     if (AppRoutes.isProtectedPath(path)) {

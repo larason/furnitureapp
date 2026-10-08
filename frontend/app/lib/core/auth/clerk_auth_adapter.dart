@@ -1,10 +1,15 @@
 import 'dart:async';
 
 import 'package:clerk_auth/clerk_auth.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide DiagnosticLevel;
 
 import 'auth_session.dart';
 import 'secure_clerk_persistor.dart';
+import '../diagnostics/app_diagnostics.dart';
+import '../diagnostics/diagnostic_category.dart';
+import '../diagnostics/diagnostic_code.dart';
+import '../diagnostics/diagnostic_event.dart';
+import '../diagnostics/diagnostic_level.dart';
 
 export 'auth_session.dart';
 
@@ -19,16 +24,21 @@ abstract interface class ClerkAuthGateway {
 }
 
 class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
-  ClerkAuthAdapter({required this._gateway}) {
+  ClerkAuthAdapter({
+    required this._gateway,
+    this.diagnostics = const NoopAppDiagnostics(),
+  }) {
     _changesSubscription = _gateway.changes.listen(_handleGatewayChange);
   }
 
-  ClerkAuthAdapter.unavailable() : _gateway = _UnavailableGateway() {
+  ClerkAuthAdapter.unavailable({this.diagnostics = const NoopAppDiagnostics()})
+    : _gateway = _UnavailableGateway() {
     _changesSubscription = _gateway.changes.listen(_handleGatewayChange);
     _status = ClerkAuthStatus.temporarilyUnavailable;
   }
 
   final ClerkAuthGateway _gateway;
+  final AppDiagnostics diagnostics;
   late final StreamSubscription<void> _changesSubscription;
   ClerkAuthStatus _status = ClerkAuthStatus.initializing;
   int _sessionGeneration = 0;
@@ -46,9 +56,11 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   static Future<ClerkAuthAdapter> create({
     required String publishableKey,
     SecureKeyValueStore? store,
+    AppDiagnostics diagnostics = const NoopAppDiagnostics(),
   }) async {
     final persistor = SecureClerkPersistor(
       store: store ?? FlutterSecureKeyValueStore(),
+      diagnostics: diagnostics,
     );
     final auth = Auth(
       config: AuthConfig(
@@ -57,7 +69,10 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
         sessionTokenPolling: true,
       ),
     );
-    final adapter = ClerkAuthAdapter(gateway: _ClerkAuthGateway(auth));
+    final adapter = ClerkAuthAdapter(
+      gateway: _ClerkAuthGateway(auth),
+      diagnostics: diagnostics,
+    );
     try {
       await adapter.initialize();
       return adapter;
@@ -76,6 +91,16 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
       await _gateway.initialize();
       _setStatus(_currentStatus);
     } catch (_) {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.error,
+          category: DiagnosticCategory.authentication,
+          code: DiagnosticCode.authSessionRestoreFailed,
+          context: const DiagnosticContext(
+            operation: DiagnosticOperation.authSessionRestore,
+          ),
+        ),
+      );
       _setStatus(ClerkAuthStatus.temporarilyUnavailable);
       rethrow;
     }
@@ -88,7 +113,22 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
     }
 
     final generation = _sessionGeneration;
-    final token = await _gateway.getSessionToken();
+    late final String? token;
+    try {
+      token = await _gateway.getSessionToken();
+    } catch (_) {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.warning,
+          category: DiagnosticCategory.authentication,
+          code: DiagnosticCode.authSessionRenewalFailed,
+          context: const DiagnosticContext(
+            operation: DiagnosticOperation.authSessionRenewal,
+          ),
+        ),
+      );
+      rethrow;
+    }
     if (generation != _sessionGeneration ||
         _localSessionBlocked ||
         _signOutInProgress ||
@@ -109,6 +149,16 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
       _localSessionBlocked = false;
       _setStatus(ClerkAuthStatus.signedOut);
     } catch (_) {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.error,
+          category: DiagnosticCategory.authentication,
+          code: DiagnosticCode.authSignOutFailed,
+          context: const DiagnosticContext(
+            operation: DiagnosticOperation.authSignOut,
+          ),
+        ),
+      );
       _setStatus(ClerkAuthStatus.temporarilyUnavailable);
       rethrow;
     } finally {

@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/core/auth/clerk_auth_adapter.dart';
 import 'package:sl_furnitures/core/auth/secure_clerk_persistor.dart';
+import 'package:sl_furnitures/core/diagnostics/app_diagnostics.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_code.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_sink.dart';
 
 void main() {
   group('SecureClerkPersistor', () {
@@ -43,17 +46,69 @@ void main() {
 
     test('preserves secure-storage read failures', () async {
       final store = _FakeSecureStore()..readError = StateError('unavailable');
-      final persistor = SecureClerkPersistor(store: store);
+      final sink = InMemoryDiagnosticSink();
+      final persistor = SecureClerkPersistor(
+        store: store,
+        diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+      );
 
       await expectLater(
         persistor.read<String>('client'),
         throwsA(isA<StateError>()),
       );
       expect(store.deleteCalls, 0);
+      expect(sink.events.single.code, DiagnosticCode.securePersistenceFailed);
     });
   });
 
   group('ClerkAuthAdapter', () {
+    test(
+      'records session restoration failures without raw SDK details',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final adapter = ClerkAuthAdapter(
+          gateway: _FakeGateway(initializeError: StateError('private detail')),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+
+        await expectLater(adapter.initialize(), throwsStateError);
+
+        expect(
+          sink.events.single.code,
+          DiagnosticCode.authSessionRestoreFailed,
+        );
+        expect(
+          sink.events.single.toJson().toString(),
+          isNot(contains('private')),
+        );
+        adapter.dispose();
+      },
+    );
+
+    test(
+      'records sign-out failures without identity or exception details',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final adapter = ClerkAuthAdapter(
+          gateway: _FakeGateway(
+            signedIn: true,
+            signOutError: StateError('private sign-out detail'),
+          ),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+        await adapter.initialize();
+
+        await expectLater(adapter.signOut(), throwsStateError);
+
+        expect(sink.events.single.code, DiagnosticCode.authSignOutFailed);
+        expect(
+          sink.events.single.toJson().toString(),
+          isNot(contains('private')),
+        );
+        adapter.dispose();
+      },
+    );
+
     test('returns no token when signed out', () async {
       final gateway = _FakeGateway();
       final adapter = ClerkAuthAdapter(gateway: gateway);
@@ -191,12 +246,14 @@ class _FakeGateway implements ClerkAuthGateway {
     this.token,
     this.delayedToken,
     this.signOutError,
+    this.initializeError,
   });
 
   bool signedIn;
   final String? token;
   final Completer<String?>? delayedToken;
   final Object? signOutError;
+  final Object? initializeError;
   int signOutCalls = 0;
   final _changes = StreamController<void>.broadcast();
 
@@ -210,7 +267,9 @@ class _FakeGateway implements ClerkAuthGateway {
   bool get isSignedIn => signedIn;
 
   @override
-  Future<void> initialize() async {}
+  Future<void> initialize() async {
+    if (initializeError case final error?) throw error;
+  }
 
   @override
   Future<String?> getSessionToken() async =>

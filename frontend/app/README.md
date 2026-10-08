@@ -17,11 +17,10 @@ This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
 Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 (networking layer)**, **Phase 16.5 (authentication storage/session)**,
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
-structure)**, and **Phase 16.8 (error/loading states)** foundations.
+structure)**, **Phase 16.8 (error/loading states)**, and **Phase 16.9
+(logging/diagnostics)** foundations.
 
-Not yet implemented (owned by later Group P phases):
-
-- 16.9 logging/diagnostics
+Group P is complete. Group Q owns customer feature implementation.
 
 The root application now uses `MaterialApp.router`. Route placeholders establish
 the Phase 16.6 navigation contract only; customer feature screens remain owned
@@ -91,6 +90,47 @@ They decide whether a retry or refresh is safe and pass the callback to the
 shared widget. The mapper does not start authentication, sign the user out, or
 retry requests automatically. The existing `AuthSession` and router continue to
 own authentication states and access policy.
+
+## Diagnostics
+
+`lib/core/diagnostics/` provides the SDK-independent diagnostics boundary. Future
+features receive `AppDiagnostics` through the existing composition boundary and
+record typed `DiagnosticEvent` values with one of the closed severity levels:
+`debug`, `info`, `warning`, `error`, or `critical`.
+
+Events use closed categories and codes. Their context is allow-listed to approved
+fields such as environment, operation, HTTP method, status, stable Laravel error
+code, numeric `Retry-After`, transport category, approved route-failure category,
+and a validated Laravel request ID. Request/response bodies, URLs and query
+parameters, headers, Clerk credentials, secure-storage contents, identity data,
+user text, raw exception messages, and production stack traces are not supported
+event fields.
+
+Diagnostics use the existing `ENABLE_DIAGNOSTICS` configuration field. Local and
+staging output is available only when explicitly enabled. Production always uses a
+no-op policy, even if the flag is accidentally enabled. Sink failures are isolated
+from application operations, and the test sink is bounded in memory.
+
+The application root installs framework and unhandled-async error capture, while
+`ApiClient`, `ClerkAuthAdapter`, secure persistence, and the central router own
+their respective expected failure events. Cancellation remains silent and the
+diagnostics layer never retries, presents UI, starts authentication, or uploads
+events remotely.
+
+Future feature example:
+
+```dart
+diagnostics.record(
+  DiagnosticEvent.now(
+    level: DiagnosticLevel.error,
+    category: DiagnosticCategory.network,
+    code: DiagnosticCode.apiRequestFailed,
+    context: const DiagnosticContext(
+      operation: DiagnosticOperation.apiRequest,
+    ),
+  ),
+);
+```
 
 ## Networking layer
 
