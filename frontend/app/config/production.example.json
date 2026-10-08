@@ -1,0 +1,6 @@
+{
+  "APP_ENV": "production",
+  "API_BASE_URL": "https://api.example.invalid",
+  "CLERK_PUBLISHABLE_KEY": "pk_live_XXXX",
+  "ENABLE_DIAGNOSTICS": false
+}

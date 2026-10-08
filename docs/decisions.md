@@ -690,6 +690,18 @@ The website keeps public catalog/SEO and anonymous request/enquiry pages public.
 
 ---
 
+### ADR/AUTH-015 — Flutter Phase 16.5 Clerk Session Adapter
+
+**Decision:** The Android Flutter app uses `clerk_auth` `0.0.18-beta`, the current community-maintained Clerk Dart package compatible with the installed Dart/Flutter versions. The package is isolated behind `ClerkAuthAdapter` and the existing SDK-independent `AuthTokenProvider`; feature code does not import Clerk types. Clerk's documented `Auth.initialize`, `Auth.sessionToken`, `sessionTokenStream`, and `Auth.signOut` APIs own restoration, token renewal, and sign-out. The package's plaintext `DefaultPersistor` is not used. A `SecureClerkPersistor` serializes only the SDK-required state into `flutter_secure_storage`, backed by Android Keystore encryption, and Android backup is disabled to prevent encrypted-state/key mismatches after restore.
+
+The adapter represents initialization, signed-out, signed-in, action-required, and temporarily-unavailable states. Pending Clerk sessions and in-progress security flows cannot provide a Laravel bearer token. Auth initialization failure leaves the public app available with authenticated requests unavailable; it does not fabricate a session or silently grant protected access. Live authenticated verification remains blocked until a real publishable key and supported development sign-in workflow are supplied. This phase adds no sign-in UI and no Laravel auth protocol.
+
+**Reason:** The official Clerk Flutter SDK path is not currently available as a stable official package. This is the narrowest documented compatible integration, keeps storage encrypted, preserves the Laravel bearer boundary, and isolates the beta dependency for future replacement.
+
+**Status:** Accepted for Phase 16.5 | **Affected:** `frontend/app/lib/core/auth/`, `frontend/app/lib/main.dart`, `frontend/app/lib/app.dart`, `frontend/app/pubspec.yaml`, `frontend/app/android/app/src/main/AndroidManifest.xml`, `frontend/app/README.md`
+
+---
+
 ### ADR/AUTHZ-001 — Three-Role Authorization Model (CLOSED)
 
 **Decision:** V1 authorization uses exactly three CLOSED roles `CUSTOMER`/`STAFF`/`ADMIN` as inputs to `ROLE + RESOURCE + ACTION + OWNERSHIP + STATE + CONTEXT`. No `MANAGER`/`DELIVERY_AGENT` etc. without explicit approval; use explicit permissions before multiplying roles.
@@ -2951,3 +2963,134 @@ The current `orders` schema has no `billing_address` column and the repository h
 **Reason:** Reusing the tested Group J surface avoids a second operational API and keeps the frozen request-first, privacy, and authorization boundaries intact. Documentation now follows the implemented close-only state machine rather than historical optional-reopen wording.
 
 **Status:** Accepted and verified in Phase 11.10 | **Date:** 2026-10-05 | **Affected:** `backend/laravel/tests/Feature/{OperationalEnquiryApiTest,OpenApiEnquiryContractTest}.php`, `backend/laravel/tests/Integration/EnquiryStatusConcurrencyMysqlTest.php`, `docs/api/{api-contract.md,api-conventions.md,api-resources.md,openapi.yaml}`, `docs/domain/business-rules.md`, `docs/decisions.md`, `phases/group-K-phases.md`
+
+---
+
+### ADR/DESIGN-007 — Android-Only Flutter App Foundation
+
+**Decision:** The SL Furnitures customer application is a Flutter project at `frontend/app/` targeting **Android only**. iOS, web, and desktop targets are intentionally not generated. The permanent Android application ID and namespace are `com.slfurnitures.app`; the Dart package is `sl_furnitures`. The launcher label is `Buy Furnitures`.
+
+Phase 16.1 establishes the project setup only: it adds the Android host project, a strict-but-standard analyzer baseline (`flutter_lints` plus `strict-casts`, `strict-inference`, `strict-raw-types`), a minimal entry point (`lib/main.dart`) and root widget (`lib/app.dart`) with a neutral bootstrap placeholder, and an app-shell smoke test. It introduces **no** theme, environment configuration, networking, authentication, routing, or feature structure — those remain Phases 16.2–16.9.
+
+The app consumes the shared design system exclusively through the existing `frontend/design-system/` contract. Flutter does not parse `tokens.css` or load `design-tokens.json` at runtime; Phase 16.2 maps approved tokens into `ThemeData` via a static Dart adapter. No mobile-specific token authority, font family, icon pack, or brand value is created. Native visual verification stays pending until a device/emulator is attached; automated analysis and builds are not treated as visual proof.
+
+**Reason:** Fixes the durable Play Store identity and platform scope before any UI exists, keeps the app on one shared design authority, follows the repository's phase-by-phase dependency order, and avoids scaffolding theme or business layers outside their owning phases.
+
+**Status:** Accepted and verified in Phase 16.1 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`pubspec.yaml`, `analysis_options.yaml`, `lib/main.dart`, `lib/app.dart`, `test/app_test.dart`, `README.md`, `android/app/src/main/AndroidManifest.xml`), `docs/decisions.md`, `phases/group-P-phases.md`
+
+---
+
+### ADR/DESIGN-008 — Flutter Theme Is Generated From Canonical `tokens.css`
+
+**Decision:** The Flutter Material 3 theme is produced by a deterministic generator, not by a hand-maintained Dart palette. `frontend/app/tool/token_generator.dart` + `tool/generate_tokens.dart` read the sole canonical authority `frontend/design-system/tokens.css`, resolve `var(...)` references, preserve semantic token names, and convert colors, pixel measurements, unitless line-height multipliers, durations, and aspect ratios into typed Dart. The CLI writes `frontend/app/lib/theme/tokens/generated_tokens.dart` (`abstract final class GeneratedTokens`) or, with `--check`, fails when that file is stale relative to `tokens.css`. Output is byte-deterministic and `dart format`-stabilised, and carries a header naming the source and the regeneration command. Generation fails loudly on unresolved references, a missing `:root`, missing required tokens, or unsupported value syntax.
+
+`GeneratedTokens` is the **only** file permitted to hold raw `Color(0x...)` literals, enforced by `test/theme/theme_definitions_test.dart`. `AppSpacing`, `AppShapes`, `AppMotion`, and `AppTypography` are aliases over it and define no values, so there is no second token palette; `design-tokens.json` and `tailwind-v4.css` remain web-side representations and are not consumed by Flutter. Staleness is checked twice — by `dart run tool/generate_tokens.dart --check` and by `test/theme/token_sync_test.dart` inside `flutter test`.
+
+`AppTheme.light()` sets `useMaterial3: true` with an **explicit `ColorScheme`** — no `ColorScheme.fromSeed`, no dynamic wallpaper color, `surfaceTint` transparent. Charcoal `--action-primary` is `primary`; the brown `--accent-brand` is a `ThemeExtension AppBrandColors`, never `secondary`; editorial is `ThemeExtension AppSurfaceColors`; success/warning/info are `ThemeExtension AppStatusColors` (danger alone becomes `error`). CSS rings and focus rings map to borders and focus decorations rather than native `Material` elevation, cards stay flat, and motion uses only the 150/200 ms tokens with a reduced-motion resolver.
+
+**Fonts:** Young Serif is bundled from the OFL asset the website already ships (`assets/fonts/`), display roles only (96/48/32). Helvetica Now Text is commercial and distributed nowhere in this repository, so utility type uses the platform sans — the terminal generic of the canonical stack, a documented fallback rather than a substituted brand font. No Google Fonts package and no downloaded font was added.
+
+**Reason:** One generator-driven source keeps the app provably in sync with the website, makes canonical changes fail visibly instead of silently drifting, and satisfies the authority order (`tokens.css` before Material defaults) without inventing a competing token file.
+
+**Consequences / deferred:** Only the approved light theme exists — no dark palette was generated from Material defaults, because `tokens.css` defines none. Material's required modal `scrim` has no canonical token and is derived from `--surface-inverse` at 54% alpha, recorded as a gap rather than a new brand colour. `44ch` is emitted as an approximate `44`. Bundling Helvetica Now Text awaits a redistribution licence. Golden tests were not added; component rendering is covered by widget tests instead.
+
+**Status:** Accepted and implemented in Phase 16.2 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`tool/token_generator.dart`, `tool/generate_tokens.dart`, `lib/theme/**`, `lib/app.dart`, `pubspec.yaml`, `assets/fonts/**`, `test/theme/**`, `test/tool/**`, `test/support/**`, `test/app_test.dart`, `README.md`), `docs/decisions.md`, `phases/group-P-phases.md`
+
+---
+
+### ADR/APP-004 — Declarative Flutter Routing and Request-First Navigation
+
+**Decision:** Phase 16.6 uses `go_router` with one root navigator and a centralized `lib/navigation/` registry. Public discovery, made-to-order request, and enquiry/contact routes are available regardless of Clerk state. `/account` is protected; the router reacts only to the adapter's state and never requests, retains, or inspects a bearer token. It redirects protected destinations to sign-in when signed out and to a neutral status route during initialization, required Clerk action, or temporary unavailability.
+
+The router retains only an allow-listed, query-free internal `/account` continuation after successful authentication. External URLs, authentication routes, query-bearing destinations, and malformed resource identifiers are rejected. Cart, checkout, payment, orders, favorites, and a stateful bottom-navigation shell are deferred because request-first scope does not yet own those destinations. Android App Links are also deferred pending a verified production domain and Digital Asset Links setup.
+
+**Consequences:** Flutter navigation has stable route names, typed location builders, predictable Android back behavior, safe unknown-route feedback, and testable auth transitions without a live Clerk sign-in flow. Later feature phases replace route placeholders in place; they do not add independent route registries or client-side authorization.
+
+**Status:** Accepted and implemented in Phase 16.6 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`pubspec.yaml`, `lib/app.dart`, `lib/navigation/**`, `test/navigation/**`, `README.md`), `docs/decisions.md`
+
+---
+
+### ADR/APP-005 — Lightweight Feature-First Flutter Composition
+
+**Decision:** Flutter customer features are organized by capability under
+`frontend/app/lib/features/`, while completed shared foundations remain in
+`core/`, `theme/`, and `navigation/`. Feature code receives the existing
+`ApiClient` and optional SDK-independent `AuthSession` through explicit
+`FeatureDependencies` constructor injection. The application composition root
+owns creation and disposal of the API client, transport, and Clerk adapter;
+`FeatureDependencies` does not own or dispose shared services.
+
+Features may add local `data/`, `domain/`, and `presentation/` layers only when
+the feature has an actual responsibility for them. The central `go_router`
+configuration remains the sole route registry and auth policy boundary. No
+feature module initializes Clerk, reads secure storage or compile-time config,
+creates an HTTP client, parses transport envelopes in presentation, or
+duplicates Laravel authorization. No feature modules, repositories, screens, or
+models are implemented before their owning Group Q phases.
+
+**Reason:** This provides a testable composition boundary and clear dependency
+direction without introducing a state-management or dependency-injection
+framework, boilerplate layers, speculative models, or request-only commerce
+features.
+
+**Status:** Accepted and implemented in Phase 16.7 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`lib/core/auth/auth_session.dart`, `lib/core/feature_dependencies.dart`, `lib/core/auth/clerk_auth_adapter.dart`, `lib/features/README.md`, `test/architecture/feature_architecture_test.dart`, `README.md`), `docs/decisions.md`
+
+---
+
+### ADR/APP-006 — Shared Flutter Async Presentation Boundary
+
+**Decision:** Phase 16.8 provides a narrow shared presentation layer under
+`frontend/app/lib/core/presentation/`. `AsyncViewState<T>` is a sealed,
+feature-owned state vocabulary for initial, loading, content, empty, failure,
+refreshing, and submitting states; features use only the states their operation
+needs. `AsyncRefreshing` and `AsyncFailure` can retain typed prior data so a
+refresh does not erase valid content by default.
+
+`ErrorPresentationMapper` consumes the existing parsed `ApiError` and
+`ApiTransportException` types. It does not parse response bodies, define API
+codes, inspect exception text, retry requests, start authentication, or sign out
+users. It preserves request IDs and canonical field paths, maps cancellation to
+no user-facing presentation, and uses a generic safe fallback for unknown
+exceptions. `AppLoadingView`, `AppEmptyView`, `AppErrorView`, and
+`AppInlineError` use the existing Material 3 theme and token-derived spacing;
+recovery callbacks belong to the owning feature and are never enabled without a
+real callback.
+
+**Reason:** This gives future Group Q features consistent accessible states
+without moving transport ownership into presentation, introducing a global
+state manager, or implementing feature business behavior prematurely.
+
+**Status:** Accepted and implemented in Phase 16.8 | **Date:** 2026-10-08 | **Affected:** `frontend/app/` (`lib/core/presentation/**`, `test/core/presentation/**`, `README.md`, `lib/features/README.md`), `docs/decisions.md`
+
+---
+
+### ADR/APP-007 — Privacy-Safe Flutter Diagnostics Boundary
+
+**Decision:** Phase 16.9 adds one SDK-independent `AppDiagnostics` interface under
+`frontend/app/lib/core/diagnostics/`. Features and shared boundaries record typed
+`DiagnosticEvent` values with closed severity, category, code, timestamp, validated
+Laravel request ID, and allow-listed context. Output is separated behind
+`DiagnosticSink`; the app supplies a development console sink, tests use a bounded
+in-memory sink, and disabled/production policy uses a no-op sink. No remote,
+persistent, analytics, or crash-upload sink is introduced.
+
+`ENABLE_DIAGNOSTICS` remains the only configuration switch. Local and staging
+output requires explicit enablement; production is always disabled. Framework and
+unhandled-async errors are captured at the application boundary with duplicate
+suppression and existing handler delegation. `ApiClient`, Clerk/session
+persistence, and the central router own their respective events. Expected
+cancellation is not recorded as an error, and diagnostics never owns UI recovery,
+authentication, retries, or authorization.
+
+Sensitive data is excluded by construction: no arbitrary metadata map is exposed;
+only environment, operation, HTTP method, status, stable API code, numeric retry
+delay, transport/route category, cancellation state, and validated request ID are
+available. Bodies, headers, URLs/query strings, credentials, secure-storage
+values, identity, user text, raw exception messages, and production stacks are not
+event fields.
+
+**Reason:** A small allow-listed boundary gives future features actionable local
+failure evidence without creating a second observability platform or a telemetry
+privacy liability.
+
+**Status:** Accepted and implemented in Phase 16.9 | **Date:** 2026-10-09 | **Affected:** `frontend/app/lib/core/diagnostics/**`, `lib/core/network/api_client.dart`, `lib/core/auth/**`, `lib/navigation/**`, `lib/main.dart`, `lib/app.dart`, `lib/core/feature_dependencies.dart`, tests, and Flutter documentation

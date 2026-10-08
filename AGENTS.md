@@ -1157,6 +1157,8 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 ### Phase 17.10 — Furniture requests
 ### Phase 17.11 — Enquiries
 ### Phase 17.12 — Profile/account
+### Phase 17.13 - Aboutus/privacypolicy/terms
+### Phase 17.14 - open source license dedicated page
 
 **Exit condition:** The mobile application supports the same core commerce capabilities as the website, adapted for mobile UX.
 
