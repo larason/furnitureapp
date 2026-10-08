@@ -3,7 +3,11 @@
 		"clerk": {
 			"url": "https://mcp.clerk.com/mcp",
 			"type": "http"
-		}
+		},
+	    "dart": {
+            "command": "dart",
+            "args": ["mcp-server"]
+    }
 	},
 	"inputs": []
 }
