@@ -48,10 +48,13 @@ String? _generate(File sourceFile) {
 }
 
 Future<int> _write(File outputFile, String generated) async {
+  final formatted = await formattedDartSource(generated);
+  if (formatted == null) {
+    stderr.writeln('Token generation failed because dart format failed.');
+    return 1;
+  }
   outputFile.parent.createSync(recursive: true);
-  outputFile.writeAsStringSync(generated);
-  final formatted = await formatDart(outputFile.path);
-  if (formatted != null) outputFile.writeAsStringSync(formatted);
+  outputFile.writeAsStringSync(formatted);
   stdout.writeln('Wrote ${outputFile.path}');
   return 0;
 }

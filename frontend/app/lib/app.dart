@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
+import 'core/network/api_client.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
 import 'theme/preview/theme_preview.dart';
@@ -10,15 +11,36 @@ import 'theme/preview/theme_preview.dart';
 ///
 /// [config] is validated by [ConfigValidator.loadCompileTime] before the widget
 /// is constructed and is injected here rather than read globally. Phase 16.4
-/// consumes `apiBaseUrl`; no configuration lookup happens inside the tree.
+/// consumes the validated config through [apiClient]; no request is made during
+/// startup.
 ///
 /// Screen implementation belongs to later Group P phases. Debug builds render
 /// the theme preview harness; release builds render a neutral placeholder until
 /// the catalog shell is implemented.
-class SLFurnituresApp extends StatelessWidget {
-  const SLFurnituresApp({super.key, required this.config});
+class SLFurnituresApp extends StatefulWidget {
+  const SLFurnituresApp({
+    super.key,
+    required this.config,
+    this.apiClient,
+    this.ownsApiClient = false,
+  });
 
   final AppConfig config;
+  final ApiClient? apiClient;
+  final bool ownsApiClient;
+
+  @override
+  State<SLFurnituresApp> createState() => _SLFurnituresAppState();
+}
+
+class _SLFurnituresAppState extends State<SLFurnituresApp> {
+  @override
+  void dispose() {
+    if (widget.ownsApiClient) {
+      widget.apiClient?.close();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

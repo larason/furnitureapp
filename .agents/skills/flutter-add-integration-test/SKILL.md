@@ -1,6 +1,6 @@
 ---
 name: flutter-add-integration-test
-description: Configures Flutter Driver for app interaction and converts MCP actions into permanent integration tests. Use when adding integration testing to a project, exploring UI components via MCP, or automating user flows with the integration_test package.
+description: Configures Flutter integration_test for app interaction and converts MCP actions into permanent integration tests. Use when adding integration testing to a project, exploring UI components via MCP, or automating user flows with the integration_test package.
 metadata:
   model: models/gemini-3.1-pro-preview
   last_modified: Tue, 21 Apr 2026 18:29:20 GMT
@@ -17,17 +17,18 @@ metadata:
 
 ## Project Setup and Dependencies
 
-Configure the project to support integration testing and Flutter Driver extensions.
+Configure the project to support Flutter integration testing.
 
 1. Add required development dependencies to `pubspec.yaml`:
    ```bash
    flutter pub add 'dev:integration_test:{"sdk":"flutter"}'
    flutter pub add 'dev:flutter_test:{"sdk":"flutter"}'
    ```
-2. Enable the Flutter Driver extension in your application entry point (typically `lib/main.dart` or a dedicated `lib/main_test.dart`):
-   - Import `package:flutter_driver/driver_extension.dart`.
-   - Call `enableFlutterDriverExtension();` before `runApp()`.
-3. Add `Key` parameters (e.g., `ValueKey('login_button')`) to critical widgets in the application code to ensure reliable targeting during tests.
+2. Add `Key` parameters (e.g., `ValueKey('login_button')`) to critical widgets in the application code to ensure reliable targeting during tests.
+
+Keep `IntegrationTestWidgetsFlutterBinding.ensureInitialized()` as the
+integration-test setup. Reserve `enableFlutterDriverExtension()` for a
+separate legacy `flutter_driver` target.
 
 ## Interactive Exploration via MCP
 
@@ -64,9 +65,11 @@ Execute tests using the `flutter drive` command. Require a host driver script lo
 - **If testing headless web:** Run with `-d web-server`.
 - **If testing on Android (Local):** Run `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/app_test.dart`.
 - **If testing on Firebase Test Lab (Android):** 
-  1. Build debug APK: `flutter build apk --debug`
-  2. Build test APK: `./gradlew app:assembleAndroidTest`
-  3. Upload both APKs to the Firebase Test Lab console.
+   1. Build the integration-test-targeted debug app with the Flutter Test Lab
+      target configuration: `./gradlew app:assembleDebug -Ptarget=integration_test/app_test.dart`
+   2. Build the existing debug APK: `flutter build apk --debug`
+   3. Build test APK: `./gradlew app:assembleAndroidTest`
+   4. Upload both APKs to the Firebase Test Lab console.
 
 ## Workflow: End-to-End Integration Testing
 
@@ -74,7 +77,6 @@ Copy and follow this checklist to implement and verify integration tests.
 
 - [ ] **Task Progress: Setup**
   - [ ] Add `integration_test` and `flutter_test` to `pubspec.yaml`.
-  - [ ] Inject `enableFlutterDriverExtension()` into the app entry point.
   - [ ] Assign `ValueKey`s to target widgets.
 - [ ] **Task Progress: Exploration**
   - [ ] Run `launch_app` via MCP.

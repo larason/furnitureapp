@@ -14,11 +14,11 @@ Laravel API as the Next.js website and shares the project design system.
 ## Phase status
 
 This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
-Material 3)**, and **Phase 16.3 (environment configuration)** foundations.
+Material 3)**, **Phase 16.3 (environment configuration)**, and **Phase 16.4
+(networking layer)** foundations.
 
 Not yet implemented (owned by later Group P phases):
 
-- 16.4 networking layer
 - 16.5 authentication storage/session
 - 16.6 routing/navigation
 - 16.7 feature/module structure
@@ -27,6 +27,66 @@ Not yet implemented (owned by later Group P phases):
 
 No customer-facing screen exists yet. Debug builds show the development-only
 theme preview harness; release builds show the neutral bootstrap placeholder.
+
+## Networking layer
+
+Phase 16.4 uses maintained `package:http` rather than Dio. The dependency is
+small, supports `AbortableRequest`, and does not require an interceptor or
+automatic-retry framework.
+
+The domain-neutral boundary is in `lib/core/network/`:
+
+- `ApiClient` receives validated `AppConfig`, an injectable `ApiTransport`, and
+  an optional `AuthTokenProvider`.
+- `HttpApiTransport` owns a `package:http` client only when it creates one;
+  injected transports remain caller-owned.
+- Requests use the configured API origin and append `/api/v1` exactly once.
+- Public requests use `Accept: application/json`; JSON bodies additionally use
+  `Content-Type: application/json`.
+- Authenticated requests explicitly use `ApiAuthMode.required` and obtain the
+  current token at request time. The client never stores bearer credentials.
+- JSON and multipart bodies are supported at the transport boundary. Multipart
+  bodies are finalized into an abortable request and do not accept a caller
+  supplied content type.
+
+Example public request:
+
+```dart
+final response = await apiClient.get<Map<String, Object?>>(
+  '/products',
+  queryParameters: {'per_page': 20},
+  decoder: (value) => Map<String, Object?>.from(value! as Map),
+);
+```
+
+Example authenticated request with a test-only provider:
+
+```dart
+final client = ApiClient(
+  config: config,
+  authTokenProvider: TestTokenProvider('token-used-only-for-a-test'),
+);
+final response = await client.get<Object?>(
+  '/me',
+  authMode: ApiAuthMode.required,
+);
+```
+
+Successful responses are parsed as `data` plus optional typed `meta`, including
+`meta.pagination`. API failures preserve HTTP status, all structured errors,
+`meta.request_id`, and numeric `Retry-After` seconds. When both request-ID
+sources exist, the response body's `meta.request_id` is authoritative and the
+`X-Request-Id` header is the fallback.
+
+Connection, timeout, cancellation, malformed response, invalid envelope, and
+unsupported content-type failures remain distinct from Laravel API errors. The
+client never retries or replays requests. Redirects are disabled so bearer
+credentials cannot cross an origin boundary.
+
+The default timeout is 10 seconds and every request accepts an explicit
+`RequestCancellation`. Closing an `ApiClient` closes only a transport created by
+that client; injected transports remain caller-owned. Startup constructs the
+client after configuration validation but performs no API request.
 
 ## Environment configuration
 
@@ -205,8 +265,10 @@ flutter run --dart-define-from-file=config/local.json
   `ios/` host project and no App Transport Security exception exist. The
   configuration layer itself is platform-neutral; if iOS is later enabled it
   will need a debug-scoped ATS exception mirroring the Android one.
-- **No networking yet.** Phase 16.4 will consume `apiBaseUrl`; nothing in this
-  phase performs an HTTP request, and no Laravel connectivity is claimed.
+- **Local live API verification is limited.** A temporary Flutter-client probe
+  successfully reached Laravel's public `/api/v1/products` endpoint and parsed
+  its response. Physical-device request execution remains pending; staging and
+  production are not deployed.
 - **No authentication yet.** Phase 16.5 owns Clerk sessions and secure storage.
   This phase only exposes and validates public Clerk configuration.
 - **Staging and production are unverified.** Their origins are not deployed, so

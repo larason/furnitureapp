@@ -18,8 +18,9 @@ class ConfigValidationException implements Exception {
 abstract final class CompileTimeDefines {
   // Dart can detect named defines, but it cannot enumerate arbitrary defines.
   static const String forbiddenSecretField = 'CLERK_SECRET_KEY';
-  static const bool _hasForbiddenSecret =
-      bool.hasEnvironment(forbiddenSecretField);
+  static const bool _hasForbiddenSecret = bool.hasEnvironment(
+    forbiddenSecretField,
+  );
 
   static const Map<String, Object?> values = <String, Object?>{
     'APP_ENV': String.fromEnvironment('APP_ENV'),
