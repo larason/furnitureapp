@@ -1,15 +1,18 @@
 <manifest
-    xmlns:android="http://schemas.android.com/apk/res/android">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- The INTERNET permission is required for development. Specifically,
          the Flutter tool needs it to communicate with the running application
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
-     <!-- Debug-only: the network security config permits HTTP only for local
-          loopback/emulator hosts. Release uses the main manifest's explicit
-          cleartext=false policy. ConfigValidator also rejects HTTP for STAGING
-          and PRODUCTION. -->
+     <!-- Debug-only: API 24+ limits HTTP to local loopback/emulator hosts via
+          the network security config. API 23 lacks that config, so this permits
+          HTTP only in debug builds. Release retains the main manifest's false
+          policy, and ConfigValidator rejects HTTP outside LOCAL. -->
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic"
         android:networkSecurityConfig="@xml/network_security_config"/>
 </manifest>
