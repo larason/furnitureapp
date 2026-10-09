@@ -5,6 +5,10 @@ import 'package:sl_furnitures/core/auth/clerk_auth_adapter.dart';
 import 'package:sl_furnitures/core/diagnostics/app_diagnostics.dart';
 import 'package:sl_furnitures/core/diagnostics/diagnostic_code.dart';
 import 'package:sl_furnitures/core/diagnostics/diagnostic_sink.dart';
+import 'package:sl_furnitures/core/network/api_response.dart';
+import 'package:sl_furnitures/core/network/request_cancellation.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
+import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/navigation/app_router.dart';
 import 'package:sl_furnitures/navigation/app_routes.dart';
 import 'package:sl_furnitures/theme/app_theme.dart';
@@ -169,6 +173,25 @@ void main() {
       expect(find.text('Products'), findsWidgets);
     });
 
+    testWidgets('returns from the catalog CTA to home with system back', (
+      tester,
+    ) async {
+      final harness = _RouterHarness(
+        ClerkAuthStatus.signedOut,
+        catalogRepository: const _EmptyCatalogRepository(),
+      );
+      await tester.pumpWidget(harness.app);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Explore furniture'));
+      await tester.pumpAndSettle();
+      expect(find.text('Furniture'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('Furniture for the way you live.'), findsOneWidget);
+    });
+
     testWidgets(
       'records unsafe authentication destinations without logging them',
       (tester) async {
@@ -196,11 +219,13 @@ class _RouterHarness {
   _RouterHarness(
     ClerkAuthStatus status, {
     AppDiagnostics diagnostics = const NoopAppDiagnostics(),
+    CatalogRepository? catalogRepository,
   }) : _status = ValueNotifier(status) {
     router = AppRouter.create(
       authState: _status,
       getAuthStatus: () => _status.value,
       diagnostics: diagnostics,
+      catalogRepository: catalogRepository,
     );
     addTearDown(dispose);
   }
@@ -217,4 +242,24 @@ class _RouterHarness {
     router.dispose();
     _status.dispose();
   }
+}
+
+class _EmptyCatalogRepository implements CatalogRepository {
+  const _EmptyCatalogRepository();
+
+  @override
+  Future<CatalogPage> fetchProducts({
+    required int page,
+    RequestCancellation? cancellation,
+  }) async => const CatalogPage(
+    products: <ProductSummary>[],
+    pagination: ApiPagination(
+      currentPage: 1,
+      perPage: 20,
+      total: 0,
+      lastPage: 1,
+      hasNext: false,
+      hasPrevious: false,
+    ),
+  );
 }

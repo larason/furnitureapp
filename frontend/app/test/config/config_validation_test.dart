@@ -36,6 +36,7 @@ void main() {
       expect(config.apiBaseUrl, 'http://10.0.2.2:8000');
       expect(config.clerkPublishableKey, isNull);
       expect(config.enableDiagnostics, isFalse);
+      expect(config.catalogDataSource, CatalogDataSource.api);
     });
 
     test('2. STAGING parses successfully', () {
@@ -373,6 +374,45 @@ void main() {
   });
 
   group('configuration object', () {
+    test('fixture catalog selection is limited to local debug builds', () {
+      final fixtures = ConfigValidator.validate({
+        ..._local(),
+        'CATALOG_DATA_SOURCE': 'fixtures',
+      });
+      expect(fixtures.catalogDataSource, CatalogDataSource.fixtures);
+
+      expect(
+        () => ConfigValidator.validate({
+          ..._local(),
+          'CATALOG_DATA_SOURCE': 'fixtures',
+        }, isDebugBuild: false),
+        _throwsConfig,
+      );
+      expect(
+        () => ConfigValidator.validate({
+          ..._staging(),
+          'CATALOG_DATA_SOURCE': 'fixtures',
+        }),
+        _throwsConfig,
+      );
+      expect(
+        () => ConfigValidator.validate({
+          ..._production(),
+          'CATALOG_DATA_SOURCE': 'fixtures',
+        }),
+        _throwsConfig,
+      );
+    });
+
+    test('catalog data source accepts only closed values', () {
+      expect(
+        () => ConfigValidator.validate({
+          ..._local(),
+          'CATALOG_DATA_SOURCE': 'demo',
+        }),
+        _throwsConfig,
+      );
+    });
     test('21. configuration objects are immutable', () {
       // A const instance can only be created when every field is final, so
       // this compiles only while the value object stays immutable.

@@ -5,6 +5,8 @@ import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
+import 'features/catalog/data/catalog_repository.dart';
+import 'features/catalog/data/fixture_catalog_repository.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
@@ -49,11 +51,21 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
   @override
   void initState() {
     super.initState();
+    final apiClient = widget.apiClient;
+    final repository =
+        widget.config.catalogDataSource == CatalogDataSource.fixtures
+        ? FixtureCatalogRepository()
+        : apiClient == null
+        ? null
+        : ApiCatalogRepository(apiClient);
     _router = AppRouter.create(
       authState: widget.authAdapter ?? _anonymousAuthState,
       getAuthStatus: () =>
           widget.authAdapter?.status ?? ClerkAuthStatus.signedOut,
       diagnostics: widget.diagnostics,
+      catalogRepository: repository,
+      showFixtureHero:
+          widget.config.catalogDataSource == CatalogDataSource.fixtures,
     );
   }
 

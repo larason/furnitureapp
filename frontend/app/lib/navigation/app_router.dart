@@ -7,6 +7,9 @@ import '../core/diagnostics/diagnostic_category.dart';
 import '../core/diagnostics/diagnostic_code.dart';
 import '../core/diagnostics/diagnostic_event.dart';
 import '../core/diagnostics/diagnostic_level.dart';
+import '../features/catalog/data/catalog_repository.dart';
+import '../features/catalog/presentation/catalog_screen.dart';
+import '../features/home/presentation/home_screen.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
 import 'route_guard.dart';
@@ -16,6 +19,8 @@ abstract final class AppRouter {
     required Listenable authState,
     required ClerkAuthStatus Function() getAuthStatus,
     AppDiagnostics diagnostics = const NoopAppDiagnostics(),
+    CatalogRepository? catalogRepository,
+    bool showFixtureHero = false,
   }) {
     final guard = RouteGuard(getAuthStatus, diagnostics: diagnostics);
     return GoRouter(
@@ -26,12 +31,19 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.homeName,
           path: AppRoutes.home,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Home'),
+          builder: (_, _) => catalogRepository == null
+              ? const _RoutePlaceholder(title: 'Home')
+              : HomeScreen(
+                  repository: catalogRepository,
+                  showFixtureHero: showFixtureHero,
+                ),
         ),
         GoRoute(
           name: AppRoutes.productsName,
           path: AppRoutes.products,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Products'),
+          builder: (_, _) => catalogRepository == null
+              ? const _RoutePlaceholder(title: 'Products')
+              : CatalogScreen(repository: catalogRepository),
           routes: <RouteBase>[
             GoRoute(
               name: AppRoutes.productName,

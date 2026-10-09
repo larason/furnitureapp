@@ -17,6 +17,15 @@ Only create a feature directory when its owning Group Q phase begins. Do not
 create placeholder repositories, models, controllers, or screens just to fill
 this structure.
 
+## Catalog (Phase 17.1)
+
+`catalog/` owns typed CAT-001 product summaries, API and development-fixture
+repositories, pagination, and the reusable product card. `home/` composes the
+first catalog page into the request-first storefront. Both use the public
+`MADE_TO_ORDER` filter, `AsyncViewState`, shared error presentation, and the
+existing router. Cart, checkout, payment, categories, search, and product-detail
+implementation remain outside this phase.
+
 ## Module Convention
 
 Each implemented feature owns its presentation and feature-specific state. It

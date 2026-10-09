@@ -17,8 +17,8 @@ This project contains the **Phase 16.1 (project setup)**, **Phase 16.2 (theme /
 Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 (networking layer)**, **Phase 16.5 (authentication storage/session)**,
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
-structure)**, **Phase 16.8 (error/loading states)**, and **Phase 16.9
-(logging/diagnostics)** foundations.
+structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
+(logging/diagnostics)**, and **Phase 17.1 (home and catalog)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
@@ -257,8 +257,27 @@ diagnostic that names fields and rules only, never a configuration value.
 | `API_BASE_URL` | always | Laravel API **origin** only. Do not add `/api/v1`; Phase 16.4 applies the frozen version and paths. |
 | `CLERK_PUBLISHABLE_KEY` | staging, production | Optional locally (no auth flow exists yet). Must start with `pk_`. |
 | `ENABLE_DIAGNOSTICS` | no | Defaults to `false`. Non-secret startup logging only. |
+| `CATALOG_DATA_SOURCE` | no | `api` (default) or development-only `fixtures`. Fixtures require `APP_ENV=local` and a debug build. |
 
 Any other field — including `CLERK_SECRET_KEY` — is rejected.
+
+### Catalog data source
+
+Home and catalog use public `GET /api/v1/products` with
+`product_type=MADE_TO_ORDER`, server pagination, and no Clerk token. API mode is
+the default and never falls back to fixture data after a failed request.
+
+For an image-rich, development-only catalog without a populated Laravel database,
+copy `config/local.example.json` to ignored `config/local.json` and add:
+
+```json
+"CATALOG_DATA_SOURCE": "fixtures"
+```
+
+Fixture mode is rejected in profile/release builds and outside `local`. It uses
+the three existing web fixture products and bundled project image assets only for
+development verification; it is not a production catalog or an image-licensing
+assertion.
 
 ### Validation rules
 

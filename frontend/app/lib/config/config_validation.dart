@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'app_config.dart';
 import 'app_environment.dart';
 
@@ -26,6 +28,8 @@ abstract final class CompileTimeDefines {
     'APP_ENV': String.fromEnvironment('APP_ENV'),
     'API_BASE_URL': String.fromEnvironment('API_BASE_URL'),
     'CLERK_PUBLISHABLE_KEY': String.fromEnvironment('CLERK_PUBLISHABLE_KEY'),
+    if (bool.hasEnvironment('CATALOG_DATA_SOURCE'))
+      'CATALOG_DATA_SOURCE': String.fromEnvironment('CATALOG_DATA_SOURCE'),
     if (bool.hasEnvironment('ENABLE_DIAGNOSTICS'))
       'ENABLE_DIAGNOSTICS': String.fromEnvironment('ENABLE_DIAGNOSTICS'),
     if (_hasForbiddenSecret)
@@ -43,6 +47,7 @@ abstract final class ConfigValidator {
   static const String _apiOriginField = 'API_BASE_URL';
   static const String _clerkField = 'CLERK_PUBLISHABLE_KEY';
   static const String _diagnosticsField = 'ENABLE_DIAGNOSTICS';
+  static const String _catalogDataSourceField = 'CATALOG_DATA_SOURCE';
 
   /// Fields the application reads. Anything else is rejected so a mistyped or
   /// secret field can never be silently ignored.
@@ -51,6 +56,7 @@ abstract final class ConfigValidator {
     _apiOriginField,
     _clerkField,
     _diagnosticsField,
+    _catalogDataSourceField,
   };
 
   /// Rejected with a specific diagnostic rather than as a generic unknown field.
@@ -72,19 +78,48 @@ abstract final class ConfigValidator {
   ];
 
   /// Loads the build-time configuration and validates it.
-  static AppConfig loadCompileTime() => validate(CompileTimeDefines.values);
+  static AppConfig loadCompileTime() =>
+      validate(CompileTimeDefines.values, isDebugBuild: kDebugMode);
 
   /// Validates [raw] and returns an immutable configuration.
-  static AppConfig validate(Map<String, Object?> raw) {
+  static AppConfig validate(
+    Map<String, Object?> raw, {
+    bool isDebugBuild = true,
+  }) {
     _rejectUnacceptedFields(raw);
     final environment = _requireEnvironment(raw);
     final apiBaseUrl = _requireApiOrigin(raw, environment);
     return AppConfig(
       environment: environment,
       apiBaseUrl: apiBaseUrl,
+      catalogDataSource: _resolveCatalogDataSource(
+        raw,
+        environment,
+        isDebugBuild,
+      ),
       clerkPublishableKey: _resolvePublishableKey(raw, environment),
       enableDiagnostics: _resolveDiagnostics(raw),
     );
+  }
+
+  static CatalogDataSource _resolveCatalogDataSource(
+    Map<String, Object?> raw,
+    AppEnvironment environment,
+    bool isDebugBuild,
+  ) {
+    final value = raw[_catalogDataSourceField];
+    if (value == null || value == 'api') return CatalogDataSource.api;
+    if (value != 'fixtures') {
+      throw const ConfigValidationException(
+        'CATALOG_DATA_SOURCE must be api or fixtures.',
+      );
+    }
+    if (environment != AppEnvironment.local || !isDebugBuild) {
+      throw const ConfigValidationException(
+        'CATALOG_DATA_SOURCE fixtures is allowed only in local debug builds.',
+      );
+    }
+    return CatalogDataSource.fixtures;
   }
 
   static void _rejectUnacceptedFields(Map<String, Object?> raw) {
@@ -97,7 +132,8 @@ abstract final class ConfigValidator {
       if (!_acceptedFields.contains(key)) {
         throw const ConfigValidationException(
           'Unknown configuration field. Accepted fields are APP_ENV, '
-          'API_BASE_URL, CLERK_PUBLISHABLE_KEY, ENABLE_DIAGNOSTICS.',
+          'API_BASE_URL, CLERK_PUBLISHABLE_KEY, ENABLE_DIAGNOSTICS, '
+          'CATALOG_DATA_SOURCE.',
         );
       }
     }

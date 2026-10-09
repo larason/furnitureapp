@@ -17,20 +17,23 @@ import 'core/diagnostics/diagnostic_level.dart';
 import 'core/network/api_client.dart';
 
 Future<void> main() async {
-  final isFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');
-  if (kDebugMode && !isFlutterTest) {
-    MarionetteBinding.ensureInitialized();
-  } else {
-    WidgetsFlutterBinding.ensureInitialized();
-  }
-
-  final diagnostics = DiagnosticPolicy.bootstrap();
-  final errorBoundary = isFlutterTest
-      ? DiagnosticErrorBoundary(diagnostics: diagnostics)
-      : installDiagnosticErrorBoundary(diagnostics);
   final parentZone = Zone.current;
+  late final DiagnosticErrorBoundary errorBoundary;
   await runZonedGuarded(
-    () => _startApplication(diagnostics),
+    () async {
+      final isFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');
+      if (kDebugMode && !isFlutterTest) {
+        MarionetteBinding.ensureInitialized();
+      } else {
+        WidgetsFlutterBinding.ensureInitialized();
+      }
+
+      final diagnostics = DiagnosticPolicy.bootstrap();
+      errorBoundary = isFlutterTest
+          ? DiagnosticErrorBoundary(diagnostics: diagnostics)
+          : installDiagnosticErrorBoundary(diagnostics);
+      await _startApplication(diagnostics);
+    },
     (error, stackTrace) =>
         errorBoundary.handleZonedAsyncError(parentZone, error, stackTrace),
   );

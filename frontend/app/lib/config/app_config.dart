@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import 'app_environment.dart';
 
+enum CatalogDataSource { api, fixtures }
+
 /// Immutable, validated configuration for one application run.
 ///
 /// Instances are produced only after [ConfigValidator.validate] succeeds, are
@@ -12,6 +14,7 @@ class AppConfig {
   const AppConfig({
     required this.environment,
     required this.apiBaseUrl,
+    this.catalogDataSource = CatalogDataSource.api,
     this.clerkPublishableKey,
     this.enableDiagnostics = false,
   });
@@ -26,6 +29,9 @@ class AppConfig {
   /// and endpoint paths. Kept as a string so a configuration instance can be
   /// `const`, which is what makes immutability provable in tests.
   final String apiBaseUrl;
+
+  /// Selects the public catalog implementation for this application run.
+  final CatalogDataSource catalogDataSource;
 
   /// Public Clerk publishable key, when the environment requires it.
   ///
