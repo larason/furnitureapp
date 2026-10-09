@@ -179,26 +179,29 @@ class _CategoryDropdown extends StatelessWidget {
   final ValueChanged<String?> onChanged;
 
   @override
-  Widget build(BuildContext context) => DropdownButtonFormField<String>(
+  Widget build(BuildContext context) => KeyedSubtree(
     key: const ValueKey<String>('search.category_filter'),
-    initialValue: selectedCategorySlug,
-    isExpanded: true,
-    decoration: const InputDecoration(labelText: 'Category'),
-    items: <DropdownMenuItem<String>>[
-      DropdownMenuItem<String>(
-        value: null,
-        child: Text(
-          SearchFilters.allCategoriesLabel,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      for (final category in categories)
+    child: DropdownButtonFormField<String>(
+      key: ValueKey<String>('search.category_filter.$selectedCategorySlug'),
+      initialValue: selectedCategorySlug,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Category'),
+      items: <DropdownMenuItem<String>>[
         DropdownMenuItem<String>(
-          value: category.slug,
-          child: Text(category.name, overflow: TextOverflow.ellipsis),
+          value: null,
+          child: Text(
+            SearchFilters.allCategoriesLabel,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-    ],
-    onChanged: onChanged,
+        for (final category in categories)
+          DropdownMenuItem<String>(
+            value: category.slug,
+            child: Text(category.name, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: onChanged,
+    ),
   );
 }
 
@@ -209,21 +212,24 @@ class _SortDropdown extends StatelessWidget {
   final ValueChanged<CatalogSort> onChanged;
 
   @override
-  Widget build(BuildContext context) => DropdownButtonFormField<CatalogSort>(
+  Widget build(BuildContext context) => KeyedSubtree(
     key: const ValueKey<String>('search.sort_filter'),
-    initialValue: sort,
-    isExpanded: true,
-    decoration: const InputDecoration(labelText: 'Sort by'),
-    items: <DropdownMenuItem<CatalogSort>>[
-      for (final option in CatalogSort.values)
-        DropdownMenuItem<CatalogSort>(
-          value: option,
-          child: Text(option.label, overflow: TextOverflow.ellipsis),
-        ),
-    ],
-    onChanged: (value) {
-      if (value != null) onChanged(value);
-    },
+    child: DropdownButtonFormField<CatalogSort>(
+      key: ValueKey<CatalogSort>(sort),
+      initialValue: sort,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Sort by'),
+      items: <DropdownMenuItem<CatalogSort>>[
+        for (final option in CatalogSort.values)
+          DropdownMenuItem<CatalogSort>(
+            value: option,
+            child: Text(option.label, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: (value) {
+        if (value != null) onChanged(value);
+      },
+    ),
   );
 }
 

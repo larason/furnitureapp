@@ -149,8 +149,8 @@ For a future catalog implementation:
 5. Connect the screen through the existing `AppRouter`.
 6. Add repository, state, and widget tests under matching `test/features/catalog/` paths.
 
-Catalog, categories, and product detail are implemented feature families.
-Search, furniture requests, enquiries, and account are future families. Cart,
+Catalog, categories, product detail, and search are implemented feature
+families. Furniture requests, enquiries, and account are future families. Cart,
 checkout, payments, orders, order tracking, and favorites remain absent under
 request-only production scope.
 
