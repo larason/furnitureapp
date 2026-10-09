@@ -1149,16 +1149,17 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 ### Phase 17.2 — Categories
 ### Phase 17.3 — Product detail
 ### Phase 17.4 — Search/filtering
-### Phase 17.5 — Cart
-### Phase 17.6 — Checkout
-### Phase 17.7 — Payments
-### Phase 17.8 — Orders
-### Phase 17.9 — Order tracking
+### Phase 17.5 — Cart -  *deferred*
+### Phase 17.6 — Checkout -  *deferred*
+### Phase 17.7 — Payments -  *deferred*
+### Phase 17.8 — Orders -  *deferred*
+### Phase 17.9 — Order tracking - *deferred*
 ### Phase 17.10 — Furniture requests
 ### Phase 17.11 — Enquiries
-### Phase 17.12 — Profile/account
-### Phase 17.13 - Aboutus/privacypolicy/terms
+### Phase 17.12 — Registration/login and Profile/account
+### Phase 17.13 - About us/privacypolicy/terms
 ### Phase 17.14 - open source license dedicated page
+### Phase 17.15 — Global App Navigation & Drawer
 
 **Exit condition:** The mobile application supports the same core commerce capabilities as the website, adapted for mobile UX.
 

@@ -59,3 +59,7 @@ The following remain open and should be carried forward without reopening comple
 1. Production transport: HTTPS API origin, CORS, production Clerk configuration, reverse-proxy limits and deployed-browser verification.
 2. Authenticated enquiry: Real Clerk customer browser submission for ENQ-001.
 3. Legal approval: Privacy Policy, Terms of Service and About Us content must receive business/legal approval before publication or indexing.
+
+17. One architectural recommendation for phase 17.5: When Phase 17.15 arrives, implement the app bar and drawer as a shared go_router shell (such as ShellRoute) rather than adding separate Scaffold navigation logic to every feature screen. This avoids duplicated navigation code and keeps the centered logo and account action consistent
+
+18. remove this restriction when payment and order flows are implemented: search only calls "product_type=MADE_TO_ORDER"

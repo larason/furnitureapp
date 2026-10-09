@@ -85,7 +85,7 @@ class ProductGridSliver extends StatelessWidget {
         return ProductCard(
           key: ValueKey<String>(product.id),
           product: product,
-          onTap: () => context.push(AppRoutes.product(product.id)),
+          onTap: () => context.push(AppRoutes.product(product.slug)),
         );
       },
     );

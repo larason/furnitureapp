@@ -1034,3 +1034,63 @@ production origins, and Android App Links verification are pending.
 - **Phase 16.9:** PASS
 - **Group P overall:** COMPLETE, pending owner review of this final foundation
   record. Group Q must not begin until Phase 16.9 is accepted.
+
+---
+
+## 25. Post-completion defect fix — connection failures were never recorded
+
+> Added after Phase 16.9 was completed. The record above is unchanged; this
+> section documents one corrective fix, its cause, and its verification.
+
+### Defect
+
+The "Integration ownership" section above states that `ApiClient` "records typed
+API/transport failures". That was true only for a transport that already failed
+with an `ApiTransportException`. The most common CAT-002 failure — no reachable
+server — produced **no diagnostic event at all**.
+
+Cause: `HttpApiTransport.send` lets the raw `dart:io`/`package:http` exception
+propagate. `ApiClient.request`'s final `catch (_)` branch constructed a *new*
+`ApiTransportException(kind: connection)` and threw it from inside the catch
+block, so it never reached the sibling `on ApiTransportException` handler that
+calls `_recordTransportError`. The same applied to the `on TimeoutException`
+branch. `ApiError` responses, invalid-envelope transport failures, and
+cancellations were already handled correctly.
+
+Found during Phase 17.3 physical-device verification: with Laravel stopped the app
+correctly displayed "Connection problem", but the diagnostics sink was empty.
+
+### Fix
+
+Scoped to `lib/core/network/api_client.dart`. Both conversion branches now build
+the exception, record it, then throw it. A single `_recordTransportFailure` gate
+serves the typed and converted routes and skips `cancellation`, so an intentional
+cancellation stays silent and no failure is recorded twice. Exception types,
+retry behaviour, timeout classification, cancellation semantics, the
+`ErrorPresentationMapper` user-facing messages, and the diagnostic privacy policy
+are unchanged. No code outside `ApiClient.request` and one new private helper was
+touched.
+
+A connection failure carries no Laravel request ID, and none is invented: the
+recorded context is `operation`, `http_method`, and `transport_failure` only.
+
+### Verification
+
+- Ten regression tests added in `test/core/network/api_client_test.dart`, using the
+  existing `FakeTransport` and bounded `InMemoryDiagnosticSink`: raw exception →
+  one `API_CONNECTION_FAILED`; already-typed exception → one event;
+  invalid-envelope → one `API_INVALID_RESPONSE`; API 404 → one `API_REQUEST_FAILED`
+  with its request ID; raw `TimeoutException` and client-side deadline →
+  `API_REQUEST_TIMEOUT`; cancellation → no event; diagnostics disabled → silent;
+  production `DiagnosticPolicy` → silent; auth failure → only the auth event.
+- Reverting the fix fails the four defect-targeting tests with an empty event list;
+  restoring it passes them. The other six guard paths that already worked.
+- Full regression suite: **339 tests passed**. `flutter analyze`, `dart format
+  --set-exit-if-changed .`, `dart run tool/generate_tokens.dart --check`, and
+  `flutter build apk --debug` all passed.
+- Physical device (Samsung SM-A135F, Android 12, Marionette): Laravel stopped →
+  the unchanged "Connection problem / Try again" state plus exactly one
+  `API_CONNECTION_FAILED`; a second failed retry produced a second event (one per
+  failed request, never two for one); Laravel restarted and "Try again" loaded the
+  product with no further events. No URL, host, token, or raw exception message
+  appeared in any event. Zero framework errors.

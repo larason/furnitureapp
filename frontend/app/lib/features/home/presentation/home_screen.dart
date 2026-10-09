@@ -269,7 +269,8 @@ class _FeaturedProducts extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: AppSpacing.space6),
             child: ProductCard(
               product: products[index],
-              onTap: () => context.push(AppRoutes.product(products[index].id)),
+              onTap: () =>
+                  context.push(AppRoutes.product(products[index].slug)),
             ),
           ),
         ),

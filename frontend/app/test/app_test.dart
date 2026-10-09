@@ -45,4 +45,46 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('fixture mode extends the same source policy to product detail', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      SLFurnituresApp(
+        config: const AppConfig(
+          environment: AppEnvironment.local,
+          apiBaseUrl: 'http://127.0.0.1:8000',
+          catalogDataSource: CatalogDataSource.fixtures,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final explore = find.text('Explore furniture');
+    await tester.ensureVisible(explore);
+    await tester.pumpAndSettle();
+    await tester.tap(explore);
+    await tester.pumpAndSettle();
+    expect(find.text('Lounge chair'), findsOneWidget);
+
+    final card = find.text('Lounge chair');
+    await tester.ensureVisible(card);
+    await tester.pumpAndSettle();
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Lounge chair'), findsWidgets);
+    expect(find.text('From TZS 100,000'), findsOneWidget);
+    expect(find.text('Showing image 1 of 2'), findsOneWidget);
+    expect(find.text('Available options'), findsOneWidget);
+    expect(
+      find.text('Requesting is not available in the app yet.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

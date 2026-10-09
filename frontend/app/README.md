@@ -18,13 +18,13 @@ Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 (networking layer)**, **Phase 16.5 (authentication storage/session)**,
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
 structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
-(logging/diagnostics)**, **Phase 17.1 (home and catalog)**, and **Phase 17.2
-(categories)**.
+(logging/diagnostics)**, **Phase 17.1 (home and catalog)**, **Phase 17.2
+(categories)**, and **Phase 17.3 (product detail)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
-The root application now uses `MaterialApp.router`. Home, catalog, and
-categories are implemented feature screens; the remaining routes are
+The root application now uses `MaterialApp.router`. Home, catalog, categories,
+and product detail are implemented feature screens; the remaining routes are
 placeholders that establish the Phase 16.6 navigation contract only. The
 development-only theme preview remains directly testable but is no longer the
 application home screen.
@@ -47,6 +47,13 @@ destination. It rejects external origins, authentication-flow loops, query
 parameters, and malformed resource identifiers. Android App Links are deferred
 until a production domain, manifest intent filters, `assetlinks.json`, and
 device verification are available.
+
+`/products/{slug-or-id}` is now the implemented product-detail screen. The
+router still validates the parameter with `ResourceIdentifier` before any
+request, and the screen resolves unknown, unpublished, or otherwise non-public
+products as an unavailable state that returns to the catalog. Catalog cards and
+home cards navigate with the server-returned **slug**; the opaque ID remains
+accepted because `CAT-002` resolves either.
 
 ## Feature Modules
 
@@ -72,17 +79,18 @@ compile-time configuration, parse API error envelopes in widgets, or duplicate
 Laravel authorization. The central `lib/navigation/` router remains the only
 route registry and `MaterialApp` root.
 
-Group Q feature implementation must remain request-first. Catalog and categories
-are implemented; product detail, search, furniture requests, enquiries, and
+Group Q feature implementation must remain request-first. Catalog, categories,
+and product detail are implemented; search, furniture requests, enquiries, and
 account are future feature families. Cart, checkout, payments, orders, order
 tracking, and favorites remain unimplemented and unregistered.
 
-## Catalog and Categories
+## Catalog, Categories, and Product Detail
 
-Phase 17.1 and 17.2 read the public Laravel catalog only:
+Phase 17.1, 17.2, and 17.3 read the public Laravel catalog only:
 
 - `GET /api/v1/products` with `product_type=MADE_TO_ORDER`. `CatalogRepository.fetchProducts` takes an optional `categorySlug`, which becomes the canonical `?category={slug}` filter.
 - `GET /api/v1/categories` (`CAT-003`) returns the paginated summary collection. `GET /api/v1/categories/{category}` (`CAT-004`) resolves one category by its server slug or opaque ID.
+- `GET /api/v1/products/{product}` (`CAT-002`) resolves one product by its server slug or opaque ID and is the only request the product-detail page makes.
 - Category products always come from `GET /api/v1/products?category={slug}&product_type=MADE_TO_ORDER`. The nested `/categories/{category}/products` route is rejected by ADR/API-END-002 and is never requested.
 
 `CategorySummary` and `CategoryDetail` model only the documented fields: `id`,
@@ -110,11 +118,34 @@ neutral fallback, aspect ratio, and semantics cannot drift between the two
 features. Category imagery is presentation-only: no crop overlays text, and no
 contrast depends on a photograph.
 
-Both features honor `CATALOG_DATA_SOURCE=fixtures` in local debug builds only.
-The fixture taxonomy mirrors the approved Next.js `HOMEPAGE_CATEGORY_FIXTURES`
+All three features honor `CATALOG_DATA_SOURCE=fixtures` in local debug builds
+only. The fixture taxonomy mirrors the approved Next.js `HOMEPAGE_CATEGORY_FIXTURES`
 and the Laravel `CategorySeeder` rooms, and fixture products stay scoped to their
 own category. Staging and production always read the real API, and no code path
 falls back to fixtures after an API error.
+
+### Product detail (Phase 17.3)
+
+`lib/features/product_detail/` owns the CAT-002 read and the single product page:
+
+- `ProductDetail` extends the shared `ProductSummary` rather than re-parsing it. Identity, price, availability, and the primary image are decoded once by `catalog/data/product_summary.dart`; product detail adds only `description`, the full `images[]` gallery, the embedded `variants[]`, the category description, and the timestamps. `ProductDetail.summary` projects back to a summary so any `CAT-001` consumer can read a detail product.
+- `ApiProductDetailRepository` performs one anonymous `GET /products/{product}` through the existing `ApiClient` in public auth mode. No bearer token, no session, no `CAT-005` call, and no request per embedded variant.
+- The gallery keeps the backend's `sort_order ASC, id ASC` order as received, opens on the image flagged `is_primary`, and navigates by native horizontal swipe inside a `PageView` at the canonical `--media-product-hero` ratio. A single image shows no position indicator; two or more show one live-region "Showing image N of M" announcement plus a dot row. There is no autoplay, no zoom, no custom gallery engine, and no gallery dependency. Off-screen photographs are not built and therefore not announced.
+- Options are a single-choice `RadioGroup` keyed on the stable variant ID, showing only the contract fields: name, SKU, price, and the coarse `availability`/`stock_indicator`. Nothing is selected by default, so the product's own base price stays visible until the customer chooses, and the displayed price switches to the chosen option's price. A selection that does not belong to the loaded product is ignored, and a reload clears it.
+- Prices stay integer minor units and reuse the Phase 17.1 `formatTzs`. A made-to-order figure is presented as `From TZS …` with an explicit note that it is indicative and confirmed through the request conversation — never as a quotation. No discount, installment, deposit, or saving is invented.
+- Category navigation uses the embedded category's server slug and the existing `/categories/{slug}` route. No second category route, repository, or locally derived slug exists.
+- A `RESOURCE_NOT_FOUND` (404) becomes an unavailable-product state that returns to the catalog. It never reveals whether an unpublished product exists, and it is never confused with a network failure, which stays a retryable `AppErrorView`.
+- A new route identifier rebuilds the controller, and obsolete requests are cancelled and their responses discarded, so one product can never appear under another.
+- **Request-only behaviour is preserved.** The primary action is a labelled *preview*: the "Request this furniture" button is rendered disabled with "Requesting is not available in the app yet." beneath it. Nothing is submitted, no `REQ-001` payload is built, no draft is stored, and no order, payment, deposit, reservation, or cart control exists on the page. Phase 17.10 replaces the preview with the real request flow.
+
+Development fixture details reuse the shared `fixtureProductSummaries` so a
+catalog card always opens a detail page with the same identity, category, price,
+and cover image. The description is the copy the Next.js fixture data already
+approves. **The second gallery image and the two options per fixture product are
+synthetic development values added by Phase 17.3** so the position indicator and
+option selection can be exercised locally; they are not inventory and not a claim
+about any real product. An unknown fixture identifier returns the same
+`RESOURCE_NOT_FOUND` (404) the API returns for a non-public product.
 
 ## Async Presentation
 
@@ -154,9 +185,24 @@ from application operations, and the test sink is bounded in memory.
 
 The application root installs framework and unhandled-async error capture, while
 `ApiClient`, `ClerkAuthAdapter`, secure persistence, and the central router own
-their respective expected failure events. Cancellation remains silent and the
-diagnostics layer never retries, presents UI, starts authentication, or uploads
-events remotely.
+their respective expected failure events. `ApiClient` records every eligible
+transport failure exactly once — whether the transport already fails with an
+`ApiTransportException` or surfaces a raw `dart:io`/`package:http` error that the
+client converts into one — so a connection failure is no longer invisible.
+Cancellation remains silent and the diagnostics layer never retries, presents UI,
+starts authentication, or uploads events remotely.
+
+Phase 17.3 deliberately records **no** product-detail diagnostic events. Every
+CAT-002 failure it can surface — transport failure, timeout, rate limit,
+`RESOURCE_NOT_FOUND`, and an invalid or malformed product payload — is already
+recorded by `ApiClient`, which owns those codes, and a second event would
+duplicate the same failure. The closed `DiagnosticCode` vocabulary has no
+feature-level code, and adding one for a single screen would widen the boundary
+without a cross-feature need. Image presentation failures degrade to the shared
+neutral `CatalogImage` fallback instead of being logged, so image loading behaves
+identically on every catalog screen. Nothing about a product URL, query
+parameter, response body, raw exception, product identifier, or customer
+information is recorded anywhere.
 
 Future feature example:
 
@@ -465,10 +511,21 @@ flutter run --dart-define-from-file=config/local.json
   `ios/` host project and no App Transport Security exception exist. The
   configuration layer itself is platform-neutral; if iOS is later enabled it
   will need a debug-scoped ATS exception mirroring the Android one.
-- **Local live API verification is limited.** A temporary Flutter-client probe
-  successfully reached Laravel's public `/api/v1/products` endpoint and parsed
-  its response. Physical-device request execution remains pending; staging and
+- **Local live API verification is limited.** Phase 17.3 was verified against
+  the local Laravel development server both from a Dart client probe and on a
+  physical Android device. `GET /api/v1/products/{product}` (`CAT-002`) returned
+  the full detail representation anonymously (3 ordered images, 2 embedded
+  variants, integer minor-unit prices, a null `description` that the app renders
+  as an omitted section), an unknown slug returned `RESOURCE_NOT_FOUND` (404),
+  and the app displayed the live payload unchanged on device. Staging and
   production are not deployed.
+- **Requesting furniture is not implemented.** The product page renders a
+  deliberately disabled "Request this furniture" preview. Phase 17.10 owns the
+  made-to-order request form, its validation, and the `REQ-001` submission.
+- **Product-detail fixture content is partly synthetic.** In `fixtures` mode the
+  second gallery image and the per-product options are development-only values
+  documented in the Phase 17.3 section above. Only local debug builds can read
+  them.
 - **No sign-in UI yet.** Live authenticated verification needs a real Clerk
   publishable key and a supported development sign-in workflow.
 - **Staging and production are unverified.** Their origins are not deployed, so

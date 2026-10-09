@@ -42,9 +42,40 @@ into the request-only storefront. Both use the public `MADE_TO_ORDER` filter,
   rejected nested `/categories/{category}/products` route is never requested.
 - Category photography reuses `CatalogImage`; no second image loader exists.
 
-Product detail, search, furniture requests, enquiries, and account, plus all
-cart, checkout, payment, order, and tracking surfaces, remain outside the
-implemented phases.
+## Product Detail (Phase 17.3)
+
+`product_detail/` owns the public CAT-002 read and the single product page:
+
+- `ProductDetail` extends the shared `ProductSummary` rather than re-parsing it.
+  **Model ownership:** `catalog/data/product_summary.dart` owns `Money`,
+  `ProductCategorySummary`, `ProductImageSummary`, and `ProductSummary`, and
+  stays the only place those JSON rules live. Product detail composes them and
+  adds only what CAT-002 adds on top, mirroring the `CategoryDetail` /
+  `CategorySummary` split. There is no generic `models/` directory and no second
+  product parser.
+- `ProductDetailRepository` reads `/products/{product}` publicly, with no bearer
+  token, exactly once per load. `CAT-005` is never called: the embedded variant
+  summaries are the only variant data the page uses.
+- `ProductDetailController` owns loading, cancellation, stale-response
+  suppression, the 404 unavailable state, and transient variant selection.
+  Selection is presentation state only — nothing is reserved, ordered, or
+  submitted — and a new route identifier rebuilds the controller so a previous
+  product cannot survive.
+- `ProductGallery` reuses `CatalogImage`, so there is still exactly one catalog
+  image loader. It preserves the backend's deterministic order, opens on the
+  `is_primary` image, and uses a native `PageView` for swipe navigation.
+- `ProductVariantSelector` shows only contract fields. No fabric, colour,
+  dimension, material, or finish is derived from a variant name or SKU, and no
+  inventory quantity is displayed.
+- `ProductRequestAction` is a labelled preview with a **disabled** button. Phase
+  17.10 replaces it with the real request flow. No cart, checkout, payment,
+  deposit, reservation, or "buy now" control exists in this feature.
+- `FixtureProductDetailRepository` reuses `catalog/data/fixture_products.dart`,
+  so a fixture catalog card and its detail page always agree. The synthetic
+  gallery and option values it adds are documented development-only content.
+
+Search, furniture requests, enquiries, and account, plus all cart, checkout,
+payment, order, and tracking surfaces, remain outside the implemented phases.
 
 ## Module Convention
 
@@ -73,6 +104,11 @@ Shared foundations never import feature code. Cross-feature imports are avoided;
 models shared by multiple features require an explicit ownership decision rather
 than placement in a generic `models/` directory.
 
+The one deliberate cross-feature dependency is `product_detail/ -> catalog/`:
+the catalog feature owns the product models and the shared `CatalogImage`, and
+product detail composes them instead of duplicating them. Any feature that needs
+the same product money, image, or catalog media must reuse those owners too.
+
 The application composition root owns `ApiClient`, its transport, and the Clerk
 adapter. `FeatureDependencies` does not dispose them. Feature repositories and
 controllers own only subscriptions/resources they create and must dispose those
@@ -89,9 +125,10 @@ For a future catalog implementation:
 5. Connect the screen through the existing `AppRouter`.
 6. Add repository, state, and widget tests under matching `test/features/catalog/` paths.
 
-Catalog, categories, product detail, search, furniture requests, enquiries, and
-account are future feature families. Cart, checkout, payments, orders, order
-tracking, and favorites remain absent under request-only production scope.
+Catalog, categories, and product detail are implemented feature families.
+Search, furniture requests, enquiries, and account are future families. Cart,
+checkout, payments, orders, order tracking, and favorites remain absent under
+request-only production scope.
 
 ## Shared Async Presentation
 
@@ -127,3 +164,8 @@ not call `print()`/`debugPrint()`, serialize exceptions, or pass API bodies,
 headers, URLs, user identity, or user-entered text. Use the closed diagnostic
 categories and codes with only typed allow-listed context. Cancellation is not an
 error event unless a feature has a specific operational reason to record it.
+
+A feature must not re-record a failure its `ApiClient` call already owns. Phase
+17.3 is the worked example: every CAT-002 failure it can surface is already
+recorded by `ApiClient`, so product detail adds no diagnostic event at all and
+does not widen the closed `DiagnosticCode` vocabulary for a single screen.

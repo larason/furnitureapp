@@ -13,6 +13,8 @@ import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/features/categories/data/category_detail.dart';
 import 'package:sl_furnitures/features/categories/data/category_repository.dart';
 import 'package:sl_furnitures/features/categories/data/category_summary.dart';
+import 'package:sl_furnitures/features/product_detail/data/product_detail.dart';
+import 'package:sl_furnitures/features/product_detail/data/product_detail_repository.dart';
 import 'package:sl_furnitures/navigation/app_router.dart';
 import 'package:sl_furnitures/navigation/app_routes.dart';
 import 'package:sl_furnitures/theme/app_theme.dart';
@@ -28,6 +30,97 @@ void main() {
 
       expect(find.text('Product'), findsWidgets);
       expect(find.text('prod_example'), findsOneWidget);
+    });
+
+    group('public product routes', () {
+      testWidgets('serves product detail without authentication', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          productDetailRepository: _StubProductDetailRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.product('modern-3-seater-fabric-sofa'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Modern 3-Seater Fabric Sofa'), findsWidgets);
+        expect(find.text('Request this furniture'), findsWidgets);
+        expect(find.text('Sign in'), findsNothing);
+      });
+
+      testWidgets('opens a product deep link by its opaque ID', (tester) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          productDetailRepository: _StubProductDetailRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.product('prod_01h8x9j2m4k5n6p7q8r9s0t1'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Modern 3-Seater Fabric Sofa'), findsWidgets);
+        expect(harness.repository!.identifiers, <String>[
+          'prod_01h8x9j2m4k5n6p7q8r9s0t1',
+        ]);
+      });
+
+      testWidgets('rejects a malformed product route parameter', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          productDetailRepository: _StubProductDetailRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go('${AppRoutes.products}/bad%20param');
+        await tester.pumpAndSettle();
+
+        expect(find.text('Invalid link'), findsWidgets);
+        expect(
+          harness.repository!.identifiers,
+          isEmpty,
+          reason: 'A malformed parameter must never reach the repository.',
+        );
+      });
+
+      testWidgets('shows an unavailable product for an unknown identifier', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          productDetailRepository: _StubProductDetailRepository(notFound: true),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.product('missing-sofa'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('This furniture is unavailable'), findsOneWidget);
+      });
+
+      testWidgets('keeps the product route public in every Clerk state', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          productDetailRepository: _StubProductDetailRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.product('modern-3-seater-fabric-sofa'));
+        await tester.pumpAndSettle();
+
+        harness.setStatus(ClerkAuthStatus.temporarilyUnavailable);
+        await tester.pumpAndSettle();
+        expect(find.text('Modern 3-Seater Fabric Sofa'), findsWidgets);
+
+        harness.setStatus(ClerkAuthStatus.initializing);
+        await tester.pumpAndSettle();
+        expect(find.text('Modern 3-Seater Fabric Sofa'), findsWidgets);
+      });
     });
 
     testWidgets(
@@ -351,19 +444,28 @@ class _RouterHarness {
     AppDiagnostics diagnostics = const NoopAppDiagnostics(),
     CatalogRepository? catalogRepository,
     CategoryRepository? categoryRepository,
-  }) : _status = ValueNotifier(status) {
+    ProductDetailRepository? productDetailRepository,
+  }) : _status = ValueNotifier(status),
+       _productDetailRepository =
+           productDetailRepository as _StubProductDetailRepository? {
     router = AppRouter.create(
       authState: _status,
       getAuthStatus: () => _status.value,
       diagnostics: diagnostics,
       catalogRepository: catalogRepository,
       categoryRepository: categoryRepository,
+      productDetailRepository: productDetailRepository,
     );
     addTearDown(dispose);
   }
 
   final ValueNotifier<ClerkAuthStatus> _status;
+  final _StubProductDetailRepository? _productDetailRepository;
   late final GoRouter router;
+
+  /// The product-detail repository passed in, so tests can assert which
+  /// identifiers actually reached CAT-002.
+  _StubProductDetailRepository? get repository => _productDetailRepository;
 
   Widget get app =>
       MaterialApp.router(theme: AppTheme.light(), routerConfig: router);
@@ -373,6 +475,55 @@ class _RouterHarness {
   void dispose() {
     router.dispose();
     _status.dispose();
+  }
+}
+
+class _StubProductDetailRepository implements ProductDetailRepository {
+  _StubProductDetailRepository({this.notFound = false});
+
+  final bool notFound;
+  final List<String> identifiers = <String>[];
+
+  static final _detail = ProductDetail.fromJson(<String, Object?>{
+    'id': 'prod_01h8x9j2m4k5n6p7q8r9s0t1',
+    'name': 'Modern 3-Seater Fabric Sofa',
+    'slug': 'modern-3-seater-fabric-sofa',
+    'description': 'Premium handcrafted living room sofa.',
+    'product_type': 'MADE_TO_ORDER',
+    'price': <String, Object?>{'amount': 125000000, 'currency': 'TZS'},
+    'category': <String, Object?>{
+      'id': 'cat_01h8x8a1b2c3d4e5f6g7h8j9',
+      'slug': 'living-room',
+      'name': 'Living Room',
+      'description': null,
+    },
+    'primary_image': null,
+    'images': <Object?>[],
+    'variants': <Object?>[],
+    'availability': 'available',
+    'stock_indicator': 'MADE_TO_ORDER',
+    'created_at': '2026-01-10T08:00:00Z',
+    'updated_at': '2026-01-12T10:00:00Z',
+  });
+
+  @override
+  Future<ProductDetail> getProduct(
+    String product, {
+    RequestCancellation? cancellation,
+  }) async {
+    identifiers.add(product);
+    if (notFound) {
+      throw const ApiError(
+        statusCode: 404,
+        errors: <ApiErrorItem>[
+          ApiErrorItem(
+            code: 'RESOURCE_NOT_FOUND',
+            message: 'The requested product was not found.',
+          ),
+        ],
+      );
+    }
+    return _detail;
   }
 }
 

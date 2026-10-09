@@ -13,6 +13,8 @@ import '../features/categories/data/category_repository.dart';
 import '../features/categories/presentation/categories_screen.dart';
 import '../features/categories/presentation/category_detail_screen.dart';
 import '../features/home/presentation/home_screen.dart';
+import '../features/product_detail/data/product_detail_repository.dart';
+import '../features/product_detail/presentation/product_detail_screen.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
 import 'route_guard.dart';
@@ -24,6 +26,7 @@ abstract final class AppRouter {
     AppDiagnostics diagnostics = const NoopAppDiagnostics(),
     CatalogRepository? catalogRepository,
     CategoryRepository? categoryRepository,
+    ProductDetailRepository? productDetailRepository,
     bool showFixtureHero = false,
   }) {
     final guard = RouteGuard(getAuthStatus, diagnostics: diagnostics);
@@ -52,9 +55,9 @@ abstract final class AppRouter {
             GoRoute(
               name: AppRoutes.productName,
               path: AppRoutes.productPath,
-              builder: (_, state) => _resourcePlaceholder(
-                title: 'Product',
+              builder: (_, state) => _productScreen(
                 identifier: state.pathParameters['productId'],
+                productDetailRepository: productDetailRepository,
                 diagnostics: diagnostics,
               ),
             ),
@@ -136,6 +139,25 @@ abstract final class AppRouter {
     );
   }
 
+  /// Public product detail. The route parameter must be a valid identifier
+  /// before any request is made, and the screen resolves unknown products from
+  /// CAT-002 as an unavailable product rather than as a broken link.
+  static Widget _productScreen({
+    required String? identifier,
+    required ProductDetailRepository? productDetailRepository,
+    required AppDiagnostics diagnostics,
+  }) {
+    final product = _validIdentifier(identifier, diagnostics);
+    if (product == null) return const _RouteErrorScreen(invalidParameter: true);
+    if (productDetailRepository == null) {
+      return _RoutePlaceholder(title: 'Product', detail: product);
+    }
+    return ProductDetailScreen(
+      identifier: product,
+      repository: productDetailRepository,
+    );
+  }
+
   /// Public category detail. The route parameter must be a valid identifier
   /// before any request is made; unknown categories are resolved by the screen
   /// from CAT-004 and shown as unavailable rather than as a broken link.
@@ -145,50 +167,41 @@ abstract final class AppRouter {
     required CatalogRepository? catalogRepository,
     required AppDiagnostics diagnostics,
   }) {
-    if (!AppRoutes.isValidResourceId(identifier)) {
-      diagnostics.record(
-        DiagnosticEvent.now(
-          level: DiagnosticLevel.warning,
-          category: DiagnosticCategory.navigation,
-          code: DiagnosticCode.navigationInvalidParameter,
-          context: const DiagnosticContext(
-            operation: DiagnosticOperation.navigation,
-            routeFailure: DiagnosticRouteFailure.invalidParameter,
-          ),
-        ),
-      );
+    final category = _validIdentifier(identifier, diagnostics);
+    if (category == null) {
       return const _RouteErrorScreen(invalidParameter: true);
     }
     if (categoryRepository == null || catalogRepository == null) {
-      return _RoutePlaceholder(title: 'Category', detail: identifier);
+      return _RoutePlaceholder(title: 'Category', detail: category);
     }
     return CategoryDetailScreen(
-      identifier: identifier!,
+      identifier: category,
       categoryRepository: categoryRepository,
       catalogRepository: catalogRepository,
     );
   }
 
-  static Widget _resourcePlaceholder({
-    required String title,
-    required String? identifier,
-    required AppDiagnostics diagnostics,
-  }) {
-    if (!AppRoutes.isValidResourceId(identifier)) {
-      diagnostics.record(
-        DiagnosticEvent.now(
-          level: DiagnosticLevel.warning,
-          category: DiagnosticCategory.navigation,
-          code: DiagnosticCode.navigationInvalidParameter,
-          context: const DiagnosticContext(
-            operation: DiagnosticOperation.navigation,
-            routeFailure: DiagnosticRouteFailure.invalidParameter,
-          ),
+  /// Returns the route identifier when it is a valid public resource
+  /// identifier, or null after recording the shared invalid-parameter
+  /// diagnostic. Every resource route validates before it can issue a request,
+  /// and the rejected value is never logged.
+  static String? _validIdentifier(
+    String? identifier,
+    AppDiagnostics diagnostics,
+  ) {
+    if (AppRoutes.isValidResourceId(identifier)) return identifier;
+    diagnostics.record(
+      DiagnosticEvent.now(
+        level: DiagnosticLevel.warning,
+        category: DiagnosticCategory.navigation,
+        code: DiagnosticCode.navigationInvalidParameter,
+        context: const DiagnosticContext(
+          operation: DiagnosticOperation.navigation,
+          routeFailure: DiagnosticRouteFailure.invalidParameter,
         ),
-      );
-      return const _RouteErrorScreen(invalidParameter: true);
-    }
-    return _RoutePlaceholder(title: title, detail: identifier);
+      ),
+    );
+    return null;
   }
 }
 

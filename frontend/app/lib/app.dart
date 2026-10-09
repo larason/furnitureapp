@@ -9,6 +9,8 @@ import 'features/catalog/data/catalog_repository.dart';
 import 'features/catalog/data/fixture_catalog_repository.dart';
 import 'features/categories/data/category_repository.dart';
 import 'features/categories/data/fixture_category_repository.dart';
+import 'features/product_detail/data/fixture_product_detail_repository.dart';
+import 'features/product_detail/data/product_detail_repository.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
@@ -66,6 +68,11 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
         : apiClient == null
         ? null
         : ApiCategoryRepository(apiClient);
+    final productDetail = useFixtures
+        ? FixtureProductDetailRepository()
+        : apiClient == null
+        ? null
+        : ApiProductDetailRepository(apiClient);
     _router = AppRouter.create(
       authState: widget.authAdapter ?? _anonymousAuthState,
       getAuthStatus: () =>
@@ -73,6 +80,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       diagnostics: widget.diagnostics,
       catalogRepository: catalog,
       categoryRepository: categories,
+      productDetailRepository: productDetail,
       showFixtureHero: useFixtures,
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:sl_furnitures/config/app_config.dart';
 import 'package:sl_furnitures/config/app_environment.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_event.dart';
 import 'package:sl_furnitures/core/network/api_client.dart';
 import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/api_transport.dart';
@@ -524,6 +525,236 @@ void main() {
 
       expect(sink.events, isEmpty);
     });
+  });
+
+  group('connection-failure diagnostics', () {
+    test(
+      'records a raw transport exception exactly once as a connection failure',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final client = _client(
+          FakeTransport.failure('Connection refused by 127.0.0.1:8000'),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+
+        final error = await _captureTransportError(
+          () => client.get<Object?>('/products/nordic-3-seater-sofa'),
+        );
+
+        expect(error.kind, ApiTransportFailureKind.connection);
+        expect(sink.events, hasLength(1));
+        final event = sink.events.single;
+        expect(event.code, DiagnosticCode.apiConnectionFailed);
+        expect(
+          event.context.transportFailure,
+          DiagnosticTransportFailure.connection,
+        );
+        expect(event.context.httpMethod, DiagnosticHttpMethod.get);
+        expect(
+          event.requestId,
+          isNull,
+          reason: 'No Laravel request ID exists.',
+        );
+      },
+    );
+
+    test(
+      'never records the raw exception message or the request URI',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final client = _client(
+          FakeTransport.failure('refused host=secret.example/api/v1/products'),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+
+        await expectLater(
+          client.get<Object?>('/products'),
+          throwsA(isA<ApiTransportException>()),
+        );
+
+        final serialized = sink.events.single.toJson().toString();
+        expect(serialized, isNot(contains('secret.example')));
+        expect(serialized, isNot(contains('/api/v1/products')));
+        expect(serialized, isNot(contains('refused')));
+      },
+    );
+
+    test('records an already typed transport exception exactly once', () async {
+      final sink = InMemoryDiagnosticSink();
+      final client = _client(
+        FakeTransport(
+          (_) => Future<ApiTransportResponse>.error(
+            const ApiTransportException(
+              kind: ApiTransportFailureKind.connection,
+            ),
+          ),
+        ),
+        diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+      );
+
+      final error = await _captureTransportError(
+        () => client.get<Object?>('/products'),
+      );
+
+      expect(error.kind, ApiTransportFailureKind.connection);
+      expect(sink.events, hasLength(1));
+      expect(sink.events.single.code, DiagnosticCode.apiConnectionFailed);
+    });
+
+    test('records an invalid-response transport failure once', () async {
+      final sink = InMemoryDiagnosticSink();
+      final client = _client(
+        FakeTransport(
+          (_) => Future<ApiTransportResponse>.error(
+            const ApiTransportException(
+              kind: ApiTransportFailureKind.invalidEnvelope,
+            ),
+          ),
+        ),
+        diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+      );
+
+      await expectLater(
+        client.get<Object?>('/products'),
+        throwsA(isA<ApiTransportException>()),
+      );
+
+      expect(sink.events, hasLength(1));
+      expect(sink.events.single.code, DiagnosticCode.apiInvalidResponse);
+    });
+
+    test(
+      'keeps API error responses on their own single diagnostic path',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final client = _client(
+          FakeTransport.json(404, <String, Object?>{
+            'errors': <Object?>[
+              <String, Object?>{
+                'code': 'RESOURCE_NOT_FOUND',
+                'message': 'The requested product was not found.',
+              },
+            ],
+            'meta': <String, Object?>{'request_id': 'req-404'},
+          }),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+
+        await expectLater(
+          client.get<Object?>('/products/nordic-3-seater-sofa'),
+          throwsA(isA<ApiError>()),
+        );
+
+        expect(sink.events, hasLength(1));
+        expect(sink.events.single.code, DiagnosticCode.apiRequestFailed);
+        expect(sink.events.single.requestId, 'req-404');
+      },
+    );
+
+    test(
+      'classifies a raw timeout as a timeout, not a connection failure',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final client = _client(
+          FakeTransport(
+            (_) => Future<ApiTransportResponse>.error(
+              TimeoutException('deadline exceeded'),
+            ),
+          ),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+
+        final error = await _captureTransportError(
+          () => client.get<Object?>('/products'),
+        );
+
+        expect(error.kind, ApiTransportFailureKind.timeout);
+        expect(sink.events, hasLength(1));
+        expect(sink.events.single.code, DiagnosticCode.apiRequestTimeout);
+      },
+    );
+
+    test('classifies a client-side deadline as a timeout', () async {
+      final sink = InMemoryDiagnosticSink();
+      final client = _client(
+        FakeTransport.waitForAbort(),
+        diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+      );
+
+      final error = await _captureTransportError(
+        () => client.get<Object?>(
+          '/products',
+          timeout: const Duration(milliseconds: 1),
+        ),
+      );
+
+      expect(error.kind, ApiTransportFailureKind.timeout);
+      expect(sink.events, hasLength(1));
+      expect(sink.events.single.code, DiagnosticCode.apiRequestTimeout);
+    });
+
+    test('stays silent when diagnostics are disabled', () async {
+      final sink = InMemoryDiagnosticSink();
+      final client = _client(
+        FakeTransport.failure('connection refused'),
+        diagnostics: DefaultAppDiagnostics(enabled: false, sink: sink),
+      );
+
+      await expectLater(
+        client.get<Object?>('/products'),
+        throwsA(isA<ApiTransportException>()),
+      );
+
+      expect(sink.events, isEmpty);
+    });
+
+    test('stays silent under the production diagnostic policy', () async {
+      final sink = InMemoryDiagnosticSink();
+      final client = _client(
+        FakeTransport.failure('connection refused'),
+        diagnostics: DiagnosticPolicy.forConfig(
+          const AppConfig(
+            environment: AppEnvironment.production,
+            apiBaseUrl: 'https://api.example.test',
+            enableDiagnostics: true,
+          ),
+          sink: sink,
+        ),
+      );
+
+      await expectLater(
+        client.get<Object?>('/products'),
+        throwsA(
+          isA<ApiTransportException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiTransportFailureKind.connection,
+          ),
+        ),
+      );
+
+      expect(sink.events, isEmpty, reason: 'Production is always no-op.');
+    });
+
+    test(
+      'does not record an authentication failure as a network event',
+      () async {
+        final sink = InMemoryDiagnosticSink();
+        final client = _client(
+          FakeTransport.success(<String, Object?>{'ok': true}),
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
+        );
+
+        await expectLater(
+          client.get<Object?>('/me', authMode: ApiAuthMode.required),
+          throwsA(isA<ApiAuthenticationException>()),
+        );
+
+        expect(sink.events.map((event) => event.code), <DiagnosticCode>[
+          DiagnosticCode.authSessionRenewalFailed,
+        ]);
+      },
+    );
   });
 
   group('package:http transport', () {
