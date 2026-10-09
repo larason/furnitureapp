@@ -6,6 +6,7 @@ import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/api_transport_exception.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/catalog/data/fixture_catalog_repository.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/fixture_products.dart';
 import 'package:sl_furnitures/features/product_detail/data/fixture_product_detail_repository.dart';
 
@@ -33,7 +34,7 @@ void main() {
       final catalog = FixtureCatalogRepository();
       final repository = FixtureProductDetailRepository();
 
-      final page = await catalog.fetchProducts(page: 1);
+      final page = await catalog.fetchProducts(const CatalogQuery());
 
       for (final summary in page.products) {
         final detail = await repository.getProduct(summary.id);

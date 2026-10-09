@@ -8,6 +8,7 @@ import 'package:sl_furnitures/core/feature_dependencies.dart';
 import 'package:sl_furnitures/core/network/api_client.dart';
 import 'package:sl_furnitures/core/network/api_response.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
 import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/features/categories/data/category_detail.dart';
@@ -109,9 +110,8 @@ class _EmptyCatalogRepository implements CatalogRepository {
   const _EmptyCatalogRepository();
 
   @override
-  Future<CatalogPage> fetchProducts({
-    required int page,
-    String? categorySlug,
+  Future<CatalogPage> fetchProducts(
+    CatalogQuery query, {
     RequestCancellation? cancellation,
   }) async => const CatalogPage(
     products: <ProductSummary>[],

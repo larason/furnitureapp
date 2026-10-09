@@ -7,6 +7,7 @@ import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/api_response.dart';
 import 'package:sl_furnitures/core/network/api_transport_exception.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
 import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/features/categories/data/category_detail.dart';
@@ -377,27 +378,26 @@ class _StubCatalogRepository implements CatalogRepository {
   void reset() => requestedSlugs.clear();
 
   @override
-  Future<CatalogPage> fetchProducts({
-    required int page,
-    String? categorySlug,
+  Future<CatalogPage> fetchProducts(
+    CatalogQuery query, {
     RequestCancellation? cancellation,
   }) async {
-    requestedSlugs.add(categorySlug);
+    requestedSlugs.add(query.categorySlug);
     if (error != null) throw error!;
-    final visible = categorySlug == null
+    final visible = query.categorySlug == null
         ? products
         : products
-              .where((product) => product.category.slug == categorySlug)
+              .where((product) => product.category.slug == query.categorySlug)
               .toList();
     return CatalogPage(
       products: visible,
       pagination: ApiPagination(
-        currentPage: page,
+        currentPage: query.page,
         perPage: 20,
         total: visible.length,
         lastPage: 1,
         hasNext: false,
-        hasPrevious: page > 1,
+        hasPrevious: query.page > 1,
       ),
     );
   }

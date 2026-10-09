@@ -1,626 +1,563 @@
-# Phase 17.3 — Flutter Product Details
+# Phase 17.4 — Flutter Search & Filtering
 
-**Project:** SL Furnitures — Flutter Android Customer Application  
+**Project:** SL Furnitures — Flutter Android Customer App  
 **Group:** Q — Flutter Customer Features  
-**Prerequisites:** Group P complete; Phases 17.1 and 17.2 implemented  
-**Scope:** Public furniture product details  
+**Prerequisites:** Group P and Phases 17.1–17.3  
+**Scope:** Public furniture search, filtering, sorting, and search-result navigation  
 **Status:** READY FOR IMPLEMENTATION
 
 ## 1. Objective
 
-Implement a production-quality product-detail experience for SL Furnitures.
+Implement a production-quality furniture search and filtering experience using the existing Flutter catalog architecture and the frozen Laravel API.
 
-Replace the existing product-detail placeholder with a fully functional screen that allows customers to:
+Customers must be able to:
 
-1. View complete furniture information.
-2. Browse product photographs.
-3. Read the product description.
-4. Understand made-to-order pricing.
-5. Inspect available product variants.
-6. Navigate to the product's category.
-7. Understand how to request the furniture.
-8. Return to the catalog or category.
-9. Recover from loading and network failures.
+1. Search furniture by supported textual criteria.
+2. Filter furniture by approved categories.
+3. Apply other filters explicitly supported by CAT-001.
+4. Sort results using documented options.
+5. Combine search, filtering, and sorting.
+6. Browse paginated results.
+7. Open product details.
+8. Clear search and filters.
+9. Recover from network failures.
+10. Use the experience without signing in.
 
-The design must feel like a premium furniture showroom rather than a conventional checkout-driven marketplace.
+The UI must be visually consistent with the SL Furnitures home, catalog, categories, and product-detail screens.
 
-**Do not implement furniture-request submission in this phase. Phase 17.10 owns that workflow.**
+**Initial production remains REQUEST ONLY. Only MADE_TO_ORDER products may be displayed.**
+
+Do not implement cart, checkout, payments, orders, favorites, or product recommendations.
 
 ---
 
 ## 2. Mandatory repository inspection
 
-Before editing, read:
+Before making changes, inspect:
 
 - Root `AGENTS.md`.
-- Flutter `AGENTS.md`.
-- Group Q Phase 17.3 specification.
-- Phase 17.1 and 17.2 completion records.
+- Flutter `AGENTS.md`, if present.
+- Group Q Phase 17.4 requirements.
+- Phase 17.1 completion report.
+- Phase 17.2 completion report.
+- Phase 17.3 completion report.
 - Flutter README.
 - `lib/features/README.md`.
 - `docs/decisions.md`.
-- `frontend/design-system/DESIGN.md`.
-- `frontend/design-system/tokens.css`.
-- `frontend/design-system/flutter-material3.md`.
-- `frontend/design-system/ACCESSIBILITY.md`.
 - `docs/api/api-contract.md`.
 - `docs/api/api-resources.md`.
+- `docs/api/api-conventions.md`.
 - `docs/api/openapi.yaml`.
-- Existing Laravel CAT-002 implementation and tests.
-- Existing Next.js product-detail implementation, if available.
-- Existing Flutter catalog models, product cards, category models, routing, image widgets, async presentation, and diagnostics.
+- Laravel CAT-001 controller, query handling, resources, and tests.
+- Existing Next.js search/filter implementation, if available.
+- `frontend/design-system/DESIGN.md`.
+- `frontend/design-system/tokens.css`.
+- Flutter theme and generated token adapters.
+- Existing `go_router` configuration.
+- Existing catalog repository and typed product models.
+- Existing category repository.
+- Existing fixture repository.
+- Existing `AsyncViewState<T>` implementation.
+- Existing `AppDiagnostics` integration.
 
 ### Required inspection findings
 
-Identify:
+Before implementation, establish:
 
-1. Existing product-detail route path and parameter rules.
-2. Product summary model from Phase 17.1.
-3. CatalogRepository interface.
-4. Current API and fixture repository implementations.
-5. Existing `CatalogImage` implementation.
-6. Existing money formatting.
-7. Existing Material 3 theme and generated tokens.
-8. Actual CAT-002 response structure.
-9. Product gallery image fields.
-10. Embedded variant summary fields.
-11. Existing fixture products and bundled image assets.
-12. Existing test and verification conventions.
+1. Exact CAT-001 search parameter name.
+2. Exact category filter parameter.
+3. Exact accepted sort fields.
+4. Exact sort direction syntax.
+5. Whether price filtering is supported.
+6. Whether availability filtering is supported.
+7. Exact pagination parameters and limits.
+8. Existing catalog repository query model.
+9. Existing product card and product-list widgets.
+10. Existing fixture catalog capabilities.
+11. Existing search route.
+12. Existing error, cancellation, and diagnostics behavior.
 
-Do not guess class names or APIs.
+If a requested filter is unsupported by the frozen API, do not invent it.
 
-Do not duplicate working infrastructure.
+If Phase 17.3 is incomplete, report the prerequisite gap instead of silently implementing product-detail work.
 
 ---
 
-## 3. Frozen API contract
+## 3. Frozen API integration
 
-Use:
+Use the existing public catalog endpoint:
 
 ```http
-GET /api/v1/products/{product}
+GET /api/v1/products
 ```
 
-This is `CAT-002`.
+CAT-001 is the authoritative source for search, filtering, sorting, and pagination.
 
-The endpoint is public and accepts either:
+### Product-type restriction
 
-- Canonical product slug.
-- Stable opaque product ID.
-
-Prefer the API-returned slug for customer-facing navigation.
-
-### Public access
-
-The request must:
-
-- Work without Clerk sign-in.
-- Use the existing ApiClient.
-- Use public authentication mode.
-- Avoid bearer tokens.
-- Avoid user provisioning.
-- Remain available during Clerk restoration or temporary unavailability.
-
-### Response
-
-CAT-002 returns a full Product Detail representation.
-
-Required contract fields include:
+Every search request must enforce:
 
 ```text
-id
-name
-slug
-product_type
-price
-category
-primary_image
-availability
-stock_indicator
-description
-images[]
-variants[]
-created_at
-updated_at
+product_type=MADE_TO_ORDER
 ```
 
-The detail response extends the existing product summary.
+This restriction is not an optional user filter during the request-only launch.
 
-Verify exact field types and nullability against OpenAPI and Laravel serialization.
+Do not expose an IN_STOCK selection.
 
-Do not invent additional response fields.
+Do not allow a search reset to remove the made-to-order restriction.
 
-### Error handling
+### Search parameter
 
-An unknown, unpublished, inactive, or otherwise non-public product must be handled according to the actual API response.
+Use the exact documented CAT-001 text-search parameter.
 
-`RESOURCE_NOT_FOUND` 404 should produce a clear unavailable-product state.
+For example, if the frozen API defines `search`, a request might resemble:
 
-Do not reveal hidden product information.
+```http
+GET /api/v1/products?search=sofa&product_type=MADE_TO_ORDER
+```
+
+This example is illustrative. Confirm the exact parameter name and accepted behavior before coding.
+
+Do not create a separate `/search` endpoint.
+
+### Category filtering
+
+Use the existing category parameter:
+
+```text
+category=<canonical category slug or supported identifier>
+```
+
+Do not use:
+
+```http
+GET /api/v1/categories/{category}/products
+```
+
+### Sorting
+
+Only expose sort fields and directions supported by the frozen contract.
+
+Previously documented fields include:
+
+- `created_at`
+- `price`
+- `name`
+
+Verify the exact wire syntax for ascending and descending order.
+
+Do not infer syntax from conventional Laravel patterns.
+
+### Pagination
+
+Use the existing canonical pagination envelope.
+
+Respect:
+
+- `current_page`
+- `per_page`
+- `total`
+- `last_page`
+- `has_next`
+- `has_previous`
+
+Do not invent cursor pagination.
+
+Do not exceed the server's documented maximum page size.
 
 ---
 
-## 4. Feature architecture
+## 4. Search architecture
 
-Follow the existing feature-first conventions.
+Reuse the existing catalog repository.
 
-Suggested structure:
+Do not create a separate HTTP client or duplicate product parsing.
 
-```text
-lib/
-  features/
-    product_detail/
-      data/
-        product_detail.dart
-        product_image.dart
-        product_variant_summary.dart
-        product_detail_repository.dart
-      presentation/
-        product_detail_controller.dart
-        product_detail_screen.dart
-        widgets/
-          product_gallery.dart
-          product_information.dart
-          product_variant_selector.dart
-          product_request_action.dart
-```
-
-This is illustrative.
-
-Use fewer files if appropriate.
-
-### Required dependency direction
+Suggested dependency flow:
 
 ```text
-ProductDetailScreen
-        |
-        v
-ProductDetailController
-        |
-        v
-ProductDetailRepository
-        |
-        v
-Existing ApiClient
-        |
-        v
-Laravel CAT-002
+SearchScreen
+     |
+     v
+SearchController
+     |
+     v
+CatalogRepository
+     |
+     +---------------------+
+     |                     |
+     v                     v
+ApiCatalogRepository   FixtureCatalogRepository
+     |                     |
+     v                     v
+Laravel CAT-001       Approved local fixtures
 ```
 
-Use constructor injection through the existing `FeatureDependencies`.
+### Shared query model
 
-Do not instantiate a new HTTP client.
+If the existing catalog repository lacks a typed query representation, introduce or extend a focused catalog query model.
 
-Do not introduce a global state-management package.
+It should represent only approved CAT-001 parameters:
 
-Do not add unnecessary architectural layers.
+- Search text.
+- Category identifier.
+- Supported sorting.
+- Supported filters.
+- Page number.
+- Page size.
+- Fixed made-to-order product type.
+
+Avoid passing arbitrary query maps from presentation widgets.
+
+Avoid duplicating query construction in the search screen.
+
+### Query invariants
+
+The query model must:
+
+1. Preserve the fixed product-type restriction.
+2. Validate sort selections.
+3. Normalize search text according to the API contract.
+4. Reset pagination when criteria change.
+5. Preserve criteria when loading another page.
+6. Generate deterministic query parameters.
+7. Avoid unsupported filters.
+8. Remain testable without Flutter widgets.
 
 ---
 
-## 5. Product detail models
+## 5. Search screen
 
-Create a typed `ProductDetail` representation.
+Replace the existing search placeholder with a functional public screen.
 
-Reuse existing product summary concepts where appropriate.
-
-Do not copy the same parsing logic into unrelated models.
-
-### Product identity
-
-Preserve:
-
-- Opaque product ID.
-- Canonical server-provided slug.
-- Product name.
-- Product type.
-
-Do not derive slugs from product names.
-
-### Description
-
-Render the actual API-provided description.
-
-Do not invent specifications or marketing copy.
-
-Inspect whether the description is plain text or another documented format.
-
-Do not introduce an HTML renderer without an actual contract requirement.
-
-### Price
-
-Use the existing money representation:
-
-```json
-{
-  "amount": 125000000,
-  "currency": "TZS"
-}
-```
-
-Money amounts are integer minor units.
-
-Do not use floating-point arithmetic for prices.
-
-Reuse the formatter from Phase 17.1.
-
-For made-to-order products, communicate that the displayed price is informational and that final requirements and pricing may depend on the request process.
-
-Do not label the price as a confirmed quotation.
-
-Do not fabricate discounts or installment options.
-
-### Availability
-
-Preserve the frozen values:
+### Main structure
 
 ```text
-availability:
-  available
-  unavailable
-
-stock_indicator:
-  IN_STOCK
-  LOW_STOCK
-  MADE_TO_ORDER
-```
-
-Do not expose physical or reserved inventory quantities.
-
-Do not present `MADE_TO_ORDER` as a stock shortage.
-
----
-
-## 6. Product gallery
-
-Implement a responsive, accessible image gallery.
-
-### Data contract
-
-CAT-002 provides `images[]` with:
-
-```text
-id
-url
-alt_text
-sort_order
-is_primary
-```
-
-### Ordering
-
-Preserve the backend's deterministic ordering:
-
-```text
-sort_order ASC
-id ASC
-```
-
-Use the primary image as the initial displayed image where the documented contract identifies it.
-
-Do not reorder images based on filename or URL.
-
-### Required behavior
-
-- Large primary image.
-- Swipe navigation between images.
-- Visible position indicator when multiple images exist.
-- Thumbnail selection if useful on larger screens.
-- Stable image dimensions.
-- Image loading feedback.
-- Neutral missing-image fallback.
-- No crashes on image failures.
-- Appropriate semantics.
-- No forced autoplay.
-
-### Image interactions
-
-Support horizontal swipe using native Flutter primitives.
-
-A full-screen image viewer is optional if it can be implemented cleanly without unnecessary dependencies.
-
-If included:
-
-- Preserve image order.
-- Support dismissal/back navigation.
-- Avoid disorienting transitions.
-- Handle zoom accessibly.
-- Respect reduced-motion preferences.
-
-Do not create a complex custom gallery engine.
-
-### Reuse
-
-Extend `CatalogImage` or its underlying image-handling primitives rather than creating an entirely separate image-loading system.
-
----
-
-## 7. Product information layout
-
-Create a clear hierarchy:
-
-1. Product photography.
-2. Product name.
-3. Price.
-4. Made-to-order status.
-5. Description.
-6. Available variants.
-7. Request-oriented action.
-8. Category navigation.
-
-Exact placement may vary according to the approved design system.
-
-### Mobile composition
-
-Suggested layout:
-
-```text
-┌────────────────────────────────┐
-│ ← Back             SL Furnitures│
-├────────────────────────────────┤
-│                                │
-│       PRODUCT PHOTOGRAPH       │
-│                                │
-│            ● ○ ○               │
-├────────────────────────────────┤
-│                                │
-│  Living Room                   │
-│                                │
-│  Modern Walnut Sofa            │
-│                                │
-│  From TZS 1,250,000            │
-│                                │
-│  Made to order                 │
-│                                │
-│  Description                   │
-│  Carefully crafted...          │
-│                                │
-│  Available options             │
-│  [Variant A] [Variant B]       │
-│                                │
-├────────────────────────────────┤
-│  [ Request this furniture ]    │
-└────────────────────────────────┘
-```
-
-This is an information-architecture reference, not a fixed pixel specification.
-
-Do not reproduce it literally if existing design tokens or accessibility requirements suggest a better arrangement.
-
----
-
-## 8. Product variants
-
-CAT-002 includes embedded variant summaries.
-
-Each variant exposes:
-
-```text
-id
-sku
-name
-price
-availability
-stock_indicator
+Search Furniture
+      |
+      v
+Search Input
+      |
+      v
+Filter / Sort Controls
+      |
+      v
+Active Filter Summary
+      |
+      v
+Results Count / Status
+      |
+      v
+Product Listing
 ```
 
 ### Required UI
 
-Display available variant options in a clear, accessible selection interface.
+- Search field.
+- Clear-search action.
+- Category filter.
+- Approved sorting controls.
+- Active filter indication.
+- Reset filters.
+- Results area.
+- Loading state.
+- Empty state.
+- Error state.
+- Pagination.
+- Product-detail navigation.
+
+Do not create decorative controls that have no functionality.
+
+### Initial state
+
+Choose an intentional initial experience consistent with the existing catalog.
+
+Acceptable approaches include:
+
+- Displaying made-to-order furniture before a query is entered.
+- Displaying a lightweight search prompt until the user enters criteria.
+
+Inspect the existing design and choose the approach that provides the most consistent user experience.
+
+Do not display fabricated trending searches, popularity rankings, or search history.
+
+---
+
+## 6. Search input behavior
+
+Implement a responsive search field using existing Material 3 components and design tokens.
+
+### Requirements
+
+- Clear label.
+- Search icon.
+- Clear-text control.
+- Keyboard search action.
+- Appropriate text input configuration.
+- Accessible semantics.
+- Stable focus behavior.
+- No automatic authentication.
+- No raw query logging.
+
+### Search triggering
+
+Use a deliberate request strategy.
 
 For example:
 
-- Variant name.
-- Variant-specific price.
-- Public availability where meaningful.
+- Debounced search while typing.
+- Immediate search when the keyboard search action is submitted.
 
-### Selection behavior
+If using debouncing:
 
-- Use stable variant IDs.
-- Keep selection state local to the product-detail feature.
-- Update the displayed variant price when a variant is selected.
-- Clearly indicate the selected option.
-- Avoid ambiguous selection controls.
-- Reset selection when the product changes.
-- Never assume the first variant is selected unless the UI deliberately establishes that default.
+- Choose a modest, documented interval.
+- Cancel pending requests when text changes.
+- Avoid issuing duplicate requests for identical normalized queries.
+- Dispose of debounce resources correctly.
 
-### Important restrictions
+Do not add a third-party debouncing dependency merely for this feature.
 
-Do not invent variant attributes such as:
+### Query normalization
 
-- Fabric.
-- Color.
-- Dimensions.
-- Material.
-- Finish.
+Trim surrounding whitespace.
 
-Only display these as structured values if the actual API contract provides them.
+Do not silently alter meaningful user input unless the API contract requires it.
 
-Do not parse a variant's name or SKU to manufacture structured attributes.
+Do not implement custom stemming, fuzzy matching, or relevance ranking in Flutter.
+
+Laravel remains responsible for server-side search behavior.
+
+---
+
+## 7. Category filtering
+
+Reuse the Phase 17.2 category repository.
+
+### Requirements
+
+- Load approved public categories.
+- Display API-returned category names.
+- Use API-returned identifiers or slugs.
+- Support an unfiltered category state.
+- Preserve the selected category while sorting or paginating.
+- Clear category filtering without clearing unrelated criteria unless explicitly requested.
+
+### UI presentation
+
+Prefer a compact category filter control or a Material 3 modal bottom sheet.
+
+Avoid displaying a large taxonomy dashboard above every search result.
+
+### Hierarchy
+
+Do not invent subcategory data.
+
+The public category collection is not a complete recursive taxonomy.
+
+Only present deeper category levels if the frozen API and existing approved data explicitly support them.
+
+### Filter interaction
+
+When a category changes:
+
+1. Update the query state.
+2. Reset to page one.
+3. Cancel obsolete requests.
+4. Fetch new results.
+5. Update the active filter presentation.
+
+---
+
+## 8. Additional filtering
+
+Inspect CAT-001 for all supported filters.
+
+Potential examples include:
+
+- Availability.
+- Price range.
+- Category.
+- Product type.
+
+Only implement filters that are both documented and meaningful for the request-only launch.
 
 ### Availability
 
-Use the backend-provided coarse availability values.
+If supported, distinguish the backend's coarse public availability from actual stock quantities.
 
-Do not fabricate inventory quantities.
+Do not expose internal inventory values.
 
-Do not implement stock reservations.
+Do not treat MADE_TO_ORDER as a conventional warehouse stock condition.
 
-### Selection and requests
+### Price range
 
-The selected variant may be retained as transient presentation state.
+If the API supports price filtering:
 
-Do not persist a draft request or submit a request to Laravel.
+- Use the documented query parameter names.
+- Use integer minor units.
+- Respect the TZS money representation.
+- Validate minimum and maximum values.
+- Avoid floating-point money calculations.
+- Handle absent prices according to the frozen contract.
+- Do not invent minimum or maximum product prices.
 
-Phase 17.10 owns request form behavior and request payload mapping.
+### Unsupported filters
 
----
+Do not add filters for:
 
-## 9. Made-to-order customer action
+- Color.
+- Material.
+- Dimensions.
+- Fabric.
+- Style.
+- Ratings.
+- Discounts.
+- Delivery speed.
 
-The launch is request-only.
+unless the current frozen CAT-001 contract explicitly supports them.
 
-The primary customer action is conceptually:
-
-**Request this furniture**
-
-It is not:
-
-- Add to cart.
-- Buy now.
-- Checkout.
-- Reserve stock.
-- Pay deposit.
-- Place order.
-
-### Phase boundary
-
-The actual furniture-request form belongs to Phase 17.10.
-
-During Phase 17.3:
-
-1. Inspect the existing request route.
-2. Preserve its current placeholder contract.
-3. Establish a safe navigation path only if it is supported by the current router.
-4. Do not pretend the request submission workflow is implemented.
-5. Do not silently create a request.
-6. Do not add a new API mutation.
-7. Do not create temporary local orders.
-
-### Product context
-
-If the current request route supports approved product context, pass the canonical identifier through validated navigation state.
-
-Do not invent unsupported query parameters or request payload fields.
-
-Do not rely on a global mutable selected-product singleton.
-
-### If the request route is still a placeholder
-
-The UI must communicate that the request flow is not yet available, rather than presenting a fully functional conversion journey.
-
-Prefer a truthful disabled action or an explicitly labeled preview of the upcoming workflow over a button that appears to submit a request.
-
-Document this temporary limitation.
+Do not parse product names or variant labels to fabricate structured filters.
 
 ---
 
-## 10. Category navigation
+## 9. Sorting
 
-The product detail includes an embedded category summary.
+Provide a concise sorting interface.
 
-Use its server-provided slug to navigate to the existing Phase 17.2 category-detail route.
+Only include API-supported choices.
 
-Requirements:
+Potential user-facing labels may include:
 
-- No locally derived slug.
-- No duplicate category repository.
-- No new category routes.
-- No authentication requirement.
-- Correct back navigation.
-- Preserve category context where practical.
+- Newest.
+- Price: Low to High.
+- Price: High to Low.
+- Name: A to Z.
 
-Do not implement breadcrumb navigation that implies unsupported nested taxonomy levels.
+These are examples, not authorization to invent unsupported wire parameters.
+
+### Sorting requirements
+
+- Map UI options to approved API values.
+- Preserve search and filters.
+- Reset pagination.
+- Cancel obsolete requests.
+- Preserve server ordering.
+- Avoid sorting only the currently loaded page.
+
+Never perform client-side sorting of a partially paginated server result and present it as a globally sorted catalog.
 
 ---
 
-## 11. Development fixture integration
+## 10. Results presentation
 
-The Flutter README confirms:
+Reuse Phase 17.1 product cards and listing widgets.
+
+### Required behavior
+
+- Correct product image.
+- Product name.
+- Informational price.
+- Made-to-order status.
+- Product-detail navigation.
+- Stable keys.
+- Lazy rendering.
+- Responsive layout.
+
+### Results count
+
+Use the backend pagination total where available.
+
+Do not calculate total results from the number of currently loaded products.
+
+### Empty results
+
+Show a helpful message such as:
+
+"No furniture matches your search. Try another keyword or adjust your filters."
+
+Provide a working reset or edit-search action.
+
+Do not treat zero results as an API error.
+
+### Error state
+
+Use existing error presentation components.
+
+Do not replace the result list with a generic exception message.
+
+---
+
+## 11. Pagination
+
+Reuse the existing catalog pagination architecture.
+
+### Requirements
+
+- Initial page load.
+- Additional page loading.
+- Correct `has_next` handling.
+- Duplicate request suppression.
+- Stable result ordering.
+- Explicit retry after page failure.
+- No accidental duplicate product entries.
+- No page mixing across different searches.
+- Preserve loaded results on pagination failure.
+
+### Criteria changes
+
+Every new search/filter/sort combination is a new result set.
+
+Reset pagination to the first page.
+
+Discard stale results from the previous criteria after the new search state is established.
+
+Use request generation identifiers or existing cancellation patterns to prevent out-of-order responses from corrupting the UI.
+
+---
+
+## 12. Fixture integration
+
+The project already supports development-only fixture catalog data.
+
+Reuse:
 
 ```text
 CATALOG_DATA_SOURCE=fixtures
 ```
 
-is implemented for local debug builds.
+Do not create a separate `SEARCH_DATA_SOURCE` setting.
 
-Phase 17.3 must extend that same source-selection policy.
+### Fixture search
 
-### Required behavior
+Implement deterministic search behavior over the approved fixture dataset.
 
-When fixture mode is active:
+Match the relevant documented search semantics as closely as practical.
 
-- Product cards open fixture product details.
-- Fixture product IDs and slugs match catalog summaries.
-- Fixture details use the same typed `ProductDetail` model.
-- Fixture gallery images use approved bundled assets.
-- Fixture variants follow the frozen API shape.
-- Category links resolve correctly.
-- Unknown fixture products return a controlled not-found result.
+Do not claim exact equivalence with Laravel full-text search where the fixture implementation cannot reproduce it.
 
-### Fixture source
+### Fixture filters
 
-Inspect the existing three web-derived fixture products.
+- Preserve category relationships.
+- Preserve made-to-order restriction.
+- Implement only supported filters.
+- Respect selected sorting.
+- Support pagination.
+- Return coherent empty results.
 
-Reuse their approved content and imagery.
+### Fixture safety
 
-Do not invent a new contradictory catalog.
+- Local debug only.
+- Staging uses Laravel.
+- Production uses Laravel.
+- No fallback after API failure.
+- No production fixture leakage.
 
-If the existing fixture summaries lack description, gallery, or variant detail:
+### Fixture limitations
 
-- Inspect approved Next.js fixture data first.
-- Add only clearly identified development-only values needed to exercise the UI.
-- Keep synthetic detail fields clearly documented.
-- Do not represent fixture content as real production inventory.
+Document any behavior that cannot be faithfully reproduced without the Laravel search implementation.
 
-### Environment safety
-
-- Local debug may use fixtures.
-- Staging always uses Laravel.
-- Production always uses Laravel.
-- No fallback to fixtures after API failure.
-- No separate product-detail data-source setting.
-- No release-mode fixture access.
-
-Use the existing configuration validation.
-
----
-
-## 12. Async state management
-
-Reuse `AsyncViewState<T>`.
-
-Support:
-
-- Initial.
-- Loading.
-- Content.
-- Failure.
-- Refreshing.
-
-Do not create a new async-state framework.
-
-### Loading
-
-Show an accessible loading state with stable layout.
-
-### Success
-
-Render the full product detail.
-
-### Not found
-
-Show a product-unavailable state with a meaningful navigation action.
-
-### Network failure
-
-Use `ErrorPresentationMapper` and `AppErrorView`.
-
-Allow explicit manual retry for the safe public GET request.
-
-### Refresh
-
-If refresh is implemented, preserve existing content until the new response succeeds.
-
-### Cancellation
-
-- Cancel obsolete requests.
-- Ignore stale responses.
-- Do not display cancellation as an error.
-- Do not dispose the shared ApiClient.
-
-### Route changes
-
-If a user navigates rapidly between products, previous product details must never appear as the newly selected product.
+Do not introduce a separate contradictory fixture catalog.
 
 ---
 
@@ -628,105 +565,86 @@ If a user navigates rapidly between products, previous product details must neve
 
 Reuse the existing central `go_router`.
 
-The README confirms that product detail is an approved public route but remains a placeholder.
+### Required navigation
 
-Replace only that placeholder with the new screen.
+- Home to search, where an approved entry point exists.
+- Catalog to search, where appropriate.
+- Search results to product detail.
+- Search back to the previous screen.
+- Correct direct search-route navigation.
 
-### Requirements
+### Route state
 
-- Valid slug.
-- Valid opaque ID.
-- Invalid parameter handling.
-- Unknown product handling.
-- Direct route navigation.
-- Catalog-to-detail navigation.
-- Category-to-detail navigation.
-- Back navigation.
-- Product change without stale data.
-- Public access in all Clerk states.
+If the existing router supports search query parameters, use its approved conventions.
 
-Do not create a second router.
+Do not invent public route parameters without checking the route contract.
 
-Do not modify `/account` authentication guards.
+### Future navigation shell
 
-Do not add Android App Links before the approved production domain and verification work.
+Phase 17.15 is reserved for the complete global app bar and navigation drawer.
+
+Do not implement that shell in Phase 17.4.
+
+However, keep the search screen compatible with a future shared navigation shell:
+
+- No independent global drawer.
+- No second router.
+- No duplicated app-wide navigation logic.
+- No hard-coded global app bar architecture.
+- Preserve correct back navigation.
 
 ---
 
-## 14. Material 3 and design-system enforcement
+## 14. Design system
 
-The canonical authority is:
+Follow the canonical design system.
 
-```text
-frontend/design-system/tokens.css
-```
+### Visual direction
 
-Use the existing generated Flutter theme.
+- Calm.
+- Architectural.
+- Warm.
+- Editorial.
+- Photography-led.
+- Minimal.
 
-### Visual identity
+### Search field
 
-- Warm architectural surfaces.
-- Strong product photography.
-- Editorial headings.
-- Restrained metadata.
-- Clear hierarchy.
-- Spacious composition.
-- Minimal ornament.
+Use a clean Material 3 input with restrained decoration.
+
+### Filters
+
+Use compact, accessible controls.
+
+Avoid overly dense chip collections.
+
+### Results
+
+Allow furniture photography to remain visually dominant.
 
 ### Typography
 
-Use Young Serif for approved editorial/display headings.
+- Young Serif for appropriate editorial headings.
+- Existing UI sans for search fields, controls, and metadata.
 
-Use the existing platform sans for utility text.
+### Tokens
 
-Do not bundle Helvetica Now Text without a license.
+Use generated semantic colors, spacing, typography, shape, and motion tokens.
 
-Do not add Google Fonts.
-
-### Color
-
-Use generated semantic tokens.
-
-No hard-coded color literals.
-
-### Spacing
-
-Use existing spacing and section adapters.
-
-Do not introduce arbitrary spacing values.
-
-### Product photography
-
-Prioritize large, clean product imagery.
-
-Do not place essential text over photographs.
-
-### Surfaces
-
-Keep product information on calm, readable backgrounds.
-
-Avoid decorative shadows and elevated cards.
-
-### Motion
-
-Use approved motion tokens.
-
-Respect reduced-motion settings.
+Do not introduce hard-coded colors or arbitrary spacing.
 
 ### Prohibited patterns
 
-- Generic marketplace layout.
-- Fake sale banners.
-- Discount countdowns.
-- Favorite hearts.
-- Review stars.
+- Marketplace-style promotional badges.
+- Fake discount banners.
+- Trending-search claims without data.
+- Search-result ratings.
+- Gradient filter panels.
 - Glassmorphism.
-- Decorative gradients.
-- Floating emoji.
-- Unapproved accent colors.
-- Multiple competing primary actions.
-- Arbitrary rounded cards.
-- Excessive animations.
+- Decorative blobs.
+- Excessive elevation.
+- Unapproved iconography.
+- Unnecessary animations.
 
 ---
 
@@ -734,293 +652,283 @@ Respect reduced-motion settings.
 
 Verify:
 
-1. Semantic product heading.
-2. Meaningful image descriptions.
-3. Gallery position announcements.
-4. Accessible gallery controls.
-5. Clear selected variant state.
-6. Keyboard and screen-reader interaction.
-7. Visible focus.
-8. Adequate touch targets.
-9. Sufficient contrast.
-10. 2× text scaling.
-11. Small-screen reflow.
-12. Landscape usability.
-13. No clipped prices.
-14. No clipped variant names.
-15. Reduced-motion behavior.
-16. Clear error recovery.
-17. Accessible disabled/request-placeholder action.
+1. Search-field label.
+2. Keyboard search action.
+3. Clear-search semantics.
+4. Category filter accessibility.
+5. Sort control labels.
+6. Selected filter announcements.
+7. Focus management.
+8. Screen-reader result announcements.
+9. 2× text scaling.
+10. Narrow-screen layout.
+11. Landscape usability.
+12. Adequate touch targets.
+13. Contrast.
+14. Reduced-motion behavior.
+15. Accessible empty states.
+16. Accessible error recovery.
+17. No clipped product names or prices.
 
-Avoid redundant image semantics.
-
-Do not make purely decorative images interactive.
+Do not rely solely on color to communicate active filters.
 
 ---
 
-## 16. Diagnostics
+## 16. Error handling
 
-Use the existing AppDiagnostics interface.
+Reuse Phase 16.8 error components.
 
-Safe diagnostic events may cover:
+### Search failure
 
-- Product detail fetch failure.
-- Invalid product response.
-- Product image presentation failure, where appropriate.
-- Unexpected feature state.
+Show a safe, mapped error with explicit retry.
+
+### Category filter loading failure
+
+Allow the search experience to remain usable when category options cannot be loaded, where the existing architecture permits it.
+
+### Pagination failure
+
+Preserve already loaded products.
+
+### Invalid query
+
+Handle documented validation errors without displaying raw API payloads.
+
+### Cancellation
+
+Do not show cancelled requests as failures.
+
+### Offline state
+
+Display the existing connection-failure presentation.
+
+Do not fall back to fixture data.
+
+---
+
+## 17. Diagnostics
+
+Reuse AppDiagnostics.
+
+The recently identified transport-error diagnostic defect belongs to Phase 16.4/16.9 corrective maintenance.
+
+Before implementing Phase 17.4, inspect whether that fix has actually been merged.
+
+Do not assume it is complete merely because the fix was approved.
+
+### Search diagnostics
+
+Record only safe, meaningful failures through the existing vocabulary.
 
 Do not log:
 
-- Product URLs.
-- Query parameters.
+- Search text.
+- Query strings.
+- Product IDs.
+- Customer identity.
+- URLs.
 - Raw response bodies.
 - Raw exceptions.
-- Customer information.
-- Clerk tokens.
-- Arbitrary product identifiers.
+- Authentication tokens.
 
-Use approved event categories and codes.
+Do not create duplicate transport diagnostics.
 
-Do not expand the closed diagnostic vocabulary casually.
-
-Avoid duplicate network events already owned by ApiClient.
+Do not modify core diagnostics unless a directly blocking defect remains.
 
 ---
 
-## 17. Performance
+## 18. Performance
 
 Requirements:
 
-- No duplicate CAT-002 requests caused by rebuilds.
-- No unnecessary CAT-005 calls.
-- No separate request for every embedded variant.
-- Stable gallery layout.
-- Lazy thumbnail loading.
-- Appropriate image decoding.
-- No unbounded image prefetch.
+- Debounce or deliberate submit-based search.
 - Cancellation of obsolete requests.
+- No duplicate queries from widget rebuilds.
+- No unnecessary category reloads.
+- Lazy result rendering.
+- Existing image-loading reuse.
+- No unbounded prefetch.
+- Stable list keys.
 - Minimal state rebuilds.
-- No new state-management package.
-- No unnecessary image-gallery dependency.
+- No new global state-management dependency.
 
-CAT-002 already contains embedded variant summaries.
-
-Use them unless the frozen contract requires additional standalone variant data for a specifically approved interaction.
+Do not implement a complex search caching layer without evidence of need.
 
 ---
 
-## 18. Automated tests
+## 19. Automated tests
 
-Add deterministic tests.
+Add deterministic tests covering:
 
-### A. Product detail parsing
+### A. Query construction
 
-Test:
+1. Fixed `MADE_TO_ORDER` restriction.
+2. Search parameter encoding.
+3. Category parameter encoding.
+4. Sort mapping.
+5. Pagination.
+6. Combined criteria.
+7. Reset behavior.
+8. Unsupported filter rejection.
 
-1. Valid CAT-002 response.
-2. Required product fields.
-3. Product description.
-4. Product type.
-5. Price in minor units.
-6. Category summary.
-7. Availability.
-8. Stock indicator.
-9. Empty image gallery.
-10. Multiple images.
-11. Image ordering.
-12. Primary image selection.
-13. Embedded variants.
-14. Empty variants.
-15. Invalid variant fields.
-16. Invalid enum values.
-17. Malformed response.
-18. Timestamps.
+### B. Search controller
 
-### B. Repository
+9. Initial state.
+10. Search submission.
+11. Search clear.
+12. Category change.
+13. Sort change.
+14. Pagination reset.
+15. Debounce behavior, if implemented.
+16. Cancellation.
+17. Stale response suppression.
+18. Empty results.
+19. Error handling.
+20. Retry.
 
-Test:
+### C. Repository
 
-19. Public request without bearer token.
-20. Slug-based detail lookup.
-21. Opaque ID lookup.
-22. Correct CAT-002 path.
-23. API success decoding.
-24. API 404.
-25. Transport failure.
-26. Invalid response envelope.
-27. Cancellation.
+21. Public API request.
+22. Correct CAT-001 path.
+23. No bearer token.
+24. Correct response parsing.
+25. Pagination metadata.
+26. API validation failure.
+27. Transport failure.
 28. No automatic retry.
-29. No unnecessary CAT-005 requests.
 
-### C. Controller
+### D. Fixtures
 
-Test:
+29. Text search.
+30. Category filtering.
+31. Combined search and category.
+32. Sorting.
+33. Pagination.
+34. No matches.
+35. Made-to-order restriction.
+36. Environment restrictions.
 
-30. Initial loading.
-31. Successful detail load.
-32. Not-found state.
-33. Network error.
-34. Manual retry.
-35. Refresh.
-36. Stale response suppression.
-37. Route parameter changes.
-38. Disposal.
-39. Variant selection.
-40. Variant price update.
-41. Product change resets selection.
+### E. Widgets
 
-### D. Gallery
-
-Test:
-
-42. Single image.
-43. Multiple images.
-44. Swipe navigation.
-45. Position indicator.
-46. Missing image fallback.
-47. Image failure fallback.
+37. Search input.
+38. Clear action.
+39. Filter selection.
+40. Sort selection.
+41. Active filters.
+42. Results count.
+43. Empty state.
+44. Error state.
+45. Product card navigation.
+46. 2× text scaling.
+47. Keyboard behavior.
 48. Accessibility semantics.
-49. Stable layout.
-50. Reduced-motion behavior.
 
-### E. UI
-
-Test:
-
-51. Product name.
-52. Product description.
-53. Made-to-order label.
-54. Price formatting.
-55. Variant selection.
-56. Category navigation.
-57. Request-action placeholder behavior.
-58. No cart controls.
-59. No checkout controls.
-60. No payment controls.
-61. 2× text scaling.
-62. Narrow-screen layout.
-63. Landscape layout.
-64. Error and empty states.
-
-### F. Fixtures
-
-Test:
-
-65. Fixture summary/detail consistency.
-66. Fixture gallery assets.
-67. Fixture variants.
-68. Unknown fixture product.
-69. Local debug source selection.
-70. Production fixture rejection.
-71. No API-to-fixture fallback.
-
-### G. Regression
+### F. Regression
 
 Verify:
 
-- All existing tests pass.
 - Home/catalog still works.
 - Categories still work.
-- Router behavior remains correct.
+- Product detail still works.
+- Existing router still works.
 - Clerk remains unchanged.
 - ApiClient remains unchanged.
-- Error/loading components remain reusable.
 - Diagnostics remain privacy-safe.
-- No commerce routes are registered.
-- Token generation remains synchronized.
+- Fixture mode remains restricted.
+- No deferred commerce features appear.
+- Token synchronization passes.
 
-This is a coverage matrix, not a mandate to create 71 individual test methods.
+This is a test coverage checklist, not a requirement to create exactly 48 test methods.
 
 ---
 
-## 19. Live Laravel verification
+## 20. Live Laravel verification
 
-When Laravel is available, verify:
+When Laravel is available, verify actual CAT-001 behavior using documented parameters.
 
-```http
-GET /api/v1/products/{product}
-```
+Test:
 
-Use a real published made-to-order product slug or ID.
-
-Verify:
-
+- Empty search.
+- Matching search.
+- No-match search.
+- Category filtering.
+- Supported sorting.
+- Combined criteria.
+- Pagination.
+- Invalid query validation.
 - Anonymous access.
-- Correct product detail fields.
-- Image gallery.
-- Embedded variants.
-- Category identity.
-- Money representation.
-- Unknown-product 404.
-- No extra variant API requests.
+
+Use real API data.
 
 Do not modify production data.
 
-If the development database has no suitable products, report the limitation and rely on fixture-backed UI tests for populated-state verification.
+Do not run destructive migrations.
 
-Do not claim real API detail verification from fixtures.
+If Laravel is unavailable, report that clearly and rely on deterministic fixture-backed tests for UI verification.
 
 ---
 
-## 20. Physical Android verification
+## 21. Physical Android verification
 
-The README documents Marionette MCP support for debug builds.
+Use Marionette MCP when available.
 
-When the physical device and Marionette are available:
+Verify on the real device:
 
 1. Launch the app.
-2. Open the home screen.
-3. Navigate to the catalog.
-4. Tap a product.
-5. Inspect product detail.
-6. Swipe gallery images.
-7. Select variants.
-8. Verify price updates.
-9. Navigate to category.
+2. Open search.
+3. Enter a search term.
+4. Submit or wait for debounce.
+5. Inspect results.
+6. Apply category filter.
+7. Change sorting.
+8. Clear filters.
+9. Open a product detail.
 10. Navigate back.
-11. Inspect loading/error states where reproducible.
-12. Check small-screen and text-scale behavior.
+11. Verify keyboard behavior.
+12. Verify empty results.
+13. Verify offline error presentation where reproducible.
+14. Inspect narrow-screen and text-scale behavior.
 
-If physical verification is unavailable, document it.
+Capture actual results in the completion report.
 
-Do not claim physical verification from widget tests.
+Do not claim physical-device verification if Marionette is unavailable.
 
 ---
 
-## 21. Documentation
+## 22. Documentation
 
 Update:
 
 - Flutter README.
 - `lib/features/README.md`.
-- Phase 17.3 completion record.
-- `docs/decisions.md` only for genuinely new durable decisions.
+- Phase 17.4 completion record.
+- `docs/decisions.md` only for durable architectural decisions.
 
 Document:
 
-1. CAT-002 integration.
-2. Product detail model.
-3. Gallery behavior.
-4. Variant selection.
-5. Price presentation.
-6. Category navigation.
-7. Request-only behavior.
-8. Fixture integration.
-9. Async state handling.
-10. Accessibility.
+1. Search query model.
+2. Supported filters.
+3. Sort options.
+4. API parameter mapping.
+5. Fixed made-to-order restriction.
+6. Fixture search behavior.
+7. Pagination.
+8. Navigation.
+9. Accessibility.
+10. Error handling.
 11. Diagnostics.
 12. Automated tests.
 13. Live API verification.
-14. Physical Android verification.
+14. Marionette verification.
 15. Remaining limitations.
 
-Do not rewrite earlier phase histories.
+Do not rewrite earlier phase completion histories.
 
 ---
 
-## 22. Verification commands
+## 23. Verification commands
 
-Run from the Flutter project root:
+Run from the Flutter project directory:
 
 ```bash
 flutter pub get
@@ -1033,79 +941,64 @@ git diff --check
 git diff --cached --check
 ```
 
-Use the existing ignored local configuration.
+Report actual results.
 
-Do not commit credentials.
+Do not modify unrelated staged files.
 
-### Additional verification
-
-Inspect:
-
-- Added dependencies.
-- Generated token changes.
-- Product-detail route integration.
-- Fixture asset declarations.
-- Accidental raw colors.
-- Duplicate API clients.
-- Duplicate model parsers.
-- Unexpected authentication requirements.
-- Deferred commerce controls.
-
-Report staged and unstaged whitespace results separately.
+Do not commit credentials or environment secrets.
 
 ---
 
-## 23. Completion report
+## 24. Completion report
 
 Provide:
 
 1. Repository inspection findings.
-2. Exact CAT-002 fields used.
-3. Product-detail architecture.
-4. Product gallery implementation.
-5. Variant selection behavior.
-6. Money formatting.
-7. Made-to-order action behavior.
-8. Category navigation.
-9. Fixture integration.
-10. Loading/error states.
-11. Accessibility verification.
-12. Diagnostics behavior.
-13. Automated test results.
-14. Live Laravel verification.
-15. Physical Android verification.
-16. Files added and modified.
-17. Documentation updates.
-18. Remaining blockers.
-19. Final Phase 17.3 PASS/FAIL.
+2. Exact CAT-001 search/filter/sort parameters.
+3. Search architecture.
+4. Query model.
+5. Category filtering.
+6. Sorting.
+7. Pagination.
+8. Fixture behavior.
+9. Navigation.
+10. Design-system compliance.
+11. Accessibility.
+12. Error/loading states.
+13. Diagnostics behavior.
+14. Automated test count and results.
+15. Live Laravel verification.
+16. Physical Android verification.
+17. Files changed.
+18. Documentation updated.
+19. Remaining blockers.
+20. Final Phase 17.4 PASS/FAIL.
 
 ---
 
-## 24. Definition of Done
+## 25. Definition of Done
 
-Phase 17.3 passes when:
+Phase 17.4 passes when:
 
-- Product-detail placeholder is replaced.
-- CAT-002 is consumed through the existing ApiClient.
-- Anonymous access works.
-- Product detail models follow the frozen contract.
-- The complete product gallery works.
-- Image failures are handled gracefully.
-- Product descriptions render correctly.
-- Variant selection works.
-- Variant-specific prices display correctly.
-- Category navigation works.
-- Request-only behavior is preserved.
-- No request submission is implemented.
-- No cart, checkout, or payment controls appear.
-- Development fixtures support product details.
+- The existing search placeholder is replaced.
+- Public search works through CAT-001.
+- Only made-to-order products are returned.
+- Supported category filtering works.
+- Supported sorting works.
+- Combined criteria work.
+- Pagination works correctly.
+- Obsolete requests cannot overwrite current results.
+- Product cards navigate to product details.
+- Empty, loading, and error states work.
+- Fixture mode supports realistic search testing.
 - Staging and production remain API-only.
-- Loading, error, and not-found states work.
-- Accessibility tests pass.
-- Existing and new tests pass.
+- Search and filters are accessible.
+- Existing tests remain green.
+- New tests pass.
 - Token synchronization passes.
 - Debug APK builds.
-- Documentation is updated.
-- External verification limitations are reported accurately.
+- Documentation is complete.
+- No backend/API changes occur.
+- No deferred commerce features are introduced.
 
-**Final instruction:** Implement the smallest maintainable, visually refined product-detail experience that uses real CAT-002 data, extends the existing fixture mode, respects the design tokens, and prepares for Phase 17.10 without implementing it. Stop after Phase 17.3.
+**Final instruction:** Implement a polished, maintainable search and filtering experience using the existing CAT-001 API, catalog models, category repository, fixture mode, design tokens, and Flutter routing. Do not implement the future Phase 17.15 global navigation shell. Stop after Phase 17.4.

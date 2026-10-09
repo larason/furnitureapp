@@ -19,7 +19,7 @@ Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
 structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
 (logging/diagnostics)**, **Phase 17.1 (home and catalog)**, **Phase 17.2
-(categories)**, and **Phase 17.3 (product detail)**.
+(categories)**, **Phase 17.3 (product detail)**, and **Phase 17.4 (search and filtering)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
@@ -80,9 +80,33 @@ Laravel authorization. The central `lib/navigation/` router remains the only
 route registry and `MaterialApp` root.
 
 Group Q feature implementation must remain request-first. Catalog, categories,
-and product detail are implemented; search, furniture requests, enquiries, and
+product detail, and search are implemented; furniture requests, enquiries, and
 account are future feature families. Cart, checkout, payments, orders, order
 tracking, and favorites remain unimplemented and unregistered.
+
+### Search and filtering (Phase 17.4)
+
+`lib/features/search/` owns the public search screen and criteria state. It
+reuses `CatalogRepository`, `CatalogController`, `ProductGridSliver`, the Phase
+17.2 category repository, shared async/error views, and the central `go_router`.
+
+- CAT-001 requests use only the documented `search`, `category`, `sort`,
+  `sort_direction`, `page`, and `per_page` parameters, plus the fixed
+  `product_type=MADE_TO_ORDER` restriction.
+- Search text is trimmed, capped at 100 characters, and submitted after a 350 ms
+  debounce or immediately from the keyboard/action button.
+- Category and sort changes reset to page one. Server pagination and ordering
+  remain authoritative; stale requests are cancelled/discarded and duplicate
+  products are suppressed while loading another page.
+- Fixture mode provides deterministic name/slug/category search, supported
+  sorting, pagination, empty results, and the made-to-order restriction. It is
+  local-debug-only and never a fallback after an API failure.
+- Results reuse shared product cards and navigate with the server product slug
+  to product detail. No unsupported availability, price, material, colour,
+  rating, discount, recommendation, cart, checkout, or payment control was
+  introduced.
+- The submit button explicitly uses the theme `primary`/`onPrimary` pair so its
+  search icon remains visible on the charcoal action surface.
 
 ## Catalog, Categories, and Product Detail
 

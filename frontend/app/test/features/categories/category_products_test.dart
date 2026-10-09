@@ -11,6 +11,7 @@ import 'package:sl_furnitures/core/network/api_transport.dart';
 import 'package:sl_furnitures/core/network/api_transport_exception.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/core/presentation/async_view_state.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
 import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/features/catalog/presentation/catalog_controller.dart';
@@ -26,11 +27,15 @@ void main() {
       final transport = _FakeTransport(_products(<Object?>[]));
       final repository = ApiCatalogRepository(_client(transport));
 
-      await repository.fetchProducts(page: 1, categorySlug: 'living-room');
+      await repository.fetchProducts(
+        const CatalogQuery(categorySlug: 'living-room'),
+      );
 
       expect(transport.lastRequest!.uri.path, '/api/v1/products');
       expect(transport.lastRequest!.uri.queryParameters, <String, String>{
         'category': 'living-room',
+        'sort': 'created_at',
+        'sort_direction': 'desc',
         'product_type': 'MADE_TO_ORDER',
         'page': '1',
         'per_page': '20',
@@ -41,7 +46,7 @@ void main() {
       final transport = _FakeTransport(_products(<Object?>[]));
       final repository = ApiCatalogRepository(_client(transport));
 
-      await repository.fetchProducts(page: 2);
+      await repository.fetchProducts(const CatalogQuery(page: 2));
 
       expect(
         transport.lastRequest!.uri.queryParameters['product_type'],
@@ -59,7 +64,9 @@ void main() {
         final transport = _FakeTransport(_products(<Object?>[]));
         final repository = ApiCatalogRepository(_client(transport));
 
-        await repository.fetchProducts(page: 1, categorySlug: 'living-room');
+        await repository.fetchProducts(
+          const CatalogQuery(categorySlug: 'living-room'),
+        );
 
         expect(transport.lastRequest!.uri.path, '/api/v1/products');
         expect(
@@ -79,8 +86,7 @@ void main() {
       final repository = ApiCatalogRepository(_client(transport));
 
       final page = await repository.fetchProducts(
-        page: 1,
-        categorySlug: 'living-room',
+        const CatalogQuery(categorySlug: 'living-room'),
       );
 
       expect(page.pagination.total, 25);
@@ -105,7 +111,7 @@ void main() {
       await pumpEventQueue();
 
       expect(controller.products, isA<CatalogController>());
-      expect(controller.products!.categorySlug, 'living-room');
+      expect(controller.products!.criteria.categorySlug, 'living-room');
       expect(catalog.lastCategorySlug, 'living-room');
       expect(catalog.calls, 1);
     });
@@ -169,13 +175,13 @@ void main() {
 
       await controller.load();
       await pumpEventQueue();
-      expect(controller.products!.categorySlug, 'living-room');
+      expect(controller.products!.criteria.categorySlug, 'living-room');
 
       repository.detail = _detail(slug: 'bedroom');
       await controller.refresh();
       await pumpEventQueue();
 
-      expect(controller.products!.categorySlug, 'bedroom');
+      expect(controller.products!.criteria.categorySlug, 'bedroom');
       expect(catalog.lastCategorySlug, 'bedroom');
       expect(catalog.calls, 2);
     });
@@ -328,30 +334,29 @@ class _StubCatalogRepository implements CatalogRepository {
   int calls = 0;
 
   @override
-  Future<CatalogPage> fetchProducts({
-    required int page,
-    String? categorySlug,
+  Future<CatalogPage> fetchProducts(
+    CatalogQuery query, {
     RequestCancellation? cancellation,
   }) async {
     calls++;
-    lastCategorySlug = categorySlug;
-    if (failFromPage != null && page >= failFromPage!) {
+    lastCategorySlug = query.categorySlug;
+    if (failFromPage != null && query.page >= failFromPage!) {
       throw const ApiTransportException(
         kind: ApiTransportFailureKind.connection,
       );
     }
-    final visible = categorySlug == null
+    final visible = query.categorySlug == null
         ? products
-        : products.where((p) => p.category.slug == categorySlug).toList();
+        : products.where((p) => p.category.slug == query.categorySlug).toList();
     return CatalogPage(
-      products: page == 1 ? visible : const [],
+      products: query.page == 1 ? visible : const [],
       pagination: ApiPagination(
-        currentPage: page,
+        currentPage: query.page,
         perPage: 20,
         total: visible.length,
         lastPage: 2,
-        hasNext: page == 1,
-        hasPrevious: page > 1,
+        hasNext: query.page == 1,
+        hasPrevious: query.page > 1,
       ),
     );
   }

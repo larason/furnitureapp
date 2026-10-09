@@ -5,6 +5,7 @@ import '../../../core/network/api_transport_exception.dart';
 import '../../../core/network/request_cancellation.dart';
 import '../../../core/presentation/async_view_state.dart';
 import '../../../core/presentation/error_presentation_mapper.dart';
+import '../../catalog/data/catalog_query.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/presentation/catalog_controller.dart';
 import '../data/category_detail.dart';
@@ -86,13 +87,15 @@ class CategoryDetailController extends ChangeNotifier {
 
   void _attachProducts(String slug, {required bool refresh}) {
     final existing = _products;
-    if (existing != null && existing.categorySlug == slug) {
+    if (existing != null && existing.criteria.categorySlug == slug) {
       if (refresh) existing.refresh();
       return;
     }
     existing?.dispose();
-    _products = CatalogController(catalogRepository, categorySlug: slug)
-      ..load();
+    _products = CatalogController(
+      catalogRepository,
+      query: CatalogQuery(categorySlug: slug),
+    )..load();
   }
 
   CategoryDetail? get _data => switch (_state) {

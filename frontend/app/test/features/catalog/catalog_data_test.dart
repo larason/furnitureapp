@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/fixture_catalog_repository.dart';
 import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/features/catalog/presentation/product_card.dart';
@@ -77,8 +78,8 @@ void main() {
 
   test('fixture catalog is request-only and paginated', () async {
     final repository = FixtureCatalogRepository();
-    final first = await repository.fetchProducts(page: 1);
-    final second = await repository.fetchProducts(page: 2);
+    final first = await repository.fetchProducts(const CatalogQuery());
+    final second = await repository.fetchProducts(const CatalogQuery(page: 2));
 
     expect(first.products, hasLength(3));
     expect(

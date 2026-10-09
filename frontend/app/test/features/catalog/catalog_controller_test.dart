@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/core/network/api_response.dart';
 import 'package:sl_furnitures/core/presentation/async_view_state.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
 import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
 import 'package:sl_furnitures/features/catalog/presentation/catalog_controller.dart';
@@ -52,12 +53,11 @@ class _DelayedCatalogRepository implements CatalogRepository {
   int pageOneCalls = 0;
 
   @override
-  Future<CatalogPage> fetchProducts({
-    required int page,
-    String? categorySlug,
+  Future<CatalogPage> fetchProducts(
+    CatalogQuery query, {
     RequestCancellation? cancellation,
   }) {
-    if (page == 2) return nextPage.future;
+    if (query.page == 2) return nextPage.future;
     pageOneCalls++;
     return Future.value(
       _page(pageOneCalls == 1 ? 'initial' : 'refreshed', hasNext: true),
@@ -69,9 +69,8 @@ class _FailingRefreshRepository implements CatalogRepository {
   int pageOneCalls = 0;
 
   @override
-  Future<CatalogPage> fetchProducts({
-    required int page,
-    String? categorySlug,
+  Future<CatalogPage> fetchProducts(
+    CatalogQuery query, {
     RequestCancellation? cancellation,
   }) async {
     pageOneCalls++;

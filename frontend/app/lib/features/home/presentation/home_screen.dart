@@ -51,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverToBoxAdapter(
             child: _Hero(
               onExplore: () => context.push(AppRoutes.products),
+              onSearch: () => context.push(AppRoutes.search),
               showFixtureImage: widget.showFixtureHero,
             ),
           ),
@@ -205,8 +206,13 @@ class _CategoryCard extends StatelessWidget {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.onExplore, required this.showFixtureImage});
+  const _Hero({
+    required this.onExplore,
+    required this.onSearch,
+    required this.showFixtureImage,
+  });
   final VoidCallback onExplore;
+  final VoidCallback onSearch;
   final bool showFixtureImage;
   @override
   Widget build(BuildContext context) {
@@ -237,9 +243,22 @@ class _Hero extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyLarge,
             ),
             const SizedBox(height: AppSpacing.space6),
-            FilledButton(
-              onPressed: onExplore,
-              child: const Text('Explore furniture'),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: AppSpacing.space4,
+              runSpacing: AppSpacing.space3,
+              children: <Widget>[
+                FilledButton(
+                  onPressed: onExplore,
+                  child: const Text('Explore furniture'),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey<String>('home.search_button'),
+                  onPressed: onSearch,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search'),
+                ),
+              ],
             ),
           ],
         ),

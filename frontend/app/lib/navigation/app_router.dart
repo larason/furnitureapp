@@ -14,6 +14,7 @@ import '../features/categories/presentation/categories_screen.dart';
 import '../features/categories/presentation/category_detail_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/product_detail/data/product_detail_repository.dart';
+import '../features/search/presentation/search_screen_host.dart';
 import '../features/product_detail/presentation/product_detail_screen.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
@@ -85,7 +86,10 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.searchName,
           path: AppRoutes.search,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Search'),
+          builder: (_, _) => _searchScreen(
+            catalogRepository: catalogRepository,
+            categoryRepository: categoryRepository,
+          ),
         ),
         GoRoute(
           name: AppRoutes.furnitureRequestsName,
@@ -136,6 +140,25 @@ abstract final class AppRouter {
         );
         return const _RouteErrorScreen();
       },
+    );
+  }
+
+  /// Public search and filtering.
+  ///
+  /// The screen owns a short-lived [SearchController] bound to this screen's
+  /// lifecycle, so returning here starts from the unfiltered catalog rather than
+  /// restoring criteria that are no longer on screen. Criteria live in the
+  /// screen, never in a global mutable singleton.
+  static Widget _searchScreen({
+    required CatalogRepository? catalogRepository,
+    required CategoryRepository? categoryRepository,
+  }) {
+    if (catalogRepository == null || categoryRepository == null) {
+      return const _RoutePlaceholder(title: 'Search');
+    }
+    return SearchScreenHost(
+      catalogRepository: catalogRepository,
+      categoryRepository: categoryRepository,
     );
   }
 

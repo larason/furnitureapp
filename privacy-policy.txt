@@ -1,0 +1,54 @@
+Privacy Policy of [Your E-commerce Store Name]
+Effective Date: [Insert Date]
+
+We are committed to protecting the privacy and security of our customers and site visitors. This Privacy Policy outlines how we collect, use, share, and safeguard your personal information when you visit our website, [Insert your website URL], and use our services.
+Data Controller, DPO, and Contact
+[Insert here the contact detail of whoever is responsible for the collection and processing of user personal data at your company. E.g.
+●	Data Controller: [Your Company Name]
+●	Data Protection Officer (DPO): [Name and Contact Information, if applicable]
+●	Address: [Your Business Address]
+●	Email: [Email Address]
+●	Phone Number: [Phone Number]
+Types of Data We Collect
+We collect personal information that you provide to us when you use our services or interact with us. This includes:
+●	Personal Identification Information: Name, email address, physical address, and telephone number.
+●	Account Details: Username, password, and purchase history.
+●	Payment Information: Credit/debit card details, billing address, and other payment-related information.
+●	Technical Data: IP address, browser type and version, time zone setting, location, browser plug-in types and versions, operating system and platform, and other technology on the devices you use to access this website.
+●	Usage Data: Information about how you use our website, products, and services.
+Why We Collect This Data
+We collect your data to:
+●	Process your orders and manage your account
+●	Improve and personalize your shopping experience
+●	Communicate with you about our products, services, and promotional offers
+●	Conduct market research and analysis
+Legal Basis for Processing
+We process your personal data based on the following legal grounds:
+●	Your consent
+●	The need to fulfill a contract with you
+●	Our legitimate business interests
+●	Legal requirements
+Data Storage, Erasure, and Security
+We and our service providers store personal data in accordance with applicable data protection laws to the extent necessary for the processing purposes outlined in this privacy policy document.
+We will delete personal data [in accordance with our data retention and deletion policy] or take steps to properly render the data anonymous unless we are legally obliged or permitted to keep it longer.
+We ensure the security of your personal information by employing both technical and organizational measures. These measures are put in place to reduce the risks related to data loss, misuse, unauthorized access, disclosure, or alteration.
+Data Transfer Outside the EU
+In some cases, we may need to transfer your personal data to countries outside the European Union (EU) or the European Economic Area (EEA). These transfers may occur when our service providers or partners are located in countries outside of the EU/EEA or when we need to store or process data in global data centers. We ensure that any such transfer of your personal data is carried out in compliance with applicable data protection laws, including the General Data Protection Regulation (GDPR). To safeguard your data during these transfers, we rely on standard contractual clauses or other appropriate safeguards, ensuring that your data is protected in accordance with GDPR standards.
+Use of Cookies and Other Trackers
+Our website uses cookies and similar tracking technologies to improve your browsing experience, understand how you use our site, and show you personalized advertising. You can manage your cookie preferences through your browser settings.
+You can access our full cookie policy [here].
+Your Rights
+You have the right to access, correct, delete, or restrict the use of your personal information. You can also object to the processing of your data in certain circumstances, including for marketing purposes.
+●	Access your personal data
+●	Rectify incorrect data
+●	Erase your data in certain circumstances
+●	Restrict or object to processing
+●	Data portability
+To exercise these rights, please contact us using the details below.
+Contact Information
+If you have any questions about this Privacy Policy or our privacy practices, please contact us at:
+●	Data Controller: [Your Company Name]
+●	Address: [Your Full Address]
+●	Email: [Email Address]
+●	Phone Number: [Phone Number]
+We reserve the right to make changes to this Privacy Policy at any time. Any changes will be posted on this page with an updated effective date.

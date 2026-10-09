@@ -4,6 +4,7 @@ import 'package:sl_furnitures/config/app_environment.dart';
 import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/api_transport_exception.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
+import 'package:sl_furnitures/features/catalog/data/catalog_query.dart';
 import 'package:sl_furnitures/features/catalog/data/fixture_catalog_repository.dart';
 import 'package:sl_furnitures/features/categories/data/category_summary.dart';
 import 'package:sl_furnitures/features/categories/data/fixture_categories.dart';
@@ -158,7 +159,7 @@ void main() {
       final categories = await repository.getCategories(page: 1);
       final slugs = categories.categories.map((c) => c.slug).toSet();
 
-      final page = await catalog.fetchProducts(page: 1);
+      final page = await catalog.fetchProducts(const CatalogQuery());
       expect(page.products, isNotEmpty);
       for (final product in page.products) {
         expect(
@@ -177,8 +178,7 @@ void main() {
 
       for (final category in page.categories) {
         final products = await catalog.fetchProducts(
-          page: 1,
-          categorySlug: category.slug,
+          CatalogQuery(categorySlug: category.slug),
         );
         expect(
           products.products.every(
@@ -194,8 +194,7 @@ void main() {
     test('fixture category browsing stays request-only', () async {
       final catalog = FixtureCatalogRepository();
       final page = await catalog.fetchProducts(
-        page: 1,
-        categorySlug: 'living-room',
+        const CatalogQuery(categorySlug: 'living-room'),
       );
 
       expect(

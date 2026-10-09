@@ -4,17 +4,26 @@ import '../../../core/network/api_transport_exception.dart';
 import '../../../core/network/request_cancellation.dart';
 import '../../../core/presentation/async_view_state.dart';
 import '../../../core/presentation/error_presentation_mapper.dart';
+import '../data/catalog_query.dart';
 import '../data/catalog_repository.dart';
 import '../data/product_summary.dart';
 
+/// Paginated state for one public `CAT-001` result set.
+///
+/// Criteria are fixed for the lifetime of the controller: any change of search
+/// text, category, or sort builds a **new** controller, which is how pagination
+/// is reset and how a previous result set is discarded. Within one result set
+/// the server owns ordering, `meta.pagination` stays authoritative, an obsolete
+/// request is cancelled and discarded, and a failed page keeps the products
+/// already on screen.
 class CatalogController extends ChangeNotifier {
-  CatalogController(this._repository, {this.categorySlug});
+  CatalogController(this._repository, {CatalogQuery? query})
+    : criteria = (query ?? const CatalogQuery()).forFirstPage();
 
   final CatalogRepository _repository;
 
-  /// Canonical server-returned category slug that scopes every page request,
-  /// or null for the unfiltered catalog.
-  final String? categorySlug;
+  /// The result set this controller pages through, always starting at page one.
+  final CatalogQuery criteria;
 
   AsyncViewState<CatalogPage> _state = const AsyncInitial<CatalogPage>();
   AsyncViewState<CatalogPage> get state => _state;
@@ -28,7 +37,7 @@ class CatalogController extends ChangeNotifier {
   Future<void> refresh() => _loadPage(1, replace: true, refresh: true);
 
   Future<void> loadNextPage() async {
-    final data = _data;
+    final data = _paginatingData;
     if (data == null || !data.pagination.hasNext || _loadingNext) return;
     final generation = _requestGeneration;
     final cancellation = RequestCancellation();
@@ -39,8 +48,7 @@ class CatalogController extends ChangeNotifier {
     _notify();
     try {
       final next = await _repository.fetchProducts(
-        page: data.pagination.currentPage + 1,
-        categorySlug: categorySlug,
+        criteria.withPage(data.pagination.currentPage + 1),
         cancellation: cancellation,
       );
       if (!_isCurrent(generation, cancellation)) return;
@@ -67,9 +75,19 @@ class CatalogController extends ChangeNotifier {
   CatalogPage? get _data => switch (_state) {
     AsyncContent(:final data) => data,
     AsyncRefreshing(:final data) => data,
-    AsyncLoading(:final previousData) => previousData,
-    AsyncFailure(:final previousData) => previousData,
+    AsyncLoading(previousData: final data?) => data,
+    AsyncFailure(previousData: final data?) => data,
     _ => null,
+  };
+
+  /// The page a new pagination request may build on.
+  ///
+  /// A pending full load or refresh already supersedes the result set, so
+  /// pagination yields instead of cancelling the in-flight request and merging
+  /// onto data that is about to be replaced.
+  CatalogPage? get _paginatingData => switch (_state) {
+    AsyncLoading() || AsyncRefreshing() => null,
+    _ => _data,
   };
 
   Future<void> _loadPage(
@@ -86,11 +104,10 @@ class CatalogController extends ChangeNotifier {
         : AsyncLoading(previousData: previous);
     _notify();
     _loadingNext = false;
-    if (replace && page == 1) nextPageError = null;
+    if (replace && page == CatalogQuery.firstPage) nextPageError = null;
     try {
       final result = await _repository.fetchProducts(
-        page: page,
-        categorySlug: categorySlug,
+        criteria.withPage(page),
         cancellation: cancellation,
       );
       if (!_isCurrent(generation, cancellation)) return;

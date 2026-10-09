@@ -117,7 +117,9 @@ class ProductGridSliver extends StatelessWidget {
   double _childAspectRatio(double width, int columns, double textScale) {
     final tileWidth = (width - (AppSpacing.space4 * (columns - 1))) / columns;
     final imageHeight = tileWidth / AppMedia.productCard;
-    final textHeight = 72 * textScale + AppSpacing.space6;
+    // Product names are allowed two lines; reserve both lines so narrow
+    // screens do not clip the card metadata below the photograph.
+    final textHeight = 92 * textScale + AppSpacing.space6;
     return tileWidth / (imageHeight + textHeight);
   }
 }

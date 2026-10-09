@@ -74,7 +74,31 @@ into the request-only storefront. Both use the public `MADE_TO_ORDER` filter,
   so a fixture catalog card and its detail page always agree. The synthetic
   gallery and option values it adds are documented development-only content.
 
-Search, furniture requests, enquiries, and account, plus all cart, checkout,
+## Search and Filtering (Phase 17.4)
+
+`search/` owns the public CAT-001 search screen, while catalog data ownership
+remains in `catalog/`:
+
+- `CatalogQuery` is the typed allow-list for search text, server category slug,
+  the four supported sort choices, page, and page size. It always emits
+  `product_type=MADE_TO_ORDER` and never emits unsupported facets.
+- `SearchController` applies one result set at a time, debounces typing for 350
+  ms, submits keyboard/button searches immediately, preserves criteria while
+  paging, and resets pagination for every criteria change.
+- Category options reuse the Phase 17.2 `CategoryRepository` and load
+  independently, so a category failure does not disable search, sorting, or
+  browsing all furniture.
+- Results reuse `CatalogController` and `ProductGridSliver`, including backend
+  totals, explicit load-more/retry behavior, cancellation, stale-response
+  suppression, stable product keys, and product-detail navigation.
+- Fixture search intentionally matches name, slug, and category name only;
+  Laravel also searches description, variant SKU, and variant attributes, which
+  are not present in summary fixtures. This limitation is local-only.
+- Search controls use Material 3 semantics and generated theme tokens. The
+  submit icon explicitly uses the theme `onPrimary` foreground against the
+  `primary` action surface for readable contrast.
+
+Furniture requests, enquiries, and account, plus all cart, checkout,
 payment, order, and tracking surfaces, remain outside the implemented phases.
 
 ## Module Convention
