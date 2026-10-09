@@ -9,6 +9,9 @@ import '../core/diagnostics/diagnostic_event.dart';
 import '../core/diagnostics/diagnostic_level.dart';
 import '../features/catalog/data/catalog_repository.dart';
 import '../features/catalog/presentation/catalog_screen.dart';
+import '../features/categories/data/category_repository.dart';
+import '../features/categories/presentation/categories_screen.dart';
+import '../features/categories/presentation/category_detail_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
@@ -20,6 +23,7 @@ abstract final class AppRouter {
     required ClerkAuthStatus Function() getAuthStatus,
     AppDiagnostics diagnostics = const NoopAppDiagnostics(),
     CatalogRepository? catalogRepository,
+    CategoryRepository? categoryRepository,
     bool showFixtureHero = false,
   }) {
     final guard = RouteGuard(getAuthStatus, diagnostics: diagnostics);
@@ -59,14 +63,17 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.categoriesName,
           path: AppRoutes.categories,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Categories'),
+          builder: (_, _) => categoryRepository == null
+              ? const _RoutePlaceholder(title: 'Categories')
+              : CategoriesScreen(repository: categoryRepository),
           routes: <RouteBase>[
             GoRoute(
               name: AppRoutes.categoryName,
               path: AppRoutes.categoryPath,
-              builder: (_, state) => _resourcePlaceholder(
-                title: 'Category',
+              builder: (_, state) => _categoryScreen(
                 identifier: state.pathParameters['categoryId'],
+                categoryRepository: categoryRepository,
+                catalogRepository: catalogRepository,
                 diagnostics: diagnostics,
               ),
             ),
@@ -126,6 +133,39 @@ abstract final class AppRouter {
         );
         return const _RouteErrorScreen();
       },
+    );
+  }
+
+  /// Public category detail. The route parameter must be a valid identifier
+  /// before any request is made; unknown categories are resolved by the screen
+  /// from CAT-004 and shown as unavailable rather than as a broken link.
+  static Widget _categoryScreen({
+    required String? identifier,
+    required CategoryRepository? categoryRepository,
+    required CatalogRepository? catalogRepository,
+    required AppDiagnostics diagnostics,
+  }) {
+    if (!AppRoutes.isValidResourceId(identifier)) {
+      diagnostics.record(
+        DiagnosticEvent.now(
+          level: DiagnosticLevel.warning,
+          category: DiagnosticCategory.navigation,
+          code: DiagnosticCode.navigationInvalidParameter,
+          context: const DiagnosticContext(
+            operation: DiagnosticOperation.navigation,
+            routeFailure: DiagnosticRouteFailure.invalidParameter,
+          ),
+        ),
+      );
+      return const _RouteErrorScreen(invalidParameter: true);
+    }
+    if (categoryRepository == null || catalogRepository == null) {
+      return _RoutePlaceholder(title: 'Category', detail: identifier);
+    }
+    return CategoryDetailScreen(
+      identifier: identifier!,
+      categoryRepository: categoryRepository,
+      catalogRepository: catalogRepository,
     );
   }
 

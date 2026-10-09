@@ -62,6 +62,25 @@ void main() {
     );
   });
 
+  test('formats negative TZS minor-unit prices with a leading minus', () {
+    expect(
+      formatTzs(const Money(amount: -50, currency: 'TZS')),
+      'TZS -0.50',
+    );
+    expect(
+      formatTzs(const Money(amount: -150, currency: 'TZS')),
+      'TZS -1.50',
+    );
+    expect(
+      formatTzs(const Money(amount: -123456, currency: 'TZS')),
+      'TZS -1,234.56',
+    );
+    expect(
+      formatTzs(const Money(amount: -10000000, currency: 'TZS')),
+      'TZS -100,000',
+    );
+  });
+
   test('fixture catalog is request-only and paginated', () async {
     final repository = FixtureCatalogRepository();
     final first = await repository.fetchProducts(page: 1);

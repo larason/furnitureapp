@@ -54,6 +54,7 @@ class _DelayedCatalogRepository implements CatalogRepository {
   @override
   Future<CatalogPage> fetchProducts({
     required int page,
+    String? categorySlug,
     RequestCancellation? cancellation,
   }) {
     if (page == 2) return nextPage.future;
@@ -70,6 +71,7 @@ class _FailingRefreshRepository implements CatalogRepository {
   @override
   Future<CatalogPage> fetchProducts({
     required int page,
+    String? categorySlug,
     RequestCancellation? cancellation,
   }) async {
     pageOneCalls++;

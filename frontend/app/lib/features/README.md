@@ -20,11 +20,31 @@ this structure.
 ## Catalog (Phase 17.1)
 
 `catalog/` owns typed CAT-001 product summaries, API and development-fixture
-repositories, pagination, and the reusable product card. `home/` composes the
-first catalog page into the request-first storefront. Both use the public
-`MADE_TO_ORDER` filter, `AsyncViewState`, shared error presentation, and the
-existing router. Cart, checkout, payment, categories, search, and product-detail
-implementation remain outside this phase.
+repositories, pagination, the reusable `ProductGridSliver` listing, the shared
+`CatalogImage`, and the product card. `home/` composes the first catalog page
+into the request-only storefront. Both use the public `MADE_TO_ORDER` filter,
+`AsyncViewState`, shared error presentation, and the existing router.
+
+## Categories (Phase 17.2)
+
+`categories/` owns the public category reads and the two screens built on them:
+
+- `CategorySummary` / `CategoryDetail` model only documented CAT-003 and CAT-004
+  fields. There is deliberately no `children` field: the collection is the flat
+  list of active storefront categories beneath the structural root, not a
+  recursive taxonomy tree.
+- `CategoryRepository` reads `/categories` and `/categories/{category}` publicly,
+  with no bearer token. `CategoryDetailController` runs those reads
+  independently from the product listing so one failure never discards the other.
+- Category products reuse `CatalogController` and `ProductGridSliver` through the
+  optional `categorySlug` on `CatalogRepository.fetchProducts`, which maps to the
+  canonical `GET /products?category={slug}&product_type=MADE_TO_ORDER`. The
+  rejected nested `/categories/{category}/products` route is never requested.
+- Category photography reuses `CatalogImage`; no second image loader exists.
+
+Product detail, search, furniture requests, enquiries, and account, plus all
+cart, checkout, payment, order, and tracking surfaces, remain outside the
+implemented phases.
 
 ## Module Convention
 

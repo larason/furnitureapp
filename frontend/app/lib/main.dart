@@ -70,13 +70,15 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
       ),
     );
     runApp(
-      SLFurnituresApp(
-        config: config,
-        apiClient: apiClient,
-        ownsApiClient: true,
-        authAdapter: clerkAuth,
-        ownsAuthAdapter: true,
-        diagnostics: diagnostics,
+      _withDeviceConfig(
+        SLFurnituresApp(
+          config: config,
+          apiClient: apiClient,
+          ownsApiClient: true,
+          authAdapter: clerkAuth,
+          ownsAuthAdapter: true,
+          diagnostics: diagnostics,
+        ),
       ),
     );
   } on ConfigValidationException catch (error) {
@@ -90,7 +92,7 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
         ),
       ),
     );
-    runApp(ConfigFailureApp(message: error.message));
+    runApp(_withDeviceConfig(ConfigFailureApp(message: error.message)));
   } catch (_) {
     diagnostics.record(
       DiagnosticEvent.now(
@@ -103,9 +105,18 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
       ),
     );
     runApp(
-      const ConfigFailureApp(
-        message: 'The application could not start. Please try again later.',
+      _withDeviceConfig(
+        const ConfigFailureApp(
+          message: 'The application could not start. Please try again later.',
+        ),
       ),
     );
   }
 }
+
+/// Wraps the root widget so accessibility overrides such as text scale can be
+/// driven during development verification.
+///
+/// The wrapper is compiled out of release builds, so it cannot ship.
+Widget _withDeviceConfig(Widget child) =>
+    kReleaseMode ? child : MarionetteDeviceConfig(child: child);

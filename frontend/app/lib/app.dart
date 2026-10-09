@@ -7,6 +7,8 @@ import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
 import 'features/catalog/data/catalog_repository.dart';
 import 'features/catalog/data/fixture_catalog_repository.dart';
+import 'features/categories/data/category_repository.dart';
+import 'features/categories/data/fixture_category_repository.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
@@ -52,20 +54,26 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
   void initState() {
     super.initState();
     final apiClient = widget.apiClient;
-    final repository =
-        widget.config.catalogDataSource == CatalogDataSource.fixtures
+    final useFixtures =
+        widget.config.catalogDataSource == CatalogDataSource.fixtures;
+    final catalog = useFixtures
         ? FixtureCatalogRepository()
         : apiClient == null
         ? null
         : ApiCatalogRepository(apiClient);
+    final categories = useFixtures
+        ? const FixtureCategoryRepository()
+        : apiClient == null
+        ? null
+        : ApiCategoryRepository(apiClient);
     _router = AppRouter.create(
       authState: widget.authAdapter ?? _anonymousAuthState,
       getAuthStatus: () =>
           widget.authAdapter?.status ?? ClerkAuthStatus.signedOut,
       diagnostics: widget.diagnostics,
-      catalogRepository: repository,
-      showFixtureHero:
-          widget.config.catalogDataSource == CatalogDataSource.fixtures,
+      catalogRepository: catalog,
+      categoryRepository: categories,
+      showFixtureHero: useFixtures,
     );
   }
 
@@ -88,6 +96,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       title: 'SL Furnitures',
       theme: AppTheme.light(),
       routerConfig: _router,
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -107,6 +116,7 @@ class ConfigFailureApp extends StatelessWidget {
     return MaterialApp(
       title: 'SL Furnitures',
       theme: AppTheme.light(),
+      debugShowCheckedModeBanner: false,
       // Resolved inside the MaterialApp so the diagnostic uses the brand
       // typography and colours rather than the ambient fallback theme.
       home: Builder(

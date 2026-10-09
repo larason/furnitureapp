@@ -5,10 +5,14 @@ import 'package:sl_furnitures/core/auth/clerk_auth_adapter.dart';
 import 'package:sl_furnitures/core/diagnostics/app_diagnostics.dart';
 import 'package:sl_furnitures/core/diagnostics/diagnostic_code.dart';
 import 'package:sl_furnitures/core/diagnostics/diagnostic_sink.dart';
+import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/api_response.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
 import 'package:sl_furnitures/features/catalog/data/product_summary.dart';
+import 'package:sl_furnitures/features/categories/data/category_detail.dart';
+import 'package:sl_furnitures/features/categories/data/category_repository.dart';
+import 'package:sl_furnitures/features/categories/data/category_summary.dart';
 import 'package:sl_furnitures/navigation/app_router.dart';
 import 'package:sl_furnitures/navigation/app_routes.dart';
 import 'package:sl_furnitures/theme/app_theme.dart';
@@ -49,6 +53,132 @@ void main() {
         }
       },
     );
+
+    group('public category routes', () {
+      testWidgets('serves the categories index without authentication', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          categoryRepository: _StubCategoryRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.categories);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Furniture by room'), findsOneWidget);
+      });
+
+      testWidgets('opens a category deep link by its server slug', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          catalogRepository: const _EmptyCatalogRepository(),
+          categoryRepository: _StubCategoryRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.category('living-room'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Living Room'), findsWidgets);
+        expect(find.text('Made to order'), findsWidgets);
+      });
+
+      testWidgets('opens a category deep link by its opaque ID', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          catalogRepository: const _EmptyCatalogRepository(),
+          categoryRepository: _StubCategoryRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.category('cat_01h8x8a1b2c3d4e5f6g7h8j9'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Living Room'), findsWidgets);
+      });
+
+      testWidgets('rejects a malformed category route parameter', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          catalogRepository: const _EmptyCatalogRepository(),
+          categoryRepository: _StubCategoryRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go('${AppRoutes.categories}/bad%20param');
+        await tester.pumpAndSettle();
+
+        expect(find.text('Invalid link'), findsWidgets);
+        expect(
+          find.text('Living Room'),
+          findsNothing,
+          reason: 'A malformed parameter must never reach the category screen.',
+        );
+      });
+
+      testWidgets('shows an unavailable category for an unknown identifier', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          catalogRepository: const _EmptyCatalogRepository(),
+          categoryRepository: _StubCategoryRepository(notFound: true),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.category('missing-room'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('This category is unavailable'), findsOneWidget);
+      });
+
+      testWidgets('returns from category detail to the index with back', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          catalogRepository: const _EmptyCatalogRepository(),
+          categoryRepository: _StubCategoryRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.categories);
+        await tester.pumpAndSettle();
+        harness.router.push(AppRoutes.category('living-room'));
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(find.text('Furniture by room'), findsOneWidget);
+      });
+
+      testWidgets('keeps the category route public while signed out', (
+        tester,
+      ) async {
+        final harness = _RouterHarness(
+          ClerkAuthStatus.signedOut,
+          catalogRepository: const _EmptyCatalogRepository(),
+          categoryRepository: _StubCategoryRepository(),
+        );
+        await tester.pumpWidget(harness.app);
+
+        harness.router.go(AppRoutes.category('living-room'));
+        await tester.pumpAndSettle();
+        expect(find.text('Sign in'), findsNothing);
+
+        harness.setStatus(ClerkAuthStatus.initializing);
+        await tester.pumpAndSettle();
+        expect(find.text('Living Room'), findsWidgets);
+      });
+    });
 
     testWidgets('redirects protected routes to sign in while signed out', (
       tester,
@@ -220,12 +350,14 @@ class _RouterHarness {
     ClerkAuthStatus status, {
     AppDiagnostics diagnostics = const NoopAppDiagnostics(),
     CatalogRepository? catalogRepository,
+    CategoryRepository? categoryRepository,
   }) : _status = ValueNotifier(status) {
     router = AppRouter.create(
       authState: _status,
       getAuthStatus: () => _status.value,
       diagnostics: diagnostics,
       catalogRepository: catalogRepository,
+      categoryRepository: categoryRepository,
     );
     addTearDown(dispose);
   }
@@ -250,6 +382,7 @@ class _EmptyCatalogRepository implements CatalogRepository {
   @override
   Future<CatalogPage> fetchProducts({
     required int page,
+    String? categorySlug,
     RequestCancellation? cancellation,
   }) async => const CatalogPage(
     products: <ProductSummary>[],
@@ -262,4 +395,57 @@ class _EmptyCatalogRepository implements CatalogRepository {
       hasPrevious: false,
     ),
   );
+}
+
+class _StubCategoryRepository implements CategoryRepository {
+  _StubCategoryRepository({this.notFound = false});
+
+  final bool notFound;
+
+  static const _detail = CategoryDetail(
+    id: 'cat_01h8x8a1b2c3d4e5f6g7h8j9',
+    name: 'Living Room',
+    slug: 'living-room',
+  );
+
+  static const _summary = CategorySummary(
+    id: 'cat_01h8x8a1b2c3d4e5f6g7h8j9',
+    name: 'Living Room',
+    slug: 'living-room',
+  );
+
+  @override
+  Future<CategoryPage> getCategories({
+    required int page,
+    RequestCancellation? cancellation,
+  }) async => const CategoryPage(
+    categories: <CategorySummary>[_summary],
+    pagination: ApiPagination(
+      currentPage: 1,
+      perPage: 20,
+      total: 1,
+      lastPage: 1,
+      hasNext: false,
+      hasPrevious: false,
+    ),
+  );
+
+  @override
+  Future<CategoryDetail> getCategory(
+    String category, {
+    RequestCancellation? cancellation,
+  }) async {
+    if (notFound) {
+      throw const ApiError(
+        statusCode: 404,
+        errors: <ApiErrorItem>[
+          ApiErrorItem(
+            code: 'RESOURCE_NOT_FOUND',
+            message: 'The requested category was not found.',
+          ),
+        ],
+      );
+    }
+    return _detail;
+  }
 }

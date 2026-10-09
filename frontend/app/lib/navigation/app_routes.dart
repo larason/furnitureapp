@@ -1,3 +1,5 @@
+import '../core/identifiers/resource_identifier.dart';
+
 abstract final class AppRoutes {
   static const home = '/';
   static const products = '/products';
@@ -32,7 +34,7 @@ abstract final class AppRoutes {
       '$categories/${Uri.encodeComponent(categoryId)}';
 
   static bool isValidResourceId(String? value) =>
-      value != null && RegExp(r'^[A-Za-z0-9][A-Za-z0-9_-]*$').hasMatch(value);
+      ResourceIdentifier.isValid(value);
 
   static bool isProtectedPath(String path) => path == account;
 

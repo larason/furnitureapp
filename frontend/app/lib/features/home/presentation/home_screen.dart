@@ -12,7 +12,10 @@ import '../../../theme/app_spacing.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/data/product_summary.dart';
 import '../../catalog/presentation/catalog_controller.dart';
+import '../../catalog/presentation/catalog_image.dart';
 import '../../catalog/presentation/product_card.dart';
+import '../../categories/data/category_detail.dart';
+import '../../categories/data/fixture_categories.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -78,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ) => _FeaturedProducts(products: data.products),
             _ => const SliverToBoxAdapter(),
           },
+          const SliverToBoxAdapter(child: _CategoryDirectory()),
           SliverToBoxAdapter(
             child: _RequestIntroduction(
               onExplore: () => context.push(AppRoutes.products),
@@ -85,6 +89,30 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    ),
+  );
+}
+
+/// Entry point to the full category index.
+///
+/// The home room strip is a preview; it links each tile straight to a landing
+/// page but cannot show every category at once, so the catalog needs its own
+/// way into the complete list rather than leaving `/categories` unreachable
+/// from the storefront.
+class _CategoryDirectory extends StatelessWidget {
+  const _CategoryDirectory();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      AppSpacing.gutterPhone,
+      AppSpacing.space7,
+      AppSpacing.gutterPhone,
+      AppSpacing.space6,
+    ),
+    child: OutlinedButton(
+      onPressed: () => context.push(AppRoutes.categories),
+      child: const Text('Browse all categories'),
     ),
   );
 }
@@ -121,11 +149,11 @@ class _FixtureCategories extends StatelessWidget {
             height: AppSpacing.space10 * 5,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: _categories.length,
+              itemCount: fixtureCategoryDetails.length,
               separatorBuilder: (_, _) =>
                   const SizedBox(width: AppSpacing.space3),
               itemBuilder: (_, index) =>
-                  _CategoryCard(category: _categories[index]),
+                  _CategoryCard(category: fixtureCategoryDetails[index]),
             ),
           ),
         ),
@@ -136,54 +164,45 @@ class _FixtureCategories extends StatelessWidget {
 
 class _CategoryCard extends StatelessWidget {
   const _CategoryCard({required this.category});
-  final _FixtureCategory category;
+
+  /// Development-fixture room story, shared with the categories feature so the
+  /// home strip and the category index cannot drift into two taxonomies.
+  final CategoryDetail category;
 
   @override
   Widget build(BuildContext context) => SizedBox(
     width: AppSpacing.space10 * 4,
     child: Material(
       color: Theme.of(context).colorScheme.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Expanded(child: Image.asset(category.assetPath, fit: BoxFit.cover)),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.space2),
-            child: Text(
-              category.name,
-              style: Theme.of(context).textTheme.titleSmall,
+      child: InkWell(
+        onTap: () => context.push(AppRoutes.category(category.slug)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: _image(context)),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.space2),
+              child: Text(
+                category.name,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
-}
 
-class _FixtureCategory {
-  const _FixtureCategory(this.name, this.assetPath);
-  final String name;
-  final String assetPath;
+  Widget _image(BuildContext context) {
+    final image = category.image;
+    if (image == null) {
+      return ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      );
+    }
+    return CatalogImage(url: image.url, assetPath: image.assetPath);
+  }
 }
-
-const _categories = <_FixtureCategory>[
-  _FixtureCategory(
-    'Living Room',
-    'assets/furnitures/fixtures/categories/living-room.jpg',
-  ),
-  _FixtureCategory(
-    'Bedroom',
-    'assets/furnitures/fixtures/categories/bedroom.jpg',
-  ),
-  _FixtureCategory(
-    'Dining Room',
-    'assets/furnitures/fixtures/categories/dining.jpg',
-  ),
-  _FixtureCategory(
-    'Home Office',
-    'assets/furnitures/fixtures/categories/office.jpg',
-  ),
-];
 
 class _Hero extends StatelessWidget {
   const _Hero({required this.onExplore, required this.showFixtureImage});
@@ -201,7 +220,7 @@ class _Hero extends StatelessWidget {
           children: <Widget>[
             if (showFixtureImage) ...<Widget>[
               Image.asset(
-                'assets/furnitures/fixtures/hero/chairs-heroimage.webp',
+                'assets/furnitures/fixtures/hero/hero.jpg',
                 width: double.infinity,
                 fit: BoxFit.cover,
                 semanticLabel: 'A curated living space with chairs',

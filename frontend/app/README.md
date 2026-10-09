@@ -18,14 +18,16 @@ Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 (networking layer)**, **Phase 16.5 (authentication storage/session)**,
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
 structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
-(logging/diagnostics)**, and **Phase 17.1 (home and catalog)**.
+(logging/diagnostics)**, **Phase 17.1 (home and catalog)**, and **Phase 17.2
+(categories)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
-The root application now uses `MaterialApp.router`. Route placeholders establish
-the Phase 16.6 navigation contract only; customer feature screens remain owned
-by their later phases. The development-only theme preview remains directly
-testable but is no longer the application home screen.
+The root application now uses `MaterialApp.router`. Home, catalog, and
+categories are implemented feature screens; the remaining routes are
+placeholders that establish the Phase 16.6 navigation contract only. The
+development-only theme preview remains directly testable but is no longer the
+application home screen.
 
 ## Navigation
 
@@ -70,10 +72,49 @@ compile-time configuration, parse API error envelopes in widgets, or duplicate
 Laravel authorization. The central `lib/navigation/` router remains the only
 route registry and `MaterialApp` root.
 
-Group Q feature implementation must remain request-first. Catalog, categories,
-product detail, search, furniture requests, enquiries, and account are future
-feature families. Cart, checkout, payments, orders, order tracking, and
-favorites remain unimplemented and unregistered.
+Group Q feature implementation must remain request-first. Catalog and categories
+are implemented; product detail, search, furniture requests, enquiries, and
+account are future feature families. Cart, checkout, payments, orders, order
+tracking, and favorites remain unimplemented and unregistered.
+
+## Catalog and Categories
+
+Phase 17.1 and 17.2 read the public Laravel catalog only:
+
+- `GET /api/v1/products` with `product_type=MADE_TO_ORDER`. `CatalogRepository.fetchProducts` takes an optional `categorySlug`, which becomes the canonical `?category={slug}` filter.
+- `GET /api/v1/categories` (`CAT-003`) returns the paginated summary collection. `GET /api/v1/categories/{category}` (`CAT-004`) resolves one category by its server slug or opaque ID.
+- Category products always come from `GET /api/v1/products?category={slug}&product_type=MADE_TO_ORDER`. The nested `/categories/{category}/products` route is rejected by ADR/API-END-002 and is never requested.
+
+`CategorySummary` and `CategoryDetail` model only the documented fields: `id`,
+`name`, `slug`, nullable `image.url`, and (detail only) `description` and
+`created_at`. There is no `children` field, because CAT-003 is not a recursive
+tree. The Laravel taxonomy has a structural `Furnitures Root` and deeper levels,
+but the public collection returns only active storefront categories beneath the
+root, and the app never fabricates subcategory navigation from that deeper
+taxonomy.
+
+Category identity flows one way: the router accepts a slug or opaque ID, CAT-004
+resolves it, and the resolved canonical slug scopes the product query. Slugs are
+never derived from display names, and a changed category rebuilds the listing so
+previous products cannot survive.
+
+Category loading is failure-independent. A product-listing failure keeps the
+valid category header on screen with a recoverable inline message; a CAT-004
+`RESOURCE_NOT_FOUND` (404) becomes an unavailable-category state and returns to
+the index. A category that resolves but has no furniture shows a
+category-specific empty message, never an empty state that implies the category
+itself is missing.
+
+Category and product photography share `CatalogImage`, so loading feedback,
+neutral fallback, aspect ratio, and semantics cannot drift between the two
+features. Category imagery is presentation-only: no crop overlays text, and no
+contrast depends on a photograph.
+
+Both features honor `CATALOG_DATA_SOURCE=fixtures` in local debug builds only.
+The fixture taxonomy mirrors the approved Next.js `HOMEPAGE_CATEGORY_FIXTURES`
+and the Laravel `CategorySeeder` rooms, and fixture products stay scoped to their
+own category. Staging and production always read the real API, and no code path
+falls back to fixtures after an API error.
 
 ## Async Presentation
 
