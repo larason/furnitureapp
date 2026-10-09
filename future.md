@@ -63,3 +63,5 @@ The following remain open and should be carried forward without reopening comple
 17. One architectural recommendation for phase 17.5: When Phase 17.15 arrives, implement the app bar and drawer as a shared go_router shell (such as ShellRoute) rather than adding separate Scaffold navigation logic to every feature screen. This avoids duplicated navigation code and keeps the centered logo and account action consistent
 
 18. remove this restriction when payment and order flows are implemented: search only calls "product_type=MADE_TO_ORDER"
+
+19. verify vigorously that in the production deployment frontend of both nextjs and flutter connect to only one laravel backend and that is fully functional and meets all requirements before going live. This includes testing all user flows, ensuring that all features work as expected, and confirming that the system can handle the expected load.
