@@ -16,6 +16,11 @@ import '../features/home/presentation/home_screen.dart';
 import '../features/product_detail/data/product_detail_repository.dart';
 import '../features/search/presentation/search_screen_host.dart';
 import '../features/product_detail/presentation/product_detail_screen.dart';
+import '../features/product_detail/data/product_detail.dart';
+import '../features/furniture_requests/data/furniture_request.dart';
+import '../features/furniture_requests/data/furniture_request_repository.dart';
+import '../features/furniture_requests/presentation/furniture_request_screen.dart';
+import '../core/auth/auth_session.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
 import 'route_guard.dart';
@@ -28,6 +33,8 @@ abstract final class AppRouter {
     CatalogRepository? catalogRepository,
     CategoryRepository? categoryRepository,
     ProductDetailRepository? productDetailRepository,
+    FurnitureRequestRepository? furnitureRequestRepository,
+    AuthSession? authSession,
     bool showFixtureHero = false,
   }) {
     final guard = RouteGuard(getAuthStatus, diagnostics: diagnostics);
@@ -94,8 +101,13 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.furnitureRequestsName,
           path: AppRoutes.furnitureRequests,
-          builder: (_, _) =>
-              const _RoutePlaceholder(title: 'Furniture request'),
+          builder: (_, state) => furnitureRequestRepository == null
+              ? const _RoutePlaceholder(title: 'Furniture request')
+              : FurnitureRequestScreen(
+                  repository: furnitureRequestRepository,
+                  authSession: authSession,
+                  product: _requestProduct(state.extra),
+                ),
         ),
         GoRoute(
           name: AppRoutes.contactName,
@@ -159,6 +171,18 @@ abstract final class AppRouter {
     return SearchScreenHost(
       catalogRepository: catalogRepository,
       categoryRepository: categoryRepository,
+    );
+  }
+
+  static FurnitureRequestProductContext? _requestProduct(Object? value) {
+    if (value is! ProductDetail || value.productType != 'MADE_TO_ORDER') {
+      return null;
+    }
+    return FurnitureRequestProductContext(
+      id: value.id,
+      name: value.name,
+      imageUrl: value.primaryImage?.url,
+      imageAlt: value.primaryImage?.altText,
     );
   }
 

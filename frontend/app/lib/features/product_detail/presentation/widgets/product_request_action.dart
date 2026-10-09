@@ -14,9 +14,14 @@ import '../../data/product_detail.dart';
 /// No cart, checkout, payment, deposit, reservation, or "buy now" control
 /// appears anywhere on the page.
 class ProductRequestAction extends StatelessWidget {
-  const ProductRequestAction({super.key, required this.selectedVariant});
+  const ProductRequestAction({
+    super.key,
+    required this.selectedVariant,
+    required this.onRequest,
+  });
 
   final ProductVariantSummary? selectedVariant;
+  final VoidCallback onRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -52,13 +57,13 @@ class ProductRequestAction extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const FilledButton(
-                onPressed: null,
-                child: Text('Request this furniture'),
+              FilledButton(
+                onPressed: onRequest,
+                child: const Text('Request this furniture'),
               ),
               const SizedBox(height: AppSpacing.space2),
               Text(
-                'Requesting is not available in the app yet.',
+                'Tell us your requirements and we will follow up.',
                 style: theme.textTheme.bodySmall,
               ),
             ],

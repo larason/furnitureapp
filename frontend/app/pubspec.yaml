@@ -12,6 +12,7 @@ dependencies:
   clerk_auth: ^0.0.18-beta
   flutter_secure_storage: ^11.2.0
   flutter_svg: ^2.2.4
+  file_picker: ^13.1.0
   go_router: ^18.0.2
   http: ^1.5.0
   http_parser: ^4.1.2

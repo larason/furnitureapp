@@ -98,8 +98,18 @@ remains in `catalog/`:
   submit icon explicitly uses the theme `onPrimary` foreground against the
   `primary` action surface for readable contrast.
 
-Furniture requests, enquiries, and account, plus all cart, checkout,
-payment, order, and tracking surfaces, remain outside the implemented phases.
+## Furniture Requests (Phase 17.10)
+
+`furniture_requests/` owns the REQ-001 customer intake flow. It uses the shared
+`ApiClient`, optional `AuthSession`, and central router; it never stores contact
+data or Clerk tokens. The form supports anonymous custom and catalog-linked
+MADE_TO_ORDER requests, validates the frozen request fields for usability, and
+leaves Laravel authoritative. An optional JPEG, PNG, WebP, or PDF is sent in the
+same private multipart REQ-001 submission. Timeout or connection failures are
+uncertain outcomes and are never retried automatically.
+
+Enquiries, account, cart, checkout, payment, order, and tracking surfaces remain
+outside the implemented phases.
 
 ## Module Convention
 

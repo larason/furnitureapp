@@ -82,7 +82,7 @@ void main() {
     expect(find.text('Showing image 1 of 2'), findsOneWidget);
     expect(find.text('Available options'), findsOneWidget);
     expect(
-      find.text('Requesting is not available in the app yet.'),
+      find.text('Tell us your requirements and we will follow up.'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

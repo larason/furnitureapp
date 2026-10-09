@@ -204,7 +204,7 @@ void main() {
     }
   });
 
-  testWidgets('presents the request action as an unavailable preview', (
+  testWidgets('presents the request action as an available request path', (
     tester,
   ) async {
     final handle = tester.ensureSemantics();
@@ -213,7 +213,7 @@ void main() {
 
     expect(find.text('Request this furniture'), findsWidgets);
     expect(
-      find.text('Requesting is not available in the app yet.'),
+      find.text('Tell us your requirements and we will follow up.'),
       findsOneWidget,
     );
     final button = tester.widget<ButtonStyleButton>(
@@ -221,8 +221,8 @@ void main() {
     );
     expect(
       button.onPressed,
-      isNull,
-      reason: 'The action must never look like it submitted a request.',
+      isNotNull,
+      reason: 'Made-to-order furniture must lead to the request workflow.',
     );
     handle.dispose();
   });

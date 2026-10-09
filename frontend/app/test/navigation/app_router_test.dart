@@ -16,6 +16,8 @@ import 'package:sl_furnitures/features/categories/data/category_repository.dart'
 import 'package:sl_furnitures/features/categories/data/category_summary.dart';
 import 'package:sl_furnitures/features/product_detail/data/product_detail.dart';
 import 'package:sl_furnitures/features/product_detail/data/product_detail_repository.dart';
+import 'package:sl_furnitures/features/furniture_requests/data/furniture_request.dart';
+import 'package:sl_furnitures/features/furniture_requests/data/furniture_request_repository.dart';
 import 'package:sl_furnitures/navigation/app_router.dart';
 import 'package:sl_furnitures/navigation/app_routes.dart';
 import 'package:sl_furnitures/theme/app_theme.dart';
@@ -147,6 +149,21 @@ void main() {
         }
       },
     );
+
+    testWidgets('opens the standalone furniture request form', (tester) async {
+      final harness = _RouterHarness(
+        ClerkAuthStatus.signedOut,
+        furnitureRequestRepository: _StubFurnitureRequestRepository(),
+      );
+      await tester.pumpWidget(harness.app);
+
+      harness.router.go(AppRoutes.furnitureRequests);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Furniture requirements'), findsOneWidget);
+      expect(find.byType(TextFormField), findsWidgets);
+      expect(find.text('Requesting:'), findsNothing);
+    });
 
     group('public category routes', () {
       testWidgets('serves the categories index without authentication', (
@@ -446,6 +463,7 @@ class _RouterHarness {
     CatalogRepository? catalogRepository,
     CategoryRepository? categoryRepository,
     ProductDetailRepository? productDetailRepository,
+    FurnitureRequestRepository? furnitureRequestRepository,
   }) : _status = ValueNotifier(status),
        _productDetailRepository =
            productDetailRepository as _StubProductDetailRepository? {
@@ -456,6 +474,7 @@ class _RouterHarness {
       catalogRepository: catalogRepository,
       categoryRepository: categoryRepository,
       productDetailRepository: productDetailRepository,
+      furnitureRequestRepository: furnitureRequestRepository,
     );
     addTearDown(dispose);
   }
@@ -526,6 +545,18 @@ class _StubProductDetailRepository implements ProductDetailRepository {
     }
     return _detail;
   }
+}
+
+class _StubFurnitureRequestRepository implements FurnitureRequestRepository {
+  @override
+  Future<SubmittedFurnitureRequest> submit(
+    FurnitureRequestDraft draft, {
+    required bool authenticated,
+    RequestCancellation? cancellation,
+  }) async => const SubmittedFurnitureRequest(
+    id: 'req_01h8x9j2m4k5n6p7q8r9s0t1',
+    status: 'SUBMITTED',
+  );
 }
 
 class _EmptyCatalogRepository implements CatalogRepository {

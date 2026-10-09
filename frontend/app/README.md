@@ -19,7 +19,7 @@ Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
 structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
 (logging/diagnostics)**, **Phase 17.1 (home and catalog)**, **Phase 17.2
-(categories)**, **Phase 17.3 (product detail)**, and **Phase 17.4 (search and filtering)**.
+(categories)**, **Phase 17.3 (product detail)**, **Phase 17.4 (search and filtering)**, and **Phase 17.10 (furniture requests)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
@@ -411,20 +411,22 @@ tracked. Create your own copy:
 cp config/local.example.json config/local.json
 ```
 
-Android Emulator (the host loopback is `10.0.2.2`):
+Android Emulator (the host loopback is `10.0.2.2`; this is the default in
+`config/local-device.json`):
 
 ```bash
 flutter run --dart-define-from-file=config/local.json
 ```
 
-Physical Android device over USB — the device cannot reach your computer's
-`127.0.0.1`, so forward the port first. **The mapping does not survive a
-reconnect**, so re-run it whenever you replug:
+Physical Android device over USB — use `config/local.json` with `adb reverse`,
+because the emulator-only `10.0.2.2` address is not available on a physical
+device. **The mapping does not survive a reconnect**, so re-run it whenever you
+replug:
 
 ```bash
 adb reverse tcp:8000 tcp:8000
 adb reverse --list                 # confirm: UsbFfs tcp:8000 tcp:8000
-flutter run --dart-define-from-file=config/local-device.json
+flutter run --dart-define-from-file=config/local.json
 ```
 
 Alternatively use your development machine's LAN IP (where the firewall permits
@@ -543,9 +545,10 @@ flutter run --dart-define-from-file=config/local.json
   as an omitted section), an unknown slug returned `RESOURCE_NOT_FOUND` (404),
   and the app displayed the live payload unchanged on device. Staging and
   production are not deployed.
-- **Requesting furniture is not implemented.** The product page renders a
-  deliberately disabled "Request this furniture" preview. Phase 17.10 owns the
-  made-to-order request form, its validation, and the `REQ-001` submission.
+- **Live request verification depends on the configured backend.** Phase 17.10
+  implements anonymous/custom and catalog-linked REQ-001 submissions with
+  optional inline private attachments. It does not persist drafts or tokens,
+  retry uncertain POST outcomes, or implement request history.
 - **Product-detail fixture content is partly synthetic.** In `fixtures` mode the
   second gallery image and the per-product options are development-only values
   documented in the Phase 17.3 section above. Only local debug builds can read

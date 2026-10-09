@@ -11,6 +11,7 @@ import 'features/categories/data/category_repository.dart';
 import 'features/categories/data/fixture_category_repository.dart';
 import 'features/product_detail/data/fixture_product_detail_repository.dart';
 import 'features/product_detail/data/product_detail_repository.dart';
+import 'features/furniture_requests/data/furniture_request_repository.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
@@ -81,6 +82,10 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       catalogRepository: catalog,
       categoryRepository: categories,
       productDetailRepository: productDetail,
+      furnitureRequestRepository: apiClient == null
+          ? null
+          : ApiFurnitureRequestRepository(apiClient),
+      authSession: widget.authAdapter,
       showFixtureHero: useFixtures,
     );
   }
