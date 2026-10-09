@@ -72,12 +72,18 @@ class CategoryDetailController extends ChangeNotifier {
       if (!_isCurrent(generation, cancellation) || _isCancellation(error)) {
         return;
       }
-      if (error is ApiError && error.statusCode == 404) {
+      final categoryUnavailable = error is ApiError && error.statusCode == 404;
+      if (categoryUnavailable) {
         _categoryUnavailable = true;
+        _products?.dispose();
+        _products = null;
       }
       final presentation = ErrorPresentationMapper.from(error);
       if (presentation != null) {
-        _state = AsyncFailure(presentation, previousData: previous);
+        _state = AsyncFailure(
+          presentation,
+          previousData: categoryUnavailable ? null : previous,
+        );
       }
     } finally {
       if (identical(_cancellation, cancellation)) _cancellation = null;

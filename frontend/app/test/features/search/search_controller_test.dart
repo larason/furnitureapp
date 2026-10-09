@@ -243,18 +243,18 @@ void main() {
       'ignores a stale response that arrives after newer criteria',
       () async {
         final catalog = _RecordingCatalogRepository();
+        catalog.deferFirstCall = true;
         final harness = _build(catalog);
         final controller = harness.controller;
         addTearDown(controller.dispose);
-        await pumpEventQueue();
 
         final stale = controller.results;
-        catalog.deferFirstCall = true;
         controller.onSearchTextChanged('sofa');
         await controller.submitSearch();
         await pumpEventQueue();
 
         catalog.gate.complete();
+        await catalog.gate.future;
         await Future<void>.delayed(Duration.zero);
         await pumpEventQueue();
 
@@ -264,6 +264,7 @@ void main() {
           reason: 'Only the newest criteria may remain applied.',
         );
         expect(identical(controller.results, stale), isFalse);
+        expect(stale.state, isA<AsyncLoading<CatalogPage>>());
       },
     );
 
@@ -347,7 +348,11 @@ class _RecordingCatalogRepository implements CatalogRepository {
   final bool multiPage;
   final List<CatalogQuery> queries = <CatalogQuery>[];
   final Completer<void> gate = Completer<void>();
-  bool deferFirstCall = false;
+  int? _deferredCallIndex;
+
+  set deferFirstCall(bool value) {
+    _deferredCallIndex = value ? queries.length + 1 : null;
+  }
 
   @override
   Future<CatalogPage> fetchProducts(
@@ -355,7 +360,11 @@ class _RecordingCatalogRepository implements CatalogRepository {
     RequestCancellation? cancellation,
   }) async {
     queries.add(query);
-    if (queries.length == 1 && deferFirstCall) await gate.future;
+    final callIndex = queries.length;
+    if (_deferredCallIndex == callIndex) {
+      _deferredCallIndex = null;
+      await gate.future;
+    }
     if (error != null) throw error!;
     if (products.isEmpty) {
       return const CatalogPage(
