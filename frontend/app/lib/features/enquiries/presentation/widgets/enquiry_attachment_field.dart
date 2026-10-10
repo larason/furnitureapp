@@ -91,7 +91,7 @@ class _EnquiryAttachmentFieldState extends State<EnquiryAttachmentField> {
         allowedExtensions: const <String>['jpg', 'jpeg', 'png', 'webp', 'pdf'],
       );
     } catch (_) {
-      return;
+      _reject('We could not choose that file. Try again.');
     }
     if (file == null) return;
     // Android's picker reports the size as part of the pick result, so this
@@ -105,6 +105,7 @@ class _EnquiryAttachmentFieldState extends State<EnquiryAttachmentField> {
     try {
       bytes = await file.readAsBytes();
     } catch (_) {
+      _reject('We could not read that file. Choose another file.');
       return;
     }
     if (!mounted) return;
@@ -120,9 +121,8 @@ class _EnquiryAttachmentFieldState extends State<EnquiryAttachmentField> {
   }
 
   /// The customer can navigate away while the picker or a measurement is
-  /// still pending, so every state change is guarded by [mounted]. A framework
-  /// error here must not be swallowed: it is a defect, not an expected
-  /// failure, and only the file read is treated as recoverable.
+  /// still pending, so every state change is guarded by [mounted]. Expected
+  /// picker and file-read failures are surfaced through the live region.
   void _reject(String message) {
     if (!mounted) return;
     setState(() => _rejection = message);
