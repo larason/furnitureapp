@@ -84,20 +84,28 @@ class SearchController extends ChangeNotifier {
   /// pages unloaded would silently hide categories that exist and can be
   /// filtered on. The walk stops at the first page that reports no further
   /// results, at [maxCategoryFilterPages], or when this controller is disposed.
-  /// A failure keeps the categories already loaded, matching the screen's rule
-  /// that a category problem never blocks search, sorting, or browsing.
+  /// A failure keeps the categories already loaded and is never retried, so an
+  /// outage cannot turn this into a burst of duplicate requests.
   Future<void> _loadCategoryFilter({int page = 0}) async {
     if (_disposed || page >= maxCategoryFilterPages) return;
-    final state = _categories.state;
-    final data = switch (state) {
-      AsyncContent(:final data) => data,
-      AsyncRefreshing(:final data) => data,
-      _ => null,
-    };
+    final data = _categoryPage;
     if (data == null || !data.pagination.hasNext) return;
+    final requestedPage = data.pagination.currentPage + 1;
     await _categories.loadNextPage();
+    // A failed or ignored page leaves `currentPage` where it was, so both
+    // conditions end the walk instead of asking for the same page again.
+    if (_categories.nextPageError != null ||
+        _categoryPage?.pagination.currentPage != requestedPage) {
+      return;
+    }
     return _loadCategoryFilter(page: page + 1);
   }
+
+  CategoryPage? get _categoryPage => switch (_categories.state) {
+    AsyncContent(:final data) => data,
+    AsyncRefreshing(:final data) => data,
+    _ => null,
+  };
 
   /// Raw text in the search field, which may differ from the applied criteria
   /// while a debounce is pending.

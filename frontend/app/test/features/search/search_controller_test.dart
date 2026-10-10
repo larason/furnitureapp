@@ -391,6 +391,11 @@ void main() {
         reason: 'Loaded categories must survive a later page failure.',
       );
       expect(controller.results.state, isA<AsyncContent<CatalogPage>>());
+      expect(
+        categories.requestedPages,
+        <int>[1, 2],
+        reason: 'A failed page must not be retried by the walk.',
+      );
     });
 
     test('stops requesting and notifies after disposal', () async {
