@@ -180,7 +180,10 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
               TextButton(
                 onPressed: _controller.isSubmitting
                     ? null
-                    : () => _change(clearAttachment: true),
+                    : () {
+                        setState(() => _attachmentRejection = null);
+                        _change(clearAttachment: true);
+                      },
                 child: const Text('Remove file'),
               ),
             ],
@@ -298,6 +301,7 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
   );
 
   Future<void> _selectAttachment() async {
+    setState(() => _attachmentRejection = null);
     PlatformFile? file;
     try {
       file = await FilePicker.pickFile(
