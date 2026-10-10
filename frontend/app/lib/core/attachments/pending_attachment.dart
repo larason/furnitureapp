@@ -17,6 +17,11 @@ const Set<String> attachmentContentTypes = <String>{
 /// The canonical multipart field name for an inline attachment.
 const String attachmentMultipartField = 'attachment';
 
+const String attachmentUnsupportedTypeMessage =
+    'Choose a JPEG, PNG, WebP, or PDF file.';
+
+const String attachmentTooLargeMessage = 'Choose a file no larger than 5 MiB.';
+
 /// Best-effort content type for a picked file.
 ///
 /// The extension is a client-side hint only and is never trusted; Laravel
@@ -51,10 +56,10 @@ class PendingAttachment {
 
   String? get validationMessage {
     if (!attachmentContentTypes.contains(contentType)) {
-      return 'Choose a JPEG, PNG, WebP, or PDF file.';
+      return attachmentUnsupportedTypeMessage;
     }
     if (size > maxAttachmentBytes) {
-      return 'Choose a file no larger than 5 MiB.';
+      return attachmentTooLargeMessage;
     }
     return null;
   }

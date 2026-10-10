@@ -320,6 +320,7 @@ shipped code. The temporary line is not present in the final tree.
 | 23 | Furniture Requests unchanged | Pass — product detail still shows the **enabled** "Request this furniture" button |
 | 24 | Catalog, product detail, and options unchanged | Pass — live product, `From TZS 1,250,000`, both option rows with SKU and price |
 | 25 | Unreachable product image | Pass — neutral `CatalogImage` fallback in a stable frame, no crash |
+| 26 | Oversized file rejected before it is read | Pass — a 6,000,009-byte PDF shows "Choose a file no larger than 5 MiB." with no filename row, so `readAsBytes()` is never called; no OOM and no exception in the log. A valid file then selects normally and clears the message |
 
 **Diagnostics observed on device** (from the app's own allow-listed events):
 
@@ -367,10 +368,18 @@ frontend/app/lib/app.dart                 (ApiEnquiryRepository composition)
 frontend/app/lib/navigation/app_router.dart (/contact builder + product context)
 frontend/app/lib/features/README.md
 frontend/app/README.md
+.gitignore                                (unrelated: adds `.aider*` tooling
+                                           ignore + a missing trailing newline;
+                                           not Phase 17.11 work)
 ```
 
-**Not modified:** any Laravel file, migration, API document, dependency manifest,
-or Phase 17.10 source. The backend was already correct and already enabled.
+**Not modified:** any Laravel file, migration, API document, dependency manifest
+(`pubspec.yaml`/`pubspec.lock` are untouched), or Phase 17.10 source. The backend
+was already correct and already enabled. `lib/main.dart`,
+`lib/config/config_validation.dart`, and `config/local-device.json` were also
+untouched: the first two do not appear in the phase diff, and
+`config/local-device.json` is a gitignored local device config that still exists
+on disk (only the `*.example.json` templates are tracked).
 
 ## 16. Documentation updated
 

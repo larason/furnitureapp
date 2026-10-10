@@ -116,9 +116,12 @@ class _EnquiryScreenState extends State<EnquiryScreen> {
             ),
           ]),
           _section(context, 'Contact details', <Widget>[
-            const Text(
-              'Your name and at least one way to reach you are required.',
-            ),
+            // Laravel derives contact for an authenticated customer, so the
+            // anonymous requirement must not be stated to a signed-in user.
+            if (widget.authSession?.isSignedIn != true)
+              const Text(
+                'Your name and at least one way to reach you are required.',
+              ),
             _field('name', 'Your name', maxLength: enquiryNameMaxLength),
             _field(
               'phone',

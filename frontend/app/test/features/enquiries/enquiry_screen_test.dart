@@ -13,6 +13,7 @@ import 'package:sl_furnitures/core/network/api_client.dart';
 import 'package:sl_furnitures/core/network/api_transport.dart';
 import 'package:sl_furnitures/features/catalog/data/catalog_repository.dart';
 import 'package:sl_furnitures/features/categories/data/category_repository.dart';
+import 'package:sl_furnitures/core/network/auth_token_provider.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/enquiries/data/enquiry_repository.dart';
 import 'package:sl_furnitures/features/furniture_requests/data/furniture_request.dart';
@@ -107,6 +108,50 @@ void main() {
         find.text('Enter a phone number, email address, or both.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('does not state the anonymous contact requirement to a '
+        'signed-in customer', (tester) async {
+      final harness = _Harness(tester, signedIn: true);
+      await harness.pump();
+      harness.router.go(AppRoutes.contact);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Your name and at least one way to reach you are required.'),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('enquiry.field.name')),
+        findsOne,
+      );
+    });
+
+    testWidgets('a signed-in customer submits without contact details', (
+      tester,
+    ) async {
+      final harness = _Harness(tester, signedIn: true);
+      await harness.pump();
+      harness.router.go(AppRoutes.contact);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('enquiry.field.subject')),
+        'Do you deliver to Dodoma?',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('enquiry.field.message')),
+        'I would like to know whether you deliver to Dodoma.',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('enquiry.submit')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter your name.'), findsNothing);
+      expect(
+        find.text('Enter a phone number, email address, or both.'),
+        findsNothing,
+      );
+      expect(find.text('Your enquiry has been received.'), findsOneWidget);
     });
 
     testWidgets('confirms a created enquiry without contacting a private '
@@ -354,6 +399,7 @@ class _Harness {
     this.offline = false,
     this.withRepository = true,
     this.pending = false,
+    this.signedIn = false,
   });
 
   final WidgetTester tester;
@@ -361,12 +407,14 @@ class _Harness {
   final bool offline;
   final bool withRepository;
   final bool pending;
+  final bool signedIn;
   final Completer<void> release = Completer<void>();
   late final GoRouter router;
   final List<String> requestedPaths = <String>[];
   final ValueNotifier<ClerkAuthStatus> _status = ValueNotifier(
     ClerkAuthStatus.signedOut,
   );
+  AuthSession? _authSession;
 
   Future<void> pump({Size? viewport}) async {
     tester.view.physicalSize = viewport ?? const Size(1200, 7200);
@@ -384,11 +432,14 @@ class _Harness {
         apiBaseUrl: 'http://127.0.0.1:8000',
       ),
       transport: transport,
+      authTokenProvider: signedIn ? _StubTokenProvider() : null,
     );
     addTearDown(() {
       router.dispose();
       _status.dispose();
+      (_authSession as _StubAuthSession?)?.dispose();
     });
+    _authSession = signedIn ? _StubAuthSession() : null;
     router = AppRouter.create(
       authState: _status,
       getAuthStatus: () => _status.value,
@@ -397,12 +448,32 @@ class _Harness {
       categoryRepository: const _EmptyCategoryRepository(),
       furnitureRequestRepository: _EmptyFurnitureRequestRepository(),
       enquiryRepository: withRepository ? ApiEnquiryRepository(client) : null,
+      authSession: _authSession,
     );
     await tester.pumpWidget(
       MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
     );
     await tester.pumpAndSettle();
   }
+}
+
+class _StubTokenProvider implements AuthTokenProvider {
+  @override
+  Future<String?> getToken() async => 'clerk-session-token';
+}
+
+class _StubAuthSession extends ChangeNotifier implements AuthSession {
+  @override
+  ClerkAuthStatus get status => ClerkAuthStatus.signedIn;
+
+  @override
+  bool get isSignedIn => true;
+
+  @override
+  Future<String?> getToken() async => 'clerk-session-token';
+
+  @override
+  Future<void> signOut() async => notifyListeners();
 }
 
 class _StubTransport implements ApiTransport {

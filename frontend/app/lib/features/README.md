@@ -67,9 +67,9 @@ into the request-only storefront. Both use the public `MADE_TO_ORDER` filter,
 - `ProductVariantSelector` shows only contract fields. No fabric, colour,
   dimension, material, or finish is derived from a variant name or SKU, and no
   inventory quantity is displayed.
-- `ProductRequestAction` is a labelled preview with a **disabled** button. Phase
-  17.10 replaces it with the real request flow. No cart, checkout, payment,
-  deposit, reservation, or "buy now" control exists in this feature.
+- `ProductRequestAction` **enables** the "Request this furniture" button and
+  opens the Phase 17.10 REQ-001 flow. No cart, checkout, payment, deposit,
+  reservation, or "buy now" control exists in this feature.
 - `FixtureProductDetailRepository` reuses `catalog/data/fixture_products.dart`,
   so a fixture catalog card and its detail page always agree. The synthetic
   gallery and option values it adds are documented development-only content.
@@ -143,8 +143,11 @@ only links to the Phase 17.10 route.
   reference. It claims no email/SMS delivery, promises no response time, and
   never navigates to a private enquiry endpoint.
 
-`core/attachments/pending_attachment.dart` owns the frozen V1 attachment limits
-and the content-type hint shared by the intake features. Phase 17.10 keeps its
+`core/attachments/pending_attachment.dart` owns the frozen V1 attachment limits,
+the shared rejection wording, and the content-type hint. The enquiry picker
+checks the reported size *before* reading the bytes, so an oversized file is
+never loaded into device memory; Laravel still applies the authoritative limit to
+whatever is uploaded. Phase 17.10 keeps its
 own equivalent because this phase must leave Furniture Requests unchanged;
 consolidating them is left to a later phase.
 
@@ -199,10 +202,10 @@ For a future catalog implementation:
 5. Connect the screen through the existing `AppRouter`.
 6. Add repository, state, and widget tests under matching `test/features/catalog/` paths.
 
-Catalog, categories, product detail, and search are implemented feature
-families. Furniture requests, enquiries, and account are future families. Cart,
-checkout, payments, orders, order tracking, and favorites remain absent under
-request-only production scope.
+Catalog, categories, product detail, search, furniture requests, and enquiries
+are implemented feature families. Account is a future family. Cart, checkout,
+payments, orders, order tracking, and favorites remain absent under request-only
+production scope.
 
 ## Shared Async Presentation
 
