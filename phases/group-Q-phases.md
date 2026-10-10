@@ -1,1143 +1,526 @@
-# Phase 17.12 — Flutter Registration, Login & Profile/Account
+# Phase 17.13 — Flutter Informational, Legal & Open Source Licenses Screens
 
 **Project:** SL Furnitures  
 **Application:** Flutter Android Customer App  
 **Group:** Q — Flutter Customer Features  
-**Phase:** 17.12  
-**Scope:** Customer registration, login, verification, recovery, authenticated sessions, profile/account  
-**Prerequisites:** Phases 16.1–16.9, 17.1–17.4, 17.10–17.11  
-**Status:** READY FOR IMPLEMENTATION
+**Phase:** 17.13 (merged with former 17.14)  
+**Prerequisite:** Phase 17.12  
+**Next phase:** 17.15 — Global App Navigation & Drawer
 
-## 1. Mission
+## 1. Objective
 
-Implement the first complete customer authentication and account-management experience in the Flutter Android application.
+Implement the four informational screens needed for the initial SL Furnitures Android release:
 
-Use the existing Clerk integration, Laravel API, secure session storage, centralized routing, and Material 3 design system.
+- About Us
+- Privacy Policy
+- Terms & Conditions
+- Open Source Licenses
 
-The feature must allow a customer to:
+Treat this as one cohesive implementation phase.
 
-1. Register using email and password.
-2. Verify their email when required by Clerk.
-3. Sign in.
-4. Recover a forgotten password.
-5. Remain signed in across application restarts.
-6. Sign out securely.
-7. View their account.
-8. View and edit permitted profile details.
-9. Access authenticated customer features.
-10. Recover gracefully from expired or invalid sessions.
+These screens must be accessible to everyone without registration, login, network connectivity, or a Laravel API request.
 
-Do not build a new authentication provider or store passwords in Laravel through Flutter.
+Use the existing Flutter Material 3 theme and the canonical design tokens generated from `frontend/design-system/tokens.css`.
 
-**Critical:** This phase must make the existing authenticated Furniture Requests and Enquiries flows genuinely usable and testable.
+Do not build a new navigation shell, redesign the existing app, or introduce unnecessary dependencies.
 
-Do not activate deferred commerce functionality.
+## 2. Mandatory repository inspection
 
----
+Before editing code, read:
 
-## 2. Mandatory repository and contract inspection
+1. Root `AGENTS.md`, particularly Group Q and the phase operating rules.
+2. `frontend/app/README.md`.
+3. `frontend/app/lib/features/README.md`.
+4. `frontend/design-system/tokens.css`.
+5. `frontend/design-system/DESIGN.md`, if present.
+6. `frontend/design-system/ACCESSIBILITY.md`, if present.
+7. Existing Flutter Material 3 theme implementation.
+8. Existing generated Flutter design tokens.
+9. Existing go_router route definitions.
+10. Existing feature-first folder structure and dependency injection conventions.
+11. Existing Flutter tests and test helpers.
+12. All relevant `.txt` files in the project root containing the Privacy Policy and Terms & Conditions.
 
-Before modifying code, read:
+First report the exact legal source filenames found and confirm that their content is readable.
 
-- Root `AGENTS.md`.
-- `frontend/AGENTS.md`, if present.
-- `frontend/app/README.md`.
-- `frontend/app/lib/features/README.md`.
-- `docs/decisions.md`.
-- `docs/api/api-contract.md` sections 17, 18 and 29.
-- `docs/api/api-conventions.md`.
-- `docs/api/api-resources.md`.
-- `docs/api/openapi.yaml`.
-- `docs/domain/business-rules.md`.
-- `frontend/design-system/tokens.css`.
-- `frontend/design-system/DESIGN.md`.
-- `frontend/design-system/ACCESSIBILITY.md`.
-- Existing Flutter authentication adapter.
-- Existing AuthSession implementation.
-- Existing secure-storage integration.
-- Existing ApiClient authentication modes.
-- Existing go_router configuration.
-- Existing `/account` placeholder and protected-route logic.
-- Existing Laravel Clerk middleware and user provisioning logic.
-- Laravel USER-001, USER-002 and USER-003 handlers.
-- Existing frontend website Clerk configuration and authentication conventions.
-- Phase 17.10 and 17.11 completion records.
+Do not assume their filenames, encodings, or internal heading structures.
 
-Inspect installed Flutter dependencies and the current supported Clerk Flutter SDK.
+If either legal source is missing, stop the affected legal-page implementation and report the missing file. Do not invent replacement legal content.
 
-### Pre-implementation report
+## 3. Architecture and feature ownership
 
-Identify:
+Create a lightweight informational feature consistent with the existing Flutter architecture.
 
-- Exact Clerk Flutter SDK and version.
-- Whether native Flutter sign-up/sign-in APIs are supported.
-- Existing Clerk initialization lifecycle.
-- Existing session-token retrieval contract.
-- Existing session persistence mechanism.
-- Current Laravel Clerk JWT verification.
-- How Laravel creates or synchronizes a local customer record.
-- Current customer role assignment.
-- Actual USER-001/002/003 request and response schemas.
-- Existing registration requirements.
-- Email verification requirements.
-- Password recovery support.
-- Existing account deletion policy, if any.
-- Existing route protection and redirect handling.
-- Existing Flutter testing conventions.
+A possible structure is:
 
-Do not begin with UI implementation before these boundaries are understood.
+```text
+frontend/app/lib/features/information/
+  presentation/
+    about_us_screen.dart
+    privacy_policy_screen.dart
+    terms_conditions_screen.dart
+    open_source_licenses_screen.dart
+    widgets/
+      information_page_scaffold.dart
+      legal_document_view.dart
+```
 
-If the installed Clerk package cannot support the required native workflow, investigate the officially supported integration path and document the decision before changing dependencies.
+Adjust this to existing repository conventions.
 
-Do not fabricate Clerk SDK methods or rely on obsolete examples.
+Do not create unnecessary repositories, controllers, state-management layers, or service abstractions for static text.
 
----
+A dedicated local document loader is acceptable if it simplifies asset management and testing.
 
-## 3. Identity and account architecture
+### Separation of concerns
 
-The approved architecture is:
+- About Us: presentation and locally defined factual content.
+- Privacy Policy: display the authoritative text asset.
+- Terms & Conditions: display the authoritative text asset.
+- Open Source Licenses: display Flutter's actual registered dependency licenses.
+- Routing: existing centralized go_router.
+- Styling: existing generated theme and design tokens.
 
-**Clerk → Authentication and identity**
+No new Laravel API is needed.
 
-**Laravel → Application authorization and customer profile**
+## 4. About Us screen
 
-**Flutter → Presentation, navigation and orchestration**
+Create a polished but simple About Us page that communicates the SL Furnitures business and its services.
 
-### Clerk responsibilities
+### Content
 
-- Email/password registration.
-- Password verification.
-- Email verification challenges.
-- Login.
-- Password recovery.
-- Session creation.
-- Session restoration.
-- Token issuance and renewal.
-- Sign-out.
-- Identity lifecycle operations supported by the approved integration.
+Use only verified business information from the project documentation or existing approved brand content.
 
-### Laravel responsibilities
+The page may describe:
 
-- Verify Clerk bearer tokens.
-- Resolve the local user.
-- Enforce CUSTOMER authorization.
-- Manage application-level customer profile data.
-- Enforce active/inactive account state.
-- Validate profile updates.
-- Return canonical API errors.
+- SL Furnitures as a furniture business.
+- Its focus on furniture products and made-to-order requests.
+- How customers can explore the catalog.
+- How customers can request furniture.
+- How customers can submit general enquiries.
+- The business's commitment to clear communication and useful furniture information.
 
-### Flutter responsibilities
-
-- Present authentication screens.
-- Collect and validate user input.
-- Invoke supported Clerk operations.
-- Reflect authentication state.
-- Attach tokens only through the existing ApiClient boundary.
-- Load and update the Laravel profile.
-- Navigate correctly.
-- Clear private UI state on sign-out.
-
-Do not introduce Firebase Authentication, Supabase Auth, custom Laravel password login, or a second identity database.
-
----
-
-## 4. Registration
-
-Implement a native registration experience using the approved Clerk Flutter integration.
-
-### Registration fields
-
-The established signup policy is:
-
-- Email address — required.
-- Password — required.
-
-Do not require:
-
-- Phone number.
-- Delivery address.
-- Billing address.
-- Furniture preferences.
-- Date of birth.
-- Marketing consent.
-- Customer role selection.
-
-The account should be created as a CUSTOMER through the existing trusted backend identity provisioning flow.
-
-Do not allow registration as STAFF or ADMIN.
-
-### Registration screen
-
-Recommended layout:
-
-**Create your account**
-
-Supporting copy:
-
-"Create an account to manage your details and stay connected with SL Furnitures."
-
-Fields:
-
-- Email address.
-- Password.
-- Password visibility toggle.
-
-Actions:
-
-- Create account.
-- Already have an account? Sign in.
-
-A confirm-password field may be used only if it is consistent with the approved design and does not duplicate Clerk's security controls unnecessarily.
-
-### Validation
-
-Use Clerk's actual password policy.
-
-Do not invent a minimum length that conflicts with Clerk settings.
-
-Show useful validation messages without disclosing sensitive implementation details.
-
-Handle:
-
-- Invalid email.
-- Weak password.
-- Email already registered.
-- Network failure.
-- Rate limiting.
-- Verification required.
-- Unsupported sign-up configuration.
-
-Do not automatically treat account creation as a fully authenticated session if Clerk requires verification.
-
----
-
-## 5. Email verification
-
-Implement the verification flow supported by the configured Clerk application.
-
-Prefer the existing approved email-code verification method if it is enabled.
-
-Do not hard-code an assumption that Clerk always uses six digits.
-
-### Verification screen
-
-Heading:
-
-"Verify your email"
-
-Supporting copy:
-
-"Enter the verification code sent to your email address."
-
-Controls:
-
-- Code entry.
-- Verify action.
-- Resend code.
-- Back or cancel.
-
-### Behavior
-
-- Respect Clerk challenge expiration.
-- Respect resend restrictions.
-- Handle invalid and expired codes.
-- Prevent repeated submissions while verifying.
-- Preserve the pending sign-up state.
-- Do not log verification codes.
-- Do not persist codes in ordinary app storage.
-
-On successful verification, complete Clerk's supported session activation flow.
-
-Then reconcile the customer identity with Laravel before showing protected account data.
-
-### Important
-
-Do not bypass email verification with local flags.
-
-Do not mark email as verified in Flutter or Laravel without authoritative confirmation.
-
----
-
-## 6. Login
-
-Implement the sign-in screen.
-
-### Fields
-
-- Email address.
-- Password.
-
-### Actions
-
-- Sign in.
-- Forgot password?
-- Create account.
-
-### Behavior
-
-Use Clerk's supported sign-in flow.
-
-Handle all returned sign-in states explicitly.
-
-Do not assume that providing correct credentials always completes authentication immediately.
-
-If Clerk requires an additional supported verification factor, handle it through the approved SDK or show a clear unsupported-state message rather than bypassing it.
-
-### Error handling
-
-Handle:
-
-- Incorrect credentials.
-- Unverified account.
-- Account not found.
-- Disabled or blocked account.
-- Rate limiting.
-- Connectivity failure.
-- Session activation failure.
-- Unexpected Clerk state.
-
-Avoid account-enumeration disclosures beyond the behavior of the approved Clerk integration.
-
-Never log passwords.
-
----
-
-## 7. Forgot password and reset password
-
-Implement the officially supported Clerk password-recovery flow.
-
-### Forgot-password screen
-
-Heading:
-
-"Reset your password"
-
-Field:
-
-- Email address.
-
-Action:
-
-"Continue"
-
-Use Clerk's configured email-based recovery mechanism.
-
-### Reset flow
-
-Depending on the supported Clerk workflow, collect:
-
-- Verification code or recovery challenge.
-- New password.
-- Any other required SDK-approved step.
-
-Do not implement your own reset token generation.
-
-Do not call a custom Laravel password reset endpoint unless the frozen architecture explicitly delegates this responsibility to Laravel.
-
-### Security
-
-- Do not log recovery codes.
-- Do not persist recovery codes.
-- Do not reveal whether an email belongs to an account beyond the provider-approved response.
-- Respect provider throttling.
-- Handle expired challenges.
-- Require successful completion before reporting password reset success.
-
----
-
-## 8. Clerk SDK integration
-
-Inspect the existing ClerkAuthAdapter.
-
-Prefer extending the existing adapter over creating a second independent authentication implementation.
-
-### Required capabilities
-
-Expose typed operations for:
-
-- Sign up.
-- Email verification.
-- Sign in.
-- Password recovery.
-- Session activation.
-- Session restoration.
-- Sign out.
-- Current authentication state.
-- Current verified session token.
-- Relevant identity metadata.
-
-Use the actual supported SDK API.
-
-### Separation
-
-Presentation widgets must not directly depend on low-level Clerk internals.
-
-The existing adapter should remain the authentication boundary.
-
-Do not call Clerk REST endpoints manually if the supported Flutter SDK already implements the operation.
-
-Do not duplicate secure-storage logic.
-
-### SDK changes
-
-If a dependency upgrade is necessary:
-
-1. Identify the current and target versions.
-2. Review migration requirements.
-3. Check Android compatibility.
-4. Check the project's Flutter/Dart constraints.
-5. Update the lockfile.
-6. Update affected adapter tests.
-7. Document the change.
-
-Do not upgrade unrelated dependencies.
-
----
-
-## 9. Session persistence and restoration
-
-A returning customer should not need to log in on every application launch when the Clerk session remains valid.
-
-### Startup behavior
-
-- Initialize the existing Clerk integration.
-- Restore the session using the approved SDK and secure-storage mechanism.
-- Resolve authenticated/anonymous state.
-- Refresh tokens through the provider's supported mechanism.
-- Avoid flashing protected account content before verification.
-- Keep public catalog browsing available.
-
-Do not make the entire application dependent on successful Clerk initialization.
-
-### Session states
-
-Support at least:
-
-- Initializing.
-- Anonymous.
-- Authenticated.
-- Expired/invalid.
-- Recoverable error.
-
-Represent intermediate provider states when necessary.
-
-### Important distinction
-
-Clerk authentication success does not automatically guarantee that Laravel authorizes the customer.
-
-The app must handle:
-
-- Valid Clerk identity, Laravel customer provisioned.
-- Valid Clerk identity, local account provisioning pending.
-- Valid Clerk identity, Laravel account inactive.
-- Valid Clerk identity, unexpected role.
-- Invalid or expired token.
-- Temporary Laravel outage.
-
-Do not silently treat a Laravel authorization failure as successful profile loading.
-
----
-
-## 10. Laravel identity provisioning
-
-Inspect the existing backend provisioning design.
-
-Determine whether a local customer is created:
-
-- Through verified-token first-use provisioning.
-- Through a webhook synchronization flow.
-- Through an existing explicit registration or synchronization endpoint.
-
-Use the actual implementation.
-
-Do not invent a new registration endpoint.
-
-Do not create a local Laravel user by submitting a client-controlled Clerk subject.
-
-### Role safety
-
-Customer registration must never allow privilege escalation.
-
-Do not accept client-supplied:
-
-- `role`
-- `permissions`
-- `is_admin`
-- `is_staff`
-- `staff_state`
-- `account_state`
-- `user_id`
-- `clerk_user_id`
-
-Laravel must remain authoritative.
-
----
-
-## 11. Account screen
-
-Replace the existing `/account` placeholder with a real account experience.
-
-### Authenticated state
-
-Recommended sections:
-
-**My Account**
-
-- Customer name.
-- Email address.
-- Email verification status, if available.
-- Phone number, if present.
-- Edit profile.
-- Account security.
-- Sign out.
-
-Use the canonical Laravel USER endpoint for application-level profile data.
-
-Do not construct an account screen solely from unverified local identity metadata.
-
-### Unauthenticated state
-
-Display a welcoming account entry screen with:
-
-- Sign in.
-- Create account.
-
-Do not show a broken protected-route placeholder.
-
-If `/account` remains a protected route, implement the approved redirect to sign-in with a safe return destination.
-
-Alternatively, use a public account landing route and protected account subroutes, but document and test the routing decision.
-
-Do not silently change route semantics.
-
----
-
-## 12. Profile read
-
-Integrate the frozen USER-001 profile-read endpoint.
-
-Confirm the exact method and path from the repository.
-
-Use the existing ApiClient with required authentication.
-
-### Data model
-
-Decode only documented fields, such as the canonical customer identity and profile representation.
+### Important content restrictions
 
 Do not invent:
 
-- Loyalty points.
-- Wallet balance.
-- Customer tier.
-- Saved addresses.
-- Purchase totals.
-- Review counts.
-- Marketing preferences.
-- Profile avatar uploads.
+- A founding year.
+- Founder names.
+- Workshop or showroom addresses.
+- Phone numbers.
+- Email addresses.
+- Business registration numbers.
+- Customer testimonials.
+- Manufacturing capacity.
+- Delivery coverage.
+- Warranties or guarantees.
+- Sustainability certifications.
+- Claims about materials or production processes that have not been verified.
 
-Handle absent optional fields safely.
+If official About Us content already exists in the repository, reuse it rather than generating competing wording.
 
-### Loading behavior
+### Suggested layout
 
-Use existing AsyncViewState patterns:
+- Page heading: "About SL Furnitures".
+- Brief introductory section.
+- What We Offer.
+- Made-to-Order Furniture.
+- Getting in Touch.
 
-- Loading.
-- Content.
-- Failure.
-- Refreshing.
+Use readable paragraphs and restrained visual hierarchy.
 
-An empty optional phone number is not a failed profile response.
+Avoid unnecessary animation, decorative counters, statistics, and marketing carousels.
 
----
+A contact action may navigate to the existing `/contact` route if it is available.
 
-## 13. Edit profile
+Do not create a second contact form.
 
-Integrate the frozen USER-002 profile-update endpoint.
+## 5. Privacy Policy screen
 
-Inspect its exact field allow-list.
+Locate the actual Privacy Policy `.txt` file in the project root.
 
-Potential editable fields include:
+Read the entire document.
 
-- Name.
-- Phone number.
-- Other explicitly supported profile fields.
+### Source-of-truth rule
 
-Do not assume email is editable through Laravel.
+The file's existing text is authoritative.
 
-### Identity-owned fields
+Do not:
 
-Email/password changes must follow Clerk's supported verified identity-management flow, not a generic Laravel profile update.
+- Rewrite it.
+- Summarize it.
+- Paraphrase it.
+- Generate additional legal clauses.
+- Remove sections.
+- Change dates.
+- Change business names.
+- Replace contact information.
+- Silently correct wording.
+- Alter its legal meaning.
 
-If those operations are not part of the frozen Phase 17.12 scope, provide truthful guidance or defer the controls rather than showing nonfunctional actions.
+Preserve the complete document, including headings, paragraphs, lists, effective dates, and contact details.
 
-### Form behavior
+### Asset strategy
 
-- Prefill from confirmed profile data.
-- Allow edits only to approved fields.
-- Validate locally.
-- Submit through the authenticated ApiClient.
-- Handle backend 422 field errors.
-- Disable duplicate submissions.
-- Refresh the canonical profile after success.
-- Preserve edits after recoverable errors.
+Bundle the document as a Flutter asset so that it is available offline.
 
-Do not optimistically claim the profile was saved before Laravel confirms it.
+Prefer a single maintained source with a reproducible build-time copy/synchronization process, rather than manually maintaining two independent versions.
 
----
+If the app build cannot directly bundle a file outside its package root, use an app-local asset copy with an explicit synchronization/check process.
 
-## 14. Account security
+Ensure changes to the root source are detectable by tests or a documented check.
 
-Create a clear account-security section.
+Do not load the legal text from a remote URL at runtime.
 
-It may include:
+### Presentation
 
-- Verified email information.
-- Change-password entry point, if the supported Clerk workflow permits it.
-- Sign out.
+- Heading: "Privacy Policy".
+- Scrollable text content.
+- Clear paragraph spacing.
+- Preserve logical section breaks.
+- Support selection/copying where appropriate.
+- Support large text scaling.
+- Use the existing theme.
+- Handle asset loading failures without crashing.
 
-Do not invent:
+The page must not require Clerk authentication.
 
-- Two-factor authentication settings.
-- Trusted devices.
-- Session history.
-- Active-device revocation.
-- Account deletion.
-- Biometric login.
+## 6. Terms & Conditions screen
 
-Only expose operations supported and approved by the configured Clerk integration.
+Apply the same source and rendering rules as the Privacy Policy.
 
-If a security capability is not available, omit it or document it as deferred.
+Locate and read the actual Terms & Conditions `.txt` file from the project root.
 
----
+Bundle the complete text into the Flutter app.
 
-## 15. Sign-out
+Do not generate or rewrite legal terms.
 
-Sign-out must invalidate the active Clerk session using the provider's supported operation.
+### Presentation
 
-### Required behavior
+- Heading: "Terms & Conditions".
+- Scrollable content.
+- Readable typography.
+- Consistent spacing.
+- Selectable text where practical.
+- Large-text support.
+- Offline access.
+- Accessible headings and navigation.
 
-- Invoke Clerk sign-out.
-- Update AuthSession.
-- Clear account-specific in-memory state.
-- Cancel or invalidate protected in-flight operations.
-- Remove stale profile UI.
-- Return to a public route.
-- Preserve anonymous catalog access.
+### Legal document consistency
 
-Do not delete user-owned server records.
+Privacy Policy and Terms & Conditions should use the same reusable document presentation component.
 
-Do not delete anonymous enquiry or request records.
+However, do not force a formatting transformation that changes the original content.
 
-Do not rely on merely clearing a boolean `isSignedIn`.
+Preserve the source documents' order and meaning.
 
-### Error handling
+## 7. Legal content integrity
 
-If sign-out fails, do not falsely report that the provider session was revoked.
+Create focused checks to protect the legal text against accidental changes.
 
-Prevent stale private account content from being displayed during transitions.
+At minimum, verify:
 
----
+1. The Privacy Policy source exists.
+2. The Terms & Conditions source exists.
+3. Both files contain nonempty text.
+4. Both are valid for the chosen asset encoding.
+5. Both assets are registered correctly in `pubspec.yaml`.
+6. Both can be loaded by Flutter.
+7. Both are displayed in full.
+8. No placeholder legal text is substituted.
+9. The bundled content matches the authoritative source after only explicitly documented, non-semantic encoding normalization.
 
-## 16. Navigation and route protection
+Prefer byte-for-byte or normalized-text equality checks between the root source and bundled asset.
 
-Use the existing central go_router.
+Do not rely solely on widget tests that check whether the heading appears.
 
-Suggested route structure, subject to the current route registry:
+If legal content is updated in the future, the app must be rebuilt and redistributed for the bundled change to reach installed users.
 
-- `/account`
-- `/sign-in`
-- `/sign-up`
-- `/verify-email`
-- `/forgot-password`
-- `/reset-password`
-- `/account/edit`
-- `/account/security`
+Document this behavior.
 
-Adapt names to the repository's established conventions.
+## 8. Open Source Licenses screen
 
-Do not duplicate an existing route.
+Implement a dedicated Open Source Licenses page.
 
-### Return-to navigation
+### Authoritative license source
 
-When a customer is asked to sign in before accessing a protected screen:
+Use Flutter's license registry and the licenses bundled by Flutter/Dart packages.
 
-1. Preserve the intended internal destination.
-2. Complete authentication.
-3. Verify the resulting session.
-4. Return to the intended destination.
+Prefer the framework-provided `LicensePage` or the corresponding supported license APIs.
 
-Only allow recognized internal application routes.
+Do not manually construct a hard-coded list of packages and licenses.
 
-Do not accept arbitrary external redirect URLs.
-
-### Public routes
-
-These must remain accessible anonymously:
-
-- Home.
-- Catalog.
-- Categories.
-- Product details.
-- Search.
-- Furniture request submission.
-- Contact & Enquiries.
-- Legal/informational pages when implemented.
-
-Do not redirect all visitors to registration on app launch.
-
-### Shared navigation
-
-Do not implement the global navigation drawer or final shared top app bar in this phase.
-
-That work is reserved for Phase 17.15.
-
-Use local navigation controls as needed to make authentication and account screens accessible.
-
----
-
-## 17. Integrate with Phase 17.10 Furniture Requests
-
-Phase 17.10 already supports both anonymous and authenticated submission.
-
-Once login is implemented:
-
-- Authenticated submissions must obtain the active Clerk token.
-- Laravel must derive ownership.
-- The client must never submit `user_id`.
-- Anonymous submissions must remain available.
-- Expired sessions must not silently downgrade to anonymous.
-- Sign-out must restore explicitly anonymous behavior.
-
-Test the actual existing Request repository rather than adding a replacement integration.
-
-Do not modify the furniture request API contract.
-
----
-
-## 18. Integrate with Phase 17.11 Enquiries
-
-The Phase 17.11 completion record identifies authenticated live submission as an outstanding verification gap.
-
-Close that gap.
+Do not copy license text from package websites as the primary implementation.
 
 ### Requirements
 
-- Sign in through the new Flutter UI.
-- Open `/contact`.
-- Submit an authenticated enquiry.
-- Confirm the Clerk bearer token reaches Laravel.
-- Confirm Laravel derives the correct local customer ownership.
-- Confirm the client sends no `user_id`.
-- Confirm account-derived contact behavior matches the backend contract.
-- Confirm sign-out restores anonymous submission.
-- Confirm a broken authenticated session does not silently submit anonymously.
+- Show the actual licenses registered by the Flutter application.
+- Preserve the full license texts.
+- Allow users to scroll and read them.
+- Provide appropriate package grouping and navigation.
+- Support text scaling.
+- Use the existing app theme where the framework permits.
+- Work offline.
+- Avoid exposing internal project paths or development-only metadata.
 
-Do not change ENQ-001 validation or endpoint topology.
+### Branding and appearance
 
----
+The page should feel consistent with the application without compromising the correctness of third-party license attribution.
 
-## 19. Customer request and enquiry history
+Using Flutter's standard `LicensePage` is acceptable, even if its internal layout differs slightly from the custom informational screens.
 
-The frozen API includes authenticated ownership-scoped read operations for requests and enquiries.
+Do not fork Flutter's license presentation solely for visual customization.
 
-However, this phase's core scope is registration/login and profile/account.
+### App-owned notices
 
-Do not automatically expand Phase 17.12 into a full customer request-history or enquiry-history implementation.
+If the project includes third-party fonts, images, icons, or other assets with attribution obligations that are not automatically registered, inspect their licenses and include any required notices through an appropriate compliant mechanism.
 
-A future account screen may include these sections when approved.
+Do not assume every asset is covered by the package registry.
 
-For now, avoid dead buttons such as:
+Do not include fictional license entries.
 
-- My Orders.
-- My Payments.
-- My Cart.
-- My Deliveries.
-- My Enquiry History, unless implemented.
-- My Furniture Requests, unless implemented.
+## 9. Shared informational page design
 
-If the roadmap explicitly assigns ownership-scoped request/enquiry history to Phase 17.12, verify that requirement first and implement only the approved API surface.
+Use one simple, reusable presentation pattern for About Us, Privacy Policy, and Terms & Conditions.
 
-Do not expose private records through public identifiers.
+### Layout
 
----
+- Existing Material 3 page background.
+- Clear page heading.
+- Readable content width.
+- Appropriate horizontal padding.
+- Comfortable vertical rhythm.
+- Consistent paragraph spacing.
+- Standard back navigation.
+- Accessible scrolling.
 
-## 20. Visual design
+Use the generated Flutter tokens for:
 
-Follow the existing SL Furnitures design system.
+- Colors.
+- Typography.
+- Spacing.
+- Borders.
+- Radii.
+- Surface treatments.
 
-### Registration and login
+Avoid new raw color literals and arbitrary font definitions.
 
-Use a calm, premium, editorial design:
+### Typography
 
-- Brand identity.
-- Clear heading.
-- Short supporting copy.
-- Simple form.
-- Strong primary action.
-- Restrained secondary links.
-- Generous whitespace.
+Use the existing editorial typography conventions.
 
-Suggested registration heading:
+Use display typography sparingly for headings.
 
-"Create your account"
+Use the approved UI/body font configuration for long legal documents.
 
-Suggested login heading:
+Legal readability takes priority over decorative typography.
 
-"Welcome back"
+Do not use unusually small text to fit more content on the screen.
 
-Suggested account heading:
+## 10. Navigation and routing
 
-"My Account"
+Register public routes in the existing central go_router.
 
-### Account layout
+Recommended route paths, unless the repository already defines canonical alternatives:
 
-Organize account information into clear sections rather than a dense dashboard.
+```text
+/about
+/privacy-policy
+/terms-and-conditions
+/open-source-licenses
+```
 
-Use existing:
+Use existing route naming conventions.
 
-- Generated Material 3 theme.
-- Typography tokens.
-- Spacing tokens.
-- Input components.
-- Buttons.
-- Error presentations.
-- Loading components.
+### Route behavior
 
-Do not add a new design system.
+- No authentication required.
+- No Clerk session required.
+- No Laravel request required.
+- Direct navigation works.
+- Back navigation works.
+- Cold-start navigation is safe.
+- Route errors are handled.
+- Legal content remains available offline.
 
-Do not hard-code arbitrary colors, spacing, typography, or radii.
+Do not implement the final shared app bar or navigation drawer.
 
-Do not use generic marketplace widgets, loyalty badges, fake statistics, or decorative profile charts.
+That work belongs to Phase 17.15.
 
----
+### Temporary discoverability
 
-## 21. Accessibility
+Ensure the screens can be reached through an existing appropriate public UI location or tested through the router without adding a new global navigation system.
 
-Verify:
+Do not add a temporary navigation component that will need to be removed in Phase 17.15.
 
-- Screen-reader labels.
-- Email keyboard.
-- Password keyboard and visibility toggle.
-- Autofill support where appropriate.
-- Keyboard-safe scrolling.
-- Focus movement after validation.
-- Verification-code accessibility.
-- Accessible loading feedback.
-- Disabled-state semantics.
-- Touch targets.
-- Error announcements.
-- 2× text scaling.
-- Small screens.
-- Landscape layouts.
-- Reduced-motion behavior.
+If an existing account screen already has an appropriate informational section, linking from it is acceptable, provided the pages themselves remain public.
+
+## 11. Accessibility
+
+Test the informational screens for:
+
 - TalkBack traversal.
+- Semantic headings.
+- Logical reading order.
+- Sufficient text contrast.
+- 2× text scaling.
+- Small Android screens.
+- Landscape orientation.
+- Keyboard and focus behavior where applicable.
+- Scroll position and navigation.
+- Long paragraphs.
+- Long URLs.
+- Lists and numbered sections.
+- Text selection.
+- No horizontal overflow.
+- No clipped document text.
 
-Authentication screens must remain usable without relying on visual cues alone.
+The legal documents must be readable from beginning to end.
 
----
+Do not introduce fixed-height containers that cut off content.
 
-## 22. Security requirements
+## 12. Loading and error states
 
-### Secrets
+Use existing application conventions for asynchronous asset loading.
 
-Never commit:
+Expected behavior:
 
-- Clerk secret keys.
-- Production tokens.
-- Passwords.
-- Verification codes.
-- Recovery codes.
-- Session cookies.
-- Private user records.
+- Display a modest loading state while an asset is read.
+- Show the document once loaded.
+- Handle asset loading failure with a clear error presentation.
+- Avoid displaying a blank screen.
+- Avoid logging entire legal documents.
+- Avoid infinite retry loops.
 
-Only use client-safe Clerk configuration in Flutter.
+Because these are bundled local assets, do not introduce network retry mechanisms.
 
-### Token handling
+The About Us page should not need a loading state if it uses static verified content.
 
-- Use the existing secure session mechanism.
-- Retrieve current tokens through ClerkAuthAdapter.
-- Never persist bearer tokens in ordinary preferences.
-- Never include tokens in logs.
-- Never place tokens in route parameters.
-- Never put tokens in crash reports.
-- Do not add custom token cryptography.
+## 13. Privacy and security
 
-### Backend authority
+These pages are public.
 
-- Laravel validates JWTs.
-- Laravel enforces role and account state.
-- Laravel validates profile updates.
-- Flutter never grants CUSTOMER/STAFF/ADMIN permissions.
-- Profile data must not leak between users.
+Do not attach Clerk tokens to local document loading.
 
-### Authentication errors
+Do not collect analytics or personal data solely because a user opens a legal page.
 
-Handle 401 and 403 separately.
+Do not introduce WebViews to render plain-text legal files.
 
-An authenticated customer with a forbidden action should not automatically be logged out.
+Do not fetch third-party license text from the internet during ordinary app usage.
 
-A temporary backend outage should not destroy a valid Clerk session.
+Do not modify backend authorization or the frozen API contract.
 
-### Privacy
+## 14. Automated tests
 
-On sign-out or account switching, ensure previously loaded private data is no longer visible.
+Add focused tests covering the consolidated phase.
 
----
+### About Us
 
-## 23. Diagnostics
+1. Screen renders.
+2. Approved business content appears.
+3. Contact action uses the existing route if present.
+4. No invented commerce controls.
+5. No authentication requirement.
 
-Reuse AppDiagnostics and existing allow-listed codes.
+### Privacy Policy
 
-Do not introduce raw Clerk exceptions into diagnostic payloads.
+6. Route resolves.
+7. Source asset loads.
+8. Full content is rendered.
+9. Source/asset synchronization passes.
+10. Long content scrolls.
+11. Text scaling works.
+12. Asset failure is handled.
 
-Never log:
+### Terms & Conditions
 
-- Email.
-- Password.
-- Verification code.
-- Recovery code.
-- Bearer token.
-- Clerk subject.
-- Local user ID.
-- Profile data.
-- Raw request body.
-- Full authentication error response.
-
-Avoid duplicate network events already recorded by ApiClient.
-
-Production diagnostics must follow the existing no-op policy.
+13. Route resolves.
+14. Source asset loads.
+15. Full content is rendered.
+16. Source/asset synchronization passes.
+17. Long content scrolls.
+18. Text scaling works.
+19. Asset failure is handled.
 
----
-
-## 24. Automated testing
-
-Implement comprehensive tests.
-
-### Registration
-
-1. Valid email/password.
-2. Invalid email.
-3. Password-policy failure.
-4. Existing account.
-5. Verification-required response.
-6. Duplicate-submit prevention.
-7. Registration cancellation.
-8. Network failure.
-9. Rate limiting.
-10. No local role injection.
+### Open Source Licenses
 
-### Verification
+20. Route resolves.
+21. Flutter license registry is used.
+22. Package licenses can be opened.
+23. License content is readable.
+24. No manually fabricated licenses.
+25. Screen works without network access.
 
-11. Valid code.
-12. Invalid code.
-13. Expired code.
-14. Resend flow.
-15. Resend throttling.
-16. Session activation.
-17. No premature authentication.
-18. No code persistence.
-
-### Login
-
-19. Successful login.
-20. Incorrect credentials.
-21. Unverified account.
-22. Provider-required additional step.
-23. Rate limiting.
-24. Network failure.
-25. Session activation.
-26. No password logging.
-
-### Recovery
-
-27. Recovery initiation.
-28. Invalid email.
-29. Verification challenge.
-30. Expired challenge.
-31. Valid password reset.
-32. Invalid password reset.
-33. No code leakage.
-
-### Sessions
-
-34. Cold-start anonymous state.
-35. Cold-start authenticated state.
-36. Session restoration.
-37. Token renewal.
-38. Expired session.
-39. Invalid session.
-40. Clerk initialization failure.
-41. Laravel unavailable.
-42. Laravel unauthorized.
-43. Inactive customer.
-44. Account switching.
-45. Sign-out cleanup.
-
-### Profile
-
-46. USER-001 request.
-47. Correct bearer header.
-48. Profile decoding.
-49. Optional phone handling.
-50. Profile loading.
-51. Profile refresh.
-52. USER-002 update.
-53. Allowed-field serialization.
-54. Forbidden-field exclusion.
-55. Validation errors.
-56. Update success.
-57. Update failure.
-58. No stale private data.
-
-### Navigation
-
-59. Account route.
-60. Sign-in route.
-61. Sign-up route.
-62. Verification route.
-63. Recovery route.
-64. Protected-route redirect.
-65. Safe return-to behavior.
-66. Anonymous catalog access.
-67. Back navigation.
-68. Sign-out navigation.
-69. Deep-link safety.
-
-### Integration regression
-
-70. Authenticated REQ-001.
-71. Anonymous REQ-001.
-72. Authenticated ENQ-001.
-73. Anonymous ENQ-001.
-74. Broken session does not silently downgrade.
-75. Product detail unaffected.
-76. Catalog unaffected.
-77. Existing multipart submission unaffected.
-78. Deferred commerce remains disabled.
-
-These are required coverage areas, not necessarily separate test functions.
-
-Use deterministic fakes for Clerk and ApiClient where appropriate.
-
-Do not require real credentials for the ordinary Flutter test suite.
-
----
-
-## 25. Live integration testing
-
-Where the development Clerk application and Laravel backend are available, verify the full chain:
-
-Flutter → Clerk → verified token → Laravel → local CUSTOMER → profile.
-
-### Registration flow
-
-1. Register a disposable test account.
-2. Complete required email verification.
-3. Activate session.
-4. Fetch Laravel profile.
-5. Confirm CUSTOMER role.
-6. Confirm no STAFF/ADMIN privileges.
-
-### Login flow
-
-7. Sign out.
-8. Sign in.
-9. Restore the session after app restart.
-10. Verify token-based Laravel access.
-
-### Profile flow
-
-11. Read profile.
-12. Update an allowed field.
-13. Read again and confirm persistence.
-14. Verify forbidden fields are rejected.
-
-### Existing feature regression
-
-15. Submit authenticated furniture request.
-16. Submit authenticated enquiry.
-17. Verify ownership on Laravel.
-18. Sign out.
-19. Submit anonymous enquiry.
-20. Verify anonymous ownership remains null.
-
-Do not use real customer credentials.
-
-Do not use production Clerk keys or production databases.
-
-If a live Clerk environment is unavailable, clearly report that real authentication integration remains unverified.
-
----
-
-## 26. Android device and Marionette testing
-
-Use the available emulator or physical Android device.
+### Navigation and regressions
+
+26. All informational routes are public.
+27. Back navigation works.
+28. Cold-start routing works.
+29. Anonymous users can open legal pages.
+30. Authenticated users can open legal pages.
+31. Clerk initialization failure does not block legal pages.
+32. Existing catalog routes remain unchanged.
+33. Furniture Requests remain unchanged.
+34. Enquiries remain unchanged.
+35. Account authentication remains unchanged.
+36. Deferred commerce routes remain inactive.
+
+Use deterministic tests.
+
+Do not require live Laravel or Clerk services.
+
+## 15. Android device verification
+
+Use an Android emulator or physical device and Marionette where available.
 
 Verify:
 
-- Registration screen.
-- Email keyboard and autofill.
-- Password visibility.
-- Email verification.
-- Sign-in.
-- Forgot-password flow.
-- Session restoration after restart.
-- Account screen.
-- Profile editing.
-- Sign-out.
-- Anonymous browsing.
-- Protected-route redirects.
-- Furniture request authenticated submission.
-- Enquiry authenticated submission.
-- Offline and rate-limit behavior.
-- Small-screen scrolling.
-- 2× text scaling.
+- About Us.
+- Privacy Policy.
+- Terms & Conditions.
+- Open Source Licenses.
+- Full document scrolling.
+- Text selection.
+- Back navigation.
+- Small-screen layout.
 - Landscape.
-- TalkBack where available.
+- 2× text scaling.
+- Offline access.
+- Anonymous access.
+- License package expansion.
+- No overflow or clipped text.
 
-Do not temporarily change production routing and leave the change committed.
+For legal content, explicitly confirm that the final paragraph is reachable.
 
-If a test-only initial route is needed, revert it and verify the final route configuration.
-
-Record which checks were performed with real Clerk and which used fakes.
-
----
-
-## 27. Documentation
+## 16. Documentation
 
 Update:
 
 - `frontend/app/README.md`.
 - `frontend/app/lib/features/README.md`.
-- Phase 17.12 completion record.
-- Relevant auth integration documentation.
-- `docs/decisions.md` only for durable new architectural decisions.
+- The Phase 17.13 completion record.
+- Any relevant asset-management documentation.
 
 Document:
 
-- Clerk SDK/version.
-- Auth flow architecture.
-- Registration policy.
-- Email verification.
-- Password recovery.
-- Session lifecycle.
-- Laravel provisioning behavior.
-- USER endpoint mappings.
-- Route protection.
-- Profile editing.
-- Sign-out cleanup.
-- Security boundaries.
-- Live testing.
-- Device testing.
-- Known limitations.
+- Actual root legal source filenames.
+- How legal files become Flutter assets.
+- How to update legal text safely.
+- How synchronization is verified.
+- Informational route names.
+- About Us content source.
+- Open-source license implementation.
+- Offline behavior.
+- Accessibility checks.
+- Device verification.
+- Test results.
 
-Do not silently change the frozen API.
+Mark former Phase 17.14 as merged into Phase 17.13.
 
----
+Do not create a separate Phase 17.14 completion record unless the existing documentation process explicitly requires a historical pointer.
 
-## 28. Verification
+## 17. Verification commands
 
-From `frontend/app`, run:
+From `frontend/app`:
 
 ```bash
 flutter pub get
@@ -1150,101 +533,77 @@ git diff --check
 git diff --cached --check
 ```
 
-Also run relevant Laravel tests if backend integration or provisioning code is modified.
+Run the legal-asset synchronization check if implemented as a separate command.
 
-Report actual test counts.
+If documentation-only changes do not affect the Flutter build, still run the standard phase verification to guard against regressions.
 
-Do not claim verification that was not performed.
+Report actual results rather than assuming success.
 
----
-
-## 29. Explicit exclusions
+## 18. Explicit exclusions
 
 Do not implement:
 
+- Phase 17.15 global navigation shell.
+- Shared global drawer.
+- Final shared app bar.
+- New account dashboard features.
+- New authentication flows.
 - Cart.
 - Checkout.
 - Payments.
 - Orders.
 - Order tracking.
-- Favorites.
-- Loyalty.
-- Saved delivery addresses.
-- Customer reviews.
-- Staff login in the customer app.
-- Admin login in the customer app.
-- Social login unless already explicitly approved.
-- Phone-only registration.
-- Guest-to-account cart merge.
-- Global navigation drawer.
-- Final shared app bar.
-- New identity provider.
-- Custom Laravel password storage.
-- New user roles.
-- Full customer enquiry/request history unless explicitly required by the phase roadmap.
+- Customer request history.
+- Enquiry history.
+- Push notifications.
+- Legal consent tracking.
+- Legal acceptance checkboxes.
+- New Laravel endpoints.
+- Remote CMS integration.
+- Analytics or tracking SDKs.
+- Custom license-management backend.
+- New design tokens unrelated to the existing theme.
 
-The global navigation shell remains Phase 17.15.
+Do not use this phase to refactor unrelated Flutter features.
 
----
+## 19. Definition of Done
 
-## 30. Definition of Done
+Phase 17.13 is complete when:
 
-Phase 17.12 passes when:
-
-- Registration is functional.
-- Email verification is functional where required.
-- Login is functional.
-- Password recovery is functional.
-- Clerk session restoration works.
-- Secure sign-out works.
-- Laravel recognizes authenticated customers.
-- The account placeholder is replaced.
-- Profile data loads from Laravel.
-- Approved profile edits persist.
-- Authentication errors are handled.
-- Anonymous browsing remains available.
-- Furniture Requests support real authenticated submissions.
-- Enquiries support real authenticated submissions.
-- No customer can grant themselves elevated privileges.
-- Private account state is cleared on sign-out.
-- Routing is correct.
-- Accessibility requirements are satisfied.
+- About Us renders verified business information.
+- Privacy Policy displays the complete authoritative source text.
+- Terms & Conditions displays the complete authoritative source text.
+- Legal source/asset synchronization is verified.
+- Open Source Licenses displays real registered dependency licenses.
+- All four routes are public.
+- All four pages work offline.
+- The existing Material 3 theme is respected.
+- Large text and long-document scrolling work.
+- Back navigation works.
+- No new backend dependencies are introduced.
 - Automated tests pass.
+- Device checks pass or their limitations are explicitly recorded.
 - The debug APK builds.
-- Design tokens remain synchronized.
-- Documentation is complete.
-- Deferred commerce functionality remains inactive.
+- Documentation is updated.
+- Former Phase 17.14 is recorded as merged.
+- Phase 17.15 remains untouched.
 
-If Flutter functionality passes but real Clerk/Laravel integration is unavailable, report the implementation as complete with **live authentication verification outstanding**, not as fully end-to-end verified.
+## 20. Completion report
 
----
+Return a concise report covering:
 
-## 31. Completion report
+1. Exact legal source files discovered.
+2. About Us content source.
+3. Files created or modified.
+4. Public routes registered.
+5. Legal asset synchronization strategy.
+6. Open Source Licenses implementation.
+7. Accessibility checks.
+8. Automated tests and counts.
+9. Device/Marionette verification.
+10. Flutter analysis and build results.
+11. Documentation updates.
+12. Known limitations.
+13. Final PASS/FAIL.
 
-Return:
-
-1. Repository inspection findings.
-2. Clerk SDK compatibility findings.
-3. Authentication architecture.
-4. Registration implementation.
-5. Email verification implementation.
-6. Login implementation.
-7. Password recovery implementation.
-8. Session persistence.
-9. Laravel provisioning.
-10. Account screen.
-11. Profile read/update.
-12. Sign-out.
-13. Routing changes.
-14. REQ-001 authenticated regression.
-15. ENQ-001 authenticated regression.
-16. Security review.
-17. Automated test counts.
-18. Live Clerk/Laravel verification.
-19. Marionette device verification.
-20. Files changed.
-21. Documentation updated.
-22. Outstanding limitations.
-23. Final PASS/FAIL.
-
-**Final instruction:** Implement Phase 17.12 only. Preserve the existing API-first architecture, Clerk identity ownership, Laravel authorization authority, and request-only launch scope. Do not proceed to Phase 17.13 until Phase 17.12 has been verified and its completion record is written.
+**Final instruction:** Complete Phase 17.13 as one consolidated informational phase. Do not proceed to Phase 17.15 until this phase has passed verification. Phase 17.14 has no separate implementation work.

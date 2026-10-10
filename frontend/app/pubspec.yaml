@@ -43,3 +43,5 @@ flutter:
     - assets/furnitures/fixtures/products/white-sofa.jpg
     - assets/furnitures/fixtures/products/barrel-armchair.jpg
     - assets/furnitures/fixtures/hero/hero.jpg
+    - assets/legal/privacy-policy.txt
+    - assets/legal/terms-of-service.txt

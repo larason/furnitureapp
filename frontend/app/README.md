@@ -20,7 +20,9 @@ Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
 (logging/diagnostics)**, **Phase 17.1 (home and catalog)**, **Phase 17.2
 (categories)**, **Phase 17.3 (product detail)**, **Phase 17.4 (search and filtering)**,
-**Phase 17.10 (furniture requests)**, and **Phase 17.11 (enquiries)**.
+**Phase 17.10 (furniture requests)**, **Phase 17.11 (enquiries)**, and
+**Phase 17.13 (informational, legal, and open-source licenses; former 17.14
+merged)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
@@ -34,8 +36,9 @@ application home screen.
 
 `lib/navigation/` is the single route registry. Public routes are home, catalog,
 product/category details, search, made-to-order requests, contact/enquiries,
-and the future Clerk sign-in/sign-up entry points. `/account` is the sole protected
-placeholder route.
+and the future Clerk sign-in/sign-up entry points. Informational routes are public
+and offline-readable: `/about`, `/privacy-policy`, `/terms-and-conditions`, and
+`/open-source-licenses`. `/account` is the sole protected placeholder route.
 
 The router refreshes from `ClerkAuthAdapter` without requesting or retaining a
 token. Protected routes redirect to a Clerk entry point when signed out and to a

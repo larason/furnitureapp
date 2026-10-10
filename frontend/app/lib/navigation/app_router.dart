@@ -26,6 +26,10 @@ import '../features/account/presentation/authentication_screen.dart';
 import '../features/furniture_requests/data/furniture_request.dart';
 import '../features/furniture_requests/data/furniture_request_repository.dart';
 import '../features/furniture_requests/presentation/furniture_request_screen.dart';
+import '../features/information/presentation/about_us_screen.dart';
+import '../features/information/presentation/open_source_licenses_screen.dart';
+import '../features/information/presentation/privacy_policy_screen.dart';
+import '../features/information/presentation/terms_conditions_screen.dart';
 import '../core/auth/auth_session.dart';
 import '../theme/app_spacing.dart';
 import 'app_routes.dart';
@@ -139,6 +143,26 @@ abstract final class AppRouter {
             authSession: authSession,
             diagnostics: diagnostics,
           ),
+        ),
+        GoRoute(
+          name: AppRoutes.aboutName,
+          path: AppRoutes.about,
+          builder: (_, _) => const AboutUsScreen(),
+        ),
+        GoRoute(
+          name: AppRoutes.privacyPolicyName,
+          path: AppRoutes.privacyPolicy,
+          builder: (_, _) => const PrivacyPolicyScreen(),
+        ),
+        GoRoute(
+          name: AppRoutes.termsAndConditionsName,
+          path: AppRoutes.termsAndConditions,
+          builder: (_, _) => const TermsConditionsScreen(),
+        ),
+        GoRoute(
+          name: AppRoutes.openSourceLicensesName,
+          path: AppRoutes.openSourceLicenses,
+          builder: (_, _) => const OpenSourceLicensesScreen(),
         ),
         GoRoute(
           name: AppRoutes.accountName,

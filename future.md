@@ -65,3 +65,5 @@ The following remain open and should be carried forward without reopening comple
 18. remove this restriction when payment and order flows are implemented: search only calls "product_type=MADE_TO_ORDER"
 
 19. verify vigorously that in the production deployment frontend of both nextjs and flutter connect to only one laravel backend and that is fully functional and meets all requirements before going live. This includes testing all user flows, ensuring that all features work as expected, and confirming that the system can handle the expected load.
+
+20. change the icon on register&login screns in flutter to match with the SL Furnitures logo and branding, ensuring a consistent visual identity across all platforms.

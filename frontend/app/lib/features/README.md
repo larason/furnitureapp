@@ -11,6 +11,7 @@ lib/features/
   furniture_requests/
   enquiries/
   account/
+  information/
 ```
 
 Only create a feature directory when its owning Group Q phase begins. Do not
@@ -153,6 +154,20 @@ consolidating them is left to a later phase.
 
 Account, cart, checkout, payment, order, and tracking surfaces remain outside
 the implemented phases.
+
+## Informational (Phase 17.13)
+
+`information/` owns the public static About Us, Privacy Policy, Terms & Conditions,
+and Open Source Licenses screens. It has no repository, controller, Clerk
+dependency, or Laravel request. The legal screens load bundled assets offline from
+`assets/legal/` and use `SelectionArea` for copying. The source files are the root
+`privacy-policy.txt` and `terms-of-service.txt`; `tool/check_legal_assets.dart`
+enforces byte-for-byte source/asset synchronization. Open Source Licenses uses
+Flutter's `LicensePage` and registered license registry.
+
+The routes are `/about`, `/privacy-policy`, `/terms-and-conditions`, and
+`/open-source-licenses`. They are public in the central router. A final shared app
+bar, drawer, and global discoverability shell remain reserved for Phase 17.15.
 
 ## Module Convention
 
