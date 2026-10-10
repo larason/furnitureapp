@@ -105,12 +105,18 @@ class ProductDetailController extends ChangeNotifier {
       if (!_isCurrent(generation, cancellation) || _isCancellation(error)) {
         return;
       }
-      if (error is ApiError && error.statusCode == 404) {
+      final productUnavailable = error is ApiError && error.statusCode == 404;
+      if (productUnavailable) {
         _productUnavailable = true;
       }
       final presentation = ErrorPresentationMapper.from(error);
       if (presentation != null) {
-        _state = AsyncFailure(presentation, previousData: previous);
+        // An unpublished product is gone, not merely unreachable, so it must
+        // not stay on screen behind a recoverable message.
+        _state = AsyncFailure(
+          presentation,
+          previousData: productUnavailable ? null : previous,
+        );
       }
     } finally {
       if (identical(_cancellation, cancellation)) _cancellation = null;

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/core/auth/auth_session.dart';
+import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/auth_token_provider.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/furniture_requests/data/furniture_request.dart';
@@ -149,6 +150,49 @@ void main() {
     expect(repository.entered.isCompleted, isFalse);
   });
 
+  test('an unreadable success response is an uncertain outcome', () async {
+    final controller = FurnitureRequestController(
+      repository: _ApiFailingRepository(
+        const ApiError(
+          statusCode: 201,
+          errors: <ApiErrorItem>[],
+          invalidResponse: true,
+        ),
+      ),
+      authSession: null,
+    );
+    addTearDown(controller.dispose);
+    controller.update(_validDraft);
+
+    await controller.submit();
+
+    expect(
+      controller.state,
+      FurnitureRequestSubmissionState.uncertain,
+      reason: 'Laravel accepted the POST but the response was unreadable.',
+    );
+    expect(controller.message, contains('another request'));
+  });
+
+  test('an unreadable rejection response still returns to editing', () async {
+    final controller = FurnitureRequestController(
+      repository: _ApiFailingRepository(
+        const ApiError(
+          statusCode: 422,
+          errors: <ApiErrorItem>[],
+          invalidResponse: true,
+        ),
+      ),
+      authSession: null,
+    );
+    addTearDown(controller.dispose);
+    controller.update(_validDraft);
+
+    await controller.submit();
+
+    expect(controller.state, FurnitureRequestSubmissionState.editing);
+  });
+
   test(
     'a token failure inside the client is an authentication error',
     () async {
@@ -170,6 +214,19 @@ void main() {
       expect(controller.message, isNot(contains('another request')));
     },
   );
+}
+
+class _ApiFailingRepository implements FurnitureRequestRepository {
+  const _ApiFailingRepository(this.error);
+
+  final Object error;
+
+  @override
+  Future<SubmittedFurnitureRequest> submit(
+    FurnitureRequestDraft draft, {
+    required bool authenticated,
+    RequestCancellation? cancellation,
+  }) => throw error;
 }
 
 class _AuthFailingRepository implements FurnitureRequestRepository {

@@ -109,14 +109,19 @@ class FurnitureRequestController extends ChangeNotifier {
       );
       _state = FurnitureRequestSubmissionState.success;
     } on ApiError catch (error) {
-      _applyApiError(error);
+      if (_acceptedButUnreadable(error)) {
+        _state = FurnitureRequestSubmissionState.uncertain;
+        _message = _uncertainMessage;
+      } else {
+        _applyApiError(error);
+      }
     } on ApiTransportException catch (error) {
       _state = error.kind == ApiTransportFailureKind.cancellation
           ? FurnitureRequestSubmissionState.editing
           : FurnitureRequestSubmissionState.uncertain;
       _message = error.kind == ApiTransportFailureKind.cancellation
           ? null
-          : 'We could not confirm whether your request was received. Retrying may create another request.';
+          : _uncertainMessage;
     } on ApiAuthenticationException {
       // The token is resolved before the request is sent, so Laravel never saw
       // this submission and a duplicate-warning would be misleading.
@@ -124,8 +129,7 @@ class FurnitureRequestController extends ChangeNotifier {
       _message = _sessionMessage;
     } catch (_) {
       _state = FurnitureRequestSubmissionState.uncertain;
-      _message =
-          'We could not confirm whether your request was received. Retrying may create another request.';
+      _message = _uncertainMessage;
     } finally {
       _cancellation = null;
       _notify();
@@ -137,6 +141,21 @@ class FurnitureRequestController extends ChangeNotifier {
   static const _sessionMessage =
       'Your signed-in session could not be confirmed. Sign in again or '
       'explicitly sign out to submit as a visitor.';
+
+  static const _uncertainMessage =
+      'We could not confirm whether your request was received. Retrying may '
+      'create another request.';
+
+  /// True when a success status carried a response this client cannot read.
+  ///
+  /// Laravel accepted the POST but the body was empty, malformed, or failed the
+  /// decoder, so the request may already exist and a resubmission could
+  /// duplicate it. A rejection status with an unreadable body is the opposite
+  /// case: the server refused, so editing is correct.
+  static bool _acceptedButUnreadable(ApiError error) =>
+      error.invalidResponse &&
+      error.statusCode >= 200 &&
+      error.statusCode < 300;
 
   void _applyApiError(ApiError error) {
     _state = FurnitureRequestSubmissionState.editing;

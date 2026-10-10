@@ -1,9 +1,9 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_session.dart';
+import '../../../core/attachments/attachment_read.dart';
+import '../../../core/attachments/pending_attachment.dart';
 import '../../../theme/app_spacing.dart';
 import '../data/furniture_request.dart';
 import '../data/furniture_request_repository.dart';
@@ -318,24 +318,30 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
     final int? size = pickedFile.lengthSync() ?? await pickedFile.length();
     if (!mounted) return;
     if (size != null && size > furnitureRequestMaxAttachmentBytes) {
-      setState(
-        () => _attachmentRejection = 'Choose a file no larger than 5 MiB.',
-      );
+      setState(() => _attachmentRejection = attachmentTooLargeMessage);
       return;
     }
-    Uint8List? bytes;
-    try {
-      bytes = await pickedFile.readAsBytes();
-    } catch (_) {}
-    if (!mounted || bytes == null) return;
-    _attachmentRejection = null;
-    _change(
-      attachment: FurnitureRequestAttachment(
-        name: pickedFile.name,
-        bytes: bytes,
-        contentType: _contentType(pickedFile.extension),
-      ),
-    );
+    // A null length means the size is unknown, so the bounded read below still
+    // enforces the limit instead of buffering an arbitrarily large file.
+    final read = await readAttachmentBytes(pickedFile.readAsByteStream());
+    if (!mounted) return;
+    switch (read) {
+      case AttachmentReadTooLarge():
+        setState(() => _attachmentRejection = attachmentTooLargeMessage);
+        return;
+      case AttachmentReadFailed():
+        setState(() => _attachmentRejection = 'We could not read that file.');
+        return;
+      case AttachmentReadSuccess(:final bytes):
+        setState(() => _attachmentRejection = null);
+        _change(
+          attachment: FurnitureRequestAttachment(
+            name: pickedFile.name,
+            bytes: bytes,
+            contentType: _contentType(pickedFile.extension),
+          ),
+        );
+    }
   }
 
   Future<void> _submit() async {

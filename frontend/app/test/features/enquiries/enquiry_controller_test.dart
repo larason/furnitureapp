@@ -341,6 +341,53 @@ void main() {
     },
   );
 
+  test('an unreadable success response is an uncertain outcome', () async {
+    final controller = EnquiryController(
+      repository: _RecordingRepository(
+        failure: const ApiError(
+          statusCode: 201,
+          errors: <ApiErrorItem>[],
+          invalidResponse: true,
+        ),
+      ),
+      authSession: _StubAuthSession(),
+    );
+    addTearDown(controller.dispose);
+    _fill(controller);
+
+    await controller.submit();
+
+    expect(
+      controller.state,
+      EnquirySubmissionState.uncertain,
+      reason: 'Laravel accepted the POST but the response was unreadable.',
+    );
+    expect(controller.message, contains('duplicate'));
+  });
+
+  test('an unreadable rejection response still returns to editing', () async {
+    final controller = EnquiryController(
+      repository: _RecordingRepository(
+        failure: const ApiError(
+          statusCode: 422,
+          errors: <ApiErrorItem>[],
+          invalidResponse: true,
+        ),
+      ),
+      authSession: _StubAuthSession(),
+    );
+    addTearDown(controller.dispose);
+    _fill(controller);
+
+    await controller.submit();
+
+    expect(
+      controller.state,
+      EnquirySubmissionState.editing,
+      reason: 'A refusal cannot have created a duplicate.',
+    );
+  });
+
   test('an accepted product context is carried into the draft', () {
     final controller = EnquiryController(
       repository: _RecordingRepository(),

@@ -1157,9 +1157,14 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 ### Phase 17.10 — Furniture requests
 ### Phase 17.11 — Enquiries
 ### Phase 17.12 — Registration/login and Profile/account
-### Phase 17.13 - About us/privacypolicy/terms
-### Phase 17.14 - open source license dedicated page
+### Phase 17.13 — Informational, Legal & Open Source Licenses Screens (merged 17.13 + 17.14)
+Implement About Us, Privacy Policy, Terms & Conditions, and a dedicated Open Source Licenses page together as one Flutter informational phase. Use the existing Privacy Policy and Terms & Conditions `.txt` files in the project root as the authoritative source text; locate and read the actual files rather than inventing or paraphrasing legal content. Preserve their complete wording and readable structure in the app. Use the existing Flutter Material 3 theme and canonical generated design tokens, provide accessible scrolling and text scaling, and use Flutter's license registry / `LicensePage` where appropriate for actual bundled dependency licenses. Keep these screens public and offline-readable where practical. Add navigation routes for these pages, but defer the shared global app bar, navigation drawer, and route-wide shell integration to Phase 17.15. Add focused tests and update phase documentation.
+
+### Phase 17.14 — Merged into Phase 17.13 (no separate implementation)
+This phase number is retained for historical references only. All open-source-license-page requirements are included in Phase 17.13. Do not implement or schedule a standalone 17.14 phase.
+
 ### Phase 17.15 — Global App Navigation & Drawer
+Implement the shared Material 3 app bar, centered SL Furnitures branding, account action, responsive navigation drawer, active-route highlighting, and centralized go_router shell integration after Phase 17.13 is complete. Include links to the informational/legal/license screens created in Phase 17.13. Do not expose deferred cart, checkout, payment, or order routes.
 
 **Exit condition:** The mobile application supports the same core commerce capabilities as the website, adapted for mobile UX.
 

@@ -95,7 +95,12 @@ class EnquiryController extends ChangeNotifier {
       );
       _state = EnquirySubmissionState.success;
     } on ApiError catch (error) {
-      _applyApiError(error);
+      if (_acceptedButUnreadable(error)) {
+        _state = EnquirySubmissionState.uncertain;
+        _message = _uncertainMessage;
+      } else {
+        _applyApiError(error);
+      }
     } on ApiTransportException catch (error) {
       _applyTransportError(error);
     } on ApiAuthenticationException {
@@ -136,6 +141,17 @@ class EnquiryController extends ChangeNotifier {
       return false;
     }
   }
+
+  /// True when a success status carried a response this client cannot read.
+  ///
+  /// Laravel accepted the POST but the body was empty, malformed, or failed the
+  /// decoder, so the enquiry may already exist and a resubmission could
+  /// duplicate it. A rejection status with an unreadable body is the opposite
+  /// case: the server refused, so editing is correct.
+  static bool _acceptedButUnreadable(ApiError error) =>
+      error.invalidResponse &&
+      error.statusCode >= 200 &&
+      error.statusCode < 300;
 
   void _applyTransportError(ApiTransportException error) {
     if (error.kind == ApiTransportFailureKind.cancellation) {

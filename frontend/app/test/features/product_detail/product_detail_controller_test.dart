@@ -57,6 +57,31 @@ void main() {
       expect(subject.product, isNull);
     });
 
+    test('drops a product that is unpublished during refresh', () async {
+      final repository = _StubProductDetailRepository();
+      final subject = controller(repository);
+      await subject.load();
+      expect(subject.product, isNotNull);
+
+      repository.error = const ApiError(
+        statusCode: 404,
+        errors: <ApiErrorItem>[
+          ApiErrorItem(
+            code: 'RESOURCE_NOT_FOUND',
+            message: 'The requested product was not found.',
+          ),
+        ],
+      );
+      await subject.refresh();
+
+      expect(subject.productUnavailable, isTrue);
+      expect(
+        subject.product,
+        isNull,
+        reason: 'An unpublished product must not linger as previous data.',
+      );
+    });
+
     test('maps a transport failure to a recoverable presentation', () async {
       final repository = _StubProductDetailRepository(
         error: const ApiTransportException(

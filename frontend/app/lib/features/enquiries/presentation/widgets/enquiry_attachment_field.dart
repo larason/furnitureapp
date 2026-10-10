@@ -1,8 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/attachments/attachment_read.dart';
 import '../../../../core/attachments/pending_attachment.dart';
 import '../../../../theme/app_spacing.dart';
 
@@ -94,28 +93,33 @@ class _EnquiryAttachmentFieldState extends State<EnquiryAttachmentField> {
       _reject('We could not choose that file. Try again.');
     }
     if (file == null) return;
-    // Android's picker reports the size as part of the pick result, so this
-    // normally costs no I/O. Only fall back to measuring when it did not.
+    // The picker usually reports the size up front, which avoids reading a
+    // known-oversized file at all. A null length means the size is unknown, so
+    // the bounded read below still enforces the limit before buffering.
     final int? size = file.lengthSync() ?? await file.length();
     if (size != null && size > maxAttachmentBytes) {
       _reject(attachmentTooLargeMessage);
       return;
     }
-    Uint8List bytes;
-    try {
-      bytes = await file.readAsBytes();
-    } catch (_) {
-      _reject('We could not read that file. Choose another file.');
-      return;
-    }
+    final read = await readAttachmentBytes(file.readAsByteStream());
     if (!mounted) return;
-    await widget.onPick(
-      PendingAttachment(
-        name: file.name,
-        bytes: bytes,
-        contentType: attachmentContentTypeForExtension(file.extension) ?? '',
-      ),
-    );
+    switch (read) {
+      case AttachmentReadTooLarge():
+        _reject(attachmentTooLargeMessage);
+        return;
+      case AttachmentReadFailed():
+        _reject('We could not read that file. Choose another file.');
+        return;
+      case AttachmentReadSuccess(:final bytes):
+        await widget.onPick(
+          PendingAttachment(
+            name: file.name,
+            bytes: bytes,
+            contentType:
+                attachmentContentTypeForExtension(file.extension) ?? '',
+          ),
+        );
+    }
     if (!mounted) return;
     setState(() => _rejection = null);
   }
