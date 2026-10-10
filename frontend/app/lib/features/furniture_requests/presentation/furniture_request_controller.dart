@@ -25,6 +25,13 @@ class FurnitureRequestController extends ChangeNotifier {
   String? _message;
   SubmittedFurnitureRequest? _submitted;
   RequestCancellation? _cancellation;
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
 
   FurnitureRequestDraft get draft => _draft;
   Map<String, String> get errors => _errors;
@@ -37,14 +44,20 @@ class FurnitureRequestController extends ChangeNotifier {
     _draft = draft;
     _errors = const {};
     if (_state == FurnitureRequestSubmissionState.uncertain) {
-      notifyListeners();
+      _notify();
       return;
     }
     _message = null;
     if (_state != FurnitureRequestSubmissionState.submitting) {
       _state = FurnitureRequestSubmissionState.editing;
     }
-    notifyListeners();
+    _notify();
+  }
+
+  /// The screen disposes this controller while a submission may still be in
+  /// flight, so late completion never notifies a disposed listener.
+  void _notify() {
+    if (!_isDisposed) notifyListeners();
   }
 
   Future<void> submit() async {
@@ -53,13 +66,13 @@ class FurnitureRequestController extends ChangeNotifier {
     if (validation.isNotEmpty) {
       _errors = validation;
       _message = 'Correct the highlighted details and try again.';
-      notifyListeners();
+      _notify();
       return;
     }
     _state = FurnitureRequestSubmissionState.submitting;
     _message = null;
     _cancellation = RequestCancellation();
-    notifyListeners();
+    _notify();
     try {
       final session = authSession;
       final signedIn = session?.isSignedIn ?? false;
@@ -98,7 +111,7 @@ class FurnitureRequestController extends ChangeNotifier {
           'We could not confirm whether your request was received. Retrying may create another request.';
     } finally {
       _cancellation = null;
-      notifyListeners();
+      _notify();
     }
   }
 
