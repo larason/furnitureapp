@@ -110,6 +110,50 @@ void main() {
       );
     });
 
+    test(
+      'a category change during a pending debounce issues one request',
+      () async {
+        final catalog = _RecordingCatalogRepository();
+        final harness = _build(catalog);
+        final controller = harness.controller;
+        addTearDown(controller.dispose);
+        await pumpEventQueue();
+        final before = catalog.queries.length;
+
+        controller.onSearchTextChanged('sofa');
+        await controller.selectCategory('sofas');
+        await Future<void>.delayed(controller.debounce * 2);
+
+        expect(
+          catalog.queries.length,
+          before + 1,
+          reason: 'The pending text must ride along with the category change.',
+        );
+        expect(controller.criteria.normalizedSearch, 'sofa');
+        expect(controller.criteria.categorySlug, 'sofas');
+      },
+    );
+
+    test(
+      'a sort change during a pending debounce issues one request',
+      () async {
+        final catalog = _RecordingCatalogRepository();
+        final harness = _build(catalog);
+        final controller = harness.controller;
+        addTearDown(controller.dispose);
+        await pumpEventQueue();
+        final before = catalog.queries.length;
+
+        controller.onSearchTextChanged('sofa');
+        await controller.selectSort(CatalogSort.priceLowToHigh);
+        await Future<void>.delayed(controller.debounce * 2);
+
+        expect(catalog.queries.length, before + 1);
+        expect(controller.criteria.normalizedSearch, 'sofa');
+        expect(controller.criteria.sort, CatalogSort.priceLowToHigh);
+      },
+    );
+
     test('changing a criterion resets pagination to the first page', () async {
       final catalog = _RecordingCatalogRepository(multiPage: true);
       final harness = _build(catalog);

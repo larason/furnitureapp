@@ -82,12 +82,7 @@ class SearchController extends ChangeNotifier {
   }
 
   /// Applies the pending text immediately, cancelling any debounce.
-  Future<void> submitSearch() async {
-    if (_disposed) return;
-    _debounceTimer?.cancel();
-    _debounceTimer = null;
-    await _apply(_criteria.withSearch(_searchText));
-  }
+  Future<void> submitSearch() => _applyPending(_criteria);
 
   /// Empties the search field and applies the remaining criteria.
   ///
@@ -95,16 +90,18 @@ class SearchController extends ChangeNotifier {
   /// clear the query, not the whole screen.
   Future<void> clearSearch() async {
     if (_disposed) return;
-    _debounceTimer?.cancel();
-    _debounceTimer = null;
     _searchText = '';
-    await _apply(_criteria.withSearch(null));
+    await _applyPending(_criteria);
   }
 
+  /// Applies a category or sort change together with any pending debounced
+  /// text, so a selection made before the debounce elapses produces one
+  /// request rather than one per criterion.
   Future<void> selectCategory(String? slug) =>
-      _apply(_criteria.copyWithCategory(slug));
+      _applyPending(_criteria.copyWithCategory(slug));
 
-  Future<void> selectSort(CatalogSort sort) => _apply(_criteria.withSort(sort));
+  Future<void> selectSort(CatalogSort sort) =>
+      _applyPending(_criteria.withSort(sort));
 
   /// Restores the unfiltered result set. The made-to-order restriction is part
   /// of every query and is not affected by a reset.
@@ -123,6 +120,15 @@ class SearchController extends ChangeNotifier {
       if (_disposed) return;
       unawaited(_apply(_criteria.withSearch(_searchText)));
     });
+  }
+
+  /// Cancels any pending debounce and applies [next] together with the current
+  /// search text as a single result set.
+  Future<void> _applyPending(CatalogQuery next) async {
+    if (_disposed) return;
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    await _apply(next.withSearch(_searchText));
   }
 
   Future<void> _apply(CatalogQuery next) async {
