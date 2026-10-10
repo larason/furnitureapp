@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sl_furnitures/core/auth/auth_session.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/furniture_requests/data/furniture_request.dart';
 import 'package:sl_furnitures/features/furniture_requests/data/furniture_request_repository.dart';
@@ -73,6 +75,57 @@ void main() {
     // tripped ChangeNotifier's use-after-dispose assertion.
     await expectLater(pending, completes);
   });
+
+  test('cancellation while fetching the token never submits', () async {
+    final repository = _GatedRepository();
+    final session = _SlowTokenSession();
+    final controller = FurnitureRequestController(
+      repository: repository,
+      authSession: session,
+    );
+    addTearDown(controller.dispose);
+    controller.update(_validDraft);
+
+    final pending = controller.submit();
+    await session.requested.future;
+    controller.cancel();
+    session.release.complete();
+    await pending;
+
+    expect(
+      repository.entered.isCompleted,
+      isFalse,
+      reason: 'A cancelled submission must not reach the repository.',
+    );
+    expect(controller.state, FurnitureRequestSubmissionState.editing);
+    expect(controller.message, isNull);
+  });
+}
+
+class _SlowTokenSession implements AuthSession {
+  final Completer<void> requested = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  ClerkAuthStatus get status => ClerkAuthStatus.signedIn;
+
+  @override
+  bool get isSignedIn => true;
+
+  @override
+  Future<String?> getToken() {
+    requested.complete();
+    return release.future.then((_) => 'session-token');
+  }
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  @override
+  Future<void> signOut() async {}
 }
 
 class _FailingRepository implements FurnitureRequestRepository {

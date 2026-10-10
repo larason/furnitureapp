@@ -126,6 +126,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('keeps the viewer on the current page when the same product '
+      'refreshes', (tester) async {
+    await tester.pumpWidget(_app(_images(3)));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(PageView), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Showing image 2 of 3'), findsOneWidget);
+
+    await tester.pumpWidget(_app(_images(3)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Showing image 2 of 3'),
+      findsOneWidget,
+      reason: 'A refresh returning the same photos must not reset the page.',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('schedules no looping animation under reduced motion', (
     tester,
   ) async {

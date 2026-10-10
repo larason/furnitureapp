@@ -44,14 +44,36 @@ class _ProductGalleryState extends State<ProductGallery> {
     return value > total - 1 ? total - 1 : value;
   }
 
+  /// Only a different gallery or entry point restarts the page view.
+  ///
+  /// An unrelated parent rebuild, including a refresh that returns the same
+  /// photographs, must leave the customer on the image they were viewing.
   @override
   void didUpdateWidget(ProductGallery oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final target = _clamp(widget.initialIndex);
-    if (_index == target && _controller.hasClients) return;
-    _index = target;
+    if (widget.initialIndex == oldWidget.initialIndex &&
+        _sameImages(oldWidget.images)) {
+      return;
+    }
+    _moveTo(_clamp(widget.initialIndex));
+  }
+
+  bool _sameImages(List<ProductDetailImage> previous) {
+    if (identical(previous, widget.images)) return true;
+    if (previous.length != widget.images.length) return false;
+    for (var index = 0; index < previous.length; index++) {
+      if (previous[index].id != widget.images[index].id) return false;
+    }
+    return true;
+  }
+
+  /// Moves the page view, rebuilding its controller when it has no clients so
+  /// a gallery that appears after an empty one still opens on [page].
+  void _moveTo(int page) {
+    if (_index == page && _controller.hasClients) return;
+    _index = page;
     if (_controller.hasClients) {
-      _controller.jumpToPage(target);
+      _controller.jumpToPage(page);
     } else {
       _controller.dispose();
       _controller = _pageController();

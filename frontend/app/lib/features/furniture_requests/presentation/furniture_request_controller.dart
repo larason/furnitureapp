@@ -89,6 +89,10 @@ class FurnitureRequestController extends ChangeNotifier {
           _state = FurnitureRequestSubmissionState.editing;
           return;
         }
+        if (_cancellation?.isCancelled ?? false) {
+          _state = FurnitureRequestSubmissionState.editing;
+          return;
+        }
       }
       _submitted = await repository.submit(
         _draft,
