@@ -79,9 +79,13 @@ test/features/product_detail/product_detail_fixtures_test.dart
 
 ## 6. Known deliberate limitations
 
-1. **No request submission.** The "Request this furniture" button is rendered
-   disabled with "Requesting is not available in the app yet." Nothing is
-   submitted, stored, or reserved. Phase 17.10 replaces it.
+1. **Request action was inert at phase close.** At Phase 17.3 close the
+   "Request this furniture" button rendered disabled with "Requesting is not
+   available in the app yet.", and no request route was registered. Phase 17.10
+   replaced this: the button is enabled, the router registers
+   `/furniture-requests` and `/furniture-requests/:productId`, and
+   `ApiFurnitureRequestRepository` submits to Laravel `POST /requests`. The
+   action still creates no cart, order, quotation, payment, or reservation.
 2. **No gallery thumbnails or full-screen viewer.** Both are explicitly optional
    in the phase. Swipe navigation and a position indicator are implemented.
 3. **Partly synthetic fixture detail.** The second gallery image and the two
@@ -156,7 +160,7 @@ diagnostics boundary could be observed live.
 | 5 | Option selection swaps the price, drops the `From` prefix, fills the radio, shows "Selected option: …" | Pass |
 | 6 | Category link opens the Phase 17.2 category landing page | Pass |
 | 7 | System back returns to the product and preserves the chosen option | Pass |
-| 8 | The disabled "Request this furniture" button is inert — no navigation, no dialog, no submission | Pass |
+| 8 | The "Request this furniture" button was inert during this phase (no navigation, no dialog, no submission); Phase 17.10 later enabled it and registered the request route | Pass |
 | 9 | 2x text scale + bold system text: no overflow, no clipped price, no clipped option name | Pass |
 
 ### 9.2 Live API mode against Laravel CAT-002
@@ -218,8 +222,10 @@ request, with no URL, host, token, or raw message in the event. See
 ## 10. Final result
 
 **Phase 17.3: PASS**, verified on a physical Android device against both the
-development fixtures and the live Laravel CAT-002 endpoint, with the two documented
-temporary limitations above (disabled request action, optional gallery extras).
+development fixtures and the live Laravel CAT-002 endpoint, with the documented
+optional gallery extras still outstanding. The request-action limitation recorded
+above described this phase's original state and has since been replaced by
+Phase 17.10.
 
 ### Environment changes made during verification
 

@@ -222,7 +222,7 @@ abstract final class AppRouter {
       );
     }
     if (productId == null) return null;
-    return FurnitureRequestProductContext(id: productId, name: productId);
+    return FurnitureRequestProductContext(id: productId);
   }
 
   /// Public product detail. The route parameter must be a valid identifier

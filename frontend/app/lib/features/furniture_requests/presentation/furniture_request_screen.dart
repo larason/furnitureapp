@@ -70,11 +70,7 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: AppSpacing.space3),
-            Text(
-              widget.product == null
-                  ? 'Our team will review your furniture idea and contact you using the details you supplied.'
-                  : 'Our team will review your request for ${widget.product!.name} and contact you using the details you supplied.',
-            ),
+            Text(_confirmationMessage),
             const SizedBox(height: AppSpacing.space3),
             Text('Status: ${submitted.status}'),
             const SizedBox(height: AppSpacing.space6),
@@ -214,6 +210,15 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
     );
   }
 
+  /// The catalog product name is absent for a deep link that carried only a
+  /// product id, so the copy never falls back to that identifier.
+  String get _confirmationMessage {
+    final name = widget.product?.name;
+    return name == null
+        ? 'Our team will review your furniture request and contact you using the details you supplied.'
+        : 'Our team will review your request for $name and contact you using the details you supplied.';
+  }
+
   Widget _productContext(BuildContext context) => Container(
     padding: const EdgeInsets.all(AppSpacing.space4),
     margin: const EdgeInsets.only(bottom: AppSpacing.space6),
@@ -224,7 +229,7 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(
-          'Requesting: ${widget.product!.name}',
+          'Requesting: ${widget.product!.name ?? 'this furniture piece'}',
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: AppSpacing.space1),

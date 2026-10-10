@@ -1,778 +1,940 @@
-# Phase 17.10 — Flutter Furniture Requests
+# Phase 17.11 — Flutter Contact & Enquiries
 
-**Project:** SL Furnitures — Flutter Android App  
+**Project:** SL Furnitures  
+**Application:** Flutter Android Customer App  
 **Group:** Q — Flutter Customer Features  
-**Prerequisites:** Phases 16.1–16.9 and active Phases 17.1–17.4  
-**Status:** READY FOR IMPLEMENTATION, subject to backend readiness verification  
-**Scope:** Anonymous and authenticated made-to-order furniture request submission
+**Phase:** 17.11 — Enquiries  
+**Prerequisites:** Phases 16.1–16.9, 17.1–17.4, 17.10  
+**Implementation approach:** Existing architecture first, frozen Laravel API, no commerce activation
 
 ## 1. Objective
 
-Implement the complete customer-facing Furniture Request workflow for the request-only production release.
+Implement the complete Contact & Enquiries feature for the request-only production launch.
 
-Support two entry points:
+Replace the existing `/contact` placeholder with a functional, polished, accessible enquiry screen.
 
-1. **Catalog-linked request:** A customer selects a MADE_TO_ORDER product, opens its detail screen, and chooses "Request this furniture."
-2. **Custom furniture request:** A customer opens the Furniture Requests route directly and describes furniture not necessarily present in the catalog.
+The feature must support:
 
-Both entry points must use the same feature architecture, form, validation, and REQ-001 submission service.
+1. Anonymous visitor enquiries.
+2. Authenticated CUSTOMER enquiries.
+3. General business questions.
+4. Optional catalog-product context where the API permits it.
+5. Contact information.
+6. Subject and message.
+7. Optional private attachment.
+8. Validation and safe API submission.
+9. Loading, error, and success states.
+10. Explicit recovery from uncertain submission outcomes.
 
-A furniture request is an expression of interest, not an Order, quotation, payment, or production commitment.
+The feature must not create furniture requests, orders, quotations, payments, reservations, or customer support chat sessions.
 
-**Do not implement deferred commerce phases 17.5–17.9.**
-
----
-
-## 2. Mandatory repository inspection
-
-Read and follow:
-
-- Root `AGENTS.md` and Flutter-specific instructions.
-- `docs/decisions.md`, especially `ADR/GROUP-H-AND-I-DEFER`, `ADR/API-REQ-001` through `011`, `ADR/BACKEND-043` onward, and `ADR/BACKEND-048/049`.
-- `docs/api/api-contract.md` section 26.
-- `docs/api/api-resources.md` Furniture Request representation.
-- `docs/api/openapi.yaml` REQ-001, REQ-002, REQ-003, REQ-007 and related schemas.
-- Laravel request controller, validator, resource, attachment services, middleware, and route activation configuration.
-- Existing Next.js furniture-request implementation, if present.
-- Flutter Phase 17.3 product details.
-- Flutter Phase 17.4 search and catalog.
-- Existing ClerkAuthAdapter, ApiClient, request cancellation, AsyncViewState, diagnostics, router, and theme.
-- Canonical `frontend/design-system/tokens.css`, `DESIGN.md`, and `ACCESSIBILITY.md`.
-
-**Critical prerequisite:** Verify that REQ-001 is actually enabled and that the separate-upload capability reconciliation has been implemented. Earlier backend decisions recorded gated routes, while a later ADR resolved the capability representation. An accepted ADR alone does not prove the route is active.
-
-If the route is still gated, implement the form and testable integration but do not claim live submission works. Report the blocker rather than silently enabling Laravel routes or changing frozen contracts.
+Keep Phase 17.10 furniture requests separate from enquiries.
 
 ---
 
-## 3. Frozen request workflow
+## 2. Inspect the repository before implementation
 
-The primary endpoint is:
+Read:
 
-```http
-POST /api/v1/requests
-```
+- Root `AGENTS.md`.
+- `frontend/AGENTS.md`.
+- `frontend/app/README.md`.
+- `frontend/app/lib/features/README.md`.
+- `docs/decisions.md`.
+- `docs/api/api-contract.md` section 27.
+- `docs/api/api-resources.md`.
+- `docs/api/openapi.yaml`.
+- `docs/api/api-conventions.md`.
+- `frontend/design-system/DESIGN.md`.
+- `frontend/design-system/ACCESSIBILITY.md`.
+- `frontend/design-system/tokens.css`.
+- Phase 17.10 implementation and completion documentation.
+- Existing Flutter enquiry placeholder.
+- Existing `lib/navigation/` route registry.
+- Existing `FeatureDependencies`.
+- Existing ApiClient and multipart support.
+- Existing ClerkAuthAdapter and AuthSession.
+- Existing furniture request form, attachment picker, repository, controller, and tests.
+- Laravel ENQ-001 route, controller, FormRequest, service, resource, rate limiter, attachment handling, and feature tests.
 
-It accepts:
+### Required inspection report
 
-- Anonymous visitors without authentication.
-- Authenticated CUSTOMER users.
-- JSON submissions without an attachment.
-- Multipart submissions with an optional inline attachment.
+Before coding, identify:
 
-An invalid or expired bearer token must not be silently downgraded to anonymous.
+- Exact ENQ-001 request fields.
+- Required and nullable fields.
+- Validation bounds.
+- Anonymous and authenticated contact rules.
+- Product and order association validation.
+- Multipart encoding requirements.
+- Attachment limits.
+- Response representation.
+- Error codes and field paths.
+- Backend route activation status.
+- Whether ENQ-007 is operational.
+- Existing reusable Flutter form components.
+- Existing request-submission state handling.
 
-STAFF and ADMIN are not authorized to use the customer submission path.
+Do not infer contract details from the furniture request form.
 
-### Request data
-
-Inspect the exact frozen schema and implement its approved fields:
-
-- `product_id` — optional/nullable opaque product identifier.
-- `quantity` — according to the frozen validation rules.
-- `name` — contact snapshot.
-- `phone` — optional contact channel.
-- `email` — optional contact channel.
-- `dimensions` — optional structured dimensions.
-- `material` — optional free text.
-- `color` — optional free text.
-- `notes` — request description.
-- `attachment` — optional file in multipart submissions.
-
-Do not submit undocumented fields.
-
-In particular, do not submit:
-
-```text
-user_id
-request_status
-request_reference
-staff_internal_notes
-message
-style
-product_details
-order_id
-payment_id
-payment_status
-quoted_price
-delivery_fee
-```
-
-The backend maps public `notes` to its internal persistence field. The Flutter client must continue using `notes`.
-
-Do not assume that an optional Dart field is optional in every business context. Confirm exact requiredness, numeric bounds, and string lengths from the Laravel validator and OpenAPI.
+The Enquiry API is a separate resource with different validation.
 
 ---
 
-## 4. Anonymous and authenticated submissions
+## 3. Frozen API contract
 
-Anonymous requests are a first-class production feature.
+Use:
 
-**Never force customers to register before requesting furniture.**
+POST /api/v1/enquiries
 
-The form must be accessible when:
+This is ENQ-001.
 
-- Signed out.
-- Clerk is initializing.
-- Clerk is temporarily unavailable.
-- Signed in as an authorized CUSTOMER.
+Do not create:
 
-For anonymous submission:
+- `/contact/submit`
+- `/messages`
+- `/support/tickets`
+- `/customer/enquiries`
+- A Next.js proxy endpoint
+- A Firebase collection
+- A direct database connection
 
-- Do not attach a bearer token.
-- Require a name.
-- Require at least one reachable contact method: phone or email.
+The existing Laravel API is authoritative.
 
-For authenticated CUSTOMER submission:
+### Canonical enquiry fields
 
-- Use the current Clerk token through the existing authentication adapter.
-- Preserve the self-contained contact snapshot required by REQ-001.
-- Do not rely on future profile changes to update an existing request.
-- Do not send `user_id`.
+Inspect the frozen schema for:
 
-If profile prefill is supported, it must be editable and must not overwrite customer-entered values.
+- `subject`
+- `message`
+- `name`
+- `phone`
+- `email`
+- `product_id`
+- `order_id`
+- `attachment`
 
-Never interpret a broken authenticated session as permission to submit anonymously without the user's explicit choice and an appropriate sign-out flow.
+Only include fields supported by ENQ-001.
+
+Do not send server-controlled fields:
+
+- `user_id`
+- `enquiry_status`
+- `staff_internal_notes`
+- `created_at`
+- `updated_at`
+- `reference`
+- `payment_id`
+- `payment_status`
+- `order_status`
+- `create_order`
+
+Unknown fields must not be silently added.
+
+### Response handling
+
+Parse the canonical `data` response envelope.
+
+Use the backend's actual enquiry representation, including its opaque ID, reference, status, and timestamps where documented.
+
+Do not invent response fields.
+
+---
+
+## 4. Anonymous submission
+
+The contact page must work without Clerk authentication.
+
+Anonymous visitors must provide:
+
+- Name.
+- At least one reachable contact method: phone or email.
+- Valid subject.
+- Valid message.
+
+Do not force account creation.
+
+Do not redirect anonymous visitors to `/account`.
+
+Do not require a Clerk token.
+
+Do not use an email address as proof of ownership.
+
+### Authenticated submission
+
+Authenticated CUSTOMER submissions use the existing Clerk session boundary.
+
+Laravel derives ownership from the verified token.
+
+Contact information may be supplied or derived according to the frozen ENQ-001 contract.
+
+If profile prefill is available, the customer must be able to edit the submitted contact snapshot.
+
+Never send a client-controlled user ID.
+
+### Authentication failures
+
+An invalid authenticated session must not silently become an anonymous submission.
+
+Respect the existing authentication-state policy.
+
+Keep public contact access available when Clerk initialization is unavailable.
 
 ---
 
 ## 5. Feature architecture
 
-Follow the established feature-first structure.
+Create the feature inside:
 
-Suggested organization:
+lib/features/enquiries/
 
-```text
-lib/features/furniture_requests/
+Follow the existing feature-first convention.
+
+Suggested structure:
+
+lib/features/enquiries/
   data/
-    furniture_request.dart
-    furniture_request_draft.dart
-    furniture_request_repository.dart
-    furniture_request_attachment.dart
+    enquiry_draft.dart
+    enquiry_submission.dart
+    enquiry_repository.dart
   presentation/
-    furniture_request_controller.dart
-    furniture_request_screen.dart
-    furniture_request_success_screen.dart
+    enquiry_controller.dart
+    enquiry_screen.dart
+    enquiry_success_screen.dart
     widgets/
-      contact_fields.dart
-      dimensions_fields.dart
-      attachment_picker.dart
-```
+      enquiry_contact_fields.dart
+      enquiry_attachment_field.dart
 
-Adapt names and file boundaries to the existing repository conventions.
+Adapt the structure to the actual repository.
+
+Small features must not introduce unnecessary layers.
+
+### Dependencies
+
+Use constructor injection through `FeatureDependencies`.
 
 Reuse:
 
-- ApiClient and its existing multipart support.
-- AuthTokenProvider.
-- FeatureDependencies.
+- ApiClient.
+- ApiAuthMode.
+- AuthSession.
+- RequestCancellation.
 - AsyncViewState.
 - ErrorPresentationMapper.
 - AppDiagnostics.
-- Material 3 form controls.
-- Existing routing and product models.
+- Existing theme.
+- Central go_router.
 
-Do not introduce a second HTTP client, a new state-management framework, or a competing authentication flow.
+Do not instantiate a new HTTP client.
+
+Do not initialize Clerk inside this feature.
+
+Do not read secure storage directly.
+
+Do not create another global state manager.
+
+### Phase 17.10 reuse
+
+Inspect the furniture request implementation for reusable mechanisms:
+
+- Attachment file selection.
+- File-size/type validation.
+- Multipart assembly.
+- Submission progress state.
+- Field error mapping.
+- Uncertain-outcome handling.
+- Duplicate-submit prevention.
+
+Reuse common mechanics without coupling the Enquiry domain to the Furniture Request domain.
+
+If shared extraction is justified, place domain-neutral utilities in the appropriate shared core layer.
+
+Do not move furniture request models into enquiries or vice versa.
+
+Avoid a generic, configurable "everything form" abstraction.
 
 ---
 
-## 6. Form design
+## 6. Contact screen design
 
-The request form should feel approachable, premium, and straightforward.
+Use the existing `/contact` route.
 
-Recommended section order:
+Recommended page hierarchy:
 
-### A. Furniture context
+1. Introductory heading.
+2. Short explanatory copy.
+3. Contact information.
+4. Enquiry details.
+5. Optional reference attachment.
+6. Submit action.
+7. Submission feedback.
 
-For a catalog-linked request:
+### Suggested copy
 
-- Show a small product image.
-- Show the API-returned product name.
-- Show a clear indication that the furniture is made to order.
-- Preserve the canonical product ID for submission.
+Heading:
 
-For a custom request:
+"How can we help?"
 
-- Show a clear heading such as "Tell us about your furniture idea."
-- Do not require a catalog product.
-- Do not submit an invented product ID.
+Supporting text:
 
-Never substitute a slug for the API-required opaque product ID.
+"Have a question about our furniture, services, or an existing enquiry? Send us a message and our team will get back to you."
 
-### B. Furniture requirements
+Do not promise a specific response time unless the business has an approved response-time policy.
 
-Provide:
+### Form fields
 
-- Quantity, if supported by the contract.
-- Dimensions.
-- Material preference.
-- Color preference.
-- Notes/description.
-
-Keep optional fields clearly identified.
-
-### C. Contact information
-
-Provide:
+Contact:
 
 - Full name.
 - Phone number.
 - Email address.
 
-Explain that customers must provide at least one usable contact method.
+Enquiry:
 
-### D. Reference attachment
+- Subject.
+- Message.
 
-Allow one optional reference image or PDF.
+Context:
 
-### E. Review and submission
+- Optional related product, when available and valid.
 
-Display a concise review of entered details before the final submission, if consistent with the existing app interaction patterns.
+Attachment:
 
-Primary action:
+- Optional image or PDF.
 
-**Submit furniture request**
+### Form behavior
 
-Do not use "Buy now," "Place order," or "Pay now."
+- Clear labels.
+- Appropriate keyboard types.
+- Visible required/optional indicators.
+- Character limits where useful.
+- Clear inline validation.
+- Keyboard-safe scrolling.
+- Disabled duplicate submission while in flight.
 
----
-
-## 7. Dimensions
-
-The canonical dimensions representation is:
-
-```json
-{
-  "length": 200,
-  "width": 90,
-  "height": 80,
-  "unit": "cm"
-}
-```
-
-Requirements:
-
-- Structured object only.
-- Unit exactly `cm`.
-- Each supplied dimension must satisfy the backend's positive numeric limits.
-- No arbitrary keys.
-- No free-text dimensions in the API payload.
-- No floating-point precision surprises.
-- Clear labels and numeric keyboards.
-
-Inspect whether the contract requires all dimensions together or allows partial values. Match the contract exactly.
-
-Do not send an empty dimensions object.
+Do not use a large multi-step wizard for this simple contact form.
 
 ---
 
-## 8. Material and color
+## 7. Subject and message
 
-Material and color are free-text inputs, not closed enums.
+The frozen enquiry contract specifies:
 
-The decisions establish:
+- Subject: 5–200 characters.
+- Message: 10–5,000 characters.
 
-- Material maximum: 500 characters.
-- Color maximum: 200 characters.
+Implement these bounds.
 
-Do not restrict customers to a fabricated list of fabrics, woods, or finishes.
+### Subject
 
-Optional suggestions may be shown only if they remain editable and do not change the wire contract.
+Use a plain-text single-line field.
 
-Do not invent structured variant attributes from product names.
+Example placeholder:
+
+"What would you like to ask?"
+
+Do not add a new closed subject-category enum unless the backend contract supports it.
+
+### Message
+
+Use a multiline plain-text field.
+
+Example placeholder:
+
+"Tell us how we can help..."
+
+Preserve meaningful line breaks.
+
+Do not submit rich text, HTML, Markdown, or executable content.
+
+Do not implement message threads or customer/staff replies.
+
+The original enquiry is immutable after submission.
 
 ---
 
-## 9. Attachments
+## 8. Optional product association
 
-V1 permits **zero or one attachment** per furniture request.
+The ENQ-001 contract permits an optional product reference.
 
-Supported types:
+This is useful for questions such as:
+
+- Is this furniture available in another finish?
+- Can you explain the materials used?
+- What are the delivery options for this product?
+
+### Requirements
+
+If a valid product context is provided:
+
+- Use the server-returned opaque product ID.
+- Show the product name.
+- Reuse the existing CatalogImage.
+- Preserve the distinction between an enquiry and a furniture request.
+
+Do not derive a product ID from its display name.
+
+Do not create a second product-detail repository.
+
+Do not automatically include a product association merely because the user previously browsed a product.
+
+### Navigation
+
+A product-related enquiry entry point may be added where it fits the existing product-detail UI.
+
+Do not replace or weaken the Phase 17.10 "Request this furniture" action.
+
+If adding a new product-detail enquiry action is not required by the frozen Phase 17.11 scope, keep product context support internal and document it for future integration.
+
+---
+
+## 9. Order association
+
+The API supports an optional order association under its ownership rules.
+
+However, order and order-tracking features are deferred for this production release.
+
+Therefore:
+
+- Do not expose an order selector.
+- Do not create an order search UI.
+- Do not request order history.
+- Do not accept arbitrary customer-entered order IDs as an ownership bypass.
+- Do not activate order support functionality.
+
+Preserve the frozen API contract for future phases.
+
+---
+
+## 10. Optional attachments
+
+Enquiries support zero or one private attachment.
+
+Reuse the existing Phase 17.10 file-picker and multipart infrastructure.
+
+Supported formats:
 
 - JPEG.
 - PNG.
 - WebP.
 - PDF.
 
-Maximum size: **5 MiB**, subject to the exact backend implementation.
+Maximum size:
 
-### File selection
+- 5 MiB, subject to confirmation against the backend's precise byte limit.
 
-Use an appropriate maintained Flutter file-selection package only if the existing project has no suitable implementation.
+### Requirements
 
-Support selecting a reference photo, drawing, or PDF.
-
-Show:
-
-- Filename.
-- File type.
-- File size.
+- File selection.
+- Filename display.
+- File size display.
 - Remove/replace action.
+- Client-side type and size checks.
+- Server-authoritative validation.
+- Accessible error feedback.
+- No broad storage permission if Android's document picker is sufficient.
 
-Avoid requesting broad Android storage permissions when the system document picker can provide the file.
+Use the canonical multipart field:
 
-### Client validation
+`attachment`
 
-Check supported type and size before upload.
+### Privacy
 
-Treat client validation as advisory. Laravel remains authoritative for file signatures, content, and storage.
+Attachments are private.
 
-Do not upload attachments to Cloudinary, Cloudflare R2, Firebase, or another service directly.
+Never expose:
 
-Request attachments use the backend's private attachment subsystem.
-
-### Inline upload
-
-Prefer a single multipart REQ-001 submission with the `attachment` field.
-
-Use the existing ApiClient multipart implementation.
-
-Preserve documented scalar and dimensions encoding rules for multipart.
-
-Do not assume JSON encoding of nested objects is accepted by the multipart validator.
+- Internal storage paths.
+- Private object keys.
+- Permanent public attachment URLs.
+- Raw attachment bytes in diagnostics.
+- Upload tokens in logs.
 
 ### Separate upload
 
-REQ-007 exists as a separate capability-based workflow.
+Prefer inline ENQ-001 multipart submission.
 
-Do not implement it unless required by the Phase 17.10 scope and verified as operational.
+ENQ-007 separate attachment upload is not required for this phase unless the existing scope explicitly calls for it.
 
-If implemented, follow the reconciled contract:
+If implemented, use the server-issued, single-use, time-limited capability-token contract and verify that the backend supports it.
 
-- A successful REQ-001 without an inline attachment may return `X-Upload-Token` in the response header.
-- The token is scoped to the created request.
-- It is time-limited and single-use.
-- It is never part of the public JSON resource.
-- It must never be logged or persisted insecurely.
-- It cannot authorize request reads.
-- It must not be reused for another request.
-
-Prefer inline upload to avoid unnecessary multi-step failure handling.
+Do not construct an upload token locally.
 
 ---
 
-## 10. Submission state machine
+## 11. Enquiry submission state
 
-Model the form's submission lifecycle explicitly:
+Use a simple explicit lifecycle:
 
-```text
-Editing
-   |
-   v
-Validating
-   |
-   v
-Submitting
-   |
-   +---- Success ----> Confirmation
-   |
-   +---- Failure ----> Editable form + error
-```
+Editing → Validating → Submitting → Success or Recoverable Failure
 
-Required behavior:
+### Duplicate submission prevention
 
-- Disable duplicate submissions while a request is in flight.
-- Preserve entered values on validation and network failures.
-- Display field-level errors.
-- Allow deliberate retry.
-- Prevent accidental double taps.
-- Handle route disposal and request cancellation safely.
+Disable the submit action while a submission is in flight.
 
-### Critical uncertain-outcome rule
+Do not dispatch multiple requests from rapid taps.
 
-REQ-001 does not require an Idempotency-Key, and duplicate submissions are not automatically deduplicated.
+### Successful submission
 
-Therefore, after a timeout or connection loss where the server may have accepted the request:
+A confirmed successful response transitions to the confirmation view.
 
-- Do not automatically retry the POST.
-- Do not claim submission failed definitively.
-- Show a truthful message explaining that the outcome could not be confirmed.
-- Explain that retrying could create another request.
-- Require an explicit user decision before resubmission.
+### Validation failure
 
-Do not introduce an undocumented idempotency header or local deduplication guarantee.
-
----
-
-## 11. Successful submission
-
-A successful REQ-001 response returns HTTP 201 and a request resource.
-
-The backend controls:
-
-- Opaque request ID.
-- Request reference.
-- Request status.
-- Creation timestamp.
-- Ownership.
-- Attachment metadata.
-
-New requests begin in:
-
-```text
-SUBMITTED
-```
-
-### Confirmation screen
-
-Show:
-
-- Clear success heading.
-- Furniture/product context when available.
-- Request reference only if exposed in the actual public response contract.
-- Submission status.
-- Brief explanation that the team will review the request and use the supplied contact details.
-
-Do not fabricate a quotation, delivery date, production start, or acceptance decision.
-
-Avoid claiming that email or SMS confirmation was sent unless the system actually supports it.
-
-For anonymous customers, do not show a link to a private request-detail endpoint they cannot access.
-
----
-
-## 12. Navigation integration
-
-Connect the existing product-detail request action to the new form.
-
-### Catalog-linked flow
-
-```text
-Catalog
-  → Product Details
-  → Request this furniture
-  → Furniture Request Form
-  → Confirmation
-```
-
-### Custom flow
-
-```text
-Furniture Requests
-  → Custom Furniture Request Form
-  → Confirmation
-```
-
-Requirements:
-
-- Reuse the existing go_router.
-- Preserve product context safely.
-- Support direct navigation to the standalone request form.
-- Handle missing or invalid product context.
-- Do not depend on a global mutable selected-product singleton.
-- Preserve back navigation.
-- Avoid duplicate routes.
-
-The planned Phase 17.15 global app bar and navigation drawer remains deferred.
-
-Do not implement it here.
-
----
-
-## 13. Authentication and ownership
-
-Use Clerk only when an authenticated CUSTOMER session is available.
-
-The Laravel backend remains authoritative for user ownership and authorization.
-
-Do not:
-
-- Implement custom authentication.
-- Store Clerk tokens in request drafts.
-- Submit user IDs.
-- Retrieve anonymous requests by guessing IDs.
-- Use email equality to establish ownership.
-- Expose staff request-management APIs.
-
-REQ-002 and REQ-003 are authenticated customer-owned retrieval operations.
-
-Do not implement a full request-history feature unless the frozen Phase 17.10 scope explicitly includes it.
-
-If history is included, restrict it to authenticated owners and use the canonical `/me/requests` endpoints.
-
----
-
-## 14. API errors
-
-Reuse the existing typed API error handling.
-
-Handle:
-
-- Missing required fields.
-- Invalid field types.
-- Invalid phone/email formats.
-- Invalid dimensions.
-- Invalid product association.
-- Unsupported attachment.
-- Oversized attachment.
-- Authentication failure.
-- Authorization failure.
-- Rate limiting.
-- Connection failure.
-- Server failure.
-
-### Field-level errors
-
-Use the backend's canonical error `field` paths to associate errors with form controls.
-
-Do not parse human-readable error messages to infer field identity.
+Keep all entered values and display relevant field errors.
 
 ### Rate limiting
 
-Respect HTTP 429 and `Retry-After`.
+Handle HTTP 429 using the existing Retry-After representation.
 
-Show an actionable wait message.
+Do not invent a countdown or deadline when the server does not provide one.
 
-Do not bypass throttling by switching identities or repeatedly resubmitting.
+### Uncertain outcome
 
-### Server errors
+A timeout or connection interruption during a non-idempotent POST may occur after Laravel accepted the enquiry.
 
-Display safe, understandable messages.
+Do not automatically retry.
 
-Do not expose raw stack traces, storage paths, tokens, or internal identifiers.
+Do not display "Your enquiry was not submitted" when the outcome is unknown.
+
+Instead, explain that confirmation was not received and another submission might create a duplicate.
+
+Require deliberate user action before trying again.
+
+### Cancellation
+
+Cancellation must not be reported as a server-side rejection.
+
+A local cancellation cannot prove that Laravel did not persist the enquiry.
 
 ---
 
-## 15. Design-system requirements
+## 12. Success confirmation
 
-Follow:
+After a confirmed successful submission, show a clear confirmation screen.
 
-```text
+Suggested copy:
+
+"Your enquiry has been received."
+
+Supporting copy:
+
+"Thank you for contacting SL Furnitures. Our team will review your message and use the contact details you provided to respond."
+
+Display only documented response fields.
+
+If the API returns a public-safe reference, it may be shown.
+
+Do not invent a reference.
+
+Do not claim that an email or SMS confirmation was sent.
+
+Do not promise a reply within a fixed period.
+
+### Anonymous privacy
+
+Anonymous users must not receive automatic access to a private enquiry-detail endpoint.
+
+Do not navigate to `/enquiries/{id}`.
+
+A response identifier is not an authentication credential.
+
+---
+
+## 13. Enquiry status
+
+The backend uses a closed status model:
+
+- OPEN.
+- CLOSED.
+
+A newly submitted enquiry begins as OPEN.
+
+The Flutter submission UI may show the status if returned by the API.
+
+Do not allow customers to:
+
+- Change status.
+- Close enquiries.
+- Reopen enquiries.
+- Assign staff.
+- Edit the original message.
+- Add staff notes.
+
+Those are not customer intake operations.
+
+---
+
+## 14. Error handling
+
+Reuse `ErrorPresentationMapper` and shared error components.
+
+Handle:
+
+- Missing subject.
+- Invalid subject length.
+- Missing message.
+- Invalid message length.
+- Missing anonymous contact.
+- Invalid email.
+- Invalid phone.
+- Invalid product association.
+- Invalid order association, if a caller supplies one.
+- Unsupported attachment.
+- Oversized attachment.
+- HTTP 401.
+- HTTP 403.
+- HTTP 422.
+- HTTP 429.
+- HTTP 500/502/503/504.
+- Transport failures.
+- Timeouts.
+- Cancellation.
+
+### Field-level errors
+
+Map canonical backend error field paths to the corresponding controls.
+
+Do not parse English error messages to identify fields.
+
+Preserve request IDs for safe support correlation.
+
+Do not display raw response bodies or stack traces.
+
+---
+
+## 15. Diagnostics
+
+Reuse the existing diagnostics boundary.
+
+The README confirms that ApiClient already records eligible transport failures exactly once.
+
+Do not add duplicate feature-level events for the same API failures.
+
+Use only existing diagnostic codes and allow-listed metadata.
+
+Never log:
+
+- Name.
+- Email.
+- Phone.
+- Subject.
+- Message.
+- Product ID.
+- Order ID.
+- Attachment filename.
+- File bytes.
+- Bearer token.
+- Upload capability token.
+- Raw request body.
+- Raw exception text.
+
+Keep production diagnostics no-op according to the existing policy.
+
+---
+
+## 16. Design-system compliance
+
+The canonical visual authority is:
+
 frontend/design-system/tokens.css
-```
 
 Use the existing generated Flutter Material 3 theme.
 
-### Visual direction
+### Design principles
 
-- Warm ivory surfaces.
-- Calm editorial composition.
-- Clear form sections.
-- Restrained deep-brown accents.
-- Charcoal primary action.
-- Young Serif display headings.
-- Existing utility sans for controls.
-- Minimal elevation.
-- No decorative gradients or glassmorphism.
+- Warm editorial presentation.
+- Clean form structure.
+- Comfortable vertical spacing.
+- Restrained typography.
+- Strong primary action.
+- Minimal decorative elements.
+- Clear error and success feedback.
 
-### Form composition
+Use Young Serif only for appropriate display headings.
 
-Use a comfortable single-column layout on phones.
+Use the existing utility sans for form labels, inputs, and helper text.
 
-Group related fields under clear headings.
+### Do not introduce
 
-Do not overwhelm customers with every optional input simultaneously.
+- Hard-coded colors.
+- Arbitrary spacing scales.
+- New font packages.
+- Decorative gradients.
+- Glassmorphism.
+- Fake customer testimonials.
+- Unverified office addresses.
+- Invented business hours.
+- Invented phone numbers.
+- Invented response-time promises.
 
-Use meaningful helper text instead of long explanatory paragraphs inside fields.
+If business contact information is already approved and present in the repository, it may be displayed.
 
-Do not use fake trust badges, testimonials, or urgency messaging.
+Otherwise, keep the page focused on the functional enquiry form.
 
 ---
 
-## 16. Accessibility
+## 17. Accessibility
 
 Verify:
 
-1. Clear field labels.
-2. Required and optional field indications.
-3. Accessible error messages.
-4. Keyboard navigation.
-5. Appropriate text-input types.
-6. Visible focus.
-7. Correct screen-reader field order.
-8. Touch target sizes.
-9. 2× text scaling.
-10. Narrow-screen layout.
-11. Landscape usability.
-12. Attachment control semantics.
-13. Submission progress announcements.
-14. Success confirmation announcements.
-15. Reduced-motion behavior.
-16. No keyboard-obscured submit action.
+1. Semantic page heading.
+2. Accessible field labels.
+3. Required/optional field clarity.
+4. Keyboard types.
+5. Multiline input accessibility.
+6. Validation announcements.
+7. Visible focus.
+8. Logical traversal order.
+9. Screen-reader attachment selection.
+10. Submission progress semantics.
+11. Success announcements.
+12. 2× text scaling.
+13. Small Android screen layouts.
+14. Landscape usability.
+15. Keyboard-safe scrolling.
+16. Touch targets.
+17. Contrast.
+18. Reduced-motion preferences.
 
-Never rely solely on color to indicate invalid fields.
-
----
-
-## 17. Privacy and security
-
-Furniture requests contain customer contact information and potentially private reference files.
-
-Requirements:
-
-- Do not log names, phone numbers, emails, notes, or dimensions.
-- Do not log attachment bytes or filenames.
-- Do not log bearer tokens or upload capability tokens.
-- Do not persist request drafts containing personal information without explicit approval.
-- Do not send request content to analytics.
-- Do not place private request data in public route URLs.
-- Do not cache private request responses in shared storage.
-- Do not expose internal attachment storage keys.
-
-Use only allow-listed diagnostic metadata.
+Do not rely solely on color for errors.
 
 ---
 
-## 18. Automated tests
+## 18. Navigation integration
 
-Add deterministic coverage for:
+Replace the existing `/contact` placeholder.
 
-### Form and validation
+Keep the route public.
 
-- Anonymous contact requiredness.
-- Authenticated contact snapshot behavior.
-- Product-linked requests.
-- Custom requests without product ID.
-- Quantity validation.
-- Structured dimensions.
-- Material/color limits.
-- Notes validation.
-- Optional fields.
-- Invalid input recovery.
+Use the existing central go_router.
+
+Required navigation:
+
+- Open Contact & Enquiries.
+- Complete the enquiry form.
+- Submit.
+- View confirmation.
+- Return to the home/catalog experience.
+
+Do not create another MaterialApp or route registry.
+
+Do not add a global drawer or app-wide navigation bar.
+
+The complete shared navigation shell remains planned for Phase 17.15.
+
+### Furniture request distinction
+
+If appropriate, include a small secondary link:
+
+"Want furniture made to your specifications? Submit a furniture request."
+
+Navigate to the existing Phase 17.10 route.
+
+Do not merge both forms.
+
+---
+
+## 19. Backend readiness
+
+Inspect the Laravel feature flag or route activation configuration for ENQ-001.
+
+Confirm whether:
+
+POST /api/v1/enquiries
+
+is operational.
+
+Do not assume it is enabled because REQ-001 was enabled.
+
+If disabled, report the precise blocker.
+
+Do not silently activate backend routes or change Laravel feature flags without authorization.
+
+Do not create a mock successful response in API mode.
+
+---
+
+## 20. Automated tests
+
+Add deterministic tests for:
+
+### Models and validation
+
+1. Subject minimum length.
+2. Subject maximum length.
+3. Message minimum length.
+4. Message maximum length.
+5. Anonymous name required.
+6. Anonymous phone/email requirement.
+7. Valid email.
+8. Invalid email.
+9. Valid phone.
+10. Invalid phone.
+11. Optional product association.
+12. Unsupported order association handling.
+13. Server-controlled field exclusion.
 
 ### Repository
 
-- Correct REQ-001 endpoint.
-- JSON submission.
-- Multipart submission.
-- Public anonymous submission.
-- Authenticated CUSTOMER submission.
-- Invalid bearer behavior.
-- Response parsing.
-- 201 success.
-- 422 validation errors.
-- 401/403 authorization errors.
-- 429 Retry-After.
-- Connection failure.
-- Cancellation.
-- No automatic POST retry.
+14. Correct ENQ-001 endpoint.
+15. Anonymous JSON submission.
+16. Authenticated submission.
+17. No user_id injection.
+18. JSON body encoding.
+19. Multipart body encoding.
+20. Successful response parsing.
+21. Field-level validation errors.
+22. Rate limiting.
+23. Authentication errors.
+24. Transport failure.
+25. Timeout.
+26. No automatic retry.
 
 ### Attachments
 
-- Valid JPEG.
-- Valid PNG.
-- Valid WebP.
-- Valid PDF.
-- Oversized file.
-- Unsupported type.
-- File removal/replacement.
-- Multipart field naming.
-- No direct third-party upload.
-- No accidental capability-token logging.
+27. JPEG selection.
+28. PNG selection.
+29. WebP selection.
+30. PDF selection.
+31. Oversized file.
+32. Unsupported type.
+33. Remove attachment.
+34. Replace attachment.
+35. Correct multipart field.
+36. No direct public upload.
 
-### State and navigation
+### State
 
-- Initial form.
-- Catalog-linked context.
-- Standalone custom request.
-- Submit loading.
-- Duplicate-tap prevention.
-- Successful confirmation.
-- Failed submission with preserved inputs.
-- Uncertain submission outcome.
-- Back navigation.
-- No private anonymous retrieval.
+37. Initial editing.
+38. Invalid submit.
+39. Valid submit.
+40. Duplicate-tap prevention.
+41. Confirmed success.
+42. Server validation failure.
+43. Network failure.
+44. Uncertain outcome.
+45. Explicit retry decision.
+46. Disposal/cancellation.
+
+### Widgets and navigation
+
+47. Contact route.
+48. Form labels.
+49. Keyboard behavior.
+50. Inline errors.
+51. Attachment controls.
+52. Loading feedback.
+53. Success confirmation.
+54. Return navigation.
+55. Anonymous route access.
+56. Accessibility semantics.
+57. Text scaling.
 
 ### Regression
 
-- Catalog.
-- Categories.
-- Product details.
-- Search/filtering.
-- Clerk session behavior.
-- ApiClient.
-- Diagnostics.
-- Fixture mode.
-- Design token synchronization.
-- No cart, checkout, payment, or order functionality.
+Verify that:
+
+- Phase 17.10 requests still work.
+- Product details still work.
+- Search/filtering still works.
+- Public catalog remains anonymous.
+- Clerk boundaries remain unchanged.
+- Existing multipart tests pass.
+- Existing diagnostics behavior remains correct.
+- Deferred commerce routes remain absent.
+
+The matrix describes coverage, not a mandatory one-test-per-number file structure.
 
 ---
 
-## 19. Laravel integration verification
+## 21. Live Laravel verification
 
-Verify REQ-001 route activation before claiming end-to-end success.
+When ENQ-001 is active and Laravel is available, verify:
 
-When the backend is available, test:
+1. Anonymous valid JSON enquiry.
+2. Authenticated CUSTOMER enquiry where a valid Clerk test session exists.
+3. Missing contact validation.
+4. Subject validation.
+5. Message validation.
+6. Optional product association.
+7. Multipart attachment.
+8. Invalid attachment.
+9. Rate limiting.
+10. Successful response.
+11. OPEN initial status.
+12. No furniture request creation.
+13. No order creation.
+14. No payment or inventory effects.
 
-1. Anonymous JSON request.
-2. Authenticated CUSTOMER JSON request.
-3. Catalog-linked request.
-4. Custom request without product ID.
-5. Multipart request with valid attachment.
-6. Invalid product.
-7. Invalid dimensions.
-8. Invalid contact.
-9. Oversized attachment.
-10. Rate-limit behavior using safe test fixtures.
-11. Request response and status.
-12. No Order or Payment creation.
+Use safe disposable development data.
 
-Use disposable test data.
+Do not use production customer information.
 
-Do not modify production records.
-
-Do not enable gated routes without explicit authorization.
-
-If REQ-001 remains gated, document that limitation precisely.
+Do not claim authenticated testing if no Clerk sign-in workflow exists.
 
 ---
 
-## 20. Marionette real-device verification
+## 22. Marionette real-device testing
 
-When the Android device and Marionette MCP are available:
+Use Marionette MCP on a connected physical Android device when available.
 
-1. Launch the app.
-2. Open a made-to-order product.
-3. Tap "Request this furniture."
-4. Verify correct product context.
-5. Enter furniture requirements.
+Test:
+
+1. Launch the application.
+2. Navigate to Contact.
+3. Confirm the placeholder is replaced.
+4. Enter a valid subject.
+5. Enter a valid message.
 6. Enter contact information.
-7. Select a reference image or PDF.
-8. Submit against an approved working backend.
-9. Verify success or accurate failure presentation.
-10. Open the standalone custom request form.
-11. Verify the no-product flow.
-12. Test keyboard behavior.
-13. Test validation messages.
-14. Test navigation and back behavior.
-15. Test connection failure.
-16. Verify no deferred commerce controls appear.
+7. Trigger validation errors.
+8. Correct errors.
+9. Select an image or PDF.
+10. Remove and replace the attachment.
+11. Submit against a working Laravel backend.
+12. Verify confirmed success.
+13. Verify error recovery.
+14. Test offline/connection-failure presentation.
+15. Check keyboard overlap.
+16. Check narrow-screen scrolling.
+17. Check accessibility semantics where supported.
+18. Return to home.
+19. Open Furniture Requests and verify that the existing flow still works.
 
-Do not claim real-device submission success when only fixture UI testing was possible.
+Do not claim physical-device verification unless actually performed.
 
 ---
 
-## 21. Documentation
+## 23. Documentation
 
 Update:
 
 - Flutter README.
 - `lib/features/README.md`.
-- Phase 17.10 completion record.
-- `docs/decisions.md` only for new durable decisions.
+- Phase 17.11 completion record.
+- `docs/decisions.md` only if a new durable decision is necessary.
 
 Document:
 
-- Request form architecture.
-- Anonymous/authenticated behavior.
-- Product-linked/custom entry points.
-- Validation.
-- Multipart attachments.
-- Submission state handling.
-- Uncertain-outcome handling.
-- Confirmation UI.
-- API readiness.
+- Feature architecture.
+- ENQ-001 contract mapping.
+- Anonymous and authenticated flows.
+- Contact validation.
+- Attachment behavior.
+- Product association.
+- Error handling.
+- Uncertain-outcome behavior.
+- Backend activation.
 - Test results.
-- Marionette results.
-- Known limitations.
+- Marionette verification.
+- Remaining limitations.
 
-Do not rewrite historical phase records.
+Do not rewrite completed Phase 17.10 history.
 
 ---
 
-## 22. Verification
+## 24. Verification commands
 
-Run:
+Run from `frontend/app`:
 
 ```bash
 flutter pub get
@@ -785,59 +947,67 @@ git diff --check
 git diff --cached --check
 ```
 
-Use existing local configuration and environment safeguards.
+Report the actual results.
 
-Do not commit secrets.
-
-Report actual command results.
+Do not claim success for commands that were not run.
 
 ---
 
-## 23. Definition of Done
+## 25. Definition of Done
 
-Phase 17.10 passes when:
+Phase 17.11 is complete when:
 
-- Furniture request form is implemented.
-- Catalog-linked and custom entry points work.
-- Anonymous customers are supported.
-- Authenticated CUSTOMER submissions use Clerk correctly.
-- The REQ-001 request model matches the frozen API.
-- Client-side validation improves usability without replacing backend validation.
-- Optional private attachment selection and multipart upload work.
-- Submission progress and errors are handled.
-- Duplicate automatic POST retries are prevented.
-- Successful submissions show accurate confirmation.
-- Product detail navigation is integrated.
+- The Contact placeholder is replaced with a real enquiry form.
+- ENQ-001 is integrated.
+- Anonymous visitors can submit enquiries.
+- Authenticated customers use the existing Clerk bearer boundary.
+- Subject and message validation match the frozen contract.
+- Contact information is validated.
+- Optional product context is handled correctly.
+- Optional private attachments work.
+- Duplicate submissions are prevented.
+- Uncertain POST outcomes are handled truthfully.
+- Successful submissions show confirmation.
+- Field errors and rate limits are handled.
+- The existing router remains authoritative.
 - Accessibility requirements are met.
-- Existing tests remain green.
+- Existing Flutter tests remain green.
 - New tests pass.
-- Token synchronization passes.
-- Debug APK builds.
+- The debug APK builds.
+- Design token synchronization passes.
 - Documentation is updated.
-- No deferred commerce features are introduced.
+- Furniture Requests remain unchanged.
+- No deferred commerce features are activated.
 
-If backend gating prevents real submission, mark the implementation **Flutter PASS / End-to-end BLOCKED**, not unconditional PASS.
+If backend gating prevents live submission, report:
 
-## 24. Completion report
+**Flutter implementation PASS / Live integration BLOCKED**
 
-Report:
+Do not claim unconditional end-to-end PASS.
+
+---
+
+## 26. Completion report
+
+Return a structured report containing:
 
 1. Repository inspection findings.
-2. Exact REQ-001 fields and validation rules.
-3. Backend route activation status.
+2. Exact ENQ-001 contract fields.
+3. Backend activation status.
 4. Feature architecture.
-5. Product-linked request flow.
-6. Custom request flow.
-7. Authentication handling.
-8. Attachment implementation.
-9. Submission/error handling.
-10. Success confirmation.
-11. Automated test results.
-12. Laravel verification.
-13. Marionette verification.
-14. Files changed.
-15. Documentation updates.
-16. Remaining blockers.
-17. Final PASS/FAIL assessment.
+5. Anonymous submission behavior.
+6. Authenticated submission behavior.
+7. Form and validation implementation.
+8. Attachment handling.
+9. Navigation integration.
+10. Success/error behavior.
+11. Security and privacy verification.
+12. Automated test results.
+13. Live Laravel test results.
+14. Marionette device results.
+15. Files changed.
+16. Documentation updated.
+17. Known limitations.
+18. Final PASS/FAIL assessment.
 
-**Final instruction:** Deliver the complete request-only furniture intake experience using the existing Flutter architecture and frozen Laravel REQ-001 contract. Preserve anonymous access, private attachments, backend authority, and all deferred commerce boundaries. Stop after Phase 17.10.
+**Final instruction:** Implement only Phase 17.11. Reuse the existing Flutter architecture and Phase 17.10 submission mechanics while keeping Enquiries a separate domain. Respect the frozen ENQ-001 API, anonymous access, private attachments, and request-only production scope. Stop after completing and verifying this phase.

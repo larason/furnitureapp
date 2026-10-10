@@ -8,16 +8,21 @@ const Set<String> furnitureRequestAttachmentTypes = <String>{
   'application/pdf',
 };
 
+/// The catalog product a request is about.
+///
+/// [name] is a display label only and is never submitted. It is `null` when the
+/// request was opened by a deep link that carried only a product id, so an
+/// internal identifier is never presented to the customer as a product name.
 class FurnitureRequestProductContext {
   const FurnitureRequestProductContext({
     required this.id,
-    required this.name,
+    this.name,
     this.imageUrl,
     this.imageAlt,
   });
 
   final String id;
-  final String name;
+  final String? name;
   final String? imageUrl;
   final String? imageAlt;
 }

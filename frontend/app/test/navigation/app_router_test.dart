@@ -167,7 +167,8 @@ void main() {
       harness.router.go(AppRoutes.furnitureRequest('prod_request_01'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Requesting: prod_request_01'), findsOneWidget);
+      expect(find.text('Requesting: prod_request_01'), findsNothing);
+      expect(find.text('Requesting: this furniture piece'), findsOneWidget);
     });
 
     group('public category routes', () {
