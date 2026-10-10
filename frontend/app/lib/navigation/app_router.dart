@@ -17,6 +17,9 @@ import '../features/product_detail/data/product_detail_repository.dart';
 import '../features/search/presentation/search_screen_host.dart';
 import '../features/product_detail/presentation/product_detail_screen.dart';
 import '../features/product_detail/data/product_detail.dart';
+import '../features/enquiries/data/enquiry_draft.dart';
+import '../features/enquiries/data/enquiry_repository.dart';
+import '../features/enquiries/presentation/enquiry_screen.dart';
 import '../features/furniture_requests/data/furniture_request.dart';
 import '../features/furniture_requests/data/furniture_request_repository.dart';
 import '../features/furniture_requests/presentation/furniture_request_screen.dart';
@@ -34,6 +37,7 @@ abstract final class AppRouter {
     CategoryRepository? categoryRepository,
     ProductDetailRepository? productDetailRepository,
     FurnitureRequestRepository? furnitureRequestRepository,
+    EnquiryRepository? enquiryRepository,
     AuthSession? authSession,
     bool showFixtureHero = false,
   }) {
@@ -124,7 +128,12 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.contactName,
           path: AppRoutes.contact,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Contact'),
+          builder: (_, state) => _enquiryScreen(
+            extra: state.extra,
+            enquiryRepository: enquiryRepository,
+            authSession: authSession,
+            diagnostics: diagnostics,
+          ),
         ),
         GoRoute(
           name: AppRoutes.accountName,
@@ -223,6 +232,37 @@ abstract final class AppRouter {
     }
     if (productId == null) return null;
     return FurnitureRequestProductContext(id: productId);
+  }
+
+  /// Public contact and enquiry intake.
+  ///
+  /// Product context is only ever taken from an already-loaded CAT-002 detail
+  /// passed by an in-app caller; a deep link carries no product, so no
+  /// identifier is inferred from a name or from browsing history.
+  static Widget _enquiryScreen({
+    required Object? extra,
+    required EnquiryRepository? enquiryRepository,
+    required AuthSession? authSession,
+    required AppDiagnostics diagnostics,
+  }) {
+    if (enquiryRepository == null) {
+      return const _RoutePlaceholder(title: 'Contact');
+    }
+    return EnquiryScreen(
+      repository: enquiryRepository,
+      authSession: authSession,
+      product: _enquiryProduct(extra),
+    );
+  }
+
+  static EnquiryProductContext? _enquiryProduct(Object? value) {
+    if (value is! ProductDetail) return null;
+    return EnquiryProductContext(
+      id: value.id,
+      name: value.name,
+      imageUrl: value.primaryImage?.url,
+      imageAlt: value.primaryImage?.altText,
+    );
   }
 
   /// Public product detail. The route parameter must be a valid identifier

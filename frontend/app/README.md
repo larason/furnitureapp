@@ -19,7 +19,8 @@ Material 3)**, **Phase 16.3 (environment configuration)**, **Phase 16.4
 **Phase 16.6 (routing/navigation)**, and **Phase 16.7 (feature/module
 structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
 (logging/diagnostics)**, **Phase 17.1 (home and catalog)**, **Phase 17.2
-(categories)**, **Phase 17.3 (product detail)**, **Phase 17.4 (search and filtering)**, and **Phase 17.10 (furniture requests)**.
+(categories)**, **Phase 17.3 (product detail)**, **Phase 17.4 (search and filtering)**,
+**Phase 17.10 (furniture requests)**, and **Phase 17.11 (enquiries)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
@@ -32,8 +33,8 @@ application home screen.
 ## Navigation
 
 `lib/navigation/` is the single route registry. Public routes are home, catalog,
-product/category details, search, made-to-order requests, contact, and the
-future Clerk sign-in/sign-up entry points. `/account` is the sole protected
+product/category details, search, made-to-order requests, contact/enquiries,
+and the future Clerk sign-in/sign-up entry points. `/account` is the sole protected
 placeholder route.
 
 The router refreshes from `ClerkAuthAdapter` without requesting or retaining a
@@ -80,9 +81,48 @@ Laravel authorization. The central `lib/navigation/` router remains the only
 route registry and `MaterialApp` root.
 
 Group Q feature implementation must remain request-first. Catalog, categories,
-product detail, search, and furniture requests are implemented; enquiries and
-account are future feature families. Cart, checkout, payments, orders, order
+product detail, search, furniture requests, and enquiries are implemented;
+account is a future feature family. Cart, checkout, payments, orders, order
 tracking, and favorites remain unimplemented and unregistered.
+
+### Enquiries (Phase 17.11)
+
+`lib/features/enquiries/` replaces the `/contact` placeholder with the public
+ENQ-001 enquiry form. It is a separate domain from `furniture_requests/`: the
+contact page never creates a furniture request, order, quotation, payment, or
+reservation, and only links to the Phase 17.10 route.
+
+- Anonymous visitors submit with a name plus at least one reachable phone or
+  email. An authenticated CUSTOMER uses the existing Clerk bearer boundary, and
+  Laravel derives ownership. No user identifier is ever sent, and a signed-in
+  session that cannot produce a token stops the submission instead of silently
+  degrading to an anonymous enquiry.
+- Validation mirrors the frozen bounds (subject 5-200, message 10-5000, name
+  120, phone 30, email 255) for usability only; Laravel remains authoritative.
+  Server field paths map back onto the matching controls.
+- `category` and `order_id` are not modelled: `category` is optional and staff
+  triage from `subject`/`message`, and `order_id` belongs to the deferred order
+  phases.
+- Zero or one private JPEG, PNG, WebP, or PDF up to 5 MiB is sent inline on the
+  same `multipart/form-data` ENQ-001 submission under the canonical
+  `attachment` field. Bytes stay in memory; only the file name and size are
+  shown. `ENQ-007` separate upload is not used.
+- The submission lifecycle is `editing -> submitting -> success | uncertain`.
+  The action is disabled while in flight so rapid taps cannot duplicate. A
+  timeout or connection failure is an **uncertain** outcome: it is never
+  auto-retried, never reported as "not submitted", and the warning survives
+  editing until the customer deliberately resubmits. A local cancellation is
+  never presented as a server rejection.
+- Optional product context is internal: the router builds it only from an
+  already-loaded `ProductDetail` passed as route `extra`. No product-detail
+  button was added, no identifier is derived from a name, and browsing history
+  never attaches a product implicitly.
+- The confirmation view shows only the returned `enquiry_status` and the opaque
+  reference. It claims no email or SMS delivery, promises no response time, and
+  never navigates to a private enquiry endpoint.
+- `lib/core/attachments/pending_attachment.dart` owns the frozen attachment
+  limits and the content-type hint. Phase 17.10 keeps its own equivalent so
+  Furniture Requests remain unchanged.
 
 ### Search and filtering (Phase 17.4)
 
@@ -552,6 +592,18 @@ flutter run --dart-define-from-file=config/local.json
   implements anonymous/custom and catalog-linked REQ-001 submissions with
   optional inline private attachments. It does not persist drafts or tokens,
   retry uncertain POST outcomes, or implement request history.
+- **Live enquiry verification is anonymous-only.** Phase 17.11 verified ENQ-001
+  against the local Laravel development server from a Dart client probe: JSON
+  creation, multipart with one private attachment, product association, `OPEN`
+  initial status, and the `422`/`429`/`UNSUPPORTED_ATTACHMENT_TYPE` failure
+  paths all behaved as the frozen contract requires. No Clerk sign-in workflow
+  exists yet, so the authenticated CUSTOMER path is **not** live-verified and is
+  not claimed. Enquiry history (`ENQ-002`/`ENQ-003`) is intentionally absent, so
+  a submitted enquiry is visible only through the returned reference.
+- **Physical-device coverage is partial.** The enquiry form, its states, and 2x
+  text scaling were verified on an Android emulator with Marionette against live
+  Laravel. Landscape orientation and a full screen-reader traversal pass are
+  still outstanding.
 - **Product-detail fixture content is partly synthetic.** In `fixtures` mode the
   second gallery image and the per-product options are development-only values
   documented in the Phase 17.3 section above. Only local debug builds can read

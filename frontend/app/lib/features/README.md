@@ -108,8 +108,48 @@ leaves Laravel authoritative. An optional JPEG, PNG, WebP, or PDF is sent in the
 same private multipart REQ-001 submission. Timeout or connection failures are
 uncertain outcomes and are never retried automatically.
 
-Enquiries, account, cart, checkout, payment, order, and tracking surfaces remain
-outside the implemented phases.
+## Enquiries (Phase 17.11)
+
+`enquiries/` owns the ENQ-001 general enquiry flow on the public `/contact`
+route. It is a separate domain from `furniture_requests/` and never creates a
+furniture request, order, quotation, payment, or reservation; the contact page
+only links to the Phase 17.10 route.
+
+- `EnquiryDraft` carries only the ENQ-001 allow-list: `subject`, `message`,
+  `name`, `phone`, `email`, and an optional `product_id`. It holds no user
+  identity — `user_id` is server-derived and is never sent, so Laravel's strict
+  unknown-field rejection is never tripped by this client.
+- `category` and `order_id` are deliberately not modelled. `category` is
+  optional and §27.5 lets staff triage from `subject`/`message`; `order_id`
+  belongs to the deferred order phases and anonymous callers may not send it.
+- `validateEnquiry` mirrors the frozen bounds (subject 5–200, message 10–5000,
+  name 120, phone 30, email 255) and the actor-aware contact rule: anonymous
+  visitors need a name plus a reachable phone or email, an authenticated
+  customer does not. Advisory only; Laravel stays authoritative.
+- `ApiEnquiryRepository` posts JSON, or one inline `multipart/form-data` file
+  under the canonical `attachment` field. `ENQ-007` separate upload is not used.
+- `EnquiryController` owns the explicit `editing → submitting → success |
+  uncertain` lifecycle. A signed-in session that cannot produce a token stops
+  the submission instead of degrading to an anonymous enquiry. Timeouts and
+  connection failures are uncertain outcomes — never auto-retried, never
+  reported as "not submitted" — and the warning survives editing until the
+  customer deliberately resubmits. Disposal cancels an in-flight request
+  without notifying a disposed controller.
+- Product context is internal support only: the router builds it from an
+  already-loaded `ProductDetail` passed as route `extra`. No product-detail
+  button was added, no identifier is derived from a name, and browsing history
+  never attaches a product implicitly.
+- The confirmation view shows only the returned `enquiry_status` and the opaque
+  reference. It claims no email/SMS delivery, promises no response time, and
+  never navigates to a private enquiry endpoint.
+
+`core/attachments/pending_attachment.dart` owns the frozen V1 attachment limits
+and the content-type hint shared by the intake features. Phase 17.10 keeps its
+own equivalent because this phase must leave Furniture Requests unchanged;
+consolidating them is left to a later phase.
+
+Account, cart, checkout, payment, order, and tracking surfaces remain outside
+the implemented phases.
 
 ## Module Convention
 
