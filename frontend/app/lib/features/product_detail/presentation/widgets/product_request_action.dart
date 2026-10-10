@@ -5,11 +5,8 @@ import '../../data/product_detail.dart';
 
 /// The request-first customer action for a made-to-order piece.
 ///
-/// This is an explicitly labelled preview, not a working conversion journey.
-/// Phase 17.3 owns no request API: nothing is submitted, no draft is stored, no
-/// `REQ-001` payload is built, and no order or reservation is created. The
-/// action is rendered disabled so it can never look like it submitted a
-/// request; Phase 17.10 replaces it with the real request flow.
+/// The enabled button calls [onRequest] to open the furniture request flow.
+/// It does not create an order, payment, deposit, reservation, or cart action.
 ///
 /// No cart, checkout, payment, deposit, reservation, or "buy now" control
 /// appears anywhere on the page.

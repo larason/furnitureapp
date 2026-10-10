@@ -80,7 +80,7 @@ Laravel authorization. The central `lib/navigation/` router remains the only
 route registry and `MaterialApp` root.
 
 Group Q feature implementation must remain request-first. Catalog, categories,
-product detail, and search are implemented; furniture requests, enquiries, and
+product detail, search, and furniture requests are implemented; enquiries and
 account are future feature families. Cart, checkout, payments, orders, order
 tracking, and favorites remain unimplemented and unregistered.
 
@@ -160,7 +160,10 @@ falls back to fixtures after an API error.
 - Category navigation uses the embedded category's server slug and the existing `/categories/{slug}` route. No second category route, repository, or locally derived slug exists.
 - A `RESOURCE_NOT_FOUND` (404) becomes an unavailable-product state that returns to the catalog. It never reveals whether an unpublished product exists, and it is never confused with a network failure, which stays a retryable `AppErrorView`.
 - A new route identifier rebuilds the controller, and obsolete requests are cancelled and their responses discarded, so one product can never appear under another.
-- **Request-only behaviour is preserved.** The primary action is a labelled *preview*: the "Request this furniture" button is rendered disabled with "Requesting is not available in the app yet." beneath it. Nothing is submitted, no `REQ-001` payload is built, no draft is stored, and no order, payment, deposit, reservation, or cart control exists on the page. Phase 17.10 replaces the preview with the real request flow.
+- **Request-only behaviour is preserved.** `ProductRequestAction` enables the
+  "Request this furniture" button and opens the Phase 17.10 request flow. The
+  flow submits a `REQ-001` request, not an order, payment, deposit, reservation,
+  or cart action.
 
 Development fixture details reuse the shared `fixtureProductSummaries` so a
 catalog card always opens a detail page with the same identity, category, price,
@@ -412,7 +415,7 @@ cp config/local.example.json config/local.json
 ```
 
 Android Emulator (the host loopback is `10.0.2.2`; this is the default in
-`config/local-device.json`):
+`config/local.json`):
 
 ```bash
 flutter run --dart-define-from-file=config/local.json

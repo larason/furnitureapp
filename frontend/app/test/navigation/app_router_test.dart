@@ -163,6 +163,11 @@ void main() {
       expect(find.text('Furniture requirements'), findsOneWidget);
       expect(find.byType(TextFormField), findsWidgets);
       expect(find.text('Requesting:'), findsNothing);
+
+      harness.router.go(AppRoutes.furnitureRequest('prod_request_01'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Requesting: prod_request_01'), findsOneWidget);
     });
 
     group('public category routes', () {

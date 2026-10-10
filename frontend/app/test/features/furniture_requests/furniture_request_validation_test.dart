@@ -55,4 +55,19 @@ void main() {
 
     expect(validateFurnitureRequest(draft), isEmpty);
   });
+
+  test('accepts whitespace around numeric values', () {
+    final errors = validateFurnitureRequest(
+      const FurnitureRequestDraft(
+        name: 'Asha Mushi',
+        phone: '+255700000000',
+        quantity: ' 2 ',
+        length: ' 120.5 ',
+        width: ' 80 ',
+        height: ' 75 ',
+      ),
+    );
+
+    expect(errors, isEmpty);
+  });
 }

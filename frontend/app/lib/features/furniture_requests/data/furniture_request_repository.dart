@@ -63,10 +63,10 @@ class ApiFurnitureRequestRepository implements FurnitureRequestRepository {
 
   Map<String, Object?> _values(FurnitureRequestDraft draft) {
     final dimensions = _dimensions(draft);
+    final quantity = draft.quantity.trim();
     return <String, Object?>{
       if (draft.product case final product?) 'product_id': product.id,
-      if (draft.quantity.trim().isNotEmpty)
-        'quantity': int.parse(draft.quantity),
+      if (quantity.isNotEmpty) 'quantity': int.parse(quantity),
       'name': draft.name.trim(),
       if (draft.phone.trim().isNotEmpty) 'phone': draft.phone.trim(),
       if (draft.email.trim().isNotEmpty) 'email': draft.email.trim(),
@@ -86,8 +86,9 @@ class ApiFurnitureRequestRepository implements FurnitureRequestRepository {
       'width': draft.width,
       'height': draft.height,
     }.entries) {
-      if (entry.value.trim().isNotEmpty) {
-        values[entry.key] = num.parse(entry.value);
+      final trimmedValue = entry.value.trim();
+      if (trimmedValue.isNotEmpty) {
+        values[entry.key] = num.parse(trimmedValue);
       }
     }
     return values.isEmpty ? null : <String, Object?>{...values, 'unit': 'cm'};

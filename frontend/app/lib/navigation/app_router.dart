@@ -101,13 +101,25 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.furnitureRequestsName,
           path: AppRoutes.furnitureRequests,
-          builder: (_, state) => furnitureRequestRepository == null
-              ? const _RoutePlaceholder(title: 'Furniture request')
-              : FurnitureRequestScreen(
-                  repository: furnitureRequestRepository,
-                  authSession: authSession,
-                  product: _requestProduct(state.extra),
-                ),
+          builder: (_, state) => _furnitureRequestScreen(
+            identifier: null,
+            extra: state.extra,
+            furnitureRequestRepository: furnitureRequestRepository,
+            authSession: authSession,
+            diagnostics: diagnostics,
+          ),
+          routes: <RouteBase>[
+            GoRoute(
+              path: AppRoutes.furnitureRequestProductPath,
+              builder: (_, state) => _furnitureRequestScreen(
+                identifier: state.pathParameters['productId'],
+                extra: state.extra,
+                furnitureRequestRepository: furnitureRequestRepository,
+                authSession: authSession,
+                diagnostics: diagnostics,
+              ),
+            ),
+          ],
         ),
         GoRoute(
           name: AppRoutes.contactName,
@@ -174,16 +186,43 @@ abstract final class AppRouter {
     );
   }
 
-  static FurnitureRequestProductContext? _requestProduct(Object? value) {
-    if (value is! ProductDetail || value.productType != 'MADE_TO_ORDER') {
-      return null;
+  static Widget _furnitureRequestScreen({
+    required String? identifier,
+    required Object? extra,
+    required FurnitureRequestRepository? furnitureRequestRepository,
+    required AuthSession? authSession,
+    required AppDiagnostics diagnostics,
+  }) {
+    final productId = identifier == null
+        ? null
+        : _validIdentifier(identifier, diagnostics);
+    if (identifier != null && productId == null) {
+      return const _RouteErrorScreen(invalidParameter: true);
     }
-    return FurnitureRequestProductContext(
-      id: value.id,
-      name: value.name,
-      imageUrl: value.primaryImage?.url,
-      imageAlt: value.primaryImage?.altText,
+    if (furnitureRequestRepository == null) {
+      return const _RoutePlaceholder(title: 'Furniture request');
+    }
+    return FurnitureRequestScreen(
+      repository: furnitureRequestRepository,
+      authSession: authSession,
+      product: _requestProduct(extra, productId),
     );
+  }
+
+  static FurnitureRequestProductContext? _requestProduct(
+    Object? value,
+    String? productId,
+  ) {
+    if (value is ProductDetail && value.productType == 'MADE_TO_ORDER') {
+      return FurnitureRequestProductContext(
+        id: value.id,
+        name: value.name,
+        imageUrl: value.primaryImage?.url,
+        imageAlt: value.primaryImage?.altText,
+      );
+    }
+    if (productId == null) return null;
+    return FurnitureRequestProductContext(id: productId, name: productId);
   }
 
   /// Public product detail. The route parameter must be a valid identifier

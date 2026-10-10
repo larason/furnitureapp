@@ -293,16 +293,22 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
       type: FileType.custom,
       allowedExtensions: const <String>['jpg', 'jpeg', 'png', 'webp', 'pdf'],
     );
-    if (file == null) {
+    if (!mounted || file == null) {
       return;
     }
-    _change(
-      attachment: FurnitureRequestAttachment(
-        name: file.name,
-        bytes: await file.readAsBytes(),
-        contentType: _contentType(file.extension),
-      ),
-    );
+    try {
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      _change(
+        attachment: FurnitureRequestAttachment(
+          name: file.name,
+          bytes: bytes,
+          contentType: _contentType(file.extension),
+        ),
+      );
+    } catch (_) {
+      return;
+    }
   }
 
   Future<void> _submit() async {

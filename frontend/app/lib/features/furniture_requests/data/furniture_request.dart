@@ -148,8 +148,9 @@ Map<String, String> validateFurnitureRequest(FurnitureRequestDraft draft) {
 }
 
 void _quantityError(String value, Map<String, String> errors) {
-  if (value.trim().isEmpty) return;
-  final quantity = int.tryParse(value);
+  final trimmedValue = value.trim();
+  if (trimmedValue.isEmpty) return;
+  final quantity = int.tryParse(trimmedValue);
   if (quantity == null || quantity < 1 || quantity > 100) {
     errors['quantity'] = 'Enter a whole number from 1 to 100.';
   }
@@ -161,8 +162,9 @@ void _dimensionErrors(FurnitureRequestDraft draft, Map<String, String> errors) {
     'width': draft.width,
     'height': draft.height,
   }.entries) {
-    if (entry.value.trim().isEmpty) continue;
-    final value = num.tryParse(entry.value);
+    final trimmedValue = entry.value.trim();
+    if (trimmedValue.isEmpty) continue;
+    final value = num.tryParse(trimmedValue);
     if (value == null || !value.isFinite || value <= 0 || value > 100000) {
       errors[entry.key] = 'Enter a positive measurement up to 100000 cm.';
     }

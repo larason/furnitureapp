@@ -195,8 +195,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       const SizedBox(height: AppSpacing.space8),
       ProductRequestAction(
         selectedVariant: _controller.selectedVariant,
-        onRequest: () =>
-            context.push(AppRoutes.furnitureRequests, extra: product),
+        onRequest: () => context.push(
+          AppRoutes.furnitureRequest(product.id),
+          extra: product,
+        ),
       ),
     ],
   );

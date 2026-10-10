@@ -36,6 +36,10 @@ class FurnitureRequestController extends ChangeNotifier {
   void update(FurnitureRequestDraft draft) {
     _draft = draft;
     _errors = const {};
+    if (_state == FurnitureRequestSubmissionState.uncertain) {
+      notifyListeners();
+      return;
+    }
     _message = null;
     if (_state != FurnitureRequestSubmissionState.submitting) {
       _state = FurnitureRequestSubmissionState.editing;
@@ -59,11 +63,19 @@ class FurnitureRequestController extends ChangeNotifier {
     try {
       final session = authSession;
       final signedIn = session?.isSignedIn ?? false;
-      if (signedIn && await session!.getToken() == null) {
-        _message =
-            'Your signed-in session could not be confirmed. Sign in again or explicitly sign out to submit as a visitor.';
-        _state = FurnitureRequestSubmissionState.editing;
-        return;
+      if (signedIn) {
+        String? token;
+        try {
+          token = await session!.getToken();
+        } catch (_) {
+          token = null;
+        }
+        if (token == null) {
+          _message =
+              'Your signed-in session could not be confirmed. Sign in again or explicitly sign out to submit as a visitor.';
+          _state = FurnitureRequestSubmissionState.editing;
+          return;
+        }
       }
       _submitted = await repository.submit(
         _draft,
