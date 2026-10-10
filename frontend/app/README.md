@@ -348,11 +348,14 @@ client after configuration validation but performs no API request.
 
 ## Authentication session boundary
 
-Phase 16.5 uses the current `clerk_auth` community-maintained
-beta SDK (`0.0.18-beta`) behind `ClerkAuthAdapter`. The SDK owns Clerk sign-in,
-session restoration, renewal, and sign-out. The app exposes only the current
-session token through `AuthTokenProvider`; `ApiClient` obtains it at request
-time and never stores bearer credentials.
+Phase 17.12 uses `clerk_auth` and the official Flutter companion
+`clerk_flutter` beta SDKs (`0.0.18-beta`) behind `ClerkAuthAdapter`. The
+adapter owns the one shared `ClerkAuthState`; `ClerkAuth` receives that state
+for the official `ClerkAuthentication` flow and never creates a second session
+lifecycle. Clerk owns email/password sign-up, email-code verification, sign-in,
+password recovery, session restoration, renewal, and sign-out. The app exposes
+only the current session token through `AuthTokenProvider`; `ApiClient` obtains
+it at request time and never stores bearer credentials.
 
 The SDK's default file persistor is not used because it writes plaintext JSON.
 `SecureClerkPersistor` stores the SDK's required client/session state through
@@ -360,11 +363,13 @@ The SDK's default file persistor is not used because it writes plaintext JSON.
 backup is disabled in the main manifest to prevent encrypted storage metadata
 from being restored without its device key.
 
-The package is beta and community-maintained rather than an official stable
-Clerk Flutter SDK. The adapter isolates this dependency so a supported SDK can
-replace it without changing API consumers. No sign-in UI is included in this
-phase, and live authenticated verification remains blocked until a real Clerk
-publishable key and a supported development sign-in workflow are supplied.
+The package is beta. The adapter isolates the SDK dependency so API consumers
+remain independent of Clerk widget internals. The Material 3 theme supplies a
+`ClerkThemeExtension` from generated canonical tokens. `/sign-in` and
+`/sign-up` use Clerk's prebuilt flow when the app has an initialized adapter;
+`/account` reads and updates Laravel's frozen `GET/PATCH /api/v1/me` profile
+representation. Only `name` and `phone` are submitted to Laravel. Password,
+email verification, recovery, and session controls remain Clerk-owned.
 
 ## Marionette MCP
 

@@ -20,6 +20,9 @@ import '../features/product_detail/data/product_detail.dart';
 import '../features/enquiries/data/enquiry_draft.dart';
 import '../features/enquiries/data/enquiry_repository.dart';
 import '../features/enquiries/presentation/enquiry_screen.dart';
+import '../features/account/data/profile_repository.dart';
+import '../features/account/presentation/account_screen.dart';
+import '../features/account/presentation/authentication_screen.dart';
 import '../features/furniture_requests/data/furniture_request.dart';
 import '../features/furniture_requests/data/furniture_request_repository.dart';
 import '../features/furniture_requests/presentation/furniture_request_screen.dart';
@@ -38,7 +41,9 @@ abstract final class AppRouter {
     ProductDetailRepository? productDetailRepository,
     FurnitureRequestRepository? furnitureRequestRepository,
     EnquiryRepository? enquiryRepository,
+    ProfileRepository? profileRepository,
     AuthSession? authSession,
+    bool clerkUiEnabled = false,
     bool showFixtureHero = false,
   }) {
     final guard = RouteGuard(getAuthStatus, diagnostics: diagnostics);
@@ -138,17 +143,23 @@ abstract final class AppRouter {
         GoRoute(
           name: AppRoutes.accountName,
           path: AppRoutes.account,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Account'),
+          builder: (_, _) => profileRepository == null
+              ? const _RoutePlaceholder(title: 'Account')
+              : AccountScreen(repository: profileRepository),
         ),
         GoRoute(
           name: AppRoutes.signInName,
           path: AppRoutes.signIn,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Sign in'),
+          builder: (_, _) => clerkUiEnabled
+              ? const AuthenticationScreen()
+              : const _RoutePlaceholder(title: 'Sign in'),
         ),
         GoRoute(
           name: AppRoutes.signUpName,
           path: AppRoutes.signUp,
-          builder: (_, _) => const _RoutePlaceholder(title: 'Sign up'),
+          builder: (_, _) => clerkUiEnabled
+              ? const AuthenticationScreen()
+              : const _RoutePlaceholder(title: 'Sign up'),
         ),
         GoRoute(
           name: AppRoutes.authStatusName,

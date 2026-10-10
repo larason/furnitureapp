@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:clerk_auth/clerk_auth.dart';
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/foundation.dart' hide DiagnosticLevel;
 
 import 'auth_session.dart';
@@ -46,6 +47,11 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   bool _signOutInProgress = false;
   bool _disposed = false;
 
+  ClerkAuthState? get clerkAuthState => switch (_gateway) {
+    _ClerkAuthGateway(:final auth) => auth,
+    _ => null,
+  };
+
   @override
   ClerkAuthStatus get status => _status;
 
@@ -62,8 +68,8 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
       store: store ?? FlutterSecureKeyValueStore(),
       diagnostics: diagnostics,
     );
-    final auth = Auth(
-      config: AuthConfig(
+    final auth = await ClerkAuthState.create(
+      config: ClerkAuthConfig(
         publishableKey: publishableKey,
         persistor: persistor,
         sessionTokenPolling: true,
@@ -198,7 +204,9 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
 class _ClerkAuthGateway implements ClerkAuthGateway {
   _ClerkAuthGateway(this._auth);
 
-  final Auth _auth;
+  final ClerkAuthState _auth;
+
+  ClerkAuthState get auth => _auth;
 
   @override
   Stream<void> get changes => _auth.sessionTokenStream.map<void>((_) {});
@@ -214,7 +222,7 @@ class _ClerkAuthGateway implements ClerkAuthGateway {
       _auth.isSignedIn && _auth.session?.status.isActive == true;
 
   @override
-  Future<void> initialize() => _auth.initialize();
+  Future<void> initialize() async {}
 
   @override
   Future<String?> getSessionToken() async {

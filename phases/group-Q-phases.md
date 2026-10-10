@@ -1,940 +1,1143 @@
-# Phase 17.11 — Flutter Contact & Enquiries
+# Phase 17.12 — Flutter Registration, Login & Profile/Account
 
 **Project:** SL Furnitures  
 **Application:** Flutter Android Customer App  
 **Group:** Q — Flutter Customer Features  
-**Phase:** 17.11 — Enquiries  
-**Prerequisites:** Phases 16.1–16.9, 17.1–17.4, 17.10  
-**Implementation approach:** Existing architecture first, frozen Laravel API, no commerce activation
+**Phase:** 17.12  
+**Scope:** Customer registration, login, verification, recovery, authenticated sessions, profile/account  
+**Prerequisites:** Phases 16.1–16.9, 17.1–17.4, 17.10–17.11  
+**Status:** READY FOR IMPLEMENTATION
 
-## 1. Objective
+## 1. Mission
 
-Implement the complete Contact & Enquiries feature for the request-only production launch.
+Implement the first complete customer authentication and account-management experience in the Flutter Android application.
 
-Replace the existing `/contact` placeholder with a functional, polished, accessible enquiry screen.
+Use the existing Clerk integration, Laravel API, secure session storage, centralized routing, and Material 3 design system.
 
-The feature must support:
+The feature must allow a customer to:
 
-1. Anonymous visitor enquiries.
-2. Authenticated CUSTOMER enquiries.
-3. General business questions.
-4. Optional catalog-product context where the API permits it.
-5. Contact information.
-6. Subject and message.
-7. Optional private attachment.
-8. Validation and safe API submission.
-9. Loading, error, and success states.
-10. Explicit recovery from uncertain submission outcomes.
+1. Register using email and password.
+2. Verify their email when required by Clerk.
+3. Sign in.
+4. Recover a forgotten password.
+5. Remain signed in across application restarts.
+6. Sign out securely.
+7. View their account.
+8. View and edit permitted profile details.
+9. Access authenticated customer features.
+10. Recover gracefully from expired or invalid sessions.
 
-The feature must not create furniture requests, orders, quotations, payments, reservations, or customer support chat sessions.
+Do not build a new authentication provider or store passwords in Laravel through Flutter.
 
-Keep Phase 17.10 furniture requests separate from enquiries.
+**Critical:** This phase must make the existing authenticated Furniture Requests and Enquiries flows genuinely usable and testable.
+
+Do not activate deferred commerce functionality.
 
 ---
 
-## 2. Inspect the repository before implementation
+## 2. Mandatory repository and contract inspection
 
-Read:
+Before modifying code, read:
 
 - Root `AGENTS.md`.
-- `frontend/AGENTS.md`.
+- `frontend/AGENTS.md`, if present.
 - `frontend/app/README.md`.
 - `frontend/app/lib/features/README.md`.
 - `docs/decisions.md`.
-- `docs/api/api-contract.md` section 27.
+- `docs/api/api-contract.md` sections 17, 18 and 29.
+- `docs/api/api-conventions.md`.
 - `docs/api/api-resources.md`.
 - `docs/api/openapi.yaml`.
-- `docs/api/api-conventions.md`.
+- `docs/domain/business-rules.md`.
+- `frontend/design-system/tokens.css`.
 - `frontend/design-system/DESIGN.md`.
 - `frontend/design-system/ACCESSIBILITY.md`.
-- `frontend/design-system/tokens.css`.
-- Phase 17.10 implementation and completion documentation.
-- Existing Flutter enquiry placeholder.
-- Existing `lib/navigation/` route registry.
-- Existing `FeatureDependencies`.
-- Existing ApiClient and multipart support.
-- Existing ClerkAuthAdapter and AuthSession.
-- Existing furniture request form, attachment picker, repository, controller, and tests.
-- Laravel ENQ-001 route, controller, FormRequest, service, resource, rate limiter, attachment handling, and feature tests.
+- Existing Flutter authentication adapter.
+- Existing AuthSession implementation.
+- Existing secure-storage integration.
+- Existing ApiClient authentication modes.
+- Existing go_router configuration.
+- Existing `/account` placeholder and protected-route logic.
+- Existing Laravel Clerk middleware and user provisioning logic.
+- Laravel USER-001, USER-002 and USER-003 handlers.
+- Existing frontend website Clerk configuration and authentication conventions.
+- Phase 17.10 and 17.11 completion records.
 
-### Required inspection report
+Inspect installed Flutter dependencies and the current supported Clerk Flutter SDK.
 
-Before coding, identify:
+### Pre-implementation report
 
-- Exact ENQ-001 request fields.
-- Required and nullable fields.
-- Validation bounds.
-- Anonymous and authenticated contact rules.
-- Product and order association validation.
-- Multipart encoding requirements.
-- Attachment limits.
-- Response representation.
-- Error codes and field paths.
-- Backend route activation status.
-- Whether ENQ-007 is operational.
-- Existing reusable Flutter form components.
-- Existing request-submission state handling.
+Identify:
 
-Do not infer contract details from the furniture request form.
+- Exact Clerk Flutter SDK and version.
+- Whether native Flutter sign-up/sign-in APIs are supported.
+- Existing Clerk initialization lifecycle.
+- Existing session-token retrieval contract.
+- Existing session persistence mechanism.
+- Current Laravel Clerk JWT verification.
+- How Laravel creates or synchronizes a local customer record.
+- Current customer role assignment.
+- Actual USER-001/002/003 request and response schemas.
+- Existing registration requirements.
+- Email verification requirements.
+- Password recovery support.
+- Existing account deletion policy, if any.
+- Existing route protection and redirect handling.
+- Existing Flutter testing conventions.
 
-The Enquiry API is a separate resource with different validation.
+Do not begin with UI implementation before these boundaries are understood.
 
----
+If the installed Clerk package cannot support the required native workflow, investigate the officially supported integration path and document the decision before changing dependencies.
 
-## 3. Frozen API contract
-
-Use:
-
-POST /api/v1/enquiries
-
-This is ENQ-001.
-
-Do not create:
-
-- `/contact/submit`
-- `/messages`
-- `/support/tickets`
-- `/customer/enquiries`
-- A Next.js proxy endpoint
-- A Firebase collection
-- A direct database connection
-
-The existing Laravel API is authoritative.
-
-### Canonical enquiry fields
-
-Inspect the frozen schema for:
-
-- `subject`
-- `message`
-- `name`
-- `phone`
-- `email`
-- `product_id`
-- `order_id`
-- `attachment`
-
-Only include fields supported by ENQ-001.
-
-Do not send server-controlled fields:
-
-- `user_id`
-- `enquiry_status`
-- `staff_internal_notes`
-- `created_at`
-- `updated_at`
-- `reference`
-- `payment_id`
-- `payment_status`
-- `order_status`
-- `create_order`
-
-Unknown fields must not be silently added.
-
-### Response handling
-
-Parse the canonical `data` response envelope.
-
-Use the backend's actual enquiry representation, including its opaque ID, reference, status, and timestamps where documented.
-
-Do not invent response fields.
+Do not fabricate Clerk SDK methods or rely on obsolete examples.
 
 ---
 
-## 4. Anonymous submission
+## 3. Identity and account architecture
 
-The contact page must work without Clerk authentication.
+The approved architecture is:
 
-Anonymous visitors must provide:
+**Clerk → Authentication and identity**
 
-- Name.
-- At least one reachable contact method: phone or email.
-- Valid subject.
-- Valid message.
+**Laravel → Application authorization and customer profile**
 
-Do not force account creation.
+**Flutter → Presentation, navigation and orchestration**
 
-Do not redirect anonymous visitors to `/account`.
+### Clerk responsibilities
 
-Do not require a Clerk token.
+- Email/password registration.
+- Password verification.
+- Email verification challenges.
+- Login.
+- Password recovery.
+- Session creation.
+- Session restoration.
+- Token issuance and renewal.
+- Sign-out.
+- Identity lifecycle operations supported by the approved integration.
 
-Do not use an email address as proof of ownership.
+### Laravel responsibilities
 
-### Authenticated submission
+- Verify Clerk bearer tokens.
+- Resolve the local user.
+- Enforce CUSTOMER authorization.
+- Manage application-level customer profile data.
+- Enforce active/inactive account state.
+- Validate profile updates.
+- Return canonical API errors.
 
-Authenticated CUSTOMER submissions use the existing Clerk session boundary.
+### Flutter responsibilities
 
-Laravel derives ownership from the verified token.
+- Present authentication screens.
+- Collect and validate user input.
+- Invoke supported Clerk operations.
+- Reflect authentication state.
+- Attach tokens only through the existing ApiClient boundary.
+- Load and update the Laravel profile.
+- Navigate correctly.
+- Clear private UI state on sign-out.
 
-Contact information may be supplied or derived according to the frozen ENQ-001 contract.
-
-If profile prefill is available, the customer must be able to edit the submitted contact snapshot.
-
-Never send a client-controlled user ID.
-
-### Authentication failures
-
-An invalid authenticated session must not silently become an anonymous submission.
-
-Respect the existing authentication-state policy.
-
-Keep public contact access available when Clerk initialization is unavailable.
-
----
-
-## 5. Feature architecture
-
-Create the feature inside:
-
-lib/features/enquiries/
-
-Follow the existing feature-first convention.
-
-Suggested structure:
-
-lib/features/enquiries/
-  data/
-    enquiry_draft.dart
-    enquiry_submission.dart
-    enquiry_repository.dart
-  presentation/
-    enquiry_controller.dart
-    enquiry_screen.dart
-    enquiry_success_screen.dart
-    widgets/
-      enquiry_contact_fields.dart
-      enquiry_attachment_field.dart
-
-Adapt the structure to the actual repository.
-
-Small features must not introduce unnecessary layers.
-
-### Dependencies
-
-Use constructor injection through `FeatureDependencies`.
-
-Reuse:
-
-- ApiClient.
-- ApiAuthMode.
-- AuthSession.
-- RequestCancellation.
-- AsyncViewState.
-- ErrorPresentationMapper.
-- AppDiagnostics.
-- Existing theme.
-- Central go_router.
-
-Do not instantiate a new HTTP client.
-
-Do not initialize Clerk inside this feature.
-
-Do not read secure storage directly.
-
-Do not create another global state manager.
-
-### Phase 17.10 reuse
-
-Inspect the furniture request implementation for reusable mechanisms:
-
-- Attachment file selection.
-- File-size/type validation.
-- Multipart assembly.
-- Submission progress state.
-- Field error mapping.
-- Uncertain-outcome handling.
-- Duplicate-submit prevention.
-
-Reuse common mechanics without coupling the Enquiry domain to the Furniture Request domain.
-
-If shared extraction is justified, place domain-neutral utilities in the appropriate shared core layer.
-
-Do not move furniture request models into enquiries or vice versa.
-
-Avoid a generic, configurable "everything form" abstraction.
+Do not introduce Firebase Authentication, Supabase Auth, custom Laravel password login, or a second identity database.
 
 ---
 
-## 6. Contact screen design
+## 4. Registration
 
-Use the existing `/contact` route.
+Implement a native registration experience using the approved Clerk Flutter integration.
 
-Recommended page hierarchy:
+### Registration fields
 
-1. Introductory heading.
-2. Short explanatory copy.
-3. Contact information.
-4. Enquiry details.
-5. Optional reference attachment.
-6. Submit action.
-7. Submission feedback.
+The established signup policy is:
 
-### Suggested copy
+- Email address — required.
+- Password — required.
 
-Heading:
+Do not require:
 
-"How can we help?"
-
-Supporting text:
-
-"Have a question about our furniture, services, or an existing enquiry? Send us a message and our team will get back to you."
-
-Do not promise a specific response time unless the business has an approved response-time policy.
-
-### Form fields
-
-Contact:
-
-- Full name.
 - Phone number.
-- Email address.
+- Delivery address.
+- Billing address.
+- Furniture preferences.
+- Date of birth.
+- Marketing consent.
+- Customer role selection.
 
-Enquiry:
+The account should be created as a CUSTOMER through the existing trusted backend identity provisioning flow.
 
-- Subject.
-- Message.
+Do not allow registration as STAFF or ADMIN.
 
-Context:
+### Registration screen
 
-- Optional related product, when available and valid.
+Recommended layout:
 
-Attachment:
-
-- Optional image or PDF.
-
-### Form behavior
-
-- Clear labels.
-- Appropriate keyboard types.
-- Visible required/optional indicators.
-- Character limits where useful.
-- Clear inline validation.
-- Keyboard-safe scrolling.
-- Disabled duplicate submission while in flight.
-
-Do not use a large multi-step wizard for this simple contact form.
-
----
-
-## 7. Subject and message
-
-The frozen enquiry contract specifies:
-
-- Subject: 5–200 characters.
-- Message: 10–5,000 characters.
-
-Implement these bounds.
-
-### Subject
-
-Use a plain-text single-line field.
-
-Example placeholder:
-
-"What would you like to ask?"
-
-Do not add a new closed subject-category enum unless the backend contract supports it.
-
-### Message
-
-Use a multiline plain-text field.
-
-Example placeholder:
-
-"Tell us how we can help..."
-
-Preserve meaningful line breaks.
-
-Do not submit rich text, HTML, Markdown, or executable content.
-
-Do not implement message threads or customer/staff replies.
-
-The original enquiry is immutable after submission.
-
----
-
-## 8. Optional product association
-
-The ENQ-001 contract permits an optional product reference.
-
-This is useful for questions such as:
-
-- Is this furniture available in another finish?
-- Can you explain the materials used?
-- What are the delivery options for this product?
-
-### Requirements
-
-If a valid product context is provided:
-
-- Use the server-returned opaque product ID.
-- Show the product name.
-- Reuse the existing CatalogImage.
-- Preserve the distinction between an enquiry and a furniture request.
-
-Do not derive a product ID from its display name.
-
-Do not create a second product-detail repository.
-
-Do not automatically include a product association merely because the user previously browsed a product.
-
-### Navigation
-
-A product-related enquiry entry point may be added where it fits the existing product-detail UI.
-
-Do not replace or weaken the Phase 17.10 "Request this furniture" action.
-
-If adding a new product-detail enquiry action is not required by the frozen Phase 17.11 scope, keep product context support internal and document it for future integration.
-
----
-
-## 9. Order association
-
-The API supports an optional order association under its ownership rules.
-
-However, order and order-tracking features are deferred for this production release.
-
-Therefore:
-
-- Do not expose an order selector.
-- Do not create an order search UI.
-- Do not request order history.
-- Do not accept arbitrary customer-entered order IDs as an ownership bypass.
-- Do not activate order support functionality.
-
-Preserve the frozen API contract for future phases.
-
----
-
-## 10. Optional attachments
-
-Enquiries support zero or one private attachment.
-
-Reuse the existing Phase 17.10 file-picker and multipart infrastructure.
-
-Supported formats:
-
-- JPEG.
-- PNG.
-- WebP.
-- PDF.
-
-Maximum size:
-
-- 5 MiB, subject to confirmation against the backend's precise byte limit.
-
-### Requirements
-
-- File selection.
-- Filename display.
-- File size display.
-- Remove/replace action.
-- Client-side type and size checks.
-- Server-authoritative validation.
-- Accessible error feedback.
-- No broad storage permission if Android's document picker is sufficient.
-
-Use the canonical multipart field:
-
-`attachment`
-
-### Privacy
-
-Attachments are private.
-
-Never expose:
-
-- Internal storage paths.
-- Private object keys.
-- Permanent public attachment URLs.
-- Raw attachment bytes in diagnostics.
-- Upload tokens in logs.
-
-### Separate upload
-
-Prefer inline ENQ-001 multipart submission.
-
-ENQ-007 separate attachment upload is not required for this phase unless the existing scope explicitly calls for it.
-
-If implemented, use the server-issued, single-use, time-limited capability-token contract and verify that the backend supports it.
-
-Do not construct an upload token locally.
-
----
-
-## 11. Enquiry submission state
-
-Use a simple explicit lifecycle:
-
-Editing → Validating → Submitting → Success or Recoverable Failure
-
-### Duplicate submission prevention
-
-Disable the submit action while a submission is in flight.
-
-Do not dispatch multiple requests from rapid taps.
-
-### Successful submission
-
-A confirmed successful response transitions to the confirmation view.
-
-### Validation failure
-
-Keep all entered values and display relevant field errors.
-
-### Rate limiting
-
-Handle HTTP 429 using the existing Retry-After representation.
-
-Do not invent a countdown or deadline when the server does not provide one.
-
-### Uncertain outcome
-
-A timeout or connection interruption during a non-idempotent POST may occur after Laravel accepted the enquiry.
-
-Do not automatically retry.
-
-Do not display "Your enquiry was not submitted" when the outcome is unknown.
-
-Instead, explain that confirmation was not received and another submission might create a duplicate.
-
-Require deliberate user action before trying again.
-
-### Cancellation
-
-Cancellation must not be reported as a server-side rejection.
-
-A local cancellation cannot prove that Laravel did not persist the enquiry.
-
----
-
-## 12. Success confirmation
-
-After a confirmed successful submission, show a clear confirmation screen.
-
-Suggested copy:
-
-"Your enquiry has been received."
+**Create your account**
 
 Supporting copy:
 
-"Thank you for contacting SL Furnitures. Our team will review your message and use the contact details you provided to respond."
+"Create an account to manage your details and stay connected with SL Furnitures."
 
-Display only documented response fields.
+Fields:
 
-If the API returns a public-safe reference, it may be shown.
+- Email address.
+- Password.
+- Password visibility toggle.
 
-Do not invent a reference.
+Actions:
 
-Do not claim that an email or SMS confirmation was sent.
+- Create account.
+- Already have an account? Sign in.
 
-Do not promise a reply within a fixed period.
+A confirm-password field may be used only if it is consistent with the approved design and does not duplicate Clerk's security controls unnecessarily.
 
-### Anonymous privacy
+### Validation
 
-Anonymous users must not receive automatic access to a private enquiry-detail endpoint.
+Use Clerk's actual password policy.
 
-Do not navigate to `/enquiries/{id}`.
+Do not invent a minimum length that conflicts with Clerk settings.
 
-A response identifier is not an authentication credential.
-
----
-
-## 13. Enquiry status
-
-The backend uses a closed status model:
-
-- OPEN.
-- CLOSED.
-
-A newly submitted enquiry begins as OPEN.
-
-The Flutter submission UI may show the status if returned by the API.
-
-Do not allow customers to:
-
-- Change status.
-- Close enquiries.
-- Reopen enquiries.
-- Assign staff.
-- Edit the original message.
-- Add staff notes.
-
-Those are not customer intake operations.
-
----
-
-## 14. Error handling
-
-Reuse `ErrorPresentationMapper` and shared error components.
+Show useful validation messages without disclosing sensitive implementation details.
 
 Handle:
 
-- Missing subject.
-- Invalid subject length.
-- Missing message.
-- Invalid message length.
-- Missing anonymous contact.
 - Invalid email.
-- Invalid phone.
-- Invalid product association.
-- Invalid order association, if a caller supplies one.
-- Unsupported attachment.
-- Oversized attachment.
-- HTTP 401.
-- HTTP 403.
-- HTTP 422.
-- HTTP 429.
-- HTTP 500/502/503/504.
-- Transport failures.
-- Timeouts.
-- Cancellation.
+- Weak password.
+- Email already registered.
+- Network failure.
+- Rate limiting.
+- Verification required.
+- Unsupported sign-up configuration.
 
-### Field-level errors
-
-Map canonical backend error field paths to the corresponding controls.
-
-Do not parse English error messages to identify fields.
-
-Preserve request IDs for safe support correlation.
-
-Do not display raw response bodies or stack traces.
+Do not automatically treat account creation as a fully authenticated session if Clerk requires verification.
 
 ---
 
-## 15. Diagnostics
+## 5. Email verification
 
-Reuse the existing diagnostics boundary.
+Implement the verification flow supported by the configured Clerk application.
 
-The README confirms that ApiClient already records eligible transport failures exactly once.
+Prefer the existing approved email-code verification method if it is enabled.
 
-Do not add duplicate feature-level events for the same API failures.
+Do not hard-code an assumption that Clerk always uses six digits.
 
-Use only existing diagnostic codes and allow-listed metadata.
+### Verification screen
 
-Never log:
+Heading:
+
+"Verify your email"
+
+Supporting copy:
+
+"Enter the verification code sent to your email address."
+
+Controls:
+
+- Code entry.
+- Verify action.
+- Resend code.
+- Back or cancel.
+
+### Behavior
+
+- Respect Clerk challenge expiration.
+- Respect resend restrictions.
+- Handle invalid and expired codes.
+- Prevent repeated submissions while verifying.
+- Preserve the pending sign-up state.
+- Do not log verification codes.
+- Do not persist codes in ordinary app storage.
+
+On successful verification, complete Clerk's supported session activation flow.
+
+Then reconcile the customer identity with Laravel before showing protected account data.
+
+### Important
+
+Do not bypass email verification with local flags.
+
+Do not mark email as verified in Flutter or Laravel without authoritative confirmation.
+
+---
+
+## 6. Login
+
+Implement the sign-in screen.
+
+### Fields
+
+- Email address.
+- Password.
+
+### Actions
+
+- Sign in.
+- Forgot password?
+- Create account.
+
+### Behavior
+
+Use Clerk's supported sign-in flow.
+
+Handle all returned sign-in states explicitly.
+
+Do not assume that providing correct credentials always completes authentication immediately.
+
+If Clerk requires an additional supported verification factor, handle it through the approved SDK or show a clear unsupported-state message rather than bypassing it.
+
+### Error handling
+
+Handle:
+
+- Incorrect credentials.
+- Unverified account.
+- Account not found.
+- Disabled or blocked account.
+- Rate limiting.
+- Connectivity failure.
+- Session activation failure.
+- Unexpected Clerk state.
+
+Avoid account-enumeration disclosures beyond the behavior of the approved Clerk integration.
+
+Never log passwords.
+
+---
+
+## 7. Forgot password and reset password
+
+Implement the officially supported Clerk password-recovery flow.
+
+### Forgot-password screen
+
+Heading:
+
+"Reset your password"
+
+Field:
+
+- Email address.
+
+Action:
+
+"Continue"
+
+Use Clerk's configured email-based recovery mechanism.
+
+### Reset flow
+
+Depending on the supported Clerk workflow, collect:
+
+- Verification code or recovery challenge.
+- New password.
+- Any other required SDK-approved step.
+
+Do not implement your own reset token generation.
+
+Do not call a custom Laravel password reset endpoint unless the frozen architecture explicitly delegates this responsibility to Laravel.
+
+### Security
+
+- Do not log recovery codes.
+- Do not persist recovery codes.
+- Do not reveal whether an email belongs to an account beyond the provider-approved response.
+- Respect provider throttling.
+- Handle expired challenges.
+- Require successful completion before reporting password reset success.
+
+---
+
+## 8. Clerk SDK integration
+
+Inspect the existing ClerkAuthAdapter.
+
+Prefer extending the existing adapter over creating a second independent authentication implementation.
+
+### Required capabilities
+
+Expose typed operations for:
+
+- Sign up.
+- Email verification.
+- Sign in.
+- Password recovery.
+- Session activation.
+- Session restoration.
+- Sign out.
+- Current authentication state.
+- Current verified session token.
+- Relevant identity metadata.
+
+Use the actual supported SDK API.
+
+### Separation
+
+Presentation widgets must not directly depend on low-level Clerk internals.
+
+The existing adapter should remain the authentication boundary.
+
+Do not call Clerk REST endpoints manually if the supported Flutter SDK already implements the operation.
+
+Do not duplicate secure-storage logic.
+
+### SDK changes
+
+If a dependency upgrade is necessary:
+
+1. Identify the current and target versions.
+2. Review migration requirements.
+3. Check Android compatibility.
+4. Check the project's Flutter/Dart constraints.
+5. Update the lockfile.
+6. Update affected adapter tests.
+7. Document the change.
+
+Do not upgrade unrelated dependencies.
+
+---
+
+## 9. Session persistence and restoration
+
+A returning customer should not need to log in on every application launch when the Clerk session remains valid.
+
+### Startup behavior
+
+- Initialize the existing Clerk integration.
+- Restore the session using the approved SDK and secure-storage mechanism.
+- Resolve authenticated/anonymous state.
+- Refresh tokens through the provider's supported mechanism.
+- Avoid flashing protected account content before verification.
+- Keep public catalog browsing available.
+
+Do not make the entire application dependent on successful Clerk initialization.
+
+### Session states
+
+Support at least:
+
+- Initializing.
+- Anonymous.
+- Authenticated.
+- Expired/invalid.
+- Recoverable error.
+
+Represent intermediate provider states when necessary.
+
+### Important distinction
+
+Clerk authentication success does not automatically guarantee that Laravel authorizes the customer.
+
+The app must handle:
+
+- Valid Clerk identity, Laravel customer provisioned.
+- Valid Clerk identity, local account provisioning pending.
+- Valid Clerk identity, Laravel account inactive.
+- Valid Clerk identity, unexpected role.
+- Invalid or expired token.
+- Temporary Laravel outage.
+
+Do not silently treat a Laravel authorization failure as successful profile loading.
+
+---
+
+## 10. Laravel identity provisioning
+
+Inspect the existing backend provisioning design.
+
+Determine whether a local customer is created:
+
+- Through verified-token first-use provisioning.
+- Through a webhook synchronization flow.
+- Through an existing explicit registration or synchronization endpoint.
+
+Use the actual implementation.
+
+Do not invent a new registration endpoint.
+
+Do not create a local Laravel user by submitting a client-controlled Clerk subject.
+
+### Role safety
+
+Customer registration must never allow privilege escalation.
+
+Do not accept client-supplied:
+
+- `role`
+- `permissions`
+- `is_admin`
+- `is_staff`
+- `staff_state`
+- `account_state`
+- `user_id`
+- `clerk_user_id`
+
+Laravel must remain authoritative.
+
+---
+
+## 11. Account screen
+
+Replace the existing `/account` placeholder with a real account experience.
+
+### Authenticated state
+
+Recommended sections:
+
+**My Account**
+
+- Customer name.
+- Email address.
+- Email verification status, if available.
+- Phone number, if present.
+- Edit profile.
+- Account security.
+- Sign out.
+
+Use the canonical Laravel USER endpoint for application-level profile data.
+
+Do not construct an account screen solely from unverified local identity metadata.
+
+### Unauthenticated state
+
+Display a welcoming account entry screen with:
+
+- Sign in.
+- Create account.
+
+Do not show a broken protected-route placeholder.
+
+If `/account` remains a protected route, implement the approved redirect to sign-in with a safe return destination.
+
+Alternatively, use a public account landing route and protected account subroutes, but document and test the routing decision.
+
+Do not silently change route semantics.
+
+---
+
+## 12. Profile read
+
+Integrate the frozen USER-001 profile-read endpoint.
+
+Confirm the exact method and path from the repository.
+
+Use the existing ApiClient with required authentication.
+
+### Data model
+
+Decode only documented fields, such as the canonical customer identity and profile representation.
+
+Do not invent:
+
+- Loyalty points.
+- Wallet balance.
+- Customer tier.
+- Saved addresses.
+- Purchase totals.
+- Review counts.
+- Marketing preferences.
+- Profile avatar uploads.
+
+Handle absent optional fields safely.
+
+### Loading behavior
+
+Use existing AsyncViewState patterns:
+
+- Loading.
+- Content.
+- Failure.
+- Refreshing.
+
+An empty optional phone number is not a failed profile response.
+
+---
+
+## 13. Edit profile
+
+Integrate the frozen USER-002 profile-update endpoint.
+
+Inspect its exact field allow-list.
+
+Potential editable fields include:
 
 - Name.
-- Email.
-- Phone.
-- Subject.
-- Message.
-- Product ID.
-- Order ID.
-- Attachment filename.
-- File bytes.
-- Bearer token.
-- Upload capability token.
-- Raw request body.
-- Raw exception text.
+- Phone number.
+- Other explicitly supported profile fields.
 
-Keep production diagnostics no-op according to the existing policy.
+Do not assume email is editable through Laravel.
 
----
+### Identity-owned fields
 
-## 16. Design-system compliance
+Email/password changes must follow Clerk's supported verified identity-management flow, not a generic Laravel profile update.
 
-The canonical visual authority is:
+If those operations are not part of the frozen Phase 17.12 scope, provide truthful guidance or defer the controls rather than showing nonfunctional actions.
 
-frontend/design-system/tokens.css
+### Form behavior
 
-Use the existing generated Flutter Material 3 theme.
+- Prefill from confirmed profile data.
+- Allow edits only to approved fields.
+- Validate locally.
+- Submit through the authenticated ApiClient.
+- Handle backend 422 field errors.
+- Disable duplicate submissions.
+- Refresh the canonical profile after success.
+- Preserve edits after recoverable errors.
 
-### Design principles
-
-- Warm editorial presentation.
-- Clean form structure.
-- Comfortable vertical spacing.
-- Restrained typography.
-- Strong primary action.
-- Minimal decorative elements.
-- Clear error and success feedback.
-
-Use Young Serif only for appropriate display headings.
-
-Use the existing utility sans for form labels, inputs, and helper text.
-
-### Do not introduce
-
-- Hard-coded colors.
-- Arbitrary spacing scales.
-- New font packages.
-- Decorative gradients.
-- Glassmorphism.
-- Fake customer testimonials.
-- Unverified office addresses.
-- Invented business hours.
-- Invented phone numbers.
-- Invented response-time promises.
-
-If business contact information is already approved and present in the repository, it may be displayed.
-
-Otherwise, keep the page focused on the functional enquiry form.
+Do not optimistically claim the profile was saved before Laravel confirms it.
 
 ---
 
-## 17. Accessibility
+## 14. Account security
 
-Verify:
+Create a clear account-security section.
 
-1. Semantic page heading.
-2. Accessible field labels.
-3. Required/optional field clarity.
-4. Keyboard types.
-5. Multiline input accessibility.
-6. Validation announcements.
-7. Visible focus.
-8. Logical traversal order.
-9. Screen-reader attachment selection.
-10. Submission progress semantics.
-11. Success announcements.
-12. 2× text scaling.
-13. Small Android screen layouts.
-14. Landscape usability.
-15. Keyboard-safe scrolling.
-16. Touch targets.
-17. Contrast.
-18. Reduced-motion preferences.
+It may include:
 
-Do not rely solely on color for errors.
+- Verified email information.
+- Change-password entry point, if the supported Clerk workflow permits it.
+- Sign out.
+
+Do not invent:
+
+- Two-factor authentication settings.
+- Trusted devices.
+- Session history.
+- Active-device revocation.
+- Account deletion.
+- Biometric login.
+
+Only expose operations supported and approved by the configured Clerk integration.
+
+If a security capability is not available, omit it or document it as deferred.
 
 ---
 
-## 18. Navigation integration
+## 15. Sign-out
 
-Replace the existing `/contact` placeholder.
+Sign-out must invalidate the active Clerk session using the provider's supported operation.
 
-Keep the route public.
+### Required behavior
+
+- Invoke Clerk sign-out.
+- Update AuthSession.
+- Clear account-specific in-memory state.
+- Cancel or invalidate protected in-flight operations.
+- Remove stale profile UI.
+- Return to a public route.
+- Preserve anonymous catalog access.
+
+Do not delete user-owned server records.
+
+Do not delete anonymous enquiry or request records.
+
+Do not rely on merely clearing a boolean `isSignedIn`.
+
+### Error handling
+
+If sign-out fails, do not falsely report that the provider session was revoked.
+
+Prevent stale private account content from being displayed during transitions.
+
+---
+
+## 16. Navigation and route protection
 
 Use the existing central go_router.
 
-Required navigation:
+Suggested route structure, subject to the current route registry:
 
-- Open Contact & Enquiries.
-- Complete the enquiry form.
-- Submit.
-- View confirmation.
-- Return to the home/catalog experience.
+- `/account`
+- `/sign-in`
+- `/sign-up`
+- `/verify-email`
+- `/forgot-password`
+- `/reset-password`
+- `/account/edit`
+- `/account/security`
 
-Do not create another MaterialApp or route registry.
+Adapt names to the repository's established conventions.
 
-Do not add a global drawer or app-wide navigation bar.
+Do not duplicate an existing route.
 
-The complete shared navigation shell remains planned for Phase 17.15.
+### Return-to navigation
 
-### Furniture request distinction
+When a customer is asked to sign in before accessing a protected screen:
 
-If appropriate, include a small secondary link:
+1. Preserve the intended internal destination.
+2. Complete authentication.
+3. Verify the resulting session.
+4. Return to the intended destination.
 
-"Want furniture made to your specifications? Submit a furniture request."
+Only allow recognized internal application routes.
 
-Navigate to the existing Phase 17.10 route.
+Do not accept arbitrary external redirect URLs.
 
-Do not merge both forms.
+### Public routes
 
----
+These must remain accessible anonymously:
 
-## 19. Backend readiness
+- Home.
+- Catalog.
+- Categories.
+- Product details.
+- Search.
+- Furniture request submission.
+- Contact & Enquiries.
+- Legal/informational pages when implemented.
 
-Inspect the Laravel feature flag or route activation configuration for ENQ-001.
+Do not redirect all visitors to registration on app launch.
 
-Confirm whether:
+### Shared navigation
 
-POST /api/v1/enquiries
+Do not implement the global navigation drawer or final shared top app bar in this phase.
 
-is operational.
+That work is reserved for Phase 17.15.
 
-Do not assume it is enabled because REQ-001 was enabled.
-
-If disabled, report the precise blocker.
-
-Do not silently activate backend routes or change Laravel feature flags without authorization.
-
-Do not create a mock successful response in API mode.
-
----
-
-## 20. Automated tests
-
-Add deterministic tests for:
-
-### Models and validation
-
-1. Subject minimum length.
-2. Subject maximum length.
-3. Message minimum length.
-4. Message maximum length.
-5. Anonymous name required.
-6. Anonymous phone/email requirement.
-7. Valid email.
-8. Invalid email.
-9. Valid phone.
-10. Invalid phone.
-11. Optional product association.
-12. Unsupported order association handling.
-13. Server-controlled field exclusion.
-
-### Repository
-
-14. Correct ENQ-001 endpoint.
-15. Anonymous JSON submission.
-16. Authenticated submission.
-17. No user_id injection.
-18. JSON body encoding.
-19. Multipart body encoding.
-20. Successful response parsing.
-21. Field-level validation errors.
-22. Rate limiting.
-23. Authentication errors.
-24. Transport failure.
-25. Timeout.
-26. No automatic retry.
-
-### Attachments
-
-27. JPEG selection.
-28. PNG selection.
-29. WebP selection.
-30. PDF selection.
-31. Oversized file.
-32. Unsupported type.
-33. Remove attachment.
-34. Replace attachment.
-35. Correct multipart field.
-36. No direct public upload.
-
-### State
-
-37. Initial editing.
-38. Invalid submit.
-39. Valid submit.
-40. Duplicate-tap prevention.
-41. Confirmed success.
-42. Server validation failure.
-43. Network failure.
-44. Uncertain outcome.
-45. Explicit retry decision.
-46. Disposal/cancellation.
-
-### Widgets and navigation
-
-47. Contact route.
-48. Form labels.
-49. Keyboard behavior.
-50. Inline errors.
-51. Attachment controls.
-52. Loading feedback.
-53. Success confirmation.
-54. Return navigation.
-55. Anonymous route access.
-56. Accessibility semantics.
-57. Text scaling.
-
-### Regression
-
-Verify that:
-
-- Phase 17.10 requests still work.
-- Product details still work.
-- Search/filtering still works.
-- Public catalog remains anonymous.
-- Clerk boundaries remain unchanged.
-- Existing multipart tests pass.
-- Existing diagnostics behavior remains correct.
-- Deferred commerce routes remain absent.
-
-The matrix describes coverage, not a mandatory one-test-per-number file structure.
+Use local navigation controls as needed to make authentication and account screens accessible.
 
 ---
 
-## 21. Live Laravel verification
+## 17. Integrate with Phase 17.10 Furniture Requests
 
-When ENQ-001 is active and Laravel is available, verify:
+Phase 17.10 already supports both anonymous and authenticated submission.
 
-1. Anonymous valid JSON enquiry.
-2. Authenticated CUSTOMER enquiry where a valid Clerk test session exists.
-3. Missing contact validation.
-4. Subject validation.
-5. Message validation.
-6. Optional product association.
-7. Multipart attachment.
-8. Invalid attachment.
+Once login is implemented:
+
+- Authenticated submissions must obtain the active Clerk token.
+- Laravel must derive ownership.
+- The client must never submit `user_id`.
+- Anonymous submissions must remain available.
+- Expired sessions must not silently downgrade to anonymous.
+- Sign-out must restore explicitly anonymous behavior.
+
+Test the actual existing Request repository rather than adding a replacement integration.
+
+Do not modify the furniture request API contract.
+
+---
+
+## 18. Integrate with Phase 17.11 Enquiries
+
+The Phase 17.11 completion record identifies authenticated live submission as an outstanding verification gap.
+
+Close that gap.
+
+### Requirements
+
+- Sign in through the new Flutter UI.
+- Open `/contact`.
+- Submit an authenticated enquiry.
+- Confirm the Clerk bearer token reaches Laravel.
+- Confirm Laravel derives the correct local customer ownership.
+- Confirm the client sends no `user_id`.
+- Confirm account-derived contact behavior matches the backend contract.
+- Confirm sign-out restores anonymous submission.
+- Confirm a broken authenticated session does not silently submit anonymously.
+
+Do not change ENQ-001 validation or endpoint topology.
+
+---
+
+## 19. Customer request and enquiry history
+
+The frozen API includes authenticated ownership-scoped read operations for requests and enquiries.
+
+However, this phase's core scope is registration/login and profile/account.
+
+Do not automatically expand Phase 17.12 into a full customer request-history or enquiry-history implementation.
+
+A future account screen may include these sections when approved.
+
+For now, avoid dead buttons such as:
+
+- My Orders.
+- My Payments.
+- My Cart.
+- My Deliveries.
+- My Enquiry History, unless implemented.
+- My Furniture Requests, unless implemented.
+
+If the roadmap explicitly assigns ownership-scoped request/enquiry history to Phase 17.12, verify that requirement first and implement only the approved API surface.
+
+Do not expose private records through public identifiers.
+
+---
+
+## 20. Visual design
+
+Follow the existing SL Furnitures design system.
+
+### Registration and login
+
+Use a calm, premium, editorial design:
+
+- Brand identity.
+- Clear heading.
+- Short supporting copy.
+- Simple form.
+- Strong primary action.
+- Restrained secondary links.
+- Generous whitespace.
+
+Suggested registration heading:
+
+"Create your account"
+
+Suggested login heading:
+
+"Welcome back"
+
+Suggested account heading:
+
+"My Account"
+
+### Account layout
+
+Organize account information into clear sections rather than a dense dashboard.
+
+Use existing:
+
+- Generated Material 3 theme.
+- Typography tokens.
+- Spacing tokens.
+- Input components.
+- Buttons.
+- Error presentations.
+- Loading components.
+
+Do not add a new design system.
+
+Do not hard-code arbitrary colors, spacing, typography, or radii.
+
+Do not use generic marketplace widgets, loyalty badges, fake statistics, or decorative profile charts.
+
+---
+
+## 21. Accessibility
+
+Verify:
+
+- Screen-reader labels.
+- Email keyboard.
+- Password keyboard and visibility toggle.
+- Autofill support where appropriate.
+- Keyboard-safe scrolling.
+- Focus movement after validation.
+- Verification-code accessibility.
+- Accessible loading feedback.
+- Disabled-state semantics.
+- Touch targets.
+- Error announcements.
+- 2× text scaling.
+- Small screens.
+- Landscape layouts.
+- Reduced-motion behavior.
+- TalkBack traversal.
+
+Authentication screens must remain usable without relying on visual cues alone.
+
+---
+
+## 22. Security requirements
+
+### Secrets
+
+Never commit:
+
+- Clerk secret keys.
+- Production tokens.
+- Passwords.
+- Verification codes.
+- Recovery codes.
+- Session cookies.
+- Private user records.
+
+Only use client-safe Clerk configuration in Flutter.
+
+### Token handling
+
+- Use the existing secure session mechanism.
+- Retrieve current tokens through ClerkAuthAdapter.
+- Never persist bearer tokens in ordinary preferences.
+- Never include tokens in logs.
+- Never place tokens in route parameters.
+- Never put tokens in crash reports.
+- Do not add custom token cryptography.
+
+### Backend authority
+
+- Laravel validates JWTs.
+- Laravel enforces role and account state.
+- Laravel validates profile updates.
+- Flutter never grants CUSTOMER/STAFF/ADMIN permissions.
+- Profile data must not leak between users.
+
+### Authentication errors
+
+Handle 401 and 403 separately.
+
+An authenticated customer with a forbidden action should not automatically be logged out.
+
+A temporary backend outage should not destroy a valid Clerk session.
+
+### Privacy
+
+On sign-out or account switching, ensure previously loaded private data is no longer visible.
+
+---
+
+## 23. Diagnostics
+
+Reuse AppDiagnostics and existing allow-listed codes.
+
+Do not introduce raw Clerk exceptions into diagnostic payloads.
+
+Never log:
+
+- Email.
+- Password.
+- Verification code.
+- Recovery code.
+- Bearer token.
+- Clerk subject.
+- Local user ID.
+- Profile data.
+- Raw request body.
+- Full authentication error response.
+
+Avoid duplicate network events already recorded by ApiClient.
+
+Production diagnostics must follow the existing no-op policy.
+
+---
+
+## 24. Automated testing
+
+Implement comprehensive tests.
+
+### Registration
+
+1. Valid email/password.
+2. Invalid email.
+3. Password-policy failure.
+4. Existing account.
+5. Verification-required response.
+6. Duplicate-submit prevention.
+7. Registration cancellation.
+8. Network failure.
 9. Rate limiting.
-10. Successful response.
-11. OPEN initial status.
-12. No furniture request creation.
-13. No order creation.
-14. No payment or inventory effects.
+10. No local role injection.
 
-Use safe disposable development data.
+### Verification
 
-Do not use production customer information.
+11. Valid code.
+12. Invalid code.
+13. Expired code.
+14. Resend flow.
+15. Resend throttling.
+16. Session activation.
+17. No premature authentication.
+18. No code persistence.
 
-Do not claim authenticated testing if no Clerk sign-in workflow exists.
+### Login
+
+19. Successful login.
+20. Incorrect credentials.
+21. Unverified account.
+22. Provider-required additional step.
+23. Rate limiting.
+24. Network failure.
+25. Session activation.
+26. No password logging.
+
+### Recovery
+
+27. Recovery initiation.
+28. Invalid email.
+29. Verification challenge.
+30. Expired challenge.
+31. Valid password reset.
+32. Invalid password reset.
+33. No code leakage.
+
+### Sessions
+
+34. Cold-start anonymous state.
+35. Cold-start authenticated state.
+36. Session restoration.
+37. Token renewal.
+38. Expired session.
+39. Invalid session.
+40. Clerk initialization failure.
+41. Laravel unavailable.
+42. Laravel unauthorized.
+43. Inactive customer.
+44. Account switching.
+45. Sign-out cleanup.
+
+### Profile
+
+46. USER-001 request.
+47. Correct bearer header.
+48. Profile decoding.
+49. Optional phone handling.
+50. Profile loading.
+51. Profile refresh.
+52. USER-002 update.
+53. Allowed-field serialization.
+54. Forbidden-field exclusion.
+55. Validation errors.
+56. Update success.
+57. Update failure.
+58. No stale private data.
+
+### Navigation
+
+59. Account route.
+60. Sign-in route.
+61. Sign-up route.
+62. Verification route.
+63. Recovery route.
+64. Protected-route redirect.
+65. Safe return-to behavior.
+66. Anonymous catalog access.
+67. Back navigation.
+68. Sign-out navigation.
+69. Deep-link safety.
+
+### Integration regression
+
+70. Authenticated REQ-001.
+71. Anonymous REQ-001.
+72. Authenticated ENQ-001.
+73. Anonymous ENQ-001.
+74. Broken session does not silently downgrade.
+75. Product detail unaffected.
+76. Catalog unaffected.
+77. Existing multipart submission unaffected.
+78. Deferred commerce remains disabled.
+
+These are required coverage areas, not necessarily separate test functions.
+
+Use deterministic fakes for Clerk and ApiClient where appropriate.
+
+Do not require real credentials for the ordinary Flutter test suite.
 
 ---
 
-## 22. Marionette real-device testing
+## 25. Live integration testing
 
-Use Marionette MCP on a connected physical Android device when available.
+Where the development Clerk application and Laravel backend are available, verify the full chain:
 
-Test:
+Flutter → Clerk → verified token → Laravel → local CUSTOMER → profile.
 
-1. Launch the application.
-2. Navigate to Contact.
-3. Confirm the placeholder is replaced.
-4. Enter a valid subject.
-5. Enter a valid message.
-6. Enter contact information.
-7. Trigger validation errors.
-8. Correct errors.
-9. Select an image or PDF.
-10. Remove and replace the attachment.
-11. Submit against a working Laravel backend.
-12. Verify confirmed success.
-13. Verify error recovery.
-14. Test offline/connection-failure presentation.
-15. Check keyboard overlap.
-16. Check narrow-screen scrolling.
-17. Check accessibility semantics where supported.
-18. Return to home.
-19. Open Furniture Requests and verify that the existing flow still works.
+### Registration flow
 
-Do not claim physical-device verification unless actually performed.
+1. Register a disposable test account.
+2. Complete required email verification.
+3. Activate session.
+4. Fetch Laravel profile.
+5. Confirm CUSTOMER role.
+6. Confirm no STAFF/ADMIN privileges.
+
+### Login flow
+
+7. Sign out.
+8. Sign in.
+9. Restore the session after app restart.
+10. Verify token-based Laravel access.
+
+### Profile flow
+
+11. Read profile.
+12. Update an allowed field.
+13. Read again and confirm persistence.
+14. Verify forbidden fields are rejected.
+
+### Existing feature regression
+
+15. Submit authenticated furniture request.
+16. Submit authenticated enquiry.
+17. Verify ownership on Laravel.
+18. Sign out.
+19. Submit anonymous enquiry.
+20. Verify anonymous ownership remains null.
+
+Do not use real customer credentials.
+
+Do not use production Clerk keys or production databases.
+
+If a live Clerk environment is unavailable, clearly report that real authentication integration remains unverified.
 
 ---
 
-## 23. Documentation
+## 26. Android device and Marionette testing
+
+Use the available emulator or physical Android device.
+
+Verify:
+
+- Registration screen.
+- Email keyboard and autofill.
+- Password visibility.
+- Email verification.
+- Sign-in.
+- Forgot-password flow.
+- Session restoration after restart.
+- Account screen.
+- Profile editing.
+- Sign-out.
+- Anonymous browsing.
+- Protected-route redirects.
+- Furniture request authenticated submission.
+- Enquiry authenticated submission.
+- Offline and rate-limit behavior.
+- Small-screen scrolling.
+- 2× text scaling.
+- Landscape.
+- TalkBack where available.
+
+Do not temporarily change production routing and leave the change committed.
+
+If a test-only initial route is needed, revert it and verify the final route configuration.
+
+Record which checks were performed with real Clerk and which used fakes.
+
+---
+
+## 27. Documentation
 
 Update:
 
-- Flutter README.
-- `lib/features/README.md`.
-- Phase 17.11 completion record.
-- `docs/decisions.md` only if a new durable decision is necessary.
+- `frontend/app/README.md`.
+- `frontend/app/lib/features/README.md`.
+- Phase 17.12 completion record.
+- Relevant auth integration documentation.
+- `docs/decisions.md` only for durable new architectural decisions.
 
 Document:
 
-- Feature architecture.
-- ENQ-001 contract mapping.
-- Anonymous and authenticated flows.
-- Contact validation.
-- Attachment behavior.
-- Product association.
-- Error handling.
-- Uncertain-outcome behavior.
-- Backend activation.
-- Test results.
-- Marionette verification.
-- Remaining limitations.
+- Clerk SDK/version.
+- Auth flow architecture.
+- Registration policy.
+- Email verification.
+- Password recovery.
+- Session lifecycle.
+- Laravel provisioning behavior.
+- USER endpoint mappings.
+- Route protection.
+- Profile editing.
+- Sign-out cleanup.
+- Security boundaries.
+- Live testing.
+- Device testing.
+- Known limitations.
 
-Do not rewrite completed Phase 17.10 history.
+Do not silently change the frozen API.
 
 ---
 
-## 24. Verification commands
+## 28. Verification
 
-Run from `frontend/app`:
+From `frontend/app`, run:
 
 ```bash
 flutter pub get
@@ -947,67 +1150,101 @@ git diff --check
 git diff --cached --check
 ```
 
-Report the actual results.
+Also run relevant Laravel tests if backend integration or provisioning code is modified.
 
-Do not claim success for commands that were not run.
+Report actual test counts.
+
+Do not claim verification that was not performed.
 
 ---
 
-## 25. Definition of Done
+## 29. Explicit exclusions
 
-Phase 17.11 is complete when:
+Do not implement:
 
-- The Contact placeholder is replaced with a real enquiry form.
-- ENQ-001 is integrated.
-- Anonymous visitors can submit enquiries.
-- Authenticated customers use the existing Clerk bearer boundary.
-- Subject and message validation match the frozen contract.
-- Contact information is validated.
-- Optional product context is handled correctly.
-- Optional private attachments work.
-- Duplicate submissions are prevented.
-- Uncertain POST outcomes are handled truthfully.
-- Successful submissions show confirmation.
-- Field errors and rate limits are handled.
-- The existing router remains authoritative.
-- Accessibility requirements are met.
-- Existing Flutter tests remain green.
-- New tests pass.
+- Cart.
+- Checkout.
+- Payments.
+- Orders.
+- Order tracking.
+- Favorites.
+- Loyalty.
+- Saved delivery addresses.
+- Customer reviews.
+- Staff login in the customer app.
+- Admin login in the customer app.
+- Social login unless already explicitly approved.
+- Phone-only registration.
+- Guest-to-account cart merge.
+- Global navigation drawer.
+- Final shared app bar.
+- New identity provider.
+- Custom Laravel password storage.
+- New user roles.
+- Full customer enquiry/request history unless explicitly required by the phase roadmap.
+
+The global navigation shell remains Phase 17.15.
+
+---
+
+## 30. Definition of Done
+
+Phase 17.12 passes when:
+
+- Registration is functional.
+- Email verification is functional where required.
+- Login is functional.
+- Password recovery is functional.
+- Clerk session restoration works.
+- Secure sign-out works.
+- Laravel recognizes authenticated customers.
+- The account placeholder is replaced.
+- Profile data loads from Laravel.
+- Approved profile edits persist.
+- Authentication errors are handled.
+- Anonymous browsing remains available.
+- Furniture Requests support real authenticated submissions.
+- Enquiries support real authenticated submissions.
+- No customer can grant themselves elevated privileges.
+- Private account state is cleared on sign-out.
+- Routing is correct.
+- Accessibility requirements are satisfied.
+- Automated tests pass.
 - The debug APK builds.
-- Design token synchronization passes.
-- Documentation is updated.
-- Furniture Requests remain unchanged.
-- No deferred commerce features are activated.
+- Design tokens remain synchronized.
+- Documentation is complete.
+- Deferred commerce functionality remains inactive.
 
-If backend gating prevents live submission, report:
-
-**Flutter implementation PASS / Live integration BLOCKED**
-
-Do not claim unconditional end-to-end PASS.
+If Flutter functionality passes but real Clerk/Laravel integration is unavailable, report the implementation as complete with **live authentication verification outstanding**, not as fully end-to-end verified.
 
 ---
 
-## 26. Completion report
+## 31. Completion report
 
-Return a structured report containing:
+Return:
 
 1. Repository inspection findings.
-2. Exact ENQ-001 contract fields.
-3. Backend activation status.
-4. Feature architecture.
-5. Anonymous submission behavior.
-6. Authenticated submission behavior.
-7. Form and validation implementation.
-8. Attachment handling.
-9. Navigation integration.
-10. Success/error behavior.
-11. Security and privacy verification.
-12. Automated test results.
-13. Live Laravel test results.
-14. Marionette device results.
-15. Files changed.
-16. Documentation updated.
-17. Known limitations.
-18. Final PASS/FAIL assessment.
+2. Clerk SDK compatibility findings.
+3. Authentication architecture.
+4. Registration implementation.
+5. Email verification implementation.
+6. Login implementation.
+7. Password recovery implementation.
+8. Session persistence.
+9. Laravel provisioning.
+10. Account screen.
+11. Profile read/update.
+12. Sign-out.
+13. Routing changes.
+14. REQ-001 authenticated regression.
+15. ENQ-001 authenticated regression.
+16. Security review.
+17. Automated test counts.
+18. Live Clerk/Laravel verification.
+19. Marionette device verification.
+20. Files changed.
+21. Documentation updated.
+22. Outstanding limitations.
+23. Final PASS/FAIL.
 
-**Final instruction:** Implement only Phase 17.11. Reuse the existing Flutter architecture and Phase 17.10 submission mechanics while keeping Enquiries a separate domain. Respect the frozen ENQ-001 API, anonymous access, private attachments, and request-only production scope. Stop after completing and verifying this phase.
+**Final instruction:** Implement Phase 17.12 only. Preserve the existing API-first architecture, Clerk identity ownership, Laravel authorization authority, and request-only launch scope. Do not proceed to Phase 17.13 until Phase 17.12 has been verified and its completion record is written.

@@ -53,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onExplore: () => context.push(AppRoutes.products),
               onSearch: () => context.push(AppRoutes.search),
               onContact: () => context.push(AppRoutes.contact),
+              onSignUp: () => context.push(AppRoutes.signUp),
               showFixtureImage: widget.showFixtureHero,
             ),
           ),
@@ -211,11 +212,13 @@ class _Hero extends StatelessWidget {
     required this.onExplore,
     required this.onSearch,
     required this.onContact,
+    required this.onSignUp,
     required this.showFixtureImage,
   });
   final VoidCallback onExplore;
   final VoidCallback onSearch;
   final VoidCallback onContact;
+  final VoidCallback onSignUp;
   final bool showFixtureImage;
   @override
   Widget build(BuildContext context) {
@@ -265,6 +268,11 @@ class _Hero extends StatelessWidget {
                   key: const ValueKey<String>('home.contact_button'),
                   onPressed: onContact,
                   child: const Text('Contact us'),
+                ),
+                OutlinedButton(
+                  key: const ValueKey<String>('home.signup_button'),
+                  onPressed: onSignUp,
+                  child: const Text('Create account'),
                 ),
               ],
             ),

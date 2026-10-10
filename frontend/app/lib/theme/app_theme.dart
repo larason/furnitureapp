@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:clerk_flutter/clerk_flutter.dart';
 
 import 'app_color_extensions.dart';
 import 'app_color_scheme.dart';
@@ -17,11 +18,12 @@ import 'tokens/generated_tokens.dart';
 /// dark mode; dark support is deferred until the token contract defines it.
 /// Every value originates in `tokens.css` via [GeneratedTokens].
 abstract final class AppTheme {
-  static const List<ThemeExtension<dynamic>> extensions =
+  static final List<ThemeExtension<dynamic>> extensions =
       <ThemeExtension<dynamic>>[
         AppSurfaceColors.standard,
         AppBrandColors.standard,
         AppStatusColors.standard,
+        _clerkTheme,
       ];
 
   static ThemeData light() => ThemeData(
@@ -57,3 +59,16 @@ abstract final class AppTheme {
     tooltipTheme: AppFeedbackThemes.tooltip,
   );
 }
+
+final ClerkThemeExtension _clerkTheme = ClerkThemeExtension(
+  colors: const ClerkThemeColors(
+    background: GeneratedTokens.surfacePaper,
+    altBackground: GeneratedTokens.surfaceEditorial,
+    borderSide: GeneratedTokens.borderDefault,
+    text: GeneratedTokens.textPrimary,
+    icon: GeneratedTokens.textSecondary,
+    lightweightText: GeneratedTokens.textSecondary,
+    error: GeneratedTokens.colorDanger,
+    accent: GeneratedTokens.accentBrand,
+  ),
+);
