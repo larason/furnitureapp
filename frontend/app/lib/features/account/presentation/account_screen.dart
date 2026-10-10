@@ -109,6 +109,19 @@ class _ProfileFormState extends State<_ProfileForm> {
   Map<String, String> _fieldErrors = const <String, String>{};
 
   @override
+  void didUpdateWidget(covariant _ProfileForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_saving && oldWidget.profile != widget.profile) {
+      if (_name.text != (widget.profile.name ?? '')) {
+        _name.text = widget.profile.name ?? '';
+      }
+      if (_phone.text != (widget.profile.phone ?? '')) {
+        _phone.text = widget.profile.phone ?? '';
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     _phone.dispose();
@@ -128,10 +141,12 @@ class _ProfileFormState extends State<_ProfileForm> {
       _fieldErrors = const <String, String>{};
     });
     try {
+      final shouldClearPhone =
+          _phone.text.trim().isEmpty && widget.profile.phone != null;
       await widget.repository.updateProfile(
         name: _name.text,
         phone: _phone.text,
-        clearPhone: _phone.text.trim().isEmpty,
+        clearPhone: shouldClearPhone,
       );
       if (mounted) widget.onSaved();
     } catch (error) {
@@ -178,7 +193,9 @@ class _ProfileFormState extends State<_ProfileForm> {
           liveRegion: true,
           child: Text(
             _message!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.error,
+            ),
           ),
         ),
       ],

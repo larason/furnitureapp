@@ -34,8 +34,7 @@ class ApiProfileRepository implements ProfileRepository {
     }
     if (clearPhone) {
       values['phone'] = null;
-    }
-    if (trimmedPhone != null && trimmedPhone.isNotEmpty) {
+    } else if (trimmedPhone != null && trimmedPhone.isNotEmpty) {
       values['phone'] = trimmedPhone;
     }
     final response = await _apiClient.patch<CustomerProfile>(
