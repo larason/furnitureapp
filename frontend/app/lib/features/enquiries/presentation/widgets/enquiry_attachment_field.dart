@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -96,21 +98,34 @@ class _EnquiryAttachmentFieldState extends State<EnquiryAttachmentField> {
     // normally costs no I/O. Only fall back to measuring when it did not.
     final int? size = file.lengthSync() ?? await file.length();
     if (size != null && size > maxAttachmentBytes) {
-      setState(() => _rejection = attachmentTooLargeMessage);
+      _reject(attachmentTooLargeMessage);
       return;
     }
+    Uint8List bytes;
     try {
-      final attachment = PendingAttachment(
-        name: file.name,
-        bytes: await file.readAsBytes(),
-        contentType: attachmentContentTypeForExtension(file.extension) ?? '',
-      );
-      if (!mounted) return;
-      await widget.onPick(attachment);
-      setState(() => _rejection = null);
+      bytes = await file.readAsBytes();
     } catch (_) {
       return;
     }
+    if (!mounted) return;
+    await widget.onPick(
+      PendingAttachment(
+        name: file.name,
+        bytes: bytes,
+        contentType: attachmentContentTypeForExtension(file.extension) ?? '',
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _rejection = null);
+  }
+
+  /// The customer can navigate away while the picker or a measurement is
+  /// still pending, so every state change is guarded by [mounted]. A framework
+  /// error here must not be swallowed: it is a defect, not an expected
+  /// failure, and only the file read is treated as recoverable.
+  void _reject(String message) {
+    if (!mounted) return;
+    setState(() => _rejection = message);
   }
 
   String _fileSize(int bytes) => '${(bytes / 1024).ceil()} KiB';
