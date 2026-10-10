@@ -90,12 +90,14 @@ class FurnitureRequestController extends ChangeNotifier {
         } catch (_) {
           token = null;
         }
-        if (token == null) {
-          _message = _sessionMessage;
+        // Cancellation dominates: a submission the customer abandoned reports
+        // nothing, even when the session also failed to produce a token.
+        if (_cancellation?.isCancelled ?? false) {
           _state = FurnitureRequestSubmissionState.editing;
           return;
         }
-        if (_cancellation?.isCancelled ?? false) {
+        if (token == null) {
+          _message = _sessionMessage;
           _state = FurnitureRequestSubmissionState.editing;
           return;
         }

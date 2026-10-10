@@ -124,6 +124,31 @@ void main() {
     expect(controller.message, isNull);
   });
 
+  test('a cancelled session failure reports nothing', () async {
+    final repository = _GatedRepository();
+    final session = _SlowTokenSession(tokenOnRelease: null);
+    final controller = FurnitureRequestController(
+      repository: repository,
+      authSession: session,
+    );
+    addTearDown(controller.dispose);
+    controller.update(_validDraft);
+
+    final pending = controller.submit();
+    await session.requested.future;
+    controller.cancel();
+    session.release.complete();
+    await pending;
+
+    expect(controller.state, FurnitureRequestSubmissionState.editing);
+    expect(
+      controller.message,
+      isNull,
+      reason: 'A cancelled submission must not blame the session.',
+    );
+    expect(repository.entered.isCompleted, isFalse);
+  });
+
   test(
     'a token failure inside the client is an authentication error',
     () async {
@@ -177,6 +202,11 @@ class _SignedInTokenSession implements AuthSession {
 }
 
 class _SlowTokenSession implements AuthSession {
+  _SlowTokenSession({this.tokenOnRelease = 'session-token'});
+
+  /// Token handed back once the pending lookup is released.
+  final String? tokenOnRelease;
+
   final Completer<void> requested = Completer<void>();
   final Completer<void> release = Completer<void>();
 
@@ -189,7 +219,7 @@ class _SlowTokenSession implements AuthSession {
   @override
   Future<String?> getToken() {
     requested.complete();
-    return release.future.then((_) => 'session-token');
+    return release.future.then((_) => tokenOnRelease);
   }
 
   @override
