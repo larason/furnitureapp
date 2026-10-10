@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _Hero(
               onExplore: () => context.push(AppRoutes.products),
               onSearch: () => context.push(AppRoutes.search),
+              onContact: () => context.push(AppRoutes.contact),
               showFixtureImage: widget.showFixtureHero,
             ),
           ),
@@ -209,10 +210,12 @@ class _Hero extends StatelessWidget {
   const _Hero({
     required this.onExplore,
     required this.onSearch,
+    required this.onContact,
     required this.showFixtureImage,
   });
   final VoidCallback onExplore;
   final VoidCallback onSearch;
+  final VoidCallback onContact;
   final bool showFixtureImage;
   @override
   Widget build(BuildContext context) {
@@ -257,6 +260,11 @@ class _Hero extends StatelessWidget {
                   onPressed: onSearch,
                   icon: const Icon(Icons.search),
                   label: const Text('Search'),
+                ),
+                OutlinedButton(
+                  key: const ValueKey<String>('home.contact_button'),
+                  onPressed: onContact,
+                  child: const Text('Contact us'),
                 ),
               ],
             ),

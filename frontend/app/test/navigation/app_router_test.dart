@@ -439,6 +439,25 @@ void main() {
       expect(find.text('Furniture for the way you live.'), findsOneWidget);
     });
 
+    testWidgets('home exposes a reachable contact entry point', (tester) async {
+      final harness = _RouterHarness(
+        ClerkAuthStatus.signedOut,
+        catalogRepository: const _EmptyCatalogRepository(),
+      );
+      await tester.pumpWidget(harness.app);
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home.contact_button')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home.contact_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Contact'), findsWidgets);
+    });
+
     testWidgets(
       'records unsafe authentication destinations without logging them',
       (tester) async {

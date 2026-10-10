@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 const int furnitureRequestMaxAttachmentBytes = 5 * 1024 * 1024;
+const int furnitureRequestMaxDimensionCm = 10000;
 const Set<String> furnitureRequestAttachmentTypes = <String>{
   'image/jpeg',
   'image/png',
@@ -170,8 +171,11 @@ void _dimensionErrors(FurnitureRequestDraft draft, Map<String, String> errors) {
     final trimmedValue = entry.value.trim();
     if (trimmedValue.isEmpty) continue;
     final value = num.tryParse(trimmedValue);
-    if (value == null || !value.isFinite || value <= 0 || value > 100000) {
-      errors[entry.key] = 'Enter a positive measurement up to 100000 cm.';
+    if (value == null ||
+        !value.isFinite ||
+        value <= 0 ||
+        value > furnitureRequestMaxDimensionCm) {
+      errors[entry.key] = 'Enter a positive measurement up to 10000 cm.';
     }
   }
 }

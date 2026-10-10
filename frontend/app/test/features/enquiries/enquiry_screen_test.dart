@@ -268,6 +268,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Furniture requirements'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enquiry details'), findsOneWidget);
     });
 
     testWidgets('shows an optional attachment control with its privacy note', (

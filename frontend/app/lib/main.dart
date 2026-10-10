@@ -18,7 +18,9 @@ import 'core/network/api_client.dart';
 
 Future<void> main() async {
   final parentZone = Zone.current;
-  late final DiagnosticErrorBoundary errorBoundary;
+  var errorBoundary = DiagnosticErrorBoundary(
+    diagnostics: const NoopAppDiagnostics(),
+  );
   await runZonedGuarded(
     () async {
       final isFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');

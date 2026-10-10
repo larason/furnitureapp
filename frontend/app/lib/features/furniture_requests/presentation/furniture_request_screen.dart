@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -32,6 +34,7 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
       );
   final _formKey = GlobalKey<FormState>();
   final _controllers = <String, TextEditingController>{};
+  String? _attachmentRejection;
 
   @override
   void dispose() {
@@ -181,6 +184,7 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
                 child: const Text('Remove file'),
               ),
             ],
+            if (_attachmentRejection != null) _error(_attachmentRejection!),
             if (_controller.errors['attachment'] != null)
               _error(_controller.errors['attachment']!),
           ]),
@@ -294,26 +298,40 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
   );
 
   Future<void> _selectAttachment() async {
-    final file = await FilePicker.pickFile(
-      type: FileType.custom,
-      allowedExtensions: const <String>['jpg', 'jpeg', 'png', 'webp', 'pdf'],
-    );
-    if (!mounted || file == null) {
-      return;
-    }
+    PlatformFile? file;
     try {
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
-      _change(
-        attachment: FurnitureRequestAttachment(
-          name: file.name,
-          bytes: bytes,
-          contentType: _contentType(file.extension),
-        ),
+      file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const <String>['jpg', 'jpeg', 'png', 'webp', 'pdf'],
       );
     } catch (_) {
       return;
     }
+    if (!mounted || file == null) {
+      return;
+    }
+    final pickedFile = file;
+    final int? size = pickedFile.lengthSync() ?? await pickedFile.length();
+    if (!mounted) return;
+    if (size != null && size > furnitureRequestMaxAttachmentBytes) {
+      setState(
+        () => _attachmentRejection = 'Choose a file no larger than 5 MiB.',
+      );
+      return;
+    }
+    Uint8List? bytes;
+    try {
+      bytes = await pickedFile.readAsBytes();
+    } catch (_) {}
+    if (!mounted || bytes == null) return;
+    _attachmentRejection = null;
+    _change(
+      attachment: FurnitureRequestAttachment(
+        name: pickedFile.name,
+        bytes: bytes,
+        contentType: _contentType(pickedFile.extension),
+      ),
+    );
   }
 
   Future<void> _submit() async {

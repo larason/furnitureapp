@@ -177,7 +177,7 @@ class _EnquiryScreenState extends State<EnquiryScreen> {
           const SizedBox(height: AppSpacing.space3),
           TextButton(
             key: const ValueKey<String>('enquiry.furniture_request_link'),
-            onPressed: () => context.go(AppRoutes.furnitureRequests),
+            onPressed: () => context.push(AppRoutes.furnitureRequests),
             child: const Text(
               'Want furniture made to your specifications? Submit a furniture '
               'request.',

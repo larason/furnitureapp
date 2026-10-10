@@ -70,4 +70,24 @@ void main() {
 
     expect(errors, isEmpty);
   });
+
+  test('enforces the frozen 10000 cm dimension cap', () {
+    final valid = validateFurnitureRequest(
+      const FurnitureRequestDraft(
+        name: 'Asha Mushi',
+        phone: '+255700000000',
+        length: '10000',
+      ),
+    );
+    final invalid = validateFurnitureRequest(
+      const FurnitureRequestDraft(
+        name: 'Asha Mushi',
+        phone: '+255700000000',
+        length: '10000.1',
+      ),
+    );
+
+    expect(valid, isEmpty);
+    expect(invalid['length'], 'Enter a positive measurement up to 10000 cm.');
+  });
 }
