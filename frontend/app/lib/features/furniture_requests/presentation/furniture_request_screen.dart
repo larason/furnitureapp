@@ -150,13 +150,13 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
             _field(
               'phone',
               'Phone number',
-              maxLength: 30,
+              maxLength: furnitureRequestPhoneMaxLength,
               keyboard: TextInputType.phone,
             ),
             _field(
               'email',
               'Email address',
-              maxLength: 255,
+              maxLength: furnitureRequestEmailMaxLength,
               keyboard: TextInputType.emailAddress,
             ),
             if (_controller.errors['contact'] != null)

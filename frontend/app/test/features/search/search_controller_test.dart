@@ -334,6 +334,65 @@ void main() {
       expect(controller.results.state, isA<AsyncContent<CatalogPage>>());
     });
 
+    test('loads every category page so the filter is complete', () async {
+      final categories = _RecordingCategoryRepository(pages: 3);
+      final controller = SearchController(
+        catalogRepository: _RecordingCatalogRepository(),
+        categoryRepository: categories,
+      );
+      addTearDown(controller.dispose);
+      await pumpEventQueue();
+
+      expect(categories.requestedPages, <int>[1, 2, 3]);
+      final state = controller.categories.state;
+      expect(state, isA<AsyncContent<CategoryPage>>());
+      expect(
+        (state as AsyncContent<CategoryPage>).data.categories,
+        hasLength(3),
+        reason: 'A category past the first page must be filterable.',
+      );
+    });
+
+    test('stops the category walk at the documented page ceiling', () async {
+      final categories = _RecordingCategoryRepository(
+        pages: SearchController.maxCategoryFilterPages + 5,
+      );
+      final controller = SearchController(
+        catalogRepository: _RecordingCatalogRepository(),
+        categoryRepository: categories,
+      );
+      addTearDown(controller.dispose);
+      await pumpEventQueue();
+
+      expect(
+        categories.requestedPages,
+        hasLength(SearchController.maxCategoryFilterPages + 1),
+        reason: 'The first page plus the documented extra-page ceiling.',
+      );
+      expect(
+        categories.requestedPages.last,
+        SearchController.maxCategoryFilterPages + 1,
+      );
+    });
+
+    test('keeps search usable when a later category page fails', () async {
+      final categories = _RecordingCategoryRepository(pages: 3)
+        ..failFromPage = 2;
+      final controller = SearchController(
+        catalogRepository: _RecordingCatalogRepository(),
+        categoryRepository: categories,
+      );
+      addTearDown(controller.dispose);
+      await pumpEventQueue();
+
+      expect(
+        controller.categories.state,
+        isA<AsyncContent<CategoryPage>>(),
+        reason: 'Loaded categories must survive a later page failure.',
+      );
+      expect(controller.results.state, isA<AsyncContent<CatalogPage>>());
+    });
+
     test('stops requesting and notifies after disposal', () async {
       final catalog = _RecordingCatalogRepository();
       final harness = _build(catalog);
@@ -456,21 +515,42 @@ extension ApiPaginationFixture on ApiPagination {
 }
 
 class _RecordingCategoryRepository implements CategoryRepository {
-  _RecordingCategoryRepository({this.error});
+  _RecordingCategoryRepository({this.error, this.pages = 1});
 
   Object? error;
+
+  /// Page number from which the fake fails, or null for a healthy source.
+  int? failFromPage;
+
+  /// Number of category pages the fake publishes.
+  final int pages;
+  final List<int> requestedPages = <int>[];
 
   @override
   Future<CategoryPage> getCategories({
     required int page,
     RequestCancellation? cancellation,
   }) async {
+    requestedPages.add(page);
     if (error != null) throw error!;
-    return const CategoryPage(
+    if (failFromPage != null && page >= failFromPage!) {
+      throw const ApiTransportException(
+        kind: ApiTransportFailureKind.connection,
+      );
+    }
+    return CategoryPage(
       categories: <CategorySummary>[
-        CategorySummary(id: 'cat_sofas', name: 'Sofas', slug: 'sofas'),
+        CategorySummary(
+          id: 'cat_page$page',
+          name: 'Page $page',
+          slug: 'p$page',
+        ),
       ],
-      pagination: ApiPaginationFixture.empty,
+      pagination: ApiPaginationFixture.of(
+        currentPage: page,
+        total: pages,
+        lastPage: pages,
+      ),
     );
   }
 

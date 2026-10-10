@@ -43,6 +43,16 @@ void main() {
     );
   });
 
+  test('mirrors the frozen REQ-001 contact formats', () {
+    FurnitureRequestDraft contact(String phone, String email) =>
+        FurnitureRequestDraft(name: 'Asha Mushi', phone: phone, email: email);
+
+    expect(validateFurnitureRequest(contact('abc', ''))['phone'], isNotNull);
+    expect(validateFurnitureRequest(contact('+255700000000', '')), isEmpty);
+    expect(validateFurnitureRequest(contact('', 'a@b'))['email'], isNotNull);
+    expect(validateFurnitureRequest(contact('', 'asha@example.test')), isEmpty);
+  });
+
   test('permits a catalog-linked request', () {
     final draft = FurnitureRequestDraft(
       product: const FurnitureRequestProductContext(

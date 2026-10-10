@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/core/auth/auth_session.dart';
+import 'package:sl_furnitures/core/network/auth_token_provider.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/furniture_requests/data/furniture_request.dart';
 import 'package:sl_furnitures/features/furniture_requests/data/furniture_request_repository.dart';
@@ -58,6 +59,28 @@ void main() {
     expect(notifications, beforeDisposal);
   });
 
+  test('disposal cancels the in-flight request itself', () async {
+    final repository = _GatedRepository();
+    final controller = FurnitureRequestController(
+      repository: repository,
+      authSession: null,
+    );
+    controller.update(_validDraft);
+    final pending = controller.submit();
+    await repository.entered.future;
+    final cancellation = repository.lastCancellation;
+
+    controller.dispose();
+
+    expect(
+      cancellation?.isCancelled,
+      isTrue,
+      reason: 'Disposing must release the request without a screen cancelling.',
+    );
+    repository.release.complete();
+    await expectLater(pending, completes);
+  });
+
   test('a submission that completes after disposal raises nothing', () async {
     final repository = _GatedRepository();
     final controller = FurnitureRequestController(
@@ -100,6 +123,57 @@ void main() {
     expect(controller.state, FurnitureRequestSubmissionState.editing);
     expect(controller.message, isNull);
   });
+
+  test(
+    'a token failure inside the client is an authentication error',
+    () async {
+      final controller = FurnitureRequestController(
+        repository: _AuthFailingRepository(),
+        authSession: _SignedInTokenSession(),
+      );
+      addTearDown(controller.dispose);
+      controller.update(_validDraft);
+
+      await controller.submit();
+
+      expect(
+        controller.state,
+        FurnitureRequestSubmissionState.editing,
+        reason: 'A pre-send failure cannot have created a duplicate.',
+      );
+      expect(controller.message, contains('session could not be confirmed'));
+      expect(controller.message, isNot(contains('another request')));
+    },
+  );
+}
+
+class _AuthFailingRepository implements FurnitureRequestRepository {
+  @override
+  Future<SubmittedFurnitureRequest> submit(
+    FurnitureRequestDraft draft, {
+    required bool authenticated,
+    RequestCancellation? cancellation,
+  }) => throw const ApiAuthenticationException();
+}
+
+class _SignedInTokenSession implements AuthSession {
+  @override
+  ClerkAuthStatus get status => ClerkAuthStatus.signedIn;
+
+  @override
+  bool get isSignedIn => true;
+
+  @override
+  Future<String?> getToken() async => 'session-token';
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  @override
+  Future<void> signOut() async {}
 }
 
 class _SlowTokenSession implements AuthSession {
@@ -142,6 +216,7 @@ class _FailingRepository implements FurnitureRequestRepository {
 class _GatedRepository implements FurnitureRequestRepository {
   final Completer<void> entered = Completer<void>();
   final Completer<void> release = Completer<void>();
+  RequestCancellation? lastCancellation;
 
   @override
   Future<SubmittedFurnitureRequest> submit(
@@ -149,6 +224,7 @@ class _GatedRepository implements FurnitureRequestRepository {
     required bool authenticated,
     RequestCancellation? cancellation,
   }) {
+    lastCancellation = cancellation;
     entered.complete();
     return release.future.then(
       (_) => const SubmittedFurnitureRequest(

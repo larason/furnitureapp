@@ -2,6 +2,17 @@ import 'dart:typed_data';
 
 const int furnitureRequestMaxAttachmentBytes = 5 * 1024 * 1024;
 const int furnitureRequestMaxDimensionCm = 10000;
+const int furnitureRequestPhoneMaxLength = 30;
+const int furnitureRequestEmailMaxLength = 255;
+
+/// Advisory mirrors of Laravel's frozen REQ-001 contact formats.
+///
+/// `PhoneNumber::PATTERN` is `/^\+?[0-9][0-9 ().-]{6,29}$/`, and email is
+/// checked with `FILTER_VALIDATE_EMAIL`. Laravel stays authoritative; these
+/// only surface the same problem before the round trip.
+final RegExp _phonePattern = RegExp(r'^\+?[0-9][0-9 ().-]{6,29}$');
+
+final RegExp _emailPattern = RegExp(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$");
 const Set<String> furnitureRequestAttachmentTypes = <String>{
   'image/jpeg',
   'image/png',
@@ -139,8 +150,13 @@ Map<String, String> validateFurnitureRequest(FurnitureRequestDraft draft) {
   if (phone.isEmpty && email.isEmpty) {
     errors['contact'] = 'Enter a phone number, email address, or both.';
   }
-  if (phone.length > 30) errors['phone'] = 'Use no more than 30 characters.';
-  if (email.isNotEmpty && (!email.contains('@') || email.length > 255)) {
+  if (phone.length > furnitureRequestPhoneMaxLength ||
+      (phone.isNotEmpty && !_phonePattern.hasMatch(phone))) {
+    errors['phone'] = 'Enter a valid phone number.';
+  }
+  if (email.isNotEmpty &&
+      (email.length > furnitureRequestEmailMaxLength ||
+          !_emailPattern.hasMatch(email))) {
     errors['email'] = 'Enter a valid email address.';
   }
   _quantityError(draft.quantity, errors);

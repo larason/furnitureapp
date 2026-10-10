@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/presentation/async_view_state.dart';
 import '../../catalog/data/catalog_query.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/presentation/catalog_controller.dart';
@@ -33,7 +34,7 @@ class SearchController extends ChangeNotifier {
        _categories = CategoriesController(categoryRepository) {
     _criteria = (initialQuery ?? const CatalogQuery()).forFirstPage();
     _results = CatalogController(catalogRepository, query: _criteria)..load();
-    _categories.load();
+    _loadCategories();
     _results.addListener(_notify);
     _categories.addListener(_notify);
   }
@@ -44,6 +45,13 @@ class SearchController extends ChangeNotifier {
   /// results still feel live. Submitting from the keyboard or the search
   /// button bypasses it entirely.
   static const Duration defaultDebounce = Duration(milliseconds: 350);
+
+  /// Upper bound on extra category pages pulled to populate the filter.
+  ///
+  /// A filter dropdown must offer every published category, but it is not a
+  /// browsing surface, so the walk stops at a documented ceiling rather than
+  /// issuing requests forever against a hostile or misconfigured endpoint.
+  static const int maxCategoryFilterPages = 10;
 
   final Duration debounce;
 
@@ -63,6 +71,33 @@ class SearchController extends ChangeNotifier {
 
   /// Public category options for the filter control.
   CategoriesController get categories => _categories;
+
+  /// Loads the first category page, then every remaining page the filter needs.
+  Future<void> _loadCategories() async {
+    await _categories.load();
+    await _loadCategoryFilter();
+  }
+
+  /// Walks forward through the remaining category pages.
+  ///
+  /// The filter is a complete list of published categories, so leaving later
+  /// pages unloaded would silently hide categories that exist and can be
+  /// filtered on. The walk stops at the first page that reports no further
+  /// results, at [maxCategoryFilterPages], or when this controller is disposed.
+  /// A failure keeps the categories already loaded, matching the screen's rule
+  /// that a category problem never blocks search, sorting, or browsing.
+  Future<void> _loadCategoryFilter({int page = 0}) async {
+    if (_disposed || page >= maxCategoryFilterPages) return;
+    final state = _categories.state;
+    final data = switch (state) {
+      AsyncContent(:final data) => data,
+      AsyncRefreshing(:final data) => data,
+      _ => null,
+    };
+    if (data == null || !data.pagination.hasNext) return;
+    await _categories.loadNextPage();
+    return _loadCategoryFilter(page: page + 1);
+  }
 
   /// Raw text in the search field, which may differ from the applied criteria
   /// while a debounce is pending.

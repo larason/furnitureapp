@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/auth/auth_session.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/api_transport_exception.dart';
+import '../../../core/network/auth_token_provider.dart';
 import '../../../core/network/request_cancellation.dart';
 import '../data/enquiry_draft.dart';
 import '../data/enquiry_repository.dart';
@@ -97,6 +98,11 @@ class EnquiryController extends ChangeNotifier {
       _applyApiError(error);
     } on ApiTransportException catch (error) {
       _applyTransportError(error);
+    } on ApiAuthenticationException {
+      // The token is resolved before the request is sent, so Laravel never saw
+      // this submission and a duplicate-warning would be misleading.
+      _state = EnquirySubmissionState.editing;
+      _message = _sessionMessage;
     } catch (_) {
       _state = EnquirySubmissionState.uncertain;
       _message = _uncertainMessage;

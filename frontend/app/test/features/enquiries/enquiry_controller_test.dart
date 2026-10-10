@@ -6,6 +6,7 @@ import 'package:sl_furnitures/core/attachments/pending_attachment.dart';
 import 'package:sl_furnitures/core/auth/auth_session.dart';
 import 'package:sl_furnitures/core/network/api_error.dart';
 import 'package:sl_furnitures/core/network/api_transport_exception.dart';
+import 'package:sl_furnitures/core/network/auth_token_provider.dart';
 import 'package:sl_furnitures/core/network/request_cancellation.dart';
 import 'package:sl_furnitures/features/enquiries/data/enquiry_draft.dart';
 import 'package:sl_furnitures/features/enquiries/data/enquiry_repository.dart';
@@ -313,6 +314,33 @@ void main() {
     expect(repository.lastCancellation?.isCancelled, isTrue);
   });
 
+  test(
+    'a token failure inside the client is an authentication error',
+    () async {
+      final repository = _RecordingRepository();
+      final controller = EnquiryController(
+        repository: repository,
+        authSession: _StubAuthSession(signedIn: true, token: 'session-token'),
+      );
+      addTearDown(controller.dispose);
+      _fill(controller);
+
+      // The pre-flight token check passed, but the client's own lookup fails
+      // before the request is sent, so Laravel never saw this submission.
+      repository.failure = const ApiAuthenticationException();
+
+      await controller.submit();
+
+      expect(
+        controller.state,
+        EnquirySubmissionState.editing,
+        reason: 'A pre-send failure cannot have created a duplicate.',
+      );
+      expect(controller.message, contains('session could not be confirmed'));
+      expect(controller.message, isNot(contains('duplicate')));
+    },
+  );
+
   test('an accepted product context is carried into the draft', () {
     final controller = EnquiryController(
       repository: _RecordingRepository(),
@@ -355,7 +383,7 @@ class _StubAuthSession extends ChangeNotifier implements AuthSession {
 class _RecordingRepository implements EnquiryRepository {
   _RecordingRepository({this.failure});
 
-  final Object? failure;
+  Object? failure;
   final Completer<void> gate = Completer<void>();
   bool _hasFailed = false;
   int callCount = 0;

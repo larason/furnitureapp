@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/auth/auth_session.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/api_transport_exception.dart';
+import '../../../core/network/auth_token_provider.dart';
 import '../../../core/network/request_cancellation.dart';
 import '../data/furniture_request.dart';
 import '../data/furniture_request_repository.dart';
@@ -27,9 +28,15 @@ class FurnitureRequestController extends ChangeNotifier {
   RequestCancellation? _cancellation;
   bool _isDisposed = false;
 
+  /// Disposing stops notifying listeners and releases any in-flight request.
+  ///
+  /// The screen also cancels explicitly, so disposal is safe for any caller and
+  /// not only the current screen. Cancellation abandons the local request only;
+  /// it cannot undo a POST Laravel already received.
   @override
   void dispose() {
     _isDisposed = true;
+    _cancellation?.cancel();
     super.dispose();
   }
 
@@ -84,8 +91,7 @@ class FurnitureRequestController extends ChangeNotifier {
           token = null;
         }
         if (token == null) {
-          _message =
-              'Your signed-in session could not be confirmed. Sign in again or explicitly sign out to submit as a visitor.';
+          _message = _sessionMessage;
           _state = FurnitureRequestSubmissionState.editing;
           return;
         }
@@ -109,6 +115,11 @@ class FurnitureRequestController extends ChangeNotifier {
       _message = error.kind == ApiTransportFailureKind.cancellation
           ? null
           : 'We could not confirm whether your request was received. Retrying may create another request.';
+    } on ApiAuthenticationException {
+      // The token is resolved before the request is sent, so Laravel never saw
+      // this submission and a duplicate-warning would be misleading.
+      _state = FurnitureRequestSubmissionState.editing;
+      _message = _sessionMessage;
     } catch (_) {
       _state = FurnitureRequestSubmissionState.uncertain;
       _message =
@@ -120,6 +131,10 @@ class FurnitureRequestController extends ChangeNotifier {
   }
 
   void cancel() => _cancellation?.cancel();
+
+  static const _sessionMessage =
+      'Your signed-in session could not be confirmed. Sign in again or '
+      'explicitly sign out to submit as a visitor.';
 
   void _applyApiError(ApiError error) {
     _state = FurnitureRequestSubmissionState.editing;
