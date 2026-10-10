@@ -17,20 +17,25 @@ import 'core/diagnostics/diagnostic_level.dart';
 import 'core/network/api_client.dart';
 
 Future<void> main() async {
-  final isFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');
-  if (kDebugMode && !isFlutterTest) {
-    MarionetteBinding.ensureInitialized();
-  } else {
-    WidgetsFlutterBinding.ensureInitialized();
-  }
-
-  final diagnostics = DiagnosticPolicy.bootstrap();
-  final errorBoundary = isFlutterTest
-      ? DiagnosticErrorBoundary(diagnostics: diagnostics)
-      : installDiagnosticErrorBoundary(diagnostics);
   final parentZone = Zone.current;
+  var errorBoundary = DiagnosticErrorBoundary(
+    diagnostics: const NoopAppDiagnostics(),
+  );
   await runZonedGuarded(
-    () => _startApplication(diagnostics),
+    () async {
+      final isFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');
+      if (kDebugMode && !isFlutterTest) {
+        MarionetteBinding.ensureInitialized();
+      } else {
+        WidgetsFlutterBinding.ensureInitialized();
+      }
+
+      final diagnostics = DiagnosticPolicy.bootstrap();
+      errorBoundary = isFlutterTest
+          ? DiagnosticErrorBoundary(diagnostics: diagnostics)
+          : installDiagnosticErrorBoundary(diagnostics);
+      await _startApplication(diagnostics);
+    },
     (error, stackTrace) =>
         errorBoundary.handleZonedAsyncError(parentZone, error, stackTrace),
   );
@@ -67,13 +72,15 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
       ),
     );
     runApp(
-      SLFurnituresApp(
-        config: config,
-        apiClient: apiClient,
-        ownsApiClient: true,
-        authAdapter: clerkAuth,
-        ownsAuthAdapter: true,
-        diagnostics: diagnostics,
+      _withDeviceConfig(
+        SLFurnituresApp(
+          config: config,
+          apiClient: apiClient,
+          ownsApiClient: true,
+          authAdapter: clerkAuth,
+          ownsAuthAdapter: true,
+          diagnostics: diagnostics,
+        ),
       ),
     );
   } on ConfigValidationException catch (error) {
@@ -87,7 +94,7 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
         ),
       ),
     );
-    runApp(ConfigFailureApp(message: error.message));
+    runApp(_withDeviceConfig(ConfigFailureApp(message: error.message)));
   } catch (_) {
     diagnostics.record(
       DiagnosticEvent.now(
@@ -100,9 +107,18 @@ Future<void> _startApplication(AppDiagnostics diagnostics) async {
       ),
     );
     runApp(
-      const ConfigFailureApp(
-        message: 'The application could not start. Please try again later.',
+      _withDeviceConfig(
+        const ConfigFailureApp(
+          message: 'The application could not start. Please try again later.',
+        ),
       ),
     );
   }
 }
+
+/// Wraps the root widget so accessibility overrides such as text scale can be
+/// driven during development verification.
+///
+/// The wrapper is compiled out of release builds, so it cannot ship.
+Widget _withDeviceConfig(Widget child) =>
+    kReleaseMode ? child : MarionetteDeviceConfig(child: child);

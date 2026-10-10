@@ -1,3 +1,5 @@
+import '../core/identifiers/resource_identifier.dart';
+
 abstract final class AppRoutes {
   static const home = '/';
   static const products = '/products';
@@ -6,6 +8,7 @@ abstract final class AppRoutes {
   static const categoryPath = ':categoryId';
   static const search = '/search';
   static const furnitureRequests = '/furniture-requests';
+  static const furnitureRequestProductPath = ':productId';
   static const contact = '/contact';
   static const account = '/account';
   static const signIn = '/sign-in';
@@ -31,8 +34,11 @@ abstract final class AppRoutes {
   static String category(String categoryId) =>
       '$categories/${Uri.encodeComponent(categoryId)}';
 
+  static String furnitureRequest(String productId) =>
+      '$furnitureRequests/${Uri.encodeComponent(productId)}';
+
   static bool isValidResourceId(String? value) =>
-      value != null && RegExp(r'^[A-Za-z0-9][A-Za-z0-9_-]*$').hasMatch(value);
+      ResourceIdentifier.isValid(value);
 
   static bool isProtectedPath(String path) => path == account;
 

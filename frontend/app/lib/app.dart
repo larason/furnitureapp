@@ -5,6 +5,14 @@ import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
+import 'features/catalog/data/catalog_repository.dart';
+import 'features/catalog/data/fixture_catalog_repository.dart';
+import 'features/categories/data/category_repository.dart';
+import 'features/categories/data/fixture_category_repository.dart';
+import 'features/product_detail/data/fixture_product_detail_repository.dart';
+import 'features/product_detail/data/product_detail_repository.dart';
+import 'features/enquiries/data/enquiry_repository.dart';
+import 'features/furniture_requests/data/furniture_request_repository.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
@@ -49,11 +57,40 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
   @override
   void initState() {
     super.initState();
+    final apiClient = widget.apiClient;
+    final useFixtures =
+        widget.config.catalogDataSource == CatalogDataSource.fixtures;
+    final catalog = useFixtures
+        ? FixtureCatalogRepository()
+        : apiClient == null
+        ? null
+        : ApiCatalogRepository(apiClient);
+    final categories = useFixtures
+        ? const FixtureCategoryRepository()
+        : apiClient == null
+        ? null
+        : ApiCategoryRepository(apiClient);
+    final productDetail = useFixtures
+        ? FixtureProductDetailRepository()
+        : apiClient == null
+        ? null
+        : ApiProductDetailRepository(apiClient);
     _router = AppRouter.create(
       authState: widget.authAdapter ?? _anonymousAuthState,
       getAuthStatus: () =>
           widget.authAdapter?.status ?? ClerkAuthStatus.signedOut,
       diagnostics: widget.diagnostics,
+      catalogRepository: catalog,
+      categoryRepository: categories,
+      productDetailRepository: productDetail,
+      furnitureRequestRepository: apiClient == null
+          ? null
+          : ApiFurnitureRequestRepository(apiClient),
+      enquiryRepository: apiClient == null
+          ? null
+          : ApiEnquiryRepository(apiClient),
+      authSession: widget.authAdapter,
+      showFixtureHero: useFixtures,
     );
   }
 
@@ -76,6 +113,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       title: 'SL Furnitures',
       theme: AppTheme.light(),
       routerConfig: _router,
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -95,6 +133,7 @@ class ConfigFailureApp extends StatelessWidget {
     return MaterialApp(
       title: 'SL Furnitures',
       theme: AppTheme.light(),
+      debugShowCheckedModeBanner: false,
       // Resolved inside the MaterialApp so the diagnostic uses the brand
       // typography and colours rather than the ambient fallback theme.
       home: Builder(

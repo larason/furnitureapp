@@ -222,9 +222,7 @@ class ApiClient {
       _recordApiError(method, error);
       rethrow;
     } on ApiTransportException catch (error) {
-      if (error.kind != ApiTransportFailureKind.cancellation) {
-        _recordTransportError(method, error);
-      }
+      _recordTransportFailure(method, error);
       rethrow;
     } on ApiAuthenticationException {
       diagnostics.record(
@@ -242,17 +240,34 @@ class ApiClient {
     } on ApiConfigurationException {
       rethrow;
     } on TimeoutException {
-      throw _cancellationFailure(true);
+      final failure = _cancellationFailure(true);
+      _recordTransportFailure(method, failure);
+      throw failure;
     } catch (_) {
-      if (timedOut || cancelled) {
-        throw _cancellationFailure(timedOut);
-      }
-      throw const ApiTransportException(
-        kind: ApiTransportFailureKind.connection,
-      );
+      final failure = timedOut || cancelled
+          ? _cancellationFailure(timedOut)
+          : const ApiTransportException(
+              kind: ApiTransportFailureKind.connection,
+            );
+      _recordTransportFailure(method, failure);
+      throw failure;
     } finally {
       timer.cancel();
     }
+  }
+
+  /// Records a transport failure unless it is an expected cancellation.
+  ///
+  /// A transport may already fail with an [ApiTransportException], or it may
+  /// surface a raw `dart:io`/`package:http` error that this client converts
+  /// into one. Both routes converge here, so every eligible failure is recorded
+  /// exactly once and an intentional cancellation stays silent.
+  void _recordTransportFailure(
+    ApiHttpMethod method,
+    ApiTransportException error,
+  ) {
+    if (error.kind == ApiTransportFailureKind.cancellation) return;
+    _recordTransportError(method, error);
   }
 
   void _recordApiError(ApiHttpMethod method, ApiError error) {
