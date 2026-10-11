@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/features/information/presentation/about_us_screen.dart';
 import 'package:sl_furnitures/features/information/presentation/privacy_policy_screen.dart';
 import 'package:sl_furnitures/features/information/presentation/terms_conditions_screen.dart';
+import 'package:sl_furnitures/features/information/presentation/widgets/legal_document_view.dart';
 import 'package:sl_furnitures/theme/app_theme.dart';
 
 void main() {
@@ -51,6 +52,23 @@ void main() {
     );
     expect(document.data, source);
     expect(document.data, contains('[email address]'));
+  });
+
+  testWidgets('legal document failure uses neutral customer copy', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const LegalDocumentView(
+          title: 'Unavailable document',
+          assetPath: 'assets/legal/missing.txt',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Please try again later.'), findsOneWidget);
+    expect(find.textContaining('asset configuration'), findsNothing);
   });
 
   test('legal sources and registered assets match byte-for-byte', () async {

@@ -4,8 +4,32 @@ import 'package:flutter/material.dart';
 import '../../../core/presentation/app_brand_logo.dart';
 import '../../../theme/app_spacing.dart';
 
-class AuthenticationScreen extends StatelessWidget {
-  const AuthenticationScreen({super.key});
+class AuthenticationScreen extends StatefulWidget {
+  const AuthenticationScreen({super.key, this.startInSignUp = false});
+
+  final bool startInSignUp;
+
+  @override
+  State<AuthenticationScreen> createState() => _AuthenticationScreenState();
+}
+
+class _AuthenticationScreenState extends State<AuthenticationScreen> {
+  bool _signUpStarted = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.startInSignUp || _signUpStarted) return;
+    _signUpStarted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startSignUp());
+  }
+
+  Future<void> _startSignUp() async {
+    if (!mounted) return;
+    final auth = ClerkAuth.of(context, listen: false);
+    if (auth.isNotAvailable || auth.isSigningUp || auth.isSignedIn) return;
+    await auth.safelyCall(context, () => auth.attemptSignUp());
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(

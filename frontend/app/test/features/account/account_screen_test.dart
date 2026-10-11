@@ -59,6 +59,10 @@ void main() {
 
     expect(find.text('Try again'), findsOneWidget);
     expect(
+      find.text('We could not complete that request. Please try again later.'),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const Key('account.actions')),
       findsOneWidget,
       reason: 'A failed profile read must not remove the sign-out control.',

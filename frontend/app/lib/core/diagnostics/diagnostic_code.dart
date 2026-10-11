@@ -18,6 +18,7 @@ enum DiagnosticCode {
   navigationUnsafeDestination,
   unexpectedFlutterError,
   unhandledAsyncError,
+  legalDocumentLoadFailed,
 }
 
 extension DiagnosticCodeValue on DiagnosticCode {
@@ -42,5 +43,6 @@ extension DiagnosticCodeValue on DiagnosticCode {
       'NAVIGATION_UNSAFE_DESTINATION',
     DiagnosticCode.unexpectedFlutterError => 'UNEXPECTED_FLUTTER_ERROR',
     DiagnosticCode.unhandledAsyncError => 'UNHANDLED_ASYNC_ERROR',
+    DiagnosticCode.legalDocumentLoadFailed => 'LEGAL_DOCUMENT_LOAD_FAILED',
   };
 }

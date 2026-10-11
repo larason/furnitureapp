@@ -194,7 +194,7 @@ abstract final class AppRouter {
           name: AppRoutes.signUpName,
           path: AppRoutes.signUp,
           builder: (context, _) => clerkUiEnabled
-              ? const AuthenticationScreen()
+              ? const AuthenticationScreen(startInSignUp: true)
               : _unavailableAuthenticationRoute(context, 'Sign up'),
         ),
         GoRoute(

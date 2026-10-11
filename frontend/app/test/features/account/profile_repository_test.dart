@@ -43,6 +43,18 @@ void main() {
     expect(body, isNot(contains('email')));
     expect(body, isNot(contains('user_id')));
   });
+
+  test('USER-002 sends an empty name for backend validation', () async {
+    final transport = _Transport.json(_profile(name: 'Asha Mushi'));
+    final repository = ApiProfileRepository(_client(transport));
+
+    await repository.updateProfile(name: '   ');
+
+    final body = jsonDecode(
+      utf8.decode((transport.request!.body! as ApiJsonBody).bytes),
+    );
+    expect(body, <String, Object?>{'name': ''});
+  });
 }
 
 ApiClient _client(_Transport transport) => ApiClient(

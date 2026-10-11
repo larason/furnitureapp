@@ -29,7 +29,7 @@ class ApiProfileRepository implements ProfileRepository {
     final values = <String, Object?>{};
     final trimmedName = name?.trim();
     final trimmedPhone = phone?.trim();
-    if (trimmedName != null && trimmedName.isNotEmpty) {
+    if (trimmedName != null) {
       values['name'] = trimmedName;
     }
     if (clearPhone) {

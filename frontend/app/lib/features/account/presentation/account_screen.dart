@@ -55,9 +55,25 @@ class _AccountScreenState extends State<AccountScreen> {
                     return const Center(child: CircularProgressIndicator());
                   }
                   if (snapshot.hasError) {
-                    return FilledButton(
-                      onPressed: _reload,
-                      child: const Text('Try again'),
+                    final presentation = ErrorPresentationMapper.from(
+                      snapshot.error!,
+                    );
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            presentation?.message ??
+                                'We could not load your account details.',
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.space4),
+                        FilledButton(
+                          onPressed: _reload,
+                          child: const Text('Try again'),
+                        ),
+                      ],
                     );
                   }
                   final profile = snapshot.requireData;
