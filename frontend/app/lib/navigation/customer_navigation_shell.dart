@@ -90,6 +90,9 @@ class _CustomerNavigationShellState extends State<CustomerNavigationShell> {
   String _titleFor(String location) {
     if (location.startsWith('${AppRoutes.products}/')) return 'Furniture';
     if (location.startsWith('${AppRoutes.categories}/')) return 'Category';
+    if (location.startsWith('${AppRoutes.furnitureRequests}/')) {
+      return 'Furniture request';
+    }
     return switch (location) {
       AppRoutes.products => 'Furniture',
       AppRoutes.categories => 'Categories',
@@ -136,7 +139,6 @@ class _CustomerAppBar extends StatelessWidget implements PreferredSizeWidget {
         children: <Widget>[
           Center(
             child: Semantics(
-              excludeSemantics: true,
               button: true,
               label: 'SL Furnitures home',
               child: InkWell(
