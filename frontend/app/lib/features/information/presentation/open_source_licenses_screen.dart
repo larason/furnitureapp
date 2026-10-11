@@ -5,7 +5,7 @@ class OpenSourceLicensesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const LicensePage(
-    applicationName: 'SL Furnitures',
+    applicationName: '\u00A9 2026 SL Furnitures',
     applicationVersion: '0.1.0',
   );
 }
