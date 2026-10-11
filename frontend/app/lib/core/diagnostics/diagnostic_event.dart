@@ -18,9 +18,11 @@ enum DiagnosticOperation {
   authSessionRestore,
   authSessionRenewal,
   authSignOut,
+  authFlow,
   securePersistence,
   navigation,
   framework,
+  legalDocument,
 }
 
 enum DiagnosticTransportFailure {
@@ -49,6 +51,7 @@ class DiagnosticContext {
     this.retryAfterSeconds,
     this.routeFailure,
     this.cancelled = false,
+    this.assetPath,
   });
 
   final AppEnvironment? environment;
@@ -60,6 +63,7 @@ class DiagnosticContext {
   final int? retryAfterSeconds;
   final DiagnosticRouteFailure? routeFailure;
   final bool cancelled;
+  final String? assetPath;
 
   Map<String, Object> toJson() {
     final result = <String, Object>{};
@@ -79,6 +83,7 @@ class DiagnosticContext {
     }
     if (routeFailure != null) result['route_failure'] = routeFailure!.name;
     if (cancelled) result['cancelled'] = true;
+    if (assetPath != null) result['asset_path'] = assetPath!;
     return result;
   }
 }

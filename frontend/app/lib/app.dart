@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
+import 'core/presentation/auth_failure_presenter.dart';
 import 'features/catalog/data/catalog_repository.dart';
 import 'features/catalog/data/fixture_catalog_repository.dart';
 import 'features/categories/data/category_repository.dart';
@@ -12,6 +14,7 @@ import 'features/categories/data/fixture_category_repository.dart';
 import 'features/product_detail/data/fixture_product_detail_repository.dart';
 import 'features/product_detail/data/product_detail_repository.dart';
 import 'features/enquiries/data/enquiry_repository.dart';
+import 'features/account/data/profile_repository.dart';
 import 'features/furniture_requests/data/furniture_request_repository.dart';
 import 'navigation/app_router.dart';
 import 'theme/app_spacing.dart';
@@ -89,7 +92,11 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       enquiryRepository: apiClient == null
           ? null
           : ApiEnquiryRepository(apiClient),
+      profileRepository: apiClient == null
+          ? null
+          : ApiProfileRepository(apiClient),
       authSession: widget.authAdapter,
+      clerkUiEnabled: widget.authAdapter?.clerkAuthState != null,
       showFixtureHero: useFixtures,
     );
   }
@@ -114,6 +121,25 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       theme: AppTheme.light(),
       routerConfig: _router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        final authState = widget.authAdapter?.clerkAuthState;
+        if (authState == null) return child!;
+        return ClerkAuth(
+          authState: authState,
+          // Clerk routes every auth failure to this stream and rethrows it when
+          // nothing is listening, so a rejected email, password or code would
+          // otherwise leave the customer staring at a spinner that never
+          // resolves into an explanation.
+          child: ClerkErrorListener(
+            handler: (context, error) => presentAuthFailure(
+              context,
+              error,
+              diagnostics: widget.diagnostics,
+            ),
+            child: child!,
+          ),
+        );
+      },
     );
   }
 }

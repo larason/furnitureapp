@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:clerk_auth/clerk_auth.dart';
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/foundation.dart' hide DiagnosticLevel;
 
 import 'auth_session.dart';
@@ -46,6 +47,11 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   bool _signOutInProgress = false;
   bool _disposed = false;
 
+  ClerkAuthState? get clerkAuthState => switch (_gateway) {
+    _ClerkAuthGateway(:final auth) => auth,
+    _ => null,
+  };
+
   @override
   ClerkAuthStatus get status => _status;
 
@@ -62,8 +68,8 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
       store: store ?? FlutterSecureKeyValueStore(),
       diagnostics: diagnostics,
     );
-    final auth = Auth(
-      config: AuthConfig(
+    final auth = await ClerkAuthState.create(
+      config: ClerkAuthConfig(
         publishableKey: publishableKey,
         persistor: persistor,
         sessionTokenPolling: true,
@@ -195,26 +201,49 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   }
 }
 
+/// Bridges Clerk's [ClerkAuthState] onto [ClerkAuthGateway].
+///
+/// Every Clerk state transition is republished immediately. Listening only to
+/// the session-token stream would report changes up to a full token-polling
+/// cycle late, which left the app showing a stale session after a successful
+/// sign-in or sign-out.
 class _ClerkAuthGateway implements ClerkAuthGateway {
-  _ClerkAuthGateway(this._auth);
+  _ClerkAuthGateway(this._auth) {
+    _auth.addListener(_publish);
+    _tokenSubscription = _auth.sessionTokenStream.listen(
+      (_) => _publish(),
+      onError: (_) => _publish(),
+    );
+  }
 
-  final Auth _auth;
+  final ClerkAuthState _auth;
+  final StreamController<void> _changes = StreamController<void>.broadcast();
+  StreamSubscription<SessionToken>? _tokenSubscription;
+
+  ClerkAuthState get auth => _auth;
+
+  void _publish() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
 
   @override
-  Stream<void> get changes => _auth.sessionTokenStream.map<void>((_) {});
+  Stream<void> get changes => _changes.stream;
 
+  /// True only while Clerk holds a session it cannot activate yet.
+  ///
+  /// An in-flight sign-in or sign-up is *not* reported as an unresolved
+  /// session: the customer is already acting on the authentication screen, and
+  /// treating that as pending disabled the account action and diverted
+  /// protected routes away from the flow they were started from.
   @override
-  bool get actionRequired =>
-      _auth.session?.status == Status.pending ||
-      _auth.isSigningIn ||
-      _auth.isSigningUp;
+  bool get actionRequired => _auth.session?.status == Status.pending;
 
   @override
   bool get isSignedIn =>
       _auth.isSignedIn && _auth.session?.status.isActive == true;
 
   @override
-  Future<void> initialize() => _auth.initialize();
+  Future<void> initialize() async {}
 
   @override
   Future<String?> getSessionToken() async {
@@ -226,7 +255,12 @@ class _ClerkAuthGateway implements ClerkAuthGateway {
   Future<void> signOut() => _auth.signOut();
 
   @override
-  void terminate() => _auth.terminate();
+  void terminate() {
+    _auth.removeListener(_publish);
+    unawaited(_tokenSubscription?.cancel());
+    _auth.terminate();
+    _changes.close();
+  }
 }
 
 class _UnavailableGateway implements ClerkAuthGateway {

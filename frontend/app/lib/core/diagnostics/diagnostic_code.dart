@@ -11,12 +11,14 @@ enum DiagnosticCode {
   authSessionRestoreFailed,
   authSessionRenewalFailed,
   authSignOutFailed,
+  authFlowFailed,
   securePersistenceFailed,
   navigationRouteUnavailable,
   navigationInvalidParameter,
   navigationUnsafeDestination,
   unexpectedFlutterError,
   unhandledAsyncError,
+  legalDocumentLoadFailed,
 }
 
 extension DiagnosticCodeValue on DiagnosticCode {
@@ -33,6 +35,7 @@ extension DiagnosticCodeValue on DiagnosticCode {
     DiagnosticCode.authSessionRestoreFailed => 'AUTH_SESSION_RESTORE_FAILED',
     DiagnosticCode.authSessionRenewalFailed => 'AUTH_SESSION_RENEWAL_FAILED',
     DiagnosticCode.authSignOutFailed => 'AUTH_SESSION_SIGN_OUT_FAILED',
+    DiagnosticCode.authFlowFailed => 'AUTH_FLOW_FAILED',
     DiagnosticCode.securePersistenceFailed => 'SECURE_PERSISTENCE_FAILED',
     DiagnosticCode.navigationRouteUnavailable => 'NAVIGATION_ROUTE_UNAVAILABLE',
     DiagnosticCode.navigationInvalidParameter => 'NAVIGATION_INVALID_PARAMETER',
@@ -40,5 +43,6 @@ extension DiagnosticCodeValue on DiagnosticCode {
       'NAVIGATION_UNSAFE_DESTINATION',
     DiagnosticCode.unexpectedFlutterError => 'UNEXPECTED_FLUTTER_ERROR',
     DiagnosticCode.unhandledAsyncError => 'UNHANDLED_ASYNC_ERROR',
+    DiagnosticCode.legalDocumentLoadFailed => 'LEGAL_DOCUMENT_LOAD_FAILED',
   };
 }

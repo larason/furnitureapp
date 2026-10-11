@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   clerk_auth: ^0.0.18-beta
+  clerk_flutter: ^0.0.18-beta
   flutter_secure_storage: ^11.2.0
   flutter_svg: ^2.2.4
   file_picker: ^13.1.0
@@ -42,3 +43,5 @@ flutter:
     - assets/furnitures/fixtures/products/white-sofa.jpg
     - assets/furnitures/fixtures/products/barrel-armchair.jpg
     - assets/furnitures/fixtures/hero/hero.jpg
+    - assets/legal/privacy-policy.txt
+    - assets/legal/terms-of-service.txt

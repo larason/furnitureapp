@@ -11,6 +11,7 @@ lib/features/
   furniture_requests/
   enquiries/
   account/
+  information/
 ```
 
 Only create a feature directory when its owning Group Q phase begins. Do not
@@ -151,8 +152,27 @@ whatever is uploaded. Phase 17.10 keeps its
 own equivalent because this phase must leave Furniture Requests unchanged;
 consolidating them is left to a later phase.
 
-Account, cart, checkout, payment, order, and tracking surfaces remain outside
-the implemented phases.
+The shared `navigation/` shell owns the app bar, navigation drawer, and Clerk
+state-aware account entry. Feature screens provide bodies only and must not add
+competing scaffolds or app bars. Account is implemented as the protected profile
+surface; cart, checkout, payment, order, and tracking surfaces remain absent
+from the request-only release.
+
+## Informational (Phase 17.13)
+
+`information/` owns the public static About Us, Privacy Policy, Terms & Conditions,
+and Open Source Licenses screens. It has no repository, controller, Clerk
+dependency, or Laravel request. The legal screens load bundled assets offline from
+`assets/legal/` and use `SelectionArea` for copying. The source files are the root
+`privacy-policy.txt` and `terms-of-service.txt`; `tool/check_legal_assets.dart`
+enforces byte-for-byte source/asset synchronization. Open Source Licenses uses
+Flutter's `LicensePage` and registered license registry.
+
+The routes are `/about`, `/privacy-policy`, `/terms-and-conditions`, and
+`/open-source-licenses`. They are public in the central router and render inside
+the Phase 17.15 shared shell, except Flutter's standalone `LicensePage`. The
+drawer exposes About, Privacy Policy, and Terms & Conditions; Account details
+provides the regular licenses entry.
 
 ## Module Convention
 
@@ -202,8 +222,8 @@ For a future catalog implementation:
 5. Connect the screen through the existing `AppRouter`.
 6. Add repository, state, and widget tests under matching `test/features/catalog/` paths.
 
-Catalog, categories, product detail, search, furniture requests, and enquiries
-are implemented feature families. Account is a future family. Cart, checkout,
+Catalog, categories, product detail, search, furniture requests, enquiries, and
+the protected Account profile are implemented feature families. Cart, checkout,
 payments, orders, order tracking, and favorites remain absent under request-only
 production scope.
 

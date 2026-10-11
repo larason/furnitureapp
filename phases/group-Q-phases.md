@@ -1,940 +1,963 @@
-# Phase 17.11 — Flutter Contact & Enquiries
+# Phase 17.15 — Global App Navigation, Drawer & Contextual Account Access
 
 **Project:** SL Furnitures  
 **Application:** Flutter Android Customer App  
 **Group:** Q — Flutter Customer Features  
-**Phase:** 17.11 — Enquiries  
-**Prerequisites:** Phases 16.1–16.9, 17.1–17.4, 17.10  
-**Implementation approach:** Existing architecture first, frozen Laravel API, no commerce activation
+**Phase:** 17.15 — Global App Navigation & Drawer  
+**Prerequisites:** Phases 17.1–17.4 and 17.10–17.13  
+**Production commerce mode:** REQUEST ONLY  
+**Status:** Final active implementation phase in Group Q
+
+---
 
 ## 1. Objective
 
-Implement the complete Contact & Enquiries feature for the request-only production launch.
+Implement the final customer-facing navigation experience for the SL Furnitures Flutter app.
 
-Replace the existing `/contact` placeholder with a functional, polished, accessible enquiry screen.
+The goal is to replace temporary, fragmented navigation entry points with a consistent global navigation system, making every currently supported customer feature discoverable.
 
-The feature must support:
+Implement:
 
-1. Anonymous visitor enquiries.
-2. Authenticated CUSTOMER enquiries.
-3. General business questions.
-4. Optional catalog-product context where the API permits it.
-5. Contact information.
-6. Subject and message.
-7. Optional private attachment.
-8. Validation and safe API submission.
-9. Loading, error, and success states.
-10. Explicit recovery from uncertain submission outcomes.
+1. A shared Material 3 top app bar.
+2. A left navigation drawer.
+3. A genuinely centered SL Furnitures brand logo.
+4. A contextual account button on the right.
+5. A guest-only Material 3 account bottom sheet.
+6. Proper sign-in and registration navigation.
+7. Direct account navigation for authenticated customers.
+8. Real SL Furnitures branding on authentication screens.
+9. Dynamic category navigation using the existing catalog backend.
+10. Removal of obsolete homepage navigation buttons created for testing.
+11. Integration of informational and legal routes.
+12. Consistent back navigation, authentication transitions, and deep links.
 
-The feature must not create furniture requests, orders, quotations, payments, reservations, or customer support chat sessions.
+**Do not implement bottom navigation for the initial REQUEST ONLY release.**
 
-Keep Phase 17.10 furniture requests separate from enquiries.
+This is a navigation integration phase, not an opportunity to redesign existing feature screens or activate deferred commerce capabilities.
 
----
+## 2. Repository inspection — mandatory
 
-## 2. Inspect the repository before implementation
+Before modifying the application, inspect:
 
-Read:
-
-- Root `AGENTS.md`.
-- `frontend/AGENTS.md`.
+- Root `AGENTS.md`, including Group Q, design consistency, and the definition of done.
 - `frontend/app/README.md`.
 - `frontend/app/lib/features/README.md`.
-- `docs/decisions.md`.
-- `docs/api/api-contract.md` section 27.
-- `docs/api/api-resources.md`.
-- `docs/api/openapi.yaml`.
-- `docs/api/api-conventions.md`.
-- `frontend/design-system/DESIGN.md`.
-- `frontend/design-system/ACCESSIBILITY.md`.
 - `frontend/design-system/tokens.css`.
-- Phase 17.10 implementation and completion documentation.
-- Existing Flutter enquiry placeholder.
-- Existing `lib/navigation/` route registry.
-- Existing `FeatureDependencies`.
-- Existing ApiClient and multipart support.
-- Existing ClerkAuthAdapter and AuthSession.
-- Existing furniture request form, attachment picker, repository, controller, and tests.
-- Laravel ENQ-001 route, controller, FormRequest, service, resource, rate limiter, attachment handling, and feature tests.
+- Generated Flutter theme/tokens and their generator.
+- Current `MaterialApp.router` setup.
+- Existing `go_router` configuration, route names, redirects, and refresh behavior.
+- Existing home, catalog, categories, search, product detail, furniture request, and enquiry screens.
+- Phase 17.12 authentication implementation and Clerk integration.
+- Phase 17.13 information and legal screens.
+- Existing `AuthSession`, `ClerkAuthAdapter`, and authentication state listener.
+- Current account/profile screens.
+- Existing assets and brand/logo resources.
+- Current loading/error components.
+- Existing route and widget tests.
 
-### Required inspection report
+Identify all temporary navigation controls introduced solely to make incomplete features accessible during development.
 
-Before coding, identify:
+Do not remove a control merely because it links to a route now present in the drawer. Preserve feature-specific CTAs such as "Request this furniture" on product details.
 
-- Exact ENQ-001 request fields.
-- Required and nullable fields.
-- Validation bounds.
-- Anonymous and authenticated contact rules.
-- Product and order association validation.
-- Multipart encoding requirements.
-- Attachment limits.
-- Response representation.
-- Error codes and field paths.
-- Backend route activation status.
-- Whether ENQ-007 is operational.
-- Existing reusable Flutter form components.
-- Existing request-submission state handling.
+Before implementation, briefly document the existing navigation architecture, actual route names, actual logo asset path, and any integration risks.
 
-Do not infer contract details from the furniture request form.
+## 3. Navigation architecture
 
-The Enquiry API is a separate resource with different validation.
+Reuse the current centralized go_router implementation.
 
----
+Introduce or extend a shared navigation shell using an appropriate supported go_router pattern, such as `ShellRoute`, if it fits the existing route hierarchy.
 
-## 3. Frozen API contract
+Avoid unnecessary migration to a new router architecture.
 
-Use:
+### Architectural responsibilities
 
-POST /api/v1/enquiries
+The shared shell owns:
 
-This is ENQ-001.
+- Global app bar.
+- Navigation drawer.
+- Consistent page presentation.
+- Account entry point.
+- Common navigation interactions.
 
-Do not create:
+Individual features own:
 
-- `/contact/submit`
-- `/messages`
-- `/support/tickets`
-- `/customer/enquiries`
-- A Next.js proxy endpoint
-- A Firebase collection
-- A direct database connection
+- Their own content.
+- Feature-specific page actions.
+- Forms.
+- Local loading and error states.
+- Feature-specific nested navigation.
 
-The existing Laravel API is authoritative.
+The navigation shell must not contain catalog API implementations, authentication business logic, or duplicated route definitions.
 
-### Canonical enquiry fields
+### Important
 
-Inspect the frozen schema for:
+Only one `MaterialApp.router` may exist.
 
-- `subject`
-- `message`
-- `name`
-- `phone`
-- `email`
-- `product_id`
-- `order_id`
-- `attachment`
+Do not put another `Scaffold` around every page without considering the existing screen structure.
 
-Only include fields supported by ENQ-001.
+Prevent:
 
-Do not send server-controlled fields:
+- Nested duplicate app bars.
+- Duplicate navigation drawers.
+- Unexpected back buttons.
+- Conflicting floating action buttons.
+- Extra top padding.
+- Double safe-area application.
+- Screens retaining invisible app bars after navigation.
 
-- `user_id`
-- `enquiry_status`
-- `staff_internal_notes`
-- `created_at`
-- `updated_at`
-- `reference`
-- `payment_id`
-- `payment_status`
-- `order_status`
-- `create_order`
+Refactor existing screen scaffolds only as much as is necessary to support the shared shell.
 
-Unknown fields must not be silently added.
+## 4. Global top app bar
 
-### Response handling
+Create a reusable SL Furnitures Material 3 top app bar.
 
-Parse the canonical `data` response envelope.
+### Required arrangement
 
-Use the backend's actual enquiry representation, including its opaque ID, reference, status, and timestamps where documented.
+```text
+┌────────────────────────────────────┐
+│                                    │
+│  ☰         SL FURNITURES        ♙  │
+│                                    │
+└────────────────────────────────────┘
+```
 
-Do not invent response fields.
+The diagram is conceptual. Use the real brand logo asset.
 
----
+### Left action — navigation drawer
 
-## 4. Anonymous submission
+Place the menu icon on the left.
 
-The contact page must work without Clerk authentication.
+Use a standard Material icon consistent with Material 3.
 
-Anonymous visitors must provide:
+Interaction:
 
-- Name.
-- At least one reachable contact method: phone or email.
-- Valid subject.
-- Valid message.
+- Tap opens the navigation drawer.
+- Drawer opens reliably from all appropriate top-level customer screens.
+- Screen readers announce "Open navigation menu".
+- Provide proper touch-target dimensions.
 
-Do not force account creation.
+### Center — SL Furnitures logo
 
-Do not redirect anonymous visitors to `/account`.
+Use the actual SL Furnitures logo already defined in the project.
 
-Do not require a Clerk token.
+The logo must be geometrically centered relative to the full app bar width, not merely centered in the space remaining between the left and right actions.
 
-Do not use an email address as proof of ownership.
+Use a balanced layout that remains correct when the menu or account icon is present.
 
-### Authenticated submission
+Preserve the logo's aspect ratio.
 
-Authenticated CUSTOMER submissions use the existing Clerk session boundary.
+Do not:
 
-Laravel derives ownership from the verified token.
+- Generate a different logo.
+- Substitute an emoji.
+- Use a generic furniture icon.
+- Replace the logo with plain text if the real asset exists.
+- Crop or stretch the logo.
+- Introduce a new brand identity.
 
-Contact information may be supplied or derived according to the frozen ENQ-001 contract.
+If the repository contains multiple logo variants, choose the one designed for the light app-bar surface.
 
-If profile prefill is available, the customer must be able to edit the submitted contact snapshot.
+If no official usable logo asset exists, report the blocker. Do not invent a replacement.
 
-Never send a client-controlled user ID.
+The logo may act as a Home navigation action if consistent with project conventions.
 
-### Authentication failures
+### Right action — account
 
-An invalid authenticated session must not silently become an anonymous submission.
+Use a recognizable person/account icon.
 
-Respect the existing authentication-state policy.
+Its behavior depends on the authoritative current authentication state.
 
-Keep public contact access available when Clerk initialization is unavailable.
+- Guest: open account bottom sheet.
+- Authenticated customer: navigate to Account/Profile.
 
----
+The icon must have a descriptive accessibility label.
 
-## 5. Feature architecture
+### Styling
 
-Create the feature inside:
+Use the generated Flutter theme derived from `frontend/design-system/tokens.css`.
 
-lib/features/enquiries/
+Preferred visual character:
 
-Follow the existing feature-first convention.
+- Warm or paper background consistent with the app.
+- Dark foreground icons.
+- Minimal elevation.
+- Restrained separators, only when needed.
+- Consistent spacing.
+- No arbitrary accent colors.
+- No overly tall promotional header.
 
-Suggested structure:
+Do not recreate the Bonobos promotional banner shown in the screenshot.
 
-lib/features/enquiries/
-  data/
-    enquiry_draft.dart
-    enquiry_submission.dart
-    enquiry_repository.dart
-  presentation/
-    enquiry_controller.dart
-    enquiry_screen.dart
-    enquiry_success_screen.dart
-    widgets/
-      enquiry_contact_fields.dart
-      enquiry_attachment_field.dart
+The screenshot is only an interaction reference for account entry.
 
-Adapt the structure to the actual repository.
+## 5. Global drawer — required hierarchy
 
-Small features must not introduce unnecessary layers.
+Create a Material 3 navigation drawer that exposes the currently available customer functionality.
 
-### Dependencies
+The drawer should prioritize product discovery.
 
-Use constructor injection through `FeatureDependencies`.
+### Proposed content hierarchy
 
-Reuse:
+```text
+SL Furnitures
 
-- ApiClient.
-- ApiAuthMode.
-- AuthSession.
-- RequestCancellation.
-- AsyncViewState.
-- ErrorPresentationMapper.
-- AppDiagnostics.
-- Existing theme.
-- Central go_router.
+[ Search furniture... ]
 
-Do not instantiate a new HTTP client.
+EXPLORE
+  Home
+  All Furniture
 
-Do not initialize Clerk inside this feature.
+CATEGORIES
+  Category A
+  Category B
+  Category C
+  ...from actual catalog data
 
-Do not read secure storage directly.
+SERVICES
+  Request Furniture
+  Contact Us
 
-Do not create another global state manager.
+INFORMATION
+  About Us
 
-### Phase 17.10 reuse
+LEGAL
+  Privacy Policy
+  Terms & Conditions
+```
 
-Inspect the furniture request implementation for reusable mechanisms:
+Use actual category names from the backend, not the placeholders above.
 
-- Attachment file selection.
-- File-size/type validation.
-- Multipart assembly.
-- Submission progress state.
-- Field error mapping.
-- Uncertain-outcome handling.
-- Duplicate-submit prevention.
+This hierarchy is an initial design specification. Match the final implementation to the established routes and information architecture.
 
-Reuse common mechanics without coupling the Enquiry domain to the Furniture Request domain.
+### Search placement
 
-If shared extraction is justified, place domain-neutral utilities in the appropriate shared core layer.
+Search must be the first actionable element in the drawer.
 
-Do not move furniture request models into enquiries or vice versa.
+Provide a prominent, accessible search field or search-entry component.
 
-Avoid a generic, configurable "everything form" abstraction.
+Preferred behavior:
 
----
+- The drawer displays a search affordance at the top.
+- Tapping it closes the drawer and opens the existing Search screen.
+- If the existing Search screen supports an initial query parameter, use that established mechanism.
+- Do not invent a new search controller or parallel filtering engine.
 
-## 6. Contact screen design
+A navigation-style search field is sufficient.
 
-Use the existing `/contact` route.
+Do not duplicate the complete Search screen inside the drawer.
 
-Recommended page hierarchy:
+If an inline search input is implemented, correctly manage focus, the software keyboard, drawer dismissal, and query transfer.
 
-1. Introductory heading.
-2. Short explanatory copy.
-3. Contact information.
-4. Enquiry details.
-5. Optional reference attachment.
-6. Submit action.
-7. Submission feedback.
+### Home and catalog
 
-### Suggested copy
+Include navigation to the existing Home and all-furniture/catalog entry points where these are distinct screens.
 
-Heading:
+Do not create duplicate destinations when both labels map to the same route without a meaningful UX difference.
 
-"How can we help?"
+### Categories
 
-Supporting text:
+The drawer must show the actual available furniture categories using the application's existing category repository/API integration.
 
-"Have a question about our furniture, services, or an existing enquiry? Send us a message and our team will get back to you."
+Do not hard-code category IDs, names, or counts.
 
-Do not promise a specific response time unless the business has an approved response-time policy.
+If categories have a supported hierarchy, preserve it.
 
-### Form fields
+For nested categories, use an accessible expansion mechanism where appropriate.
 
-Contact:
+Selecting a category must:
 
-- Full name.
-- Phone number.
-- Email address.
+1. Close the drawer.
+2. Navigate to the existing category screen.
+3. Supply the correct established route parameter.
+4. Display that category's actual products.
+5. Preserve existing catalog pagination/filtering behavior.
+6. Avoid loading a different category accidentally.
 
-Enquiry:
+Use the existing domain category model.
 
-- Subject.
-- Message.
-
-Context:
-
-- Optional related product, when available and valid.
-
-Attachment:
-
-- Optional image or PDF.
-
-### Form behavior
-
-- Clear labels.
-- Appropriate keyboard types.
-- Visible required/optional indicators.
-- Character limits where useful.
-- Clear inline validation.
-- Keyboard-safe scrolling.
-- Disabled duplicate submission while in flight.
-
-Do not use a large multi-step wizard for this simple contact form.
-
----
-
-## 7. Subject and message
-
-The frozen enquiry contract specifies:
-
-- Subject: 5–200 characters.
-- Message: 10–5,000 characters.
-
-Implement these bounds.
-
-### Subject
-
-Use a plain-text single-line field.
-
-Example placeholder:
-
-"What would you like to ask?"
-
-Do not add a new closed subject-category enum unless the backend contract supports it.
-
-### Message
-
-Use a multiline plain-text field.
-
-Example placeholder:
-
-"Tell us how we can help..."
-
-Preserve meaningful line breaks.
-
-Do not submit rich text, HTML, Markdown, or executable content.
-
-Do not implement message threads or customer/staff replies.
-
-The original enquiry is immutable after submission.
-
----
-
-## 8. Optional product association
-
-The ENQ-001 contract permits an optional product reference.
-
-This is useful for questions such as:
-
-- Is this furniture available in another finish?
-- Can you explain the materials used?
-- What are the delivery options for this product?
-
-### Requirements
-
-If a valid product context is provided:
-
-- Use the server-returned opaque product ID.
-- Show the product name.
-- Reuse the existing CatalogImage.
-- Preserve the distinction between an enquiry and a furniture request.
-
-Do not derive a product ID from its display name.
-
-Do not create a second product-detail repository.
-
-Do not automatically include a product association merely because the user previously browsed a product.
-
-### Navigation
-
-A product-related enquiry entry point may be added where it fits the existing product-detail UI.
-
-Do not replace or weaken the Phase 17.10 "Request this furniture" action.
-
-If adding a new product-detail enquiry action is not required by the frozen Phase 17.11 scope, keep product context support internal and document it for future integration.
-
----
-
-## 9. Order association
-
-The API supports an optional order association under its ownership rules.
-
-However, order and order-tracking features are deferred for this production release.
-
-Therefore:
-
-- Do not expose an order selector.
-- Do not create an order search UI.
-- Do not request order history.
-- Do not accept arbitrary customer-entered order IDs as an ownership bypass.
-- Do not activate order support functionality.
-
-Preserve the frozen API contract for future phases.
-
----
-
-## 10. Optional attachments
-
-Enquiries support zero or one private attachment.
-
-Reuse the existing Phase 17.10 file-picker and multipart infrastructure.
-
-Supported formats:
-
-- JPEG.
-- PNG.
-- WebP.
-- PDF.
-
-Maximum size:
-
-- 5 MiB, subject to confirmation against the backend's precise byte limit.
-
-### Requirements
-
-- File selection.
-- Filename display.
-- File size display.
-- Remove/replace action.
-- Client-side type and size checks.
-- Server-authoritative validation.
-- Accessible error feedback.
-- No broad storage permission if Android's document picker is sufficient.
-
-Use the canonical multipart field:
-
-`attachment`
-
-### Privacy
-
-Attachments are private.
-
-Never expose:
-
-- Internal storage paths.
-- Private object keys.
-- Permanent public attachment URLs.
-- Raw attachment bytes in diagnostics.
-- Upload tokens in logs.
-
-### Separate upload
-
-Prefer inline ENQ-001 multipart submission.
-
-ENQ-007 separate attachment upload is not required for this phase unless the existing scope explicitly calls for it.
-
-If implemented, use the server-issued, single-use, time-limited capability-token contract and verify that the backend supports it.
-
-Do not construct an upload token locally.
-
----
-
-## 11. Enquiry submission state
-
-Use a simple explicit lifecycle:
-
-Editing → Validating → Submitting → Success or Recoverable Failure
-
-### Duplicate submission prevention
-
-Disable the submit action while a submission is in flight.
-
-Do not dispatch multiple requests from rapid taps.
-
-### Successful submission
-
-A confirmed successful response transitions to the confirmation view.
-
-### Validation failure
-
-Keep all entered values and display relevant field errors.
-
-### Rate limiting
-
-Handle HTTP 429 using the existing Retry-After representation.
-
-Do not invent a countdown or deadline when the server does not provide one.
-
-### Uncertain outcome
-
-A timeout or connection interruption during a non-idempotent POST may occur after Laravel accepted the enquiry.
-
-Do not automatically retry.
-
-Do not display "Your enquiry was not submitted" when the outcome is unknown.
-
-Instead, explain that confirmation was not received and another submission might create a duplicate.
-
-Require deliberate user action before trying again.
-
-### Cancellation
-
-Cancellation must not be reported as a server-side rejection.
-
-A local cancellation cannot prove that Laravel did not persist the enquiry.
-
----
-
-## 12. Success confirmation
-
-After a confirmed successful submission, show a clear confirmation screen.
-
-Suggested copy:
-
-"Your enquiry has been received."
-
-Supporting copy:
-
-"Thank you for contacting SL Furnitures. Our team will review your message and use the contact details you provided to respond."
-
-Display only documented response fields.
-
-If the API returns a public-safe reference, it may be shown.
-
-Do not invent a reference.
-
-Do not claim that an email or SMS confirmation was sent.
-
-Do not promise a reply within a fixed period.
-
-### Anonymous privacy
-
-Anonymous users must not receive automatic access to a private enquiry-detail endpoint.
-
-Do not navigate to `/enquiries/{id}`.
-
-A response identifier is not an authentication credential.
-
----
-
-## 13. Enquiry status
-
-The backend uses a closed status model:
-
-- OPEN.
-- CLOSED.
-
-A newly submitted enquiry begins as OPEN.
-
-The Flutter submission UI may show the status if returned by the API.
-
-Do not allow customers to:
-
-- Change status.
-- Close enquiries.
-- Reopen enquiries.
-- Assign staff.
-- Edit the original message.
-- Add staff notes.
-
-Those are not customer intake operations.
-
----
-
-## 14. Error handling
-
-Reuse `ErrorPresentationMapper` and shared error components.
+### Category loading behavior
 
 Handle:
 
-- Missing subject.
-- Invalid subject length.
-- Missing message.
-- Invalid message length.
-- Missing anonymous contact.
-- Invalid email.
-- Invalid phone.
-- Invalid product association.
-- Invalid order association, if a caller supplies one.
-- Unsupported attachment.
-- Oversized attachment.
-- HTTP 401.
-- HTTP 403.
-- HTTP 422.
-- HTTP 429.
-- HTTP 500/502/503/504.
-- Transport failures.
-- Timeouts.
-- Cancellation.
+- Initial loading.
+- Already cached categories.
+- Empty catalog.
+- Network failure.
+- Retry.
+- Slow API responses.
 
-### Field-level errors
+The drawer should open immediately without waiting for the category API.
 
-Map canonical backend error field paths to the corresponding controls.
+If loading fails, retain working links to Home, Search, Contact, and informational screens.
 
-Do not parse English error messages to identify fields.
-
-Preserve request IDs for safe support correlation.
+Do not crash the drawer because categories are unavailable.
 
-Do not display raw response bodies or stack traces.
+Avoid making the same unnecessary API call every time the drawer opens.
 
----
+Reuse the established repository/cache lifecycle where possible.
 
-## 15. Diagnostics
+### Services
 
-Reuse the existing diagnostics boundary.
+Include:
 
-The README confirms that ApiClient already records eligible transport failures exactly once.
+- Request Furniture.
+- Contact Us.
 
-Do not add duplicate feature-level events for the same API failures.
+Use existing public routes.
 
-Use only existing diagnostic codes and allow-listed metadata.
+Do not require authentication for these pages.
 
-Never log:
+If the request screen supports an optional product context, preserve the existing product-linked request workflow and avoid manufacturing fake product data when entering from the drawer.
 
-- Name.
-- Email.
-- Phone.
-- Subject.
-- Message.
-- Product ID.
-- Order ID.
-- Attachment filename.
-- File bytes.
-- Bearer token.
-- Upload capability token.
-- Raw request body.
-- Raw exception text.
+### Information
 
-Keep production diagnostics no-op according to the existing policy.
+Include About Us.
 
----
+### Legal section
 
-## 16. Design-system compliance
+Place Privacy Policy and Terms & Conditions toward the bottom of the drawer.
 
-The canonical visual authority is:
+These should have lower visual prominence than discovery and request features but remain easy to find.
 
-frontend/design-system/tokens.css
+Consider layout behavior on short screens: the drawer must remain scrollable and the legal links must never be clipped.
 
-Use the existing generated Flutter Material 3 theme.
+### Open Source Licenses
 
-### Design principles
+**Do not place Open Source Licenses in the main furniture navigation drawer.**
 
-- Warm editorial presentation.
-- Clean form structure.
-- Comfortable vertical spacing.
-- Restrained typography.
-- Strong primary action.
-- Minimal decorative elements.
-- Clear error and success feedback.
+Instead, expose the licenses entry inside the existing Account Details/Profile information area using the public licenses route implemented in Phase 17.13.
 
-Use Young Serif only for appropriate display headings.
+Preserve Flutter's registered-license display implementation.
 
-Use the existing utility sans for form labels, inputs, and helper text.
+Do not make a duplicate license viewer.
 
-### Do not introduce
+For guests, do not unexpectedly require authentication to access the underlying license route; it remains a public route even though its regular navigation entry is located in account details.
 
-- Hard-coded colors.
-- Arbitrary spacing scales.
-- New font packages.
-- Decorative gradients.
-- Glassmorphism.
-- Fake customer testimonials.
-- Unverified office addresses.
-- Invented business hours.
-- Invented phone numbers.
-- Invented response-time promises.
+## 6. Drawer interaction details
 
-If business contact information is already approved and present in the repository, it may be displayed.
+Use Material 3 components that are compatible with the existing theme.
 
-Otherwise, keep the page focused on the functional enquiry form.
+The drawer must:
 
----
+- Open and close smoothly.
+- Close after a destination is selected.
+- Highlight the active destination where appropriate.
+- Preserve correct category selection.
+- Support system-back dismissal.
+- Respect safe areas.
+- Scroll on small screens.
+- Support landscape.
+- Remain usable at 2× text scaling.
+- Avoid horizontal overflow.
+- Support TalkBack.
+- Keep touch targets accessible.
+- Avoid duplicate route pushes when the user selects the current destination.
 
-## 17. Accessibility
+Use semantic section labels and clear grouping.
 
-Verify:
+Do not use heavy animations or custom gestures when standard Flutter functionality is sufficient.
 
-1. Semantic page heading.
-2. Accessible field labels.
-3. Required/optional field clarity.
-4. Keyboard types.
-5. Multiline input accessibility.
-6. Validation announcements.
-7. Visible focus.
-8. Logical traversal order.
-9. Screen-reader attachment selection.
-10. Submission progress semantics.
-11. Success announcements.
-12. 2× text scaling.
-13. Small Android screen layouts.
-14. Landscape usability.
-15. Keyboard-safe scrolling.
-16. Touch targets.
-17. Contrast.
-18. Reduced-motion preferences.
+Avoid showing all categories as a giant unstructured list if a meaningful hierarchy already exists.
 
-Do not rely solely on color for errors.
+## 7. Account icon — unauthenticated behavior
 
----
+When a user without an authenticated Clerk customer session taps the global account icon:
 
-## 18. Navigation integration
+**Open a Material 3 modal bottom sheet.**
 
-Replace the existing `/contact` placeholder.
+Do not navigate directly to the Sign In screen.
 
-Keep the route public.
+### Bottom-sheet presentation
 
-Use the existing central go_router.
+The reference screenshot shows an account sheet over an existing shopping screen.
 
-Required navigation:
+Adapt that interaction to SL Furnitures.
 
-- Open Contact & Enquiries.
-- Complete the enquiry form.
-- Submit.
-- View confirmation.
-- Return to the home/catalog experience.
+Suggested layout:
 
-Do not create another MaterialApp or route registry.
+```text
+┌────────────────────────────────────┐
+│  Account                        ×  │
+│                                    │
+│  Welcome to SL FURNITURES          │
+│  Sign in to manage your account.   │
+│                                    │
+│  ┌──────────────────────────────┐  │
+│  │           Sign In            │  │
+│  └──────────────────────────────┘  │
+│                                    │
+│  ┌──────────────────────────────┐  │
+│  │        Create Account        │  │
+│  └──────────────────────────────┘  │
+│                                    │
+└────────────────────────────────────┘
+```
 
-Do not add a global drawer or app-wide navigation bar.
+### Styling
 
-The complete shared navigation shell remains planned for Phase 17.15.
+Use the application's established Material 3 buttons, shapes, typography, and spacing.
 
-### Furniture request distinction
+Recommended:
 
-If appropriate, include a small secondary link:
+- Primary filled button: Sign In.
+- Secondary outlined button: Create Account.
+- Clear sheet title: Account.
+- Close button in the top-right.
+- Surface color from canonical tokens.
+- Rounded top corners from the approved theme.
+- Safe-area spacing.
 
-"Want furniture made to your specifications? Submit a furniture request."
+Do not add Shop Pay, social login, or other third-party authentication buttons based on the screenshot.
 
-Navigate to the existing Phase 17.10 route.
+Do not include Orders, Tracking, Cart, or other deferred commerce actions.
 
-Do not merge both forms.
+### Interaction
 
----
+On Sign In:
 
-## 19. Backend readiness
+1. Dismiss the bottom sheet.
+2. Navigate to the existing Clerk Sign In screen.
 
-Inspect the Laravel feature flag or route activation configuration for ENQ-001.
+On Create Account:
 
-Confirm whether:
+1. Dismiss the bottom sheet.
+2. Navigate to the existing Clerk Registration screen.
 
-POST /api/v1/enquiries
+On Close:
 
-is operational.
+- Dismiss the sheet without navigating.
 
-Do not assume it is enabled because REQ-001 was enabled.
+On Android system back:
 
-If disabled, report the precise blocker.
+- Dismiss the sheet first.
 
-Do not silently activate backend routes or change Laravel feature flags without authorization.
+On outside tap:
 
-Do not create a mock successful response in API mode.
+- Use standard modal dismissal behavior, unless the established app accessibility conventions require otherwise.
 
----
+### Important
 
-## 20. Automated tests
+Use supported Flutter APIs such as `showModalBottomSheet`.
 
-Add deterministic tests for:
+Do not reimplement the bottom-sheet framework.
 
-### Models and validation
+Avoid creating a bottom sheet from each individual screen. Its trigger belongs to the global navigation shell.
 
-1. Subject minimum length.
-2. Subject maximum length.
-3. Message minimum length.
-4. Message maximum length.
-5. Anonymous name required.
-6. Anonymous phone/email requirement.
-7. Valid email.
-8. Invalid email.
-9. Valid phone.
-10. Invalid phone.
-11. Optional product association.
-12. Unsupported order association handling.
-13. Server-controlled field exclusion.
+## 8. Account icon — authenticated behavior
 
-### Repository
+When the current customer has a valid authenticated Clerk session:
 
-14. Correct ENQ-001 endpoint.
-15. Anonymous JSON submission.
-16. Authenticated submission.
-17. No user_id injection.
-18. JSON body encoding.
-19. Multipart body encoding.
-20. Successful response parsing.
-21. Field-level validation errors.
-22. Rate limiting.
-23. Authentication errors.
-24. Transport failure.
-25. Timeout.
-26. No automatic retry.
+Tapping the account icon must navigate directly to the existing Account/Profile screen.
 
-### Attachments
+Do not show the guest sheet.
 
-27. JPEG selection.
-28. PNG selection.
-29. WebP selection.
-30. PDF selection.
-31. Oversized file.
-32. Unsupported type.
-33. Remove attachment.
-34. Replace attachment.
-35. Correct multipart field.
-36. No direct public upload.
+Do not prompt for a second login.
 
-### State
+Reuse the existing route and authentication guard.
 
-37. Initial editing.
-38. Invalid submit.
-39. Valid submit.
-40. Duplicate-tap prevention.
-41. Confirmed success.
-42. Server validation failure.
-43. Network failure.
-44. Uncertain outcome.
-45. Explicit retry decision.
-46. Disposal/cancellation.
+### Authentication-state transitions
 
-### Widgets and navigation
+The global account entry must react to changes in the actual authentication state.
 
-47. Contact route.
-48. Form labels.
-49. Keyboard behavior.
-50. Inline errors.
-51. Attachment controls.
-52. Loading feedback.
-53. Success confirmation.
-54. Return navigation.
-55. Anonymous route access.
-56. Accessibility semantics.
-57. Text scaling.
+Handle:
+
+- App starts anonymously.
+- Customer signs in.
+- Customer registers and verifies email.
+- Session is restored at startup.
+- Session expires.
+- Customer signs out.
+- Clerk initialization is delayed.
+- Session refresh is in progress.
+
+Do not infer authenticated state from stale local booleans or profile data alone.
+
+### Important pending-state rule
+
+While the authentication state is unresolved, do not briefly show the guest sheet and then redirect the user to the account page.
+
+Wait for or resolve the authoritative state through the existing session abstraction.
+
+Prevent duplicate navigation and race conditions.
+
+## 9. Authentication success routing
+
+Update the relevant login/registration completion behavior to support the intended launch UX.
+
+### Standard flow
+
+```text
+Guest taps Account
+        ↓
+Account bottom sheet
+        ↓
+Sign In / Create Account
+        ↓
+Clerk authentication
+        ↓
+Email verification if required
+        ↓
+Authenticated session established
+        ↓
+Home
+```
+
+After successful authentication, navigate to the Home screen for a normal account entry flow.
+
+Use `go` or the existing equivalent when appropriate to avoid leaving redundant authentication pages in the back stack.
+
+### Preserve explicit return destinations
+
+Do not break valid protected-route return-to behavior already implemented in Phase 17.12.
+
+If the user originally entered an authenticated workflow with a legitimate allowlisted return destination, honor that existing mechanism.
+
+For authentication initiated directly from the global Account bottom sheet, Home is the preferred destination after successful sign-in or registration.
+
+Do not create open redirects or accept arbitrary external return URLs.
+
+### Failure behavior
+
+If authentication fails or is cancelled:
+
+- Do not navigate to Home as an authenticated user.
+- Keep the user in the appropriate auth flow or safely restore the prior public screen.
+- Present the existing Clerk error handling.
+- Do not alter Laravel account ownership logic.
+
+## 10. Real brand logo on authentication screens
+
+Inspect every authentication screen implemented in Phase 17.12.
+
+Replace the temporary placeholder logo/icon with the actual official **SL Furnitures** logo.
+
+Relevant screens may include:
+
+- Sign In.
+- Registration.
+- Email verification.
+- Password recovery.
+- Other existing Clerk authentication entry screens.
+
+If an authentication flow is rendered by a prebuilt Clerk widget, first determine whether a supported header slot, wrapper, theme customization, or surrounding layout permits the official logo.
+
+Do not fork or modify the Clerk SDK to change its branding.
+
+Preserve Clerk's supported authentication behavior.
+
+### Brand requirements
+
+- Use the same canonical asset as the global app bar where practical.
+- Preserve its proportions.
+- Provide suitable semantic labeling.
+- Use the correct variant for the screen background.
+- Avoid multiple competing logos.
+- Do not create new brand imagery.
+- Do not modify authentication credentials or token handling.
+
+The login screens should visually belong to SL Furnitures without creating a second design system.
+
+## 11. Homepage cleanup
+
+Inspect the Home screen for temporary buttons introduced solely to access screens during development and testing.
+
+Remove obsolete test-navigation buttons, especially temporary standalone entry buttons for:
+
+- Search.
+- Contact Us.
+
+These destinations are now available through the navigation drawer.
+
+### Preserve legitimate functionality
+
+Do not remove:
+
+- Product cards.
+- Catalog browsing.
+- Category exploration components.
+- Product discovery content.
+- Actual product search functionality.
+- Made-to-order request CTAs.
+- Product-detail request buttons.
+- Meaningful editorial content.
+
+The cleanup is intended to remove redundant development shortcuts, not reduce core customer capability.
+
+If Search has an established, intentional discovery component on the Home screen, distinguish it from a temporary testing button before removing anything.
+
+Do not remove functionality that is not otherwise accessible.
+
+## 12. Route inventory and consistency
+
+Use the actual route names from the repository.
+
+The navigation must account for the currently active customer destinations, including:
+
+```text
+Home
+Catalog / All Furniture
+Categories
+Category Detail
+Search
+Product Detail
+Request Furniture
+Contact Us
+About Us
+Privacy Policy
+Terms & Conditions
+Sign In
+Registration
+Account / Profile
+Open Source Licenses
+```
+
+Do not assume all these routes are top-level drawer destinations.
+
+Product Detail is normally reached through product selection.
+
+Sign In and Registration are reached through the guest account sheet.
+
+Account/Profile is reached through the account icon.
+
+Open Source Licenses is found in account details.
+
+Only appropriate public discovery, service, information, and legal routes belong in the main drawer.
+
+### Deferred routes
+
+Do not activate:
+
+- Cart.
+- Checkout.
+- Payments.
+- Customer Orders.
+- Order Tracking.
+
+Do not display disabled placeholder navigation items for those features in the production drawer.
+
+The frozen API contracts remain unchanged.
+
+## 13. Global-shell coverage
+
+The app bar should be present consistently across suitable customer screens.
+
+However, do not blindly apply it to every route.
+
+Review whether a screen needs its own navigation treatment, for example:
+
+- Auth screens with dedicated presentation.
+- Full-screen media/image viewers.
+- Nested product pages where a back action is more appropriate.
+- Modal flows.
+- Keyboard-focused forms.
+
+Document the selected shell boundaries.
+
+For top-level customer screens, prioritize the global menu/logo/account structure.
+
+For nested screens, preserve an understandable back path and avoid removing expected Android navigation behavior solely for visual consistency.
+
+Do not cause a nested product page to become impossible to dismiss or return from.
+
+## 14. Back-stack and deep-link behavior
+
+Verify these flows:
+
+### Normal navigation
+
+```text
+Home → Drawer → Categories → Category Detail → Product Detail
+```
+
+Back navigation should return to the expected prior customer context.
+
+### Search
+
+```text
+Home → Drawer → Search → Search Results → Product Detail
+```
+
+Do not reset search state unnecessarily.
+
+### Guest account
+
+```text
+Home → Account icon → Bottom sheet → Close
+```
+
+Must remain on Home.
+
+### Guest sign-in
+
+```text
+Home → Account icon → Bottom sheet → Sign In
+```
+
+After successful authentication, navigate to Home unless a valid existing return-to destination applies.
+
+### Authenticated account
+
+```text
+Home → Account icon → Account/Profile
+```
+
+### Sign-out
+
+```text
+Account/Profile → Sign Out → Public Home
+```
+
+After sign-out, tapping Account must again show the guest bottom sheet.
+
+### Deep links
+
+Opening a valid public deep link must not unexpectedly redirect through Home or Sign In.
+
+Opening a valid protected account route while unauthenticated must preserve the existing protected-route policy.
+
+Avoid stack loops, duplicate Home entries, and navigation after a widget has been disposed.
+
+## 15. Design token enforcement
+
+The navigation implementation must use the existing canonical design tokens.
+
+Authority:
+
+`frontend/design-system/tokens.css`
+
+Flutter presentation:
+
+Existing generated Material 3 theme and token constants.
+
+Do not manually introduce an unrelated palette.
+
+Pay particular attention to:
+
+- Drawer surface.
+- App bar surface.
+- Primary actions.
+- Secondary actions.
+- Dividers.
+- Text hierarchy.
+- Active navigation states.
+- Focus states.
+- Border and corner radii.
+- Sheet shape.
+- Spacing.
+- Typography.
+
+The user-supplied screenshot is a layout and interaction inspiration, not a source of brand colors.
+
+Do not copy the purple Shop Pay button or Bonobos typography.
+
+Maintain consistency with existing SL Furnitures UI.
+
+## 16. Accessibility
+
+The navigation experience must support assistive technology.
+
+### App bar
+
+- Menu button has an accessible label.
+- Logo has appropriate semantics.
+- Account button has an accessible label.
+- Actions meet touch-target expectations.
+- Focus order is logical.
+
+### Drawer
+
+- Drawer opening announces the navigation context.
+- Search is discoverable.
+- Sections are understandable.
+- Categories have meaningful labels.
+- Expanded categories expose their state appropriately.
+- Selected destinations are identifiable.
+- Legal links are reachable.
+- Drawer content scrolls at large text sizes.
+
+### Account bottom sheet
+
+- The sheet title is announced.
+- Keyboard/TalkBack focus enters the sheet correctly.
+- Sign In and Create Account are distinctly labeled.
+- Close action works.
+- Background interactions are correctly blocked while modal.
+- Android back dismisses the modal appropriately.
+- No clipped controls at 2× text scaling.
+
+Test portrait and landscape orientations.
+
+## 17. Performance and stability
+
+Avoid expensive rebuilding of the navigation shell on every route transition.
+
+Do not repeatedly fetch category data when it is already valid and cached.
+
+Do not initialize multiple Clerk SDK instances.
+
+Do not query the Laravel profile endpoint merely to decide whether a guest sheet should appear if the current Clerk session abstraction already provides the necessary authentication state.
+
+Do not block the Home screen on drawer-category loading.
+
+Dispose of listeners and controllers appropriately.
+
+Keep the drawer responsive on low-end Android devices.
+
+Avoid introducing a new state-management framework just for navigation.
+
+## 18. Automated test coverage
+
+Add tests for the following scenarios.
+
+### Global app bar
+
+1. Menu icon renders.
+2. Real logo is used.
+3. Account icon renders.
+4. Logo remains centered.
+5. Drawer opens.
+6. Logo navigation works if configured.
+7. App bar respects the existing theme.
+
+### Drawer
+
+8. Search appears first.
+9. Search opens the existing route.
+10. Home navigation works.
+11. Catalog navigation works.
+12. Categories load from the existing repository.
+13. Category selection opens the correct category.
+14. Category loading state works.
+15. Category empty state works.
+16. Category failure does not block other links.
+17. Category retry works where available.
+18. Drawer closes after selection.
+19. Active destination is indicated.
+20. About Us navigation works.
+21. Contact Us navigation works.
+22. Request Furniture navigation works.
+23. Privacy Policy navigation works.
+24. Terms & Conditions navigation works.
+25. Licenses are absent from the main drawer.
+26. Deferred commerce destinations are absent.
+
+### Guest account bottom sheet
+
+27. Guest account tap opens the sheet.
+28. Sheet has Account heading.
+29. Sign In button renders.
+30. Create Account button renders.
+31. Close button dismisses the sheet.
+32. Back dismisses the sheet.
+33. Sign In navigates to the existing sign-in route.
+34. Create Account navigates to the existing registration route.
+35. No invented social login buttons are present.
+36. No deferred Orders/Cart buttons are present.
+
+### Authenticated account
+
+37. Authenticated account tap navigates directly to profile.
+38. Authenticated tap never displays the guest sheet.
+39. Session restoration does not cause guest-sheet flicker.
+40. Session expiry follows the existing safe guest behavior.
+41. Sign-out restores guest account behavior.
+42. Authentication state changes do not create duplicate navigation.
+
+### Authentication branding and routing
+
+43. Sign-in screen shows the real brand logo.
+44. Registration screen shows the real brand logo.
+45. Verification/recovery screens use approved branding where supported.
+46. Normal sign-in success navigates to Home.
+47. Normal registration success navigates to Home after the required verification and successful session establishment.
+48. Authentication failure does not simulate success.
+49. Existing protected-route return-to logic remains valid.
 
 ### Regression
 
-Verify that:
+50. Product-detail routes still work.
+51. Category filters still work.
+52. Search results still work.
+53. Public furniture requests still work.
+54. Public enquiries still work.
+55. Authenticated request/enquiry submissions still work.
+56. Account/profile editing still works.
+57. Legal screens remain public.
+58. Licenses can be opened from account details.
+59. Home no longer displays obsolete test-navigation buttons.
+60. No bottom navigation bar exists.
 
-- Phase 17.10 requests still work.
-- Product details still work.
-- Search/filtering still works.
-- Public catalog remains anonymous.
-- Clerk boundaries remain unchanged.
-- Existing multipart tests pass.
-- Existing diagnostics behavior remains correct.
-- Deferred commerce routes remain absent.
+Use existing test infrastructure and fakes.
 
-The matrix describes coverage, not a mandatory one-test-per-number file structure.
+Do not require live Clerk or Laravel services for deterministic widget tests.
 
----
+## 19. Android / Marionette verification
 
-## 21. Live Laravel verification
+Build and launch the actual Android app.
 
-When ENQ-001 is active and Laravel is available, verify:
+Use Marionette where available to verify real interactions.
 
-1. Anonymous valid JSON enquiry.
-2. Authenticated CUSTOMER enquiry where a valid Clerk test session exists.
-3. Missing contact validation.
-4. Subject validation.
-5. Message validation.
-6. Optional product association.
-7. Multipart attachment.
-8. Invalid attachment.
-9. Rate limiting.
-10. Successful response.
-11. OPEN initial status.
-12. No furniture request creation.
-13. No order creation.
-14. No payment or inventory effects.
+Perform the following manual journeys:
 
-Use safe disposable development data.
+**Journey A — Anonymous discovery**
 
-Do not use production customer information.
+Launch → Open Drawer → Search → Return → Open Drawer → Category → Product → Request Furniture.
 
-Do not claim authenticated testing if no Clerk sign-in workflow exists.
+**Journey B — Anonymous contact**
 
----
+Launch → Open Drawer → Contact Us → Return Home.
 
-## 22. Marionette real-device testing
+**Journey C — Legal content**
 
-Use Marionette MCP on a connected physical Android device when available.
+Launch → Open Drawer → Privacy Policy → Back → Terms & Conditions → Back.
 
-Test:
+**Journey D — Guest account**
 
-1. Launch the application.
-2. Navigate to Contact.
-3. Confirm the placeholder is replaced.
-4. Enter a valid subject.
-5. Enter a valid message.
-6. Enter contact information.
-7. Trigger validation errors.
-8. Correct errors.
-9. Select an image or PDF.
-10. Remove and replace the attachment.
-11. Submit against a working Laravel backend.
-12. Verify confirmed success.
-13. Verify error recovery.
-14. Test offline/connection-failure presentation.
-15. Check keyboard overlap.
-16. Check narrow-screen scrolling.
-17. Check accessibility semantics where supported.
-18. Return to home.
-19. Open Furniture Requests and verify that the existing flow still works.
+Launch → Account → Bottom sheet → Close → Account → Create Account.
 
-Do not claim physical-device verification unless actually performed.
+**Journey E — Authenticated account**
 
----
+Sign In → Home → Account icon → Profile → Open Source Licenses.
 
-## 23. Documentation
+**Journey F — Sign-out**
 
-Update:
+Authenticated Profile → Sign Out → Home → Account icon → Guest bottom sheet.
 
-- Flutter README.
-- `lib/features/README.md`.
-- Phase 17.11 completion record.
-- `docs/decisions.md` only if a new durable decision is necessary.
+**Journey G — Accessibility**
 
-Document:
+Repeat drawer and bottom-sheet verification at 2× text scaling and in landscape orientation.
 
-- Feature architecture.
-- ENQ-001 contract mapping.
-- Anonymous and authenticated flows.
-- Contact validation.
-- Attachment behavior.
-- Product association.
-- Error handling.
-- Uncertain-outcome behavior.
-- Backend activation.
-- Test results.
-- Marionette verification.
-- Remaining limitations.
+Record screenshots or concise interaction results.
 
-Do not rewrite completed Phase 17.10 history.
+If the Clerk integration environment prevents a live authenticated journey, report that limitation explicitly and provide the corresponding deterministic test evidence. Do not claim live success without running it.
 
----
+## 20. Scope exclusions
 
-## 24. Verification commands
+Do not implement:
 
-Run from `frontend/app`:
+- Bottom navigation bar.
+- Cart navigation.
+- Checkout navigation.
+- Payment UI.
+- Orders history.
+- Order tracking.
+- Favorites.
+- Promotional offer banners.
+- New search backend.
+- New category API endpoints.
+- New account features.
+- New legal-document content.
+- New brand logo designs.
+- New navigation packages when go_router is sufficient.
+- A second `MaterialApp`.
+- A second authentication system.
+- Any changes to frozen Laravel API contracts.
+
+Do not make unrelated UI changes.
+
+## 21. Verification commands
+
+From `frontend/app`:
 
 ```bash
 flutter pub get
@@ -947,67 +970,83 @@ git diff --check
 git diff --cached --check
 ```
 
-Report the actual results.
+Run additional targeted navigation, authentication, and widget tests where appropriate.
 
-Do not claim success for commands that were not run.
+Report exact command results.
 
----
+## 22. Documentation updates
 
-## 25. Definition of Done
+Update:
 
-Phase 17.11 is complete when:
+- `frontend/app/README.md`.
+- `frontend/app/lib/features/README.md`.
+- Navigation architecture documentation, if present.
+- Phase 17.15 completion record.
 
-- The Contact placeholder is replaced with a real enquiry form.
-- ENQ-001 is integrated.
-- Anonymous visitors can submit enquiries.
-- Authenticated customers use the existing Clerk bearer boundary.
-- Subject and message validation match the frozen contract.
-- Contact information is validated.
-- Optional product context is handled correctly.
-- Optional private attachments work.
-- Duplicate submissions are prevented.
-- Uncertain POST outcomes are handled truthfully.
-- Successful submissions show confirmation.
-- Field errors and rate limits are handled.
-- The existing router remains authoritative.
-- Accessibility requirements are met.
-- Existing Flutter tests remain green.
-- New tests pass.
-- The debug APK builds.
-- Design token synchronization passes.
-- Documentation is updated.
-- Furniture Requests remain unchanged.
-- No deferred commerce features are activated.
+Document:
 
-If backend gating prevents live submission, report:
+- Shared app-bar ownership.
+- Drawer hierarchy.
+- Dynamic category data source.
+- Public and protected route behavior.
+- Account-icon authentication logic.
+- Bottom-sheet behavior.
+- Successful authentication routing.
+- Logo asset usage.
+- Where to find Open Source Licenses.
+- Home cleanup.
+- Why bottom navigation is intentionally omitted for REQUEST ONLY launch.
+- Deferred commerce navigation policy.
+- Test and device verification results.
 
-**Flutter implementation PASS / Live integration BLOCKED**
+Do not silently alter previously frozen decisions.
 
-Do not claim unconditional end-to-end PASS.
+## 23. Definition of Done
 
----
+Phase 17.15 passes when all of the following are true:
 
-## 26. Completion report
+- One shared top-navigation pattern is working.
+- Left menu opens the drawer.
+- Official SL Furnitures logo is centered.
+- Right account action responds correctly to authentication state.
+- Guest users see a themed Material 3 account bottom sheet.
+- Guest Sign In and Create Account buttons navigate correctly.
+- Authenticated users go directly to Account/Profile.
+- Successful normal authentication returns to Home.
+- Existing protected-route return-to behavior remains intact.
+- Actual catalog categories are accessible from the drawer.
+- Search is the first drawer action.
+- All active public customer destinations are discoverable.
+- Privacy Policy and Terms & Conditions appear in the lower drawer section.
+- Open Source Licenses is accessed through Account Details, not the main drawer.
+- Actual brand logo replaces temporary auth screen branding.
+- Obsolete homepage test-navigation buttons are removed.
+- Existing made-to-order request and enquiry workflows remain functional.
+- Deferred cart, checkout, payments, orders, and tracking features remain unavailable.
+- No bottom navigation bar is introduced.
+- Accessibility checks pass.
+- Automated tests pass.
+- Android debug build succeeds.
+- Documentation and completion record are updated.
+
+## 24. Completion report
 
 Return a structured report containing:
 
-1. Repository inspection findings.
-2. Exact ENQ-001 contract fields.
-3. Backend activation status.
-4. Feature architecture.
-5. Anonymous submission behavior.
-6. Authenticated submission behavior.
-7. Form and validation implementation.
-8. Attachment handling.
-9. Navigation integration.
-10. Success/error behavior.
-11. Security and privacy verification.
-12. Automated test results.
-13. Live Laravel test results.
-14. Marionette device results.
-15. Files changed.
-16. Documentation updated.
-17. Known limitations.
-18. Final PASS/FAIL assessment.
+1. Navigation architecture chosen.
+2. Files modified or created.
+3. Real logo asset used.
+4. Drawer destinations implemented.
+5. Dynamic category integration.
+6. Guest account bottom-sheet implementation.
+7. Authenticated account behavior.
+8. Auth success routing.
+9. Homepage buttons removed.
+10. Open Source Licenses entry location.
+11. Automated tests added and results.
+12. Android/Marionette verification.
+13. Accessibility findings.
+14. Outstanding limitations.
+15. Final PASS/FAIL.
 
-**Final instruction:** Implement only Phase 17.11. Reuse the existing Flutter architecture and Phase 17.10 submission mechanics while keeping Enquiries a separate domain. Respect the frozen ENQ-001 API, anonymous access, private attachments, and request-only production scope. Stop after completing and verifying this phase.
+**Final instruction:** Implement only Phase 17.15. Prioritize a coherent, attractive, accessible customer navigation experience for the initial REQUEST ONLY production release. Do not add bottom navigation or prematurely activate commerce features.

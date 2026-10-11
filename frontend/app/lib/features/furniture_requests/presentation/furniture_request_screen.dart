@@ -1,10 +1,12 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/auth/auth_session.dart';
 import '../../../core/attachments/attachment_read.dart';
 import '../../../core/attachments/pending_attachment.dart';
 import '../../../theme/app_spacing.dart';
+import '../../../navigation/app_routes.dart';
 import '../data/furniture_request.dart';
 import '../data/furniture_request_repository.dart';
 import 'furniture_request_controller.dart';
@@ -47,11 +49,12 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _controller,
-    builder: (context, _) => Scaffold(
-      appBar: AppBar(title: const Text('Furniture request')),
-      body: SafeArea(
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => SafeArea(
+        top: false,
         child: _controller.state == FurnitureRequestSubmissionState.success
             ? _success(context)
             : _form(context),
@@ -78,13 +81,21 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
             Text('Status: ${submitted.status}'),
             const SizedBox(height: AppSpacing.space6),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => _leave(context),
               child: const Text('Done'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  void _leave(BuildContext context) {
+    if (context.canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    context.go(AppRoutes.home);
   }
 
   Widget _form(BuildContext context) {

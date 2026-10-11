@@ -37,9 +37,9 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Search')),
-      body: ListenableBuilder(
+    return Material(
+      type: MaterialType.transparency,
+      child: ListenableBuilder(
         listenable: widget.controller,
         builder: (context, _) => RefreshIndicator(
           onRefresh: widget.controller.results.refresh,

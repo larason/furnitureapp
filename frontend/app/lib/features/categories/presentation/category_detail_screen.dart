@@ -64,20 +64,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _controller,
-    builder: (context, _) {
-      final state = _controller.state;
-      final detail = _detailOf(state);
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(
-            detail?.name ?? 'Category',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        body: switch (state) {
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final state = _controller.state;
+        return switch (state) {
           AsyncInitial() || AsyncLoading(previousData: null) =>
             const AppLoadingView(message: 'Loading category'),
           AsyncFailure(previousData: null, :final error) => _failure(
@@ -92,19 +85,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             error,
           ),
           _ => const SizedBox.shrink(),
-        },
-      );
-    },
+        };
+      },
+    ),
   );
-
-  CategoryDetail? _detailOf(AsyncViewState<CategoryDetail> state) =>
-      switch (state) {
-        AsyncContent(:final data) => data,
-        AsyncRefreshing(:final data) => data,
-        AsyncLoading(previousData: final data?) => data,
-        AsyncFailure(previousData: final data?) => data,
-        _ => null,
-      };
 
   Widget _failure(BuildContext context, ErrorPresentation error) {
     if (!_controller.categoryUnavailable) {

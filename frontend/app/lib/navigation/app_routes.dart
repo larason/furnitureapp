@@ -10,6 +10,10 @@ abstract final class AppRoutes {
   static const furnitureRequests = '/furniture-requests';
   static const furnitureRequestProductPath = ':productId';
   static const contact = '/contact';
+  static const about = '/about';
+  static const privacyPolicy = '/privacy-policy';
+  static const termsAndConditions = '/terms-and-conditions';
+  static const openSourceLicenses = '/open-source-licenses';
   static const account = '/account';
   static const signIn = '/sign-in';
   static const signUp = '/sign-up';
@@ -23,6 +27,10 @@ abstract final class AppRoutes {
   static const searchName = 'search';
   static const furnitureRequestsName = 'furniture-requests';
   static const contactName = 'contact';
+  static const aboutName = 'about';
+  static const privacyPolicyName = 'privacy-policy';
+  static const termsAndConditionsName = 'terms-and-conditions';
+  static const openSourceLicensesName = 'open-source-licenses';
   static const accountName = 'account';
   static const signInName = 'sign-in';
   static const signUpName = 'sign-up';

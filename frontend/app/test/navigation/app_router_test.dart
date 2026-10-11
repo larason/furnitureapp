@@ -150,6 +150,23 @@ void main() {
       },
     );
 
+    testWidgets('unavailable authentication routes return guests home', (
+      tester,
+    ) async {
+      final harness = _RouterHarness(ClerkAuthStatus.signedOut);
+      await tester.pumpWidget(harness.app);
+
+      harness.router.go(AppRoutes.signIn);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('auth_unavailable.home_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        AppRoutes.home,
+      );
+    });
+
     testWidgets('opens the standalone furniture request form', (tester) async {
       final harness = _RouterHarness(
         ClerkAuthStatus.signedOut,
@@ -343,6 +360,23 @@ void main() {
       expect(find.text('Account'), findsWidgets);
     });
 
+    testWidgets('returns direct account authentication to home after sign in', (
+      tester,
+    ) async {
+      final harness = _RouterHarness(ClerkAuthStatus.signedOut);
+      await tester.pumpWidget(harness.app);
+
+      harness.router.go(AppRoutes.signIn);
+      await tester.pumpAndSettle();
+      harness.setStatus(ClerkAuthStatus.signedIn);
+      await tester.pumpAndSettle();
+
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        AppRoutes.home,
+      );
+    });
+
     testWidgets('rejects external intended destinations', (tester) async {
       final harness = _RouterHarness(ClerkAuthStatus.signedIn);
       await tester.pumpWidget(harness.app);
@@ -391,7 +425,9 @@ void main() {
       expect(find.text('Invalid link'), findsWidgets);
     });
 
-    testWidgets('removes protected content after sign out', (tester) async {
+    testWidgets('lands on home when a signed-in customer signs out', (
+      tester,
+    ) async {
       final harness = _RouterHarness(ClerkAuthStatus.signedIn);
       await tester.pumpWidget(harness.app);
 
@@ -401,7 +437,67 @@ void main() {
 
       harness.setStatus(ClerkAuthStatus.signedOut);
       await tester.pumpAndSettle();
-      expect(find.text('Sign in'), findsWidgets);
+
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        AppRoutes.home,
+      );
+      expect(find.text('Account'), findsNothing);
+    });
+
+    testWidgets('sends a guest who never signed in to the sign-in screen', (
+      tester,
+    ) async {
+      final harness = _RouterHarness(ClerkAuthStatus.signedOut);
+      await tester.pumpWidget(harness.app);
+
+      harness.router.go(AppRoutes.account);
+      await tester.pumpAndSettle();
+
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        startsWith(AppRoutes.signIn),
+      );
+    });
+
+    testWidgets('offers a way out of an unresolved session', (tester) async {
+      final harness = _RouterHarness(ClerkAuthStatus.actionRequired);
+      await tester.pumpWidget(harness.app);
+
+      harness.router.go(AppRoutes.account);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Action required'), findsWidgets);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('auth_status.home_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        AppRoutes.home,
+      );
+    });
+
+    testWidgets('reflows an unresolved session at 2x text scaling', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final harness = _RouterHarness(ClerkAuthStatus.temporarilyUnavailable);
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: harness.app,
+        ),
+      );
+
+      harness.router.go(AppRoutes.account);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Back to home'), findsOneWidget);
     });
 
     testWidgets('returns from product detail to catalog with system back', (
@@ -414,15 +510,16 @@ void main() {
       await tester.pumpAndSettle();
       harness.router.push(AppRoutes.product('prod_example'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
-      expect(find.text('Products'), findsWidgets);
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        AppRoutes.products,
+      );
     });
 
-    testWidgets('returns from the catalog CTA to home with system back', (
-      tester,
-    ) async {
+    testWidgets('explore furniture opens the catalog', (tester) async {
       final harness = _RouterHarness(
         ClerkAuthStatus.signedOut,
         catalogRepository: const _EmptyCatalogRepository(),
@@ -432,14 +529,15 @@ void main() {
 
       await tester.tap(find.text('Explore furniture'));
       await tester.pumpAndSettle();
-      expect(find.text('Furniture'), findsOneWidget);
-
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      expect(find.text('Furniture for the way you live.'), findsOneWidget);
+      expect(
+        harness.router.routeInformationProvider.value.uri.path,
+        AppRoutes.products,
+      );
     });
 
-    testWidgets('home exposes a reachable contact entry point', (tester) async {
+    testWidgets('home removes obsolete test-navigation controls', (
+      tester,
+    ) async {
       final harness = _RouterHarness(
         ClerkAuthStatus.signedOut,
         catalogRepository: const _EmptyCatalogRepository(),
@@ -447,15 +545,18 @@ void main() {
       await tester.pumpWidget(harness.app);
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(
+      expect(
         find.byKey(const ValueKey<String>('home.contact_button')),
+        findsNothing,
       );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('home.contact_button')),
+      expect(
+        find.byKey(const ValueKey<String>('home.search_button')),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Contact'), findsWidgets);
+      expect(
+        find.byKey(const ValueKey<String>('home.signup_button')),
+        findsNothing,
+      );
     });
 
     testWidgets(

@@ -34,7 +34,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('How can we help?'), findsOneWidget);
-      expect(find.text('Contact us'), findsOneWidget);
       expect(find.text('Subject *'), findsOneWidget);
       expect(find.text('Message *'), findsOneWidget);
       expect(find.text('Send enquiry'), findsOneWidget);
@@ -269,7 +268,7 @@ void main() {
 
       expect(find.text('Furniture requirements'), findsOneWidget);
 
-      await tester.pageBack();
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
       expect(find.text('Enquiry details'), findsOneWidget);

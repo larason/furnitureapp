@@ -9,14 +9,18 @@ import '../core/diagnostics/diagnostic_event.dart';
 import '../core/diagnostics/diagnostic_level.dart';
 import 'app_routes.dart';
 
+/// Decides where a request belongs for the current authentication state.
+///
+/// The guard is stateful because sign-out is a transition, not a state: a
+/// customer who signs out from a protected screen should land on the public
+/// catalog, not be pushed into a sign-in form they just completed.
 class RouteGuard {
-  const RouteGuard(
-    this._getAuthStatus, {
-    this.diagnostics = const NoopAppDiagnostics(),
-  });
+  RouteGuard(this._getAuthStatus, {this.diagnostics = const NoopAppDiagnostics()});
 
   final ClerkAuthStatus Function() _getAuthStatus;
   final AppDiagnostics diagnostics;
+
+  ClerkAuthStatus? _lastObserved;
 
   String? redirect(BuildContext context, GoRouterState state) {
     final path = state.uri.path;
@@ -37,9 +41,12 @@ class RouteGuard {
       );
     }
     final authStatus = _getAuthStatus();
+    final endedSession = _lastObserved == ClerkAuthStatus.signedIn &&
+        authStatus == ClerkAuthStatus.signedOut;
+    _lastObserved = authStatus;
 
     if (AppRoutes.isProtectedPath(path)) {
-      return _redirectProtected(state.uri.toString(), authStatus);
+      return _redirectProtected(state.uri.toString(), authStatus, endedSession);
     }
 
     if (path == AppRoutes.authStatus) {
@@ -54,10 +61,16 @@ class RouteGuard {
     return null;
   }
 
-  String? _redirectProtected(String destination, ClerkAuthStatus authStatus) {
+  String? _redirectProtected(
+    String destination,
+    ClerkAuthStatus authStatus,
+    bool endedSession,
+  ) {
     return switch (authStatus) {
       ClerkAuthStatus.signedIn => null,
-      ClerkAuthStatus.signedOut => AppRoutes.signInWithDestination(destination),
+      ClerkAuthStatus.signedOut => endedSession
+          ? AppRoutes.home
+          : AppRoutes.signInWithDestination(destination),
       ClerkAuthStatus.initializing ||
       ClerkAuthStatus.actionRequired ||
       ClerkAuthStatus.temporarilyUnavailable =>

@@ -1176,7 +1176,7 @@ Implement the shared Material 3 app bar, centered SL Furnitures branding, accoun
 ### Phase 18.2 — Email notifications
 ### Phase 18.3 — In-app notifications
 ### Phase 18.4 — Push notification architecture
-### Phase 18.5 — Order notifications
+### Phase 18.5 — Order notifications - *deferred*
 ### Phase 18.6 — Request/enquiry notifications
 ### Phase 18.7 — Notification preferences
 
@@ -1184,70 +1184,107 @@ Implement the shared Material 3 app bar, centered SL Furnitures branding, accoun
 
 ---
 
-## PHASE GROUP S — QUALITY ASSURANCE
+## PHASE GROUP S — ADMIN DASHBOARD FRONTEND (NEXT.JS + MUI)
 
-### Phase 19.1 — Unit-test expansion
-### Phase 19.2 — API integration tests
-### Phase 19.3 — Web component tests
-### Phase 19.4 — Flutter tests
-### Phase 19.5 — End-to-end critical paths
-### Phase 19.6 — Security testing
-### Phase 19.7 — Accessibility testing
-### Phase 19.8 — Performance testing
-### Phase 19.9 — Regression testing
+### 19.1 — Admin Architecture & API Contract Audit
+   Inspect Laravel admin endpoints, roles, permissions, existing admin backend readiness, and frontend structure. Produce a route-to-API mapping before creating screens.
+### 19.2 — Admin Next.js Foundation & Design System
+   Set up or extend the admin app with Next.js App Router, TypeScript, MUI, and existing canonical design tokens.
+### 19.3 —  Clerk Admin Authentication & Authorization
+   Implement admin/staff login, protected routes, verified server-side authorization, and permission-aware navigation.
+### 19.4 — Dashboard Shell & Navigation
+   Responsive sidebar, top bar, breadcrumbs, page layouts, tables, dialogs, notifications, and reusable operational UI primitives.
+### 19.5 — Dashboard Overview
+   Build a useful operational summary from existing backend capabilities, without inventing analytics endpoints or fabricated revenue figures.
+### 19.6 — Product Management
+   Product lists, create/edit flows, product states, variant-aware details, and validations aligned with the Laravel API.
+### 19.7 — Categories Management
+   Create/edit category workflows, hierarchical category structure, and safe deletion/visibility rules.
+### 19.8 — Product Media Management
+   Images, uploads, ordering, alt text, previews, and deletion using the existing secure backend media contracts.
+### 19.9 — Inventory Management
+   Build inventory screens only for currently supported capabilities. Preserve request-only launch restrictions.
+### 19.10 — Made-to-Order Request Management
+    Request inbox, details, filtering, lifecycle actions, and private attachments. This is a critical initial-launch feature.
+### 19.11 — Enquiry Management
+    Enquiry inbox, customer contact information, private attachments, status transitions, and operational response workflows.
+### 19.12 — Customer Management
+    Permission-scoped customer directory and allowed administrative operations. Never expose Clerk passwords or support customer impersonation.
+### 19.13 — Staff Management & Role Controls
+    Admin-only staff approval and permitted role/permission operations. Do not allow staff to elevate their own privileges.
+### 19.14 — Audit Logs & Operational Visibility
+    Display available backend audit information without inventing an audit data source.
+### 19.15 — Admin Settings & Account
+    Admin profile, Clerk-managed account/security actions, and configuration screens only where supported.
+### 19.16 — Admin Integration, Accessibility & Production Hardening
+    Test complete product, request, enquiry, staff, and customer workflows; permission boundaries; responsive layouts; error recovery; and production build readiness.
+
+----
+
+## PHASE GROUP T — QUALITY ASSURANCE
+
+### Phase 20.1 — Unit-test expansion
+### Phase 20.2 — API integration tests
+### Phase 20.3 — Web component tests
+### Phase 20.4 — Flutter tests
+### Phase 20.5 — End-to-end critical paths
+### Phase 20.6 — Security testing
+### Phase 20.7 — Accessibility testing
+### Phase 20.8 — Performance testing
+### Phase 20.9 — Regression testing
 
 **Exit condition:** Critical customer and operational workflows are covered by repeatable tests.
 
 ---
 
-## PHASE GROUP T — PRODUCTION SECURITY AND OPERATIONS
+## PHASE GROUP U — PRODUCTION SECURITY AND OPERATIONS
 
-### Phase 20.1 — Production configuration
-### Phase 20.2 — Secret management
-### Phase 20.3 — HTTPS/domain setup
-### Phase 20.4 — Database backup
-### Phase 20.5 — Restore test
-### Phase 20.6 — Logging/monitoring
-### Phase 20.7 — Error tracking
-### Phase 20.8 — Rate limiting review
-### Phase 20.9 — File upload/security review
-### Phase 20.10 — Dependency/security audit
+### Phase 21.1 — Production configuration
+### Phase 21.2 — Secret management
+### Phase 21.3 — HTTPS/domain setup
+### Phase 21.4 — Database backup
+### Phase 21.5 — Restore test
+### Phase 21.6 — Logging/monitoring
+### Phase 21.7 — Error tracking
+### Phase 21.8 — Rate limiting review
+### Phase 21.9 — File upload/security review
+### Phase 21.10 — Dependency/security audit
 
 **Exit condition:** The system is operationally ready for controlled production use.
 
 ---
 
-## PHASE GROUP U — CI/CD AND DEPLOYMENT
+## PHASE GROUP V — CI/CD AND DEPLOYMENT
 
-### Phase 21.1 — Repository branching strategy
-### Phase 21.2 — Automated backend checks
-### Phase 21.3 — Automated web checks
-### Phase 21.4 — Automated Flutter checks
-### Phase 21.5 — Staging deployment
-### Phase 21.6 — Staging smoke tests
-### Phase 21.7 — Production deployment process
-### Phase 21.8 — Rollback strategy
+### Phase 22.1 — Repository branching strategy
+### Phase 22.2 — Automated backend checks
+### Phase 22.3 — Automated web checks
+### Phase 22.4 — Automated Flutter checks
+### Phase 22.5 — Staging deployment
+### Phase 22.6 — Staging smoke tests
+### Phase 22.7 — Production deployment process
+### Phase 22.8 — Rollback strategy
 
 **Exit condition:** Deployment is repeatable and recoverable.
 
 ---
 
-## PHASE GROUP V — LAUNCH
+## PHASE GROUP W — LAUNCH
 
-### Phase 22.1 — Production data preparation
-### Phase 22.2 — Product catalog verification
-### Phase 22.3 — Payment verification
-### Phase 22.4 — Order workflow verification
-### Phase 22.5 — SEO verification
-### Phase 22.6 — Monitoring verification
-### Phase 22.7 — Final security review
-### Phase 22.8 — Launch checklist
+### Phase 23.1 — Production data preparation
+### Phase 23.2 — Product catalog verification
+### Phase 23.3 — Payment verification
+### Phase 23.4 — Order workflow verification
+### Phase 23.5 — SEO verification
+### Phase 23.6 — Monitoring verification
+### Phase 23.7 — Final security review
+### Phase 23.8 — Launch checklist
 
 **Exit condition:** Version 1 is ready for real customers.
 
 ---
 
-## PHASE GROUP W — POST-LAUNCH IMPROVEMENT
+## PHASE GROUP X — POST-LAUNCH IMPROVEMENT
 
 Only after the core system is stable should optional growth features be considered.
 
