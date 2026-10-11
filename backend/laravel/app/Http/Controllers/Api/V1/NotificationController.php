@@ -38,7 +38,7 @@ class NotificationController extends V1Controller
 
         $paginator = $query->paginate($filters['per_page'], ['*'], 'page', $filters['page']);
         $lastPage = max(1, $paginator->lastPage());
-        $currentPage = min($paginator->currentPage(), $lastPage);
+        $currentPage = $paginator->currentPage();
 
         return response()->json([
             'data' => NotificationResource::collection($paginator->getCollection())->resolve($request),
@@ -74,7 +74,14 @@ class NotificationController extends V1Controller
             throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested notification was not found.', 404);
         }
 
-        $model->read_at = $request->read() ? now() : null;
+        if ($request->read()) {
+            if ($model->read_at === null) {
+                $model->read_at = now();
+            }
+        } else {
+            $model->read_at = null;
+        }
+
         $model->save();
 
         return (new NotificationResource($model))

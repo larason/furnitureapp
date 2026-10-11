@@ -58,7 +58,7 @@ final class CreateOperationalNotifications implements ShouldQueue
 
         foreach ($recipients as $recipient) {
             try {
-                Notification::query()->insertOrIgnore([
+                $inserted = Notification::query()->insertOrIgnore([
                     'recipient_user_id' => $recipient->getKey(),
                     'type' => $this->type->value,
                     'title' => $this->title(),
@@ -69,6 +69,19 @@ final class CreateOperationalNotifications implements ShouldQueue
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+
+                if ($inserted === 0) {
+                    continue;
+                }
+
+                $notification = Notification::query()
+                    ->where('recipient_user_id', $recipient->getKey())
+                    ->where('type', $this->type->value)
+                    ->where('source_type', $this->sourceType)
+                    ->where('source_id', $this->sourceIdentifier())
+                    ->firstOrFail();
+
+                SendOperationalNotificationEmail::dispatch((int) $notification->getKey())->afterCommit();
             } catch (Throwable $exception) {
                 Log::warning('Operational notification creation failed.', [
                     'notification_type' => $this->type->value,

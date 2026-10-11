@@ -1,796 +1,780 @@
-# Phase 18.1 — Notification Domain & Laravel Foundation
+# Phase 18.2 — Transactional Email Notifications with Laravel Mail and Resend
 
 **Project:** SL Furnitures  
 **Group:** R — Notifications  
-**Phase:** 18.1 — Notification Domain  
+**Phase:** 18.2 — Email Notifications  
 **Backend:** Laravel 13 + MySQL  
+**Email system:** Laravel Mail + Symfony Mailer + Resend  
 **Production mode:** REQUEST ONLY  
-**Status:** Implementation instructions for OpenCode
+**Prerequisite:** Phase 18.1 — Notification Domain (implemented)  
+**Next phase:** 18.3 — In-App Notifications & Laravel Reverb
+
+---
 
 ## 1. Objective
 
-Audit, validate, and complete the existing Laravel notification domain foundation so that approved business events can safely produce durable, recipient-authorized, idempotent notification records.
+Implement reliable, queued transactional email delivery through Resend using the existing Phase 18.1 notification domain.
 
-The notification domain must support later integration with:
+Do not create a separate email notification system.
 
-- Laravel Mail + Symfony Mailer + Resend (Phase 18.2).
-- Laravel database notifications + Reverb broadcasting (Phase 18.3).
-- Firebase Cloud Messaging for Android push (Phase 18.4).
-- Request and enquiry notification delivery orchestration (Phase 18.6).
+The implementation must reuse the existing:
 
-Do not implement those delivery integrations in Phase 18.1.
+- Notification records.
+- Event type registry.
+- Recipient resolution.
+- Role and permission checks.
+- Event idempotency.
+- Queue processing.
+- Source/target relationships.
+- Logging conventions.
+- Frozen API contracts.
 
-Novu is deferred. Laravel remains the notification system of record and the authority for recipients, event mapping, business references, and delivery eligibility.
+The email channel should be a downstream delivery mechanism for the authoritative logical notification.
 
-**Primary outcome:** A trustworthy notification domain that later delivery channels can consume without changing the frozen V1 API.
+**Primary objective:** When an approved furniture request or enquiry is successfully submitted, eligible operational users can receive a branded, secure, informative email notification.
 
-## 2. Mandatory repository audit
+Do not implement Reverb, Firebase Cloud Messaging, Novu, SMS, or order-related notifications in this phase.
 
-Read these documents before changing code:
+## 2. Mandatory repository and contract audit
 
-- Root `AGENTS.md`, especially Group R and the operating rules.
-- `docs/api/api-contract.md §28`, including notification types, recipients, security, read state, event mapping, ordering, and failure behavior.
-- `docs/api/api-resources.md §7`.
-- `docs/api/api-conventions.md §28`.
-- `docs/api/openapi.yaml`, specifically the Notification schema, NOT-001, NOT-002, and referenced request/response schemas.
-- `docs/domain/business-rules.md §13`.
-- `docs/decisions.md`, especially ADR/NOT-001 through ADR/NOT-008.
-- Existing Group C notification schema and migrations.
-- Existing notification models, policies, services, controllers, API resources, factories, and tests.
-- Existing Clerk identity mapping, RBAC permissions, and local User model.
-- Request and enquiry creation services.
-- Existing Laravel queue, event, and transaction infrastructure.
-- Relevant completion records for Groups J and K.
+Before modifying code, inspect:
 
-Identify exactly what already exists, what is tested, what is missing, and what contradicts the frozen contract.
+1. Root `AGENTS.md`.
+2. Phase 18.1 completion report.
+3. The entire Phase 18.1 notification implementation.
+4. Notification creation services and queued listeners/jobs.
+5. Notification recipient-resolution rules.
+6. The existing unique source/type/recipient constraint.
+7. NOT-001 and NOT-002 implementations.
+8. Existing queue configuration, workers, retry policies, and failed-job storage.
+9. Current Laravel mail configuration.
+10. Existing mailables, notification classes, and email templates, if any.
+11. `docs/api/api-contract.md §28`.
+12. `docs/api/api-resources.md §7`.
+13. `docs/api/api-conventions.md §28`.
+14. `docs/api/openapi.yaml`.
+15. `docs/domain/business-rules.md §13`.
+16. `docs/decisions.md` notification ADRs.
+17. Existing request and enquiry workflows.
+18. Current Composer dependencies and lockfile.
 
-Do not assume the notification subsystem is unimplemented.
+Also review the current official documentation:
 
-### Required audit deliverable
+- https://laravel.com/docs/13.x/mail
+- https://resend.com/docs/send-with-laravel
+- https://github.com/resend/resend-laravel
+- https://resend.com/docs/dashboard/domains/introduction
 
-Produce a table with:
+Use exact compatible package APIs and actual repository conventions.
 
-- Contract requirement.
-- Existing implementation file.
-- Current behavior.
-- Compliant / gap / conflict.
-- Proposed minimal action.
-- Associated test.
+### Audit deliverable
 
-Do not begin broad refactoring until the audit is complete.
+Briefly identify:
 
-## 3. Frozen contract preservation
+- Existing Laravel mail transport configuration.
+- Existing queues.
+- Existing notification dispatch points.
+- Existing recipient identity/email source.
+- Existing domain and template abstractions.
+- Existing tests.
+- Missing email-channel functionality.
+- Human configuration needed.
 
-The following rules are mandatory.
+Do not install duplicate email transports or rewrite working Phase 18.1 code.
 
-### API
+## 3. Email transport selection
 
-Reuse the existing operations:
+Use Laravel Mail with the Symfony Mailer-based Resend transport.
 
-**NOT-001**
+Preferred strategy:
 
-`GET /api/v1/me/notifications`
+Use the Laravel 13-supported native Resend mail driver with the official `resend/resend-php` SDK if the installed framework supports it.
 
-**NOT-002**
+Inspect the installed framework and documentation before choosing dependencies.
 
-`PATCH /api/v1/me/notifications/{notification}`
+If a compatible native driver is already available, do not also install `resend/resend-laravel` unnecessarily.
 
-The mark-read request body must follow the frozen OpenAPI specification.
+Use `resend/resend-laravel` only if there is a demonstrated compatibility or integration reason to prefer it.
 
-Retain:
+Do not install both implementations to solve the same problem.
 
-- The canonical success envelope.
-- The canonical error envelope.
-- The notification representation.
-- Recipient ownership.
-- Authentication requirements.
-- Allowed filters.
-- Pagination structure.
-- Deterministic sorting.
-- CLOSED notification type enum.
-- Read/unread semantics.
-- Existing error/status behavior.
+### Configuration example
 
-Do not add:
+For Laravel's native Resend driver, verify the supported configuration and equivalent of:
 
-- A public notification creation endpoint.
-- A manual broadcast endpoint.
-- An arbitrary notification-target endpoint.
-- A notification deletion endpoint.
-- A notification-preferences API.
-- A new read-all or unread-count endpoint unless already present in the frozen OpenAPI contract.
-- A new notification type.
+```php
+// config/mail.php
 
-Where narrative documentation mentions an optional future operation not present in the frozen OpenAPI, treat it as unapproved rather than implementing it automatically.
+'default' => env('MAIL_MAILER', 'log'),
 
-### Contract change policy
-
-If a required capability cannot fit the frozen public API without modification, stop and request the owner's decision before altering any externally observable contract.
-
-Internal services, indexes, deduplication keys, and delivery bookkeeping may be added only if justified and compatible.
-
-## 4. Active notification types
-
-For the initial REQUEST ONLY launch, only two notification types are active.
-
-| Authoritative business event | Notification type | Recipient scope |
-|---|---|---|
-| Made-to-order request submitted successfully | `NEW_MADE_TO_ORDER_REQUEST` | Authorized operational staff |
-| General enquiry submitted successfully | `NEW_ENQUIRY` | Authorized operational staff |
-
-These types are already part of the frozen registry.
-
-Preserve all other frozen types in the registry and existing compatibility logic, but do not activate their generation.
-
-### Deferred events
-
-Do not activate notifications for:
-
-- Cart operations.
-- Checkout.
-- New orders.
-- Order acceptance.
-- Order processing.
-- Pickup readiness.
-- Shipping.
-- Delivery.
-- Order completion.
-- Order cancellation.
-- Payment processing.
-- Payment success/failure.
-- Tracking updates.
-
-Phase 18.5 remains deferred.
-
-Do not remove the frozen order notification types merely because their producers are currently disabled.
-
-## 5. Notification domain boundaries
-
-Use the existing Laravel `Notification` domain model and architecture if compatible.
-
-The core relationship must be:
-
-```text
-Authoritative Business Event
-          |
-          v
-Approved Notification Policy
-          |
-          v
-Recipient Resolution
-          |
-          v
-Persistent Logical Notification
-          |
-          v
-Future Channel Delivery
+// Mailers
+'resend' => [
+    'transport' => 'resend',
+],
 ```
 
-A notification informs an authorized actor that something happened.
+```php
+// config/services.php
 
-It does not:
+'resend' => [
+    'key' => env('RESEND_KEY'),
+],
+```
 
-- Create a business request.
-- Approve an enquiry.
-- Transition a request or enquiry status.
-- Establish ownership.
-- Grant permission to view private resources.
-- Prove that email or push delivery succeeded.
-- Change any underlying business state.
+The exact configuration must match the installed driver. The official separate Resend Laravel package may instead expect `RESEND_API_KEY`.
 
-The request or enquiry collection remains authoritative regardless of notification delivery.
+Choose one canonical environment variable and document it consistently.
 
-## 6. Notification model and schema review
+Never assume `RESEND_KEY` and `RESEND_API_KEY` are interchangeable without explicit configuration.
 
-Inspect existing database tables and Eloquent models before introducing migrations.
+Do not hard-code API credentials.
 
-Verify that the notification persistence model can represent the frozen contract.
+### Environment
 
-Review:
+Support configuration for:
 
-- Stable public notification ID.
-- Recipient identity/scope.
-- CLOSED notification type.
-- Title.
-- Message.
-- Structured target.
-- Source event/resource identity.
-- Created timestamp.
-- Server-owned read timestamp.
-- Derived read state.
-- Privacy/recipient exposure.
-- Stable ordering.
-- Indexes for recipient, unread state, and pagination.
+- Resend API key.
+- Verified sender address.
+- Sender display name.
+- Optional reply-to address.
+- Chosen mail transport.
+- Queue connection.
+- Sending-enabled flag if needed for safe rollout.
 
-Do not automatically add columns because an example architecture mentions them.
+Add safe placeholders to `.env.example`.
 
-Only introduce schema changes for confirmed, demonstrable gaps.
+Keep real values out of Git.
 
-If using Laravel's built-in database-notification machinery, determine whether it can conform to the existing schema and representation without introducing a duplicate logical notification store.
+Development and testing must work without real Resend credentials.
 
-Do not create both an independent Laravel notification table and a separate custom notification table containing the same logical messages.
+## 4. Human intervention — Resend account setup
 
-The application must have one authoritative logical notification model.
+**MANDATORY OWNER CHECKPOINT**
 
-## 7. Business event integration
+If the project has no configured, verified Resend account, notify the project owner.
 
-Inspect the existing submission flows for:
+Provide instructions for:
 
-- REQ-001 — Made-to-order furniture requests.
-- ENQ-001 — General enquiries.
+1. Creating or signing into https://resend.com.
+2. Selecting the correct Resend workspace.
+3. Adding the owned email sending domain.
+4. Obtaining the DNS records provided by Resend.
+5. Adding the required DNS records at the domain's DNS provider.
+6. Waiting for domain verification.
+7. Creating an API key with minimum required permissions.
+8. Selecting the production sender address.
+9. Approving the display name and reply-to address.
+10. Supplying credentials securely through environment or secret management.
 
-Find the actual point where each submission has been successfully and durably committed.
+Do not invent a domain, sender email address, or brand contact address.
 
-Notification generation must be downstream of successful submission.
+Do not assume the website domain is already verified for email.
 
-### Required behavior
+Do not assume the domain DNS is managed by the same provider as the website.
 
-A successful request or enquiry may produce an approved operational notification.
+### Agent behavior
 
-A rejected submission must not create one.
+Pause live-delivery verification until these steps are completed.
 
-Do not generate notifications from:
+Continue independently with testable mailables, templates, queue integration, and automated tests.
 
-- Form validation attempts.
-- Failed database transactions.
-- Uncommitted request data.
-- Duplicate controller invocations.
-- Client navigation actions.
-- Client-supplied status or type fields.
+Never request the API key in source code, screenshots, logs, or public documentation.
 
-If the code already emits trusted domain events, reuse them.
+Do not send production emails without explicit approval.
 
-If it does not, introduce the smallest appropriate internal event or dispatch boundary.
+## 5. Active event scope
 
-Do not invent an external API or change the request/enquiry response contract.
+For the initial REQUEST ONLY launch, implement operational email delivery for:
 
-### Transaction safety
+### Event A
 
-Ensure notification work is triggered only after the authoritative business transaction commits.
+`NEW_MADE_TO_ORDER_REQUEST`
 
-Use Laravel's supported after-commit event/job behavior or an existing reliable equivalent.
+Source:
 
-Do not enqueue dependent work before commit when a worker might process data that is not yet visible or might be rolled back.
+Successfully created made-to-order furniture request.
 
-## 8. Reliability and transaction isolation
+Recipients:
 
-A notification failure must not roll back an otherwise successful furniture request or enquiry.
+The eligible active users already resolved in Phase 18.1 through the appropriate requests-management permission.
 
-Implement or verify failure isolation at the appropriate asynchronous boundary.
+### Event B
 
-### Required invariants
+`NEW_ENQUIRY`
 
-- Request creation succeeds even if notification delivery infrastructure is temporarily unavailable.
-- Enquiry creation succeeds even if notification delivery infrastructure is temporarily unavailable.
-- Delivery exceptions never escape in a way that changes a committed business response into a misleading submission failure.
-- Notification retries are bounded.
-- Failures are observable.
-- A delayed notification does not alter the business submission's original timestamp or status.
+Source:
 
-### Failure window review
+Successfully created general enquiry.
 
-Specifically analyze:
+Recipients:
 
-1. Business transaction committed, but dispatch process crashes.
-2. Job dispatched more than once.
-3. Worker crashes after persisting a notification.
-4. Recipient's role changes between event creation and processing.
-5. No eligible staff exist.
-6. A recipient account becomes inactive.
-7. A database write fails during notification creation.
+The eligible active users already resolved in Phase 18.1 through the appropriate enquiries-management permission.
 
-For the commit-to-dispatch failure window, inspect whether the repository already provides transactional outbox infrastructure.
+### Reuse recipient decisions
 
-Do not automatically introduce a complex outbox framework. If durable capture across that window is a launch requirement and the current architecture cannot guarantee it, record the exact risk and propose the smallest reliable solution for approval.
+Do not create a second recipient-selection policy for email.
 
-Do not claim an in-memory after-commit callback guarantees delivery across process crashes.
+Do not independently query all staff email addresses and send indiscriminately.
 
-## 9. Idempotency and deduplication
+The Phase 18.1 recipient policy remains authoritative.
 
-The same business event must not create duplicate logical notifications for the same intended recipient/scope.
+One approved notification recipient may have an associated email delivery attempt.
 
-Define the deduplication identity using authoritative server-generated information, including as applicable:
+Do not send operational notifications to CUSTOMER accounts.
 
-- Source event.
-- Source resource identifier.
-- Notification type.
-- Recipient identity or operational audience.
-- Domain event occurrence identifier if existing.
+Do not automatically notify every ADMIN.
 
-Distinguish a duplicate event replay from a new, legitimate event affecting the same resource.
+## 6. Customer acknowledgment emails
 
-For the current launch, NEW_MADE_TO_ORDER_REQUEST and NEW_ENQUIRY correspond to successful creation events.
+The frozen notification event matrix does not create customer in-app notifications for successful request/enquiry submissions.
 
-Implement or verify an atomic deduplication mechanism backed by database constraints or an equivalently robust mechanism.
+Customer confirmation emails are a separate business decision.
 
-An application-level "check then insert" without concurrency protection is insufficient.
+**Do not activate them without owner approval.**
 
-### Tests
+If the owner approves transactional acknowledgments, clarify:
 
-Prove that:
+- Should anonymous submitters receive confirmations?
+- Should authenticated submitters receive confirmations?
+- What wording is approved?
+- Which destination email is authoritative?
+- How should mistyped or attacker-supplied email addresses be handled?
+- What rate limits and anti-abuse measures apply?
 
-- Replayed source events do not duplicate notifications.
-- Concurrent processing does not duplicate notifications.
-- Different request/enquiry resources generate distinct notifications.
-- Different authorized recipients can receive their own intended notifications where applicable.
-- Failed attempts can be retried safely.
+Do not email full enquiry/request content to an unverified address by default.
 
-Do not introduce externally visible idempotency fields into the frozen notification API.
+If approval is not available, implement only operational staff email notifications and document customer acknowledgments as deferred.
 
-## 10. Recipient resolution and authorization
+Do not invent new V1 notification enum values to implement confirmations.
 
-Never trust a client-submitted notification recipient.
+## 7. Email delivery architecture
 
-Recipient resolution must occur server-side using actual local users, roles, permissions, and account status.
+Preserve the separation between:
 
-### Staff recipients
+1. Business event.
+2. Logical notification.
+3. Recipient-scoped delivery attempt.
+4. Provider transport result.
 
-For NEW_MADE_TO_ORDER_REQUEST, select users explicitly authorized for the operational request workflow.
+Suggested conceptual flow:
 
-For NEW_ENQUIRY, select users explicitly authorized for the enquiry workflow.
+```text
+REQ-001 / ENQ-001 committed
+           |
+           v
+Phase 18.1 domain event
+           |
+           v
+Logical notification persisted
+           |
+           v
+Eligible recipient identified
+           |
+           v
+Queued email delivery job
+           |
+           v
+Laravel Mail / Symfony Mailer
+           |
+           v
+Resend transport
+```
 
-Inspect the repository's actual permission names and policy model.
+Do not perform synchronous email transmission inside the customer request/enquiry HTTP transaction.
 
-Do not hard-code recipient email addresses into the domain service.
+The submission must remain successful even if Resend is unavailable.
 
-Do not assume every authenticated user is operational staff.
+### Delivery bookkeeping
 
-Do not automatically send all staff notifications to every admin account.
+Inspect whether Phase 18.1 established a reusable delivery-attempt model.
 
-### Admin recipients
+If one exists, extend it.
 
-The frozen contract permits admin visibility according to operational scope, but does not require blind duplication to all administrators.
+Otherwise, introduce only the minimal internal persistence needed to track:
 
-Inspect existing policies and decisions.
+- Logical notification reference.
+- Channel: EMAIL.
+- Recipient reference.
+- Delivery status.
+- Attempt count.
+- Last attempted timestamp.
+- Provider message ID where returned.
+- Safe error category.
+- Relevant timestamps.
 
-If there is no established rule governing whether ADMIN users receive request/enquiry alerts, request explicit business-owner approval before enabling admin fan-out.
+Do not expose this bookkeeping through the frozen NOT-001/NOT-002 API.
 
-### Customer recipients
+Do not create a second logical notification record for email delivery.
 
-Do not generate persistent customer in-app notifications for anonymous requests or enquiries.
+If schema changes are necessary, use new additive migrations and preserve existing notification rows.
 
-Do not invent customer notification types such as:
+Do not assume development databases are disposable.
 
-- REQUEST_SUBMITTED
-- ENQUIRY_RECEIVED
-- REQUEST_APPROVED
-- ENQUIRY_REPLIED
+## 8. Retry safety and email duplication
 
-The current contract does not authorize these as new V1 in-app notification types.
+Email delivery is an external side effect.
 
-Customer-facing confirmation emails are a separate delivery-policy question for Phase 18.2/18.6 and require approval where not already decided.
+The existing Phase 18.1 unique index prevents duplicate logical notifications, but email retries require additional safeguards.
 
-### Open decision
+### Requirements
 
-Review whether staff notifications are modeled as:
+- At most one pending logical email delivery workflow per notification/channel.
+- Multiple workers must not independently claim the same pending delivery.
+- Use database-level atomic claiming or another appropriate concurrency-safe mechanism.
+- Use bounded retries.
+- Honor provider rate-limit guidance where available.
+- Retry transient failures such as connection failure, timeouts, and applicable provider/server errors.
+- Do not blindly retry permanent failures such as invalid sender configuration, rejected recipient, or missing credentials.
+- Use exponential backoff or the repository's established retry policy.
+- Record permanent failures for operational review.
+- Do not retry indefinitely.
+- Do not re-send already confirmed delivered/submitted messages simply because a queue job is replayed.
 
-- Individual recipient-scoped records; or
-- A shared operational queue with distinct personal read semantics.
+### Important external-delivery limitation
 
-Preserve any already established and compatible implementation.
+If Resend accepts an email but the worker crashes before recording the provider result, an uncertain-delivery window can remain.
 
-If the repository does not resolve this distinction, document the alternatives and request an explicit decision before creating a new shared-read or acknowledgment model.
+Evaluate the provider's currently supported idempotency mechanisms and whether the selected Laravel transport exposes them.
 
-Do not silently overload `read_at` as team-wide handling status.
+If provider-level idempotency is supported and appropriate, use a stable key derived from the logical email attempt.
 
-## 11. Read/unread semantics
+If no such guarantee is available, document the duplicate-delivery limitation and choose an explicit safe retry policy.
 
-The frozen contract defines:
+Do not claim exactly-once email delivery based solely on a database unique index.
 
-- `read_at == null` means unread.
-- A populated `read_at` means read.
-- `is_read` is derived.
-- The server owns `read_at`.
-- Read state is distinct from request/enquiry operational status.
+## 9. Email templates
 
-Read state must not be mutated by notification dispatch or delivery.
+Create two reusable, branded transactional email templates.
 
-Opening an underlying request/enquiry does not automatically mean an operational notification was read unless existing approved semantics explicitly require it.
+Use Laravel Mailables, Markdown mail templates, or Blade templates consistent with the existing codebase.
 
-One staff member reading a notification must not mark a request as resolved for everyone.
+### Template A — New furniture request
 
-Verify correct behavior for:
+Suggested subject:
 
-- Personal recipient scoping.
-- Read/unread filtering.
-- Mark-read endpoint.
-- Repeated mark-read calls.
-- Cross-user access.
-- Cross-role access.
-- Server timestamps.
-- Multi-device consistency.
+`New furniture request received — SL Furnitures`
 
-Do not rewrite immutable notification contents when changing read state.
+Suggested content:
 
-## 12. Notification source and target
+- SL Furnitures branding.
+- Clear notification heading.
+- Request reference.
+- Submission time.
+- Minimal operational context.
+- Link to the authorized admin request page, but only when a real safe route is established.
+- A note that the recipient must sign in to view the request details.
 
-Source information exists for auditability and deduplication.
+### Template B — New enquiry
 
-Target information exists for optional navigation to an authorized business resource.
+Suggested subject:
 
-Use server-generated target references matching the frozen representation.
+`New customer enquiry received — SL Furnitures`
 
-For the active launch:
+Suggested content:
 
-- NEW_MADE_TO_ORDER_REQUEST references the corresponding request.
-- NEW_ENQUIRY references the corresponding enquiry.
+- SL Furnitures branding.
+- Enquiry reference.
+- Submission time.
+- Minimal enquiry context.
+- Link to the authorized admin enquiry page when a real route exists.
+- Clear sign-in requirement for viewing private details.
 
-Use actual frozen target types and opaque resource IDs from the repository, not invented strings.
+### Critical routing rule
 
-### Security
+The admin frontend may not yet have implemented routes for requests and enquiries.
 
-A target ID is not a capability token.
+Do not invent links such as `/admin/requests/{id}` without verifying the real frontend route.
 
-Opening the target must still require the corresponding authorized operational API operation.
+If the admin frontend is not ready, provide the reference and omit the direct CTA rather than linking to a broken or insecure page.
 
-Do not embed:
+Never generate public access links that bypass Clerk and Laravel authorization.
 
-- Complete enquiry messages.
-- Customer private attachments.
-- Authentication credentials.
-- Full customer profiles.
-- Internal staff notes.
+### Design language
+
+Follow SL Furnitures' established visual identity.
+
+Reuse canonical colors and typography where email-client compatibility permits.
+
+Email HTML needs its own compatibility-safe formatting, but it must not create a competing brand system.
+
+Use a simple, elegant layout rather than a complex marketing template.
+
+Provide a plain-text version as well as HTML.
+
+### Content security
+
+Avoid including:
+
+- Full customer messages.
+- Private attachments.
 - Upload tokens.
-- Signed private attachment URLs.
-- Entire business resource payloads.
+- Customer passwords.
+- Clerk authentication data.
+- Internal staff notes.
+- Raw API responses.
+- Sensitive provider identifiers.
+- Unverified commercial promises.
 
-Keep titles/messages concise and operationally useful.
+Treat names and product titles as untrusted and escape them correctly.
 
-Treat any source-derived customer-entered text as untrusted. Prefer server-controlled templates with minimal safe identifiers over interpolating arbitrary private content.
+## 10. Sender identity and reply behavior
 
-## 13. Notification creation service
+The production sender must belong to an approved verified domain.
 
-If a domain-level creation service already exists, review and reuse it.
+Use a consistent display name such as SL Furnitures only after confirmation that it matches the business's chosen sender identity.
 
-If absent, implement the smallest cohesive service needed to centralize:
+Do not hard-code `onboarding@resend.dev` or other test-only sender addresses into production code.
 
-- Approved event mapping.
-- Recipient policy.
-- Notification type selection.
-- Source/target construction.
-- Deduplicated persistence.
-- Error isolation.
-- Logging/correlation.
+Do not set a customer-submitted email address as the sender.
 
-Keep domain orchestration separate from transport delivery.
+For replies:
 
-Later channel implementations should be able to consume the resulting logical notification without duplicating event-to-recipient decisions.
+- Prefer an approved business reply-to address.
+- Do not automatically expose private customer addresses in mail headers.
+- Do not turn transactional notification emails into an unrestricted reply relay.
 
-### Design principles
+If the sender or reply-to identity is undecided, request the owner's choice before activating live delivery.
 
-Avoid:
+## 11. Queue integration
 
-- Giant switch statements.
-- New application-wide service containers.
-- Multiple competing event buses.
-- Duplicate source-to-type mappings.
-- Provider-specific fields leaking into the public notification representation.
-- Provider API clients in domain services.
-- Excessive abstractions for hypothetical channels.
+Use the existing Laravel queue infrastructure.
 
-Prefer small, testable Laravel services, jobs, or event listeners consistent with the existing codebase.
+Verify:
 
-## 14. Channel boundary preparation
+- Queue connection.
+- Queue worker process.
+- Job class.
+- Retry attempts.
+- Timeout.
+- Backoff.
+- Failed-job logging.
+- After-commit behavior.
+- Queue isolation where useful.
 
-Prepare the domain for later delivery channels without implementing the channels now.
+Mail delivery must occur asynchronously.
 
-### Phase 18.2 — Email
+### Transaction boundary
 
-Future:
+Never send an email before the source business transaction commits.
 
-Laravel Mail + Symfony Mailer + Resend.
+Phase 18.1's logical notification creation remains the authoritative trigger boundary.
 
-Phase 18.1 may define the approved internal delivery boundary, but must not:
+If the mail dispatch depends on notification persistence, ensure the notification record is durably committed before the mail worker processes it.
 
-- Install provider SDKs.
-- Send live email.
-- Request API keys.
-- Create production email templates.
-- Configure DNS.
-- Provision Resend resources.
+### Important
 
-### Phase 18.3 — In-app and Reverb
+Avoid dispatch chains in which a failure in email sending marks a successful furniture request as failed.
 
-Future:
+Do not use synchronous `Mail::send()` within REQ-001 or ENQ-001 controllers.
 
-Authoritative database-backed inbox plus Laravel Reverb for real-time signals.
+## 12. Provider error handling
 
-Phase 18.1 must not:
+Handle failures from:
 
-- Start Reverb.
-- Publish WebSocket messages.
-- Create public broadcast channels.
-- Implement web notification UI.
-- Introduce new public subscription endpoints.
+- Missing API credentials.
+- Unverified sender domain.
+- Invalid sender.
+- Invalid recipient.
+- Resend rate limiting.
+- Network failures.
+- Provider timeouts.
+- Provider temporary failures.
+- Provider rejection.
+- Exhausted retries.
 
-Database persistence and the existing NOT-001/NOT-002 domain/API behavior may be verified and minimally repaired as part of this foundation.
+Never leak raw provider errors to public request/enquiry clients.
 
-Full client and real-time delivery integration belongs to Phase 18.3.
+Use sanitized structured logging.
 
-### Phase 18.4 — FCM
+Record sufficient diagnostic information for operational troubleshooting.
 
-Future:
+If the provider response reports acceptance, do not automatically claim the message was delivered to the recipient's inbox.
 
-Android Firebase Cloud Messaging.
+Distinguish:
 
-Phase 18.1 must not:
+- Queued.
+- Submitted/accepted by provider.
+- Delivered, when actually confirmed by supported provider events.
+- Permanently failed.
 
-- Add Firebase packages.
-- Register device tokens.
-- Create FCM credentials.
-- Send push notifications.
-- Add mobile notification permission prompts.
+Do not mark delivery on the basis of queue completion alone.
 
-Do not invent an FCM device-token API. Review and request approval for any required frozen-contract changes when Phase 18.4 begins.
+### Delivery status tracking
 
-### Novu
+If verified provider delivery events are not implemented in this phase, represent the strongest status actually known.
 
-Do not install or integrate Novu.
+Do not create webhook endpoints outside the frozen public API without reviewing the API compatibility and security policy.
 
-Maintain a clean internal channel boundary so future evaluation remains possible.
+A future provider webhook, if required, needs authenticated signature verification, replay protection, a clearly documented non-public integration boundary, and explicit review.
 
-## 15. Logging and observability
+## 13. Security requirements
 
-Notification failures must be diagnosable without exposing personal data.
+Enforce:
 
-Use existing Laravel logging conventions.
+- Verified sender domain.
+- API key stored securely.
+- No secrets committed.
+- No unauthorized recipients.
+- No staff permission bypass.
+- No confidential enquiry bodies in email.
+- No public resource authorization bypass.
+- No token leakage.
+- No unescaped user content.
+- No open redirects.
+- No untrusted outbound URLs.
+- Rate-limit-safe handling.
+- Recipient eligibility checks as appropriate before actual send.
+- Safe processing of deactivated or permission-revoked accounts.
 
-Capture appropriate safe identifiers:
+Review the tradeoff between recipient eligibility determined at event time and eligibility at send time.
 
-- Correlation/request ID where available.
-- Domain event identifier.
-- Notification type.
-- Source resource identifier.
-- Internal recipient identity where access to logs is restricted.
-- Processing attempt.
-- Failure category.
-- Outcome.
+Follow the Phase 18.1 policy and document changes.
 
-Do not log:
+Do not allow a user who loses operational permission to receive a newly dispatched private notification email merely because a job remained queued.
 
-- Clerk session tokens.
-- Resend credentials.
-- FCM credentials.
-- Full enquiry messages.
-- Uploaded attachment contents.
-- Customer email bodies.
-- Arbitrary personal details.
+## 14. Test requirements
 
-Investigate retry visibility and failed-job reporting.
+Add deterministic tests for:
 
-Do not claim delivery success in Phase 18.1; this phase does not deliver messages.
+### Transport and configuration
 
-## 16. Performance requirements
+1. Laravel mail configuration loads.
+2. The chosen Resend driver is configured correctly.
+3. No duplicate mail drivers are introduced.
+4. Missing API key fails safely.
+5. Unconfigured sender prevents unsafe live sends.
+6. Development/test mailers require no Resend credentials.
 
-Notification generation must not introduce noticeable latency into public request/enquiry submission.
+### Event integration
 
-Prefer asynchronous downstream processing.
+7. NEW_MADE_TO_ORDER_REQUEST schedules an eligible email.
+8. NEW_ENQUIRY schedules an eligible email.
+9. Invalid request creates no email.
+10. Invalid enquiry creates no email.
+11. No email is scheduled before commit.
+12. No unauthorized customer email is sent.
+13. No order or delivery email is sent.
+14. No extra logical notification is created solely for email.
 
-Inspect the queue driver and worker architecture already configured.
+### Recipient authorization
 
-Consider recipient count and database query efficiency.
+15. Active authorized STAFF receives an email.
+16. STAFF without matching permission is excluded.
+17. Inactive STAFF is excluded.
+18. ADMIN inclusion follows Phase 18.1 permissions.
+19. CUSTOMER cannot receive staff operational email.
+20. Permission revocation is honored before send.
+21. Empty eligible-recipient set does not fail the customer submission.
 
-Use appropriate indexes for recipient-scoped queries and deduplication.
+### Templates
 
-Avoid an N+1 authorization query for each candidate recipient where a bounded, authorized query can resolve the operational audience safely.
-
-Do not cache authorization-sensitive recipient sets indefinitely.
-
-Keep the architecture appropriate for a small business.
-
-## 17. Required automated testing
-
-Add or extend tests covering:
-
-### Contract compatibility
-
-1. NOT-001 retains its exact public contract.
-2. NOT-002 retains its exact public contract.
-3. Notification types remain CLOSED.
-4. Existing pagination and filters are unchanged.
-5. Response envelopes remain unchanged.
-6. Read timestamps remain server-owned.
-7. Cross-user notification access is denied and masked as contracted.
-
-### Business events
-
-8. Successful REQ-001 produces the approved domain notification.
-9. Successful ENQ-001 produces the approved domain notification.
-10. Invalid REQ-001 produces no notification.
-11. Invalid ENQ-001 produces no notification.
-12. Rolled-back transactions produce no notification.
-13. Anonymous REQ-001 does not create a customer in-app notification.
-14. Anonymous ENQ-001 does not create a customer in-app notification.
-15. Normal customer submissions do not create customer-facing invented notification types.
-
-### Recipients
-
-16. Authorized request staff are eligible.
-17. Authorized enquiry staff are eligible.
-18. Unauthorized users are excluded.
-19. Customers cannot be selected as operational recipients.
-20. Inactive/revoked accounts are handled according to established policy.
-21. Admin recipient behavior follows an approved policy.
-22. No-recipient scenarios are handled safely.
-23. One staff member reading does not change the business resource status.
-
-### Idempotency
-
-24. Duplicate request event replay does not create duplicate notifications.
-25. Duplicate enquiry event replay does not create duplicate notifications.
-26. Concurrent duplicate delivery attempts do not duplicate logical notifications.
-27. Distinct resources produce distinct notifications.
-28. Database deduplication is atomic.
+22. Furniture request email renders correctly.
+23. Enquiry email renders correctly.
+24. HTML is escaped safely.
+25. Plain-text alternatives exist.
+26. Missing admin frontend routes do not produce fabricated links.
+27. No private attachments or sensitive data appear in templates.
+28. Brand presentation is consistent.
 
 ### Reliability
 
-29. Queue failure does not roll back an already committed request.
-30. Queue failure does not roll back an already committed enquiry.
-31. Notification persistence failure is recorded.
-32. Retriable failures follow approved bounds.
-33. Unrecoverable failures remain observable.
-34. Notification processing does not accidentally run before transaction commit.
-35. Notification history remains stable after retries.
+29. Duplicate jobs do not trigger unnecessary duplicate sends.
+30. Concurrent workers cannot independently claim the same pending attempt.
+31. Transient provider failures trigger bounded retries.
+32. Permanent failures do not retry indefinitely.
+33. Provider rate limits are handled appropriately.
+34. Provider acceptance is not confused with confirmed inbox delivery.
+35. Email delivery failure does not roll back a request.
+36. Email delivery failure does not roll back an enquiry.
+37. Uncertain-delivery limitations are documented.
 
-### Privacy and security
+### Regressions
 
-36. Customer A cannot access Customer B notifications.
-37. Staff cannot access unrelated private customer notifications.
-38. Clients cannot create arbitrary notification records.
-39. Clients cannot modify recipient/type/source/target.
-40. Notification targets do not bypass resource authorization.
-41. Notification content excludes private attachments and secrets.
-42. Deferred order/payment notifications are not emitted in REQUEST ONLY mode.
+38. NOT-001 remains compatible.
+39. NOT-002 remains compatible.
+40. Per-recipient read_at remains independent.
+41. Existing notification unique constraint remains effective.
+42. Phase 18.1 recipient policy remains authoritative.
+43. The frozen OpenAPI specification is unchanged.
 
-Use deterministic tests and existing factories.
+Use Laravel mail fakes, queue fakes, and controlled provider simulations as appropriate.
 
-Do not require live Resend, Reverb, Firebase, Clerk Dashboard, or production email credentials.
+Be careful that mocked queue behavior still exercises the real delivery-attempt state machine in dedicated tests.
 
-## 18. Human-intervention protocol
+Do not claim to have verified Resend delivery with a mocked Laravel mailer.
 
-If implementation requires a human decision or service configuration, notify the project owner explicitly.
+## 15. Human intervention checkpoints
 
-Examples:
+Notify the owner whenever a real external or business decision is needed.
 
-- Choosing the operational recipient audience.
-- Determining staff-only versus authorized-admin notification fan-out.
-- Resolving personal versus shared operational read semantics.
-- Approving an internal schema migration with significant data implications.
-- Accepting a reliability limitation or approving an outbox strategy.
-- Resolving a frozen-contract incompatibility.
-- Selecting hosting or queue infrastructure that affects production reliability.
+### Checkpoint A — Domain verification
 
-When blocked:
+Ask the owner to configure the Resend sending domain and required DNS records.
 
-1. Describe the exact blocker.
-2. Present the available compliant options.
-3. State the recommended option and tradeoffs.
-4. Identify precisely what the owner must decide or configure.
-5. Avoid making irreversible changes before approval.
-6. Continue independent, safe work if possible.
+Wait for verified status before production delivery tests.
 
-Do not silently invent a business rule.
+### Checkpoint B — Credentials
 
-Resend domain verification, Reverb hosting, and Firebase project configuration are later-phase interventions, not prerequisites for completing Phase 18.1.
+Ask the owner to configure the API key through a secure local or deployment secret mechanism.
 
-## 19. Documentation
+Do not ask them to commit the key.
 
-Create a Phase 18.1 completion record in the project's existing phase-documentation convention.
+### Checkpoint C — Sender identity
 
-Include:
+Ask the owner to approve:
 
-- Contract traceability table.
-- Existing notification subsystem inventory.
-- Schema/model audit outcome.
-- Active and deferred notification events.
-- Recipient policy.
-- Read-state semantics.
-- Deduplication mechanism.
-- Transaction/queue boundary.
-- Known failure windows.
-- Observability decisions.
-- Channel integration boundaries.
-- Migration changes, if any.
-- Explicit owner decisions requested and resolved.
-- Tests and verification results.
-- Remaining prerequisites for Phase 18.2.
+- From address.
+- Display name.
+- Reply-to behavior.
 
-Update other documentation only where implementation or architecture genuinely changed.
+### Checkpoint D — Customer acknowledgments
 
-Do not rewrite frozen API contracts merely to document internal implementation choices.
+Ask whether customer confirmation emails should be implemented later.
 
-## 20. Verification
+Do not add them unless approved.
 
-Use the actual project commands and test suite.
+### Checkpoint E — Live delivery testing
+
+Ask for:
+
+- Approved test recipient email address.
+- Permission to send actual test emails.
+- Confirmation of target environment.
+
+### Checkpoint F — Production activation
+
+Before enabling live sending in production, confirm:
+
+- Verified domain.
+- Correct secret configuration.
+- Queue workers running.
+- Failure monitoring.
+- Provider limits appropriate for expected volume.
+- Approved recipients.
+- No unexpected customer or order notifications.
+
+Do not silently deploy or activate production email sending.
+
+## 16. Documentation
+
+Document:
+
+- Exact transport implementation and dependency choices.
+- Why the selected Laravel Resend driver was chosen.
+- Environment variable names.
+- Local development mail behavior.
+- Sending-domain setup procedure.
+- Email templates.
+- Approved recipient policy.
+- Queue job lifecycle.
+- Retry strategy.
+- Internal delivery-attempt persistence.
+- Idempotency limitations.
+- Provider failure handling.
+- Manual setup steps.
+- Live test evidence or blockers.
+- Future Reverb/FCM boundaries.
+- Confirmed deferrals.
+
+Do not put production API keys in the completion report.
+
+Update existing architecture documentation without rewriting the frozen notification API.
+
+## 17. Verification
+
+Run the project's existing backend checks.
 
 At minimum:
 
 ```bash
+composer validate
 php artisan test
 vendor/bin/phpstan analyse
 vendor/bin/pint --test
 php artisan route:list
 git diff --check
+git diff --cached --check
 ```
 
-Also execute:
+Run targeted email, notification, request, and enquiry regression tests.
 
-- Relevant notification feature tests.
-- Request/enquiry regression tests.
-- Authorization regression tests.
-- Queue and transaction-boundary tests.
-- Migration checks on an approved disposable test database if schema changes are necessary.
+If migrations are added, test them only against approved disposable databases.
 
-Never use `migrate:fresh` against a development, staging, or production database.
+Follow the root AGENTS.md database safety guard.
 
-Follow the repository's mandatory destructive-database guard.
+Confirm:
 
-Report commands that were skipped or could not run.
+- No new public API endpoints.
+- No notification enum changes.
+- No role/permission regressions.
+- No accidental live email sends during automated tests.
+- No secrets introduced into version control.
 
-## 21. Explicit exclusions
+Report actual pass/fail results.
+
+## 18. Explicit exclusions
 
 Do not implement:
 
-- Resend API integration.
-- Actual email sending.
-- Reverb broadcasting.
-- WebSocket subscriptions.
-- Firebase Messaging integration.
-- Device-token registration.
-- Android push UI.
-- Admin notification dashboard.
-- New customer notification screens.
-- Notification marketing campaigns.
+- Laravel Reverb.
+- WebSocket channels.
+- Firebase Cloud Messaging.
+- Mobile device-token registration.
 - Novu.
 - SMS.
-- Order/delivery/payment notification production triggers.
-- Arbitrary notification creation APIs.
-- New notification enum members.
-- Unapproved public API changes.
+- Marketing campaigns.
+- Newsletters.
+- Promotional email.
+- Order notifications.
+- Payment notifications.
+- Delivery notifications.
+- Customer request-status notification types.
+- Customer acknowledgment emails without approval.
+- New public notification API endpoints.
+- Admin dashboard UI.
+- New request/enquiry lifecycle actions.
+- A custom email-provider HTTP client.
+- A second notification persistence system.
 
-Do not activate customer purchase workflows.
+## 19. Definition of Done
 
-Do not refactor unrelated Laravel domains.
+Phase 18.2 is complete when:
 
-## 22. Definition of Done
+- Resend integrates through the selected Laravel Mail/Symfony Mailer transport.
+- Existing Phase 18.1 notifications trigger appropriate email workflows.
+- Eligible recipients are taken from the authoritative permission-based resolution.
+- Branded operational email templates exist.
+- HTML and plain-text versions render.
+- Mail is sent asynchronously.
+- Sending failures cannot reverse successful business transactions.
+- Bounded retry behavior is implemented and tested.
+- Duplicate logical notifications do not automatically produce duplicate email workflows.
+- Email delivery status is reported accurately.
+- Provider credentials and sender configuration are secured.
+- No frozen API changes are introduced.
+- REQUEST ONLY scope is preserved.
+- Automated tests pass.
+- Live delivery has been verified where authorized and configured, or clearly recorded as an external setup blocker.
+- Documentation and the phase completion report are updated.
 
-Phase 18.1 is complete when:
+## 20. Completion report
 
-- The current notification implementation has been audited against all relevant frozen contracts.
-- Confirmed domain gaps are resolved without inventing API behavior.
-- Authoritative REQ-001 and ENQ-001 events can produce the intended operational notification records.
-- Recipient selection is server-authorized.
-- Notification creation is idempotent.
-- Read state remains recipient-scoped and distinct from business handling.
-- Notifications do not grant access to their target resources.
-- Business transaction success is independent of notification delivery success.
-- Event dispatch respects transaction commit boundaries.
-- Important delivery and dispatch failure windows are documented and appropriately mitigated or explicitly escalated.
-- Order, payment, and delivery notification producers remain deferred.
-- Notification security and privacy tests pass.
-- Relevant request/enquiry regressions pass.
-- Documentation reflects actual behavior.
-- No external provider credentials are required.
-- No frozen contract violation has been introduced.
-- Any unresolved decision is clearly reported rather than silently assumed.
-
-## 23. Completion report
-
-At the end, provide:
+Return:
 
 1. PASS, PARTIAL, or FAIL.
-2. Files inspected, added, and modified.
-3. Existing components reused.
-4. Actual schema and model changes.
-5. Approved event mapping.
-6. Recipient resolution strategy.
-7. Idempotency implementation and tests.
-8. Queue/transaction reliability findings.
-9. NOT-001/NOT-002 compatibility.
-10. Security and authorization test results.
-11. Commands run and results.
-12. Human intervention required, if any.
-13. Known limitations.
-14. Phase 18.2 readiness.
+2. Existing mail infrastructure discovered.
+3. Transport package selected and reason.
+4. Files added/modified.
+5. Email templates implemented.
+6. Sender configuration.
+7. Recipient eligibility behavior.
+8. Delivery-attempt persistence.
+9. Queue/retry/idempotency behavior.
+10. Security review.
+11. Tests added and results.
+12. Real Resend delivery evidence, if available.
+13. Human actions still required.
+14. Known limitations.
+15. Phase 18.3 readiness.
 
-**Final instruction:** Implement only Phase 18.1. Preserve the frozen notification API and the REQUEST ONLY production scope. Do not proceed to Resend configuration, Reverb, FCM, or later phases until the domain foundation is verified and the project owner explicitly requests the next phase.
+**Final instruction:** Implement only Phase 18.2. Use Laravel Mail, Symfony Mailer, and Resend without duplicating the notification domain. Request human intervention for account, DNS, credentials, and live delivery activation. Do not proceed to Phase 18.3 without the project owner's next instruction.

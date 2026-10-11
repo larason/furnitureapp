@@ -57,4 +57,35 @@ final class NotificationApiTest extends TestCase
 
         $this->assertNull($foreign->fresh()->read_at);
     }
+
+    public function test_out_of_range_page_reports_the_requested_page_with_empty_data(): void
+    {
+        $customer = User::factory()->customer()->create(['clerk_user_id' => 'notification_pagination']);
+        Notification::factory()->count(2)->forRecipient($customer)->create();
+
+        $this->withHeaders($this->authenticateAs($customer))
+            ->getJson('/api/v1/me/notifications?per_page=1&page=9')
+            ->assertOk()
+            ->assertJsonPath('data', [])
+            ->assertJsonPath('meta.pagination.current_page', 9)
+            ->assertJsonPath('meta.pagination.last_page', 2)
+            ->assertJsonPath('meta.pagination.has_next', false)
+            ->assertJsonPath('meta.pagination.has_previous', true);
+    }
+
+    public function test_repeated_read_request_preserves_the_first_read_timestamp(): void
+    {
+        $customer = User::factory()->customer()->create(['clerk_user_id' => 'notification_read_timestamp']);
+        $firstReadAt = now()->subHour()->startOfSecond();
+        $notification = Notification::factory()->forRecipient($customer)->create(['read_at' => $firstReadAt]);
+
+        $this->withHeaders($this->authenticateAs($customer))
+            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()), ['read' => true])
+            ->assertOk();
+
+        $this->assertSame(
+            $firstReadAt->toISOString(),
+            $notification->fresh()->read_at?->toISOString(),
+        );
+    }
 }
