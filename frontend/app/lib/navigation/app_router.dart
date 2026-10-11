@@ -162,12 +162,13 @@ abstract final class AppRouter {
             GoRoute(
               name: AppRoutes.privacyPolicyName,
               path: AppRoutes.privacyPolicy,
-              builder: (_, _) => const PrivacyPolicyScreen(),
+              builder: (_, _) => PrivacyPolicyScreen(diagnostics: diagnostics),
             ),
             GoRoute(
               name: AppRoutes.termsAndConditionsName,
               path: AppRoutes.termsAndConditions,
-              builder: (_, _) => const TermsConditionsScreen(),
+              builder: (_, _) =>
+                  TermsConditionsScreen(diagnostics: diagnostics),
             ),
             GoRoute(
               name: AppRoutes.accountName,

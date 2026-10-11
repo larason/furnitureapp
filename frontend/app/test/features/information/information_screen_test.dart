@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sl_furnitures/core/diagnostics/app_diagnostics.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_code.dart';
+import 'package:sl_furnitures/core/diagnostics/diagnostic_sink.dart';
 import 'package:sl_furnitures/features/information/presentation/about_us_screen.dart';
 import 'package:sl_furnitures/features/information/presentation/privacy_policy_screen.dart';
 import 'package:sl_furnitures/features/information/presentation/terms_conditions_screen.dart';
@@ -57,11 +60,13 @@ void main() {
   testWidgets('legal document failure uses neutral customer copy', (
     tester,
   ) async {
+    final sink = InMemoryDiagnosticSink();
     await tester.pumpWidget(
       _app(
-        const LegalDocumentView(
+        LegalDocumentView(
           title: 'Unavailable document',
           assetPath: 'assets/legal/missing.txt',
+          diagnostics: DefaultAppDiagnostics(enabled: true, sink: sink),
         ),
       ),
     );
@@ -69,6 +74,11 @@ void main() {
 
     expect(find.text('Please try again later.'), findsOneWidget);
     expect(find.textContaining('asset configuration'), findsNothing);
+    expect(sink.events.single.code, DiagnosticCode.legalDocumentLoadFailed);
+    expect(
+      sink.events.single.context.toJson(),
+      containsPair('asset_path', 'assets/legal/missing.txt'),
+    );
   });
 
   test('legal sources and registered assets match byte-for-byte', () async {
