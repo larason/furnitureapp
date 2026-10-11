@@ -4,7 +4,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../theme/app_spacing.dart';
 
 class AppBrandLogo extends StatelessWidget {
-  const AppBrandLogo({super.key});
+  const AppBrandLogo({super.key, this.height = AppSpacing.space8});
+
+  final double height;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -13,7 +15,7 @@ class AppBrandLogo extends StatelessWidget {
     child: SvgPicture.asset(
       'assets/applogo/brandlogo.svg',
       excludeFromSemantics: true,
-      height: AppSpacing.space8,
+      height: height,
       fit: BoxFit.contain,
     ),
   );

@@ -50,7 +50,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No categories are published yet'), findsOneWidget);
-    expect(find.text('Categories'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

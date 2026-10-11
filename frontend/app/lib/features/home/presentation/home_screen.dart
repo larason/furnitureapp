@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/presentation/app_brand_logo.dart';
 import '../../../core/presentation/app_empty_view.dart';
 import '../../../core/presentation/app_error_view.dart';
 import '../../../core/presentation/app_loading_view.dart';
@@ -42,18 +41,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const AppBrandLogo()),
-    body: ListenableBuilder(
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
       listenable: _controller,
       builder: (context, _) => CustomScrollView(
         slivers: <Widget>[
           SliverToBoxAdapter(
             child: _Hero(
-              onExplore: () => context.push(AppRoutes.products),
-              onSearch: () => context.push(AppRoutes.search),
-              onContact: () => context.push(AppRoutes.contact),
-              onSignUp: () => context.push(AppRoutes.signUp),
+              onExplore: () => context.go(AppRoutes.products),
               showFixtureImage: widget.showFixtureHero,
             ),
           ),
@@ -87,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SliverToBoxAdapter(child: _CategoryDirectory()),
           SliverToBoxAdapter(
             child: _RequestIntroduction(
-              onExplore: () => context.push(AppRoutes.products),
+              onExplore: () => context.go(AppRoutes.products),
             ),
           ),
         ],
@@ -208,17 +204,8 @@ class _CategoryCard extends StatelessWidget {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({
-    required this.onExplore,
-    required this.onSearch,
-    required this.onContact,
-    required this.onSignUp,
-    required this.showFixtureImage,
-  });
+  const _Hero({required this.onExplore, required this.showFixtureImage});
   final VoidCallback onExplore;
-  final VoidCallback onSearch;
-  final VoidCallback onContact;
-  final VoidCallback onSignUp;
   final bool showFixtureImage;
   @override
   Widget build(BuildContext context) {
@@ -257,22 +244,6 @@ class _Hero extends StatelessWidget {
                 FilledButton(
                   onPressed: onExplore,
                   child: const Text('Explore furniture'),
-                ),
-                OutlinedButton.icon(
-                  key: const ValueKey<String>('home.search_button'),
-                  onPressed: onSearch,
-                  icon: const Icon(Icons.search),
-                  label: const Text('Search'),
-                ),
-                OutlinedButton(
-                  key: const ValueKey<String>('home.contact_button'),
-                  onPressed: onContact,
-                  child: const Text('Contact us'),
-                ),
-                OutlinedButton(
-                  key: const ValueKey<String>('home.signup_button'),
-                  onPressed: onSignUp,
-                  child: const Text('Create account'),
                 ),
               ],
             ),

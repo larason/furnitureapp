@@ -1,0 +1,67 @@
+Terms of Service of [website name]
+This document governs:
+●	the use of our website, and
+●	any other related agreement or legal relationship with us
+in a legally binding way. You must read this document carefully.
+Our website is provided by: [name/company and full address]
+Contact email: [email address]
+
+TERMS OF USE
+Unless stated otherwise, the terms in this section apply generally when using our website. Specific or additional conditions may apply in certain situations and are noted in this document.
+Account registration
+To use the service, you may register an account by providing complete and truthful information. You are responsible for keeping your login credentials confidential and for all activities under your account. Notify us immediately if you believe your account has been compromised. We reserve the right to suspend or delete accounts that are inappropriate, offensive, or in violation of these terms.
+Content and intellectual property
+All content on our website is owned by us or our licensors. You may not copy, modify, sell, or create derivative works from it without our written permission. Exceptions apply where explicitly stated or permitted by law.
+Acceptable use
+Our website may only be used within the scope of what these terms and applicable law permit. You are solely responsible for ensuring your use does not violate any laws, regulations, or third-party rights.
+Note: Add any other conditions here — for example, specific rules for user-generated content, affiliate programs, or age verification requirements.
+
+TERMS AND CONDITIONS OF SALE
+Note: Include this section only if you sell products or services.
+Prices, descriptions, and availability of products are detailed on our website and may change without notice. During checkout, you will see all charges, including fees, taxes, and delivery costs, before submitting your order. Accepted payment methods are provided during the purchasing process.
+Products are delivered to the address you provide. Delivery times are outlined on our website or during the purchasing process.
+Note: Add your specific purchasing process, payment methods, delivery countries, and any other sale conditions here.
+
+USER RIGHTS
+Right of withdrawal
+Unless exceptions apply, if you qualify as a European consumer, you have the right to withdraw from a contract within 14 days, without giving any reason.
+To withdraw, notify us clearly before the withdrawal period ends. If you correctly withdraw, we will reimburse all payments made, including standard delivery costs, within 14 days of receiving your notification, using the same payment method you used.
+For physical goods: you must return them within 14 days of notifying us. You bear the return costs and are responsible for any diminished value from handling beyond what is necessary to assess the goods.
+UK users: The same 14-day cancellation right applies. Contact us using the details in this document to exercise it.
+
+GUARANTEES
+EU consumers: we guarantee the conformity of goods for at least 2 years from delivery, in accordance with applicable law.
+UK consumers: you have the right to receive goods that conform to the contract.
+
+LIABILITY AND INDEMNIFICATION
+We limit our liability to the maximum extent permitted by applicable law.
+You agree to indemnify us from any claims arising from your culpable violation of these terms or third-party rights related to your use of the service, to the extent allowed by law.
+Unless explicitly stated otherwise, you cannot claim damages against us except where damages affect life, health, or physical integrity, arise from breach of significant contractual obligations, or result from intentional or gross negligence.
+Note: If your business operates in the US, this section requires additional provisions covering disclaimers of warranties and limitations of liability specific to US law. These vary by state and are not covered by the clauses above.
+
+COMMON PROVISIONS
+No waiver
+Our failure to assert any right or provision under these terms does not waive that right or provision. No waiver will constitute a continuing waiver of such term or any other term.
+Service interruption
+To maintain the best service level, we reserve the right to interrupt the service for maintenance, updates, or other changes, with appropriate notification.
+We may suspend or discontinue the service within legal limits. If discontinued, we will assist you in withdrawing personal data and respect your rights regarding continued product use and compensation under applicable law.
+The service may be unavailable due to events beyond our reasonable control, such as infrastructure breakdowns or blackouts.
+Service reselling
+You may not reproduce, duplicate, copy, sell, or exploit any part of our website or its service without our express written permission, granted either directly or through a legitimate reselling program.
+Privacy policy
+For information on the use of personal data, you can refer to our website’s privacy policy.
+Changes to the terms
+We reserve the right to modify these terms at any time, informing you of any changes. Such changes will only affect the relationship with you from the date communicated onwards.
+Your continued use of the service will signify your acceptance of the revised terms. If you do not wish to be bound by the changes, you must stop using the service and terminate the agreement. The applicable previous version will govern the relationship prior to your acceptance. You can obtain any previous version from us.
+If legally required, we will notify you in advance of when the modified terms will take effect.
+Governing law and jurisdiction
+Note: Specify the country or state whose law governs these terms, and the courts that will have jurisdiction over any disputes. If you serve consumers in the EU or UK, mandatory consumer protection rules in their country of residence may still apply regardless of your chosen governing law.
+
+DISPUTE RESOLUTION
+The European Commission provides an online platform for alternative dispute resolution for disputes arising from online contracts. European consumers or consumers based in Norway, Iceland, or Liechtenstein can use this platform via the following link: https://ec.europa.eu/consumers/odr
+Note: Specify whether disputes will be resolved through arbitration, mediation, or litigation, and in which jurisdiction. US businesses should also add a jury trial waiver and class action waiver if applicable.
+
+CONTACT
+All communications regarding the use of our website must be sent using the contact information provided in this document:
+[name/company and full address]
+[email address]

@@ -22,7 +22,7 @@ structure)**, **Phase 16.8 (error/loading states)**, **Phase 16.9
 (categories)**, **Phase 17.3 (product detail)**, **Phase 17.4 (search and filtering)**,
 **Phase 17.10 (furniture requests)**, **Phase 17.11 (enquiries)**, and
 **Phase 17.13 (informational, legal, and open-source licenses; former 17.14
-merged)**.
+merged)**, and **Phase 17.15 (global app navigation and drawer)**.
 
 Group P is complete. Group Q owns customer feature implementation.
 
@@ -34,11 +34,23 @@ application home screen.
 
 ## Navigation
 
-`lib/navigation/` is the single route registry. Public routes are home, catalog,
-product/category details, search, made-to-order requests, contact/enquiries,
-and the future Clerk sign-in/sign-up entry points. Informational routes are public
-and offline-readable: `/about`, `/privacy-policy`, `/terms-and-conditions`, and
-`/open-source-licenses`. `/account` is the sole protected placeholder route.
+`lib/navigation/` is the single route registry. Its `ShellRoute` owns the shared
+Material 3 app bar, drawer, and account entry point for customer routes. Public
+routes are home, catalog, product/category details, search, made-to-order
+requests, contact/enquiries, and Clerk sign-in/sign-up. Informational routes are
+public and offline-readable: `/about`, `/privacy-policy`,
+`/terms-and-conditions`, and `/open-source-licenses`. `/account` is the sole
+protected profile route.
+
+The drawer loads and caches actual CAT-003 category summaries independently of
+its static destinations, so a category failure never hides navigation to Home,
+Search, Requests, Contact, or legal information. It includes no cart, checkout,
+payment, order, tracking, or Open Source Licenses entry. Licenses remain public
+and are linked from Account details. The global account button waits for the
+authoritative Clerk state: guests receive the sign-in/create-account bottom
+sheet; authenticated customers go directly to `/account`. Direct authentication
+returns to Home once Clerk establishes a session, while a valid protected-route
+`continue` destination remains honored by the route guard.
 
 The router refreshes from `ClerkAuthAdapter` without requesting or retaining a
 token. Protected routes redirect to a Clerk entry point when signed out and to a
@@ -374,6 +386,72 @@ remain independent of Clerk widget internals. The Material 3 theme supplies a
 representation. Only `name` and `phone` are submitted to Laravel. Password,
 email verification, recovery, and session controls remain Clerk-owned.
 
+### Three beta-SDK behaviours the app must work around
+
+`0.0.18-beta` has three gaps that are invisible until a customer hits them, so
+the app compensates explicitly rather than relying on the SDK.
+
+**1. Auth failures are silent without a listener.** Clerk routes every
+rejected credential to `ClerkAuthState.errorStream`, and `handleError`
+*rethrows* when nothing is subscribed. Without a subscriber the customer sees a
+spinner that resolves into nothing. The app root therefore wraps its tree in
+`ClerkErrorListener` (`lib/app.dart`), which also captures the loading overlay
+that otherwise leaks when the rethrow escapes.
+
+**2. SDK error text must never be rendered.** Clerk's messages carry server
+diagnostics and internal identifiers, such as a trailing
+`(ERROR RECEIVED FROM SERVER)`. `authFailureMessageFor`
+(`lib/core/auth/auth_failure_message.dart`) maps Clerk error codes to
+customer-facing copy and falls back to one safe message per flow. Only
+recognised codes reach the screen; the raw error goes to diagnostics as
+`AUTH_FLOW_FAILED`.
+
+Errors are classified by flow — `signIn`, `signUp`, `verification`,
+`recovery`, `general` — because the right guidance depends on where the
+customer is. Clerk attaches no flow to a failure, so `authFailureFlowFor`
+derives it from the active `SignIn`/`SignUp` and the factor being attempted: a
+rejected password is a sign-in failure, a rejected code is a verification
+failure, and a reset code is a recovery failure. Messages that describe the
+input rather than the account (password rules, missing fields, rate limits,
+connectivity, ended sessions) stay specific; only existence-revealing codes
+are neutralised.
+
+### Account enumeration
+
+Neutral copy for `identifier_not_found`, `form_identifier_not_found` and
+`form_email_address_exists` is **defense in depth, not enumeration
+protection.** This layer only normalises what the app chooses to display. It
+cannot hide existence from a determined caller, because the underlying status
+code, the response timing and Clerk's own copy still distinguish the cases.
+
+The control that actually changes what is disclosed is Clerk's enumeration
+protection in the Dashboard:
+
+- **Bulk** (enabled for this instance) rate-limits enumeration while keeping
+  the helpful "sign in instead" message.
+- **Strict** hides existence outright, but is incompatible with password-first
+  sign-up and would require dropping password auth.
+
+The website (`frontend/web`) renders Clerk's prebuilt `<SignUp>` and `<SignIn>`
+components, so its copy is entirely Clerk's; do not wrap or restyle those to
+change error text.
+
+**3. Session-token polling is not an auth-change signal.** `sessionTokenStream`
+emits only when a token is fetched or renewed, which the SDK schedules every 53
+seconds. Listening to it alone reported sign-in and sign-out up to a full
+poll-cycle late, leaving the account screen visible after sign-out and the
+account button unable to open the guest sheet. `_ClerkAuthGateway` now also
+subscribes to the `ClerkAuthState` notifier, so every Clerk transition is
+republished immediately. Related: an in-flight sign-in or sign-up is a flow the
+customer is already acting on, not an unresolved session, so it no longer
+reports `actionRequired` — that state disables the account button and diverts
+protected routes into `/auth-status` mid-flow.
+
+Sign-out is treated as a transition rather than a state: `RouteGuard` remembers
+the last observed status and sends a protected route to `/` when a session
+ends, so signing out never lands the customer on a sign-in form they just
+completed. `/auth-status` always offers a way back to the catalog.
+
 ## Marionette MCP
 
 The debug app initializes `MarionetteBinding` for runtime Flutter interaction;
@@ -417,7 +495,7 @@ diagnostic that names fields and rules only, never a configuration value.
 | --- | --- | --- |
 | `APP_ENV` | always | `local`, `staging`, or `production`. Unknown or missing values are rejected — there is no fallback. |
 | `API_BASE_URL` | always | Laravel API **origin** only. Do not add `/api/v1`; Phase 16.4 applies the frozen version and paths. |
-| `CLERK_PUBLISHABLE_KEY` | staging, production | Optional locally (no auth flow exists yet). Must start with `pk_`. |
+| `CLERK_PUBLISHABLE_KEY` | staging, production | Optional locally. Required for sign-in, sign-up and `/account`; when absent the app runs signed out with no Clerk UI and account routes render a placeholder. Must start with `pk_`. |
 | `ENABLE_DIAGNOSTICS` | no | Defaults to `false`. Non-secret startup logging only. |
 | `CATALOG_DATA_SOURCE` | no | `api` (default) or development-only `fixtures`. Fixtures require `APP_ENV=local` and a debug build. |
 

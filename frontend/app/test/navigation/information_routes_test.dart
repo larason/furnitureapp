@@ -24,14 +24,15 @@ void main() {
 
     final routes = <String, String>{
       AppRoutes.about: 'About SL Furnitures',
-      AppRoutes.privacyPolicy: 'Privacy Policy',
-      AppRoutes.termsAndConditions: 'Terms & Conditions',
+      AppRoutes.privacyPolicy: 'Privacy Policy of',
+      AppRoutes.termsAndConditions: 'Terms of Service of',
       AppRoutes.openSourceLicenses: 'SL Furnitures',
     };
     for (final entry in routes.entries) {
       router.go(entry.key);
       await tester.pumpAndSettle();
-      expect(find.text(entry.value), findsWidgets);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.textContaining(entry.value), findsWidgets);
       expect(router.routeInformationProvider.value.uri.path, entry.key);
     }
   });

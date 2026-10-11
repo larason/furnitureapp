@@ -1,524 +1,961 @@
-# Phase 17.13 — Flutter Informational, Legal & Open Source Licenses Screens
+# Phase 17.15 — Global App Navigation, Drawer & Contextual Account Access
 
 **Project:** SL Furnitures  
 **Application:** Flutter Android Customer App  
 **Group:** Q — Flutter Customer Features  
-**Phase:** 17.13 (merged with former 17.14)  
-**Prerequisite:** Phase 17.12  
-**Next phase:** 17.15 — Global App Navigation & Drawer
+**Phase:** 17.15 — Global App Navigation & Drawer  
+**Prerequisites:** Phases 17.1–17.4 and 17.10–17.13  
+**Production commerce mode:** REQUEST ONLY  
+**Status:** Final active implementation phase in Group Q
+
+---
 
 ## 1. Objective
 
-Implement the four informational screens needed for the initial SL Furnitures Android release:
+Implement the final customer-facing navigation experience for the SL Furnitures Flutter app.
 
-- About Us
-- Privacy Policy
-- Terms & Conditions
-- Open Source Licenses
+The goal is to replace temporary, fragmented navigation entry points with a consistent global navigation system, making every currently supported customer feature discoverable.
 
-Treat this as one cohesive implementation phase.
+Implement:
 
-These screens must be accessible to everyone without registration, login, network connectivity, or a Laravel API request.
+1. A shared Material 3 top app bar.
+2. A left navigation drawer.
+3. A genuinely centered SL Furnitures brand logo.
+4. A contextual account button on the right.
+5. A guest-only Material 3 account bottom sheet.
+6. Proper sign-in and registration navigation.
+7. Direct account navigation for authenticated customers.
+8. Real SL Furnitures branding on authentication screens.
+9. Dynamic category navigation using the existing catalog backend.
+10. Removal of obsolete homepage navigation buttons created for testing.
+11. Integration of informational and legal routes.
+12. Consistent back navigation, authentication transitions, and deep links.
 
-Use the existing Flutter Material 3 theme and the canonical design tokens generated from `frontend/design-system/tokens.css`.
+**Do not implement bottom navigation for the initial REQUEST ONLY release.**
 
-Do not build a new navigation shell, redesign the existing app, or introduce unnecessary dependencies.
+This is a navigation integration phase, not an opportunity to redesign existing feature screens or activate deferred commerce capabilities.
 
-## 2. Mandatory repository inspection
+## 2. Repository inspection — mandatory
 
-Before editing code, read:
+Before modifying the application, inspect:
 
-1. Root `AGENTS.md`, particularly Group Q and the phase operating rules.
-2. `frontend/app/README.md`.
-3. `frontend/app/lib/features/README.md`.
-4. `frontend/design-system/tokens.css`.
-5. `frontend/design-system/DESIGN.md`, if present.
-6. `frontend/design-system/ACCESSIBILITY.md`, if present.
-7. Existing Flutter Material 3 theme implementation.
-8. Existing generated Flutter design tokens.
-9. Existing go_router route definitions.
-10. Existing feature-first folder structure and dependency injection conventions.
-11. Existing Flutter tests and test helpers.
-12. All relevant `.txt` files in the project root containing the Privacy Policy and Terms & Conditions.
+- Root `AGENTS.md`, including Group Q, design consistency, and the definition of done.
+- `frontend/app/README.md`.
+- `frontend/app/lib/features/README.md`.
+- `frontend/design-system/tokens.css`.
+- Generated Flutter theme/tokens and their generator.
+- Current `MaterialApp.router` setup.
+- Existing `go_router` configuration, route names, redirects, and refresh behavior.
+- Existing home, catalog, categories, search, product detail, furniture request, and enquiry screens.
+- Phase 17.12 authentication implementation and Clerk integration.
+- Phase 17.13 information and legal screens.
+- Existing `AuthSession`, `ClerkAuthAdapter`, and authentication state listener.
+- Current account/profile screens.
+- Existing assets and brand/logo resources.
+- Current loading/error components.
+- Existing route and widget tests.
 
-First report the exact legal source filenames found and confirm that their content is readable.
+Identify all temporary navigation controls introduced solely to make incomplete features accessible during development.
 
-Do not assume their filenames, encodings, or internal heading structures.
+Do not remove a control merely because it links to a route now present in the drawer. Preserve feature-specific CTAs such as "Request this furniture" on product details.
 
-If either legal source is missing, stop the affected legal-page implementation and report the missing file. Do not invent replacement legal content.
+Before implementation, briefly document the existing navigation architecture, actual route names, actual logo asset path, and any integration risks.
 
-## 3. Architecture and feature ownership
+## 3. Navigation architecture
 
-Create a lightweight informational feature consistent with the existing Flutter architecture.
+Reuse the current centralized go_router implementation.
 
-A possible structure is:
+Introduce or extend a shared navigation shell using an appropriate supported go_router pattern, such as `ShellRoute`, if it fits the existing route hierarchy.
+
+Avoid unnecessary migration to a new router architecture.
+
+### Architectural responsibilities
+
+The shared shell owns:
+
+- Global app bar.
+- Navigation drawer.
+- Consistent page presentation.
+- Account entry point.
+- Common navigation interactions.
+
+Individual features own:
+
+- Their own content.
+- Feature-specific page actions.
+- Forms.
+- Local loading and error states.
+- Feature-specific nested navigation.
+
+The navigation shell must not contain catalog API implementations, authentication business logic, or duplicated route definitions.
+
+### Important
+
+Only one `MaterialApp.router` may exist.
+
+Do not put another `Scaffold` around every page without considering the existing screen structure.
+
+Prevent:
+
+- Nested duplicate app bars.
+- Duplicate navigation drawers.
+- Unexpected back buttons.
+- Conflicting floating action buttons.
+- Extra top padding.
+- Double safe-area application.
+- Screens retaining invisible app bars after navigation.
+
+Refactor existing screen scaffolds only as much as is necessary to support the shared shell.
+
+## 4. Global top app bar
+
+Create a reusable SL Furnitures Material 3 top app bar.
+
+### Required arrangement
 
 ```text
-frontend/app/lib/features/information/
-  presentation/
-    about_us_screen.dart
-    privacy_policy_screen.dart
-    terms_conditions_screen.dart
-    open_source_licenses_screen.dart
-    widgets/
-      information_page_scaffold.dart
-      legal_document_view.dart
+┌────────────────────────────────────┐
+│                                    │
+│  ☰         SL FURNITURES        ♙  │
+│                                    │
+└────────────────────────────────────┘
 ```
 
-Adjust this to existing repository conventions.
+The diagram is conceptual. Use the real brand logo asset.
 
-Do not create unnecessary repositories, controllers, state-management layers, or service abstractions for static text.
+### Left action — navigation drawer
 
-A dedicated local document loader is acceptable if it simplifies asset management and testing.
+Place the menu icon on the left.
 
-### Separation of concerns
+Use a standard Material icon consistent with Material 3.
 
-- About Us: presentation and locally defined factual content.
-- Privacy Policy: display the authoritative text asset.
-- Terms & Conditions: display the authoritative text asset.
-- Open Source Licenses: display Flutter's actual registered dependency licenses.
-- Routing: existing centralized go_router.
-- Styling: existing generated theme and design tokens.
+Interaction:
 
-No new Laravel API is needed.
+- Tap opens the navigation drawer.
+- Drawer opens reliably from all appropriate top-level customer screens.
+- Screen readers announce "Open navigation menu".
+- Provide proper touch-target dimensions.
 
-## 4. About Us screen
+### Center — SL Furnitures logo
 
-Create a polished but simple About Us page that communicates the SL Furnitures business and its services.
+Use the actual SL Furnitures logo already defined in the project.
 
-### Content
+The logo must be geometrically centered relative to the full app bar width, not merely centered in the space remaining between the left and right actions.
 
-Use only verified business information from the project documentation or existing approved brand content.
+Use a balanced layout that remains correct when the menu or account icon is present.
 
-The page may describe:
-
-- SL Furnitures as a furniture business.
-- Its focus on furniture products and made-to-order requests.
-- How customers can explore the catalog.
-- How customers can request furniture.
-- How customers can submit general enquiries.
-- The business's commitment to clear communication and useful furniture information.
-
-### Important content restrictions
-
-Do not invent:
-
-- A founding year.
-- Founder names.
-- Workshop or showroom addresses.
-- Phone numbers.
-- Email addresses.
-- Business registration numbers.
-- Customer testimonials.
-- Manufacturing capacity.
-- Delivery coverage.
-- Warranties or guarantees.
-- Sustainability certifications.
-- Claims about materials or production processes that have not been verified.
-
-If official About Us content already exists in the repository, reuse it rather than generating competing wording.
-
-### Suggested layout
-
-- Page heading: "About SL Furnitures".
-- Brief introductory section.
-- What We Offer.
-- Made-to-Order Furniture.
-- Getting in Touch.
-
-Use readable paragraphs and restrained visual hierarchy.
-
-Avoid unnecessary animation, decorative counters, statistics, and marketing carousels.
-
-A contact action may navigate to the existing `/contact` route if it is available.
-
-Do not create a second contact form.
-
-## 5. Privacy Policy screen
-
-Locate the actual Privacy Policy `.txt` file in the project root.
-
-Read the entire document.
-
-### Source-of-truth rule
-
-The file's existing text is authoritative.
+Preserve the logo's aspect ratio.
 
 Do not:
 
-- Rewrite it.
-- Summarize it.
-- Paraphrase it.
-- Generate additional legal clauses.
-- Remove sections.
-- Change dates.
-- Change business names.
-- Replace contact information.
-- Silently correct wording.
-- Alter its legal meaning.
+- Generate a different logo.
+- Substitute an emoji.
+- Use a generic furniture icon.
+- Replace the logo with plain text if the real asset exists.
+- Crop or stretch the logo.
+- Introduce a new brand identity.
 
-Preserve the complete document, including headings, paragraphs, lists, effective dates, and contact details.
+If the repository contains multiple logo variants, choose the one designed for the light app-bar surface.
 
-### Asset strategy
+If no official usable logo asset exists, report the blocker. Do not invent a replacement.
 
-Bundle the document as a Flutter asset so that it is available offline.
+The logo may act as a Home navigation action if consistent with project conventions.
 
-Prefer a single maintained source with a reproducible build-time copy/synchronization process, rather than manually maintaining two independent versions.
+### Right action — account
 
-If the app build cannot directly bundle a file outside its package root, use an app-local asset copy with an explicit synchronization/check process.
+Use a recognizable person/account icon.
 
-Ensure changes to the root source are detectable by tests or a documented check.
+Its behavior depends on the authoritative current authentication state.
 
-Do not load the legal text from a remote URL at runtime.
+- Guest: open account bottom sheet.
+- Authenticated customer: navigate to Account/Profile.
 
-### Presentation
+The icon must have a descriptive accessibility label.
 
-- Heading: "Privacy Policy".
-- Scrollable text content.
-- Clear paragraph spacing.
-- Preserve logical section breaks.
-- Support selection/copying where appropriate.
-- Support large text scaling.
-- Use the existing theme.
-- Handle asset loading failures without crashing.
+### Styling
 
-The page must not require Clerk authentication.
+Use the generated Flutter theme derived from `frontend/design-system/tokens.css`.
 
-## 6. Terms & Conditions screen
+Preferred visual character:
 
-Apply the same source and rendering rules as the Privacy Policy.
-
-Locate and read the actual Terms & Conditions `.txt` file from the project root.
-
-Bundle the complete text into the Flutter app.
-
-Do not generate or rewrite legal terms.
-
-### Presentation
-
-- Heading: "Terms & Conditions".
-- Scrollable content.
-- Readable typography.
+- Warm or paper background consistent with the app.
+- Dark foreground icons.
+- Minimal elevation.
+- Restrained separators, only when needed.
 - Consistent spacing.
-- Selectable text where practical.
-- Large-text support.
-- Offline access.
-- Accessible headings and navigation.
+- No arbitrary accent colors.
+- No overly tall promotional header.
 
-### Legal document consistency
+Do not recreate the Bonobos promotional banner shown in the screenshot.
 
-Privacy Policy and Terms & Conditions should use the same reusable document presentation component.
+The screenshot is only an interaction reference for account entry.
 
-However, do not force a formatting transformation that changes the original content.
+## 5. Global drawer — required hierarchy
 
-Preserve the source documents' order and meaning.
+Create a Material 3 navigation drawer that exposes the currently available customer functionality.
 
-## 7. Legal content integrity
+The drawer should prioritize product discovery.
 
-Create focused checks to protect the legal text against accidental changes.
-
-At minimum, verify:
-
-1. The Privacy Policy source exists.
-2. The Terms & Conditions source exists.
-3. Both files contain nonempty text.
-4. Both are valid for the chosen asset encoding.
-5. Both assets are registered correctly in `pubspec.yaml`.
-6. Both can be loaded by Flutter.
-7. Both are displayed in full.
-8. No placeholder legal text is substituted.
-9. The bundled content matches the authoritative source after only explicitly documented, non-semantic encoding normalization.
-
-Prefer byte-for-byte or normalized-text equality checks between the root source and bundled asset.
-
-Do not rely solely on widget tests that check whether the heading appears.
-
-If legal content is updated in the future, the app must be rebuilt and redistributed for the bundled change to reach installed users.
-
-Document this behavior.
-
-## 8. Open Source Licenses screen
-
-Implement a dedicated Open Source Licenses page.
-
-### Authoritative license source
-
-Use Flutter's license registry and the licenses bundled by Flutter/Dart packages.
-
-Prefer the framework-provided `LicensePage` or the corresponding supported license APIs.
-
-Do not manually construct a hard-coded list of packages and licenses.
-
-Do not copy license text from package websites as the primary implementation.
-
-### Requirements
-
-- Show the actual licenses registered by the Flutter application.
-- Preserve the full license texts.
-- Allow users to scroll and read them.
-- Provide appropriate package grouping and navigation.
-- Support text scaling.
-- Use the existing app theme where the framework permits.
-- Work offline.
-- Avoid exposing internal project paths or development-only metadata.
-
-### Branding and appearance
-
-The page should feel consistent with the application without compromising the correctness of third-party license attribution.
-
-Using Flutter's standard `LicensePage` is acceptable, even if its internal layout differs slightly from the custom informational screens.
-
-Do not fork Flutter's license presentation solely for visual customization.
-
-### App-owned notices
-
-If the project includes third-party fonts, images, icons, or other assets with attribution obligations that are not automatically registered, inspect their licenses and include any required notices through an appropriate compliant mechanism.
-
-Do not assume every asset is covered by the package registry.
-
-Do not include fictional license entries.
-
-## 9. Shared informational page design
-
-Use one simple, reusable presentation pattern for About Us, Privacy Policy, and Terms & Conditions.
-
-### Layout
-
-- Existing Material 3 page background.
-- Clear page heading.
-- Readable content width.
-- Appropriate horizontal padding.
-- Comfortable vertical rhythm.
-- Consistent paragraph spacing.
-- Standard back navigation.
-- Accessible scrolling.
-
-Use the generated Flutter tokens for:
-
-- Colors.
-- Typography.
-- Spacing.
-- Borders.
-- Radii.
-- Surface treatments.
-
-Avoid new raw color literals and arbitrary font definitions.
-
-### Typography
-
-Use the existing editorial typography conventions.
-
-Use display typography sparingly for headings.
-
-Use the approved UI/body font configuration for long legal documents.
-
-Legal readability takes priority over decorative typography.
-
-Do not use unusually small text to fit more content on the screen.
-
-## 10. Navigation and routing
-
-Register public routes in the existing central go_router.
-
-Recommended route paths, unless the repository already defines canonical alternatives:
+### Proposed content hierarchy
 
 ```text
-/about
-/privacy-policy
-/terms-and-conditions
-/open-source-licenses
+SL Furnitures
+
+[ Search furniture... ]
+
+EXPLORE
+  Home
+  All Furniture
+
+CATEGORIES
+  Category A
+  Category B
+  Category C
+  ...from actual catalog data
+
+SERVICES
+  Request Furniture
+  Contact Us
+
+INFORMATION
+  About Us
+
+LEGAL
+  Privacy Policy
+  Terms & Conditions
 ```
 
-Use existing route naming conventions.
+Use actual category names from the backend, not the placeholders above.
 
-### Route behavior
+This hierarchy is an initial design specification. Match the final implementation to the established routes and information architecture.
 
-- No authentication required.
-- No Clerk session required.
-- No Laravel request required.
-- Direct navigation works.
-- Back navigation works.
-- Cold-start navigation is safe.
-- Route errors are handled.
-- Legal content remains available offline.
+### Search placement
 
-Do not implement the final shared app bar or navigation drawer.
+Search must be the first actionable element in the drawer.
 
-That work belongs to Phase 17.15.
+Provide a prominent, accessible search field or search-entry component.
 
-### Temporary discoverability
+Preferred behavior:
 
-Ensure the screens can be reached through an existing appropriate public UI location or tested through the router without adding a new global navigation system.
+- The drawer displays a search affordance at the top.
+- Tapping it closes the drawer and opens the existing Search screen.
+- If the existing Search screen supports an initial query parameter, use that established mechanism.
+- Do not invent a new search controller or parallel filtering engine.
 
-Do not add a temporary navigation component that will need to be removed in Phase 17.15.
+A navigation-style search field is sufficient.
 
-If an existing account screen already has an appropriate informational section, linking from it is acceptable, provided the pages themselves remain public.
+Do not duplicate the complete Search screen inside the drawer.
 
-## 11. Accessibility
+If an inline search input is implemented, correctly manage focus, the software keyboard, drawer dismissal, and query transfer.
 
-Test the informational screens for:
+### Home and catalog
 
-- TalkBack traversal.
-- Semantic headings.
-- Logical reading order.
-- Sufficient text contrast.
-- 2× text scaling.
-- Small Android screens.
-- Landscape orientation.
-- Keyboard and focus behavior where applicable.
-- Scroll position and navigation.
-- Long paragraphs.
-- Long URLs.
-- Lists and numbered sections.
-- Text selection.
-- No horizontal overflow.
-- No clipped document text.
+Include navigation to the existing Home and all-furniture/catalog entry points where these are distinct screens.
 
-The legal documents must be readable from beginning to end.
+Do not create duplicate destinations when both labels map to the same route without a meaningful UX difference.
 
-Do not introduce fixed-height containers that cut off content.
+### Categories
 
-## 12. Loading and error states
+The drawer must show the actual available furniture categories using the application's existing category repository/API integration.
 
-Use existing application conventions for asynchronous asset loading.
+Do not hard-code category IDs, names, or counts.
 
-Expected behavior:
+If categories have a supported hierarchy, preserve it.
 
-- Display a modest loading state while an asset is read.
-- Show the document once loaded.
-- Handle asset loading failure with a clear error presentation.
-- Avoid displaying a blank screen.
-- Avoid logging entire legal documents.
-- Avoid infinite retry loops.
+For nested categories, use an accessible expansion mechanism where appropriate.
 
-Because these are bundled local assets, do not introduce network retry mechanisms.
+Selecting a category must:
 
-The About Us page should not need a loading state if it uses static verified content.
+1. Close the drawer.
+2. Navigate to the existing category screen.
+3. Supply the correct established route parameter.
+4. Display that category's actual products.
+5. Preserve existing catalog pagination/filtering behavior.
+6. Avoid loading a different category accidentally.
 
-## 13. Privacy and security
+Use the existing domain category model.
 
-These pages are public.
+### Category loading behavior
 
-Do not attach Clerk tokens to local document loading.
+Handle:
 
-Do not collect analytics or personal data solely because a user opens a legal page.
+- Initial loading.
+- Already cached categories.
+- Empty catalog.
+- Network failure.
+- Retry.
+- Slow API responses.
 
-Do not introduce WebViews to render plain-text legal files.
+The drawer should open immediately without waiting for the category API.
 
-Do not fetch third-party license text from the internet during ordinary app usage.
+If loading fails, retain working links to Home, Search, Contact, and informational screens.
 
-Do not modify backend authorization or the frozen API contract.
+Do not crash the drawer because categories are unavailable.
 
-## 14. Automated tests
+Avoid making the same unnecessary API call every time the drawer opens.
 
-Add focused tests covering the consolidated phase.
+Reuse the established repository/cache lifecycle where possible.
 
-### About Us
+### Services
 
-1. Screen renders.
-2. Approved business content appears.
-3. Contact action uses the existing route if present.
-4. No invented commerce controls.
-5. No authentication requirement.
+Include:
 
-### Privacy Policy
+- Request Furniture.
+- Contact Us.
 
-6. Route resolves.
-7. Source asset loads.
-8. Full content is rendered.
-9. Source/asset synchronization passes.
-10. Long content scrolls.
-11. Text scaling works.
-12. Asset failure is handled.
+Use existing public routes.
 
-### Terms & Conditions
+Do not require authentication for these pages.
 
-13. Route resolves.
-14. Source asset loads.
-15. Full content is rendered.
-16. Source/asset synchronization passes.
-17. Long content scrolls.
-18. Text scaling works.
-19. Asset failure is handled.
+If the request screen supports an optional product context, preserve the existing product-linked request workflow and avoid manufacturing fake product data when entering from the drawer.
+
+### Information
+
+Include About Us.
+
+### Legal section
+
+Place Privacy Policy and Terms & Conditions toward the bottom of the drawer.
+
+These should have lower visual prominence than discovery and request features but remain easy to find.
+
+Consider layout behavior on short screens: the drawer must remain scrollable and the legal links must never be clipped.
 
 ### Open Source Licenses
 
-20. Route resolves.
-21. Flutter license registry is used.
-22. Package licenses can be opened.
-23. License content is readable.
-24. No manually fabricated licenses.
-25. Screen works without network access.
+**Do not place Open Source Licenses in the main furniture navigation drawer.**
 
-### Navigation and regressions
+Instead, expose the licenses entry inside the existing Account Details/Profile information area using the public licenses route implemented in Phase 17.13.
 
-26. All informational routes are public.
-27. Back navigation works.
-28. Cold-start routing works.
-29. Anonymous users can open legal pages.
-30. Authenticated users can open legal pages.
-31. Clerk initialization failure does not block legal pages.
-32. Existing catalog routes remain unchanged.
-33. Furniture Requests remain unchanged.
-34. Enquiries remain unchanged.
-35. Account authentication remains unchanged.
-36. Deferred commerce routes remain inactive.
+Preserve Flutter's registered-license display implementation.
 
-Use deterministic tests.
+Do not make a duplicate license viewer.
 
-Do not require live Laravel or Clerk services.
+For guests, do not unexpectedly require authentication to access the underlying license route; it remains a public route even though its regular navigation entry is located in account details.
 
-## 15. Android device verification
+## 6. Drawer interaction details
 
-Use an Android emulator or physical device and Marionette where available.
+Use Material 3 components that are compatible with the existing theme.
 
-Verify:
+The drawer must:
 
-- About Us.
-- Privacy Policy.
-- Terms & Conditions.
-- Open Source Licenses.
-- Full document scrolling.
-- Text selection.
-- Back navigation.
-- Small-screen layout.
-- Landscape.
-- 2× text scaling.
-- Offline access.
-- Anonymous access.
-- License package expansion.
-- No overflow or clipped text.
+- Open and close smoothly.
+- Close after a destination is selected.
+- Highlight the active destination where appropriate.
+- Preserve correct category selection.
+- Support system-back dismissal.
+- Respect safe areas.
+- Scroll on small screens.
+- Support landscape.
+- Remain usable at 2× text scaling.
+- Avoid horizontal overflow.
+- Support TalkBack.
+- Keep touch targets accessible.
+- Avoid duplicate route pushes when the user selects the current destination.
 
-For legal content, explicitly confirm that the final paragraph is reachable.
+Use semantic section labels and clear grouping.
 
-## 16. Documentation
+Do not use heavy animations or custom gestures when standard Flutter functionality is sufficient.
 
-Update:
+Avoid showing all categories as a giant unstructured list if a meaningful hierarchy already exists.
 
-- `frontend/app/README.md`.
-- `frontend/app/lib/features/README.md`.
-- The Phase 17.13 completion record.
-- Any relevant asset-management documentation.
+## 7. Account icon — unauthenticated behavior
 
-Document:
+When a user without an authenticated Clerk customer session taps the global account icon:
 
-- Actual root legal source filenames.
-- How legal files become Flutter assets.
-- How to update legal text safely.
-- How synchronization is verified.
-- Informational route names.
-- About Us content source.
-- Open-source license implementation.
-- Offline behavior.
-- Accessibility checks.
-- Device verification.
-- Test results.
+**Open a Material 3 modal bottom sheet.**
 
-Mark former Phase 17.14 as merged into Phase 17.13.
+Do not navigate directly to the Sign In screen.
 
-Do not create a separate Phase 17.14 completion record unless the existing documentation process explicitly requires a historical pointer.
+### Bottom-sheet presentation
 
-## 17. Verification commands
+The reference screenshot shows an account sheet over an existing shopping screen.
+
+Adapt that interaction to SL Furnitures.
+
+Suggested layout:
+
+```text
+┌────────────────────────────────────┐
+│  Account                        ×  │
+│                                    │
+│  Welcome to SL FURNITURES          │
+│  Sign in to manage your account.   │
+│                                    │
+│  ┌──────────────────────────────┐  │
+│  │           Sign In            │  │
+│  └──────────────────────────────┘  │
+│                                    │
+│  ┌──────────────────────────────┐  │
+│  │        Create Account        │  │
+│  └──────────────────────────────┘  │
+│                                    │
+└────────────────────────────────────┘
+```
+
+### Styling
+
+Use the application's established Material 3 buttons, shapes, typography, and spacing.
+
+Recommended:
+
+- Primary filled button: Sign In.
+- Secondary outlined button: Create Account.
+- Clear sheet title: Account.
+- Close button in the top-right.
+- Surface color from canonical tokens.
+- Rounded top corners from the approved theme.
+- Safe-area spacing.
+
+Do not add Shop Pay, social login, or other third-party authentication buttons based on the screenshot.
+
+Do not include Orders, Tracking, Cart, or other deferred commerce actions.
+
+### Interaction
+
+On Sign In:
+
+1. Dismiss the bottom sheet.
+2. Navigate to the existing Clerk Sign In screen.
+
+On Create Account:
+
+1. Dismiss the bottom sheet.
+2. Navigate to the existing Clerk Registration screen.
+
+On Close:
+
+- Dismiss the sheet without navigating.
+
+On Android system back:
+
+- Dismiss the sheet first.
+
+On outside tap:
+
+- Use standard modal dismissal behavior, unless the established app accessibility conventions require otherwise.
+
+### Important
+
+Use supported Flutter APIs such as `showModalBottomSheet`.
+
+Do not reimplement the bottom-sheet framework.
+
+Avoid creating a bottom sheet from each individual screen. Its trigger belongs to the global navigation shell.
+
+## 8. Account icon — authenticated behavior
+
+When the current customer has a valid authenticated Clerk session:
+
+Tapping the account icon must navigate directly to the existing Account/Profile screen.
+
+Do not show the guest sheet.
+
+Do not prompt for a second login.
+
+Reuse the existing route and authentication guard.
+
+### Authentication-state transitions
+
+The global account entry must react to changes in the actual authentication state.
+
+Handle:
+
+- App starts anonymously.
+- Customer signs in.
+- Customer registers and verifies email.
+- Session is restored at startup.
+- Session expires.
+- Customer signs out.
+- Clerk initialization is delayed.
+- Session refresh is in progress.
+
+Do not infer authenticated state from stale local booleans or profile data alone.
+
+### Important pending-state rule
+
+While the authentication state is unresolved, do not briefly show the guest sheet and then redirect the user to the account page.
+
+Wait for or resolve the authoritative state through the existing session abstraction.
+
+Prevent duplicate navigation and race conditions.
+
+## 9. Authentication success routing
+
+Update the relevant login/registration completion behavior to support the intended launch UX.
+
+### Standard flow
+
+```text
+Guest taps Account
+        ↓
+Account bottom sheet
+        ↓
+Sign In / Create Account
+        ↓
+Clerk authentication
+        ↓
+Email verification if required
+        ↓
+Authenticated session established
+        ↓
+Home
+```
+
+After successful authentication, navigate to the Home screen for a normal account entry flow.
+
+Use `go` or the existing equivalent when appropriate to avoid leaving redundant authentication pages in the back stack.
+
+### Preserve explicit return destinations
+
+Do not break valid protected-route return-to behavior already implemented in Phase 17.12.
+
+If the user originally entered an authenticated workflow with a legitimate allowlisted return destination, honor that existing mechanism.
+
+For authentication initiated directly from the global Account bottom sheet, Home is the preferred destination after successful sign-in or registration.
+
+Do not create open redirects or accept arbitrary external return URLs.
+
+### Failure behavior
+
+If authentication fails or is cancelled:
+
+- Do not navigate to Home as an authenticated user.
+- Keep the user in the appropriate auth flow or safely restore the prior public screen.
+- Present the existing Clerk error handling.
+- Do not alter Laravel account ownership logic.
+
+## 10. Real brand logo on authentication screens
+
+Inspect every authentication screen implemented in Phase 17.12.
+
+Replace the temporary placeholder logo/icon with the actual official **SL Furnitures** logo.
+
+Relevant screens may include:
+
+- Sign In.
+- Registration.
+- Email verification.
+- Password recovery.
+- Other existing Clerk authentication entry screens.
+
+If an authentication flow is rendered by a prebuilt Clerk widget, first determine whether a supported header slot, wrapper, theme customization, or surrounding layout permits the official logo.
+
+Do not fork or modify the Clerk SDK to change its branding.
+
+Preserve Clerk's supported authentication behavior.
+
+### Brand requirements
+
+- Use the same canonical asset as the global app bar where practical.
+- Preserve its proportions.
+- Provide suitable semantic labeling.
+- Use the correct variant for the screen background.
+- Avoid multiple competing logos.
+- Do not create new brand imagery.
+- Do not modify authentication credentials or token handling.
+
+The login screens should visually belong to SL Furnitures without creating a second design system.
+
+## 11. Homepage cleanup
+
+Inspect the Home screen for temporary buttons introduced solely to access screens during development and testing.
+
+Remove obsolete test-navigation buttons, especially temporary standalone entry buttons for:
+
+- Search.
+- Contact Us.
+
+These destinations are now available through the navigation drawer.
+
+### Preserve legitimate functionality
+
+Do not remove:
+
+- Product cards.
+- Catalog browsing.
+- Category exploration components.
+- Product discovery content.
+- Actual product search functionality.
+- Made-to-order request CTAs.
+- Product-detail request buttons.
+- Meaningful editorial content.
+
+The cleanup is intended to remove redundant development shortcuts, not reduce core customer capability.
+
+If Search has an established, intentional discovery component on the Home screen, distinguish it from a temporary testing button before removing anything.
+
+Do not remove functionality that is not otherwise accessible.
+
+## 12. Route inventory and consistency
+
+Use the actual route names from the repository.
+
+The navigation must account for the currently active customer destinations, including:
+
+```text
+Home
+Catalog / All Furniture
+Categories
+Category Detail
+Search
+Product Detail
+Request Furniture
+Contact Us
+About Us
+Privacy Policy
+Terms & Conditions
+Sign In
+Registration
+Account / Profile
+Open Source Licenses
+```
+
+Do not assume all these routes are top-level drawer destinations.
+
+Product Detail is normally reached through product selection.
+
+Sign In and Registration are reached through the guest account sheet.
+
+Account/Profile is reached through the account icon.
+
+Open Source Licenses is found in account details.
+
+Only appropriate public discovery, service, information, and legal routes belong in the main drawer.
+
+### Deferred routes
+
+Do not activate:
+
+- Cart.
+- Checkout.
+- Payments.
+- Customer Orders.
+- Order Tracking.
+
+Do not display disabled placeholder navigation items for those features in the production drawer.
+
+The frozen API contracts remain unchanged.
+
+## 13. Global-shell coverage
+
+The app bar should be present consistently across suitable customer screens.
+
+However, do not blindly apply it to every route.
+
+Review whether a screen needs its own navigation treatment, for example:
+
+- Auth screens with dedicated presentation.
+- Full-screen media/image viewers.
+- Nested product pages where a back action is more appropriate.
+- Modal flows.
+- Keyboard-focused forms.
+
+Document the selected shell boundaries.
+
+For top-level customer screens, prioritize the global menu/logo/account structure.
+
+For nested screens, preserve an understandable back path and avoid removing expected Android navigation behavior solely for visual consistency.
+
+Do not cause a nested product page to become impossible to dismiss or return from.
+
+## 14. Back-stack and deep-link behavior
+
+Verify these flows:
+
+### Normal navigation
+
+```text
+Home → Drawer → Categories → Category Detail → Product Detail
+```
+
+Back navigation should return to the expected prior customer context.
+
+### Search
+
+```text
+Home → Drawer → Search → Search Results → Product Detail
+```
+
+Do not reset search state unnecessarily.
+
+### Guest account
+
+```text
+Home → Account icon → Bottom sheet → Close
+```
+
+Must remain on Home.
+
+### Guest sign-in
+
+```text
+Home → Account icon → Bottom sheet → Sign In
+```
+
+After successful authentication, navigate to Home unless a valid existing return-to destination applies.
+
+### Authenticated account
+
+```text
+Home → Account icon → Account/Profile
+```
+
+### Sign-out
+
+```text
+Account/Profile → Sign Out → Public Home
+```
+
+After sign-out, tapping Account must again show the guest bottom sheet.
+
+### Deep links
+
+Opening a valid public deep link must not unexpectedly redirect through Home or Sign In.
+
+Opening a valid protected account route while unauthenticated must preserve the existing protected-route policy.
+
+Avoid stack loops, duplicate Home entries, and navigation after a widget has been disposed.
+
+## 15. Design token enforcement
+
+The navigation implementation must use the existing canonical design tokens.
+
+Authority:
+
+`frontend/design-system/tokens.css`
+
+Flutter presentation:
+
+Existing generated Material 3 theme and token constants.
+
+Do not manually introduce an unrelated palette.
+
+Pay particular attention to:
+
+- Drawer surface.
+- App bar surface.
+- Primary actions.
+- Secondary actions.
+- Dividers.
+- Text hierarchy.
+- Active navigation states.
+- Focus states.
+- Border and corner radii.
+- Sheet shape.
+- Spacing.
+- Typography.
+
+The user-supplied screenshot is a layout and interaction inspiration, not a source of brand colors.
+
+Do not copy the purple Shop Pay button or Bonobos typography.
+
+Maintain consistency with existing SL Furnitures UI.
+
+## 16. Accessibility
+
+The navigation experience must support assistive technology.
+
+### App bar
+
+- Menu button has an accessible label.
+- Logo has appropriate semantics.
+- Account button has an accessible label.
+- Actions meet touch-target expectations.
+- Focus order is logical.
+
+### Drawer
+
+- Drawer opening announces the navigation context.
+- Search is discoverable.
+- Sections are understandable.
+- Categories have meaningful labels.
+- Expanded categories expose their state appropriately.
+- Selected destinations are identifiable.
+- Legal links are reachable.
+- Drawer content scrolls at large text sizes.
+
+### Account bottom sheet
+
+- The sheet title is announced.
+- Keyboard/TalkBack focus enters the sheet correctly.
+- Sign In and Create Account are distinctly labeled.
+- Close action works.
+- Background interactions are correctly blocked while modal.
+- Android back dismisses the modal appropriately.
+- No clipped controls at 2× text scaling.
+
+Test portrait and landscape orientations.
+
+## 17. Performance and stability
+
+Avoid expensive rebuilding of the navigation shell on every route transition.
+
+Do not repeatedly fetch category data when it is already valid and cached.
+
+Do not initialize multiple Clerk SDK instances.
+
+Do not query the Laravel profile endpoint merely to decide whether a guest sheet should appear if the current Clerk session abstraction already provides the necessary authentication state.
+
+Do not block the Home screen on drawer-category loading.
+
+Dispose of listeners and controllers appropriately.
+
+Keep the drawer responsive on low-end Android devices.
+
+Avoid introducing a new state-management framework just for navigation.
+
+## 18. Automated test coverage
+
+Add tests for the following scenarios.
+
+### Global app bar
+
+1. Menu icon renders.
+2. Real logo is used.
+3. Account icon renders.
+4. Logo remains centered.
+5. Drawer opens.
+6. Logo navigation works if configured.
+7. App bar respects the existing theme.
+
+### Drawer
+
+8. Search appears first.
+9. Search opens the existing route.
+10. Home navigation works.
+11. Catalog navigation works.
+12. Categories load from the existing repository.
+13. Category selection opens the correct category.
+14. Category loading state works.
+15. Category empty state works.
+16. Category failure does not block other links.
+17. Category retry works where available.
+18. Drawer closes after selection.
+19. Active destination is indicated.
+20. About Us navigation works.
+21. Contact Us navigation works.
+22. Request Furniture navigation works.
+23. Privacy Policy navigation works.
+24. Terms & Conditions navigation works.
+25. Licenses are absent from the main drawer.
+26. Deferred commerce destinations are absent.
+
+### Guest account bottom sheet
+
+27. Guest account tap opens the sheet.
+28. Sheet has Account heading.
+29. Sign In button renders.
+30. Create Account button renders.
+31. Close button dismisses the sheet.
+32. Back dismisses the sheet.
+33. Sign In navigates to the existing sign-in route.
+34. Create Account navigates to the existing registration route.
+35. No invented social login buttons are present.
+36. No deferred Orders/Cart buttons are present.
+
+### Authenticated account
+
+37. Authenticated account tap navigates directly to profile.
+38. Authenticated tap never displays the guest sheet.
+39. Session restoration does not cause guest-sheet flicker.
+40. Session expiry follows the existing safe guest behavior.
+41. Sign-out restores guest account behavior.
+42. Authentication state changes do not create duplicate navigation.
+
+### Authentication branding and routing
+
+43. Sign-in screen shows the real brand logo.
+44. Registration screen shows the real brand logo.
+45. Verification/recovery screens use approved branding where supported.
+46. Normal sign-in success navigates to Home.
+47. Normal registration success navigates to Home after the required verification and successful session establishment.
+48. Authentication failure does not simulate success.
+49. Existing protected-route return-to logic remains valid.
+
+### Regression
+
+50. Product-detail routes still work.
+51. Category filters still work.
+52. Search results still work.
+53. Public furniture requests still work.
+54. Public enquiries still work.
+55. Authenticated request/enquiry submissions still work.
+56. Account/profile editing still works.
+57. Legal screens remain public.
+58. Licenses can be opened from account details.
+59. Home no longer displays obsolete test-navigation buttons.
+60. No bottom navigation bar exists.
+
+Use existing test infrastructure and fakes.
+
+Do not require live Clerk or Laravel services for deterministic widget tests.
+
+## 19. Android / Marionette verification
+
+Build and launch the actual Android app.
+
+Use Marionette where available to verify real interactions.
+
+Perform the following manual journeys:
+
+**Journey A — Anonymous discovery**
+
+Launch → Open Drawer → Search → Return → Open Drawer → Category → Product → Request Furniture.
+
+**Journey B — Anonymous contact**
+
+Launch → Open Drawer → Contact Us → Return Home.
+
+**Journey C — Legal content**
+
+Launch → Open Drawer → Privacy Policy → Back → Terms & Conditions → Back.
+
+**Journey D — Guest account**
+
+Launch → Account → Bottom sheet → Close → Account → Create Account.
+
+**Journey E — Authenticated account**
+
+Sign In → Home → Account icon → Profile → Open Source Licenses.
+
+**Journey F — Sign-out**
+
+Authenticated Profile → Sign Out → Home → Account icon → Guest bottom sheet.
+
+**Journey G — Accessibility**
+
+Repeat drawer and bottom-sheet verification at 2× text scaling and in landscape orientation.
+
+Record screenshots or concise interaction results.
+
+If the Clerk integration environment prevents a live authenticated journey, report that limitation explicitly and provide the corresponding deterministic test evidence. Do not claim live success without running it.
+
+## 20. Scope exclusions
+
+Do not implement:
+
+- Bottom navigation bar.
+- Cart navigation.
+- Checkout navigation.
+- Payment UI.
+- Orders history.
+- Order tracking.
+- Favorites.
+- Promotional offer banners.
+- New search backend.
+- New category API endpoints.
+- New account features.
+- New legal-document content.
+- New brand logo designs.
+- New navigation packages when go_router is sufficient.
+- A second `MaterialApp`.
+- A second authentication system.
+- Any changes to frozen Laravel API contracts.
+
+Do not make unrelated UI changes.
+
+## 21. Verification commands
 
 From `frontend/app`:
 
@@ -533,77 +970,83 @@ git diff --check
 git diff --cached --check
 ```
 
-Run the legal-asset synchronization check if implemented as a separate command.
+Run additional targeted navigation, authentication, and widget tests where appropriate.
 
-If documentation-only changes do not affect the Flutter build, still run the standard phase verification to guard against regressions.
+Report exact command results.
 
-Report actual results rather than assuming success.
+## 22. Documentation updates
 
-## 18. Explicit exclusions
+Update:
 
-Do not implement:
+- `frontend/app/README.md`.
+- `frontend/app/lib/features/README.md`.
+- Navigation architecture documentation, if present.
+- Phase 17.15 completion record.
 
-- Phase 17.15 global navigation shell.
-- Shared global drawer.
-- Final shared app bar.
-- New account dashboard features.
-- New authentication flows.
-- Cart.
-- Checkout.
-- Payments.
-- Orders.
-- Order tracking.
-- Customer request history.
-- Enquiry history.
-- Push notifications.
-- Legal consent tracking.
-- Legal acceptance checkboxes.
-- New Laravel endpoints.
-- Remote CMS integration.
-- Analytics or tracking SDKs.
-- Custom license-management backend.
-- New design tokens unrelated to the existing theme.
+Document:
 
-Do not use this phase to refactor unrelated Flutter features.
+- Shared app-bar ownership.
+- Drawer hierarchy.
+- Dynamic category data source.
+- Public and protected route behavior.
+- Account-icon authentication logic.
+- Bottom-sheet behavior.
+- Successful authentication routing.
+- Logo asset usage.
+- Where to find Open Source Licenses.
+- Home cleanup.
+- Why bottom navigation is intentionally omitted for REQUEST ONLY launch.
+- Deferred commerce navigation policy.
+- Test and device verification results.
 
-## 19. Definition of Done
+Do not silently alter previously frozen decisions.
 
-Phase 17.13 is complete when:
+## 23. Definition of Done
 
-- About Us renders verified business information.
-- Privacy Policy displays the complete authoritative source text.
-- Terms & Conditions displays the complete authoritative source text.
-- Legal source/asset synchronization is verified.
-- Open Source Licenses displays real registered dependency licenses.
-- All four routes are public.
-- All four pages work offline.
-- The existing Material 3 theme is respected.
-- Large text and long-document scrolling work.
-- Back navigation works.
-- No new backend dependencies are introduced.
+Phase 17.15 passes when all of the following are true:
+
+- One shared top-navigation pattern is working.
+- Left menu opens the drawer.
+- Official SL Furnitures logo is centered.
+- Right account action responds correctly to authentication state.
+- Guest users see a themed Material 3 account bottom sheet.
+- Guest Sign In and Create Account buttons navigate correctly.
+- Authenticated users go directly to Account/Profile.
+- Successful normal authentication returns to Home.
+- Existing protected-route return-to behavior remains intact.
+- Actual catalog categories are accessible from the drawer.
+- Search is the first drawer action.
+- All active public customer destinations are discoverable.
+- Privacy Policy and Terms & Conditions appear in the lower drawer section.
+- Open Source Licenses is accessed through Account Details, not the main drawer.
+- Actual brand logo replaces temporary auth screen branding.
+- Obsolete homepage test-navigation buttons are removed.
+- Existing made-to-order request and enquiry workflows remain functional.
+- Deferred cart, checkout, payments, orders, and tracking features remain unavailable.
+- No bottom navigation bar is introduced.
+- Accessibility checks pass.
 - Automated tests pass.
-- Device checks pass or their limitations are explicitly recorded.
-- The debug APK builds.
-- Documentation is updated.
-- Former Phase 17.14 is recorded as merged.
-- Phase 17.15 remains untouched.
+- Android debug build succeeds.
+- Documentation and completion record are updated.
 
-## 20. Completion report
+## 24. Completion report
 
-Return a concise report covering:
+Return a structured report containing:
 
-1. Exact legal source files discovered.
-2. About Us content source.
-3. Files created or modified.
-4. Public routes registered.
-5. Legal asset synchronization strategy.
-6. Open Source Licenses implementation.
-7. Accessibility checks.
-8. Automated tests and counts.
-9. Device/Marionette verification.
-10. Flutter analysis and build results.
-11. Documentation updates.
-12. Known limitations.
-13. Final PASS/FAIL.
+1. Navigation architecture chosen.
+2. Files modified or created.
+3. Real logo asset used.
+4. Drawer destinations implemented.
+5. Dynamic category integration.
+6. Guest account bottom-sheet implementation.
+7. Authenticated account behavior.
+8. Auth success routing.
+9. Homepage buttons removed.
+10. Open Source Licenses entry location.
+11. Automated tests added and results.
+12. Android/Marionette verification.
+13. Accessibility findings.
+14. Outstanding limitations.
+15. Final PASS/FAIL.
 
-**Final instruction:** Complete Phase 17.13 as one consolidated informational phase. Do not proceed to Phase 17.15 until this phase has passed verification. Phase 17.14 has no separate implementation work.
+**Final instruction:** Implement only Phase 17.15. Prioritize a coherent, attractive, accessible customer navigation experience for the initial REQUEST ONLY production release. Do not add bottom navigation or prematurely activate commerce features.

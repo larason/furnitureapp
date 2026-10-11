@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sl_furnitures/core/network/api_error.dart';
@@ -8,6 +10,45 @@ import 'package:sl_furnitures/features/account/presentation/account_screen.dart'
 import 'package:sl_furnitures/theme/app_theme.dart';
 
 void main() {
+  testWidgets('centers the account actions control', (tester) async {
+    await tester.pumpWidget(_app(_StubProfileRepository()));
+    await tester.pumpAndSettle();
+
+    final center = tester.getCenter(find.byKey(const Key('account.actions')));
+    expect(center.dx, tester.getSize(find.byType(MaterialApp)).width / 2);
+  });
+
+  testWidgets('disables both profile fields while saving', (tester) async {
+    final saveCompleter = Completer<CustomerProfile>();
+    final repository = _StubProfileRepository(saveCompleter: saveCompleter);
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save profile'));
+    await tester.pump();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(0)).enabled,
+      false,
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).enabled,
+      false,
+    );
+
+    saveCompleter.complete(
+      const CustomerProfile(
+        id: 'user_01h8x9j2m4k5n6p7q8r9s0t1',
+        role: 'CUSTOMER',
+        name: 'Asha Mushi',
+        email: 'asha@example.test',
+        phone: null,
+        emailVerified: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('keeps the account actions available when the profile fails', (
     tester,
   ) async {
@@ -21,6 +62,11 @@ void main() {
       find.byKey(const Key('account.actions')),
       findsOneWidget,
       reason: 'A failed profile read must not remove the sign-out control.',
+    );
+    expect(
+      find.text('Open source licenses'),
+      findsOneWidget,
+      reason: 'Account resources must remain available when the profile fails.',
     );
   });
 
@@ -109,10 +155,15 @@ Widget _app(ProfileRepository repository) => MaterialApp(
 );
 
 class _StubProfileRepository implements ProfileRepository {
-  _StubProfileRepository({this.updateFailure, this.loadFailure});
+  _StubProfileRepository({
+    this.updateFailure,
+    this.loadFailure,
+    this.saveCompleter,
+  });
 
   final Object? updateFailure;
   final Object? loadFailure;
+  final Completer<CustomerProfile>? saveCompleter;
   int updateCalls = 0;
 
   @override
@@ -140,6 +191,7 @@ class _StubProfileRepository implements ProfileRepository {
     updateCalls++;
     final failure = updateFailure;
     if (failure != null) return Future<CustomerProfile>.error(failure);
+    if (saveCompleter != null) return saveCompleter!.future;
     return Future<CustomerProfile>.value(
       CustomerProfile(
         id: 'user_01h8x9j2m4k5n6p7q8r9s0t1',

@@ -18,6 +18,7 @@ enum DiagnosticOperation {
   authSessionRestore,
   authSessionRenewal,
   authSignOut,
+  authFlow,
   securePersistence,
   navigation,
   framework,

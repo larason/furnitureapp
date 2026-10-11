@@ -10,13 +10,20 @@ class AboutUsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InformationPageScaffold(
-    title: 'About SL Furnitures',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        Semantics(
+          header: true,
+          child: Text(
+            'About SL Furnitures',
+            style: Theme.of(context).textTheme.headlineLarge,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.space4),
         Text(
           'Furniture for the way you live.',
-          style: Theme.of(context).textTheme.headlineLarge,
+          style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: AppSpacing.space4),
         const Text(

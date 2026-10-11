@@ -47,11 +47,12 @@ class _FurnitureRequestScreenState extends State<FurnitureRequestScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _controller,
-    builder: (context, _) => Scaffold(
-      appBar: AppBar(title: const Text('Furniture request')),
-      body: SafeArea(
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => SafeArea(
+        top: false,
         child: _controller.state == FurnitureRequestSubmissionState.success
             ? _success(context)
             : _form(context),

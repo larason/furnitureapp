@@ -306,5 +306,12 @@ So the extra two zeros in fixtures.ts are intentional. If you want a displayed p
 7. app displays Configuration error on startup
 ```
 cd frontend/app
+adb devices
+adb reverse tcp:8000 tcp:8000
+flutter run -d <DEVICE_ID> --dart-define-from-file=config/local.json
+OR
 flutter run --dart-define-from-file=config/local.json
+
+for fixtures
+flutter run --dart-define-from-file=config/local-device-fixtures.json
 ```

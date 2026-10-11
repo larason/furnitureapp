@@ -1,7 +1,9 @@
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/presentation/error_presentation_mapper.dart';
+import '../../../navigation/app_routes.dart';
 import '../../../theme/app_spacing.dart';
 import '../data/customer_profile.dart';
 import '../data/profile_repository.dart';
@@ -31,53 +33,79 @@ class _AccountScreenState extends State<AccountScreen> {
   void _reload() => setState(() => _profile = widget.repository.getProfile());
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Account'),
-      // Kept outside the profile future so a failed `GET /me` never removes the
-      // Clerk-managed sign-out and security controls.
-      actions: <Widget>[
-        widget.accountActions ?? const ClerkUserButton(showName: false),
-        const SizedBox(width: AppSpacing.space4),
+  Widget build(BuildContext context) => Material(
+    color: Theme.of(context).scaffoldBackgroundColor,
+    child: Column(
+      children: <Widget>[
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.space3),
+            child:
+                widget.accountActions ?? const ClerkUserButton(showName: false),
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(AppSpacing.space4),
+            children: <Widget>[
+              FutureBuilder<CustomerProfile>(
+                future: _profile,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return FilledButton(
+                      onPressed: _reload,
+                      child: const Text('Try again'),
+                    );
+                  }
+                  final profile = snapshot.requireData;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        profile.name ?? profile.email,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: AppSpacing.space6),
+                      Text(
+                        'Email',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Text(profile.email),
+                      const SizedBox(height: AppSpacing.space4),
+                      Text(
+                        'Phone',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Text(profile.phone ?? 'Not provided'),
+                      const SizedBox(height: AppSpacing.space6),
+                      _ProfileForm(
+                        profile: profile,
+                        repository: widget.repository,
+                        onSaved: _reload,
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: AppSpacing.space6),
+              Text(
+                'Account details',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.space2),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.article_outlined),
+                title: const Text('Open source licenses'),
+                onTap: () => context.push(AppRoutes.openSourceLicenses),
+              ),
+            ],
+          ),
+        ),
       ],
-    ),
-    body: FutureBuilder<CustomerProfile>(
-      future: _profile,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(
-            child: FilledButton(
-              onPressed: _reload,
-              child: const Text('Try again'),
-            ),
-          );
-        }
-        final profile = snapshot.requireData;
-        return ListView(
-          padding: const EdgeInsets.all(AppSpacing.space4),
-          children: <Widget>[
-            Text(
-              profile.name ?? profile.email,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.space6),
-            Text('Email', style: Theme.of(context).textTheme.labelLarge),
-            Text(profile.email),
-            const SizedBox(height: AppSpacing.space4),
-            Text('Phone', style: Theme.of(context).textTheme.labelLarge),
-            Text(profile.phone ?? 'Not provided'),
-            const SizedBox(height: AppSpacing.space6),
-            _ProfileForm(
-              profile: profile,
-              repository: widget.repository,
-              onSaved: _reload,
-            ),
-          ],
-        );
-      },
     ),
   );
 }
@@ -173,6 +201,7 @@ class _ProfileFormState extends State<_ProfileForm> {
     children: <Widget>[
       TextField(
         controller: _name,
+        enabled: !_saving,
         decoration: InputDecoration(
           labelText: 'Name',
           errorText: _fieldError('name'),
@@ -181,6 +210,7 @@ class _ProfileFormState extends State<_ProfileForm> {
       const SizedBox(height: AppSpacing.space3),
       TextField(
         controller: _phone,
+        enabled: !_saving,
         decoration: InputDecoration(
           labelText: 'Phone',
           errorText: _fieldError('phone'),

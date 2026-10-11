@@ -64,20 +64,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _controller,
-    builder: (context, _) {
-      final state = _controller.state;
-      final product = _controller.product;
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(
-            product?.name ?? 'Furniture',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        body: switch (state) {
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final state = _controller.state;
+        return switch (state) {
           AsyncInitial() || AsyncLoading(previousData: null) =>
             const AppLoadingView(message: 'Loading furniture'),
           AsyncFailure(previousData: null, :final error) => _failure(error),
@@ -89,9 +82,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             error,
           ),
           _ => const SizedBox.shrink(),
-        },
-      );
-    },
+        };
+      },
+    ),
   );
 
   Widget _failure(ErrorPresentation error) {

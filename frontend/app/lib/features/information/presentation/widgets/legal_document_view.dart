@@ -24,7 +24,6 @@ class _LegalDocumentViewState extends State<LegalDocumentView> {
 
   @override
   Widget build(BuildContext context) => InformationPageScaffold(
-    title: widget.title,
     child: FutureBuilder<String>(
       future: _document,
       builder: (context, snapshot) {

@@ -152,8 +152,11 @@ whatever is uploaded. Phase 17.10 keeps its
 own equivalent because this phase must leave Furniture Requests unchanged;
 consolidating them is left to a later phase.
 
-Account, cart, checkout, payment, order, and tracking surfaces remain outside
-the implemented phases.
+The shared `navigation/` shell owns the app bar, navigation drawer, and Clerk
+state-aware account entry. Feature screens provide bodies only and must not add
+competing scaffolds or app bars. Account is implemented as the protected profile
+surface; cart, checkout, payment, order, and tracking surfaces remain absent
+from the request-only release.
 
 ## Informational (Phase 17.13)
 
@@ -166,8 +169,10 @@ enforces byte-for-byte source/asset synchronization. Open Source Licenses uses
 Flutter's `LicensePage` and registered license registry.
 
 The routes are `/about`, `/privacy-policy`, `/terms-and-conditions`, and
-`/open-source-licenses`. They are public in the central router. A final shared app
-bar, drawer, and global discoverability shell remain reserved for Phase 17.15.
+`/open-source-licenses`. They are public in the central router and render inside
+the Phase 17.15 shared shell, except Flutter's standalone `LicensePage`. The
+drawer exposes About, Privacy Policy, and Terms & Conditions; Account details
+provides the regular licenses entry.
 
 ## Module Convention
 
@@ -217,8 +222,8 @@ For a future catalog implementation:
 5. Connect the screen through the existing `AppRouter`.
 6. Add repository, state, and widget tests under matching `test/features/catalog/` paths.
 
-Catalog, categories, product detail, search, furniture requests, and enquiries
-are implemented feature families. Account is a future family. Cart, checkout,
+Catalog, categories, product detail, search, furniture requests, enquiries, and
+the protected Account profile are implemented feature families. Cart, checkout,
 payments, orders, order tracking, and favorites remain absent under request-only
 production scope.
 

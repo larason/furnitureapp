@@ -6,6 +6,7 @@ import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
+import 'core/presentation/auth_failure_presenter.dart';
 import 'features/catalog/data/catalog_repository.dart';
 import 'features/catalog/data/fixture_catalog_repository.dart';
 import 'features/categories/data/category_repository.dart';
@@ -123,7 +124,21 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       builder: (context, child) {
         final authState = widget.authAdapter?.clerkAuthState;
         if (authState == null) return child!;
-        return ClerkAuth(authState: authState, child: child!);
+        return ClerkAuth(
+          authState: authState,
+          // Clerk routes every auth failure to this stream and rethrows it when
+          // nothing is listening, so a rejected email, password or code would
+          // otherwise leave the customer staring at a spinner that never
+          // resolves into an explanation.
+          child: ClerkErrorListener(
+            handler: (context, error) => presentAuthFailure(
+              context,
+              error,
+              diagnostics: widget.diagnostics,
+            ),
+            child: child!,
+          ),
+        );
       },
     );
   }

@@ -46,9 +46,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Categories')),
-    body: ListenableBuilder(
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
       listenable: _controller,
       builder: (context, _) => switch (_controller.state) {
         AsyncInitial() || AsyncLoading(previousData: null) =>

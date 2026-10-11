@@ -54,13 +54,14 @@ class _EnquiryScreenState extends State<EnquiryScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _controller,
-    builder: (context, _) {
-      final submitted = _controller.submitted;
-      return Scaffold(
-        appBar: AppBar(title: const Text('Contact us')),
-        body: SafeArea(
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    child: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final submitted = _controller.submitted;
+        return SafeArea(
+          top: false,
           child:
               submitted != null &&
                   _controller.state == EnquirySubmissionState.success
@@ -69,9 +70,9 @@ class _EnquiryScreenState extends State<EnquiryScreen> {
                   onClose: () => _leave(context),
                 )
               : _form(context),
-        ),
-      );
-    },
+        );
+      },
+    ),
   );
 
   Widget _form(BuildContext context) {
