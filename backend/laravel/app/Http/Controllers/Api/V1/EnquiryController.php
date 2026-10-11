@@ -12,6 +12,7 @@ use App\Http\Resources\AttachmentResource;
 use App\Http\Resources\CustomerEnquirySummaryResource;
 use App\Http\Resources\EnquiryResource;
 use App\Http\Resources\OperationalEnquiryResource;
+use App\Jobs\CreateOperationalNotifications;
 use App\Models\Enquiry;
 use App\Models\User;
 use App\Services\Attachments\UploadAttachment;
@@ -22,10 +23,13 @@ use App\Services\Enquiries\CreateEnquiryCommand;
 use App\Services\Enquiries\ListOperationalEnquiries;
 use App\Support\ApiErrorCode;
 use App\Support\EnquiryIdentifier;
+use App\Support\NotificationType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class EnquiryController extends V1Controller
 {
@@ -78,6 +82,20 @@ class EnquiryController extends V1Controller
 
         if ($uploadToken !== null) {
             $headers['X-Upload-Token'] = $uploadToken;
+        }
+
+        try {
+            CreateOperationalNotifications::dispatch(
+                'enquiry',
+                (int) $enquiry->getKey(),
+                NotificationType::NEW_ENQUIRY,
+            )->afterCommit();
+        } catch (Throwable $exception) {
+            Log::warning('Enquiry notification dispatch failed after submission.', [
+                'notification_type' => NotificationType::NEW_ENQUIRY->value,
+                'source_type' => 'enquiry',
+                'exception' => $exception::class,
+            ]);
         }
 
         return (new EnquiryResource($enquiry))
