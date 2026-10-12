@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\NotificationStateChanged;
 use App\Exceptions\Api\ApiException;
 use App\Http\Requests\ListNotificationsRequest;
 use App\Http\Requests\UpdateNotificationRequest;
@@ -10,8 +11,11 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Support\ApiErrorCode;
 use App\Support\NotificationIdentifier;
+use App\Support\NotificationRealtimeChange;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class NotificationController extends V1Controller
 {
@@ -74,15 +78,23 @@ class NotificationController extends V1Controller
             throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested notification was not found.', 404);
         }
 
-        if ($request->read()) {
+        $read = $request->read();
+        $stateChanged = false;
+
+        if ($read) {
             if ($model->read_at === null) {
                 $model->read_at = now();
+                $stateChanged = true;
             }
-        } else {
+        } elseif ($model->read_at !== null) {
             $model->read_at = null;
+            $stateChanged = true;
         }
 
         $model->save();
+        if ($stateChanged) {
+            $this->broadcastReadStateChange($model);
+        }
 
         return (new NotificationResource($model))
             ->response()
@@ -97,6 +109,18 @@ class NotificationController extends V1Controller
         }
 
         return $user;
+    }
+
+    private function broadcastReadStateChange(Notification $notification): void
+    {
+        try {
+            NotificationStateChanged::dispatch($notification, NotificationRealtimeChange::ReadStateChanged);
+        } catch (Throwable $exception) {
+            Log::warning('Notification read-state broadcast dispatch failed.', [
+                'notification_id' => $notification->getKey(),
+                'exception' => $exception::class,
+            ]);
+        }
     }
 
     /** @return array<string, string> */

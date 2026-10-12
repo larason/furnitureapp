@@ -1,688 +1,674 @@
-# Phase 18.2 — Transactional Email Notifications with Laravel Mail and Resend
+# Phase 18.3 — In-App Notifications & Laravel Reverb
 
 **Project:** SL Furnitures  
 **Group:** R — Notifications  
-**Phase:** 18.2 — Email Notifications  
+**Active phase:** 18.3  
 **Backend:** Laravel 13 + MySQL  
-**Email system:** Laravel Mail + Symfony Mailer + Resend  
-**Production mode:** REQUEST ONLY  
-**Prerequisite:** Phase 18.1 — Notification Domain (implemented)  
-**Next phase:** 18.3 — In-App Notifications & Laravel Reverb
+**Realtime transport:** Laravel Reverb (WebSockets)  
+**Authentication:** Clerk JWT verified by Laravel  
+**Production mode:** REQUEST ONLY
 
----
+**Prerequisites:**
+- Phase 18.1 — Notification Domain: implemented.
+- Phase 18.2 — Resend transactional email: implemented; test email successfully sent.
+
+**Next phase:** 18.4 — Firebase Cloud Messaging Architecture.
 
 ## 1. Objective
 
-Implement reliable, queued transactional email delivery through Resend using the existing Phase 18.1 notification domain.
+Extend the existing recipient-scoped Laravel notification system with secure, real-time in-app notification updates using Laravel Reverb.
 
-Do not create a separate email notification system.
+Preserve MySQL as the authoritative notification store.
 
-The implementation must reuse the existing:
+The WebSocket layer must notify connected, authorized users that their notification state has changed. Clients must be able to reconcile against the existing frozen notification API.
 
-- Notification records.
-- Event type registry.
-- Recipient resolution.
-- Role and permission checks.
-- Event idempotency.
-- Queue processing.
-- Source/target relationships.
-- Logging conventions.
-- Frozen API contracts.
+Implement and test:
 
-The email channel should be a downstream delivery mechanism for the authoritative logical notification.
+- Laravel Reverb server integration.
+- Secure private broadcast channels.
+- Clerk-authenticated channel authorization.
+- Notification-created broadcast events.
+- Notification-read-state update signals where justified.
+- Broadcast delivery after database commit.
+- Safe, minimal WebSocket payloads.
+- Reliable reconnection and state reconciliation.
+- Failures isolated from business operations and email delivery.
+- Authenticated test-client verification.
+- Documentation and human deployment checkpoints.
 
-**Primary objective:** When an approved furniture request or enquiry is successfully submitted, eligible operational users can receive a branded, secure, informative email notification.
+Do not introduce another notification persistence system or change the frozen API.
 
-Do not implement Reverb, Firebase Cloud Messaging, Novu, SMS, or order-related notifications in this phase.
+## 2. Mandatory repository inspection
 
-## 2. Mandatory repository and contract audit
+Before editing code, read:
 
-Before modifying code, inspect:
-
-1. Root `AGENTS.md`.
-2. Phase 18.1 completion report.
-3. The entire Phase 18.1 notification implementation.
-4. Notification creation services and queued listeners/jobs.
-5. Notification recipient-resolution rules.
-6. The existing unique source/type/recipient constraint.
+1. Root `AGENTS.md`, particularly Group R and the implementation quality rules.
+2. Phase 18.1 completion documentation.
+3. Phase 18.2 completion documentation.
+4. Existing Notification model, resources, controllers, policies, and tests.
+5. Recipient resolution and authorization logic.
+6. Notification unique-index and idempotency implementation.
 7. NOT-001 and NOT-002 implementations.
-8. Existing queue configuration, workers, retry policies, and failed-job storage.
-9. Current Laravel mail configuration.
-10. Existing mailables, notification classes, and email templates, if any.
-11. `docs/api/api-contract.md §28`.
-12. `docs/api/api-resources.md §7`.
-13. `docs/api/api-conventions.md §28`.
-14. `docs/api/openapi.yaml`.
-15. `docs/domain/business-rules.md §13`.
-16. `docs/decisions.md` notification ADRs.
-17. Existing request and enquiry workflows.
-18. Current Composer dependencies and lockfile.
-
-Also review the current official documentation:
-
-- https://laravel.com/docs/13.x/mail
-- https://resend.com/docs/send-with-laravel
-- https://github.com/resend/resend-laravel
-- https://resend.com/docs/dashboard/domains/introduction
-
-Use exact compatible package APIs and actual repository conventions.
-
-### Audit deliverable
-
-Briefly identify:
-
-- Existing Laravel mail transport configuration.
-- Existing queues.
-- Existing notification dispatch points.
-- Existing recipient identity/email source.
-- Existing domain and template abstractions.
-- Existing tests.
-- Missing email-channel functionality.
-- Human configuration needed.
-
-Do not install duplicate email transports or rewrite working Phase 18.1 code.
-
-## 3. Email transport selection
-
-Use Laravel Mail with the Symfony Mailer-based Resend transport.
-
-Preferred strategy:
-
-Use the Laravel 13-supported native Resend mail driver with the official `resend/resend-php` SDK if the installed framework supports it.
-
-Inspect the installed framework and documentation before choosing dependencies.
-
-If a compatible native driver is already available, do not also install `resend/resend-laravel` unnecessarily.
-
-Use `resend/resend-laravel` only if there is a demonstrated compatibility or integration reason to prefer it.
-
-Do not install both implementations to solve the same problem.
-
-### Configuration example
-
-For Laravel's native Resend driver, verify the supported configuration and equivalent of:
-
-```php
-// config/mail.php
-
-'default' => env('MAIL_MAILER', 'log'),
-
-// Mailers
-'resend' => [
-    'transport' => 'resend',
-],
-```
-
-```php
-// config/services.php
-
-'resend' => [
-    'key' => env('RESEND_KEY'),
-],
-```
-
-The exact configuration must match the installed driver. The official separate Resend Laravel package may instead expect `RESEND_API_KEY`.
-
-Choose one canonical environment variable and document it consistently.
-
-Never assume `RESEND_KEY` and `RESEND_API_KEY` are interchangeable without explicit configuration.
-
-Do not hard-code API credentials.
-
-### Environment
-
-Support configuration for:
-
-- Resend API key.
-- Verified sender address.
-- Sender display name.
-- Optional reply-to address.
-- Chosen mail transport.
-- Queue connection.
-- Sending-enabled flag if needed for safe rollout.
-
-Add safe placeholders to `.env.example`.
-
-Keep real values out of Git.
-
-Development and testing must work without real Resend credentials.
-
-## 4. Human intervention — Resend account setup
-
-**MANDATORY OWNER CHECKPOINT**
-
-If the project has no configured, verified Resend account, notify the project owner.
-
-Provide instructions for:
-
-1. Creating or signing into https://resend.com.
-2. Selecting the correct Resend workspace.
-3. Adding the owned email sending domain.
-4. Obtaining the DNS records provided by Resend.
-5. Adding the required DNS records at the domain's DNS provider.
-6. Waiting for domain verification.
-7. Creating an API key with minimum required permissions.
-8. Selecting the production sender address.
-9. Approving the display name and reply-to address.
-10. Supplying credentials securely through environment or secret management.
-
-Do not invent a domain, sender email address, or brand contact address.
-
-Do not assume the website domain is already verified for email.
-
-Do not assume the domain DNS is managed by the same provider as the website.
-
-### Agent behavior
-
-Pause live-delivery verification until these steps are completed.
-
-Continue independently with testable mailables, templates, queue integration, and automated tests.
-
-Never request the API key in source code, screenshots, logs, or public documentation.
-
-Do not send production emails without explicit approval.
-
-## 5. Active event scope
-
-For the initial REQUEST ONLY launch, implement operational email delivery for:
-
-### Event A
-
-`NEW_MADE_TO_ORDER_REQUEST`
-
-Source:
-
-Successfully created made-to-order furniture request.
-
-Recipients:
-
-The eligible active users already resolved in Phase 18.1 through the appropriate requests-management permission.
-
-### Event B
-
-`NEW_ENQUIRY`
-
-Source:
-
-Successfully created general enquiry.
-
-Recipients:
-
-The eligible active users already resolved in Phase 18.1 through the appropriate enquiries-management permission.
-
-### Reuse recipient decisions
-
-Do not create a second recipient-selection policy for email.
-
-Do not independently query all staff email addresses and send indiscriminately.
-
-The Phase 18.1 recipient policy remains authoritative.
-
-One approved notification recipient may have an associated email delivery attempt.
-
-Do not send operational notifications to CUSTOMER accounts.
-
-Do not automatically notify every ADMIN.
-
-## 6. Customer acknowledgment emails
-
-The frozen notification event matrix does not create customer in-app notifications for successful request/enquiry submissions.
-
-Customer confirmation emails are a separate business decision.
-
-**Do not activate them without owner approval.**
-
-If the owner approves transactional acknowledgments, clarify:
-
-- Should anonymous submitters receive confirmations?
-- Should authenticated submitters receive confirmations?
-- What wording is approved?
-- Which destination email is authoritative?
-- How should mistyped or attacker-supplied email addresses be handled?
-- What rate limits and anti-abuse measures apply?
-
-Do not email full enquiry/request content to an unverified address by default.
-
-If approval is not available, implement only operational staff email notifications and document customer acknowledgments as deferred.
-
-Do not invent new V1 notification enum values to implement confirmations.
-
-## 7. Email delivery architecture
-
-Preserve the separation between:
-
-1. Business event.
-2. Logical notification.
-3. Recipient-scoped delivery attempt.
-4. Provider transport result.
-
-Suggested conceptual flow:
+8. Email delivery attempts and queued email dispatch.
+9. Existing Laravel event/listener/job architecture.
+10. Clerk JWT verification middleware and local User mapping.
+11. Laravel bootstrap/routing configuration.
+12. Existing queue configuration and workers.
+13. Existing frontend architecture and plans for the admin dashboard.
+14. `docs/api/api-contract.md §28`.
+15. `docs/api/api-resources.md §7`.
+16. `docs/api/api-conventions.md §28`.
+17. `docs/api/openapi.yaml`.
+18. `docs/domain/business-rules.md §13`.
+19. Notification-related ADRs in `docs/decisions.md`.
+
+Review the current official Laravel 13 broadcasting and Reverb documentation:
+
+- https://laravel.com/docs/13.x/broadcasting
+- https://laravel.com/docs/13.x/reverb
+
+### Inspection report
+
+Identify:
+
+- Whether Reverb is already installed.
+- Whether broadcasting is configured.
+- Whether an existing broadcaster is active.
+- How Clerk bearer authentication is integrated.
+- How a staff user's notification is persisted.
+- How email delivery is triggered.
+- Where broadcasting should be dispatched.
+- Which server processes are needed.
+- Whether the hosting environment supports WebSockets.
+
+Reuse working infrastructure.
+
+Do not run broad installation commands without inspecting their possible changes to existing files.
+
+## 3. Architectural boundary
+
+Use this flow:
 
 ```text
-REQ-001 / ENQ-001 committed
-           |
-           v
-Phase 18.1 domain event
-           |
-           v
-Logical notification persisted
-           |
-           v
-Eligible recipient identified
-           |
-           v
-Queued email delivery job
-           |
-           v
-Laravel Mail / Symfony Mailer
-           |
-           v
-Resend transport
+REQ-001 / ENQ-001
+        |
+        v
+Business transaction committed
+        |
+        v
+Phase 18.1 Notification domain
+        |
+        v
+MySQL notification persisted
+        |
+        +----> Phase 18.2 queued Resend email
+        |
+        +----> Phase 18.3 Reverb signal
+                       |
+                       v
+              Private recipient channel
+                       |
+                       v
+              Authorized web client
+                       |
+                       v
+               Fetch NOT-001
+                       |
+                       v
+               Update local UI state
 ```
 
-Do not perform synchronous email transmission inside the customer request/enquiry HTTP transaction.
+The broadcast is a signal, not the definitive notification database.
 
-The submission must remain successful even if Resend is unavailable.
+Never use a WebSocket event to create a second logical notification record.
 
-### Delivery bookkeeping
+Never make WebSocket connectivity a prerequisite for accepting a furniture request or enquiry.
 
-Inspect whether Phase 18.1 established a reusable delivery-attempt model.
+Reverb does not replace Laravel notification persistence, APIs, or authorization.
 
-If one exists, extend it.
+## 4. Supported events
 
-Otherwise, introduce only the minimal internal persistence needed to track:
+Only activate real-time notification delivery for the two approved REQUEST ONLY event types:
 
-- Logical notification reference.
-- Channel: EMAIL.
-- Recipient reference.
-- Delivery status.
-- Attempt count.
-- Last attempted timestamp.
-- Provider message ID where returned.
-- Safe error category.
-- Relevant timestamps.
+- `NEW_MADE_TO_ORDER_REQUEST`
+- `NEW_ENQUIRY`
 
-Do not expose this bookkeeping through the frozen NOT-001/NOT-002 API.
+Reuse the exact logical notification records already generated in Phase 18.1.
 
-Do not create a second logical notification record for email delivery.
+Each event must be delivered only to the eligible notification's assigned recipient.
 
-If schema changes are necessary, use new additive migrations and preserve existing notification rows.
+The existing eligibility rules remain authoritative:
 
-Do not assume development databases are disposable.
+- Active operational users authorized for request management.
+- Active operational users authorized for enquiry management.
+- ADMIN only when their actual permissions qualify them.
+- No automatic broadcasting to every ADMIN.
+- No broadcasting to CUSTOMER accounts for these operational events.
 
-## 8. Retry safety and email duplication
+Do not add new public notification types.
 
-Email delivery is an external side effect.
+Do not activate order, payment, or delivery notifications.
 
-The existing Phase 18.1 unique index prevents duplicate logical notifications, but email retries require additional safeguards.
+## 5. Laravel Reverb installation
 
-### Requirements
+Determine whether Reverb is already installed and configured.
 
-- At most one pending logical email delivery workflow per notification/channel.
-- Multiple workers must not independently claim the same pending delivery.
-- Use database-level atomic claiming or another appropriate concurrency-safe mechanism.
-- Use bounded retries.
-- Honor provider rate-limit guidance where available.
-- Retry transient failures such as connection failure, timeouts, and applicable provider/server errors.
-- Do not blindly retry permanent failures such as invalid sender configuration, rejected recipient, or missing credentials.
-- Use exponential backoff or the repository's established retry policy.
-- Record permanent failures for operational review.
-- Do not retry indefinitely.
-- Do not re-send already confirmed delivered/submitted messages simply because a queue job is replayed.
+If not, use the official, Laravel-version-compatible installation method.
 
-### Important external-delivery limitation
+Possible documented commands include:
 
-If Resend accepts an email but the worker crashes before recording the provider result, an uncertain-delivery window can remain.
+```bash
+php artisan install:broadcasting --reverb
+```
 
-Evaluate the provider's currently supported idempotency mechanisms and whether the selected Laravel transport exposes them.
+or an equivalent compatible manual installation using `laravel/reverb`.
 
-If provider-level idempotency is supported and appropriate, use a stable key derived from the logical email attempt.
+Inspect the installation command's effects before running it.
 
-If no such guarantee is available, document the duplicate-delivery limitation and choose an explicit safe retry policy.
+### Installation requirements
 
-Do not claim exactly-once email delivery based solely on a database unique index.
+- Reuse the existing Laravel application.
+- Do not create a separate WebSocket microservice.
+- Do not install Pusher's hosted service.
+- Do not introduce Ably or another broadcasting provider.
+- Do not duplicate broadcast configuration.
+- Do not overwrite the existing queue driver.
+- Do not disturb the Resend integration.
+- Keep Reverb credentials out of Git.
+- Add appropriate `.env.example` placeholders.
+- Ensure configuration works in LOCAL, STAGING, and PRODUCTION.
 
-## 9. Email templates
+Do not automatically configure horizontal scaling or Redis unless the actual deployment requires it.
 
-Create two reusable, branded transactional email templates.
+For initial small-business scale, a single managed Reverb server is sufficient if supported by the chosen hosting environment.
 
-Use Laravel Mailables, Markdown mail templates, or Blade templates consistent with the existing codebase.
+## 6. Private recipient broadcast channels
 
-### Template A — New furniture request
+Create one private channel namespace for a recipient's personal notification updates.
 
-Suggested subject:
+A conceptual channel name is:
 
-`New furniture request received — SL Furnitures`
+```text
+private-notifications.{recipientUserId}
+```
 
-Suggested content:
+The exact Laravel channel definition and Echo subscription syntax must follow Laravel's supported conventions.
 
-- SL Furnitures branding.
-- Clear notification heading.
-- Request reference.
-- Submission time.
-- Minimal operational context.
-- Link to the authorized admin request page, but only when a real safe route is established.
-- A note that the recipient must sign in to view the request details.
+Do not assume the conceptual prefix should be copied literally into every layer.
 
-### Template B — New enquiry
+### Authorization rule
 
-Suggested subject:
+A caller can subscribe only when:
 
-`New customer enquiry received — SL Furnitures`
+1. A valid Clerk session JWT is verified by Laravel.
+2. The token resolves to an active local application user.
+3. The requested channel recipient identifier matches that authenticated user.
+4. The user is eligible to access their notification stream under existing policies.
 
-Suggested content:
+Do not trust the supplied recipient ID by itself.
 
-- SL Furnitures branding.
-- Enquiry reference.
-- Submission time.
-- Minimal enquiry context.
-- Link to the authorized admin enquiry page when a real route exists.
-- Clear sign-in requirement for viewing private details.
+Never expose notification streams through public channels.
 
-### Critical routing rule
+Never allow a wildcard staff subscription to all customer notifications.
 
-The admin frontend may not yet have implemented routes for requests and enquiries.
-
-Do not invent links such as `/admin/requests/{id}` without verifying the real frontend route.
-
-If the admin frontend is not ready, provide the reference and omit the direct CTA rather than linking to a broken or insecure page.
-
-Never generate public access links that bypass Clerk and Laravel authorization.
-
-### Design language
-
-Follow SL Furnitures' established visual identity.
-
-Reuse canonical colors and typography where email-client compatibility permits.
-
-Email HTML needs its own compatibility-safe formatting, but it must not create a competing brand system.
-
-Use a simple, elegant layout rather than a complex marketing template.
-
-Provide a plain-text version as well as HTML.
-
-### Content security
-
-Avoid including:
-
-- Full customer messages.
-- Private attachments.
-- Upload tokens.
-- Customer passwords.
-- Clerk authentication data.
-- Internal staff notes.
-- Raw API responses.
-- Sensitive provider identifiers.
-- Unverified commercial promises.
-
-Treat names and product titles as untrusted and escape them correctly.
-
-## 10. Sender identity and reply behavior
-
-The production sender must belong to an approved verified domain.
-
-Use a consistent display name such as SL Furnitures only after confirmation that it matches the business's chosen sender identity.
-
-Do not hard-code `onboarding@resend.dev` or other test-only sender addresses into production code.
-
-Do not set a customer-submitted email address as the sender.
-
-For replies:
-
-- Prefer an approved business reply-to address.
-- Do not automatically expose private customer addresses in mail headers.
-- Do not turn transactional notification emails into an unrestricted reply relay.
-
-If the sender or reply-to identity is undecided, request the owner's choice before activating live delivery.
-
-## 11. Queue integration
-
-Use the existing Laravel queue infrastructure.
-
-Verify:
-
-- Queue connection.
-- Queue worker process.
-- Job class.
-- Retry attempts.
-- Timeout.
-- Backoff.
-- Failed-job logging.
-- After-commit behavior.
-- Queue isolation where useful.
-
-Mail delivery must occur asynchronously.
-
-### Transaction boundary
-
-Never send an email before the source business transaction commits.
-
-Phase 18.1's logical notification creation remains the authoritative trigger boundary.
-
-If the mail dispatch depends on notification persistence, ensure the notification record is durably committed before the mail worker processes it.
+Never give ADMIN blanket access to every user's private notification channel.
 
 ### Important
 
-Avoid dispatch chains in which a failure in email sending marks a successful furniture request as failed.
+Recipient channel access is not equivalent to permission to view the underlying request/enquiry resource.
 
-Do not use synchronous `Mail::send()` within REQ-001 or ENQ-001 controllers.
+Normal operational resource authorization must still apply.
 
-## 12. Provider error handling
+## 7. Clerk authentication for channel subscription
 
-Handle failures from:
+This project uses Clerk for identity, with Laravel verifying the session JWT.
 
-- Missing API credentials.
-- Unverified sender domain.
-- Invalid sender.
-- Invalid recipient.
-- Resend rate limiting.
-- Network failures.
-- Provider timeouts.
-- Provider temporary failures.
-- Provider rejection.
-- Exhausted retries.
+Do not introduce a separate Laravel login system or session-authentication flow.
 
-Never leak raw provider errors to public request/enquiry clients.
+Review Laravel's broadcasting authorization mechanism and ensure private-channel authorization works with the established Clerk bearer-token middleware.
 
-Use sanitized structured logging.
+### Requirements
 
-Record sufficient diagnostic information for operational troubleshooting.
+- Verify Clerk JWT server-side.
+- Resolve the existing local User.
+- Reuse role and account-status checks.
+- Reject missing, expired, invalid, or pending-security-task sessions.
+- Deny cross-user channel subscriptions.
+- Deny deactivated users.
+- Return safe authorization errors.
+- Avoid recording bearer tokens in logs.
+- Do not put JWTs into WebSocket query strings or channel names.
 
-If the provider response reports acceptance, do not automatically claim the message was delivered to the recipient's inbox.
+### Broadcasting authorization route
 
-Distinguish:
+Laravel may use `/broadcasting/auth` for private-channel authorization.
 
-- Queued.
-- Submitted/accepted by provider.
-- Delivered, when actually confirmed by supported provider events.
-- Permanently failed.
+This is infrastructure-specific and is not one of the frozen `/api/v1` business operations.
 
-Do not mark delivery on the basis of queue completion alone.
+Before enabling it:
 
-### Delivery status tracking
+- Inspect existing route topology.
+- Confirm the proper middleware.
+- Confirm the request authentication mechanism.
+- Confirm CORS and origin restrictions.
+- Confirm Clerk bearer token behavior.
+- Verify it cannot fall back to insecure or unrelated session authentication.
 
-If verified provider delivery events are not implemented in this phase, represent the strongest status actually known.
+If introducing an infrastructure authorization route creates a compatibility or deployment concern, explain the decision before proceeding.
 
-Do not create webhook endpoints outside the frozen public API without reviewing the API compatibility and security policy.
+Do not add arbitrary new notification CRUD endpoints.
 
-A future provider webhook, if required, needs authenticated signature verification, replay protection, a clearly documented non-public integration boundary, and explicit review.
+## 8. Broadcast payload design
 
-## 13. Security requirements
+Keep payloads minimal.
 
-Enforce:
+Prefer a notification-state-change signal containing only safe internal routing information such as:
 
-- Verified sender domain.
-- API key stored securely.
-- No secrets committed.
-- No unauthorized recipients.
-- No staff permission bypass.
-- No confidential enquiry bodies in email.
-- No public resource authorization bypass.
-- No token leakage.
-- No unescaped user content.
-- No open redirects.
-- No untrusted outbound URLs.
-- Rate-limit-safe handling.
-- Recipient eligibility checks as appropriate before actual send.
-- Safe processing of deactivated or permission-revoked accounts.
+- Opaque notification ID.
+- Change kind, such as created or read-state changed.
+- Optional event occurrence marker, if already available.
 
-Review the tradeoff between recipient eligibility determined at event time and eligibility at send time.
+Do not duplicate the complete notification API response if the client can retrieve it through NOT-001.
 
-Follow the Phase 18.1 policy and document changes.
+Never broadcast:
 
-Do not allow a user who loses operational permission to receive a newly dispatched private notification email merely because a job remained queued.
+- Full enquiry messages.
+- Complete made-to-order request descriptions.
+- Customer email addresses.
+- Phone numbers.
+- Private attachments.
+- Upload tokens.
+- Staff internal notes.
+- Clerk tokens.
+- Resend credentials.
+- Full user profiles.
+- Private signed URLs.
 
-## 14. Test requirements
+Do not treat the WebSocket payload as authorization to open an underlying resource.
 
-Add deterministic tests for:
+A recipient client should fetch authoritative details using the existing API.
 
-### Transport and configuration
+### Type consistency
 
-1. Laravel mail configuration loads.
-2. The chosen Resend driver is configured correctly.
-3. No duplicate mail drivers are introduced.
-4. Missing API key fails safely.
-5. Unconfigured sender prevents unsafe live sends.
-6. Development/test mailers require no Resend credentials.
+Do not invent notification machine types.
 
-### Event integration
+Use the existing CLOSED registry for persisted notifications.
 
-7. NEW_MADE_TO_ORDER_REQUEST schedules an eligible email.
-8. NEW_ENQUIRY schedules an eligible email.
-9. Invalid request creates no email.
-10. Invalid enquiry creates no email.
-11. No email is scheduled before commit.
-12. No unauthorized customer email is sent.
-13. No order or delivery email is sent.
-14. No extra logical notification is created solely for email.
+Internal broadcast event names are transport concerns and must be clearly distinguished from public notification types.
 
-### Recipient authorization
+## 9. Broadcast after successful persistence
 
-15. Active authorized STAFF receives an email.
-16. STAFF without matching permission is excluded.
-17. Inactive STAFF is excluded.
-18. ADMIN inclusion follows Phase 18.1 permissions.
-19. CUSTOMER cannot receive staff operational email.
-20. Permission revocation is honored before send.
-21. Empty eligible-recipient set does not fail the customer submission.
+Only broadcast after the logical notification record has been committed.
 
-### Templates
+The required ordering is:
 
-22. Furniture request email renders correctly.
-23. Enquiry email renders correctly.
-24. HTML is escaped safely.
-25. Plain-text alternatives exist.
-26. Missing admin frontend routes do not produce fabricated links.
-27. No private attachments or sensitive data appear in templates.
-28. Brand presentation is consistent.
+```text
+Persist logical notification
+        |
+        v
+Commit transaction
+        |
+        v
+Queue broadcast delivery
+        |
+        v
+Reverb sends live update
+```
 
-### Reliability
+A broadcast must never announce a notification that may still roll back.
 
-29. Duplicate jobs do not trigger unnecessary duplicate sends.
-30. Concurrent workers cannot independently claim the same pending attempt.
-31. Transient provider failures trigger bounded retries.
-32. Permanent failures do not retry indefinitely.
-33. Provider rate limits are handled appropriately.
-34. Provider acceptance is not confused with confirmed inbox delivery.
-35. Email delivery failure does not roll back a request.
-36. Email delivery failure does not roll back an enquiry.
-37. Uncertain-delivery limitations are documented.
+Use Laravel-supported after-commit dispatch behavior or the existing repository equivalent.
 
-### Regressions
+Do not use an immediate broadcast before transaction commit.
 
-38. NOT-001 remains compatible.
-39. NOT-002 remains compatible.
-40. Per-recipient read_at remains independent.
-41. Existing notification unique constraint remains effective.
-42. Phase 18.1 recipient policy remains authoritative.
-43. The frozen OpenAPI specification is unchanged.
+### Duplication protection
 
-Use Laravel mail fakes, queue fakes, and controlled provider simulations as appropriate.
+Phase 18.1 already uses a unique source/type/recipient constraint.
 
-Be careful that mocked queue behavior still exercises the real delivery-attempt state machine in dedicated tests.
+Preserve this guarantee.
 
-Do not claim to have verified Resend delivery with a mocked Laravel mailer.
+A replayed business event that does not create a new logical notification should not produce a misleading additional "new notification" signal.
 
-## 15. Human intervention checkpoints
+If transport-level broadcasts are occasionally duplicated, clients must tolerate repeated IDs and reconcile idempotently through the API.
 
-Notify the owner whenever a real external or business decision is needed.
+Do not introduce a second competing deduplication registry unnecessarily.
 
-### Checkpoint A — Domain verification
+## 10. Read/unread synchronization
 
-Ask the owner to configure the Resend sending domain and required DNS records.
+Preserve the frozen NOT-002 API:
 
-Wait for verified status before production delivery tests.
+```http
+PATCH /api/v1/me/notifications/{notification}
+```
 
-### Checkpoint B — Credentials
+The client sends the approved request body according to OpenAPI.
 
-Ask the owner to configure the API key through a secure local or deployment secret mechanism.
+Laravel remains authoritative for `read_at`.
 
-Do not ask them to commit the key.
+### Desired real-time behavior
 
-### Checkpoint C — Sender identity
+When a recipient marks a notification read:
 
-Ask the owner to approve:
+1. Laravel verifies recipient ownership.
+2. Laravel updates read state according to NOT-002.
+3. The database transaction commits.
+4. An optional recipient-scoped update signal is published.
+5. Other active sessions for that recipient refresh their local state.
 
-- From address.
-- Display name.
-- Reply-to behavior.
+Do not broadcast a read-state change to another user's channel.
 
-### Checkpoint D — Customer acknowledgments
+Do not conflate "read" with "handled" or "closed".
 
-Ask whether customer confirmation emails should be implemented later.
+Do not make notification read state change the status of a request or enquiry.
 
-Do not add them unless approved.
+Avoid sending duplicate read-change broadcasts when an idempotent operation produces no meaningful state change.
 
-### Checkpoint E — Live delivery testing
+## 11. Frontend integration boundary
 
-Ask for:
+The production admin dashboard frontend will be implemented in its dedicated group after Notifications.
 
-- Approved test recipient email address.
-- Permission to send actual test emails.
-- Confirmation of target environment.
+Therefore, implement the Laravel realtime infrastructure now without prematurely building the entire admin notification UI.
 
-### Checkpoint F — Production activation
+### Required in this phase
 
-Before enabling live sending in production, confirm:
+Provide a small authenticated integration test client, test harness, or reusable Echo connection proof that demonstrates:
 
-- Verified domain.
-- Correct secret configuration.
-- Queue workers running.
-- Failure monitoring.
-- Provider limits appropriate for expected volume.
-- Approved recipients.
-- No unexpected customer or order notifications.
+- Secure channel authorization.
+- Successful subscription.
+- Receipt of a notification-created signal.
+- API reconciliation using NOT-001.
+- Mark-read behavior through NOT-002.
+- Reconnection after interruption.
+- Cross-user access denial.
 
-Do not silently deploy or activate production email sending.
+This must run against real Laravel/Reverb in a controlled local or staging environment where feasible.
 
-## 16. Documentation
+### Defer to Admin Dashboard Frontend group
 
-Document:
+- Production notification bell.
+- Unread badge.
+- Notification popover.
+- Notification center/page.
+- Request/enquiry deep-link navigation.
+- Staff-specific layout integration.
+- Notification accessibility/UI polish.
+- Admin dashboard responsive behavior.
 
-- Exact transport implementation and dependency choices.
-- Why the selected Laravel Resend driver was chosen.
-- Environment variable names.
-- Local development mail behavior.
-- Sending-domain setup procedure.
-- Email templates.
-- Approved recipient policy.
-- Queue job lifecycle.
-- Retry strategy.
-- Internal delivery-attempt persistence.
-- Idempotency limitations.
-- Provider failure handling.
-- Manual setup steps.
-- Live test evidence or blockers.
-- Future Reverb/FCM boundaries.
-- Confirmed deferrals.
+Document the client integration requirements so the future Next.js + MUI admin implementation can reuse them.
 
-Do not put production API keys in the completion report.
+Do not place staff-operational notifications inside the public customer website or Flutter app.
 
-Update existing architecture documentation without rewriting the frozen notification API.
+Do not invent customer notification events just to populate a UI.
 
-## 17. Verification
+### Echo integration
 
-Run the project's existing backend checks.
+The later admin client may use Laravel Echo with Reverb's supported Pusher protocol client.
+
+If adding a reusable integration helper now, ensure it:
+
+- Authenticates against the proper Laravel channel-auth route.
+- Uses current Clerk session tokens securely.
+- Does not expose server secrets.
+- Avoids subscribing before authentication is resolved.
+- Unsubscribes on logout.
+- Cleans up listeners.
+- Refreshes credentials appropriately.
+- Does not create duplicate subscriptions.
+
+Do not introduce permanent frontend dependencies solely for a disposable smoke-test page if a standalone test harness is sufficient.
+
+## 12. Reconnection and missed events
+
+WebSockets do not provide a durable replayable inbox by themselves.
+
+The durable inbox remains MySQL, exposed through NOT-001.
+
+### Required reconciliation points
+
+Clients should refetch notifications:
+
+- After initial authentication.
+- After a successful connection.
+- After reconnection.
+- After a relevant WebSocket signal.
+- When returning to an active notification UI, where practical.
+
+Do not assume all broadcasts are delivered exactly once.
+
+Do not build an unnecessary event-replay infrastructure.
+
+Use notification IDs for client-side deduplication.
+
+Preserve server-authoritative unread counts and pagination.
+
+Never determine the global unread count merely by incrementing an in-memory counter on each WebSocket message.
+
+## 13. Authorization and privacy hardening
+
+Test cross-user access thoroughly.
+
+Required negative cases:
+
+- Anonymous user attempts a subscription.
+- CUSTOMER attempts a STAFF recipient channel.
+- STAFF A attempts STAFF B's channel.
+- STAFF attempts an unrelated customer's channel.
+- ADMIN attempts a recipient channel other than their own.
+- Expired Clerk token attempts authorization.
+- Tampered bearer token attempts authorization.
+- Deactivated user attempts authorization.
+- Invalid channel name is submitted.
+- Invalid recipient identifier is submitted.
+
+Every case must be denied safely.
+
+### Browser origin rules
+
+Configure Reverb allowed origins appropriately.
+
+Do not use wildcard production origins.
+
+Do not confuse origin filtering with user authorization.
+
+Origin checks supplement, but never replace, JWT verification and channel authorization.
+
+### Revocation behavior
+
+When a staff user's permissions or account state change, evaluate how existing long-lived subscriptions are terminated or prevented from receiving further sensitive events.
+
+Private-channel authorization at connection time alone may not immediately revoke an existing subscription.
+
+At a minimum:
+
+- Validate recipient eligibility before event emission.
+- Ensure revoked recipients are excluded from new notification delivery.
+- Document how client session expiry, disconnect, and reconnection are handled.
+- Escalate any remaining unacceptable revocation window.
+
+Do not claim immediate revocation if the implementation cannot enforce it.
+
+## 14. Queue and fault isolation
+
+Broadcasting must not break:
+
+- Furniture request submissions.
+- Enquiry submissions.
+- Phase 18.1 notification persistence.
+- Phase 18.2 Resend email delivery.
+
+### Required behavior
+
+If Reverb is offline:
+
+- The business operation remains successful.
+- The logical notification remains stored.
+- Queued email behavior remains independent.
+- The broadcast job fails or retries according to policy.
+- The recipient can still fetch the notification through NOT-001.
+- The failure is observable.
+
+Use bounded retries and suitable backoff.
+
+Avoid retry storms when Reverb is unavailable.
+
+Where supported, isolate broadcast workloads from other queues to prevent a WebSocket outage from starving email delivery.
+
+Do not introduce distributed infrastructure without a demonstrated need.
+
+## 15. Deployment and configuration
+
+Inspect existing environment configuration.
+
+Typical Reverb deployment requires:
+
+- Reverb application ID/key/secret.
+- WebSocket host.
+- Server bind address and port.
+- Public WebSocket hostname.
+- TLS termination.
+- Reverse proxy with WebSocket upgrade support.
+- Long-running Reverb process.
+- Running Laravel queue worker.
+- Process restart management.
+- Secure production origins.
+- Logs and health monitoring.
+
+Use the exact environment variables required by the installed Laravel/Reverb versions.
+
+Do not confuse the internal Reverb bind address/port with the public WSS hostname and port.
+
+Do not expose the Reverb application secret to the browser.
+
+App keys intended for client connection are different from server secrets.
+
+### Hosting checkpoint
+
+**Stop and ask the project owner** whether the chosen deployment environment supports persistent WebSocket processes before making production configuration changes.
+
+If the hosting provider cannot support Reverb, report that limitation.
+
+Do not silently replace Reverb with a paid third-party WebSocket service.
+
+Do not modify firewall rules, DNS, reverse proxy configuration, or production process managers without the owner's approval.
+
+## 16. Human intervention protocol
+
+Whenever manual input is needed:
+
+1. Explain the exact requirement.
+2. State why it cannot be completed automatically.
+3. Provide the required owner action.
+4. Explain the expected configuration/result.
+5. Explain how to verify success.
+6. Continue independent safe work where possible.
+7. Stop the blocked production step until approved.
+
+Potential checkpoints:
+
+- Hosting provider selection.
+- Public WebSocket subdomain.
+- DNS configuration.
+- HTTPS/WSS certificate setup.
+- Reverse proxy configuration.
+- Firewall/port configuration.
+- Production environment credentials.
+- Production process manager.
+- Live multi-user subscription test authorization.
+- Any frozen-contract or security-policy decision.
+
+Do not fabricate successful connectivity.
+
+Do not invent production infrastructure settings.
+
+## 17. Automated tests
+
+Add targeted tests for the following.
+
+### Persistence and broadcasting
+
+1. Persisted notification schedules the correct broadcast.
+2. REQ notification uses the existing recipient.
+3. ENQ notification uses the existing recipient.
+4. Rolled-back notification creates no broadcast.
+5. Duplicate event replay does not create a second logical notification.
+6. Failed broadcast does not remove a notification.
+7. Failed broadcast does not stop email delivery.
+8. Failed broadcast does not roll back request/enquiry creation.
+
+### Channel authorization
+
+9. Authenticated recipient can subscribe to their own channel.
+10. Anonymous subscription fails.
+11. Cross-user subscription fails.
+12. CUSTOMER cannot subscribe to operational STAFF channels.
+13. STAFF cannot subscribe to another recipient's private stream.
+14. ADMIN cannot access arbitrary personal channels.
+15. Expired tokens fail.
+16. Inactive accounts fail.
+17. Channel names are properly validated.
+
+### Payload security
+
+18. Broadcast payload contains only approved fields.
+19. No Clerk token is exposed.
+20. No recipient email is exposed.
+21. No full request/enquiry body is exposed.
+22. No private attachments are exposed.
+23. No staff internal notes are exposed.
+24. No raw provider credentials appear.
+
+### Read-state synchronization
+
+25. NOT-002 marks only the authenticated recipient's notification.
+26. Read-state change signals go to the correct channel.
+27. One STAFF member's read action does not alter another's read state.
+28. No duplicate signal is emitted for unchanged state where appropriate.
+29. NOT-001 remains authoritative after reconciliation.
+
+### Integration behavior
+
+30. Authorized subscriber receives a real broadcast.
+31. Unauthorized subscriber cannot receive a private-channel signal.
+32. A disconnected client can recover missed notifications through NOT-001.
+33. Multiple client sessions for the same recipient reconcile.
+34. Logout cleans up subscriptions in the test client.
+35. Reconnect restores notification state.
+36. Resend regression tests still pass.
+37. Deferred order/payment/delivery events are not activated.
+
+Use Laravel's supported broadcasting test fakes for deterministic tests.
+
+A mocked broadcast assertion does not count as a successful real WebSocket integration test.
+
+## 18. Integration smoke test
+
+When local environment permits, run an end-to-end controlled test:
+
+1. Start Laravel.
+2. Start queue worker.
+3. Start Reverb.
+4. Authenticate as an eligible STAFF user through the existing Clerk/Laravel integration.
+5. Subscribe to the user's private notification channel.
+6. Submit a valid test made-to-order request.
+7. Confirm MySQL creates exactly one recipient notification.
+8. Confirm the authorized subscriber receives the live signal.
+9. Fetch NOT-001 and confirm the notification is returned.
+10. Mark it read through NOT-002.
+11. Confirm the updated server read state.
+12. Disconnect and reconnect.
+13. Confirm reconciliation through NOT-001.
+14. Attempt to subscribe as a different user and verify denial.
+15. Confirm Resend delivery behavior remains unaffected.
+
+Repeat the equivalent event test for a general enquiry.
+
+Use controlled test data only.
+
+If real Clerk accounts or a live Resend email are required to execute any smoke test, obtain explicit approval before using them.
+
+## 19. Verification commands
+
+From the Laravel backend directory, run the existing project's quality checks.
 
 At minimum:
 
@@ -696,85 +682,108 @@ git diff --check
 git diff --cached --check
 ```
 
-Run targeted email, notification, request, and enquiry regression tests.
+Run targeted Reverb, channel-auth, notification, and email regression tests.
 
-If migrations are added, test them only against approved disposable databases.
+Use `php artisan reverb:start` for a controlled local integration test only after correct configuration.
 
-Follow the root AGENTS.md database safety guard.
+Use the existing queue worker to process test broadcast events.
 
-Confirm:
+Do not add uncontrolled long-running background processes to CI.
 
-- No new public API endpoints.
-- No notification enum changes.
-- No role/permission regressions.
-- No accidental live email sends during automated tests.
-- No secrets introduced into version control.
+If broadcast configuration relies on specific PHP extensions, diagnose and document missing dependencies.
 
-Report actual pass/fail results.
+Do not run destructive database commands outside the root AGENTS.md guard.
 
-## 18. Explicit exclusions
+## 20. Documentation
+
+Create the Phase 18.3 completion record using repository conventions.
+
+Include:
+
+- Existing infrastructure audit.
+- Reverb dependency/configuration.
+- Private channel names.
+- Clerk authorization integration.
+- Broadcast event names.
+- Payload schema.
+- Commit and dispatch ordering.
+- Reconnect/reconciliation behavior.
+- Recipient revocation considerations.
+- Queue and retry strategy.
+- Local setup commands.
+- Production hosting requirements.
+- Environment variable descriptions.
+- Exact integration-test results.
+- Known limitations.
+- Admin frontend integration guidance.
+- Human intervention needed before production.
+
+Document why WebSocket signals are not authoritative notification records.
+
+Do not rewrite the frozen public API to describe transport-internal details.
+
+## 21. Explicit exclusions
 
 Do not implement:
 
-- Laravel Reverb.
-- WebSocket channels.
 - Firebase Cloud Messaging.
-- Mobile device-token registration.
-- Novu.
+- Push-token registration.
+- Android notification permissions.
 - SMS.
+- Novu.
 - Marketing campaigns.
-- Newsletters.
-- Promotional email.
-- Order notifications.
-- Payment notifications.
-- Delivery notifications.
-- Customer request-status notification types.
-- Customer acknowledgment emails without approval.
-- New public notification API endpoints.
-- Admin dashboard UI.
-- New request/enquiry lifecycle actions.
-- A custom email-provider HTTP client.
-- A second notification persistence system.
+- Production admin dashboard UI.
+- A new notification database.
+- New public notification endpoints.
+- Notification preferences API.
+- New notification types.
+- Customer request-status notifications.
+- Order, payment, or delivery notifications.
+- Paid third-party WebSocket services.
+- Unnecessary Redis clustering.
+- Complex event replay or CQRS.
 
-## 19. Definition of Done
+Do not refactor unrelated business logic.
 
-Phase 18.2 is complete when:
+## 22. Definition of Done
 
-- Resend integrates through the selected Laravel Mail/Symfony Mailer transport.
-- Existing Phase 18.1 notifications trigger appropriate email workflows.
-- Eligible recipients are taken from the authoritative permission-based resolution.
-- Branded operational email templates exist.
-- HTML and plain-text versions render.
-- Mail is sent asynchronously.
-- Sending failures cannot reverse successful business transactions.
-- Bounded retry behavior is implemented and tested.
-- Duplicate logical notifications do not automatically produce duplicate email workflows.
-- Email delivery status is reported accurately.
-- Provider credentials and sender configuration are secured.
-- No frozen API changes are introduced.
-- REQUEST ONLY scope is preserved.
+Phase 18.3 is complete when:
+
+- Reverb is correctly configured for the Laravel application.
+- Recipient-scoped private channels exist.
+- Subscription authorization reuses Clerk-authenticated local User identity.
+- Cross-user subscriptions are denied.
+- Approved persisted notifications generate post-commit broadcast signals.
+- Signal payloads do not expose private business information.
+- NOT-001 remains the authoritative inbox.
+- NOT-002 remains the authoritative read-state mutation.
+- Multi-session and reconnect reconciliation is demonstrated.
+- Reverb failures do not break business submissions.
+- Email notifications remain functional.
+- No new public API behavior is introduced.
+- No deferred commerce notifications are activated.
 - Automated tests pass.
-- Live delivery has been verified where authorized and configured, or clearly recorded as an external setup blocker.
-- Documentation and the phase completion report are updated.
+- A real WebSocket smoke test passes where supported.
+- Production hosting blockers are explicitly documented.
+- Phase documentation is complete.
 
-## 20. Completion report
+## 23. Completion report
 
 Return:
 
 1. PASS, PARTIAL, or FAIL.
-2. Existing mail infrastructure discovered.
-3. Transport package selected and reason.
-4. Files added/modified.
-5. Email templates implemented.
-6. Sender configuration.
-7. Recipient eligibility behavior.
-8. Delivery-attempt persistence.
-9. Queue/retry/idempotency behavior.
-10. Security review.
-11. Tests added and results.
-12. Real Resend delivery evidence, if available.
-13. Human actions still required.
-14. Known limitations.
-15. Phase 18.3 readiness.
+2. Installed/reused Reverb dependencies.
+3. Files modified and created.
+4. Private channel structure.
+5. Clerk channel-auth mechanism.
+6. Broadcast events and payloads.
+7. Database/event dispatch behavior.
+8. Queue and retry results.
+9. Security and authorization tests.
+10. Real WebSocket smoke test evidence.
+11. Resend regression results.
+12. Human configuration still required.
+13. Known limitations.
+14. Readiness for Phase 18.4.
 
-**Final instruction:** Implement only Phase 18.2. Use Laravel Mail, Symfony Mailer, and Resend without duplicating the notification domain. Request human intervention for account, DNS, credentials, and live delivery activation. Do not proceed to Phase 18.3 without the project owner's next instruction.
+**Final instruction:** Complete only Phase 18.3. Preserve the recipient-scoped notification and Resend implementations from Phases 18.1 and 18.2. Do not build the admin dashboard UI or implement FCM. If real hosting, credentials, or owner approval is required, notify the project owner before proceeding with the affected step.

@@ -37,6 +37,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: null,
     )
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', [
+        'middleware' => [
+            HandleCors::class,
+            AddSecurityHeaders::class,
+            'clerk.auth',
+        ],
+    ])
     ->withCommands([__DIR__.'/../app/Console/Commands'])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(null);
@@ -85,7 +92,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(fn (Throwable $e, Request $request) => app(ApiExceptionRenderer::class)->render($e, $request));
         $exceptions->respond(function ($response, Throwable $_, Request $request) {
-            if (! $request->is('api/*')) {
+            if (! $request->is('api/*') && ! $request->is('broadcasting/auth')) {
                 return $response;
             }
 

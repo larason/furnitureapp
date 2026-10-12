@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\NotificationStateChanged;
 use App\Jobs\CreateOperationalNotifications;
 use App\Jobs\SendOperationalNotificationEmail;
 use App\Mail\NewEnquiryNotification;
@@ -14,9 +15,12 @@ use App\Models\User;
 use App\Support\EmailDeliveryStatus;
 use App\Support\EnquiryIdentifier;
 use App\Support\FurnitureRequestIdentifier;
+use App\Support\NotificationIdentifier;
+use App\Support\NotificationRealtimeChange;
 use App\Support\NotificationType;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Resend\Exceptions\ErrorException as ResendErrorException;
@@ -285,6 +289,74 @@ final class OperationalNotificationEmailTest extends TestCase
         Queue::assertPushed(SendOperationalNotificationEmail::class, 1);
         $this->assertDatabaseCount('notifications', 1);
         $this->assertSame($recipient->id, Notification::query()->value('recipient_user_id'));
+    }
+
+    public function test_logical_notification_broadcasts_a_minimal_created_signal_to_its_recipient(): void
+    {
+        Event::fake([NotificationStateChanged::class]);
+        $recipient = User::factory()->staff()->create();
+        $request = FurnitureRequest::factory()->create();
+
+        (new CreateOperationalNotifications(
+            'furniture_request',
+            $request->id,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+        ))->handle();
+
+        $notification = Notification::query()->sole();
+        Event::assertDispatched(
+            NotificationStateChanged::class,
+            function (NotificationStateChanged $event) use ($notification, $recipient): bool {
+                return $event->broadcastOn()->name === 'private-notifications.'.$recipient->id
+                    && $event->broadcastWith() === [
+                        'notification_id' => NotificationIdentifier::encodeId($notification->id),
+                        'change' => NotificationRealtimeChange::Created->value,
+                    ];
+            },
+        );
+    }
+
+    public function test_enquiry_notification_broadcasts_a_minimal_created_signal_to_its_recipient(): void
+    {
+        Event::fake([NotificationStateChanged::class]);
+        $recipient = User::factory()->staff()->create();
+        $enquiry = Enquiry::factory()->general()->create();
+
+        (new CreateOperationalNotifications(
+            'enquiry',
+            $enquiry->id,
+            NotificationType::NEW_ENQUIRY,
+        ))->handle();
+
+        $notification = Notification::query()->sole();
+        Event::assertDispatched(
+            NotificationStateChanged::class,
+            function (NotificationStateChanged $event) use ($notification, $recipient): bool {
+                return $event->broadcastOn()->name === 'private-notifications.'.$recipient->id
+                    && $event->broadcastWith() === [
+                        'notification_id' => NotificationIdentifier::encodeId($notification->id),
+                        'change' => NotificationRealtimeChange::Created->value,
+                    ];
+            },
+        );
+    }
+
+    public function test_broadcast_failure_does_not_remove_the_persisted_notification(): void
+    {
+        Mail::fake();
+        config(['broadcasting.default' => 'unavailable-reverb']);
+        $recipient = User::factory()->staff()->create();
+        $request = FurnitureRequest::factory()->create();
+
+        (new CreateOperationalNotifications(
+            'furniture_request',
+            $request->id,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+        ))->handle();
+
+        $this->assertDatabaseCount('notifications', 1);
+        $this->assertSame($recipient->id, Notification::query()->value('recipient_user_id'));
+        Mail::assertSent(NewFurnitureRequestNotification::class);
     }
 
     private function createNotification(User $recipient, NotificationType $type, string $sourceType, int $sourceId): Notification

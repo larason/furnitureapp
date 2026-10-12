@@ -11,4 +11,7 @@ return [
         'max_attempts' => (int) env('NOTIFICATION_EMAIL_MAX_ATTEMPTS', 3),
         'stale_after_minutes' => (int) env('NOTIFICATION_EMAIL_STALE_AFTER_MINUTES', 15),
     ],
+    'realtime' => [
+        'queue' => env('NOTIFICATION_BROADCAST_QUEUE', 'notifications-broadcast'),
+    ],
 ];

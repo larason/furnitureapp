@@ -2,12 +2,14 @@
 
 namespace App\Jobs;
 
+use App\Events\NotificationStateChanged;
 use App\Models\Enquiry;
 use App\Models\FurnitureRequest;
 use App\Models\Notification;
 use App\Models\User;
 use App\Support\EnquiryIdentifier;
 use App\Support\FurnitureRequestIdentifier;
+use App\Support\NotificationRealtimeChange;
 use App\Support\NotificationType;
 use App\Support\PermissionName;
 use App\Support\RoleName;
@@ -82,6 +84,16 @@ final class CreateOperationalNotifications implements ShouldQueue
                     ->firstOrFail();
 
                 SendOperationalNotificationEmail::dispatch((int) $notification->getKey())->afterCommit();
+
+                try {
+                    NotificationStateChanged::dispatch($notification, NotificationRealtimeChange::Created);
+                } catch (Throwable $exception) {
+                    Log::warning('Operational notification broadcast dispatch failed.', [
+                        'notification_type' => $this->type->value,
+                        'source_type' => $this->sourceType,
+                        'exception' => $exception::class,
+                    ]);
+                }
             } catch (Throwable $exception) {
                 Log::warning('Operational notification creation failed.', [
                     'notification_type' => $this->type->value,

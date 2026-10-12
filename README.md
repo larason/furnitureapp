@@ -315,3 +315,11 @@ flutter run --dart-define-from-file=config/local.json
 for fixtures
 flutter run --dart-define-from-file=config/local-device-fixtures.json
 ```
+
+8. reverb tests
+
+```
+php -r 'echo bin2hex(random_bytes(16)), PHP_EOL;' # generate keys 3 times for app_id, app_key, app_secret
+php artisan reverb:start --debug
+php artisan queue:work --queue=notifications-broadcast --tries=3
+```

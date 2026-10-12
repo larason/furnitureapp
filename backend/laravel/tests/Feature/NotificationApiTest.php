@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Events\NotificationStateChanged;
 use App\Models\Notification;
 use App\Models\User;
 use App\Support\NotificationIdentifier;
+use App\Support\NotificationRealtimeChange;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\AuthenticatesApiUser;
 use Tests\TestCase;
 
@@ -75,6 +78,7 @@ final class NotificationApiTest extends TestCase
 
     public function test_repeated_read_request_preserves_the_first_read_timestamp(): void
     {
+        Event::fake([NotificationStateChanged::class]);
         $customer = User::factory()->customer()->create(['clerk_user_id' => 'notification_read_timestamp']);
         $firstReadAt = now()->subHour()->startOfSecond();
         $notification = Notification::factory()->forRecipient($customer)->create(['read_at' => $firstReadAt]);
@@ -86,6 +90,29 @@ final class NotificationApiTest extends TestCase
         $this->assertSame(
             $firstReadAt->toISOString(),
             $notification->fresh()->read_at?->toISOString(),
+        );
+        Event::assertNotDispatched(NotificationStateChanged::class);
+    }
+
+    public function test_read_state_change_broadcasts_a_recipient_scoped_signal(): void
+    {
+        Event::fake([NotificationStateChanged::class]);
+        $customer = User::factory()->customer()->create(['clerk_user_id' => 'notification_realtime_read']);
+        $notification = Notification::factory()->forRecipient($customer)->create();
+
+        $this->withHeaders($this->authenticateAs($customer))
+            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()), ['read' => true])
+            ->assertOk();
+
+        Event::assertDispatched(
+            NotificationStateChanged::class,
+            function (NotificationStateChanged $event) use ($customer, $notification): bool {
+                return $event->broadcastOn()->name === 'private-notifications.'.$customer->id
+                    && $event->broadcastWith() === [
+                        'notification_id' => NotificationIdentifier::encodeId((int) $notification->getKey()),
+                        'change' => NotificationRealtimeChange::ReadStateChanged->value,
+                    ];
+            },
         );
     }
 }
