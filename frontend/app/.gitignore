@@ -48,3 +48,6 @@ app.*.map.json
 # are shared; real --dart-define-from-file values stay on the developer machine.
 /config/*.json
 !/config/*.example.json
+
+# Android build reports
+/android/build/

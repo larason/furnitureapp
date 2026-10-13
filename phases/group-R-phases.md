@@ -1,789 +1,947 @@
-# Phase 18.3 — In-App Notifications & Laravel Reverb
+# Phase 18.4 — Firebase Cloud Messaging (FCM)
 
 **Project:** SL Furnitures  
 **Group:** R — Notifications  
-**Active phase:** 18.3  
-**Backend:** Laravel 13 + MySQL  
-**Realtime transport:** Laravel Reverb (WebSockets)  
-**Authentication:** Clerk JWT verified by Laravel  
-**Production mode:** REQUEST ONLY
+**Phase:** 18.4 — Push Notification Architecture & FCM Integration  
+**Backend:** Laravel + MySQL  
+**Mobile:** Flutter + Android Material 3  
+**Authentication:** Clerk  
+**Push provider:** Firebase Cloud Messaging (FCM HTTP v1)  
+**Deployment:** Future Coolify VPS  
+**Initial production scope:** REQUEST ONLY
 
-**Prerequisites:**
-- Phase 18.1 — Notification Domain: implemented.
-- Phase 18.2 — Resend transactional email: implemented; test email successfully sent.
+## 1. Current project status
 
-**Next phase:** 18.4 — Firebase Cloud Messaging Architecture.
+The following phases are complete:
 
-## 1. Objective
+- 18.1 — Notification Domain.
+- 18.2 — Email Notifications using Laravel Mail + Resend.
+- 18.3 — In-App Notifications using MySQL + Laravel Reverb.
 
-Extend the existing recipient-scoped Laravel notification system with secure, real-time in-app notification updates using Laravel Reverb.
+Phase 18.3 passed its real Clerk-authenticated local WebSocket smoke test.
 
-Preserve MySQL as the authoritative notification store.
+The existing notification architecture has:
 
-The WebSocket layer must notify connected, authorized users that their notification state has changed. Clients must be able to reconcile against the existing frozen notification API.
+- Recipient-scoped logical notification records.
+- Server-authoritative creation and read state.
+- Closed notification type registry.
+- Permission-based operational recipients.
+- Post-commit queue dispatch.
+- Source/type/recipient idempotency.
+- Operational email delivery.
+- Private Reverb broadcast channels.
+- Independent `notifications-broadcast` queue.
+- Frozen NOT-001 and NOT-002 APIs.
 
-Implement and test:
+**Firebase preparation completed by owner:**
 
-- Laravel Reverb server integration.
-- Secure private broadcast channels.
-- Clerk-authenticated channel authorization.
-- Notification-created broadcast events.
-- Notification-read-state update signals where justified.
-- Broadcast delivery after database commit.
-- Safe, minimal WebSocket payloads.
-- Reliable reconnection and state reconciliation.
-- Failures isolated from business operations and email delivery.
-- Authenticated test-client verification.
-- Documentation and human deployment checkpoints.
+- Firebase project created through Firebase Console.
+- Firebase CLI installed on development machine.
 
-Do not introduce another notification persistence system or change the frozen API.
+Do not recreate the Firebase project or replace the working notification architecture.
 
-## 2. Mandatory repository inspection
+## 2. Objective
 
-Before editing code, read:
+Implement a secure, maintainable FCM foundation for future Android customer notifications while preserving the frozen API and REQUEST ONLY production restrictions.
 
-1. Root `AGENTS.md`, particularly Group R and the implementation quality rules.
-2. Phase 18.1 completion documentation.
-3. Phase 18.2 completion documentation.
-4. Existing Notification model, resources, controllers, policies, and tests.
-5. Recipient resolution and authorization logic.
-6. Notification unique-index and idempotency implementation.
-7. NOT-001 and NOT-002 implementations.
-8. Email delivery attempts and queued email dispatch.
-9. Existing Laravel event/listener/job architecture.
-10. Clerk JWT verification middleware and local User mapping.
-11. Laravel bootstrap/routing configuration.
-12. Existing queue configuration and workers.
-13. Existing frontend architecture and plans for the admin dashboard.
-14. `docs/api/api-contract.md §28`.
-15. `docs/api/api-resources.md §7`.
-16. `docs/api/api-conventions.md §28`.
-17. `docs/api/openapi.yaml`.
-18. `docs/domain/business-rules.md §13`.
-19. Notification-related ADRs in `docs/decisions.md`.
+The phase should establish:
 
-Review the current official Laravel 13 broadcasting and Reverb documentation:
+1. Firebase configuration for the existing Flutter Android application.
+2. Firebase Messaging SDK integration.
+3. Android notification permission handling.
+4. Device token acquisition and refresh handling.
+5. Authentication-bound device-registration architecture.
+6. A secure Laravel FCM HTTP v1 sender.
+7. OAuth 2.0 service-account authentication.
+8. Queued delivery with bounded retries.
+9. Secure handling of invalid/stale tokens.
+10. Foreground/background/terminated-state message handling.
+11. Logout and account-switch cleanup.
+12. Automated tests.
+13. A controlled local/device delivery test where authorized.
+14. Documentation for future activation of approved notification types.
 
-- https://laravel.com/docs/13.x/broadcasting
-- https://laravel.com/docs/13.x/reverb
+**Critical scope restriction:** The infrastructure may be completed now, but production business-triggered customer push delivery must remain disabled until a qualifying customer notification event is explicitly approved and available.
 
-### Inspection report
+The existing staff request/enquiry notification types are not eligible for delivery to the customer Flutter app.
 
-Identify:
+## 3. Mandatory audit
 
-- Whether Reverb is already installed.
-- Whether broadcasting is configured.
-- Whether an existing broadcaster is active.
-- How Clerk bearer authentication is integrated.
-- How a staff user's notification is persisted.
-- How email delivery is triggered.
-- Where broadcasting should be dispatched.
-- Which server processes are needed.
-- Whether the hosting environment supports WebSockets.
+Before modifying code, inspect:
 
-Reuse working infrastructure.
+- Root `AGENTS.md`.
+- Phase 18.1 completion record.
+- Phase 18.2 completion record.
+- Phase 18.3 completion record.
+- Existing Laravel Notification model.
+- Existing delivery attempt tracking.
+- Existing mail/realtime notification jobs.
+- Existing queue and retry infrastructure.
+- Existing Clerk authentication middleware.
+- Existing user model and role policies.
+- Existing Flutter app architecture.
+- Existing Flutter Clerk authentication adapter.
+- Existing application lifecycle/state management.
+- Existing Flutter dependencies and Android configuration.
+- Android `applicationId`, build variants, and flavors.
+- Existing Firebase configuration, if any.
+- Frozen API notification documentation.
+- The current version of `docs/api/openapi.yaml`.
+- Existing project Firebase and environment notes.
 
-Do not run broad installation commands without inspecting their possible changes to existing files.
+Check actual Android application identity rather than assuming a package name.
 
-## 3. Architectural boundary
+Inspect the official documentation:
 
-Use this flow:
+https://firebase.google.com/docs/cloud-messaging/flutter/client
 
-```text
-REQ-001 / ENQ-001
-        |
-        v
-Business transaction committed
-        |
-        v
-Phase 18.1 Notification domain
-        |
-        v
-MySQL notification persisted
-        |
-        +----> Phase 18.2 queued Resend email
-        |
-        +----> Phase 18.3 Reverb signal
-                       |
-                       v
-              Private recipient channel
-                       |
-                       v
-              Authorized web client
-                       |
-                       v
-               Fetch NOT-001
-                       |
-                       v
-               Update local UI state
-```
+https://firebase.google.com/docs/cloud-messaging/flutter/receive
 
-The broadcast is a signal, not the definitive notification database.
+https://firebase.google.com/docs/cloud-messaging/send/v1-api
 
-Never use a WebSocket event to create a second logical notification record.
+https://firebase.google.com/docs/cloud-messaging/manage-tokens
 
-Never make WebSocket connectivity a prerequisite for accepting a furniture request or enquiry.
+https://firebase.google.com/docs/flutter/setup
 
-Reverb does not replace Laravel notification persistence, APIs, or authorization.
+Use maintained, compatible versions of official FlutterFire packages.
 
-## 4. Supported events
+### Audit output
 
-Only activate real-time notification delivery for the two approved REQUEST ONLY event types:
+Report:
+
+- Existing Firebase project linkage.
+- Actual Android package/application ID.
+- Existing Firebase packages.
+- Whether `firebase_options.dart` exists.
+- Current Android SDK requirements.
+- Existing token storage.
+- Existing authenticated API capabilities.
+- Any frozen API gaps.
+- Human configuration required.
+
+Do not invent configuration values.
+
+## 4. Approved notification scope
+
+The active REQUEST ONLY notification types are:
 
 - `NEW_MADE_TO_ORDER_REQUEST`
 - `NEW_ENQUIRY`
 
-Reuse the exact logical notification records already generated in Phase 18.1.
+These notifications are intended for authorized operational STAFF/ADMIN recipients.
 
-Each event must be delivered only to the eligible notification's assigned recipient.
+The existing Flutter Android app is CUSTOMER-facing.
 
-The existing eligibility rules remain authoritative:
+Therefore:
 
-- Active operational users authorized for request management.
-- Active operational users authorized for enquiry management.
-- ADMIN only when their actual permissions qualify them.
-- No automatic broadcasting to every ADMIN.
-- No broadcasting to CUSTOMER accounts for these operational events.
+**Do not send these operational notifications to the customer Flutter app.**
 
-Do not add new public notification types.
+Do not invent customer push types such as:
 
-Do not activate order, payment, or delivery notifications.
+- `REQUEST_SUBMITTED`
+- `REQUEST_STATUS_UPDATED`
+- `ENQUIRY_RECEIVED`
+- `ORDER_PAID`
+- `ORDER_SHIPPED`
+- `NEW_PROMOTION`
 
-## 5. Laravel Reverb installation
+Do not activate frozen order/payment/delivery event producers.
 
-Determine whether Reverb is already installed and configured.
+Do not create new types without a formal frozen-contract decision.
 
-If not, use the official, Laravel-version-compatible installation method.
+### Expected Phase 18.4 outcome
 
-Possible documented commands include:
+FCM registration, receipt, secure transport, and delivery architecture are prepared and tested.
+
+Automatic production push fan-out can remain dormant until approved customer events exist.
+
+An explicitly authorized, development-only diagnostic message may be used for transport testing, but it must not be persisted as a new public notification type or exposed through the normal notification feed.
+
+## 5. Firebase project setup
+
+The owner has already created a Firebase project.
+
+Do not create another.
+
+Inspect whether the correct Android application is registered in this project.
+
+If absent, notify the owner and use the existing Flutter application ID to register it with the approved project.
+
+Do not rename the Android application ID or change release signing identities merely to simplify Firebase setup.
+
+### FlutterFire CLI
+
+Check:
 
 ```bash
-php artisan install:broadcasting --reverb
+firebase --version
+flutter --version
+dart --version
+flutterfire --version
 ```
 
-or an equivalent compatible manual installation using `laravel/reverb`.
+If FlutterFire CLI is missing, explain that it is distinct from Firebase CLI.
 
-Inspect the installation command's effects before running it.
+Use the official installation workflow:
 
-### Installation requirements
-
-- Reuse the existing Laravel application.
-- Do not create a separate WebSocket microservice.
-- Do not install Pusher's hosted service.
-- Do not introduce Ably or another broadcasting provider.
-- Do not duplicate broadcast configuration.
-- Do not overwrite the existing queue driver.
-- Do not disturb the Resend integration.
-- Keep Reverb credentials out of Git.
-- Add appropriate `.env.example` placeholders.
-- Ensure configuration works in LOCAL, STAGING, and PRODUCTION.
-
-Do not automatically configure horizontal scaling or Redis unless the actual deployment requires it.
-
-For initial small-business scale, a single managed Reverb server is sufficient if supported by the chosen hosting environment.
-
-## 6. Private recipient broadcast channels
-
-Create one private channel namespace for a recipient's personal notification updates.
-
-A conceptual channel name is:
-
-```text
-private-notifications.{recipientUserId}
+```bash
+dart pub global activate flutterfire_cli
 ```
 
-The exact Laravel channel definition and Echo subscription syntax must follow Laravel's supported conventions.
+Then configure only the approved Android target using the supported FlutterFire configuration command.
 
-Do not assume the conceptual prefix should be copied literally into every layer.
+For example:
 
-### Authorization rule
+```bash
+flutterfire configure
+```
 
-A caller can subscribe only when:
+Use the actual selected Firebase project and Android application.
 
-1. A valid Clerk session JWT is verified by Laravel.
-2. The token resolves to an active local application user.
-3. The requested channel recipient identifier matches that authenticated user.
-4. The user is eligible to access their notification stream under existing policies.
+Do not configure iOS, web push, or desktop platforms unless the current phase requires them.
 
-Do not trust the supplied recipient ID by itself.
+### Configuration
 
-Never expose notification streams through public channels.
+Prefer the generated FlutterFire options and standard Android Firebase integration.
 
-Never allow a wildcard staff subscription to all customer notifications.
+Confirm:
 
-Never give ADMIN blanket access to every user's private notification channel.
+- Correct Firebase project ID.
+- Correct Android application ID.
+- Correct sender/project number.
+- Correct generated Firebase options.
+- Correct debug/release build configuration.
+- Correct Firebase initialization timing.
 
-### Important
+Do not manually fabricate Firebase configuration values.
 
-Recipient channel access is not equivalent to permission to view the underlying request/enquiry resource.
+Client-side Firebase configuration is not a server service-account credential. Treat provider secrets and private keys separately from ordinary Firebase client configuration.
 
-Normal operational resource authorization must still apply.
+Do not commit private server credentials.
 
-## 7. Clerk authentication for channel subscription
+## 6. Flutter dependency integration
 
-This project uses Clerk for identity, with Laravel verifying the session JWT.
+Use maintained official packages:
 
-Do not introduce a separate Laravel login system or session-authentication flow.
+- `firebase_core`
+- `firebase_messaging`
 
-Review Laravel's broadcasting authorization mechanism and ensure private-channel authorization works with the established Clerk bearer-token middleware.
+Install only if not already present.
+
+Do not add Firebase Authentication.
+
+Clerk remains the only application authentication authority.
+
+Do not introduce Firestore, Firebase Realtime Database, or Firebase Functions for notification storage.
+
+MySQL remains the source of truth.
+
+### Initialization
+
+Initialize Firebase at the appropriate application startup boundary.
+
+Use the generated Firebase configuration.
+
+Ensure startup failures are handled safely.
+
+Firebase initialization failures must not crash unrelated public catalog behavior unnecessarily.
+
+Keep Flutter implementation aligned with the application's existing dependency injection, repository, and state-management architecture.
+
+Do not create a second global state system solely for FCM.
+
+## 7. Android notification permissions
+
+Support Android notification permissions correctly.
+
+For Android 13 and newer, handle runtime notification permission requests.
+
+Do not assume permission is granted.
+
+Do not show repeated permission dialogs at every application launch.
+
+### Recommended user experience
+
+Ask for notification permission at a contextually appropriate time.
+
+Explain why notifications may be useful before the system permission request.
+
+Respect denial.
+
+Provide a route to system settings if permission changes later.
+
+Avoid implying that customer push alerts are currently active when no approved customer events exist.
+
+### Scope safety
+
+For REQUEST ONLY launch, the agent must propose whether to keep automatic permission prompts disabled until actual customer notifications are activated.
+
+Do not enable unsolicited notification permission requests merely because the SDK has been installed.
+
+## 8. Device token lifecycle
+
+Implement a clean Flutter-side abstraction for:
+
+- Obtaining an FCM registration token.
+- Detecting token refresh.
+- Tracking permission state.
+- Detecting authenticated user changes.
+- Registering an eligible token with Laravel when supported.
+- Deactivating an association on logout.
+- Re-associating safely after login.
+- Handling transient registration failures.
+- Preventing duplicate registration.
+- Avoiding unnecessary token requests.
+- Ensuring correct behavior after reinstall and token rotation.
+
+### Security invariants
+
+An FCM token is not a Clerk authentication token.
+
+FCM tokens must not be used to authenticate users.
+
+Device registration must never permit a client to choose another user ID.
+
+The Laravel recipient association must be derived from a verified Clerk session JWT.
+
+Do not store application bearer tokens in FCM payloads.
+
+Do not log complete registration tokens.
+
+Do not put FCM tokens into analytics, crash reports, public URLs, or debug screenshots.
+
+## 9. Frozen API checkpoint — device registration
+
+This is a mandatory contract decision.
+
+The frozen V1 API defines NOT-001 and NOT-002, but does not authorize arbitrary device-token registration and deletion endpoints.
+
+Before introducing any externally callable route, inspect the complete current OpenAPI specification for a pre-approved device-registration contract.
+
+If no suitable operation exists:
+
+**STOP and notify the owner.**
+
+Explain that authenticated device registration requires a reviewed API capability or an explicitly approved separate integration boundary.
+
+Present the minimum proposed contract for review.
+
+Do not silently add `/api/v1/me/devices`, `/api/v1/fcm-token`, or any other new public API path.
+
+### Proposed capability for owner review
+
+A minimum authenticated device-registration workflow should support:
+
+- Register/update an app instance's current token.
+- Remove/deactivate that app instance's association at logout.
+- Bind the token to the authenticated user server-side.
+- Preserve idempotency.
+- Handle token rotation.
+- Handle multiple devices.
+- Avoid one user registering devices for another user.
+- Avoid leaking whether a token belongs to another account.
+- Handle inactive/revoked accounts.
+- Use strict request validation.
+- Enforce request limits.
+- Minimize stored identifiers.
+- Preserve backward compatibility.
+
+The exact method/path/schema/error behavior must be explicitly approved under project API governance.
+
+Do not implement the proposed route based solely on this illustrative description.
+
+### Independent progress
+
+Continue Flutter SDK setup, internal sender implementation, and transport tests that do not require the unresolved endpoint.
+
+Do not label the entire phase PASS if this essential production integration remains blocked.
+
+## 10. Laravel FCM server-side sender
+
+Implement a secure internal FCM sending abstraction using the FCM HTTP v1 API.
+
+Use short-lived OAuth 2.0 access tokens derived from server-authorized service-account credentials.
+
+Do not use obsolete FCM legacy server-key authentication.
+
+Do not use the Firebase web API key as a server push credential.
+
+Do not use user-supplied OAuth tokens.
+
+### PHP implementation choice
+
+Review whether the existing Laravel application has a maintained, compatible Firebase messaging integration.
+
+Choose the smallest reliable implementation.
+
+Acceptable approaches include:
+
+- A compatible, maintained PHP Firebase messaging library.
+- A small Laravel HTTP client adapter using Google's PHP authentication library for OAuth 2.0.
+
+Do not install multiple competing FCM client libraries.
+
+Prefer vetted libraries for credential parsing, OAuth signing, token refresh, and message delivery.
+
+Do not write custom cryptography or handcrafted service-account JWT signing when maintained libraries exist.
+
+### Sender responsibilities
+
+- Build a valid FCM HTTP v1 request.
+- Authorize with short-lived OAuth 2.0 access tokens.
+- Send only to approved registered tokens.
+- Apply configured timeouts.
+- Classify provider errors.
+- Support bounded retries.
+- Record safe delivery outcomes.
+- Avoid duplicate sender implementations.
+- Expose internal testable interfaces.
+- Remain independent of customer-facing HTTP request processing.
+
+## 11. Human checkpoint — Firebase server credentials
+
+Firebase project creation and Firebase CLI installation do not automatically configure Laravel's service-account credentials.
+
+Notify the owner when server credentials are required.
+
+Guide the owner through:
+
+1. Opening the existing Firebase project.
+2. Selecting Project Settings.
+3. Opening Service Accounts.
+4. Reviewing the appropriate service account and minimum required permissions.
+5. Ensuring FCM HTTP v1 API access is enabled.
+6. Generating a service-account credential only if needed.
+7. Storing it securely outside Git.
+8. Configuring Laravel to read the approved credential.
+9. Confirming the correct Firebase project ID.
+
+Prefer Application Default Credentials where practical.
+
+For local development, an approved service-account JSON path may be used through the supported environment configuration.
+
+For Coolify, use securely provisioned secrets or protected credential mounts.
+
+Do not copy the service-account JSON into public web assets, Flutter assets, the Docker image, or source control.
+
+Do not request that the owner paste private keys into the chat.
+
+Do not expose the service account to the Flutter application.
+
+## 12. Laravel device-token persistence
+
+If and only if the API contract decision in Section 9 is approved, implement a minimal registration store.
+
+Inspect existing database tables first.
+
+Prefer a normalized association between:
+
+- Local authenticated user.
+- App installation/device record.
+- FCM registration token or secure token representation.
+- Platform.
+- Last registered/seen timestamp.
+- Active/revoked status.
+- Relevant lifecycle timestamps.
+
+### Multiple devices
+
+A user may sign in on multiple Android devices.
+
+Do not overwrite the first device registration when a second device signs in.
+
+### Account changes
+
+A device token must not remain associated with the wrong user after account switching.
+
+Support safe deactivation and reassociation.
+
+### Token privacy
+
+Store the minimum data necessary for delivery.
+
+Use a keyed fingerprint or other appropriate safe lookup/uniqueness mechanism where justified.
+
+Evaluate encryption at rest for any stored tokens that must be retrieved for sending.
+
+Never expose FCM registration tokens through notification resources.
+
+### Database safety
+
+Use additive migrations.
+
+No destructive reset of any existing development or production database.
+
+Follow the root AGENTS.md migration guard.
+
+## 13. Delivery attempts and idempotency
+
+Reuse the notification-channel delivery infrastructure introduced in Phase 18.2 where compatible.
+
+FCM delivery is downstream of a logical notification.
+
+Do not create duplicate logical notifications solely to send push.
+
+### Delivery tracking
+
+Track internal delivery outcomes where applicable:
+
+- Notification reference.
+- Target registration or app instance.
+- PUSH channel.
+- Attempt state.
+- Retry count.
+- Last attempt time.
+- Provider message identifier.
+- Sanitized error classification.
+
+Do not expose these fields through NOT-001 or NOT-002.
+
+### Delivery semantics
+
+FCM acceptance means the service accepted the message for processing; it does not prove that a human saw the notification.
+
+Do not claim exactly-once delivery.
+
+Use deduplication at the logical notification and delivery-attempt boundaries.
+
+Handle concurrent workers safely.
+
+## 14. Retry and failure handling
+
+FCM transport errors must not affect successful furniture requests, enquiries, Resend email, or Reverb broadcasts.
 
 ### Requirements
 
-- Verify Clerk JWT server-side.
-- Resolve the existing local User.
-- Reuse role and account-status checks.
-- Reject missing, expired, invalid, or pending-security-task sessions.
-- Deny cross-user channel subscriptions.
-- Deny deactivated users.
-- Return safe authorization errors.
-- Avoid recording bearer tokens in logs.
-- Do not put JWTs into WebSocket query strings or channel names.
+- Queue push attempts separately or within an appropriately isolated notification channel workload.
+- Use bounded retries.
+- Apply exponential backoff.
+- Respect provider retry guidance.
+- Avoid retry storms.
+- Distinguish transient from permanent failures.
+- Deactivate tokens proven invalid.
+- Do not delete every token after an arbitrary HTTP 400 response.
+- Do not retry invalid tokens indefinitely.
+- Log only sanitized errors.
 
-### Broadcasting authorization route
+Specifically handle expired/unregistered tokens.
 
-Laravel may use `/broadcasting/auth` for private-channel authorization.
+Treat `INVALID_ARGUMENT` carefully: it may indicate a malformed payload rather than an invalid token.
 
-This is infrastructure-specific and is not one of the frozen `/api/v1` business operations.
+Do not silently remove a valid token because the server generated an invalid message.
 
-Before enabling it:
+### Failure independence
 
-- Inspect existing route topology.
-- Confirm the proper middleware.
-- Confirm the request authentication mechanism.
-- Confirm CORS and origin restrictions.
-- Confirm Clerk bearer token behavior.
-- Verify it cannot fall back to insecure or unrelated session authentication.
+If FCM is unavailable:
 
-If introducing an infrastructure authorization route creates a compatibility or deployment concern, explain the decision before proceeding.
+- Request/enquiry submission still succeeds.
+- MySQL notification state remains intact.
+- Resend remains functional.
+- Reverb remains functional.
+- Failed jobs are observable.
+- No user data is exposed.
 
-Do not add arbitrary new notification CRUD endpoints.
+## 15. Android receiving behavior
 
-## 8. Broadcast payload design
+Prepare Flutter's receiving lifecycle.
 
-Keep payloads minimal.
+Cover:
 
-Prefer a notification-state-change signal containing only safe internal routing information such as:
+### Foreground
 
-- Opaque notification ID.
-- Change kind, such as created or read-state changed.
-- Optional event occurrence marker, if already available.
+Handle incoming push messages while the app is open.
 
-Do not duplicate the complete notification API response if the client can retrieve it through NOT-001.
+Avoid automatically duplicating system notifications and custom UI notifications.
 
-Never broadcast:
+Do not display full customer-sensitive content without verifying the policy for the event.
 
-- Full enquiry messages.
-- Complete made-to-order request descriptions.
-- Customer email addresses.
-- Phone numbers.
-- Private attachments.
-- Upload tokens.
-- Staff internal notes.
-- Clerk tokens.
-- Resend credentials.
-- Full user profiles.
-- Private signed URLs.
+### Background
 
-Do not treat the WebSocket payload as authorization to open an underlying resource.
+Register the correct Flutter background message handler where required.
 
-A recipient client should fetch authoritative details using the existing API.
+Keep background handlers small, safe, and compatible with Flutter's supported isolate/lifecycle rules.
 
-### Type consistency
+Do not make privileged API requests from unauthenticated background contexts.
 
-Do not invent notification machine types.
+### Terminated application
 
-Use the existing CLOSED registry for persisted notifications.
+Support notification-open handling when the app is launched from a push notification.
 
-Internal broadcast event names are transport concerns and must be clearly distinguished from public notification types.
+Do not assume the application already has a valid Clerk session.
 
-## 9. Broadcast after successful persistence
+Restore authentication state safely before attempting protected navigation.
 
-Only broadcast after the logical notification record has been committed.
+### Token refresh
 
-The required ordering is:
+Use the appropriate Firebase Messaging token-refresh stream.
 
-```text
-Persist logical notification
-        |
-        v
-Commit transaction
-        |
-        v
-Queue broadcast delivery
-        |
-        v
-Reverb sends live update
-```
+Do not retain obsolete tokens indefinitely.
 
-A broadcast must never announce a notification that may still roll back.
+### Duplicate message behavior
 
-Use Laravel-supported after-commit dispatch behavior or the existing repository equivalent.
+Deduplicate navigation and foreground presentation where practical using stable server-controlled message identity.
 
-Do not use an immediate broadcast before transaction commit.
+## 16. Push payload policy
 
-### Duplication protection
+Prefer minimal, safe payloads.
 
-Phase 18.1 already uses a unique source/type/recipient constraint.
+An approved business push should contain only the information necessary to alert the recipient and enable safe navigation.
 
-Preserve this guarantee.
+Do not include:
 
-A replayed business event that does not create a new logical notification should not produce a misleading additional "new notification" signal.
+- Full customer enquiry text.
+- Private furniture specifications.
+- Staff-only comments.
+- Contact phone numbers.
+- Email addresses.
+- Passwords.
+- Clerk JWTs.
+- Firebase service-account credentials.
+- Internal database dumps.
+- Sensitive attachment URLs.
 
-If transport-level broadcasts are occasionally duplicated, clients must tolerate repeated IDs and reconcile idempotently through the API.
+### Notification targets
 
-Do not introduce a second competing deduplication registry unnecessarily.
+A push target is not an authorization capability.
 
-## 10. Read/unread synchronization
+After opening a notification, the app must authenticate and fetch the authorized underlying resource through the Laravel API.
 
-Preserve the frozen NOT-002 API:
+Do not allow raw push payload values to bypass authorization checks.
 
-```http
-PATCH /api/v1/me/notifications/{notification}
-```
+### Current launch policy
 
-The client sends the approved request body according to OpenAPI.
+No business-triggered customer FCM events are approved yet.
 
-Laravel remains authoritative for `read_at`.
+Do not fabricate sample request-status alerts as production features.
 
-### Desired real-time behavior
+## 17. Local diagnostic test mode
 
-When a recipient marks a notification read:
+Since no production-eligible customer push event is active, implement a controlled transport-only diagnostic capability.
 
-1. Laravel verifies recipient ownership.
-2. Laravel updates read state according to NOT-002.
-3. The database transaction commits.
-4. An optional recipient-scoped update signal is published.
-5. Other active sessions for that recipient refresh their local state.
+The diagnostic must be:
 
-Do not broadcast a read-state change to another user's channel.
+- Disabled in production.
+- Restricted to local/test environments.
+- Explicitly invoked by an authorized developer.
+- Directed only to a designated test installation.
+- Independent of the public NOT-001 and NOT-002 APIs.
+- Unable to send arbitrary mass messages.
+- Free from real customer private data.
 
-Do not conflate "read" with "handled" or "closed".
+Do not create a permanent unauthenticated HTTP send endpoint.
 
-Do not make notification read state change the status of a request or enquiry.
+A local Artisan command or isolated test harness is preferable, provided its safety boundaries are explicit.
 
-Avoid sending duplicate read-change broadcasts when an idempotent operation produces no meaningful state change.
+If a test requires a real FCM registration token or Google credential, ask the owner to supply the configuration securely without exposing secrets.
 
-## 11. Frontend integration boundary
+### Test success
 
-The production admin dashboard frontend will be implemented in its dedicated group after Notifications.
+Demonstrate a real Firebase transport result and actual Android-device receipt, not merely a mocked HTTP success.
 
-Therefore, implement the Laravel realtime infrastructure now without prematurely building the entire admin notification UI.
+If only provider acceptance is verified, explicitly distinguish that from device presentation.
 
-### Required in this phase
+## 18. Android notification channels and user experience
 
-Provide a small authenticated integration test client, test harness, or reusable Echo connection proof that demonstrates:
+For approved future notifications, prepare appropriate Android notification-channel behavior.
 
-- Secure channel authorization.
-- Successful subscription.
-- Receipt of a notification-created signal.
-- API reconciliation using NOT-001.
-- Mark-read behavior through NOT-002.
-- Reconnection after interruption.
-- Cross-user access denial.
+Avoid unnecessary channel categories.
 
-This must run against real Laravel/Reverb in a controlled local or staging environment where feasible.
+Use clear user-facing names and descriptions.
 
-### Defer to Admin Dashboard Frontend group
+Do not create one Android channel per individual notification.
 
-- Production notification bell.
-- Unread badge.
-- Notification popover.
-- Notification center/page.
-- Request/enquiry deep-link navigation.
-- Staff-specific layout integration.
-- Notification accessibility/UI polish.
-- Admin dashboard responsive behavior.
+Ensure:
 
-Document the client integration requirements so the future Next.js + MUI admin implementation can reuse them.
+- Icon handling is appropriate.
+- Notifications remain legible.
+- User permission decisions are respected.
+- Duplicate notifications are avoided.
+- Deep links are validated.
+- App state restoration is safe.
+- Accessibility is considered.
+- No staff operations appear in the customer Flutter application.
 
-Do not place staff-operational notifications inside the public customer website or Flutter app.
+Avoid extensive custom notification UI.
 
-Do not invent customer notification events just to populate a UI.
+The existing Flutter Material 3 design system remains authoritative.
 
-### Echo integration
+## 19. Security hardening
 
-The later admin client may use Laravel Echo with Reverb's supported Pusher protocol client.
+Test against:
 
-If adding a reusable integration helper now, ensure it:
+- Anonymous token registration.
+- Forged Clerk identity.
+- Client-selected victim user IDs.
+- Registration for another account.
+- Token reassociation conflicts.
+- Missing or expired Clerk sessions.
+- Deactivated users.
+- Invalid tokens.
+- Duplicate device registrations.
+- Logout followed by another user's login.
+- Sensitive token leakage.
+- Unauthorized FCM sending.
+- Firebase project mismatch.
+- Stale tokens.
+- Unsupported Android configuration.
+- Incorrect notification deep links.
 
-- Authenticates against the proper Laravel channel-auth route.
-- Uses current Clerk session tokens securely.
-- Does not expose server secrets.
-- Avoids subscribing before authentication is resolved.
-- Unsubscribes on logout.
-- Cleans up listeners.
-- Refreshes credentials appropriately.
-- Does not create duplicate subscriptions.
+Do not use FCM registration tokens as authentication credentials.
 
-Do not introduce permanent frontend dependencies solely for a disposable smoke-test page if a standalone test harness is sufficient.
+Do not expose service-account keys to Flutter.
 
-## 12. Reconnection and missed events
+Do not send protected data to a stale device belonging to a previous user.
 
-WebSockets do not provide a durable replayable inbox by themselves.
+## 20. Automated testing
 
-The durable inbox remains MySQL, exposed through NOT-001.
+Add tests for:
 
-### Required reconciliation points
+### Flutter setup
 
-Clients should refetch notifications:
+1. Firebase initialization is configured.
+2. Android app identity matches Firebase configuration.
+3. Token lifecycle is handled correctly.
+4. Token refresh updates local state.
+5. Permission denial is handled.
+6. Repeated initialization does not duplicate listeners.
+7. Logout triggers the approved cleanup strategy.
+8. Account switching does not retain stale recipient identity.
 
-- After initial authentication.
-- After a successful connection.
-- After reconnection.
-- After a relevant WebSocket signal.
-- When returning to an active notification UI, where practical.
+### Laravel sender
 
-Do not assume all broadcasts are delivered exactly once.
+9. Correct FCM HTTP v1 endpoint.
+10. Correct OAuth 2.0 authorization behavior.
+11. Missing credentials fail safely.
+12. Invalid project configuration fails safely.
+13. Valid diagnostic payload is serialized correctly.
+14. Transient HTTP errors retry.
+15. Permanent errors do not retry indefinitely.
+16. Unregistered tokens are deactivated.
+17. Malformed payloads do not cause indiscriminate token deletion.
+18. Message identifiers are handled safely.
+19. No credentials or raw device tokens appear in logs.
 
-Do not build an unnecessary event-replay infrastructure.
+### Authorization
 
-Use notification IDs for client-side deduplication.
+20. Customer identity is server-derived.
+21. A user cannot register another user's device.
+22. Registration requires active, valid authentication.
+23. Multiple devices remain independent.
+24. Token rotation is handled.
+25. Logout/account switching prevents cross-account leakage.
+26. Unapproved STAFF operational events are not routed into the customer application.
 
-Preserve server-authoritative unread counts and pagination.
+### Regression
 
-Never determine the global unread count merely by incrementing an in-memory counter on each WebSocket message.
+27. NOT-001 remains unchanged.
+28. NOT-002 remains unchanged.
+29. Resend email delivery remains unchanged.
+30. Reverb notification signals remain unchanged.
+31. Source/type/recipient deduplication is preserved.
+32. Request/enquiry transactions remain independent of push failures.
+33. Deferred order/payment/delivery notifications remain disabled.
+34. No new public API endpoints are added without approval.
+35. No new notification type is introduced.
 
-## 13. Authorization and privacy hardening
+Use official testing and mock facilities where possible.
 
-Test cross-user access thoroughly.
+Do not call live Firebase during ordinary CI runs.
 
-Required negative cases:
+## 21. Controlled real-device test
 
-- Anonymous user attempts a subscription.
-- CUSTOMER attempts a STAFF recipient channel.
-- STAFF A attempts STAFF B's channel.
-- STAFF attempts an unrelated customer's channel.
-- ADMIN attempts a recipient channel other than their own.
-- Expired Clerk token attempts authorization.
-- Tampered bearer token attempts authorization.
-- Deactivated user attempts authorization.
-- Invalid channel name is submitted.
-- Invalid recipient identifier is submitted.
+Once the required configuration is available, perform a controlled test using a suitable Android device or emulator with working Google Play services.
 
-Every case must be denied safely.
+Steps:
 
-### Browser origin rules
+1. Initialize Firebase successfully.
+2. Confirm Firebase project/application identity.
+3. Obtain the current FCM registration token securely.
+4. Confirm notification permission state.
+5. Invoke the approved local diagnostic sender.
+6. Confirm provider acceptance.
+7. Confirm receipt in foreground.
+8. Test background receipt.
+9. Test notification tap/launch behavior where applicable.
+10. Confirm duplicate suppression.
+11. Confirm token refresh behavior.
+12. Confirm logout/account-switch handling.
+13. Confirm no staff-only notification data is exposed.
 
-Configure Reverb allowed origins appropriately.
+Do not use a live customer communication event as the first FCM test.
 
-Do not use wildcard production origins.
+If device availability or credentials block the test, report PARTIAL rather than fabricating PASS.
 
-Do not confuse origin filtering with user authorization.
+## 22. Coolify deployment readiness
 
-Origin checks supplement, but never replace, JWT verification and channel authorization.
+Production will eventually use Coolify on a VPS.
 
-### Revocation behavior
+Prepare deployment notes for:
 
-When a staff user's permissions or account state change, evaluate how existing long-lived subscriptions are terminated or prevented from receiving further sensitive events.
+- Secure Google credential storage.
+- Firebase project ID.
+- Queue worker for push.
+- Worker supervision.
+- Retry visibility.
+- Secret rotation.
+- Firewall/egress requirements.
+- Environment separation.
+- Crash recovery.
+- Monitoring.
+- Protected token data.
+- Token cleanup lifecycle.
 
-Private-channel authorization at connection time alone may not immediately revoke an existing subscription.
+Do not deploy now.
 
-At a minimum:
+Do not create a public FCM sender endpoint.
 
-- Validate recipient eligibility before event emission.
-- Ensure revoked recipients are excluded from new notification delivery.
-- Document how client session expiry, disconnect, and reconnection are handled.
-- Escalate any remaining unacceptable revocation window.
+Do not modify production infrastructure without approval.
 
-Do not claim immediate revocation if the implementation cannot enforce it.
+## 23. Mandatory human checkpoints
 
-## 14. Queue and fault isolation
+Notify the owner when any of these steps require manual action:
 
-Broadcasting must not break:
+**Checkpoint A — Firebase project selection:** Confirm the exact existing project rather than creating a new one.
 
-- Furniture request submissions.
-- Enquiry submissions.
-- Phase 18.1 notification persistence.
-- Phase 18.2 Resend email delivery.
+**Checkpoint B — Android registration:** Verify the Android package name and register the correct application if missing.
 
-### Required behavior
+**Checkpoint C — FlutterFire configuration:** Help select only Android and the correct environment.
 
-If Reverb is offline:
+**Checkpoint D — Service account:** Explain how to provision and securely store the required server credentials.
 
-- The business operation remains successful.
-- The logical notification remains stored.
-- Queued email behavior remains independent.
-- The broadcast job fails or retries according to policy.
-- The recipient can still fetch the notification through NOT-001.
-- The failure is observable.
+**Checkpoint E — Frozen API approval:** Request authorization before implementing a new device-registration API or changing its public contract.
 
-Use bounded retries and suitable backoff.
+**Checkpoint F — Real Android device test:** Ask the owner to connect/approve a test device and required permissions.
 
-Avoid retry storms when Reverb is unavailable.
+**Checkpoint G — Live diagnostic push:** Request permission before sending a real FCM test notification.
 
-Where supported, isolate broadcast workloads from other queues to prevent a WebSocket outage from starving email delivery.
+**Checkpoint H — Customer notification activation:** Obtain separate approval for any new business event or recipient/channel policy.
 
-Do not introduce distributed infrastructure without a demonstrated need.
+**Checkpoint I — Production credentials and deployment:** Wait for the deployment phase.
 
-## 15. Deployment and configuration
+Do not silently skip these checkpoints.
 
-Inspect existing environment configuration.
+## 24. Verification
 
-Typical Reverb deployment requires:
+Run the project's existing verification commands.
 
-- Reverb application ID/key/secret.
-- WebSocket host.
-- Server bind address and port.
-- Public WebSocket hostname.
-- TLS termination.
-- Reverse proxy with WebSocket upgrade support.
-- Long-running Reverb process.
-- Running Laravel queue worker.
-- Process restart management.
-- Secure production origins.
-- Logs and health monitoring.
-
-Use the exact environment variables required by the installed Laravel/Reverb versions.
-
-Do not confuse the internal Reverb bind address/port with the public WSS hostname and port.
-
-Do not expose the Reverb application secret to the browser.
-
-App keys intended for client connection are different from server secrets.
-
-### Hosting checkpoint
-
-**Stop and ask the project owner** whether the chosen deployment environment supports persistent WebSocket processes before making production configuration changes.
-
-If the hosting provider cannot support Reverb, report that limitation.
-
-Do not silently replace Reverb with a paid third-party WebSocket service.
-
-Do not modify firewall rules, DNS, reverse proxy configuration, or production process managers without the owner's approval.
-
-## 16. Human intervention protocol
-
-Whenever manual input is needed:
-
-1. Explain the exact requirement.
-2. State why it cannot be completed automatically.
-3. Provide the required owner action.
-4. Explain the expected configuration/result.
-5. Explain how to verify success.
-6. Continue independent safe work where possible.
-7. Stop the blocked production step until approved.
-
-Potential checkpoints:
-
-- Hosting provider selection.
-- Public WebSocket subdomain.
-- DNS configuration.
-- HTTPS/WSS certificate setup.
-- Reverse proxy configuration.
-- Firewall/port configuration.
-- Production environment credentials.
-- Production process manager.
-- Live multi-user subscription test authorization.
-- Any frozen-contract or security-policy decision.
-
-Do not fabricate successful connectivity.
-
-Do not invent production infrastructure settings.
-
-## 17. Automated tests
-
-Add targeted tests for the following.
-
-### Persistence and broadcasting
-
-1. Persisted notification schedules the correct broadcast.
-2. REQ notification uses the existing recipient.
-3. ENQ notification uses the existing recipient.
-4. Rolled-back notification creates no broadcast.
-5. Duplicate event replay does not create a second logical notification.
-6. Failed broadcast does not remove a notification.
-7. Failed broadcast does not stop email delivery.
-8. Failed broadcast does not roll back request/enquiry creation.
-
-### Channel authorization
-
-9. Authenticated recipient can subscribe to their own channel.
-10. Anonymous subscription fails.
-11. Cross-user subscription fails.
-12. CUSTOMER cannot subscribe to operational STAFF channels.
-13. STAFF cannot subscribe to another recipient's private stream.
-14. ADMIN cannot access arbitrary personal channels.
-15. Expired tokens fail.
-16. Inactive accounts fail.
-17. Channel names are properly validated.
-
-### Payload security
-
-18. Broadcast payload contains only approved fields.
-19. No Clerk token is exposed.
-20. No recipient email is exposed.
-21. No full request/enquiry body is exposed.
-22. No private attachments are exposed.
-23. No staff internal notes are exposed.
-24. No raw provider credentials appear.
-
-### Read-state synchronization
-
-25. NOT-002 marks only the authenticated recipient's notification.
-26. Read-state change signals go to the correct channel.
-27. One STAFF member's read action does not alter another's read state.
-28. No duplicate signal is emitted for unchanged state where appropriate.
-29. NOT-001 remains authoritative after reconciliation.
-
-### Integration behavior
-
-30. Authorized subscriber receives a real broadcast.
-31. Unauthorized subscriber cannot receive a private-channel signal.
-32. A disconnected client can recover missed notifications through NOT-001.
-33. Multiple client sessions for the same recipient reconcile.
-34. Logout cleans up subscriptions in the test client.
-35. Reconnect restores notification state.
-36. Resend regression tests still pass.
-37. Deferred order/payment/delivery events are not activated.
-
-Use Laravel's supported broadcasting test fakes for deterministic tests.
-
-A mocked broadcast assertion does not count as a successful real WebSocket integration test.
-
-## 18. Integration smoke test
-
-When local environment permits, run an end-to-end controlled test:
-
-1. Start Laravel.
-2. Start queue worker.
-3. Start Reverb.
-4. Authenticate as an eligible STAFF user through the existing Clerk/Laravel integration.
-5. Subscribe to the user's private notification channel.
-6. Submit a valid test made-to-order request.
-7. Confirm MySQL creates exactly one recipient notification.
-8. Confirm the authorized subscriber receives the live signal.
-9. Fetch NOT-001 and confirm the notification is returned.
-10. Mark it read through NOT-002.
-11. Confirm the updated server read state.
-12. Disconnect and reconnect.
-13. Confirm reconciliation through NOT-001.
-14. Attempt to subscribe as a different user and verify denial.
-15. Confirm Resend delivery behavior remains unaffected.
-
-Repeat the equivalent event test for a general enquiry.
-
-Use controlled test data only.
-
-If real Clerk accounts or a live Resend email are required to execute any smoke test, obtain explicit approval before using them.
-
-## 19. Verification commands
-
-From the Laravel backend directory, run the existing project's quality checks.
-
-At minimum:
+For Laravel:
 
 ```bash
 composer validate
 php artisan test
 vendor/bin/phpstan analyse
 vendor/bin/pint --test
-php artisan route:list
 git diff --check
-git diff --cached --check
 ```
 
-Run targeted Reverb, channel-auth, notification, and email regression tests.
+For Flutter:
 
-Use `php artisan reverb:start` for a controlled local integration test only after correct configuration.
+```bash
+flutter pub get
+flutter analyze
+flutter test
+```
 
-Use the existing queue worker to process test broadcast events.
+Also run relevant Android build checks and focused integration tests.
 
-Do not add uncontrolled long-running background processes to CI.
+Do not run destructive database migrations.
 
-If broadcast configuration relies on specific PHP extensions, diagnose and document missing dependencies.
+Do not run live provider tests inside ordinary automated test suites.
 
-Do not run destructive database commands outside the root AGENTS.md guard.
+Report actual command results, not inferred success.
 
-## 20. Documentation
+## 25. Documentation
 
-Create the Phase 18.3 completion record using repository conventions.
+Create:
+
+`phases/phase-18.4-completion.md`
+
+Follow the established completion-report conventions.
 
 Include:
 
-- Existing infrastructure audit.
-- Reverb dependency/configuration.
-- Private channel names.
-- Clerk authorization integration.
-- Broadcast event names.
-- Payload schema.
-- Commit and dispatch ordering.
-- Reconnect/reconciliation behavior.
-- Recipient revocation considerations.
-- Queue and retry strategy.
-- Local setup commands.
-- Production hosting requirements.
-- Environment variable descriptions.
-- Exact integration-test results.
-- Known limitations.
-- Admin frontend integration guidance.
-- Human intervention needed before production.
+- Exact Firebase project linkage status.
+- Android application identity.
+- FlutterFire package versions.
+- Generated configuration inventory.
+- Server credential strategy.
+- Token lifecycle model.
+- API-contract decision and approval status.
+- FCM sender architecture.
+- Retry/error policies.
+- Channel isolation.
+- Diagnostic test procedure.
+- Actual device test results.
+- Security review.
+- Existing Resend/Reverb regression results.
+- Production environment requirements.
+- Deferred customer notification activation.
+- Human interventions and unresolved blockers.
 
-Document why WebSocket signals are not authoritative notification records.
+Never include private credentials or raw FCM tokens.
 
-Do not rewrite the frozen public API to describe transport-internal details.
-
-## 21. Explicit exclusions
+## 26. Explicit exclusions
 
 Do not implement:
 
-- Firebase Cloud Messaging.
-- Push-token registration.
-- Android notification permissions.
-- SMS.
+- Firebase Authentication.
+- Firestore notification persistence.
+- Firebase Realtime Database.
+- Cloud Functions for push orchestration.
 - Novu.
-- Marketing campaigns.
-- Production admin dashboard UI.
-- A new notification database.
-- New public notification endpoints.
-- Notification preferences API.
-- New notification types.
-- Customer request-status notifications.
-- Order, payment, or delivery notifications.
-- Paid third-party WebSocket services.
-- Unnecessary Redis clustering.
-- Complex event replay or CQRS.
+- SMS.
+- Marketing pushes.
+- Customer request-status notifications without approval.
+- Staff-only notifications on the customer Android app.
+- Android staff/admin management screens.
+- Production deployment.
+- Unapproved API operations.
+- New notification enum values.
+- Order/payment/delivery notification triggers.
+- iOS or web push support unless separately approved.
 
-Do not refactor unrelated business logic.
+## 27. Definition of Done
 
-## 22. Definition of Done
+Phase 18.4 can be marked PASS only when:
 
-Phase 18.3 is complete when:
-
-- Reverb is correctly configured for the Laravel application.
-- Recipient-scoped private channels exist.
-- Subscription authorization reuses Clerk-authenticated local User identity.
-- Cross-user subscriptions are denied.
-- Approved persisted notifications generate post-commit broadcast signals.
-- Signal payloads do not expose private business information.
-- NOT-001 remains the authoritative inbox.
-- NOT-002 remains the authoritative read-state mutation.
-- Multi-session and reconnect reconciliation is demonstrated.
-- Reverb failures do not break business submissions.
-- Email notifications remain functional.
-- No new public API behavior is introduced.
-- No deferred commerce notifications are activated.
+- The existing Firebase project is correctly linked to Flutter Android.
+- The official Firebase Messaging SDK is integrated.
+- Authentication remains Clerk-owned.
+- Token lifecycle is implemented within an approved contract boundary.
+- Laravel can securely authenticate to FCM HTTP v1.
+- The sender is testable and correctly handles provider errors.
+- Invalid token handling is safe.
+- Push attempts are isolated and bounded.
+- No frozen API violations exist.
+- No staff notifications leak to customer Android users.
+- Resend and Reverb remain functional.
 - Automated tests pass.
-- A real WebSocket smoke test passes where supported.
-- Production hosting blockers are explicitly documented.
-- Phase documentation is complete.
+- An authorized diagnostic push has been verified on an Android test device, or the project's approved acceptance criteria explicitly separate environment/device verification.
+- Production customer business-event fan-out remains disabled pending a separate approved event.
+- Documentation is complete.
 
-## 23. Completion report
+If essential work is blocked by device-registration contract approval, credentials, or unavailable hardware, report PARTIAL with exact remaining actions.
+
+Do not mark PASS solely because packages are installed.
+
+## 28. Completion report
 
 Return:
 
 1. PASS, PARTIAL, or FAIL.
-2. Installed/reused Reverb dependencies.
-3. Files modified and created.
-4. Private channel structure.
-5. Clerk channel-auth mechanism.
-6. Broadcast events and payloads.
-7. Database/event dispatch behavior.
-8. Queue and retry results.
-9. Security and authorization tests.
-10. Real WebSocket smoke test evidence.
-11. Resend regression results.
-12. Human configuration still required.
-13. Known limitations.
-14. Readiness for Phase 18.4.
+2. Repository audit findings.
+3. Firebase project and Android app configuration status.
+4. Flutter dependencies installed.
+5. Server FCM transport choice.
+6. Authentication and credentials configuration.
+7. Device-token architecture.
+8. Frozen API compatibility findings.
+9. Queue/retry implementation.
+10. Tests and verification results.
+11. Real Android delivery evidence.
+12. Human actions completed.
+13. Human actions still required.
+14. Deferred functionality.
+15. Readiness for Phase 18.5/18.6.
 
-**Final instruction:** Complete only Phase 18.3. Preserve the recipient-scoped notification and Resend implementations from Phases 18.1 and 18.2. Do not build the admin dashboard UI or implement FCM. If real hosting, credentials, or owner approval is required, notify the project owner before proceeding with the affected step.
+**Final instruction:** Implement Phase 18.4 only. Establish FCM infrastructure without inventing new notification types, leaking operational data to customer devices, or silently changing the frozen API. Stop at owner intervention checkpoints and continue independent safe work where possible.

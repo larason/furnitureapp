@@ -44,6 +44,12 @@ class User extends Authenticatable
         return $this->hasMany(FurnitureRequest::class);
     }
 
+    /** @return HasMany<DeviceInstallation, $this> */
+    public function deviceInstallations(): HasMany
+    {
+        return $this->hasMany(DeviceInstallation::class);
+    }
+
     protected function casts(): array
     {
         return [

@@ -1,5 +1,8 @@
 **Hosting decision for Phase 18.3:** SL Furnitures will use a self-managed VPS running Coolify. The Laravel API, customer Next.js website, admin Next.js dashboard, and Laravel Reverb will be deployed through Coolify on the same VPS initially.
 
+Operational procedures — schema changes, feature flags, secrets, and test commands — are in
+`docs/operations.md`. This file records hosting decisions only.
+
 Proceed with local Reverb integration and the remaining real WebSocket smoke test.
 
 For production readiness:

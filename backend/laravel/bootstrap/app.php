@@ -11,6 +11,8 @@ use App\Http\Middleware\CustomerCartAccess;
 use App\Http\Middleware\CustomerSubmissionAccess;
 use App\Http\Middleware\EnforceApiRequestLimits;
 use App\Http\Middleware\EnsureCheckoutEnabled;
+use App\Http\Middleware\EnsureCustomerDeviceAccess;
+use App\Http\Middleware\EnsureDeviceRegistrationEnabled;
 use App\Http\Middleware\EnsureEnquiriesEnabled;
 use App\Http\Middleware\EnsureFurnitureRequestsEnabled;
 use App\Http\Middleware\OperationalAccess;
@@ -76,6 +78,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => RequirePermission::class,
             'staff-or-admin' => StaffOrAdminAccess::class,
             'attachment.credential' => RequireAttachmentUploadCredential::class,
+            'devices.enabled' => EnsureDeviceRegistrationEnabled::class,
+            'customer-device' => EnsureCustomerDeviceAccess::class,
         ]);
 
         $middleware->priority([

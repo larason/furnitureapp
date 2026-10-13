@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "994118682297",
+    "project_id": "slfurnitures",
+    "storage_bucket": "slfurnitures.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:994118682297:android:51dea83625f9b0c2b67d68",
+        "android_client_info": {
+          "package_name": "com.slfurnitures.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzr-4gGF8rLPWgxAXJR838Q35qHi2Gcz4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -13,6 +13,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LicensePage), findsOneWidget);
-    expect(find.text('SL Furnitures'), findsOneWidget);
+    expect(find.text('© 2026 SL Furnitures'), findsOneWidget);
   });
 }

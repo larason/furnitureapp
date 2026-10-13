@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default channel for FCM messages that carry a notification payload.
+         Without this the platform falls back to an unnamed channel whose
+         importance and sound the application does not control. -->
+    <string name="default_notification_channel_id" translatable="false">fcm_default_channel</string>
+    <string name="default_notification_channel_name">Notifications</string>
+    <string name="default_notification_channel_description">Order and account updates</string>
+</resources>

@@ -5545,3 +5545,201 @@ Change Request → Impact Analysis → Breaking/Non-Breaking Classification →
 Contract Review → Architecture Decision Record (docs/decisions.md) →
 OpenAPI Update → Example Update → Verification → Release Decision
 ```
+
+---
+
+## 36. Device Registration & Deactivation Contract (Phase 18.4 Additive Extension)
+
+**Amended 2026-10-13 (ACTIVE-only token uniqueness).** §36.4 and §36.6 were updated: a
+retired registration no longer causes a conflict. The amendment changes no endpoint path,
+request or response field, status code, error code, authentication rule, or delivery policy.
+See `docs/decisions.md` `ADR/BACKEND-057`.
+
+**Classification: additive, non-breaking V1 extension.** No existing path, request
+field, response field, error code, status code, or behavior is modified. Approved by the
+project owner on 2026-10-12 under the post-freeze additive-extension process. Recorded in
+`docs/decisions.md`.
+
+This contract governs **token management only**. It does not authorize sending any customer
+notification. FCM business-event fan-out remains disabled and requires separate approval.
+
+### 36.1 Capability Boundary
+
+- The authenticated `CUSTOMER` may register and retire **their own** device installations.
+- `STAFF` and `ADMIN` are refused. Registering a device is a customer-account capability, and
+  operational staff must not associate a device with a customer account.
+- No anonymous registration. No public sender endpoint. No customer-selected `user_id`.
+- Ownership is derived **only** from the verified Clerk principal.
+- The registration token is an opaque FCM addressing value. It is **not** an authentication
+  credential and never authenticates a request.
+
+### 36.2 DEV-001 — Register or Rotate a Device Installation
+
+```text
+POST /api/v1/me/devices
+Authorization: Bearer <clerk_session_token>
+```
+
+Idempotent. Also used for FCM token rotation; there is deliberately **no** separate
+token-refresh endpoint.
+
+Request body:
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `token` | string | yes | `1..4096`, FCM registration token |
+| `platform` | string | yes | CLOSED enum, currently only `ANDROID` |
+| `app_instance_id` | string | yes | `1..128`, opaque per-installation identity |
+| `app_version` | string \| null | no | `<=64` |
+| `app_build` | string \| null | no | `<=64` |
+
+Any other field — including `user_id`, `customer_id`, `role`, `status`, `id`, or `owner` —
+is rejected with `422` and `errors[0].field` naming the offending field. Ownership is never
+read from the request.
+
+Responses:
+
+| Status | Meaning |
+|---|---|
+| `201 Created` | A new installation was registered |
+| `200 OK` | An existing installation was updated (rotation or reactivation) |
+| `401` | No verified Clerk session |
+| `403` | Authenticated but not a `CUSTOMER` |
+| `409` | The token is already registered to a different account |
+| `422` | Validation failure |
+| `429` | Rate limit exceeded |
+| `501` | Device registration is not enabled in this environment |
+
+`201`/`200` body (frozen `data` envelope):
+
+```json
+{
+  "data": {
+    "id": "dev_1",
+    "platform": "ANDROID",
+    "app_instance_id": "installation-abc",
+    "app_version": "1.0.0",
+    "app_build": "1",
+    "status": "ACTIVE",
+    "created_at": "2026-10-12T19:00:00.000000Z",
+    "updated_at": "2026-10-12T19:00:00.000000Z",
+    "last_registered_at": "2026-10-12T19:00:00.000000Z"
+  },
+  "meta": { "request_id": "..." }
+}
+```
+
+`Cache-Control: private, no-store`, `Vary: Authorization`.
+
+**The token is never returned.** `token`, `token_ciphertext`, and `token_fingerprint` are
+absent from every response.
+
+### 36.3 DEV-002 — Deactivate a Device Installation
+
+```text
+DELETE /api/v1/me/devices/{device}
+Authorization: Bearer <clerk_session_token>
+```
+
+`{device}` is the opaque server-issued identifier from DEV-001, matching `dev_` + base-36
+encoding of the internal row id. Database internals are never exposed.
+
+| Status | Meaning |
+|---|---|
+| `204 No Content` | Deactivated, or already inactive (idempotent) |
+| `401` | No verified Clerk session |
+| `403` | Authenticated but not a `CUSTOMER` |
+| `404` | Unknown identifier, malformed identifier, **or a device owned by another customer** |
+| `429` | Rate limit exceeded |
+| `501` | Device registration is not enabled in this environment |
+
+Repeat deactivation by the owner is `204`. A device owned by another customer is masked as
+`404 RESOURCE_NOT_FOUND` — never `403` — so the route cannot be used to discover or confirm
+another customer's devices.
+
+### 36.4 Single-Owner Token Rule
+
+Exactly one **active** owner per FCM registration token, enforced by a **database unique
+constraint** on an irreversible keyed fingerprint, not only by application checks.
+
+- A token **currently registered and ACTIVE** to a different customer → `409 CONFLICT`.
+  Ownership is **never** silently transferred, regardless of how plausible the supplied
+  `app_instance_id` is. The current owner must deactivate first.
+- A token whose previous owner has already **retired** the registration (`INACTIVE`) does
+  **not** block the device being registered for whoever holds it now. A retired row is
+  history, not a claim: it keeps its stored fingerprint, its original `user_id`, and its
+  `deactivated_at`, so the record of which customer once held the device survives intact.
+  This is what allows a device handed to a new customer to register, which a global
+  constraint prevented.
+- A previous owner cannot reclaim its own retired row while another customer holds the token
+  `ACTIVE`: that customer is the current owner, so the attempt is `409 CONFLICT`.
+- Several `INACTIVE` rows may legitimately share one fingerprint, so **no** query may assume a
+  fingerprint is globally unique. Only `ACTIVE` rows represent ownership.
+- Concurrent registration of the same token by two customers resolves to one winner and one
+  `409`; the database, not a pre-check, breaks the tie.
+- `409` reuses the frozen `CONFLICT` code. No new error code was introduced.
+
+### 36.5 Token Protection
+
+- The token is stored **encrypted** (recoverable), because delivery later needs the raw value.
+- Uniqueness uses a **keyed HMAC-SHA256 fingerprint**, which is irreversible. A plain hash of
+  a bearer-like value would be vulnerable to offline guessing.
+- The raw token is never stored in plaintext, never logged, never returned by any endpoint,
+  and never exposed through notification APIs.
+- Both `token_ciphertext` and `token_fingerprint` are model-hidden, so no serializer, log, or
+  admin read can leak them.
+- Rotating the fingerprint key requires a controlled migration before registrations resume. The
+  old key remains deployed while every ACTIVE token is decrypted and re-fingerprinted with the
+  new key; migration coverage and fingerprint uniqueness must be verified before the new key is
+  deployed. Re-registration alone is insufficient because stale ACTIVE rows would retain old-key
+  fingerprints and could permit a second ACTIVE owner for the same token.
+
+### 36.6 Lifecycle States
+
+`ACTIVE` → `INACTIVE` on sign-out, explicit deactivation, or provider `UNREGISTERED`.
+
+Rows are **deactivated, never deleted**, so a replayed or late message cannot resurrect a
+retired association. Re-registering an `INACTIVE` row reactivates it and clears
+`deactivated_at`, provided no other customer currently holds the same token `ACTIVE`.
+
+A retired row remains a full historical record: stored token, fingerprint, original `user_id`,
+and the moment it was retired. It is retained deliberately, and retiring a row never rewrites
+its owner.
+
+| Provider outcome | Effect |
+|---|---|
+| `UNREGISTERED` | Deactivate the row (only automatic deactivation) |
+| `INVALID_ARGUMENT` | **No** status change — it indicates a malformed message, not a dead token |
+| `408` / `429` / `5xx` | Retry with backoff; no status change |
+
+### 36.7 Independent Enablement
+
+Token management and notification fan-out are separate decisions with separate flags:
+
+| Flag | Default | Effect when off |
+|---|---|---|
+| `NOTIFICATION_PUSH_REGISTRATION_ENABLED` | `false` | DEV-001/002 return `501 not_implemented` |
+| `NOTIFICATION_PUSH_ENABLED` | `false` | No customer push is ever sent |
+
+Registration may be enabled while fan-out stays disabled. This phase ships with both `false`.
+
+### 36.8 Abuse Control
+
+`POST /me/devices` and `DELETE /me/devices/{device}` share
+`RATE_LIMIT_DEVICE_REGISTRATION_PER_MINUTE` (default `20/min` per authenticated customer) →
+`429` with `Retry-After`. Registration is idempotent, so a low budget is safe and limits how
+much churn a compromised client can cause.
+
+### 36.9 Not In Scope
+
+This extension deliberately does **not** define:
+- Any customer business-event notification or recipient policy.
+- Navigation or routing for a notification tap.
+- Push opt-in preference UI or per-category preferences.
+- Delivery attempts, retry queues, or fan-out jobs.
+
+### 36.10 OpenAPI
+
+`POST /me/devices` and `DELETE /me/devices/{device}` are added under
+`paths./api/v1/me/devices` with `DeviceInstallation`, `RegisterDeviceRequest`, and
+`DevicePlatform` schemas. No existing path or schema was altered.

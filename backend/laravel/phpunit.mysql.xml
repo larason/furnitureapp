@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MySQL verification configuration for the ACTIVE-only device token constraint.
+
+  MySQL cannot express a partial unique index, so the constraint relies on a
+  generated column. This configuration exists so that path can be proven against
+  the real engine, which the SQLite suite cannot do.
+
+  It points ONLY at the disposable database. DeviceTokenUniquenessMysqlTest
+  additionally asserts the database name before touching anything, so pointing
+  this at a development or production database fails the test rather than
+  mutating it. Never use it with `migrate` against a real database.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <!-- Only MySQL-engine suites. This configuration points at the disposable
+             database, so it must not pull in the SQLite-oriented feature tests,
+             which would rebuild and reseed that database for no reason. Naming
+             the pattern makes a new engine-specific suite opt in by its name. -->
+        <testsuite name="MysqlVerification">
+            <directory suffix="MysqlTest.php">tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="DB_CONNECTION" value="mysql" force="true"/>
+        <env name="DB_DATABASE" value="furnitureapp_test_disposable" force="true"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="CLERK_SECRET_KEY" value=""/>
+        <env name="CLERK_JWT_KEY" value=""/>
+        <env name="CLERK_ISSUER" value=""/>
+        <env name="CLERK_AUDIENCES" value=""/>
+        <env name="CLERK_AUTHORIZED_PARTIES" value=""/>
+    </php>
+</phpunit>

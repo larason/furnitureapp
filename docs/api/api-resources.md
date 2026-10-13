@@ -1114,3 +1114,100 @@ Additional notes:
 ### 15.3 Authorization and IDOR
 
 - All private holder-scoped `GET /me/requests/{request}`, `GET /me/enquiries/{enquiry}`, `PATCH /me/notifications/{notification}`, `CART-003/004`, `ORD-002/003/004` now document `401` + `404` masked (not `403`) for horizontal `Customer A→B`. Staff/Admin `ORD-005..014`, `INV-001/adjust`, `REQ-004/005`, `ENQ-004/005`, `ADM-001..009` document `401` + `403` + `404` + `409` where state. Canonical routes only; alias `/staff/*` removed per `decisions.md ADR/API-SEC-005`.
+
+---
+
+## 16. DeviceInstallation — Customer Push Registration (Phase 18.4 Additive Extension)
+
+Owner: the authenticated `CUSTOMER` it was registered by. Added under the approved additive
+V1 extension; see `api-contract.md §36`. No existing resource was changed.
+
+### 16.1 Public Shape
+
+```json
+{
+  "id": "dev_1",
+  "platform": "ANDROID",
+  "app_instance_id": "installation-abc",
+  "app_version": "1.0.0",
+  "app_build": "1",
+  "status": "ACTIVE",
+  "created_at": "2026-10-12T19:00:00.000000Z",
+  "updated_at": "2026-10-12T19:00:00.000000Z",
+  "last_registered_at": "2026-10-12T19:00:00.000000Z"
+}
+```
+
+`id` is the opaque public identifier (`dev_` + base-36 row id) used in `DELETE
+/api/v1/me/devices/{device}`. The internal autoincrement key is never exposed.
+
+### 16.2 Fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Opaque, server-issued, stable |
+| `platform` | string | CLOSED enum; `ANDROID` only today |
+| `app_instance_id` | string | Client-supplied opaque per-installation identity, `1..128` |
+| `app_version` | string \| null | Informational, `<=64` |
+| `app_build` | string \| null | Informational, `<=64` |
+| `status` | string | `ACTIVE` or `INACTIVE` |
+| `created_at` | string | ISO-8601 UTC |
+| `updated_at` | string | ISO-8601 UTC |
+| `last_registered_at` | string \| null | ISO-8601 UTC, set on every registration/rotation |
+
+### 16.3 Never Serialized
+
+| Field | Reason |
+|---|---|
+| `user_id` | Ownership is implicit (the caller) and not client-selectable |
+| `token_ciphertext` | Encrypted bearer-like value; recovering it server-side is the only reason it is stored |
+| `token_fingerprint` | Irreversible uniqueness key; exposing it would leak a token oracle |
+| `active_token_fingerprint` | Storage-only uniqueness slot maintained by the database; never a client concern |
+
+All four are model-hidden, so they cannot leak through a resource, an audit log, or an
+accidental `toArray()`. See `api-contract.md §36.5`.
+
+### 16.4 Relationships
+
+| Relationship | Cardinality | Notes |
+|---|---|---|
+| `DeviceInstallation → User` | many-to-one | `user_id`, `ON DELETE CASCADE` |
+| `User → DeviceInstallation` | one-to-many | A customer may hold several installations |
+| `DeviceInstallation → DeviceInstallation` (self) | unique by token | Exactly one **ACTIVE** owner per registration token; retired rows may share a fingerprint |
+
+### 16.5 Request Input per Resource
+
+| Field | Rule |
+|---|---|
+| `token` | required, `1..4096` |
+| `platform` | required, CLOSED enum |
+| `app_instance_id` | required, `1..128` |
+| `app_version` | optional, `<=64` |
+| `app_build` | optional, `<=64` |
+| `user_id`, `role`, `status`, `id`, `customer_id`, `owner` | **rejected** `422` |
+| any other field | **rejected** `422` |
+
+### 16.6 Error Considerations
+
+| Condition | Code | Status |
+|---|---|---|
+| No verified session | `AUTHENTICATION_REQUIRED` | 401 |
+| Not a `CUSTOMER` | `FORBIDDEN` | 403 |
+| Token owned by another account | `CONFLICT` | 409 |
+| Malformed/unknown field | `INVALID_VALUE` | 422 |
+| Missing/invalid field | `VALIDATION_ERROR` | 422 |
+| Foreign or unknown device on delete | `RESOURCE_NOT_FOUND` | 404 |
+| Rate limited | `RATE_LIMITED` | 429 |
+| Registration not enabled | — | 501 `{"status":"not_implemented"}` |
+
+No new error code was added to the closed registry.
+
+### 16.7 Authorization Summary
+
+| Actor | DEV-001 register | DEV-002 deactivate |
+|---|---|---|
+| `CUSTOMER` (owner) | Allowed | Allowed, idempotent |
+| `CUSTOMER` (other's device) | `409 CONFLICT` | `404 RESOURCE_NOT_FOUND` |
+| `STAFF` | `403` | `403` |
+| `ADMIN` | `403` | `403` |
+| Anonymous | `401` | `401` |

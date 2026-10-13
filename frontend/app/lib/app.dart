@@ -6,6 +6,7 @@ import 'config/app_config.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
+import 'core/notifications/push_messaging_service.dart';
 import 'core/presentation/auth_failure_presenter.dart';
 import 'features/catalog/data/catalog_repository.dart';
 import 'features/catalog/data/fixture_catalog_repository.dart';
@@ -38,6 +39,7 @@ class SLFurnituresApp extends StatefulWidget {
     this.authAdapter,
     this.ownsAuthAdapter = false,
     this.diagnostics = const NoopAppDiagnostics(),
+    this.pushMessaging,
   });
 
   final AppConfig config;
@@ -46,6 +48,7 @@ class SLFurnituresApp extends StatefulWidget {
   final ClerkAuthAdapter? authAdapter;
   final bool ownsAuthAdapter;
   final AppDiagnostics diagnostics;
+  final PushMessagingService? pushMessaging;
 
   @override
   State<SLFurnituresApp> createState() => _SLFurnituresAppState();
@@ -99,6 +102,9 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       clerkUiEnabled: widget.authAdapter?.clerkAuthState != null,
       showFixtureHero: useFixtures,
     );
+    if (widget.pushMessaging != null && widget.authAdapter != null) {
+      widget.pushMessaging!.attachAuthSession(widget.authAdapter!);
+    }
   }
 
   @override
@@ -111,6 +117,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
     if (widget.ownsAuthAdapter) {
       widget.authAdapter?.dispose();
     }
+    widget.pushMessaging?.dispose();
     super.dispose();
   }
 

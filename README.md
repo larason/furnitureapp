@@ -323,3 +323,17 @@ php -r 'echo bin2hex(random_bytes(16)), PHP_EOL;' # generate keys 3 times for ap
 php artisan reverb:start --debug
 php artisan queue:work --queue=notifications-broadcast --tries=3
 ```
+
+9. QN: if a user now misses the chance of getting JIT provisioning on first signup what to do then. Nothing is permanently missed. JIT provisioning can happen on any later authenticated Laravel request.
+  The user can:
+1. Sign in again through Clerk.
+2. Ensure the email is verified and the system clock is correct.
+3. Visit or trigger a feature that calls Laravel with the Clerk bearer token, such as:
+- submit a furniture request;
+- submit an enquiry;
+- use another authenticated API feature.
+4. Or the website can explicitly call:
+  GET /api/v1/me
+  Authorization: Bearer <current Clerk session token>
+  Laravel then fetches the verified Clerk profile and creates the local users and customer_profiles rows.
+  
