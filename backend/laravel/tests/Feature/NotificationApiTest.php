@@ -7,6 +7,7 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Support\NotificationIdentifier;
 use App\Support\NotificationRealtimeChange;
+use App\Support\PermissionName;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -59,6 +60,50 @@ final class NotificationApiTest extends TestCase
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
 
         $this->assertNull($foreign->fresh()->read_at);
+    }
+
+    public function test_operational_notification_list_rechecks_current_permissions(): void
+    {
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'notification_permission_list']);
+        $requestNotification = Notification::factory()->forRecipient($staff)->create([
+            'type' => 'NEW_MADE_TO_ORDER_REQUEST',
+        ]);
+        Notification::factory()->forRecipient($staff)->create(['type' => 'NEW_ENQUIRY']);
+        $staff->roles->first()->revokePermissionTo(PermissionName::REQUESTS_MANAGE->value);
+
+        $this->withHeaders($this->authenticateAs($staff))
+            ->getJson('/api/v1/me/notifications')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonMissing(['id' => NotificationIdentifier::encodeId((int) $requestNotification->getKey())]);
+
+        $this->withHeaders($this->authenticateAs($staff))
+            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $requestNotification->getKey()), ['read' => true])
+            ->assertNotFound()
+            ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+
+        $this->assertNull($requestNotification->fresh()->read_at);
+    }
+
+    public function test_customer_cannot_read_or_mutate_historical_operational_notifications(): void
+    {
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'notification_role_changed']);
+        $notification = Notification::factory()->forRecipient($staff)->create([
+            'type' => 'NEW_ENQUIRY',
+        ]);
+        $staff->syncRoles('CUSTOMER');
+
+        $this->withHeaders($this->authenticateAs($staff))
+            ->getJson('/api/v1/me/notifications')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 0);
+
+        $this->withHeaders($this->authenticateAs($staff))
+            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()), ['read' => true])
+            ->assertNotFound()
+            ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
+
+        $this->assertNull($notification->fresh()->read_at);
     }
 
     public function test_out_of_range_page_reports_the_requested_page_with_empty_data(): void

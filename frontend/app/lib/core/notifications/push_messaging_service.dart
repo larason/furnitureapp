@@ -172,7 +172,35 @@ final class PushMessagingService extends ChangeNotifier {
     _authSession?.removeListener(_handleAuthListener);
     _authSession = session;
     session.addListener(_handleAuthListener);
+    session.addBeforeSignOutListener(retireDeviceBeforeSignOut);
     unawaited(_enqueueAuthChange());
+  }
+
+  /// Retires this device while the outgoing session is still authenticated.
+  ///
+  /// `ClerkAuthAdapter.signOut()` runs this before it stops handing out session
+  /// tokens, so the deactivating DELETE still carries the previous account's
+  /// bearer token. Deleting the local token without it would strand the backend
+  /// installation as ACTIVE, and a later account reusing that token value would
+  /// be refused. The subsequent signed-out notification finds nothing left to
+  /// retire, so the device is not deleted twice.
+  Future<void> retireDeviceBeforeSignOut() async {
+    if (!_wasSignedIn) {
+      return;
+    }
+
+    _wasSignedIn = false;
+    final coordinator = registrations;
+
+    if (coordinator == null) {
+      await _deleteLocalToken();
+      _clearToken();
+
+      return;
+    }
+
+    await coordinator.retireOnSignOut();
+    _clearToken();
   }
 
   void _handleAuthListener() {

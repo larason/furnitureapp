@@ -25,6 +25,14 @@ abstract interface class ClerkAuthGateway {
 }
 
 class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
+  /// Upper bound on a single pre sign-out listener.
+  ///
+  /// A listener that never completes would otherwise block sign-out forever,
+  /// because Clerk sign-out cannot be safely deferred. The bound sits above the
+  /// API request timeout so a legitimate but slow cleanup still finishes, and it
+  /// is applied per listener so one stalled listener cannot starve the rest.
+  static const Duration _beforeSignOutListenerTimeout = Duration(seconds: 15);
+
   ClerkAuthAdapter({
     required this._gateway,
     this.diagnostics = const NoopAppDiagnostics(),
@@ -41,6 +49,7 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   final ClerkAuthGateway _gateway;
   final AppDiagnostics diagnostics;
   late final StreamSubscription<void> _changesSubscription;
+  final List<Future<void> Function()> _beforeSignOutListeners = [];
   ClerkAuthStatus _status = ClerkAuthStatus.initializing;
   int _sessionGeneration = 0;
   bool _localSessionBlocked = false;
@@ -147,6 +156,11 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   @override
   Future<void> signOut() async {
     _sessionGeneration++;
+    // Retirement has to happen while the outgoing session is still
+    // authenticated. Blocking the session first would leave listeners without a
+    // bearer token, so their authenticated cleanup would fail silently while
+    // local cleanup still succeeded.
+    await _runBeforeSignOutListeners();
     _localSessionBlocked = true;
     _signOutInProgress = true;
     _setStatus(ClerkAuthStatus.signedOut);
@@ -169,6 +183,24 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
       rethrow;
     } finally {
       _signOutInProgress = false;
+    }
+  }
+
+  @override
+  void addBeforeSignOutListener(Future<void> Function() listener) {
+    _beforeSignOutListeners.add(listener);
+  }
+
+  Future<void> _runBeforeSignOutListeners() async {
+    for (final listener in List.of(_beforeSignOutListeners)) {
+      try {
+        await listener().timeout(_beforeSignOutListenerTimeout);
+      } catch (error) {
+        assert(() {
+          debugPrint('Pre sign-out cleanup failed: $error');
+          return true;
+        }());
+      }
     }
   }
 

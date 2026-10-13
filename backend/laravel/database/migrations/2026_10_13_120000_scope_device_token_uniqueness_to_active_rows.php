@@ -92,13 +92,21 @@ return new class extends Migration
                 DB::statement("DROP TRIGGER IF EXISTS {$this->updateTrigger()}");
             }
 
-            $this->dropActiveTokenConstraint();
+            // Restore the legacy index before removing the ACTIVE-only one. Both
+            // constraints may coexist for the length of one statement, whereas the
+            // opposite order leaves the table with no fingerprint uniqueness at all
+            // if the restore fails: DDL commits implicitly, so nothing would roll the
+            // dropped index back. `assertNoSharedFingerprints()` already proved the
+            // legacy index can be created, and while it exists it is strictly
+            // stronger, so the overlap rejects nothing the ACTIVE-only index allowed.
             $this->restoreLegacyIndex();
+            $this->dropActiveTokenConstraint();
         }
 
         if (DB::getDriverName() === 'sqlite') {
-            DB::statement("DROP INDEX IF EXISTS {$this->activeIndex()}");
+            // Same ordering rationale as the generated-column branch above.
             $this->restoreLegacyIndex();
+            DB::statement("DROP INDEX IF EXISTS {$this->activeIndex()}");
         }
     }
 
@@ -131,15 +139,28 @@ return new class extends Migration
 
         $this->addActiveTokenTriggers();
 
-        DB::statement(<<<SQL
-            ALTER TABLE device_installations
-                ADD UNIQUE KEY {$this->activeIndex()} ({$this->activeColumn()})
-            SQL);
-
-        // Rows written before the triggers existed must be backfilled.
+        // Backfill before the index exists, not after. Every statement above is DDL,
+        // which commits implicitly, so once the column, the triggers and the index are
+        // all in place `hasActiveTokenConstraint()` reports the migration as applied. A
+        // backfill that then failed would leave existing ACTIVE rows holding NULL, which
+        // a unique index ignores, so those rows would silently escape the constraint and
+        // a later re-run would skip the backfill as already done. Backfilling first keeps
+        // the index as the last step, so a failure leaves the constraint *not* applied and
+        // the error surfaces instead of passing for a working migration.
+        //
+        // The legacy global index still applies at this point, so no two ACTIVE rows can
+        // share a fingerprint and the backfill cannot introduce a duplicate. The explicit
+        // assignment is kept even though the BEFORE UPDATE trigger recomputes the same
+        // value: it states the invariant directly instead of depending on the trigger
+        // firing for a self-assignment.
         DB::statement(<<<SQL
             UPDATE device_installations
             SET {$this->activeColumn()} = IF(`status` = 'ACTIVE', `token_fingerprint`, NULL)
+            SQL);
+
+        DB::statement(<<<SQL
+            ALTER TABLE device_installations
+                ADD UNIQUE KEY {$this->activeIndex()} ({$this->activeColumn()})
             SQL);
 
         $this->dropLegacyIndex();

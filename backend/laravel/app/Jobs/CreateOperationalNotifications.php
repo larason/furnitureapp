@@ -60,40 +60,7 @@ final class CreateOperationalNotifications implements ShouldQueue
 
         foreach ($recipients as $recipient) {
             try {
-                $inserted = Notification::query()->insertOrIgnore([
-                    'recipient_user_id' => $recipient->getKey(),
-                    'type' => $this->type->value,
-                    'title' => $this->title(),
-                    'message' => $this->message(),
-                    'target' => json_encode($this->target(), JSON_THROW_ON_ERROR),
-                    'source_type' => $this->sourceType,
-                    'source_id' => $this->sourceIdentifier(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                if ($inserted === 0) {
-                    continue;
-                }
-
-                $notification = Notification::query()
-                    ->where('recipient_user_id', $recipient->getKey())
-                    ->where('type', $this->type->value)
-                    ->where('source_type', $this->sourceType)
-                    ->where('source_id', $this->sourceIdentifier())
-                    ->firstOrFail();
-
-                SendOperationalNotificationEmail::dispatch((int) $notification->getKey())->afterCommit();
-
-                try {
-                    NotificationStateChanged::dispatch($notification, NotificationRealtimeChange::Created);
-                } catch (Throwable $exception) {
-                    Log::warning('Operational notification broadcast dispatch failed.', [
-                        'notification_type' => $this->type->value,
-                        'source_type' => $this->sourceType,
-                        'exception' => $exception::class,
-                    ]);
-                }
+                $this->deliverTo($recipient);
             } catch (Throwable $exception) {
                 Log::warning('Operational notification creation failed.', [
                     'notification_type' => $this->type->value,
@@ -103,6 +70,71 @@ final class CreateOperationalNotifications implements ShouldQueue
 
                 throw $exception;
             }
+        }
+    }
+
+    /**
+     * Stores the notification and schedules its downstream delivery work.
+     *
+     * The insert is idempotent on `notifications_recipient_type_source_unique`,
+     * so a retry after a failed dispatch finds the existing row instead of
+     * creating a duplicate. The `Created` broadcast belongs to the row itself and
+     * therefore fires only on the inserting attempt, while the email job is
+     * re-enqueued whenever the delivery has not started yet. Downstream failures
+     * propagate so the job retries and repairs the missing work instead of
+     * stranding the recipient.
+     */
+    private function deliverTo(User $recipient): void
+    {
+        $created = $this->insertNotification($recipient) === 1;
+        $notification = $this->notificationFor($recipient);
+
+        if ($created) {
+            $this->broadcastCreated($notification);
+        }
+
+        if ($notification->emailDeliveries()->exists()) {
+            return;
+        }
+
+        SendOperationalNotificationEmail::dispatch((int) $notification->getKey())->afterCommit();
+    }
+
+    private function insertNotification(User $recipient): int
+    {
+        return Notification::query()->insertOrIgnore([
+            'recipient_user_id' => $recipient->getKey(),
+            'type' => $this->type->value,
+            'title' => $this->title(),
+            'message' => $this->message(),
+            'target' => json_encode($this->target(), JSON_THROW_ON_ERROR),
+            'source_type' => $this->sourceType,
+            'source_id' => $this->sourceIdentifier(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function notificationFor(User $recipient): Notification
+    {
+        return Notification::query()
+            ->where('recipient_user_id', $recipient->getKey())
+            ->where('type', $this->type->value)
+            ->where('source_type', $this->sourceType)
+            ->where('source_id', $this->sourceIdentifier())
+            ->firstOrFail();
+    }
+
+    private function broadcastCreated(Notification $notification): void
+    {
+        try {
+            NotificationStateChanged::dispatch($notification, NotificationRealtimeChange::Created);
+        } catch (Throwable $exception) {
+            Log::warning('Operational notification broadcast dispatch failed.', [
+                'notification_type' => $this->type->value,
+                'source_type' => $this->sourceType,
+                'exception' => $exception::class,
+            ]);
         }
     }
 

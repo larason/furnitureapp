@@ -27,6 +27,15 @@ use Illuminate\Support\Facades\DB;
  */
 final class DeviceRegistrationService
 {
+    /** PostgreSQL reports a unique-key breach with its own SQLSTATE. */
+    private const POSTGRES_DUPLICATE_KEY_SQLSTATE = '23505';
+
+    /** MySQL's general integrity-violation state, shared by every constraint class. */
+    private const INTEGRITY_VIOLATION_SQLSTATE = '23000';
+
+    /** The MySQL driver code that narrows `23000` down to a duplicate entry. */
+    private const MYSQL_DUPLICATE_ENTRY_CODE = 1062;
+
     public function __construct(
         private readonly PushTokenCipher $cipher,
         private readonly PushTokenFingerprint $fingerprint,
@@ -173,9 +182,25 @@ final class DeviceRegistrationService
         );
     }
 
+    /**
+     * Distinguishes a duplicate-key error from every other integrity failure.
+     *
+     * PDO reports `errorInfo` as `[SQLSTATE, driverCode, driverMessage]`, so the
+     * driver code lives in `errorInfo[1]`, not `errorInfo[0]`. MySQL raises the
+     * general `23000` state for foreign keys, NOT NULL and CHECK constraints too,
+     * so treating that state alone as a duplicate would swallow a real integrity
+     * failure and report it as a contention to retry.
+     */
     private function isUniqueViolation(QueryException $exception): bool
     {
-        return in_array((string) $exception->getCode(), ['23000', '23505'], true)
-            || (int) ($exception->errorInfo[0] ?? 0) === 1062;
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+
+        if ($sqlState === self::POSTGRES_DUPLICATE_KEY_SQLSTATE) {
+            return true;
+        }
+
+        return $sqlState === self::INTEGRITY_VIOLATION_SQLSTATE
+            && $driverCode === self::MYSQL_DUPLICATE_ENTRY_CODE;
     }
 }

@@ -253,6 +253,131 @@ final class DeviceTokenUniquenessMysqlTest extends TestCase
         }
     }
 
+    /**
+     * Rows that exist *before* the migration runs must end up constrained, not merely
+     * have the column and index present.
+     *
+     * `migrate:fresh` leaves the table empty, so nothing else in this suite exercises the
+     * backfill. A column left NULL on an existing ACTIVE row is invisible to a unique
+     * index, so "the index exists" and "the index governs this row" are different claims
+     * and only the second one matters.
+     */
+    public function test_rows_present_before_the_migration_are_backfilled_and_constrained(): void
+    {
+        if (! $this->runsOnMariaDb()) {
+            $this->markTestSkipped('Only the MariaDB path backfills a maintained column.');
+        }
+
+        $amendment = $this->amendment();
+        $owner = User::factory()->customer()->create();
+        $fingerprint = app(PushTokenFingerprint::class)->for('mysql-pre-existing');
+
+        $amendment->down();
+
+        try {
+            // Written while the legacy global index is the only constraint in place.
+            DB::table('device_installations')->insert($this->row($owner, 'instance-old', $fingerprint, 'ACTIVE'));
+            $this->assertFalse(
+                Schema::hasColumn('device_installations', 'active_token_fingerprint'),
+                'Precondition: the rolled-back schema has no maintained column at all.',
+            );
+
+            $amendment->up();
+
+            $this->assertSame(
+                $fingerprint,
+                DB::table('device_installations')->value('active_token_fingerprint'),
+                'A pre-existing ACTIVE row must be backfilled, or the index cannot see it.',
+            );
+
+            $this->expectException(QueryException::class);
+            DB::table('device_installations')->insert($this->row($owner, 'instance-new', $fingerprint, 'ACTIVE'));
+        } finally {
+            // DDL implicitly commits, so RefreshDatabase cannot restore this schema.
+            $amendment->up();
+        }
+    }
+
+    /**
+     * A failed backfill must not leave the migration looking applied.
+     *
+     * Column, triggers and index are all DDL, so they commit implicitly. If the backfill
+     * ran after them and then failed, `hasActiveTokenConstraint()` would report the
+     * constraint as applied — column present, index present, both triggers present — while
+     * every pre-existing ACTIVE row still held NULL, which a unique index ignores. The
+     * table would silently accept a second ACTIVE owner of a pre-existing token, and no
+     * re-run would ever repair it.
+     */
+    public function test_a_failed_backfill_is_not_reported_as_an_applied_constraint(): void
+    {
+        if (! $this->runsOnMariaDb()) {
+            $this->markTestSkipped('Only the MariaDB path backfills a maintained column.');
+        }
+
+        $amendment = $this->amendment();
+        $owner = User::factory()->customer()->create();
+
+        $amendment->down();
+
+        try {
+            DB::table('device_installations')->insert(
+                $this->row($owner, 'instance-old', app(PushTokenFingerprint::class)->for('mysql-sabotaged'), 'ACTIVE')
+            );
+
+            $this->sabotageUpdates();
+            $this->assertThrows(fn () => $amendment->up());
+
+            $this->assertFalse(
+                $this->reportsActiveTokenConstraint(),
+                'A constraint whose backfill never ran must not be reported as applied, or no later '
+                .'migration would retry it and the existing rows would stay unconstrained.',
+            );
+        } finally {
+            $this->unsabotageUpdates();
+            $this->resetActiveTokenSchema();
+            $amendment->up();
+        }
+    }
+
+    /**
+     * Makes the backfill UPDATE fail without touching anything else.
+     */
+    private function sabotageUpdates(): void
+    {
+        DB::statement(<<<'SQL'
+            CREATE TRIGGER trg_test_block_device_backfill
+            BEFORE UPDATE ON device_installations
+            FOR EACH ROW
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'sabotaged'
+            SQL);
+    }
+
+    private function unsabotageUpdates(): void
+    {
+        DB::statement('DROP TRIGGER IF EXISTS trg_test_block_device_backfill');
+    }
+
+    /**
+     * Returns the MariaDB path to a state `up()` can rebuild from.
+     *
+     * `up()` starts by adding the column, so a half-applied schema has to be cleared by
+     * hand. DDL implicitly commits, so RefreshDatabase cannot do it.
+     */
+    private function resetActiveTokenSchema(): void
+    {
+        foreach (['trg_device_installations_active_token_insert', 'trg_device_installations_active_token_update'] as $trigger) {
+            DB::statement("DROP TRIGGER IF EXISTS {$trigger}");
+        }
+
+        if (Schema::hasIndex('device_installations', 'device_installations_active_token_unique')) {
+            DB::statement('ALTER TABLE device_installations DROP INDEX device_installations_active_token_unique');
+        }
+
+        if (Schema::hasColumn('device_installations', 'active_token_fingerprint')) {
+            DB::statement('ALTER TABLE device_installations DROP COLUMN active_token_fingerprint');
+        }
+    }
+
     private function amendment(): object
     {
         return require database_path('migrations/2026_10_13_120000_scope_device_token_uniqueness_to_active_rows.php');

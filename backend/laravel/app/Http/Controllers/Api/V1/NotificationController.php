@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Support\ApiErrorCode;
 use App\Support\NotificationIdentifier;
 use App\Support\NotificationRealtimeChange;
+use App\Support\NotificationType;
+use App\Support\PermissionName;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -22,9 +24,11 @@ class NotificationController extends V1Controller
     public function meIndex(ListNotificationsRequest $request): JsonResponse
     {
         $user = $this->authenticatedUser($request);
+        $types = $this->authorizedTypes($user);
         $filters = $request->filters();
         $query = Notification::query()
             ->where('recipient_user_id', $user->getKey())
+            ->whereIn('type', $types)
             ->orderByDesc('created_at')
             ->orderBy('id');
 
@@ -57,6 +61,7 @@ class NotificationController extends V1Controller
                 ],
                 'unread_count' => Notification::query()
                     ->where('recipient_user_id', $user->getKey())
+                    ->whereIn('type', $types)
                     ->whereNull('read_at')
                     ->count(),
             ],
@@ -66,12 +71,14 @@ class NotificationController extends V1Controller
     public function meUpdate(UpdateNotificationRequest $request, string $notification): JsonResponse
     {
         $user = $this->authenticatedUser($request);
+        $types = $this->authorizedTypes($user);
         $id = NotificationIdentifier::decode($notification);
         $model = $id === null
             ? null
             : Notification::query()
                 ->whereKey($id)
                 ->where('recipient_user_id', $user->getKey())
+                ->whereIn('type', $types)
                 ->first();
 
         if ($model === null) {
@@ -99,6 +106,36 @@ class NotificationController extends V1Controller
         return (new NotificationResource($model))
             ->response()
             ->withHeaders($this->privateHeaders());
+    }
+
+    /** @return list<string> */
+    private function authorizedTypes(User $user): array
+    {
+        if ($user->hasRole('CUSTOMER')) {
+            return array_values(array_filter(
+                array_map(static fn (NotificationType $type): string => $type->value, NotificationType::cases()),
+                static fn (string $type): bool => ! NotificationType::from($type)->isOperational(),
+            ));
+        }
+
+        if (! $user->checkPermissionTo(PermissionName::NOTIFICATIONS_READ_OPERATIONAL->value)) {
+            throw new ApiException(ApiErrorCode::FORBIDDEN, 'The requested permission is not available.', 403);
+        }
+
+        return array_values(array_filter(
+            array_map(static fn (NotificationType $type): string => $type->value, NotificationType::cases()),
+            fn (string $type): bool => $this->canReadOperationalType($user, NotificationType::from($type)),
+        ));
+    }
+
+    private function canReadOperationalType(User $user, NotificationType $type): bool
+    {
+        return match ($type) {
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST => $user->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value),
+            NotificationType::NEW_ENQUIRY => $user->checkPermissionTo(PermissionName::ENQUIRIES_MANAGE->value),
+            NotificationType::NEW_ORDER => $user->checkPermissionTo(PermissionName::ORDERS_VIEW_OPERATIONAL->value),
+            default => $type->isOperational(),
+        };
     }
 
     private function authenticatedUser(Request $request): User

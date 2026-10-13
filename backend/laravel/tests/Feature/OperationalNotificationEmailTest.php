@@ -280,6 +280,16 @@ final class OperationalNotificationEmailTest extends TestCase
             NotificationType::NEW_MADE_TO_ORDER_REQUEST,
         ))->handle();
 
+        // A consumed email job records its delivery row, so the duplicate run is
+        // a genuine no-op rather than a simulated dispatch that never ran.
+        EmailDelivery::query()->create([
+            'notification_id' => Notification::query()->sole()->id,
+            'recipient_user_id' => $recipient->id,
+            'channel' => EmailDelivery::CHANNEL,
+            'status' => EmailDeliveryStatus::ACCEPTED->value,
+            'attempt_count' => 1,
+        ]);
+
         (new CreateOperationalNotifications(
             'furniture_request',
             $request->id,
@@ -289,6 +299,48 @@ final class OperationalNotificationEmailTest extends TestCase
         Queue::assertPushed(SendOperationalNotificationEmail::class, 1);
         $this->assertDatabaseCount('notifications', 1);
         $this->assertSame($recipient->id, Notification::query()->value('recipient_user_id'));
+    }
+
+    public function test_retry_after_a_failed_dispatch_reenqueues_the_missing_email_delivery(): void
+    {
+        Queue::fake();
+        $recipient = User::factory()->staff()->create();
+        $request = FurnitureRequest::factory()->create();
+        $job = new CreateOperationalNotifications(
+            'furniture_request',
+            $request->id,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+        );
+
+        $job->handle();
+
+        $this->assertSame(1, Notification::query()->count());
+        $this->assertDatabaseCount('notification_email_deliveries', 0);
+
+        $job->handle();
+
+        Queue::assertPushed(SendOperationalNotificationEmail::class, 2);
+        $this->assertSame(1, Notification::query()->count());
+        $this->assertSame($recipient->id, Notification::query()->value('recipient_user_id'));
+    }
+
+    public function test_retry_does_not_rebroadcast_an_already_created_notification(): void
+    {
+        Event::fake([NotificationStateChanged::class]);
+        Queue::fake();
+        User::factory()->staff()->create();
+        $request = FurnitureRequest::factory()->create();
+        $job = new CreateOperationalNotifications(
+            'furniture_request',
+            $request->id,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+        );
+
+        $job->handle();
+        $job->handle();
+
+        Event::assertDispatchedTimes(NotificationStateChanged::class, 1);
+        $this->assertSame(1, Notification::query()->count());
     }
 
     public function test_logical_notification_broadcasts_a_minimal_created_signal_to_its_recipient(): void
