@@ -103,7 +103,7 @@ class ApiDeviceRegistrationRepository implements DeviceRegistrationRepository {
     RequestCancellation? cancellation,
   }) async {
     await _apiClient.delete<Object?>(
-      '/me/devices/$deviceId',
+      '/me/devices/${Uri.encodeComponent(deviceId)}',
       authMode: ApiAuthMode.required,
       cancellation: cancellation,
     );

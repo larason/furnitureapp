@@ -191,6 +191,11 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
     _beforeSignOutListeners.add(listener);
   }
 
+  @override
+  void removeBeforeSignOutListener(Future<void> Function() listener) {
+    _beforeSignOutListeners.remove(listener);
+  }
+
   Future<void> _runBeforeSignOutListeners() async {
     for (final listener in List.of(_beforeSignOutListeners)) {
       try {

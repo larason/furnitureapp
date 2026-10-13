@@ -480,6 +480,9 @@ class _StubAuthSession extends ChangeNotifier implements AuthSession {
   void addBeforeSignOutListener(Future<void> Function() listener) {}
 
   @override
+  void removeBeforeSignOutListener(Future<void> Function() listener) {}
+
+  @override
   Future<void> signOut() async => notifyListeners();
 }
 

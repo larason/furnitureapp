@@ -166,6 +166,9 @@ class _FakeAuthSession extends ChangeNotifier implements AuthSession {
   void addBeforeSignOutListener(Future<void> Function() listener) {}
 
   @override
+  void removeBeforeSignOutListener(Future<void> Function() listener) {}
+
+  @override
   Future<void> signOut() async {
     status = ClerkAuthStatus.signedOut;
     notifyListeners();

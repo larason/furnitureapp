@@ -28,4 +28,7 @@ abstract interface class AuthSession implements Listenable, AuthTokenProvider {
   /// Implementations must declare this: every [AuthSession] is required to decide
   /// whether it can drain such cleanup before sign-out.
   void addBeforeSignOutListener(Future<void> Function() listener);
+
+  /// Removes previously registered pre-sign-out cleanup.
+  void removeBeforeSignOutListener(Future<void> Function() listener);
 }

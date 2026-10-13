@@ -81,25 +81,18 @@ return new class extends Migration
         $this->assertNoSharedFingerprints();
 
         if (DB::getDriverName() === 'mysql') {
-            // Hardening, not a fix: the completed end state is identical either way,
-            // because MariaDB lets an orphaned trigger be dropped without complaint.
-            // Removing the triggers first closes the window in which the column is gone
-            // but the triggers still reference it, where an interrupted rollback would
-            // leave every later INSERT and UPDATE failing on "Unknown column ... in
-            // 'NEW'" with no migration able to repair it.
+            // Restore the legacy index before removing any ACTIVE-only protection. DDL
+            // commits implicitly, so a failed restore must leave the active index and,
+            // on MariaDB, its triggers intact.
+            $this->restoreLegacyIndex();
+
             if ($this->isMariaDb()) {
                 DB::statement("DROP TRIGGER IF EXISTS {$this->insertTrigger()}");
                 DB::statement("DROP TRIGGER IF EXISTS {$this->updateTrigger()}");
             }
 
-            // Restore the legacy index before removing the ACTIVE-only one. Both
-            // constraints may coexist for the length of one statement, whereas the
-            // opposite order leaves the table with no fingerprint uniqueness at all
-            // if the restore fails: DDL commits implicitly, so nothing would roll the
-            // dropped index back. `assertNoSharedFingerprints()` already proved the
-            // legacy index can be created, and while it exists it is strictly
-            // stronger, so the overlap rejects nothing the ACTIVE-only index allowed.
-            $this->restoreLegacyIndex();
+            // Drop the dependent triggers before the column, and keep the ACTIVE-only
+            // constraint until legacy uniqueness is in place.
             $this->dropActiveTokenConstraint();
         }
 

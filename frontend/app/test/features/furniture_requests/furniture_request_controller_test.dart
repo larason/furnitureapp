@@ -258,6 +258,9 @@ class _SignedInTokenSession implements AuthSession {
   void addBeforeSignOutListener(Future<void> Function() listener) {}
 
   @override
+  void removeBeforeSignOutListener(Future<void> Function() listener) {}
+
+  @override
   Future<void> signOut() async {}
 }
 
@@ -290,6 +293,9 @@ class _SlowTokenSession implements AuthSession {
 
   @override
   void addBeforeSignOutListener(Future<void> Function() listener) {}
+
+  @override
+  void removeBeforeSignOutListener(Future<void> Function() listener) {}
 
   @override
   Future<void> signOut() async {}

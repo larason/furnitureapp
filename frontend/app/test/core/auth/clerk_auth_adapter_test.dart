@@ -307,6 +307,25 @@ void main() {
       },
     );
 
+    test('does not run removed pre sign-out cleanup', () async {
+      final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+      final adapter = ClerkAuthAdapter(gateway: gateway);
+      await adapter.initialize();
+      var cleanupCalls = 0;
+      Future<void> cleanup() async {
+        cleanupCalls++;
+      }
+
+      adapter.addBeforeSignOutListener(cleanup);
+      adapter.removeBeforeSignOutListener(cleanup);
+
+      await adapter.signOut();
+
+      expect(cleanupCalls, 0);
+      expect(gateway.signOutCalls, 1);
+      adapter.dispose();
+    });
+
     test(
       'a stalled pre sign-out listener does not block sign-out',
       () async {

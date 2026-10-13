@@ -169,7 +169,9 @@ final class PushMessagingService extends ChangeNotifier {
       return;
     }
 
-    _authSession?.removeListener(_handleAuthListener);
+    _authSession
+      ?..removeListener(_handleAuthListener)
+      ..removeBeforeSignOutListener(retireDeviceBeforeSignOut);
     _authSession = session;
     session.addListener(_handleAuthListener);
     session.addBeforeSignOutListener(retireDeviceBeforeSignOut);
@@ -184,7 +186,10 @@ final class PushMessagingService extends ChangeNotifier {
   /// installation as ACTIVE, and a later account reusing that token value would
   /// be refused. The subsequent signed-out notification finds nothing left to
   /// retire, so the device is not deleted twice.
-  Future<void> retireDeviceBeforeSignOut() async {
+  Future<void> retireDeviceBeforeSignOut() =>
+      _authChanges.add(_retireDeviceBeforeSignOut);
+
+  Future<void> _retireDeviceBeforeSignOut() async {
     if (!_wasSignedIn) {
       return;
     }
@@ -271,7 +276,9 @@ final class PushMessagingService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _authSession?.removeListener(_handleAuthListener);
+    _authSession
+      ?..removeListener(_handleAuthListener)
+      ..removeBeforeSignOutListener(retireDeviceBeforeSignOut);
     unawaited(_foregroundSubscription?.cancel());
     unawaited(_openedSubscription?.cancel());
     unawaited(_tokenSubscription?.cancel());
@@ -328,9 +335,18 @@ final class PushMessagingService extends ChangeNotifier {
     }
 
     _setToken(token);
-    // Rotation reuses the same registration endpoint, so the server record
-    // converges on the new token instead of accumulating a second device.
-    unawaited(registrations?.registerForCustomer() ?? Future<void>.value());
+    final coordinator = registrations;
+    if (coordinator == null) {
+      return;
+    }
+
+    unawaited(
+      _authChanges.add(() async {
+        if (_authSession?.isSignedIn == true) {
+          await coordinator.registerForCustomer();
+        }
+      }),
+    );
   }
 
   /// Discards the local token, so the next sign-in or account switch receives a

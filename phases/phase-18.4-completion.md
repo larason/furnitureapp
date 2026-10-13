@@ -142,9 +142,9 @@ database name), then that database was dropped. The development database
 8. **No token in responses.** Verified by test: the token, ciphertext, and fingerprint are
    absent from every response body.
 
-## Test results
+## Initial Phase 18.4 verification
 
-### Passing
+### Scoped suite results
 
 | Suite | Result |
 |---|---|
@@ -178,7 +178,7 @@ Android 16 (API 36) x86_64 emulator, Google Play Services and Play Store present
 The channel fallback and the terminated-message loss were both reproduced before the fix and
 confirmed fixed afterwards.
 
-### Full suite status
+### Initial full-suite verification
 
 **Both suites are green.** The previously failing tests were fixed after the Phase 18.4
 implementation; see "Pre-existing failure remediation" below.
@@ -255,12 +255,13 @@ engine difference and the disposable-database verification workflow — is conso
 
 | Check | Result |
 |---|---|
-| `php artisan test --compact` (SQLite) | **1741 tests, 1733 passed, 8 skipped, 0 failed** |
+| `php artisan test --compact` (SQLite, amendment verification) | **1741 tests, 1733 passed, 8 skipped, 0 failed** |
 | MySQL uniqueness suite (disposable DB) | 4 tests, 16 assertions passed |
 | MySQL concurrency suite (disposable DB) | 3 tests, 16 assertions passed |
 | PHPStan (level 5) | **0 errors** |
 | Pint | passed |
-| `flutter analyze` / `flutter test` | clean / **655 passed** (unchanged) |
+| `flutter analyze` (amendment verification) | clean |
+| `flutter test` (amendment verification) | **655 tests, 655 passed, 0 failed** |
 
 The concurrency suite deliberately avoids `RefreshDatabase`, whose wrapping transaction would
 hide one connection's uncommitted work from another. It drives two real connections against
