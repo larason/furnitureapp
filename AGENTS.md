@@ -1241,7 +1241,7 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 
 ----
 
-## PHASE GROUP T — QUALITY ASSURANCE
+## PHASE GROUP T — QUALITY ASSURANCE - TESTSPRITE CLI AND MCP
 
 ### Phase 20.1 — Unit-test expansion
 ### Phase 20.2 — API integration tests
