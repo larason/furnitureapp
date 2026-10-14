@@ -203,7 +203,8 @@ Contains over 45 migrations governing schema integrity:
 
 ### 2. Frontend Applications (`frontend/`)
 
-- **`frontend/web/`**: Next.js App Router application providing customer browsing, made-to-order forms, general enquiry flows, and admin portal.
+- **`frontend/web/`**: Next.js App Router application providing the customer website, public catalog, made-to-order forms, and general enquiry flows.
+- **`frontend/admin/`**: Planned separate Next.js App Router admin dashboard with its own origin, deployment, environment configuration, Clerk boundary, and Laravel RBAC admission. It is not scaffolded until Phase 19.1 approval.
 - **`frontend/app/`**: Flutter mobile application designed with Material 3 components.
 - **`frontend/design-system/`**:
   - `DESIGN.md`: The definitive design contract (monochrome color scheme, Futura Condensed typography, pill buttons, flat card layouts).
@@ -336,4 +337,3 @@ php artisan queue:work --queue=notifications-broadcast --tries=3
   GET /api/v1/me
   Authorization: Bearer <current Clerk session token>
   Laravel then fetches the verified Clerk profile and creates the local users and customer_profiles rows.
-  
