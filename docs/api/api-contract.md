@@ -4147,7 +4147,7 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 - **No customer lookup:** `GET /api/v1/users/{id}` is **not** customer-accessible. If Admin later needs User lookup, that belongs to Phase 1.29 `ADM-008/009` (this phase defines resource concepts only).
 - **Staff lookup / Customer management:** Staff directory and customer administration belong to Phase 1.29 — not defined here.
 
-### 29.4 User/Profile Representation — Customer View (`USER-001` response)
+### 29.4 User/Profile Representation — Self View (`USER-001` response)
 
 | Field | Type | Exposure | Nullable | Notes |
 |---|---|---|---|---|
@@ -4157,10 +4157,14 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 | `email` | string | Own | no | Lowercased/trimmed, unique; read via Profile, **change via dedicated security workflow**, not ordinary `PATCH` (see `§29.7`) |
 | `phone` | string \| null | Own | yes | Normalized, optional; validated `phone` format; `null` where not supplied if business permits (documented in `§29.6`) |
 | `email_verified` | boolean | Own | no | `true`/`false` — server-controlled; alternative `email_verified_at: ISO8601 Z \| null` acceptable but contract must pick one (this doc uses `email_verified` boolean alias for profile convenience, backed by `email_verified_at` authoritative attribute; do not accept client `{"email_verified":true}`) |
+| `account_state` | `ACTIVE` \| `SUSPENDED` \| null | Own | yes | Server-controlled local account state. An inactive/suspended account is rejected before a successful protected response; `null` remains valid for existing CUSTOMER records that have no staff/admin state. |
+| `permissions` | string array | Own | no | Deterministically sorted effective Laravel permission identifiers. This is a presentation hint for the authenticated subject only; it never grants access and Laravel re-evaluates every protected operation. |
 | `created_at` | ISO8601 `Z` | Own | no | Server-generated |
 | `updated_at` | ISO8601 `Z` | Own | no | Server-generated |
 
-**Not exposed on `USER-001/002` (never serialized, even to Admin via normal Profile serialization):** `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, `internal permissions/authorization flags`, `internal staff notes`, `internal account flags`, `payment credentials`.
+**Not exposed on `USER-001/002` (never serialized, even to Admin via normal Profile serialization):** `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, internal authorization flags beyond the approved effective `permissions` identifiers, `internal staff notes`, `internal account flags`, `payment credentials`.
+
+> **Approved additive V1 amendment — Phase 19.3:** `account_state` and `permissions` are added to the authenticated subject's own representation only, per `ADR/ADMIN-002`. Existing fields retain their meaning. This enables separate-admin admission and permission-aware presentation; it does not create a role-management API, grant permissions on the client, or expose credentials, role pivots, policy internals, or another user's authorization data.
 
 **Lightweight requirement:** `GET /me` returns **only account data** — not `orders[]`, `cart`, `requests[]`, `enquiries[]`, `notifications[]`, `addresses[]`/`saved_addresses[]` (deferred per `business-rules.md §11`), `notification preferences`. Those are separate resources (`GET /me/orders`, `GET /me/cart`, `GET /me/requests`, `GET /me/enquiries`, `GET /me/notifications`). This keeps the representation compact enough to be called frequently on app startup (`app starts → authenticate/session check → GET /me`) without fetching entire account history.
 
@@ -4174,9 +4178,9 @@ PATCH /api/v1/me  →  authenticated principal  →  update only permitted field
 | `phone` | No | **Yes** (read + `PATCH` mutable) | Own mutable; operational where needed | **Authorized** |
 | `role` | No | **Read-only** | **Read-only** on own `/me` ; **No self-change** | **Authorized management** (Phase 1.29 `staff.manage`/`users.manage_authorized` only, separate from `/me`) |
 | `email_verified` / `email_verified_at` | No | **Read-only** | Read-only where authorized | **Authorized** (where approved) |
-| `account_state` / `staff_approval_state` / `suspension` / `disablement` | No | Read-only where relevant (if exposed) | **Restricted — Staff cannot modify** (no `STAFF → disable customer`) | **Authorized** (explicit Admin-only security workflow, Phase 1.29) |
+| `account_state` | No | **Read-only** (`ACTIVE`/`SUSPENDED`/`null`) | **Read-only**; Staff cannot modify it | **Read-only** in own `/me`; explicit Admin-only security workflow controls changes |
 | `password` / `password_hash` / tokens / secrets | No | **No** (never) | **No** | **No** (never) |
-| `permissions` / `authorization flags` | No | No (not direct; `role` exposed, permissions evaluated server-side) | No | Authorized management (separate) |
+| `permissions` | No | **Read-only effective identifiers** for own presentation; no client grant | **Read-only effective identifiers** for own presentation; no client grant | **Read-only effective identifiers** for own presentation; management remains separate |
 | `created_at` / `updated_at` | No | **Yes** (own) | Authorized where operational | Authorized |
 
 - **Customer → `own` only** — `Customer A → Customer B profile` via any future `/users/{id}` must fail object-level check (see `§29.12`).

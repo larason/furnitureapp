@@ -418,6 +418,9 @@ class _StubAuthSession extends ChangeNotifier implements AuthSession {
   bool get isSignedIn => signedIn;
 
   @override
+  String? get sessionId => signedIn ? 'sess_test' : null;
+
+  @override
   Future<String?> getToken() async => token;
 
   @override

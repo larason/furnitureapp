@@ -1,0 +1,14 @@
+@import "../../design-system/tokens.css";
+
+html { min-width: 320px; }
+
+body {
+  margin: 0;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+::selection { background: var(--surface-editorial); color: var(--text-primary); }

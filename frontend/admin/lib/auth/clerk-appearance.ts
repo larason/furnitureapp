@@ -1,0 +1,27 @@
+export const clerkAuthAppearance = {
+  variables: {
+    colorBackground: "var(--surface-paper)",
+    colorBorder: "var(--text-primary)",
+    colorDanger: "var(--color-danger)",
+    colorForeground: "var(--text-primary)",
+    colorInput: "var(--surface-paper)",
+    colorInputForeground: "var(--text-primary)",
+    colorMuted: "var(--surface-editorial)",
+    colorMutedForeground: "var(--text-secondary)",
+    colorNeutral: "var(--text-secondary)",
+    colorPrimary: "var(--action-primary)",
+    colorPrimaryForeground: "var(--text-inverse)",
+    colorRing: "var(--action-focus)",
+    fontFamily: "var(--font-ui)",
+    fontFamilyButtons: "var(--font-ui)",
+    fontSize: "var(--text-sm)",
+    borderRadius: "0",
+    spacing: "var(--space-4)",
+  },
+  options: { elevation: "flush" },
+  elements: {
+    card: { border: "var(--border-width) solid var(--text-primary)", borderRadius: "0", padding: "var(--space-6)" },
+    headerTitle: { fontFamily: "var(--font-display)" },
+    footerAction: { display: "none" },
+  },
+} as const;

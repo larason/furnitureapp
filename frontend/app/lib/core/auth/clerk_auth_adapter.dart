@@ -18,6 +18,7 @@ abstract interface class ClerkAuthGateway {
   Stream<void> get changes;
   bool get actionRequired;
   bool get isSignedIn;
+  String? get sessionId;
   Future<void> initialize();
   Future<String?> getSessionToken();
   Future<void> signOut();
@@ -55,6 +56,7 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   bool _localSessionBlocked = false;
   bool _signOutInProgress = false;
   bool _disposed = false;
+  String? _publishedSessionId;
 
   ClerkAuthState? get clerkAuthState => switch (_gateway) {
     _ClerkAuthGateway(:final auth) => auth,
@@ -67,6 +69,9 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   @override
   bool get isSignedIn =>
       !_localSessionBlocked && !_signOutInProgress && _gateway.isSignedIn;
+
+  @override
+  String? get sessionId => isSignedIn ? _gateway.sessionId : null;
 
   static Future<ClerkAuthAdapter> create({
     required String publishableKey,
@@ -232,8 +237,14 @@ class ClerkAuthAdapter extends ChangeNotifier implements AuthSession {
   }
 
   void _setStatus(ClerkAuthStatus status) {
-    if (_status == status || _disposed) return;
+    final sessionId = status == ClerkAuthStatus.signedIn
+        ? _gateway.sessionId
+        : null;
+    if ((_status == status && _publishedSessionId == sessionId) || _disposed) {
+      return;
+    }
     _status = status;
+    _publishedSessionId = sessionId;
     notifyListeners();
   }
 }
@@ -280,6 +291,9 @@ class _ClerkAuthGateway implements ClerkAuthGateway {
       _auth.isSignedIn && _auth.session?.status.isActive == true;
 
   @override
+  String? get sessionId => _auth.session?.id;
+
+  @override
   Future<void> initialize() async {}
 
   @override
@@ -309,6 +323,9 @@ class _UnavailableGateway implements ClerkAuthGateway {
 
   @override
   bool get isSignedIn => false;
+
+  @override
+  String? get sessionId => null;
 
   @override
   Future<void> initialize() async {}

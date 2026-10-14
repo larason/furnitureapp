@@ -246,6 +246,9 @@ class _SignedInTokenSession implements AuthSession {
   bool get isSignedIn => true;
 
   @override
+  String? get sessionId => 'sess_test';
+
+  @override
   Future<String?> getToken() async => 'session-token';
 
   @override
@@ -278,6 +281,9 @@ class _SlowTokenSession implements AuthSession {
 
   @override
   bool get isSignedIn => true;
+
+  @override
+  String? get sessionId => 'sess_test';
 
   @override
   Future<String?> getToken() {

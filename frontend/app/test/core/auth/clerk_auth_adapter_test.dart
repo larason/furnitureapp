@@ -143,35 +143,56 @@ void main() {
       },
     );
 
-    test('publishes a status change when Clerk signs the customer out', () async {
-      final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+    test('publishes an active Clerk session switch', () async {
+      final gateway = _FakeGateway(signedIn: true, sessionId: 'sess_a');
       final adapter = ClerkAuthAdapter(gateway: gateway);
+      var notifications = 0;
+      adapter.addListener(() => notifications++);
       await adapter.initialize();
-      expect(adapter.status, ClerkAuthStatus.signedIn);
 
-      gateway.signedIn = false;
+      gateway.sessionId = 'sess_b';
       await gateway.emitChange();
 
-      expect(adapter.status, ClerkAuthStatus.signedOut);
-      expect(await adapter.getToken(), isNull);
+      expect(adapter.sessionId, 'sess_b');
+      expect(notifications, 2);
       adapter.dispose();
     });
 
-    test('resolves an in-flight flow as signed out, not as action required', () async {
-      // A live sign-in or sign-up is a state the customer is already acting
-      // on. Reporting it as an unresolved session disabled the account action
-      // and diverted protected routes away from the authentication screen.
-      final gateway = _FakeGateway();
-      final adapter = ClerkAuthAdapter(gateway: gateway);
-      await adapter.initialize();
+    test(
+      'publishes a status change when Clerk signs the customer out',
+      () async {
+        final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+        expect(adapter.status, ClerkAuthStatus.signedIn);
 
-      expect(gateway.flowInProgress, isFalse);
-      gateway.flowInProgress = true;
-      await gateway.emitChange();
+        gateway.signedIn = false;
+        await gateway.emitChange();
 
-      expect(adapter.status, ClerkAuthStatus.signedOut);
-      adapter.dispose();
-    });
+        expect(adapter.status, ClerkAuthStatus.signedOut);
+        expect(await adapter.getToken(), isNull);
+        adapter.dispose();
+      },
+    );
+
+    test(
+      'resolves an in-flight flow as signed out, not as action required',
+      () async {
+        // A live sign-in or sign-up is a state the customer is already acting
+        // on. Reporting it as an unresolved session disabled the account action
+        // and diverted protected routes away from the authentication screen.
+        final gateway = _FakeGateway();
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+
+        expect(gateway.flowInProgress, isFalse);
+        gateway.flowInProgress = true;
+        await gateway.emitChange();
+
+        expect(adapter.status, ClerkAuthStatus.signedOut);
+        adapter.dispose();
+      },
+    );
 
     test('reports action required only for an unresolved session', () async {
       final gateway = _FakeGateway();
@@ -289,23 +310,18 @@ void main() {
       },
     );
 
-    test(
-      'signs out even when pre sign-out cleanup fails',
-      () async {
-        final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
-        final adapter = ClerkAuthAdapter(gateway: gateway);
-        await adapter.initialize();
-        adapter.addBeforeSignOutListener(
-          () async => throw StateError('offline'),
-        );
+    test('signs out even when pre sign-out cleanup fails', () async {
+      final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+      final adapter = ClerkAuthAdapter(gateway: gateway);
+      await adapter.initialize();
+      adapter.addBeforeSignOutListener(() async => throw StateError('offline'));
 
-        await adapter.signOut();
+      await adapter.signOut();
 
-        expect(gateway.signOutCalls, 1);
-        expect(adapter.status, ClerkAuthStatus.signedOut);
-        adapter.dispose();
-      },
-    );
+      expect(gateway.signOutCalls, 1);
+      expect(adapter.status, ClerkAuthStatus.signedOut);
+      adapter.dispose();
+    });
 
     test('does not run removed pre sign-out cleanup', () async {
       final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
@@ -389,6 +405,7 @@ class _FakeSecureStore implements SecureKeyValueStore {
 class _FakeGateway implements ClerkAuthGateway {
   _FakeGateway({
     this.signedIn = false,
+    this.sessionId,
     this.token,
     this.delayedToken,
     this.signOutError,
@@ -396,6 +413,9 @@ class _FakeGateway implements ClerkAuthGateway {
   });
 
   bool signedIn;
+
+  @override
+  String? sessionId;
   final String? token;
   final Completer<String?>? delayedToken;
   final Object? signOutError;

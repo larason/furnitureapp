@@ -750,15 +750,21 @@ components:
         email_verified:
           type: boolean
           readOnly: true
-        staff_state:
+        account_state:
           type:
           - string
           - 'null'
           enum:
-          - PENDING
           - ACTIVE
           - SUSPENDED
+          - null
           readOnly: true
+        permissions:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Deterministically sorted effective permission identifiers for the authenticated subject. Presentation only; Laravel remains authoritative.
         created_at:
           type: string
           format: date-time

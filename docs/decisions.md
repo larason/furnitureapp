@@ -2,8 +2,6 @@
 
 > **Source:** Phases 1.1–1.14. New decisions are appended here per `phase-1.13.md §76` / `phase-1.14.md §71` (do not create `api-response-decisions.md` or `api-input-decisions.md`).
 
----
-
 ### ADR/DESIGN-001 — Furniture Token Authority and Brand Translation
 
 **Decision:** Retain the previous Nike-derived system's structural discipline while establishing SL Furnitures as architectural, warm, and editorial. The official `designs/brandlogo.png` is the identity authority. Furniture character comes from the semantic warm-ivory canvas, controlled deep-brown editorial/material accent, Young Serif display typography, photography, and restrained composition. Charcoal `#111111` remains primary text/action and white `#FFFFFF` remains paper/product surface.
@@ -273,6 +271,16 @@
 **Decision:** Within `v1`: no silent rename, type/meaning/nullability change, or removal; adding truly optional field is non-breaking. Money shape or timestamp format change is breaking per versioning policy.
 
 **Reason:** `phase-1.13.md §53-58`, `api-versioning-strategy.md`.
+
+---
+
+### ADR/ADMIN-002 — Authenticated Self Identity for Admin Admission
+
+**Decision:** `GET/PATCH /api/v1/me` (`USER-001/002`) add read-only `account_state` and a deterministically sorted `permissions` array containing only the authenticated local user's effective Laravel permission identifiers. Existing fields retain their meaning. The fields are private, `no-store`, self-only, and presentation-only; Laravel remains the final authorization authority for every endpoint.
+
+**Reason:** The separately deployed admin application must resolve an active local STAFF/ADMIN identity and present permission-aware UI without trusting Clerk metadata, a frontend role map, or stale client state. The existing local `account_state` model uses `ACTIVE`, `SUSPENDED`, or `null` for legacy customer records. Inactive users remain rejected by authentication middleware before `USER-001/002` execute.
+
+**Consequences:** This is an owner-approved additive V1 amendment, not a new endpoint or authentication mechanism. The stale `User.staff_state` OpenAPI property is removed from the self identity schema; the implemented local field is canonically `account_state`. It does not expose tokens, password material, RBAC pivots, policy internals, or another user's data. The frontend must fail closed on missing/malformed values and cannot grant access from the returned array.
 
 ---
 
@@ -3395,3 +3403,43 @@ the real engine proves the generated/trigger path actually works.
 `tests/Feature/DeviceTokenConcurrencyMysqlTest.php` (new),
 `tests/Feature/DeviceInstallationApiTest.php`, `docs/api/api-contract.md §36.4/§36.6`,
 `docs/api/api-conventions.md §33.3`, `docs/api/api-resources.md §16`
+
+---
+
+### ADR/NOT-009 — Operational Notification Preferences Are Not a V1 Capability
+
+**Decision:** Active eligible `STAFF` and `ADMIN` recipients must receive the approved
+`NEW_MADE_TO_ORDER_REQUEST` and `NEW_ENQUIRY` notifications through the existing durable inbox,
+Reverb synchronization, and Resend operational-email paths. Personal operational-email opt-out is
+prohibited. Customer push preferences are deferred until commerce workflows and customer
+notification events receive separate owner approval.
+
+No `user_notification_preferences` schema, preference API, preference-delivery suppression,
+default backfill, frontend settings UI, or alternative notification configuration mechanism is
+introduced in the request-only release. Existing FCM device registration remains intact, with
+`NOTIFICATION_PUSH_ENABLED=false` and `NOTIFICATION_PUSH_REGISTRATION_ENABLED=false`.
+
+**Reason:** There is no approved optional notification channel in the current request-only scope.
+Operational request/enquiry alerts are required for the business workflow; allowing recipient
+opt-out would make a personal setting suppress an operationally required communication. Persisting
+customer consent before approved customer event policy would create inert, misleading settings and
+unnecessarily extend the frozen V1 API and database schema.
+
+**Status:** Accepted; implementation deferred | **Date:** 2026-10-14 | **Affected:**
+`phases/group-R-phases.md`, `phases/phase-18.7-completion.md`
+
+---
+
+### ADR/ADMIN-001 — Separate Admin Next.js Application and Origin
+
+**Decision:** The administrative dashboard is a separate Next.js + React + TypeScript + MUI application at the proposed `frontend/admin` location. It has its own App Router, layouts, build, environment configuration, deployment and production origin/subdomain. It must not be hosted under `frontend/web` or the customer website's `/admin` route.
+
+The application reuses the existing Clerk instance for identity and session handling. Laravel remains the authority for local user resolution, active account state, `CUSTOMER`/`STAFF`/`ADMIN` roles, exact permissions, resource authorization and business state. A Clerk-authenticated CUSTOMER is denied dashboard admission even when the Clerk session is valid. No public admin registration or client-side role elevation is permitted.
+
+**Reason:** Separate routing and deployment reduce customer/admin coupling and make the privileged surface independently controlled. Reusing Clerk and Laravel preserves the existing single-identity and centralized authorization model. The decision also respects the request-only release: only implemented, permission-backed operational APIs may become active admin screens.
+
+**Consequences:** The admin application needs exact Clerk authorized-party/origin, Laravel CORS, CSP and Reverb allowed-origin configuration. It must use the frozen `/api/v1` contract and existing NOT-001/NOT-002 plus private Reverb channels. A dashboard aggregate endpoint is not assumed; Overview must not fabricate metrics. The customer website remains public/catalog-oriented and receives no admin routes.
+
+**Status:** Accepted architecture direction; implementation pending Phase 19.2 and owner confirmation of the concrete domain/origin.
+
+**Evidence:** `phases/phase-19.1-architecture-api-audit.md`, `phases/group-S-phases.md`, `AGENTS.md §8`, `AGENTS.md §27`.
