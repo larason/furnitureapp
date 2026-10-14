@@ -97,6 +97,8 @@ test("Clerk integration keeps public catalog routes public and uses canonical au
   const layout = read("app/layout.tsx");
   const proxy = read("proxy.ts");
   const bridge = read("lib/auth/laravel.ts");
+  const bootstrap = read("components/auth/laravel-session-bootstrap.tsx");
+  const bootstrapLogic = read("lib/auth/laravel-session-bootstrap.ts");
   const apiClient = read("lib/api/client.ts");
   const signIn = read("app/sign-in/[[...sign-in]]/page.tsx");
   const signUp = read("app/sign-up/[[...sign-up]]/page.tsx");
@@ -114,6 +116,15 @@ test("Clerk integration keeps public catalog routes public and uses canonical au
   assert.match(bridge, /import "server-only"/);
   assert.match(bridge, /createAuthenticatedLaravelRequest\(auth, apiRequest\)/);
   assert.match(bridge, /path: "\/me", cache: "no-store"/);
+  assert.match(bootstrap, /useAuth/);
+  assert.match(bootstrap, /useUser/);
+  assert.match(bootstrap, /isEligibleLaravelBootstrapSession/);
+  assert.match(bootstrap, /sessionBootstrap\.bootstrap\(sessionKey, getToken\)/);
+  assert.match(bootstrap, /window\.addEventListener\("online", recover\)/);
+  assert.match(bootstrap, /document\.addEventListener\("visibilitychange", recoverWhenVisible\)/);
+  assert.match(bootstrap, /MAX_SESSION_RECOVERY_ATTEMPTS = 2/);
+  assert.match(bootstrapLogic, /emailVerification === "verified"/);
+  assert.match(bootstrapLogic, /sessionStatus === undefined \|\| sessionStatus === "active"/);
   assert.doesNotMatch(apiClient, /@clerk/);
   assert.match(signIn, /<AuthPageLayout title="Welcome back">\s*<SignIn appearance=\{clerkAuthAppearance\} \/>/);
   assert.match(signUp, /<AuthPageLayout title="Create your account">\s*<SignUp appearance=\{clerkAuthAppearance\} \/>/);

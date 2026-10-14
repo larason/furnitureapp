@@ -84,3 +84,7 @@ The following remain open and should be carried forward without reopening comple
 - The migration adds the device_installations table and swaps an index. It does not touch any existing table the website depends on.
 - It's additive and verified against real MariaDB.
 - A failure would occur at deploy time, not during normal operation.
+
+26. The website's current Clerk integration is a one-way bridge: Clerk → Laravel. It does not yet support Laravel → Clerk, so the website cannot create or update Clerk identities. This is a known limitation and should be documented for future work.
+
+27. Use TestSprite CLI to test this project and fix what fails.
