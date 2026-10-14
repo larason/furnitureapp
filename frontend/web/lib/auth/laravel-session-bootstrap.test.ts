@@ -106,9 +106,9 @@ test("invalidates stale work on reset without deleting a replacement bootstrap",
   const current = bootstrap.bootstrap(SESSION_ID, async () => "new-token");
   resolveFirst?.();
   await stale;
-  await bootstrap.bootstrap(SESSION_ID, async () => "new-token");
   resolveSecond?.();
   await current;
+  await bootstrap.bootstrap(SESSION_ID, async () => "new-token");
   await bootstrap.bootstrap(SESSION_ID, async () => "new-token");
 
   assert.equal(calls, 2);
@@ -180,6 +180,64 @@ test("refreshes a rejected token once, then blocks an identity that remains reje
 
   assert.equal(calls, 4);
   assert.deepEqual(tokenOptions, [undefined, { skipCache: true }, undefined, { skipCache: true }]);
+});
+
+test("refreshes a rejected token once even when no transient retry budget remains", async () => {
+  let calls = 0;
+  const tokenOptions: Array<Readonly<{ skipCache?: boolean }> | undefined> = [];
+  const bootstrap = createLaravelSessionBootstrap({
+    apiRequest: async <T>() => {
+      calls += 1;
+      if (calls === 1) {
+        throw new ApiError(401, [{ code: "INVALID_AUTHENTICATION", message: "Rejected" }]);
+      }
+
+      return { data: {} as T };
+    },
+    retryDelaysMs: [],
+  });
+
+  await bootstrap.bootstrap(SESSION_ID, async (options) => {
+    tokenOptions.push(options);
+
+    return "fresh-token";
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(tokenOptions, [undefined, { skipCache: true }]);
+});
+
+test("keeps the token refresh independent of the transient retry count", async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  const tokenOptions: Array<Readonly<{ skipCache?: boolean }> | undefined> = [];
+  const bootstrap = createLaravelSessionBootstrap({
+    apiRequest: async <T>() => {
+      calls += 1;
+      if (calls === 1) {
+        throw new ApiTransportError("network");
+      }
+      if (calls === 2) {
+        throw new ApiError(401, [{ code: "INVALID_AUTHENTICATION", message: "Rejected" }]);
+      }
+
+      return { data: {} as T };
+    },
+    retryDelaysMs: [1],
+    sleep: async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+  });
+
+  await bootstrap.bootstrap(SESSION_ID, async (options) => {
+    tokenOptions.push(options);
+
+    return "fresh-token";
+  });
+
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [1]);
+  assert.deepEqual(tokenOptions, [undefined, undefined, { skipCache: true }]);
 });
 
 test("allows a later lifecycle change to retry an unsuccessful temporary bootstrap", async () => {

@@ -14,6 +14,8 @@ const DEFAULT_RETRY_DELAYS_MS = [250, 1_000] as const;
 
 const INVALID_AUTHENTICATION_CODE = "INVALID_AUTHENTICATION";
 
+const INITIAL_GENERATION = 0;
+
 export type ClerkTokenGetter = (options?: Readonly<{ skipCache?: boolean }>) => Promise<string | null>;
 
 export type LaravelSessionBootstrap = Readonly<{
@@ -57,11 +59,15 @@ export function createLaravelSessionBootstrap({
         return existing;
       }
 
-      const generation = generations.get(sessionId) ?? 0;
-      let work: Promise<void>;
-      work = bootstrapSession(apiRequest, getToken, retryDelaysMs, sleep)
+      const generation = currentGeneration(generations, sessionId);
+      const work: Promise<void> = bootstrapSession(
+        apiRequest,
+        getToken,
+        retryDelaysMs,
+        sleep,
+      )
         .then((outcome) => {
-          if (generation !== generations.get(sessionId)) {
+          if (generation !== currentGeneration(generations, sessionId)) {
             return;
           }
           if (outcome === "success") {
@@ -83,10 +89,22 @@ export function createLaravelSessionBootstrap({
     reset(sessionId) {
       successfulSessions.delete(sessionId);
       blockedSessions.delete(sessionId);
-      generations.set(sessionId, (generations.get(sessionId) ?? 0) + 1);
+      generations.set(sessionId, currentGeneration(generations, sessionId) + 1);
       inFlight.delete(sessionId);
     },
   };
+}
+
+/**
+ * A session with no recorded generation is still at the initial generation, so
+ * an absent entry must compare equal to it instead of invalidating the
+ * bootstrap result it belongs to.
+ */
+function currentGeneration(
+  generations: ReadonlyMap<string, number>,
+  sessionId: string,
+): number {
+  return generations.get(sessionId) ?? INITIAL_GENERATION;
 }
 
 export function isEligibleLaravelBootstrapSession({
@@ -112,7 +130,10 @@ async function bootstrapSession(
   sleep: (milliseconds: number) => Promise<void>,
 ): Promise<"success" | "blocked" | "failed"> {
   let refreshAttempted = false;
-  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+  // The attempt index advances only when a bounded backoff retry is scheduled.
+  // A one-time token refresh retries the current attempt instead, so it never
+  // consumes the transient retry budget and still happens when no retry remains.
+  for (let attempt = 0; attempt <= retryDelaysMs.length;) {
     try {
       const request = createAuthenticatedLaravelRequest(
         async () => ({
@@ -138,6 +159,7 @@ async function bootstrapSession(
       }
 
       await sleep(retryDelaysMs[attempt]);
+      attempt += 1;
     }
   }
 
