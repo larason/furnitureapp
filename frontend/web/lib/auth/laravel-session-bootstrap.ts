@@ -19,7 +19,7 @@ const INITIAL_GENERATION = 0;
 export type ClerkTokenGetter = (options?: Readonly<{ skipCache?: boolean }>) => Promise<string | null>;
 
 export type LaravelSessionBootstrap = Readonly<{
-  bootstrap: (sessionId: string, getToken: ClerkTokenGetter) => Promise<void>;
+  bootstrap: (sessionId: string, getToken: ClerkTokenGetter) => Promise<boolean>;
   reset: (sessionId: string) => void;
 }>;
 
@@ -45,13 +45,13 @@ export function createLaravelSessionBootstrap({
 }: BootstrapDependencies): LaravelSessionBootstrap {
   const successfulSessions = new Set<string>();
   const blockedSessions = new Set<string>();
-  const inFlight = new Map<string, Promise<void>>();
+  const inFlight = new Map<string, Promise<boolean>>();
   const generations = new Map<string, number>();
 
   return {
     bootstrap(sessionId, getToken) {
       if (successfulSessions.has(sessionId) || blockedSessions.has(sessionId)) {
-        return Promise.resolve();
+        return Promise.resolve(successfulSessions.has(sessionId));
       }
 
       const existing = inFlight.get(sessionId);
@@ -60,7 +60,7 @@ export function createLaravelSessionBootstrap({
       }
 
       const generation = currentGeneration(generations, sessionId);
-      const work: Promise<void> = bootstrapSession(
+      const work: Promise<boolean> = bootstrapSession(
         apiRequest,
         getToken,
         retryDelaysMs,
@@ -68,13 +68,16 @@ export function createLaravelSessionBootstrap({
       )
         .then((outcome) => {
           if (generation !== currentGeneration(generations, sessionId)) {
-            return;
+            return false;
           }
           if (outcome === "success") {
             successfulSessions.add(sessionId);
+            return true;
           } else if (outcome === "blocked") {
             blockedSessions.add(sessionId);
           }
+
+          return false;
         })
         .finally(() => {
           if (inFlight.get(sessionId) === work) {

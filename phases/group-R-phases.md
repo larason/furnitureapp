@@ -1,863 +1,588 @@
-# Phase 18.6 — Request & Enquiry Notifications
+# SL Furnitures — Phase 18.7: Notification Preferences
 
 **Project:** SL Furnitures
-**Group:** R — Notifications
-**Phase:** 18.6 — Request & Enquiry Notifications
-**Status:** Ready for implementation
-**Backend:** Laravel + MySQL
-**Authentication:** Clerk + Laravel RBAC
-**Email:** Resend via Laravel Mail
-**Real-time:** Laravel Reverb
-**Push infrastructure:** Firebase Cloud Messaging (FCM)
-**Initial commerce mode:** REQUEST ONLY
+**Phase:** 18.7 — Notification Preferences
+**Implementation approach:** Contract-first, backend-first, approval-gated
+**Backend:** Laravel 13 + MariaDB 11.8
+**Authentication:** Clerk
+**Delivery:** MySQL/MariaDB notification records, Resend email, Laravel Reverb, Firebase Cloud Messaging
+**Frontend consumers:** Future Next.js/MUI admin dashboard and Flutter customer app
+
+## Status — CLOSED / IMPLEMENTATION DEFERRED (Owner decision, 2026-10-14)
+
+The owner declined the proposed preference schema, API, and delivery-policy extension for the
+current request-only release.
+
+- Eligible active `STAFF`/`ADMIN` recipients must continue to receive mandatory
+  `NEW_MADE_TO_ORDER_REQUEST` and `NEW_ENQUIRY` notifications through the existing durable inbox,
+  Reverb synchronization, and Resend operational-email paths. Personal operational-email opt-out
+  is prohibited.
+- Customer push preferences are deferred until commerce workflows and their customer notification
+  policies are separately approved. `NOTIFICATION_PUSH_ENABLED=false` and
+  `NOTIFICATION_PUSH_REGISTRATION_ENABLED=false` remain unchanged.
+- No `user_notification_preferences` table, preference fields, NPF endpoints, preference-delivery
+  suppression, default backfill, UI, or alternative configuration mechanism is approved.
+- `NOT-001`, `NOT-002`, recipient eligibility, existing delivery isolation, and the FCM device
+  registration contract remain unchanged.
+
+The proposal sections below are retained as historical review material only. They do not authorize
+implementation. Any future customer notification preference requires a new policy and frozen API
+contract review.
 
 ## 1. Objective
 
-Complete and verify production-oriented notification behavior for successful made-to-order furniture requests and general enquiries.
+Design and implement a secure, extensible notification-preferences system that allows eligible users to control optional delivery channels without disabling required operational notifications.
 
-Do not implement a new notification system. Reuse, audit, complete, and harden the functionality already implemented in Phases 18.1–18.4.
+Preserve the existing notification architecture established in Phases 18.1–18.6.
 
-The outcome must be a reliable operational notification workflow in which:
+The system must distinguish:
 
-1. A visitor successfully submits a furniture request or enquiry.
-2. Laravel durably commits the corresponding business resource.
-3. The existing notification pipeline identifies eligible operational recipients.
-4. Recipient-scoped logical notifications are created without duplication.
-5. Eligible recipients receive their notifications through the existing authenticated notification API.
-6. Resend delivers eligible operational email alerts.
-7. Reverb signals changes to connected authorized recipients.
-8. Failures in downstream notification channels never invalidate a successful request or enquiry.
-9. Staff use the request/enquiry resource itself for operational action; notification read state is informational only.
+- Durable in-app notifications.
+- Reverb real-time synchronization signals.
+- Resend operational email.
+- FCM push delivery.
+- Per-user preferences.
+- Per-device registration and permission.
+- Business-event eligibility.
 
-The phase is complete only when existing behavior is audited, identified gaps are corrected, and end-to-end tests demonstrate the approved policy.
+A notification preference must not become an authorization mechanism or change the underlying business record.
 
-## 2. Project context
+**Mandatory gate:** Audit the frozen contract and propose the preference policy, endpoint definitions, and schema first. Do not implement an unapproved contract extension.
 
-Existing completed phases:
+## 2. Verified baseline
 
-- Phase 18.1 — Notification Domain.
-- Phase 18.2 — Email Notifications.
-- Phase 18.3 — In-App Notifications with Laravel Reverb.
-- Phase 18.4 — Firebase Cloud Messaging infrastructure and authenticated customer device registration.
+Phase 18.6 is PASS.
 
-Phase 18.3 passed a real Clerk-authenticated Reverb smoke test.
+Existing functionality:
 
-Phase 18.4 completed its approved infrastructure scope. Laravel and Flutter test suites have returned to a green baseline:
+- `NEW_MADE_TO_ORDER_REQUEST` for active STAFF/ADMIN with `requests.manage`.
+- `NEW_ENQUIRY` for active STAFF/ADMIN with `enquiries.manage`.
+- Durable recipient-scoped notification records.
+- Independent notification read state.
+- Resend operational email delivery.
+- Reverb private recipient channels.
+- `notification.state-changed` with minimal payload.
+- NOT-001 recipient inbox.
+- NOT-002 read/unread mutation.
+- FCM device-registration architecture, with customer business-event push fan-out disabled.
+- No customer notification for REQ-001 or ENQ-001.
+- Order notifications deferred to Phase 18.5.
 
-- Laravel: 1,726 passed, 1 skipped, 0 failed.
-- Flutter: 637 passed, 0 failed.
+The verified live Reverb event was received on `private-notifications.4`, with payload containing only `notification_id` and `change`.
 
-Preserve those results.
+Do not rebuild these systems.
 
-The initial production release is REQUEST ONLY. Order and payment notifications remain deferred.
+## 3. Mandatory audit
 
-The admin dashboard frontend will be implemented in a later group. This phase must not invent a temporary production-facing admin interface.
+Read and follow:
 
-## 3. Required repository audit
-
-Read these authorities before implementation:
-
-- Root `AGENTS.md`, particularly Phase Group R.
-- `docs/api/api-contract.md`, especially notification event and trigger policies.
+- Root `AGENTS.md`.
+- `docs/api/api-contract.md`, especially §17, §18, §28, §29, §31.
 - `docs/api/api-resources.md`.
 - `docs/api/api-conventions.md`.
 - `docs/api/openapi.yaml`.
 - `docs/decisions.md`.
-- Request and enquiry domain rules.
 - `phases/phase-18.1-completion.md`.
 - `phases/phase-18.2-completion.md`.
 - `phases/phase-18.3-completion.md`.
 - `phases/phase-18.4-completion.md`.
+- `phases/phase-18.6-completion.md`.
+- Existing notification models, services, controllers, FormRequests, jobs, migrations, tests, and delivery records.
+- Existing device-registration contract and FCM feature flags.
+- Existing STAFF/ADMIN permissions.
+- Existing email eligibility and retry rules.
+- Existing notification source/target and privacy rules.
 
-Inspect the actual Laravel code for:
+Check whether any notification-preference infrastructure already exists.
 
-- REQ-001 and ENQ-001 controllers and services.
-- Request/enquiry persistence transactions.
-- Notification model and resource serializer.
-- Recipient resolution and permission checking.
-- Notification creation jobs.
-- Logical notification deduplication.
-- Resend mail notification jobs and templates.
-- Reverb broadcast jobs/events.
-- Channel authorization.
-- Existing email delivery attempts.
-- Queue routing and retry behavior.
-- Related tests and factories.
+Produce a concise gap analysis before proposing changes.
 
-Produce a concise gap analysis before writing code:
+## 4. Phase 18.7 approval checkpoint
 
-| Capability | Existing implementation | Gap | Action |
-|---|---|---|---|
-| Request trigger | Audit | Identify | Reuse/fix |
-| Enquiry trigger | Audit | Identify | Reuse/fix |
-| Recipient filtering | Audit | Identify | Reuse/fix |
-| Duplicate suppression | Audit | Identify | Reuse/fix |
-| Email | Audit | Identify | Reuse/fix |
-| Reverb | Audit | Identify | Reuse/fix |
-| Security/privacy | Audit | Identify | Reuse/fix |
-| Operational navigation target | Audit | Identify | Defer UI or correct metadata |
+The current frozen V1 contract does not establish a dedicated notification-preferences API.
 
-Do not recreate working components merely because Phase 18.6 is a separate roadmap item.
+Therefore, before implementation, prepare an owner decision proposal containing:
 
-## 4. Frozen event and recipient policy
+1. Exact preference categories and channels.
+2. Mandatory versus optional behavior.
+3. Defaults for existing and new accounts.
+4. Proposed database schema.
+5. Proposed API endpoint names, HTTP methods, and paths.
+6. Request/response JSON examples.
+7. Authentication and authorization rules.
+8. Error responses and validation rules.
+9. Backward compatibility.
+10. Behavior of already queued notifications.
+11. Behavior when preferences change concurrently with delivery.
+12. Customer push opt-in semantics.
+13. Interaction with device registration.
+14. Interaction with Android notification permission.
+15. Operational impact on STAFF/ADMIN notifications.
+16. Migration and rollback strategy.
+17. Automated test plan.
 
-Implement exactly the following active business-event mapping.
+**STOP after this proposal and request owner approval before changing the frozen API contract, database schema, or delivery policy.**
 
-### Event A — Made-to-order request
+Do not interpret the existence of Phase 18.7 on the roadmap as automatic approval for a specific API design.
 
-**Source operation:** `REQ-001`
-**Business resource:** Furniture Request
-**Notification type:** `NEW_MADE_TO_ORDER_REQUEST`
+## 5. Proposed preference policy for owner review
 
-Recipients:
+Use the following as the recommended starting policy, not as an already approved contract.
 
-- Active STAFF with `requests.manage`.
-- Active ADMIN with `requests.manage`.
-- No inactive accounts.
-- No accounts lacking the required permission.
-- No ordinary CUSTOMER recipient.
+### A. STAFF/ADMIN — Durable in-app notifications
 
-ADMIN status alone is not sufficient; the required operational permission must be present.
+Operational notification creation remains mandatory for eligible recipients.
 
-### Event B — General enquiry
+A STAFF/ADMIN user must not be able to disable the creation of `NEW_MADE_TO_ORDER_REQUEST` or `NEW_ENQUIRY` notifications through personal preferences.
 
-**Source operation:** `ENQ-001`
-**Business resource:** Enquiry
-**Notification type:** `NEW_ENQUIRY`
+Eligibility remains determined by:
 
-Recipients:
+- Active account.
+- STAFF or ADMIN role.
+- Exact required permission.
+- Approved business-event policy.
 
-- Active STAFF with `enquiries.manage`.
-- Active ADMIN with `enquiries.manage`.
-- No inactive accounts.
-- No accounts lacking the required permission.
-- No ordinary CUSTOMER recipient.
+Read/unread remains informational and independent of business processing.
 
-The permission sets must remain independent.
+### B. STAFF/ADMIN — Reverb
 
-A user with only `requests.manage` must not receive NEW_ENQUIRY.
+Reverb remains the real-time synchronization mechanism for the recipient's durable inbox.
 
-A user with only `enquiries.manage` must not receive NEW_MADE_TO_ORDER_REQUEST.
+Do not expose a preference that causes an operational user to lose the authoritative notification record.
 
-A user with both permissions is eligible for both.
+If future UI notification sound or toast preferences are desired, treat those as presentation settings, not as disabling server-side notification creation.
 
-### No automatic customer notifications
+Do not create new Reverb event types.
 
-The requester does not receive a persistent NOT-001 notification simply because they submitted REQ-001 or ENQ-001.
+### C. STAFF/ADMIN — Email
 
-Anonymous submissions have no authenticated customer notification recipient.
+Propose an optional per-user operational email setting.
 
-Do not create customer confirmation email behavior without explicit approval of the recipient and content policy.
+Recommended default: `enabled`.
 
-Do not add new notification enum values.
+Disabling email would suppress future optional Resend deliveries for that recipient but would not suppress:
 
-## 5. Request submission integration
+- Durable notification creation.
+- Reverb synchronization.
+- Inbox retrieval.
+- Operational authorization.
+- Business request/enquiry processing.
 
-Inspect the existing request creation workflow.
+Whether staff email may be disabled is a business policy requiring explicit owner approval.
 
-A successful REQ-001 must:
+### D. CUSTOMER — In-app
 
-1. Validate the request according to the frozen contract.
-2. Persist the request with its authoritative business state.
-3. Commit the database transaction successfully.
-4. Schedule downstream notification processing safely after commitment.
-5. Resolve current eligible operational recipients.
-6. Create at most one logical notification per source/type/recipient.
-7. Dispatch approved email and Reverb delivery actions independently.
+Preserve the approved notification event registry.
 
-### Important invariants
+Do not introduce customer notifications for REQ-001 or ENQ-001.
 
-- Do not send a notification for a failed validation.
-- Do not notify for a transaction that rolls back.
-- Do not notify for a nonexistent or uncommitted request.
-- Do not duplicate notification creation on job retry.
-- Do not create duplicate notifications due to concurrent processing.
-- Do not create extra notifications for attachment processing unless a separately approved business event exists.
+Do not activate deferred order notifications.
 
-Confirm that both authenticated and anonymous request creation use the same authoritative event semantics.
+A customer preference must not generate a business notification for an event that has not been approved.
 
-Do not require Clerk authentication for the public anonymous submission path.
+### E. CUSTOMER — Push
 
-Do not modify request business-state rules.
+Propose an explicit user-level push preference, initially disabled unless the owner approves another default.
 
-## 6. Enquiry submission integration
+Distinguish:
 
-Apply the same guarantees to ENQ-001.
+1. Laravel user preference.
+2. Firebase device-registration state.
+3. Android operating-system notification permission.
+4. Backend push feature flags.
+5. Approved business-event eligibility.
 
-A successful enquiry must result in the approved NEW_ENQUIRY operational notifications.
+All applicable gates must allow delivery.
 
-Test both:
+An Android permission grant alone must not be treated as consent to every future business-event push notification.
 
-- Anonymous enquiry.
-- Authenticated customer enquiry.
+A user-level preference alone must not activate customer push fan-out.
 
-Verify:
+Do not change the existing FCM registration ownership or uniqueness policy.
 
-- Only successful committed enquiries generate notifications.
-- A rejected enquiry never generates notifications.
-- Duplicate processing cannot create duplicate logical notifications.
-- All eligible operational recipients receive independent recipient-scoped records.
-- Ineligible recipients receive none.
+### F. CUSTOMER — Email
 
-Do not convert an enquiry into a furniture request or order.
+Do not automatically introduce customer email confirmations, marketing emails, or subscription settings.
 
-## 7. Recipient resolution
+Customer email event types and delivery policies remain separately approval-gated.
 
-Recipient resolution must remain server-authoritative.
+### G. Marketing
 
-Use the existing Laravel role and permission system, not hard-coded email addresses or client-provided recipient lists.
+Marketing notifications are outside this phase.
 
-Requirements:
+Do not add promotional email, SMS, advertising subscriptions, or campaign preferences.
 
-- Use current active local users.
-- Check actual required permissions.
-- Deduplicate users with multiple qualifying roles or permission assignments.
-- Avoid N+1 queries where reasonable.
-- Never select ordinary customers as operational recipients.
-- Exclude disabled or inactive users.
-- Maintain independent notification records for each eligible recipient.
-- Preserve existing STAFF/ADMIN authorization boundaries.
+## 6. Proposed backend model
 
-### Dynamic permissions
+Evaluate a dedicated user-scoped preference model.
 
-Review how role changes between source submission, queued processing, and delivery affect eligibility.
+Recommended characteristics:
 
-Preserve the existing approved creation-time recipient policy.
+- One authoritative preference configuration per local Laravel user.
+- User identity derived from the authenticated Clerk principal.
+- Server-defined channel keys.
+- Strict boolean validation.
+- Explicit defaults.
+- No user-controlled recipient ID.
+- No role mutation.
+- No arbitrary JSON preference keys accepted.
+- No unnecessary duplication of customer/staff profile data.
+- Clear distinction between preferences and device installations.
 
-For each outbound channel, document the point at which account state and permissions are checked.
+Compare a normalized table against a constrained JSON-column design.
 
-If an account becomes inactive before an unsent email is delivered, assess whether a fresh eligibility check is necessary to prevent sensitive operational alerts from reaching a former staff member.
+Recommend the simplest schema that preserves validation, migration safety, and future extensibility.
 
-Do not change established policy silently. Report any conflict requiring a human decision.
+Do not create multiple conflicting sources of truth.
 
-## 8. Durable notification creation
+Use MariaDB 11.8-compatible migrations.
 
-Reuse the existing Notification model and uniqueness constraints.
+## 7. Proposed API design
 
-A notification must be recipient-scoped and linked to the originating resource.
+Evaluate a dedicated authenticated preference resource under `/api/v1/me`.
 
-Required properties include:
+For owner review, consider:
 
-- Server-generated opaque notification ID.
-- Recipient local user ID.
-- Frozen notification type.
-- Safe human-readable title.
-- Safe human-readable message.
-- Structured source.
-- Structured target.
-- Creation timestamp.
-- Independent `read_at` state.
+`GET /api/v1/me/notification-preferences`
 
-The notification is an alert, not a copy of the entire business record.
+`PATCH /api/v1/me/notification-preferences`
 
-### Idempotency
+These are proposals, not approved endpoints.
 
-Use the existing source/type/recipient uniqueness rule.
+Do not reuse NOT-003 or NOT-004 IDs: those identifiers have separate deferred meanings in the existing notification contract.
 
-Re-running notification processing must not create duplicate records or trigger duplicate downstream work unnecessarily.
+Propose distinct operation IDs and update the endpoint inventory only after approval.
 
-Review whether the existing design can recover from a crash between business commit and job dispatch. A Laravel `afterCommit` callback alone is not a fully durable outbox.
+Do not embed the full preference object into `GET /api/v1/me`.
 
-Do not introduce a new outbox or distributed event bus automatically.
+### Required API properties
 
-If a material crash-loss gap exists, present a bounded, documented reliability improvement and any schema implications for approval.
+- Clerk bearer authentication.
+- Recipient-owned preference access.
+- Strict request allow-list.
+- Unknown fields rejected.
+- Deterministic validation errors.
+- Consistent V1 response envelope.
+- No cross-user preference modification.
+- No client-controlled roles.
+- Private, non-cacheable responses.
+- Safe concurrent updates.
+- Idempotent repeated setting of the same value.
 
-## 9. Notification content policy
+Provide exact proposed schemas and examples before implementation.
 
-Operational notifications must be concise and privacy-safe.
+## 8. Delivery-time enforcement
 
-Illustrative request title:
+After approval, integrate preference checks at the correct delivery boundary.
 
-"New furniture request"
+For Resend:
 
-Illustrative enquiry title:
+1. Resolve the durable notification recipient.
+2. Recheck active account and required permission.
+3. Recheck the recipient's approved email preference immediately before sending.
+4. Suppress email if disabled.
+5. Preserve the durable notification.
+6. Record the suppression outcome without misclassifying it as provider failure.
+7. Do not retry intentionally suppressed email indefinitely.
 
-"New customer enquiry"
+Define how a preference change affects queued jobs.
 
-The content may identify the event and include a safe reference if supported by the existing notification representation.
+Recommended semantics: a preference change affects deliveries that have not yet passed the final send-eligibility check.
 
-Do not put the following in email subject lines, Reverb payloads, or general notification previews without a separately approved need:
+A completed external provider submission cannot be retroactively undone.
 
-- Full enquiry messages.
-- Customer private contact details.
-- Private attachment URLs.
-- Authentication credentials.
-- Raw internal notes.
-- Complete furniture specifications.
-- Private documents.
-- Internal database identifiers.
-- Unnecessary personal information.
+Do not alter notification idempotency or source-event uniqueness.
 
-The staff member must open the authorized business resource to view complete information.
-
-### Text handling
-
-Any text derived from visitor submissions must be escaped safely in HTML email templates.
-
-Avoid unsanitized HTML rendering.
-
-Never interpolate customer-provided text into raw executable email markup.
-
-## 10. Structured source and target
-
-Preserve the existing notification source/target contract.
-
-For a request:
-
-- Source refers to the originating Furniture Request.
-- Target refers to that same operational resource.
-
-For an enquiry:
-
-- Source refers to the originating Enquiry.
-- Target refers to that Enquiry.
-
-Use the frozen target vocabulary and opaque IDs exactly as defined by the authoritative API documents.
-
-A notification target is not a bearer credential.
-
-Possession of a target ID does not authorize resource access.
-
-The future admin dashboard must still call the appropriate protected REQ/ENQ operational endpoint and pass Laravel authorization.
-
-Do not create public request/enquiry detail URLs.
-
-Do not implement the admin navigation UI in this phase.
-
-## 11. Resend operational email integration
-
-Reuse Phase 18.2 email delivery.
-
-A successful approved event should enqueue the corresponding operational email for each eligible recipient according to the existing email policy.
-
-Audit:
-
-- Recipient email source.
-- Eligibility checks.
-- Sender configuration.
-- Email subject.
-- Email body.
-- HTML and plain-text rendering where supported.
-- Queue name.
-- Retry/backoff behavior.
-- Provider failure handling.
-- Duplicate-send protection.
-- Delivery-attempt persistence or existing logs.
-
-Do not create another Resend client or a separate mail subsystem.
-
-### Email privacy
-
-- Do not send operational alerts to customer email addresses.
-- Do not add CC/BCC to an unapproved shared mailbox.
-- Do not expose all staff recipient emails to other recipients.
-- Do not include raw private attachment links.
-- Do not invent a production admin URL.
-- Do not put secrets into logs.
-
-### Failure behavior
-
-If Resend fails:
-
-- The request/enquiry remains successful.
-- The durable notification remains.
-- Reverb remains independent.
-- The email job can retry according to existing bounded policy.
-- Failure is observable.
-
-Do not retry the entire business submission in response to an email error.
-
-## 12. Laravel Reverb integration
-
-Reuse Phase 18.3.
-
-Each eligible user has a private recipient-scoped channel:
-
-`private-notifications.{localUserId}`
-
-Preserve Clerk bearer-token authorization and channel ownership checks.
-
-For each newly created durable notification, emit the existing minimal signal:
-
-`notification.state-changed`
-
-Do not create a second event name if the existing event already covers this behavior.
-
-### Signal behavior
-
-The signal informs a connected client that the notification state changed.
-
-It must not act as the authoritative notification resource.
-
-The client must reconcile through:
-
-`GET /api/v1/me/notifications`
+## 9. Reverb behavior
 
 Preserve:
 
-- Minimal event payload.
-- Private recipient channel.
-- After-commit dispatch.
-- Independent broadcast queue.
-- Bounded retry.
-- No duplicate signal for already-existing notification creation.
-- Cross-user channel denial.
-- Authentication and reconnection safeguards.
+- `private-notifications.{localUserId}`.
+- Clerk-authorized channel subscriptions.
+- Minimal `notification.state-changed` payload.
+- NOT-001 reconciliation after signal or reconnect.
+- Recipient isolation.
+- Existing queue separation.
 
-### No production UI yet
+Do not make Reverb the authoritative source of preferences or notification state.
 
-The eventual Next.js/MUI admin dashboard will consume these signals.
+Do not expose preferences in the WebSocket payload.
 
-Do not add a staff notification bell to the customer website.
+## 10. Push behavior
 
-Do not add a staff notification bell to the customer Flutter application.
+Do not activate FCM business-event fan-out.
 
-Do not implement a temporary production-facing admin dashboard in this phase.
+If approved, implement only the preference persistence and eligibility groundwork required for future push delivery.
 
-## 13. NOT-001 and NOT-002 behavior
+Keep:
 
-The current API contract remains authoritative:
-
-`GET /api/v1/me/notifications`
-
-`PATCH /api/v1/me/notifications/{notification}`
-
-Ensure newly created request/enquiry notifications work correctly with:
-
-- Pagination.
-- Filtering by unread state.
-- Filtering by closed type.
-- Stable ordering.
-- Own-recipient access.
-- Optional unread count.
-- `read_at` and derived `is_read`.
-- Ownership masking.
-
-### Read state must not change business state
-
-Marking NEW_ENQUIRY as read must not close the enquiry.
-
-Marking NEW_MADE_TO_ORDER_REQUEST as read must not accept, reject, or process the request.
-
-Likewise, staff processing a request does not automatically mark every staff member's notification as read.
-
-Do not introduce a shared `handled` or `acknowledged` notification state without approval.
-
-Business processing remains in the protected request/enquiry operational APIs.
-
-## 14. Cross-channel consistency
-
-For one committed event, the intended relationship is:
-
-**One logical notification per eligible recipient**, with downstream delivery mechanisms operating against that same logical record.
-
-Verify that:
-
-- Email failure does not remove the in-app record.
-- Reverb failure does not remove the in-app record.
-- A Reverb reconnect does not create a new notification.
-- Resend retry does not create another notification.
-- Notification read-state changes do not send duplicate creation emails.
-- All channels use the same event/source association.
-- Channel-specific attempts do not appear as duplicate NOT-001 resources.
-
-If the current delivery-attempt model differs, preserve its already approved behavior and document the exact relationship.
-
-Do not add email, Reverb, or FCM delivery metadata to public notification serialization without contract approval.
-
-## 15. FCM restrictions
-
-Phase 18.4 provided secure Android FCM infrastructure and device registration.
-
-However, the registered Android application is CUSTOMER-facing.
-
-The two events in this phase are STAFF operational notifications.
-
-Therefore:
-
-- Do not send NEW_MADE_TO_ORDER_REQUEST to customer devices.
-- Do not send NEW_ENQUIRY to customer devices.
-- Do not query customer device tokens for staff operational recipients.
-- Do not build an admin Android application.
-- Do not activate customer push business-event fan-out.
-- Keep `NOTIFICATION_PUSH_ENABLED=false` unless a separate approved use case exists.
-- Keep device registration controlled by its independent existing configuration flag.
-
-Do not modify the approved device-registration API.
-
-FCM must remain unaffected by this phase.
-
-## 16. Request/enquiry lifecycle boundaries
-
-Only the existing approved creation events are in scope.
-
-Do not introduce alerts for:
-
-- Request status changes.
-- Enquiry closure.
-- Staff reassignment.
-- Request acceptance.
-- Request rejection.
-- New attachment.
-- Staff internal note changes.
-- Quote generation.
-- Customer follow-up.
-- Order creation.
-
-These may become useful future events, but they are not automatically permitted by the frozen event registry.
-
-If the user wants these behaviors later, they require an explicit event, type, recipient, and delivery-channel decision.
-
-## 17. Delivery reliability
-
-Review and strengthen the existing pipeline only where necessary.
-
-### Queue separation
-
-Ensure that the existing queues continue to isolate work appropriately:
-
-- Core request/enquiry persistence.
-- Operational notification creation.
-- Resend email delivery.
-- Reverb broadcasting.
-
-Do not change established queue names without a justified reason.
-
-### Retry behavior
-
-Retries must be bounded and idempotent.
-
-Do not allow:
-
-- Infinite retries.
-- Recursive dispatch loops.
-- Duplicate logical notifications.
-- Provider errors to roll back committed business data.
-- Failed email to block Reverb.
-- Failed Reverb to block email.
-- Sensitive payloads in failed-job logs.
-
-### Observability
-
-Ensure there is safe evidence for:
-
-- Event source.
-- Notification creation outcome.
-- Recipient counts.
-- Delivery queue failures.
-- Retry exhaustion.
-- Correlation/request identifier where supported.
-
-Use identifiers rather than personal information in routine operational logs.
-
-## 18. Authorization and abuse resistance
-
-Verify the following:
-
-1. Anonymous visitors can submit permitted requests/enquiries.
-2. They cannot read operational notifications.
-3. CUSTOMER cannot subscribe to another user's staff channel.
-4. CUSTOMER cannot fetch staff notifications.
-5. Inactive STAFF cannot receive newly created operational notifications.
-6. Unauthorized ADMIN cannot receive operational notifications solely because of role.
-7. STAFF lacking `requests.manage` is excluded from request events.
-8. STAFF lacking `enquiries.manage` is excluded from enquiry events.
-9. Only the notification's recipient may modify its read state.
-10. Request/enquiry target metadata does not bypass resource authorization.
-11. No arbitrary client field can select a notification recipient.
-12. No user input can select a notification type.
-13. No customer submission can directly generate a staff email without passing the normal validated business workflow.
-14. Replayed processing cannot duplicate logical notifications.
-15. Rate limits and anti-abuse protections on public submissions remain unchanged.
-
-Do not weaken Clerk authentication or permission middleware to simplify tests.
-
-## 19. Automated testing
-
-Expand tests only where coverage is missing.
-
-### Event creation
-
-- Successful authenticated request produces correct staff notifications.
-- Successful anonymous request produces correct staff notifications.
-- Successful authenticated enquiry produces correct staff notifications.
-- Successful anonymous enquiry produces correct staff notifications.
-- Invalid request produces none.
-- Invalid enquiry produces none.
-- Rolled-back request produces none.
-- Rolled-back enquiry produces none.
-
-### Recipients
-
-- Eligible STAFF receives the correct notification.
-- Eligible ADMIN with permission receives it.
-- ADMIN without permission does not.
-- STAFF with only requests permission receives only request notifications.
-- STAFF with only enquiries permission receives only enquiry notifications.
-- STAFF with both receives both.
-- Inactive operational user receives none.
-- CUSTOMER receives none.
-- Duplicate role/permission assignments do not duplicate recipient records.
-
-### Idempotency
-
-- Retrying the source notification job does not create duplicates.
-- Concurrent processing preserves uniqueness.
-- Duplicate creation does not generate an extra Reverb creation signal.
-- Email retries do not create additional logical notifications.
-
-### Email
-
-- Request event uses correct email content.
-- Enquiry event uses correct email content.
-- Mail goes only to eligible operational recipients.
-- Unsafe private fields are absent.
-- Customer input is escaped.
-- Resend failure does not affect the business resource.
-- Retried email delivery preserves idempotency.
-
-### Reverb
-
-- Correct private recipient channel.
-- Correct existing signal name.
-- Minimal payload.
-- No cross-recipient broadcast.
-- No notification before durable persistence.
-- Broadcast failure is isolated.
-- Reconnection works through NOT-001 reconciliation.
-
-### API and lifecycle
-
-- Own notification can be listed.
-- Cross-user notification cannot be read or modified.
-- Read/unread changes are independently scoped.
-- Read state does not modify request/enquiry business status.
-- Filtering and pagination remain correct.
-- Frozen response shapes remain unchanged.
-
-### Regression
-
-- Existing device-registration tests pass.
-- FCM infrastructure remains untouched.
-- Resend tests pass.
-- Reverb tests pass.
-- Clerk verifier tests remain hermetic.
-- Previously fixed Flutter accessibility tests remain green.
-- No order/payment notification events are activated.
-
-## 20. Controlled local integration test
-
-After automated tests pass, perform or validate a real local integration smoke test.
-
-Use the existing Clerk STAFF test account if safely available.
-
-Test A — Furniture Request:
-
-1. Submit a valid REQ-001 through the normal customer website or approved test client.
-2. Confirm the source request is persisted.
-3. Confirm one logical notification is created for each eligible recipient.
-4. Confirm expected email delivery behavior.
-5. Confirm the authorized staff Reverb subscriber receives the existing signal.
-6. Confirm NOT-001 lists the new notification.
-7. Confirm NOT-002 can mark it read.
-8. Confirm the request's business status remains unchanged.
-
-Test B — Enquiry:
-
-Repeat for ENQ-001.
-
-Test C — Negative authorization:
-
-Verify a separate CUSTOMER or unauthorized operational identity cannot access the notification or subscribe to the recipient's channel.
-
-Test D — Failure isolation:
-
-Use supported testing or fault injection to confirm a notification-provider failure does not undo a committed request/enquiry.
-
-Avoid sending uncontrolled live emails to actual customers or staff.
-
-If external Resend or Reverb configuration is unavailable, report precisely what was mocked and what was verified live.
-
-Do not claim new live delivery evidence without running the actual test.
-
-## 21. Admin dashboard handoff
-
-The admin dashboard will be implemented in a later dedicated phase.
-
-Prepare a short integration handoff describing:
-
-- NOT-001 endpoint and notification response.
-- NOT-002 read/unread mutation.
-- Private Reverb channel naming.
-- Clerk bearer authorization for `/broadcasting/auth`.
-- Existing broadcast signal.
-- Reconnect/reconciliation behavior.
-- Recommended notification inbox behavior.
-- Request/enquiry target resolution.
-- Permission-based UI visibility.
-- Read state versus handled business state.
-- Empty, loading, failed, and unread-count states.
-
-Do not create new admin UI components.
-
-Do not add frontend-specific assumptions to Laravel domain services.
-
-Document integration requirements for the future Next.js/MUI admin application.
-
-## 22. Human decision boundaries
-
-The approved recipient policy is already established:
-
-- Active STAFF/ADMIN with `requests.manage` for request events.
-- Active STAFF/ADMIN with `enquiries.manage` for enquiry events.
-
-Do not reopen that policy without a demonstrated conflict in existing authoritative documents.
-
-Request human approval only if a genuinely new decision is needed, such as:
-
-- Changing the approved recipients.
-- Introducing a shared operational mailbox.
-- Sending customer confirmation emails.
-- Adding request/enquiry status-change events.
-- Adding new notification types.
-- Implementing shared acknowledgement semantics.
-- Introducing a new public API operation.
-- Adding customer push fan-out.
-- Introducing a durable outbox requiring a material schema/architecture change.
-
-Continue independent work while awaiting any approval.
-
-## 23. Quality and safety checks
-
-Run relevant verification from the correct project directories.
-
-Laravel:
-
-```bash
-composer validate
-php artisan test --compact
-vendor/bin/phpstan analyse
-vendor/bin/pint --test
-php artisan route:list
-git diff --check
-```
-
-Flutter:
-
-```bash
-flutter analyze
-flutter test
-```
-
-Run relevant Next.js verification if the phase changes customer submission wiring or tests.
-
-Do not needlessly rebuild unrelated applications.
-
-Do not run destructive migrations against a non-disposable database.
-
-Any MySQL-specific integration test must follow the project's disposable database guard.
-
-Preserve the test-isolation fix that prevents PHPUnit from inheriting uncontrolled Clerk values from the developer's `.env`.
-
-A phase is not PASS if the agent introduced failing tests.
-
-## 24. Documentation
-
-Create:
-
-`phases/phase-18.6-completion.md`
-
-Record:
-
-1. Initial audit and actual pre-existing implementation.
-2. Identified gaps.
-3. Precise code changes, if any.
-4. REQ-001 and ENQ-001 event mapping.
-5. Recipient permission rules.
-6. Email delivery behavior.
-7. Reverb behavior.
-8. Notification creation and idempotency.
-9. Failure isolation.
-10. Security/privacy checks.
-11. Automated test results.
-12. Local integration test evidence.
-13. Unchanged contracts.
-14. Known limitations.
-15. Future admin dashboard integration handoff.
-16. Readiness for Phase 18.7.
-17. Any human decision required.
-
-Update `docs/decisions.md` only when an actual architectural decision is made.
-
-Do not introduce unnecessary new documentation or duplicate existing contracts.
-
-## 25. Explicit exclusions
+- `NOTIFICATION_PUSH_ENABLED=false`.
+- `NOTIFICATION_PUSH_REGISTRATION_ENABLED=false`.
 
 Do not:
 
-- Implement Phase 18.5 order notifications.
-- Implement Phase 18.7 notification preferences.
-- Build the Next.js admin dashboard.
-- Add staff notifications to customer Flutter.
-- Add staff notifications to the public Next.js website.
-- Add new customer push events.
-- Enable FCM fan-out.
-- Add new notification types.
-- Implement marketing notifications.
-- Add SMS or Novu.
-- Send customer confirmation emails without approval.
-- Introduce unapproved public API paths.
-- Change request/enquiry business transitions.
-- Create a new notification domain or competing recipient model.
-- Modify Coolify deployment infrastructure.
+- Invent customer push events.
+- Enable push merely because a preference is true.
+- Transfer device ownership.
+- Delete historical device rows.
+- Modify ACTIVE-only fingerprint uniqueness.
+- Treat Android permission as a server-side preference update without a defined consent flow.
 
-## 26. Definition of Done
+A future approved customer event must pass the server-side preference and device-eligibility checks before FCM delivery.
 
-Mark Phase 18.6 PASS when:
+## 11. Account lifecycle
 
-- Both REQ-001 and ENQ-001 produce the correct approved operational notifications.
-- Anonymous and authenticated submissions are handled properly.
-- Recipient eligibility is verified and permission-scoped.
-- Logical notifications are persisted exactly once per eligible source/type/recipient.
-- Resend integration operates correctly.
-- Reverb integration uses authorized private channels.
-- NOT-001 and NOT-002 remain correct.
-- Read state remains independent of business state.
-- Invalid or rolled-back submissions generate no notifications.
-- Downstream channel failures do not invalidate business submissions.
-- Duplicate processing remains safe.
-- Existing FCM infrastructure remains unchanged and customer fan-out disabled.
-- No frozen API changes are required, or any changes have received explicit approval.
-- Automated tests pass.
-- Any real integration testing is reported accurately.
-- The eventual admin frontend has sufficient integration documentation.
-- Completion record is updated.
+After approval, cover:
 
-Mark PARTIAL if a required implementation or meaningful live verification remains blocked.
+- First-time Laravel JIT provisioning.
+- Existing accounts without preference rows.
+- Existing CUSTOMER users.
+- Existing STAFF users.
+- Existing ADMIN users.
+- Role changes.
+- Account suspension.
+- Account reactivation.
+- Logout.
+- Clerk account switching.
+- Device token rotation.
+- Multiple customer devices.
 
-Do not mark the phase incomplete merely because the future admin dashboard does not yet exist; its UI is explicitly outside this phase.
+Defaults must be deterministic.
 
-## 27. Final report
+JIT provisioning must not depend on successful delivery-channel configuration.
 
-Provide:
+Do not make notification preference creation a prerequisite for public catalog access.
 
-**Status:** PASS / PARTIAL / FAIL
+## 12. Security and privacy
 
-Then report:
+Ensure:
 
-- Existing functionality reused.
-- New or changed files.
-- Business event coverage.
-- Recipients and permissions.
-- Resend email results.
-- Reverb delivery results.
-- API behavior.
-- Idempotency results.
-- Security/privacy findings.
-- Test suite results.
-- Actual local smoke-test evidence.
-- Deferred functionality.
-- Remaining owner actions.
-- Readiness for Phase 18.7 — Notification Preferences.
+- Users can access only their own preferences.
+- STAFF cannot edit another user's preferences.
+- ADMIN does not automatically receive authority to change another user's preferences.
+- Preferences cannot grant `requests.manage`, `enquiries.manage`, or notification permissions.
+- Unknown channels and keys are rejected.
+- Preferences do not expose device tokens.
+- Preference responses do not expose provider credentials.
+- No Clerk JWT is logged.
+- No customer contact information is added to Reverb signals.
+- No mass-assignment vulnerabilities.
+- No preference setting can authorize access to a business record.
 
-**Execute Phase 18.6 only. Reuse the working infrastructure, preserve the REQUEST ONLY business policy, and prioritize verified behavior over unnecessary new code.**
+Retain the existing notification ownership masking rules.
+
+## 13. Automated testing plan
+
+After owner approval, implement tests for:
+
+### API and persistence
+
+1. Default preferences for a newly provisioned CUSTOMER.
+2. Default preferences for STAFF.
+3. Default preferences for ADMIN.
+4. Existing users without preference rows.
+5. Authenticated own-preference retrieval.
+6. Valid partial update.
+7. Repeated update idempotency.
+8. Unknown preference key rejection.
+9. Invalid type rejection.
+10. Unauthenticated access rejection.
+11. Cross-user modification prevention.
+12. Concurrent update behavior.
+13. Persistence across sessions and devices.
+14. Account-role changes without unsafe preference escalation.
+
+### Operational delivery
+
+15. Staff email enabled → existing Resend job proceeds.
+16. Staff email disabled → Resend suppressed.
+17. Durable notification still created when email disabled.
+18. Reverb signal remains available.
+19. Recipient loses permission → no unauthorized email.
+20. Recipient suspended → no unauthorized email.
+21. Preference disabled while email queued → suppressed before send.
+22. Preference enabled again → subsequent events eligible.
+23. Previously delivered email is not resent merely because preferences change.
+24. Existing delivery idempotency remains intact.
+25. Failed provider attempts remain distinguishable from preference suppression.
+
+### Customer push architecture
+
+26. Customer push preference disabled by default.
+27. Preference enabled does not bypass global FCM flags.
+28. Preference enabled does not create new push events.
+29. Inactive device remains ineligible.
+30. Device owned by another customer remains inaccessible.
+31. Token rotation preserves existing security invariants.
+32. Logout cleanup remains correct.
+33. Android OS permission is not confused with server-side consent.
+
+### Regression
+
+34. REQ-001 notification recipient policy unchanged.
+35. ENQ-001 notification recipient policy unchanged.
+36. NOT-001 unchanged.
+37. NOT-002 unchanged.
+38. Reverb channel authorization unchanged.
+39. No CUSTOMER notifications for request/enquiry submission.
+40. Business status independent of notification preferences.
+
+Use the actual approved schema and policy when implementing these tests.
+
+## 14. Integration verification
+
+After implementation approval, perform controlled local tests:
+
+**Test A — Email enabled**
+
+Create a valid request/enquiry, process the queue, and verify an eligible STAFF/ADMIN recipient receives the expected operational email delivery attempt.
+
+**Test B — Email disabled**
+
+Disable email for the same authorized recipient, create another valid source event, and verify the durable notification exists but no Resend send is attempted.
+
+**Test C — Reverb unaffected**
+
+With email disabled, confirm the recipient still receives `notification.state-changed` and can retrieve the new notification through NOT-001.
+
+**Test D — Preference persistence**
+
+Sign out and back in with Clerk, then verify the approved preference remains stored in Laravel.
+
+**Test E — Security**
+
+Verify another authenticated user cannot modify the recipient's preferences.
+
+Do not create unnecessary live email traffic or test against unapproved recipient addresses.
+
+Record mocked versus real transport evidence separately.
+
+## 15. Frontend handoff
+
+Do not build the admin dashboard in this phase.
+
+Document how the future Next.js/MUI admin dashboard should:
+
+- Retrieve the current user's preferences.
+- Render mandatory channels as non-editable.
+- Render optional channels as toggles.
+- Persist changes through the approved API.
+- Handle loading, saving, failure, and retry states.
+- Avoid optimistic success when the API rejects an update.
+- Keep read/unread state separate from preferences.
+
+For Flutter:
+
+- Document future push-preference integration.
+- Keep Android OS permission distinct from backend preference.
+- Preserve device registration and logout behavior.
+- Do not add a notification bell or customer notification events.
+
+Frontend implementation should occur only when the relevant UI phase is approved.
+
+## 16. Documentation
+
+Update the relevant project documents only after the owner approves the design:
+
+- `docs/api/api-contract.md`.
+- `docs/api/api-resources.md`.
+- `docs/api/api-conventions.md`.
+- `docs/api/openapi.yaml`.
+- `docs/decisions.md`.
+- Relevant backend documentation.
+- `phases/phase-18.7-completion.md`.
+
+Record a clear architecture decision covering:
+
+- Mandatory operational notifications.
+- Optional delivery channels.
+- Default preferences.
+- API contract.
+- Schema.
+- Delivery-time enforcement.
+- FCM consent boundaries.
+- Queued delivery behavior.
+- Security and migration decisions.
+
+Do not silently rewrite previously frozen contract decisions.
+
+## 17. Verification
+
+After approval and implementation, run:
+
+- Focused preference API tests.
+- Notification delivery tests.
+- Request/enquiry integration tests.
+- Relevant Clerk/JIT provisioning tests.
+- Relevant FCM registration tests.
+- Full Laravel test suite.
+- PHPStan Level 5.
+- Pint.
+- OpenAPI contract validation.
+- MariaDB migration tests on a disposable database.
+- `git diff --check`.
+
+Run Flutter tests only if Flutter code is modified.
+
+Do not execute destructive database operations against the development or production database.
+
+## 18. Scope exclusions
+
+Do not implement:
+
+- Phase 18.5 order notifications.
+- New customer notification event types.
+- New customer email confirmation events.
+- Marketing notifications.
+- SMS delivery.
+- Customer push business-event fan-out.
+- A new notification service provider.
+- The Next.js admin dashboard.
+- A new Flutter notification center.
+- Durable outbox architecture.
+- Coolify deployment.
+- Unapproved NOT-003/NOT-004 operations.
+- Global notification-read or notification-deletion features.
+
+## 19. Definition of Done
+
+Phase 18.7 is complete only when:
+
+1. The owner approves the notification-preference policy.
+2. The owner approves any required V1 API contract extension.
+3. Preference persistence is implemented safely.
+4. Eligible users can retrieve and update approved preferences.
+5. Mandatory operational notifications cannot be disabled.
+6. Optional email delivery respects the approved preference.
+7. Reverb and durable notification creation remain correct.
+8. Customer push remains gated by existing restrictions.
+9. Account and device isolation remain intact.
+10. Automated tests pass.
+11. Relevant live integration tests pass.
+12. Documentation reflects the implemented behavior.
+13. No unauthorized contract or business-event changes occur.
+
+## 20. First response required from the agent
+
+**Do not begin implementation immediately.**
+
+First return:
+
+1. Audit findings.
+2. Existing preference-related code, if any.
+3. Proposed preference policy.
+4. Proposed database schema.
+5. Proposed API operations and exact JSON contracts.
+6. Default values.
+7. Delivery-time enforcement design.
+8. Security considerations.
+9. Migration plan.
+10. Decisions requiring owner approval.
+
+Label this response:
+
+**PHASE 18.7 — DESIGN PROPOSAL / AWAITING OWNER APPROVAL**
+
+Wait for explicit approval before implementing.
+
+After approval, implement in small, tested steps and produce `phases/phase-18.7-completion.md`.

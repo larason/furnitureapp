@@ -3395,3 +3395,27 @@ the real engine proves the generated/trigger path actually works.
 `tests/Feature/DeviceTokenConcurrencyMysqlTest.php` (new),
 `tests/Feature/DeviceInstallationApiTest.php`, `docs/api/api-contract.md §36.4/§36.6`,
 `docs/api/api-conventions.md §33.3`, `docs/api/api-resources.md §16`
+
+---
+
+### ADR/NOT-009 — Operational Notification Preferences Are Not a V1 Capability
+
+**Decision:** Active eligible `STAFF` and `ADMIN` recipients must receive the approved
+`NEW_MADE_TO_ORDER_REQUEST` and `NEW_ENQUIRY` notifications through the existing durable inbox,
+Reverb synchronization, and Resend operational-email paths. Personal operational-email opt-out is
+prohibited. Customer push preferences are deferred until commerce workflows and customer
+notification events receive separate owner approval.
+
+No `user_notification_preferences` schema, preference API, preference-delivery suppression,
+default backfill, frontend settings UI, or alternative notification configuration mechanism is
+introduced in the request-only release. Existing FCM device registration remains intact, with
+`NOTIFICATION_PUSH_ENABLED=false` and `NOTIFICATION_PUSH_REGISTRATION_ENABLED=false`.
+
+**Reason:** There is no approved optional notification channel in the current request-only scope.
+Operational request/enquiry alerts are required for the business workflow; allowing recipient
+opt-out would make a personal setting suppress an operationally required communication. Persisting
+customer consent before approved customer event policy would create inert, misleading settings and
+unnecessarily extend the frozen V1 API and database schema.
+
+**Status:** Accepted; implementation deferred | **Date:** 2026-10-14 | **Affected:**
+`phases/group-R-phases.md`, `phases/phase-18.7-completion.md`

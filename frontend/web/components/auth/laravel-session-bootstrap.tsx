@@ -49,7 +49,11 @@ export function LaravelSessionBootstrap() {
       recoveryAttempts.current.delete(previousSessionId.current);
     }
     previousSessionId.current = sessionKey;
-    void sessionBootstrap.bootstrap(sessionKey, getToken);
+    void sessionBootstrap.bootstrap(sessionKey, getToken).then((succeeded) => {
+      if (succeeded) {
+        recoveryAttempts.current.delete(sessionKey);
+      }
+    });
 
     const recover = () => {
       const attempts = recoveryAttempts.current.get(sessionKey) ?? 0;
@@ -58,7 +62,11 @@ export function LaravelSessionBootstrap() {
       }
 
       recoveryAttempts.current.set(sessionKey, attempts + 1);
-      void sessionBootstrap.bootstrap(sessionKey, getToken);
+      void sessionBootstrap.bootstrap(sessionKey, getToken).then((succeeded) => {
+        if (succeeded) {
+          recoveryAttempts.current.delete(sessionKey);
+        }
+      });
     };
     const recoverWhenVisible = () => {
       if (document.visibilityState === "visible") {

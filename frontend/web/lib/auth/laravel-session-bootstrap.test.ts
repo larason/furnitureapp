@@ -35,7 +35,7 @@ test("bootstraps an eligible Clerk session once and sends an ephemeral bearer to
     },
   });
 
-  await bootstrap.bootstrap(SESSION_ID, async () => "fresh-token");
+  assert.equal(await bootstrap.bootstrap(SESSION_ID, async () => "fresh-token"), true);
   await bootstrap.bootstrap(SESSION_ID, async () => "fresh-token");
 
   assert.equal(requests.length, 1);
@@ -173,7 +173,7 @@ test("refreshes a rejected token once, then blocks an identity that remains reje
     return "invalid-token";
   };
 
-  await bootstrap.bootstrap(SESSION_ID, getToken);
+  assert.equal(await bootstrap.bootstrap(SESSION_ID, getToken), false);
   await bootstrap.bootstrap(SESSION_ID, getToken);
   bootstrap.reset(SESSION_ID);
   await bootstrap.bootstrap(SESSION_ID, getToken);
