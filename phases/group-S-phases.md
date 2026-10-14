@@ -1,885 +1,806 @@
-# SL Furnitures — Phase 19.2: Admin Next.js Foundation & Design System
+# SL Furnitures — Phase 19.3: Clerk Authentication & Laravel Admin Authorization
 
 **Group:** S — Admin Dashboard Frontend  
-**Phase:** 19.2 — Admin Next.js Foundation & Design System  
-**Status:** APPROVED FOR IMPLEMENTATION  
+**Phase:** 19.3 — Clerk Authentication, Session Integration & STAFF/ADMIN Admission  
 **Application:** `frontend/admin`  
-**Framework:** Next.js 16 + React + TypeScript + MUI  
-**Local development port:** 3001  
-**Identity provider:** Existing Clerk application  
-**API:** Existing Laravel `/api/v1`  
-**Design authority:** `frontend/design-system`  
-**Business scope:** REQUEST ONLY
-
----
+**Framework:** Next.js 16.3.8, React 19.2.8, MUI 9.4.0  
+**Identity:** Clerk Next.js SDK 7.9.11  
+**Backend:** Existing Laravel `/api/v1`  
+**Development origin:** `http://localhost:3001`  
+**Status:** APPROVED FOR IMPLEMENTATION
 
 ## 1. Objective
 
-Create the independent SL Furnitures Admin Dashboard Next.js application and establish a production-quality, design-token-driven frontend foundation.
+Implement the secure authentication and authorization foundation for the independent SL Furnitures Admin Dashboard.
 
-This phase is responsible for:
+The dashboard must:
 
-1. Creating and configuring `frontend/admin`.
-2. Establishing Next.js App Router and TypeScript foundations.
-3. Installing and configuring Material UI correctly.
-4. Integrating the existing SL Furnitures design tokens.
-5. Creating the admin MUI theme.
-6. Establishing reusable UI primitives.
-7. Establishing responsive layout foundations.
-8. Preparing typed Laravel API transport.
-9. Preparing Clerk integration boundaries.
-10. Establishing error, loading, and empty-state primitives.
-11. Configuring accessibility, testing, linting, and build validation.
-12. Preparing independent deployment configuration.
-13. Documenting the architecture for later admin implementation phases.
+1. Authenticate users through the existing Clerk application.
+2. Obtain valid, current Clerk session tokens.
+3. Resolve the authenticated local Laravel identity through `GET /api/v1/me`.
+4. Verify local account activation and STAFF/ADMIN eligibility.
+5. Enforce server-side admission before protected operational content is rendered or fetched.
+6. Preserve exact Laravel permission boundaries.
+7. Reject CUSTOMER identities.
+8. Reject inactive, suspended, unauthorized or unresolvable accounts.
+9. Support safe sign-in, sign-out, session restoration and expiration.
+10. Prepare a reusable authenticated identity context for Phase 19.4 and later operational screens.
 
-The goal is a clean, maintainable foundation on which later phases can build operational screens without redesigning fundamental components.
+Do not implement actual request, enquiry, catalog, inventory or notification screens.
 
-**Do not implement real dashboard business features during Phase 19.2.**
+This phase establishes the security foundation for those later features.
 
-## 2. Mandatory pre-implementation audit
+## 2. Mandatory audit
 
-Read:
+Before coding, inspect:
 
 - Root `AGENTS.md`.
-- `frontend/AGENTS.md`.
-- `frontend/web/AGENTS.md`.
-- `frontend/web/README.md`.
-- `frontend/web/ROUTING.md`.
-- `README.md`.
+- `frontend/admin/AGENTS.md`.
+- `frontend/admin/README.md`.
+- `frontend/admin/app/`.
+- `frontend/admin/components/providers/`.
+- `frontend/admin/lib/api/`.
+- `frontend/admin/lib/config/`.
+- `frontend/admin/theme/`.
+- `frontend/admin/.env.example`.
 - `phases/phase-19.1-architecture-api-audit.md`.
-- `phases/group-S-phases.md`.
-- `frontend/design-system/DESIGN.md`.
-- `frontend/design-system/tokens.css`.
-- `frontend/design-system/design-tokens.json`, if present.
-- `frontend/design-system/COMPONENTS.md`.
-- `frontend/design-system/USAGE.md`.
-- `frontend/design-system/ACCESSIBILITY.md`.
-- `frontend/design-system/production-caveats.md`, if present.
-- Existing `frontend/web/theme/theme.ts`.
-- Existing website Next.js/MUI integration.
-- Existing font configuration.
-- Existing package-manager conventions.
-- Laravel API/OpenAPI contracts relevant to the admin client.
+- `phases/phase-19.2-completion.md`.
+- Existing Clerk integration in `frontend/web`.
+- Existing Laravel Clerk authentication middleware.
+- Existing `LocalUserProvisioner`.
+- `GET /api/v1/me` controller and resource.
+- Existing STAFF/ADMIN RBAC policies.
+- `PermissionCatalog`.
+- Clerk authorized-party configuration.
+- Relevant API and OpenAPI contracts.
+- Existing auth-related frontend and backend tests.
 
-Inspect actual files instead of assuming their contents from this prompt.
+Verify the exact Clerk 7.9.11 APIs and Next.js 16 integration requirements before implementing authentication.
 
-Preserve established repository conventions unless a concrete incompatibility requires deviation.
+Reuse the existing typed admin API transport.
 
-Before coding, briefly report the intended directory structure, package-manager approach, and design-token integration approach.
+Do not introduce a second API client or authentication provider.
 
-## 3. Application boundary
+## 3. Architectural principles
 
-Create:
+Enforce these boundaries.
 
-`frontend/admin`
+### Clerk
 
-This is a separate Next.js application.
+Clerk is responsible for:
 
-It must have its own:
+- Authentication.
+- Sign-in.
+- Session issuance.
+- Session restoration.
+- Session expiration.
+- Sign-out.
+- Identity verification.
 
-- `package.json`.
-- Dependency and build configuration.
-- Next.js configuration.
-- TypeScript configuration.
-- App Router.
-- Root layout.
-- Theme provider.
-- Environment example.
-- Testing configuration.
-- Error boundaries.
-- Documentation.
-- Independent build and start commands.
+### Laravel
 
-Do not create admin routes inside `frontend/web`.
+Laravel is responsible for:
 
-Do not modify the customer website's routing, metadata, navigation, or layouts.
+- Local user projection.
+- Account activation state.
+- STAFF/ADMIN role determination.
+- Permission assignment.
+- Business authorization.
+- Resource ownership.
+- Operational API authorization.
 
-Do not create a new Laravel application.
+### Next.js admin
 
-Use the same Laravel API and Clerk identity provider that the customer website uses.
+Next.js is responsible for:
 
-## 4. Package management and dependencies
+- Acquiring the current Clerk token.
+- Calling Laravel securely.
+- Resolving current admin identity.
+- Enforcing an application-level admission boundary.
+- Rendering appropriate authentication and authorization states.
+- Providing role/permission information to presentation components.
+- Preventing protected data leaks through rendering or caching.
 
-Match the existing project's verified dependency compatibility.
+Never treat authentication as authorization.
 
-Use Next.js 16 and compatible versions of:
+## 4. Sign-in architecture
 
-- React.
-- React DOM.
-- TypeScript.
-- Material UI.
-- Emotion.
-- MUI's supported Next.js App Router integration.
-- Clerk Next.js SDK.
-- Existing project linting and testing tools.
+Implement the appropriate Clerk sign-in flow for the separate admin origin.
 
-Inspect the customer website's dependency versions and its working App Router/MUI configuration before choosing exact versions.
+Requirements:
 
-Avoid blindly installing latest versions.
+- Reuse the existing Clerk instance.
+- Support sign-in through Clerk's approved SDK components or APIs.
+- Do not build custom password authentication.
+- Do not create a public STAFF/ADMIN registration flow.
+- Do not create role-selection controls.
+- Do not introduce local Laravel credential sessions.
+- Do not create a separate admin identity database.
+- Preserve Clerk's existing verification and security requirements.
 
-Use the repository's current package manager and lockfile conventions.
+The sign-in experience should follow the SL Furnitures MUI design system where customization is supported by the selected Clerk integration.
 
-Do not introduce an independent workspace strategy unless the repository already uses one or it is necessary for the selected integration.
+Do not use fake ADMIN identities for demonstration.
 
-Do not add:
+### Sign-in route
 
-- Redux.
-- Zustand.
-- A separate CSS component library.
-- Tailwind.
-- shadcn/ui.
-- Another authentication provider.
-- A second design-token system.
-- Unnecessary icon libraries.
-- A large collection of speculative packages.
+Choose an appropriate route such as:
 
-MUI and the project's approved design system are the foundation.
+`/sign-in`
 
-## 5. Proposed application structure
+Confirm its compatibility with the installed Clerk SDK and existing routing configuration.
 
-Use a structure appropriate to the actual Next.js configuration.
+Allow only validated, same-origin return destinations.
 
-A recommended starting point:
+Prevent external open redirects through untrusted redirect parameters.
+
+After successful Clerk authentication, the user must still pass Laravel admission before entering any protected operational route.
+
+## 5. Server-side admission boundary
+
+Implement a reusable server-side admin admission function.
+
+An illustrative name is:
+
+`requireOperationalIdentity()`
+
+Follow existing naming and module conventions.
+
+The function should:
+
+1. Obtain the current Clerk authentication context using the supported server SDK.
+2. Reject missing or invalid authentication.
+3. Obtain a fresh/current Clerk session bearer token.
+4. Call `GET /api/v1/me` through the existing request-scoped Laravel API client.
+5. Validate the response against the actual frozen user resource contract.
+6. Verify that the Laravel local account is ACTIVE.
+7. Verify that the authoritative local role is STAFF or ADMIN.
+8. Preserve the Laravel-returned exact permissions.
+9. Return a minimal, typed, authorized operational identity.
+10. Fail closed on invalid, missing or ambiguous identity information.
+
+Do not decide authorization solely from:
+
+- Clerk `userId`.
+- Clerk metadata.
+- Clerk organization role.
+- Email domain.
+- Frontend local storage.
+- Client role flags.
+- Route parameters.
+- A decoded but unverified JWT payload.
+
+Laravel `/me` must remain authoritative.
+
+### JIT provisioning
+
+The existing Laravel authentication pipeline may perform JIT local-user provisioning.
+
+Do not independently create STAFF or ADMIN users inside Next.js.
+
+If a new Clerk identity causes Laravel to provision a local CUSTOMER, that user is still unauthorized for the admin dashboard.
+
+Do not automatically promote CUSTOMER users.
+
+An existing verified STAFF/ADMIN identity may be admitted only if Laravel confirms the active local role.
+
+If provisioning is unavailable or rejected, deny admission.
+
+## 6. Protected route architecture
+
+Prepare a protected App Router route boundary for later dashboard pages.
+
+An appropriate conceptual structure is:
 
 ```text
-frontend/admin/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx
-│   ├── loading.tsx
-│   ├── error.tsx
-│   ├── not-found.tsx
-│   └── globals.css
-├── components/
-│   ├── providers/
-│   ├── ui/
-│   ├── layout/
-│   └── states/
-├── lib/
-│   ├── api/
-│   │   ├── client.ts
-│   │   ├── errors.ts
-│   │   └── types.ts
-│   ├── auth/
-│   ├── config/
-│   └── utils/
-├── theme/
-│   ├── theme.ts
-│   ├── providers.tsx
-│   └── index.ts
-├── public/
-├── tests/
-├── .env.example
-├── .gitignore
-├── next.config.ts
-├── package.json
-├── tsconfig.json
-├── eslint.config.mjs
-├── README.md
-└── AGENTS.md
+frontend/admin/app/
+  layout.tsx
+  (auth)/
+    sign-in/
+      page.tsx
+  (protected)/
+    layout.tsx
+    page.tsx
 ```
 
-Adapt filenames to match established repository practices.
+This is illustrative.
 
-Do not build an elaborate folder tree full of empty placeholder modules.
+Route groups do not appear in the URL.
 
-Create only directories and abstractions that are immediately useful.
+Choose actual files according to the current scaffold and avoid duplicate `/` routes.
 
-### Route planning
+### Protected layout
 
-Reserve space for future protected routes:
+The protected route boundary must resolve and validate the Laravel identity before rendering protected children or initiating operational reads.
 
-- Overview.
-- Requests.
-- Enquiries.
-- Catalog.
-- Categories.
-- Inventory.
-- Notifications.
-- Customers.
-- Staff.
-- Audit logs.
-- Account.
+However, do not rely only on a parent layout for every later authorization decision.
 
-The final protected dashboard route structure belongs to Phases 19.3–19.4.
+Next.js layouts may be reused across client-side navigation. Future protected data access must independently enforce authentication and appropriate permission checks at the relevant server/API boundary.
 
-Do not publish these as accessible operational pages during foundation setup.
+Client-side permission state is for presentation, not security.
 
-## 6. Design system — strict source of truth
+### Next.js proxy
 
-The existing shared SL Furnitures design system is mandatory.
+If the installed Next.js 16 / Clerk integration requires `proxy.ts`, use the supported convention.
 
-**Canonical authority:**
+Proxy-level authentication may redirect clearly signed-out users.
+
+It must not become the sole authorization boundary.
+
+Do not duplicate authoritative role logic inside proxy code.
+
+## 7. Role admission policy
+
+Implement these exact rules.
+
+| Laravel state | Admin admission |
+|---|---|
+| ACTIVE ADMIN | Allow |
+| ACTIVE STAFF | Allow |
+| ACTIVE CUSTOMER | Deny |
+| INACTIVE ADMIN | Deny |
+| INACTIVE STAFF | Deny |
+| Suspended user | Deny |
+| Missing local role | Deny |
+| Ambiguous role state | Deny |
+| Invalid Clerk session | Deny |
+| Expired/unavailable session | Deny |
+| Laravel identity cannot be resolved | Fail closed |
+
+Check the actual Laravel account-state enum and role model instead of assuming field names.
+
+### Multi-role handling
+
+The existing project defines an authoritative local role model.
+
+Do not invent precedence rules for ambiguous combinations.
+
+If the Laravel response can contain multiple roles, follow the approved backend rules or stop and identify the contract ambiguity.
+
+Do not elevate privilege based on whichever role seems highest.
+
+## 8. Exact permission handling
+
+Phase 19.3 must establish permission-aware foundations for later screens.
+
+Create a narrowly scoped permission helper, such as:
+
+`hasPermission(identity, permission)`
+
+It should operate only on permissions resolved from the current Laravel identity.
+
+Do not maintain an independent frontend permission catalog that can drift from Laravel.
+
+Use existing server permission identifiers.
+
+Examples:
+
+- `requests.view`
+- `requests.manage`
+- `enquiries.view`
+- `enquiries.manage`
+- `products.view`
+- `products.manage`
+- `inventory.view`
+- `inventory.manage`
+- `notifications.read_operational`
+- `staff.manage`
+- `staff.approve`
+- `users.manage_authorized`
+- `audit.view`
+
+These examples must be checked against the actual current `PermissionCatalog`.
+
+Do not invent new permission strings.
+
+### Permission gate
+
+Provide a reusable server-side permission guard for later operational routes.
+
+Examples of behavior:
+
+- STAFF with `requests.view` may access permitted request data.
+- STAFF without `requests.manage` cannot perform request mutations.
+- ADMIN must still satisfy any required exact permissions.
+- Customer directory requires ADMIN plus its approved permission.
+- Staff administration requires ADMIN plus the matching permission.
+
+Do not implement business resource screens now.
+
+Do not grant permissions merely because a navigation item is visible.
+
+Laravel must independently enforce authorization on each API operation.
+
+## 9. Authenticated identity representation
+
+Create a minimal, typed representation of the Laravel-resolved operational identity.
+
+Use the actual `/me` response schema.
+
+Consider including only fields needed by later admin interfaces:
+
+- Opaque local user identifier.
+- Display name or approved profile fields.
+- Authoritative role.
+- Account state, if required.
+- Exact permissions.
+- Approved account/avatar information if present.
+
+Do not serialize the Clerk bearer token.
+
+Do not expose confidential Laravel internal fields.
+
+Do not fabricate user DTO attributes.
+
+Avoid retaining a complete raw Laravel response when a narrower identity shape is sufficient.
+
+If the app needs a client-side identity context, pass only sanitized presentation fields and permission names.
+
+Do not include bearer tokens, provider secrets or other credentials in React props.
+
+## 10. Authenticated API integration
+
+Reuse:
+
+`frontend/admin/lib/api/client.ts`
+
+from Phase 19.2.
+
+Preserve:
+
+- Frozen `/api/v1` URL behavior.
+- Request-scoped bearer tokens.
+- Success envelope parsing.
+- Error classification.
+- Pagination handling.
+- Network timeout handling.
+- Private/no-store request semantics.
+- Sanitized errors.
+- No credential logging.
+
+### Server-side use
+
+Use current-request authentication context.
+
+Never place a bearer token in module-global state.
+
+Never share authorized API clients across users.
+
+Do not cache `/me` or operational data across sessions.
+
+Ensure all protected reads use dynamic request context and appropriate `no-store` behavior.
+
+### Client-side future use
+
+Prepare an appropriately scoped way for interactive components to obtain the current Clerk token immediately before a protected request.
+
+Do not pass server-acquired Clerk tokens to client components.
+
+Do not rely on a single token captured at initial login.
+
+Clerk session tokens are short-lived and must be refreshed through supported SDK mechanisms.
+
+Avoid adding a speculative browser API framework before interactive screens require it.
+
+## 11. Sign-out and account switching
+
+Provide a safe logout flow.
+
+Requirements:
+
+- Use Clerk's supported sign-out mechanism.
+- Reset authenticated admin presentation state.
+- Invalidate any application-owned identity cache.
+- Redirect to the sign-in or safe signed-out page.
+- Prevent stale data from a previous user appearing after logout.
+- Ensure protected server requests cannot reuse an old bearer token.
+
+### Account switching
+
+If Customer A signs in after ADMIN B:
+
+- The previous ADMIN's role and permissions must not persist.
+- The new Clerk session must trigger independent Laravel `/me` resolution.
+- CUSTOMER A must be denied admin admission.
+- Stale async results must not update current account state.
+- No prior account's operational data may remain in a shared cache.
+
+Avoid cross-user React Query/SWR caches unless an approved cache-isolation strategy exists.
+
+Do not add global state libraries merely for auth.
+
+## 12. Error and denial states
+
+Use the shared Phase 19.2 MUI primitives.
+
+Provide distinct states for:
+
+### Signed out
+
+Show the approved sign-in experience or safe redirect.
+
+### CUSTOMER account
+
+Display a clear access-denied message.
+
+Do not suggest creating another account or self-promoting to STAFF.
+
+Offer a safe sign-out action.
+
+### Inactive or suspended account
+
+Display a generic account-unavailable message.
+
+Do not expose internal enforcement details.
+
+### Missing permission
+
+Display a permission-denied state for that section.
+
+Avoid displaying forbidden business data.
+
+### Laravel unavailable
+
+Show a recoverable service-unavailable state.
+
+Do not show protected content based on stale role information.
+
+### Invalid/expired Clerk session
+
+Use the Clerk session lifecycle to recover or return the user to sign-in.
+
+Do not create endless redirect loops.
+
+### Configuration missing
+
+Preserve the existing safe configuration state from Phase 19.2.
+
+Do not render a fake authenticated admin preview.
+
+### Forbidden versus unavailable
+
+Use actual API status and error semantics where available.
+
+Do not misrepresent a `403` as a network outage or use a `500` fallback to admit the user.
+
+## 13. Styling and design consistency
+
+Use the existing shared design system.
+
+Canonical source:
 
 `frontend/design-system/tokens.css`
 
-Do not invent new brand colors, typography, spacing scales, shadows, radii, or breakpoint systems.
+Use the existing admin MUI theme from Phase 19.2.
 
-Do not create an independent admin design system.
+Do not create:
 
-Do not treat the customer website's compiled theme as the canonical token source.
+- A second palette.
+- Unapproved typography.
+- Hardcoded arbitrary brand colors.
+- A new component library.
+- A full dashboard sidebar prematurely.
 
-Use existing semantic tokens such as:
+Create a polished but minimal sign-in and authorization-state presentation.
 
-- `--surface-canvas`
-- `--surface-paper`
-- `--surface-editorial`
-- `--text-primary`
-- `--text-secondary`
-- `--text-muted`
-- `--border-subtle`
-- `--border-default`
-- `--action-primary`
-- `--action-primary-hover`
-- `--action-focus`
-- `--accent-brand`
-- `--color-success`
-- `--color-warning`
-- `--color-danger`
-- `--color-info`
+Use existing:
 
-Inspect and preserve all actual token definitions.
-
-The design system defines an architectural, warm, disciplined visual language. The admin dashboard should express it through operational information density rather than introducing unrelated dashboard styling.
-
-### Enforcement
-
-Create a clear process ensuring the admin MUI theme stays aligned with canonical tokens.
-
-Preferred options:
-
-1. Consume the shared CSS tokens directly.
-2. Use existing generated token mappings if already supported.
-3. Add a small deterministic adapter only if necessary.
-
-Avoid manually duplicating token values throughout components.
-
-If importing shared CSS from outside the Next.js application creates tooling limitations, solve those within the existing build architecture.
-
-Do not copy the canonical token file into a second independently maintained version.
-
-Do not modify canonical brand tokens merely to accommodate a dashboard component.
-
-## 7. MUI theme implementation
-
-Create the admin MUI theme as a thin mapping from canonical design tokens.
-
-Configure:
-
-- Palette.
-- Background surfaces.
-- Text colors.
-- Border colors.
+- PageContainer.
+- PageHeader.
+- ErrorState.
+- LoadingState.
+- MUI Buttons.
 - Typography.
-- Spacing.
-- Shape.
-- Breakpoints.
-- Focus styling.
-- Component default variants.
-- Component style overrides where justified.
+- Paper/Card components.
+- Approved icons.
 
-Use the semantic meanings defined in the shared design system.
+Avoid generic AI-generated dashboards with fabricated KPIs.
 
-Do not invent a new palette.
+## 14. Local authentication configuration
 
-### Typography
+The admin site runs at:
 
-Inspect the existing font authority carefully.
+`http://localhost:3001`
 
-The current design system defines:
+Verify the existing Clerk application is configured for this origin.
 
-- Display typography: Young Serif.
-- UI/body typography: Helvetica Now Text with approved fallbacks.
-- Monospace typography: approved system/mono stack.
+Audit:
 
-Follow the documented font-loading and licensing strategy.
+- Admin Clerk publishable key.
+- Clerk frontend/redirect configuration.
+- Laravel `CLERK_AUTHORIZED_PARTIES`.
+- Laravel CORS allowed origins if browser API calls are used.
+- Local Laravel API origin.
+- Next.js server API connectivity.
 
-Do not download, bundle, or redistribute proprietary fonts without authorized assets.
+Use the same Clerk instance as the customer application.
 
-Do not silently replace the design system with Inter, Poppins, Roboto, or arbitrary Google Fonts.
+Do not disable authorized-party verification.
 
-Use approved fallbacks where the intended font is unavailable.
+Do not change JWT issuer, audience or signature validation.
 
-Keep operational body text legible at dense information sizes.
+Do not use wildcard CORS.
 
-### MUI components
+### Browser token handling
 
-Establish consistent theme defaults for:
+Do not require the owner to repeatedly copy short-lived Clerk JWTs into terminal commands.
 
-- Button.
-- IconButton.
-- TextField.
-- Select.
-- Checkbox.
-- Radio.
-- Switch, if later approved.
-- FormControl.
-- Typography.
-- Paper.
-- Card.
-- Divider.
-- Chip.
-- Alert.
-- Dialog.
-- Menu.
-- Tooltip.
-- Table.
-- TableCell.
-- TableRow.
-- Pagination.
-- Skeleton.
+For browser-driven smoke tests, obtain a fresh token through the live Clerk session immediately before each API call.
 
-Do not implement customized overrides for every possible component without a demonstrated need.
+Do not extend token TTL or persist raw tokens.
 
-Prefer centralized, minimal, documented theme overrides.
+If operator action is needed to sign in, ask for it explicitly.
 
-Do not mix arbitrary component-level hardcoded colors with semantic token usage.
+## 15. Environment variables
 
-## 8. Next.js App Router and MUI integration
+Update `.env.example` only as required.
 
-Use the correct MUI App Router integration for the installed Next.js version.
+Distinguish:
 
-Verify:
+- Public Clerk configuration.
+- Server-only Laravel API origin.
+- Approved admin canonical origin.
+- Optional future browser API configuration.
 
-- Emotion cache behavior.
-- Server-side rendering.
-- Streaming support.
-- Correct style insertion.
-- Hydration stability.
-- Provider boundaries.
-- Theme consistency between server and client rendering.
-- CSS import behavior.
-- Development and production builds.
+Do not place Clerk secret keys or API secrets in `NEXT_PUBLIC_*` variables.
 
-Avoid a global client-only root merely to make MUI work.
-
-Keep server components as the default.
-
-Make provider wrappers client components only when required.
-
-Do not suppress hydration warnings to hide integration problems.
-
-Do not introduce unsafe style insertion patterns.
-
-## 9. Reusable UI primitives
-
-Implement a small set of reusable, theme-aware building blocks for future admin screens.
-
-Recommended foundation primitives:
-
-### PageContainer
-
-- Consistent maximum content width.
-- Responsive gutters.
-- Token-based spacing.
-- Suitable for narrow and wide admin layouts.
-
-### PageHeader
-
-- Semantic page heading.
-- Optional description.
-- Optional action slot.
-- Responsive alignment.
-
-### SectionHeader
-
-- Clear subsection title.
-- Optional contextual action.
-- Correct heading hierarchy.
-
-### StatusIndicator
-
-- Uses existing success, warning, danger, and neutral semantics.
-- Never communicates meaning through color alone.
-- Accessible text labels.
-- Supports known operational states without inventing new backend enums.
-
-### EmptyState
-
-- Consistent spacing.
-- Clear message.
-- Optional contextual action.
-- No fabricated records.
-
-### ErrorState
-
-- Sanitized user-facing message.
-- Optional genuine retry action.
-- No raw server exception or credentials.
-
-### LoadingState
-
-- Accessible loading indicator or appropriate MUI skeleton.
-- Avoid layout shifts where feasible.
-- Does not imply successful authorization.
-
-### ConfirmDialog
-
-- Accessible confirmation and cancellation.
-- Keyboard support.
-- Correct initial focus and close behavior.
-- Suitable for future protected operations.
-
-### DataTable foundation
-
-Evaluate whether a thin wrapper over MUI Table is justified now.
-
-If implemented, support:
-
-- Semantic table markup.
-- Accessible headers.
-- Responsive overflow.
-- Empty state.
-- Loading state.
-- Clear pagination slots.
-- No assumptions about frontend-owned business sorting.
-
-Do not add MUI X Data Grid or a commercial table dependency unless an actual approved requirement justifies it.
-
-Do not build full request or enquiry tables yet.
-
-## 10. Responsive foundations
-
-Design the foundation for:
-
-- Mobile.
-- Tablet.
-- Laptop.
-- Desktop.
-- Large desktop.
-
-Admin information density can differ from the customer storefront, but the responsive system must follow shared design tokens.
-
-Use:
-
-- Responsive container widths.
-- Flexible layouts.
-- Readable text.
-- Appropriate touch target sizing.
-- Overflow-safe tables.
-- Keyboard-friendly menus and dialogs.
-
-Do not force desktop-only access.
-
-Avoid fixed-width dashboards that overflow on small screens.
-
-Full admin sidebar, topbar, and navigation behavior belong to Phase 19.4.
-
-Prepare layout primitives without prematurely building that shell.
-
-## 11. Accessibility
-
-Follow `frontend/design-system/ACCESSIBILITY.md`.
-
-At minimum:
-
-- WCAG-aligned color contrast.
-- Keyboard navigation.
-- Visible focus indicators.
-- Semantic headings.
-- Landmark regions.
-- Accessible form labels.
-- Descriptive validation messages.
-- Appropriate screen-reader announcements.
-- Non-color status communication.
-- Reduced-motion respect.
-- Zoom and text scaling.
-- Safe responsive reflow.
-
-Do not rely on placeholder text as the sole form label.
-
-Do not disable default keyboard behavior in MUI components.
-
-Do not use an inaccessible icon-only control without an accessible label.
-
-Test key primitives with keyboard interactions and accessible queries.
-
-## 12. Clerk integration preparation
-
-Install and configure the existing project's compatible Clerk Next.js SDK.
-
-The admin application must use the same Clerk identity instance as the customer website.
-
-However:
-
-**Phase 19.2 does not implement the complete STAFF/ADMIN admission flow. That is Phase 19.3.**
-
-Prepare only the minimal valid Clerk provider and configuration foundation needed for the app.
-
-Do not:
-
-- Create independent admin sign-up.
-- Create public staff registration.
-- Create a new identity provider.
-- Assign Laravel roles from Clerk metadata.
-- Trust a frontend `isAdmin` flag.
-- Admit any authenticated Clerk identity to protected admin data.
-- Implement `/me` role admission incompletely.
-- Create a public dashboard route containing private or mock operational data.
-
-If the SDK requires environment variables to initialize, use explicit validated configuration and appropriate non-sensitive developer setup instructions.
-
-Missing Clerk configuration must not silently result in a fake signed-in ADMIN.
-
-Keep actual keys out of the repository.
-
-Prepare Phase 19.3 integration points without adding speculative role logic.
-
-## 13. Laravel API transport foundation
-
-Create a minimal, typed, reusable API client suitable for the future admin application.
-
-The client must follow:
-
-- Frozen V1 API envelope.
-- Canonical error structure.
-- Pagination metadata.
-- Opaque resource IDs.
-- Strict query parameter vocabulary.
-- `Cache-Control: private, no-store` for operational/private data.
-- Clerk bearer authentication.
-- Active local role/permission checks performed by Laravel.
-- Safe timeouts and network failures.
-- Explicit error handling.
-
-### Server-first approach
-
-Prefer server-side API access for protected initial reads.
-
-Create a transport that accepts a caller-provided current bearer token or a safely scoped token provider.
-
-Do not resolve Clerk tokens at module initialization.
-
-Do not use a shared global authorization header.
-
-Do not cache private operational responses across requests.
-
-Never serialize Clerk JWTs into client component props.
-
-Do not persist tokens in localStorage or sessionStorage.
-
-Prepare a browser-compatible authenticated transport abstraction only if required by the existing architecture.
-
-Phase 19.3 will implement full Clerk session integration and `/me` authorization admission.
-
-### Scope
-
-Do not implement request, enquiry, product, or staff repositories yet unless required for transport tests.
-
-Do not invent endpoint DTO fields.
-
-Use exact frozen schemas when type definitions are needed.
-
-Preserve API transport independence from the customer website.
-
-## 14. Environment configuration
-
-Create `.env.example` with documented variables.
-
-Include only variables that the chosen foundation actually needs.
-
-Likely configuration boundaries include:
-
-- Clerk publishable key.
-- Admin canonical origin.
-- Server-only Laravel API base URL.
-- Optional browser API origin if required.
-- Future public Reverb connection configuration.
-
-Do not copy secrets from the customer application's environment files.
-
-Do not commit actual Clerk keys, signing secrets, Laravel credentials, or Reverb secrets.
+Do not commit `.env.local`.
 
 Do not hardcode production domains.
 
-Production admin origin remains an owner/operations configuration decision.
+Keep customer/admin deployment configurations isolated.
 
-The local development server should use port `3001`.
+## 16. Authentication security tests
 
-If it is unavailable, fail with a clear diagnostic rather than silently switching to another origin that may not be authorized by Clerk or Laravel.
+Add meaningful tests covering:
 
-## 15. Independent build and deployment
+### Clerk and session
 
-The admin frontend must support independent commands.
+1. Signed-out user cannot access protected operational content.
+2. Valid Clerk session triggers Laravel identity resolution.
+3. Missing or invalid bearer token is rejected.
+4. Expired session is not admitted.
+5. Incomplete Clerk verification cannot bypass Laravel.
+6. Session restoration resolves identity correctly.
+7. Sign-out clears authenticated presentation state.
+8. Account switching does not leak previous identity.
+9. Repeated navigation does not create uncontrolled auth requests.
+10. Missing configuration fails safely.
 
-At minimum:
+### Laravel identity
 
-- Development.
-- Production build.
-- Production start.
-- Lint.
-- Typecheck.
-- Unit/component tests.
+11. ACTIVE ADMIN is admitted.
+12. ACTIVE STAFF is admitted.
+13. ACTIVE CUSTOMER is denied.
+14. INACTIVE ADMIN is denied.
+15. INACTIVE STAFF is denied.
+16. Missing local identity is not granted privileged access.
+17. JIT-provisioned CUSTOMER is denied.
+18. Missing local role fails closed.
+19. Ambiguous identity response fails closed.
+20. Laravel outage produces a safe unavailable state.
+21. Backend 401 and 403 are handled distinctly.
+22. Server failures do not result in default admission.
 
-Provide scripts consistent with the existing repository.
+### Permissions
 
-The app must be independently deployable to Coolify later.
+23. Exact permission check succeeds when present.
+24. Missing permission denies protected operation.
+25. ADMIN role alone does not bypass exact permissions.
+26. STAFF cannot enter ADMIN-only sections.
+27. Client-provided role or permission fields are ignored.
+28. Laravel permission changes are reflected on the next authoritative check.
+29. Unauthorized deep links do not reveal operational data.
 
-Do not perform deployment in this phase.
+### Security and transport
 
-Do not assume production domains, certificates, proxy headers, or VPS environment configuration are already complete.
+30. Private `/me` response is not shared-cacheable.
+31. Bearer tokens are not serialized to HTML.
+32. Bearer tokens are not logged.
+33. Concurrent requests use the correct user's token.
+34. Old account data is not reused after sign-out.
+35. Open redirect parameters cannot redirect outside approved destinations.
+36. No public admin signup route exists.
+37. No fake/admin fallback identity exists.
 
-Document future requirements for:
+Use deterministic mocks for ordinary unit and component tests.
 
-- HTTPS.
-- Clerk authorized origins and redirects.
-- Laravel CORS allowed origins.
-- Laravel Clerk authorized parties.
-- Reverb allowed origins.
-- WebSocket WSS.
-- CSP.
-- Private-cache protection.
+Do not weaken security to simplify tests.
 
-Do not weaken security through wildcard origins.
+## 17. Controlled integration smoke test
 
-## 16. SEO and privacy defaults
+Once automated tests pass, perform a controlled real local test.
 
-The admin dashboard is not a public search destination.
+Use the existing verified local ADMIN identity from the Group K bootstrap and Phase 18.6 testing.
 
-Configure appropriate non-indexing defaults.
+Do not create another ADMIN automatically.
 
-Use private, non-indexable application metadata.
+### Test A — ADMIN
 
-Avoid including protected routes in public sitemaps.
+1. Start Laravel.
+2. Start `frontend/admin` on port 3001.
+3. Sign in using the real verified ADMIN Clerk identity.
+4. Confirm a fresh Clerk session token is acquired.
+5. Confirm authenticated `/api/v1/me` returns the existing ADMIN.
+6. Confirm account state is active.
+7. Confirm exact permissions are resolved.
+8. Confirm protected admin admission succeeds.
+9. Confirm no sensitive token appears in browser output.
 
-Do not publish private records in metadata, previews, or static HTML.
+### Test B — CUSTOMER
 
-A robots policy alone is not authorization.
+1. Sign out ADMIN.
+2. Sign in as a verified CUSTOMER.
+3. Confirm Clerk authentication succeeds.
+4. Confirm Laravel identifies the local role as CUSTOMER.
+5. Confirm admin access is denied.
+6. Confirm no operational data is fetched.
 
-Do not rely on `noindex` or robots.txt to protect admin resources.
+### Test C — STAFF
 
-Full route security belongs to Phase 19.3, and all protected data must remain inaccessible until then.
+If an approved active STAFF test identity is available:
 
-## 17. Foundation demonstration
+1. Sign in as STAFF.
+2. Confirm active role and exact permissions.
+3. Confirm admin admission succeeds.
+4. Confirm ADMIN-only authorization still rejects STAFF.
 
-Provide a minimal, polished foundation view that demonstrates:
+Do not invent a privileged identity solely to claim a live PASS.
 
-- Correct MUI theme.
-- Canonical typography.
-- Page container.
-- Headings.
-- Buttons.
-- Form controls.
-- Status indicators.
-- Empty and error states.
-- Responsive behavior.
-- Accessible focus styles.
+### Test D — Session transition
 
-This is a development foundation demonstration, not a functioning operational dashboard.
+1. Sign out.
+2. Confirm protected admission is revoked.
+3. Refresh the protected page.
+4. Confirm no previous account data appears.
+5. Sign in again and verify independent identity resolution.
 
-Do not include:
+### Test E — Backend unavailable
 
-- Fake sales metrics.
-- Fake revenue charts.
-- Fabricated customer orders.
-- Mock business notification counts.
-- Fake STAFF approval flows.
-- Hardcoded customer identities.
-- A simulated ADMIN login.
+Stop or isolate the local Laravel service safely.
 
-If the demonstration is served at a public development route, it must contain no protected content, misleading operational UI, or real private data. Remove or safely isolate it before production deployment.
+Verify the admin dashboard fails closed and displays the expected unavailable state rather than rendering cached operational content.
 
-Prefer automated component tests or a clearly isolated development-only showcase over a permanent public component-gallery route.
+Do not modify production services.
 
-## 18. Tests
+### Reporting
 
-Implement meaningful coverage for the foundation.
+Clearly distinguish:
 
-### Application
+- Automated tests.
+- Real Clerk session tests.
+- Real Laravel API responses.
+- Tests not executed due to unavailable credentials or configuration.
 
-1. Admin app starts independently.
-2. Customer website files/routes remain unchanged.
-3. Build and typecheck pass.
-4. App Router renders without hydration mismatch.
-5. Missing required configuration fails safely.
-6. No live admin operational data is accessible through scaffolded routes.
+Do not mark unexecuted checks as successful.
 
-### Design system
+## 18. Quality gates
 
-7. Shared canonical tokens are consumed correctly.
-8. MUI palette maps to approved semantic values.
-9. Typography uses approved stacks.
-10. Spacing and border semantics remain consistent.
-11. Focus styles remain visible.
-12. Responsive layouts avoid horizontal overflow.
-13. No independently invented brand tokens are introduced.
-
-### Components
-
-14. PageHeader renders correct heading semantics.
-15. StatusIndicator includes readable text.
-16. EmptyState is accessible.
-17. ErrorState handles genuine retry actions.
-18. LoadingState exposes accessible status.
-19. ConfirmDialog supports keyboard interaction.
-20. Form controls expose labels and errors.
-21. Table foundation uses semantic headers, if implemented.
-
-### API transport
-
-22. Success envelope is parsed.
-23. Pagination metadata is preserved.
-24. Canonical validation errors are handled.
-25. Unauthorized response is distinguishable from forbidden.
-26. Rate-limit and server errors remain distinguishable.
-27. Missing bearer authentication fails closed for protected calls.
-28. Tokens are not persisted or logged.
-29. Private fetches cannot accidentally use shared Next.js caching.
-30. Concurrent requests do not share another user's bearer token.
-
-### Security boundaries
-
-31. No public ADMIN registration exists.
-32. No CUSTOMER is treated as ADMIN through Clerk metadata.
-33. No unauthenticated scaffolded route exposes operational data.
-34. Environment examples contain no real secrets.
-35. No production origin is hardcoded.
-
-Do not fabricate passing results.
-
-## 19. Quality gates
-
-Run the appropriate commands established by the new package configuration, including:
+Run from `frontend/admin`:
 
 ```bash
-cd frontend/admin
-
 npm run lint
 npm run typecheck
 npm run test
 npm run build
 ```
 
-Use the actual repository package manager if it is not npm.
+Also run:
 
-Inspect dependency compatibility.
+```bash
+git diff --check
+```
 
-Run `git diff --check`.
+Run relevant Laravel authentication tests if backend behavior is audited or changed.
 
-If available, run existing token validation or consistency checks.
+If backend files are changed, run the applicable Laravel test suite, PHPStan and Pint.
 
-If the app is launched locally, verify that it serves on port `3001`.
+Verify:
 
-Test at narrow and wide viewport sizes.
+- No hydration errors.
+- No protected data leakage.
+- No redirect loops.
+- No unauthorized role elevation.
+- No regressions in the existing MUI foundation.
 
-If changes to shared design-system files are necessary, run relevant customer website checks to ensure no regression.
+Do not force-upgrade dependencies as part of this phase.
 
-Do not modify Laravel or Flutter merely to make the admin scaffold pass.
+The Phase 19.2 report documented five development/transitive dependency audit findings. Keep them visible as a separate dependency follow-up rather than obscuring them with unrelated authentication changes.
 
-## 20. Documentation
+## 19. Documentation
 
-Create:
+Update:
 
-`frontend/admin/README.md`
-
-and:
-
-`frontend/admin/AGENTS.md`
-
-Following project conventions, document:
-
-- Application purpose.
-- Independent deployment boundary.
-- Setup instructions.
-- Local development port.
-- Required environment variables.
-- Package scripts.
-- Folder structure.
-- Canonical design-system authority.
-- MUI theme implementation.
-- API transport usage.
-- Clerk/Laravel security boundaries.
-- Rules for adding future screens.
-- Accessibility requirements.
-- Test commands.
-- Phase exclusions.
+- `frontend/admin/README.md`.
+- `frontend/admin/AGENTS.md`, if new security rules are needed.
+- Relevant environment documentation.
 
 Create:
 
-`phases/phase-19.2-completion.md`
+`phases/phase-19.3-completion.md`
 
-Record:
+Document:
 
-1. Files added.
-2. Dependency versions.
-3. App architecture.
-4. Theme/token strategy.
-5. Component primitives created.
-6. API client foundation.
-7. Clerk preparation status.
-8. Environment configuration.
-9. Build and test results.
-10. Security observations.
-11. Known limitations.
-12. Phase 19.3 handoff.
+- Clerk integration architecture.
+- Protected route boundary.
+- Server-side Laravel `/me` admission.
+- Local role validation.
+- Exact permission handling.
+- Authentication error states.
+- Logout/account-switch behavior.
+- Token handling and refresh.
+- Test evidence.
+- Local smoke-test results.
+- Remaining security limitations.
+- Phase 19.4 handoff.
 
-Do not rewrite completed phase history.
+Do not rewrite previous completion reports.
 
-## 21. Scope exclusions
+## 20. Explicit exclusions
 
 Do not implement:
 
-- Complete STAFF/ADMIN authorization gate.
-- Admin signup or account invitations.
-- Protected dashboard shell.
-- Operational request tables.
-- Enquiry workflows.
-- Product creation/editing forms.
-- Category management workflows.
-- Inventory adjustments.
-- Staff CRUD or approvals.
+- Phase 19.4 full dashboard shell.
+- Sidebar/topbar/navigation.
+- Real request/enquiry views.
+- Catalog or inventory workflows.
+- Staff management.
 - Customer directory.
 - Audit log UI.
-- Reverb subscription client.
-- Notification inbox functionality.
+- Notification inbox.
+- Reverb subscription.
 - Notification preferences.
-- Customer push notifications.
-- Checkout, orders, payments or deliveries.
+- Customer FCM push.
+- New backend permissions.
 - New Laravel endpoints.
-- New database migrations.
+- New admin registration mechanisms.
+- Commerce/order/payment functionality.
 - Production Coolify deployment.
 
-These belong to later phases or require separate approval.
+## 21. Definition of Done
 
-## 22. Definition of Done
+Phase 19.3 is PASS when:
 
-Phase 19.2 is PASS when:
+1. Clerk authentication works in the independent admin app.
+2. Laravel `/me` determines STAFF/ADMIN admission.
+3. ACTIVE STAFF and ADMIN users are admitted.
+4. CUSTOMER users are rejected.
+5. Inactive/suspended users are rejected.
+6. Missing/invalid identity fails closed.
+7. Exact permissions remain Laravel-authoritative.
+8. Protected routes resolve authorization on the server.
+9. Session expiration and logout are safe.
+10. Account switching does not expose stale data.
+11. No bearer token is persisted, serialized or leaked.
+12. Public admin signup/role elevation is impossible.
+13. Automated tests pass.
+14. Local Clerk/Laravel smoke tests confirm the core admission path.
+15. Documentation is updated.
+16. No business API contract is changed.
 
-1. `frontend/admin` exists as an independent Next.js application.
-2. The application runs on local port `3001`.
-3. The project uses compatible Next.js, React, TypeScript and MUI versions.
-4. Canonical shared design tokens drive the admin theme.
-5. MUI App Router SSR integration is correct.
-6. Reusable accessible primitives are implemented and tested.
-7. Typed Laravel transport respects the frozen contract.
-8. Clerk SDK integration is prepared without bypassing authorization.
-9. No operational data is publicly accessible.
-10. Responsive and accessibility foundations are verified.
-11. Lint, typecheck, tests and production build pass.
-12. Customer website remains unaffected.
-13. Documentation is complete.
-14. No Laravel API or database contract change is introduced.
+If real Clerk credentials or local infrastructure are unavailable, report **PARTIAL** rather than claiming a live PASS.
 
-## 23. Final agent response
+## 22. Final report
 
 Return:
 
-**PHASE 19.2 — PASS / PARTIAL / FAIL**
+**PHASE 19.3 — PASS / PARTIAL / FAIL**
 
 Include:
 
 - Files changed.
-- Application directory.
-- Framework and dependency versions.
-- Local development URL.
-- Theme/token implementation.
-- Reusable primitives.
-- API transport design.
-- Clerk integration preparation.
-- Security boundary status.
-- Automated validation results.
-- Remaining issues.
-- Exact readiness for Phase 19.3.
+- Authentication routes.
+- Protected route implementation.
+- Clerk SDK integration.
+- Laravel `/me` identity resolution.
+- Role admission behavior.
+- Exact permission handling.
+- Token lifecycle security.
+- Sign-out behavior.
+- Unauthorized and unavailable states.
+- Test results.
+- Real local smoke-test evidence.
+- Remaining limitations.
+- Readiness for Phase 19.4.
 
-**Proceed with the implementation now. Do not advance into Phase 19.3 without owner approval.**
+**Implement Phase 19.3 now. Do not proceed to Phase 19.4 without owner approval.**

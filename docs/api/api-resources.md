@@ -775,10 +775,14 @@ See `api-contract.md §14.17` for operation-level matrix (`Browse/Add cart/Check
 | `email` | string | Own | no | Clerk-authoritative verified identity/contact snapshot; read via Profile, changed only through Clerk security workflow, not ordinary `PATCH` |
 | `phone` | string \| null | Own | yes | Normalized; nullable if business permits clearing; mutable via `PATCH /me` allow-list; `phone_verified` (if later) server-controlled |
 | `email_verified` | boolean | Own | no | Clerk-authoritative status synchronized into a server-controlled local snapshot; client `{"email_verified":true}` rejected |
+| `account_state` | `ACTIVE` \| `SUSPENDED` \| null | Own | yes | Existing local authorization state. Inactive/suspended accounts are rejected before successful protected responses; `null` remains valid for existing CUSTOMER accounts. |
+| `permissions` | string[] | Own | no | Deterministically sorted effective Laravel permission identifiers for own presentation. They remain advisory; Laravel authorizes every operation. |
 | `created_at` | ISO8601 `Z` | Own | no | Server-generated |
 | `updated_at` | ISO8601 `Z` | Own | no | Server-generated |
 
-**Not serialized (even to Admin via normal `/me`):** `clerk_user_id`, `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, `permissions`/`authorization flags`, `internal staff notes`/`internal account flags`, `payment credentials`.
+**Not serialized (even to Admin via normal `/me`):** `clerk_user_id`, `password`, `password_hash`, `authentication tokens`, `refresh tokens`, `reset tokens`, `verification secrets`, `session secrets`, `security answers`, `provider secrets`, internal authorization flags beyond the approved effective `permissions` identifiers, `internal staff notes`/`internal account flags`, `payment credentials`.
+
+**Phase 19.3 approved additive amendment:** `account_state` and the authenticated subject's effective `permissions` are exposed only in `USER-001/002` under `ADR/ADMIN-002`. They preserve private/no-store caching and never authorize a client request.
 
 **Lightweight:** `GET /me` contains **only account data** — not `orders[]`, `cart`, `requests[]`, `enquiries[]`, `notifications[]`, `addresses[]`/`saved_addresses[]` (deferred), `notification preferences`. Those via `GET /me/orders`, `GET /me/cart`, `GET /me/requests`, `GET /me/enquiries`, `GET /me/notifications`. Historical `Order`/`Request`/`Enquiry` snapshot (`delivery_address`, `contact`) is preserved separately — profile change never rewrites those.
 

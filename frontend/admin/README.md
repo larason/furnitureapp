@@ -21,20 +21,26 @@ Open `http://localhost:3001`. The port is explicit so the admin and customer app
 | `npm run start` | Start the production build on port 3001 |
 | `npm run lint` | Run Next.js ESLint rules |
 | `npm run typecheck` | Run strict TypeScript checking |
-| `npm run test` | Run transport and foundation primitive tests |
+| `npm run test` | Run transport, admission and foundation primitive tests |
 
 ## Architecture
 
-- `app/` contains the independent App Router and foundation preview only.
+- `app/(auth)/sign-in` provides Clerk's existing sign-in flow; it is not an admin registration route. `withSignUp={false}` and `transferable={false}` disable the sign-up flow, so an unregistered email or OAuth identity dead-ends instead of entering registration.
+- `app/(protected)` is a dynamic server-side admission boundary. It resolves the current Clerk session, obtains a request-scoped bearer token, and calls Laravel `GET /api/v1/me` before rendering protected content.
 - `components/` contains small theme-aware UI/state primitives; no business tables or dashboard shell are implemented yet.
 - `lib/api/` contains a request-scoped typed Laravel transport. It preserves `/api/v1`, envelopes, pagination, errors, timeouts and private no-store behavior. It does not acquire, persist or log Clerk tokens.
+- `lib/auth/server-operational-identity.ts` bridges the current server-side Clerk session to the Laravel transport. `lib/auth/operational-identity.ts` validates the narrow Laravel identity response and fails closed on missing, malformed, inactive, CUSTOMER, or unauthorized identities. A Laravel `401` under a still-active Clerk session yields a recoverable **Session not accepted** state with a sign-out action rather than a redirect to `/sign-in`.
 - `theme/` is a thin MUI adapter over the shared `design-tokens.json` export.
 
-Laravel remains authoritative for local users, roles, account state, permissions and all business rules. Clerk is the existing identity provider. Full STAFF/ADMIN admission and `/me` authorization are Phase 19.3 responsibilities; this foundation does not admit users to private operational data.
+Clerk authenticates users only. Laravel remains authoritative for local users, roles, account state, effective permissions and all business rules. A protected route requires a current Clerk session plus Laravel-confirmed `ACTIVE` `STAFF` or `ADMIN` identity. CUSTOMER, suspended, missing, malformed and ambiguous identities are denied. Returned permissions drive presentation gates only; Laravel independently enforces every operational API call.
+
+No bearer token is stored, logged, passed to client components, or shared between requests. The admitted identity's name and role appear next to a **Sign out** control that uses Clerk's `signOut` and returns to `/sign-in`. A later session resolves `/me` again, so account switching cannot reuse prior identity data.
+
+Every state that may be shown to a possibly-authenticated visitor — access denied, account unavailable, session not accepted, and service unavailable — offers a Clerk sign-out action, so an outage or rejection never strands a signed-in user.
 
 ## Environment
 
-See `.env.example`. `API_BASE_URL` is server-only and must be a bare Laravel HTTP(S) origin. The production admin origin, Clerk authorized parties, Laravel CORS, CSP and Reverb origins are deployment configuration decisions; no production domain is hardcoded.
+See `.env.example`. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is browser-safe. `CLERK_SECRET_KEY` and `API_BASE_URL` are server-only and belong only in `.env.local` or deployment secret management. Configure `http://localhost:3001` as an exact Clerk allowed origin and Laravel `CLERK_AUTHORIZED_PARTIES` value for local admin testing. The production admin origin, Laravel CORS, CSP and Reverb origins are deployment configuration decisions; no production domain is hardcoded.
 
 ## Design and accessibility rules
 
@@ -44,4 +50,4 @@ Future screens must provide loading, empty, error and permission-safe states, us
 
 ## Phase exclusions
 
-This phase does not implement authentication admission, protected dashboard navigation, requests, enquiries, catalog management, inventory, notifications, Reverb, staff/customer administration, audit logs, orders, payments, checkout, delivery or deployment.
+This phase does not implement a dashboard shell, navigation, requests, enquiries, catalog management, inventory, notifications, Reverb, staff/customer administration, audit logs, orders, payments, checkout, delivery or deployment.

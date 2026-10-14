@@ -274,6 +274,16 @@
 
 ---
 
+### ADR/ADMIN-002 — Authenticated Self Identity for Admin Admission
+
+**Decision:** `GET/PATCH /api/v1/me` (`USER-001/002`) add read-only `account_state` and a deterministically sorted `permissions` array containing only the authenticated local user's effective Laravel permission identifiers. Existing fields retain their meaning. The fields are private, `no-store`, self-only, and presentation-only; Laravel remains the final authorization authority for every endpoint.
+
+**Reason:** The separately deployed admin application must resolve an active local STAFF/ADMIN identity and present permission-aware UI without trusting Clerk metadata, a frontend role map, or stale client state. The existing local `account_state` model uses `ACTIVE`, `SUSPENDED`, or `null` for legacy customer records. Inactive users remain rejected by authentication middleware before `USER-001/002` execute.
+
+**Consequences:** This is an owner-approved additive V1 amendment, not a new endpoint or authentication mechanism. The stale `User.staff_state` OpenAPI property is removed from the self identity schema; the implemented local field is canonically `account_state`. It does not expose tokens, password material, RBAC pivots, policy internals, or another user's data. The frontend must fail closed on missing/malformed values and cannot grant access from the returned array.
+
+---
+
 ### ADR/API-IN-001 — JSON is the Default Request Format
 
 **Decision:** All normal create/update/action requests use `application/json` UTF-8; `multipart/form-data` only for attachment file uploads. Unsupported `Content-Type` → validation error, not silent guess.

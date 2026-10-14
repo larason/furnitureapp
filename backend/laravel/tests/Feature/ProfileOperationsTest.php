@@ -7,10 +7,14 @@ use App\Authentication\ClerkTokenVerifier;
 use App\Exceptions\MigrationPreconditionException;
 use App\Models\Cart;
 use App\Models\User;
+use App\Support\PermissionCatalog;
+use App\Support\RoleName;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ProfileOperationsTest extends TestCase
@@ -28,7 +32,9 @@ class ProfileOperationsTest extends TestCase
             ->assertJsonPath('data.name', 'Profile Customer')
             ->assertJsonPath('data.email', 'profile@example.com')
             ->assertJsonPath('data.phone', null)
-            ->assertJsonPath('data.role', 'CUSTOMER');
+            ->assertJsonPath('data.role', 'CUSTOMER')
+            ->assertJsonPath('data.account_state', null)
+            ->assertJsonPath('data.permissions', []);
         $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
         $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
         $this->assertArrayNotHasKey('clerk_user_id', $response->json('data'));
@@ -124,6 +130,101 @@ class ProfileOperationsTest extends TestCase
             ->assertJsonPath('errors.0.code', 'FORBIDDEN');
     }
 
+    public function test_me_serializes_active_staff_and_admin_effective_permissions_deterministically(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staff = User::factory()->staff()->create(['clerk_user_id' => 'staff_profile']);
+        $admin = User::factory()->admin()->create(['clerk_user_id' => 'admin_profile']);
+
+        $staffResponse = $this->bearerFor('staff_profile')->getJson('/api/v1/me');
+        $adminResponse = $this->bearerFor('admin_profile')->getJson('/api/v1/me');
+
+        $staffResponse->assertOk()
+            ->assertJsonPath('data.role', RoleName::STAFF->value)
+            ->assertJsonPath('data.account_state', 'ACTIVE')
+            ->assertJsonPath('data.permissions', $this->permissionsFor(RoleName::STAFF));
+        $adminResponse->assertOk()
+            ->assertJsonPath('data.role', RoleName::ADMIN->value)
+            ->assertJsonPath('data.account_state', 'ACTIVE')
+            ->assertJsonPath('data.permissions', $this->permissionsFor(RoleName::ADMIN));
+    }
+
+    public function test_suspended_staff_is_rejected_before_identity_serialization(): void
+    {
+        $staff = User::factory()->staff()->create([
+            'clerk_user_id' => 'suspended_staff_profile',
+            'account_state' => 'SUSPENDED',
+        ]);
+
+        $this->bearerFor('suspended_staff_profile')->getJson('/api/v1/me')
+            ->assertForbidden()
+            ->assertJsonPath('errors.0.code', 'FORBIDDEN');
+        $this->assertSame('SUSPENDED', $staff->fresh()->account_state);
+    }
+
+    public function test_active_staff_with_no_effective_permissions_serializes_an_empty_permission_list(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $staffRole = Role::query()
+            ->where('name', RoleName::STAFF->value)
+            ->where('guard_name', config('auth.defaults.guard'))
+            ->firstOrFail();
+        $staffRole->syncPermissions([]);
+        User::factory()->staff()->create(['clerk_user_id' => 'staff_without_permissions']);
+
+        $this->bearerFor('staff_without_permissions')->getJson('/api/v1/me')
+            ->assertOk()
+            ->assertJsonPath('data.role', RoleName::STAFF->value)
+            ->assertJsonPath('data.account_state', 'ACTIVE')
+            ->assertJsonPath('data.permissions', []);
+    }
+
+    public function test_missing_or_ambiguous_local_roles_are_rejected(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $missingRole = User::factory()->create(['clerk_user_id' => 'missing_profile_role']);
+        $ambiguousRole = User::factory()->create(['clerk_user_id' => 'ambiguous_profile_role']);
+        $ambiguousRole->assignRole(RoleName::STAFF->value, RoleName::ADMIN->value);
+
+        $this->bearerFor('missing_profile_role')->getJson('/api/v1/me')->assertForbidden();
+        $this->bearerFor('ambiguous_profile_role')->getJson('/api/v1/me')->assertForbidden();
+        $this->assertCount(0, $missingRole->getRoleNames());
+    }
+
+    public function test_ineligible_role_is_rejected_before_a_profile_write(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $ambiguousRole = User::factory()->create([
+            'clerk_user_id' => 'ambiguous_patch_role',
+            'name' => 'Original Name',
+            'phone' => null,
+        ]);
+        $ambiguousRole->assignRole(RoleName::STAFF->value, RoleName::ADMIN->value);
+
+        $this->bearerFor('ambiguous_patch_role')
+            ->patchJson('/api/v1/me', ['name' => 'Mutated Name', 'phone' => '+255700000009'])
+            ->assertForbidden();
+
+        $fresh = $ambiguousRole->fresh();
+        $this->assertSame('Original Name', $fresh->name, 'An ineligible role must not persist a profile write.');
+        $this->assertNull($fresh->phone);
+    }
+
+    public function test_missing_local_role_is_rejected_before_a_profile_write(): void
+    {
+        $this->seed(RbacSeeder::class);
+        $missingRole = User::factory()->create([
+            'clerk_user_id' => 'missing_patch_role',
+            'name' => 'Original Name',
+        ]);
+
+        $this->bearerFor('missing_patch_role')
+            ->patchJson('/api/v1/me', ['name' => 'Mutated Name'])
+            ->assertForbidden();
+
+        $this->assertSame('Original Name', $missingRole->fresh()->name);
+    }
+
     public function test_cart_user_foreign_key_is_restrictive(): void
     {
         $foreignKey = collect(Schema::getForeignKeys('carts'))
@@ -186,14 +287,29 @@ class ProfileOperationsTest extends TestCase
 
     private function bearer(): self
     {
+        return $this->bearerFor('user_123');
+    }
+
+    private function bearerFor(string $clerkUserId): self
+    {
         $verifier = $this->mock(ClerkTokenVerifier::class);
         $verifier->shouldReceive('verify')->andReturn(new AuthenticatedClerkIdentity(
-            'user_123',
+            $clerkUserId,
             'sess_123',
             'https://clerk.example.test',
         ));
         $this->app->instance(ClerkTokenVerifier::class, $verifier);
 
         return $this->withHeaders(['Authorization' => 'Bearer session-token']);
+    }
+
+    /** @return list<string> */
+    private function permissionsFor(RoleName $role): array
+    {
+        return collect(PermissionCatalog::forRole($role))
+            ->map(static fn ($permission): string => $permission->value)
+            ->sort()
+            ->values()
+            ->all();
     }
 }
