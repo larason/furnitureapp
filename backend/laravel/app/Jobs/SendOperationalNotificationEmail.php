@@ -207,7 +207,9 @@ final class SendOperationalNotificationEmail implements ShouldQueue
         return match ($notification->type) {
             NotificationType::NEW_MADE_TO_ORDER_REQUEST => new NewFurnitureRequestNotification(
                 $notification,
-                FurnitureRequest::query()->findOrFail(FurnitureRequestIdentifier::decode((string) $notification->source_id)),
+                FurnitureRequest::query()->findOrFail(
+                    FurnitureRequestIdentifier::decode((string) $notification->source_id),
+                ),
             ),
             NotificationType::NEW_ENQUIRY => new NewEnquiryNotification(
                 $notification,

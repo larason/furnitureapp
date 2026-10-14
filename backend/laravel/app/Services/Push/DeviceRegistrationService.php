@@ -44,7 +44,13 @@ final class DeviceRegistrationService
     /**
      * Registers or rotates the installation for a customer.
      *
-     * @param  array{app_instance_id: string, token: string, platform: string, app_version?: string|null, app_build?: string|null}  $attributes
+     * @param  array{
+     *     app_instance_id: string,
+     *     token: string,
+     *     platform: string,
+     *     app_version?: string|null,
+     *     app_build?: string|null
+     * }  $attributes
      */
     public function register(User $customer, array $attributes): DeviceRegistration
     {
@@ -52,7 +58,9 @@ final class DeviceRegistrationService
         $ciphertext = $this->cipher->encrypt($attributes['token']);
 
         try {
-            return DB::transaction(fn (): DeviceRegistration => $this->persist($customer, $attributes, $fingerprint, $ciphertext));
+            return DB::transaction(
+                fn (): DeviceRegistration => $this->persist($customer, $attributes, $fingerprint, $ciphertext),
+            );
         } catch (QueryException $exception) {
             if (! $this->isUniqueViolation($exception)) {
                 throw $exception;
@@ -65,10 +73,20 @@ final class DeviceRegistrationService
     }
 
     /**
-     * @param  array{app_instance_id: string, token: string, platform: string, app_version?: string|null, app_build?: string|null}  $attributes
+     * @param  array{
+     *     app_instance_id: string,
+     *     token: string,
+     *     platform: string,
+     *     app_version?: string|null,
+     *     app_build?: string|null
+     * }  $attributes
      */
-    private function persist(User $customer, array $attributes, string $fingerprint, string $ciphertext): DeviceRegistration
-    {
+    private function persist(
+        User $customer,
+        array $attributes,
+        string $fingerprint,
+        string $ciphertext,
+    ): DeviceRegistration {
         $this->assertTokenIsUnclaimed($customer, $fingerprint);
 
         $device = $customer->deviceInstallations()
@@ -104,10 +122,19 @@ final class DeviceRegistrationService
     }
 
     /**
-     * @param  array{app_instance_id: string, token: string, platform: string, app_version?: string|null, app_build?: string|null}  $attributes
+     * @param  array{
+     *     app_instance_id: string,
+     *     token: string,
+     *     platform: string,
+     *     app_version?: string|null,
+     *     app_build?: string|null
+     * }  $attributes
      */
-    private function resolveConcurrentRegistration(User $customer, array $attributes, string $fingerprint): DeviceRegistration
-    {
+    private function resolveConcurrentRegistration(
+        User $customer,
+        array $attributes,
+        string $fingerprint,
+    ): DeviceRegistration {
         $this->assertTokenIsUnclaimed($customer, $fingerprint);
 
         $device = $customer->deviceInstallations()

@@ -137,7 +137,9 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
 
         try {
             $first->beginTransaction();
-            $first->table('device_installations')->insert($this->activeRow($this->firstUserId, 'instance-a', str_repeat('a', 64)));
+            $first->table('device_installations')->insert(
+                $this->activeRow($this->firstUserId, 'instance-a', str_repeat('a', 64)),
+            );
 
             // The second session blocks on the unique index until the first commits.
             $second->statement('SET SESSION innodb_lock_wait_timeout = 5');
@@ -181,7 +183,9 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
         $this->assertDistinctSessions($first, $second);
 
         $first->beginTransaction();
-        $first->table('device_installations')->insert($this->activeRow($this->firstUserId, 'instance-a', str_repeat('b', 64)));
+        $first->table('device_installations')->insert(
+            $this->activeRow($this->firstUserId, 'instance-a', str_repeat('b', 64)),
+        );
         $first->rollBack();
 
         $second->statement('SET SESSION innodb_lock_wait_timeout = 5');
@@ -202,13 +206,17 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
         $connection = DB::connection();
         $fingerprint = str_repeat('c', 64);
 
-        $connection->table('device_installations')->insert($this->activeRow($this->firstUserId, 'instance-a', $fingerprint));
+        $connection->table('device_installations')->insert(
+            $this->activeRow($this->firstUserId, 'instance-a', $fingerprint),
+        );
         $connection->table('device_installations')
             ->where('app_instance_id', 'instance-a')
             ->update(['status' => 'INACTIVE', 'deactivated_at' => now()]);
 
         // The retired row keeps the fingerprint for audit but frees it for a new owner.
-        $connection->table('device_installations')->insert($this->activeRow($this->secondUserId, 'instance-b', $fingerprint));
+        $connection->table('device_installations')->insert(
+            $this->activeRow($this->secondUserId, 'instance-b', $fingerprint),
+        );
 
         $this->assertSame(2, $connection->table('device_installations')->count());
         $this->assertSame(
@@ -216,7 +224,9 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
             $connection->table('device_installations')->where('app_instance_id', 'instance-a')->count(),
         );
         $this->assertNull(
-            $connection->table('device_installations')->where('app_instance_id', 'instance-a')->value('active_token_fingerprint'),
+            $connection->table('device_installations')
+                ->where('app_instance_id', 'instance-a')
+                ->value('active_token_fingerprint'),
             'A retired row must not occupy the unique slot.',
         );
     }

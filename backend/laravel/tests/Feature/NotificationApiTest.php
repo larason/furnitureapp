@@ -49,13 +49,19 @@ final class NotificationApiTest extends TestCase
         $foreign = Notification::factory()->forRecipient($other)->create();
 
         $this->withHeaders($this->authenticateAs($customer))
-            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $owned->getKey()), ['read' => true])
+            ->patchJson(
+                '/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $owned->getKey()),
+                ['read' => true],
+            )
             ->assertOk()
             ->assertJsonPath('data.is_read', true)
             ->assertJsonStructure(['data' => ['read_at']]);
 
         $this->withHeaders($this->authenticateAs($customer))
-            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $foreign->getKey()), ['read' => true])
+            ->patchJson(
+                '/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $foreign->getKey()),
+                ['read' => true],
+            )
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
 
@@ -78,7 +84,10 @@ final class NotificationApiTest extends TestCase
             ->assertJsonMissing(['id' => NotificationIdentifier::encodeId((int) $requestNotification->getKey())]);
 
         $this->withHeaders($this->authenticateAs($staff))
-            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $requestNotification->getKey()), ['read' => true])
+            ->patchJson(
+                '/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $requestNotification->getKey()),
+                ['read' => true],
+            )
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
 
@@ -99,7 +108,10 @@ final class NotificationApiTest extends TestCase
             ->assertJsonPath('meta.pagination.total', 0);
 
         $this->withHeaders($this->authenticateAs($staff))
-            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()), ['read' => true])
+            ->patchJson(
+                '/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()),
+                ['read' => true],
+            )
             ->assertNotFound()
             ->assertJsonPath('errors.0.code', 'RESOURCE_NOT_FOUND');
 
@@ -129,7 +141,10 @@ final class NotificationApiTest extends TestCase
         $notification = Notification::factory()->forRecipient($customer)->create(['read_at' => $firstReadAt]);
 
         $this->withHeaders($this->authenticateAs($customer))
-            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()), ['read' => true])
+            ->patchJson(
+                '/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()),
+                ['read' => true],
+            )
             ->assertOk();
 
         $this->assertSame(
@@ -146,7 +161,10 @@ final class NotificationApiTest extends TestCase
         $notification = Notification::factory()->forRecipient($customer)->create();
 
         $this->withHeaders($this->authenticateAs($customer))
-            ->patchJson('/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()), ['read' => true])
+            ->patchJson(
+                '/api/v1/me/notifications/'.NotificationIdentifier::encodeId((int) $notification->getKey()),
+                ['read' => true],
+            )
             ->assertOk();
 
         Event::assertDispatched(

@@ -99,10 +99,13 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
         // Device installations are customer-owned, derived only from the
         // verified principal. Registration is gated independently of push
         // fan-out so tokens can be managed without sending notifications.
-        Route::middleware(['devices.enabled', 'customer-device', 'throttle:device-registration'])->prefix('devices')->name('devices.')->group(function (): void {
-            Route::post('/', [DeviceInstallationController::class, 'store'])->name('store');
-            Route::delete('/{device}', [DeviceInstallationController::class, 'destroy'])->name('destroy');
-        });
+        Route::middleware(['devices.enabled', 'customer-device', 'throttle:device-registration'])
+            ->prefix('devices')
+            ->name('devices.')
+            ->group(function (): void {
+                Route::post('/', [DeviceInstallationController::class, 'store'])->name('store');
+                Route::delete('/{device}', [DeviceInstallationController::class, 'destroy'])->name('destroy');
+            });
 
         Route::post('/cart/merge', [CartController::class, 'merge'])->middleware(['customer-cart', 'throttle:authenticated-write'])->name('cart.merge');
 

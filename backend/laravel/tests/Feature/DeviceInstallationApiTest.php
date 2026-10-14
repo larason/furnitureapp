@@ -172,7 +172,10 @@ final class DeviceInstallationApiTest extends TestCase
         $device = DeviceInstallation::factory()->forOwner($customer)->inactive()->create();
 
         $this->withHeaders($this->asUser($customer))
-            ->postJson('/api/v1/me/devices', $this->payload('token-revived', ['app_instance_id' => $device->app_instance_id]))
+            ->postJson(
+                '/api/v1/me/devices',
+                $this->payload('token-revived', ['app_instance_id' => $device->app_instance_id]),
+            )
             ->assertOk()
             ->assertJsonPath('data.status', 'ACTIVE');
 

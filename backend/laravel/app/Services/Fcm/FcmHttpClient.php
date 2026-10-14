@@ -7,9 +7,11 @@ use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Throwable;
 
-final class FcmHttpV1Client
+final class FcmHttpClient
 {
-    public function __construct(private readonly FcmAccessTokenProvider $accessTokenProvider) {}
+    public function __construct(
+        private readonly FcmAccessTokenProvider $accessTokenProvider,
+    ) {}
 
     /** @param array<int|string, mixed> $data */
     public function send(string $token, array $data, string $title, string $body): FcmSendResult
@@ -71,7 +73,11 @@ final class FcmHttpV1Client
                 return new FcmSendResult($name);
             }
 
-            throw new FcmDeliveryException('FCM returned an invalid success response.', 'PROVIDER_RESPONSE_FAILURE', true);
+            throw new FcmDeliveryException(
+                'FCM returned an invalid success response.',
+                'PROVIDER_RESPONSE_FAILURE',
+                true,
+            );
         }
 
         throw $this->providerException($response->status(), $response->json());

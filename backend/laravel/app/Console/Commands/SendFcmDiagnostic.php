@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Fcm\FcmDeliveryException;
-use App\Services\Fcm\FcmHttpV1Client;
+use App\Services\Fcm\FcmHttpClient;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -13,7 +13,7 @@ class SendFcmDiagnostic extends Command
 
     protected $description = 'Send a local-only FCM transport diagnostic to the configured test installation.';
 
-    public function handle(FcmHttpV1Client $client): int
+    public function handle(FcmHttpClient $client): int
     {
         if (! app()->environment(['local', 'testing']) || ! config('notifications.push.diagnostic_enabled')) {
             $this->error('FCM diagnostics are disabled outside an explicitly enabled local/testing environment.');

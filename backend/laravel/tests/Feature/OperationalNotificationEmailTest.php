@@ -50,7 +50,15 @@ final class OperationalNotificationEmailTest extends TestCase
         Mail::fake();
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
+        $html = (new NewFurnitureRequestNotification($notification, $request))->render();
+
+        $this->assertStringContainsString('<title>New furniture request | SL Furnitures</title>', $html);
 
         (new SendOperationalNotificationEmail($notification->id))->handle();
 
@@ -74,6 +82,7 @@ final class OperationalNotificationEmailTest extends TestCase
         $mail = new NewEnquiryNotification($notification, $enquiry);
         $html = $mail->render();
 
+        $this->assertStringContainsString('<title>New customer enquiry | SL Furnitures</title>', $html);
         $this->assertStringContainsString('New customer enquiry received', $html);
         $this->assertStringContainsString('ENQ-', $html);
         $this->assertStringNotContainsString('<script>alert(1)</script>', $html);
@@ -106,7 +115,12 @@ final class OperationalNotificationEmailTest extends TestCase
         $recipient = User::factory()->staff()->create();
         Role::findByName('STAFF')->revokePermissionTo('requests.manage');
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
 
         (new SendOperationalNotificationEmail($notification->id))->handle();
 
@@ -124,7 +138,12 @@ final class OperationalNotificationEmailTest extends TestCase
         config(['notifications.email.enabled' => false]);
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
 
         (new SendOperationalNotificationEmail($notification->id))->handle();
 
@@ -140,7 +159,12 @@ final class OperationalNotificationEmailTest extends TestCase
         Mail::fake();
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
 
         $job = new SendOperationalNotificationEmail($notification->id);
         $job->handle();
@@ -154,9 +178,17 @@ final class OperationalNotificationEmailTest extends TestCase
     {
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
         $mailer = mock();
-        $mailer->shouldReceive('to')->once()->withArgs(fn (User $actual): bool => $actual->is($recipient))->andReturnSelf();
+        $mailer->shouldReceive('to')
+            ->once()
+            ->withArgs(fn (User $actual): bool => $actual->is($recipient))
+            ->andReturnSelf();
         $mailer->shouldReceive('send')->once()->andThrow(new TransportException('temporary failure'));
         Mail::shouldReceive('mailer')->once()->with('array')->andReturn($mailer);
 
@@ -176,9 +208,17 @@ final class OperationalNotificationEmailTest extends TestCase
     {
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
         $mailer = mock();
-        $mailer->shouldReceive('to')->once()->withArgs(fn (User $actual): bool => $actual->is($recipient))->andReturnSelf();
+        $mailer->shouldReceive('to')
+            ->once()
+            ->withArgs(fn (User $actual): bool => $actual->is($recipient))
+            ->andReturnSelf();
         $mailer->shouldReceive('send')->once()->andThrow(
             new TransportException(
                 'Request to Resend API failed.',
@@ -208,7 +248,12 @@ final class OperationalNotificationEmailTest extends TestCase
         Mail::fake();
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
         $delivery = EmailDelivery::query()->create([
             'notification_id' => $notification->id,
             'recipient_user_id' => $recipient->id,
@@ -242,7 +287,12 @@ final class OperationalNotificationEmailTest extends TestCase
         Mail::fake();
         $recipient = User::factory()->staff()->create();
         $request = FurnitureRequest::factory()->create();
-        $notification = $this->createNotification($recipient, NotificationType::NEW_MADE_TO_ORDER_REQUEST, 'furniture_request', $request->id);
+        $notification = $this->createNotification(
+            $recipient,
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            'furniture_request',
+            $request->id,
+        );
         EmailDelivery::query()->create([
             'notification_id' => $notification->id,
             'recipient_user_id' => $recipient->id,
@@ -298,7 +348,10 @@ final class OperationalNotificationEmailTest extends TestCase
 
         Queue::assertPushed(SendOperationalNotificationEmail::class, 1);
         $this->assertDatabaseCount('notifications', 1);
-        $this->assertSame($recipient->id, Notification::query()->value('recipient_user_id'));
+        $this->assertSame(
+            $recipient->id,
+            Notification::query()->value('recipient_user_id'),
+        );
     }
 
     public function test_retry_after_a_failed_dispatch_reenqueues_the_missing_email_delivery(): void
@@ -411,8 +464,12 @@ final class OperationalNotificationEmailTest extends TestCase
         Mail::assertSent(NewFurnitureRequestNotification::class);
     }
 
-    private function createNotification(User $recipient, NotificationType $type, string $sourceType, int $sourceId): Notification
-    {
+    private function createNotification(
+        User $recipient,
+        NotificationType $type,
+        string $sourceType,
+        int $sourceId,
+    ): Notification {
         return Notification::factory()->forRecipient($recipient)->create([
             'type' => $type,
             'source_type' => $sourceType,

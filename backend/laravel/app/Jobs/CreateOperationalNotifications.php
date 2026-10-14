@@ -42,10 +42,13 @@ final class CreateOperationalNotifications implements ShouldQueue
         $permission = $this->permission();
         $recipients = User::query()
             ->where('account_state', 'ACTIVE')
-            ->whereHas('roles', fn ($query) => $query->whereIn('name', [
-                RoleName::STAFF->value,
-                RoleName::ADMIN->value,
-            ]))
+            ->whereHas(
+                'roles',
+                fn ($query) => $query->whereIn('name', [
+                    RoleName::STAFF->value,
+                    RoleName::ADMIN->value,
+                ]),
+            )
             ->get()
             ->filter(fn (User $user): bool => $user->checkPermissionTo($permission));
 

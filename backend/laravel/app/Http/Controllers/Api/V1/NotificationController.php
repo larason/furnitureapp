@@ -131,9 +131,15 @@ class NotificationController extends V1Controller
     private function canReadOperationalType(User $user, NotificationType $type): bool
     {
         return match ($type) {
-            NotificationType::NEW_MADE_TO_ORDER_REQUEST => $user->checkPermissionTo(PermissionName::REQUESTS_MANAGE->value),
-            NotificationType::NEW_ENQUIRY => $user->checkPermissionTo(PermissionName::ENQUIRIES_MANAGE->value),
-            NotificationType::NEW_ORDER => $user->checkPermissionTo(PermissionName::ORDERS_VIEW_OPERATIONAL->value),
+            NotificationType::NEW_MADE_TO_ORDER_REQUEST => $user->checkPermissionTo(
+                PermissionName::REQUESTS_MANAGE->value,
+            ),
+            NotificationType::NEW_ENQUIRY => $user->checkPermissionTo(
+                PermissionName::ENQUIRIES_MANAGE->value,
+            ),
+            NotificationType::NEW_ORDER => $user->checkPermissionTo(
+                PermissionName::ORDERS_VIEW_OPERATIONAL->value,
+            ),
             default => $type->isOperational(),
         };
     }

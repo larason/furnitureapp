@@ -1,5 +1,8 @@
 <!doctype html>
 <html lang="en">
+<head>
+    <title>New customer enquiry | SL Furnitures</title>
+</head>
 <body style="margin:0;background:#f5f1eb;color:#2e2924;font-family:Arial,sans-serif;line-height:1.6;">
 <div style="max-width:600px;margin:0 auto;padding:32px 20px;">
     <div style="background:#3f3328;color:#fff;padding:20px 24px;">

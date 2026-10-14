@@ -4,12 +4,12 @@ namespace Tests\Feature;
 
 use App\Services\Fcm\FcmAccessTokenProvider;
 use App\Services\Fcm\FcmDeliveryException;
-use App\Services\Fcm\FcmHttpV1Client;
+use App\Services\Fcm\FcmHttpClient;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
-final class FcmHttpV1ClientTest extends TestCase
+final class FcmHttpClientTest extends TestCase
 {
     public function test_it_sends_a_minimal_http_v1_message_with_a_short_lived_access_token(): void
     {
@@ -20,7 +20,7 @@ final class FcmHttpV1ClientTest extends TestCase
             'https://fcm.googleapis.com/*' => Http::response(['name' => 'projects/slfurnitures/messages/1'], 200),
         ]);
 
-        $result = (new FcmHttpV1Client($provider))->send(
+        $result = (new FcmHttpClient($provider))->send(
             'registration-token',
             ['kind' => 'diagnostic'],
             'Test title',
@@ -51,7 +51,7 @@ final class FcmHttpV1ClientTest extends TestCase
         ]);
 
         try {
-            (new FcmHttpV1Client($provider))->send('secret-registration-token', [], 'Test title', 'Test body');
+            (new FcmHttpClient($provider))->send('secret-registration-token', [], 'Test title', 'Test body');
             $this->fail('Expected an FCM delivery exception.');
         } catch (FcmDeliveryException $exception) {
             $this->assertSame('TOKEN_INVALID', $exception->category);
@@ -72,7 +72,7 @@ final class FcmHttpV1ClientTest extends TestCase
         ]);
 
         try {
-            (new FcmHttpV1Client($provider))->send('registration-token', [], 'Test title', 'Test body');
+            (new FcmHttpClient($provider))->send('registration-token', [], 'Test title', 'Test body');
             $this->fail('Expected an FCM delivery exception.');
         } catch (FcmDeliveryException $exception) {
             $this->assertSame('INVALID_ARGUMENT', $exception->category);
@@ -91,7 +91,7 @@ final class FcmHttpV1ClientTest extends TestCase
         ]);
 
         try {
-            (new FcmHttpV1Client($provider))->send('registration-token', [], 'Test title', 'Test body');
+            (new FcmHttpClient($provider))->send('registration-token', [], 'Test title', 'Test body');
             $this->fail('Expected an FCM delivery exception.');
         } catch (FcmDeliveryException $exception) {
             $this->assertSame('TRANSPORT_FAILURE', $exception->category);
@@ -108,7 +108,7 @@ final class FcmHttpV1ClientTest extends TestCase
         Http::fake();
 
         try {
-            (new FcmHttpV1Client($provider))->send('registration-token', [], 'Test title', 'Test body');
+            (new FcmHttpClient($provider))->send('registration-token', [], 'Test title', 'Test body');
             $this->fail('Expected an FCM delivery exception.');
         } catch (FcmDeliveryException $exception) {
             $this->assertSame('FCM project configuration is missing.', $exception->getMessage());

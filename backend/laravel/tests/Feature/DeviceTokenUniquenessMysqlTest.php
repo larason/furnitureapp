@@ -365,7 +365,10 @@ final class DeviceTokenUniquenessMysqlTest extends TestCase
      */
     private function resetActiveTokenSchema(): void
     {
-        foreach (['trg_device_installations_active_token_insert', 'trg_device_installations_active_token_update'] as $trigger) {
+        foreach ([
+            'trg_device_installations_active_token_insert',
+            'trg_device_installations_active_token_update',
+        ] as $trigger) {
             DB::statement("DROP TRIGGER IF EXISTS {$trigger}");
         }
 
@@ -399,7 +402,9 @@ final class DeviceTokenUniquenessMysqlTest extends TestCase
      */
     private function reportsActiveTokenConstraint(): bool
     {
-        $migration = require database_path('migrations/2026_10_13_120000_scope_device_token_uniqueness_to_active_rows.php');
+        $migration = require database_path(
+            'migrations/2026_10_13_120000_scope_device_token_uniqueness_to_active_rows.php',
+        );
 
         $predicate = new ReflectionMethod($migration, 'hasActiveTokenConstraint');
         $predicate->setAccessible(true);
@@ -414,7 +419,10 @@ final class DeviceTokenUniquenessMysqlTest extends TestCase
     {
         $statements = [];
 
-        foreach (['trg_device_installations_active_token_insert', 'trg_device_installations_active_token_update'] as $trigger) {
+        foreach ([
+            'trg_device_installations_active_token_insert',
+            'trg_device_installations_active_token_update',
+        ] as $trigger) {
             $created = DB::selectOne("SHOW CREATE TRIGGER {$trigger}");
             $statements[] = (string) $created->{'SQL Original Statement'};
             DB::statement("DROP TRIGGER {$trigger}");

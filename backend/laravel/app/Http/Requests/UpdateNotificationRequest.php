@@ -23,7 +23,12 @@ final class UpdateNotificationRequest extends FormRequest
     {
         $query = $this->query();
         if ($query !== []) {
-            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'Query parameters are not supported.', 422, (string) array_key_first($query));
+            throw new ApiException(
+                ApiErrorCode::INVALID_VALUE,
+                'Query parameters are not supported.',
+                422,
+                (string) array_key_first($query),
+            );
         }
 
         $content = $this->attributes->get(EnforceApiRequestLimits::JSON_BODY_ATTRIBUTE);
@@ -34,7 +39,12 @@ final class UpdateNotificationRequest extends FormRequest
         $input = $this->request->all();
         $unknown = array_diff(array_keys($input), ['read']);
         if ($unknown !== []) {
-            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'The request field is not supported.', 422, (string) reset($unknown));
+            throw new ApiException(
+                ApiErrorCode::INVALID_VALUE,
+                'The request field is not supported.',
+                422,
+                (string) reset($unknown),
+            );
         }
 
         if (! array_key_exists('read', $input) || ! is_bool($input['read'])) {

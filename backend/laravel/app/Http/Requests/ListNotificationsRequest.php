@@ -28,7 +28,11 @@ final class ListNotificationsRequest extends FormRequest
     {
         $unknown = array_diff(array_keys($this->query()), ['page', 'per_page', 'unread', 'type']);
         if ($unknown !== []) {
-            throw $this->error(ApiErrorCode::INVALID_VALUE, (string) reset($unknown), 'The query parameter is not supported.');
+            throw $this->error(
+                ApiErrorCode::INVALID_VALUE,
+                (string) reset($unknown),
+                'The query parameter is not supported.',
+            );
         }
 
         return [

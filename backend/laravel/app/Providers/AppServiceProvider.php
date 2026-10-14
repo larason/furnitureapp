@@ -55,7 +55,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('operational-write', fn (Request $request) => Limit::perMinute(120)->by($this->userKey($request)));
         RateLimiter::for('cart-add', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('order-cancel', fn (Request $request) => Limit::perMinute(5)->by($this->userKey($request)));
-        RateLimiter::for('device-registration', fn (Request $request) => Limit::perMinute((int) config('rate_limits.device_registration_per_minute', 20))->by($this->userKey($request)));
+        RateLimiter::for(
+            'device-registration',
+            fn (Request $request) => Limit::perMinute(
+                (int) config('rate_limits.device_registration_per_minute', 20),
+            )->by($this->userKey($request)),
+        );
         RateLimiter::for('inventory-adjust', fn (Request $request) => Limit::perMinute(20)->by($this->userKey($request)));
         RateLimiter::for('admin-staff', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('guest-cart-create', fn (Request $request) => $request->user() === null
