@@ -4,6 +4,7 @@ use App\Support\PermissionCatalog;
 use App\Support\PermissionName;
 use App\Support\RoleName;
 use Illuminate\Database\Migrations\Migration;
+use Spatie\Permission\Contracts\Permission as PermissionContract;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -56,7 +57,7 @@ return new class extends Migration
         $record = Role::firstOrCreate(['name' => $role->value, 'guard_name' => $guard]);
 
         $record->givePermissionTo(array_map(
-            fn (PermissionName $permission): Permission => Permission::findOrCreate($permission->value, $guard),
+            fn (PermissionName $permission): PermissionContract => Permission::findOrCreate($permission->value, $guard),
             $permissions,
         ));
     }
