@@ -16,6 +16,9 @@ abstract interface class AuthSession implements Listenable, AuthTokenProvider {
 
   bool get isSignedIn;
 
+  /// Stable Clerk session identity for in-memory lifecycle coordination.
+  String? get sessionId;
+
   Future<void> signOut();
 
   /// Registers cleanup that still needs the outgoing session's bearer token.

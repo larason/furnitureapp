@@ -3,6 +3,7 @@ import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
+import 'core/auth/authenticated_session_bootstrap_coordinator.dart';
 import 'core/auth/clerk_auth_adapter.dart';
 import 'core/diagnostics/app_diagnostics.dart';
 import 'core/network/api_client.dart';
@@ -25,8 +26,8 @@ import 'theme/app_theme.dart';
 ///
 /// [config] is validated by [ConfigValidator.loadCompileTime] before the widget
 /// is constructed and is injected here rather than read globally. Phase 16.4
-/// consumes the validated config through [apiClient]; no request is made during
-/// startup.
+/// consumes the validated config through [apiClient]. An eligible restored Clerk
+/// session starts a nonblocking background `/me` synchronization.
 ///
 /// Feature screens are introduced by their owning Group P phases. This root
 /// only owns route registration and authentication-aware access control.
@@ -59,6 +60,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
     ClerkAuthStatus.signedOut,
   );
   late final GoRouter _router;
+  AuthenticatedSessionBootstrapCoordinator? _sessionBootstrap;
 
   @override
   void initState() {
@@ -81,6 +83,9 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
         : apiClient == null
         ? null
         : ApiProductDetailRepository(apiClient);
+    final profileRepository = apiClient == null
+        ? null
+        : ApiProfileRepository(apiClient);
     _router = AppRouter.create(
       authState: widget.authAdapter ?? _anonymousAuthState,
       getAuthStatus: () =>
@@ -95,9 +100,7 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
       enquiryRepository: apiClient == null
           ? null
           : ApiEnquiryRepository(apiClient),
-      profileRepository: apiClient == null
-          ? null
-          : ApiProfileRepository(apiClient),
+      profileRepository: profileRepository,
       authSession: widget.authAdapter,
       clerkUiEnabled: widget.authAdapter?.clerkAuthState != null,
       showFixtureHero: useFixtures,
@@ -105,11 +108,19 @@ class _SLFurnituresAppState extends State<SLFurnituresApp> {
     if (widget.pushMessaging != null && widget.authAdapter != null) {
       widget.pushMessaging!.attachAuthSession(widget.authAdapter!);
     }
+    if (profileRepository != null && widget.authAdapter != null) {
+      _sessionBootstrap = AuthenticatedSessionBootstrapCoordinator(
+        session: widget.authAdapter!,
+        profiles: profileRepository,
+        onSessionReady: widget.pushMessaging?.markLaravelSessionReady,
+      )..start();
+    }
   }
 
   @override
   void dispose() {
     _router.dispose();
+    _sessionBootstrap?.dispose();
     _anonymousAuthState.dispose();
     if (widget.ownsApiClient) {
       widget.apiClient?.close();

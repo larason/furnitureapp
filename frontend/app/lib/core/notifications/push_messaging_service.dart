@@ -76,6 +76,7 @@ final class PushMessagingService extends ChangeNotifier {
   StreamSubscription<RemoteMessage>? _openedSubscription;
   StreamSubscription<String>? _tokenSubscription;
   AuthSession? _authSession;
+  String? _laravelReadySessionId;
   String? _token;
   bool _wasSignedIn = false;
   bool _disposed = false;
@@ -173,8 +174,20 @@ final class PushMessagingService extends ChangeNotifier {
       ?..removeListener(_handleAuthListener)
       ..removeBeforeSignOutListener(retireDeviceBeforeSignOut);
     _authSession = session;
+    _laravelReadySessionId = null;
     session.addListener(_handleAuthListener);
     session.addBeforeSignOutListener(retireDeviceBeforeSignOut);
+    unawaited(_enqueueAuthChange());
+  }
+
+  /// Allows authenticated device registration only after Laravel has resolved
+  /// the same Clerk session's local user projection.
+  void markLaravelSessionReady(String sessionId) {
+    if (_authSession?.isSignedIn != true ||
+        _authSession?.sessionId != sessionId) {
+      return;
+    }
+    _laravelReadySessionId = sessionId;
     unawaited(_enqueueAuthChange());
   }
 
@@ -298,7 +311,13 @@ final class PushMessagingService extends ChangeNotifier {
   }
 
   Future<void> _handleAuthChange() async {
-    final isSignedIn = _authSession?.isSignedIn == true;
+    final sessionId = _authSession?.isSignedIn == true
+        ? _authSession?.sessionId
+        : null;
+    if (sessionId == null) {
+      _laravelReadySessionId = null;
+    }
+    final isSignedIn = sessionId != null && sessionId == _laravelReadySessionId;
     final coordinator = registrations;
     final wasSignedIn = _wasSignedIn;
     _wasSignedIn = isSignedIn;
@@ -330,7 +349,11 @@ final class PushMessagingService extends ChangeNotifier {
   }
 
   void _handleTokenRefresh(String token) {
-    if (_authSession?.isSignedIn != true) {
+    final session = _authSession;
+    final sessionId = session?.sessionId;
+    if (session?.isSignedIn != true ||
+        sessionId == null ||
+        sessionId != _laravelReadySessionId) {
       return;
     }
 
@@ -342,7 +365,11 @@ final class PushMessagingService extends ChangeNotifier {
 
     unawaited(
       _authChanges.add(() async {
-        if (_authSession?.isSignedIn == true) {
+        final currentSession = _authSession;
+        final currentSessionId = currentSession?.sessionId;
+        if (currentSession?.isSignedIn == true &&
+            currentSessionId == sessionId &&
+            currentSessionId == _laravelReadySessionId) {
           await coordinator.registerForCustomer();
         }
       }),

@@ -160,6 +160,9 @@ class _FakeAuthSession extends ChangeNotifier implements AuthSession {
   bool get isSignedIn => status == ClerkAuthStatus.signedIn;
 
   @override
+  String? get sessionId => isSignedIn ? 'sess_test' : null;
+
+  @override
   Future<String?> getToken() async => null;
 
   @override

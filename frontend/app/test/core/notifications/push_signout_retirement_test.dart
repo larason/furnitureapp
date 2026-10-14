@@ -27,6 +27,9 @@ class _SessionGateway implements ClerkAuthGateway {
   bool get isSignedIn => signedIn;
 
   @override
+  String? get sessionId => signedIn ? 'sess_test' : null;
+
+  @override
   Future<void> initialize() async {}
 
   @override
@@ -95,11 +98,11 @@ void main() {
   late ClerkAuthAdapter adapter;
 
   PushRegistrationCoordinator build() => PushRegistrationCoordinator(
-        repository: repository,
-        tokenProvider: () async => 'fcm-token',
-        tokenDeleter: () async => tokenDeletions++,
-        installationIdentity: _Identity(),
-      );
+    repository: repository,
+    tokenProvider: () async => 'fcm-token',
+    tokenDeleter: () async => tokenDeletions++,
+    installationIdentity: _Identity(),
+  );
 
   setUp(() async {
     gateway = _SessionGateway();
@@ -141,12 +144,15 @@ void main() {
     },
   );
 
-  test('a sign-out with no registered device deletes only the local token', () async {
-    adapter.addBeforeSignOutListener(build().retireOnSignOut);
+  test(
+    'a sign-out with no registered device deletes only the local token',
+    () async {
+      adapter.addBeforeSignOutListener(build().retireOnSignOut);
 
-    await adapter.signOut();
+      await adapter.signOut();
 
-    expect(repository.deactivations, isEmpty);
-    expect(tokenDeletions, 1);
-  });
+      expect(repository.deactivations, isEmpty);
+      expect(tokenDeletions, 1);
+    },
+  );
 }
