@@ -1,10 +1,15 @@
-# Laravel JIT Provisioning — Next.js Session Bootstrap
+# Laravel JIT Provisioning — Next.js Identity Probe
 
 ## Integration point
 
-`frontend/web/components/auth/laravel-session-bootstrap.tsx` renders once inside the existing
+`frontend/web/components/auth/laravel-identity-probe.tsx` renders once inside the existing
 `ClerkProvider` through `app/providers.tsx`. It has no UI and does not change public routes,
 server-rendered catalog pages, Clerk credential flows, or the frozen Laravel API contract.
+
+Laravel is stateless, so the probe does not establish a session. Its only durable effect is the JIT
+provisioning that resolving `GET /api/v1/me` triggers, which is why it must not be gated on the
+Phase 15.9/15.10 request and enquiry forms. It is a formally sanctioned browser bearer path; see the
+browser bearer path rule in `frontend/AGENTS.md`.
 
 ## Session readiness and request contract
 

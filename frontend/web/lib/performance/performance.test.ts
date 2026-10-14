@@ -26,7 +26,7 @@ const APP_AND_COMPONENT_SOURCES = [...listSources("app"), ...listSources("compon
 const EXPECTED_CLIENT_COMPONENTS = [
   "app/error.tsx",
   "app/providers.tsx",
-  "components/auth/laravel-session-bootstrap.tsx",
+  "components/auth/laravel-identity-probe.tsx",
   "components/catalog/price-filter-inputs.tsx",
   "components/catalog/sort-filter-select.tsx",
   "components/enquiries/enquiry-form.tsx",

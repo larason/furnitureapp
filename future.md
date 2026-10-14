@@ -88,3 +88,13 @@ The following remain open and should be carried forward without reopening comple
 26. The website's current Clerk integration is a one-way bridge: Clerk → Laravel. It does not yet support Laravel → Clerk, so the website cannot create or update Clerk identities. This is a known limitation and should be documented for future work.
 
 27. Use TestSprite CLI to test this project and fix what fails.
+
+28. The finding I'd actually flag
+    getCurrentLocalUser() in frontend/web/lib/auth/laravel.ts is defined but imported by nothing. So is authenticatedLaravelRequest. The entire server-only bridge — the mechanism AGENTS.md:83 says is mandatory — is currently dead code, while the path it was meant to prevent is the only live one.
+    That's the real inversion, and it's worth a decision.
+   Options
+ 	Approach	Trade-off
+  A (finding's suggestion)	Route the probe through a Server Action → server bridge	I don't recommend it. A client component can't import a server-only module, so this needs a Server Action or Route Handler — precisely the "proxy, Server Action, or second client" that L83 pushes against. Also semantically wrong (POST + CSRF surface for a read), and slower.
+    B (my recommendation)	Keep the probe; formalize a narrow exception in AGENTS.md:83 and rename it to say what it does (e.g. LaravelIdentityProbe)	Zero behaviour change, zero security change. Makes the contract honest and keeps the path greppable/bounded to GET /me, never-persist, no other resource.
+       C	Delete the probe; let JIT provisioning happen on the server when the first private page calls getCurrentLocalUser()	Architecturally cleanest end-state, and it revives the dead bridge. But it reintroduces exactly the gap you were guarding against — on request-only scope no private page exists, so nothing would provision.
+    C is the right destination; B is the right thing to do now, and C becomes the plan when orders/profile ship. That sequencing is safe because B doesn't foreclose C.

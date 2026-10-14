@@ -12,7 +12,12 @@ const browserApiRequest = createApiClient({ baseUrl: process.env.NEXT_PUBLIC_API
 const sessionBootstrap = createLaravelSessionBootstrap({ apiRequest: browserApiRequest });
 const MAX_SESSION_RECOVERY_ATTEMPTS = 2;
 
-export function LaravelSessionBootstrap() {
+// Sanctioned browser bearer path (see frontend/AGENTS.md). Laravel is stateless,
+// so there is no session to establish here: the only durable effect is the JIT
+// provisioning that resolving `GET /me` triggers. This probe reads the caller's
+// own `/me` and nothing else, and never persists the token.
+
+export function LaravelIdentityProbe() {
   const { getToken, isLoaded: isAuthLoaded, isSignedIn, sessionClaims, sessionId } = useAuth();
   const { isLoaded: isUserLoaded, user } = useUser();
   const previousSessionId = useRef<string | null>(null);
