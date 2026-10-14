@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\CartController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\CheckoutController;
 use App\Http\Controllers\Api\V1\CustomerOrderController;
+use App\Http\Controllers\Api\V1\DeviceInstallationController;
 use App\Http\Controllers\Api\V1\EnquiryController;
 use App\Http\Controllers\Api\V1\InventoryController;
 use App\Http\Controllers\Api\V1\MeController;
@@ -94,6 +95,17 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
         });
 
         Route::patch('/', [MeController::class, 'update'])->middleware('throttle:authenticated-write')->name('update');
+
+        // Device installations are customer-owned, derived only from the
+        // verified principal. Registration is gated independently of push
+        // fan-out so tokens can be managed without sending notifications.
+        Route::middleware(['devices.enabled', 'customer-device', 'throttle:device-registration'])
+            ->prefix('devices')
+            ->name('devices.')
+            ->group(function (): void {
+                Route::post('/', [DeviceInstallationController::class, 'store'])->name('store');
+                Route::delete('/{device}', [DeviceInstallationController::class, 'destroy'])->name('destroy');
+            });
 
         Route::post('/cart/merge', [CartController::class, 'merge'])->middleware(['customer-cart', 'throttle:authenticated-write'])->name('cart.merge');
 

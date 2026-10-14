@@ -143,7 +143,12 @@ class _CustomerAppBar extends StatelessWidget implements PreferredSizeWidget {
               label: 'SL Furnitures home',
               child: InkWell(
                 onTap: () => context.go(AppRoutes.home),
-                child: const AppBrandLogo(height: AppSpacing.space7),
+                // The enclosing node already names this control, so the logo's
+                // own label is excluded: otherwise assistive technology
+                // announces the brand twice.
+                child: const ExcludeSemantics(
+                  child: AppBrandLogo(height: AppSpacing.space7),
+                ),
               ),
             ),
           ),

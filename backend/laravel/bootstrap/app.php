@@ -11,6 +11,8 @@ use App\Http\Middleware\CustomerCartAccess;
 use App\Http\Middleware\CustomerSubmissionAccess;
 use App\Http\Middleware\EnforceApiRequestLimits;
 use App\Http\Middleware\EnsureCheckoutEnabled;
+use App\Http\Middleware\EnsureCustomerDeviceAccess;
+use App\Http\Middleware\EnsureDeviceRegistrationEnabled;
 use App\Http\Middleware\EnsureEnquiriesEnabled;
 use App\Http\Middleware\EnsureFurnitureRequestsEnabled;
 use App\Http\Middleware\OperationalAccess;
@@ -37,6 +39,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: null,
     )
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', [
+        'middleware' => [
+            HandleCors::class,
+            AddSecurityHeaders::class,
+            'clerk.auth',
+        ],
+    ])
     ->withCommands([__DIR__.'/../app/Console/Commands'])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(null);
@@ -69,6 +78,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => RequirePermission::class,
             'staff-or-admin' => StaffOrAdminAccess::class,
             'attachment.credential' => RequireAttachmentUploadCredential::class,
+            'devices.enabled' => EnsureDeviceRegistrationEnabled::class,
+            'customer-device' => EnsureCustomerDeviceAccess::class,
         ]);
 
         $middleware->priority([
@@ -85,7 +96,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(fn (Throwable $e, Request $request) => app(ApiExceptionRenderer::class)->render($e, $request));
         $exceptions->respond(function ($response, Throwable $_, Request $request) {
-            if (! $request->is('api/*')) {
+            if (! $request->is('api/*') && ! $request->is('broadcasting/auth')) {
                 return $response;
             }
 

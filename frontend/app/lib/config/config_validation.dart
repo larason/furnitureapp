@@ -32,6 +32,10 @@ abstract final class CompileTimeDefines {
       'CATALOG_DATA_SOURCE': String.fromEnvironment('CATALOG_DATA_SOURCE'),
     if (bool.hasEnvironment('ENABLE_DIAGNOSTICS'))
       'ENABLE_DIAGNOSTICS': String.fromEnvironment('ENABLE_DIAGNOSTICS'),
+    if (bool.hasEnvironment('ENABLE_PUSH_REGISTRATION'))
+      'ENABLE_PUSH_REGISTRATION': String.fromEnvironment(
+        'ENABLE_PUSH_REGISTRATION',
+      ),
     if (_hasForbiddenSecret)
       forbiddenSecretField: String.fromEnvironment(forbiddenSecretField),
   };
@@ -48,6 +52,7 @@ abstract final class ConfigValidator {
   static const String _clerkField = 'CLERK_PUBLISHABLE_KEY';
   static const String _diagnosticsField = 'ENABLE_DIAGNOSTICS';
   static const String _catalogDataSourceField = 'CATALOG_DATA_SOURCE';
+  static const String _pushRegistrationField = 'ENABLE_PUSH_REGISTRATION';
 
   /// Fields the application reads. Anything else is rejected so a mistyped or
   /// secret field can never be silently ignored.
@@ -57,6 +62,7 @@ abstract final class ConfigValidator {
     _clerkField,
     _diagnosticsField,
     _catalogDataSourceField,
+    _pushRegistrationField,
   };
 
   /// Rejected with a specific diagnostic rather than as a generic unknown field.
@@ -99,6 +105,7 @@ abstract final class ConfigValidator {
       ),
       clerkPublishableKey: _resolvePublishableKey(raw, environment),
       enableDiagnostics: _resolveDiagnostics(raw),
+      enablePushRegistration: _resolvePushRegistration(raw),
     );
   }
 
@@ -133,7 +140,7 @@ abstract final class ConfigValidator {
         throw const ConfigValidationException(
           'Unknown configuration field. Accepted fields are APP_ENV, '
           'API_BASE_URL, CLERK_PUBLISHABLE_KEY, ENABLE_DIAGNOSTICS, '
-          'CATALOG_DATA_SOURCE.',
+          'CATALOG_DATA_SOURCE, ENABLE_PUSH_REGISTRATION.',
         );
       }
     }
@@ -306,6 +313,20 @@ abstract final class ConfigValidator {
     }
     throw const ConfigValidationException(
       'ENABLE_DIAGNOSTICS must be true or false.',
+    );
+  }
+
+  static bool _resolvePushRegistration(Map<String, Object?> raw) {
+    final value = raw[_pushRegistrationField];
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true') return true;
+      if (normalized == 'false') return false;
+    }
+    throw const ConfigValidationException(
+      'ENABLE_PUSH_REGISTRATION must be true or false.',
     );
   }
 

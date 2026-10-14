@@ -265,6 +265,87 @@ void main() {
       adapter.dispose();
     });
 
+    test(
+      'runs pre sign-out cleanup while the session token is still obtainable',
+      () async {
+        final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+        String? tokenDuringCleanup;
+        ClerkAuthStatus? statusDuringCleanup;
+        adapter.addBeforeSignOutListener(() async {
+          tokenDuringCleanup = await adapter.getToken();
+          statusDuringCleanup = adapter.status;
+          expect(gateway.signOutCalls, 0);
+        });
+
+        await adapter.signOut();
+
+        expect(tokenDuringCleanup, 'clerk-token');
+        expect(statusDuringCleanup, ClerkAuthStatus.signedIn);
+        expect(gateway.signOutCalls, 1);
+        expect(await adapter.getToken(), isNull);
+        adapter.dispose();
+      },
+    );
+
+    test(
+      'signs out even when pre sign-out cleanup fails',
+      () async {
+        final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+        adapter.addBeforeSignOutListener(
+          () async => throw StateError('offline'),
+        );
+
+        await adapter.signOut();
+
+        expect(gateway.signOutCalls, 1);
+        expect(adapter.status, ClerkAuthStatus.signedOut);
+        adapter.dispose();
+      },
+    );
+
+    test('does not run removed pre sign-out cleanup', () async {
+      final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+      final adapter = ClerkAuthAdapter(gateway: gateway);
+      await adapter.initialize();
+      var cleanupCalls = 0;
+      Future<void> cleanup() async {
+        cleanupCalls++;
+      }
+
+      adapter.addBeforeSignOutListener(cleanup);
+      adapter.removeBeforeSignOutListener(cleanup);
+
+      await adapter.signOut();
+
+      expect(cleanupCalls, 0);
+      expect(gateway.signOutCalls, 1);
+      adapter.dispose();
+    });
+
+    test(
+      'a stalled pre sign-out listener does not block sign-out',
+      () async {
+        final gateway = _FakeGateway(signedIn: true, token: 'clerk-token');
+        final adapter = ClerkAuthAdapter(gateway: gateway);
+        await adapter.initialize();
+        var laterListenerRan = false;
+        adapter.addBeforeSignOutListener(() => Completer<void>().future);
+        adapter.addBeforeSignOutListener(() async => laterListenerRan = true);
+
+        await adapter.signOut();
+
+        expect(gateway.signOutCalls, 1);
+        expect(adapter.status, ClerkAuthStatus.signedOut);
+        expect(laterListenerRan, isTrue);
+        adapter.dispose();
+      },
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
+
     test('rejects a token that completes after sign out starts', () async {
       final delayedToken = Completer<String?>();
       final gateway = _FakeGateway(signedIn: true, delayedToken: delayedToken);

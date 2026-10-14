@@ -1038,3 +1038,97 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
 - **CSRF:** Applies to Clerk/Next.js cookie flows and to Laravel cookie-based guest-cart mutations (see `§22.6`). Laravel Bearer (`Authorization`) mutations require no `X-CSRF-Token`, but every `guest_cart_id` cookie mutation (`CART-002/003/004` browser path) MUST pass the `Origin`/Fetch Metadata forgery check — Laravel does read a cookie for this path, so it is not bearer-only. Do not send Laravel session cookies and do not implement a parallel Laravel session CSRF flow.
 - **CORS:** `Access-Control-Allow-Origin` allow-list `https://www.example.com, https://admin.example.com` (exact origin echoed, never `*`), `Access-Control-Allow-Credentials: true`, `Allow-Methods GET,POST,PATCH,DELETE`, `Allow-Headers Content-Type, Authorization, Idempotency-Key, X-Guest-Cart-Id, X-Upload-Token`, `Vary: Origin`, `Max-Age`. Authenticated calls use the `Authorization` Bearer header; browser guest-cart calls additionally require `credentials: 'include'` so the `guest_cart_id` cookie is sent (see `§22.6`).
 - **Cache:** `Cache-Control: private, no-store` for `Cart, Checkout, Orders, Tracking, Notifications, Profile, Request/Enquiry private` (`PRIVATE`, `Vary: Authorization` plus `Cookie` only for the guest-cart `guest_cart_id` cookie); `Cache-Control: public, max-age=300, s-maxage=600` + `CDN-Cache-Control` for `CAT-001..006` `PUBLIC`.
+
+---
+
+## 33. Device Registration Conventions (Phase 18.4 Additive Extension)
+
+Additive extension. No existing convention is modified. See `api-contract.md §36`.
+
+### 33.1 Authentication & Authorization
+
+- Both routes sit in the authenticated `me` group: `clerk.auth` (verified Clerk session) plus
+  `customer-device` (`CUSTOMER` only; `STAFF`/`ADMIN` refused with `403`).
+- Ownership is derived **only** from the verified principal. `user_id`, `customer_id`, `role`,
+  `status`, `id`, and `owner` in a request body are rejected `422`; any other unrecognised
+  field is also rejected, so a mistyped or privilege-escalating field can never be silently
+  ignored (same allow-list discipline as `PATCH /me`).
+- A resource belonging to another customer is masked as `404 RESOURCE_NOT_FOUND`, never `403`,
+  consistent with `§29` private-resource masking.
+
+### 33.2 Idempotency
+
+- `POST /me/devices` is idempotent per `(user, app_instance_id)`: first call `201`, repeat
+  `200`. No `Idempotency-Key` header is required, because the resource is naturally
+  convergent — a duplicate request cannot create a second row.
+- Token rotation reuses the same endpoint. There is deliberately **no** separate
+  token-refresh endpoint, so there is only one way to change a stored token and therefore one
+  place to enforce the single-owner rule.
+- `DELETE /me/devices/{device}` is idempotent for the owner: `204` on repeat.
+- Unknown or already-inactive device → `404` for an unknown identifier, `204` for an
+  already-inactive one the caller owns.
+
+### 33.3 Concurrency & Single Owner
+
+- One **ACTIVE** owner per token is a **database** constraint, not an application check. The
+  constraint is on an irreversible keyed fingerprint of the token, scoped to live rows.
+- A registration attempt first checks for a foreign **ACTIVE** owner and returns
+  `409 CONFLICT` before writing. A concurrent race that slips past that check loses at the
+  constraint; the loser re-resolves against the committed row and returns either the same
+  success (same owner) or `409` (different owner). There is no interleaving that yields two
+  active owners.
+- Ownership is never transferred because of a client-supplied token, `app_instance_id`, or any
+  other client value. What *is* allowed is a device moving to a new customer after the
+  previous owner retired it, which is a handover rather than a transfer: the retired row keeps
+  its original `user_id` and is never reassigned.
+- Rows are deactivated, never deleted, so a replayed or late provider message cannot
+  resurrect a retired association.
+- **Fingerprint queries must scope to `ACTIVE`.** Several `INACTIVE` rows may legitimately
+  share one fingerprint, so a lookup that does not filter on `status` will treat history as a
+  live claim. `assertTokenIsUnclaimed` and any future fingerprint lookup must restrict to
+  active rows; `StaleDeviceInstallationReaper` reaps by fingerprint but only transitions
+  active rows.
+
+### 33.4 Token Protection
+
+- Stored encrypted (recoverable) because delivery later needs the raw token.
+- Uniqueness via keyed HMAC-SHA256 fingerprint, which is irreversible. A bare hash of a
+  bearer-like value would permit offline guessing.
+- Raw tokens never appear in logs, responses, notification payloads, or error messages.
+- The fingerprint key defaults to the application key and can be overridden with
+  `PUSH_TOKEN_FINGERPRINT_KEY`. Key rotation requires a maintenance migration while the old
+  key remains available: registration and delivery are paused, every ACTIVE token is decrypted
+  and re-fingerprinted with the new key, coverage and uniqueness are verified, and only then is
+  the new key deployed. Re-registration alone is unsafe because stale ACTIVE rows would retain
+  old-key fingerprints and the database could admit a second owner.
+
+### 33.5 Rate Limiting
+
+`RATE_LIMIT_DEVICE_REGISTRATION_PER_MINUTE` (default `20`/min, per authenticated customer) →
+`429` with `Retry-After`, shared by both routes. Tightened relative to
+`authenticated-write` because registration mutates security-relevant server state and a
+compromised client could otherwise churn device rows.
+
+### 33.6 Independent Enablement
+
+`NOTIFICATION_PUSH_REGISTRATION_ENABLED` (token management) and `NOTIFICATION_PUSH_ENABLED`
+(notification fan-out) are separate flags, both defaulting to `false`. Registering a device
+grants the ability to *address* it, not permission to *message* the customer. Keeping them
+separate means token management can be enabled, tested, and rolled back without any
+notification ever being sent.
+
+### 33.7 Caching
+
+`Cache-Control: private, no-store` and `Vary: Authorization` on both routes, matching every
+other authenticated `me` response. Device registrations are never shared-cacheable.
+
+### 33.8 Client Lifecycle Obligations
+
+The contract is enforced server-side, but the client must honour it for the guarantee to hold:
+
+- On sign-out and on account switch, deactivate the previous device **and** delete the local
+  FCM token **before** registering the new account. A token that survives a session change
+  can deliver another customer's notifications to a device.
+- Treat a failed deactivation as fail-closed: do not attempt to force a takeover. The server
+  answers `409`, which is the correct outcome.
+- Never read or persist the device token in application logs or analytics.

@@ -23,7 +23,7 @@ final class EnforceApiRequestLimits
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->is('api/*')) {
+        if (! $request->is('api/*') && ! $request->is('broadcasting/auth')) {
             return $next($request);
         }
 

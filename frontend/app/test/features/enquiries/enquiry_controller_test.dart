@@ -421,6 +421,12 @@ class _StubAuthSession extends ChangeNotifier implements AuthSession {
   Future<String?> getToken() async => token;
 
   @override
+  void addBeforeSignOutListener(Future<void> Function() listener) {}
+
+  @override
+  void removeBeforeSignOutListener(Future<void> Function() listener) {}
+
+  @override
   Future<void> signOut() async {
     signedIn = false;
     notifyListeners();

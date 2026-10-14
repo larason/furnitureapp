@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Authentication\ClerkTokenVerifier;
 use App\Authentication\LocalUserProvisioner;
+use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,6 +24,7 @@ final class AuthenticateClerk
         EnsureActiveAccount::assert($user);
 
         auth()->setUser($user);
+        $request->setUserResolver(static fn (): User => $user);
 
         return $next($request);
     }

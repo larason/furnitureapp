@@ -3094,3 +3094,304 @@ failure evidence without creating a second observability platform or a telemetry
 privacy liability.
 
 **Status:** Accepted and implemented in Phase 16.9 | **Date:** 2026-10-09 | **Affected:** `frontend/app/lib/core/diagnostics/**`, `lib/core/network/api_client.dart`, `lib/core/auth/**`, `lib/navigation/**`, `lib/main.dart`, `lib/app.dart`, `lib/core/feature_dependencies.dart`, tests, and Flutter documentation
+
+---
+
+### ADR/BACKEND-056 — Customer Device Registration as an Additive V1 Contract Extension
+
+**Decision:** The Version 1 API contract is extended additively with authenticated
+`CUSTOMER` device registration and deactivation, approved by the project owner on
+2026-10-12 as a formal additive extension under the post-freeze process. Two endpoints are
+added: `POST /api/v1/me/devices` (idempotent registration and FCM token rotation) and
+`DELETE /api/v1/me/devices/{device}` (deactivation of a server-issued opaque device
+identifier). No existing path, request field, response field, status code, or error code is
+modified.
+
+Ownership is derived **only** from the verified Clerk principal, and the capability is
+`CUSTOMER`-only. `STAFF` and `ADMIN` are refused because registering a device is a
+customer-account capability. A device belonging to another customer is masked as
+`404 RESOURCE_NOT_FOUND` rather than `403`, so the route cannot be used to probe for other
+customers' devices.
+
+Exactly one active owner per FCM registration token is enforced by a **database unique
+constraint** on an irreversible keyed HMAC-SHA256 fingerprint, not by an application check
+alone. The token itself is stored encrypted, because delivery later needs to recover it; the
+fingerprint exists because a bare hash of a bearer-like value would permit offline guessing.
+Both `token_ciphertext` and `token_fingerprint` are model-hidden, so neither can leak through
+a resource, an audit log, or an accidental serialization. A token already bound to a
+different account returns `409 CONFLICT` using the existing frozen code: ownership is never
+silently transferred on the strength of a client-supplied token, installation id, or any
+other client value. The previous owner must deactivate first.
+
+Token rotation reuses `POST /me/devices`. No separate token-refresh endpoint is added,
+deliberately: one endpoint means one place where the single-owner rule is enforced, and one
+place to audit. Repeated registration is naturally convergent on `(user, app_instance_id)`,
+so no `Idempotency-Key` header is required and a duplicate request cannot create a second
+row. A concurrent race resolves through the database constraint, so the loser re-reads the
+committed row and returns either the same success or `409`. Rows are deactivated rather than
+deleted, so a replayed or late provider message cannot resurrect a retired association.
+
+Token management and notification fan-out are separate decisions with separate flags.
+`NOTIFICATION_PUSH_REGISTRATION_ENABLED` gates the routes; `NOTIFICATION_PUSH_ENABLED` gates
+actually sending. Both default to `false`, and this phase ships with both disabled.
+Registering a device grants the ability to *address* it, not permission to *message* the
+customer, so the two must be operable and rollback-able independently.
+
+On the client, sign-out and account switch deactivate the previous device and delete the
+local FCM token **before** registering the new account. A failed deactivation is treated as
+fail-closed: the server's `409` is the correct outcome, and the client must not attempt to
+force a takeover. A token that survives a session change could deliver another customer's
+notifications to a device.
+
+**Reason:** Push delivery was proven end-to-end against Firebase project `slfurnitures`
+before any token was persisted, so the remaining blocker was purely contractual. Persisting
+a token is security-relevant state, so the contract had to settle ownership, masking,
+single-owner enforcement, token protection, and lifecycle semantics explicitly rather than
+by convention. Choosing additive paths plus an existing error code kept the frozen contract
+intact, and splitting the two flags keeps the ability to address a device from becoming the
+ability to message a customer.
+
+**Status:** Accepted and implemented in Phase 18.4. **Partially superseded on 2026-10-13 by `ADR/BACKEND-057`**, which rescopes token uniqueness from global to ACTIVE-only: a retired registration no longer blocks a new owner. Everything else in this ADR — the endpoints, `CUSTOMER`-only authorization, masked `404`, encrypted tokens with a keyed fingerprint, rotation via `POST /me/devices`, the independent enablement flags, and the client lifecycle rules — remains in force. | **Date:** 2026-10-12 (amended 2026-10-13) | **Affected:** `docs/api/api-contract.md` (§36), `docs/api/api-resources.md` (§16), `docs/api/api-conventions.md` (§33), `docs/api/openapi.yaml`, `backend/laravel/app/Services/Push/**`, `app/Models/DeviceInstallation.php`, `app/Http/Controllers/Api/V1/DeviceInstallationController.php`, `app/Http/Requests/RegisterDeviceRequest.php`, `app/Http/Resources/DeviceInstallationResource.php`, `app/Http/Middleware/EnsureCustomerDeviceAccess.php`, `app/Http/Middleware/EnsureDeviceRegistrationEnabled.php`, `app/Support/Device*.php`, `database/migrations/2026_10_12_120000_create_device_installations_table.php`, `frontend/app/lib/core/notifications/**`, `lib/main.dart`, tests, and phase documentation
+
+---
+
+### ADR/APP-008 — Android Default Notification Channel and Terminated-Message Buffering
+
+**Decision:** The Android application declares and creates its own default FCM notification
+channel, and a message that opens a terminated application is buffered rather than published
+immediately.
+
+Phase 18.4 live testing on an Android 16 emulator surfaced a real defect: FCM delivered every
+message to the platform fallback channel `fcm_fallback_notification_channel`, logging
+`Missing Default Notification Channel metadata in AndroidManifest`. The manifest now
+declares `com.google.firebase.messaging.default_notification_channel_id`, and `MainActivity`
+creates that channel on first launch. Declaring the id alone is not sufficient — on Android O
+and later a message addressed to a channel that does not exist is dropped rather than shown,
+so creation is required and must be idempotent. After the change, live delivery was observed
+on `fcm_default_channel` with the application-controlled name and description. Notification
+icon and color metadata are deliberately **not** declared: they would require inventing brand
+values outside the design-system token authority.
+
+The same testing exposed a second defect: `signals` is a broadcast stream, so a message read
+by `getInitialMessage()` during `initialize()` was published before any consumer could
+subscribe and was silently lost. A notification tap that launched the application therefore
+delivered nothing to the application. Such messages are now held in a
+`PushInitialSignalBuffer` and drained exactly once, on the first subscription
+(`onListen`, not a stream getter, since a getter access happens before the caller subscribes)
+or through an explicit take. Buffering, rather than immediate navigation, is the deliberate
+choice: acting on a launch message synchronously could navigate a customer who is not yet
+authenticated to a destination that requires a session, and no customer-facing route is
+approved for a notification target in this release.
+
+**Reason:** Both defects were found only by real delivery on a real emulator, and both were
+invisible to unit tests because the unit-level contract looked correct. Owning the channel
+and surviving a terminated launch are prerequisites for trustworthy customer-facing push,
+and neither can be verified without a live provider.
+
+**Status:** Accepted and implemented in Phase 18.4 | **Date:** 2026-10-12 | **Affected:** `frontend/app/android/app/src/main/AndroidManifest.xml`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/kotlin/com/slfurnitures/app/MainActivity.kt`, `lib/core/notifications/push_messaging_service.dart`, `lib/main.dart`, `test/core/notifications/**`
+
+---
+
+### ADR/APP-009 — Installation Identity Is a Persisted Random UUID, Never the FCM Token
+
+**Decision:** `app_instance_id` is a random RFC 4122 v4 UUID generated on first
+registration and persisted through the existing `SecureKeyValueStore`. It is never derived
+from the FCM registration token, and `PushRegistrationCoordinator` requires an
+`InstallationIdentityStore` so no call site can fall back to another value.
+
+**Reason:** An earlier revision of this decision used the FCM token as the installation
+identity, justified by the `firebase_installations` plugin not compiling against the project's
+AGP 9 / Java 17 toolchain. That justification was correct about the plugin but wrong about the
+consequence. Because the server keys rows on `UNIQUE (user_id, app_instance_id)`, a token-as-
+identity makes every token rotation look like a brand-new installation: each rotation inserts a
+new `ACTIVE` row while the previous one stays `ACTIVE` indefinitely, because sign-out only
+retires the most recently registered device. A customer who rotated tokens would accumulate
+one live, undeliverable device row per rotation, and the reaper would only reclaim them after
+the stale window. A token is also secret-adjacent, so using it as a second field widens its
+exposure for no benefit.
+
+A generated, persisted identity removes both problems without adding a dependency: it is
+stable across rotations, converges on one row per installation, and is unpredictable because
+it is produced with `Random.secure()`. Persistence failures are contained — an unavailable
+secure store yields a regenerated identity rather than blocking registration, which costs one
+extra device row instead of the ability to register at all. The seam remains, so a real
+Firebase installation id can be adopted later without changing the contract or the
+coordinator.
+
+The token-as-identity path was also never properly covered: the rotation test injected an
+explicit installation id, so it exercised only the happy path and reported convergence that
+the production default did not deliver. The replacement tests exercise the real default.
+
+**Status:** Accepted and implemented in Phase 18.4 (supersedes the earlier
+token-as-identity decision of the same name) | **Date:** 2026-10-13 | **Affected:**
+`frontend/app/lib/core/notifications/installation_identity.dart`,
+`lib/core/notifications/push_registration_coordinator.dart`, `lib/main.dart`,
+`test/core/notifications/push_registration_coordinator_test.dart`
+---
+
+### ADR/TESTING-001 — The Test Suite Must Be Hermetic to Environment Configuration
+
+**Decision:** `backend/laravel/phpunit.xml` now pins `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`,
+`CLERK_ISSUER`, `CLERK_AUDIENCES`, and `CLERK_AUTHORIZED_PARTIES` to empty values, so the
+authentication suite never reads a developer's local `.env`.
+
+**Reason:** Four tests in `OfficialClerkTokenVerifierTest` had been failing on any machine
+whose `.env` contained a real Clerk issuer. Because `config/clerk.php` resolves the issuer
+and authorized parties from the environment, the test fixtures — which use
+`https://clerk.example.test` — were rejected as forged tokens, producing
+`INVALID_AUTHENTICATION` and `SESSION_EXPIRED` mismatches that looked like product bugs.
+They were test-isolation defects: a green suite depended on the developer's local
+configuration. The tests were correct, the verifier was correct, and the configuration
+boundary was leaky. Pinning the values fixes the cause rather than relaxing a single
+assertion, and the fix was verified to hold even when a deliberately hostile issuer and
+authorized party are injected into `.env`.
+
+The general rule: a test must assert against values it sets itself. Any configuration a test
+asserts on must be pinned in `phpunit.xml` (or set explicitly in the test), never inherited
+from a developer's environment. A suite that passes only because of an unset local variable
+cannot gate a release.
+
+**Status:** Accepted and implemented | **Date:** 2026-10-12 | **Affected:** `backend/laravel/phpunit.xml`
+
+---
+
+### ADR/APP-010 — Brand Logo Semantics Are Not Doubled Inside a Labelled Control
+
+**Decision:** `AppBrandLogo` renders inside the app bar wrapped in `ExcludeSemantics`,
+because the enclosing `Semantics(button: true, label: 'SL Furnitures home')` already names
+the control. The logo keeps its own `Semantics(label: 'SL Furnitures', image: true)` where it
+is used standalone (the authentication screen and the navigation drawer).
+
+**Reason:** A `Semantics` node nested inside another labelled node does not replace the
+parent label; it concatenates, producing the announced string `"SL Furnitures home\n"` and
+announcing the brand twice. This was a genuine accessibility defect, not merely a stale test:
+a screen-reader user heard the brand name repeated on every app bar. The nested label is
+redundant, so excluding it improves the announcement and makes the label match exactly what a
+developer intends to assert.
+
+**Status:** Accepted and implemented | **Date:** 2026-10-12 | **Affected:** `frontend/app/lib/navigation/customer_navigation_shell.dart`, `frontend/app/lib/core/presentation/app_brand_logo.dart`, `frontend/app/test/navigation/customer_navigation_shell_test.dart`
+
+---
+
+### ADR/APP-011 — Auth-Driven Device Work Is Serialized in Arrival Order
+
+**Decision:** Session changes are dispatched through a `SerialTaskQueue` so
+`PushMessagingService` handles them one at a time, in arrival order. Both entry points route
+through it: the `AuthSession` listener and the initial call made by `attachAuthSession`.
+
+**Reason:** A `ChangeNotifier` can fire several times in quick succession, and each event
+previously started an independent `unawaited` reconciliation. A sign-out that overlapped an
+in-flight sign-in registration then found `_registeredDeviceId` still `null` — the
+registration had not returned an id yet — so it retired nothing and deleted the local token,
+and the registration afterwards completed and left the device registered to an account that
+had already signed out. The reproduced trace was
+`[refresh-token, register:start, delete-token, register:end]`, with no `deactivate` at all.
+That is a customer-privacy problem, not merely a tidiness issue: a device that should no
+longer receive pushes stays addressable.
+
+Serializing is the smallest correct fix. It preserves `_handleAuthChange` itself unchanged
+and guarantees sign-out runs after the sign-in registration has settled, so the device id is
+known and the deactivation actually happens. A failing operation is reported to its caller
+but does not break the chain, so one network error cannot wedge the queue permanently —
+without that, a single failed registration would silently stop all future sign-out
+cleanup.
+
+**Status:** Accepted and implemented | **Date:** 2026-10-13 | **Affected:**
+`frontend/app/lib/core/notifications/serial_task_queue.dart` (new),
+`lib/core/notifications/push_messaging_service.dart`,
+`test/core/notifications/serial_task_queue_test.dart` (new),
+`test/core/notifications/push_auth_change_ordering_test.dart` (new)
+
+### ADR/APP-012 — A Token Rotated During Registration Is Retried, Not Dropped
+
+**Decision:** `PushRegistrationCoordinator` records a pending-registration flag when
+`registerForCustomer` is called while a registration is already in flight, and once that
+registration settles it re-sends only if the token actually changed. The token the server last
+accepted is remembered, so a collapsed call carrying an unchanged token is skipped rather than
+turned into a redundant request.
+
+**Reason:** FCM rotates tokens independently of session events, so a rotation can land while the
+startup registration is awaiting the network. The previous code collapsed such a call by
+returning `false` immediately, which silently discarded the new token: the reproduced result was
+that the server received only `token-OLD` while the device already held `token-NEW`. The server
+would then keep addressing a token the device no longer has, so push stops for that device with
+no error surfaced anywhere and no retry scheduled. Nothing fails loudly, which is what makes it
+dangerous.
+
+The follow-up is conditional on the token having changed, because the original purpose of the
+collapse was to avoid duplicate registrations. An unconditional retry would have satisfied the
+rotation case but reintroduced the duplicate request the collapse existed to prevent. Comparing
+against the last accepted token satisfies both: a rotation is always delivered, a redundant
+concurrent trigger costs nothing, and a registration that *failed* is still retried because its
+token was never recorded as accepted.
+
+**Status:** Accepted and implemented | **Date:** 2026-10-13 | **Affected:**
+`frontend/app/lib/core/notifications/push_registration_coordinator.dart`,
+`test/core/notifications/push_token_refresh_registration_test.dart` (new)
+
+---
+
+### ADR/BACKEND-057 — Token Uniqueness Is ACTIVE-Only, and the Server Is MariaDB
+
+**Decision:** Device token uniqueness is scoped to live registrations. A fingerprint may
+appear on many `INACTIVE` rows, but at most one row with a given fingerprint may be `ACTIVE`.
+The retired row keeps its stored token, fingerprint, original `user_id`, and `deactivated_at`.
+No endpoint path, request or response field, status code, error code, authentication rule, or
+delivery policy changes. An explicit amendment to the approved Phase 18.4 contract, approved
+2026-10-13.
+
+**Reason:** The original global unique index treated a retired registration as a permanent
+claim. Once any customer had held a token, nobody else could ever register it, so a device
+handed to a new customer could never receive push — the retired row reserved the fingerprint
+forever. That was discovered while reviewing the sign-out behaviour: the client retires the
+previous device and deletes the local token, and the server then refuses the new account.
+
+The two earlier options were both rejected deliberately. Reassigning `user_id` on the retired
+row would be the silent ownership transfer `api-contract.md §36.4` forbids, and would falsify
+the record of who held the device. Deleting the row would violate the "deactivated, never
+deleted" rule that exists so a replayed message cannot resurrect a retired association.
+Scoping the constraint instead keeps every one of those properties: nothing is transferred,
+nothing is deleted, and the historical owner is still provable.
+
+The `409 CONFLICT` rule is unchanged in the case that matters: a token that another customer
+*currently* holds `ACTIVE` is still refused, and a previous owner still cannot reclaim its
+retired row while someone else holds the token live. Only genuinely abandoned history stops
+being a conflict.
+
+**Rollback is intentionally blocked, and the only remediation is forward.**
+`down()` refuses with `MigrationPreconditionException` as soon as two rows share a
+fingerprint. Restoring global uniqueness would require deleting retired rows, which would
+destroy the record of which customer once held a device — the property this amendment exists
+to preserve. The only lossless rollback state is one in which no retired row shares a
+fingerprint, which in practice means before any device has changed hands. This follows the
+house precedent set by `ADR/GROUP-K-PRODUCT-BASE-PRICE`.
+
+Operationally, if `php artisan migrate:rollback` fails with
+`MigrationPreconditionException` for this migration, the correct response is to **leave the
+migration applied**. Deleting retired rows to force the rollback through would destroy the
+audit trail, and the constraint is a deliberate strengthening rather than a defect. If the
+constraint itself is ever found to be wrong, the correction is a **new forward migration**
+that changes the constraint — never a rollback, because rollback here only ever relaxes the
+guarantee back toward the bug this amendment fixed. `migrate:fresh` remains available for a
+genuinely disposable environment, under the `AGENTS.md §11` guard.
+
+**Engine finding.** The application server is **MariaDB 11.8.8**, not MySQL, despite the
+`mysql` PDO driver name. MariaDB rejects `IF`, `CASE`, `NULLIF`, and `CONCAT` in a generated
+column expression, so the generated-column approach specified for MySQL 8 fails there with
+error 1901. The migration therefore has three paths: a STORED generated column on MySQL 8, a
+nullable column populated by `BEFORE INSERT`/`BEFORE UPDATE` triggers plus a unique index on
+MariaDB, and a partial unique index on SQLite. The unique index still performs the enforcement
+on every path, so the failure is a normal integrity violation (`SQLSTATE 23000`) that the
+existing violation mapping already turns into the frozen `CONFLICT` code.
+
+This is exactly the class of defect the SQLite suite cannot catch: the constraint is
+unreachable from an in-memory SQLite database, and only the disposable-database run against
+the real engine proves the generated/trigger path actually works.
+
+**Status:** Accepted and implemented | **Date:** 2026-10-13 | **Affected:**
+`backend/laravel/database/migrations/2026_10_13_120000_scope_device_token_uniqueness_to_active_rows.php`,
+`app/Services/Push/DeviceRegistrationService.php`, `app/Models/User.php`,
+`phpunit.mysql.xml`, `tests/Feature/DeviceTokenUniquenessMysqlTest.php` (new),
+`tests/Feature/DeviceTokenConcurrencyMysqlTest.php` (new),
+`tests/Feature/DeviceInstallationApiTest.php`, `docs/api/api-contract.md §36.4/§36.6`,
+`docs/api/api-conventions.md §33.3`, `docs/api/api-resources.md §16`

@@ -9,6 +9,8 @@ use App\Authentication\Clerk\OfficialClerkTokenVerifier;
 use App\Authentication\Clerk\OfficialClerkUserGateway;
 use App\Authentication\ClerkTokenVerifier;
 use App\Services\Cart\GuestCartTransport;
+use App\Services\Fcm\FcmAccessTokenProvider;
+use App\Services\Fcm\GoogleFcmAccessTokenProvider;
 use App\Services\ProductImages\ProductImageStorage;
 use App\Support\ProductionConfiguration;
 use Clerk\Backend\ClerkBackend;
@@ -31,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ClerkTokenVerifier::class, OfficialClerkTokenVerifier::class);
         $this->app->bind(ClerkUserGateway::class, OfficialClerkUserGateway::class);
         $this->app->bind(ClerkSessionGateway::class, OfficialClerkSessionGateway::class);
+        $this->app->bind(FcmAccessTokenProvider::class, GoogleFcmAccessTokenProvider::class);
     }
 
     /**
@@ -52,6 +55,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('operational-write', fn (Request $request) => Limit::perMinute(120)->by($this->userKey($request)));
         RateLimiter::for('cart-add', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('order-cancel', fn (Request $request) => Limit::perMinute(5)->by($this->userKey($request)));
+        RateLimiter::for(
+            'device-registration',
+            fn (Request $request) => Limit::perMinute(
+                (int) config('rate_limits.device_registration_per_minute', 20),
+            )->by($this->userKey($request)),
+        );
         RateLimiter::for('inventory-adjust', fn (Request $request) => Limit::perMinute(20)->by($this->userKey($request)));
         RateLimiter::for('admin-staff', fn (Request $request) => Limit::perMinute(30)->by($this->userKey($request)));
         RateLimiter::for('guest-cart-create', fn (Request $request) => $request->user() === null

@@ -16,7 +16,7 @@ tags:
 - name: Authentication
   description: Public identity
 - name: Users
-  description: Authenticated self /me
+  description: Authenticated self /me and customer device registration (token management only)
 - name: Catalog
   description: Public product/category
 - name: Cart
@@ -1918,6 +1918,112 @@ components:
           format: uri
           readOnly: true
           description: Private access URL; null while private download delivery is not implemented
+    RegisterDeviceRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - token
+      - platform
+      - app_instance_id
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: >-
+            FCM registration token for this installation. Opaque and never echoed back. Stored
+            encrypted and matched through an irreversible keyed fingerprint; it is not an
+            authentication credential and never authenticates a request.
+        platform:
+          $ref: '#/components/schemas/DevicePlatform'
+        app_instance_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            Opaque per-installation identity. It cannot transfer ownership: a token already bound
+            to another account is refused with 409 regardless of this value.
+        app_version:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+        app_build:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+    DevicePlatform:
+      type: string
+      description: CLOSED enum. Adding a value is an additive contract change.
+      enum:
+      - ANDROID
+    DeviceInstallation:
+      type: object
+      description: >-
+        A customer app installation registered for push delivery. The token, its ciphertext, and
+        its fingerprint are deliberately absent: the client has no reason to receive them.
+      required:
+      - id
+      - platform
+      - app_instance_id
+      - status
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          readOnly: true
+          description: Opaque public identifier (dev_ + base36 row id); internal keys are never exposed.
+          pattern: ^dev_[0-9a-z]+$
+        platform:
+          $ref: '#/components/schemas/DevicePlatform'
+        app_instance_id:
+          type: string
+        app_version:
+          type:
+          - string
+          - 'null'
+        app_build:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+          description: 'ACTIVE or INACTIVE. Rows are deactivated, never deleted.'
+          enum:
+          - ACTIVE
+          - INACTIVE
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_registered_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    DeviceInstallationResponse:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/DeviceInstallation'
+    NotImplementedResponse:
+      type: object
+      description: >-
+        Stable marker returned by a documented route that is gated off in the current
+        environment. Not part of the frozen error envelope.
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - not_implemented
     Notification:
       type: object
       required:
@@ -2477,6 +2583,114 @@ paths:
           $ref: '#/components/responses/RetiredEndpoint'
         '404':
           $ref: '#/components/responses/NotFound'
+  /me/devices:
+    post:
+      operationId: DEV-001
+      tags:
+      - Users
+      summary: >-
+        Register or rotate this installation's push token. Idempotent; also used for FCM token
+        rotation, so there is no separate token-refresh endpoint. CUSTOMER only, ownership derived
+        solely from the verified Clerk principal. Does not authorize sending any notification.
+      description: >-
+        201 when a new installation is registered, 200 when an existing one is updated or
+        reactivated. 409 when the token is already registered to a different account:
+        ownership is never silently transferred, and the previous owner must deactivate first.
+        A token owned by another customer is refused even if a matching app_instance_id is
+        supplied. Any field outside the documented set, including user_id, role, or status, is
+        rejected 422. The token is never echoed in the response.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInstallationResponse'
+        '200':
+          description: OK - existing installation updated or reactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInstallationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '403 - authenticated but not a CUSTOMER'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '409 - token already registered to another account'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          description: '501 - device registration is not enabled in this environment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotImplementedResponse'
+  /me/devices/{device}:
+    delete:
+      operationId: DEV-002
+      tags:
+      - Users
+      summary: >-
+        Deactivate a device installation owned by the caller. Idempotent. A device owned by
+        another customer is masked as 404 so the route cannot be used to discover it.
+      description: >-
+        The device is deactivated rather than deleted, so a replayed or late provider message
+        cannot resurrect the association. Re-registering the same installation reactivates it.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: device
+        in: path
+        required: true
+        description: Opaque server-issued device identifier (dev_ + base36 row id).
+        schema:
+          type: string
+          pattern: ^dev_[0-9a-z]+$
+      responses:
+        '204':
+          description: No Content - deactivated, or already inactive
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '403 - authenticated but not a CUSTOMER'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: >-
+            404 - unknown identifier, malformed identifier, or a device owned by another customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          description: '501 - device registration is not enabled in this environment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotImplementedResponse'
   /me:
     get:
       operationId: USER-001

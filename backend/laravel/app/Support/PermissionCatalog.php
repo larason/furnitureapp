@@ -27,6 +27,7 @@ class PermissionCatalog
             PermissionName::REQUESTS_MANAGE,
             PermissionName::ENQUIRIES_VIEW,
             PermissionName::ENQUIRIES_MANAGE,
+            PermissionName::NOTIFICATIONS_READ_OPERATIONAL,
             PermissionName::STAFF_APPROVE,
             PermissionName::STAFF_MANAGE,
             PermissionName::USERS_MANAGE_AUTHORIZED,
@@ -62,6 +63,7 @@ class PermissionCatalog
             PermissionName::REQUESTS_MANAGE,
             PermissionName::ENQUIRIES_VIEW,
             PermissionName::ENQUIRIES_MANAGE,
+            PermissionName::NOTIFICATIONS_READ_OPERATIONAL,
         ];
     }
 }

@@ -17,6 +17,7 @@ class AppConfig {
     this.catalogDataSource = CatalogDataSource.api,
     this.clerkPublishableKey,
     this.enableDiagnostics = false,
+    this.enablePushRegistration = false,
   });
 
   /// Environment selected at build time through `APP_ENV`.
@@ -42,4 +43,10 @@ class AppConfig {
   /// Development diagnostics flag. Never enabled implicitly: it defaults to
   /// false and must be set deliberately in configuration.
   final bool enableDiagnostics;
+
+  /// Enables authenticated device registration for push delivery.
+  ///
+  /// This is disabled by default until the backend registration flag is enabled
+  /// for the same environment.
+  final bool enablePushRegistration;
 }

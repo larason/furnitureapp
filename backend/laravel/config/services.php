@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'firebase' => [
+        'project_id' => env('FIREBASE_PROJECT_ID'),
+        'credentials_path' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+        'diagnostic_token' => env('FCM_DIAGNOSTIC_TOKEN'),
+    ],
+
 ];

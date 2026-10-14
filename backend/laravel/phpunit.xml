@@ -23,6 +23,14 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
+        <!-- Authentication must be hermetic. Without these, a developer's local
+             .env leaks a real issuer and authorized parties into the suite and
+             every token fixture is rejected as a forged token. -->
+        <env name="CLERK_SECRET_KEY" value=""/>
+        <env name="CLERK_JWT_KEY" value=""/>
+        <env name="CLERK_ISSUER" value=""/>
+        <env name="CLERK_AUDIENCES" value=""/>
+        <env name="CLERK_AUTHORIZED_PARTIES" value=""/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>

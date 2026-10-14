@@ -435,9 +435,9 @@ and database-name checks are required before destructive migration commands. The
 repository-wide guard for `migrate:fresh` is:
 
 ```bash
-test "${APP_ENV:-}" != "production"
+test "${APP_ENV:-}" != "production" &&
 test "${DB_DATABASE:-}" = ":memory:" -o \
-     "${DB_DATABASE:-}" = "furnitureapp_test_disposable"
+     "${DB_DATABASE:-}" = "furnitureapp_test_disposable" &&
 php artisan migrate:fresh --seed --force
 ```
 
@@ -446,6 +446,31 @@ production application database. For destructive MySQL verification, create the
 disposable database named `furnitureapp_test_disposable`, point the command
 explicitly at it, verify the environment is non-production, run with `--force`,
 and destroy the disposable database afterward.
+
+**Never call `migrate:fresh` from an ad-hoc `php -r`, `tinker`, or one-off script.**
+The shell guard above only protects a command that reads `DB_DATABASE` from the
+environment. `phpunit.mysql.xml` pins `DB_DATABASE=furnitureapp_test_disposable`
+for the real-engine suites, so those are safe by construction — but an ad-hoc
+script boots the application from `.env`, which points at `furnitureapp`, and
+silently discards the override. Anything invoked that way executes against the
+development database. Apply the two-part guard inside the script itself before
+calling `Artisan::call`, or run the real-engine suites through
+`vendor/bin/phpunit -c phpunit.mysql.xml` instead:
+
+```php
+abort_unless(app()->environment() !== 'production', 'Refusing: production.');
+abort_unless(
+    DB::connection()->getDatabaseName() === 'furnitureapp_test_disposable',
+    'Refusing: this is not the disposable database.'
+);
+```
+
+The same applies to `migrate:refresh`, `migrate:reset`, and `db:wipe`. Prefer
+read-only inspection (`php artisan tinker --execute 'DB::table(...)->count()'`)
+when the question is "what does the database look like".
+
+Operator-facing procedures — including the migrations whose rollback is
+intentionally blocked and what to do about it — are in `docs/operations.md` §1.
 
 ---
 
@@ -1158,13 +1183,8 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
 ### Phase 17.11 — Enquiries
 ### Phase 17.12 — Registration/login and Profile/account
 ### Phase 17.13 — Informational, Legal & Open Source Licenses Screens (merged 17.13 + 17.14)
-Implement About Us, Privacy Policy, Terms & Conditions, and a dedicated Open Source Licenses page together as one Flutter informational phase. Use the existing Privacy Policy and Terms & Conditions `.txt` files in the project root as the authoritative source text; locate and read the actual files rather than inventing or paraphrasing legal content. Preserve their complete wording and readable structure in the app. Use the existing Flutter Material 3 theme and canonical generated design tokens, provide accessible scrolling and text scaling, and use Flutter's license registry / `LicensePage` where appropriate for actual bundled dependency licenses. Keep these screens public and offline-readable where practical. Add navigation routes for these pages, but defer the shared global app bar, navigation drawer, and route-wide shell integration to Phase 17.15. Add focused tests and update phase documentation.
-
 ### Phase 17.14 — Merged into Phase 17.13 (no separate implementation)
-This phase number is retained for historical references only. All open-source-license-page requirements are included in Phase 17.13. Do not implement or schedule a standalone 17.14 phase.
-
 ### Phase 17.15 — Global App Navigation & Drawer
-Implement the shared Material 3 app bar, centered SL Furnitures branding, account action, responsive navigation drawer, active-route highlighting, and centralized go_router shell integration after Phase 17.13 is complete. Include links to the informational/legal/license screens created in Phase 17.13. Do not expose deferred cart, checkout, payment, or order routes.
 
 **Exit condition:** The mobile application supports the same core commerce capabilities as the website, adapted for mobile UX.
 

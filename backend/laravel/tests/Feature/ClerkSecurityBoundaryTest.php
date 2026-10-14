@@ -298,7 +298,13 @@ class ClerkSecurityBoundaryTest extends TestCase
         $this->withHeaders($headers)->postJson('/api/v1/admin/staff', [])
             ->assertForbidden();
 
-        $this->withHeaders($headers)->patchJson('/api/v1/categories/demo', [])
+        // Customer account administration. Staff hold no customer-account
+        // capability at all (AGENTS.md §17), so this must be denied on the
+        // account boundary rather than on any resource lookup. The category
+        // route this used to assert is catalog work STAFF is entitled to
+        // (`products.manage`), so it only ever returned 403 while the
+        // permissions of an unseeded database left STAFF with none.
+        $this->withHeaders($headers)->getJson('/api/v1/users')
             ->assertForbidden();
 
         $this->assertSame('STAFF', $staff->fresh()->getRoleNames()->first());

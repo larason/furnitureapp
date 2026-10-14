@@ -371,6 +371,28 @@ void main() {
         _throwsConfig,
       );
     });
+
+    test(
+      'ENABLE_PUSH_REGISTRATION is disabled by default and configurable',
+      () {
+        final disabled = ConfigValidator.validate(_local());
+        expect(disabled.enablePushRegistration, isFalse);
+
+        final enabled = ConfigValidator.validate({
+          ..._local(),
+          'ENABLE_PUSH_REGISTRATION': true,
+        });
+        expect(enabled.enablePushRegistration, isTrue);
+
+        expect(
+          () => ConfigValidator.validate({
+            ..._local(),
+            'ENABLE_PUSH_REGISTRATION': 'maybe',
+          }),
+          _throwsConfig,
+        );
+      },
+    );
   });
 
   group('configuration object', () {

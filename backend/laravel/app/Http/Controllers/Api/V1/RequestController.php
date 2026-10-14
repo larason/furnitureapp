@@ -12,6 +12,7 @@ use App\Http\Resources\AttachmentResource;
 use App\Http\Resources\CustomerFurnitureRequestSummaryResource;
 use App\Http\Resources\FurnitureRequestResource;
 use App\Http\Resources\OperationalFurnitureRequestResource;
+use App\Jobs\CreateOperationalNotifications;
 use App\Models\FurnitureRequest;
 use App\Models\User;
 use App\Services\Attachments\UploadAttachment;
@@ -22,11 +23,14 @@ use App\Services\Requests\ListOperationalFurnitureRequests;
 use App\Services\Requests\UpdateFurnitureRequestOperationalFields;
 use App\Support\ApiErrorCode;
 use App\Support\FurnitureRequestIdentifier;
+use App\Support\NotificationType;
 use App\Support\PermissionName;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class RequestController extends V1Controller
 {
@@ -80,6 +84,20 @@ class RequestController extends V1Controller
 
         if ($uploadToken !== null) {
             $headers['X-Upload-Token'] = $uploadToken;
+        }
+
+        try {
+            CreateOperationalNotifications::dispatch(
+                'furniture_request',
+                (int) $furnitureRequest->getKey(),
+                NotificationType::NEW_MADE_TO_ORDER_REQUEST,
+            )->afterCommit();
+        } catch (Throwable $exception) {
+            Log::warning('Furniture request notification dispatch failed after submission.', [
+                'notification_type' => NotificationType::NEW_MADE_TO_ORDER_REQUEST->value,
+                'source_type' => 'furniture_request',
+                'exception' => $exception::class,
+            ]);
         }
 
         return (new FurnitureRequestResource($furnitureRequest))

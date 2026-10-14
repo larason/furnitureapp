@@ -67,3 +67,20 @@ The following remain open and should be carried forward without reopening comple
 19. verify vigorously that in the production deployment frontend of both nextjs and flutter connect to only one laravel backend and that is fully functional and meets all requirements before going live. This includes testing all user flows, ensuring that all features work as expected, and confirming that the system can handle the expected load.
 
 20. customer profiles in flutter app editing and updating profile info is no working.
+
+21. using mux for video hosting and streaming for the explainer videos and any other video content on the website and flutter app. Ensure that the integration is seamless and that videos load quickly and play smoothly across all devices.
+
+22. One implementation limitation should remain tracked for future work: token-fingerprint key rotation requires a controlled active-row migration while the old key remains available; device re-registration alone is unsafe because stale ACTIVE rows retain old-key fingerprints. `app_instance_id` is already a locally generated, persisted UUID (see item 24) and no longer falls back to the FCM token. Neither point requires activating customer push fan-out now.
+
+23. Migration rollback refusal -mitigate it is recorded in the docs
+
+24. Firebase Installation ID — deferred.
+   A locally generated, persisted UUID is an acceptable application-instance identifier for now, provided it remains stable across ordinary token rotations and the existing lifecycle tests cover that behavior.
+   There is no need to introduce an incompatible Firebase Installations dependency merely to complete this phase.
+
+25.  One judgement call to confirm: I made the database name assertion non-relaxable in the runbook ("if that assertion ever needs relaxing, the guard has been removed"). If you'd rather keep that a soft guideline, say so — but I'd argue a test that asserts it is running against the right database is not something to loosen casually.
+  Where the real risk is, and it isn't the website
+  The one genuine operational consideration is a migration on the shared database, not a runtime feature:
+- The migration adds the device_installations table and swaps an index. It does not touch any existing table the website depends on.
+- It's additive and verified against real MariaDB.
+- A failure would occur at deploy time, not during normal operation.

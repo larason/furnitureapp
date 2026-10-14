@@ -30,6 +30,8 @@ enum PermissionName: string
     case ENQUIRIES_VIEW = 'enquiries.view';
     case ENQUIRIES_MANAGE = 'enquiries.manage';
 
+    case NOTIFICATIONS_READ_OPERATIONAL = 'notifications.read_operational';
+
     case STAFF_APPROVE = 'staff.approve';
     case STAFF_MANAGE = 'staff.manage';
 

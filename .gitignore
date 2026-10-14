@@ -1,3 +1,5 @@
 .kilo/
 .freebuff/
 .aider*
+.env
+*.env

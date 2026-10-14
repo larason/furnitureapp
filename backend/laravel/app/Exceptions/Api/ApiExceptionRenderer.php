@@ -30,7 +30,7 @@ class ApiExceptionRenderer
 
     public function render(Throwable $e, Request $request): ?JsonResponse
     {
-        if (! $request->is('api/*')) {
+        if (! $request->is('api/*') && ! $request->is('broadcasting/auth')) {
             return null;
         }
 
