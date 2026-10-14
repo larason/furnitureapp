@@ -17,6 +17,12 @@ export class ApiTransportError extends Error {
   constructor(readonly kind: "network" | "timeout" | "aborted", cause?: unknown) { super(transportMessage(kind), { cause }); this.name = "ApiTransportError"; }
 }
 
+const TRANSPORT_MESSAGES: Readonly<Record<ApiTransportError["kind"], string>> = {
+  network: "The API could not be reached.",
+  timeout: "The API request timed out.",
+  aborted: "The API request was cancelled.",
+};
+
 function transportMessage(kind: ApiTransportError["kind"]): string {
-  return kind === "timeout" ? "The API request timed out." : kind === "aborted" ? "The API request was cancelled." : "The API could not be reached.";
+  return TRANSPORT_MESSAGES[kind];
 }

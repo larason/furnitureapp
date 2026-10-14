@@ -1,9 +1,16 @@
 import Chip from "@mui/material/Chip";
 
 export type StatusIndicatorStatus = "success" | "warning" | "danger" | "info" | "neutral";
-interface StatusIndicatorProps { status: StatusIndicatorStatus; label: string; }
+type StatusIndicatorChipColor = "default" | "error" | "success" | "warning" | "info";
 
-export function StatusIndicator({ status, label }: StatusIndicatorProps) {
-  const color: "default" | "error" | "success" | "warning" | "info" = status === "neutral" ? "default" : status === "danger" ? "error" : status;
-  return <Chip component="span" label={label} color={color} variant="outlined" aria-label={`Status: ${label}`} />;
+const CHIP_COLORS: Readonly<Record<StatusIndicatorStatus, StatusIndicatorChipColor>> = {
+  success: "success",
+  warning: "warning",
+  danger: "error",
+  info: "info",
+  neutral: "default",
+};
+
+export function StatusIndicator({ status, label }: Readonly<{ status: StatusIndicatorStatus; label: string }>) {
+  return <Chip component="span" label={label} color={CHIP_COLORS[status]} variant="outlined" aria-label={`Status: ${label}`} />;
 }

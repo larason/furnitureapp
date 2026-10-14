@@ -95,9 +95,15 @@ async function decodePayload(response: Response): Promise<{ data?: unknown; meta
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function isSuccessPayload<T>(payload: { data?: unknown }): payload is ApiSuccess<T> { return Object.prototype.hasOwnProperty.call(payload, "data"); }
+function isSuccessPayload<T>(payload: { data?: unknown }): payload is ApiSuccess<T> { return Object.hasOwn(payload, "data"); }
 function retryAfter(headers: Headers): number | undefined { const value = Number(headers.get("Retry-After")); return Number.isFinite(value) && value >= 0 ? value : undefined; }
-function validateTimeout(value: number): number { if (!Number.isFinite(value) || value <= 0) throw new ApiConfigurationError("API timeout must be a positive finite number."); return value; }
+function validateTimeout(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new ApiConfigurationError("API timeout must be a positive finite number.");
+  }
+
+  return value;
+}
 function combineSignals(first: AbortSignal, second: AbortSignal): AbortSignal {
   const controller = new AbortController();
   const abort = () => controller.abort();

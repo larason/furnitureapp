@@ -11,7 +11,7 @@ export async function requireOperationalIdentity(): Promise<AdmissionResult> {
       return { isAuthenticated: session.isAuthenticated, sessionStatus: session.sessionStatus, getToken: session.getToken };
     },
     getMe: async (token) => {
-      const client = createAdminApiClient({ tokenProvider: async () => token });
+      const client = createAdminApiClient({ tokenProvider: () => Promise.resolve(token) });
       const response = await client<unknown>({ path: "/me" });
       return response.data;
     },

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 interface PageHeaderProps { title: string; description?: string; actions?: ReactNode; }
 
-export function PageHeader({ title, description, actions }: PageHeaderProps) {
+export function PageHeader({ title, description, actions }: Readonly<PageHeaderProps>) {
   return <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, justifyContent: "space-between", gap: 3, mb: 6 }}>
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1, maxWidth: "var(--content-width-lead)" }}>
       <Typography component="h1" variant="h1" id="page-title">{title}</Typography>

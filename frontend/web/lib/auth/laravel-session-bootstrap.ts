@@ -126,47 +126,59 @@ export function isEligibleLaravelBootstrapSession({
     && (sessionStatus === undefined || sessionStatus === "active");
 }
 
+type BootstrapOutcome = "success" | "blocked" | "failed";
+
 async function bootstrapSession(
   apiRequest: RequestFunction,
   getToken: ClerkTokenGetter,
   retryDelaysMs: readonly number[],
   sleep: (milliseconds: number) => Promise<void>,
-): Promise<"success" | "blocked" | "failed"> {
-  let refreshAttempted = false;
-  // The attempt index advances only when a bounded backoff retry is scheduled.
-  // A one-time token refresh retries the current attempt instead, so it never
-  // consumes the transient retry budget and still happens when no retry remains.
-  for (let attempt = 0; attempt <= retryDelaysMs.length;) {
-    try {
-      const request = createAuthenticatedLaravelRequest(
-        async () => ({
-          isAuthenticated: true,
-          sessionStatus: "active",
-          getToken: () => getToken(refreshAttempted ? { skipCache: true } : undefined),
-        }),
-        apiRequest,
-      );
-      await request({ path: "/me", cache: "no-store" });
+): Promise<BootstrapOutcome> {
+  return attemptBootstrap(apiRequest, getToken, retryDelaysMs, sleep, 0, false);
+}
 
-      return "success";
-    } catch (error) {
-      if (isRefreshableAuthenticationFailure(error) && !refreshAttempted) {
-        refreshAttempted = true;
-        continue;
-      }
-      if (isBlockedBootstrapError(error)) {
-        return "blocked";
-      }
-      if (!isTemporaryBootstrapError(error) || attempt === retryDelaysMs.length) {
-        return "failed";
-      }
+/**
+ * Retries strictly sequentially: each attempt depends on the previous outcome,
+ * so it cannot be parallelised. `attempt` advances only when a bounded backoff
+ * retry is scheduled. A one-time token refresh retries the current attempt
+ * instead, so it never consumes the transient retry budget and still happens
+ * when no retry remains.
+ */
+async function attemptBootstrap(
+  apiRequest: RequestFunction,
+  getToken: ClerkTokenGetter,
+  retryDelaysMs: readonly number[],
+  sleep: (milliseconds: number) => Promise<void>,
+  attempt: number,
+  refreshAttempted: boolean,
+): Promise<BootstrapOutcome> {
+  try {
+    const request = createAuthenticatedLaravelRequest(
+      () => Promise.resolve({
+        isAuthenticated: true,
+        sessionStatus: "active",
+        getToken: () => getToken(refreshAttempted ? { skipCache: true } : undefined),
+      }),
+      apiRequest,
+    );
+    await request({ path: "/me", cache: "no-store" });
 
-      await sleep(retryDelaysMs[attempt]);
-      attempt += 1;
+    return "success";
+  } catch (error) {
+    if (isRefreshableAuthenticationFailure(error) && !refreshAttempted) {
+      return attemptBootstrap(apiRequest, getToken, retryDelaysMs, sleep, attempt, true);
     }
-  }
+    if (isBlockedBootstrapError(error)) {
+      return "blocked";
+    }
+    if (!isTemporaryBootstrapError(error) || attempt === retryDelaysMs.length) {
+      return "failed";
+    }
 
-  return "failed";
+    await sleep(retryDelaysMs[attempt]);
+
+    return attemptBootstrap(apiRequest, getToken, retryDelaysMs, sleep, attempt + 1, refreshAttempted);
+  }
 }
 
 function isBlockedBootstrapError(error: unknown): boolean {

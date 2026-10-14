@@ -17,7 +17,7 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
-export function ConfirmDialog({ open, title, description, confirmLabel = "Confirm", cancelLabel = "Cancel", onConfirm, onCancel }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, title, description, confirmLabel = "Confirm", cancelLabel = "Cancel", onConfirm, onCancel }: Readonly<ConfirmDialogProps>) {
   return <Dialog open={open} onClose={onCancel} aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
     <DialogTitle id="confirm-dialog-title">{title}</DialogTitle>
     <DialogContent><DialogContentText id="confirm-dialog-description">{description}</DialogContentText></DialogContent>
