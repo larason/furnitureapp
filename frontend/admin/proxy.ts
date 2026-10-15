@@ -1,8 +1,10 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextRequest } from "next/server";
+import { ADMIN_PROTECTED_MATCHERS } from "@/lib/navigation/admin-route-paths";
 
-const isProtectedRoute = createRouteMatcher(["/"]);
+// Early UX redirect only: the protected layout remains the authorization boundary.
+const isProtectedRoute = createRouteMatcher([...ADMIN_PROTECTED_MATCHERS]);
 const hasClerkConfiguration = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim());
 const clerkProxy = hasClerkConfiguration ? clerkMiddleware(async (auth, request) => {
   if (isProtectedRoute(request)) {

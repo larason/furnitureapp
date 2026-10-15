@@ -48,7 +48,7 @@ Action: On deployment, set for the API host:
   and for the website: NEXT_PUBLIC_API_BASE_URL=https://<public API origin>
 Expected result: preflight + anonymous/authenticated JSON and 5 MiB multipart succeed from the production origin over HTTPS.
 
-15. /var/www/html/furnitureapp/phases/group-O-phases.md
+15. /phases/group-O-phases.md
 - Phases 15.9 and 15.10 use approved direct browser `REQ-001` and `ENQ-001` paths for public anonymous submission and optional Clerk bearer association. The server-only `/me` bridge remains separate and is not required for these flows.
 - Prohibits a new BFF/route-handler proxy, alternate HTTP client, token persistence, and Server Actions without validating 5 MiB attachment limits.
 - Requires JSON without attachment and inline FormData with attachment; the existing API client supports both.

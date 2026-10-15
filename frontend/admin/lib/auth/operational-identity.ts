@@ -34,7 +34,7 @@ export async function resolveOperationalIdentity(dependencies: AdmissionDependen
 }
 
 export function hasPermission(identity: OperationalIdentity, permission: string): boolean {
-  return identity.permissions.includes(permission);
+  return Array.isArray(identity.permissions) && identity.permissions.includes(permission);
 }
 
 export function requirePermission(identity: OperationalIdentity, permission: string): boolean {

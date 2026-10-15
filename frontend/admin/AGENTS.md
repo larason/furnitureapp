@@ -13,5 +13,20 @@
 - Never redirect a still-authenticated Clerk session to `/sign-in`. `SignIn` cannot render for an already signed-in user, so a Laravel `401` under a live session must surface a recoverable state that offers a Clerk sign-out instead of a redirect loop.
 - Keep private API calls `no-store`; preserve the frozen `/api/v1` envelopes, pagination and error vocabulary.
 - Use MUI and `@mui/icons-material`; do not add Tailwind, another component library, or another authentication provider.
+
+## Shell and navigation
+
+- `app/(protected)/layout.tsx` is the only admission boundary. `proxy.ts` may pre-empt signed-out access for early UX only; it must never decide roles, permissions or business authorization, and must keep consuming `ADMIN_PROTECTED_MATCHERS`.
+- The shell owns the single `<main id="admin-main-content">` landmark and the skip link. Pages must not declare another `main`.
+- Define routes and navigation only in `lib/navigation/admin-route-paths.ts` and `lib/navigation/admin-navigation.ts`. Never hardcode a navigation link, route path or breadcrumb inside a component, and never duplicate the registry per surface.
+- Filter navigation with `resolveAdminNavigation(identity)` from the Laravel-resolved permissions. Navigation visibility is presentation, never authorization; an `ADMIN` role alone must not reveal a link for a permission the identity lacks, and missing permission data fails closed.
+- Every protected page repeats its own exact requirement server-side through `requireAdminRouteAccess(adminRoute(...))` and renders `access.denial` when not granted. A client-only gate is never sufficient.
+- Only use permission identifiers that exist in `backend/laravel/app/Support/PermissionName.php`, and only add an approved role restriction where Laravel enforces one. Never invent a permission or broaden one in the frontend.
+- Do not publish a navigation entry whose backend endpoint is unimplemented; omit it and document the dependency. Deferred commerce administration (orders, payments, checkout, delivery) must never appear in the navigation.
+- Placeholders must state that the feature is not implemented, name the owning phase, load no data and render no fabricated records, counts, charts or metrics. The overview is a navigational landing page, not an analytics dashboard.
+- Keep shell sub-components presentational and hook-free where practical; put routing, drawer and identity hooks only in the shell entry point so the shell stays render-testable.
+- A component that passes a component reference (for example MUI `component={NextLink}`) must declare `"use client"`. A Server Component cannot serialize a function into a Client Component prop, which fails at runtime with "Functions cannot be passed directly to Client Components". `tests/server-boundary.test.ts` enforces this for every `.tsx` under `app/` and `components/`; keep it passing rather than relying on review.
+- New or changed navigation, route protection or placeholder behavior requires corresponding tests: permission mapping against the Laravel catalog, active-route matching, denial behavior and rendered placeholder content.
+
 - Every future screen needs accessible loading, empty, error, permission, keyboard, responsive and reduced-motion behavior.
 - Run `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, and `git diff --check` before completion.

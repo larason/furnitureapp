@@ -1,10 +1,15 @@
 import "server-only";
 
 import { auth } from "@clerk/nextjs/server";
+import { cache } from "react";
 import { createAdminApiClient } from "@/lib/api/client";
 import { resolveOperationalIdentity, type AdmissionResult } from "@/lib/auth/operational-identity";
 
-export async function requireOperationalIdentity(): Promise<AdmissionResult> {
+/**
+ * Resolves the operational identity once per request so the protected layout and
+ * the page's own route check share one Laravel admission decision.
+ */
+export const requireOperationalIdentity = cache(async (): Promise<AdmissionResult> => {
   return resolveOperationalIdentity({
     getSession: async () => {
       const session = await auth();
@@ -16,4 +21,4 @@ export async function requireOperationalIdentity(): Promise<AdmissionResult> {
       return response.data;
     },
   });
-}
+});
