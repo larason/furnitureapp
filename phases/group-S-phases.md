@@ -1,484 +1,262 @@
-# SL Furnitures — Phase 19.4: Dashboard Shell & Navigation
+# SL Furnitures — Phase 19.5: Dashboard Overview
 
-**Group:** S — Admin Dashboard Frontend
-**Phase:** 19.4 — Dashboard Shell & Navigation
-**Application:** `frontend/admin`
-**Framework:** Existing Next.js App Router + TypeScript + MUI
-**Authentication:** Existing Clerk integration
-**Authorization:** Existing Laravel `/api/v1/me` admission boundary
-**Design authority:** `frontend/design-system/tokens.css`
-**Local origin:** `http://localhost:3001`
+**Group:** S — Admin Dashboard Frontend  
+**Phase:** 19.5 — Dashboard Overview  
+**Application:** `frontend/admin`  
+**Framework:** Existing Next.js App Router + TypeScript + MUI  
+**Authentication:** Existing Clerk integration  
+**Authorization:** Existing Laravel `/api/v1/me` admission and route guards  
+**Design authority:** `frontend/design-system/tokens.css`  
+**Local origin:** `http://localhost:3001`  
 **Status:** APPROVED FOR IMPLEMENTATION
 
 ## 1. Objective
 
-Build the responsive, accessible, production-quality dashboard shell for the independent SL Furnitures Admin Dashboard.
+Implement the finished, production-quality Overview landing page for the SL Furnitures Admin Dashboard.
 
-This phase turns the Phase 19.3 authentication foundation into a consistent operational interface.
+Phase 19.4 established the dashboard shell and a preliminary Overview page. This phase must refine that page into a coherent, useful landing experience that helps each authorized staff member or administrator understand their workspace and navigate to relevant areas.
 
-Implement:
+The overview must be honest about the current implementation state. The application is being delivered in phases, and several linked destinations remain placeholders.
 
-1. A responsive desktop sidebar.
-2. A mobile navigation drawer.
-3. A top application bar.
-4. Brand and application identity.
-5. Permission-aware navigation.
-6. Active route highlighting.
-7. Breadcrumbs or equivalent page context.
-8. A consistent page content area.
-9. An authenticated user/account menu.
-10. A reliable sign-out control.
-11. A neutral overview landing page without fabricated business metrics.
-12. Consistent page titles and section placeholders for later phases.
-13. Accessible navigation and responsive layout behavior.
-14. Shared operational page-state integration.
-15. Tests and documentation.
+**This phase is a navigation-first overview, not an analytics dashboard.**
 
-**Do not implement business workflows or retrieve real operational data in this phase.**
-
-The purpose is to establish the shared shell that later request, enquiry, catalog, inventory, notification, staff, and audit screens will use.
+Do not introduce a dashboard-summary API, aggregate business metrics from unrelated endpoints, or fabricate data to make the page look populated.
 
 ## 2. Mandatory audit before implementation
 
-Inspect the current repository rather than assuming the files or APIs described below exist exactly as written.
-
-Read:
+Inspect the current repository and read:
 
 - Root `AGENTS.md`.
 - `frontend/AGENTS.md`.
 - `frontend/admin/AGENTS.md`.
 - `frontend/admin/README.md`.
-- `frontend/admin/app/`.
-- `frontend/admin/components/`.
-- `frontend/admin/lib/auth/`.
-- `frontend/admin/lib/api/`.
-- `frontend/admin/theme/`.
-- `frontend/admin/app/(protected)/layout.tsx`.
 - `frontend/admin/app/(protected)/page.tsx`.
-- `frontend/admin/proxy.ts`.
-- `phases/phase-19.1-architecture-api-audit.md`.
-- `phases/phase-19.2-completion.md`.
-- `phases/phase-19.3-completion.md`.
-- `phases/group-S-phases.md`.
+- `frontend/admin/app/(protected)/layout.tsx`.
+- `frontend/admin/components/layout/admin-overview-body.tsx`.
+- `frontend/admin/components/layout/admin-route-placeholder.tsx`.
+- `frontend/admin/lib/navigation/admin-navigation.ts`.
+- `frontend/admin/lib/navigation/admin-route-paths.ts`.
+- `frontend/admin/lib/auth/operational-identity.ts`.
+- `frontend/admin/lib/auth/server-operational-identity.ts`.
+- `frontend/admin/lib/auth/route-guard.ts`.
+- Existing shared UI components and the MUI theme.
 - `frontend/design-system/tokens.css`.
 - `frontend/design-system/ACCESSIBILITY.md`.
 - `frontend/design-system/COMPONENTS.md`.
-- Existing Laravel `PermissionCatalog` and relevant API authorization rules.
+- `phases/phase-19.1-architecture-api-audit.md`.
+- `phases/phase-19.2-completion.md`.
+- `phases/phase-19.3-completion.md`.
+- `phases/phase-19.4-completion.md`.
+- `phases/group-S-phases.md`.
 
-Verify the existing Phase 19.3 implementations of:
+Verify the actual filenames and exported APIs rather than assuming this list exactly matches the current tree.
 
-- `requireOperationalIdentity()`.
-- `requirePermission()`.
-- `hasPermission()`.
-- The sanitized authenticated identity provider.
-- The existing sign-out control.
-- The four authentication/authorization failure states.
-- Private/no-store API transport behavior.
+Before editing, report a short implementation plan and summarize which existing overview elements will be retained, improved, or removed.
 
-Reuse these implementations. Do not build a parallel authentication or permission system.
+Do not begin by scaffolding another application, redesigning the shell, or replacing working authentication infrastructure.
 
-Before editing, report a brief plan describing the shell components, navigation permission mapping, route structure, and responsive behavior.
+## 3. Scope
 
-## 3. Non-negotiable security boundary
+Implement the Overview at the existing protected `/` route.
 
-The Phase 19.3 implementation is authoritative.
+The page should provide:
 
-Every protected dashboard request must remain behind the established server-side admission boundary.
+1. A clear welcome heading and concise introduction.
+2. A well-organized workspace navigation area.
+3. Permission-filtered shortcuts generated from the existing navigation registry.
+4. A clear distinction between the dashboard shell being available and business modules still being implemented.
+5. Useful, truthful descriptions of accessible modules and their current implementation status.
+6. A restrained identity/access summary where it improves the experience.
+7. Responsive, accessible page composition consistent with the existing shell.
+8. Automated tests and updated phase documentation.
 
-Use the existing Laravel-resolved identity and effective permission list.
+Reuse the existing `AdminShell`, navigation registry, sanitized identity provider, route guards, `PageContainer`, `PageHeader`, `SectionHeader`, and other shared primitives wherever appropriate.
 
-Never trust:
+Do not create a second navigation configuration or another authorization layer.
 
-- Client-supplied role values.
-- Clerk metadata as the business role.
-- A frontend `isAdmin` boolean.
-- Navigation visibility as authorization.
-- A previously cached identity from another session.
-- A role inferred from the current URL.
-- An ADMIN role as a substitute for an exact permission.
+## 4. Security and route protection
 
-The shell may receive the sanitized identity already approved by Phase 19.3. It must never receive or expose a Clerk bearer token.
+Preserve the Phase 19.3 and Phase 19.4 security boundaries.
 
-Do not weaken, bypass, or replace the protected layout.
+The Overview must remain behind the existing protected route layout and server-side admission mechanism.
 
-Do not move protected content into a public route.
+- Keep the existing Overview route and URL.
+- Preserve the existing `requireAdminRouteAccess(adminRoute(...))` guard pattern, using the actual verified API.
+- Resolve identity and effective permissions through the established Laravel-backed admission flow.
+- Do not trust Clerk metadata as the authoritative business role.
+- Do not use a client-side role or `isAdmin` flag as authorization.
+- Do not allow ADMIN to bypass an exact permission requirement.
+- Do not expose bearer tokens, raw `/me` responses, internal permission payloads, or sensitive server-side details.
+- Do not weaken any existing denied, invalid-session, inactive-account, or unavailable-service state.
 
-Do not change the Laravel `/me` contract.
+Overview shortcuts are presentation and navigation only. The destination route must retain its own server-side authorization guard.
 
-Do not add a new authentication provider, role, or permission.
+Do not add public overview content containing operational identity information.
 
-## 4. Design system and theme
+## 5. Design and content direction
 
-Use the existing admin MUI theme and canonical shared design tokens.
+Use the existing MUI theme and canonical shared design tokens. Follow the current dashboard shell's visual language.
 
-Authoritative token source:
+The Overview should feel like an intentional operational workspace, not a generic analytics template.
 
-`frontend/design-system/tokens.css`
+Prioritize:
 
-Follow the existing documented semantic tokens for:
+- Clear visual hierarchy.
+- Concise, meaningful copy.
+- Readable section headings.
+- Consistent spacing and alignment.
+- Restrained use of Paper/Card surfaces.
+- Clear distinction between navigation and status information.
+- Responsive layouts that do not rely on hover.
+- Accessible links and keyboard focus.
+- The existing brand and typography system.
 
-- Canvas and paper surfaces.
-- Primary and secondary text.
-- Borders and dividers.
-- Primary actions.
-- Brand accents.
-- Status colors.
-- Typography.
-- Spacing.
-- Radius.
-- Focus styling.
-- Breakpoints.
+Avoid filling the page with excessive cards, decorative charts, gradients, meaningless icons, or redundant panels.
 
-Do not introduce an independent admin palette.
+Do not copy token values into a new file, introduce a second palette, or install another component library.
 
-Do not copy token values into a new file.
+## 6. Recommended Overview structure
 
-Do not change the customer website's visual system.
+Use judgment and existing components to deliver the clearest page. The following content hierarchy is the target.
 
-Do not install another component library.
+### A. Welcome and context
 
-The admin shell should look like a cohesive SL Furnitures application, with a disciplined operational layout rather than a generic analytics template.
+Show a clear heading such as “Welcome back, [approved display name]” using the existing sanitized identity helper.
 
-Prefer restrained surfaces, clear information hierarchy, readable labels, consistent spacing, and accessible interaction states.
+- Use the approved fallback if the name is absent.
+- Never invent a name, email, role, or profile image.
+- Provide a short explanation of the dashboard's purpose.
+- Do not make claims that request handling, enquiry handling, catalog editing, or other business workflows are already available when their routes remain placeholders.
 
-## 5. Application shell architecture
+Keep the introduction short and useful.
 
-Build reusable components in the existing project structure.
+### B. Workspace navigation
 
-Suggested responsibilities:
+Create a clean, easy-to-scan workspace section using the existing typed navigation registry.
 
-- `AdminShell`: shared authenticated application frame.
-- `AdminSidebar`: desktop navigation.
-- `AdminMobileDrawer`: responsive mobile navigation.
-- `AdminTopbar`: menu control, page context, account menu.
-- `AdminNavigation`: permission-filtered navigation items.
-- `AdminBreadcrumbs`: current page context.
-- `AdminUserMenu`: current identity and sign-out.
-- `AdminPageContainer`: consistent page gutters and width.
-- `AdminPageHeader`: consistent title, description, and action placement.
+It may group accessible destinations according to the existing navigation groups:
 
-These are proposed names, not a requirement to duplicate existing components. Reuse or extend an existing primitive when it already serves the same purpose.
+- Operations.
+- Catalog.
+- Administration.
 
-Keep the shell modular without introducing an elaborate abstraction framework.
+Include Overview only if doing so improves navigation rather than linking users redundantly to their current page.
 
-The shell should wrap all future protected operational pages through the existing protected route layout.
-
-Do not duplicate Clerk or Laravel admission logic inside individual shell components.
-
-## 6. Desktop layout
-
-Implement a responsive desktop frame with:
-
-### Sidebar
-
-- SL Furnitures brand/application identity. logo assets in `frontend/admin/public`.
-- Navigation grouped into meaningful operational sections.
-- Clear current-page indicator.
-- Consistent icon and label alignment.
-- Appropriate active, hover, and focus states.
-- Optional collapse behavior only if it can be implemented accessibly without unnecessary complexity.
-
-Avoid an oversized logo or excessive decorative content.
-
-The sidebar must not show links the current identity is not permitted to access.
-
-### Topbar
-
-Include:
-
-- A mobile menu trigger.
-- Current page title or breadcrumb context.
-- Authenticated account menu.
-- Sign-out action.
-- Optional restrained brand or environment context if useful.
-
-Do not add a global search box unless a real, approved search workflow already exists.
-
-Do not add fake notifications, unread badges, profile images, or account details.
-
-### Main content
-
-- Responsive page container.
-- Consistent heading placement.
-- Clear separation between title and page content.
-- Appropriate minimum width and overflow behavior.
-- No horizontal overflow at common desktop sizes.
-
-Avoid nested cards around every element. Use MUI Paper/Card only when it provides meaningful grouping.
-
-## 7. Mobile and tablet navigation
-
-On narrower screens:
-
-- Replace the persistent desktop sidebar with a mobile drawer.
-- Provide a clearly labelled menu trigger.
-- Use the MUI-supported drawer behavior.
-- Support keyboard opening, navigation, and dismissal.
-- Close the drawer after selecting a destination.
-- Keep focus behavior accessible.
-- Prevent interaction with obscured content while a modal drawer is open.
-- Respect reduced-motion preferences.
-- Avoid layout shifts and clipped page titles.
-
-Do not simply shrink the desktop sidebar until its labels become unreadable.
-
-Do not require hover to discover a navigation action.
-
-Use the shared token-defined breakpoints unless an actual accessibility or layout constraint requires a documented adjustment.
-
-## 8. Navigation model
-
-Define navigation through one centralized, typed configuration.
-
-Each item should specify only the metadata it needs, such as:
-
-- Stable identifier.
-- Label.
-- Path.
-- Icon.
-- Navigation group.
-- Required exact permission, when applicable.
-- Optional explicitly approved role restriction.
-
-Do not scatter permission checks throughout multiple copies of the sidebar.
-
-Filter navigation from the Laravel-resolved effective permissions.
-
-### Initial navigation groups
-
-Use the approved Group S roadmap and actual backend permission catalog to determine the final entries. The expected operational areas include:
-
-**Workspace**
-
-- Overview.
-
-**Operations**
-
-- Made-to-order requests.
-- Enquiries.
-- Notifications.
-
-**Catalog**
-
-- Products.
-- Categories.
-- Inventory.
-
-**Administration**
-
-- Customers.
-- Staff.
-- Audit logs.
-
-Only show a section when its required permission is present. Use the actual route and permission vocabulary established in the project; the labels above are human-readable examples.
-
-Do not invent permission identifiers or assume that every listed area has a complete backend implementation.
-
-Do not introduce links to checkout, orders, payments, delivery management, or other deferred commerce workflows.
-
-Do not expose staff-management actions merely because the user can enter the dashboard.
-
-### Permission mapping
-
-Before implementing the navigation, inspect Laravel's actual `PermissionCatalog`.
-
-Build a documented mapping from each implemented navigation entry to its exact required permission.
-
-Potential mappings to verify include:
-
-- Requests → `requests.view`.
-- Enquiries → `enquiries.view`.
-- Notifications → `notifications.read_operational`.
-- Products → `products.view`.
-- Inventory → `inventory.view`.
-- Staff → the approved staff-management permission.
-- Customers → the approved customer-management permission.
-- Audit logs → `audit.view`.
-
-These are candidates to verify, not permission definitions to create.
-
-For categories, determine the actual catalog authorization rule rather than assuming that product permission automatically grants category permission.
-
-If the backend has no distinct permission for a feature, follow the approved backend policy. Do not invent a broader frontend-only authorization rule.
-
-### ADMIN is not an automatic bypass
-
-An ADMIN identity without the exact permission must not receive a protected navigation link solely because its role is ADMIN.
-
-An authorized STAFF identity should see every navigation item for which it has the necessary permissions, regardless of whether the item is traditionally considered an administrative feature.
-
-Do not hardcode an assumption that every STAFF user has one fixed set of capabilities.
-
-## 9. Direct route authorization
-
-Hiding a link is not sufficient.
-
-For every route placeholder implemented in this phase:
-
-1. Resolve the existing operational identity on the server.
-2. Apply the appropriate exact permission guard where that route represents a permission-controlled feature.
-3. Render the page only after authorization succeeds.
-4. Use the existing denial state for a missing permission.
-5. Never fetch business data from a placeholder.
-6. Never render private content in static output.
-
-Use the existing `requirePermission()` helper or its verified equivalent.
-
-Do not create a client-only permission gate as the sole protection for a route.
-
-Do not duplicate the full permission catalog in a frontend role matrix.
-
-If a navigation entry has no valid permission mapping or route contract, omit it and document the dependency rather than guessing.
-
-## 10. Overview landing page
-
-Replace the Phase 19.3 development confirmation page with a minimal, polished authenticated overview.
-
-The overview should establish the visual language and help the operator navigate.
-
-It may contain:
-
-- A welcome heading using approved profile information.
-- A short explanation of the dashboard's purpose.
-- Permission-filtered shortcuts to implemented route placeholders.
-- A neutral description of available operational areas.
-- A clear distinction between available navigation and features that are not yet implemented.
-
-**It must not contain fabricated:**
-
-- Revenue.
-- Sales.
-- Orders.
-- Conversion rates.
-- Customer counts.
-- Inventory totals.
-- Pending-request counts.
-- Notification counts.
-- Activity timelines.
-- Charts.
-- Recent transactions.
-
-Do not call arbitrary API endpoints to populate overview cards.
-
-Do not invent metrics just to make the dashboard appear populated.
-
-The overview is a navigational landing page, not a fake analytics dashboard.
-
-Do not add API calls unless a real approved overview endpoint already exists and is explicitly within the current phase's scope.
-
-## 11. Section placeholders
-
-Later phases will implement the real operational sections.
-
-If the navigation includes destinations that do not yet have actual screens, provide simple, protected placeholder pages where necessary to avoid dead links.
-
-A placeholder must:
-
-- Have the correct page title.
-- State clearly that the feature will be implemented in a later phase.
-- Avoid suggesting the feature is already functional.
-- Make no business API requests.
-- Show no fabricated records.
-- Require the correct permission before rendering.
-- Use the shared page container and header.
-
-Do not build fake CRUD forms, fake tables, fake inboxes, or mock operational workflows.
-
-If a route depends on an unimplemented backend endpoint or unapproved permission, do not create a misleading operational page. Omit the navigation item until its dependency is resolved and document the reason.
-
-Avoid creating many unnecessary routes solely to make the navigation appear complete.
-
-## 12. Active navigation and page context
-
-Implement correct active-route behavior.
+Each destination must obtain its label, description, path, icon, permission requirement, role restriction, and availability information from the existing approved configuration or a small, clearly defined shared metadata source.
 
 Requirements:
 
-- The exact overview route highlights Overview.
-- A future nested route highlights its correct parent navigation item.
-- Similar route prefixes do not accidentally highlight multiple unrelated items.
-- Hidden or unauthorized navigation entries cannot become visible through active-route state.
-- Breadcrumbs reflect the actual route hierarchy.
-- Page titles are consistent between the topbar, breadcrumb, and main heading where appropriate.
+- Reuse the existing permission-filtering logic.
+- Show only destinations allowed by the Laravel-resolved effective permissions and existing route policy.
+- Do not reproduce permission checks in a separate array.
+- Do not invent new permissions.
+- Do not reveal restricted destinations as shortcuts to users who cannot access them.
+- Ensure each shortcut points to the correct existing route.
+- Make the entire interactive area accessible if card-style links are used.
+- Preserve semantic link behavior and normal browser navigation.
 
-Use supported Next.js routing APIs.
+The overview must remain usable for a STAFF member with a limited permission set. Do not assume all staff members have the same capabilities or that every ADMIN has every permission.
 
-Do not inspect browser globals during server rendering.
+### C. Accurate implementation status
 
-Avoid hydration mismatches between the server and client.
+The current application contains real dashboard navigation and protected route placeholders, but those placeholders do not perform business operations.
 
-If responsive drawer state or active-route state requires a client component, keep that boundary small.
+Make this distinction explicit.
 
-## 13. User menu and sign-out
+Use concise wording to communicate that:
 
-Reuse the existing Phase 19.3 sign-out mechanism.
+- The authenticated dashboard shell and navigation are available.
+- Business workflows are being implemented in scheduled phases.
+- A link to a section does not mean that its business workflow is functional.
+- No live operational summary is displayed because there is no approved dashboard-summary contract.
 
-The account menu should show only approved, sanitized local identity information, such as:
+Use the actual roadmap to determine the phase or status of a feature. Do not hardcode a phase number without verifying it.
 
-- Display name.
-- Email address, if present and approved for display.
-- Local role label.
+Where useful, show a neutral status such as “Planned” or “Not yet implemented.” Avoid status labels that could be mistaken for real operational state.
 
-Do not expose the Clerk token or internal API response.
+Do not turn every status into a large colored badge. Use restrained text or a subtle semantic status treatment.
 
-Use an approved fallback for missing profile values. Do not fabricate an email address or role.
+Do not display an “available now” badge on a business module whose page is still a placeholder.
 
-The menu must provide a working sign-out action.
+### D. Identity/access information
 
-Sign-out must use the existing Clerk SDK integration and its safe redirect behavior.
+Review the existing “Your access” panel.
 
-After sign-out:
+Retain it only in a form that provides real value and does not duplicate the account menu unnecessarily.
 
-- Protected content must no longer be accessible.
-- Stale client identity state must not remain visible.
-- Protected API calls must not reuse the prior identity.
-- The user must return to the approved signed-out route.
+If included, use sanitized, approved identity fields and the established local role label. Do not display the raw permission list or any token.
 
-Do not implement an independent session store.
+Keep the explanation of Laravel's authorization boundary concise. Avoid making the Overview a technical documentation page.
 
-Do not introduce a custom sign-out API.
+## 7. No fabricated analytics or business data
 
-## 14. Notifications in the shell
+There is no approved aggregate dashboard endpoint.
 
-The notification area must not imply a functioning notification inbox before its UI phase is implemented.
+Therefore, do not add:
 
-Do not display a bell with a fabricated unread count.
+- Revenue or sales totals.
+- Order counts or order status totals.
+- Conversion rates.
+- Customer totals.
+- Inventory quantities or low-stock counts.
+- Pending-request or enquiry counts.
+- Unread-notification counts.
+- Recent activity timelines.
+- Charts, trends, or comparisons.
+- “Today,” “this week,” or other time-based summaries that imply real data.
+- Mock records or sample operational data presented as live.
+- Placeholder numeric values such as `0`, `—`, or `N/A` arranged to resemble real KPI cards.
 
-Do not create a Reverb client in Phase 19.4.
+Do not fetch multiple unrelated endpoints and aggregate their responses in the browser or server to simulate a dashboard API.
 
-Do not introduce a new notification endpoint.
+Do not add a new endpoint, database migration, backend query, permission, or API contract change.
 
-If the approved notification page is not implemented, either provide a clearly labelled permission-protected placeholder or omit its navigation item until its scheduled implementation, according to the Group S roadmap.
+Do not create a Reverb connection, notification subscription, or notification polling loop.
 
-Preserve the existing Phase 18 notification behavior and contracts.
+The Overview should make **zero additional business-data API calls**. The existing protected admission flow's `/api/v1/me` request is expected and must remain intact.
 
-## 15. Accessibility
+If a genuine operational summary is considered necessary, document it as a future, separately approved API/contract decision. Do not implement it in Phase 19.5.
 
-Follow `frontend/design-system/ACCESSIBILITY.md`.
+## 8. API, caching, and rendering boundaries
+
+Keep the Overview primarily server-rendered wherever practical.
+
+- Reuse the existing server-side identity and permission data already available through the established architecture.
+- Do not add client-side data fetching for static roadmap information.
+- Do not add new route handlers or proxy endpoints.
+- Do not serialize a Clerk bearer token across the Server/Client Component boundary.
+- Keep client components limited to genuine interaction.
+- Do not pass non-serializable function props from a Server Component into a Client Component.
+- Follow the Phase 19.4 regression lesson regarding `component={NextLink}` and MUI components across the React Server Component boundary.
+- Preserve private/no-store behavior for authenticated requests.
+- Do not introduce shared caches containing authenticated identity or permission-specific content.
+
+If the page needs a client-side child, keep the boundary small and pass only serializable, approved presentation data.
+
+## 9. Navigation and accessibility
+
+Follow `frontend/design-system/ACCESSIBILITY.md` and existing admin shell conventions.
 
 At minimum:
 
-- Use semantic navigation landmarks.
-- Provide accessible names for navigation controls.
-- Use appropriate `aria-current` on the active destination.
-- Keep keyboard focus visible.
-- Support drawer opening and dismissal through the keyboard.
-- Ensure focus is managed appropriately for modal navigation.
-- Provide accessible names for icon-only buttons.
-- Use headings in a logical hierarchy.
-- Do not communicate active state through color alone.
-- Maintain sufficient text and focus contrast.
-- Respect reduced-motion preferences.
-- Ensure responsive text does not clip.
-- Test keyboard-only navigation.
+- Use logical heading levels.
+- Use semantic links for navigation.
+- Provide accessible names for icon-only controls.
+- Maintain visible keyboard focus.
+- Do not communicate implementation status through color alone.
+- Ensure link targets and labels make sense when read by assistive technology.
+- Avoid nested interactive elements.
+- Keep text contrast and focus treatment consistent with the design system.
+- Ensure the content works with keyboard-only navigation.
+- Preserve the single main landmark supplied by the dashboard shell.
+- Avoid adding a second page-level `main` element.
+- Respect reduced-motion preferences already implemented in the shell.
 
-Do not disable built-in MUI accessibility behavior.
+Do not introduce custom interaction behavior when a normal link or existing shared component is sufficient.
 
-Do not use placeholder labels as substitutes for accessible names.
+## 10. Responsive behavior
 
-## 16. Responsive and visual verification
-
-Verify the shell at minimum at these viewport widths:
+Verify the Overview at minimum at:
 
 - 360 px.
 - 390 px.
@@ -486,86 +264,75 @@ Verify the shell at minimum at these viewport widths:
 - 1024 px.
 - 1440 px.
 
-Test:
+Check:
 
-- Sidebar behavior.
-- Drawer behavior.
-- Long page titles.
-- Long account names.
-- Navigation with many authorized items.
-- Navigation with very few permissions.
-- STAFF and ADMIN presentations.
-- Missing profile fields.
-- Denied route states.
-- Small-screen page overflow.
+- Heading wrapping and truncation.
+- Shortcut layout at narrow widths.
+- Long navigation labels.
+- Long display names.
+- Adequate spacing and readable line lengths.
+- No horizontal overflow.
+- Usable touch targets.
+- Correct layout alongside the existing desktop sidebar.
+- Correct layout with the mobile navigation drawer.
 - Keyboard focus visibility.
+- No hydration errors or console errors caused by the Overview.
 
-The UI should remain useful even if an authorized user has only a small subset of permissions.
+Reuse existing breakpoints and layout conventions. Do not redesign the global shell in this phase.
 
-Do not assume that an ADMIN always has more effective permissions than STAFF.
+If a live authenticated browser session is available, test the actual `/` route, not only a synthetic component harness. If live STAFF credentials are unavailable, do not create or alter an identity to bypass the limitation; use appropriately scoped automated tests and document the missing live verification.
 
-## 17. Tests
+## 11. Automated tests
 
-Create automated tests for the shell and navigation.
+Use the existing test framework and conventions in `frontend/admin`.
 
-### Navigation configuration
+Add or extend tests for the Overview.
 
-1. Every configured link has a valid path and unique stable identifier.
-2. Every protected entry maps to an existing approved permission.
-3. No fabricated permission identifier is used.
-4. Navigation is filtered from Laravel-resolved permissions.
-5. A CUSTOMER identity cannot render the protected shell.
-6. ADMIN role alone does not reveal a missing-permission link.
-7. STAFF with the required permission can see the relevant link.
-8. STAFF without the permission cannot see it.
-9. Missing permission data fails closed.
+### Content and correctness
 
-### Routing
+1. The Overview renders the approved welcome heading and fallback behavior.
+2. The page has a clear, logical heading hierarchy.
+3. Workspace shortcuts use the centralized navigation configuration.
+4. Only permission-eligible destinations appear.
+5. The page remains useful with a small permission set.
+6. Missing or malformed permissions fail closed.
+7. The page distinguishes dashboard-shell availability from unfinished business workflows.
+8. Any displayed phase/status metadata matches the approved roadmap.
+9. No fake analytics, sample records, fabricated counts, or unread badges appear.
+10. No new business API calls are introduced by the Overview.
 
-10. Overview renders only behind the protected layout.
-11. Authorized placeholders render their neutral state.
-12. Unauthorized direct navigation shows the existing denial state.
-13. Unknown routes use the correct not-found behavior.
-14. Active-route matching is correct for nested routes.
-15. Similar path prefixes do not produce incorrect highlights.
-16. Protected pages do not initiate business API calls in this phase.
+### Authorization and identity
 
-### User menu
+11. The Overview remains protected by the existing admission boundary.
+12. Unauthorized users cannot access private Overview content.
+13. ADMIN does not receive a permission bypass.
+14. The page displays only approved, sanitized identity information.
+15. No Clerk token or raw internal API response is rendered.
 
-17. Sanitized identity fields are displayed correctly.
-18. Missing display fields use approved fallbacks.
-19. No Clerk bearer token is rendered.
-20. Sign-out invokes the existing Clerk flow.
-21. Stale identity state is cleared after sign-out.
+### Navigation and rendering
 
-### Responsive behavior and accessibility
+16. Shortcuts point to the correct existing routes.
+17. Shortcut destinations retain their own route guards.
+18. Active navigation behavior remains correct.
+19. The page preserves the shell's single `main` landmark.
+20. Server/Client Component boundaries remain valid.
+21. No hydration or serialization regression is introduced.
 
-22. Desktop sidebar renders correctly.
-23. Mobile drawer opens and closes.
-24. Selecting a destination closes the drawer.
+### Responsive and accessibility behavior
+
+22. Shortcut layouts remain usable at the required viewport sizes.
+23. Long labels and names do not cause horizontal overflow.
+24. Links have meaningful accessible names.
 25. Keyboard focus is visible.
-26. Navigation controls have accessible names.
-27. Active destinations expose the correct semantic state.
-28. Long navigation labels do not break layout.
-29. Small screens do not introduce unintended horizontal overflow.
-30. Empty navigation permission sets remain usable.
+26. No nested interactive elements are introduced.
 
-### Overview integrity
+Test through the project's existing tools. Do not add a large test dependency solely for this page.
 
-31. No fabricated business metrics are rendered.
-32. No unapproved API endpoints are called.
-33. No fake unread count is displayed.
-34. No customer, request, enquiry, or inventory records are mocked as live data.
+## 12. Quality gates
 
-Use the project's actual testing tools and accessible queries.
-
-## 18. Quality gates
-
-Run the existing admin application commands:
+Run from `frontend/admin` using the repository's established package manager:
 
 ```bash
-cd frontend/admin
-
 npm run lint
 npm run typecheck
 npm run test
@@ -578,120 +345,79 @@ Also run:
 git diff --check
 ```
 
-Use the repository's established package manager if it differs from npm.
+Re-run the relevant Phase 19.3 and Phase 19.4 authorization, navigation, and Server/Client Component boundary tests.
 
-Verify the application runs on port `3001`.
+Verify the production build and protected route behavior. If the app is running locally, test the actual Overview page at `http://localhost:3001/`.
 
-Re-run relevant Phase 19.3 authentication tests to ensure the new layout has not bypassed the protected route boundary.
+Do not report a check as passed unless it actually ran and passed. Separate automated tests, browser checks, and unavailable live identity tests in the final report.
 
-Check that the customer website, Laravel API, and database remain unchanged.
+## 13. Documentation and completion report
 
-Do not modify backend code to accommodate frontend-only navigation assumptions.
-
-## 19. Documentation
-
-Update `frontend/admin/README.md` and `frontend/admin/AGENTS.md` if needed to document:
-
-- Shell component responsibilities.
-- Navigation configuration.
-- Permission mapping.
-- Route protection requirements.
-- How to add future navigation entries.
-- How to implement protected pages.
-- Design-token usage.
-- Accessibility expectations.
-- How to run tests.
+Update `frontend/admin/README.md` or `frontend/admin/AGENTS.md` only where the new Overview behavior creates a meaningful documentation change.
 
 Create:
 
-`phases/phase-19.4-completion.md`
+`phases/phase-19.5-completion.md`
 
 Include:
 
-1. Files changed.
-2. Shell architecture.
-3. Sidebar and topbar implementation.
-4. Responsive drawer behavior.
-5. Navigation groups and routes.
-6. Verified permission mapping.
-7. Direct route authorization.
-8. Overview page behavior.
-9. Placeholder routes and deferred dependencies.
-10. Accessibility and responsive test results.
-11. Authentication regression results.
-12. Lint/typecheck/test/build results.
+1. Phase status: PASS / PARTIAL / FAIL.
+2. Files changed.
+3. Overview layout and content hierarchy.
+4. Navigation registry and permission-filtering reuse.
+5. Implementation-status presentation and roadmap source.
+6. Identity display and authorization-boundary preservation.
+7. Confirmation that no aggregate API or additional business-data request was introduced.
+8. Confirmation that no fabricated analytics or operational records are shown.
+9. Accessibility and responsive test results.
+10. Authentication and route-guard regression results.
+11. Lint, typecheck, test, build, and diff-check results.
+12. Live browser verification and any unavailable identity tests.
 13. Known limitations.
-14. Phase 19.5 handoff.
+14. Handoff to Phase 19.6.
 
-Do not rewrite completed phase reports.
+Do not rewrite previous completion reports or retroactively change their status.
 
-## 20. Explicit exclusions
+## 14. Explicit exclusions
 
 Do not implement:
 
-- Request management.
+- Dashboard analytics or KPI cards.
+- A dashboard-summary API.
+- Made-to-order request management.
 - Enquiry management.
-- Catalog CRUD.
-- Category management workflows.
+- Product or category CRUD.
 - Inventory operations.
-- Customer management.
-- Staff management.
-- Audit log screens.
-- Functional notification inbox.
-- Reverb subscription.
-- Notification preferences.
-- Dashboard metric APIs.
-- Charts or analytics.
-- New Laravel routes.
-- New database migrations.
+- Customer or staff management.
+- Audit-log viewing.
+- A functional notification inbox.
+- Reverb subscriptions or polling.
 - New roles or permissions.
-- Checkout, orders, payments or delivery workflows.
-- Production Coolify deployment.
+- New Laravel endpoints or database migrations.
+- Changes to the frozen API contract.
+- Checkout, orders, payments, or delivery workflows.
+- Production deployment configuration.
+- Unrelated dependency upgrades or redesign of the global dashboard shell.
 
-These must be implemented in their approved later phases.
+Those responsibilities remain in their approved phases.
 
-## 21. Definition of Done
+## 15. Definition of Done
 
-Phase 19.4 is PASS when:
+Phase 19.5 is **PASS** when:
 
-1. The existing protected route boundary remains intact.
-2. The responsive dashboard shell is complete.
-3. Desktop sidebar and mobile drawer behave correctly.
-4. Navigation is generated from a centralized, typed configuration.
-5. Each implemented protected entry uses an actual approved permission.
-6. Unauthorized navigation and direct route access are denied.
-7. The overview contains no fabricated operational data.
-8. Placeholders are explicit, protected and non-functional by design.
-9. User identity display uses sanitized Laravel-resolved data.
-10. Sign-out works and clears stale identity presentation.
-11. Accessibility and responsive behavior are verified.
-12. Authentication regression tests pass.
-13. Lint, typecheck, tests and production build pass.
-14. No Laravel contract, database, customer website or business workflow changes are introduced.
-15. Documentation and the completion report are complete.
+1. The Overview is polished and consistent with the existing dashboard shell.
+2. Its content is truthful and useful without operational metrics.
+3. Shortcuts are generated from the existing navigation registry and permission-filtering logic.
+4. Users see only destinations permitted by the established policy.
+5. Business placeholders are clearly distinguished from functional modules.
+6. Identity display remains sanitized and private.
+7. The existing Laravel-backed admission and route guards remain intact.
+8. No new business-data API calls, aggregate endpoint, or fabricated data are introduced.
+9. The page is accessible and responsive at the required viewport widths.
+10. Automated tests and all required quality gates pass.
+11. Phase 19.3 and 19.4 security and rendering regressions are not introduced.
+12. The completion report accurately documents results and limitations.
 
-If a required permission mapping is ambiguous, do not guess. Omit the affected navigation entry and document the dependency. If a real smoke test cannot be performed, report PARTIAL instead of claiming PASS.
+If a requirement cannot be verified, report it honestly as a limitation. Do not weaken authorization, create fake data, or claim success without evidence.
 
-## 22. Final report
-
-Return:
-
-**PHASE 19.4 — PASS / PARTIAL / FAIL**
-
-Include:
-
-- Files changed.
-- Shell architecture.
-- Sidebar/topbar/mobile drawer behavior.
-- Navigation groups and exact permission mappings.
-- Protected route behavior.
-- Overview content and confirmation that no fabricated metrics exist.
-- Placeholder routes and deferred sections.
-- Sign-out verification.
-- Responsive and accessibility results.
-- Automated validation results.
-- Authentication regression results.
-- Remaining limitations.
-- Readiness for Phase 19.5.
-
-**Implement Phase 19.4 now. Do not advance to Phase 19.5 without owner approval.**
+**Implement Phase 19.5 now. Do not proceed to Phase 19.6 without owner approval.**

@@ -10,5 +10,5 @@ export const metadata: Metadata = adminRouteMetadata(ROUTE.href);
 export default async function ProductsPage() {
   const access = await requireAdminRouteAccess(ROUTE);
   if (!access.granted) return access.denial;
-  return <AdminRoutePlaceholder route={ROUTE} phase="Phase 19.6" />;
+  return <AdminRoutePlaceholder route={ROUTE} />;
 }

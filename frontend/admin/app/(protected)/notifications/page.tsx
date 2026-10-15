@@ -10,5 +10,5 @@ export const metadata: Metadata = adminRouteMetadata(ROUTE.href);
 export default async function NotificationsPage() {
   const access = await requireAdminRouteAccess(ROUTE);
   if (!access.granted) return access.denial;
-  return <AdminRoutePlaceholder route={ROUTE} phase="the approved notification inbox phase" />;
+  return <AdminRoutePlaceholder route={ROUTE} />;
 }

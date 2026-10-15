@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Support\AuthorizedParties;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -14,28 +15,33 @@ use Tests\TestCase;
 class CommittedOriginTemplatesTest extends TestCase
 {
     #[Test]
-    public function the_laravel_example_documents_every_frontend_origin(): void
+    #[DataProvider('originListProvider')]
+    public function the_laravel_example_authorizes_every_frontend_origin(string $variable): void
     {
         $missing = AuthorizedParties::missingFor(
             $this->declaredFrontendOrigins(),
-            $this->exampleList('CORS_ALLOWED_ORIGINS'),
+            $this->exampleList($variable),
         );
 
-        self::assertSame([], $missing, 'CORS_ALLOWED_ORIGINS in .env.example must cover every declared frontend origin.');
+        self::assertSame([], $missing, "{$variable} in .env.example must cover every declared frontend origin.");
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function originListProvider(): iterable
+    {
+        // Clerk authorized parties gate the token itself: an unlisted `azp` is
+        // rejected as INVALID_AUTHENTICATION, which the admin surfaces as
+        // "Session not accepted". CORS only governs browser-originated calls and
+        // does not affect the server-to-server admission request, so the admin
+        // origin must be authorized in its own right, not merely cross-origin-capable.
+        yield 'Clerk authorized parties' => ['CLERK_AUTHORIZED_PARTIES'];
+        yield 'CORS allowed origins' => ['CORS_ALLOWED_ORIGINS'];
     }
 
     #[Test]
     public function the_admin_example_declares_an_origin(): void
     {
         self::assertNotSame('', $this->exampleValue('frontend/admin', 'NEXT_PUBLIC_ADMIN_ORIGIN'));
-    }
-
-    #[Test]
-    public function the_laravel_example_explains_the_authorized_parties_rule(): void
-    {
-        $example = $this->exampleValue('backend/laravel', 'CLERK_AUTHORIZED_PARTIES');
-
-        self::assertNotSame('', $example, 'CLERK_AUTHORIZED_PARTIES must remain in .env.example.');
     }
 
     /** @return list<string> */

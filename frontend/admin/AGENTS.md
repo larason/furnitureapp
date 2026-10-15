@@ -23,6 +23,8 @@
 - Every protected page repeats its own exact requirement server-side through `requireAdminRouteAccess(adminRoute(...))` and renders `access.denial` when not granted. A client-only gate is never sufficient.
 - Only use permission identifiers that exist in `backend/laravel/app/Support/PermissionName.php`, and only add an approved role restriction where Laravel enforces one. Never invent a permission or broaden one in the frontend.
 - Do not publish a navigation entry whose backend endpoint is unimplemented; omit it and document the dependency. Deferred commerce administration (orders, payments, checkout, delivery) must never appear in the navigation.
+- The registry's `plannedFor` is the single source for a placeholder's roadmap phase. Placeholder pages must not hardcode a phase string, and any status the Overview displays must name a phase that exists in the approved roadmap.
+- The Overview is navigation-first: never add counts, totals, charts, timelines or sample records, never fetch a business endpoint to populate it, and never show a status that could be mistaken for real operational state.
 - Placeholders must state that the feature is not implemented, name the owning phase, load no data and render no fabricated records, counts, charts or metrics. The overview is a navigational landing page, not an analytics dashboard.
 - Keep shell sub-components presentational and hook-free where practical; put routing, drawer and identity hooks only in the shell entry point so the shell stays render-testable.
 - A component that passes a component reference (for example MUI `component={NextLink}`) must declare `"use client"`. A Server Component cannot serialize a function into a Client Component prop, which fails at runtime with "Functions cannot be passed directly to Client Components". `tests/server-boundary.test.ts` enforces this for every `.tsx` under `app/` and `components/`; keep it passing rather than relying on review.
@@ -30,3 +32,13 @@
 
 - Every future screen needs accessible loading, empty, error, permission, keyboard, responsive and reduced-motion behavior.
 - Run `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, and `git diff --check` before completion.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

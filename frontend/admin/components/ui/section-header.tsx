@@ -6,7 +6,7 @@ interface SectionHeaderProps { title: string; titleId?: string; description?: st
 
 export function SectionHeader({ title, titleId, description, actions }: Readonly<SectionHeaderProps>) {
   return <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, justifyContent: "space-between", gap: 2 }}>
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}><Typography component="h2" variant="h2" id={titleId}>{title}</Typography>{description ? <Typography color="text.secondary">{description}</Typography> : null}</Box>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, maxWidth: "var(--content-width-lead)" }}><Typography component="h2" variant="h2" id={titleId}>{title}</Typography>{description ? <Typography color="text.secondary">{description}</Typography> : null}</Box>
     {actions ? <Box sx={{ display: "flex", flexDirection: "row", gap: 1 }}>{actions}</Box> : null}
   </Box>;
 }

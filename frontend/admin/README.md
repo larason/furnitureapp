@@ -50,7 +50,7 @@ The shell is the shared frame that every protected operational screen renders in
 | `components/layout/admin-user-menu.tsx` | Sanitized identity plus the single sign-out control (Clerk `signOut` → `/sign-in`). |
 | `components/layout/admin-navigation-list.tsx` | Presentational, permission-filtered navigation list with `aria-current` on the active destination. |
 | `components/layout/admin-route-placeholder.tsx` + `components/ui/feature-placeholder.tsx` | Explicit "not yet implemented" page body; loads no data and performs no operations. |
-| `components/layout/admin-overview-body.tsx` | Overview landing content: account panel, permission-filtered shortcuts and roadmap status. |
+| `components/layout/admin-overview-body.tsx` | Overview landing content: access summary, permission-filtered shortcut grid with per-destination roadmap status, and the not-yet-available list. |
 | `components/layout/shell-layout.ts` | Shell identifiers and token-derived geometry (`ADMIN_SIDEBAR_WIDTH`, drawer width, `main` id). |
 
 Only the shell entry point uses hooks. Sub-components are presentational so they can be rendered and asserted directly in `node:test`.
@@ -60,6 +60,8 @@ Only the shell entry point uses hooks. Sub-components are presentational so they
 `lib/navigation/admin-route-paths.ts` owns the route paths and the proxy matcher patterns; `lib/navigation/admin-navigation.ts` owns the single typed route registry: identifier, path, label, description, icon, group, exact permission and any approved role restriction. Per-group labels are `Workspace`, `Operations`, `Catalog` and `Administration`.
 
 Navigation is always produced by `resolveAdminNavigation(identity)`, which filters the registry against the Laravel-resolved effective permissions. An `ADMIN` role never reveals a link for a permission the identity does not hold, and missing permission data fails closed.
+
+Each entry also carries `plannedFor`, the roadmap phase that owns the destination's business workflow while it remains a placeholder. It is the single source for a phase number: `adminRouteStatus()` renders the Overview wording (`Not yet implemented — {phase}`), and `AdminRoutePlaceholder` reads the same field, so pages never hardcode one. `resolveOverviewNavigation(identity)` derives the Overview's shortcut groups by removing the Overview's own entry from the filtered registry.
 
 ### Verified permission mapping
 
@@ -77,14 +79,25 @@ Navigation is always produced by `resolveAdminNavigation(identity)`, which filte
 
 Every identifier above is an existing `backend/laravel/app/Support/PermissionName.php` value; `lib/auth/permission-names.ts` only centralizes the strings the shell references and grants nothing. Role restrictions mirror Laravel's `admin` middleware for those paths.
 
-**Staff management is deliberately absent.** `ADM-001`…`ADM-006` are routed but return `501`, and Phase 19.3 of the Group S roadmap gates the screen on backend completion. No navigation entry is published for an unimplemented endpoint.
+**Staff management is deliberately absent.** `ADM-001`…`ADM-006` are routed but return `501`, and Phase 19.13 of the Group S roadmap gates the screen on backend completion. No navigation entry is published for an unimplemented endpoint.
 
 Cart, checkout, payment, order and delivery administration are deferred while the release is request-only and must not be added to the navigation.
+
+## Overview page
+
+`app/(protected)/page.tsx` is a navigation-first landing page, not an analytics dashboard. Its content hierarchy is:
+
+1. `Welcome back, {operationalDisplayName(identity)}` (approved helper and fallback) plus one sentence describing the workspace.
+2. **Your access** — the sanitized name, email and local role label, and one sentence stating that Laravel resolves the identity per request while each protected page repeats its own requirement.
+3. **Operational areas** — the permission-filtered shortcut grid produced by `resolveOverviewNavigation(identity)`, grouped as Operations, Catalog and Administration. Each destination is a whole-card link (`Card` rendered through `next/link`) whose accessible name is its label, and shows a restrained text status `Not yet implemented — {phase}` while its workflow is a placeholder. The Overview never links to itself.
+4. **Not yet available** — the areas that have no navigation entry (staff management, blocked on the backend endpoints; account and settings; deferred commerce administration), and the statement that no operational summary is displayed because this release has no approved reporting contract.
+
+The page makes zero business-data API calls beyond the admission flow's `GET /api/v1/me`, renders no counts, totals, charts, timelines or sample records, and passes only the sanitized identity across the Server/Client Component boundary.
 
 ## Adding a navigation entry
 
 1. Add the path to `lib/navigation/admin-route-paths.ts` (this also covers the proxy's early redirect).
-2. Add the entry to `ADMIN_ROUTES` in `lib/navigation/admin-navigation.ts` with an existing Laravel permission and, only if the backend enforces one, an approved role restriction.
+2. Add the entry to `ADMIN_ROUTES` in `lib/navigation/admin-navigation.ts` with an existing Laravel permission, only if the backend enforces one an approved role restriction, and the roadmap phase that will implement the destination (`plannedFor`) while it is a placeholder.
 3. Create `app/(protected)/<path>/page.tsx` that calls `requireAdminRouteAccess(adminRoute(ADMIN_ROUTE_PATHS.<key>))`, returns `access.denial` when not granted, and otherwise renders through `PageContainer`/`PageHeader`.
 4. Add the route to the enabled list in `package.json`'s `test` script only if a new test file is added, and extend the completion record.
 
@@ -106,7 +119,7 @@ export default async function RequestsPage() {
 - Hiding a navigation link is not authorization. Every protected page repeats its own exact requirement server-side.
 - `lib/auth/route-guard.ts` holds the pure decision (`granted`, `forbidden`, `signed-out`, `session-invalid`, `unavailable`, `account-denied`); `lib/auth/server-route-guard.tsx` maps it to the existing denial states.
 - The shell owns the only `<main>` landmark; pages must not declare another.
-- Placeholders state the phase that will implement them and must not retrieve data or render fabricated records.
+- Placeholders state the phase that will implement them and must not retrieve data or render fabricated records. A placeholder page renders `<AdminRoutePlaceholder route={ROUTE} />`; its phase comes from the registry's `plannedFor`, never from a page-local string.
 
 ## Design and accessibility rules
 

@@ -142,7 +142,7 @@ test("the protected shell keeps a single main landmark and an accessible skip li
 });
 
 test("protected placeholders state their phase, render no records and make no requests", () => {
-  const markup = CLEAN_MARKUP(<AdminRoutePlaceholder route={adminRoute("/requests")} phase="Phase 19.10" />);
+  const markup = CLEAN_MARKUP(<AdminRoutePlaceholder route={adminRoute("/requests")} />);
   assert.match(markup, /<h1[^>]*>Made-to-order requests<\/h1>/);
   assert.match(markup, /Not yet implemented/);
   assert.match(markup, /Phase 19\.10/);
@@ -163,7 +163,8 @@ test("the overview shows only authorized areas and fabricates no operational met
   assert.equal(staffMarkup.includes('href="/audit-logs"'), false);
   assert.equal(staffMarkup.includes('href="/customers"'), false);
   const text = visibleText(staffMarkup);
-  assert.equal(/[$€£%]|\brevenue\b|\bsales\b|conversion|\bunread\b|pending count|last updated|\b\d+\s*(?:orders|requests|enquiries|customers|items)\b/i.test(text), false);
+  // `(?<![\d.])\s+` keeps a roadmap phase number such as "19.10" from reading as a fabricated count.
+  assert.equal(/[$€£%]|\brevenue\b|\bsales\b|conversion|\bunread\b|pending count|last updated|(?<![\d.])\b\d+\s+(?:orders|requests|enquiries|customers|items)\b/i.test(text), false);
 });
 
 test("the shell and overview surfaces contain no fabricated data, endpoint calls or notification counts", () => {

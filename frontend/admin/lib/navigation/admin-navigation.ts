@@ -34,6 +34,14 @@ export interface AdminRoute {
   readonly permission?: string;
   /** Approved role restriction mirroring the backend route middleware. */
   readonly role?: OperationalRole;
+  /** True while this destination's business workflow has not shipped. */
+  readonly placeholder?: boolean;
+  /**
+   * Roadmap phase owning this destination's workflow, only when the approved
+   * roadmap actually names one. A placeholder without it still states that the
+   * workflow is unimplemented, but never implies an approved milestone.
+   */
+  readonly plannedFor?: string;
 }
 
 export interface AdminNavigationGroup {
@@ -49,6 +57,8 @@ export interface AdminBreadcrumb {
 
 export const ADMIN_OVERVIEW_HREF = ADMIN_ROUTE_PATHS.overview;
 export const ADMIN_APPLICATION_NAME = "SL Furnitures Admin";
+
+const NOT_YET_IMPLEMENTED = "Not yet implemented";
 
 const ADMIN_NAVIGATION_GROUP_LABELS: Readonly<Record<AdminNavigationGroupId, string>> = {
   workspace: "Workspace",
@@ -76,6 +86,8 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: AssignmentOutlined,
     group: "operations",
     permission: AdminPermissionName.REQUESTS_VIEW,
+    placeholder: true,
+    plannedFor: "Phase 19.10",
   },
   {
     id: "enquiries",
@@ -85,6 +97,8 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: MailOutlineOutlined,
     group: "operations",
     permission: AdminPermissionName.ENQUIRIES_VIEW,
+    placeholder: true,
+    plannedFor: "Phase 19.11",
   },
   {
     id: "notifications",
@@ -94,6 +108,7 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: NotificationsNoneOutlined,
     group: "operations",
     permission: AdminPermissionName.NOTIFICATIONS_READ_OPERATIONAL,
+    placeholder: true,
   },
   {
     id: "products",
@@ -103,6 +118,8 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: Inventory2Outlined,
     group: "catalog",
     permission: AdminPermissionName.PRODUCTS_MANAGE,
+    placeholder: true,
+    plannedFor: "Phase 19.6",
   },
   {
     id: "categories",
@@ -112,6 +129,8 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: CategoryOutlined,
     group: "catalog",
     permission: AdminPermissionName.PRODUCTS_MANAGE,
+    placeholder: true,
+    plannedFor: "Phase 19.7",
   },
   {
     id: "inventory",
@@ -121,6 +140,8 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: WarehouseOutlined,
     group: "catalog",
     permission: AdminPermissionName.INVENTORY_VIEW,
+    placeholder: true,
+    plannedFor: "Phase 19.9",
   },
   {
     id: "customers",
@@ -131,6 +152,8 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     group: "administration",
     permission: AdminPermissionName.USERS_MANAGE_AUTHORIZED,
     role: "ADMIN",
+    placeholder: true,
+    plannedFor: "Phase 19.12",
   },
   {
     id: "audit-logs",
@@ -141,8 +164,23 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     group: "administration",
     permission: AdminPermissionName.AUDIT_VIEW,
     role: "ADMIN",
+    placeholder: true,
+    plannedFor: "Phase 19.14",
   },
 ];
+
+/**
+ * Restrained roadmap status for a destination whose workflow has not shipped.
+ * Names a phase only when the approved roadmap does, so no status can imply a
+ * milestone that was never approved.
+ */
+export function adminRouteStatus(route: AdminRoute): string | null {
+  if (!route.placeholder) {
+    return null;
+  }
+
+  return route.plannedFor ? `${NOT_YET_IMPLEMENTED} — ${route.plannedFor}` : NOT_YET_IMPLEMENTED;
+}
 
 function isRoutePermitted(route: AdminRoute, identity: OperationalIdentity): boolean {
   if (route.permission && !hasPermission(identity, route.permission)) return false;
@@ -171,6 +209,16 @@ export function resolveAdminNavigation(identity: OperationalIdentity): readonly 
     label: ADMIN_NAVIGATION_GROUP_LABELS[groupId],
     items: ADMIN_ROUTES.filter((route) => route.group === groupId && isRoutePermitted(route, identity)),
   })).filter((group) => group.items.length > 0);
+}
+
+/**
+ * The permission-filtered registry for the overview page, without the overview's
+ * own entry, so the landing page never links users to the page they are on.
+ */
+export function resolveOverviewNavigation(identity: OperationalIdentity): readonly AdminNavigationGroup[] {
+  return resolveAdminNavigation(identity)
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.href !== ADMIN_OVERVIEW_HREF) }))
+    .filter((group) => group.items.length > 0);
 }
 
 export function isNavigationHrefActive(href: string, pathname: string): boolean {
