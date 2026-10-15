@@ -115,9 +115,13 @@ test("missing or malformed permissions fail closed to an empty workspace explana
 });
 
 test("shell availability and unfinished workflows are stated distinctly", () => {
-  assert.match(visibleText(render(<AdminOverviewBody identity={STAFF} />)), /The authenticated shell and navigation are available/);
-  assert.match(visibleText(render(<AdminOverviewBody identity={STAFF} />)), /does not mean the workflow behind it is functional yet/);
-  assert.match(visibleText(render(<AdminOverviewBody identity={STAFF} />)), /Opening one shows its implementation status/);
+  const visible = visibleText(render(<AdminOverviewBody identity={STAFF} />));
+  assert.match(visible, /The authenticated shell and navigation are available/);
+  assert.match(visible, /Products is implemented and available in this build/);
+  assert.match(visible, /the areas listed below remain scheduled/);
+  assert.match(visible, /does not mean the workflow behind it is functional yet/);
+  assert.match(visible, /Opening one shows its implementation status/);
+  assert.match(visible, /navigation availability, not operational state/);
   assert.match(PAGE_SOURCE, /business workflows arrive in scheduled phases/);
 });
 
@@ -136,6 +140,10 @@ test("every displayed roadmap status matches the approved Group S roadmap", () =
       assert.equal(route.placeholder, undefined, "the overview itself is implemented and is not a placeholder.");
       assert.equal(route.plannedFor, undefined, "the overview itself is implemented and has no planned phase.");
       assert.equal(adminRouteStatus(route), null);
+      continue;
+    }
+    if (route.placeholder !== true) {
+      assert.equal(adminRouteStatus(route), null, `${route.href} is implemented and must not advertise a not-implemented status.`);
       continue;
     }
     assert.equal(route.placeholder, true, `${route.href} must be marked as a placeholder.`);

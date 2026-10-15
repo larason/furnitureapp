@@ -30,6 +30,17 @@
 - A component that passes a component reference (for example MUI `component={NextLink}`) must declare `"use client"`. A Server Component cannot serialize a function into a Client Component prop, which fails at runtime with "Functions cannot be passed directly to Client Components". `tests/server-boundary.test.ts` enforces this for every `.tsx` under `app/` and `components/`; keep it passing rather than relying on review.
 - New or changed navigation, route protection or placeholder behavior requires corresponding tests: permission mapping against the Laravel catalog, active-route matching, denial behavior and rendered placeholder content.
 
+## Product module
+
+- Expose only operations Laravel actually supports. The approved product contract is `GET /admin/products`, `GET /admin/products/{product}`, `POST /products` and `PATCH /products/{product}`; the write allow-list is `name`, `slug`, `description`, `product_type`, `price`, `category_id`, `is_active`, `is_published`. Never add a field, enum, filter, sort or endpoint the contract does not define.
+- Always read the operational resource (`/admin/products…`), never the public catalog resource, for staff views. Never reconstruct a product, price, state or variant from a partial response — an unreadable response is an error, not an empty list.
+- Keep product type (`IN_STOCK`/`MADE_TO_ORDER`), product state (`is_active`/`is_published`), availability and inventory distinct. `MADE_TO_ORDER` is a valid product type, never invalid because checkout is deferred.
+- Money is integer minor units; format with `Intl.NumberFormat` and never with floating-point arithmetic. Unknown enum values render a neutral fallback, never a confident state.
+- Variants are read-only while `POST /products/{product}/variants` returns `501`; never render an enabled variant-creation control or send a request known to fail. Product media upload stays out of scope until its owning phase.
+- Server actions live in `lib/catalog/product-actions.ts` and must repeat `requireAdminRouteAccess`'s exact permission first, because Server Functions are directly POST-reachable. Keep all authenticated calls on `lib/api/server-request.ts` + `lib/api/client.ts` (`no-store`); never put a bearer token in a Client Component prop or a shared cache.
+- Category options come from the public `GET /categories` collection only, because no operational category endpoint exists; preserve the current selection when a category is absent from the first page, and never hardcode a category id.
+- The list is a Server Component with a native `GET` filter form so filter state lives in the URL; do not fetch per keystroke, and never filter only the current server page for a global filter.
+
 - Every future screen needs accessible loading, empty, error, permission, keyboard, responsive and reduced-motion behavior.
 - Run `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, and `git diff --check` before completion.
 

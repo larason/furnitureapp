@@ -5,8 +5,6 @@ export class ApiConfigurationError extends Error {
 }
 
 export class ApiError extends Error {
-  readonly kind = "api" as const;
-
   constructor(readonly status: number, readonly errors: readonly ApiErrorItem[], readonly requestId?: string, readonly retryAfterSeconds?: number) {
     super("The API request failed.");
     this.name = "ApiError";

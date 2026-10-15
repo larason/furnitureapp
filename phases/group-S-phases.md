@@ -1,262 +1,448 @@
-# SL Furnitures — Phase 19.5: Dashboard Overview
+# SL Furnitures — Phase 19.6: Product Management
 
 **Group:** S — Admin Dashboard Frontend  
-**Phase:** 19.5 — Dashboard Overview  
+**Phase:** 19.6 — Product Management  
 **Application:** `frontend/admin`  
-**Framework:** Existing Next.js App Router + TypeScript + MUI  
+**Framework:** Existing Next.js App Router, TypeScript and MUI  
 **Authentication:** Existing Clerk integration  
-**Authorization:** Existing Laravel `/api/v1/me` admission and route guards  
+**Authorization:** Existing Laravel-backed identity and exact-permission route guards  
+**API:** Existing Laravel `/api/v1` contract and typed transport  
 **Design authority:** `frontend/design-system/tokens.css`  
 **Local origin:** `http://localhost:3001`  
-**Status:** APPROVED FOR IMPLEMENTATION
+**Status:** APPROVED FOR IMPLEMENTATION, subject to the contract and runtime checks below
 
 ## 1. Objective
 
-Implement the finished, production-quality Overview landing page for the SL Furnitures Admin Dashboard.
+Replace the existing protected Products placeholder with a usable product management module for SL Furnitures.
 
-Phase 19.4 established the dashboard shell and a preliminary Overview page. This phase must refine that page into a coherent, useful landing experience that helps each authorized staff member or administrator understand their workspace and navigate to relevant areas.
+Implement:
 
-The overview must be honest about the current implementation state. The application is being delivered in phases, and several linked destinations remain placeholders.
+1. A paginated product list using an approved Laravel operational product endpoint.
+2. Search, filters and sorting only where supported by the actual API contract.
+3. Product detail views.
+4. Product creation.
+5. Product editing.
+6. Product state and product-type presentation aligned with Laravel's actual domain model.
+7. Variant-aware product details using the variant information actually returned by the API.
+8. Form validation aligned with Laravel's request validation and error envelope.
+9. Correct loading, empty, error, forbidden, not-found and submission states.
+10. Automated tests, responsive/accessibility verification and a phase completion report.
 
-**This phase is a navigation-first overview, not an analytics dashboard.**
+This is a real operational feature, not a static mockup.
 
-Do not introduce a dashboard-summary API, aggregate business metrics from unrelated endpoints, or fabricate data to make the page look populated.
+**Laravel remains authoritative for product data, state, validation, permissions and persistence.** The frontend must not introduce a parallel product model or simulate successful mutations.
+
+Keep this phase focused on products. Do not implement the separate category-management, inventory-adjustment, request-management or enquiry-management workflows.
 
 ## 2. Mandatory audit before implementation
 
-Inspect the current repository and read:
+Before editing, inspect and read:
 
 - Root `AGENTS.md`.
 - `frontend/AGENTS.md`.
 - `frontend/admin/AGENTS.md`.
 - `frontend/admin/README.md`.
-- `frontend/admin/app/(protected)/page.tsx`.
-- `frontend/admin/app/(protected)/layout.tsx`.
-- `frontend/admin/components/layout/admin-overview-body.tsx`.
-- `frontend/admin/components/layout/admin-route-placeholder.tsx`.
+- `frontend/admin/app/(protected)/products/page.tsx`.
+- Existing protected layout and route guard implementation.
+- `frontend/admin/lib/api/client.ts` and related API types/errors.
 - `frontend/admin/lib/navigation/admin-navigation.ts`.
-- `frontend/admin/lib/navigation/admin-route-paths.ts`.
-- `frontend/admin/lib/auth/operational-identity.ts`.
-- `frontend/admin/lib/auth/server-operational-identity.ts`.
-- `frontend/admin/lib/auth/route-guard.ts`.
-- Existing shared UI components and the MUI theme.
+- Existing shared form, table, state and dialog components.
+- Existing admin MUI theme and design tokens.
 - `frontend/design-system/tokens.css`.
 - `frontend/design-system/ACCESSIBILITY.md`.
 - `frontend/design-system/COMPONENTS.md`.
+- `docs/api/api-contract.md`.
+- `docs/api/api-resources.md`.
+- `docs/api/api-conventions.md`.
+- `docs/api/openapi.yaml`.
+- Laravel's actual product routes, controllers, FormRequests, resources, policies, permission catalog, enums/state machines, product and variant models, and relevant tests.
 - `phases/phase-19.1-architecture-api-audit.md`.
 - `phases/phase-19.2-completion.md`.
 - `phases/phase-19.3-completion.md`.
 - `phases/phase-19.4-completion.md`.
+- `phases/phase-19.5-completion.md`.
 - `phases/group-S-phases.md`.
 
-Verify the actual filenames and exported APIs rather than assuming this list exactly matches the current tree.
+Verify filenames and actual exports before using them.
 
-Before editing, report a short implementation plan and summarize which existing overview elements will be retained, improved, or removed.
+### Pre-implementation report
 
-Do not begin by scaffolding another application, redesigning the shell, or replacing working authentication infrastructure.
+Before making changes, report:
 
-## 3. Scope
+1. The exact approved list/detail/create/update endpoints and their runtime behavior.
+2. The response envelope, product resource fields and pagination metadata.
+3. The actual product type and product state values.
+4. The exact create/update field rules and validation limits.
+5. The fields and relationships returned for variants.
+6. Whether category selection can be populated from an approved API.
+7. Which product operations the current permission catalog permits.
+8. Any unresolved API-contract/runtime discrepancy.
+9. The planned frontend architecture and tests.
 
-Implement the Overview at the existing protected `/` route.
+If an endpoint or required field has no approved contract, do not invent it. Identify the dependency and proceed only with independently usable, contract-supported parts of this phase.
 
-The page should provide:
+## 3. API operations and contract integrity
 
-1. A clear welcome heading and concise introduction.
-2. A well-organized workspace navigation area.
-3. Permission-filtered shortcuts generated from the existing navigation registry.
-4. A clear distinction between the dashboard shell being available and business modules still being implemented.
-5. Useful, truthful descriptions of accessible modules and their current implementation status.
-6. A restrained identity/access summary where it improves the experience.
-7. Responsive, accessible page composition consistent with the existing shell.
-8. Automated tests and updated phase documentation.
+The Phase 19.1 audit identifies the following existing operations. Verify each one against the current OpenAPI/API contract and actual Laravel implementation before use.
 
-Reuse the existing `AdminShell`, navigation registry, sanitized identity provider, route guards, `PageContainer`, `PageHeader`, `SectionHeader`, and other shared primitives wherever appropriate.
+| Operation | Expected endpoint | Required handling |
+|---|---|---|
+| Operational product list | `GET /api/v1/admin/products` | Use only after verifying the approved request and response contract. |
+| Operational product detail | `GET /api/v1/admin/products/{product}` | Use the API-returned resource and identifiers. |
+| Create product | `POST /api/v1/products` | Follow `StoreProductRequest` and its documented resource response. |
+| Update product | `PATCH /api/v1/products/{product}` | Follow `UpdateProductRequest` and its documented resource response. |
+| Upload product image | `POST /api/v1/products/{product}/images` | Implement only if it is supported by the approved contract and fits the existing product-management UX. |
+| Create product variant | `POST /api/v1/products/{product}/variants` | Reported as returning `501`; do not present it as a working operation unless the backend is verified to support it. |
 
-Do not create a second navigation configuration or another authorization layer.
+Do not confuse public catalog endpoints with operational product endpoints. Public resources may omit unpublished products, internal state or other fields needed by staff.
 
-## 4. Security and route protection
+### Contract discrepancy gate
 
-Preserve the Phase 19.3 and Phase 19.4 security boundaries.
+The Phase 19.1 audit noted that the operational list/detail endpoints exist at runtime while their status in the frozen API inventory is inconsistent.
 
-The Overview must remain behind the existing protected route layout and server-side admission mechanism.
+- Compare the actual endpoint definitions, OpenAPI schemas, resource serialization, authorization middleware and tests.
+- Do not silently rewrite `api-contract.md`, `api-resources.md`, `api-conventions.md` or `openapi.yaml`.
+- Do not introduce a new endpoint, field, enum, permission or response envelope.
+- If the existing documented schemas fully define the endpoint and the discrepancy is only a status-label mismatch, use the documented schema and report the discrepancy without editing the frozen contract.
+- If the endpoint shape or authorization contract is genuinely undocumented or contradictory, stop use of that endpoint, report the exact blocker and do not replace it with a guessed or public-only endpoint.
 
-- Keep the existing Overview route and URL.
-- Preserve the existing `requireAdminRouteAccess(adminRoute(...))` guard pattern, using the actual verified API.
-- Resolve identity and effective permissions through the established Laravel-backed admission flow.
-- Do not trust Clerk metadata as the authoritative business role.
-- Do not use a client-side role or `isAdmin` flag as authorization.
-- Do not allow ADMIN to bypass an exact permission requirement.
-- Do not expose bearer tokens, raw `/me` responses, internal permission payloads, or sensitive server-side details.
-- Do not weaken any existing denied, invalid-session, inactive-account, or unavailable-service state.
+The same rule applies to variant details, category options and product-state changes.
 
-Overview shortcuts are presentation and navigation only. The destination route must retain its own server-side authorization guard.
+## 4. Authorization and route protection
 
-Do not add public overview content containing operational identity information.
+Preserve the Phase 19.3 security boundary and Phase 19.4 shell.
 
-## 5. Design and content direction
+The existing Products route must retain its URL and registry entry.
 
-Use the existing MUI theme and canonical shared design tokens. Follow the current dashboard shell's visual language.
+At the top of the page, preserve the existing route-guard pattern:
 
-The Overview should feel like an intentional operational workspace, not a generic analytics template.
+`requireAdminRouteAccess(adminRoute(ADMIN_ROUTE_PATHS.products))`
 
-Prioritize:
-
-- Clear visual hierarchy.
-- Concise, meaningful copy.
-- Readable section headings.
-- Consistent spacing and alignment.
-- Restrained use of Paper/Card surfaces.
-- Clear distinction between navigation and status information.
-- Responsive layouts that do not rely on hover.
-- Accessible links and keyboard focus.
-- The existing brand and typography system.
-
-Avoid filling the page with excessive cards, decorative charts, gradients, meaningless icons, or redundant panels.
-
-Do not copy token values into a new file, introduce a second palette, or install another component library.
-
-## 6. Recommended Overview structure
-
-Use judgment and existing components to deliver the clearest page. The following content hierarchy is the target.
-
-### A. Welcome and context
-
-Show a clear heading such as “Welcome back, [approved display name]” using the existing sanitized identity helper.
-
-- Use the approved fallback if the name is absent.
-- Never invent a name, email, role, or profile image.
-- Provide a short explanation of the dashboard's purpose.
-- Do not make claims that request handling, enquiry handling, catalog editing, or other business workflows are already available when their routes remain placeholders.
-
-Keep the introduction short and useful.
-
-### B. Workspace navigation
-
-Create a clean, easy-to-scan workspace section using the existing typed navigation registry.
-
-It may group accessible destinations according to the existing navigation groups:
-
-- Operations.
-- Catalog.
-- Administration.
-
-Include Overview only if doing so improves navigation rather than linking users redundantly to their current page.
-
-Each destination must obtain its label, description, path, icon, permission requirement, role restriction, and availability information from the existing approved configuration or a small, clearly defined shared metadata source.
+Use the exact verified project API and keep the guard as the first page operation, before rendering protected product content or performing data access.
 
 Requirements:
 
-- Reuse the existing permission-filtering logic.
-- Show only destinations allowed by the Laravel-resolved effective permissions and existing route policy.
-- Do not reproduce permission checks in a separate array.
-- Do not invent new permissions.
-- Do not reveal restricted destinations as shortcuts to users who cannot access them.
-- Ensure each shortcut points to the correct existing route.
-- Make the entire interactive area accessible if card-style links are used.
-- Preserve semantic link behavior and normal browser navigation.
+- Keep the Products page behind the existing protected layout.
+- Continue using Laravel-resolved identity and effective permissions.
+- Do not trust Clerk metadata, client-supplied roles or a client-only `isAdmin` flag.
+- Do not allow ADMIN to bypass an exact permission requirement.
+- Do not create new permission identifiers.
+- Do not change Laravel authorization to accommodate the frontend.
+- Do not weaken denied, inactive-account, invalid-session or API-unavailable states.
+- Keep tokens server-side and use the existing request-scoped token retrieval.
+- Never serialize a bearer token, raw `/me` response or private authorization payload into a Client Component.
+- Preserve private/no-store behavior for authenticated API requests.
 
-The overview must remain usable for a STAFF member with a limited permission set. Do not assume all staff members have the same capabilities or that every ADMIN has every permission.
+Laravel's permission catalog defines both `products.view` and `products.manage` (`backend/laravel/app/Support/PermissionName.php`), and both are granted to STAFF and ADMIN. That catalog fact is separate from this route's approved requirement: the Products route keeps the existing registry's verified requirement, `products.manage`. The presence of `products.view` does not grant access to this admin route and must not be substituted for `products.manage`; **do not invent a permission or grant access through a frontend-only rule**.
 
-### C. Accurate implementation status
+The operational read endpoints (`GET /admin/products`, `GET /admin/products/{product}`) accept `products.view` or `products.manage`, while catalog writes require `products.manage`. The frontend must use the exact permission the registry requires, `products.manage`, and leave authorization to Laravel. Any change to this route's required permission requires a separately approved frontend decision, not a local rule.
 
-The current application contains real dashboard navigation and protected route placeholders, but those placeholders do not perform business operations.
+## 5. Product list
 
-Make this distinction explicit.
+Replace the Products placeholder with a real product index page.
 
-Use concise wording to communicate that:
+### Page structure
 
-- The authenticated dashboard shell and navigation are available.
-- Business workflows are being implemented in scheduled phases.
-- A link to a section does not mean that its business workflow is functional.
-- No live operational summary is displayed because there is no approved dashboard-summary contract.
+Use the existing shell and shared components:
 
-Use the actual roadmap to determine the phase or status of a feature. Do not hardcode a phase number without verifying it.
+- `PageContainer`.
+- `PageHeader`.
+- Existing table, pagination, field, button and state components where suitable.
+- Existing theme and semantic design tokens.
 
-Where useful, show a neutral status such as “Planned” or “Not yet implemented.” Avoid status labels that could be mistaken for real operational state.
+The page should provide:
 
-Do not turn every status into a large colored badge. Use restrained text or a subtle semantic status treatment.
+- A clear Products heading and short description.
+- A visible Create product action for users who pass the existing route guard.
+- A search field if supported by the operational list contract.
+- Filters only for supported server-side fields.
+- A product table or responsive list.
+- Server-provided pagination.
+- A clear way to open product details and editing.
 
-Do not display an “available now” badge on a business module whose page is still a placeholder.
+Do not make the page resemble a generic analytics dashboard. Avoid excessive cards and decorative metrics.
 
-### D. Identity/access information
+### Product rows
 
-Review the existing “Your access” panel.
+Display only fields present in the approved operational product resource and appropriate for the authorized operator.
 
-Retain it only in a form that provides real value and does not duplicate the account menu unnecessarily.
+Useful fields may include product name, image, product type, category, price, product state, variant summary and updated time—but verify the exact resource before selecting columns.
 
-If included, use sanitized, approved identity fields and the established local role label. Do not display the raw permission list or any token.
+Rules:
 
-Keep the explanation of Laravel's authorization boundary concise. Avoid making the Overview a technical documentation page.
+- Never fabricate a product name, identifier, price, status, category or variant count.
+- Do not derive a product's state from whether a value happens to be present.
+- Do not confuse product type with product state.
+- Do not display inventory quantities from a public catalog resource or infer stock from product availability.
+- Use API-returned identifiers for actions and API-returned values for display.
+- Use semantic links or buttons with accessible names.
+- Provide appropriate truncation and wrapping for long product names.
+- Keep columns usable on mobile; allow a responsive row/card layout if the shared table cannot fit.
+- Do not hide important information solely behind hover.
 
-## 7. No fabricated analytics or business data
+### Search, filtering and sorting
 
-There is no approved aggregate dashboard endpoint.
+Use only parameters documented and implemented by the operational product-list endpoint.
 
-Therefore, do not add:
+- Use the API's exact parameter names and allowed values.
+- Do not invent aliases, filter semantics or sort fields.
+- Preserve pagination and filter state consistently when navigating between pages.
+- Avoid client-side filtering of only the current server page when the user expects a global filter.
+- Debounce search only if needed, with cleanup and no stale response overwriting newer results.
+- Cancel or ignore obsolete requests where appropriate.
+- Do not trigger a new request for every keystroke without an intentional interaction design.
+- If a filter is not supported by the operational endpoint, omit it and record the limitation.
 
-- Revenue or sales totals.
-- Order counts or order status totals.
-- Conversion rates.
-- Customer totals.
-- Inventory quantities or low-stock counts.
-- Pending-request or enquiry counts.
-- Unread-notification counts.
-- Recent activity timelines.
-- Charts, trends, or comparisons.
-- “Today,” “this week,” or other time-based summaries that imply real data.
-- Mock records or sample operational data presented as live.
-- Placeholder numeric values such as `0`, `—`, or `N/A` arranged to resemble real KPI cards.
+Use the API's pagination metadata, not locally estimated totals.
 
-Do not fetch multiple unrelated endpoints and aggregate their responses in the browser or server to simulate a dashboard API.
+## 6. Product detail and variant-aware presentation
 
-Do not add a new endpoint, database migration, backend query, permission, or API contract change.
+Create a detail route consistent with the existing admin route conventions and route guard utilities. Use the stable product identifier expected by Laravel. Do not derive an ID from a slug or create a new identifier format.
 
-Do not create a Reverb connection, notification subscription, or notification polling loop.
+The detail page should display the authoritative product resource and provide an Edit action.
 
-The Overview should make **zero additional business-data API calls**. The existing protected admission flow's `/api/v1/me` request is expected and must remain intact.
+### Product information
 
-If a genuine operational summary is considered necessary, document it as a future, separately approved API/contract decision. Do not implement it in Phase 19.5.
+Show the approved fields available from the operational resource, which may include:
 
-## 8. API, caching, and rendering boundaries
+- Name and description.
+- Product type.
+- Category.
+- Product state.
+- Price and currency.
+- Public slug, if returned and approved for operator display.
+- Product images, if returned.
+- Created/updated timestamps, if returned.
+- Existing variant information, if returned by the approved API.
 
-Keep the Overview primarily server-rendered wherever practical.
+Use appropriate loading, error and not-found handling. A failed request must not leave stale details from a previously viewed product visible.
 
-- Reuse the existing server-side identity and permission data already available through the established architecture.
-- Do not add client-side data fetching for static roadmap information.
-- Do not add new route handlers or proxy endpoints.
-- Do not serialize a Clerk bearer token across the Server/Client Component boundary.
-- Keep client components limited to genuine interaction.
-- Do not pass non-serializable function props from a Server Component into a Client Component.
-- Follow the Phase 19.4 regression lesson regarding `component={NextLink}` and MUI components across the React Server Component boundary.
-- Preserve private/no-store behavior for authenticated requests.
-- Do not introduce shared caches containing authenticated identity or permission-specific content.
+### Variant-aware details
 
-If the page needs a client-side child, keep the boundary small and pass only serializable, approved presentation data.
+The detail view must accurately represent product variants when the approved resource provides them.
 
-## 9. Navigation and accessibility
+- Inspect the real `ProductVariant` schema, relationships and resource serialization.
+- Show variant attributes and values only when returned by the API.
+- Use authoritative variant IDs and default-variant indicators when present.
+- Display variant-specific prices, SKUs, dimensions, materials or availability only if the resource actually contains those fields.
+- Distinguish product-level fields from variant-level fields.
+- Do not derive variants from product text, names, product type or images.
+- Do not invent a default variant when none is returned.
+- Do not assume every product must have multiple variants.
+- If variants are not returned by the approved detail resource, show a neutral explanation that variant information is not available through the current API rather than fabricating an empty operational state.
 
-Follow `frontend/design-system/ACCESSIBILITY.md` and existing admin shell conventions.
+**Variant creation is not part of the working mutation scope while `CAT-010` returns `501`.** Do not submit requests that are known to fail. Do not render an enabled Add variant button that promises a working operation. If useful, show a neutral disabled/not-yet-available explanation and record the backend dependency.
 
-At minimum:
+Do not implement variant editing or deletion unless the audit finds an existing approved and operational endpoint for that exact operation.
 
-- Use logical heading levels.
-- Use semantic links for navigation.
-- Provide accessible names for icon-only controls.
-- Maintain visible keyboard focus.
-- Do not communicate implementation status through color alone.
-- Ensure link targets and labels make sense when read by assistive technology.
-- Avoid nested interactive elements.
-- Keep text contrast and focus treatment consistent with the design system.
-- Ensure the content works with keyboard-only navigation.
-- Preserve the single main landmark supplied by the dashboard shell.
-- Avoid adding a second page-level `main` element.
-- Respect reduced-motion preferences already implemented in the shell.
+## 7. Create product flow
 
-Do not introduce custom interaction behavior when a normal link or existing shared component is sufficient.
+Implement a real create form using the approved `POST /api/v1/products` contract.
 
-## 10. Responsive behavior
+### Form requirements
 
-Verify the Overview at minimum at:
+- Provide persistent labels and appropriate required/optional indicators.
+- Follow the existing form and validation component conventions.
+- Organize related fields into clear sections.
+- Provide field-level errors and an accessible submission-level error summary where appropriate.
+- Prevent duplicate submissions while a request is in flight.
+- Preserve user input after a validation failure.
+- Confirm navigation or display a clear success state only after the API confirms creation.
+- Use the created resource returned by Laravel rather than constructing a local product record.
+- Navigate to the new product's detail page only if the returned resource includes the required identifier and the route contract supports it.
+
+### Fields and options
+
+Derive the form fields from `StoreProductRequest`, the approved API schema and the current Laravel model.
+
+Do not assume every field is required, nullable or writable.
+
+Do not invent fields such as `status`, `is_active`, `sku`, `stock_quantity`, `sale_price`, `brand` or `variant_options` without verifying that they exist in the approved create contract.
+
+Use exact backend values for enums and product types. In particular, preserve the supported distinction between `IN_STOCK` and `MADE_TO_ORDER` if these are the actual values in the current contract.
+
+A made-to-order product is a valid first-class product type. Do not disable or label it as invalid merely because checkout is deferred.
+
+### Category selection
+
+Product creation may require a category reference. Inspect the actual product request and approved category-list contract.
+
+- Use authoritative category identifiers and labels returned by Laravel.
+- Do not hardcode category IDs or seed names into the form.
+- Do not create a second frontend category catalog.
+- Do not assume the public category endpoint exposes inactive or all operational categories.
+- If the available approved endpoint cannot provide valid options for a required category field, report the blocker and do not enable a form that sends guessed identifiers.
+
+Do not implement category creation or editing in this phase.
+
+### Submission behavior
+
+- Submit only contract-approved fields.
+- Use the existing typed Laravel transport.
+- Respect the documented JSON and multipart conventions.
+- Use the existing API envelope and error normalization.
+- Map `422` validation errors to the correct fields.
+- Handle `401`, `403`, `404`, `409`, `429` and server/network failures according to the project's established error contract.
+- Do not expose stack traces, SQL errors or raw backend internals.
+- Do not report success until the server returns a successful response.
+- Do not automatically retry a non-idempotent create request in a way that could create duplicate products.
+
+## 8. Edit product flow
+
+Implement editing through the approved `PATCH /api/v1/products/{product}` endpoint.
+
+### Loading existing data
+
+- Load the current product through the approved operational detail endpoint.
+- Populate the form from Laravel's returned resource.
+- Do not reuse the create form's arbitrary defaults as though they were saved values.
+- Clearly distinguish loading, not-found, forbidden and API-unavailable states.
+- Do not allow an edit submission until the current resource is loaded successfully.
+
+### Update behavior
+
+- Submit only editable fields supported by `UpdateProductRequest`.
+- Preserve fields the operator did not change.
+- Follow the API's partial-update semantics exactly.
+- Do not send fields simply because they exist on the displayed resource.
+- Avoid overwriting server-managed fields, timestamps, IDs, derived availability or variant relations.
+- Prevent duplicate submissions.
+- Preserve user edits after a `422` response.
+- Handle stale or conflicting updates according to the actual API contract.
+- After a successful update, render the returned authoritative resource or re-fetch it through the approved endpoint.
+- Do not show optimistic success that assumes the mutation succeeded.
+
+If the backend uses optimistic concurrency or conflict responses, follow the documented mechanism. Do not invent ETags, revision numbers or idempotency fields.
+
+## 9. Product states and type distinctions
+
+Before implementing state controls, determine the exact state model from Laravel's enums, policies, FormRequests, resource serialization and tests.
+
+The UI must distinguish the following concepts where they exist:
+
+1. **Product type:** for example `IN_STOCK` or `MADE_TO_ORDER`.
+2. **Product state:** the actual lifecycle or publication state defined by Laravel.
+3. **Availability:** a server-returned or documented derived/public availability concept.
+4. **Inventory:** the separately authorized inventory domain, owned by Phase 19.9.
+
+Do not treat these as interchangeable.
+
+### State display
+
+- Use exact API values and an explicit presentation mapping.
+- Use readable labels without changing the value sent to Laravel.
+- Do not infer that an unpublished, unavailable or soft-deleted product is in a particular state unless the API explicitly defines that meaning.
+- Do not render unknown future enum values as a successful known state; use a safe neutral fallback and preserve the raw value only where approved for operator diagnostics.
+
+### State changes
+
+If the existing update endpoint allows a state transition, expose it only when the transition is approved by the backend contract and state machine.
+
+- Use the exact accepted values.
+- Respect any role or permission rules enforced by Laravel.
+- Confirm destructive or high-impact transitions where the design system supports it.
+- Show server validation/conflict responses without pretending a transition occurred.
+- Refresh authoritative product state after a successful change.
+- Do not implement a new activate, deactivate, publish, archive or restore endpoint.
+- Do not invent transition rules in TypeScript.
+- Do not assume `PATCH` accepts every field in the resource.
+
+If state changes are not supported by the current API, display the actual state read-only and document the backend dependency.
+
+## 10. Product images
+
+Inspect the existing `CAT-009` image-upload contract and Laravel implementation.
+
+Only implement image upload if the existing contract provides the required behavior and it fits the product create/edit workflow without a new API contract.
+
+If implemented:
+
+- Use the approved multipart field name and validation constraints.
+- Follow the existing upload size, MIME-type and image-dimension rules.
+- Provide progress or pending feedback where supported by the current transport.
+- Prevent duplicate uploads.
+- Display useful validation errors for rejected files.
+- Do not store images as base64 in product JSON.
+- Do not construct public media URLs from guessed storage paths.
+- Render the image URL or media representation returned by Laravel.
+- Provide meaningful alt text for product images.
+- Do not claim image deletion, reordering or replacement is supported unless the API exposes those operations.
+
+If image upload is outside the current approved contract or cannot be verified, implement the other supported product operations and record the limitation.
+
+## 11. Frontend architecture
+
+Follow the existing admin application structure. Avoid building a second data layer.
+
+Use focused modules under the existing feature architecture, such as:
+
+- Product domain/resource types.
+- Product API query/mutation functions.
+- Product list page components.
+- Product detail components.
+- Create/edit form components.
+- Product state/type presentation helpers.
+- Tests.
+
+These are suggested responsibilities, not instructions to duplicate existing modules.
+
+Requirements:
+
+- Keep all authenticated API requests behind `frontend/admin/lib/api/client.ts` or its verified established equivalent.
+- Use the existing Clerk token retrieval and request-scoped identity behavior.
+- Preserve `cache: "no-store"` for authenticated business requests.
+- Do not place authenticated product responses in a shared cache.
+- Do not serialize bearer tokens into Client Components.
+- Use Server Components by default and small Client Component boundaries for actual form/table interaction.
+- Respect the established Next.js/MUI Server/Client Component constraints.
+- Do not add a new API proxy, route handler, backend endpoint or service abstraction framework.
+- Do not add dependencies unless an unavoidable, documented requirement exists.
+
+Use existing shared operational state components for loading, empty, error, forbidden and other states. Do not create a new state system just for products.
+
+## 12. Caching and request lifecycle
+
+Authenticated product data must remain private and session-scoped.
+
+- Do not use `force-cache`, shared `unstable_cache` or another cross-user cache for authenticated product resources.
+- Avoid stale data after create/edit mutations.
+- Re-fetch or update state from the authoritative mutation response.
+- Ensure request errors are not silently converted into empty product lists.
+- Keep empty results distinct from network errors and permission failures.
+- Prevent stale asynchronous responses from replacing a newer search/filter result.
+- Do not poll product endpoints.
+- Do not introduce realtime subscriptions.
+- Do not make repeated N+1 requests for variant or image data if the approved list/detail resources already include those relationships.
+- Do not add an aggregate endpoint or modify the frozen API contract.
+
+## 13. Accessibility and responsive design
+
+Use the canonical design system and follow `frontend/design-system/ACCESSIBILITY.md`.
+
+### Forms
+
+- Every input has a persistent label.
+- Required and optional fields are communicated clearly.
+- Errors are programmatically associated with their controls.
+- Focus moves appropriately after a failed submission where supported by existing conventions.
+- The form remains usable using only a keyboard.
+- Disabled/loading states are announced appropriately.
+- Destructive or state-changing controls have meaningful accessible names.
+
+### Product list and detail
+
+- Use semantic headings and landmarks.
+- Provide accessible names for row actions.
+- Ensure table headers are correctly associated with cells.
+- Do not rely on color alone for state or type.
+- Provide useful image alt text.
+- Ensure product name, type, state and actions remain understandable at narrow widths.
+- Preserve visible keyboard focus.
+- Respect reduced-motion preferences.
+
+### Responsive verification
+
+Test at:
 
 - 360 px.
 - 390 px.
@@ -264,73 +450,122 @@ Verify the Overview at minimum at:
 - 1024 px.
 - 1440 px.
 
-Check:
+Verify that:
 
-- Heading wrapping and truncation.
-- Shortcut layout at narrow widths.
-- Long navigation labels.
-- Long display names.
-- Adequate spacing and readable line lengths.
-- No horizontal overflow.
-- Usable touch targets.
-- Correct layout alongside the existing desktop sidebar.
-- Correct layout with the mobile navigation drawer.
-- Keyboard focus visibility.
-- No hydration errors or console errors caused by the Overview.
+- The list has no unintended horizontal page overflow.
+- Search, filters, pagination and Create product remain usable.
+- Forms reflow without clipped labels or buttons.
+- Long product names, descriptions and identifiers wrap safely.
+- Detail and variant sections remain readable.
+- Dialogs fit small viewports and remain keyboard-accessible.
+- The existing desktop sidebar/mobile drawer behavior remains unchanged.
 
-Reuse existing breakpoints and layout conventions. Do not redesign the global shell in this phase.
+Do not redesign the global shell or introduce a second breakpoint system.
 
-If a live authenticated browser session is available, test the actual `/` route, not only a synthetic component harness. If live STAFF credentials are unavailable, do not create or alter an identity to bypass the limitation; use appropriately scoped automated tests and document the missing live verification.
+## 14. Required automated tests
 
-## 11. Automated tests
+Use the project's existing testing framework.
 
-Use the existing test framework and conventions in `frontend/admin`.
+### Authorization
 
-Add or extend tests for the Overview.
+1. Products remains protected by the existing route guard.
+2. Missing or malformed permission data fails closed.
+3. ADMIN does not bypass the required permission.
+4. A user lacking the current catalog permission cannot load protected product content.
+5. The page does not call product APIs before authorization succeeds.
+6. The existing sign-out and admission behavior remains intact.
 
-### Content and correctness
+### Product list
 
-1. The Overview renders the approved welcome heading and fallback behavior.
-2. The page has a clear, logical heading hierarchy.
-3. Workspace shortcuts use the centralized navigation configuration.
-4. Only permission-eligible destinations appear.
-5. The page remains useful with a small permission set.
-6. Missing or malformed permissions fail closed.
-7. The page distinguishes dashboard-shell availability from unfinished business workflows.
-8. Any displayed phase/status metadata matches the approved roadmap.
-9. No fake analytics, sample records, fabricated counts, or unread badges appear.
-10. No new business API calls are introduced by the Overview.
+7. Loading state renders correctly.
+8. Empty results render as an empty state, not as an API error.
+9. API failure is distinct from empty results.
+10. Product rows use actual returned fields.
+11. Pagination uses server metadata.
+12. Search, filter and sort parameters match the approved contract.
+13. Stale responses do not overwrite newer results.
+14. No fabricated products or business metrics are rendered.
+15. List data is not shared across authenticated users.
 
-### Authorization and identity
+### Detail and variants
 
-11. The Overview remains protected by the existing admission boundary.
-12. Unauthorized users cannot access private Overview content.
-13. ADMIN does not receive a permission bypass.
-14. The page displays only approved, sanitized identity information.
-15. No Clerk token or raw internal API response is rendered.
+16. Detail data uses the authoritative returned resource.
+17. Not-found, forbidden and unavailable states are distinct.
+18. Existing variants display only when the API returns them.
+19. Product-level and variant-level data remain distinct.
+20. Unknown state values render safely.
+21. No fabricated variant attributes or counts appear.
+22. Variant creation is not presented as functional while CAT-010 returns `501`.
 
-### Navigation and rendering
+### Create form
 
-16. Shortcuts point to the correct existing routes.
-17. Shortcut destinations retain their own route guards.
-18. Active navigation behavior remains correct.
-19. The page preserves the shell's single `main` landmark.
-20. Server/Client Component boundaries remain valid.
-21. No hydration or serialization regression is introduced.
+23. Required fields and options match the approved contract.
+24. Category options use API-returned identifiers.
+25. Client validation does not replace Laravel validation.
+26. `422` errors map to appropriate fields.
+27. Submission prevents duplicate requests.
+28. Successful navigation uses the returned product identifier.
+29. Network/server failure does not display false success.
+30. Made-to-order products remain a supported valid type where the API allows it.
 
-### Responsive and accessibility behavior
+### Edit form and states
 
-22. Shortcut layouts remain usable at the required viewport sizes.
-23. Long labels and names do not cause horizontal overflow.
-24. Links have meaningful accessible names.
-25. Keyboard focus is visible.
-26. No nested interactive elements are introduced.
+31. Existing values are loaded from the API.
+32. Edit cannot submit before the resource is loaded.
+33. Only approved writable fields are submitted.
+34. Unchanged values are not unintentionally overwritten.
+35. State transitions follow the approved API rules.
+36. Conflicts and validation failures preserve the user's work.
+37. Successful edits refresh the authoritative state.
+38. No unsupported state mutation endpoint is called.
 
-Test through the project's existing tools. Do not add a large test dependency solely for this page.
+### Security and architecture
 
-## 12. Quality gates
+39. No bearer token appears in HTML or Client Component props.
+40. Authenticated requests use the existing private/no-store transport.
+41. No unapproved endpoint, permission, enum or request field is introduced.
+42. No public-only catalog resource is substituted for an operational resource.
+43. No additional category, inventory or analytics workflow is created.
+44. No unrelated API contract, database or customer frontend changes occur.
 
-Run from `frontend/admin` using the repository's established package manager:
+### Accessibility and responsive behavior
+
+45. Form labels and validation errors are accessible.
+46. Table actions have meaningful names.
+47. Keyboard focus remains visible.
+48. Responsive layouts work at the required widths.
+49. No nested interactive elements or hydration regressions are introduced.
+50. Reduced-motion behavior follows the established design system.
+
+Use representative mocked responses only inside tests. Never present test fixtures as live application data.
+
+## 15. Live verification
+
+If the Laravel API and admin app are running, test the actual protected routes using an existing authorized development account.
+
+Verify:
+
+- Products list loads from the real operational endpoint.
+- Pagination/filtering, where supported, reflects the server response.
+- Product details load correctly.
+- Create and edit succeed only when Laravel accepts the request.
+- Invalid fields display the actual server validation response.
+- Forbidden access remains denied.
+- Variant details accurately reflect the actual resource.
+- No request to a known `501` variant mutation endpoint occurs.
+- The app remains functional after a failed request.
+- No sensitive token or private response is exposed in the browser.
+- The browser console and network log contain no unexpected errors or calls.
+
+Do not invent product records in a production database. If a test product is needed, use an explicitly approved disposable test environment or an existing authorized test fixture.
+
+If no authorized test product or safe disposable environment is available, do not mutate real catalog data just to claim a live pass. Report the missing verification honestly.
+
+Do not create a staff identity manually or bypass Laravel admission to make a test pass.
+
+## 16. Quality gates
+
+Run from `frontend/admin` with the repository's established package manager:
 
 ```bash
 npm run lint
@@ -345,79 +580,87 @@ Also run:
 git diff --check
 ```
 
-Re-run the relevant Phase 19.3 and Phase 19.4 authorization, navigation, and Server/Client Component boundary tests.
+Run the relevant regression suites from Phases 19.3–19.5, especially:
 
-Verify the production build and protected route behavior. If the app is running locally, test the actual Overview page at `http://localhost:3001/`.
+- Admission and route guards.
+- Navigation/permission filtering.
+- Server/Client Component boundaries.
+- Overview integrity.
+- Shared operational states.
 
-Do not report a check as passed unless it actually ran and passed. Separate automated tests, browser checks, and unavailable live identity tests in the final report.
+If backend code must be changed because the existing endpoint does not satisfy its approved contract, do not silently expand this frontend phase. Record the exact blocker and request owner approval for a separate backend/contract phase.
 
-## 13. Documentation and completion report
+Do not report a command as passed unless it actually ran and passed.
 
-Update `frontend/admin/README.md` or `frontend/admin/AGENTS.md` only where the new Overview behavior creates a meaningful documentation change.
+## 17. Documentation and completion report
+
+Update `frontend/admin/README.md` and/or `frontend/admin/AGENTS.md` only where needed to explain the real product feature architecture and its API/permission boundaries.
 
 Create:
 
-`phases/phase-19.5-completion.md`
+`phases/phase-19.6-completion.md`
 
 Include:
 
 1. Phase status: PASS / PARTIAL / FAIL.
 2. Files changed.
-3. Overview layout and content hierarchy.
-4. Navigation registry and permission-filtering reuse.
-5. Implementation-status presentation and roadmap source.
-6. Identity display and authorization-boundary preservation.
-7. Confirmation that no aggregate API or additional business-data request was introduced.
-8. Confirmation that no fabricated analytics or operational records are shown.
-9. Accessibility and responsive test results.
-10. Authentication and route-guard regression results.
-11. Lint, typecheck, test, build, and diff-check results.
-12. Live browser verification and any unavailable identity tests.
-13. Known limitations.
-14. Handoff to Phase 19.6.
+3. Approved endpoints used and their verified contract shapes.
+4. Product list, pagination, search and filters implemented.
+5. Create/edit fields and exact validation behavior.
+6. Product type and state handling.
+7. Variant detail behavior and CAT-010 status.
+8. Image upload status, if in scope.
+9. Category-option source and any limitations.
+10. Authorization and route-guard verification.
+11. Loading, empty, error, forbidden and not-found behavior.
+12. Accessibility and responsive test results.
+13. Live browser/API verification performed.
+14. Lint, typecheck, test, build and diff-check results.
+15. Any contract/runtime discrepancies and unresolved blockers.
+16. Explicit confirmation that no fake products or unsupported operations were introduced.
+17. Handoff to Phase 19.7.
 
-Do not rewrite previous completion reports or retroactively change their status.
+Do not rewrite prior completion reports or change the status of completed phases.
 
-## 14. Explicit exclusions
+## 18. Explicit exclusions
 
 Do not implement:
 
-- Dashboard analytics or KPI cards.
-- A dashboard-summary API.
-- Made-to-order request management.
-- Enquiry management.
-- Product or category CRUD.
-- Inventory operations.
+- Category CRUD or category state management.
+- Inventory quantities or inventory adjustments.
+- Request or enquiry management.
+- Order, checkout, payment or delivery workflows.
 - Customer or staff management.
-- Audit-log viewing.
-- A functional notification inbox.
-- Reverb subscriptions or polling.
-- New roles or permissions.
-- New Laravel endpoints or database migrations.
+- Audit-log workflows.
+- Functional notification inbox or Reverb subscription.
+- Dashboard analytics.
+- Variant creation while CAT-010 is unavailable.
+- Variant editing/deletion without an approved working endpoint.
+- New API endpoints, permissions, roles or request/response fields.
+- Database migrations.
 - Changes to the frozen API contract.
-- Checkout, orders, payments, or delivery workflows.
-- Production deployment configuration.
-- Unrelated dependency upgrades or redesign of the global dashboard shell.
+- Frontend-only product-state transitions.
+- Fake data presented as real.
+- Unrelated dependency upgrades or global shell redesign.
 
-Those responsibilities remain in their approved phases.
+## 19. Definition of Done
 
-## 15. Definition of Done
+Phase 19.6 is **PASS** when:
 
-Phase 19.5 is **PASS** when:
+1. The Products placeholder is replaced by a real Laravel-backed product-management module.
+2. The operational product list and detail endpoints are verified against approved contracts.
+3. Product creation and editing use only approved request fields.
+4. Product types and lifecycle states reflect Laravel's authoritative values.
+5. Validation errors and API failure states are handled correctly.
+6. Variant details reflect actual API data, with unsupported mutations clearly unavailable.
+7. Authorization remains Laravel-backed and fail-closed.
+8. Authenticated data uses the established private/no-store transport.
+9. The UI is accessible and responsive.
+10. Automated tests and quality gates pass.
+11. Live verification is accurately reported.
+12. No fake products, unsupported API calls, new permissions or contract changes are introduced.
+13. The completion report clearly records any unresolved backend limitations.
 
-1. The Overview is polished and consistent with the existing dashboard shell.
-2. Its content is truthful and useful without operational metrics.
-3. Shortcuts are generated from the existing navigation registry and permission-filtering logic.
-4. Users see only destinations permitted by the established policy.
-5. Business placeholders are clearly distinguished from functional modules.
-6. Identity display remains sanitized and private.
-7. The existing Laravel-backed admission and route guards remain intact.
-8. No new business-data API calls, aggregate endpoint, or fabricated data are introduced.
-9. The page is accessible and responsive at the required viewport widths.
-10. Automated tests and all required quality gates pass.
-11. Phase 19.3 and 19.4 security and rendering regressions are not introduced.
-12. The completion report accurately documents results and limitations.
+If product listing, category selection or another core operation is blocked by an unresolved contract issue, do not work around it with guessed fields or public data. Report **PARTIAL** with the exact blocker and leave the affected operation disabled.
 
-If a requirement cannot be verified, report it honestly as a limitation. Do not weaken authorization, create fake data, or claim success without evidence.
-
-**Implement Phase 19.5 now. Do not proceed to Phase 19.6 without owner approval.**
+**Implement Phase 19.6 now. Do not proceed to Phase 19.7 without owner approval.**

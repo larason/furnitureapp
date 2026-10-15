@@ -1220,7 +1220,7 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
    Product lists, create/edit flows, product states, variant-aware details, and validations aligned with the Laravel API.
 ### 19.7 — Categories Management
    Create/edit category workflows, hierarchical category structure, and safe deletion/visibility rules.
-### 19.8 — Product Media Management
+### 19.8 — Product Media Management - cloudflare R2
    Images, uploads, ordering, alt text, previews, and deletion using the existing secure backend media contracts.
 ### 19.9 — Inventory Management
    Build inventory screens only for currently supported capabilities. Preserve request-only launch restrictions.

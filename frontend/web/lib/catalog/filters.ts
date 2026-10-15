@@ -16,10 +16,10 @@ export type ProductCollectionQuery = Readonly<{
 
 export type ProductCollectionSearchParams = Readonly<Record<string, string | readonly string[] | undefined>>;
 
-export const PRODUCT_TYPES = ["IN_STOCK", "MADE_TO_ORDER"] as const;
-export const AVAILABILITY_VALUES = ["available", "unavailable"] as const;
-export const SORT_FIELDS = ["created_at", "price", "name"] as const;
-export const SORT_DIRECTIONS = ["asc", "desc"] as const;
+const PRODUCT_TYPES = ["IN_STOCK", "MADE_TO_ORDER"] as const;
+const AVAILABILITY_VALUES = ["available", "unavailable"] as const;
+const SORT_FIELDS = ["created_at", "price", "name"] as const;
+const SORT_DIRECTIONS = ["asc", "desc"] as const;
 
 export const SEARCH_QUERY_MAX_LENGTH = 100;
 

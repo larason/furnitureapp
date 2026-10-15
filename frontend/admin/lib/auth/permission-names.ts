@@ -13,5 +13,3 @@ export const AdminPermissionName = {
   USERS_MANAGE_AUTHORIZED: "users.manage_authorized",
   AUDIT_VIEW: "audit.view",
 } as const;
-
-export type AdminPermissionName = (typeof AdminPermissionName)[keyof typeof AdminPermissionName];

@@ -1,0 +1,22 @@
+{
+  // Fallow config for this monorepo (frontend/admin, frontend/web, backend/laravel).
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Laravel's Vite build inputs are runtime roots declared in
+  // backend/laravel/vite.config.js. The laravel-vite-plugin is not installed in
+  // backend/laravel, so they must be seeded as entries explicitly.
+  "entry": [
+    "backend/laravel/resources/css/app.css",
+    "backend/laravel/resources/js/app.js"
+  ],
+  // Generated artifact derived from frontend/design-system/source, not authored code.
+  "ignorePatterns": [
+    "frontend/design-system/tailwind-v4.css"
+  ],
+  // Intentionally unreferenced for now: a Phase 19.2 UI primitive awaiting the
+  // phase that consumes it, and the documented server-only Laravel bridge that
+  // frontend/web/lib/auth/auth.test.ts asserts against.
+  "ignoreFindings": [
+    "frontend/admin/components/ui/confirm-dialog.tsx",
+    "frontend/web/lib/auth/laravel.ts"
+  ]
+}

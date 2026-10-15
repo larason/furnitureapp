@@ -118,8 +118,6 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: Inventory2Outlined,
     group: "catalog",
     permission: AdminPermissionName.PRODUCTS_MANAGE,
-    placeholder: true,
-    plannedFor: "Phase 19.6",
   },
   {
     id: "categories",

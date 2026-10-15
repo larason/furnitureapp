@@ -2,7 +2,6 @@ import { ApiConfigurationError, ApiError, ApiTransportError } from "@/lib/api/er
 import type { OperationalIdentity, OperationalRole } from "@/lib/auth/types";
 
 const OPERATIONAL_ROLES = new Set(["STAFF", "ADMIN"]);
-export type { OperationalIdentity, OperationalRole } from "@/lib/auth/types";
 
 export type AdmissionResult =
   | { kind: "admitted"; identity: OperationalIdentity }

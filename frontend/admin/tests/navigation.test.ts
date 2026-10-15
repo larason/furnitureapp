@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AdminPermissionName } from "../lib/auth/permission-names";
 import type { OperationalIdentity } from "../lib/auth/types";
@@ -153,7 +153,7 @@ test("breadcrumbs reflect the route hierarchy", () => {
   assert.deepEqual(buildBreadcrumbs(null), [{ label: "SL Furnitures Admin" }]);
 });
 
-test("every configured route has a protected page that repeats its requirement and loads no business data", () => {
+test("every configured route has a protected page that repeats its requirement and resolves its own route", () => {
   for (const route of ADMIN_ROUTES) {
     const pageFile = pageFileFor(route.href);
     assert.ok(existsSync(pageFile), `${route.href} has no protected page at ${pageFile}.`);
@@ -163,10 +163,37 @@ test("every configured route has a protected page that repeats its requirement a
     assert.equal(source.includes(`adminRoute(ADMIN_ROUTE_PATHS.${pathKey})`), true, `${route.href} must resolve its own configured route.`);
     assert.match(source, /requireAdminRouteAccess\(/, `${route.href} must repeat server-side authorization.`);
     assert.match(source, /if \(!access\.granted\) return access\.denial;/, `${route.href} must render the denial state when unauthorized.`);
+  }
+});
+
+test("a route without an implemented workflow still loads no business data", () => {
+  for (const route of ADMIN_ROUTES.filter((candidate) => candidate.placeholder === true)) {
+    const source = readFileSync(pageFileFor(route.href), "utf8");
     for (const forbidden of ["createAdminApiClient", "fetch(", "/api/v1", "axios"]) {
-      assert.equal(source.includes(forbidden), false, `${route.href} must not call business APIs in this phase (found ${forbidden}).`);
+      assert.equal(source.includes(forbidden), false, `${route.href} must not call business APIs while it is a placeholder (found ${forbidden}).`);
     }
   }
+});
+
+test("an implemented route performs data access only after authorization succeeds", () => {
+  for (const route of ADMIN_ROUTES.filter((candidate) => candidate.placeholder !== true && candidate.href !== ADMIN_OVERVIEW_HREF)) {
+    const source = readFileSync(pageFileFor(route.href), "utf8");
+    const body = source.split("\n").filter((line) => !line.trimStart().startsWith("import ")).join("\n");
+    assert.match(source, /requireAdminRouteAccess\(/, `${route.href} must keep the route guard.`);
+    const denialIndex = body.indexOf("if (!access.granted) return access.denial;");
+    assert.notEqual(denialIndex, -1, `${route.href} must render the denial state when unauthorized.`);
+    for (const access of ["attemptProductRead(", "fetchOperationalProductPage(", "fetchOperationalProduct(", "fetchCategoryOptions("]) {
+      const accessIndex = body.indexOf(access);
+      if (accessIndex === -1) continue;
+      assert.ok(denialIndex < accessIndex, `${route.href} must authorize before calling ${access}.`);
+    }
+  }
+});
+
+test("the products route uses the operational endpoint, never the public catalog resource", () => {
+  const source = readFileSync(join(PROTECTED_DIRECTORY, "products", "page.tsx"), "utf8");
+  assert.match(source, /fetchOperationalProductPage/);
+  assert.equal(/fetchPublicApi|requestPublicApi/.test(source), false, "the list must not be read through the public catalog resource.");
 });
 
 test("the request proxy pre-empts signed-out access to every protected route without deciding authorization", () => {
@@ -183,8 +210,10 @@ test("the request proxy pre-empts signed-out access to every protected route wit
 });
 
 test("every protected page belongs to a configured route", () => {
-  const configured = ADMIN_ROUTES.map((route) => pageFileFor(route.href));
+  const configured = new Set(ADMIN_ROUTES.map((route) => route.href));
   for (const pageFile of protectedPageFiles(PROTECTED_DIRECTORY)) {
-    assert.ok(configured.includes(pageFile), `${pageFile} is not a configured route page.`);
+    const directory = relative(PROTECTED_DIRECTORY, dirname(pageFile)).split(sep).join("/");
+    const topLevelHref = directory === "" ? ADMIN_OVERVIEW_HREF : `/${directory.split("/")[0]}`;
+    assert.ok(configured.has(topLevelHref), `${pageFile} does not belong to a configured route.`);
   }
 });

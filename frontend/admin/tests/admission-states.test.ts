@@ -25,3 +25,11 @@ test("the unavailable state discloses no internal enforcement detail", () => {
   assert.match(body, /Operational access unavailable/);
   assert.doesNotMatch(body, /\b401\b|\b403\b|bearer|clerk_token|session token/i);
 });
+
+test("the customer denial explains the account mismatch and prescribes signing back in", () => {
+  const body = componentBody("AccessDeniedState");
+  assert.match(body, /signed in to a customer account/);
+  assert.match(body, /replaces this session/);
+  assert.match(body, /Sign out and sign in/);
+  assert.doesNotMatch(body, /\b401\b|\b403\b|bearer|clerk_token|session token/i);
+});

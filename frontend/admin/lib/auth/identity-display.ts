@@ -2,9 +2,9 @@ import type { OperationalIdentity, OperationalRole } from "@/lib/auth/types";
 
 /** Approved display fallbacks for sanitized Laravel identity fields. */
 export const UNKNOWN_DISPLAY_NAME = "Operational user";
-export const UNKNOWN_EMAIL = "No email on file";
+const UNKNOWN_EMAIL = "No email on file";
 
-export const OPERATIONAL_ROLE_LABELS: Readonly<Record<OperationalRole, string>> = {
+const OPERATIONAL_ROLE_LABELS: Readonly<Record<OperationalRole, string>> = {
   STAFF: "Staff",
   ADMIN: "Administrator",
 };

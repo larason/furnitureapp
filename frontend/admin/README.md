@@ -21,7 +21,7 @@ Open `http://localhost:3001`. The port is explicit so the admin and customer app
 | `npm run start` | Start the production build on port 3001 |
 | `npm run lint` | Run Next.js ESLint rules |
 | `npm run typecheck` | Run strict TypeScript checking |
-| `npm run test` | Run transport, admission, navigation, route-guard, shell and primitive tests |
+| `npm run test` | Run transport, admission, navigation, route-guard, shell, primitive, overview and product tests |
 
 ## Authentication and admission
 
@@ -94,6 +94,42 @@ Cart, checkout, payment, order and delivery administration are deferred while th
 
 The page makes zero business-data API calls beyond the admission flow's `GET /api/v1/me`, renders no counts, totals, charts, timelines or sample records, and passes only the sanitized identity across the Server/Client Component boundary.
 
+## Products module (Phase 19.6)
+
+`/products` is the first implemented operational workflow. It is a real Laravel-backed module, not a placeholder, and it exposes only operations the backend actually supports.
+
+### Routes
+
+| Route | Page | Purpose |
+| --- | --- | --- |
+| `/products` | `app/(protected)/products/page.tsx` | Operational list: filters, table, server pagination. |
+| `/products/new` | `app/(protected)/products/new/page.tsx` | Create form. |
+| `/products/[product]` | `app/(protected)/products/[product]/page.tsx` | Read-only authoritative detail. |
+| `/products/[product]/edit` | `app/(protected)/products/[product]/edit/page.tsx` | Edit form. |
+
+`ADMIN_PRODUCT_PATHS` in `lib/navigation/admin-route-paths.ts` owns the nested paths. They are deliberately excluded from `ADMIN_PROTECTED_PATHS`/`ADMIN_PROTECTED_MATCHERS` and from the navigation registry: the `/products` entry is the only destination, and its derived `/products(.*)` matcher already covers the nested routes. Every product page repeats `requireAdminRouteAccess(adminRoute(ADMIN_ROUTE_PATHS.products))` as its first operation.
+
+### Contract and permission
+
+- List: `GET /api/v1/admin/products` — `search` (≤100), `category`, `product_type`, `is_active`, `is_published`, `availability`, `page`, `per_page` (≤100). Unknown query parameters are rejected by Laravel (`422`). There is **no sort parameter**; the API orders by `created_at` descending.
+- Detail: `GET /api/v1/admin/products/{product}` (encoded `prd_…` id or slug).
+- Create: `POST /api/v1/products`; update: `PATCH /api/v1/products/{product}`.
+- Allow-listed write fields only: `name`, `slug`, `description`, `product_type`, `price{amount,currency}`, `category_id`, `is_active`, `is_published`. Any other field is rejected. Money is integer minor units.
+- The permission is `products.manage` (the registry's verified requirement). The phase instructions state `products.view` does not exist; in fact `products.view` **is** present in `PermissionName` and held by STAFF/ADMIN, but it is not used here — kept on the approved existing rule.
+
+### Data flow
+
+- `lib/api/server-request.ts` obtains the Clerk session token per request and forwards it only as a bearer header; `lib/catalog/products-api.ts` performs every read/write through `lib/api/client.ts`, so authenticated requests are `no-store`.
+- `lib/catalog/product-actions.ts` holds the `"use server"` create/update actions. Server Functions are directly POST-reachable, so both repeat the exact permission before touching product data.
+- `lib/catalog/product-resource.ts` parses the API response defensively; `lib/catalog/product-presentation.ts` maps type/state/availability/stock to labels with a neutral fallback for unknown values; `lib/catalog/product-query.ts` owns the filter vocabulary, URL state and request query; `lib/catalog/product-form.ts` maps the form to the contract (partial updates send only changed fields).
+- The list filter is a native `GET` form, so filter state lives in the URL, the list stays a Server Component, and no request is issued per keystroke. Components that build table/column `render` functions or hold form state are Client Components.
+
+### Honest limitations
+
+- **Variants are read-only.** The detail resource returns `id`, `sku`, `name`, `price`, `availability` and `stock_indicator`. Variant creation is unavailable because `POST /api/v1/products/{product}/variants` returns `501`; no create control is rendered and no request is made.
+- **Product media is deferred to Phase 19.8.** The detail page reports the number of image records returned; upload, ordering and deletion are not implemented.
+- **Category options come from the public `GET /api/v1/categories?per_page=100`**, which exposes only active top-level categories. There is no operational category-list endpoint and no separate `categories.*` permission. If the first 100 do not cover the catalog, the form is limited to those options; the current selection is always preserved.
+
 ## Adding a navigation entry
 
 1. Add the path to `lib/navigation/admin-route-paths.ts` (this also covers the proxy's early redirect).
@@ -129,4 +165,4 @@ Shell accessibility expectations: a keyboard skip link to `#admin-main-content`,
 
 ## Phase exclusions
 
-This phase does not implement request, enquiry, catalog, inventory, notification, customer, staff or audit workflows; every operational destination is an explicit, permission-protected placeholder. It also does not add Reverb subscriptions, notification preferences, dashboard metric endpoints, charts, new Laravel routes, migrations, roles or permissions.
+Products (Phase 19.6) is implemented. The remaining operational destinations — requests, enquiries, notifications, categories, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement category CRUD, inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it adds no Reverb subscription, dashboard metric endpoint, chart, Laravel route, migration, role or permission.
