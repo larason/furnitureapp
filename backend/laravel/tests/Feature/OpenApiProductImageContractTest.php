@@ -77,14 +77,16 @@ class OpenApiProductImageContractTest extends TestCase
     {
         $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
 
+        $responses = $document['components']['responses'];
         $responseNames = ['Unauthorized', 'Forbidden', 'NotFound', 'PayloadTooLarge', 'ValidationError', 'RateLimited'];
         foreach ($responseNames as $name) {
-            $this->assertArrayHasKey($name, $document['components']['responses'], "Unresolved response reference {$name}");
+            $this->assertArrayHasKey($name, $responses, "Unresolved response reference {$name}");
         }
 
+        $parameters = $document['components']['parameters'];
         $parameterNames = ['ProductPath', 'ImagePath'];
         foreach ($parameterNames as $name) {
-            $this->assertArrayHasKey($name, $document['components']['parameters'], "Unresolved parameter reference {$name}");
+            $this->assertArrayHasKey($name, $parameters, "Unresolved parameter reference {$name}");
         }
 
         foreach (['ProductImage', 'ProductImageAltTextRequest', 'ProductImageOrderRequest'] as $name) {
@@ -108,8 +110,8 @@ class OpenApiProductImageContractTest extends TestCase
         $paths = $document['paths'];
         $this->assertArrayNotHasKey('requestBody', $paths['/products/{product}/images/{image}/primary']['post']);
         $this->assertArrayNotHasKey('requestBody', $paths['/products/{product}/images/{image}']['delete']);
-        $uploadProperties = $paths['/products/{product}/images']['post']['requestBody']['content']['multipart/form-data']['schema']['properties'];
-        $this->assertArrayNotHasKey('sort_order', $uploadProperties);
+        $uploadContent = $paths['/products/{product}/images']['post']['requestBody']['content'];
+        $this->assertArrayNotHasKey('sort_order', $uploadContent['multipart/form-data']['schema']['properties']);
 
         foreach ($paths as $path => $operations) {
             foreach (['post', 'patch', 'put'] as $method) {
