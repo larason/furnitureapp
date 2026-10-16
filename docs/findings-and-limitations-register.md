@@ -34,7 +34,7 @@ Nothing in this register has been staged or committed by the agent. The register
 
 ### F1 — Category hierarchy exists in the domain but is unreachable through the API
 
-**Status:** OPEN — expected to be resolved by an additive API v2 (see F1 recommendation).
+**Status:** OPEN — expected to be resolved by an additive API v2 (see F1 recommendation). **Blocking capability for Phase 19.7, which was closed PARTIAL-accepted on 2026-10-16 (owner decision 6); it does not block Phase 19.8A.**
 
 **Evidence (verified):**
 
@@ -226,11 +226,13 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 
 ### F9 — Media management is deferred to Phase 19.8
 
-**Status:** DEFERRED by roadmap.
+**Status:** PARTIALLY RESOLVED (2026-10-16) — Phase 19.8A delivered upload + preview only.
 
 **Evidence (verified):** The admin product detail reports only an image count; the category form and detail treat `image` as a URL field (`CategoryCreateRequest.image` is a `string|null` URL in `openapi.yaml:2336-2340`) with no upload control. Phase 19.8 ("Product Media Management - cloudflare R2") owns the real capability.
 
-**Recommendation:** No action. Do not add upload controls to either module before 19.8.
+**Update (2026-10-16):** Phase 19.8A implemented product image **upload and preview** (`POST /api/v1/products/{product}/images`, CAT-009) on the product detail screen, with the preview origin allow-listed from `CATALOG_MEDIA_BASE_URL`. Deletion, ordering, alt-text editing and setting the primary image remain **unimplemented and unoffered**, because no backend endpoint exists for any of them. Category media remains a plain `image` URL string with no upload.
+
+**Recommendation:** The residual work belongs to Phase 19.8B/19.8C as the owner defines them, and needs a backend media mutation contract first. Do not add controls for unimplemented media mutations.
 
 ---
 
@@ -345,7 +347,7 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 | ID | Finding | Recommendation | Owner | Blocking launch? |
 | --- | --- | --- | --- | --- |
 | F6 | "Two Clerk instances" — **withdrawn** | Do not build multi-instance verification | — | No (moot) |
-| F1 | Category hierarchy not in the API | Additive **v2** listing; never widen v1 | new API v2 phase | No |
+| F1 | Category hierarchy not in the API | Additive **v2** listing; never widen v1. **Phase 19.7 closed PARTIAL-accepted (2026-10-16)** on this gap | new API v2 phase | No |
 | F5 | Staff endpoints `501`; one usable account | **DECIDED (2026-10-16):** single-operator launch confirmed; orphan demo rows removed; backend remains 19.13 | 19.13 | No (decision taken) |
 | F4 | `CAT-003` omits `page`/`per_page` | **DONE (2026-10-16)** — additive doc fix applied | — | No |
 | F7 | JIT always assigns CUSTOMER | Document "grant role first, sign in second" | 19.13 + ops | No |
@@ -354,7 +356,7 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 | F11 | Authenticated render never executed | Operator walks 8 routes once (accepted 2026-10-16) | operator | No |
 | F10 | Roadmap jargon deferred | One coherent pass after Group S | end of Group S | No |
 | F8 | Variants `501` | Keep read-only | — | No |
-| F9 | Media deferred to 19.8 | No upload controls yet | 19.8 | No |
+| F9 | Media deferred to 19.8 | **Upload + preview DONE (2026-10-16, 19.8A)**; deletion/ordering/alt-text/primary still need a backend contract | 19.8B/19.8C | No |
 | F12 | Fallow metrics unverified | Re-run Fallow before gating on it | next quality phase | No |
 | F13 | Unreferenced `confirm-dialog.tsx` | Consume or remove | 19.13 | No |
 | F14 | Nav header/drawer/footer hardcode the taxonomy | Retire the fixture; read the catalog (`docs/plan-catalog-backed-navigation.md`); **set = API-supplied (owner, 2026-10-16)** | Group S closure | No |
@@ -390,6 +392,10 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 5. **Authenticated smoke test (F11).** *Requested:* the owner will test the implemented product and category routes with the authorised admin account and safe test data.
    **Owner decision:** Accepted. F11 stays OPEN until the result is written back here; the Phase 19.6/19.7 records continue to report live behaviour as unverified until then.
 
+6. **Phase 19.7 closure (F1/F4/F11).** *Requested:* confirm whether Phase 19.7 can be closed given its PARTIAL verdict.
+   **Owner decision:** Close **Phase 19.7 as PARTIAL — accepted (2026-10-16)**; do **not** relabel it PASS, because the verdict rests on a missing backend capability, not on the delivered work. The blocking gap is **F1** — there is no operational/admin category listing endpoint, so `/categories` can only manage the active top-level categories returned by the public `GET /api/v1/categories`. Resolving it requires an approved `/api/v2/categories` contract phase and must never be done by widening the frozen `/api/v1/categories`. **F4** is CLOSED (the additive `CAT-003` documentation fix was applied); **F11** (authenticated live render) remains OPEN. F5 is an accepted operational fact, not a blocker. Closure unblocks Phase 19.8A.
+   **Record:** `phases/phase-19.7-completion.md` → Status → "Closure (2026-10-16)".
+
 ### Carried over from the decisions above
 
 - **Seeded demand rows removed; genuinely anonymous submissions preserved.** Deleting `user 1`/`user 2` triggers the schema's `SET NULL` on `enquiries.user_id`/`furniture_requests.user_id`, and the public API accepts no-login submissions, so `user_id` (and even `carts.user_id`) is nullable by design. The leftovers were therefore a **mix**, not one disposable batch.
@@ -402,7 +408,7 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 ## Accepted limitations pending their owning phases
 
 - F8: Variant creation remains unavailable while CAT-010 returns `501`.
-- F9: Product media management remains deferred to Phase 19.8.
+- F9: Product image upload + preview shipped in Phase 19.8A; deletion, ordering, alt-text editing and primary selection remain deferred until a backend media mutation contract exists.
 - F10: Roadmap-jargon cleanup remains deferred until the end of Group S.
 - F12: Fallow metrics remain unverified until the tool can be run.
 - F13: The unused confirmation dialog will be reused or removed in its owning phase.

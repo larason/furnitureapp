@@ -21,3 +21,15 @@ export async function requestPublicApi<T>(request: AdminApiRequest): Promise<Api
   const client = createAdminApiClient();
   return client<T>(request);
 }
+
+const UPLOAD_TIMEOUT_MS = 30_000;
+
+/**
+ * Multipart upload path. The transport forwards the native `FormData` unchanged,
+ * so the runtime sets the multipart boundary and no JSON serializer touches the
+ * file bytes. Only the file field is forwarded; no other request field is added.
+ */
+export async function requestOperationalUpload<T>(request: Omit<AdminApiRequest, "body" | "timeoutMs"> & Readonly<{ form: FormData }>): Promise<ApiSuccess<T>> {
+  const { form, ...rest } = request;
+  return requestOperationalApi<T>({ ...rest, body: form, timeoutMs: UPLOAD_TIMEOUT_MS });
+}

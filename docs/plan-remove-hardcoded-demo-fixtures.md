@@ -11,7 +11,7 @@ During earlier bootstrap and design phases, local fixtures and disposable demo d
 1. **Frontend Web Fixtures (`HOMEPAGE_DATA_SOURCE=fixtures`)**: In `frontend/web/lib/homepage/fixtures.ts`, providing mock products (`fixture-open-frame-armchair`, etc.), mock categories, and mock media paths (`/furnitures/fixtures/...`). This module is **retained** as a development-only preview source (Phase 5.1); only its runtime entry points are consolidated and guarded.
 2. **Frontend App Fixtures (`CATALOG_DATA_SOURCE=fixtures`)**: In `frontend/app/lib/features/**/fixture_*.dart`, mirroring the web fixtures.
 3. **Hardcoded Homepage Media**: Static banner images in `frontend/web/app/page.tsx` pointing to local fixture assets (`/furnitures/fixtures/hero-image/hero-image.jpg`).
-4. **Backend Demo Seeders (`CatalogSeeder.php`, `CommerceDemoSeeder.php`)**: Populating mock products with dummy storage file paths (`products/dev/nordic-sofa/main.webp`) and mock orders/carts using `R2_PUBLIC_BASE_URL=https://examplefurnitures.com`.
+4. **Backend Demo Seeders (`CatalogSeeder.php`, `CommerceDemoSeeder.php`)**: Populating mock products with dummy storage file paths (`products/dev/nordic-sofa/main.webp`) and mock orders/carts using the R2 public development URL (`https://pub-20ad593372b04704ae5e74f0c4bda810.r2.dev`, rate-limited and development-only).
 
 This plan details how to systematically transition to genuine API-driven data and clean up disposable demo artifacts without breaking API contracts, test suites, or production readiness.
 
@@ -53,7 +53,7 @@ Ensure the backend serves valid, real media URLs that clients are authorized to 
 1. **Align Environment Storage Configuration**:
    - In `backend/laravel/.env`:
      - If using local storage: configure `FILESYSTEM_DISK=public` and `APP_URL=http://127.0.0.1:8000`.
-     - If using Cloudflare R2 / S3: verify `R2_PUBLIC_BASE_URL` points to the real public bucket CDN domain (e.g. `https://media.yourdomain.com`).
+     - If using Cloudflare R2 / S3: verify `R2_PUBLIC_BASE_URL` points to the real public bucket CDN domain (e.g. `https://media.yourdomain.com`). The current value is Cloudflare R2's **public development URL** (`*.r2.dev`), which is development-only and **rate-limited**; it must be replaced with a real CDN/custom domain before production.
 2. **Configure Next.js Remote Patterns (`next.config.ts`)**:
    - Update `frontend/web/next.config.ts` to allow both the local development API origin and the remote CDN origin:
      ```ts
@@ -156,7 +156,7 @@ Laravel is **already** the sole *effective* runtime authority: no environment se
 
 Phase 3 item 1 is therefore already satisfied in effect. What remains is removing demo **data**, routing every fixture read through the one guarded accessor, and deleting genuinely dead code — not switching sources.
 
-Residual data: `products` 4 (3 `IN_STOCK`, 1 `MADE_TO_ORDER`), `product_images` 4 (all `products/dev/...` dummy paths), `carts` 1, `enquiries` 2, `furniture_requests` 4, `notifications` 5. `orders`/`order_items` are already 0. `R2_PUBLIC_BASE_URL` is now set (`https://examplefurnitures.com`) — Phase 1 must still confirm it resolves to the real public bucket/CDN domain.
+Residual data: `products` 4 (3 `IN_STOCK`, 1 `MADE_TO_ORDER`), `product_images` 4 (all `products/dev/...` dummy paths), `carts` 1, `enquiries` 2, `furniture_requests` 4, `notifications` 5. `orders`/`order_items` are already 0. `R2_PUBLIC_BASE_URL` is now set to the Cloudflare R2 **public development URL** (`https://pub-20ad593372b04704ae5e74f0c4bda810.r2.dev`) — development-only and rate-limited, so Phase 1 must still confirm a real public bucket/CDN domain before production.
 
 ### 4.2 Hard orderings — these constrain the sequence
 

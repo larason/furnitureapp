@@ -3,6 +3,7 @@ import Button from "@mui/material/Button";
 import { notFound } from "next/navigation";
 import { ProductDetailView } from "@/components/catalog/product-detail-view";
 import { ProductFailureState } from "@/components/catalog/product-failure-state";
+import { ProductImageUploader } from "@/components/catalog/product-image-uploader";
 import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireAdminRouteAccess } from "@/lib/auth/server-route-guard";
@@ -42,7 +43,7 @@ export default async function ProductDetailPage({ params }: Readonly<{ params: P
           </>
         }
       />
-      <ProductDetailView product={product.value} />
+      <ProductDetailView product={product.value} mediaUpload={<ProductImageUploader productId={product.value.id} />} />
     </PageContainer>
   );
 }

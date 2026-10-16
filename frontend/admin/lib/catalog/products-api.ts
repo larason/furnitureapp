@@ -2,7 +2,7 @@ import "server-only";
 
 import { ApiError } from "@/lib/api/errors";
 import type { ApiErrorItem, JsonValue } from "@/lib/api/types";
-import { requestOperationalApi, requestPublicApi } from "@/lib/api/server-request";
+import { requestOperationalApi, requestOperationalUpload, requestPublicApi } from "@/lib/api/server-request";
 import { parseCategoryOptions, type CategoryOption } from "@/lib/catalog/category-option";
 import { ProductResourceError, parseOperationalProduct, parseProductPage, type OperationalProduct, type OperationalProductPage } from "@/lib/catalog/product-resource";
 import { productListRequestQuery, type ProductListQuery } from "@/lib/catalog/product-query";
@@ -56,6 +56,15 @@ export async function submitProductCreate(payload: Readonly<Record<string, JsonV
 export async function submitProductUpdate(identifier: string, payload: Readonly<Record<string, JsonValue>>): Promise<OperationalProduct> {
   const response = await requestOperationalApi<unknown>({ path: `/products/${encodeURIComponent(identifier)}`, method: "PATCH", body: payload });
   return parseOperationalProduct(response.data);
+}
+
+/**
+ * CAT-009 image upload. `form` must carry only the `image` file field — the
+ * backend rejects any other field — and the response body is not parsed, because
+ * the caller refreshes the product detail resource instead.
+ */
+export async function submitProductImage(identifier: string, form: FormData): Promise<void> {
+  await requestOperationalUpload<unknown>({ path: `/products/${encodeURIComponent(identifier)}/images`, method: "POST", form });
 }
 
 /** Runs a read and converts a thrown failure into a render-safe outcome. */

@@ -1,14 +1,19 @@
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
+import { ProductImageGallery } from "@/components/catalog/product-image-gallery";
 import { ProductStateChips } from "@/components/catalog/product-state-chips";
 import { ProductVariantTable } from "@/components/catalog/product-variant-table";
 import { SectionHeader } from "@/components/ui/section-header";
 import { availabilityLabel, formatProductPrice, formatProductTimestamp, productStateDescriptors, productTypeLabel } from "@/lib/catalog/product-presentation";
 import type { OperationalProduct } from "@/lib/catalog/product-resource";
+import type { ReactNode } from "react";
 
-/** Read-only authoritative product record. Every value comes from Laravel. */
-export function ProductDetailView({ product }: Readonly<{ product: OperationalProduct }>) {
+/**
+ * Read-only authoritative product record. Every value comes from Laravel. Media
+ * upload is supplied by the page because it needs the server-only action.
+ */
+export function ProductDetailView({ product, mediaUpload }: Readonly<{ product: OperationalProduct; mediaUpload?: ReactNode }>) {
   const created = formatProductTimestamp(product.createdAt);
   const updated = formatProductTimestamp(product.updatedAt);
 
@@ -40,15 +45,15 @@ export function ProductDetailView({ product }: Readonly<{ product: OperationalPr
       </Box>
 
       <Box component="section" aria-labelledby="product-media-heading">
-        <SectionHeader title="Product media" titleId="product-media-heading" />
-        <Paper variant="outlined" sx={{ p: 3, mt: 3 }}>
-          <Typography color="text.secondary">
-            {product.images.length > 0
-              ? `${product.images.length} image record${product.images.length === 1 ? "" : "s"} returned by the API. `
-              : "No image records were returned for this product. "}
-            Image preview, upload, ordering and deletion are managed in Phase 19.8 (Product Media Management); this release reads the product record only.
-          </Typography>
-        </Paper>
+        <SectionHeader
+          title="Product media"
+          titleId="product-media-heading"
+          description="Images returned by the operational product resource. Ordering, alt text, primary selection and deletion are not editable because no media mutation API exists yet."
+        />
+        <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 4 }}>
+          <ProductImageGallery productName={product.name} images={product.images} />
+          {mediaUpload}
+        </Box>
       </Box>
 
       <Box component="section" aria-labelledby="product-variants-heading">

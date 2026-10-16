@@ -2,7 +2,21 @@
 
 ## Status
 
-**PARTIAL** — the screen is implemented, truthful and production-shaped, but it does **not** manage the complete category collection.
+**PARTIAL — closed as accepted (owner, 2026-10-16).** The screen is implemented, truthful and production-shaped, but it does **not** manage the complete category collection.
+
+### Closure (2026-10-16)
+
+The verdict stands as **PARTIAL**; it is not re-labelled PASS, because the blocking gap below is a missing backend capability, not something the delivered work resolved. The owner reviewed the record and **accepted the PARTIAL scope**, which closes the phase and unblocks Phase 19.8A.
+
+Where the blockers live now:
+
+| Blocker | Recorded in | State |
+| --- | --- | --- |
+| No operational/admin category listing endpoint → `/categories` can only manage the active top-level set | Register **F1** (blocking capability) and §11 item 1 below | **OPEN** — needs an approved `/api/v2/categories` contract phase; never widen frozen v1 |
+| Frozen `GET /categories` documented no `page`/`per_page` | Register **F4** and §11 item 2 below | **CLOSED (2026-10-16)** — additive doc fix applied |
+| Authenticated live render never executed | Register **F11** | **OPEN** — owner-run operator smoke test (F11) |
+
+F5 (single bootstrapped ADMIN) is recorded as an accepted operational fact, not a blocker. Nothing about the PARTIAL verdict depended on F4 or F5; F1 alone is decisive, and F1 is documented with evidence and a recommendation.
 
 ### The scope answer (decisive for the verdict)
 
@@ -126,7 +140,7 @@ Updated suites: `tests/navigation.test.ts`, `tests/overview.test.tsx` (see §1).
 
 **Contract/doc discrepancies (reported; frozen docs untouched):**
 
-2. The frozen `/categories` GET enumerates no query parameters, yet `page`/`per_page` are the approved global collection pagination vocabulary and are runtime-validated. Phase 19.6 already consumes `?per_page=100` from the same endpoint; this phase consumes `page`/`per_page` the same way. The doc gap is recorded here rather than "fixed" in a frozen file.
+2. ~~The frozen `/categories` GET enumerates no query parameters, yet `page`/`per_page` are the approved global collection pagination vocabulary and are runtime-validated.~~ **RESOLVED (2026-10-16) — register F4 CLOSED.** The owner approved and applied the additive, non-breaking documentation change: `CAT-003` in `docs/api/openapi.yaml` now declares `Page` and `PerPage`, matching `CAT-001`. Three added lines; no path, schema, response or runtime behaviour changed. Phase 19.6 already consumes `?per_page=100` from the same endpoint and this phase consumes `page`/`per_page` the same way, so the documented contract now matches the verified runtime behaviour.
 
 **Confirmations:**
 

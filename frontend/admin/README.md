@@ -12,6 +12,8 @@ npm run dev
 
 Open `http://localhost:3001`. The port is explicit so the admin and customer applications cannot accidentally share an origin. Without `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, the application renders a safe configuration state and never assumes an authenticated administrator.
 
+Set `CATALOG_MEDIA_BASE_URL` to the HTTPS origin Laravel builds product image URLs from — the same value as the backend's `R2_PUBLIC_BASE_URL`. It is the only origin allow-listed for image previews; when it is missing or invalid, previews are disabled and the product record is unaffected. `next.config.ts` compiles the value into the `next/image` allow-list **when the server starts**, so set it before starting the server and **restart after changing it**: editing `.env.local` under a running server reloads the server's environment but not the compiled allow-list, which leaves every preview reporting that the image is unreachable even though the stored record and URL are valid.
+
 ## Scripts
 
 | Script | Purpose |
@@ -21,7 +23,7 @@ Open `http://localhost:3001`. The port is explicit so the admin and customer app
 | `npm run start` | Start the production build on port 3001 |
 | `npm run lint` | Run Next.js ESLint rules |
 | `npm run typecheck` | Run strict TypeScript checking |
-| `npm run test` | Run transport, admission, navigation, route-guard, shell, primitive, overview and product tests |
+| `npm run test` | Run transport, admission, navigation, route-guard, shell, primitive, overview, product, product-media and category tests |
 
 ## Authentication and admission
 
@@ -127,8 +129,42 @@ The page makes zero business-data API calls beyond the admission flow's `GET /ap
 ### Honest limitations
 
 - **Variants are read-only.** The detail resource returns `id`, `sku`, `name`, `price`, `availability` and `stock_indicator`. Variant creation is unavailable because `POST /api/v1/products/{product}/variants` returns `501`; no create control is rendered and no request is made.
-- **Product media is deferred to Phase 19.8.** The detail page reports the number of image records returned; upload, ordering and deletion are not implemented.
+- **Product media upload and preview arrive in Phase 19.8A** (see below); ordering, alt-text editing, setting the primary image and deletion remain unimplemented because no media mutation endpoint exists.
 - **Category options come from the public `GET /api/v1/categories?per_page=100`**, which exposes only active top-level categories. There is no operational category-list endpoint and no separate `categories.*` permission. If the first 100 do not cover the catalog, the form is limited to those options; the current selection is always preserved.
+
+## Product media upload and preview (Phase 19.8A)
+
+Phase 19.8A adds product image upload and preview to the product detail page. It is **not** full product media management: deletion, ordering, alt-text editing and setting the primary image remain unimplemented and are not offered.
+
+### Contract and permission
+
+- Upload: `POST /api/v1/products/{product}/images` (CAT-009), gated by `products.manage`. The request is `multipart/form-data` carrying exactly one file field, `image`. Laravel rejects any non-file field and any file field other than `image`.
+- Laravel accepts JPEG, PNG and WebP up to the configured `product_images.max_bytes` (5 MiB by default) and rejects embedded GPS metadata. An oversized body is `413 REQUEST_TOO_LARGE`; an invalid file is `422`; both are mapped to distinct messages.
+- Images are read from the operational product resource: `{ id, url, alt_text, sort_order, is_primary }`. Ordering, alt text and primary status are displayed as authoritative values, never edited.
+
+### Data flow
+
+- `lib/api/server-request.ts` exposes `requestOperationalUpload`, an explicit multipart path over the same transport. `FormData` is forwarded unchanged, so the runtime sets the boundary and no JSON serializer touches the file bytes. Only the `image` field is forwarded.
+- `lib/catalog/products-api.ts` adds `submitProductImage`; `lib/catalog/product-image-actions.ts` holds the `"use server"` upload action, which repeats the exact `products.manage` requirement before reading the file and revalidates the detail path on success.
+- `components/catalog/product-image-gallery.tsx` (Server Component) renders the returned records; `components/catalog/product-image-preview.tsx` is the only Client Component in the media section, containing a load-failure fallback and a render boundary so an unreachable or rejected image can never break the detail page. `components/catalog/product-image-uploader.tsx` is the Client Component form; it disables its submit control while a request is in flight.
+- `lib/catalog/media-origin.ts` resolves and validates the configured media origin. A malformed, insecure or credential-bearing value resolves to nothing, in which case the image allow-list is empty and previews render an explicit unavailable state instead of an arbitrary host.
+
+### Effective size limits
+
+| Limit | Value | Source |
+| --- | --- | --- |
+| Laravel product image limit | 5 MiB (`product_images.max_bytes`) | `backend/laravel/config/product_images.php` |
+| PHP `upload_max_filesize` / `post_max_size` | 30 MiB | local PHP configuration |
+| Next.js Server Action body | 6 MB | `serverActions.bodySizeLimit` in `next.config.ts` |
+
+Next.js caps Server Action bodies at 1 MB by default, below the backend's own limit, so `next.config.ts` raises it to accept the backend limit plus multipart overhead. Laravel remains the authority: an image the backend rejects is still rejected. This value was chosen locally and the PHP and reverse-proxy limits must be re-verified per environment.
+
+### Honest limitations
+
+- **No mutation of existing images.** There is no endpoint for deletion, ordering, alt-text editing or setting the primary image, so no control for any of them is rendered.
+- **Uploads can create duplicates.** Laravel accepts repeated uploads; nothing here deduplicates.
+- **Live verification is pending.** The owner performs the authenticated smoke test; the automated coverage is transport, authorization and rendering assertions plus the pure origin/allow-list logic.
+- **Category media upload is still deferred**; categories take an `image` URL string, so no category upload is added here.
 
 ## Categories module (Phase 19.7)
 
@@ -165,7 +201,7 @@ The page makes zero business-data API calls beyond the admission flow's `GET /ap
 - **The screen manages only the active top-level categories returned by the public `GET /api/v1/categories`** — the categories directly beneath the structural root. It does **not** manage the complete category collection.
 - The listing cannot show the root category, inactive (`is_active = false`) categories, or deeper sub-categories: no operational/admin category listing endpoint exists, so those are invisible to every listing available to this app.
 - Hierarchy and active/inactive state are not part of the approved category request, so no parent, state or ordering control is rendered and no such field is ever sent.
-- **Category media upload is deferred to Phase 19.8.** The form and detail view show the stored image URL only.
+- **Category media upload is deferred to Phase 19.8.** The form and detail view show the stored image URL only. (Phase 19.8A added product image upload; category images remain a URL string with no upload.)
 - The screen states this scope on every list/create surface (`CategoryScopeNotice`), and its empty state explicitly says an empty result is not proof that the catalog has no categories.
 
 ## Adding a navigation entry
@@ -203,4 +239,4 @@ Shell accessibility expectations: a keyboard skip link to `#admin-main-content`,
 
 ## Phase exclusions
 
-Products (Phase 19.6) and Categories (Phase 19.7) are implemented. The remaining operational destinations — requests, enquiries, notifications, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows, and it does not add category hierarchy, category activation/deactivation, category deletion or category media management; it adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission.
+Products (Phase 19.6), Categories (Phase 19.7) and product image upload/preview (Phase 19.8A) are implemented. The remaining operational destinations — requests, enquiries, notifications, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it adds no product image deletion, ordering, alt-text editing or primary-image selection; and it does not add category hierarchy, category activation/deactivation, category deletion or category media management. It adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission.

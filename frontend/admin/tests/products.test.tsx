@@ -156,9 +156,10 @@ test("only the approved endpoints are contacted and no unapproved resource is in
   for (const path of ['"/admin/products"', "`/admin/products/${encodeURIComponent(identifier)}`", 'path: "/products"', 'path: `/products/${encodeURIComponent(identifier)}`', 'path: "/categories"']) {
     assert.ok(PRODUCTS_API.includes(path), `${path} must be the verified contract path.`);
   }
-  for (const forbidden of ["/inventory", "/orders", "/requests", "/enquiries", "/customers", "/audit", "variants", "/images"]) {
+  for (const forbidden of ["/inventory", "/orders", "/requests", "/enquiries", "/customers", "/audit", "variants"]) {
     assert.equal(PRODUCTS_API.includes(forbidden), false, `the product API module must not call ${forbidden}.`);
   }
+  assert.ok(PRODUCTS_API.includes("`/products/${encodeURIComponent(identifier)}/images`"), "CAT-009 is the only approved media endpoint.");
   assert.equal(/"sort"|sort_by|order_by/.test(PRODUCTS_API), false, "no sort parameter may be invented.");
 });
 
@@ -391,12 +392,12 @@ test("the detail view shows authoritative product fields and honest variant data
   const visible = text(markup);
   assert.ok(visible.includes("OAK-1"));
   assert.ok(visible.includes("Low stock"));
-  assert.ok(visible.includes("1 image record"), "the media section reports the returned image count.");
+  assert.ok(visible.includes("Sort order: 0"), "the media section reports the returned image metadata.");
   assert.ok(visible.includes("Variant creation is not available in this release"));
 
   const withoutVariant = render(<ProductDetailView product={mockProduct()} />);
   assert.ok(text(withoutVariant).includes("No variants were returned for this product by the current API."));
-  assert.ok(text(withoutVariant).includes("No image records were returned for this product."));
+  assert.ok(text(withoutVariant).includes("No images recorded"));
 });
 
 test("the variant table renders only the fields the resource returns", () => {
