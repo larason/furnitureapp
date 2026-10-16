@@ -27,11 +27,24 @@ const QUERY_KEYS = ["search", "category", "product_type", "availability", "min_p
 const WHOLE_TZS = /^\d+$/;
 const MAX_SAFE_MINOR_UNITS = String(Number.MAX_SAFE_INTEGER);
 
+/**
+ * Reads the documented collection parameters. A native `GET` filter form submits
+ * every named control, so an empty parameter only means that control was left
+ * unset; it is dropped rather than forwarded. Every non-empty value is preserved
+ * for Laravel to validate.
+ */
 export function parseProductCollectionQuery(searchParams: ProductCollectionSearchParams): ProductCollectionQuery {
   const query: Record<string, ProductCollectionQueryValue> = {};
   for (const key of QUERY_KEYS) {
     const value = searchParams[key];
-    if (value !== undefined) query[key] = value;
+    if (typeof value === "string") {
+      if (value !== "") query[key] = value;
+      continue;
+    }
+    if (value === undefined) continue;
+
+    const selected = value.filter((item) => item !== "");
+    if (selected.length > 0) query[key] = selected;
   }
   return query;
 }

@@ -1,7 +1,6 @@
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
-import { ProductImageGallery } from "@/components/catalog/product-image-gallery";
 import { ProductStateChips } from "@/components/catalog/product-state-chips";
 import { ProductVariantTable } from "@/components/catalog/product-variant-table";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -10,10 +9,11 @@ import type { OperationalProduct } from "@/lib/catalog/product-resource";
 import type { ReactNode } from "react";
 
 /**
- * Read-only authoritative product record. Every value comes from Laravel. Media
- * upload is supplied by the page because it needs the server-only action.
+ * Authoritative product record. Every value comes from Laravel. The media section
+ * is supplied by the page as a slot because its gallery needs the server-only
+ * mutation actions, so this view stays free of them.
  */
-export function ProductDetailView({ product, mediaUpload }: Readonly<{ product: OperationalProduct; mediaUpload?: ReactNode }>) {
+export function ProductDetailView({ product, media }: Readonly<{ product: OperationalProduct; media?: ReactNode }>) {
   const created = formatProductTimestamp(product.createdAt);
   const updated = formatProductTimestamp(product.updatedAt);
 
@@ -48,12 +48,9 @@ export function ProductDetailView({ product, mediaUpload }: Readonly<{ product: 
         <SectionHeader
           title="Product media"
           titleId="product-media-heading"
-          description="Images returned by the operational product resource. Ordering, alt text, primary selection and deletion are not editable in this release."
+          description="Images returned by the operational product resource. Deletion, ordering, alt text and primary selection are sent to Laravel, and the gallery renders only what Laravel returns."
         />
-        <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 4 }}>
-          <ProductImageGallery productName={product.name} images={product.images} />
-          {mediaUpload}
-        </Box>
+        <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 4 }}>{media}</Box>
       </Box>
 
       <Box component="section" aria-labelledby="product-variants-heading">

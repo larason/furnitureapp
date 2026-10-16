@@ -191,7 +191,7 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 
 **Impact:** Everything proven about these screens is proven at the code/unit level. No end-to-end evidence exists that the admin dashboard works against the running API with a real session.
 
-**Recommendation:** Have the operator sign in with the bootstrapped Admin and walk the four category routes plus the four product routes once. Record the result here. Until then, Phase 19.6/19.7 records must keep reporting this as an unverified limitation rather than a pass.
+**Recommendation:** Have the operator sign in with the bootstrapped Admin and walk the four category routes plus the four product routes once, including the Phase 19.8 media controls: upload, edit alt text, set a primary image, reorder twice, and delete an image (with the confirmation). Record the result here. Until then, Phase 19.6/19.7/19.8 records must keep reporting this as an unverified limitation rather than a pass.
 
 **Owner:** operator action; verification, not implementation.
 
@@ -226,15 +226,17 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 
 ### F9 — Media management is deferred to Phase 19.8
 
-**Status:** PARTIALLY RESOLVED (2026-10-16) — Phase 19.8A delivered upload + preview; Phase 19.8B delivered the backend media-mutation contract. The admin UI for the mutations is still outstanding (19.8C).
+**Status:** RESOLVED for products (2026-10-16) — Phases 19.8A–19.8C delivered upload, preview and all four media mutations in the admin application. Category media upload remains unsupported by design (F9 scope below).
 
 **Evidence (verified):** The admin product detail reports only an image count; the category form and detail treat `image` as a URL field (`CategoryCreateRequest.image` is a `string|null` URL in `openapi.yaml`) with no upload control. Phase 19.8 ("Product Media Management - cloudflare R2") owns the real capability.
 
 **Update (2026-10-16):** Phase 19.8A implemented product image **upload and preview** (`POST /api/v1/products/{product}/images`, CAT-009) on the product detail screen, with the preview origin allow-listed from `CATALOG_MEDIA_BASE_URL`.
 
-**Update (2026-10-16, Phase 19.8B):** The missing backend contract now exists. Four approved media mutations are implemented and documented — `CAT-015` `DELETE …/images/{image}`, `CAT-016` `PATCH …/images/{image}` (`alt_text` only), `CAT-017` `POST …/images/{image}/primary`, `CAT-018` `POST …/images/reorder` (see `docs/api/api-contract.md §21.12`, `ADR/API-FRZ-003`, `ADR/BACKEND-058`). **The admin application still renders no controls for them** — that UI work is Phase 19.8C. Category media remains a plain `image` URL string with no upload and no backend support for category image upload.
+**Update (2026-10-16, Phase 19.8B):** The missing backend contract now exists. Four approved media mutations are implemented and documented — `CAT-015` `DELETE …/images/{image}`, `CAT-016` `PATCH …/images/{image}` (`alt_text` only), `CAT-017` `POST …/images/{image}/primary`, `CAT-018` `POST …/images/reorder` (see `docs/api/api-contract.md §21.12`, `ADR/API-FRZ-003`, `ADR/BACKEND-058`).
 
-**Recommendation:** Phase 19.8C should wire the four mutations into the admin gallery (delete, alt text, primary, reorder) against the now-frozen contract. Do not add controls for capability that does not exist — category image upload remains unsupported.
+**Update (2026-10-16, Phase 19.8C):** All four mutations are now wired into the admin product gallery (`phases/phase-19.8c-completion.md`). Delete goes through a confirmation dialog that identifies the image; alt text is edited under the 500-character rule; the primary image is selected explicitly and a product with none says so; the reorder control sends the complete ordered list and is disabled at both boundaries. The gallery is confirmed rather than optimistic — each action revalidates the operational detail resource, a `404` is reported as a stale gallery, and a `204` is no longer parsed as JSON. **Verified by automated tests only:** the authenticated browser smoke test of the four mutations is still outstanding (see F11). Category media remains a plain `image` URL string with no upload and no backend support for category image upload.
+
+**Recommendation:** Closed for products. Do not add controls for capability that does not exist — category image upload remains unsupported and is not part of this finding.
 
 ---
 
@@ -250,13 +252,13 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 
 ### F13 — `confirm-dialog.tsx` is a deliberately unreferenced primitive
 
-**Status:** OPEN — intentional, tracked.
+**Status:** RESOLVED (2026-10-16) — consumed by Phase 19.8C (`components/catalog/product-image-gallery.tsx` uses it for `CAT-015` deletion confirmation).
 
 **Evidence (verified):** `.fallowrc.json` `ignoreFindings` explicitly exempts `frontend/admin/components/ui/confirm-dialog.tsx` with the comment that it is "a Phase 19.2 UI primitive awaiting the phase that consumes it."
 
-**Impact:** A component exists with no consumer. It is exempted from dead-code reporting, so it will not surface again on its own.
+**Impact:** The exemption no longer has a reason: the primitive has exactly one consumer, so the exemption could be dropped the next time `.fallowrc.json` is reviewed (owner-owned file; not changed here).
 
-**Recommendation:** Either consume it in the first phase that needs a confirmation dialog (F5/Phase 19.13 is the likely candidate) or remove it. Do not let the exemption outlive the reason for it.
+**Recommendation:** Drop the `confirm-dialog.tsx` exemption at the next `.fallowrc.json` review so a future unreferenced state surfaces again. The primitive itself stays.
 
 ---
 
@@ -358,9 +360,9 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 | F11 | Authenticated render never executed | Operator walks 8 routes once (accepted 2026-10-16) | operator | No |
 | F10 | Roadmap jargon deferred | One coherent pass after Group S | end of Group S | No |
 | F8 | Variants `501` | Keep read-only | — | No |
-| F9 | Media deferred to 19.8 | **Upload + preview DONE (2026-10-16, 19.8A)**; deletion/ordering/alt-text/primary still need a backend contract | 19.8B/19.8C | No |
+| F9 | Media deferred to 19.8 | **DONE for products (2026-10-16):** 19.8A upload + preview; 19.8B backend contract; 19.8C wired delete/alt-text/primary/reorder into the admin gallery | — | No |
 | F12 | Fallow metrics unverified | Re-run Fallow before gating on it | next quality phase | No |
-| F13 | Unreferenced `confirm-dialog.tsx` | Consume or remove | 19.13 | No |
+| F13 | Unreferenced `confirm-dialog.tsx` | **DONE (2026-10-16)** — now consumed by the 19.8C media deletion confirmation; drop its Fallow exemption at the next review | next `.fallowrc.json` review | No |
 | F14 | Nav header/drawer/footer hardcode the taxonomy | Retire the fixture; read the catalog (`docs/plan-catalog-backed-navigation.md`); **set = API-supplied (owner, 2026-10-16)** | Group S closure | No |
 | F15 | Homepage tiles silently capped at 4 | Make the selection rule deliberate (`docs/plan-catalog-backed-navigation.md` §4.5) | Group S closure | No |
 | F16 | Unreadable product response shown as an outage | **DONE (2026-10-16)** — parse failure now classified `"invalid"` | `frontend/admin` | No |

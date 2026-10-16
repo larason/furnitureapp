@@ -28,7 +28,7 @@ export function PriceFilterInputs({ minPriceTzs, maxPriceTzs, minPriceMinorUnits
   }
 
   return (
-    <Box sx={{ display: "contents" }}>
+    <Box key={`${minPriceTzs}|${maxPriceTzs}`} sx={{ display: "contents" }}>
       <TextField inputRef={minInput} type="text" inputMode="numeric" label="Minimum price (TZS)" defaultValue={minPriceTzs} onChange={syncPrices} fullWidth />
       <input ref={minHiddenInput} type="hidden" data-query-name="min_price" name={minPriceMinorUnits ? "min_price" : ""} defaultValue={minPriceMinorUnits} />
       <TextField inputRef={maxInput} type="text" inputMode="numeric" label="Maximum price (TZS)" defaultValue={maxPriceTzs} onChange={syncPrices} fullWidth />

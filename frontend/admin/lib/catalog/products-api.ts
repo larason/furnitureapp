@@ -4,6 +4,7 @@ import { ApiError } from "@/lib/api/errors";
 import type { ApiErrorItem, JsonValue } from "@/lib/api/types";
 import { requestOperationalApi, requestOperationalUpload, requestPublicApi } from "@/lib/api/server-request";
 import { parseCategoryOptions, type CategoryOption } from "@/lib/catalog/category-option";
+import { PRODUCT_IMAGE_ALT_TEXT_FIELD, PRODUCT_IMAGE_REORDER_FIELD } from "@/lib/catalog/product-image-mutations";
 import { ProductResourceError, parseOperationalProduct, parseProductPage, type OperationalProduct, type OperationalProductPage } from "@/lib/catalog/product-resource";
 import { productListRequestQuery, type ProductListQuery } from "@/lib/catalog/product-query";
 
@@ -64,7 +65,40 @@ export async function submitProductUpdate(identifier: string, payload: Readonly<
  * the caller refreshes the product detail resource instead.
  */
 export async function submitProductImage(identifier: string, form: FormData): Promise<void> {
-  await requestOperationalUpload<unknown>({ path: `/products/${encodeURIComponent(identifier)}/images`, method: "POST", form });
+  await requestOperationalUpload<unknown>({ path: productImagesPath(identifier), method: "POST", form });
+}
+
+/**
+ * CAT-015 delete. A `204` has no body; the caller refreshes the product detail
+ * resource rather than trusting a local removal.
+ */
+export async function deleteProductImage(identifier: string, imageId: string): Promise<void> {
+  await requestOperationalApi<void>({ path: productImagePath(identifier, imageId), method: "DELETE" });
+}
+
+/** CAT-016 alt text. `alt_text` is the only mutable field; `null` clears it. */
+export async function updateProductImageAltText(identifier: string, imageId: string, altText: string | null): Promise<void> {
+  const payload: Record<string, JsonValue> = { [PRODUCT_IMAGE_ALT_TEXT_FIELD]: altText };
+  await requestOperationalApi<void>({ path: productImagePath(identifier, imageId), method: "PATCH", body: payload });
+}
+
+/** CAT-017 primary selection. The endpoint accepts no request body at all. */
+export async function selectPrimaryProductImage(identifier: string, imageId: string): Promise<void> {
+  await requestOperationalApi<void>({ path: `${productImagePath(identifier, imageId)}/primary`, method: "POST" });
+}
+
+/** CAT-018 reorder. The array must be the complete ordered image set for the product. */
+export async function reorderProductImages(identifier: string, orderedImageIds: readonly string[]): Promise<void> {
+  const payload: Record<string, JsonValue> = { [PRODUCT_IMAGE_REORDER_FIELD]: orderedImageIds };
+  await requestOperationalApi<void>({ path: `${productImagesPath(identifier)}/reorder`, method: "POST", body: payload });
+}
+
+function productImagesPath(identifier: string): string {
+  return `/products/${encodeURIComponent(identifier)}/images`;
+}
+
+function productImagePath(identifier: string, imageId: string): string {
+  return `${productImagesPath(identifier)}/${encodeURIComponent(imageId)}`;
 }
 
 /** Runs a read and converts a thrown failure into a render-safe outcome. */

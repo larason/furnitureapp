@@ -129,24 +129,32 @@ The page makes zero business-data API calls beyond the admission flow's `GET /ap
 ### Honest limitations
 
 - **Variants are read-only.** The detail resource returns `id`, `sku`, `name`, `price`, `availability` and `stock_indicator`. Variant creation is unavailable because `POST /api/v1/products/{product}/variants` returns `501`; no create control is rendered and no request is made.
-- **Product media upload and preview arrive in Phase 19.8A** (see below); ordering, alt-text editing, setting the primary image and deletion remain unimplemented **in this application**. The backend endpoints now exist (Phase 19.8B: CAT-015–CAT-018); wiring them into the admin gallery is the next media phase.
+- **Product media management is implemented in Phases 19.8A–19.8C** (see below): upload, preview, deletion, ordering, alt-text editing and primary-image selection are all wired to the approved endpoints. What remains unimplemented is out of scope, not missing.
 - **Category options come from the public `GET /api/v1/categories?per_page=100`**, which exposes only active top-level categories. There is no operational category-list endpoint and no separate `categories.*` permission. If the first 100 do not cover the catalog, the form is limited to those options; the current selection is always preserved.
 
-## Product media upload and preview (Phase 19.8A)
+## Product media management (Phases 19.8A–19.8C)
 
-Phase 19.8A adds product image upload and preview to the product detail page. It is **not** full product media management: deletion, ordering, alt-text editing and setting the primary image remain unimplemented and are not offered.
+Phase 19.8A adds product image upload and preview to the product detail page; Phase 19.8C wires the four media-mutation endpoints delivered in Phase 19.8B into the same gallery. Together they cover upload, preview, deletion, ordering, alt-text editing and primary-image selection. Nothing else about a product image is offered, and no local state is treated as persisted until Laravel confirms it.
 
 ### Contract and permission
 
 - Upload: `POST /api/v1/products/{product}/images` (CAT-009), gated by `products.manage`. The request is `multipart/form-data` carrying exactly one file field, `image`. Laravel rejects any non-file field and any file field other than `image`.
+- Delete: `DELETE /api/v1/products/{product}/images/{image}` (CAT-015). It takes no request body and answers `204 No Content`; a `404` means the gallery was stale, so the gallery is refreshed and the operator is told the image may already be gone.
+- Alt text: `PATCH /api/v1/products/{product}/images/{image}` (CAT-016) with `alt_text` as the only field. The value is trimmed, a blank value clears it, and the documented maximum is 500 characters.
+- Primary image: `POST /api/v1/products/{product}/images/{image}/primary` (CAT-017). It takes no request body. A product may have no primary image, and deleting the primary never promotes another automatically.
+- Reorder: `POST /api/v1/products/{product}/images/reorder` (CAT-018) with an `images` array that must be the complete ordered image set. The control sends the whole list, never a partial one, and a boundary move is disabled so a no-op reorder is never sent.
 - Laravel accepts JPEG, PNG and WebP up to the configured `product_images.max_bytes` (5 MiB by default) and rejects embedded GPS metadata. An oversized body is `413 REQUEST_TOO_LARGE`; an invalid file is `422`; both are mapped to distinct messages.
-- Images are read from the operational product resource: `{ id, url, alt_text, sort_order, is_primary }`. Ordering, alt text and primary status are displayed as authoritative values, never edited.
+- Images are read from the operational product resource: `{ id, url, alt_text, sort_order, is_primary }`. Ordering, alt text and primary status are displayed only as Laravel returns them; the gallery position is shown separately from the stored sort order.
 
 ### Data flow
 
 - `lib/api/server-request.ts` exposes `requestOperationalUpload`, an explicit multipart path over the same transport. `FormData` is forwarded unchanged, so the runtime sets the boundary and no JSON serializer touches the file bytes. Only the `image` field is forwarded.
-- `lib/catalog/products-api.ts` adds `submitProductImage`; `lib/catalog/product-image-actions.ts` holds the `"use server"` upload action, which repeats the exact `products.manage` requirement before reading the file and revalidates the detail path on success.
-- `components/catalog/product-image-gallery.tsx` (Server Component) renders the returned records; `components/catalog/product-image-preview.tsx` is the only Client Component in the media section, containing a load-failure fallback and a render boundary so an unreachable or rejected image can never break the detail page. `components/catalog/product-image-uploader.tsx` is the Client Component form; it disables its submit control while a request is in flight.
+- `lib/api/client.ts` treats `204 No Content` as a successful mutation with no payload; every other successful response must still carry a valid envelope.
+- `lib/catalog/products-api.ts` adds `submitProductImage`, `deleteProductImage`, `updateProductImageAltText`, `selectPrimaryProductImage` and `reorderProductImages`. None of them returns a body: the caller revalidates the detail path and reads the refreshed operational product as the single source of truth.
+- `lib/catalog/product-image-actions.ts` holds the `"use server"` upload and mutation actions. Each repeats the exact `products.manage` requirement before touching a resource, maps failures through the shared error contract, and revalidates the detail path unless the request failed outright.
+- `lib/catalog/product-image-mutations.ts` is the dependency-free module the actions and the client share: the request field names, the outcome type, the alt-text and reorder helpers, and the safe message catalogue. It has no server-only import, which keeps the mutation vocabulary unit-testable and lets the client gallery stay free of the transport.
+- `components/catalog/product-image-gallery.tsx` is the Client Component gallery. It receives the four Server Actions as props from the page, runs one mutation at a time, disables the matching controls while a request is in flight, and renders only the values the refreshed resource returns. `components/catalog/product-image-alt-text-editor.tsx` is the controlled editor for CAT-016. `components/catalog/product-image-preview.tsx` keeps the load-failure fallback and render boundary so an unreachable or rejected image can never break the detail page, and `components/catalog/product-image-uploader.tsx` remains the CAT-009 form that disables its submit control while a request is in flight.
+- Deletion always goes through `components/ui/confirm-dialog.tsx`. The confirmation identifies the image; it never claims the stored object is removed synchronously.
 - `lib/catalog/media-origin.ts` resolves and validates the configured media origin. A malformed, insecure or credential-bearing value resolves to nothing, in which case the image allow-list is empty and previews render an explicit unavailable state instead of an arbitrary host.
 
 ### Effective size limits
@@ -161,9 +169,9 @@ Next.js caps Server Action bodies at 1 MB by default, below the backend's own li
 
 ### Honest limitations
 
-- **No mutation of existing images yet.** The endpoints now exist (Phase 19.8B: CAT-015–CAT-018 — delete, alt text, primary, reorder), but this application renders no control for them yet; wiring them is the next media phase.
+- **Every mutation is confirmed, not optimistic.** The gallery never shows a new order, alt text or primary selection before Laravel accepts it. A failed reorder therefore leaves the last confirmed order on screen, and a rejected alt-text save keeps the operator's draft for correction.
 - **Uploads can create duplicates.** Laravel accepts repeated uploads; nothing here deduplicates.
-- **Live verification is pending.** The owner performs the authenticated smoke test; the automated coverage is transport, authorization and rendering assertions plus the pure origin/allow-list logic.
+- **Live verification is pending.** The owner performs the authenticated smoke test; the automated coverage is transport, authorization, vocabulary and rendering assertions plus the pure origin/allow-list logic.
 - **Category media upload is still deferred**; categories take an `image` URL string, so no category upload is added here.
 
 ## Categories module (Phase 19.7)
@@ -239,4 +247,4 @@ Shell accessibility expectations: a keyboard skip link to `#admin-main-content`,
 
 ## Phase exclusions
 
-Products (Phase 19.6), Categories (Phase 19.7) and product image upload/preview (Phase 19.8A) are implemented. The remaining operational destinations — requests, enquiries, notifications, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it adds no product image deletion, ordering, alt-text editing or primary-image selection; and it does not add category hierarchy, category activation/deactivation, category deletion or category media management. It adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission.
+Products (Phase 19.6), Categories (Phase 19.7) and product media management (Phases 19.8A–19.8C) are implemented. The remaining operational destinations — requests, enquiries, notifications, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it does not add category hierarchy, category activation/deactivation, category deletion or category media management. It adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission.

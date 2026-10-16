@@ -10,6 +10,7 @@ import {
   toFilterControlValues,
 } from "./filters";
 import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
+import { ProductCollectionControls } from "@/components/catalog/product-collection-controls";
 import { isInvertedRange, syncPriceField } from "@/components/catalog/price-filter-inputs";
 import { SORT_OPTIONS, SortFilterSelect, toSortOptionValue } from "@/components/catalog/sort-filter-select";
 import { createElement } from "react";
@@ -39,6 +40,19 @@ test("CAT-001 preserves invalid and repeated URL values for Laravel validation w
 
   assert.equal(serializeProductCollectionQuery(query), "product_type=WRONG&product_type=IN_STOCK&availability=yes&min_price=-1&max_price=100&sort=rating");
   assert.deepEqual(toFilterControlValues(query), { category: "", productType: "", availability: "", sort: "", sortDirection: "", minPriceTzs: "", maxPriceTzs: "1" });
+});
+
+test("a filter form submits every control, so an empty one is never treated as a filter", () => {
+  const unset = { category: "", product_type: "", availability: "", min_price: "", max_price: "", sort: "", sort_direction: "" };
+
+  assert.deepEqual(parseProductCollectionQuery(unset), {});
+  assert.equal(serializeProductCollectionQuery(parseProductCollectionQuery(unset)), "");
+  assert.deepEqual(parseProductCollectionQuery({ search: "chair", ...unset }), { search: "chair" });
+  assert.deepEqual(
+    parseProductCollectionQuery({ search: "chair", ...unset, availability: "available", sort: "price", sort_direction: "asc" }),
+    { search: "chair", availability: "available", sort: "price", sort_direction: "asc" },
+  );
+  assert.deepEqual(parseProductCollectionQuery({ category: ["", ""], availability: ["", "available"] }), { availability: ["available"] });
 });
 
 test("price controls convert whole TZS to integer minor units without floating point arithmetic", () => {
@@ -83,6 +97,24 @@ test("catalog controls preserve an existing search term independently of the des
   const controls = read("components/catalog/product-collection-controls.tsx");
   assert.match(controls, /\{search \? <input type="hidden" name="search" value=\{search\}/);
   assert.doesNotMatch(controls, /action === "\/search" && search/);
+});
+
+test("filter controls reinitialise from the URL per control instead of remounting the whole form", () => {
+  const query = parseProductCollectionQuery({ category: "living-room", min_price: "1500000" });
+  const tree = ProductCollectionControls({ action: "/products", categories: [], query });
+
+  // Keying the form remounted the entire subtree on every query change, which
+  // desynchronised the server markup from the client. Each control resets its own
+  // instance from the resolved query instead.
+  assert.equal(tree.key, null);
+
+  const controls = read("components/catalog/product-collection-controls.tsx");
+  assert.doesNotMatch(controls, /serializeProductCollectionQuery/);
+  assert.match(controls, /<FilterSelect label="Category" name="category" value=\{values\.category\}/);
+
+  assert.match(read("components/catalog/filter-select.tsx"), /<Select key=\{value\}[\s\S]*?defaultValue=\{value\}/);
+  assert.match(read("components/catalog/sort-filter-select.tsx"), /<SortSelection key=\{resolved\} initial=\{resolved\} \/>/);
+  assert.match(read("components/catalog/price-filter-inputs.tsx"), /<Box key=\{`\$\{minPriceTzs\}\|\$\{maxPriceTzs\}`\}/);
 });
 
 test("price filter inputs convert whole TZS on change so the frozen minor-unit query is actually submitted", () => {

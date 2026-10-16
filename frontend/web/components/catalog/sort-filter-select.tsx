@@ -22,7 +22,16 @@ export function toSortOptionValue(sort: string | undefined, sortDirection: strin
 }
 
 export function SortFilterSelect({ sort, sortDirection }: Readonly<{ sort?: string; sortDirection?: string }>) {
-  const [value, setValue] = useState(() => toSortOptionValue(sort, sortDirection));
+  const resolved = toSortOptionValue(sort, sortDirection);
+
+  // Keyed by the URL-derived value: applying or clearing filters has to mount a fresh
+  // state holder. Otherwise the control keeps showing — and re-submits through the
+  // hidden pair below — a sort the URL no longer contains.
+  return <SortSelection key={resolved} initial={resolved} />;
+}
+
+function SortSelection({ initial }: Readonly<{ initial: string }>) {
+  const [value, setValue] = useState(initial);
   const selected = SORT_OPTIONS.find((option) => option.value === value) ?? SORT_OPTIONS[0];
 
   return (
