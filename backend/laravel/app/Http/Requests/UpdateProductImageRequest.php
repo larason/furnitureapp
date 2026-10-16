@@ -23,11 +23,21 @@ final class UpdateProductImageRequest extends FormRequest
 
         $unknown = array_diff(array_keys($input), [self::FIELD]);
         if ($unknown !== []) {
-            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'The request field is not supported.', 422, (string) reset($unknown));
+            throw new ApiException(
+                ApiErrorCode::INVALID_VALUE,
+                'The request field is not supported.',
+                422,
+                (string) reset($unknown)
+            );
         }
 
         if (! array_key_exists(self::FIELD, $input)) {
-            throw new ApiException(ApiErrorCode::MISSING_REQUIRED_FIELD, 'The alt_text field is required.', 422, self::FIELD);
+            throw new ApiException(
+                ApiErrorCode::MISSING_REQUIRED_FIELD,
+                'The alt_text field is required.',
+                422,
+                self::FIELD
+            );
         }
 
         if (is_string($input[self::FIELD])) {

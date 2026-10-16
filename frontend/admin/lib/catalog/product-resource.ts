@@ -180,16 +180,22 @@ function parseImageSummary(value: unknown): ProductImageSummary | null {
   return { id, url, altText: typeof value.alt_text === "string" ? value.alt_text : null };
 }
 
+/**
+ * The gallery is always sent by the operational detail resource, so a response
+ * without a readable array — or with an unreadable entry in it — is a broken
+ * response, not an empty gallery. Reconstructing one would hide the regression and
+ * leave the page offering media operations over incomplete data.
+ */
 function parseImageDetails(value: unknown): readonly ProductImageDetail[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  if (!Array.isArray(value)) throw new ProductResourceError();
+  return value.map((entry) => {
     const summary = parseImageSummary(entry);
-    if (summary === null || !isRecord(entry)) return [];
-    return [{
+    if (summary === null) throw new ProductResourceError();
+    return {
       ...summary,
-      sortOrder: readNonNegativeInteger(entry.sort_order) ?? 0,
-      isPrimary: entry.is_primary === true,
-    }];
+      sortOrder: readNonNegativeInteger(isRecord(entry) ? entry.sort_order : null) ?? 0,
+      isPrimary: isRecord(entry) && entry.is_primary === true,
+    };
   });
 }
 

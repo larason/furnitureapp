@@ -134,7 +134,10 @@ final class ProductImageMutationApiTest extends TestCase
 
         $payload = json_decode((string) DB::table('jobs')->value('payload'), true, 512, JSON_THROW_ON_ERROR);
         /** @var DeleteProductImageObject $job */
-        $job = unserialize((string) $payload['data']['command'], ['allowed_classes' => [DeleteProductImageObject::class]]);
+        $job = unserialize(
+            (string) $payload['data']['command'],
+            ['allowed_classes' => [DeleteProductImageObject::class]]
+        );
 
         $this->assertInstanceOf(
             DeleteProductImageObject::class,
@@ -151,7 +154,8 @@ final class ProductImageMutationApiTest extends TestCase
         $image = $this->createImage($product, ['alt_text' => 'Old text', 'sort_order' => 4, 'is_primary' => true]);
         $headers = $this->operator();
 
-        $updated = $this->json('PATCH', $this->imageUrl($product, $image), ['alt_text' => 'New text'], $headers)->assertOk();
+        $patch = ['alt_text' => 'New text'];
+        $updated = $this->json('PATCH', $this->imageUrl($product, $image), $patch, $headers)->assertOk();
         $updated->assertJsonPath('data.alt_text', 'New text');
         $updated->assertJsonPath('data.url', self::PUBLIC_BASE_URL.'/'.$image->file_path);
         $this->assertSame(['id', 'url', 'alt_text', 'sort_order', 'is_primary'], array_keys($updated->json('data')));
@@ -186,8 +190,13 @@ final class ProductImageMutationApiTest extends TestCase
         $this->json('PATCH', $url, [], $headers)->assertUnprocessable();
         $this->json('PATCH', $url, ['alt_text' => 'ok', 'sort_order' => 9], $headers)->assertUnprocessable();
         $this->json('PATCH', $url, ['alt_text' => 'ok', 'is_primary' => false], $headers)->assertUnprocessable();
-        $this->json('PATCH', $url, ['alt_text' => 'ok', 'url' => 'https://evil.test/x.png'], $headers)->assertUnprocessable();
-        $this->json('PATCH', $url, ['alt_text' => 'ok', 'file_path' => 'products/steal.png'], $headers)->assertUnprocessable();
+        $rejectedFields = [
+            ['alt_text' => 'ok', 'url' => 'https://evil.test/x.png'],
+            ['alt_text' => 'ok', 'file_path' => 'products/steal.png'],
+        ];
+        foreach ($rejectedFields as $rejected) {
+            $this->json('PATCH', $url, $rejected, $headers)->assertUnprocessable();
+        }
 
         $stored = $image->fresh();
         $this->assertSame(3, $stored->sort_order);
@@ -213,7 +222,8 @@ final class ProductImageMutationApiTest extends TestCase
         $previous = $this->createImage($product, ['sort_order' => 1, 'is_primary' => true]);
         $target = $this->createImage($product, ['sort_order' => 2]);
 
-        $response = $this->json('POST', $this->imageUrl($product, $target, '/primary'), [], $this->operator())->assertOk();
+        $primaryUrl = $this->imageUrl($product, $target, '/primary');
+        $response = $this->json('POST', $primaryUrl, [], $this->operator())->assertOk();
 
         $response->assertJsonPath('data.is_primary', true);
         $response->assertJsonPath('data.id', ProductImageIdentifier::encode($target));
@@ -323,7 +333,9 @@ final class ProductImageMutationApiTest extends TestCase
         $single = Product::factory()->create();
         $image = $this->createImage($single);
 
-        $this->json('POST', $this->productUrl($single, '/reorder'), ['images' => [ProductImageIdentifier::encode($image)]], $headers)
+        $reorderUrl = $this->productUrl($single, '/reorder');
+        $encodedImage = ProductImageIdentifier::encode($image);
+        $this->json('POST', $reorderUrl, ['images' => [$encodedImage]], $headers)
             ->assertOk()
             ->assertJsonCount(1, 'data');
         $this->assertSame(1, $image->fresh()->sort_order);
@@ -345,15 +357,23 @@ final class ProductImageMutationApiTest extends TestCase
         $secondId = ProductImageIdentifier::encode($second);
 
         $this->json('POST', $url, ['images' => [$firstId, $firstId]], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => [$firstId, ProductImageIdentifier::encode($foreign)]], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => [$firstId]], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => [$firstId, $secondId, 'img_zzzzzzzzzz']], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => [$firstId, 'not-an-identifier']], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => $firstId], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => [[ProductImageIdentifier::encode($first)]]], $headers)->assertUnprocessable();
-        $this->json('POST', $url, ['images' => [$firstId, $secondId], 'sort_order' => 1], $headers)->assertUnprocessable();
+        $encodedFirst = ProductImageIdentifier::encode($first);
+        $encodedForeign = ProductImageIdentifier::encode($foreign);
+        $rejectedPayloads = [
+            ['images' => [$firstId, $encodedForeign]],
+            ['images' => [$firstId]],
+            ['images' => [$firstId, $secondId, 'img_zzzzzzzzzz']],
+            ['images' => [$firstId, 'not-an-identifier']],
+            ['images' => $firstId],
+            ['images' => [[$encodedFirst]]],
+            ['images' => [$firstId, $secondId], 'sort_order' => 1],
+        ];
+        foreach ($rejectedPayloads as $rejected) {
+            $this->json('POST', $url, $rejected, $headers)->assertUnprocessable();
+        }
         $this->json('POST', $url, [], $headers)->assertUnprocessable();
-        $this->json('POST', self::PRODUCTS.'prod_zzzzzzzz/images/reorder', ['images' => []], $headers)->assertNotFound();
+        $unknownProductUrl = self::PRODUCTS.'prod_zzzzzzzz/images/reorder';
+        $this->json('POST', $unknownProductUrl, ['images' => []], $headers)->assertNotFound();
 
         $this->assertSame([1, 2], $this->orderedImages($product)->pluck('sort_order')->all());
         $this->assertDatabaseHas('product_images', ['id' => $foreign->getKey()]);

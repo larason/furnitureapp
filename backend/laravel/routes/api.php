@@ -147,10 +147,18 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
             Route::post($products, [ProductController::class, 'store'])->middleware('throttle:operational-write')->name('products.store');
             Route::patch($products.$productPath, [ProductController::class, 'update'])->middleware('throttle:operational-write')->name('products.update');
             Route::post($products.'/{product}/images', [ProductController::class, 'storeImage'])->middleware('throttle:operational-write')->name('products.images.store');
-            Route::post($products.'/{product}/images/reorder', [ProductController::class, 'reorderImages'])->middleware('throttle:operational-write')->name('products.images.reorder');
-            Route::post($products.'/{product}/images/{image}/primary', [ProductController::class, 'selectPrimaryImage'])->middleware('throttle:operational-write')->name('products.images.primary');
-            Route::patch($products.'/{product}/images/{image}', [ProductController::class, 'updateImage'])->middleware('throttle:operational-write')->name('products.images.update');
-            Route::delete($products.'/{product}/images/{image}', [ProductController::class, 'destroyImage'])->middleware('throttle:operational-write')->name('products.images.destroy');
+            Route::post($products.'/{product}/images/reorder', [ProductController::class, 'reorderImages'])
+                ->middleware('throttle:operational-write')
+                ->name('products.images.reorder');
+            Route::post($products.'/{product}/images/{image}/primary', [ProductController::class, 'selectPrimaryImage'])
+                ->middleware('throttle:operational-write')
+                ->name('products.images.primary');
+            Route::patch($products.'/{product}/images/{image}', [ProductController::class, 'updateImage'])
+                ->middleware('throttle:operational-write')
+                ->name('products.images.update');
+            Route::delete($products.'/{product}/images/{image}', [ProductController::class, 'destroyImage'])
+                ->middleware('throttle:operational-write')
+                ->name('products.images.destroy');
             Route::post($products.'/{product}/variants', [ProductController::class, 'storeVariant'])->middleware('throttle:operational-write')->name('products.variants.store');
             Route::post('/categories', [CategoryController::class, 'store'])->middleware('throttle:operational-write')->name('categories.store');
             Route::patch('/categories/{category}', [CategoryController::class, 'update'])->middleware('throttle:operational-write')->name('categories.update');

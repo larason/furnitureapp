@@ -43,7 +43,9 @@ final class ReorderProductImages
             $position = self::FIRST_POSITION;
             foreach ($ordered as $image) {
                 if ($image->sort_order !== $position) {
-                    ProductImage::query()->whereKey($image->getKey())->update(['sort_order' => $position, 'updated_at' => now()]);
+                    ProductImage::query()
+                        ->whereKey($image->getKey())
+                        ->update(['sort_order' => $position, 'updated_at' => now()]);
                 }
 
                 $position++;
@@ -71,18 +73,33 @@ final class ReorderProductImages
             $id = ProductImageIdentifier::decode($identifier);
 
             if ($id === null || ! $byId->has($id)) {
-                throw new ApiException(ApiErrorCode::INVALID_VALUE, 'Every submitted image must belong to this product.', 422, self::FIELD);
+                throw new ApiException(
+                    ApiErrorCode::INVALID_VALUE,
+                    'Every submitted image must belong to this product.',
+                    422,
+                    self::FIELD
+                );
             }
 
             if ($ordered->contains(fn (ProductImage $image): bool => $image->getKey() === $id)) {
-                throw new ApiException(ApiErrorCode::INVALID_VALUE, 'A product image may appear only once.', 422, self::FIELD);
+                throw new ApiException(
+                    ApiErrorCode::INVALID_VALUE,
+                    'A product image may appear only once.',
+                    422,
+                    self::FIELD
+                );
             }
 
             $ordered->push($byId->get($id));
         }
 
         if ($ordered->count() !== $images->count()) {
-            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'The list must contain every image of the product exactly once.', 422, self::FIELD);
+            throw new ApiException(
+                ApiErrorCode::INVALID_VALUE,
+                'The list must contain every image of the product exactly once.',
+                422,
+                self::FIELD
+            );
         }
 
         return $ordered;

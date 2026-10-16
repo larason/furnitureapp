@@ -60,7 +60,9 @@ class CommittedOriginTemplatesTest extends TestCase
     /** @return list<string> */
     private function exampleList(string $key): array
     {
-        return array_values(array_filter(array_map('trim', explode(',', $this->exampleValue('backend/laravel', $key)))));
+        $raw = explode(',', $this->exampleValue('backend/laravel', $key));
+
+        return array_values(array_filter(array_map('trim', $raw)));
     }
 
     private function exampleValue(string $app, string $key): string

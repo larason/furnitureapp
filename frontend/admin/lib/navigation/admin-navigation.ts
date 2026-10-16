@@ -227,7 +227,7 @@ export function findActiveNavigation(
   pathname: string,
 ): { readonly group: AdminNavigationGroup; readonly item: AdminRoute } | null {
   const matches = groups.flatMap((group) => group.items.filter((item) => isNavigationHrefActive(item.href, pathname)).map((item) => ({ group, item })));
-  return matches.sort((first, second) => second.item.href.length - first.item.href.length)[0] ?? null;
+  return matches.toSorted((first, second) => second.item.href.length - first.item.href.length)[0] ?? null;
 }
 
 export function buildBreadcrumbs(active: { readonly item: AdminRoute } | null): readonly AdminBreadcrumb[] {

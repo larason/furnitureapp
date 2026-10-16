@@ -66,8 +66,10 @@ class OpenApiProductImageContractTest extends TestCase
             }
         }
 
-        $this->assertArrayHasKey('204', $document['paths']['/products/{product}/images/{image}']['delete']['responses']);
-        $this->assertArrayHasKey('200', $document['paths']['/products/{product}/images/{image}/primary']['post']['responses']);
+        $deleteResponses = $document['paths']['/products/{product}/images/{image}']['delete']['responses'];
+        $primaryResponses = $document['paths']['/products/{product}/images/{image}/primary']['post']['responses'];
+        $this->assertArrayHasKey('204', $deleteResponses);
+        $this->assertArrayHasKey('200', $primaryResponses);
         $this->assertArrayHasKey('200', $document['paths']['/products/{product}/images/reorder']['post']['responses']);
     }
 
@@ -75,11 +77,13 @@ class OpenApiProductImageContractTest extends TestCase
     {
         $document = Yaml::parseFile(base_path('../../docs/api/openapi.yaml'));
 
-        foreach (['Unauthorized', 'Forbidden', 'NotFound', 'PayloadTooLarge', 'ValidationError', 'RateLimited'] as $name) {
+        $responseNames = ['Unauthorized', 'Forbidden', 'NotFound', 'PayloadTooLarge', 'ValidationError', 'RateLimited'];
+        foreach ($responseNames as $name) {
             $this->assertArrayHasKey($name, $document['components']['responses'], "Unresolved response reference {$name}");
         }
 
-        foreach (['ProductPath', 'ImagePath'] as $name) {
+        $parameterNames = ['ProductPath', 'ImagePath'];
+        foreach ($parameterNames as $name) {
             $this->assertArrayHasKey($name, $document['components']['parameters'], "Unresolved parameter reference {$name}");
         }
 
@@ -98,12 +102,14 @@ class OpenApiProductImageContractTest extends TestCase
         $this->assertSame(['string', 'null'], $schemas['ProductImageAltTextRequest']['properties']['alt_text']['type']);
         $this->assertSame(['images'], array_keys($schemas['ProductImageOrderRequest']['properties']));
         $this->assertFalse($schemas['ProductImageOrderRequest']['additionalProperties']);
-        $this->assertSame('^img_[0-9a-z]+$', $schemas['ProductImageOrderRequest']['properties']['images']['items']['pattern']);
+        $orderPattern = $schemas['ProductImageOrderRequest']['properties']['images']['items']['pattern'];
+        $this->assertSame('^img_[0-9a-z]+$', $orderPattern);
 
         $paths = $document['paths'];
         $this->assertArrayNotHasKey('requestBody', $paths['/products/{product}/images/{image}/primary']['post']);
         $this->assertArrayNotHasKey('requestBody', $paths['/products/{product}/images/{image}']['delete']);
-        $this->assertArrayNotHasKey('sort_order', $paths['/products/{product}/images']['post']['requestBody']['content']['multipart/form-data']['schema']['properties']);
+        $uploadProperties = $paths['/products/{product}/images']['post']['requestBody']['content']['multipart/form-data']['schema']['properties'];
+        $this->assertArrayNotHasKey('sort_order', $uploadProperties);
 
         foreach ($paths as $path => $operations) {
             foreach (['post', 'patch', 'put'] as $method) {

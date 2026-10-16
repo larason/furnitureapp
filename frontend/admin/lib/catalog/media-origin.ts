@@ -75,6 +75,12 @@ export function catalogMediaRemotePatterns(mediaOrigin: CatalogMediaOrigin | nul
 }
 
 function normalizeBasePath(pathname: string): string {
-  const trimmed = pathname.replace(/\/+$/, "");
+  // A trailing `\/+$` replace backtracks quadratically on input such as "///x",
+  // so trim the trailing separators directly instead.
+  let end = pathname.length;
+  while (end > 0 && pathname.charAt(end - 1) === "/") {
+    end -= 1;
+  }
+  const trimmed = pathname.slice(0, end);
   return trimmed === "/" ? "" : trimmed;
 }

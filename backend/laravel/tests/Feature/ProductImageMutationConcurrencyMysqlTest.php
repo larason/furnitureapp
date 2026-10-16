@@ -165,7 +165,11 @@ final class ProductImageMutationConcurrencyMysqlTest extends TestCase
 
         $this->assertNotNull($blocked, 'A competing reorder must not run while the product row is locked.');
         $this->assertSame(self::LOCK_WAIT_TIMEOUT_ERROR, (int) ($blocked->errorInfo[1] ?? 0));
-        $this->assertSame([1, 2, 3], $this->sortedPositions($product), 'The blocked attempt must leave no partial ordering.');
+        $this->assertSame(
+            [1, 2, 3],
+            $this->sortedPositions($product),
+            'The blocked attempt must leave no partial ordering.'
+        );
 
         $first->rollBack();
 

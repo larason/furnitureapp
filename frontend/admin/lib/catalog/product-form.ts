@@ -1,5 +1,4 @@
-import type { ApiErrorItem } from "@/lib/api/types";
-import type { JsonValue } from "@/lib/api/types";
+import type { ApiErrorItem, JsonValue } from "@/lib/api/types";
 import type { OperationalProduct } from "@/lib/catalog/product-resource";
 
 /**
@@ -15,6 +14,14 @@ const PRODUCT_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const PRODUCT_CURRENCY = "TZS";
 const MINOR_UNITS_PER_MAJOR = 100;
+
+/**
+ * The frozen write contract types `description` as a non-nullable string, and
+ * Laravel's global ConvertEmptyStringsToNull turns a cleared value into `null`,
+ * which validation rejects. Silently dropping the change would report a save that
+ * never happened, so the save is blocked with this message instead.
+ */
+export const UNCLEARABLE_DESCRIPTION_MESSAGE = "A saved description cannot be cleared. Leave it unchanged or enter new text.";
 
 export const PRODUCT_FORM_FIELDS = {
   name: "name",
@@ -130,6 +137,7 @@ export function buildUpdatePayload(values: ProductFormValues, original: ProductF
   const fieldErrors = validateValues(values);
   const amount = parseMajorUnitsToMinorUnits(values.priceAmount);
   if (amount === null) fieldErrors[PRODUCT_FORM_FIELDS.priceAmount] = "Enter a valid price amount.";
+  if (clearsSavedDescription(values, original)) fieldErrors[PRODUCT_FORM_FIELDS.description] = UNCLEARABLE_DESCRIPTION_MESSAGE;
   if (Object.keys(fieldErrors).length > 0 || amount === null) return { payload: null, fieldErrors };
 
   const payload = compactPayload({
@@ -198,6 +206,11 @@ function compactPayload(source: Readonly<Record<string, JsonValue | undefined>>)
 
 function changed(next: string, previous: string): boolean {
   return next !== previous;
+}
+
+/** True when an edit empties a description that already has saved text. */
+function clearsSavedDescription(values: ProductFormValues, original: ProductFormValues): boolean {
+  return original.description.trim().length > 0 && values.description.trim().length === 0;
 }
 
 function mapApiField(error: ApiErrorItem): ProductFormField | null {

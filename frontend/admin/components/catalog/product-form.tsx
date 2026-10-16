@@ -117,7 +117,7 @@ export function ProductForm({ mode, values, categories, currentCategory, categor
         value={draft.description}
         onChange={(event) => setField({ description: event.target.value })}
         error={Boolean(fieldErrors[PRODUCT_FORM_FIELDS.description])}
-        helperText={fieldErrors[PRODUCT_FORM_FIELDS.description] ?? `Optional, up to ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters.`}
+        helperText={fieldErrors[PRODUCT_FORM_FIELDS.description] ?? `Up to ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters.`}
         slotProps={{ htmlInput: { maxLength: PRODUCT_DESCRIPTION_MAX_LENGTH } }}
       />
 
@@ -129,12 +129,17 @@ export function ProductForm({ mode, values, categories, currentCategory, categor
 
       <Box sx={{ display: "flex", flexDirection: "row", gap: 2, flexWrap: "wrap" }}>
         <Button type="submit" variant="contained" disabled={pending || categoryBlocked} aria-busy={pending}>
-          {pending ? "Saving…" : mode === "create" ? "Create product" : "Save changes"}
+          {submitLabel(pending, mode)}
         </Button>
         <Button href={cancelHref(mode, productId)}>Cancel</Button>
       </Box>
     </Box>
   );
+}
+
+function submitLabel(pending: boolean, mode: "create" | "edit"): string {
+  if (pending) return "Saving…";
+  return mode === "create" ? "Create product" : "Save changes";
 }
 
 function cancelHref(mode: "create" | "edit", productId: string | undefined): string {

@@ -16,6 +16,7 @@ import { AdminPermissionName } from "../lib/auth/permission-names";
 import { parseCategoryOptions } from "../lib/catalog/category-option";
 import {
   EMPTY_PRODUCT_FORM_VALUES,
+  UNCLEARABLE_DESCRIPTION_MESSAGE,
   buildCreatePayload,
   buildUpdatePayload,
   fieldErrorsFromApi,
@@ -58,6 +59,7 @@ function rawProduct(overrides: Record<string, unknown> = {}): Record<string, unk
     price: { amount: 150000, currency: "TZS" },
     category: { id: "cat_1", slug: "chairs", name: "Chairs" },
     availability: "available", stock_indicator: "IN_STOCK",
+    images: [],
     ...overrides,
   };
 }
@@ -233,12 +235,31 @@ test("an unusable product response is rejected rather than guessed", () => {
 });
 
 test("missing optional relations are empty, never fabricated, and unknown states are preserved", () => {
-  const product = parseOperationalProduct({ id: "prd_1", name: "Oak chair", slug: "oak-chair", product_type: "FUTURE_TYPE", price: { amount: 0, currency: "TZS" }, category: { id: "cat_1", slug: "chairs", name: "Chairs" }, availability: "future_state", stock_indicator: "future_stock" });
+  const product = parseOperationalProduct({ id: "prd_1", name: "Oak chair", slug: "oak-chair", product_type: "FUTURE_TYPE", price: { amount: 0, currency: "TZS" }, category: { id: "cat_1", slug: "chairs", name: "Chairs" }, availability: "future_state", stock_indicator: "future_stock", images: [] });
   assert.equal(product.isActive, null);
   assert.equal(product.isPublished, null);
   assert.deepEqual(product.variants, []);
-  assert.deepEqual(product.images, []);
+  assert.deepEqual(product.images, [], "an explicitly empty gallery is a real empty gallery.");
   assert.equal(product.availability, "future_state");
+});
+
+test("a response without a readable gallery is rejected instead of shown as an empty one", () => {
+  // Laravel always sends the gallery, so an omitted array is a broken response.
+  assert.throws(() => parseOperationalProduct(rawProduct({ images: undefined })), ProductResourceError);
+  assert.throws(() => parseOperationalProduct(rawProduct({ images: null })), ProductResourceError);
+  assert.throws(() => parseOperationalProduct(rawProduct({ images: "none" })), ProductResourceError);
+  assert.throws(() => parseOperationalProduct(rawProduct({ images: {} })), ProductResourceError);
+
+  // Dropping an unreadable entry would silently lose an image, and CAT-018 requires
+  // the complete ordered set, so the whole response is unusable.
+  assert.throws(() => parseOperationalProduct(rawProduct({ images: [{ id: "img_1" }] })), ProductResourceError);
+  assert.throws(() => parseOperationalProduct(rawProduct({ images: [null] })), ProductResourceError);
+
+  // A product that genuinely has no images is still readable.
+  assert.deepEqual(parseOperationalProduct(rawProduct()).images, []);
+
+  const meta = { pagination: { current_page: 1, per_page: 20, total: 1, last_page: 1 } };
+  assert.throws(() => parseProductPage({ data: [rawProduct({ images: undefined })], meta }), ProductResourceError);
 });
 
 test("pagination metadata is used verbatim from the server response", () => {
@@ -316,6 +337,32 @@ test("an update sends only the fields the operator changed", () => {
 
   const priceChanged = buildUpdatePayload({ ...original, priceAmount: "1600.50" }, original);
   assert.deepEqual(priceChanged.payload, { price: { amount: 160050, currency: "TZS" } });
+});
+
+test("clearing a saved description is blocked instead of silently dropped", () => {
+  const original = validFormValues({ description: "Built to your measurements." });
+
+  // Laravel rejects a cleared description: the frozen contract types it as a
+  // non-nullable string and ConvertEmptyStringsToNull turns "" into null.
+  const cleared = buildUpdatePayload({ ...original, description: "   " }, original);
+  assert.equal(cleared.payload, null, "a cleared description must not reach the API.");
+  assert.equal(cleared.fieldErrors.description, UNCLEARABLE_DESCRIPTION_MESSAGE);
+
+  // Dropping the field would report a save that never happened, so the operator
+  // must be told even when the description was the only change.
+  const clearedWithOtherEdits = buildUpdatePayload({ ...original, description: "", name: "Renamed chair" }, original);
+  assert.equal(clearedWithOtherEdits.payload, null);
+  assert.equal(clearedWithOtherEdits.fieldErrors.description, UNCLEARABLE_DESCRIPTION_MESSAGE);
+
+  // Replacing the text is still an ordinary update.
+  const replaced = buildUpdatePayload({ ...original, description: "New text" }, original);
+  assert.deepEqual(replaced.payload, { description: "New text" });
+
+  // A product that never had a description can still be saved without one.
+  const originallyEmpty = validFormValues({ description: "" });
+  const created = buildCreatePayload(originallyEmpty);
+  assert.equal(created.payload?.description, undefined);
+  assert.equal(buildUpdatePayload({ ...originallyEmpty, description: "" }, originallyEmpty).fieldErrors.description, undefined);
 });
 
 test("major/minor unit conversion is exact and reversible", () => {

@@ -86,7 +86,7 @@ export function CategoryForm({ mode, values, categoryId }: Readonly<CategoryForm
 
       <Box sx={{ display: "flex", flexDirection: "row", gap: 2, flexWrap: "wrap" }}>
         <Button type="submit" variant="contained" disabled={pending} aria-busy={pending}>
-          {pending ? "Saving…" : mode === "create" ? "Create category" : "Save changes"}
+          {submitLabel(pending, mode)}
         </Button>
         <Button href={cancelHref(mode, categoryId)}>Cancel</Button>
       </Box>
@@ -95,6 +95,11 @@ export function CategoryForm({ mode, values, categoryId }: Readonly<CategoryForm
       </Typography>
     </Box>
   );
+}
+
+function submitLabel(pending: boolean, mode: "create" | "edit"): string {
+  if (pending) return "Saving…";
+  return mode === "create" ? "Create category" : "Save changes";
 }
 
 function cancelHref(mode: "create" | "edit", categoryId: string | undefined): string {

@@ -12,7 +12,8 @@ final class CheckClerkOrigins extends Command
     protected $signature = 'clerk:check-origins
         {origin?* : Client origins to verify; defaults to the origins declared by the frontends}';
 
-    protected $description = 'Verify that every frontend origin is an authorized Clerk party and an allowed CORS origin';
+    protected $description = 'Verify that every frontend origin is an authorized Clerk party'
+        .' and an allowed CORS origin';
 
     public function handle(): int
     {
@@ -21,7 +22,10 @@ final class CheckClerkOrigins extends Command
         $origins = $requested === [] ? $this->declaredClientOrigins() : $requested;
 
         if ($origins === []) {
-            $this->error('No client origins were resolved. Pass them explicitly, e.g. '.self::ADMIN_ORIGIN_VARIABLE.'=http://localhost:3001');
+            $this->error(
+                'No client origins were resolved. Pass them explicitly, e.g. '
+                .self::ADMIN_ORIGIN_VARIABLE.'=http://localhost:3001'
+            );
 
             return self::FAILURE;
         }
@@ -45,8 +49,14 @@ final class CheckClerkOrigins extends Command
         }
 
         if ($problems !== []) {
-            $this->warn('Add the missing origins to '.implode(' and ', $problems).' in your Laravel .env, then run `php artisan config:clear`.');
-            $this->warn('Clerk compares the token `azp` claim exactly: a trailing slash, a localhost/127.0.0.1 alias, a scheme change or a port change is a different origin.');
+            $this->warn(
+                'Add the missing origins to '.implode(' and ', $problems)
+                .' in your Laravel .env, then run `php artisan config:clear`.'
+            );
+            $this->warn(
+                'Clerk compares the token `azp` claim exactly: a trailing slash, a localhost/127.0.0.1 alias, '
+                .'a scheme change or a port change is a different origin.'
+            );
 
             return self::FAILURE;
         }
@@ -121,6 +131,9 @@ final class CheckClerkOrigins extends Command
             return [];
         }
 
-        return array_values(array_filter($value, static fn (mixed $item): bool => is_string($item) && trim($item) !== ''));
+        return array_values(array_filter(
+            $value,
+            static fn (mixed $item): bool => is_string($item) && trim($item) !== ''
+        ));
     }
 }

@@ -26,7 +26,15 @@ export interface ProductListQuery {
   readonly perPage: number;
 }
 
-export type ProductListSearchParams = Record<string, string | string[] | undefined>;
+/** A raw, unvalidated `searchParams` entry as Next.js delivers it. */
+type RawQueryParam = string | string[] | undefined;
+
+/** A value the frozen list contract accepts in an outgoing query string. */
+type QueryParamValue = string | number | boolean;
+
+type QueryParamRecord = Readonly<Record<string, QueryParamValue>>;
+
+export type ProductListSearchParams = Record<string, RawQueryParam>;
 
 export function parseProductListQuery(params: ProductListSearchParams): ProductListQuery {
   return {
@@ -42,7 +50,7 @@ export function parseProductListQuery(params: ProductListSearchParams): ProductL
 }
 
 /** Builds the exact API query for the operational list request. */
-export function productListRequestQuery(query: ProductListQuery): Readonly<Record<string, string | number | boolean>> {
+export function productListRequestQuery(query: ProductListQuery): QueryParamRecord {
   return compact({
     search: query.search,
     category: query.category,
@@ -78,32 +86,32 @@ export function countProductFilters(query: ProductListQuery): number {
   return [query.search, query.category, query.productType, query.isActive, query.isPublished, query.availability].filter((value) => value !== null).length;
 }
 
-function compact(source: Readonly<Record<string, string | number | boolean | null>>): Readonly<Record<string, string | number | boolean>> {
-  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== null)) as Record<string, string | number | boolean>;
+function compact(source: Readonly<Record<string, QueryParamValue | null>>): QueryParamRecord {
+  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== null)) as Record<string, QueryParamValue>;
 }
 
-function readFirst(value: string | string[] | undefined): string | null {
+function readFirst(value: RawQueryParam): string | null {
   if (typeof value === "string") return value;
   return Array.isArray(value) && typeof value[0] === "string" ? value[0] : null;
 }
 
-function readText(value: string | string[] | undefined, maxLength: number): string | null {
+function readText(value: RawQueryParam, maxLength: number): string | null {
   const text = readFirst(value)?.trim() ?? "";
   return text.length > 0 && text.length <= maxLength ? text : null;
 }
 
-function readEnum<const T extends readonly string[]>(value: string | string[] | undefined, allowed: T): T[number] | null {
+function readEnum<const T extends readonly string[]>(value: RawQueryParam, allowed: T): T[number] | null {
   const candidate = readFirst(value);
   return candidate !== null && (allowed as readonly string[]).includes(candidate) ? (candidate as T[number]) : null;
 }
 
-function readBoolean(value: string | string[] | undefined): boolean | null {
+function readBoolean(value: RawQueryParam): boolean | null {
   const candidate = readFirst(value);
   if (candidate === "true") return true;
   return candidate === "false" ? false : null;
 }
 
-function readInteger(value: string | string[] | undefined, minimum: number, maximum: number, fallback: number): number {
+function readInteger(value: RawQueryParam, minimum: number, maximum: number, fallback: number): number {
   const candidate = Number(readFirst(value));
   return Number.isInteger(candidate) && candidate >= minimum && candidate <= maximum ? candidate : fallback;
 }

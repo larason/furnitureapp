@@ -114,8 +114,12 @@ class ProductController extends V1Controller
         return (new ProductImageResource($image))->response()->setStatusCode(201)->withHeaders($this->privateHeaders());
     }
 
-    public function updateImage(UpdateProductImageRequest $request, string $product, string $image, UpdateProductImageAltText $updater): JsonResponse
-    {
+    public function updateImage(
+        UpdateProductImageRequest $request,
+        string $product,
+        string $image,
+        UpdateProductImageAltText $updater
+    ): JsonResponse {
         [$resolvedProduct, $resolvedImage] = $this->resolveOperationalImage($product, $image);
 
         $updated = $updater->update($resolvedProduct, $resolvedImage, $request->altText());
@@ -132,8 +136,12 @@ class ProductController extends V1Controller
         return response()->noContent()->withHeaders($this->privateHeaders());
     }
 
-    public function selectPrimaryImage(SelectPrimaryProductImageRequest $request, string $product, string $image, SelectPrimaryProductImage $selector): JsonResponse
-    {
+    public function selectPrimaryImage(
+        SelectPrimaryProductImageRequest $request,
+        string $product,
+        string $image,
+        SelectPrimaryProductImage $selector
+    ): JsonResponse {
         [$resolvedProduct, $resolvedImage] = $this->resolveOperationalImage($product, $image);
 
         $selected = $selector->select($resolvedProduct, $resolvedImage);
@@ -141,8 +149,11 @@ class ProductController extends V1Controller
         return (new ProductImageResource($selected))->response()->withHeaders($this->privateHeaders());
     }
 
-    public function reorderImages(ReorderProductImagesRequest $request, string $product, ReorderProductImages $reorderer): JsonResponse
-    {
+    public function reorderImages(
+        ReorderProductImagesRequest $request,
+        string $product,
+        ReorderProductImages $reorderer
+    ): JsonResponse {
         $images = $reorderer->reorder($this->resolveOperationalProduct($product), $request->imageIdentifiers());
 
         return response()->json([

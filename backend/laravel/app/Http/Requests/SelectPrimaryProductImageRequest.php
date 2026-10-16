@@ -23,7 +23,12 @@ final class SelectPrimaryProductImageRequest extends FormRequest
         $input = $this->all();
 
         if ($input !== []) {
-            throw new ApiException(ApiErrorCode::INVALID_VALUE, 'This operation does not accept a request body.', 422, (string) array_key_first($input));
+            throw new ApiException(
+                ApiErrorCode::INVALID_VALUE,
+                'This operation does not accept a request body.',
+                422,
+                (string) array_key_first($input)
+            );
         }
     }
 
