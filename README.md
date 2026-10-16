@@ -44,6 +44,9 @@ Admin Dashboard ──────────┘
 
 ## Project Structure & Subdirectories
 
+<details>
+<summary>Click to expand</summary>
+
 ```
 furnitureapp/
 ├── .agents/                      # Agent capabilities, skills, and configuration
@@ -145,9 +148,15 @@ furnitureapp/
 └── README.md                     # This file
 ```
 
+</details>
+
+
 ---
 
 ## Detailed Directory Breakdown
+
+<details>
+<summary>Click to expand</summary>
 
 ### 1. Backend Service (`backend/laravel`)
 
@@ -221,6 +230,8 @@ Contains over 45 migrations governing schema integrity:
 - **`docs/domain/business-rules.md`**: Authoritative domain rules for catalog availability, stock reservation, money calculations, and order workflows.
 - **`security.md`**: Full documentation of resolved security reviews (pre-auth quotas, transient anonymous carts, log scrubbing, CORS/CSP hardening).
 - **`phases/`**: Detailed phase tracking records from Group A through Group K.
+
+</details>
 
 ---
 
