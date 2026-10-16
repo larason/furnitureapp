@@ -12,4 +12,10 @@ final class ProductImageIdentifier
     {
         return Base36Identifier::encode(self::PREFIX, (int) $image->getKey());
     }
+
+    /** Decodes an `img_` identifier; malformed input resolves to null rather than an id. */
+    public static function decode(string $identifier): ?int
+    {
+        return Base36Identifier::decode($identifier, self::PREFIX);
+    }
 }

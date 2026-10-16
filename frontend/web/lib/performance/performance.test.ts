@@ -78,7 +78,8 @@ test("PDP loads only the lead image eagerly and never duplicates it in the galle
   const page = read("app/products/[slug]/page.tsx");
   assert.match(page, /secondaryImages = product\.images\.filter\(\(image\) => image\.id !== leadImage\?\.id\)/);
   assert.match(page, /<ProductMedia image=\{leadImage\} productName=\{product\.name\} preload \/>/);
-  assert.match(page, /secondaryImages\.map\(\(image\) => <ProductMedia key=\{image\.id\} image=\{image\} productName=\{product\.name\} \/>\)/);
+  assert.match(page, /GALLERY_IMAGE_ASPECT = "var\(--media-product-card\)"/);
+  assert.match(page, /secondaryImages\.map\(\(image\) => <ProductMedia key=\{image\.id\} image=\{image\} productName=\{product\.name\} aspectRatio=\{GALLERY_IMAGE_ASPECT\} \/>\)/);
 });
 
 test("collection cards reuse lightweight CAT-001 summaries without per-card detail fetches", () => {

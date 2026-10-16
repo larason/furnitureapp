@@ -34,7 +34,10 @@ class ProductImageApiTest extends TestCase
     {
         parent::setUp();
         $this->seed(RbacSeeder::class);
-        config(['product_images.disk' => 'product_images', 'product_images.public_base_url' => 'https://examplefurnitures.com']);
+        config([
+            'product_images.disk' => 'product_images',
+            'product_images.public_base_url' => 'https://pub-20ad593372b04704ae5e74f0c4bda810.r2.dev',
+        ]);
         Storage::fake('product_images');
     }
 
@@ -72,7 +75,8 @@ class ProductImageApiTest extends TestCase
             $this->assertStringEndsWith('.'.$extension, $stored->file_path);
             Storage::disk('product_images')->assertExists($stored->file_path);
             $this->assertSame($file->getContent(), Storage::disk('product_images')->get($stored->file_path));
-            $response->assertJsonPath('data.url', 'https://examplefurnitures.com/'.$stored->file_path);
+            $publicBaseUrl = 'https://pub-20ad593372b04704ae5e74f0c4bda810.r2.dev';
+            $response->assertJsonPath('data.url', $publicBaseUrl.'/'.$stored->file_path);
             $this->assertSame(['id', 'url', 'alt_text', 'sort_order', 'is_primary'], array_keys($response->json('data')));
         }
     }

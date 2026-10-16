@@ -78,6 +78,12 @@ check(
   /typeof sx === "function" \? sx\(theme\) : sx/.test(navLink),
   "NavLink must resolve callback sx values against the current theme",
 );
+for (const match of navLink.matchAll(/<Box\b[^>]*>/g)) {
+  check(
+    match[0].includes('component="span"'),
+    "NavLink wrappers must be explicit <span> phrasing content, never a <div>, so they stay valid inside <p> and headings",
+  );
+}
 
 const imports = [...combined.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]);
 for (const specifier of imports) {

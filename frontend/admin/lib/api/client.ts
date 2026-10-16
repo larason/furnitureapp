@@ -3,6 +3,7 @@ import type { ApiErrorItem, ApiMeta, ApiMethod, ApiQuery, ApiRequestBody, ApiSuc
 
 const API_PREFIX = "/api/v1/";
 const DEFAULT_TIMEOUT_MS = 10_000;
+const NO_CONTENT_STATUS = 204;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 export interface AdminApiClientOptions {
@@ -33,6 +34,7 @@ export function createAdminApiClient(options: AdminApiClientOptions = {}): Admin
     try {
       const response = await fetchImpl(buildUrl(baseUrl, input.path, input.query), { method, headers, body, signal, cache: token ? "no-store" : undefined });
       if (signal.aborted) throw new ApiTransportError("aborted");
+      if (response.status === NO_CONTENT_STATUS) return noContentSuccess<T>();
       const payload = await decodePayload(response);
       if (!response.ok) throw new ApiError(response.status, payload.errors ?? [], payload.meta?.request_id, retryAfter(response.headers));
       if (!isSuccessPayload<T>(payload)) throw new ApiError(response.status, [{ code: "INVALID_RESPONSE", message: "The API returned an invalid response." }]);
@@ -96,6 +98,8 @@ async function decodePayload(response: Response): Promise<{ data?: unknown; meta
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isSuccessPayload<T>(payload: { data?: unknown }): payload is ApiSuccess<T> { return Object.hasOwn(payload, "data"); }
+/** A `204` has no body, so a successful mutation carries no payload to parse or validate. */
+function noContentSuccess<T>(): ApiSuccess<T> { return { data: undefined as T }; }
 function retryAfter(headers: Headers): number | undefined { const value = Number(headers.get("Retry-After")); return Number.isFinite(value) && value >= 0 ? value : undefined; }
 function validateTimeout(value: number): number {
   if (!Number.isFinite(value) || value <= 0) {

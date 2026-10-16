@@ -117,6 +117,17 @@ components:
       schema:
         type: string
       description: Product id or slug
+    ImagePath:
+      name: image
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^img_[0-9a-z]+$
+      description: >-
+        Product image identifier (img_ + base36 row id). Resolved only within the
+        supplied product: an image belonging to another product, an unknown identifier
+        and a malformed identifier are all reported as 404.
     VariantPath:
       name: variant
       in: path
@@ -2378,18 +2389,58 @@ components:
           readOnly: true
           example: https://cdn.example.com/products/oak-table.webp
         alt_text:
-          type: string
-          readOnly: true
+          type:
+          - string
+          - 'null'
           example: Solid Oak Dining Table front view
         sort_order:
           type: integer
-          minimum: 1
+          minimum: 0
           readOnly: true
+          description: >-
+            Ascending display position. Uploads and reorders assign contiguous 1-based
+            positions; rows created before that convention may still carry 0.
           example: 1
         is_primary:
           type: boolean
           readOnly: true
           example: true
+    ProductImageAltTextRequest:
+      type: object
+      required:
+      - alt_text
+      additionalProperties: false
+      properties:
+        alt_text:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+          description: >-
+            Replacement alt text. The value is trimmed; an empty or whitespace-only
+            string clears the alt text and is stored as null, as is an explicit null.
+            Any other field (`sort_order`, `is_primary`, `url`, `file_path`, storage
+            key or disk) is rejected with 422 INVALID_VALUE.
+      description: >-
+        Alt text is the only mutable image field. A request without `alt_text` is
+        rejected with 422 MISSING_REQUIRED_FIELD.
+    ProductImageOrderRequest:
+      type: object
+      required:
+      - images
+      additionalProperties: false
+      properties:
+        images:
+          type: array
+          description: >-
+            The complete ordered set of the product's images. Every image of the
+            product must appear exactly once; duplicate, unknown and other-product
+            identifiers are rejected with 422 INVALID_VALUE. An empty array is valid
+            only when the product has no images. Positions are normalized to
+            contiguous 1-based values.
+          items:
+            type: string
+            pattern: ^img_[0-9a-z]+$
     VariantSummary:
       type: object
       required:
@@ -2982,6 +3033,162 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/ProductImage'
+  /products/{product}/images/{image}:
+    patch:
+      operationId: CAT-016
+      tags:
+      - Catalog
+      summary: Update image alt text
+      description: >-
+        Partial update of a single image. Only `alt_text` is accepted. Image ownership is
+        enforced against the supplied product.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      - $ref: '#/components/parameters/ImagePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductImageAltTextRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ProductImage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      operationId: CAT-015
+      tags:
+      - Catalog
+      summary: Delete image
+      description: >-
+        Deletes the image record and its stored object. The deletion target is always the
+        persisted storage key of the resolved record, never a client-supplied path or URL.
+        A deleted image cannot be retrieved again and a repeat request returns 404.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      - $ref: '#/components/parameters/ImagePath'
+      responses:
+        '204':
+          description: >-
+            No Content. The record is gone. If the external object cannot be removed in
+            the same request, the removal is recorded for retry and the response is still
+            204 because the authoritative record no longer exists.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /products/{product}/images/reorder:
+    post:
+      operationId: CAT-018
+      tags:
+      - Catalog
+      summary: Reorder images
+      description: >-
+        Atomic batch replacement of the product's image ordering. Submitted inside one
+        transaction under a product row lock, so concurrent reorders serialize and the
+        final ordering is always one complete submitted list with contiguous positions.
+        Image ids, urls, alt text and primary-image state are preserved.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductImageOrderRequest'
+      responses:
+        '200':
+          description: OK with the complete reordered collection
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductImage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /products/{product}/images/{image}/primary:
+    post:
+      operationId: CAT-017
+      tags:
+      - Catalog
+      summary: Select the primary image
+      description: >-
+        Marks one image of the product as primary, demoting the current primary in the
+        same transaction. Idempotent: selecting the current primary succeeds unchanged.
+        Accepts no request body; any submitted field is rejected with 422 INVALID_VALUE.
+        `sort_order` is never modified. The product invariant is at most one primary
+        image, so deleting the primary leaves the product without one.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProductPath'
+      - $ref: '#/components/parameters/ImagePath'
+      responses:
+        '200':
+          description: OK with the selected image and its resulting `is_primary`
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ProductImage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /categories:
     get:
       operationId: CAT-003
@@ -2989,6 +3196,9 @@ paths:
       - Catalog
       summary: List categories
       security: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK

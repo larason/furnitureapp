@@ -119,9 +119,9 @@
 |---|---|---|---|---|
 | `id` | string | PUBLIC | no | Image identifier (e.g. `img_01h8x9a0b1c2d3e4f5g6h7j8`) |
 | `url` | string (URI) | PUBLIC | no | Full CDN URL to optimized public image |
-| `alt_text` | string | PUBLIC | no | Descriptive accessibility & SEO alt text |
-| `sort_order` | integer | PUBLIC | no | Display sequence position (1-indexed, ascending) |
-| `is_primary` | boolean | PUBLIC | no | `true` for primary cover image, `false` otherwise |
+| `alt_text` | string \| null | PUBLIC | yes | Descriptive accessibility & SEO alt text. The only image field a client may change (`CAT-016`): trimmed, max 500 characters, blank/whitespace stores `null`. |
+| `sort_order` | integer | PUBLIC | no | Display sequence position. `CAT-009` uploads and `CAT-018` reorders assign contiguous 1-based positions; rows created before that convention may still carry `0`. |
+| `is_primary` | boolean | PUBLIC | no | `true` for the primary cover image, `false` otherwise. The invariant is **at most one** primary image per product (`CAT-017`); a product may legitimately have none (`CAT-015` deleting the primary does not auto-promote). |
 
 ---
 
@@ -847,8 +847,8 @@ Responses are `Cache-Control: private, no-store` with `Vary: Authorization`, use
 | Aspect | Contract |
 |---|---|
 | **Owner** | System (catalog) |
-| **Privileged readers** | `STAFF`/`ADMIN` with `products.manage` where approved — via `CAT-007..012` operational views and `INV-002` inventory-linked product operational detail |
-| **Privileged writers** | `STAFF`/`ADMIN` with `products.manage` — controlled `POST /products` / `PATCH /products/{product}` / `POST .../images` / `POST .../variants` |
+| **Privileged readers** | `STAFF`/`ADMIN` with `products.manage` where approved — via `CAT-007..012`/`CAT-015..018` operational views and `INV-002` inventory-linked product operational detail |
+| **Privileged writers** | `STAFF`/`ADMIN` with `products.manage` — controlled `POST /products` / `PATCH /products/{product}` / `POST .../images` / `POST .../variants`, plus media mutations `PATCH .../images/{image}` (`alt_text`), `POST .../images/{image}/primary`, `POST .../images/reorder`, `DELETE .../images/{image}` |
 | **Customer visibility** | **Not exposed** — public `GET /products` (§1) shows `PUBLIC` fields only (`id/name/slug/description/product_type/price/category/images/variants/availability/stock_indicator`); operational flags `is_active/is_published` internal, `reserved_quantity/available_quantity/supplier` never public |
 | **Immutable** | `id`, `created_at`, `availability`/`stock_indicator` derived, `reserved_quantity` server-derived |
 | **Server-controlled** | `id`, `slug` uniqueness server, `created_at`/`updated_at`, `availability`/`stock_indicator`, inventory quantities |
@@ -1084,7 +1084,7 @@ Do not define endpoints, Sanctum mechanics, hashing, or middleware here; see `ap
 | **User** (Profile) | No (except `POST /auth/register`) | **Own** | **Restricted** (own profile only) | **Admin** | `AUTH-001..008`, `USER-001..002`, `ADM-008/009` | `POST /auth/register` (AUTH-001) public; `POST /auth/login` (AUTH-002) public; `POST /auth/logout` (AUTH-003) self; `POST /auth/password/*` (AUTH-004/005) public; `GET /me` (USER-001) own, `PATCH /me` (USER-002) own (`name`/`phone` only, canonical `PATCH /api/v1/me`; legacy `/me/profile` retired), `POST /auth/change-password` (AUTH-008, canonical; legacy `POST /me/password` `USER-003` **RETIRED**) own; `GET /users` (ADM-008), `GET /users/{user}` (ADM-009) Admin `users.manage_authorized` only |
 | **Staff / Roles** | No | No | No | **Manage** | `ADM-001..007` | `GET /admin/staff` (ADM-001), `GET /admin/staff/{user}` (ADM-002), `POST /admin/staff` (ADM-003 invite/create, not `POST {password}` generic), `POST /admin/staff/{user}/approve` (ADM-004), `POST /admin/staff/{user}/suspend` (ADM-005), `POST /admin/staff/{user}/reactivate` (ADM-006) — all Admin `staff.manage`/`staff.approve` (audited, no self-approval, `Idempotency-Key` Required for approve/suspend/reactivate, Critical concurrency), plus `GET /admin/audit-logs` (ADM-007) read-only where approved |
 | **Audit Log** | No | No | No | **Read** | `ADM-007` | `GET /admin/audit-logs` requires Admin `audit.view`; read-only with strict filters `actor/action/resource_type/resource_id/created_from/created_to/page/per_page`, `PRIVATE`/`no-store`, and `meta.pagination`; audit ID is serialization-only `audit_<base36(event id)>`; `PATCH/DELETE` and detail routes are absent; creation audit remains mandatory |
-| **Operational Product** (distinct from Public) | No | No | **Read/Manage** (operational) | **Manage** | `CAT-007..012` + `INV-002` | Operational product view: includes `is_active/is_published`, `internal inventory quantity/reserved/available` where authorized, `operational metadata` — never via public `GET /products` (public remains `PUBLIC` cacheable; operational is `PRIVATE`) |
+| **Operational Product** (distinct from Public) | No | No | **Read/Manage** (operational) | **Manage** | `CAT-007..012`/`CAT-015..018` + `INV-002` | Operational product view: includes `is_active/is_published`, `internal inventory quantity/reserved/available` where authorized, `operational metadata` — never via public `GET /products` (public remains `PUBLIC` cacheable; operational is `PRIVATE`) |
 | **Operational Order** | No | No | **Operational** | **Operational/Admin** | `ORD-005..014` | Staff/Admin operational order queue/detail + controlled actions (`accept/process/ready-for-pickup/ship/deliver/complete/delivery-fee`) — financial `delivery_fee` via `ORD-014` `POST .../delivery-fee` (`Idempotency-Key` Required, Critical); fulfillment branch validated |
 
 | **Staff / Roles** | No | No | No | **Manage** | `ADM-001..006` | `GET /admin/staff` (ADM-001), `GET /admin/staff/{user}` (ADM-002), `POST /admin/staff` (ADM-003), `POST /admin/staff/{user}/approve` (ADM-004), `POST /admin/staff/{user}/suspend` (ADM-005), `POST /admin/staff/{user}/reactivate` (ADM-006) — managed duplicates above retained for traceability |

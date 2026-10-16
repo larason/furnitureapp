@@ -48,3 +48,26 @@ test("admin API client rejects encoded traversal and malformed JSON envelopes", 
   const malformedClient = createAdminApiClient({ baseUrl: "http://127.0.0.1:8000", fetchImpl: async () => new Response("null", { status: 200 }) });
   await assert.rejects(malformedClient({ path: "/requests" }), (error: unknown) => error instanceof ApiError && error.errors[0]?.code === "INVALID_RESPONSE");
 });
+
+test("admin API client accepts a 204 No Content mutation without parsing a body", async () => {
+  let request: Request | undefined;
+  const client = createAdminApiClient({
+    baseUrl: "http://127.0.0.1:8000",
+    tokenProvider: async () => "session-token",
+    fetchImpl: async (input, init) => {
+      request = new Request(input, init);
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  const result = await client<void>({ path: "/products/prd_1/images/img_1", method: "DELETE" });
+  assert.equal(result.data, undefined);
+  assert.equal(request?.method, "DELETE");
+  assert.equal(request?.headers.get("Authorization"), "Bearer session-token");
+  assert.equal(request?.cache, "no-store");
+});
+
+test("admin API client still rejects an empty successful response that is not 204", async () => {
+  const client = createAdminApiClient({ baseUrl: "http://127.0.0.1:8000", fetchImpl: async () => new Response("", { status: 200 }) });
+  await assert.rejects(client({ path: "/requests" }), (error: unknown) => error instanceof ApiError && error.errors[0]?.code === "INVALID_RESPONSE");
+});

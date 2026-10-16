@@ -2,7 +2,6 @@ import { ApiConfigurationError, ApiError, ApiTransportError } from "@/lib/api/er
 import type { OperationalIdentity, OperationalRole } from "@/lib/auth/types";
 
 const OPERATIONAL_ROLES = new Set(["STAFF", "ADMIN"]);
-export type { OperationalIdentity, OperationalRole } from "@/lib/auth/types";
 
 export type AdmissionResult =
   | { kind: "admitted"; identity: OperationalIdentity }
@@ -34,7 +33,7 @@ export async function resolveOperationalIdentity(dependencies: AdmissionDependen
 }
 
 export function hasPermission(identity: OperationalIdentity, permission: string): boolean {
-  return identity.permissions.includes(permission);
+  return Array.isArray(identity.permissions) && identity.permissions.includes(permission);
 }
 
 export function requirePermission(identity: OperationalIdentity, permission: string): boolean {

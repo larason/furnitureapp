@@ -28,6 +28,8 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
 
     private const DUPLICATE_ENTRY_ERROR = 1062;
 
+    private const DISPOSABLE_DATABASE = 'furnitureapp_test_disposable';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -36,13 +38,9 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
             $this->markTestSkipped('Requires a real concurrent MySQL/MariaDB server.');
         }
 
-        $this->assertSame(
-            'furnitureapp_test_disposable',
-            DB::connection()->getDatabaseName(),
-            'This suite must only run against the disposable test database.',
-        );
-
+        $this->assertDisposableDatabase();
         $this->buildSchema();
+        $this->setUpCompleted = true;
         $this->firstUserId = (int) User::factory()->create()->getKey();
         $this->secondUserId = (int) User::factory()->create()->getKey();
         $this->secondWriter = $this->independentConnection();
@@ -53,6 +51,8 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
     private int $secondUserId;
 
     private Connection $secondWriter;
+
+    private bool $setUpCompleted = false;
 
     /**
      * A genuinely separate connection, so the "second writer" is a second
@@ -97,11 +97,35 @@ final class DeviceTokenConcurrencyMysqlTest extends TestCase
         // RefreshDatabase suite would not re-run migrations and would fail on the
         // missing table. `migrate:fresh` leaves the schema consistent with the
         // migrations table, and the database is disposable and rebuilt per test.
-        if (DB::getDriverName() === 'mysql' && Schema::hasTable('migrations')) {
+        // PHPUnit still calls tearDown() after a setUp() failure, so the rebuild is
+        // gated on this suite having reached it against the disposable database —
+        // otherwise it would wipe whichever database happens to be connected.
+        if ($this->setUpCompleted && $this->isDisposableDatabase()) {
             Artisan::call('migrate:fresh', ['--force' => true]);
         }
 
         parent::tearDown();
+    }
+
+    private function assertDisposableDatabase(): void
+    {
+        if (app()->environment('production')) {
+            $this->fail('Refusing to run destructive concurrency migrations in production.');
+        }
+
+        $this->assertSame(
+            self::DISPOSABLE_DATABASE,
+            DB::connection()->getDatabaseName(),
+            'This suite must only run against the disposable test database.',
+        );
+    }
+
+    private function isDisposableDatabase(): bool
+    {
+        return app()->environment() !== 'production'
+            && DB::getDriverName() === 'mysql'
+            && DB::connection()->getDatabaseName() === self::DISPOSABLE_DATABASE
+            && Schema::hasTable('migrations');
     }
 
     private function buildSchema(): void

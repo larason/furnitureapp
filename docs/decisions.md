@@ -3443,3 +3443,54 @@ The application reuses the existing Clerk instance for identity and session hand
 **Status:** Accepted architecture direction; implementation pending Phase 19.2 and owner confirmation of the concrete domain/origin.
 
 **Evidence:** `phases/phase-19.1-architecture-api-audit.md`, `phases/group-S-phases.md`, `AGENTS.md §8`, `AGENTS.md §27`.
+
+---
+
+### ADR/API-FRZ-003 — Post-Freeze Catalog Contract Extension: Product Media Mutations (`CAT-015`–`CAT-018`)
+
+**Change Request:** Add four product-media mutations so the admin application can complete media management: `CAT-015` `DELETE /api/v1/products/{product}/images/{image}`; `CAT-016` `PATCH /api/v1/products/{product}/images/{image}` (`alt_text` only); `CAT-017` `POST /api/v1/products/{product}/images/{image}/primary`; `CAT-018` `POST /api/v1/products/{product}/images/reorder`. Raised under the formal Post-Freeze Change Process of `ADR/API-FRZ-001`. The owner explicitly approved widening the frozen V1 contract for exactly these operations.
+
+**Impact Analysis:**
+- **Additive only.** No existing path, method, request field, response field, enum, status code, authorization rule or business-state transition changes. `CAT-009` upload semantics are untouched. Conforming clients that never call the new operations are unaffected.
+- Shared boundary identical to `CAT-009`: `clerk.auth` + `staff-or-admin` + `permission:products.manage` + `throttle:operational-write`. New failure modes are the documented `401`/`403`/`404`/`422`/`429` classes.
+- The only pre-existing schema touch-ups are consistency corrections required for the new operations to be truthful: `ProductImage.alt_text` becomes nullable (it always could hold `null` and `CAT-016` makes clearing it part of the contract) and `ProductImage.sort_order` `minimum` moves `1` → `0` (legacy rows can still be `0`). Both widen the accepted range; neither breaks a conforming client.
+
+**Classification:** **Additive extension** (new operations) plus **Non-Breaking** consistency corrections. No removal, rename, or narrowing of any documented client contract. Per `phases/api-breaking-change-policy.md`, this is recorded and reviewed rather than introduced silently.
+
+**Method choice:** `CAT-017` and `CAT-018` are `POST` actions, not `PUT`. V1 defines **no** `PUT` endpoint — `phases/api-action-method-policy.md §12` and decision `1.10-DEC-06` state that `PUT` is permitted only for genuine complete-replacement resources and that no V1 endpoint currently requires it. Both operations cause cross-row effects under a product-row lock, so they follow the established `POST /{resource}/{identifier}/{action}` convention (`POST /orders/{order}/cancel`, `POST /cart/merge`) with `DELETE` for removal (`CAT-015`) and `PATCH` for the partial field update (`CAT-016`).
+
+**Invariant — at most one primary image, not exactly one:** `CAT-017` demotes the current primary before promoting the new one in the same transaction, and is idempotent when the target is already primary. Deleting the primary image (`CAT-015`) deliberately leaves the product with **no** primary image and does not auto-promote; the public read falls back to the first image by `sort_order ASC, id ASC`. Zero-primary state is already permitted by the schema (`ProductImageSchemaTest::test_product_without_primary_image_returns_null_for_primary_image`), so no new state is introduced.
+
+**Ordering normalisation:** `CAT-018` requires the product's complete image set (rejecting duplicates, unknown ids, other-product ids and incomplete lists with `422 INVALID_VALUE`) and normalises positions to contiguous **1-based** values `1..n`, matching the upload path's `max+1` convention and converging legacy `0`-based seed rows. `sort_order` is never a client-writable field on any endpoint.
+
+**Contract Review:** Reviewed against `phases/api-breaking-change-policy.md`, `phases/api-action-method-policy.md`, `phases/action-naming-policy.md` and `AGENTS.md §7`. Contract prose, resources, conventions, examples and OpenAPI are updated together.
+
+**OpenAPI Update:** `docs/api/openapi.yaml` — four new paths, `ImagePath` parameter, `ProductImageAltTextRequest` and `ProductImageOrderRequest` schemas, and the `ProductImage` nullability/minimum corrections.
+
+**Example Update:** `docs/api/api-examples.md §9.9` adds request/response examples for all four operations plus the masked cross-product `404`.
+
+**Verification:** `tests/Feature/ProductImageMutationApiTest.php` (authorization matrix, happy paths, rejection matrix, storage-failure deferral), `tests/Feature/ProductImageMutationConcurrencyMysqlTest.php` (real MariaDB two-session lock + unique-guard proof), `tests/Feature/OpenApiProductImageContractTest.php` (paths, verbs, schemas), plus the existing `ProductImageApiTest`/`ProductImageSchemaTest` regressions.
+
+**Approval:** Project owner (Phase 19.8B scope).
+
+**Reason:** Records the approved post-freeze catalog extension explicitly so the four new observable operations, the method choice, the primary-image invariant and the ordering rule are documented and reviewable instead of drifting from the frozen V1 baseline.
+
+**Status:** Accepted (Additive / Non-Breaking) | **Date:** 2026-10-16 | **Affected:** `backend/laravel` (`routes/api.php`, `app/Http/Controllers/Api/V1/ProductController.php`, `app/Http/Requests/{UpdateProductImageRequest,ReorderProductImagesRequest,SelectPrimaryProductImageRequest}.php`, `app/Services/ProductImages/*`, `app/Support/ProductImageIdentifier.php`), `docs/api/{api-contract.md,api-resources.md,api-conventions.md,api-examples.md,openapi.yaml}`, `docs/decisions.md`
+
+---
+
+### ADR/BACKEND-058 — Product Image Object Removal Is Row-First With a Durable Retry Job
+
+**Decision:** `CAT-015` deletes the image **record** first — inside a transaction guarded by a `products` row lock and scoped to the resolved product — and only then removes the stored object using the record's persisted `file_path`. If the object store reports failure, the removal is dispatched to a durable retry job, `App\Jobs\DeleteProductImageObject` (carrying the `disk` and `objectKey`, `tries = 5`, escalating backoff), and the request still returns `204` because the authoritative record no longer exists.
+
+**Reason:** The database and the object store cannot share a transaction, so the ordering that keeps the *authoritative* state consistent is: remove the record so no reader can observe a mapping to a missing object, then remove the object. Object-first was rejected because a failure after the object is gone but before the row is deleted would leave a record pointing at nothing — the state that breaks product rendering. A new `product_image_cleanup_tasks` table was rejected as duplicate schema that the existing attachment cleanup pattern (and Laravel's durable queue, already used in this application with `QUEUE_CONNECTION=database`) already covers.
+
+**Consequences:**
+- A storage failure is not silent: the response is `204` (the record is gone) but an error is logged as `product_image.object_delete_deferred` and the retry job is queued.
+- If the job exhausts its attempts, `failed()` logs `product_image.object_delete_failed` and the job lands in `failed_jobs` for operator inspection. The residual risk is a permanently orphaned stored **object** — never a resurrected record and never a broken product representation.
+- DB↔object-store atomicity is **not** claimed anywhere in the contract. A **missing** object is treated as already deleted (both the local and S3/R2 drivers report success), so a retry after manual cleanup is harmless.
+- The client can never supply a storage key, path, URL or disk: deletion always targets the persisted `file_path` of the record resolved from `/{product}/images/{image}`.
+
+**Status:** Accepted | **Date:** 2026-10-16 | **Affected:** `backend/laravel` (`app/Services/ProductImages/DeleteProductImage.php`, `app/Services/ProductImages/ProductImageStorage.php`, `app/Jobs/DeleteProductImageObject.php`, `app/Http/Controllers/Api/V1/ProductController.php`), `docs/api/api-contract.md §21.12`, `docs/decisions.md`
+
+**Evidence:** `tests/Feature/ProductImageMutationApiTest.php` (`test_delete_tolerates_a_missing_object_and_defers_on_storage_failure`, `test_retry_job_removes_the_recorded_object_and_reports_a_permanent_failure`), `phases/phase-19.8b-completion.md`.

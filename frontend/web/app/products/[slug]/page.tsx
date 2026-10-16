@@ -21,6 +21,8 @@ import { buildBreadcrumbStructuredData, buildProductStructuredData } from "@/lib
 type ProductPageProps = Readonly<{ params: Promise<{ slug: string }> }>;
 
 const MISSING_PRODUCT_ERROR_CODES = new Set(["RESOURCE_NOT_FOUND", "PRODUCT_NOT_FOUND"]);
+const LEAD_IMAGE_ASPECT = "var(--media-product-hero)";
+const GALLERY_IMAGE_ASPECT = "var(--media-product-card)";
 
 export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -64,15 +66,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </Box>
         </Stack>
       </SiteSection>
-      {product.description ? <SiteSection aria-label="Product description"><Stack spacing={3} sx={{ maxWidth: "var(--content-width-lead)" }}><Typography component="h2" variant="h3">About this piece</Typography><Typography>{product.description}</Typography></Stack></SiteSection> : null}
+      {product.description ? <SiteSection aria-label="Product description"><Stack spacing={3}><Typography component="h2" variant="h3">About this piece</Typography><Typography sx={{ columnCount: { xs: 1, md: 2 }, columnGap: "var(--space-8)", overflowWrap: "anywhere" }}>{product.description}</Typography></Stack></SiteSection> : null}
       {product.variants.length ? <SiteSection aria-label="Available variations" surface="paper"><Stack spacing={3}><Typography component="h2" variant="h3">Variations</Typography><Box component="dl" sx={{ display: "grid", gap: 3, m: 0 }}>{product.variants.map((variant) => <Box key={variant.id}><Typography component="dt" variant="subtitle2">{variant.name}</Typography><Typography component="dd" variant="body2" sx={{ m: 0 }}>{variant.sku} - {formatMoney(variant.price)} - {availabilityLabel(undefined, variant.stock_indicator, variant.availability)}</Typography></Box>)}</Box></Stack></SiteSection> : null}
-      {secondaryImages.length ? <SiteSection aria-label="More product views"><Stack spacing={4}><Typography component="h2" variant="h3">More views</Typography><Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, gap: { xs: 4, md: 5 } }}>{secondaryImages.map((image) => <ProductMedia key={image.id} image={image} productName={product.name} />)}</Box></Stack></SiteSection> : null}
+      {secondaryImages.length ? <SiteSection aria-label="More product views"><Stack spacing={4}><Typography component="h2" variant="h3">More views</Typography><Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, gap: { xs: 4, md: 5 } }}>{secondaryImages.map((image) => <ProductMedia key={image.id} image={image} productName={product.name} aspectRatio={GALLERY_IMAGE_ASPECT} />)}</Box></Stack></SiteSection> : null}
     </>
   );
 }
 
-function ProductMedia({ image, productName, preload = false }: Readonly<{ image: { url: string; alt_text: string | null } | undefined; productName: string; preload?: boolean }>) {
-  return <Box sx={{ position: "relative", aspectRatio: "var(--media-product-hero)", bgcolor: "background.paper" }}>{image ? <Image src={image.url} alt={image.alt_text || productName} fill sizes={PRODUCT_DETAIL_IMAGE_SIZES} preload={preload} style={{ objectFit: "contain" }} /> : <Box sx={{ height: "100%", display: "grid", placeItems: "center", p: 4 }}><Typography variant="body2" color="text.secondary">Photograph to follow</Typography></Box>}</Box>;
+function ProductMedia({ image, productName, aspectRatio = LEAD_IMAGE_ASPECT, preload = false }: Readonly<{ image: { url: string; alt_text: string | null } | undefined; productName: string; aspectRatio?: string; preload?: boolean }>) {
+  return <Box sx={{ position: "relative", aspectRatio, bgcolor: "background.paper" }}>{image ? <Image src={image.url} alt={image.alt_text || productName} fill sizes={PRODUCT_DETAIL_IMAGE_SIZES} preload={preload} style={{ objectFit: "contain" }} /> : <Box sx={{ height: "100%", display: "grid", placeItems: "center", p: 4 }}><Typography variant="body2" color="text.secondary">Photograph to follow</Typography></Box>}</Box>;
 }
 
 function availabilityLabel(productType: string | undefined, stockIndicator: string, availability: string) {

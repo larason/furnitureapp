@@ -1,806 +1,407 @@
-# SL Furnitures — Phase 19.3: Clerk Authentication & Laravel Admin Authorization
+# Phase 19.8C — Product Media Management UI
 
-**Group:** S — Admin Dashboard Frontend  
-**Phase:** 19.3 — Clerk Authentication, Session Integration & STAFF/ADMIN Admission  
-**Application:** `frontend/admin`  
-**Framework:** Next.js 16.3.8, React 19.2.8, MUI 9.4.0  
-**Identity:** Clerk Next.js SDK 7.9.11  
-**Backend:** Existing Laravel `/api/v1`  
-**Development origin:** `http://localhost:3001`  
-**Status:** APPROVED FOR IMPLEMENTATION
+## Objective
 
-## 1. Objective
+Complete product image management in `frontend/admin` by integrating the four approved Laravel media mutation endpoints delivered in Phase 19.8B:
 
-Implement the secure authentication and authorization foundation for the independent SL Furnitures Admin Dashboard.
+1. Delete a product image.
+2. Edit image alt text.
+3. Select the primary image.
+4. Reorder product images.
 
-The dashboard must:
+Phase 19.8A already implemented product image upload and preview. Preserve that working functionality and integrate the new controls into the existing product detail gallery.
 
-1. Authenticate users through the existing Clerk application.
-2. Obtain valid, current Clerk session tokens.
-3. Resolve the authenticated local Laravel identity through `GET /api/v1/me`.
-4. Verify local account activation and STAFF/ADMIN eligibility.
-5. Enforce server-side admission before protected operational content is rendered or fetched.
-6. Preserve exact Laravel permission boundaries.
-7. Reject CUSTOMER identities.
-8. Reject inactive, suspended, unauthorized or unresolvable accounts.
-9. Support safe sign-in, sign-out, session restoration and expiration.
-10. Prepare a reusable authenticated identity context for Phase 19.4 and later operational screens.
+**Scope:** Admin frontend only. Do not modify the Laravel backend, API contract, database schema, OpenAPI specification, or customer-facing Flutter and Next.js applications.
 
-Do not implement actual request, enquiry, catalog, inventory or notification screens.
+Follow the repository root `AGENTS.md`, `frontend/admin/AGENTS.md`, the Phase 19 roadmap, the existing design tokens, and the established Phase 19.2–19.8A architecture.
 
-This phase establishes the security foundation for those later features.
+Use `phases/phase-19.8b-completion.md` as the authoritative record of the delivered API behavior.
 
-## 2. Mandatory audit
+---
 
-Before coding, inspect:
+## 1. Audit the existing implementation first
 
-- Root `AGENTS.md`.
-- `frontend/admin/AGENTS.md`.
-- `frontend/admin/README.md`.
-- `frontend/admin/app/`.
-- `frontend/admin/components/providers/`.
-- `frontend/admin/lib/api/`.
-- `frontend/admin/lib/config/`.
-- `frontend/admin/theme/`.
-- `frontend/admin/.env.example`.
-- `phases/phase-19.1-architecture-api-audit.md`.
-- `phases/phase-19.2-completion.md`.
-- Existing Clerk integration in `frontend/web`.
-- Existing Laravel Clerk authentication middleware.
-- Existing `LocalUserProvisioner`.
-- `GET /api/v1/me` controller and resource.
-- Existing STAFF/ADMIN RBAC policies.
-- `PermissionCatalog`.
-- Clerk authorized-party configuration.
-- Relevant API and OpenAPI contracts.
-- Existing auth-related frontend and backend tests.
+Before editing code, inspect:
 
-Verify the exact Clerk 7.9.11 APIs and Next.js 16 integration requirements before implementing authentication.
+- `frontend/admin/components/catalog/product-image-gallery.tsx`
+- `frontend/admin/components/catalog/product-image-preview.tsx`
+- `frontend/admin/components/catalog/product-image-uploader.tsx`
+- `frontend/admin/components/catalog/product-detail-view.tsx`
+- `frontend/admin/lib/catalog/product-image-actions.ts`
+- `frontend/admin/lib/catalog/products-api.ts`
+- `frontend/admin/lib/api/server-request.ts`
+- The product detail page under `frontend/admin/app/(protected)/products/[product]/`
+- Existing server-side identity and permission helpers, including `requireOperationalIdentity()` and `resolveAdminRouteAccess()`.
+- The reusable `ConfirmDialog`, form controls, loading/error states, and notification or feedback patterns.
+- Existing product media tests and the Phase 19.8A completion report.
 
-Reuse the existing typed admin API transport.
+Verify the actual exported types, current image data shape, server-action conventions, error envelope handling, and product detail refresh/revalidation strategy.
 
-Do not introduce a second API client or authentication provider.
+Do not recreate existing infrastructure or add a second API transport layer. Extend the existing implementation with the smallest complete change set.
 
-## 3. Architectural principles
+If the working tree contains owner changes, preserve them. Do not reset, overwrite, or revert unrelated files.
 
-Enforce these boundaries.
+## 2. Use the four approved endpoints exactly
 
-### Clerk
+The following endpoints and payloads are the delivered contract. Consume them as documented; do not invent alternative routes or request fields.
 
-Clerk is responsible for:
+### CAT-015 — Delete an image
 
-- Authentication.
-- Sign-in.
-- Session issuance.
-- Session restoration.
-- Session expiration.
-- Sign-out.
-- Identity verification.
+`DELETE /api/v1/products/{product}/images/{image}`
 
-### Laravel
+- Success: HTTP `204 No Content`.
+- The response has no JSON body.
+- A missing or previously deleted image returns `404 RESOURCE_NOT_FOUND`.
+- The backend removes the database record and handles object deletion with its durable retry mechanism.
+- Do not retry a successful deletion merely because the client did not receive a response.
+- Do not claim that the underlying object is synchronously deleted in every storage-failure scenario.
 
-Laravel is responsible for:
+The UI must require explicit confirmation before deletion. Use the existing `ConfirmDialog` primitive if it fits the established patterns.
 
-- Local user projection.
-- Account activation state.
-- STAFF/ADMIN role determination.
-- Permission assignment.
-- Business authorization.
-- Resource ownership.
-- Operational API authorization.
+The confirmation should identify the image using its thumbnail and/or accessible description and explain that deletion removes it from the product gallery.
 
-### Next.js admin
+After confirmation:
 
-Next.js is responsible for:
+1. Disable duplicate submissions.
+2. Call the server action.
+3. On `204`, refresh or revalidate the product detail data.
+4. Show appropriate success feedback.
+5. On failure, preserve the remaining gallery state and show safe, actionable feedback.
 
-- Acquiring the current Clerk token.
-- Calling Laravel securely.
-- Resolving current admin identity.
-- Enforcing an application-level admission boundary.
-- Rendering appropriate authentication and authorization states.
-- Providing role/permission information to presentation components.
-- Preventing protected data leaks through rendering or caching.
+Handle a `404` as a stale gallery state: refresh the product data and tell the operator that the image may already have been removed.
 
-Never treat authentication as authorization.
+Never delete an image solely by manipulating client-side state.
 
-## 4. Sign-in architecture
+### CAT-016 — Edit alt text
 
-Implement the appropriate Clerk sign-in flow for the separate admin origin.
+`PATCH /api/v1/products/{product}/images/{image}`
+
+Request:
+
+`{ "alt_text": "Description of the image" }`
+
+Or clear the field using:
+
+`{ "alt_text": null }`
+
+Contract rules:
+
+- `alt_text` is the only accepted mutable field.
+- The maximum length is 500 characters.
+- The backend trims the supplied value.
+- An empty or whitespace-only string becomes `null`.
+- Unknown fields, including `sort_order` and `is_primary`, must not be sent.
+- Success: HTTP `200`, response envelope `{ "data": ProductImage }`.
+
+Implement a usable editing interaction for each image. An inline form or a small accessible edit panel is acceptable; use the established admin design system.
 
 Requirements:
 
-- Reuse the existing Clerk instance.
-- Support sign-in through Clerk's approved SDK components or APIs.
-- Do not build custom password authentication.
-- Do not create a public STAFF/ADMIN registration flow.
-- Do not create role-selection controls.
-- Do not introduce local Laravel credential sessions.
-- Do not create a separate admin identity database.
-- Preserve Clerk's existing verification and security requirements.
-
-The sign-in experience should follow the SL Furnitures MUI design system where customization is supported by the selected Clerk integration.
-
-Do not use fake ADMIN identities for demonstration.
-
-### Sign-in route
-
-Choose an appropriate route such as:
-
-`/sign-in`
-
-Confirm its compatibility with the installed Clerk SDK and existing routing configuration.
-
-Allow only validated, same-origin return destinations.
-
-Prevent external open redirects through untrusted redirect parameters.
-
-After successful Clerk authentication, the user must still pass Laravel admission before entering any protected operational route.
-
-## 5. Server-side admission boundary
-
-Implement a reusable server-side admin admission function.
-
-An illustrative name is:
-
-`requireOperationalIdentity()`
-
-Follow existing naming and module conventions.
-
-The function should:
-
-1. Obtain the current Clerk authentication context using the supported server SDK.
-2. Reject missing or invalid authentication.
-3. Obtain a fresh/current Clerk session bearer token.
-4. Call `GET /api/v1/me` through the existing request-scoped Laravel API client.
-5. Validate the response against the actual frozen user resource contract.
-6. Verify that the Laravel local account is ACTIVE.
-7. Verify that the authoritative local role is STAFF or ADMIN.
-8. Preserve the Laravel-returned exact permissions.
-9. Return a minimal, typed, authorized operational identity.
-10. Fail closed on invalid, missing or ambiguous identity information.
-
-Do not decide authorization solely from:
-
-- Clerk `userId`.
-- Clerk metadata.
-- Clerk organization role.
-- Email domain.
-- Frontend local storage.
-- Client role flags.
-- Route parameters.
-- A decoded but unverified JWT payload.
-
-Laravel `/me` must remain authoritative.
-
-### JIT provisioning
-
-The existing Laravel authentication pipeline may perform JIT local-user provisioning.
-
-Do not independently create STAFF or ADMIN users inside Next.js.
-
-If a new Clerk identity causes Laravel to provision a local CUSTOMER, that user is still unauthorized for the admin dashboard.
-
-Do not automatically promote CUSTOMER users.
-
-An existing verified STAFF/ADMIN identity may be admitted only if Laravel confirms the active local role.
-
-If provisioning is unavailable or rejected, deny admission.
-
-## 6. Protected route architecture
-
-Prepare a protected App Router route boundary for later dashboard pages.
-
-An appropriate conceptual structure is:
-
-```text
-frontend/admin/app/
-  layout.tsx
-  (auth)/
-    sign-in/
-      page.tsx
-  (protected)/
-    layout.tsx
-    page.tsx
-```
-
-This is illustrative.
-
-Route groups do not appear in the URL.
-
-Choose actual files according to the current scaffold and avoid duplicate `/` routes.
-
-### Protected layout
-
-The protected route boundary must resolve and validate the Laravel identity before rendering protected children or initiating operational reads.
-
-However, do not rely only on a parent layout for every later authorization decision.
-
-Next.js layouts may be reused across client-side navigation. Future protected data access must independently enforce authentication and appropriate permission checks at the relevant server/API boundary.
-
-Client-side permission state is for presentation, not security.
-
-### Next.js proxy
-
-If the installed Next.js 16 / Clerk integration requires `proxy.ts`, use the supported convention.
-
-Proxy-level authentication may redirect clearly signed-out users.
-
-It must not become the sole authorization boundary.
-
-Do not duplicate authoritative role logic inside proxy code.
-
-## 7. Role admission policy
-
-Implement these exact rules.
-
-| Laravel state | Admin admission |
-|---|---|
-| ACTIVE ADMIN | Allow |
-| ACTIVE STAFF | Allow |
-| ACTIVE CUSTOMER | Deny |
-| INACTIVE ADMIN | Deny |
-| INACTIVE STAFF | Deny |
-| Suspended user | Deny |
-| Missing local role | Deny |
-| Ambiguous role state | Deny |
-| Invalid Clerk session | Deny |
-| Expired/unavailable session | Deny |
-| Laravel identity cannot be resolved | Fail closed |
-
-Check the actual Laravel account-state enum and role model instead of assuming field names.
-
-### Multi-role handling
-
-The existing project defines an authoritative local role model.
-
-Do not invent precedence rules for ambiguous combinations.
-
-If the Laravel response can contain multiple roles, follow the approved backend rules or stop and identify the contract ambiguity.
-
-Do not elevate privilege based on whichever role seems highest.
-
-## 8. Exact permission handling
-
-Phase 19.3 must establish permission-aware foundations for later screens.
-
-Create a narrowly scoped permission helper, such as:
-
-`hasPermission(identity, permission)`
-
-It should operate only on permissions resolved from the current Laravel identity.
-
-Do not maintain an independent frontend permission catalog that can drift from Laravel.
-
-Use existing server permission identifiers.
-
-Examples:
-
-- `requests.view`
-- `requests.manage`
-- `enquiries.view`
-- `enquiries.manage`
-- `products.view`
-- `products.manage`
-- `inventory.view`
-- `inventory.manage`
-- `notifications.read_operational`
-- `staff.manage`
-- `staff.approve`
-- `users.manage_authorized`
-- `audit.view`
-
-These examples must be checked against the actual current `PermissionCatalog`.
-
-Do not invent new permission strings.
-
-### Permission gate
-
-Provide a reusable server-side permission guard for later operational routes.
-
-Examples of behavior:
-
-- STAFF with `requests.view` may access permitted request data.
-- STAFF without `requests.manage` cannot perform request mutations.
-- ADMIN must still satisfy any required exact permissions.
-- Customer directory requires ADMIN plus its approved permission.
-- Staff administration requires ADMIN plus the matching permission.
-
-Do not implement business resource screens now.
-
-Do not grant permissions merely because a navigation item is visible.
-
-Laravel must independently enforce authorization on each API operation.
-
-## 9. Authenticated identity representation
-
-Create a minimal, typed representation of the Laravel-resolved operational identity.
-
-Use the actual `/me` response schema.
-
-Consider including only fields needed by later admin interfaces:
-
-- Opaque local user identifier.
-- Display name or approved profile fields.
-- Authoritative role.
-- Account state, if required.
-- Exact permissions.
-- Approved account/avatar information if present.
-
-Do not serialize the Clerk bearer token.
-
-Do not expose confidential Laravel internal fields.
-
-Do not fabricate user DTO attributes.
-
-Avoid retaining a complete raw Laravel response when a narrower identity shape is sufficient.
-
-If the app needs a client-side identity context, pass only sanitized presentation fields and permission names.
-
-Do not include bearer tokens, provider secrets or other credentials in React props.
-
-## 10. Authenticated API integration
-
-Reuse:
-
-`frontend/admin/lib/api/client.ts`
-
-from Phase 19.2.
-
-Preserve:
-
-- Frozen `/api/v1` URL behavior.
-- Request-scoped bearer tokens.
-- Success envelope parsing.
-- Error classification.
-- Pagination handling.
-- Network timeout handling.
-- Private/no-store request semantics.
-- Sanitized errors.
-- No credential logging.
-
-### Server-side use
-
-Use current-request authentication context.
-
-Never place a bearer token in module-global state.
-
-Never share authorized API clients across users.
-
-Do not cache `/me` or operational data across sessions.
-
-Ensure all protected reads use dynamic request context and appropriate `no-store` behavior.
-
-### Client-side future use
-
-Prepare an appropriately scoped way for interactive components to obtain the current Clerk token immediately before a protected request.
-
-Do not pass server-acquired Clerk tokens to client components.
-
-Do not rely on a single token captured at initial login.
-
-Clerk session tokens are short-lived and must be refreshed through supported SDK mechanisms.
-
-Avoid adding a speculative browser API framework before interactive screens require it.
-
-## 11. Sign-out and account switching
-
-Provide a safe logout flow.
+- Display the existing alt text when present.
+- Make the distinction between an absent alt text and an unsaved edit clear.
+- Allow the operator to save a description or clear it.
+- Enforce the 500-character maximum in the UI as well as relying on server validation.
+- Display a character count if it improves usability.
+- Provide Save and Cancel controls.
+- Preserve unsaved input when a request fails.
+- Disable repeated submissions while saving.
+- On success, use the returned `ProductImage` or refreshed product data as the source of truth.
+- Show validation errors accessibly.
+
+Do not treat image alt text as a filename, image title, or storage URL. Do not automatically invent descriptive alt text for the operator.
+
+### CAT-017 — Select the primary image
+
+`POST /api/v1/products/{product}/images/{image}/primary`
+
+- No request body is accepted.
+- Do not send `sort_order`, `is_primary`, or any other JSON fields.
+- Success: HTTP `200`, response envelope `{ "data": ProductImage }`.
+- Selecting the current primary image is idempotent.
+- The backend guarantees at most one primary image per product.
+- A product is allowed to have no primary image.
+
+Implement a clear primary-image indicator and a control to make a non-primary image the primary image.
 
 Requirements:
 
-- Use Clerk's supported sign-out mechanism.
-- Reset authenticated admin presentation state.
-- Invalidate any application-owned identity cache.
-- Redirect to the sign-in or safe signed-out page.
-- Prevent stale data from a previous user appearing after logout.
-- Ensure protected server requests cannot reuse an old bearer token.
+- Clearly distinguish the primary image visually and accessibly.
+- Do not render a functional “Make primary” control for the image already selected as primary.
+- Disable the action while a media mutation is in progress.
+- On success, refresh or update the gallery using the authoritative server response.
+- Ensure the previous primary image no longer appears selected.
+- Handle products with no primary image without assuming one must always exist.
+- Do not silently promote another image when the current primary is deleted; the backend intentionally allows zero primary images.
 
-### Account switching
+The UI may display the first image as a visual fallback where appropriate, but must not misrepresent that fallback as a persisted primary image.
 
-If Customer A signs in after ADMIN B:
+### CAT-018 — Reorder images
 
-- The previous ADMIN's role and permissions must not persist.
-- The new Clerk session must trigger independent Laravel `/me` resolution.
-- CUSTOMER A must be denied admin admission.
-- Stale async results must not update current account state.
-- No prior account's operational data may remain in a shared cache.
+`POST /api/v1/products/{product}/images/reorder`
 
-Avoid cross-user React Query/SWR caches unless an approved cache-isolation strategy exists.
+Request:
 
-Do not add global state libraries merely for auth.
+`{ "images": ["img_...", "img_...", "img_..."] }`
 
-## 12. Error and denial states
+- The array must represent the complete current image set for the product.
+- The backend rejects duplicates, unknown identifiers, foreign-product identifiers, invalid entries, and incomplete lists.
+- An empty array is valid for a product with no images.
+- The backend persists the order and normalizes positions to contiguous 1-based `sort_order` values.
+- Success: HTTP `200`, response envelope `{ "data": [ProductImage] }`.
+- Image metadata and primary-image selection are preserved.
 
-Use the shared Phase 19.2 MUI primitives.
+Implement accessible reordering controls.
 
-Provide distinct states for:
+Preferred approach: simple **Move up** and **Move down** buttons for each image, avoiding a new drag-and-drop dependency. If an existing accessible drag-and-drop solution is already present and fits the project, it may be reused instead.
 
-### Signed out
+Requirements:
 
-Show the approved sign-in experience or safe redirect.
+1. Show the current image order clearly.
+2. Let an operator move an image earlier or later in the gallery.
+3. Disable Move up for the first image and Move down for the last image.
+4. Construct the reorder request from the complete ordered list of current image IDs after the proposed move.
+5. Send only the approved `images` array; never attempt to update `sort_order` directly.
+6. Do not issue a reorder request for a no-op.
+7. Prevent conflicting mutations while an operation is pending.
+8. On success, use the server response or re-fetch the product detail so the displayed order reflects persisted data.
+9. If the request fails, restore the last confirmed order and show an accessible error.
+10. Do not leave an optimistic order displayed as saved after a failed request.
 
-### CUSTOMER account
+Use the returned `sort_order` and the server's persisted image collection as the source of truth after mutations. Do not rely on locally assigned positions as evidence of successful persistence.
 
-Display a clear access-denied message.
+---
 
-Do not suggest creating another account or self-promoting to STAFF.
+## 3. Server-side authentication and authorization
 
-Offer a safe sign-out action.
+All four mutations must use the existing server-side transport and authentication architecture.
 
-### Inactive or suspended account
+For every mutation:
 
-Display a generic account-unavailable message.
+1. Resolve the current Clerk identity on the server.
+2. Enforce the existing operational identity and `products.manage` permission before forwarding the mutation.
+3. Forward the current server-side Clerk bearer token through the approved server-only request helper.
+4. Call the exact Laravel endpoint and HTTP method.
+5. Preserve Laravel's documented response and error semantics.
+6. Revalidate or refresh the affected product detail using the established project pattern.
 
-Do not expose internal enforcement details.
+Follow the existing Phase 19.8A server-action authorization pattern, including `resolveAdminRouteAccess()` or the verified equivalent.
 
-### Missing permission
+Laravel independently enforces authorization. Frontend permission checks are not a substitute for backend authorization.
 
-Display a permission-denied state for that section.
+Never:
 
-Avoid displaying forbidden business data.
+- Expose Clerk bearer tokens to client components or browser state.
+- Accept the product ID or image ID as proof of authorization.
+- Allow the browser to supply storage keys, object paths, disks, or arbitrary image URLs.
+- Add direct database or storage access from the admin frontend.
+- Bypass the Laravel API for convenience.
+- Send undocumented mutation fields.
+- Log credentials, authorization headers, or image contents.
 
-### Laravel unavailable
+Use existing error types and safe error mapping. Handle authentication expiry, `403`, `404`, `422`, rate limiting, network failures, and unexpected server errors without exposing internal stack traces.
 
-Show a recoverable service-unavailable state.
+For `DELETE`, specifically handle the `204 No Content` response without attempting to parse it as JSON.
 
-Do not show protected content based on stale role information.
+---
 
-### Invalid/expired Clerk session
+## 4. Gallery behavior and mutation coordination
 
-Use the Clerk session lifecycle to recover or return the user to sign-in.
+Keep the gallery cohesive and predictable.
 
-Do not create endless redirect loops.
+- Preserve Phase 19.8A upload and preview behavior.
+- Keep image previews responsive and preserve aspect ratio.
+- Retain accessible image descriptions and the existing broken-image fallback.
+- Keep the empty state distinct from loading and API failure states.
+- Preserve the existing product detail page and navigation.
+- Use the actual product image collection returned by Laravel.
+- Keep primary-image status separate from gallery position.
+- Do not assume the first image is the primary image.
+- Do not assume every product has a primary image.
 
-### Configuration missing
+### Prevent conflicting operations
 
-Preserve the existing safe configuration state from Phase 19.2.
+Avoid overlapping operations that can invalidate the gallery's current state.
 
-Do not render a fake authenticated admin preview.
+At minimum:
 
-### Forbidden versus unavailable
+- Prevent duplicate submissions for the same action.
+- Prevent simultaneous reorder operations.
+- Prevent deletion while an incompatible edit, primary selection, or reorder operation is pending.
+- Prefer a clear gallery-level pending state during structural mutations such as delete, primary selection, and reorder.
+- Keep per-image alt-text editing manageable without allowing stale updates to overwrite newer data.
 
-Use actual API status and error semantics where available.
+A simple, well-tested mutation state model is preferable to an elaborate state-management refactor.
 
-Do not misrepresent a `403` as a network outage or use a `500` fallback to admit the user.
+After successful mutations, ensure the rendered gallery and product detail data converge on the authoritative Laravel state. Use the existing revalidation or refresh pattern rather than introducing a parallel cache.
 
-## 13. Styling and design consistency
+Do not use arbitrary timeouts to simulate completion.
 
-Use the existing shared design system.
+---
 
-Canonical source:
+## 5. UI, accessibility, and design system
 
-`frontend/design-system/tokens.css`
+Use the canonical design tokens and existing reusable components in `frontend/admin`.
 
-Use the existing admin MUI theme from Phase 19.2.
+The interface must provide:
 
-Do not create:
+- Clear labels and accessible names for every action.
+- Keyboard-operable controls.
+- Visible focus indicators.
+- Accessible pending, success, and error feedback.
+- A confirmation dialog for deletion.
+- Clear visual indication of the primary image.
+- Clear ordering controls and boundary states.
+- Alt-text editing with validation feedback.
+- Responsive gallery layout suitable for desktop and narrow viewports.
+- Loading and empty states consistent with the existing design system.
+- No reliance on color alone to communicate primary status or errors.
 
-- A second palette.
-- Unapproved typography.
-- Hardcoded arbitrary brand colors.
-- A new component library.
-- A full dashboard sidebar prematurely.
+Do not add a new design system, introduce unrelated layout changes, or add a dependency unless a genuine requirement cannot be met with existing components.
 
-Create a polished but minimal sign-in and authorization-state presentation.
+Do not invent success messages claiming that an operation completed before the server confirms it.
 
-Use existing:
+---
 
-- PageContainer.
-- PageHeader.
-- ErrorState.
-- LoadingState.
-- MUI Buttons.
-- Typography.
-- Paper/Card components.
-- Approved icons.
+## 6. Testing requirements
 
-Avoid generic AI-generated dashboards with fabricated KPIs.
+Extend the existing admin media test suite, particularly `frontend/admin/tests/product-media.test.tsx` and the current server-action/API transport tests.
 
-## 14. Local authentication configuration
+Use deterministic mocks for automated UI tests. Do not require live Clerk credentials, a real R2 upload, or a production API to run the suite.
 
-The admin site runs at:
+### Delete tests
 
-`http://localhost:3001`
+- Confirmation is required before deletion.
+- Canceling confirmation makes no API request.
+- Confirming deletion calls CAT-015 with the correct product and image identifiers.
+- A successful `204` response is handled without JSON parsing.
+- Duplicate deletion submissions are prevented.
+- Success refreshes or revalidates the product data.
+- A `404` triggers appropriate stale-state handling.
+- A failed request does not falsely remove the image from the confirmed gallery.
+- No storage key or URL is sent to Laravel.
 
-Verify the existing Clerk application is configured for this origin.
+### Alt-text tests
 
-Audit:
+- Existing alt text can be edited and saved.
+- Clearing alt text sends `null` according to the established form behavior.
+- Whitespace-only text follows the backend contract.
+- The UI enforces the 500-character maximum.
+- The request contains only `alt_text`.
+- Save and Cancel behave correctly.
+- Validation and network errors are displayed accessibly.
+- Failed submissions preserve the user's draft.
+- Duplicate submissions are prevented.
 
-- Admin Clerk publishable key.
-- Clerk frontend/redirect configuration.
-- Laravel `CLERK_AUTHORIZED_PARTIES`.
-- Laravel CORS allowed origins if browser API calls are used.
-- Local Laravel API origin.
-- Next.js server API connectivity.
+### Primary-image tests
 
-Use the same Clerk instance as the customer application.
+- A non-primary image can be selected as primary.
+- CAT-017 is called without a request body.
+- The returned or refreshed gallery reflects the new primary image.
+- The previous primary is no longer marked primary.
+- Selecting the current primary does not produce an unnecessary request.
+- A product without a primary image renders correctly.
+- A failed mutation does not falsely change the persisted primary state.
 
-Do not disable authorized-party verification.
+### Reorder tests
 
-Do not change JWT issuer, audience or signature validation.
+- Moving an image up or down produces the expected complete ordered ID list.
+- The first image cannot move up and the last image cannot move down.
+- No-op moves do not issue a request.
+- CAT-018 sends only the complete `images` array.
+- A successful response updates the displayed gallery order.
+- A failed reorder restores the last confirmed order.
+- Duplicate submissions and concurrent reorder requests are prevented.
+- Primary-image status and alt text remain associated with their original image IDs.
 
-Do not use wildcard CORS.
+### Shared security and regression tests
 
-### Browser token handling
+- Every server action enforces the established server-side operational identity and `products.manage` permission.
+- Clerk tokens never reach client components.
+- API authorization and validation errors are handled safely.
+- Unknown response shapes do not crash the gallery.
+- Existing upload and preview tests continue to pass.
+- No undocumented API route or payload is introduced.
+- No direct browser-side API mutation bypasses the server-only transport.
+- Empty galleries and broken image previews remain safe.
 
-Do not require the owner to repeatedly copy short-lived Clerk JWTs into terminal commands.
+Add tests for any discovered edge cases that affect the contract. Do not weaken existing assertions or replace meaningful tests with snapshots alone.
 
-For browser-driven smoke tests, obtain a fresh token through the live Clerk session immediately before each API call.
+---
 
-Do not extend token TTL or persist raw tokens.
+## 7. Quality gates and verification
 
-If operator action is needed to sign in, ask for it explicitly.
+Run the established frontend admin gates:
 
-## 15. Environment variables
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `git diff --check`
 
-Update `.env.example` only as required.
+Inspect the final diff for:
 
-Distinguish:
+- Unrelated modifications.
+- Accidental changes to the frozen API contract or backend.
+- Exposed credentials.
+- New dependencies without justification.
+- Incomplete or unused media controls.
+- Stale optimistic UI states.
+- Incorrect treatment of `204 No Content`.
+- Unhandled mutation failures.
 
-- Public Clerk configuration.
-- Server-only Laravel API origin.
-- Approved admin canonical origin.
-- Optional future browser API configuration.
+If any gate fails, report the exact command and failure. Do not claim a gate passed unless it was actually run.
 
-Do not place Clerk secret keys or API secrets in `NEXT_PUBLIC_*` variables.
+### Live verification
 
-Do not commit `.env.local`.
+If a usable authenticated operator session and development backend are available, verify the complete workflow on a real product:
 
-Do not hardcode production domains.
+1. Open its product detail page and inspect the gallery.
+2. Upload an image and confirm it appears.
+3. Edit its alt text and confirm it persists after refresh.
+4. Select a primary image and confirm the selection persists.
+5. Reorder at least two images and confirm the order persists after refresh.
+6. Delete a test image after confirming the destructive action.
+7. Check empty, failed-request, and narrow-viewport behavior where practical.
 
-Keep customer/admin deployment configurations isolated.
+Do not delete valuable production data to perform these checks. Use an appropriate test product.
 
-## 16. Authentication security tests
+If authenticated live testing is unavailable, explicitly record it as pending. Passing mocks and build checks are not evidence that the live authenticated workflow succeeded.
 
-Add meaningful tests covering:
+---
 
-### Clerk and session
+## 8. Completion report
 
-1. Signed-out user cannot access protected operational content.
-2. Valid Clerk session triggers Laravel identity resolution.
-3. Missing or invalid bearer token is rejected.
-4. Expired session is not admitted.
-5. Incomplete Clerk verification cannot bypass Laravel.
-6. Session restoration resolves identity correctly.
-7. Sign-out clears authenticated presentation state.
-8. Account switching does not leak previous identity.
-9. Repeated navigation does not create uncontrolled auth requests.
-10. Missing configuration fails safely.
+Create `phases/phase-19.8c-completion.md` following the established completion-report format.
 
-### Laravel identity
+Record:
 
-11. ACTIVE ADMIN is admitted.
-12. ACTIVE STAFF is admitted.
-13. ACTIVE CUSTOMER is denied.
-14. INACTIVE ADMIN is denied.
-15. INACTIVE STAFF is denied.
-16. Missing local identity is not granted privileged access.
-17. JIT-provisioned CUSTOMER is denied.
-18. Missing local role fails closed.
-19. Ambiguous identity response fails closed.
-20. Laravel outage produces a safe unavailable state.
-21. Backend 401 and 403 are handled distinctly.
-22. Server failures do not result in default admission.
+1. Final status: `PASS`, `PARTIAL`, or `BLOCKED`, with the reason.
+2. Files changed and the purpose of each significant change.
+3. How each CAT-015 through CAT-018 endpoint is integrated.
+4. The confirmation and stale-state behavior for deletion.
+5. Alt-text validation and clearing behavior.
+6. Primary-image selection and zero-primary handling.
+7. Reordering controls, complete-list payload behavior, and failure recovery.
+8. Server-side authentication and permission enforcement.
+9. Automated test counts and all quality-gate results.
+10. Whether the real authenticated workflow was verified.
+11. Remaining limitations and any required owner action.
 
-### Permissions
+Update the appropriate roadmap status record only if it is in the authorized scope and consistent with repository instructions. Preserve owner-managed changes. If the roadmap file is explicitly out of scope, record the status in the completion report and identify the pending owner action.
 
-23. Exact permission check succeeds when present.
-24. Missing permission denies protected operation.
-25. ADMIN role alone does not bypass exact permissions.
-26. STAFF cannot enter ADMIN-only sections.
-27. Client-provided role or permission fields are ignored.
-28. Laravel permission changes are reflected on the next authoritative check.
-29. Unauthorized deep links do not reveal operational data.
+Keep the findings and limitations register accurate. Do not mark the live authenticated smoke test as resolved unless it was performed.
 
-### Security and transport
+## Acceptance criteria
 
-30. Private `/me` response is not shared-cacheable.
-31. Bearer tokens are not serialized to HTML.
-32. Bearer tokens are not logged.
-33. Concurrent requests use the correct user's token.
-34. Old account data is not reused after sign-out.
-35. Open redirect parameters cannot redirect outside approved destinations.
-36. No public admin signup route exists.
-37. No fake/admin fallback identity exists.
+Phase 19.8C is complete when:
 
-Use deterministic mocks for ordinary unit and component tests.
+- All four approved media operations work through the actual documented CAT-015–CAT-018 endpoints.
+- Image upload and preview from Phase 19.8A remain functional.
+- The gallery reflects persisted Laravel state after successful mutations.
+- Failed operations do not leave misleading or stale optimistic UI.
+- Delete confirmation, validation, accessibility, and mutation coordination are implemented.
+- All mutations use server-side Clerk identity and the existing `products.manage` authorization path.
+- Automated tests and applicable quality gates pass.
+- The completion report accurately distinguishes automated verification from live authenticated verification.
 
-Do not weaken security to simplify tests.
-
-## 17. Controlled integration smoke test
-
-Once automated tests pass, perform a controlled real local test.
-
-Use the existing verified local ADMIN identity from the Group K bootstrap and Phase 18.6 testing.
-
-Do not create another ADMIN automatically.
-
-### Test A — ADMIN
-
-1. Start Laravel.
-2. Start `frontend/admin` on port 3001.
-3. Sign in using the real verified ADMIN Clerk identity.
-4. Confirm a fresh Clerk session token is acquired.
-5. Confirm authenticated `/api/v1/me` returns the existing ADMIN.
-6. Confirm account state is active.
-7. Confirm exact permissions are resolved.
-8. Confirm protected admin admission succeeds.
-9. Confirm no sensitive token appears in browser output.
-
-### Test B — CUSTOMER
-
-1. Sign out ADMIN.
-2. Sign in as a verified CUSTOMER.
-3. Confirm Clerk authentication succeeds.
-4. Confirm Laravel identifies the local role as CUSTOMER.
-5. Confirm admin access is denied.
-6. Confirm no operational data is fetched.
-
-### Test C — STAFF
-
-If an approved active STAFF test identity is available:
-
-1. Sign in as STAFF.
-2. Confirm active role and exact permissions.
-3. Confirm admin admission succeeds.
-4. Confirm ADMIN-only authorization still rejects STAFF.
-
-Do not invent a privileged identity solely to claim a live PASS.
-
-### Test D — Session transition
-
-1. Sign out.
-2. Confirm protected admission is revoked.
-3. Refresh the protected page.
-4. Confirm no previous account data appears.
-5. Sign in again and verify independent identity resolution.
-
-### Test E — Backend unavailable
-
-Stop or isolate the local Laravel service safely.
-
-Verify the admin dashboard fails closed and displays the expected unavailable state rather than rendering cached operational content.
-
-Do not modify production services.
-
-### Reporting
-
-Clearly distinguish:
-
-- Automated tests.
-- Real Clerk session tests.
-- Real Laravel API responses.
-- Tests not executed due to unavailable credentials or configuration.
-
-Do not mark unexecuted checks as successful.
-
-## 18. Quality gates
-
-Run from `frontend/admin`:
-
-```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
-```
-
-Also run:
-
-```bash
-git diff --check
-```
-
-Run relevant Laravel authentication tests if backend behavior is audited or changed.
-
-If backend files are changed, run the applicable Laravel test suite, PHPStan and Pint.
-
-Verify:
-
-- No hydration errors.
-- No protected data leakage.
-- No redirect loops.
-- No unauthorized role elevation.
-- No regressions in the existing MUI foundation.
-
-Do not force-upgrade dependencies as part of this phase.
-
-The Phase 19.2 report documented five development/transitive dependency audit findings. Keep them visible as a separate dependency follow-up rather than obscuring them with unrelated authentication changes.
-
-## 19. Documentation
-
-Update:
-
-- `frontend/admin/README.md`.
-- `frontend/admin/AGENTS.md`, if new security rules are needed.
-- Relevant environment documentation.
-
-Create:
-
-`phases/phase-19.3-completion.md`
-
-Document:
-
-- Clerk integration architecture.
-- Protected route boundary.
-- Server-side Laravel `/me` admission.
-- Local role validation.
-- Exact permission handling.
-- Authentication error states.
-- Logout/account-switch behavior.
-- Token handling and refresh.
-- Test evidence.
-- Local smoke-test results.
-- Remaining security limitations.
-- Phase 19.4 handoff.
-
-Do not rewrite previous completion reports.
-
-## 20. Explicit exclusions
-
-Do not implement:
-
-- Phase 19.4 full dashboard shell.
-- Sidebar/topbar/navigation.
-- Real request/enquiry views.
-- Catalog or inventory workflows.
-- Staff management.
-- Customer directory.
-- Audit log UI.
-- Notification inbox.
-- Reverb subscription.
-- Notification preferences.
-- Customer FCM push.
-- New backend permissions.
-- New Laravel endpoints.
-- New admin registration mechanisms.
-- Commerce/order/payment functionality.
-- Production Coolify deployment.
-
-## 21. Definition of Done
-
-Phase 19.3 is PASS when:
-
-1. Clerk authentication works in the independent admin app.
-2. Laravel `/me` determines STAFF/ADMIN admission.
-3. ACTIVE STAFF and ADMIN users are admitted.
-4. CUSTOMER users are rejected.
-5. Inactive/suspended users are rejected.
-6. Missing/invalid identity fails closed.
-7. Exact permissions remain Laravel-authoritative.
-8. Protected routes resolve authorization on the server.
-9. Session expiration and logout are safe.
-10. Account switching does not expose stale data.
-11. No bearer token is persisted, serialized or leaked.
-12. Public admin signup/role elevation is impossible.
-13. Automated tests pass.
-14. Local Clerk/Laravel smoke tests confirm the core admission path.
-15. Documentation is updated.
-16. No business API contract is changed.
-
-If real Clerk credentials or local infrastructure are unavailable, report **PARTIAL** rather than claiming a live PASS.
-
-## 22. Final report
-
-Return:
-
-**PHASE 19.3 — PASS / PARTIAL / FAIL**
-
-Include:
-
-- Files changed.
-- Authentication routes.
-- Protected route implementation.
-- Clerk SDK integration.
-- Laravel `/me` identity resolution.
-- Role admission behavior.
-- Exact permission handling.
-- Token lifecycle security.
-- Sign-out behavior.
-- Unauthorized and unavailable states.
-- Test results.
-- Real local smoke-test evidence.
-- Remaining limitations.
-- Readiness for Phase 19.4.
-
-**Implement Phase 19.3 now. Do not proceed to Phase 19.4 without owner approval.**
+Begin with the repository audit, then implement the smallest complete and well-tested UI change set. Do not modify the backend or invent additional API capabilities.

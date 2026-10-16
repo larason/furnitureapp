@@ -35,7 +35,9 @@ export function NavLink({
   }
 
   return (
+    // Phrasing content only: NavLink is rendered inside <p> and headings, where a div is invalid.
     <Box
+      component="span"
       sx={{
         display: "contents",
         "& a": {

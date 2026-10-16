@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApiRequestOptions } from "@/lib/api/client";
+import { parseProductCollectionQuery } from "@/lib/catalog/filters";
 import { getProductCatalog } from "@/lib/products/catalog";
 import { read, stubTransport, withApiDataSource } from "../test-utils/frontend-test-helpers";
 
@@ -16,6 +17,29 @@ test("product catalog uses the canonical API client with page one omitted", asyn
     assert.equal(firstPage.source, "api");
     assert.deepEqual(calls[0], { path: "/products", cache: "no-store" });
     assert.deepEqual(calls[1].query, { page: "2" });
+  });
+});
+
+test("a filter form submitted through the browser never sends an empty filter to CAT-001", async () => {
+  await withApiDataSource(async () => {
+    const calls: ApiRequestOptions[] = [];
+    const apiRequest = stubTransport((request) => {
+      calls.push(request);
+      return { data: [], meta: { pagination: { current_page: 1, per_page: 20, total: 0, last_page: 1, has_next: false, has_previous: false } } };
+    });
+    const formSubmission = { category: "", product_type: "", availability: "", min_price: "", max_price: "", sort: "", sort_direction: "" };
+
+    await getProductCatalog(parseProductCollectionQuery(formSubmission), apiRequest);
+    await getProductCatalog(parseProductCollectionQuery({ search: "chair", ...formSubmission }), apiRequest);
+    await getProductCatalog(parseProductCollectionQuery({ search: "chair", ...formSubmission, availability: "available" }), apiRequest);
+
+    assert.deepEqual(calls[0], { path: "/products", cache: "no-store" });
+    assert.deepEqual(calls[1].query, { search: "chair" });
+    assert.deepEqual(calls[2].query, { search: "chair", availability: "available" });
+    for (const call of calls) {
+      const values = call.query && !(call.query instanceof URLSearchParams) ? Object.values(call.query) : [];
+      assert.equal(values.some((value) => value === ""), false, "no empty filter value may reach Laravel.");
+    }
   });
 });
 

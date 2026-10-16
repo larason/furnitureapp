@@ -1219,6 +1219,10 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `CAT-012` | PATCH | `/api/v1/categories/{category}` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Update category (Staff only if approved) | PROPOSED |
 | `CAT-013` | GET | `/api/v1/admin/products` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | List products for operations (operational read, includes unpublished/draft) | PROPOSED |
 | `CAT-014` | GET | `/api/v1/admin/products/{product}` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | Retrieve product operationally (operational read, includes internal flags/inventory) | PROPOSED |
+| `CAT-015` | DELETE | `/api/v1/products/{product}/images/{image}` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Delete product image (record and stored object) | PROPOSED |
+| `CAT-016` | PATCH | `/api/v1/products/{product}/images/{image}` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Update product image alt text (only mutable image field; unknown fields rejected) | PROPOSED |
+| `CAT-017` | POST | `/api/v1/products/{product}/images/{image}/primary` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Select primary product image (idempotent; accepts no request body) | PROPOSED |
+| `CAT-018` | POST | `/api/v1/products/{product}/images/reorder` | Catalog | Staff, Admin | Yes | `ADMINISTRATIVE` `products.manage` where approved | Reorder product images (atomic complete replacement; normalized 1-based) | PROPOSED |
 | `ADM-001` | GET | `/api/v1/admin/staff` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | List staff | PROPOSED |
 | `ADM-002` | GET | `/api/v1/admin/staff/{user}` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | Get staff detail | PROPOSED |
 | `ADM-003` | POST | `/api/v1/admin/staff` | Staff | Admin | Yes | `ADMINISTRATIVE` `staff.manage` | Invite staff (admin creates/invites) | PROPOSED |
@@ -1274,7 +1278,7 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 **Other:**
 - `NOT-001/002` — holder-scoped via `/me`, `AUTHENTICATED_OWNER` own per actor: **Customer** own (customer notifications), **Staff** `OPERATIONAL` own recipient-scoped (operational: new order/request/payment event — not private customer-account info), **Admin** `ADMIN` limited own recipient-scoped (administrative as needed); content immutable, only `read`/`unread` mutable via `PATCH` (`NOT-002`).
 - `INV-001..003` — `inventory.view` vs `inventory.manage` strictly split (catalog vs stock); `adjust` explicit action with `quantity/change + reason` (not `PATCH {quantity:999}`), auditable.
-- `CAT-007..012` — `products.manage` (catalog CRUD + images/variants, not stock) vs `inventory.manage` (stock only).
+- `CAT-007..012`/`CAT-015..018` — `products.manage` (catalog CRUD + images/variants/media mutations, not stock) vs `inventory.manage` (stock only).
 - `ADM-001..006` — `staff.approve`/`staff.manage`/`users.manage_authorized` Admin-only, audited; `role` changes rejected from customer/staff; `block` customer not allowed via `STAFF` (only separate `ADMIN` restriction workflow if ever approved, per §18.12).
 - `PAY-001/002`, `WEBHOOK-001` — generic placeholders, `Phase Group H` owner, no provider payloads, use global error envelope later.
 
@@ -1290,7 +1294,7 @@ Below are concise summaries for non-obvious endpoints (pagination/query/response
 |---|---|
 | **Anonymous** | `CAT-001..006` (catalog public), `REQ-001`, `ENQ-001` (anonymous submit), and Clerk-managed sign-up/sign-in/recovery outside the Laravel API |
 | **Customer** | Catalog reads, `USER-001..002` own profile, `CART-001..005` own/guest handoff cart, `CHK-001` checkout, `ORD-001..004` own orders/tracking/cancel, `REQ-002/003`/`ENQ-002/003` own, `NOT-001/002` own (customer notifications, holder-scoped via `/me`); Clerk owns credentials/session/security |
-| **Staff** | Operational `ORD-005/006/007..011` + `ORD-013` + `ORD-012` tracking, `REQ-004..006`, `ENQ-004..006`, `INV-001/002` view (and `INV-003` if `inventory.manage` approved), `CAT-007..012` if `products.manage` approved, `NOT-001/002` `OPERATIONAL` own, recipient-scoped (operational notifications) |
+| **Staff** | Operational `ORD-005/006/007..011` + `ORD-013` + `ORD-012` tracking, `REQ-004..006`, `ENQ-004..006`, `INV-001/002` view (and `INV-003` if `inventory.manage` approved), `CAT-007..012`/`CAT-015..018` if `products.manage` approved, `NOT-001/002` `OPERATIONAL` own, recipient-scoped (operational notifications) |
 | **Admin** | `ADM-001..006` staff/users manage, plus all operational + catalog/inventory management, `NOT-001/002` `ADMIN` limited own, recipient-scoped (administrative notifications as needed), `PAY-002` admin limited (view status only; `PAY-001` initiate is **Customer-only**, not Admin — see §19.1 master permission table), `WEBHOOK-001` system (Group H) |
 
 Full matrix in §18 and `api-resources.md §13`; this summary is not replacement.
@@ -1354,7 +1358,7 @@ Availability is **embedded** in `Product` (`availability: available|unavailable`
 | General enquiry (+ attachment) | `ENQ-001` → `ENQ-002/003` → `ENQ-004..006` | Yes |
 | Staff order processing | `ORD-005/006` → `ORD-007..011` + `ORD-013` + `NOT-001` operational | Yes |
 | Admin staff approval | `ADM-001..004` | Yes |
-| Product/inventory management | `CAT-007..012` + `INV-001..003` | Yes |
+| Product/inventory management | `CAT-007..012`/`CAT-015..018` + `INV-001..003` | Yes |
 
 All endpoint dependencies `resource exists + relationship exists + actor exists + auth rule exists + authz rule exists + HTTP method + path naming + request/response/error conventions` are satisfied; any gap is flagged as incomplete (none for V1).
 
@@ -1364,7 +1368,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ### 19.13 Endpoint Count, MVP & Surface Discipline
 
-- **Smallest coherent surface:** V1 ID inventory is `76` total (`73` substantive + `3` Group H placeholders) with mixed current statuses per `§19.15` — `73` substantive: catalog 14 [`CAT-001..006` public 6 + `CAT-007..014` management 8 (`CAT-013/014` operational product reads)] + auth 8 [`AUTH-001..008` **RETIRED** in Phase 4.1; not callable] + user 3 [`USER-001/002` active + `USER-003` retired] + cart 5 [`CART-001..005` inc. `CART-005` merge] + checkout 1 [`CHK-001`] + orders 14 [`ORD-001..014` **APPROVED**] + requests 7 [`REQ-001..007` **APPROVED**] + enquiries 7 [`ENQ-001..007` **APPROVED**] + notifications 2 [`NOT-001/002` **APPROVED**] + inventory 3 [`INV-001..003`] + admin 9 [`ADM-001..009`]; plus `3` placeholders [`PAY-001/002`, `WEBHOOK-001`] (`PROPOSED*`, Group H) — target `APPROVED` for remaining `PROPOSED` after Phase 1.21 review; retired IDs stay retired. No `GET /my-orders` duplicate of `GET /me/orders`, no `/categories/{category}/products` duplicate, no `/products/{product}/images` separate, no `/products/{product}/availability` separate — canonical choices per §19.5-19.7. Guest-cart identifier is `X-Guest-Cart-Id` / `guest_cart_id` cookie (opaque, backend-issued) handled in `CART-001..004` anonymous support and merged via Clerk-authenticated `CART-005`.
+- **Smallest coherent surface:** V1 ID inventory is `80` total (`77` substantive + `3` Group H placeholders) with mixed current statuses per `§19.15` — `77` substantive: catalog 18 [`CAT-001..006` public 6 + `CAT-007..014` management 8 (`CAT-013/014` operational product reads) + `CAT-015..018` media mutations 4] + auth 8 [`AUTH-001..008` **RETIRED** in Phase 4.1; not callable] + user 3 [`USER-001/002` active + `USER-003` retired] + cart 5 [`CART-001..005` inc. `CART-005` merge] + checkout 1 [`CHK-001`] + orders 14 [`ORD-001..014` **APPROVED**] + requests 7 [`REQ-001..007` **APPROVED**] + enquiries 7 [`ENQ-001..007` **APPROVED**] + notifications 2 [`NOT-001/002` **APPROVED**] + inventory 3 [`INV-001..003`] + admin 9 [`ADM-001..009`]; plus `3` placeholders [`PAY-001/002`, `WEBHOOK-001`] (`PROPOSED*`, Group H) — target `APPROVED` for remaining `PROPOSED` after Phase 1.21 review; retired IDs stay retired. No `GET /my-orders` duplicate of `GET /me/orders`, no `/categories/{category}/products` duplicate, no `/products/{product}/images` separate, no `/products/{product}/availability` separate — canonical choices per §19.5-19.7. Guest-cart identifier is `X-Guest-Cart-Id` / `guest_cart_id` cookie (opaque, backend-issued) handled in `CART-001..004` anonymous support and merged via Clerk-authenticated `CART-005`.
 - **MVP discipline:** Excludes `wishlist`, `reviews`, `coupons`, `saved addresses`, `loyalty`, `live driver tracking` unless explicitly approved.
 - **Surface security:** each endpoint justified; attack/testing/documentation/authorization cost considered.
 
@@ -1399,7 +1403,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ## 21. Catalog API Contract (Phase 1.20)
 
-> **Authority:** Canonical domain API contract for the **Catalog** subsystem (`CAT-001..CAT-006` public read operations and `CAT-007..CAT-012` administrative management baseline). Consolidates `phases/phase-1.20.md`.
+> **Authority:** Canonical domain API contract for the **Catalog** subsystem (`CAT-001..CAT-006` public read operations, `CAT-007..CAT-012` administrative management baseline, and `CAT-015..CAT-018` product-media mutations added by Phase 19.8B). Consolidates `phases/phase-1.20.md`.
 > **Core Principle:** Fast, public, predictable, SEO-compatible, cache-friendly, safe, and completely independent of customer authentication.
 
 ### 21.1 Catalog Endpoint Contract Matrix
@@ -1418,6 +1422,10 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | `CAT-010` | POST | `/api/v1/products/{product}/variants` | Yes | `products.manage` (Admin/Staff) | No | Add product variant | Non-cacheable |
 | `CAT-011` | POST | `/api/v1/categories` | Yes | `products.manage` (Admin/Staff) | No | Create category | Non-cacheable |
 | `CAT-012` | PATCH | `/api/v1/categories/{category}` | Yes | `products.manage` (Admin/Staff) | No | Update category | Non-cacheable |
+| `CAT-015` | DELETE | `/api/v1/products/{product}/images/{image}` | Yes | `products.manage` (Admin/Staff) | No | Delete product image (record and stored object) | Non-cacheable |
+| `CAT-016` | PATCH | `/api/v1/products/{product}/images/{image}` | Yes | `products.manage` (Admin/Staff) | No | Update product image alt text (only mutable image field) | Non-cacheable |
+| `CAT-017` | POST | `/api/v1/products/{product}/images/{image}/primary` | Yes | `products.manage` (Admin/Staff) | No | Select the product's primary image (idempotent, no request body) | Non-cacheable |
+| `CAT-018` | POST | `/api/v1/products/{product}/images/reorder` | Yes | `products.manage` (Admin/Staff) | No | Reorder the product's images (atomic complete replacement) | Non-cacheable |
 
 *Note on Rejected Duplicate Endpoints:*  
 - `GET /api/v1/categories/{category}/products` is **REJECTED** in favor of canonical `GET /api/v1/products?category={category}` (ADR/API-END-002).  
@@ -1716,7 +1724,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 - **Cache Safety:** Public Catalog responses contain zero customer session data, zero cookies, zero customer identifiers, and zero user-specific state.
 - **Cache-Control Candidates:** Public GET responses can safely be cached via HTTP `Cache-Control`, CDN edge nodes, and Next.js ISR (Incremental Static Regeneration).
 - **Determinism:** Identical query parameters against identical catalog state yield identical JSON byte output.
-- **Invalidation Triggers:** Administrative catalog mutations (`CAT-007..CAT-012`, `INV-003`) trigger CDN/application cache invalidation for the affected product/category paths.
+- **Invalidation Triggers:** Administrative catalog mutations (`CAT-007..CAT-012`, `CAT-015..CAT-018`, `INV-003`) trigger CDN/application cache invalidation for the affected product/category paths.
 
 ---
 
@@ -1731,6 +1739,54 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 | SQL injection via search or sort | Parameterized database queries; strict server-side allow-list for `sort` fields | SEC-INP-001 |
 | Enum tampering (`product_type`, `availability`) | Closed enum validation; invalid values immediately trigger `INVALID_VALUE` 422 | API-VAL-003 |
 | Unbounded response payload / DoS | Enforced pagination limits (`per_page` max 100); bounded gallery/variant lists | API-RES-001 |
+| Client-supplied storage key or arbitrary media path | Deletion always uses the persisted `file_path` of the record resolved from the path; no request body may set `url`, `file_path`, storage key or disk — a submitted field is `422 INVALID_VALUE` on every body-accepting endpoint (`CAT-009`, `CAT-016`, `CAT-017`, `CAT-018`), and `CAT-015` reads no body and ignores one, so nothing in a body can change what is deleted | IMG-OWN-001 |
+| Cross-product image targeting | The `{image}` segment is resolved strictly inside `{product}`; unknown, malformed and other-product identifiers all return `RESOURCE_NOT_FOUND` 404 | IMG-OWN-002 |
+| Silent image reordering through an unrelated field | `sort_order` is not a writable field on any endpoint; ordering changes only through `CAT-018`'s complete list and are normalized server-side | IMG-ORD-001 |
+| Orphaned stored object after an image delete | The record is deleted inside a product-locked transaction and the object afterwards; a storage failure enqueues a durable retry job (not silent success) | IMG-STO-001 |
+| Two images becoming primary at once | Product-row lock serializes selection; `product_images.is_primary_guard` unique index is the last-resort database guard | IMG-PRI-001 |
+
+---
+
+### 21.12 Product Image Mutation Contracts (`CAT-015`–`CAT-018`) — Phase 19.8B
+
+> **Authority:** Phase 19.8B extended the frozen V1 catalog contract with four approved product-media mutations. The owner explicitly approved widening the contract for exactly these operations; no other catalog path, request shape, enum or status behaviour changed.
+
+**Shared boundary (all four):** `clerk.auth` + `staff-or-admin` + `permission:products.manage` + `throttle:operational-write`, identical to `CAT-009`. Responses are `PRIVATE` (`Cache-Control: private`), never CDN-cached. Documented failure classes: `401` unauthenticated, `403` authenticated without `products.manage`, `404` product/image resolution, `429` rate limited; `422` validation (`CAT-016`, `CAT-017`, `CAT-018`) and `413` over-size (`CAT-018`).
+
+- **Image identity:** `{image}` is `img_` + the base36 row id. It is resolved strictly inside `{product}`; an unknown, malformed, or **other-product** identifier all return `RESOURCE_NOT_FOUND` 404, so the route cannot be used to discover or mutate another product's media.
+- **Method choice — `POST` not `PUT`:** V1 defines no `PUT` endpoint (`phases/api-action-method-policy.md §12`; decision `1.10-DEC-06` "no Version 1 endpoint currently requires `PUT`"). Both new actions (`CAT-017`, `CAT-018`) are controlled operations with cross-row effects, so they follow the established `POST /{resource}/{identifier}/{action}` convention (`/orders/{order}/cancel`, `/cart/merge`) rather than a partial-field `PATCH`.
+
+**`CAT-015` — `DELETE /api/v1/products/{product}/images/{image}`**
+
+- Deletes the image **record** and its stored **object**. Returns `204 No Content` with an empty body.
+- Ordering of effects: the record is deleted inside a transaction guarded by a product-row lock, then the object is removed using the record's persisted `file_path`. The client never supplies a path, key, URL or disk.
+- If the storage provider reports a failure, the removal is enqueued as a durable retry job and the response is still `204`: the authoritative record is already gone. A **missing** object is treated as already deleted (both drivers treat it as success).
+- Idempotency: the operation is idempotent in effect for `HELD → DELETED`; a repeat request returns `404 RESOURCE_NOT_FOUND` because the image no longer resolves (documented not-found behaviour, not a silent `204`).
+- Deleting the **primary** image does not promote another image. The invariant is **at most one** primary, not exactly one; the public product representation falls back to the first image in `sort_order ASC, id ASC`.
+- Residual risk (documented, not atomic): if the retry job exhausts its attempts, the stored object can remain as an orphan. The failure is logged and lands in `failed_jobs`; the record itself is never resurrected. DB↔object-store atomicity is not claimed.
+
+**`CAT-016` — `PATCH /api/v1/products/{product}/images/{image}`**
+
+- Body accepts **only** `alt_text` (`present`, `string | null`, max 500). The value is trimmed; an empty or whitespace-only string is stored as `null`, as is an explicit `null`.
+- Any other field (`sort_order`, `is_primary`, `url`, `file_path`, storage key, disk, ownership) is rejected `422 INVALID_VALUE` with the offending field. An absent `alt_text` is `422 MISSING_REQUIRED_FIELD`.
+- Returns `200` with the unchanged `ProductImage` representation (`id`, `url`, `alt_text`, `sort_order`, `is_primary`). Idempotent: repeating the same value is a no-op write of the same state.
+
+**`CAT-017` — `POST /api/v1/products/{product}/images/{image}/primary`**
+
+- Marks one image as primary and demotes the current primary **in the same transaction** (demote before promote, because the model and the database both refuse two primaries simultaneously).
+- Accepts **no request body**; any submitted field is rejected `422 INVALID_VALUE`. The operation can never set `is_primary` on a second image, and it never changes `sort_order`.
+- Idempotent: selecting the image that is already primary returns `200` unchanged. Concurrency: the product-row lock serializes competing selections and the `is_primary_guard` unique index refuses a second primary even if a writer bypasses the service.
+- Returns `200` with the selected `ProductImage`.
+
+**`CAT-018` — `POST /api/v1/products/{product}/images/reorder`**
+
+- Body is `{"images": ["img_…", …]}`: the **complete** ordered set of the product's images. Every image of the product must appear exactly once.
+- Rejected `422 INVALID_VALUE`: duplicates, unknown identifiers, identifiers belonging to another product, non-string entries, and an **incomplete** list. An unknown product is `404`. A top-level unknown field is `422`. `images: []` is valid only for a product that has no images.
+- Positions are normalized after reordering to contiguous **1-based** values (`1..n`), matching the upload path's `max+1` convention; legacy `0`-based rows converge once reordered. Only `sort_order` is written — `id`, `url`, `alt_text` and `is_primary` are preserved.
+- Returns `200` with the complete reordered collection. Executed inside one transaction under a product-row lock, so concurrent reorders serialize and the final ordering is always one complete submitted list — never a partial mix. Idempotent for a given list.
+- No per-array size cap is invented: the list is bounded by the global JSON body limit (`413` above it).
+
+**Cache invalidation:** all four mutations are administrative catalog mutations and invalidate the affected product's public catalog paths (extends the `CAT-007..CAT-012` invalidation rule in §21.10).
 
 ---
 
@@ -4381,6 +4437,10 @@ Public vs Operational representations remain separate (see `api-resources.md §1
 | `CAT-012` | `PATCH` | `/api/v1/categories/{category}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Update category | Designed idempotent | Low |
 | `CAT-013` | `GET` | `/api/v1/admin/products` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | List products for operations (operational read, includes unpublished/draft) | — | — |
 | `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | Retrieve product operationally (operational read, includes internal flags/inventory) | — | — |
+| `CAT-015` | `DELETE` | `/api/v1/products/{product}/images/{image}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Delete product image (record and stored object) | Idempotent (repeat → 404) | Low |
+| `CAT-016` | `PATCH` | `/api/v1/products/{product}/images/{image}` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Update image alt text (only mutable image field) | Designed idempotent | Low |
+| `CAT-017` | `POST` | `/api/v1/products/{product}/images/{image}/primary` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Select primary image (demotes the previous primary atomically) | Designed idempotent | Medium (product-row lock + `is_primary` unique guard) |
+| `CAT-018` | `POST` | `/api/v1/products/{product}/images/reorder` | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Reorder images (atomic complete replacement) | Designed idempotent | Medium (product-row lock) |
 
 - Do not introduce product states contradicting `§21` domain model; use existing `is_active`/`is_published`/`product_type`.
 - `CAT-007`/`008` request bodies contain only `name/slug/description/category_id/product_type/price/is_active/is_published` allow-list; `id/created_at/availability/stock_indicator/reserved_quantity` server-controlled.
@@ -4653,6 +4713,7 @@ Existing IDs remain **retired never recycled**. Phase 1.29 adds/confirms:
 | `CAT-007`..`012` | `POST`/`PATCH` | `/api/v1/products`, `/api/v1/products/{product}`, `/api/v1/products/{product}/images`, `/api/v1/products/{product}/variants`, `/api/v1/categories`, `/api/v1/categories/{category}` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Operational catalog writes (create/update product, manage images/variants, create/update category) | —/Designed idempotent for PATCH/`CAT-008,012` | Low | **PROPOSED** (target `APPROVED` after review, see §30.15) |
 | `CAT-013` | `GET` | `/api/v1/admin/products` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | List products for operations (operational read, filters `search/category/product_type/is_active/is_published/availability`, paginated) | — | — | **PROPOSED** |
 | `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` / `OPERATIONAL` `products.view` where approved | Retrieve product operationally (includes `is_active/is_published`/inventory) | — | — | **PROPOSED** |
+| `CAT-015`..`018` | `DELETE`/`PATCH`/`POST` | `/api/v1/products/{product}/images/{image}`, `/api/v1/products/{product}/images/{image}/primary`, `/api/v1/products/{product}/images/reorder` | Catalog | Staff, Admin | Required | `ADMINISTRATIVE` `products.manage` where approved | Product-media mutations (delete image, edit alt text, select primary, reorder) | Designed idempotent | Medium (product-row lock; `is_primary` unique guard) | **PROPOSED** (Phase 19.8B, §21.12) |
 | `INV-001` | `GET` | `/api/v1/inventory` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | List inventory (operational) | — | — | **APPROVED** (Phase 11.6) |
 | `INV-002` | `GET` | `/api/v1/inventory/{inventory}` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.view` | Get inventory detail | — | — | **APPROVED** (Phase 11.6) |
 | `INV-003` | `POST` | `/api/v1/inventory/{inventory}/adjust` | Inventory | Staff, Admin | Required | `OPERATIONAL` `inventory.manage` + auditable reason | Controlled inventory adjustment | **Required** | **Critical** | **APPROVED** (Phase 11.6) |
@@ -4883,7 +4944,7 @@ Canonical self-context remains `GET /api/v1/me` (`USER-001`) and `PATCH /api/v1/
 | **Notification** | Recipient (`recipient_user_id` server-derived) | `Own` (`GET /me/notifications` `NOT-001`) | `Operational recipient scope` (`NOT-001` filtered `NEW_ORDER`) | `Admin scope` |
 | **Profile** | User | `Own` (`GET/PATCH /me`) | `Own` (`GET/PATCH /me`) — not browse-as-customer | `Own` (`GET/PATCH /me`) + `ADM-008/009` `ADMIN`-only for `GET /users` |
 | **Inventory** | Business | **No** (sees `availability`/`stock_indicator` only) | `Operational` (`INV-001/002` view, `INV-003` adjust `inventory.manage`) | `Administrative` |
-| **Catalog** | Business | `Public read` (`CAT-001..006`, `availability` only) | `Operational` (`CAT-013/014` read + `CAT-007..012` manage where approved) | `Administrative` |
+| **Catalog** | Business | `Public read` (`CAT-001..006`, `availability` only) | `Operational` (`CAT-013/014` read + `CAT-007..012`/`CAT-015..018` manage where approved) | `Administrative` |
 | **Audit** | Business | **No** | **Normally no** | `Read-only` (`ADM-007` explicit `audit.view`, private/no-store per `§30.16.1`) |
 
 Matches `phases/phase-1.30.md §9` table and prior contracts; no contradiction.
@@ -4897,11 +4958,11 @@ Matches `phases/phase-1.30.md §9` table and prior contracts; no contradiction.
 
 ### 31.7 Endpoint Inventory Completeness
 
-All **75** Version 1 endpoints (**72** committed + **3** Group H placeholders `PROPOSED*`) exist once with stable IDs, unique path/method, and are documented in `§19.1`/`§30.21` and `api-resources.md §15` (`CAT` 14 + `AUTH` 8 + `USER` 2 + `CART` 5 + `CHK` 1 + `ORD` 14 + `REQ` 7 + `ENQ` 7 + `NOT` 2 + `INV` 3 + `ADM` 9 + `PAY` 2 + `WEBHOOK` 1 = **75**):
+All **80** Version 1 endpoint IDs (**77** substantive + **3** Group H placeholders `PROPOSED*`; `RETIRED` IDs — `AUTH-001..008`, `USER-003` — remain counted as existing, never recycled) exist once with stable IDs, unique path/method, and are documented in `§19.1`/`§30.21` and `api-resources.md §15` (`CAT` 18 + `AUTH` 8 + `USER` 3 + `CART` 5 + `CHK` 1 + `ORD` 14 + `REQ` 7 + `ENQ` 7 + `NOT` 2 + `INV` 3 + `ADM` 9 + `PAY` 2 + `WEBHOOK` 1 = **80**):
 
-- `CAT-001..014` (6 public reads + 6 operational writes + 2 operational reads `CAT-013/014` **PROPOSED**),
-- `AUTH-001..008` (register/login/logout/password/verify/change-password, `USER-003` retired),
-- `USER-001/002` (`GET/PATCH /me`),
+- `CAT-001..018` (6 public reads + 10 operational writes `CAT-007..012` and `CAT-015..018` + 2 operational reads `CAT-013/014` **PROPOSED**),
+- `AUTH-001..008` (register/login/logout/password/verify/change-password; **RETIRED** in Phase 4.1, not callable),
+- `USER-001/002` (`GET/PATCH /me`) active; `USER-003` retired (never recycled),
 - `CART-001..005` (guest holder via `X-Guest-Cart-Id` + merge),
 - `CHK-001` (`POST /checkout`),
 - `ORD-001..014` (`ORD-001..004` customer, `ORD-005/006` operational, `ORD-007..011,013,014` controlled actions),
@@ -5209,6 +5270,10 @@ For every inconsistency in `§31.26`, authoritative documentation was updated: `
 | `CAT-012` | `PATCH` | `/api/v1/categories/{category}` | Staff, Admin | Update category |
 | `CAT-013` | `GET` | `/api/v1/admin/products` | Staff, Admin | List products for operations |
 | `CAT-014` | `GET` | `/api/v1/admin/products/{product}` | Staff, Admin | Retrieve product operationally |
+| `CAT-015` | `DELETE` | `/api/v1/products/{product}/images/{image}` | Staff, Admin (`products.manage`) | Delete image |
+| `CAT-016` | `PATCH` | `/api/v1/products/{product}/images/{image}` | Staff, Admin (`products.manage`) | Update image alt text |
+| `CAT-017` | `POST` | `/api/v1/products/{product}/images/{image}/primary` | Staff, Admin (`products.manage`) | Select primary image |
+| `CAT-018` | `POST` | `/api/v1/products/{product}/images/reorder` | Staff, Admin (`products.manage`) | Reorder images |
 | `AUTH-001` | `POST` | `/api/v1/auth/register` | — (retired) | **RETIRED** — use Clerk sign-up |
 | `AUTH-002` | `POST` | `/api/v1/auth/login` | — (retired) | **RETIRED** — use Clerk sign-in |
 | `AUTH-003` | `POST` | `/api/v1/auth/logout` | — (retired) | **RETIRED** — use Clerk sign-out |

@@ -1,11 +1,8 @@
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import type { ReactNode } from "react";
+import { FilterSelect } from "@/components/catalog/filter-select";
 import { PriceFilterInputs } from "@/components/catalog/price-filter-inputs";
 import { SortFilterSelect } from "@/components/catalog/sort-filter-select";
 import { NavLink } from "@/components/layout/nav-link";
@@ -25,9 +22,9 @@ export function ProductCollectionControls({ action, categories, query }: Product
       <Stack component="fieldset" spacing={4} sx={{ border: 0, p: 0, m: 0 }}>
         <Box component="legend" sx={{ typography: "subtitle1", p: 0 }}>Filter furniture</Box>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, gap: 3 }}>
-          <FilterSelect label="Category" name="category" defaultValue={values.category}><MenuItem value="">All categories</MenuItem>{categories.map((category) => <MenuItem key={category.id} value={category.slug}>{category.name}</MenuItem>)}</FilterSelect>
-          <FilterSelect label="Product type" name="product_type" defaultValue={values.productType}><MenuItem value="">All furniture</MenuItem><MenuItem value="IN_STOCK">In stock</MenuItem><MenuItem value="MADE_TO_ORDER">Made to order</MenuItem></FilterSelect>
-          <FilterSelect label="Availability" name="availability" defaultValue={values.availability}><MenuItem value="">Any availability</MenuItem><MenuItem value="available">Available</MenuItem><MenuItem value="unavailable">Unavailable</MenuItem></FilterSelect>
+          <FilterSelect label="Category" name="category" value={values.category}><MenuItem value="">All categories</MenuItem>{categories.map((category) => <MenuItem key={category.id} value={category.slug}>{category.name}</MenuItem>)}</FilterSelect>
+          <FilterSelect label="Product type" name="product_type" value={values.productType}><MenuItem value="">All furniture</MenuItem><MenuItem value="IN_STOCK">In stock</MenuItem><MenuItem value="MADE_TO_ORDER">Made to order</MenuItem></FilterSelect>
+          <FilterSelect label="Availability" name="availability" value={values.availability}><MenuItem value="">Any availability</MenuItem><MenuItem value="available">Available</MenuItem><MenuItem value="unavailable">Unavailable</MenuItem></FilterSelect>
           <PriceFilterInputs minPriceTzs={values.minPriceTzs} maxPriceTzs={values.maxPriceTzs} minPriceMinorUnits={singleValue(query.min_price)} maxPriceMinorUnits={singleValue(query.max_price)} />
           <SortFilterSelect sort={values.sort} sortDirection={values.sortDirection} />
         </Box>
@@ -35,9 +32,4 @@ export function ProductCollectionControls({ action, categories, query }: Product
       </Stack>
     </Box>
   );
-}
-
-function FilterSelect({ label, name, defaultValue, children }: Readonly<{ label: string; name: string; defaultValue: string; children: ReactNode }>) {
-  const id = `${name}-label`;
-  return <FormControl fullWidth><InputLabel id={id}>{label}</InputLabel><Select labelId={id} label={label} name={name} defaultValue={defaultValue}>{children}</Select></FormControl>;
 }

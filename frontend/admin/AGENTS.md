@@ -13,5 +13,58 @@
 - Never redirect a still-authenticated Clerk session to `/sign-in`. `SignIn` cannot render for an already signed-in user, so a Laravel `401` under a live session must surface a recoverable state that offers a Clerk sign-out instead of a redirect loop.
 - Keep private API calls `no-store`; preserve the frozen `/api/v1` envelopes, pagination and error vocabulary.
 - Use MUI and `@mui/icons-material`; do not add Tailwind, another component library, or another authentication provider.
+
+## Shell and navigation
+
+- `app/(protected)/layout.tsx` is the only admission boundary. `proxy.ts` may pre-empt signed-out access for early UX only; it must never decide roles, permissions or business authorization, and must keep consuming `ADMIN_PROTECTED_MATCHERS`.
+- The shell owns the single `<main id="admin-main-content">` landmark and the skip link. Pages must not declare another `main`.
+- Define routes and navigation only in `lib/navigation/admin-route-paths.ts` and `lib/navigation/admin-navigation.ts`. Never hardcode a navigation link, route path or breadcrumb inside a component, and never duplicate the registry per surface.
+- Filter navigation with `resolveAdminNavigation(identity)` from the Laravel-resolved permissions. Navigation visibility is presentation, never authorization; an `ADMIN` role alone must not reveal a link for a permission the identity lacks, and missing permission data fails closed.
+- Every protected page repeats its own exact requirement server-side through `requireAdminRouteAccess(adminRoute(...))` and renders `access.denial` when not granted. A client-only gate is never sufficient.
+- Only use permission identifiers that exist in `backend/laravel/app/Support/PermissionName.php`, and only add an approved role restriction where Laravel enforces one. Never invent a permission or broaden one in the frontend.
+- Do not publish a navigation entry whose backend endpoint is unimplemented; omit it and document the dependency. Deferred commerce administration (orders, payments, checkout, delivery) must never appear in the navigation.
+- The registry's `plannedFor` is the single source for a placeholder's roadmap phase. Placeholder pages must not hardcode a phase string, and any status the Overview displays must name a phase that exists in the approved roadmap.
+- The Overview is navigation-first: never add counts, totals, charts, timelines or sample records, never fetch a business endpoint to populate it, and never show a status that could be mistaken for real operational state.
+- Placeholders must state that the feature is not implemented, name the owning phase, load no data and render no fabricated records, counts, charts or metrics. The overview is a navigational landing page, not an analytics dashboard.
+- Keep shell sub-components presentational and hook-free where practical; put routing, drawer and identity hooks only in the shell entry point so the shell stays render-testable.
+- A component that passes a component reference (for example MUI `component={NextLink}`) must declare `"use client"`. A Server Component cannot serialize a function into a Client Component prop, which fails at runtime with "Functions cannot be passed directly to Client Components". `tests/server-boundary.test.ts` enforces this for every `.tsx` under `app/` and `components/`; keep it passing rather than relying on review.
+- New or changed navigation, route protection or placeholder behavior requires corresponding tests: permission mapping against the Laravel catalog, active-route matching, denial behavior and rendered placeholder content.
+
+## Product module
+
+- Expose only operations Laravel actually supports. The approved product contract is `GET /admin/products`, `GET /admin/products/{product}`, `POST /products` and `PATCH /products/{product}`; the write allow-list is `name`, `slug`, `description`, `product_type`, `price`, `category_id`, `is_active`, `is_published`. Never add a field, enum, filter, sort or endpoint the contract does not define.
+- Always read the operational resource (`/admin/products…`), never the public catalog resource, for staff views. Never reconstruct a product, price, state or variant from a partial response — an unreadable response is an error, not an empty list.
+- Keep product type (`IN_STOCK`/`MADE_TO_ORDER`), product state (`is_active`/`is_published`), availability and inventory distinct. `MADE_TO_ORDER` is a valid product type, never invalid because checkout is deferred.
+- Money is integer minor units; format with `Intl.NumberFormat` and never with floating-point arithmetic. Unknown enum values render a neutral fallback, never a confident state.
+- Variants are read-only while `POST /products/{product}/variants` returns `501`; never render an enabled variant-creation control or send a request known to fail.
+- Product media is upload plus the four approved mutations (Phases 19.8A–19.8C). The approved media endpoints are `POST /products/{product}/images` (CAT-009), `products.manage`-gated and multipart with exactly one `image` file field; `DELETE /products/{product}/images/{image}` (CAT-015), which takes no body; `PATCH /products/{product}/images/{image}` with `alt_text` only (CAT-016); `POST /products/{product}/images/{image}/primary` (CAT-017), which takes no body; and `POST /products/{product}/images/reorder` (CAT-018), whose `images` array must be the complete 1-based ordered set — all `products.manage`-gated, all `Cache-Control: private`. Never invent an endpoint beyond them, and never send `sort_order`, `is_primary`, `url` or a storage key in a request body. The image list is read from the operational detail resource, and its sort order, `is_primary` and `alt_text` are displayed as authoritative values.
+- Media mutations are confirmed, never optimistic. A `404` means the gallery was stale, so it is reported as such and the detail resource is revalidated; a `204` carries no body and is never treated as a parse failure. The gallery shows no local order, alt text or primary selection before Laravel confirms it, and only one mutation runs at a time.
+- Deletion always goes through `ConfirmDialog`; the confirmation identifies the image and never promises a synchronous object removal. The alt-text editor is the only control for CAT-016 and enforces the 500-character maximum documented by Laravel.
+- The client media components (`product-image-gallery.tsx`, `product-image-alt-text-editor.tsx`) receive the four Server Actions as props from the page. They must never import `product-image-actions` or the server transport, so they stay renderable in tests. Keep the shared request fields, outcome type and safe messages in the dependency-free `lib/catalog/product-image-mutations.ts`.
+- Server actions live in `lib/catalog/product-actions.ts` and must repeat `requireAdminRouteAccess`'s exact permission first, because Server Functions are directly POST-reachable. Keep all authenticated calls on `lib/api/server-request.ts` + `lib/api/client.ts` (`no-store`); never put a bearer token in a Client Component prop or a shared cache.
+- The media Server Actions live in `lib/catalog/product-image-actions.ts` and each repeats the same exact permission before touching a resource or reading the file, because Server Functions are directly POST-reachable. Forward only the `image` field through the multipart transport in `lib/api/server-request.ts`; never JSON-serialize an upload.
+- Image previews render only URLs from the `CATALOG_MEDIA_BASE_URL` origin, which is also the `next/image` allow-list in `next.config.ts`. A URL outside it renders an explicit unavailable state, never a rewritten URL or a widened host. The allow-list is compiled when the server starts, so changing `CATALOG_MEDIA_BASE_URL` requires a restart; a mismatch must surface as the unavailable state, never a crash and never a widened host. Advisory client-side type and size checks mirror `backend/laravel/config/product_images.php`; Laravel stays authoritative.
+- Category options come from the public `GET /categories` collection only, because no operational category endpoint exists; preserve the current selection when a category is absent from the first page, and never hardcode a category id.
+- The list is a Server Component with a native `GET` filter form so filter state lives in the URL; do not fetch per keystroke, and never filter only the current server page for a global filter.
+
+## Category module
+
+- Expose only operations Laravel actually supports. The approved category contract is the public `GET /categories` and `GET /categories/{category}` reads, plus the `products.manage`-gated `POST /categories` and `PATCH /categories/{category}` writes. Never add a field, filter, sort or endpoint the contract does not define.
+- The `GET /categories` collection returns **only the active top-level categories** (active direct children of the structural root). It is not the complete category collection: the root, inactive categories and deeper sub-categories have no listing endpoint and must never be claimed, guessed or reconstructed. Every list/create surface states this scope, and an empty result is never presented as "the catalog has no categories".
+- Because no operational category endpoint exists, the category screens read the public catalog collection/detail while the writes stay operational and `products.manage`-gated. The permission is `products.manage`; there is no `categories.*` permission — never invent one.
+- The category write allow-list is `name`, `slug`, `description`, `image` only. A create forces `parent = root` and `is_active = true`; hierarchy, active/inactive state and ordering are not request fields, so never render a parent, state or ordering control or send one.
+- A category's `image` is an http(s) URL string, not a file: Phase 19.8A added product image upload only, so render the stored URL only as an http(s) link, never a raw scheme, and never upload a category image.
+- Server actions live in `lib/catalog/category-actions.ts` and must repeat `requireAdminRouteAccess`'s exact permission first, because Server Functions are directly POST-reachable. Keep authenticated calls on `lib/api/server-request.ts` + `lib/api/client.ts` (`no-store`); a partial update sends only the changed fields and a no-op update is never sent.
+
 - Every future screen needs accessible loading, empty, error, permission, keyboard, responsive and reduced-motion behavior.
 - Run `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, and `git diff --check` before completion.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

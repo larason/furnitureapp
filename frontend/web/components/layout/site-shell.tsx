@@ -4,7 +4,7 @@ import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
 import { PrimaryCategoryNavigation } from "./primary-category-navigation";
 
-export const MAIN_CONTENT_ID = "main-content";
+const MAIN_CONTENT_ID = "main-content";
 
 export function SiteShell({ children }: Readonly<{ children: ReactNode }>) {
   return (

@@ -801,6 +801,106 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440010
 ```
 *`quantity` integer units (not TZS), server `new_quantity = current + delta` transactional; duplicate same key replays `200` no second delta.*
 
+### 9.9 Product media mutations — `CAT-015`–`CAT-018` (Post-Freeze `API-FRZ-003`)
+
+All four use the same operational boundary as `CAT-009`: `Authorization: Bearer <ACCESS_TOKEN>` (Staff/Admin with `products.manage`), `Cache-Control: private`. `{image}` is resolved strictly inside `{product}`; an unknown, malformed or other-product identifier is `404`.
+
+**`CAT-016` Edit alt text — `PATCH /api/v1/products/{product}/images/{image}`**
+
+```http
+PATCH /api/v1/products/prod_01h8x9j2m4k5n6p7q8r9s0t1/images/img_01h8x9a0b1c2d3e4f5g6h7j8
+Authorization: Bearer <ACCESS_TOKEN>
+Content-Type: application/json
+
+{ "alt_text": "Solid Oak Dining Table — front view" }
+```
+
+```json
+{
+  "data": {
+    "id": "img_01h8x9a0b1c2d3e4f5g6h7j8",
+    "url": "https://cdn.example.com/products/oak-table.webp",
+    "alt_text": "Solid Oak Dining Table — front view",
+    "sort_order": 1,
+    "is_primary": true
+  }
+}
+```
+*Only `alt_text` is accepted. `{ "alt_text": null }` or a blank string clears it; `sort_order`, `is_primary`, `url` or a storage key are `422 INVALID_VALUE`.*
+
+**`CAT-017` Select primary — `POST /api/v1/products/{product}/images/{image}/primary`**
+
+```http
+POST /api/v1/products/prod_01h8x9j2m4k5n6p7q8r9s0t1/images/img_01h8x9b1c2d3e4f5g6h7j8k9/primary
+Authorization: Bearer <ACCESS_TOKEN>
+```
+
+```json
+{
+  "data": {
+    "id": "img_01h8x9b1c2d3e4f5g6h7j8k9",
+    "url": "https://cdn.example.com/products/oak-table-side.webp",
+    "alt_text": "Solid Oak Dining Table — side view",
+    "sort_order": 2,
+    "is_primary": true
+  }
+}
+```
+*No request body; any submitted field is `422 INVALID_VALUE`. The previously primary image becomes `false` in the same transaction, and `sort_order` is unchanged. Repeating the call is a `200` no-op.*
+
+**`CAT-018` Reorder — `POST /api/v1/products/{product}/images/reorder`**
+
+```http
+POST /api/v1/products/prod_01h8x9j2m4k5n6p7q8r9s0t1/images/reorder
+Authorization: Bearer <ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+  "images": [
+    "img_01h8x9b1c2d3e4f5g6h7j8k9",
+    "img_01h8x9a0b1c2d3e4f5g6h7j8"
+  ]
+}
+```
+
+```json
+{
+  "data": [
+    { "id": "img_01h8x9b1c2d3e4f5g6h7j8k9", "url": "https://cdn.example.com/products/oak-table-side.webp", "alt_text": "Solid Oak Dining Table — side view", "sort_order": 1, "is_primary": true },
+    { "id": "img_01h8x9a0b1c2d3e4f5g6h7j8", "url": "https://cdn.example.com/products/oak-table.webp", "alt_text": "Solid Oak Dining Table — front view", "sort_order": 2, "is_primary": false }
+  ]
+}
+```
+*The list must contain every image of the product exactly once — duplicates, unknown ids, other-product ids and incomplete lists are `422 INVALID_VALUE`. Positions are normalized to contiguous `1..n`; `alt_text` and `is_primary` are preserved.*
+
+**`CAT-015` Delete — `DELETE /api/v1/products/{product}/images/{image}`**
+
+```http
+DELETE /api/v1/products/prod_01h8x9j2m4k5n6p7q8r9s0t1/images/img_01h8x9a0b1c2d3e4f5g6h7j8
+Authorization: Bearer <ACCESS_TOKEN>
+```
+
+```http
+HTTP/1.1 204 No Content
+```
+*The record and its stored object are removed. Deleting the primary image leaves the product with no primary image. A repeat request is `404` because the image no longer resolves.*
+
+**Rejected cross-product target — `CAT-015`**
+
+```http
+DELETE /api/v1/products/prod_OTHER/images/img_01h8x9a0b1c2d3e4f5g6h7j8
+Authorization: Bearer <ACCESS_TOKEN>
+```
+
+```json
+{
+  "errors": [
+    { "code": "RESOURCE_NOT_FOUND", "message": "The requested resource was not found." }
+  ],
+  "meta": { "request_id": "req_01h8z5a6b7c8d9e0f1g2h3j4k5" }
+}
+```
+
 ---
 
 ## 10. Made-to-Order Request Examples
