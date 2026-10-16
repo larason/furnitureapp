@@ -2989,6 +2989,9 @@ paths:
       - Catalog
       summary: List categories
       security: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
           description: OK

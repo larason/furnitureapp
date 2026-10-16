@@ -439,6 +439,19 @@ test("expected read failures render the established distinct states", () => {
   assert.match(DETAIL_PAGE, /failure === "not-found"\) notFound\(\)/, "a missing product resolves to not-found, not a generic error.");
 });
 
+test("an unreadable response is classified as invalid data, not a service outage", () => {
+  const start = PRODUCTS_API.indexOf("function describeProductApiFailure");
+  assert.ok(start > -1, "the failure classifier must exist.");
+
+  const unreadable = PRODUCTS_API.indexOf("error instanceof ProductResourceError", start);
+  const apiError = PRODUCTS_API.indexOf("error instanceof ApiError", start);
+  assert.ok(unreadable > -1, "an unreadable response must be classified explicitly.");
+  assert.ok(apiError > unreadable, "the resource error must be classified before the status fallback.");
+
+  assert.equal(/failure === "invalid"/.test(FAILURE_COMPONENT), false, "\"invalid\" must fall through to the unreadable-response default.");
+  assert.match(FAILURE_COMPONENT, /description="The product service returned a response this application could not read\."/);
+});
+
 test("the list page keeps loading, empty and failure states distinct and does not fabricate data", () => {
   assert.match(LIST_PAGE, /if \(!page\.ok\) return <ProductFailureState/);
   assert.match(LIST_PAGE, /page\.value\.products\.length === 0/);

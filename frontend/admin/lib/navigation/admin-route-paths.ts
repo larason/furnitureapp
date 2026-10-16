@@ -27,6 +27,18 @@ export const ADMIN_PRODUCT_PATHS = {
   edit: (productId: string) => `${ADMIN_ROUTE_PATHS.products}/${encodeURIComponent(productId)}/edit`,
 } as const;
 
+/**
+ * Nested category routes that belong to the `/categories` destination. Like the
+ * product paths, they are not navigation entries and are already covered by the
+ * `/categories(.*)` protected matcher.
+ */
+export const ADMIN_CATEGORY_PATHS = {
+  list: ADMIN_ROUTE_PATHS.categories,
+  create: `${ADMIN_ROUTE_PATHS.categories}/new`,
+  detail: (categoryId: string) => `${ADMIN_ROUTE_PATHS.categories}/${encodeURIComponent(categoryId)}`,
+  edit: (categoryId: string) => `${ADMIN_ROUTE_PATHS.categories}/${encodeURIComponent(categoryId)}/edit`,
+} as const;
+
 export const ADMIN_PROTECTED_PATHS: readonly string[] = Object.values(ADMIN_ROUTE_PATHS);
 
 /** Proxy matcher patterns: each protected path plus its nested routes. */

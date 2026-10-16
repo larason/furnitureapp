@@ -159,7 +159,7 @@ function ScheduledSection() {
       <SectionHeader
         title="Not yet available"
         titleId="overview-scheduled-title"
-        description="The authenticated shell and navigation are available. Products is implemented and available in this build; the areas listed below remain scheduled. This reflects navigation availability, not operational state."
+        description="The authenticated shell and navigation are available. The product and category modules are implemented and available in this build; the areas listed below remain scheduled. This reflects navigation availability, not operational state."
       />
       <Box sx={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", pt: 3, maxWidth: "var(--content-width-lead)" }}>
         <Typography color="text.secondary">

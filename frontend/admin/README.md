@@ -130,6 +130,44 @@ The page makes zero business-data API calls beyond the admission flow's `GET /ap
 - **Product media is deferred to Phase 19.8.** The detail page reports the number of image records returned; upload, ordering and deletion are not implemented.
 - **Category options come from the public `GET /api/v1/categories?per_page=100`**, which exposes only active top-level categories. There is no operational category-list endpoint and no separate `categories.*` permission. If the first 100 do not cover the catalog, the form is limited to those options; the current selection is always preserved.
 
+## Categories module (Phase 19.7)
+
+`/categories` is the second implemented operational workflow. It is a real Laravel-backed module, not a placeholder — but it is **not** full category administration: the complete scope statement is below.
+
+### Routes
+
+| Route | Page | Purpose |
+| --- | --- | --- |
+| `/categories` | `app/(protected)/categories/page.tsx` | List of the categories the API publishes, plus the scope notice. |
+| `/categories/new` | `app/(protected)/categories/new/page.tsx` | Create form for a new top-level category. |
+| `/categories/[category]` | `app/(protected)/categories/[category]/page.tsx` | Read-only authoritative detail. |
+| `/categories/[category]/edit` | `app/(protected)/categories/[category]/edit/page.tsx` | Edit form. |
+
+`ADMIN_CATEGORY_PATHS` in `lib/navigation/admin-route-paths.ts` owns the nested paths. Like the product paths, they are deliberately excluded from `ADMIN_PROTECTED_PATHS`/`ADMIN_PROTECTED_MATCHERS` and from the navigation registry: the `/categories` entry is the only destination, and its derived `/categories(.*)` matcher already covers the nested routes. Every category page repeats `requireAdminRouteAccess(adminRoute(ADMIN_ROUTE_PATHS.categories))` as its first operation.
+
+### Contract and permission
+
+- List: `GET /api/v1/categories` — the **public** collection (`page`, `per_page` ≤100). No search, sort or state filter exists in the contract.
+- Detail: `GET /api/v1/categories/{category}` — the **public** detail, resolved by encoded id or slug.
+- Create: `POST /api/v1/categories`; update: `PATCH /api/v1/categories/{category}`.
+- Allow-listed write fields only: `name` (≤120), `slug` (kebab-case, ≤255), `description` (nullable, ≤1000), `image` (nullable http(s) URL, ≤255). Any other field is rejected. A create always forces `parent = root` and `is_active = true`; the root category itself cannot be updated (`403`) and a slug collision is reported as `409`.
+- The permission is `products.manage` — the same verified requirement already used by the Products module. There is no `categories.*` permission and none is invented.
+
+### Data flow
+
+- `lib/catalog/categories-api.ts` performs every read through the public catalog endpoints and every write through the authenticated transport, so authenticated requests are `no-store` and request-scoped.
+- `lib/catalog/category-actions.ts` holds the `"use server"` create/update actions. Server Functions are directly POST-reachable, so both repeat the exact permission before touching category data.
+- `lib/catalog/category-resource.ts` parses the API response defensively; `lib/catalog/category-query.ts` owns the pagination vocabulary, URL state and request query; `lib/catalog/category-form.ts` maps the form to the contract (partial updates send only changed fields, and a no-op update is never sent); `lib/catalog/category-presentation.ts` handles the safe image link and timestamp formatting.
+- Every rendered failure class stays distinct (`CategoryFailureState`), and a missing category resolves through the framework `notFound()` rather than a generic error.
+
+### Honest limitations (scope)
+
+- **The screen manages only the active top-level categories returned by the public `GET /api/v1/categories`** — the categories directly beneath the structural root. It does **not** manage the complete category collection.
+- The listing cannot show the root category, inactive (`is_active = false`) categories, or deeper sub-categories: no operational/admin category listing endpoint exists, so those are invisible to every listing available to this app.
+- Hierarchy and active/inactive state are not part of the approved category request, so no parent, state or ordering control is rendered and no such field is ever sent.
+- **Category media upload is deferred to Phase 19.8.** The form and detail view show the stored image URL only.
+- The screen states this scope on every list/create surface (`CategoryScopeNotice`), and its empty state explicitly says an empty result is not proof that the catalog has no categories.
+
 ## Adding a navigation entry
 
 1. Add the path to `lib/navigation/admin-route-paths.ts` (this also covers the proxy's early redirect).
@@ -165,4 +203,4 @@ Shell accessibility expectations: a keyboard skip link to `#admin-main-content`,
 
 ## Phase exclusions
 
-Products (Phase 19.6) is implemented. The remaining operational destinations — requests, enquiries, notifications, categories, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement category CRUD, inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it adds no Reverb subscription, dashboard metric endpoint, chart, Laravel route, migration, role or permission.
+Products (Phase 19.6) and Categories (Phase 19.7) are implemented. The remaining operational destinations — requests, enquiries, notifications, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows, and it does not add category hierarchy, category activation/deactivation, category deletion or category media management; it adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission.

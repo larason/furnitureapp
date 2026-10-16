@@ -41,6 +41,15 @@
 - Category options come from the public `GET /categories` collection only, because no operational category endpoint exists; preserve the current selection when a category is absent from the first page, and never hardcode a category id.
 - The list is a Server Component with a native `GET` filter form so filter state lives in the URL; do not fetch per keystroke, and never filter only the current server page for a global filter.
 
+## Category module
+
+- Expose only operations Laravel actually supports. The approved category contract is the public `GET /categories` and `GET /categories/{category}` reads, plus the `products.manage`-gated `POST /categories` and `PATCH /categories/{category}` writes. Never add a field, filter, sort or endpoint the contract does not define.
+- The `GET /categories` collection returns **only the active top-level categories** (active direct children of the structural root). It is not the complete category collection: the root, inactive categories and deeper sub-categories have no listing endpoint and must never be claimed, guessed or reconstructed. Every list/create surface states this scope, and an empty result is never presented as "the catalog has no categories".
+- Because no operational category endpoint exists, the category screens read the public catalog collection/detail while the writes stay operational and `products.manage`-gated. The permission is `products.manage`; there is no `categories.*` permission — never invent one.
+- The category write allow-list is `name`, `slug`, `description`, `image` only. A create forces `parent = root` and `is_active = true`; hierarchy, active/inactive state and ordering are not request fields, so never render a parent, state or ordering control or send one.
+- Category media upload stays out of scope until Phase 19.8; show the stored `image` URL only as an http(s) link, never a raw scheme, and never upload.
+- Server actions live in `lib/catalog/category-actions.ts` and must repeat `requireAdminRouteAccess`'s exact permission first, because Server Functions are directly POST-reachable. Keep authenticated calls on `lib/api/server-request.ts` + `lib/api/client.ts` (`no-store`); a partial update sends only the changed fields and a no-op update is never sent.
+
 - Every future screen needs accessible loading, empty, error, permission, keyboard, responsive and reduced-motion behavior.
 - Run `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, and `git diff --check` before completion.
 

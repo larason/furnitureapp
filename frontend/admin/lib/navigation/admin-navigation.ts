@@ -123,12 +123,10 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     id: "categories",
     href: ADMIN_ROUTE_PATHS.categories,
     label: "Categories",
-    description: "Catalog category structure and visibility.",
+    description: "Top-level catalog categories published to the storefront.",
     icon: CategoryOutlined,
     group: "catalog",
     permission: AdminPermissionName.PRODUCTS_MANAGE,
-    placeholder: true,
-    plannedFor: "Phase 19.7",
   },
   {
     id: "inventory",

@@ -182,7 +182,7 @@ test("an implemented route performs data access only after authorization succeed
     assert.match(source, /requireAdminRouteAccess\(/, `${route.href} must keep the route guard.`);
     const denialIndex = body.indexOf("if (!access.granted) return access.denial;");
     assert.notEqual(denialIndex, -1, `${route.href} must render the denial state when unauthorized.`);
-    for (const access of ["attemptProductRead(", "fetchOperationalProductPage(", "fetchOperationalProduct(", "fetchCategoryOptions("]) {
+    for (const access of ["attemptProductRead(", "fetchOperationalProductPage(", "fetchOperationalProduct(", "fetchCategoryOptions(", "attemptCategoryRead(", "fetchCategoryPage(", "fetchCategory("]) {
       const accessIndex = body.indexOf(access);
       if (accessIndex === -1) continue;
       assert.ok(denialIndex < accessIndex, `${route.href} must authorize before calling ${access}.`);

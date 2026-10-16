@@ -4,7 +4,7 @@ import { ApiError } from "@/lib/api/errors";
 import type { ApiErrorItem, JsonValue } from "@/lib/api/types";
 import { requestOperationalApi, requestPublicApi } from "@/lib/api/server-request";
 import { parseCategoryOptions, type CategoryOption } from "@/lib/catalog/category-option";
-import { parseOperationalProduct, parseProductPage, type OperationalProduct, type OperationalProductPage } from "@/lib/catalog/product-resource";
+import { ProductResourceError, parseOperationalProduct, parseProductPage, type OperationalProduct, type OperationalProductPage } from "@/lib/catalog/product-resource";
 import { productListRequestQuery, type ProductListQuery } from "@/lib/catalog/product-query";
 
 /**
@@ -67,7 +67,16 @@ export async function attemptProductRead<T>(operation: () => Promise<T>): Promis
   }
 }
 
+/**
+ * Classifies a failed product read. A response the parsers could not read is
+ * `invalid` (unreadable data), not `unavailable` (a service outage) — the two
+ * render different states and only one of them is worth retrying.
+ */
 function describeProductApiFailure(error: unknown): ProductApiFailure {
+  if (error instanceof ProductResourceError) {
+    return "invalid";
+  }
+
   return error instanceof ApiError ? STATUS_FAILURES[error.status] ?? "unavailable" : "unavailable";
 }
 
