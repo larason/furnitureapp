@@ -129,7 +129,7 @@ The page makes zero business-data API calls beyond the admission flow's `GET /ap
 ### Honest limitations
 
 - **Variants are read-only.** The detail resource returns `id`, `sku`, `name`, `price`, `availability` and `stock_indicator`. Variant creation is unavailable because `POST /api/v1/products/{product}/variants` returns `501`; no create control is rendered and no request is made.
-- **Product media upload and preview arrive in Phase 19.8A** (see below); ordering, alt-text editing, setting the primary image and deletion remain unimplemented because no media mutation endpoint exists.
+- **Product media upload and preview arrive in Phase 19.8A** (see below); ordering, alt-text editing, setting the primary image and deletion remain unimplemented **in this application**. The backend endpoints now exist (Phase 19.8B: CAT-015–CAT-018); wiring them into the admin gallery is the next media phase.
 - **Category options come from the public `GET /api/v1/categories?per_page=100`**, which exposes only active top-level categories. There is no operational category-list endpoint and no separate `categories.*` permission. If the first 100 do not cover the catalog, the form is limited to those options; the current selection is always preserved.
 
 ## Product media upload and preview (Phase 19.8A)
@@ -161,7 +161,7 @@ Next.js caps Server Action bodies at 1 MB by default, below the backend's own li
 
 ### Honest limitations
 
-- **No mutation of existing images.** There is no endpoint for deletion, ordering, alt-text editing or setting the primary image, so no control for any of them is rendered.
+- **No mutation of existing images yet.** The endpoints now exist (Phase 19.8B: CAT-015–CAT-018 — delete, alt text, primary, reorder), but this application renders no control for them yet; wiring them is the next media phase.
 - **Uploads can create duplicates.** Laravel accepts repeated uploads; nothing here deduplicates.
 - **Live verification is pending.** The owner performs the authenticated smoke test; the automated coverage is transport, authorization and rendering assertions plus the pure origin/allow-list logic.
 - **Category media upload is still deferred**; categories take an `image` URL string, so no category upload is added here.

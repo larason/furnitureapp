@@ -6,7 +6,10 @@ use App\Exceptions\Api\ApiException;
 use App\Http\Requests\CreateProductImageRequest;
 use App\Http\Requests\OperationalProductIndexRequest;
 use App\Http\Requests\ProductIndexRequest;
+use App\Http\Requests\ReorderProductImagesRequest;
+use App\Http\Requests\SelectPrimaryProductImageRequest;
 use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductImageRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Http\Resources\OperationalProductResource;
 use App\Http\Resources\ProductDetailResource;
@@ -14,18 +17,25 @@ use App\Http\Resources\ProductImageResource;
 use App\Http\Resources\ProductSummaryResource;
 use App\Http\Resources\ProductVariantResource;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Queries\ProductCatalogQuery;
 use App\Services\ProductImages\CreateProductImage;
+use App\Services\ProductImages\DeleteProductImage;
+use App\Services\ProductImages\ReorderProductImages;
+use App\Services\ProductImages\SelectPrimaryProductImage;
+use App\Services\ProductImages\UpdateProductImageAltText;
 use App\Services\Products\CreateProduct;
 use App\Services\Products\UpdateProduct;
 use App\Support\ApiErrorCode;
 use App\Support\CategoryIdentifier;
 use App\Support\ProductIdentifier;
+use App\Support\ProductImageIdentifier;
 use App\Support\ProductType;
 use App\Support\VariantIdentifier;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 
 class ProductController extends V1Controller
@@ -102,6 +112,42 @@ class ProductController extends V1Controller
         $image = $creator->create($this->resolveOperationalProduct($product), $request->validatedImage());
 
         return (new ProductImageResource($image))->response()->setStatusCode(201)->withHeaders($this->privateHeaders());
+    }
+
+    public function updateImage(UpdateProductImageRequest $request, string $product, string $image, UpdateProductImageAltText $updater): JsonResponse
+    {
+        [$resolvedProduct, $resolvedImage] = $this->resolveOperationalImage($product, $image);
+
+        $updated = $updater->update($resolvedProduct, $resolvedImage, $request->altText());
+
+        return (new ProductImageResource($updated))->response()->withHeaders($this->privateHeaders());
+    }
+
+    public function destroyImage(string $product, string $image, DeleteProductImage $deleter): Response
+    {
+        [$resolvedProduct, $resolvedImage] = $this->resolveOperationalImage($product, $image);
+
+        $deleter->delete($resolvedProduct, $resolvedImage);
+
+        return response()->noContent()->withHeaders($this->privateHeaders());
+    }
+
+    public function selectPrimaryImage(SelectPrimaryProductImageRequest $request, string $product, string $image, SelectPrimaryProductImage $selector): JsonResponse
+    {
+        [$resolvedProduct, $resolvedImage] = $this->resolveOperationalImage($product, $image);
+
+        $selected = $selector->select($resolvedProduct, $resolvedImage);
+
+        return (new ProductImageResource($selected))->response()->withHeaders($this->privateHeaders());
+    }
+
+    public function reorderImages(ReorderProductImagesRequest $request, string $product, ReorderProductImages $reorderer): JsonResponse
+    {
+        $images = $reorderer->reorder($this->resolveOperationalProduct($product), $request->imageIdentifiers());
+
+        return response()->json([
+            'data' => ProductImageResource::collection($images)->resolve(),
+        ])->withHeaders($this->privateHeaders());
     }
 
     public function adminIndex(OperationalProductIndexRequest $request): JsonResponse
@@ -239,6 +285,30 @@ class ProductController extends V1Controller
         }
 
         return $this->prepareOperationalProduct($product);
+    }
+
+    /**
+     * Resolves an image only through its owning product. A valid image id from a
+     * different product is indistinguishable from an unknown one, so a mismatch
+     * cannot be used to probe another product's media.
+     *
+     * @return array{0: Product, 1: ProductImage}
+     */
+    private function resolveOperationalImage(string $product, string $image): array
+    {
+        $resolvedProduct = $this->resolveOperationalProduct($product);
+        $imageId = ProductImageIdentifier::decode($image);
+
+        $resolvedImage = $imageId === null ? null : ProductImage::query()
+            ->where('product_id', $resolvedProduct->getKey())
+            ->whereKey($imageId)
+            ->first();
+
+        if ($resolvedImage === null) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, 'The requested image was not found.', 404);
+        }
+
+        return [$resolvedProduct, $resolvedImage];
     }
 
     private function loadOperationalProduct(Product $product): Product

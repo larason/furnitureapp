@@ -226,13 +226,15 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 
 ### F9 — Media management is deferred to Phase 19.8
 
-**Status:** PARTIALLY RESOLVED (2026-10-16) — Phase 19.8A delivered upload + preview only.
+**Status:** PARTIALLY RESOLVED (2026-10-16) — Phase 19.8A delivered upload + preview; Phase 19.8B delivered the backend media-mutation contract. The admin UI for the mutations is still outstanding (19.8C).
 
-**Evidence (verified):** The admin product detail reports only an image count; the category form and detail treat `image` as a URL field (`CategoryCreateRequest.image` is a `string|null` URL in `openapi.yaml:2336-2340`) with no upload control. Phase 19.8 ("Product Media Management - cloudflare R2") owns the real capability.
+**Evidence (verified):** The admin product detail reports only an image count; the category form and detail treat `image` as a URL field (`CategoryCreateRequest.image` is a `string|null` URL in `openapi.yaml`) with no upload control. Phase 19.8 ("Product Media Management - cloudflare R2") owns the real capability.
 
-**Update (2026-10-16):** Phase 19.8A implemented product image **upload and preview** (`POST /api/v1/products/{product}/images`, CAT-009) on the product detail screen, with the preview origin allow-listed from `CATALOG_MEDIA_BASE_URL`. Deletion, ordering, alt-text editing and setting the primary image remain **unimplemented and unoffered**, because no backend endpoint exists for any of them. Category media remains a plain `image` URL string with no upload.
+**Update (2026-10-16):** Phase 19.8A implemented product image **upload and preview** (`POST /api/v1/products/{product}/images`, CAT-009) on the product detail screen, with the preview origin allow-listed from `CATALOG_MEDIA_BASE_URL`.
 
-**Recommendation:** The residual work belongs to Phase 19.8B/19.8C as the owner defines them, and needs a backend media mutation contract first. Do not add controls for unimplemented media mutations.
+**Update (2026-10-16, Phase 19.8B):** The missing backend contract now exists. Four approved media mutations are implemented and documented — `CAT-015` `DELETE …/images/{image}`, `CAT-016` `PATCH …/images/{image}` (`alt_text` only), `CAT-017` `POST …/images/{image}/primary`, `CAT-018` `POST …/images/reorder` (see `docs/api/api-contract.md §21.12`, `ADR/API-FRZ-003`, `ADR/BACKEND-058`). **The admin application still renders no controls for them** — that UI work is Phase 19.8C. Category media remains a plain `image` URL string with no upload and no backend support for category image upload.
+
+**Recommendation:** Phase 19.8C should wire the four mutations into the admin gallery (delete, alt text, primary, reorder) against the now-frozen contract. Do not add controls for capability that does not exist — category image upload remains unsupported.
 
 ---
 

@@ -94,3 +94,5 @@ The following remain open and should be carried forward without reopening comple
     B (my recommendation)	Keep the probe; formalize a narrow exception in AGENTS.md:83 and rename it to say what it does (e.g. LaravelIdentityProbe)	Zero behaviour change, zero security change. Makes the contract honest and keeps the path greppable/bounded to GET /me, never-persist, no other resource.
        C	Delete the probe; let JIT provisioning happen on the server when the first private page calls getCurrentLocalUser()	Architecturally cleanest end-state, and it revives the dead bridge. But it reintroduces exactly the gap you were guarding against — on request-only scope no private page exists, so nothing would provision.
     C is the right destination; B is the right thing to do now, and C becomes the plan when orders/profile ship. That sequencing is safe because B doesn't foreclose C.
+
+29. replace demo terms of service and privacy policy in the nextjs website with real ones available on respective .txt files on root of the project

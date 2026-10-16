@@ -203,11 +203,11 @@ test("the gallery falls back to a neutral accessible label when alt text is abse
   });
 });
 
-test("the media section is read-only until a media mutation API exists", () => {
+test("the media section stays read-only in this release", () => {
   for (const forbidden of ["Delete", "Reorder", "Make primary", "Save alt", "alt_text", "is_primary", "sort_order"]) {
     assert.equal(GALLERY.includes(forbidden), false, `the gallery must not offer ${forbidden}.`);
   }
-  assert.match(DETAIL_VIEW, /Ordering, alt text, primary selection and deletion are not editable because no media mutation API exists yet/);
+  assert.match(DETAIL_VIEW, /Ordering, alt text, primary selection and deletion are not editable in this release/);
   assert.match(DETAIL_VIEW, /ProductImageGallery/);
   assert.match(DETAIL_VIEW, /mediaUpload\?: ReactNode/);
   assert.equal(/ProductImageUploader|product-image-actions/.test(DETAIL_VIEW), false, "the view must stay free of the server-only upload action.");

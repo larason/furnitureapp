@@ -9,7 +9,7 @@ import type { ApiErrorItem } from "@/lib/api/types";
 export const PRODUCT_IMAGE_FIELD = "image";
 export const PRODUCT_IMAGE_PRODUCT_FIELD = "product_id";
 
-export const PRODUCT_IMAGE_ACCEPTED_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
+const PRODUCT_IMAGE_ACCEPTED_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 export const PRODUCT_IMAGE_MAX_BYTES = 5_242_880;
 
 const PRODUCT_IMAGE_TYPE_LABEL = "JPEG, PNG or WebP";

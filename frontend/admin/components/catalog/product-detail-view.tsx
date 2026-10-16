@@ -48,7 +48,7 @@ export function ProductDetailView({ product, mediaUpload }: Readonly<{ product: 
         <SectionHeader
           title="Product media"
           titleId="product-media-heading"
-          description="Images returned by the operational product resource. Ordering, alt text, primary selection and deletion are not editable because no media mutation API exists yet."
+          description="Images returned by the operational product resource. Ordering, alt text, primary selection and deletion are not editable in this release."
         />
         <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 4 }}>
           <ProductImageGallery productName={product.name} images={product.images} />

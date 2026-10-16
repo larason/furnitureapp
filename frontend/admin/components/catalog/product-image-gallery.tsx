@@ -11,8 +11,8 @@ const PREVIEW_SIZES = "(min-width: 900px) 30vw, (min-width: 600px) 45vw, 90vw";
 
 /**
  * Read-only view of the images Laravel returns for a product. Sort order, alt
- * text and primary status are authoritative values shown as information; there
- * is no media mutation API, so nothing here is editable.
+ * text and primary status are authoritative values shown as information; no
+ * media mutation control is wired in this release, so nothing here is editable.
  */
 export function ProductImageGallery({ productName, images }: Readonly<{ productName: string; images: readonly ProductImageDetail[] }>) {
   const mediaOrigin = resolveCatalogMediaOrigin(process.env.CATALOG_MEDIA_BASE_URL);
