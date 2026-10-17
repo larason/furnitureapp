@@ -8,7 +8,7 @@
     "start": "next start --port 3001",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import=tsx --test tests/api-client.test.ts tests/primitives.test.tsx tests/theme.test.ts tests/operational-identity.test.ts tests/admission-states.test.ts tests/navigation.test.ts tests/route-guard.test.ts tests/overview.test.tsx tests/shell.test.tsx tests/products.test.tsx tests/product-media.test.tsx tests/categories.test.tsx tests/server-boundary.test.ts"
+    "test": "node --import=tsx --test tests/api-client.test.ts tests/primitives.test.tsx tests/theme.test.ts tests/operational-identity.test.ts tests/admission-states.test.ts tests/navigation.test.ts tests/route-guard.test.ts tests/overview.test.tsx tests/shell.test.tsx tests/products.test.tsx tests/product-media.test.tsx tests/categories.test.tsx tests/inventory.test.tsx tests/server-boundary.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "7.9.11",

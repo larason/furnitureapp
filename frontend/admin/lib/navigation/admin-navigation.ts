@@ -136,8 +136,6 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: WarehouseOutlined,
     group: "catalog",
     permission: AdminPermissionName.INVENTORY_VIEW,
-    placeholder: true,
-    plannedFor: "Phase 19.9",
   },
   {
     id: "customers",

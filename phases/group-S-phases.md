@@ -1,336 +1,506 @@
-# Phase 19.8C — Product Media Management UI
+# Phase 19.9 — Inventory Management UI
 
 ## Objective
 
-Complete product image management in `frontend/admin` by integrating the four approved Laravel media mutation endpoints delivered in Phase 19.8B:
+Implement the operational inventory management interface in `frontend/admin`, integrating the existing, audited Laravel inventory API.
 
-1. Delete a product image.
-2. Edit image alt text.
-3. Select the primary image.
-4. Reorder product images.
+The Laravel implementation is complete and hardened. **This phase must not modify the Laravel backend, database schema, inventory business rules, frozen API contract, or OpenAPI specification.**
 
-Phase 19.8A already implemented product image upload and preview. Preserve that working functionality and integrate the new controls into the existing product detail gallery.
+The current admin inventory page is a placeholder. Replace it with a usable, permission-aware inventory listing, filtering, detail inspection, and stock-adjustment workflow.
 
-**Scope:** Admin frontend only. Do not modify the Laravel backend, API contract, database schema, OpenAPI specification, or customer-facing Flutter and Next.js applications.
+Follow the root `AGENTS.md`, `frontend/admin/AGENTS.md`, the approved Phase Group S roadmap, the frozen API documentation, the existing Phase 19.2–19.8 architecture, and the canonical design system.
 
-Follow the repository root `AGENTS.md`, `frontend/admin/AGENTS.md`, the Phase 19 roadmap, the existing design tokens, and the established Phase 19.2–19.8A architecture.
+Treat the owner-provided inventory audit as the starting evidence, but verify the relevant code and contracts before implementing.
 
-Use `phases/phase-19.8b-completion.md` as the authoritative record of the delivered API behavior.
+## 1. Mandatory audit before coding
+
+Inspect and document the actual repository implementation for:
+
+- `frontend/admin/app/(protected)/inventory/page.tsx`
+- The inventory entry in the admin navigation configuration.
+- `frontend/admin/lib/api/client.ts` and `AdminApiRequest`.
+- `frontend/admin/lib/api/server-request.ts`.
+- Existing server actions, API error handling, authorization helpers, and data-refresh patterns.
+- `AdminPermissionName` and any permission unions, catalogs, route metadata, and authorization tests derived from it.
+- Existing list, filter, pagination, detail, form, dialog, loading, error, and empty-state components.
+- The exact inventory request and response schemas in:
+  - `docs/api/api-contract.md`
+  - `docs/api/api-resources.md`
+  - `docs/api/api-conventions.md`
+  - `docs/api/openapi.yaml`
+  - `docs/api/api-examples.md`, where relevant.
+- The product detail and variant-list contracts needed to resolve inventory labels.
+- Existing admin tests and phase completion-report conventions.
+
+Confirm the exact query parameter names, pagination envelope, identifier types, nullable fields, adjustment request fields, accepted adjustment reasons, response envelope, error codes, and status codes from the repository.
+
+Do not guess missing details. If the runtime implementation contradicts the frozen contract, report the discrepancy and stop before inventing a new API shape.
+
+Preserve existing owner changes. Do not reset or revert unrelated files.
 
 ---
 
-## 1. Audit the existing implementation first
+## 2. Integrate the existing inventory API
 
-Before editing code, inspect:
+Use the existing endpoints exactly as documented.
 
-- `frontend/admin/components/catalog/product-image-gallery.tsx`
-- `frontend/admin/components/catalog/product-image-preview.tsx`
-- `frontend/admin/components/catalog/product-image-uploader.tsx`
-- `frontend/admin/components/catalog/product-detail-view.tsx`
-- `frontend/admin/lib/catalog/product-image-actions.ts`
-- `frontend/admin/lib/catalog/products-api.ts`
-- `frontend/admin/lib/api/server-request.ts`
-- The product detail page under `frontend/admin/app/(protected)/products/[product]/`
-- Existing server-side identity and permission helpers, including `requireOperationalIdentity()` and `resolveAdminRouteAccess()`.
-- The reusable `ConfirmDialog`, form controls, loading/error states, and notification or feedback patterns.
-- Existing product media tests and the Phase 19.8A completion report.
+### INV-001 — List inventory
 
-Verify the actual exported types, current image data shape, server-action conventions, error envelope handling, and product detail refresh/revalidation strategy.
+`GET /api/v1/inventory`
 
-Do not recreate existing infrastructure or add a second API transport layer. Extend the existing implementation with the smallest complete change set.
-
-If the working tree contains owner changes, preserve them. Do not reset, overwrite, or revert unrelated files.
-
-## 2. Use the four approved endpoints exactly
-
-The following endpoints and payloads are the delivered contract. Consume them as documented; do not invent alternative routes or request fields.
-
-### CAT-015 — Delete an image
-
-`DELETE /api/v1/products/{product}/images/{image}`
-
-- Success: HTTP `204 No Content`.
-- The response has no JSON body.
-- A missing or previously deleted image returns `404 RESOURCE_NOT_FOUND`.
-- The backend removes the database record and handles object deletion with its durable retry mechanism.
-- Do not retry a successful deletion merely because the client did not receive a response.
-- Do not claim that the underlying object is synchronously deleted in every storage-failure scenario.
-
-The UI must require explicit confirmation before deletion. Use the existing `ConfirmDialog` primitive if it fits the established patterns.
-
-The confirmation should identify the image using its thumbnail and/or accessible description and explain that deletion removes it from the product gallery.
-
-After confirmation:
-
-1. Disable duplicate submissions.
-2. Call the server action.
-3. On `204`, refresh or revalidate the product detail data.
-4. Show appropriate success feedback.
-5. On failure, preserve the remaining gallery state and show safe, actionable feedback.
-
-Handle a `404` as a stale gallery state: refresh the product data and tell the operator that the image may already have been removed.
-
-Never delete an image solely by manipulating client-side state.
-
-### CAT-016 — Edit alt text
-
-`PATCH /api/v1/products/{product}/images/{image}`
-
-Request:
-
-`{ "alt_text": "Description of the image" }`
-
-Or clear the field using:
-
-`{ "alt_text": null }`
-
-Contract rules:
-
-- `alt_text` is the only accepted mutable field.
-- The maximum length is 500 characters.
-- The backend trims the supplied value.
-- An empty or whitespace-only string becomes `null`.
-- Unknown fields, including `sort_order` and `is_primary`, must not be sent.
-- Success: HTTP `200`, response envelope `{ "data": ProductImage }`.
-
-Implement a usable editing interaction for each image. An inline form or a small accessible edit panel is acceptable; use the established admin design system.
+The endpoint provides paginated inventory data, ordered by `updated_at DESC, id ASC`, with supported product, variant, and warehouse-location filters.
 
 Requirements:
 
-- Display the existing alt text when present.
-- Make the distinction between an absent alt text and an unsaved edit clear.
-- Allow the operator to save a description or clear it.
-- Enforce the 500-character maximum in the UI as well as relying on server validation.
-- Display a character count if it improves usability.
-- Provide Save and Cancel controls.
-- Preserve unsaved input when a request fails.
-- Disable repeated submissions while saving.
-- On success, use the returned `ProductImage` or refreshed product data as the source of truth.
-- Show validation errors accessibly.
+- Use the exact existing endpoint path. It is `/api/v1/inventory`, **not** `/api/v1/admin/inventory`.
+- Use the existing server-side API transport and Clerk token flow.
+- Preserve the API's authoritative pagination and ordering.
+- Use server-side filtering. Do not fetch every inventory record and filter the entire dataset in the browser.
+- Build the list around the actual `InventoryResource` schema.
+- Preserve the backend's deterministic ordering; do not introduce unsupported sorting.
+- Preserve pagination metadata and current filters when navigating between pages, following existing admin patterns.
+- Reset pagination appropriately when filters change.
+- Serialize only documented query parameters and valid values.
+- Do not send arbitrary or unknown query parameters.
+- Handle loading, empty results, API errors, and permission failures as distinct states.
 
-Do not treat image alt text as a filename, image title, or storage URL. Do not automatically invent descriptive alt text for the operator.
+Display the actual values returned by Laravel, including the inventory identifier, product and variant references, warehouse location, quantity information, and timestamps wherever those fields exist in the verified resource.
 
-### CAT-017 — Select the primary image
+The audit reports eight required resource fields. Use the exact schema rather than reconstructing it from this description.
 
-`POST /api/v1/products/{product}/images/{image}/primary`
+Do not calculate or invent stock quantities when Laravel already returns the authoritative values. Do not replace an API failure with an empty inventory list.
 
-- No request body is accepted.
-- Do not send `sort_order`, `is_primary`, or any other JSON fields.
-- Success: HTTP `200`, response envelope `{ "data": ProductImage }`.
-- Selecting the current primary image is idempotent.
-- The backend guarantees at most one primary image per product.
-- A product is allowed to have no primary image.
+### INV-002 — Retrieve one inventory record
 
-Implement a clear primary-image indicator and a control to make a non-primary image the primary image.
+`GET /api/v1/inventory/{inventory}`
+
+Use this endpoint to load an authoritative inventory snapshot when opening the inventory detail or adjustment interaction.
 
 Requirements:
 
-- Clearly distinguish the primary image visually and accessibly.
-- Do not render a functional “Make primary” control for the image already selected as primary.
-- Disable the action while a media mutation is in progress.
-- On success, refresh or update the gallery using the authoritative server response.
-- Ensure the previous primary image no longer appears selected.
-- Handle products with no primary image without assuming one must always exist.
-- Do not silently promote another image when the current primary is deleted; the backend intentionally allows zero primary images.
+- Use the exact inventory identifier returned by Laravel.
+- Do not normalize, lowercase, or otherwise transform opaque identifiers.
+- Do not treat an identifier as proof of authorization.
+- Preserve the API's not-found behavior, including masking unknown and cross-resource identifiers.
+- Display the latest returned inventory values before the operator submits an adjustment.
+- If the detail request fails, do not silently substitute stale values and proceed as though the refresh succeeded.
+- Reuse the existing server-side transport and error-handling patterns.
 
-The UI may display the first image as a visual fallback where appropriate, but must not misrepresent that fallback as a persisted primary image.
+A drawer or dialog is acceptable for inventory detail and adjustment if it fits the existing architecture. Do not create a new route hierarchy without a clear benefit consistent with the roadmap.
 
-### CAT-018 — Reorder images
+### INV-003 — Adjust inventory
 
-`POST /api/v1/products/{product}/images/reorder`
+`POST /api/v1/inventory/{inventory}/adjust`
 
-Request:
-
-`{ "images": ["img_...", "img_...", "img_..."] }`
-
-- The array must represent the complete current image set for the product.
-- The backend rejects duplicates, unknown identifiers, foreign-product identifiers, invalid entries, and incomplete lists.
-- An empty array is valid for a product with no images.
-- The backend persists the order and normalizes positions to contiguous 1-based `sort_order` values.
-- Success: HTTP `200`, response envelope `{ "data": [ProductImage] }`.
-- Image metadata and primary-image selection are preserved.
-
-Implement accessible reordering controls.
-
-Preferred approach: simple **Move up** and **Move down** buttons for each image, avoiding a new drag-and-drop dependency. If an existing accessible drag-and-drop solution is already present and fits the project, it may be reused instead.
+Use the documented request body and the required `Idempotency-Key` header.
 
 Requirements:
 
-1. Show the current image order clearly.
-2. Let an operator move an image earlier or later in the gallery.
-3. Disable Move up for the first image and Move down for the last image.
-4. Construct the reorder request from the complete ordered list of current image IDs after the proposed move.
-5. Send only the approved `images` array; never attempt to update `sort_order` directly.
-6. Do not issue a reorder request for a no-op.
-7. Prevent conflicting mutations while an operation is pending.
-8. On success, use the server response or re-fetch the product detail so the displayed order reflects persisted data.
-9. If the request fails, restore the last confirmed order and show an accessible error.
-10. Do not leave an optimistic order displayed as saved after a failed request.
+- Read the exact request schema and accepted reason values before building the form.
+- Send only the documented request fields.
+- Generate a valid UUID idempotency key for each new logical adjustment.
+- Send the key using the exact `Idempotency-Key` HTTP header.
+- Do not assume the adjustment response has a particular shape until it has been verified in the contract.
+- Respect documented validation errors, authorization failures, rate limiting, duplicate-intent behavior, and other status codes.
+- Refresh the affected inventory record and list after a confirmed successful adjustment using the existing refresh or revalidation strategy.
+- Do not claim that an adjustment succeeded before receiving an authoritative successful response.
 
-Use the returned `sort_order` and the server's persisted image collection as the source of truth after mutations. Do not rely on locally assigned positions as evidence of successful persistence.
+Do not create a replacement inventory-adjustment endpoint, directly write to the database, or bypass the existing `InventoryAdjustmentService`.
 
 ---
 
-## 3. Server-side authentication and authorization
+## 3. Fix the Idempotency-Key transport prerequisite
 
-All four mutations must use the existing server-side transport and authentication architecture.
+The existing `AdminApiRequest` does not support the `Idempotency-Key` header. INV-003 requires a UUID, so adjustment submission cannot be implemented correctly until the existing transport supports it.
 
-For every mutation:
+Extend the existing transport narrowly.
 
-1. Resolve the current Clerk identity on the server.
-2. Enforce the existing operational identity and `products.manage` permission before forwarding the mutation.
-3. Forward the current server-side Clerk bearer token through the approved server-only request helper.
-4. Call the exact Laravel endpoint and HTTP method.
-5. Preserve Laravel's documented response and error semantics.
-6. Revalidate or refresh the affected product detail using the established project pattern.
+Preferred approach:
 
-Follow the existing Phase 19.8A server-action authorization pattern, including `resolveAdminRouteAccess()` or the verified equivalent.
+- Add a dedicated optional `idempotencyKey` request option to `AdminApiRequest`, or use an equally narrow, type-safe mechanism that fits the existing architecture.
+- When supplied, the transport must add the `Idempotency-Key` header.
+- When absent, existing API requests must behave exactly as they do now.
+- Preserve existing `Accept`, bearer authorization, content negotiation, request serialization, error handling, timeouts, and private/no-store behavior.
+- Do not introduce arbitrary caller-controlled headers that can override `Authorization`, `Accept`, or other security-sensitive transport behavior.
+- Do not create a separate fetch implementation solely for inventory adjustments.
+- Do not expose bearer tokens to client components or browser-visible state.
 
-Laravel independently enforces authorization. Frontend permission checks are not a substitute for backend authorization.
+Add tests proving that the header is included for inventory adjustments, omitted for unrelated calls, and forwarded without breaking the existing JSON transport.
 
-Never:
+### Idempotency lifecycle
 
-- Expose Clerk bearer tokens to client components or browser state.
-- Accept the product ID or image ID as proof of authorization.
-- Allow the browser to supply storage keys, object paths, disks, or arbitrary image URLs.
-- Add direct database or storage access from the admin frontend.
-- Bypass the Laravel API for convenience.
-- Send undocumented mutation fields.
-- Log credentials, authorization headers, or image contents.
+Idempotency must cover the actual user intent, not merely an individual HTTP attempt.
 
-Use existing error types and safe error mapping. Handle authentication expiry, `403`, `404`, `422`, rate limiting, network failures, and unexpected server errors without exposing internal stack traces.
+Implement the following behavior:
 
-For `DELETE`, specifically handle the `204 No Content` response without attempting to parse it as JSON.
+1. A new adjustment receives a new UUID.
+2. A retry of the same adjustment, with the same inventory identifier and identical payload, reuses the original UUID.
+3. If the operator changes the payload, it represents a new intent and must not reuse the old key.
+4. If a network failure leaves the result uncertain, do not blindly submit a new adjustment with a new key.
+5. Where retry is offered, retain the original key and exact payload for that retry.
+6. Do not automatically retry a stock adjustment unless the retry uses the same idempotency key and identical request intent.
+7. Handle the documented `409` duplicate-intent response safely. Do not respond by generating another key and immediately repeating the operation.
+8. After a confirmed success, clear the completed submission state so a genuinely new adjustment can receive a new key.
 
----
+Use an existing UUID utility if available. Otherwise, use an appropriate platform-supported UUID generator. Do not use predictable timestamps, `Math.random()`, or a constant key.
 
-## 4. Gallery behavior and mutation coordination
-
-Keep the gallery cohesive and predictable.
-
-- Preserve Phase 19.8A upload and preview behavior.
-- Keep image previews responsive and preserve aspect ratio.
-- Retain accessible image descriptions and the existing broken-image fallback.
-- Keep the empty state distinct from loading and API failure states.
-- Preserve the existing product detail page and navigation.
-- Use the actual product image collection returned by Laravel.
-- Keep primary-image status separate from gallery position.
-- Do not assume the first image is the primary image.
-- Do not assume every product has a primary image.
-
-### Prevent conflicting operations
-
-Avoid overlapping operations that can invalidate the gallery's current state.
-
-At minimum:
-
-- Prevent duplicate submissions for the same action.
-- Prevent simultaneous reorder operations.
-- Prevent deletion while an incompatible edit, primary selection, or reorder operation is pending.
-- Prefer a clear gallery-level pending state during structural mutations such as delete, primary selection, and reorder.
-- Keep per-image alt-text editing manageable without allowing stale updates to overwrite newer data.
-
-A simple, well-tested mutation state model is preferable to an elaborate state-management refactor.
-
-After successful mutations, ensure the rendered gallery and product detail data converge on the authoritative Laravel state. Use the existing revalidation or refresh pattern rather than introducing a parallel cache.
-
-Do not use arbitrary timeouts to simulate completion.
+Keep the idempotency key separate from business form fields; never include it in the JSON request body unless the verified API contract explicitly requires that, which the audit says it does not.
 
 ---
 
-## 5. UI, accessibility, and design system
+## 4. Implement the missing `inventory.manage` permission type
 
-Use the canonical design tokens and existing reusable components in `frontend/admin`.
+The backend already defines `inventory.view` and `inventory.manage`. The audit reports that both are granted to STAFF and ADMIN, but the frontend permission type currently includes only `inventory.view`.
 
-The interface must provide:
+Add the exact `inventory.manage` permission to the existing frontend permission catalog/type system.
 
-- Clear labels and accessible names for every action.
-- Keyboard-operable controls.
-- Visible focus indicators.
-- Accessible pending, success, and error feedback.
-- A confirmation dialog for deletion.
-- Clear visual indication of the primary image.
-- Clear ordering controls and boundary states.
-- Alt-text editing with validation feedback.
-- Responsive gallery layout suitable for desktop and narrow viewports.
-- Loading and empty states consistent with the existing design system.
-- No reliance on color alone to communicate primary status or errors.
+Requirements:
 
-Do not add a new design system, introduce unrelated layout changes, or add a dependency unless a genuine requirement cannot be met with existing components.
+- Use the exact permission identifier `inventory.manage`.
+- Do not invent a new permission, role, role hierarchy, or authorization shortcut.
+- Do not hardcode permissions based only on the user's role.
+- Do not grant ADMIN an implicit bypass.
+- Preserve the existing Laravel `/api/v1/me` identity and effective-permission model.
+- Update affected type guards, permission helpers, route metadata, and tests only where necessary.
 
-Do not invent success messages claiming that an operation completed before the server confirms it.
+### Inventory page authorization
 
----
+The inventory page requires `inventory.view`.
 
-## 6. Testing requirements
+- A user with `inventory.view` can open the inventory page and inspect inventory.
+- A user without `inventory.view` must be denied according to the existing route-authorization architecture.
+- The inventory navigation entry must use the existing permission-aware navigation pattern.
 
-Extend the existing admin media test suite, particularly `frontend/admin/tests/product-media.test.tsx` and the current server-action/API transport tests.
+### Adjustment authorization
 
-Use deterministic mocks for automated UI tests. Do not require live Clerk credentials, a real R2 upload, or a production API to run the suite.
+Stock adjustment requires `inventory.manage`.
 
-### Delete tests
+- Show adjustment controls only when the resolved operational identity has `inventory.manage`.
+- A user with `inventory.view` but without `inventory.manage` must still be able to inspect inventory, but must not be able to submit adjustments.
+- Enforce the exact permission again inside every adjustment server action, before forwarding the request.
+- Do not rely on hidden buttons or client-side permission checks as the authorization boundary.
+- Laravel remains the final authorization authority.
 
-- Confirmation is required before deletion.
-- Canceling confirmation makes no API request.
-- Confirming deletion calls CAT-015 with the correct product and image identifiers.
-- A successful `204` response is handled without JSON parsing.
-- Duplicate deletion submissions are prevented.
-- Success refreshes or revalidates the product data.
-- A `404` triggers appropriate stale-state handling.
-- A failed request does not falsely remove the image from the confirmed gallery.
-- No storage key or URL is sent to Laravel.
+The audit reports that STAFF and ADMIN currently hold both permissions. Still, use the effective permissions returned by Laravel for each operational identity rather than assuming every account has the same access.
 
-### Alt-text tests
-
-- Existing alt text can be edited and saved.
-- Clearing alt text sends `null` according to the established form behavior.
-- Whitespace-only text follows the backend contract.
-- The UI enforces the 500-character maximum.
-- The request contains only `alt_text`.
-- Save and Cancel behave correctly.
-- Validation and network errors are displayed accessibly.
-- Failed submissions preserve the user's draft.
-- Duplicate submissions are prevented.
-
-### Primary-image tests
-
-- A non-primary image can be selected as primary.
-- CAT-017 is called without a request body.
-- The returned or refreshed gallery reflects the new primary image.
-- The previous primary is no longer marked primary.
-- Selecting the current primary does not produce an unnecessary request.
-- A product without a primary image renders correctly.
-- A failed mutation does not falsely change the persisted primary state.
-
-### Reorder tests
-
-- Moving an image up or down produces the expected complete ordered ID list.
-- The first image cannot move up and the last image cannot move down.
-- No-op moves do not issue a request.
-- CAT-018 sends only the complete `images` array.
-- A successful response updates the displayed gallery order.
-- A failed reorder restores the last confirmed order.
-- Duplicate submissions and concurrent reorder requests are prevented.
-- Primary-image status and alt text remain associated with their original image IDs.
-
-### Shared security and regression tests
-
-- Every server action enforces the established server-side operational identity and `products.manage` permission.
-- Clerk tokens never reach client components.
-- API authorization and validation errors are handled safely.
-- Unknown response shapes do not crash the gallery.
-- Existing upload and preview tests continue to pass.
-- No undocumented API route or payload is introduced.
-- No direct browser-side API mutation bypasses the server-only transport.
-- Empty galleries and broken image previews remain safe.
-
-Add tests for any discovered edge cases that affect the contract. Do not weaken existing assertions or replace meaningful tests with snapshots alone.
+Add tests for view-only and adjustment-authorized identities, including server-action denial.
 
 ---
 
-## 7. Quality gates and verification
+## 5. Replace the inventory navigation placeholder
 
-Run the established frontend admin gates:
+The current navigation entry marks Inventory as a placeholder planned for Phase 19.9.
+
+Once the page is implemented:
+
+- Convert Inventory into a real navigation link to `/inventory`.
+- Remove the placeholder treatment using the existing navigation metadata conventions.
+- Gate the entry using `inventory.view`.
+- Preserve all unrelated navigation entries and their existing phase ownership.
+- Update tests that intentionally assert the inventory placeholder state.
+- Do not change the global dashboard into an inventory analytics page.
+
+The overview must not gain fabricated inventory KPIs, revenue numbers, stock totals, charts, or operational metrics that the approved APIs do not provide.
+
+---
+
+## 6. Product and variant labels without an API contract change
+
+This is the main data-presentation challenge.
+
+The inventory resource exposes opaque identifiers such as product and variant IDs. Displaying only those IDs is not a satisfactory operational inventory interface.
+
+**Do not change the frozen `InventoryResource` schema. Do not add product names, slugs, variant SKUs, or labels to the inventory API.**
+
+Use existing documented catalog read endpoints to resolve labels.
+
+The audit identifies the existing public variant endpoint:
+
+`GET /api/v1/products/{product}/variants` (CAT-005)
+
+It returns variant information including SKU and name. Verify its exact response schema and the existing product-detail endpoint for product names before implementing.
+
+### Label resolution strategy
+
+Implement a small, typed inventory-label resolver using the existing server-side transport.
+
+Requirements:
+
+1. Load the paginated inventory records first.
+2. Extract the distinct product IDs from the returned page.
+3. Deduplicate product-detail and variant-list requests by product ID.
+4. Resolve each unique product's name using the existing documented product-detail endpoint.
+5. Resolve its variants using CAT-005, then match each inventory row's `variant_id` to the returned variant data.
+6. Do not make duplicate requests for multiple inventory rows belonging to the same product.
+7. Avoid one request per inventory row.
+8. Bound parallel catalog requests to a reasonable concurrency limit.
+9. Reuse results within the current server render/request where practical.
+10. Do not introduce a new backend endpoint, new database join, persistent label database, or undocumented query parameter.
+11. Do not cache private inventory records in a shared cache.
+12. Do not silently reinterpret a failed label lookup as an inventory failure if the inventory request itself succeeded.
+
+The expected seeded inventory is currently small, but the implementation should still deduplicate requests and avoid unbounded concurrency.
+
+### Label fallback behavior
+
+If product or variant metadata cannot be resolved:
+
+- Keep the inventory record visible.
+- Show a clear, non-misleading fallback such as “Product details unavailable” or “Variant details unavailable”, with the relevant opaque ID available for troubleshooting.
+- Do not invent product names, SKUs, or variant labels.
+- Do not fail the entire inventory page because one catalog lookup failed.
+- Do not silently display an opaque ID as if it were a human-readable product name.
+- Make the fallback accessible and visually restrained.
+
+Use the verified nullability and ownership semantics from the resource schemas. Do not assume every inventory record has a non-null variant if the contract permits otherwise.
+
+### Product and variant filters
+
+The inventory API supports product, variant, and warehouse-location filters, but the frontend must use the exact documented parameter names and expected values.
+
+Provide usable filters while respecting those semantics.
+
+- Prefer labeled product and variant selectors only when the available catalog endpoints provide appropriate options consistent with the actual inventory data.
+- If a reliable option set is not available, use clearly labeled exact-identifier inputs with helper text explaining that the backend filter matches an identifier, not an arbitrary product-name search.
+- Do not pretend that a local page of paginated rows represents every available filter option.
+- Do not claim that a filter searches product names unless a verified API or deliberate client-side interaction actually implements that behavior.
+- Do not add a new API endpoint just to populate a dropdown.
+- Use the actual warehouse-location values from the contract or current data. Do not invent warehouse names or silently map unknown values to a made-up location.
+
+Keep filtering server-side and preserve filters in pagination/navigation using the existing admin conventions.
+
+Document the chosen label and filter strategy, including its request-count behavior and fallback semantics, in the phase report.
+
+---
+
+## 7. Inventory list and detail experience
+
+Implement a clear, responsive operational table using the existing reusable `DataTable` and other admin primitives where appropriate.
+
+The page should include:
+
+- Page heading and concise explanatory text.
+- Supported product, variant, and warehouse-location filters.
+- Current filter state.
+- Server-side pagination.
+- A loading state.
+- A distinct empty state.
+- A recoverable API error state with a safe retry path.
+- Human-readable product and variant labels when resolvable.
+- Warehouse location using the actual backend value or a verified label.
+- The authoritative quantity fields from `InventoryResource`.
+- The update timestamp in the existing date/time presentation style.
+- A clear action to inspect the inventory record or open the adjustment flow, according to the user's permissions.
+
+Do not add unsupported sorting, export, bulk adjustments, inventory creation, or variant creation.
+
+### Quantity presentation
+
+- Display actual quantity values returned by Laravel.
+- Do not calculate an alternative stock figure and present it as authoritative.
+- Preserve the distinction between physical quantity, reserved quantity, and available quantity where those fields exist.
+- Render zero values as zero, not as blank or unavailable.
+- Format timestamps using the established project convention.
+- Avoid inventing a warehouse display name or unit of measurement.
+
+The audit notes that `reserved_quantity` is currently expected to read zero because cart and checkout reservations are deferred. Display the real returned value without pretending that reservation workflows are active.
+
+Do not change the customer-facing catalog or Flutter app as part of this phase.
+
+---
+
+## 8. Stock-adjustment form
+
+Implement an accessible adjustment dialog or panel using the established admin form components.
+
+Inspect the actual INV-003 request schema and reason enum before creating the form. The backend contract is authoritative.
+
+The audit confirms these business rules:
+
+- `STOCK_RECEIPT` requires a positive quantity change.
+- `RETURN` requires a positive quantity change.
+- `DAMAGE` requires a negative quantity change.
+- The resulting quantity cannot fall below `reserved_quantity`.
+- Quantity arithmetic is protected against 32-bit overflow.
+- Adjustments are transactional and audited.
+- The backend enforces reason-to-sign consistency.
+
+Implement the frontend so these rules are understandable before submission, while keeping Laravel authoritative.
+
+### Form behavior
+
+- Identify the product, variant, and warehouse location being adjusted.
+- Display the latest authoritative inventory snapshot fetched through INV-002.
+- Show current quantity and other relevant returned quantity fields.
+- Use the exact accepted reason values from the contract.
+- Use the exact adjustment payload fields expected by INV-003.
+- Provide a clear quantity-change input with correct sign behavior.
+- If the UI accepts an absolute quantity and derives the sign from the reason, make that mapping explicit and deterministic.
+- Do not permit a reason/sign combination known to be invalid.
+- Do not silently change a user's intended sign.
+- Reject zero, non-integer, out-of-range, or otherwise invalid values in the UI whenever the contract requires that.
+- Prevent unsafe client-side overflow when previewing the resulting quantity.
+- If the proposed result would be below `reserved_quantity`, show a clear validation message and block submission.
+- Treat this preview as advisory; Laravel must still perform the authoritative validation and transaction.
+- Include any notes or other fields only if they exist in the verified request schema.
+- Preserve field-level validation errors returned by Laravel.
+- Disable duplicate submissions while an operation is in progress.
+- Do not discard form input after an ordinary validation failure.
+- Do not report success before the backend confirms it.
+
+Use accessible labels, keyboard-operable controls, visible focus states, and actionable error messages.
+
+### Adjustment result
+
+After a confirmed success:
+
+- Show a concise success confirmation.
+- Refresh the affected inventory record and list.
+- Update displayed quantities from authoritative API data.
+- Keep the active filter and pagination context where possible.
+- Reset the form and idempotency state for a new logical adjustment.
+- Do not create local-only adjustment records or invent audit entries.
+
+On a `422`, show actionable validation feedback.
+
+On a `403`, show the existing permission-denial treatment.
+
+On a `429`, communicate that the request is rate-limited and follow existing retry guidance.
+
+On a `409`, follow the documented duplicate-intent semantics. Never automatically generate a new key and repeat a possibly completed adjustment.
+
+On a timeout or network failure, treat the outcome as potentially uncertain. Preserve the same key and payload if offering a retry.
+
+Do not automatically retry a stock mutation with a new idempotency key.
+
+---
+
+## 9. Audit trail and scope boundaries
+
+INV-003 already records audited before/after adjustment information.
+
+Do not implement a new audit system. Do not add a frontend-generated audit event or attempt to write directly to the audit-log endpoint.
+
+The existing `GET /api/v1/admin/audit-logs` (ADM-007) remains part of the separate audit-log roadmap phase. Phase 19.9 only needs to use the existing inventory adjustment workflow.
+
+### Explicitly out of scope
+
+Do not implement:
+
+- New Laravel inventory endpoints or schema changes.
+- API contract or OpenAPI modifications.
+- Inventory creation or deletion.
+- Variant creation or editing.
+- Product creation or editing.
+- Changes to catalog seeders or fixture data.
+- Changes to published product states or product types.
+- Customer checkout, cart, orders, payments, or reservation workflows.
+- A new audit-log screen.
+- Bulk stock adjustment.
+- Unsupported inventory sorting or export.
+- A new API proxy, route handler, or direct database access path.
+- Fake inventory records, metrics, quantities, products, variants, or warehouse locations.
+- Unrelated changes to other admin pages.
+
+The audit identifies an existing request-first-release concern: published `IN_STOCK` products conflict with the separate demo-fixture removal plan. Do not resolve that conflict within Phase 19.9. Record it as an existing product/catalog decision requiring separate owner action.
+
+Likewise, the fact that variants cannot currently be created means the adjustment interface must operate on inventory records that actually exist. Do not suggest that the UI can create inventory for a new variant.
+
+---
+
+## 10. Testing requirements
+
+Extend the existing admin test suite with deterministic tests. Do not require live Clerk credentials or a production API for ordinary automated testing.
+
+### Transport tests
+
+- Existing API calls remain unchanged when no idempotency key is supplied.
+- INV-003 includes the exact `Idempotency-Key` header.
+- The key is not placed in the JSON body.
+- Existing `Accept` and bearer authorization headers remain intact.
+- Arbitrary callers cannot override security-sensitive headers.
+- Request serialization and error-envelope handling remain unchanged.
+- A valid UUID is used for each new logical adjustment.
+
+### Authorization tests
+
+- A user with `inventory.view` can open the inventory page.
+- A user without `inventory.view` is denied.
+- A view-only user sees no usable adjustment action.
+- A view-only user cannot invoke the adjustment server action successfully.
+- A user with `inventory.manage` can access the adjustment workflow.
+- Permission checks use Laravel's effective permission data, not a hardcoded role shortcut.
+- ADMIN does not receive an implicit permission bypass.
+
+### Listing and filtering tests
+
+- The correct `/api/v1/inventory` endpoint is used.
+- The exact documented pagination parameters and response envelope are handled.
+- The backend's deterministic order is preserved.
+- Product, variant, and warehouse filters serialize using the actual contract.
+- Filter changes reset pagination appropriately.
+- Pagination preserves current filters.
+- Empty data differs from a failed API request.
+- A malformed response or unexpected network failure does not become a false empty state.
+- Unknown query parameters are never emitted.
+
+### Product and variant label tests
+
+- Product names are resolved using the verified product-detail endpoint.
+- Variant names/SKUs are resolved using CAT-005.
+- Duplicate product IDs result in deduplicated catalog requests.
+- Requests are bounded rather than launched without a concurrency limit.
+- A failed product lookup does not hide otherwise valid inventory.
+- A failed variant lookup does not hide otherwise valid inventory.
+- Fallback labels never invent product or variant data.
+- The implementation does not assume that the current inventory page contains every possible filter option.
+- No inventory API contract changes are made.
+
+### Adjustment tests
+
+- The adjustment form uses the exact INV-003 request schema.
+- Only documented reason values are offered.
+- `STOCK_RECEIPT` and `RETURN` produce positive quantity changes.
+- `DAMAGE` produces a negative quantity change.
+- Invalid sign/reason combinations are rejected before submission.
+- Zero, non-integer, and out-of-range inputs are handled safely according to the contract.
+- The below-reserved-quantity guard is enforced in the UI.
+- The backend remains authoritative if the inventory changes after the form opens.
+- Double submission is prevented.
+- A new logical adjustment receives a new key.
+- A retry of the same uncertain intent reuses the original key and exact payload.
+- Changing the payload does not reuse the previous key.
+- A successful adjustment refreshes authoritative inventory data.
+- A `422`, `403`, `409`, `429`, or network failure is handled safely.
+- No failure is falsely reported as success.
+- Existing dashboard and permission behavior remains intact.
+
+Use the existing testing stack and patterns. Do not weaken tests to make the new implementation pass.
+
+---
+
+## 11. Accessibility and design system
+
+Use the existing canonical design tokens and reusable components.
+
+- Prefer the existing `DataTable`, `PageHeader`, `EmptyState`, `ErrorState`, `LoadingState`, form primitives, and dialog patterns where appropriate.
+- Use semantic headings, labels, tables, buttons, and links.
+- Ensure all filters and adjustment fields have persistent accessible labels.
+- Provide visible keyboard focus.
+- Do not rely on color alone for stock state, validation, or permission feedback.
+- Keep action targets usable on narrow viewports.
+- Ensure loading, errors, empty states, and successful mutations are communicated accessibly.
+- Avoid excessive cards, badges, or decorative visual elements.
+- Keep the interface operational and restrained rather than adding dashboard-style marketing or analytics.
+- Follow the project's existing responsive and reduced-motion conventions.
+
+Do not introduce a new design system or dependency unless an audited requirement cannot be satisfied with the current stack.
+
+---
+
+## 12. Quality gates
+
+Run the established frontend admin quality gates:
 
 - `npm run lint`
 - `npm run typecheck`
@@ -340,68 +510,80 @@ Run the established frontend admin gates:
 
 Inspect the final diff for:
 
-- Unrelated modifications.
-- Accidental changes to the frozen API contract or backend.
-- Exposed credentials.
-- New dependencies without justification.
-- Incomplete or unused media controls.
-- Stale optimistic UI states.
-- Incorrect treatment of `204 No Content`.
-- Unhandled mutation failures.
+- Unrelated file changes.
+- Accidental backend or API contract changes.
+- Permission bypasses.
+- Direct browser-side inventory mutations.
+- Missing idempotency headers.
+- Unstable idempotency keys on retries.
+- Unbounded product/variant lookup requests.
+- False empty states.
+- Invented labels or quantities.
+- Unhandled adjustment errors.
+- Secret or bearer-token exposure.
+- Changes to the existing product/catalog fixture state.
 
-If any gate fails, report the exact command and failure. Do not claim a gate passed unless it was actually run.
+If a gate fails, report the exact command and failure. Do not claim it passed unless it actually ran.
 
 ### Live verification
 
-If a usable authenticated operator session and development backend are available, verify the complete workflow on a real product:
+If a usable authenticated operator session and development backend are available, verify:
 
-1. Open its product detail page and inspect the gallery.
-2. Upload an image and confirm it appears.
-3. Edit its alt text and confirm it persists after refresh.
-4. Select a primary image and confirm the selection persists.
-5. Reorder at least two images and confirm the order persists after refresh.
-6. Delete a test image after confirming the destructive action.
-7. Check empty, failed-request, and narrow-viewport behavior where practical.
+1. An authorized operator can open Inventory.
+2. The inventory table displays real records.
+3. Product and variant labels resolve correctly, or safe fallbacks appear.
+4. Filters and pagination work against the actual API.
+5. A view-only identity cannot adjust stock.
+6. An authorized operator can open an inventory record and see its current values.
+7. A valid test adjustment succeeds and updates the UI from authoritative API data.
+8. A retry of the same intent does not apply the stock change twice.
+9. Invalid reason/sign and below-reserved adjustments are rejected safely.
+10. A failed or uncertain request does not cause a blind new adjustment.
+11. Narrow-viewport and keyboard interactions remain usable.
 
-Do not delete valuable production data to perform these checks. Use an appropriate test product.
+Use an appropriate development record and a small, deliberate adjustment. Do not modify production stock merely to test the interface.
 
-If authenticated live testing is unavailable, explicitly record it as pending. Passing mocks and build checks are not evidence that the live authenticated workflow succeeded.
+If live testing is unavailable, report that fact explicitly. Automated tests and mocked responses do not establish successful live integration.
 
 ---
 
-## 8. Completion report
+## 13. Completion report and roadmap
 
-Create `phases/phase-19.8c-completion.md` following the established completion-report format.
+Create `phases/phase-19.9-completion.md` using the established completion-report conventions.
 
 Record:
 
-1. Final status: `PASS`, `PARTIAL`, or `BLOCKED`, with the reason.
+1. Final status: `PASS`, `PARTIAL`, or `BLOCKED`.
 2. Files changed and the purpose of each significant change.
-3. How each CAT-015 through CAT-018 endpoint is integrated.
-4. The confirmation and stale-state behavior for deletion.
-5. Alt-text validation and clearing behavior.
-6. Primary-image selection and zero-primary handling.
-7. Reordering controls, complete-list payload behavior, and failure recovery.
-8. Server-side authentication and permission enforcement.
-9. Automated test counts and all quality-gate results.
-10. Whether the real authenticated workflow was verified.
-11. Remaining limitations and any required owner action.
+3. INV-001, INV-002, and INV-003 integration details.
+4. The exact transport change used to send `Idempotency-Key`.
+5. How idempotency keys are generated, retained on retries, and reset for new intents.
+6. How `inventory.view` and `inventory.manage` are enforced.
+7. The product/variant label-resolution strategy, deduplication, concurrency limits, and fallback behavior.
+8. Pagination and filter behavior.
+9. Adjustment validation, sign rules, and below-reserved handling.
+10. Automated test counts and all quality-gate results.
+11. Whether the real authenticated inventory workflow was tested.
+12. Any unresolved live-verification limitations.
+13. The existing product-fixture/request-first-release concern, without changing it.
+14. Remaining limitations and owner actions.
 
-Update the appropriate roadmap status record only if it is in the authorized scope and consistent with repository instructions. Preserve owner-managed changes. If the roadmap file is explicitly out of scope, record the status in the completion report and identify the pending owner action.
+Update the approved roadmap status according to repository instructions, preserving owner-managed changes. Do not mark a live smoke test as complete unless it was performed.
 
-Keep the findings and limitations register accurate. Do not mark the live authenticated smoke test as resolved unless it was performed.
+### Acceptance criteria
 
-## Acceptance criteria
+Phase 19.9 is complete when:
 
-Phase 19.8C is complete when:
+- The inventory placeholder is replaced by a real, permission-aware admin workflow.
+- INV-001 lists and filters real paginated inventory records.
+- INV-002 provides authoritative record details for inspection and adjustment.
+- INV-003 submits valid adjustments using a UUID `Idempotency-Key`.
+- The API transport change preserves all existing requests.
+- A repeated or uncertain request cannot casually become a second stock adjustment.
+- `inventory.view` and `inventory.manage` are checked independently, including in server actions.
+- Product and variant labels are resolved from existing catalog endpoints without changing the frozen inventory contract or making duplicate requests per row.
+- The UI follows the real backend adjustment rules and refreshes from authoritative state.
+- No fake inventory data or unrelated commerce features are introduced.
+- Tests and quality gates pass, and the completion report distinguishes automated verification from live authenticated verification.
 
-- All four approved media operations work through the actual documented CAT-015–CAT-018 endpoints.
-- Image upload and preview from Phase 19.8A remain functional.
-- The gallery reflects persisted Laravel state after successful mutations.
-- Failed operations do not leave misleading or stale optimistic UI.
-- Delete confirmation, validation, accessibility, and mutation coordination are implemented.
-- All mutations use server-side Clerk identity and the existing `products.manage` authorization path.
-- Automated tests and applicable quality gates pass.
-- The completion report accurately distinguishes automated verification from live authenticated verification.
-
-Begin with the repository audit, then implement the smallest complete and well-tested UI change set. Do not modify the backend or invent additional API capabilities.
+Begin with the audit, then implement the smallest complete, production-conscious change set. Do not modify the Laravel backend or widen the API contract.

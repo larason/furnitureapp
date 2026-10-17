@@ -10,6 +10,7 @@ export const AdminPermissionName = {
   NOTIFICATIONS_READ_OPERATIONAL: "notifications.read_operational",
   PRODUCTS_MANAGE: "products.manage",
   INVENTORY_VIEW: "inventory.view",
+  INVENTORY_MANAGE: "inventory.manage",
   USERS_MANAGE_AUTHORIZED: "users.manage_authorized",
   AUDIT_VIEW: "audit.view",
 } as const;

@@ -193,6 +193,8 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 
 **Recommendation:** Have the operator sign in with the bootstrapped Admin and walk the four category routes plus the four product routes once, including the Phase 19.8 media controls: upload, edit alt text, set a primary image, reorder twice, and delete an image (with the confirmation). Record the result here. Until then, Phase 19.6/19.7/19.8 records must keep reporting this as an unverified limitation rather than a pass.
 
+**Update (2026-10-17, Phase 19.9):** `/inventory` joins the same list while F11 stays OPEN. The implemented surface is the `INV-001` list with its three exact-identifier filters and server pagination, the `INV-002` inspect/adjustment dialog, and the `INV-003` idempotent adjustment; it has been verified by mocked automated suites, the production build and a direct reading of the running repository only. The operator checklist is unchanged in kind, plus: confirm a view-only identity sees no adjustment control, confirm an identical retry does not apply a stock change twice, and confirm a below-reserved or wrong-sign adjustment is rejected safely. See `phases/phase-19.9-completion.md` §12. This entry is not resolved by that phase and must not be reported as a pass.
+
 **Owner:** operator action; verification, not implementation.
 
 ---
@@ -221,6 +223,41 @@ user 6 | clerk-linked | state=null   | roles=CUSTOMER
 **Evidence (verified):** `routes/api.php:150` registers `POST /products/{product}/variants`; `app/Http/Controllers/Api/V1/ProductController.php:155-158` → `notImplemented()` → `501`. The admin renders variants read-only and offers no enabled create control.
 
 **Recommendation:** No action. Keep the UI read-only and keep asserting it in tests (already done in `tests/products.test.tsx`).
+
+---
+
+### F17 — No application path creates inventory, so `/inventory` is inspect-and-adjust only
+
+**Status:** ACCEPTED (2026-10-17) — recorded as a **v1 limitation** by owner decision; the frozen contract is deliberately left untouched.
+
+**Evidence (verified 2026-10-17):**
+
+- `app/Services/Products/CreateProduct.php:20-35` creates only a `products` row inside its transaction — no Variant and no Stock. "Add product" is therefore not "add inventory".
+- Inventory is variant-scoped: `database/migrations/2026_09_10_110000_create_product_stocks_table.php:15-16` makes `product_variant_id` a **non-null** FK (`cascadeOnDelete`) and `:26-28` makes it unique per `(product_variant_id, warehouse_location)`. A stock row cannot exist without a variant.
+- Variant creation is unimplemented — `app/Http/Controllers/Api/V1/ProductController.php:212-215` `storeVariant()` → `notImplemented()` (see F8). So the middle link cannot be created either.
+- **No `ProductStock` creation exists anywhere in `app/`**: `grep` for `ProductStock::create`, `new ProductStock`, `ProductStock::firstOrCreate` and `ProductStock::updateOrCreate` under `app/` returns nothing. No model observer provisions stock either — `app/Models/ProductVariant.php:47` and `app/Models/ProductStock.php:35` only validate (`assertValid`).
+- `INV-003` cannot create a row: `app/Services/InventoryAdjustmentService.php:35-36` takes an already-resolved `ProductStock` and only mutates `quantity`; `app/Http/Controllers/Api/V1/InventoryController.php:62` binds `{inventory}` from an existing row.
+- Reads are variant-joined: `InventoryController.php:30,36` lists `ProductStock::query()->with('productVariant')`, and `app/Http/Resources/InventoryResource.php:20,24` derives `product_id` from `$variant->product_id`.
+- Production reference data excludes catalog/commerce rows: `database/seeders/DatabaseSeeder.php:20-22` runs only `RbacSeeder` + `CategorySeeder`.
+- The only `ProductStock` writer is the local-development demo seeder — `database/seeders/CatalogSeeder.php:125,129,183`, labelled *"Deterministic demo catalogue for local development (disposable data)."*
+- `frontend/admin/AGENTS.md` (Inventory module) already forbids "inventory creation, variant creation or deletion", so no admin control may sit in front of the gap.
+
+**Impact:**
+
+- An admin-created product can never appear on `/inventory`; only pre-existing rows are listed. The real chain is `Product → ProductVariant → ProductStock`, and the admin application covers only the first link.
+- A production database starts with **zero** `product_stocks` rows, so the Phase 19.9 screen is legitimately empty until stock rows exist out-of-band. This is a launch-scope consequence, not a defect in the Phase 19.9 implementation.
+- The gap cannot be closed from any frontend: there is no endpoint behind a "create inventory" or "create variant" control, and inventing one is prohibited. Closing it requires a new backend capability plus a contract change, which is exactly what the freeze prevents.
+- Because inventory is variant-scoped, a row whose product is unpublished, inactive or soft-deleted resolves no catalog label; Phase 19.9 renders that as an explicit unavailable label rather than an error or a fabricated name.
+
+**Recommendation:**
+
+1. Accept as a **v1 limitation** and keep the frozen `/api/v1` contract untouched — **owner decision (2026-10-17)**.
+2. Keep `/inventory` scope exactly as delivered: inspect (`INV-001`/`INV-002`) and adjust an existing row (`INV-003`). Do not add an inventory-creation or variant-creation control.
+3. When `IN_STOCK` commerce is enabled (post-launch), the missing middle link needs its own approved backend phase, coupled with F8: variant creation, plus a stock-provisioning decision — auto-provision a zero-quantity row per `(variant, ProductStock::DEFAULT_LOCATION)`, or expose an explicit create endpoint — including the warehouse-location policy and its audit treatment. That work is additive and contract-changing, and is out of scope for v1.
+4. Until then, stock rows enter only through a documented data-preparation/operator procedure (Phase 23.1), under the same "no ad-hoc database edits" discipline as F5. Do not hand-insert stock rows to make the screen look populated.
+5. This does **not** block the request-only launch: only `MADE_TO_ORDER` products are published, and those are fulfilled on request with no stock.
+
+**Owner:** post-launch backend phase (with F8). Launch scope unchanged.
 
 ---
 
@@ -366,6 +403,7 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 | F14 | Nav header/drawer/footer hardcode the taxonomy | Retire the fixture; read the catalog (`docs/plan-catalog-backed-navigation.md`); **set = API-supplied (owner, 2026-10-16)** | Group S closure | No |
 | F15 | Homepage tiles silently capped at 4 | Make the selection rule deliberate (`docs/plan-catalog-backed-navigation.md` §4.5) | Group S closure | No |
 | F16 | Unreadable product response shown as an outage | **DONE (2026-10-16)** — parse failure now classified `"invalid"` | `frontend/admin` | No |
+| F17 | No application path creates inventory (`product_stocks`); `/inventory` is inspect-and-adjust only | **ACCEPTED (2026-10-17)** as a v1 limitation; frozen v1 untouched; needs an approved backend phase with F8 | post-launch backend phase (with F8) | No |
 
 **Group S closure bundle:** F10 + F14 + F15 (see the subsection above) — one closure pass, separate commits.
 
@@ -373,7 +411,7 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 
 # Findings Register — Owner Decisions and Mitigation Plan
 
-**Requested:** 2026-10-15. **Decided and executed:** 2026-10-16.
+**Requested:** 2026-10-15. **Decided and executed:** 2026-10-16, with one follow-up decision on 2026-10-17 (item 7).
 
 ## Decisions recorded (owner, 2026-10-16)
 
@@ -400,6 +438,9 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
    **Owner decision:** Close **Phase 19.7 as PARTIAL — accepted (2026-10-16)**; do **not** relabel it PASS, because the verdict rests on a missing backend capability, not on the delivered work. The blocking gap is **F1** — there is no operational/admin category listing endpoint, so `/categories` can only manage the active top-level categories returned by the public `GET /api/v1/categories`. Resolving it requires an approved `/api/v2/categories` contract phase and must never be done by widening the frozen `/api/v1/categories`. **F4** is CLOSED (the additive `CAT-003` documentation fix was applied); **F11** (authenticated live render) remains OPEN. F5 is an accepted operational fact, not a blocker. Closure unblocks Phase 19.8A.
    **Record:** `phases/phase-19.7-completion.md` → Status → "Closure (2026-10-16)".
 
+7. **Inventory creation at launch (F17).** *Requested:* confirm whether the frozen v1 contract should be extended so an admin-created product can become inventory.
+   **Owner decision (2026-10-17):** Leave the frozen `/api/v1` contract alone. Record the gap as a **v1 limitation** (F17): no application path creates `product_stocks`, so `/inventory` remains inspect-and-adjust only (`INV-001`/`INV-002` read, `INV-003` adjust). Variant creation (F8) and any stock-provisioning contract are out of scope for v1 and belong to a post-launch backend phase. No frontend control may be added ahead of that capability.
+
 ### Carried over from the decisions above
 
 - **Seeded demand rows removed; genuinely anonymous submissions preserved.** Deleting `user 1`/`user 2` triggers the schema's `SET NULL` on `enquiries.user_id`/`furniture_requests.user_id`, and the public API accepts no-login submissions, so `user_id` (and even `carts.user_id`) is nullable by design. The leftovers were therefore a **mix**, not one disposable batch.
@@ -412,6 +453,7 @@ Plan for the web half: `docs/plan-catalog-backed-navigation.md`. F10's guard cou
 ## Accepted limitations pending their owning phases
 
 - F8: Variant creation remains unavailable while CAT-010 returns `501`.
+- F17: Inventory cannot be created through the application — there is no variant-creation or stock-creation path, so `/inventory` stays inspect-and-adjust only. Resolves with F8 plus an approved stock-provisioning contract.
 - F9: Product image upload + preview shipped in Phase 19.8A; deletion, ordering, alt-text editing and primary selection remain deferred until a backend media mutation contract exists.
 - F10: Roadmap-jargon cleanup remains deferred until the end of Group S.
 - F12: Fallow metrics remain unverified until the tool can be run.

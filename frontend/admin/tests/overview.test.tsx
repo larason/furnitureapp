@@ -117,7 +117,7 @@ test("missing or malformed permissions fail closed to an empty workspace explana
 test("shell availability and unfinished workflows are stated distinctly", () => {
   const visible = visibleText(render(<AdminOverviewBody identity={STAFF} />));
   assert.match(visible, /The authenticated shell and navigation are available/);
-  assert.match(visible, /The product and category modules are implemented and available in this build/);
+  assert.match(visible, /The product, category and inventory modules are implemented and available in this build/);
   assert.match(visible, /the areas listed below remain scheduled/);
   assert.match(visible, /does not mean the workflow behind it is functional yet/);
   assert.match(visible, /Opening one shows its implementation status/);
@@ -128,7 +128,14 @@ test("shell availability and unfinished workflows are stated distinctly", () => 
 test("every displayed roadmap status matches the approved Group S roadmap", () => {
   const markup = render(<AdminOverviewBody identity={ADMIN} />);
   const displayed = [...visibleText(markup).matchAll(/Phase 19\.\d+/g)].map((match) => match[0]);
-  assert.ok(displayed.length >= 7, "statuses for the scheduled areas and the shortcuts must render.");
+  // Exactly the placeholders' owning phases plus the two prose-scheduled areas:
+  // a newly implemented destination drops its status instead of being left advertised.
+  const expected = [
+    ...ADMIN_ROUTES.filter((route) => route.placeholder === true && route.plannedFor).map((route) => route.plannedFor as string),
+    "Phase 19.13",
+    "Phase 19.15",
+  ];
+  assert.deepEqual([...new Set(displayed)].sort(), [...new Set(expected)].sort(), "statuses for the scheduled areas and the shortcuts must render, and no implemented destination may still advertise one.");
   for (const phase of new Set(displayed)) {
     const number = phase.match(/^Phase (19\.\d+)$/);
     assert.ok(number, `${phase} must name an approved roadmap phase number.`);

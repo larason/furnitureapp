@@ -23,7 +23,7 @@ Set `CATALOG_MEDIA_BASE_URL` to the HTTPS origin Laravel builds product image UR
 | `npm run start` | Start the production build on port 3001 |
 | `npm run lint` | Run Next.js ESLint rules |
 | `npm run typecheck` | Run strict TypeScript checking |
-| `npm run test` | Run transport, admission, navigation, route-guard, shell, primitive, overview, product, product-media and category tests |
+| `npm run test` | Run transport, admission, navigation, route-guard, shell, primitive, overview, product, product-media, category and inventory tests |
 
 ## Authentication and admission
 
@@ -75,7 +75,7 @@ Each entry also carries `plannedFor`, the roadmap phase that owns the destinatio
 | `/notifications` | `notifications.read_operational` | — | NOT-001/002 |
 | `/products` | `products.manage` | — | CAT-007/008/013/014 |
 | `/categories` | `products.manage` | — | CAT-011/012 (no separate category permission exists) |
-| `/inventory` | `inventory.view` | — | INV-001/002 |
+| `/inventory` | `inventory.view` (adjustment additionally requires `inventory.manage`) | — | INV-001/002/003 |
 | `/customers` | `users.manage_authorized` | `ADMIN` | ADM-008/009 |
 | `/audit-logs` | `audit.view` | `ADMIN` | ADM-007 |
 
@@ -212,6 +212,41 @@ Next.js caps Server Action bodies at 1 MB by default, below the backend's own li
 - **Category media upload is deferred to Phase 19.8.** The form and detail view show the stored image URL only. (Phase 19.8A added product image upload; category images remain a URL string with no upload.)
 - The screen states this scope on every list/create surface (`CategoryScopeNotice`), and its empty state explicitly says an empty result is not proof that the catalog has no categories.
 
+## Inventory module (Phase 19.9)
+
+`/inventory` is the fourth implemented operational workflow and the fourth real Laravel-backed module. It is a single list destination with an inspect/adjust dialog; no nested route or new route hierarchy was added.
+
+### Contract and permission
+
+- List: `GET /api/v1/inventory` (INV-001) — **not** `/admin/inventory`. Filters `product` (`prod_...` id, numeric id or slug), `variant` (`^var_[0-9a-z]+$` only; a SKU is rejected) and `warehouse_location` (exact, ≤255), plus `page`/`per_page` (default 20, max 100). There is no search or sort parameter, and Laravel rejects unknown parameters. Ordering is the API's own `updated_at DESC, id ASC`.
+- Detail: `GET /api/v1/inventory/{inventory}` (INV-002), resolved by the opaque `inv_...` Inventory ID. Unknown and non-Inventory identifiers are `404`.
+- Adjustment: `POST /api/v1/inventory/{inventory}/adjust` (INV-003) with exactly `quantity_delta` and the CLOSED `reason` (`STOCK_RECEIPT`/`CORRECTION`/`DAMAGE`/`RETURN`/`AUDIT_ADJUSTMENT`), plus the required `Idempotency-Key` header. Laravel computes `new_quantity = current + delta` transactionally, rejects a negative result and a result below `reserved_quantity`, never changes `reserved_quantity`, and audits every success.
+- The page requires `inventory.view`; the adjustment additionally requires `inventory.manage`. Both are existing `backend/laravel/app/Support/PermissionName.php` values and neither is inferred from the role.
+
+### Data flow
+
+- `lib/catalog/inventory-api.ts` reads INV-001/INV-002 and submits INV-003 through the shared request-scoped transport, so authenticated calls stay `no-store`.
+- `lib/catalog/inventory-actions.ts` holds the `"use server"` snapshot and adjustment actions. Each repeats the exact permission before touching a resource or reading the request, and the adjustment validates the identifier, the reason, the sign and the UUID key shape instead of trusting the caller.
+- `lib/catalog/inventory-mutations.ts` is the dependency-free module the actions and the client dialog share: the reason set and labels, the sign rules, the advisory pre-flight validation, the preview, the intent signature, the outcome catalogue and the safe messages. It has no `server-only` import so the rules stay directly unit-testable.
+- `lib/catalog/inventory-query.ts` owns the filter vocabulary, the URL state and the request query; `lib/catalog/inventory-resource.ts` parses the response defensively and rejects anything unreadable; `lib/catalog/inventory-label.ts` and `lib/catalog/inventory-presentation.ts` map labels, quantities and timestamps for display.
+- `components/catalog/inventory-table.tsx` is the Client Component table; `inventory-adjustment-dialog.tsx` is the detail/adjustment dialog; `inventory-list-filters.tsx` is the native `GET` filter form. They receive the two Server Actions as props from the page and never import the transport.
+- `lib/api/client.ts` gained one narrow, typed request option, `idempotencyKey`. When supplied it must be a UUID and is sent as the `Idempotency-Key` header; when absent every existing request is unchanged. The transport still writes only `Accept`, `Authorization`, `Content-Type` and `Idempotency-Key`, and a caller cannot contribute arbitrary headers.
+
+### Idempotency
+
+A key belongs to one logical intent. A new adjustment generates a UUID; a retry of the identical `inventoryId + quantity_delta + reason` reuses it; changing the quantity or reason is a new intent and gets a new key. A confirmed success releases the key so the next adjustment is genuinely new. A `409` is reported as a duplicate intent without generating another key, an uncertain transport failure keeps the original key and payload for an identical retry, and nothing here retries a stock mutation automatically.
+
+### Product and variant labels
+
+The frozen `InventoryResource` carries only identifiers. Product names come from `GET /api/v1/products/{product}` and variant names/SKUs from `GET /api/v1/products/{product}/variants` — the public reads, because `inventory.view` alone cannot read the operational product resource. Distinct product IDs from the returned page are deduplicated, the fan-out is bounded to 4 concurrent lookups, and each lookup degrades independently: an unresolvable product or variant renders “Product details unavailable” / “Variant details unavailable” with its opaque ID kept as a troubleshooting reference. A failed label lookup never hides an inventory record, never becomes an inventory failure, and never invents a name or SKU.
+
+### Honest limitations
+
+- **Only the identifiers the contract defines are filterable.** There is no product-name search, no variant SKU filter and no warehouse option endpoint, so the filters are exact-identifier inputs with explanatory helper text rather than selectors. The rows on the current page are not treated as the complete option set.
+- **`reserved_quantity` reads zero by design.** Cart and checkout reservations are deferred, so the figure Laravel returns is displayed as-is and its meaning is stated on the page; the workflow is not presented as active.
+- **Live verification is pending.** The owner performs the authenticated smoke test; the automated coverage is transport, authorization, vocabulary and rendering assertions.
+- **Inventory creation, variant creation, bulk adjustment, sorting and export do not exist** in the approved contract and are not offered. The audit-log screen remains its own phase; adjustment auditing is Laravel's.
+
 ## Adding a navigation entry
 
 1. Add the path to `lib/navigation/admin-route-paths.ts` (this also covers the proxy's early redirect).
@@ -247,4 +282,4 @@ Shell accessibility expectations: a keyboard skip link to `#admin-main-content`,
 
 ## Phase exclusions
 
-Products (Phase 19.6), Categories (Phase 19.7) and product media management (Phases 19.8A–19.8C) are implemented. The remaining operational destinations — requests, enquiries, notifications, inventory, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement inventory adjustment, request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it does not add category hierarchy, category activation/deactivation, category deletion or category media management. It adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission.
+Products (Phase 19.6), Categories (Phase 19.7), product media management (Phases 19.8A–19.8C) and Inventory (Phase 19.9) are implemented. The remaining operational destinations — requests, enquiries, notifications, customers and audit logs — are still explicit, permission-protected placeholders and load no data. This phase does not implement request, enquiry, notification, customer, staff, audit, order, checkout, payment or delivery workflows; it does not add category hierarchy, category activation/deactivation, category deletion, category media management, bulk stock adjustment, inventory or variant creation, or inventory export. It adds no dashboard metric endpoint, chart, Laravel route, migration, role or permission, and it changes neither the frozen API contract nor the customer-facing applications.

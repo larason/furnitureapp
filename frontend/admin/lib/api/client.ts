@@ -1,4 +1,5 @@
 import { ApiConfigurationError, ApiError, ApiTransportError } from "./errors";
+import { isIdempotencyKey } from "./idempotency";
 import type { ApiErrorItem, ApiMeta, ApiMethod, ApiQuery, ApiRequestBody, ApiSuccess } from "./types";
 
 const API_PREFIX = "/api/v1/";
@@ -13,7 +14,7 @@ export interface AdminApiClientOptions {
   defaultTimeoutMs?: number;
 }
 
-export interface AdminApiRequest { path: string; method?: ApiMethod; query?: ApiQuery; body?: ApiRequestBody; signal?: AbortSignal; timeoutMs?: number; }
+export interface AdminApiRequest { path: string; method?: ApiMethod; query?: ApiQuery; body?: ApiRequestBody; signal?: AbortSignal; timeoutMs?: number; /** Documented `Idempotency-Key` request header; must be a UUID when supplied. */ idempotencyKey?: string; }
 export type AdminApiClient = <T>(request: AdminApiRequest) => Promise<ApiSuccess<T>>;
 
 export function createAdminApiClient(options: AdminApiClientOptions = {}): AdminApiClient {
@@ -26,6 +27,10 @@ export function createAdminApiClient(options: AdminApiClientOptions = {}): Admin
     const token = options.tokenProvider ? await options.tokenProvider() : null;
     const headers = new Headers({ Accept: "application/json" });
     if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (input.idempotencyKey !== undefined) {
+      if (!isIdempotencyKey(input.idempotencyKey)) throw new ApiConfigurationError("Idempotency-Key must be a UUID.");
+      headers.set("Idempotency-Key", input.idempotencyKey);
+    }
     const body = createBody(input.body, method, headers);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), validateTimeout(input.timeoutMs ?? defaultTimeoutMs));

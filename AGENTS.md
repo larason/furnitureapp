@@ -1230,7 +1230,7 @@ Contract documented in Group D; actual Next.js Clerk setup belongs to the later 
     Enquiry inbox, customer contact information, private attachments, status transitions, and operational response workflows.
 ### 19.12 — Customer Management
     Permission-scoped customer directory and allowed administrative operations. Never expose Clerk passwords or support customer impersonation.
-### 19.13 — Staff Management & Role Controls
+### 19.13 — Staff Management & Role Controls - audit first what differentiate a STAFF from an ADMIN
     Admin-only staff approval and permitted role/permission operations. Do not allow staff to elevate their own privileges.
 ### 19.14 — Audit Logs & Operational Visibility
     Display available backend audit information without inventing an audit data source.
