@@ -86,8 +86,6 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     icon: AssignmentOutlined,
     group: "operations",
     permission: AdminPermissionName.REQUESTS_VIEW,
-    placeholder: true,
-    plannedFor: "Phase 19.10",
   },
   {
     id: "enquiries",

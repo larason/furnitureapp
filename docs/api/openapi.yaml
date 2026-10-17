@@ -158,6 +158,13 @@ components:
       required: true
       schema:
         type: string
+    AttachmentPath:
+      name: attachment
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Stable opaque Attachment resource ID (`att_...`); never a storage key or filesystem path
     EnquiryPath:
       name: enquiry
       in: path
@@ -1508,6 +1515,10 @@ components:
       - $ref: '#/components/schemas/MadeToOrderRequest'
       - type: object
         properties:
+          request_reference:
+            type: string
+            readOnly: true
+            description: Human-quotable staff reference (`REQ-...`). Operational representation only; never exposed to customers.
           staff_internal_notes:
             type:
             - string
@@ -1934,7 +1945,7 @@ components:
           - 'null'
           format: uri
           readOnly: true
-          description: Private access URL; null while private download delivery is not implemented
+          description: Temporary signed private-access URL; null when no authorized delivery route exists
     RegisterDeviceRequest:
       type: object
       additionalProperties: false
@@ -4392,6 +4403,60 @@ paths:
           $ref: '#/components/responses/RateLimited'
       description: Requires parent ownership + scoped upload token (X-Upload-Token) for anonymous* or bearerAuth for authenticated;
         attachment inherits parent auth; no permanent public URL
+  /requests/{request}/attachments/{attachment}:
+    get:
+      operationId: REQ-008
+      tags:
+      - Requests
+      summary: Download a request attachment
+      description: >-
+        Private attachment delivery. The temporary signed URL is the only credential, so no
+        bearer token is required. The signature binds the request/attachment pair, so an
+        attachment belonging to a different request is masked as not found. The link expires
+        after the configured TTL (ATTACHMENTS_DOWNLOAD_URL_TTL_MINUTES, default 15 minutes).
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/RequestPath'
+      - $ref: '#/components/parameters/AttachmentPath'
+      responses:
+        '200':
+          description: The stored file bytes
+          headers:
+            Content-Disposition:
+              description: Always an attachment disposition; never inline.
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: Always `nosniff`.
+              schema:
+                type: string
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /me/requests:
     get:
       operationId: REQ-002

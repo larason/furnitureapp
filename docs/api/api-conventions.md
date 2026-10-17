@@ -649,7 +649,7 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 
 ## 26. Made-to-Order Request Conventions (Phase 1.25)
 
-> **Authority:** Reusable conventions governing the Request domain (`REQ-001`..`REQ-007` — anonymous creation, customer ownership, private data, attachment authorization, dimensions, status, operational handling). Consolidates `phases/phase-1.25.md`.
+> **Authority:** Reusable conventions governing the Request domain (`REQ-001`..`REQ-008` — anonymous creation, customer ownership, private data, attachment authorization and signed delivery, dimensions, status, operational handling). Consolidates `phases/phase-1.25.md`; `REQ-008` added by `ADR/API-FRZ-004`.
 
 ### 26.1 Anonymous Creation with Explicit Contact — Self-Contained Record
 
@@ -696,7 +696,7 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 - **Optional:** `0` or `1` attachment on creation in V1; separate `POST /requests/{request}/attachments` (`REQ-007`) with scoped token `+` parent ownership for after-creation upload.
 - **Preferred:** `multipart/form-data` field `attachment` inline with `REQ-001` creation — simpler for Laravel/Next.js/Flutter; do not assume pre-upload-then-attach-file flow.
 - **Security:** Validate `size <=5 MB`, `type` allow-list (`image/jpeg`, `image/png`, `image/webp`, `application/pdf`), `actual content signature` (client MIME not trusted), filename sanitized, storage authorization. `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE`.
-- **Access:** Inherits Request authorization — `Customer own → own attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → scoped token only`. No permanent public storage URLs; future uses signed/temporary URLs. No internal storage keys exposed.
+- **Access (implemented — `REQ-008`, `ADR/API-FRZ-004`):** `AttachmentResource.url` is an **absolute temporary signed URL** for `GET /api/v1/requests/{request}/attachments/{attachment}`; the signature is the only credential (no bearer token), bound to the request/attachment pair, expiring after `ATTACHMENTS_DOWNLOAD_URL_TTL_MINUTES` (default `15`). Mismatch/unknown → `404` masked; unsigned/tampered/expired → `403`. No permanent public storage URLs; `url` is `null` when no delivery route exists for the parent (enquiry attachments until `ENQ-008`). No internal storage keys, disks or filesystem paths exposed.
 - **Metadata:** `filename, content_type, size` safe; never expose internal keys.
 
 ### 26.9 Request Status — Minimal CLOSED, Not Arbitrary (Formally Approved)
@@ -726,8 +726,8 @@ The guest cart token is a bearer credential. Possessing it grants access to the 
 ### 26.13 Caching, Pagination, Filtering, Sorting — Global Reuse
 
 - **Pagination:** `REQ-002`/`REQ-004` use global `page`/`per_page` (1–100) → `meta.pagination` per `§11`; no request-specific pagination format.
-- **Filtering (staff `REQ-004` allow-list):** `search` (name/email/phone/reference/product), `request_status` CLOSED, `product_id`, `created_from`/`created_to` ISO8601 `Z`.
-- **Sorting:** `created_at DESC, id ASC` (newest first) + `id ASC` tie-breaker for both staff queue and customer history.
+- **Filtering (staff `REQ-004` allow-list):** `search` (name/email/phone/reference/product), `request_status` CLOSED, `product_id`, `created_from`/`created_to` ISO8601 `Z`. No `sort`/`sort_direction` parameter exists; an unknown query parameter → `422`.
+- **Sorting:** `created_at DESC, id ASC` (newest first) + `id ASC` tie-breaker for both staff queue and customer history. Fixed server-side; not client-selectable.
 - **Search privacy:** queries run over **authorized dataset** — `Customer A /me/requests?search=...` searches only own; `Staff search` cannot reveal outside permitted scope.
 
 ### 26.14 Anonymous Mutation Safety & Rate Limiting
@@ -1016,6 +1016,7 @@ All global conventions (`/api/v1` prefix, HTTP methods, `snake_case` fields, opa
 ### 32.5 Scoped Upload Token for Attachments
 
 - SecuritySchemes `uploadToken: {type: apiKey, in: header, name: X-Upload-Token}` + parameter `UploadToken`. `REQ-007`/`ENQ-007` `POST /requests/{request}/attachments` and `POST /enquiries/{enquiry}/attachments` now `security: [{bearerAuth: []}, {uploadToken: []}]` (either authenticated or scoped single-use token bound to parent). Requires parent ownership atomically, inherits `Request→Attachment` auth, no permanent public URL, `url` temporary signed, `401/403/404/422/429` documented. `X-Upload-Token` header required for anonymous* upload.
+- `REQ-008` `GET /requests/{request}/attachments/{attachment}` uses the signed-URL credential instead of a bearer token (`security: []`); the signature is bound to the request/attachment pair, so a mismatch is masked `404`, and an invalid/expired signature is `403` (`403/404/429` documented, no `401`).
 
 ### 32.6 Canonical Routes and Alias Deprecation
 

@@ -47,6 +47,10 @@ class OpenApiAttachmentContractTest extends TestCase
             $this->assertArrayHasKey($field, $attachment['properties'], "Attachment must expose {$field}.");
         }
         $this->assertSame(['string', 'null'], $attachment['properties']['url']['type']);
+        $this->assertSame(
+            'Temporary signed private-access URL; null when no authorized delivery route exists',
+            $attachment['properties']['url']['description'],
+        );
         $this->assertArrayNotHasKey('storage_key', $attachment['properties']);
     }
 

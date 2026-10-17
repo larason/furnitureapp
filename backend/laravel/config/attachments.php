@@ -33,4 +33,17 @@ return [
 
     'max_filename_length' => 255,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Private Delivery Link Lifetime
+    |--------------------------------------------------------------------------
+    |
+    | Lifetime of the temporary signed URL a request attachment is delivered
+    | through (REQ-008). The signature is the credential: the link expires and
+    | is never refreshed or cached.
+    |
+    */
+
+    'download_url_ttl_minutes' => (int) env('ATTACHMENTS_DOWNLOAD_URL_TTL_MINUTES', 15),
+
 ];

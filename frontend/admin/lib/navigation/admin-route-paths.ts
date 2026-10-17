@@ -39,6 +39,16 @@ export const ADMIN_CATEGORY_PATHS = {
   edit: (categoryId: string) => `${ADMIN_ROUTE_PATHS.categories}/${encodeURIComponent(categoryId)}/edit`,
 } as const;
 
+/**
+ * Nested made-to-order request routes. Like the product and category paths they
+ * are not navigation entries, and the `/requests(.*)` protected matcher already
+ * covers them.
+ */
+export const ADMIN_REQUEST_PATHS = {
+  list: ADMIN_ROUTE_PATHS.requests,
+  detail: (requestId: string) => `${ADMIN_ROUTE_PATHS.requests}/${encodeURIComponent(requestId)}`,
+} as const;
+
 export const ADMIN_PROTECTED_PATHS: readonly string[] = Object.values(ADMIN_ROUTE_PATHS);
 
 /** Proxy matcher patterns: each protected path plus its nested routes. */

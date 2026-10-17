@@ -6,6 +6,7 @@
  */
 export const AdminPermissionName = {
   REQUESTS_VIEW: "requests.view",
+  REQUESTS_MANAGE: "requests.manage",
   ENQUIRIES_VIEW: "enquiries.view",
   NOTIFICATIONS_READ_OPERATIONAL: "notifications.read_operational",
   PRODUCTS_MANAGE: "products.manage",

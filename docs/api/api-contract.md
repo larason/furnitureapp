@@ -1149,7 +1149,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 
 ## 19. Version 1 Endpoint Inventory — Concrete Catalogue
 
-> **Authority note:** This section is the **authoritative Version 1 endpoint inventory** — stable IDs, versioned paths, actors, auth/authz, purpose, and contract references. It answers *What exists? Who uses it? What does it do?* All paths use `/api/v1`; roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; reuse global conventions (query Phase 1.11, pagination Phase 1.12, response Phase 1.13, input Phase 1.14, validation Phase 1.15, errors Phase 1.16, auth Phase 1.17/Phase 4.1 `§17`, authz Phase 1.18). Payment/webhook endpoints are placeholders owned by Group H (see §19.12). **Current status (accepted):** `APPROVED` for `INV-001..003` (Phase 11.6), `ORD-001..014` (Phase 1.23), `REQ-001..007` (Phase 1.25), `ENQ-001..007` (Phase 1.26), `NOT-001/002` (Phase 1.27), and `ADM-008/009` (Phase 11.8); `RETIRED` for `AUTH-001..008` (Phase 4.1 Clerk change); `PROPOSED` for remaining V1 endpoints (`CAT-*`, `USER-*`, `CART-*`, `CHK-001`, remaining `ADM-*`, etc.) and `PROPOSED*` for `PAY-001/002`/`WEBHOOK-001` Group H placeholders. Master table `Status` reflects the current status per row.
+> **Authority note:** This section is the **authoritative Version 1 endpoint inventory** — stable IDs, versioned paths, actors, auth/authz, purpose, and contract references. It answers *What exists? Who uses it? What does it do?* All paths use `/api/v1`; roles are CLOSED `CUSTOMER`/`STAFF`/`ADMIN`; reuse global conventions (query Phase 1.11, pagination Phase 1.12, response Phase 1.13, input Phase 1.14, validation Phase 1.15, errors Phase 1.16, auth Phase 1.17/Phase 4.1 `§17`, authz Phase 1.18). Payment/webhook endpoints are placeholders owned by Group H (see §19.12). **Current status (accepted):** `APPROVED` for `INV-001..003` (Phase 11.6), `ORD-001..014` (Phase 1.23), `REQ-001..008` (Phase 1.25; `REQ-008` added by `ADR/API-FRZ-004`), `ENQ-001..007` (Phase 1.26), `NOT-001/002` (Phase 1.27), and `ADM-008/009` (Phase 11.8); `RETIRED` for `AUTH-001..008` (Phase 4.1 Clerk change); `PROPOSED` for remaining V1 endpoints (`CAT-*`, `USER-*`, `CART-*`, `CHK-001`, remaining `ADM-*`, etc.) and `PROPOSED*` for `PAY-001/002`/`WEBHOOK-001` Group H placeholders. Master table `Status` reflects the current status per row.
 
 ### 19.1 Master Endpoint Table (Stable IDs, Do Not Recycle)
 
@@ -1199,6 +1199,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `REQ-005` | GET | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.view` | Get operational request | APPROVED |
 | `REQ-006` | PATCH | `/api/v1/requests/{request}` | Request | Staff, Admin | Yes | `OPERATIONAL` `requests.manage` | Update operational request state (`request_status` CLOSED) | APPROVED |
 | `REQ-007` | POST | `/api/v1/requests/{request}/attachments` | Request | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** — server-issued upload token (from `REQ-001` response, single-use/time-limited) + parent ownership; predictable ID alone insufficient | Upload request attachment — **preferred: multipart on `REQ-001` creation**; separate `POST` only with scoped token (anonymous requires token), private to parent | APPROVED |
+| `REQ-008` | GET | `/api/v1/requests/{request}/attachments/{attachment}` | Request | Holder of a valid signed URL | **Signed** — temporary signed URL bound to the `{request}`/`{attachment}` pair (no bearer token); unsigned/tampered/expired → `403`, mismatch/unknown → `404` masked | Download request attachment (private, streamed) — additive per `ADR/API-FRZ-004`; no permanent public URL | APPROVED |
 | `ENQ-001` | POST | `/api/v1/enquiries` | Enquiry | Anonymous, Customer | No / Yes | **PUBLIC** submit (validated + anti-abuse) | Submit general enquiry (anonymous allowed) | APPROVED |
 | `ENQ-002` | GET | `/api/v1/me/enquiries` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` own | List own enquiries | APPROVED |
 | `ENQ-003` | GET | `/api/v1/me/enquiries/{enquiry}` | Enquiry | Customer | Yes | `AUTHENTICATED_OWNER` owns enquiry | Get own enquiry detail | APPROVED |
@@ -1236,7 +1237,7 @@ See `api-conventions.md §19` for reusable authorization conventions, `api-resou
 | `PAY-002` | GET | `/api/v1/payments/{payment}` | Payment | Customer, Staff, Admin | Yes | `AUTHENTICATED_OWNER` own / `OPERATIONAL` / `ADMIN` limited | Get payment status (generic) | PROPOSED* |
 | `WEBHOOK-001` | POST | `/api/v1/webhooks/payment/{provider}` | Payment | System/Webhook | Signature | `SYSTEM` service auth (Group H) | Payment provider callback (Group H) | PROPOSED* |
 
-> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). `INV-001..003`, `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002`, and `ADM-008/009` are **`APPROVED`** as marked per row; `AUTH-001..008` are **`RETIRED`**. Other non-payment, non-retired endpoints remain **current `PROPOSED`**.
+> `*` Payment/webhook endpoints are placeholders marked `PROPOSED*` with Owner `Phase Group H` — no provider selection, no detailed payloads (see §19.12). `INV-001..003`, `ORD-001..014`, `REQ-001..008`, `ENQ-001..007`, `NOT-001/002`, and `ADM-008/009` are **`APPROVED`** as marked per row; `AUTH-001..008` are **`RETIRED`**. Other non-payment, non-retired endpoints remain **current `PROPOSED`**.
 
 ### 19.2 Endpoint Detail Template & Per-Endpoint Contract Summary
 
@@ -1368,7 +1369,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ### 19.13 Endpoint Count, MVP & Surface Discipline
 
-- **Smallest coherent surface:** V1 ID inventory is `80` total (`77` substantive + `3` Group H placeholders) with mixed current statuses per `§19.15` — `77` substantive: catalog 18 [`CAT-001..006` public 6 + `CAT-007..014` management 8 (`CAT-013/014` operational product reads) + `CAT-015..018` media mutations 4] + auth 8 [`AUTH-001..008` **RETIRED** in Phase 4.1; not callable] + user 3 [`USER-001/002` active + `USER-003` retired] + cart 5 [`CART-001..005` inc. `CART-005` merge] + checkout 1 [`CHK-001`] + orders 14 [`ORD-001..014` **APPROVED**] + requests 7 [`REQ-001..007` **APPROVED**] + enquiries 7 [`ENQ-001..007` **APPROVED**] + notifications 2 [`NOT-001/002` **APPROVED**] + inventory 3 [`INV-001..003`] + admin 9 [`ADM-001..009`]; plus `3` placeholders [`PAY-001/002`, `WEBHOOK-001`] (`PROPOSED*`, Group H) — target `APPROVED` for remaining `PROPOSED` after Phase 1.21 review; retired IDs stay retired. No `GET /my-orders` duplicate of `GET /me/orders`, no `/categories/{category}/products` duplicate, no `/products/{product}/images` separate, no `/products/{product}/availability` separate — canonical choices per §19.5-19.7. Guest-cart identifier is `X-Guest-Cart-Id` / `guest_cart_id` cookie (opaque, backend-issued) handled in `CART-001..004` anonymous support and merged via Clerk-authenticated `CART-005`.
+- **Smallest coherent surface:** V1 ID inventory is `81` total (`78` substantive + `3` Group H placeholders) with mixed current statuses per `§19.15` — `78` substantive: catalog 18 [`CAT-001..006` public 6 + `CAT-007..014` management 8 (`CAT-013/014` operational product reads) + `CAT-015..018` media mutations 4] + auth 8 [`AUTH-001..008` **RETIRED** in Phase 4.1; not callable] + user 3 [`USER-001/002` active + `USER-003` retired] + cart 5 [`CART-001..005` inc. `CART-005` merge] + checkout 1 [`CHK-001`] + orders 14 [`ORD-001..014` **APPROVED**] + requests 8 [`REQ-001..008` **APPROVED**] + enquiries 7 [`ENQ-001..007` **APPROVED**] + notifications 2 [`NOT-001/002` **APPROVED**] + inventory 3 [`INV-001..003`] + admin 9 [`ADM-001..009`]; plus `3` placeholders [`PAY-001/002`, `WEBHOOK-001`] (`PROPOSED*`, Group H) — target `APPROVED` for remaining `PROPOSED` after Phase 1.21 review; retired IDs stay retired. No `GET /my-orders` duplicate of `GET /me/orders`, no `/categories/{category}/products` duplicate, no `/products/{product}/images` separate, no `/products/{product}/availability` separate — canonical choices per §19.5-19.7. Guest-cart identifier is `X-Guest-Cart-Id` / `guest_cart_id` cookie (opaque, backend-issued) handled in `CART-001..004` anonymous support and merged via Clerk-authenticated `CART-005`.
 - **MVP discipline:** Excludes `wishlist`, `reviews`, `coupons`, `saved addresses`, `loyalty`, `live driver tracking` unless explicitly approved.
 - **Surface security:** each endpoint justified; attack/testing/documentation/authorization cost considered.
 
@@ -1388,7 +1389,7 @@ All endpoint dependencies `resource exists + relationship exists + actor exists 
 
 ### 19.15 Status & Lifecycle (Current vs Target)
 
-**Current:** `ORD-001..014`, `REQ-001..007`, `ENQ-001..007`, `NOT-001/002` are `APPROVED`; `AUTH-001..008` are `RETIRED` (retired in Phase 4.1; route removal in Phase 4.2; IDs remain retired, never recycled); all other non-payment, non-retired endpoints are `PROPOSED`; `PAY-001/002`/`WEBHOOK-001` are `PROPOSED*` (Group H placeholder).
+**Current:** `ORD-001..014`, `REQ-001..008`, `ENQ-001..007`, `NOT-001/002` are `APPROVED`; `AUTH-001..008` are `RETIRED` (retired in Phase 4.1; route removal in Phase 4.2; IDs remain retired, never recycled); all other non-payment, non-retired endpoints are `PROPOSED`; `PAY-001/002`/`WEBHOOK-001` are `PROPOSED*` (Group H placeholder).
 **Target after Phase 1.21 review:** all remaining V1 `PROPOSED` endpoints become `APPROVED`; retired IDs stay retired. Status table above reflects this **current** `APPROVED`/`PROPOSED`/`PROPOSED*`/`RETIRED` definition; any removed ID remains retired, never recycled. Future `DEPRECATED`/`RETIRED` per versioning.
 
 ## 20. Links to Conventions & Resources
@@ -3143,7 +3144,7 @@ V1 tracking = **fulfillment/order milestones** (`PAID, ACCEPTED, PROCESSING, REA
 
 ### 26.1 Request Endpoint Inventory (Authoritative — aligned with Phase 1.19 `§19.1`)
 
-Request endpoints `REQ-001`..`REQ-005` are **`APPROVED`** (complete V1 Request contract — finalized in Phase 1.25). `REQ-006` (staff update) and `REQ-007` (attachment upload) are **`APPROVED`** where documented. This supersedes the provisional `PROPOSED` label in `§19.1` for the Request domain; `§19.15` remains `PROPOSED` only for domains not yet finalized. Clients may consume `REQ-001`..`REQ-007` as authoritative.
+Request endpoints `REQ-001`..`REQ-005` are **`APPROVED`** (complete V1 Request contract — finalized in Phase 1.25). `REQ-006` (staff update), `REQ-007` (attachment upload) and `REQ-008` (private attachment delivery, added by `ADR/API-FRZ-004`) are **`APPROVED`** where documented. This supersedes the provisional `PROPOSED` label in `§19.1` for the Request domain; `§19.15` remains `PROPOSED` only for domains not yet finalized. Clients may consume `REQ-001`..`REQ-008` as authoritative.
 
 | ID | Method | Path | Actor | Auth | Authorization | Purpose | Idempotency | Concurrency |
 |---|---|---|---|---|---|---|---|---|
@@ -3154,6 +3155,7 @@ Request endpoints `REQ-001`..`REQ-005` are **`APPROVED`** (complete V1 Request c
 | `REQ-005` | `GET` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.view` | Get operational request detail | — | — |
 | `REQ-006` | `PATCH` | `/api/v1/requests/{request}` | Staff, Admin | Required | `OPERATIONAL` `requests.manage` | Update operational request (limited staff fields, see §26.9) | Designed idempotent | Low/Medium (race `Staff A close + Staff B update`) |
 | `REQ-007` | `POST` | `/api/v1/requests/{request}/attachments` | Anonymous* (scoped), Customer, Staff, Admin | **Scoped** | **Scoped upload token** + parent ownership; predictable ID alone insufficient | Upload request attachment — preferred is inline multipart on `REQ-001`; separate `POST` only with scoped token, private to parent | — | — |
+| `REQ-008` | `GET` | `/api/v1/requests/{request}/attachments/{attachment}` | Holder of a valid signed URL (any actor) | **No** (signature is the credential) | **Signed URL** bound to the `{request}`/`{attachment}` pair + `authenticated-read` throttle; unsigned/tampered/expired → `403`, mismatch/unknown → `404` masked | Download request attachment (private, streamed) — additive per `ADR/API-FRZ-004`; no permanent public URL | — | — |
 
 `*` `REQ-007` anonymous path requires server-issued upload token returned on `REQ-001` creation (single-use/time-limited); see §26.8.
 
@@ -3280,8 +3282,8 @@ This avoids a huge furniture-configuration DSL while giving Staff measurable int
 - **Preferred transport:** `multipart/form-data` inline with `REQ-001` creation (field `attachment`). Do not invent pre-upload-then-attach-file flow unless approved; single-request flow is simpler for Laravel/Next.js/Flutter.
 - **Separate upload (`REQ-007`):** `POST /api/v1/requests/{request}/attachments` with `multipart/form-data` field `attachment`. Requires **scoped server-issued upload token** (single-use/time-limited token returned in `REQ-001` `201` response — not predictable request `id` alone). Scoped token + parent ownership checked atomically. Anonymous `REQ-007` requires that token; otherwise `401/404`.
 - **Security:** Validate `file size` (max `5 MB` V1), `allowed types` (`image/jpeg`, `image/png`, `image/webp`, `application/pdf` allow-list), `actual content signature` (client MIME/extension not trusted), filename sanitized, storage authorization. `INVALID_ATTACHMENT` / `ATTACHMENT_TOO_LARGE` / `UNSUPPORTED_ATTACHMENT_TYPE`.
-- **Access:** Inherits Request authorization — `Customer → own request attachment`, `Staff → operational`, `Admin → authorized`, `Anonymous → no automatic public retrieval`. No permanent public storage URLs; later implementation may use signed/temporary URLs.
-- **Metadata exposure:** `filename/display name, content_type, size` only where authorized; never internal storage keys.
+- **Access (implemented — `REQ-008`, added by `ADR/API-FRZ-004`):** `AttachmentResource.url` carries an **absolute temporary signed URL** for `GET /api/v1/requests/{request}/attachments/{attachment}`. The signature is the only credential — no bearer token is required — and it is bound to the `{request}`/`{attachment}` pair, so an attachment that does not belong to the supplied request is masked as `404 RESOURCE_NOT_FOUND`. The link lifetime is `ATTACHMENTS_DOWNLOAD_URL_TTL_MINUTES` (default `15` minutes). There is **no permanent public storage URL**; `url` is `null` for a parent type with no authorized delivery route (enquiry attachments stay `null` until `ENQ-008`). A download returns `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`.
+- **Metadata exposure:** `filename/display name, content_type, size` only where authorized; never internal storage keys, disks or filesystem paths.
 
 ### 26.9 Staff Operational Handling — REQ-006 (Controlled)
 
@@ -3355,7 +3357,7 @@ SUBMITTED → IN_REVIEW → CLOSED
 ### 26.16 Query, Pagination, Filter, Search, Sorting — Global Conventions
 
 - **Collection pagination:** `REQ-002` (customer) and `REQ-004` (staff) use `page`/`per_page` (1–100) → `meta.pagination` per `§4` / `api-conventions.md §11`.
-- **Staff filters (allow-list only):** `search` (name/email/phone/reference/product), `request_status` CLOSED (`SUBMITTED`/`IN_REVIEW`/`CLOSED`), `product_id` (linked product), `created_from`/`created_to` ISO8601 `Z`, `sort` / `sort_direction`, `page`/`per_page`. Unknown filter → `422`.
+- **Staff filters (allow-list only):** `search` (name/email/phone/reference/product), `request_status` CLOSED (`SUBMITTED`/`IN_REVIEW`/`CLOSED`), `product_id` (linked product), `created_from`/`created_to` ISO8601 `Z`, `page`/`per_page`. Unknown query parameter → `422`. There is **no** `sort`/`sort_direction` parameter in V1 (the implementation fixed the order; a former mention here was a documentation slip corrected by `ADR/API-FRZ-004`).
 - **Customer filters:** implicitly scoped to own; `search` limited to own dataset.
 - **Sorting:** `created_at DESC, id ASC` (newest first) default for both staff queue and customer history; `id ASC` tie-breaker; no DB natural order.
 - **No request-specific pagination format** — global reuse.
@@ -3421,7 +3423,7 @@ Only add codes with actual utility per `§15.15`; `PRODUCT_NOT_REQUESTABLE` dist
     "notes": "Need a 2.2m dining table for 6, rounded corners.",
     "request_status": "SUBMITTED",
     "attachments": [
-      { "id": "att_01h...", "filename": "inspiration.jpg", "content_type": "image/jpeg", "size": 843210 }
+      { "id": "att_01h...", "filename": "inspiration.jpg", "content_type": "image/jpeg", "size": 843210, "url": "https://api.example.com/api/v1/requests/req_01h8y5a1b2c3d4e5f6g7h8j9/attachments/att_01h...?expires=1756810800&signature=9c1f...e4" }
     ],
     "created_at": "2026-09-01T10:15:00Z",
     "updated_at": "2026-09-01T10:15:00Z"
@@ -3468,8 +3470,9 @@ Only add codes with actual utility per `§15.15`; `PRODUCT_NOT_REQUESTABLE` dist
     "color": "natural walnut",
     "notes": "Need a 2.2m dining table for 6.",
     "request_status": "IN_REVIEW",
+    "request_reference": "REQ-7F3K9QX2M1",
     "staff_internal_notes": "Called customer 2026-09-01, discussed walnut availability.",
-    "attachments": [{ "id": "att_01h...", "filename": "inspiration.jpg", "content_type": "image/jpeg", "size": 843210 }],
+    "attachments": [{ "id": "att_01h...", "filename": "inspiration.jpg", "content_type": "image/jpeg", "size": 843210, "url": "https://api.example.com/api/v1/requests/req_01h8y5a1b2c3d4e5f6g7h8j9/attachments/att_01h...?expires=1756810800&signature=9c1f...e4" }],
     "user_id": "user_01h...",
     "created_at": "2026-09-01T10:15:00Z",
     "updated_at": "2026-09-01T11:00:00Z"
@@ -4966,7 +4969,7 @@ All **80** Version 1 endpoint IDs (**77** substantive + **3** Group H placeholde
 - `CART-001..005` (guest holder via `X-Guest-Cart-Id` + merge),
 - `CHK-001` (`POST /checkout`),
 - `ORD-001..014` (`ORD-001..004` customer, `ORD-005/006` operational, `ORD-007..011,013,014` controlled actions),
-- `REQ-001..007` / `ENQ-001..007` (anonymous `REQ-001`/`ENQ-001` + owner/operational + scoped `REQ-007`/`ENQ-007` attachments),
+- `REQ-001..008` / `ENQ-001..007` (anonymous `REQ-001`/`ENQ-001` + owner/operational + scoped `REQ-007`/`ENQ-007` attachments + signed `REQ-008` delivery),
 - `NOT-001/002` canonical (`NOT-003`/`NOT-004` deferred, `NOT-004` not duplicated — see `§30.21` correction),
 - `INV-001..003`,
 - `ADM-001..009` (`ADM-001/002` staff list/detail, `ADM-003` invite, `ADM-004` approve, `ADM-005` suspend, `ADM-006` reactivate, `ADM-007` audit-logs, `ADM-008/009` users list/detail),

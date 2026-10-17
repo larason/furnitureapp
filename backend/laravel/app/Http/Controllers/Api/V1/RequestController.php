@@ -13,6 +13,7 @@ use App\Http\Resources\CustomerFurnitureRequestSummaryResource;
 use App\Http\Resources\FurnitureRequestResource;
 use App\Http\Resources\OperationalFurnitureRequestResource;
 use App\Jobs\CreateOperationalNotifications;
+use App\Models\Attachment;
 use App\Models\FurnitureRequest;
 use App\Models\User;
 use App\Services\Attachments\UploadAttachment;
@@ -22,6 +23,7 @@ use App\Services\Requests\CreateFurnitureRequestCommand;
 use App\Services\Requests\ListOperationalFurnitureRequests;
 use App\Services\Requests\UpdateFurnitureRequestOperationalFields;
 use App\Support\ApiErrorCode;
+use App\Support\AttachmentIdentifier;
 use App\Support\FurnitureRequestIdentifier;
 use App\Support\NotificationType;
 use App\Support\PermissionName;
@@ -30,11 +32,15 @@ use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class RequestController extends V1Controller
 {
     private const REQUEST_NOT_FOUND_MESSAGE = 'The requested furniture request was not found.';
+
+    private const ATTACHMENT_NOT_FOUND_MESSAGE = 'The requested attachment was not found.';
 
     private const ATTACHMENT_CREDENTIAL_REQUIRED_MESSAGE = 'Authentication or an upload capability is required.';
 
@@ -208,6 +214,57 @@ class RequestController extends V1Controller
             ->response()
             ->setStatusCode(201)
             ->withHeaders($this->privateHeaders());
+    }
+
+    public function downloadAttachment(string $request, string $attachment): StreamedResponse
+    {
+        $record = $this->findDownloadableAttachment($request, $attachment);
+        $stream = Storage::disk((string) $record->storage_disk)->readStream((string) $record->storage_key);
+
+        if (! is_resource($stream)) {
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ATTACHMENT_NOT_FOUND_MESSAGE, 404);
+        }
+
+        return new StreamedResponse(
+            static function () use ($stream): void {
+                fpassthru($stream);
+                fclose($stream);
+            },
+            200,
+            [
+                'Content-Type' => (string) $record->content_type,
+                'Content-Disposition' => 'attachment; filename="'.$this->downloadFilename((string) $record->filename).'"',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store',
+            ],
+        );
+    }
+
+    private function findDownloadableAttachment(string $requestIdentifier, string $attachmentIdentifier): Attachment
+    {
+        $requestId = FurnitureRequestIdentifier::decode($requestIdentifier);
+        $attachmentId = AttachmentIdentifier::decode($attachmentIdentifier);
+        $record = $requestId === null || $attachmentId === null
+            ? null
+            : Attachment::query()
+                ->whereKey($attachmentId)
+                ->where('furniture_request_id', $requestId)
+                ->first();
+
+        if ($record === null) {
+            // Masking covers an unknown request, an unknown attachment and an
+            // attachment belonging to a different request alike.
+            throw new ApiException(ApiErrorCode::RESOURCE_NOT_FOUND, self::ATTACHMENT_NOT_FOUND_MESSAGE, 404);
+        }
+
+        return $record;
+    }
+
+    private function downloadFilename(string $filename): string
+    {
+        $safe = (string) preg_replace('/[^A-Za-z0-9 _.\-]+/', '_', $filename);
+
+        return $safe === '' ? 'attachment' : $safe;
     }
 
     private function findRequestOrFail(string $identifier): FurnitureRequest

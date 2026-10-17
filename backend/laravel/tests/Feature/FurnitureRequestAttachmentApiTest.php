@@ -64,7 +64,10 @@ class FurnitureRequestAttachmentApiTest extends TestCase
         $this->assertSame('reference.png', $attachment['filename']);
         $this->assertSame('image/png', $attachment['content_type']);
         $this->assertSame(['id', 'filename', 'content_type', 'size', 'url'], array_keys($attachment));
-        $this->assertNull($attachment['url']);
+        $this->assertIsString($attachment['url']);
+        $this->assertStringContainsString('/api/v1/requests/', $attachment['url']);
+        $this->assertStringContainsString('/attachments/'.$attachment['id'], $attachment['url']);
+        $this->assertStringContainsString('signature=', $attachment['url']);
 
         $stored = Attachment::query()->sole();
         $this->assertSame('image/png', $stored->content_type);

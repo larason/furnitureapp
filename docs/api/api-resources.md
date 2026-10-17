@@ -343,12 +343,13 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 | `color` | string \| null | STAFF | yes | |
 | `notes` | string \| null | STAFF | yes | Customer notes preserved |
 | `request_status` | enum `SUBMITTED`,`IN_REVIEW`,`CLOSED` CLOSED — **formally approved V1** | STAFF | no | CLOSED; staff transition `SUBMITTED→IN_REVIEW→CLOSED` via approved `REQ-006` (was deferred per §43-44, now approved ADR/API-REQ-010) |
+| `request_reference` | string `REQ-...` | STAFF (`requests.view`) | no | Human-quotable staff reference; **operational representation only** — deliberately absent from `FurnitureRequestResource`/`CustomerFurnitureRequestSummary` (`ADR/API-FRZ-004`, owner decision `D2`) |
 | `staff_internal_notes` | string \| null | STAFF (`requests.manage` where authorized) | yes | Separated from `notes`; never customer-visible |
 | `user_id` | string \| null | STAFF | yes | `null` for anonymous; `user_...` when authenticated — derived, never client-supplied |
-| `attachments` | `[{id, filename, content_type, size}]` | STAFF | no | Private to parent |
+| `attachments` | `[{id, filename, content_type, size, url}]` | STAFF | no | Private to parent; `url` is a temporary signed delivery link (`REQ-008`) |
 | `created_at` / `updated_at` | ISO8601 UTC | STAFF | no | |
 
-### 5.4 Request Attachment (Subresource `REQ-007`)
+### 5.4 Request Attachment (Subresource `REQ-007`, delivered by `REQ-008`)
 
 | Field | Type | Exposure | Notes |
 |---|---|---|---|
@@ -356,7 +357,7 @@ Field-level before serialization; authorization before data fetch; `password`/`p
 | `filename` | string | own / STAFF | Sanitized display name |
 | `content_type` | string | own / STAFF | Validated server-side (client MIME not trusted): allow `image/jpeg`, `image/png`, `image/webp`, `application/pdf` |
 | `size` | integer bytes | own / STAFF | Validated `<=5 MB` V1 |
-| `url` | string (URI) \| null | own / STAFF (private) | Safe access URL if authorized (signed/temporary later); never permanent public URL; internal storage keys never exposed |
+| `url` | string (URI) \| null | own / STAFF (private) | **Implemented** absolute temporary signed URL for `GET /api/v1/requests/{request}/attachments/{attachment}` (`REQ-008`, `ADR/API-FRZ-004`). Expires after `ATTACHMENTS_DOWNLOAD_URL_TTL_MINUTES` (default 15). `null` when no authorized delivery route exists for the parent (enquiry attachments stay `null` until `ENQ-008`). Never a permanent public URL; internal storage keys/disks never exposed. |
 
 *Inventory/price/promise:* Request never reserves inventory, never guarantees price/production/delivery.
 
@@ -907,8 +908,9 @@ One `ProductStock` row is one Inventory resource: one Variant at one `warehouse_
 | Aspect | Contract |
 |---|---|
 | **Owner** | Customer (or `null` anonymous) — staff operational relationship, not owns |
-| **Privileged readers** | `STAFF`/`ADMIN` `requests.view` — `GET /requests` (`REQ-004`), `GET /requests/{request}` (`REQ-005`, includes `staff_internal_notes` where authorized) |
+| **Privileged readers** | `STAFF`/`ADMIN` `requests.view` — `GET /requests` (`REQ-004`), `GET /requests/{request}` (`REQ-005`, includes `request_reference` and `staff_internal_notes` where authorized) |
 | **Privileged writers** | `STAFF`/`ADMIN` `requests.manage` — `PATCH /requests/{request}` (`REQ-006`) only `request_status` (`SUBMITTED→IN_REVIEW→CLOSED`) + `staff_internal_notes`; original `product_id/quantity/dimensions/material/color/notes/contact` immutable |
+| **Attachment delivery** | Private request attachments are delivered through a temporary signed URL (`REQ-008`, `ADR/API-FRZ-004`); the signature is the only credential and is bound to the request/attachment pair |
 | **Customer visibility** | Customer sees own requests `GET /me/requests` (§5); never internal notes |
 | **Audit** | `request_status` changes audited |
 

@@ -23,6 +23,7 @@ final class OperationalFurnitureRequestResource extends JsonResource
         $furnitureRequest = $this->resource;
 
         return $this->furnitureRequestData($furnitureRequest, [
+            'request_reference' => $furnitureRequest->request_reference,
             'staff_internal_notes' => $this->includeInternalNotes ? $furnitureRequest->staff_internal_notes : null,
             'user_id' => UserIdentifier::encodeId($furnitureRequest->user_id),
         ]);

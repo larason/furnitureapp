@@ -980,7 +980,26 @@ Content-Type: image/jpeg
 <binary>
 ------Boundary--
 ```
-*`0 or 1` per `REQ-001` inline `multipart/form-data` preferred; private URL `GET` inherits parent `requests.view`; no permanent public URL.*
+*`0 or 1` per `REQ-001` inline `multipart/form-data` preferred; private URL `GET` uses a temporary signed URL as its credential; no permanent public URL.*
+
+### 10.4 Attachment delivery — `REQ-008` `GET /api/v1/requests/{request}/attachments/{attachment}` — Signed URL (no bearer token)
+
+```http
+GET /api/v1/requests/req_01h8y5a1b2c3d4e5f6g7h8j9/attachments/att_01h8z2k3m4n5p6q7r8s9t0u1?expires=1756810800&signature=9c1f...e4 HTTP/1.1
+Host: api.example.com
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+Content-Disposition: attachment; filename="inspiration.jpg"
+X-Content-Type-Options: nosniff
+Cache-Control: private, no-store
+
+<binary>
+```
+
+*Added by `ADR/API-FRZ-004`. The `url` field on each attachment in `REQ-004`/`REQ-005`/`REQ-007` responses is this link. The signature is the only credential and is bound to the request/attachment pair: unsigned, tampered or expired → `403`; an attachment belonging to another request, or an unknown identifier → `404` (masked). The link expires after `ATTACHMENTS_DOWNLOAD_URL_TTL_MINUTES` (default 15). No permanent public URL, and no storage key or disk appears in the URL or the response.*
 
 ---
 

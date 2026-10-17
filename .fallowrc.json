@@ -12,11 +12,9 @@
   "ignorePatterns": [
     "frontend/design-system/tailwind-v4.css"
   ],
-  // Intentionally unreferenced for now: a Phase 19.2 UI primitive awaiting the
-  // phase that consumes it, and the documented server-only Laravel bridge that
-  // frontend/web/lib/auth/auth.test.ts asserts against.
+  // Intentionally unreferenced for now: the documented server-only Laravel bridge
+  // that frontend/web/lib/auth/auth.test.ts asserts against.
   "ignoreFindings": [
-    "frontend/admin/components/ui/confirm-dialog.tsx",
     "frontend/web/lib/auth/laravel.ts"
   ]
 }

@@ -69,6 +69,33 @@ class OpenApiRequestContractTest extends TestCase
         }
     }
 
+    public function test_req_008_documents_signed_private_attachment_delivery(): void
+    {
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
+
+        $download = $document['paths']['/requests/{request}/attachments/{attachment}']['get'];
+
+        $this->assertSame('REQ-008', $download['operationId']);
+        $this->assertSame([], $download['security'], 'REQ-008 must not require a bearer token.');
+
+        foreach (['200', '403', '404', '429'] as $status) {
+            $this->assertArrayHasKey($status, $download['responses'], "REQ-008 must document {$status}.");
+        }
+
+        $this->assertArrayNotHasKey('401', $download['responses']);
+    }
+
+    public function test_operational_request_schema_exposes_the_request_reference_only_operationally(): void
+    {
+        $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));
+
+        $this->assertArrayHasKey(
+            'request_reference',
+            $document['components']['schemas']['OperationalFurnitureRequest']['allOf'][1]['properties'],
+        );
+        $this->assertArrayNotHasKey('request_reference', $document['components']['schemas']['MadeToOrderRequest']['properties']);
+    }
+
     public function test_req_001_multipart_documents_bracket_encoded_dimensions(): void
     {
         $document = Yaml::parseFile(base_path(self::OPENAPI_PATH));

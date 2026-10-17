@@ -1,506 +1,470 @@
-# Phase 19.9 — Inventory Management UI
+# Phase 19.10 — Made-to-Order Request Management
 
 ## Objective
 
-Implement the operational inventory management interface in `frontend/admin`, integrating the existing, audited Laravel inventory API.
+Implement the operational Made-to-Order Request management interface in `frontend/admin`, integrating the existing, audited Laravel request workflow (`REQ-004`, `REQ-005`, `REQ-006`).
 
-The Laravel implementation is complete and hardened. **This phase must not modify the Laravel backend, database schema, inventory business rules, frozen API contract, or OpenAPI specification.**
+The Laravel request intake, operational reads/writes, status machine, validation and authorization are already implemented and tested. Unlike Phase 19.9, the owner has approved **one narrowly scoped, additive backend completion** — authorized private attachment delivery — because the phase cannot pass without it (see §2). Everything else in this phase is frontend integration.
 
-The current admin inventory page is a placeholder. Replace it with a usable, permission-aware inventory listing, filtering, detail inspection, and stock-adjustment workflow.
+The `/requests` admin route is currently a permission-protected placeholder (`placeholder: true`, `plannedFor: "Phase 19.10"`) that loads no data. Replace it with a real, permission-aware inbox, request detail, lifecycle actions and attachment inspection.
 
-Follow the root `AGENTS.md`, `frontend/admin/AGENTS.md`, the approved Phase Group S roadmap, the frozen API documentation, the existing Phase 19.2–19.8 architecture, and the canonical design system.
+Follow the root `AGENTS.md`, `frontend/AGENTS.md`, `frontend/admin/AGENTS.md`, the Phase Group S roadmap, the frozen API documentation, the Phase 19.2–19.9 architecture and the canonical design system.
 
-Treat the owner-provided inventory audit as the starting evidence, but verify the relevant code and contracts before implementing.
+Treat the Phase 19.10 pre-implementation audit (summarized in §1.2) as starting evidence, but verify the relevant code and contract before implementing.
+
+### Why this phase is different from 19.9
+
+Phase 19.9 forbade all backend change. Phase 19.10 has exactly two approved backend changes (§2, §3.3). They are additive, they stay inside `v1`, and every other Laravel, schema, business-rule, contract and OpenAPI change remains prohibited without a further explicit owner decision.
 
 ## 1. Mandatory audit before coding
 
-Inspect and document the actual repository implementation for:
+### 1.1 Inspect and document the actual repository implementation for
 
-- `frontend/admin/app/(protected)/inventory/page.tsx`
-- The inventory entry in the admin navigation configuration.
-- `frontend/admin/lib/api/client.ts` and `AdminApiRequest`.
-- `frontend/admin/lib/api/server-request.ts`.
-- Existing server actions, API error handling, authorization helpers, and data-refresh patterns.
-- `AdminPermissionName` and any permission unions, catalogs, route metadata, and authorization tests derived from it.
-- Existing list, filter, pagination, detail, form, dialog, loading, error, and empty-state components.
-- The exact inventory request and response schemas in:
-  - `docs/api/api-contract.md`
-  - `docs/api/api-resources.md`
-  - `docs/api/api-conventions.md`
-  - `docs/api/openapi.yaml`
-  - `docs/api/api-examples.md`, where relevant.
-- The product detail and variant-list contracts needed to resolve inventory labels.
-- Existing admin tests and phase completion-report conventions.
+- `frontend/admin/app/(protected)/requests/page.tsx` and the `requests` entry in `ADMIN_ROUTES`.
+- `frontend/admin/lib/navigation/admin-route-paths.ts`, `admin-navigation.ts` (`adminRoute`, `adminRouteMetadata`, `placeholder`/`plannedFor`).
+- `frontend/admin/lib/auth/permission-names.ts`, `operational-identity.ts`, `route-guard.ts`, `server-route-guard.tsx`, `server-operational-identity.ts`.
+- `frontend/admin/lib/api/client.ts`, `server-request.ts`, `errors.ts`, `idempotency.ts`, `types.ts`.
+- The Phase 19.6–19.9 module conventions (`lib/catalog/*`, `components/catalog/*`, `components/states/*`, `components/ui/*`), including the list/filter/pagination/failure-state patterns and the server-action shape.
+- `frontend/admin/package.json` — the test script is an explicit file list; a new test file must be added to it.
+- The admin README route→permission→API table and the placeholder/implemented-module conventions.
+- The exact request contract in `docs/api/api-contract.md` (§26), `docs/api/api-resources.md` (§5, §10.4/§10.5), `docs/api/api-conventions.md` (§26), `docs/api/openapi.yaml` (REQ paths, `MadeToOrderRequest`, `OperationalFurnitureRequest`, `Attachment`), and `docs/api/api-examples.md`.
+- `backend/laravel/routes/api.php`, `app/Http/Controllers/Api/V1/RequestController.php`, `app/Http/Resources/*` (`AttachmentResource`, `OperationalFurnitureRequestResource`, `PresentsFurnitureRequest`), `app/Http/Requests/UpdateFurnitureRequestRequest.php`, `app/Http/Requests/ListOperationalFurnitureRequestsRequest.php`, `app/Services/Requests/*`, `app/Services/Attachments/*`, `app/Support/{PermissionCatalog,PermissionName,RequestStatus,FurnitureRequestIdentifier,AttachmentIdentifier}.php`, `config/attachments.php`.
+- The existing backend request/attachment tests and the admin test suite.
 
-Confirm the exact query parameter names, pagination envelope, identifier types, nullable fields, adjustment request fields, accepted adjustment reasons, response envelope, error codes, and status codes from the repository.
+Confirm the exact query parameter names, pagination envelope, identifier types, nullable fields, operational field allow-list, status transitions, response envelope, error codes and status codes from the repository.
 
-Do not guess missing details. If the runtime implementation contradicts the frozen contract, report the discrepancy and stop before inventing a new API shape.
+Do not guess missing details. If runtime behavior contradicts the frozen contract, report the discrepancy and record it; do not silently invent a new API shape.
 
 Preserve existing owner changes. Do not reset or revert unrelated files.
 
----
+### 1.2 Pre-implementation audit findings and their disposition
 
-## 2. Integrate the existing inventory API
+The audit confirmed the following. The `Disposition` column is binding for this phase.
 
-Use the existing endpoints exactly as documented.
+| # | Finding (verified) | Disposition |
+| --- | --- | --- |
+| G1 | `AttachmentResource` hard-codes `url: null`; `AttachmentStorage` has no read/temporary-URL capability; there is no download route. An operator cannot open a submitted attachment without server filesystem access. | **Fixed** by §2 item **C1** (owner-approved additive backend completion). This is the one change that determines whether the phase can PASS. |
+| G2 | `request_reference` is searchable (`ListOperationalFurnitureRequests::applySearch`) but is never serialized in any resource; the website confirmation line that tries to render it never runs (`frontend/web/components/furniture-requests/furniture-request-form.tsx`). | **Fixed for the operational surface** by §2 item **C2**. The customer-facing acknowledgement is a separate customer-contract decision — see `D2` in §15. |
+| G3 | `staff_internal_notes: null` conflates "actor lacks `requests.manage`" with "empty note". | **Fixed in the admin UI** — permission-keyed rendering (§8.4). No contract change. |
+| G4 | There is no reply/respond-to-customer action; only status + internal notes. | **Accepted V1 limitation.** No reply UI, no invented email action. Record it. |
+| G5 | Write allow-list is exactly `request_status` + `staff_internal_notes` with `minProperties: 1`; transitions `SUBMITTED→{IN_REVIEW,CLOSED}`, `IN_REVIEW→{CLOSED}`, `CLOSED→∅`; forbidden transition → `409 CONFLICT` (`field: request_status`). | **Integrated exactly** (§9). |
+| G6 | No concurrency control on `staff_internal_notes` (last-write-wins); the `409` covers only the status transition race. | **Accepted V1 limitation.** Record it; do not build optimistic concurrency. |
+| G7 | `api-contract.md §26.16` mentions `sort`/`sort_direction`, but `api-conventions.md §26.13`, `openapi.yaml` and the implementation do not define or accept them (unknown query parameter → `422`). | **Documentation reconciliation** — §2 item **C3**. The implementation is correct; the prose is the outlier. |
+| G8 | `frontend/admin/lib/auth/permission-names.ts` exposes only `REQUESTS_VIEW`. | **Fixed** — add `REQUESTS_MANAGE` (§5.2). |
+| G9 | STAFF cannot resolve the customer behind `user_id` (no `users.manage_authorized`); anonymous requests have `user_id: null`. | **Out of scope** (staff-administration capability). Render only the submitted contact snapshot; never link to a customer profile (§8.5). |
+| G10 | Staff identity/onboarding is incomplete (`ADM-001…006` `501`, no `staff_state`). | **Owner-excluded** (F5/F11) — see §14.3. Do not attempt to fix. |
+| G11 | At most one attachment per request; a second upload is rejected `409`. | **Reflected in the UI** (§8.6). No admin-side upload. |
+| G12 | `NEW_MADE_TO_ORDER_REQUEST` notifications reach only `requests.manage` holders. | **Recorded.** No change. |
 
-### INV-001 — List inventory
+## 2. Approved backend completion (the only authorized Laravel work)
 
-`GET /api/v1/inventory`
+### 2.1 Why C1 is required for the phase to pass
 
-The endpoint provides paginated inventory data, ordered by `updated_at DESC, id ASC`, with supported product, variant, and warehouse-location filters.
+The owner approved a contract change for private attachments **only if the phase needs it to PASS**.
 
-Requirements:
+Phase 19.10 needs it:
 
-- Use the exact existing endpoint path. It is `/api/v1/inventory`, **not** `/api/v1/admin/inventory`.
-- Use the existing server-side API transport and Clerk token flow.
-- Preserve the API's authoritative pagination and ordering.
-- Use server-side filtering. Do not fetch every inventory record and filter the entire dataset in the browser.
-- Build the list around the actual `InventoryResource` schema.
-- Preserve the backend's deterministic ordering; do not introduce unsupported sorting.
-- Preserve pagination metadata and current filters when navigating between pages, following existing admin patterns.
-- Reset pagination appropriately when filters change.
-- Serialize only documented query parameters and valid values.
-- Do not send arbitrary or unknown query parameters.
-- Handle loading, empty results, API errors, and permission failures as distinct states.
+- The roadmap line for this phase (`AGENTS.md`) names *"private attachments"* as a deliverable of this phase.
+- `AGENTS.md §14` (favor real business workflows over demos) and the Phase 11 exit condition (staff operate without touching the database or filesystem) mean a panel that only lists a filename is a demo, not an operational workflow. A request exists so the operator can evaluate the customer's requirement — including the photo or PDF they attached.
+- The frozen contract **already** specifies a temporary signed URL: `api-resources.md §5.4` types `url` as `string (URI) | null` and describes it as *"Safe access URL if authorized (signed/temporary later); never permanent public URL; internal storage keys never exposed"*, and `api-conventions.md` already states for `REQ-007` *"no permanent public URL, `url` temporary signed"*.
 
-Display the actual values returned by Laravel, including the inventory identifier, product and variant references, warehouse location, quantity information, and timestamps wherever those fields exist in the verified resource.
+Delivering the signed URL therefore **completes the documented contract** rather than inventing new behaviour. The only genuinely new surface is the download route itself, which is additive under `phases/api-breaking-change-policy.md §2` (*"Adding a new resource or endpoint"*).
 
-The audit reports eight required resource fields. Use the exact schema rather than reconstructing it from this description.
+If the owner withdraws this approval, the fallback is a metadata-only attachment panel and the phase can only reach **PARTIAL**. Confirm the approval stands before writing C1.
 
-Do not calculate or invent stock quantities when Laravel already returns the authoritative values. Do not replace an API failure with an empty inventory list.
+### 2.2 C1 — Private attachment delivery (`REQ-008`, additive)
 
-### INV-002 — Retrieve one inventory record
+**New endpoint:** `GET /api/v1/requests/{request}/attachments/{attachment}`
 
-`GET /api/v1/inventory/{inventory}`
+- Route name `api.requests.attachments.download`; registered under the existing `/api/v1` group.
+- Guarded by Laravel's `signed` middleware (framework default alias; confirm it is available) plus a throttle. **No bearer token is required** — the signature is the credential, so the browser can open the link directly.
+- Use an existing documented rate limiter rather than inventing a threshold (`api-conventions.md` lists the approved limits). `authenticated-read` (180/min; keyed by IP for an anonymous signed request) is the pragmatic choice. Record whichever limiter is used.
+- The controller resolves the request identifier and the attachment identifier, both via the existing `*Identifier::decode`, and returns `404 RESOURCE_NOT_FOUND` (masked) when either is unknown **or when the attachment does not belong to that request**. Parent binding is a required security property.
+- Stream the file from the attachment's own `storage_disk`/`storage_key`. The disk name and key are never serialized, logged, or included in a response body or URL path.
+- Response headers: the stored `content_type`, `Content-Disposition: attachment; filename="…"` (a stable download disposition — see §9.2), `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`.
+- Deleting nothing, creating nothing, and mutating nothing: the endpoint is a pure read.
 
-Use this endpoint to load an authoritative inventory snapshot when opening the inventory detail or adjustment interaction.
+**Resource change:** `AttachmentResource` must expose a real `url`.
 
-Requirements:
+- `url` = an absolute temporary signed URL for the attachment's own parent, or `null` when no authorized delivery route exists for that parent.
+- Generate it with a short TTL read from `config('attachments.download_url_ttl_minutes')` (default `15`), declared beside the existing `config/attachments.php` keys and mirrored in `.env.example` the same way `ATTACHMENTS_DISK` is.
+- Gate generation on the route existing for the parent type (including enquiry parents, which stay `null` until Phase 19.11 adds `ENQ-008`) so the resource never throws when a route is absent.
+- The generated URL uses the application's configured absolute URL. Confirm it resolves to the API origin the admin browser can reach, and that `no-store` plus the TTL bound the exposure of a leaked link.
 
-- Use the exact inventory identifier returned by Laravel.
-- Do not normalize, lowercase, or otherwise transform opaque identifiers.
-- Do not treat an identifier as proof of authorization.
-- Preserve the API's not-found behavior, including masking unknown and cross-resource identifiers.
-- Display the latest returned inventory values before the operator submits an adjustment.
-- If the detail request fails, do not silently substitute stale values and proceed as though the refresh succeeded.
-- Reuse the existing server-side transport and error-handling patterns.
+**Classification:** additive — new endpoint, plus a nullable response field that becomes populated. No existing path, method, request field, response field, enum, status code, authorization rule or business-state transition changes. Classify and record it under `ADR/API-FRZ-004`.
 
-A drawer or dialog is acceptable for inventory detail and adjustment if it fits the existing architecture. Do not create a new route hierarchy without a clear benefit consistent with the roadmap.
+### 2.3 C2 — `request_reference` on the operational representation (additive)
 
-### INV-003 — Adjust inventory
+- Add `request_reference` to `OperationalFurnitureRequestResource` only (`REQ-004`, `REQ-005`, `REQ-006` responses).
+- **Do not** add it to `FurnitureRequestResource` or `PresentsFurnitureRequest`'s shared projection: `FurnitureRequestResourceTest::test_internal_and_schema_only_fields_are_absent` deliberately asserts its absence from the customer representation, and the customer contract is not part of this phase (`D2`).
+- Rationale: the staff `search` filter already matches `request_reference`, and the operator must be able to read the reference they are quoting back to a customer. Without this, reference search is one-directional and unverifiable.
+- **Classification:** additive response field → non-breaking per `phases/api-breaking-change-policy.md §2`.
 
-`POST /api/v1/inventory/{inventory}/adjust`
+### 2.4 C3 — Contract documentation reconciliation (no behaviour change)
 
-Use the documented request body and the required `Idempotency-Key` header.
+The implementation is the source of truth. Update the documents to match it:
 
-Requirements:
+- `docs/api/api-contract.md §26.1` — add the `REQ-008` row (verb, path, actor, auth, purpose).
+- `docs/api/api-contract.md §26.8` — replace the "deferred" attachment-access prose with the implemented `REQ-008` signed-URL delivery, TTL, and the no-permanent-public-URL rule.
+- `docs/api/api-contract.md §26.16` — remove the `sort`/`sort_direction` mention that `api-conventions.md §26.13`, `openapi.yaml` and the implementation do not define; state the fixed order `created_at DESC, id ASC` and the unknown-query-parameter `422`.
+- `docs/api/api-contract.md §26.20` — show a populated `url` in the staff detail example.
+- `docs/api/api-resources.md §5.3` (operational request fields) — add `request_reference`; §5.4 — describe `url` as the implemented temporary signed URL.
+- `docs/api/api-conventions.md §26` — align the attachment access paragraph and the filter/sort statement with `REQ-008` and the implementation.
+- `docs/api/openapi.yaml` — new `REQ-008` path, `OpenApiAttachmentContractTest`-compatible `Attachment.url` description (*"Temporary signed private-access URL; null when no authorized delivery route exists"*), `request_reference` added to `OperationalFurnitureRequest`, and the `REQ-008` operation documented with `401`-free but `403` (invalid/expired signature), `404`, `429` responses.
+- `docs/api/api-examples.md` — add the delivery example.
+- `docs/decisions.md` — append `ADR/API-FRZ-004` using the `ADR/API-FRZ-003` template (Change Request / Impact Analysis / Classification / Contract Review / OpenAPI Update / Example Update / Verification / Approval / Reason / Status / Date / Affected). Record the owner's approval, its date, and the explicitly excluded customer-facing `request_reference` exposure.
 
-- Read the exact request schema and accepted reason values before building the form.
-- Send only the documented request fields.
-- Generate a valid UUID idempotency key for each new logical adjustment.
-- Send the key using the exact `Idempotency-Key` HTTP header.
-- Do not assume the adjustment response has a particular shape until it has been verified in the contract.
-- Respect documented validation errors, authorization failures, rate limiting, duplicate-intent behavior, and other status codes.
-- Refresh the affected inventory record and list after a confirmed successful adjustment using the existing refresh or revalidation strategy.
-- Do not claim that an adjustment succeeded before receiving an authoritative successful response.
+### 2.5 Not approved
 
-Do not create a replacement inventory-adjustment endpoint, directly write to the database, or bypass the existing `InventoryAdjustmentService`.
+Unless the owner separately approves it in writing, do **not**:
 
----
+- Change `REQ-001…REQ-007` request or response semantics in any way.
+- Expose `request_reference` to customers, or change `FurnitureRequestResource`/`CustomerFurnitureRequestSummaryResource`.
+- Add enquiry attachment delivery (`ENQ-008`) — Phase 19.11 owns it; C1 must be shaped so 19.11 can add the mirror route without reworking `AttachmentResource`.
+- Add an admin-side upload capability, attachment deletion, or attachment replacement.
+- Change the attachment allow-list, size limit, or the one-attachment-per-request rule.
 
-## 3. Fix the Idempotency-Key transport prerequisite
+## 3. Integrate the existing request API
 
-The existing `AdminApiRequest` does not support the `Idempotency-Key` header. INV-003 requires a UUID, so adjustment submission cannot be implemented correctly until the existing transport supports it.
+Use the endpoints exactly as documented and implemented.
 
-Extend the existing transport narrowly.
+### 3.1 REQ-004 — List operational requests
 
-Preferred approach:
+`GET /api/v1/requests` — requires `requests.view`.
 
-- Add a dedicated optional `idempotencyKey` request option to `AdminApiRequest`, or use an equally narrow, type-safe mechanism that fits the existing architecture.
-- When supplied, the transport must add the `Idempotency-Key` header.
-- When absent, existing API requests must behave exactly as they do now.
-- Preserve existing `Accept`, bearer authorization, content negotiation, request serialization, error handling, timeouts, and private/no-store behavior.
-- Do not introduce arbitrary caller-controlled headers that can override `Authorization`, `Accept`, or other security-sensitive transport behavior.
-- Do not create a separate fetch implementation solely for inventory adjustments.
-- Do not expose bearer tokens to client components or browser-visible state.
+Accepted query parameters (allow-list; anything else → `422`):
 
-Add tests proving that the header is included for inventory adjustments, omitted for unrelated calls, and forwarded without breaking the existing JSON transport.
+| Parameter | Notes |
+| --- | --- |
+| `search` | ≤ 100 characters; matches name, email, phone, request reference, linked product. |
+| `request_status` | `SUBMITTED` \| `IN_REVIEW` \| `CLOSED` (CLOSED enum). |
+| `product_id` | Exact opaque `prod_…` identifier. Not a name search. |
+| `created_from` | Inclusive ISO8601 UTC lower bound. |
+| `created_to` | Inclusive ISO8601 UTC upper bound. |
+| `page` / `per_page` | `per_page` 1–100. |
 
-### Idempotency lifecycle
+- The backend order is fixed (`created_at DESC, id ASC`). There is no `sort` parameter; do not send one.
+- The envelope is `{ data: [...], meta: { pagination: { current_page, per_page, total, last_page, has_next, has_previous } } }`.
+- `staff_internal_notes` is populated only when the actor holds `requests.manage`.
+- Responses are `Cache-Control: private, no-store`; render per request, never cache across operators.
 
-Idempotency must cover the actual user intent, not merely an individual HTTP attempt.
+### 3.2 REQ-005 — Retrieve one operational request
 
-Implement the following behavior:
+`GET /api/v1/requests/{request}` — requires `requests.view`. `{request}` is `req_…`.
+An unknown or unreadable identifier, or a deleted request, is `404 RESOURCE_NOT_FOUND` → the admin renders `notFound()`, matching the product detail precedent.
 
-1. A new adjustment receives a new UUID.
-2. A retry of the same adjustment, with the same inventory identifier and identical payload, reuses the original UUID.
-3. If the operator changes the payload, it represents a new intent and must not reuse the old key.
-4. If a network failure leaves the result uncertain, do not blindly submit a new adjustment with a new key.
-5. Where retry is offered, retain the original key and exact payload for that retry.
-6. Do not automatically retry a stock adjustment unless the retry uses the same idempotency key and identical request intent.
-7. Handle the documented `409` duplicate-intent response safely. Do not respond by generating another key and immediately repeating the operation.
-8. After a confirmed success, clear the completed submission state so a genuinely new adjustment can receive a new key.
+### 3.3 REQ-006 — Update operational request state
 
-Use an existing UUID utility if available. Otherwise, use an appropriate platform-supported UUID generator. Do not use predictable timestamps, `Math.random()`, or a constant key.
+`PATCH /api/v1/requests/{request}` — requires `requests.manage`. Body allow-list is exactly:
 
-Keep the idempotency key separate from business form fields; never include it in the JSON request body unless the verified API contract explicitly requires that, which the audit says it does not.
+```json
+{ "request_status": "IN_REVIEW", "staff_internal_notes": "…" }
+```
 
----
+- `additionalProperties: false`; any other field → `422 INVALID_VALUE`.
+- `minProperties: 1` — an empty body is rejected. Never send a no-op update.
+- `request_status` transitions (current → allowed targets): `SUBMITTED → IN_REVIEW | CLOSED`; `IN_REVIEW → CLOSED`; `CLOSED → (none)`. A forbidden transition is `409 CONFLICT` with `field: request_status`.
+- `staff_internal_notes`: **omitted** preserves the existing value; `null` or a whitespace-only string clears it; a non-blank string replaces it. Trimmed maximum is 5000 characters. The client must therefore send the field **only when it changed**.
+- The operation is designed idempotent by value. Do **not** invent an `Idempotency-Key` for it and do **not** add an undocumented header. Prevent double submission in the UI instead (§9.5).
+- The response is the updated `OperationalFurnitureRequest`.
 
-## 4. Implement the missing `inventory.manage` permission type
+### 3.4 REQ-008 — Download an attachment
 
-The backend already defines `inventory.view` and `inventory.manage`. The audit reports that both are granted to STAFF and ADMIN, but the frontend permission type currently includes only `inventory.view`.
+Added by §2.2. Consumers only follow `attachments[].url`; they never construct the URL from an identifier.
 
-Add the exact `inventory.manage` permission to the existing frontend permission catalog/type system.
+## 4. Permission model
 
-Requirements:
+### 4.1 Rules
 
-- Use the exact permission identifier `inventory.manage`.
-- Do not invent a new permission, role, role hierarchy, or authorization shortcut.
-- Do not hardcode permissions based only on the user's role.
-- Do not grant ADMIN an implicit bypass.
-- Preserve the existing Laravel `/api/v1/me` identity and effective-permission model.
-- Update affected type guards, permission helpers, route metadata, and tests only where necessary.
+- The page, the detail route and every read require `requests.view`, repeated server-side on each route (deep links must never rely on navigation visibility).
+- Status changes and internal-note edits require `requests.manage`.
+- The internal-notes **display** is also gated on `requests.manage`, because the backend only populates the field for that permission (§8.4).
+- Evaluate Laravel's effective permission data via `hasPermission`; a role never authorizes on its own, and missing permission data fails closed.
+- ADMIN holds `requests.view` and `requests.manage` legitimately through the permission catalog; it receives no implicit bypass and none is hardcoded.
+- Server Actions are directly reachable, so `updateRequestAction` (or equivalent) repeats the exact `requests.manage` requirement before calling Laravel.
 
-### Inventory page authorization
+### 4.2 Add the missing permission constant
 
-The inventory page requires `inventory.view`.
+Add to `frontend/admin/lib/auth/permission-names.ts`:
 
-- A user with `inventory.view` can open the inventory page and inspect inventory.
-- A user without `inventory.view` must be denied according to the existing route-authorization architecture.
-- The inventory navigation entry must use the existing permission-aware navigation pattern.
+```ts
+REQUESTS_MANAGE: "requests.manage",
+```
 
-### Adjustment authorization
+It mirrors `backend/laravel/app/Support/PermissionName.php`. It grants nothing; Laravel remains authoritative. Update any union, map or authorization test derived from the same constant set.
 
-Stock adjustment requires `inventory.manage`.
+## 5. Replace the placeholder
 
-- Show adjustment controls only when the resolved operational identity has `inventory.manage`.
-- A user with `inventory.view` but without `inventory.manage` must still be able to inspect inventory, but must not be able to submit adjustments.
-- Enforce the exact permission again inside every adjustment server action, before forwarding the request.
-- Do not rely on hidden buttons or client-side permission checks as the authorization boundary.
-- Laravel remains the final authorization authority.
+### 5.1 Route paths
 
-The audit reports that STAFF and ADMIN currently hold both permissions. Still, use the effective permissions returned by Laravel for each operational identity rather than assuming every account has the same access.
+Add to `frontend/admin/lib/navigation/admin-route-paths.ts`, following the `ADMIN_PRODUCT_PATHS` precedent:
 
-Add tests for view-only and adjustment-authorized identities, including server-action denial.
+```ts
+export const ADMIN_REQUEST_PATHS = {
+  list: ADMIN_ROUTE_PATHS.requests,
+  detail: (requestId: string) => `${ADMIN_ROUTE_PATHS.requests}/${encodeURIComponent(requestId)}`,
+} as const;
+```
 
----
+`ADMIN_PROTECTED_MATCHERS` already covers `/requests(.*)`, and nested request routes are not navigation entries — keep them out of the navigation registry for the same reasons documented for products and categories.
 
-## 5. Replace the inventory navigation placeholder
+### 5.2 Navigation registry
 
-The current navigation entry marks Inventory as a placeholder planned for Phase 19.9.
+In `frontend/admin/lib/navigation/admin-navigation.ts`, remove `placeholder: true` and `plannedFor` from the `requests` entry and keep `permission: AdminPermissionName.REQUESTS_VIEW`. This is what retires the user-visible "Not yet implemented — Phase 19.10" wording (`adminRouteStatus`, `AdminRoutePlaceholder`). Do not change the entry's `id`, `href`, `group`, `icon` or label.
 
-Once the page is implemented:
+### 5.3 Pages
 
-- Convert Inventory into a real navigation link to `/inventory`.
-- Remove the placeholder treatment using the existing navigation metadata conventions.
-- Gate the entry using `inventory.view`.
-- Preserve all unrelated navigation entries and their existing phase ownership.
-- Update tests that intentionally assert the inventory placeholder state.
-- Do not change the global dashboard into an inventory analytics page.
+- `app/(protected)/requests/page.tsx` — the inbox (Server Component). Replace the `AdminRoutePlaceholder` body with the real list.
+- `app/(protected)/requests/[request]/page.tsx` — the detail (Server Component), mirroring the product detail page's `requireAdminRouteAccess(ROUTE)` → `attemptRequestRead` → `notFound()` shape.
 
-The overview must not gain fabricated inventory KPIs, revenue numbers, stock totals, charts, or operational metrics that the approved APIs do not provide.
+### 5.4 Module layout
 
----
+Follow the existing module conventions (one focused file per concern, no giant components):
 
-## 6. Product and variant labels without an API contract change
+- `lib/requests/request-api.ts` — REQ-004/REQ-005/REQ-006 calls through the shared transport, plus an `attemptRequestRead` outcome wrapper modelled on `inventory-api.ts`.
+- `lib/requests/request-resource.ts` — strict defensive parsers for the operational envelope (`RequestResourceError` on unreadable data: missing/non-array `data`, wrong types, unreadable attachment entries). Reject rather than reconstruct.
+- `lib/requests/request-query.ts` — the filter vocabulary, URL-state parsing/serialization, page reset on filter change, and the request-query serializer. Never emit an unknown parameter.
+- `lib/requests/request-presentation.ts` — status labels, quantity/dimension/date/size formatting, contact precedence, reference display.
+- `lib/requests/request-mutations.ts` — the dependency-free shared vocabulary: `RequestStatusValue`, allowed transitions, `MAX_STAFF_NOTES`, outcome types and safe user-facing messages.
+- `lib/requests/request-actions.ts` — `"use server"` actions (`updateRequestAction`, and a read helper if needed). Each repeats `requireAdminRouteAccess` + the exact permission, validates the payload shape, calls Laravel, and revalidates the list and detail paths.
+- `components/requests/*` — list filters, table, pagination, failure state, detail view, operational form, attachment panel.
 
-This is the main data-presentation challenge.
+### 5.5 README
 
-The inventory resource exposes opaque identifiers such as product and variant IDs. Displaying only those IDs is not a satisfactory operational inventory interface.
+Update `frontend/admin/README.md`: move `/requests` out of the placeholder list, document the implemented module, its permission gates, the exact endpoints, and the C1/C2 contract additions. Keep the route→permission→API table accurate.
 
-**Do not change the frozen `InventoryResource` schema. Do not add product names, slugs, variant SKUs, or labels to the inventory API.**
+## 6. Request inbox (`/requests`)
 
-Use existing documented catalog read endpoints to resolve labels.
+Server-rendered, real API data only.
 
-The audit identifies the existing public variant endpoint:
+### 6.1 Filters
 
-`GET /api/v1/products/{product}/variants` (CAT-005)
+- Native GET form (the inventory-filter precedent), so the list stays server-rendered and link-shareable.
+- Controls: `search` (text), `request_status` (select: any / SUBMITTED / IN_REVIEW / CLOSED), `product_id` (exact `prod_…` text input with helper text — the API has no staff product-name search), `created_from` / `created_to` (date inputs).
+- Date inputs produce `YYYY-MM-DD`; convert `from` → `T00:00:00Z` and `to` → `T23:59:59Z` and label the bounds as **UTC** so the inclusive-boundary behaviour is explicit rather than surprising.
+- Reset `page` to 1 whenever any filter changes. Provide an explicit clear-filters control.
+- A filter control's state must reset per control (use a per-control `key`; a form-level `key` causes a React hydration mismatch — this was already hit in Phase 19.9).
 
-It returns variant information including SKU and name. Verify its exact response schema and the existing product-detail endpoint for product names before implementing.
+### 6.2 Table
 
-### Label resolution strategy
+Columns: **Reference** (`request_reference`, C2), **Submitted** (`created_at`), **Customer** (name + the submitted phone/email), **Furniture** (linked product name, or an explicit "Custom request" for `product_id: null`), **Quantity** (or an explicit "Not specified" for `null`), **Status**, **Attachment** (present/absent indicator only), **Action** (open detail).
 
-Implement a small, typed inventory-label resolver using the existing server-side transport.
+- Do not fetch attachment bytes for the list.
+- Do not render `user_id` as a customer link (G9).
+- The row action links to `ADMIN_REQUEST_PATHS.detail(id)` using the opaque `req_…` id.
 
-Requirements:
+### 6.3 Pagination
 
-1. Load the paginated inventory records first.
-2. Extract the distinct product IDs from the returned page.
-3. Deduplicate product-detail and variant-list requests by product ID.
-4. Resolve each unique product's name using the existing documented product-detail endpoint.
-5. Resolve its variants using CAT-005, then match each inventory row's `variant_id` to the returned variant data.
-6. Do not make duplicate requests for multiple inventory rows belonging to the same product.
-7. Avoid one request per inventory row.
-8. Bound parallel catalog requests to a reasonable concurrency limit.
-9. Reuse results within the current server render/request where practical.
-10. Do not introduce a new backend endpoint, new database join, persistent label database, or undocumented query parameter.
-11. Do not cache private inventory records in a shared cache.
-12. Do not silently reinterpret a failed label lookup as an inventory failure if the inventory request itself succeeded.
+Use the documented `meta.pagination` and preserve every active filter in the page links (the inventory-pagination precedent). Never fabricate a page count.
 
-The expected seeded inventory is currently small, but the implementation should still deduplicate requests and avoid unbounded concurrency.
+### 6.4 States
 
-### Label fallback behavior
+Distinct, accessible loading, empty and failure states:
 
-If product or variant metadata cannot be resolved:
+- Empty (no requests, and no filters) → "No requests have been submitted."
+- Empty (filters active) → "No requests match these filters." plus the clear action.
+- Failure → the existing failure-state component with the mapped reason; **an unreadable response is `invalid` (rejected parsing), not `unavailable`** (the F16 lesson).
+- A failed request must never render as an empty list.
 
-- Keep the inventory record visible.
-- Show a clear, non-misleading fallback such as “Product details unavailable” or “Variant details unavailable”, with the relevant opaque ID available for troubleshooting.
-- Do not invent product names, SKUs, or variant labels.
-- Do not fail the entire inventory page because one catalog lookup failed.
-- Do not silently display an opaque ID as if it were a human-readable product name.
-- Make the fallback accessible and visually restrained.
+## 7. Request detail (`/requests/{request}`)
 
-Use the verified nullability and ownership semantics from the resource schemas. Do not assume every inventory record has a non-null variant if the contract permits otherwise.
+Present the authoritative REQ-005 record:
 
-### Product and variant filters
+- **Header**: `request_reference` as the page title with the opaque `req_…` id as secondary technical context; current status; submitted and last-updated timestamps.
+- **Customer**: `name`, `phone`, `email`. Null values render as an explicit "Not provided" — never a blank cell, a dash without a legend, or a fabricated value.
+- **Furniture**: linked `product.name` (and slug) when `product` is present; an explicit "Custom / general request" when `product_id` is `null`. **Link to `/products/{product_id}` only when the identity also holds `products.manage`**; otherwise render the name as plain text (a request-only operator must not be sent to a route they cannot open).
+- **Specification**: `quantity` (distinguish `null` = unspecified from a number), `dimensions` (`length`/`width`/`height`/`unit`, showing the canonical `cm`; absent measurements shown as unspecified), `material`, `color`, `notes`.
+- **Attachment panel** (§8.6).
+- **Operational form** (§8.3).
 
-The inventory API supports product, variant, and warehouse-location filters, but the frontend must use the exact documented parameter names and expected values.
+Do not render a status timeline: the request API exposes no per-request status history, and inventing one from `updated_at` would be fabricated data. Audit visibility is a later phase (§10).
 
-Provide usable filters while respecting those semantics.
+## 8. Lifecycle actions and attachment inspection
 
-- Prefer labeled product and variant selectors only when the available catalog endpoints provide appropriate options consistent with the actual inventory data.
-- If a reliable option set is not available, use clearly labeled exact-identifier inputs with helper text explaining that the backend filter matches an identifier, not an arbitrary product-name search.
-- Do not pretend that a local page of paginated rows represents every available filter option.
-- Do not claim that a filter searches product names unless a verified API or deliberate client-side interaction actually implements that behavior.
-- Do not add a new API endpoint just to populate a dropdown.
-- Use the actual warehouse-location values from the contract or current data. Do not invent warehouse names or silently map unknown values to a made-up location.
+### 8.1 Status control
 
-Keep filtering server-side and preserve filters in pagination/navigation using the existing admin conventions.
+- A select offering the current status plus only the transitions the state machine allows (`SUBMITTED → IN_REVIEW, CLOSED`; `IN_REVIEW → CLOSED`).
+- Provide a "no change" option so notes can be updated without forcing a status transition.
+- When `request_status` is `CLOSED`, render the status read-only with an explicit "This request is closed." statement and offer no further transition (there is no reopen in V1).
+- The UI's allowed set is guidance only; Laravel validates the transition authoritatively.
 
-Document the chosen label and filter strategy, including its request-count behavior and fallback semantics, in the phase report.
+### 8.2 Internal notes control
 
----
+- A textarea with a persistent accessible label, helper text explaining the replace/clear semantics, and a 5000-character limit.
+- Submit `staff_internal_notes` **only when the value differs from the loaded value**; omitting it preserves the stored note.
+- Clearing must send `null` (or a whitespace-only string) deliberately — never send `""` merely because the operator did not type anything.
 
-## 7. Inventory list and detail experience
+### 8.3 Submission behaviour
 
-Implement a clear, responsive operational table using the existing reusable `DataTable` and other admin primitives where appropriate.
+- Send only changed fields from the allow-list, never both if only one changed, never an empty body, never an unknown field.
+- Disable the submit control while in flight; prevent double submission client-side.
+- On success: revalidate the detail and the list from authoritative state (do not trust the mutation response shape), show a confirmation, and reset the form to the returned values.
+- On failure, map and surface the exact outcome:
+  - `409 CONFLICT` → "This request was changed by someone else. Reload to see the current status." No automatic retry.
+  - `422` → surface the field-level validation error.
+  - `403` → the permission-denied treatment.
+  - `401` → the session treatment (`session`), no data rendered.
+  - `429` → the throttled treatment, including `Retry-After` where present.
+  - network/unknown → the unavailable treatment.
+- No failure is ever reported as success.
 
-The page should include:
+### 8.4 Internal-notes gating (resolves G3)
 
-- Page heading and concise explanatory text.
-- Supported product, variant, and warehouse-location filters.
-- Current filter state.
-- Server-side pagination.
-- A loading state.
-- A distinct empty state.
-- A recoverable API error state with a safe retry path.
-- Human-readable product and variant labels when resolvable.
-- Warehouse location using the actual backend value or a verified label.
-- The authoritative quantity fields from `InventoryResource`.
-- The update timestamp in the existing date/time presentation style.
-- A clear action to inspect the inventory record or open the adjustment flow, according to the user's permissions.
+- The backend populates `staff_internal_notes` only when the actor holds `requests.manage`.
+- With `requests.manage`: show the stored note, or an explicit "No internal notes recorded."
+- Without `requests.manage`: show a distinct "Internal notes are not available with your permissions." — never "No internal notes recorded", which would assert an empty state the API did not confirm.
+- The edit control renders only with `requests.manage`.
 
-Do not add unsupported sorting, export, bulk adjustments, inventory creation, or variant creation.
+### 8.5 Customer identity (G9)
 
-### Quantity presentation
+- Render the request's own contact snapshot only.
+- Do not resolve, link to, or fetch a customer profile; the operational request resource exposes `user_id` as an opaque `user_…` value and STAFF has no `users.manage_authorized`.
+- Render `user_id: null` as "Anonymous submission".
+- Never treat `user_id` as an authorization signal.
 
-- Display actual quantity values returned by Laravel.
-- Do not calculate an alternative stock figure and present it as authoritative.
-- Preserve the distinction between physical quantity, reserved quantity, and available quantity where those fields exist.
-- Render zero values as zero, not as blank or unavailable.
-- Format timestamps using the established project convention.
-- Avoid inventing a warehouse display name or unit of measurement.
+### 8.6 Attachment panel (C1, G11)
 
-The audit notes that `reserved_quantity` is currently expected to read zero because cart and checkout reservations are deferred. Display the real returned value without pretending that reservation workflows are active.
+- Zero attachments → "No attachment was submitted with this request."
+- One attachment → `filename`, a readable content-type label, and the formatted size in bytes/KiB/MiB.
+- When `attachments[].url` is present → an "Open attachment" link with `target="_blank"` and `rel="noopener noreferrer"`.
+- When an attachment exists but `url` is `null` → an explicit "Preview or download is not available for this attachment." (defensive; should not occur for a request attachment after C1).
+- Never render `storage_key`, `storage_disk`, a numeric id, or a filesystem path.
+- Never construct a download URL from the attachment id, and never proxy or re-stream the bytes through an admin route handler.
+- Add a short, honest statement that opened links are time-limited and that reloading the request refreshes them. Do not attempt client-side expiry detection.
+- **Inline preview is deliberately out of scope** (§9.2). No `next/image` remote host, no new image allow-list entry, no `CATALOG_MEDIA_BASE_URL` change.
 
-Do not change the customer-facing catalog or Flutter app as part of this phase.
+## 9. Design, security and boundary decisions
 
----
+### 9.1 Design system
 
-## 8. Stock-adjustment form
+Use the existing canonical tokens and components (`DataTable`, `PageHeader`, `PageContainer`, `EmptyState`, `ErrorState`, `LoadingState`, form primitives, `StatusIndicator`). Do not introduce a new design system, dependency, or dashboard-style analytics.
 
-Implement an accessible adjustment dialog or panel using the established admin form components.
+### 9.2 Download disposition
 
-Inspect the actual INV-003 request schema and reason enum before creating the form. The backend contract is authoritative.
+`REQ-008` serves with `Content-Disposition: attachment`. This is deliberate: it avoids inline PDF rendering on a privileged origin, keeps the admin free of any remote image allow-list change, and makes the security posture trivial to reason about. The operator downloads and opens the file locally.
 
-The audit confirms these business rules:
+### 9.3 Attachment link exposure
 
-- `STOCK_RECEIPT` requires a positive quantity change.
-- `RETURN` requires a positive quantity change.
-- `DAMAGE` requires a negative quantity change.
-- The resulting quantity cannot fall below `reserved_quantity`.
-- Quantity arithmetic is protected against 32-bit overflow.
-- Adjustments are transactional and audited.
-- The backend enforces reason-to-sign consistency.
+Signed URLs are bearer credentials. The response is `private, no-store`; the TTL bounds leakage; the link is opened in a new tab with `rel="noopener noreferrer"`. Do not log, persist, or otherwise retain a signed URL beyond the rendered page.
 
-Implement the frontend so these rules are understandable before submission, while keeping Laravel authoritative.
+### 9.4 No invented reply channel (G4)
 
-### Form behavior
+Do not add "Reply", "Send email", "Mark contacted", "Convert to order", or "Quote" controls. There is no API for them. Render the contact details for manual follow-up and record the limitation.
 
-- Identify the product, variant, and warehouse location being adjusted.
-- Display the latest authoritative inventory snapshot fetched through INV-002.
-- Show current quantity and other relevant returned quantity fields.
-- Use the exact accepted reason values from the contract.
-- Use the exact adjustment payload fields expected by INV-003.
-- Provide a clear quantity-change input with correct sign behavior.
-- If the UI accepts an absolute quantity and derives the sign from the reason, make that mapping explicit and deterministic.
-- Do not permit a reason/sign combination known to be invalid.
-- Do not silently change a user's intended sign.
-- Reject zero, non-integer, out-of-range, or otherwise invalid values in the UI whenever the contract requires that.
-- Prevent unsafe client-side overflow when previewing the resulting quantity.
-- If the proposed result would be below `reserved_quantity`, show a clear validation message and block submission.
-- Treat this preview as advisory; Laravel must still perform the authoritative validation and transaction.
-- Include any notes or other fields only if they exist in the verified request schema.
-- Preserve field-level validation errors returned by Laravel.
-- Disable duplicate submissions while an operation is in progress.
-- Do not discard form input after an ordinary validation failure.
-- Do not report success before the backend confirms it.
+### 9.5 No optimistic concurrency
 
-Use accessible labels, keyboard-operable controls, visible focus states, and actionable error messages.
+Internal notes are last-write-wins at the API (G6). Do not implement ETag/`If-Match`, do not send an assumed version, and do not claim conflict detection for notes. Only the status transition can legitimately conflict (`409`).
 
-### Adjustment result
+### 9.6 No fabricated data anywhere
 
-After a confirmed success:
+No dashboards, no metrics, no request counts, no response-time figures, no status timeline, no placeholder rows, no seeded fake requests.
 
-- Show a concise success confirmation.
-- Refresh the affected inventory record and list.
-- Update displayed quantities from authoritative API data.
-- Keep the active filter and pagination context where possible.
-- Reset the form and idempotency state for a new logical adjustment.
-- Do not create local-only adjustment records or invent audit entries.
-
-On a `422`, show actionable validation feedback.
-
-On a `403`, show the existing permission-denial treatment.
-
-On a `429`, communicate that the request is rate-limited and follow existing retry guidance.
-
-On a `409`, follow the documented duplicate-intent semantics. Never automatically generate a new key and repeat a possibly completed adjustment.
-
-On a timeout or network failure, treat the outcome as potentially uncertain. Preserve the same key and payload if offering a retry.
-
-Do not automatically retry a stock mutation with a new idempotency key.
-
----
-
-## 9. Audit trail and scope boundaries
-
-INV-003 already records audited before/after adjustment information.
-
-Do not implement a new audit system. Do not add a frontend-generated audit event or attempt to write directly to the audit-log endpoint.
-
-The existing `GET /api/v1/admin/audit-logs` (ADM-007) remains part of the separate audit-log roadmap phase. Phase 19.9 only needs to use the existing inventory adjustment workflow.
-
-### Explicitly out of scope
+## 10. Explicitly out of scope
 
 Do not implement:
 
-- New Laravel inventory endpoints or schema changes.
-- API contract or OpenAPI modifications.
-- Inventory creation or deletion.
-- Variant creation or editing.
-- Product creation or editing.
-- Changes to catalog seeders or fixture data.
-- Changes to published product states or product types.
-- Customer checkout, cart, orders, payments, or reservation workflows.
-- A new audit-log screen.
-- Bulk stock adjustment.
-- Unsupported inventory sorting or export.
-- A new API proxy, route handler, or direct database access path.
-- Fake inventory records, metrics, quantities, products, variants, or warehouse locations.
+- Any Laravel/schema/business-rule change beyond §2.2 (`C1`) and §2.3 (`C2`).
+- Any API contract or OpenAPI change beyond §2.4 (`C3`).
+- Enquiry management or `ENQ-008` (Phase 19.11).
+- Customer-facing `request_reference` exposure or any change to `frontend/web` (owner decision `D2`).
+- Request → Order conversion, quoting, pricing, invoicing, or payment.
+- Customer reply/notification sending.
+- Admin-side attachment upload, deletion, replacement, or inline preview.
+- Bulk actions, export, or any unsupported sorting.
+- Customer-profile resolution, linking, editing, or impersonation.
+- Staff management, onboarding, invitations, approvals, or role editing (F5/F11 — owner-excluded).
+- A new admin API proxy, route handler, or direct database/filesystem access path.
+- Fake request data, metrics, or states.
 - Unrelated changes to other admin pages.
 
-The audit identifies an existing request-first-release concern: published `IN_STOCK` products conflict with the separate demo-fixture removal plan. Do not resolve that conflict within Phase 19.9. Record it as an existing product/catalog decision requiring separate owner action.
+## 11. Testing requirements
 
-Likewise, the fact that variants cannot currently be created means the adjustment interface must operate on inventory records that actually exist. Do not suggest that the UI can create inventory for a new variant.
+Extend the existing admin test suite with deterministic tests. Do not require live Clerk credentials or a real API for ordinary automated tests. Do not weaken tests to make the implementation pass. Add every new test file to the explicit list in `frontend/admin/package.json`.
 
----
+### 11.1 Transport tests
 
-## 10. Testing requirements
+- REQ-004/REQ-005/REQ-006 are called with the exact documented paths and methods.
+- Only allow-listed query parameters and body fields are emitted; unknown parameters are never sent.
+- `PATCH` sends `request_status` and/or `staff_internal_notes` only, only when changed, and never an empty body.
+- Existing authorization and `Accept` headers remain intact; arbitrary callers cannot override security-sensitive headers.
+- Error-envelope handling is unchanged.
 
-Extend the existing admin test suite with deterministic tests. Do not require live Clerk credentials or a production API for ordinary automated testing.
+### 11.2 Authorization tests
 
-### Transport tests
+- `requests.view` opens the inbox and the detail.
+- Without `requests.view` the routes are denied.
+- A view-only identity sees no usable status/notes control.
+- A view-only identity cannot invoke the update server action successfully.
+- `requests.manage` enables the status and notes workflow.
+- The update action repeats the exact permission check.
+- Permission checks use effective permission data, not a role shortcut.
+- ADMIN receives no hardcoded bypass.
+- `REQUESTS_MANAGE` resolves to `requests.manage`.
 
-- Existing API calls remain unchanged when no idempotency key is supplied.
-- INV-003 includes the exact `Idempotency-Key` header.
-- The key is not placed in the JSON body.
-- Existing `Accept` and bearer authorization headers remain intact.
-- Arbitrary callers cannot override security-sensitive headers.
-- Request serialization and error-envelope handling remain unchanged.
-- A valid UUID is used for each new logical adjustment.
+### 11.3 Listing and filtering tests
 
-### Authorization tests
-
-- A user with `inventory.view` can open the inventory page.
-- A user without `inventory.view` is denied.
-- A view-only user sees no usable adjustment action.
-- A view-only user cannot invoke the adjustment server action successfully.
-- A user with `inventory.manage` can access the adjustment workflow.
-- Permission checks use Laravel's effective permission data, not a hardcoded role shortcut.
-- ADMIN does not receive an implicit permission bypass.
-
-### Listing and filtering tests
-
-- The correct `/api/v1/inventory` endpoint is used.
-- The exact documented pagination parameters and response envelope are handled.
-- The backend's deterministic order is preserved.
-- Product, variant, and warehouse filters serialize using the actual contract.
-- Filter changes reset pagination appropriately.
-- Pagination preserves current filters.
-- Empty data differs from a failed API request.
-- A malformed response or unexpected network failure does not become a false empty state.
+- The exact documented filters serialize correctly, including the UTC date-boundary conversion.
 - Unknown query parameters are never emitted.
+- Filter changes reset pagination; pagination preserves filters.
+- The backend's fixed order is preserved (no client-side reordering presented as authoritative).
+- Empty data is distinguishable from a failed request.
+- An unreadable/malformed response renders `invalid`, not an empty list and not `unavailable`.
 
-### Product and variant label tests
+### 11.4 Detail tests
 
-- Product names are resolved using the verified product-detail endpoint.
-- Variant names/SKUs are resolved using CAT-005.
-- Duplicate product IDs result in deduplicated catalog requests.
-- Requests are bounded rather than launched without a concurrency limit.
-- A failed product lookup does not hide otherwise valid inventory.
-- A failed variant lookup does not hide otherwise valid inventory.
-- Fallback labels never invent product or variant data.
-- The implementation does not assume that the current inventory page contains every possible filter option.
-- No inventory API contract changes are made.
+- A `404` renders `notFound()`.
+- Unreadable payloads are rejected, not reconstructed.
+- Null fields render as explicit "Not provided"/"Not specified" rather than blanks or zeros.
+- The product link renders only with `products.manage`; otherwise the name is plain text.
+- `user_id: null` renders as "Anonymous submission"; a non-null `user_id` is never linked or resolved.
 
-### Adjustment tests
+### 11.5 Lifecycle tests
 
-- The adjustment form uses the exact INV-003 request schema.
-- Only documented reason values are offered.
-- `STOCK_RECEIPT` and `RETURN` produce positive quantity changes.
-- `DAMAGE` produces a negative quantity change.
-- Invalid sign/reason combinations are rejected before submission.
-- Zero, non-integer, and out-of-range inputs are handled safely according to the contract.
-- The below-reserved-quantity guard is enforced in the UI.
-- The backend remains authoritative if the inventory changes after the form opens.
-- Double submission is prevented.
-- A new logical adjustment receives a new key.
-- A retry of the same uncertain intent reuses the original key and exact payload.
-- Changing the payload does not reuse the previous key.
-- A successful adjustment refreshes authoritative inventory data.
-- A `422`, `403`, `409`, `429`, or network failure is handled safely.
-- No failure is falsely reported as success.
-- Existing dashboard and permission behavior remains intact.
+- Only the allowed transition targets are offered for each current status; `CLOSED` offers none.
+- Notes are sent only when changed; clearing sends `null`, not `""`.
+- A no-op submit is impossible.
+- `409`, `422`, `403`, `429`, `401` and network failures are each handled and surfaced safely.
+- No automatic retry occurs after any failure.
+- Success revalidates authoritative state rather than echoing the response.
+- No reply/quote/convert control exists.
+- No status timeline is rendered.
 
-Use the existing testing stack and patterns. Do not weaken tests to make the new implementation pass.
+### 11.6 Attachment tests
 
----
+- Zero/one attachment states render correctly.
+- A present `url` renders an accessible "Open attachment" link with `target="_blank"` and `rel="noopener noreferrer"`.
+- A `null` `url` with an attachment present renders the explicit unavailable message.
+- Storage keys, disks and numeric ids are never rendered.
+- No download URL is constructed client-side from an identifier.
+- The panel performs no byte fetch, and the list performs no attachment fetch.
 
-## 11. Accessibility and design system
+### 11.7 Backend tests (required by §2)
 
-Use the existing canonical design tokens and reusable components.
+- `REQ-008` returns the file bytes for a valid signed URL (valid request/parent pair).
+- An unsigned or tampered URL is rejected (`403`).
+- An expired URL is rejected (`403`).
+- A signed URL whose attachment belongs to another request is rejected `404`.
+- An unknown request or attachment identifier is `404` without leaking internals.
+- The response sets the stored content type, `nosniff`, `private, no-store`, and an attachment disposition; no storage disk, key, or path appears anywhere in the response or the URL path.
+- `AttachmentResource` exposes a non-null signed `url` for a request attachment and `null` for a parent type with no delivery route.
+- `OperationalFurnitureRequestResource` exposes `request_reference`; `FurnitureRequestResource` still does not.
+- Update `FurnitureRequestAttachmentApiTest` (currently asserts `url === null` and the exact key set) and any OpenAPI contract test affected by C1–C3.
+- Regression: the existing `OperationalFurnitureRequestApiTest`, `FurnitureRequestResourceTest`, `ScopedAttachmentUploadApiTest`, `SecurityRequestBoundaryTest`, `OpenApiRequestContractTest` and `OpenApiAttachmentContractTest` still pass.
 
-- Prefer the existing `DataTable`, `PageHeader`, `EmptyState`, `ErrorState`, `LoadingState`, form primitives, and dialog patterns where appropriate.
-- Use semantic headings, labels, tables, buttons, and links.
-- Ensure all filters and adjustment fields have persistent accessible labels.
-- Provide visible keyboard focus.
-- Do not rely on color alone for stock state, validation, or permission feedback.
-- Keep action targets usable on narrow viewports.
-- Ensure loading, errors, empty states, and successful mutations are communicated accessibly.
-- Avoid excessive cards, badges, or decorative visual elements.
-- Keep the interface operational and restrained rather than adding dashboard-style marketing or analytics.
-- Follow the project's existing responsive and reduced-motion conventions.
+## 12. Accessibility and design system
 
-Do not introduce a new design system or dependency unless an audited requirement cannot be satisfied with the current stack.
+- Semantic headings, labels, tables, list/link semantics and buttons; the table uses `th[scope="col"]`.
+- Every filter, form field and action has a persistent accessible label — placeholder text is not a label.
+- Visible keyboard focus; keyboard-operable filters, links and forms.
+- Status, permission denial, validation and failure are never conveyed by color alone.
+- The loading state announces itself (the `role="status"` precedent from 19.9).
+- Action targets remain usable on narrow viewports; the table scrolls rather than breaking the layout.
+- Follow the project's responsive and reduced-motion conventions.
+- Keep the interface operational and restrained.
 
----
+## 13. Quality gates
 
-## 12. Quality gates
-
-Run the established frontend admin quality gates:
+Frontend (required):
 
 - `npm run lint`
 - `npm run typecheck`
@@ -508,82 +472,102 @@ Run the established frontend admin quality gates:
 - `npm run build`
 - `git diff --check`
 
+Backend (required because §2 changes Laravel):
+
+- `vendor/bin/pint --dirty --format agent`
+- `vendor/bin/phpstan analyse`
+- the relevant `php artisan test --compact` filters (request/attachment/OpenAPI suites), plus `phpunit.mysql.xml` where a real-engine suite applies
+
 Inspect the final diff for:
 
-- Unrelated file changes.
-- Accidental backend or API contract changes.
-- Permission bypasses.
-- Direct browser-side inventory mutations.
-- Missing idempotency headers.
-- Unstable idempotency keys on retries.
-- Unbounded product/variant lookup requests.
-- False empty states.
-- Invented labels or quantities.
-- Unhandled adjustment errors.
-- Secret or bearer-token exposure.
-- Changes to the existing product/catalog fixture state.
+- Backend changes beyond C1/C2/C3.
+- Any customer-contract or `frontend/web` change.
+- Permission bypasses or role-only authorization.
+- Sentinel `url` construction client-side, or storage internals rendered.
+- Unknown fields or empty bodies sent to REQ-006.
+- Missing `requests.manage` checks in the server action.
+- False empty states or unreadable responses treated as outages.
+- Invented reply/metrics/timeline data.
+- Secret, bearer-token, signed-URL, or storage-key exposure.
+- Changes to product/catalog fixtures or published product states.
 
 If a gate fails, report the exact command and failure. Do not claim it passed unless it actually ran.
 
-### Live verification
+### 13.1 Live verification
 
-If a usable authenticated operator session and development backend are available, verify:
+Live verification is limited to an ADMIN identity. STAFF onboarding is owner-excluded (F5/F11), so a real STAFF-only session cannot be created and must not be faked:
 
-1. An authorized operator can open Inventory.
-2. The inventory table displays real records.
-3. Product and variant labels resolve correctly, or safe fallbacks appear.
-4. Filters and pagination work against the actual API.
-5. A view-only identity cannot adjust stock.
-6. An authorized operator can open an inventory record and see its current values.
-7. A valid test adjustment succeeds and updates the UI from authoritative API data.
-8. A retry of the same intent does not apply the stock change twice.
-9. Invalid reason/sign and below-reserved adjustments are rejected safely.
-10. A failed or uncertain request does not cause a blind new adjustment.
-11. Narrow-viewport and keyboard interactions remain usable.
+- An authorized operator can open `/requests` and see real records.
+- Filters, search (including by reference) and pagination work against the real API.
+- A detail page opens from the inbox and from a deep link.
+- A valid status transition succeeds and refreshes from authoritative data.
+- An internal note can be added, replaced and cleared.
+- An attachment can be opened through the signed link, and the link fails after its TTL.
+- An invalid transition is rejected with the `409` message.
+- Narrow-viewport and keyboard interactions remain usable.
 
-Use an appropriate development record and a small, deliberate adjustment. Do not modify production stock merely to test the interface.
+Use a development request record. Do not modify production data merely to test the interface. If live verification is unavailable, report that fact explicitly; automated tests and mocked responses do not establish live integration.
 
-If live testing is unavailable, report that fact explicitly. Automated tests and mocked responses do not establish successful live integration.
+## 14. Risks and constraints to record
 
----
+### 14.1 Live-ready but not live-proven
 
-## 13. Completion report and roadmap
+The request workflow is complete in Laravel and unit/feature-tested, but no STAFF session can be provisioned. Record the ADMIN-only live verification and the residual risk.
 
-Create `phases/phase-19.9-completion.md` using the established completion-report conventions.
+### 14.2 Contract debt recorded, not hidden
 
-Record:
+Record G4 (no reply channel), G6 (notes last-write-wins), G9 (no customer resolution), G11 (one attachment), G12 (notification reach) in `docs/findings-and-limitations-register.md` with a disposition, so they are visible rather than implied.
+
+### 14.3 Owner-excluded
+
+Do not attempt F5/F11 (staff endpoints `501`, staff onboarding). This phase must not create, invite, approve, or promote a STAFF identity.
+
+### 14.4 Request-only release boundary
+
+This phase must not enable cart/checkout/order/payment behavior. No published-product or product-type state is changed here.
+
+## 15. Completion report, owner decisions and roadmap
+
+Create `phases/phase-19.10-completion.md` using the established completion-report conventions. Record:
 
 1. Final status: `PASS`, `PARTIAL`, or `BLOCKED`.
 2. Files changed and the purpose of each significant change.
-3. INV-001, INV-002, and INV-003 integration details.
-4. The exact transport change used to send `Idempotency-Key`.
-5. How idempotency keys are generated, retained on retries, and reset for new intents.
-6. How `inventory.view` and `inventory.manage` are enforced.
-7. The product/variant label-resolution strategy, deduplication, concurrency limits, and fallback behavior.
-8. Pagination and filter behavior.
-9. Adjustment validation, sign rules, and below-reserved handling.
-10. Automated test counts and all quality-gate results.
-11. Whether the real authenticated inventory workflow was tested.
-12. Any unresolved live-verification limitations.
-13. The existing product-fixture/request-first-release concern, without changing it.
-14. Remaining limitations and owner actions.
+3. REQ-004/REQ-005/REQ-006 integration details and the exact filter/body allow-lists used.
+4. The C1 delivery mechanism: route, signed-URL TTL, headers, and how parent binding and expiry are enforced.
+5. The C2 `request_reference` exposure and confirmation that the customer representation is unchanged.
+6. The C3 documentation reconciliation, including the `§26.16` `sort` correction.
+7. How `requests.view` and `requests.manage` are each enforced, including in the server action.
+8. The audit-gap disposition table (§1.2) with the final outcome per item.
+9. Automated test counts, backend suite results, and all quality-gate results.
+10. Whether the real authenticated request workflow was tested, and with which role.
+11. Unresolved live-verification limitations (F5/F11) and the ADMIN-only verification.
+12. Remaining limitations and owner actions.
+13. Proof that no unrelated backend, contract, customer-website, or fixture change was introduced.
 
 Update the approved roadmap status according to repository instructions, preserving owner-managed changes. Do not mark a live smoke test as complete unless it was performed.
 
+### Owner decisions referenced
+
+- **D1 — Attachment delivery (APPROVED 2026-10-17).** Owner approved a contract change for private attachments if the phase requires it to PASS; §2.1 establishes the requirement. Record the approval in `ADR/API-FRZ-004`. If withdrawn, fall back to a metadata-only panel and report `PARTIAL`.
+- **D2 — Customer-facing `request_reference` (OPEN).** The website acknowledgement tries to render a reference the customer contract withholds, and the customer's only currently exposed identifier (`req_…`) is not staff-searchable. Recommendation: expose `request_reference` in the customer request representation **and** `CustomerFurnitureRequestSummary` in a separate, explicitly approved customer-contract change (which also repairs the website line with no website code change), or remove the dead reference line from `frontend/web`. Not part of this phase.
+- **D3 — `§26.16` `sort` mention (APPROVED as a doc correction).** Treated as a documentation slip; the implementation is authoritative; no code change.
+- **D4 — Staff-related gaps F5/F11 (OWNER-EXCLUDED).** Not addressed here.
+
 ### Acceptance criteria
 
-Phase 19.9 is complete when:
+Phase 19.10 is complete when:
 
-- The inventory placeholder is replaced by a real, permission-aware admin workflow.
-- INV-001 lists and filters real paginated inventory records.
-- INV-002 provides authoritative record details for inspection and adjustment.
-- INV-003 submits valid adjustments using a UUID `Idempotency-Key`.
-- The API transport change preserves all existing requests.
-- A repeated or uncertain request cannot casually become a second stock adjustment.
-- `inventory.view` and `inventory.manage` are checked independently, including in server actions.
-- Product and variant labels are resolved from existing catalog endpoints without changing the frozen inventory contract or making duplicate requests per row.
-- The UI follows the real backend adjustment rules and refreshes from authoritative state.
-- No fake inventory data or unrelated commerce features are introduced.
-- Tests and quality gates pass, and the completion report distinguishes automated verification from live authenticated verification.
+- The `/requests` placeholder is replaced by a real, permission-aware operational workflow, and the navigation entry no longer advertises a future phase.
+- REQ-004 lists and filters real paginated requests using exactly the documented parameters, order and envelope.
+- REQ-005 provides the authoritative request record, with nulls rendered explicitly rather than invented.
+- REQ-006 updates only `request_status` and/or a changed `staff_internal_notes`, follows the real transition rules, and surfaces `409`/`422`/`403`/`429`/`401` without auto-retry or false success.
+- `requests.view` and `requests.manage` are enforced independently, server-side, including in the server action.
+- An authorized operator can open the attachment submitted with a request through a time-limited, authorized URL — without filesystem or database access — and expired or tampered links fail closed.
+- Internal-notes rendering distinguishes "not authorized" from "empty" (G3), and the customer representation is unchanged.
+- Reference search is verifiable from the inbox because `request_reference` is exposed operationally (C2).
+- The approved additive contract changes are documented in `api-contract.md`, `api-resources.md`, `api-conventions.md`, `api-examples.md`, `openapi.yaml` and `docs/decisions.md` (`ADR/API-FRZ-004`), and are classified non-breaking.
+- No fake request data, metrics, timelines, reply channels, or unsupported operations are introduced.
+- Customer-facing applications, other admin modules, staff onboarding and published-product state are untouched.
+- Every quality gate in §13 passes, and the completion report distinguishes automated verification from live authenticated verification.
 
-Begin with the audit, then implement the smallest complete, production-conscious change set. Do not modify the Laravel backend or widen the API contract.
+Begin with the audit, then implement the smallest complete, production-conscious change set. Make only the approved backend changes in §2; leave every other Laravel, contract and customer-frontend behaviour exactly as it is.

@@ -3479,6 +3479,37 @@ The application reuses the existing Clerk instance for identity and session hand
 
 ---
 
+### ADR/API-FRZ-004 — Post-Freeze Request Contract Extension: Private Attachment Delivery (`REQ-008`) and Operational `request_reference`
+
+**Change Request:** Add one endpoint and two additive representation fields so the admin application can complete Made-to-Order Request management (Phase 19.10): `REQ-008` `GET /api/v1/requests/{request}/attachments/{attachment}`, which streams a private request attachment through a temporary signed URL; `request_reference` added to `OperationalFurnitureRequestResource`; and a real temporary signed `url` populated on `AttachmentResource` for request attachments. Raised under the formal Post-Freeze Change Process of `ADR/API-FRZ-001`. The owner approved private attachment delivery (decision `D1`, 2026-10-17) on the condition that the phase requires it to PASS; Phase 19.10 does, because the roadmap names "private attachments" as a deliverable and `AGENTS.md §14` treats a metadata-only panel as a demo rather than an operational workflow.
+
+**Impact Analysis:**
+- **Additive only.** No existing path, method, request field, response field, enum, status code, authorization rule or business-state transition changes. `REQ-001`..`REQ-007` request/response semantics are untouched. Conforming clients that never follow an attachment URL are unaffected.
+- `AttachmentResource.url` was typed `string | null` in the frozen contract (`api-resources.md §5.4`) and documented for `REQ-007` as "no permanent public URL, `url` temporary signed". `REQ-008` completes that documented intent rather than inventing new behaviour; the field becomes populated for request attachments and stays `null` where no delivery route exists.
+- The new route is `api`-group + `signed` + `throttle:authenticated-read`. The signature is the only credential, so no bearer token is required; the signature binds the `{request}`/`{attachment}` pair, so a mismatch is masked `404` and an invalid/expired signature is `403`. The endpoint reads and streams only — it creates, mutates and deletes nothing.
+- `request_reference` is added to the **operational** representation only. `FurnitureRequestResource` and `CustomerFurnitureRequestSummary` remain unchanged, and `FurnitureRequestResourceTest::test_internal_and_schema_only_fields_are_absent` continues to assert its absence from the customer representation. Customer-facing exposure is a separate open decision (`D2`).
+- Documentation reconciliation (`C3`): `api-contract.md §26.16` previously mentioned `sort`/`sort_direction`, which `api-conventions.md §26.13`, `openapi.yaml` and the implementation never defined or accepted. The implementation is authoritative; the prose is corrected. No code change.
+
+**Classification:** **Additive extension** (one new endpoint plus two new nullable/populated response fields) plus a **Non-Breaking documentation correction**. No removal, rename or narrowing of any documented client contract. Per `phases/api-breaking-change-policy.md §2`, adding a new endpoint and a response field is non-breaking.
+
+**Delivery mechanism:** `url` is generated with `URL::temporarySignedRoute` at a TTL of `config('attachments.download_url_ttl_minutes')` (default `15`, mirrored in `.env.example` beside `ATTACHMENTS_DISK`). Generation is gated on the route existing for the parent type, so enquiry attachments stay `null` until Phase 19.11 adds the mirror `ENQ-008` without reworking `AttachmentResource`. Downloads serve `Content-Disposition: attachment` deliberately (avoids inline PDF rendering on a privileged origin and keeps the admin free of remote image allow-list changes), with `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. The disk name and key are never serialized, logged, or placed in a response body or URL path.
+
+**Contract Review:** Reviewed against `phases/api-breaking-change-policy.md` and `AGENTS.md §7`. Contract prose, resources, conventions, examples, OpenAPI and the findings register are updated together. The excluded customer-facing `request_reference` exposure is recorded explicitly.
+
+**OpenAPI Update:** `docs/api/openapi.yaml` — new `REQ-008` path (`security: []`, `403`/`404`/`429`, no `401`), `AttachmentPath` parameter, `Attachment.url` description, and `request_reference` on `OperationalFurnitureRequest`.
+
+**Example Update:** `docs/api/api-examples.md §10.4` adds the signed-link request/response example; `api-contract.md §26.20` shows a populated `url`.
+
+**Verification:** `tests/Feature/FurnitureRequestAttachmentDeliveryApiTest.php` (valid/unsigned/tampered/expired, cross-request `404`, unknown-id masking, headers and no storage leakage, `url` null without a route), `tests/Feature/FurnitureRequestAttachmentApiTest.php` (populated `url`), `tests/Feature/OperationalFurnitureRequestApiTest.php` (`request_reference` in detail and list), `OpenApiRequestContractTest`/`OpenApiAttachmentContractTest`, plus the existing request/attachment/security regressions.
+
+**Approval:** Project owner (decision `D1`, 2026-10-17), scoped to Phase 19.10.
+
+**Reason:** Records the approved post-freeze request extension so `REQ-008`, the temporary-signed-URL rule, the operational-only `request_reference` and the `§26.16` documentation correction are documented and reviewable instead of drifting from the frozen V1 baseline.
+
+**Status:** Accepted (Additive / Non-Breaking) | **Date:** 2026-10-17 | **Affected:** `backend/laravel` (`routes/api.php`, `app/Http/Controllers/Api/V1/RequestController.php`, `app/Http/Resources/{AttachmentResource,OperationalFurnitureRequestResource}.php`, `config/attachments.php`, `.env.example`), `frontend/admin` (requests module), `docs/api/{api-contract.md,api-resources.md,api-conventions.md,api-examples.md,openapi.yaml}`, `docs/decisions.md`, `docs/findings-and-limitations-register.md`
+
+---
+
 ### ADR/BACKEND-058 — Product Image Object Removal Is Row-First With a Durable Retry Job
 
 **Decision:** `CAT-015` deletes the image **record** first — inside a transaction guarded by a `products` row lock and scoped to the resolved product — and only then removes the stored object using the record's persisted `file_path`. If the object store reports failure, the removal is dispatched to a durable retry job, `App\Jobs\DeleteProductImageObject` (carrying the `disk` and `objectKey`, `tries = 5`, escalating backoff), and the request still returns `204` because the authoritative record no longer exists.

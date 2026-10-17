@@ -225,6 +225,14 @@ Route::prefix('v1')->name('api.')->group(function () use ($products, $productPat
     });
 
     // --------------------------------------------------------------------
+    // PRIVATE ATTACHMENT DELIVERY — the signature is the credential (REQ-008).
+    // No bearer token: the browser opens the short-lived signed link directly.
+    // --------------------------------------------------------------------
+    Route::middleware(['signed', 'throttle:authenticated-read'])
+        ->get('/requests/{request}/attachments/{attachment}', [RequestController::class, 'downloadAttachment'])
+        ->name('requests.attachments.download');
+
+    // --------------------------------------------------------------------
     // ADMIN — Admin-only staff lifecycle, user visibility, audit logs
     // --------------------------------------------------------------------
     Route::middleware(['clerk.auth', 'staff-or-admin'])->prefix('admin')->name('admin.')->group(function () use ($products, $productPath): void {

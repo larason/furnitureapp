@@ -338,6 +338,20 @@ final class OperationalFurnitureRequestApiTest extends TestCase
             ->assertJsonMissingPath('data.disk');
     }
 
+    public function test_operational_resource_exposes_the_request_reference_in_detail_and_list(): void
+    {
+        $request = FurnitureRequest::factory()->create();
+        $headers = $this->authenticateAs(User::factory()->staff()->create(['clerk_user_id' => 'staff_reference']));
+
+        $this->withHeaders($headers)->getJson($this->url($request))
+            ->assertOk()
+            ->assertJsonPath('data.request_reference', $request->request_reference);
+
+        $this->withHeaders($headers)->getJson(self::INDEX)
+            ->assertOk()
+            ->assertJsonPath('data.0.request_reference', $request->request_reference);
+    }
+
     public function test_malformed_queries_and_empty_updates_are_rejected(): void
     {
         $request = FurnitureRequest::factory()->create();

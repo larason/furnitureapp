@@ -142,14 +142,14 @@ test("the protected shell keeps a single main landmark and an accessible skip li
 });
 
 test("protected placeholders state their phase, render no records and make no requests", () => {
-  const markup = CLEAN_MARKUP(<AdminRoutePlaceholder route={adminRoute("/requests")} />);
-  assert.match(markup, /<h1[^>]*>Made-to-order requests<\/h1>/);
+  const markup = CLEAN_MARKUP(<AdminRoutePlaceholder route={adminRoute("/enquiries")} />);
+  assert.match(markup, /<h1[^>]*>Enquiries<\/h1>/);
   assert.match(markup, /Not yet implemented/);
-  assert.match(markup, /Phase 19\.10/);
+  assert.match(markup, /Phase 19\.11/);
   assert.match(markup, /retrieves no data and performs no operations/);
   assert.equal(/<table|<input|<form/i.test(markup), false);
-  const placeholder = CLEAN_MARKUP(<FeaturePlaceholder feature="Made-to-order request handling" phase="Phase 19.10" />);
-  assert.match(placeholder, /Planned for Phase 19\.10/);
+  const placeholder = CLEAN_MARKUP(<FeaturePlaceholder feature="Customer directory" phase="Phase 19.12" />);
+  assert.match(placeholder, /Planned for Phase 19\.12/);
   assert.equal(/<table|<input|<form/i.test(placeholder), false);
 });
 
