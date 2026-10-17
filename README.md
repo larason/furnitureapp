@@ -348,3 +348,11 @@ php artisan queue:work --queue=notifications-broadcast --tries=3
   GET /api/v1/me
   Authorization: Bearer <current Clerk session token>
   Laravel then fetches the verified Clerk profile and creates the local users and customer_profiles rows.
+
+## Top contributors
+
+<a href="https://github.com/larason/furnitureapp/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=larason/furnitureapp" />
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).
